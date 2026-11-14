@@ -49,6 +49,7 @@ fn cut_lake(f: &mut Fixture) {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
 }

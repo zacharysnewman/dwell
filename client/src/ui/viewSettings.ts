@@ -13,18 +13,53 @@ export function sanitizeExposure(value: unknown): number {
     : DEFAULT_EXPOSURE;
 }
 
-/** The sky's clouds (dwell-look's clouds.rs): Low has fewer noise octaves and no self-shadow. */
-export const CLOUD_QUALITIES = ['off', 'low', 'high'] as const;
+/** The sky's clouds (dwell-look's clouds.rs): Low the flat deck; Medium and High the volume (CLOUDS.md §8). */
+export const CLOUD_QUALITIES = ['off', 'low', 'medium', 'high'] as const;
 export type CloudQuality = (typeof CLOUD_QUALITIES)[number];
 
-/** High on desktops, Low on phones (the GPU time a phone can spare). */
+/** Medium on desktops (High, the half-resolution volume, is opt-in: over its GPU budget seen from
+ * above, docs/CLOUDS.md §8.3), Low on phones (the GPU time a phone can spare). */
 export function defaultClouds(mobile: boolean): CloudQuality {
-  return mobile ? 'low' : 'high';
+  return mobile ? 'low' : 'medium';
 }
 
 /** A stored Clouds setting; anything else (missing, unknown) takes the device's default. */
 export function sanitizeClouds(value: unknown, mobile: boolean): CloudQuality {
   return CLOUD_QUALITIES.find((q) => q === value) ?? defaultClouds(mobile);
+}
+
+/**
+ * The light shafts, the volumetric glow rays (dwell-look's shafts.rs, ADR 0064): Low draws them at
+ * a quarter of the resolution with fewer samples, High at half. Owner, 2026-11-07: "Full quality
+ * everywhere with a cheaper version as a 'low' setting", so High on phones too.
+ */
+export const SHAFT_QUALITIES = ['off', 'low', 'high'] as const;
+export type ShaftQuality = (typeof SHAFT_QUALITIES)[number];
+export const DEFAULT_SHAFTS: ShaftQuality = 'high';
+
+/** A stored Light shafts setting; anything else (missing, unknown) takes the fallback (High). */
+export function sanitizeShafts(
+  value: unknown,
+  fallback: ShaftQuality = DEFAULT_SHAFTS,
+): ShaftQuality {
+  return SHAFT_QUALITIES.find((q) => q === value) ?? fallback;
+}
+
+/**
+ * Bloom, the glow round self-lit surfaces (dwell-look's bloom.rs, WORK_QUEUE item 19): Low draws its
+ * chain at half of High's resolution; Off draws none. A phone and a CPU adapter never draw it,
+ * whatever this says (render/bloom.rs `bloom_for`).
+ */
+export const BLOOM_QUALITIES = ['off', 'low', 'high'] as const;
+export type BloomQuality = (typeof BLOOM_QUALITIES)[number];
+export const DEFAULT_BLOOM: BloomQuality = 'high';
+
+/** A stored Bloom setting; anything else (missing, unknown) takes the fallback (High). */
+export function sanitizeBloom(
+  value: unknown,
+  fallback: BloomQuality = DEFAULT_BLOOM,
+): BloomQuality {
+  return BLOOM_QUALITIES.find((q) => q === value) ?? fallback;
 }
 
 /** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
@@ -53,15 +88,28 @@ export function sanitizeShowArms(record: unknown): boolean {
   return v !== false;
 }
 
+/**
+ * A stored view record's Leaf cards setting (shared/look/leaves.json `cards`; BUGS.md #72): on
+ * unless stored off (a record from before it has none).
+ */
+export function sanitizeLeafCards(record: unknown): boolean {
+  const v =
+    typeof record === 'object' && record !== null
+      ? (record as Record<string, unknown>).leafCards
+      : undefined;
+  return v !== false;
+}
+
 /** The view record to store: the stored one's other fields kept (newer builds' fields survive). */
 export function viewRecord(
   stored: unknown,
   fovDeg: number,
   showArms = true,
+  leafCards = true,
 ): Record<string, unknown> {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, fovDeg, showArms };
+  return { ...base, fovDeg, showArms, leafCards };
 }

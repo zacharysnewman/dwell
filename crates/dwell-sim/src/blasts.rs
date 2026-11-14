@@ -15,6 +15,16 @@ pub struct Fuse {
     pub ticks: u32,
 }
 
+/// A blast's piece waiting to spawn: its cell (cleared), its block, its velocity (the blast's
+/// fling, plus any later blast's push while it waits) and its `noPieceContactS` window in ticks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Queued {
+    pub cell: [i32; 3],
+    pub state: dwell_blocks::StateId,
+    pub velocity: dwell_physics::DVec3,
+    pub apart_ticks: u32,
+}
+
 /// The fuses burning and the table they burn by.
 #[derive(Clone, Debug)]
 pub struct Fuses {
@@ -24,6 +34,11 @@ pub struct Fuses {
     pub per_tick: u32,
     /// Cells one blast flings at most (`limits.maxPieces`).
     pub max_pieces: usize,
+    /// Pieces spawned a tick at most (`limits.piecesPerTick`): a blast's beyond wait in `queued`.
+    pub pieces_per_tick: usize,
+    /// Blasts' pieces whose cells are already cleared, waiting to spawn (the nearest a blast first,
+    /// the blasts in order; docs/EXPLOSIVES.md §3.12).
+    pub queued: std::collections::VecDeque<Queued>,
     /// Blasts' pieces kept apart from one another (`noPieceContactS`), each with the ticks left
     /// in its window; past it, each rejoins once it overlaps no other piece.
     pub apart: Vec<(dwell_physics::BodyHandle, u32)>,
@@ -36,6 +51,8 @@ impl Default for Fuses {
             burning: Vec::new(),
             per_tick: LIMITS.blasts_per_tick,
             max_pieces: LIMITS.max_pieces as usize,
+            pieces_per_tick: LIMITS.pieces_per_tick as usize,
+            queued: Default::default(),
             apart: Vec::new(),
         }
     }

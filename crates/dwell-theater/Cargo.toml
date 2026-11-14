@@ -1,0 +1,16 @@
+[package]
+name = "dwell-theater"
+description = "Dwell's theater mode camera engine (docs/THEATER_MODE.md): camera paths as data (keyframes and segments with a move kind and an easing), presets (shared/theater/presets.json) that expand into paths, a path evaluated at a time into a camera pose, and a frame-rate independent player that tracks moving targets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+# FaceFrame (docs/BIFACIAL_WORLD.md §11): a path's looks, orbits and offsets are face-local.
+dwell-world = { path = "../dwell-world" }
+serde_json = "1"
+
+[lints]
+workspace = true

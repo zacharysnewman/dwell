@@ -8,7 +8,8 @@ const invite = () => readFileSync(INVITE_FILE, 'utf8');
 async function expectJoined(page: Page, transport: string): Promise<void> {
   await expect(page.locator('#net-status')).toHaveText(
     new RegExp(`\\(${transport}\\) · player \\d+ · RTT \\d+ ms \\(datagram \\d+ ms\\)`),
-    { timeout: 15_000 },
+    // Two pages on the software renderer each stall a few seconds after the join (BUGS.md #49).
+    { timeout: 30_000 },
   );
 }
 
@@ -73,7 +74,9 @@ test('the loading screen covers the join until the terrain around the player is 
   const s = await loadingOf(page);
   expect(s?.loading.enabled).toBe(true);
   expect(s?.loading.shown).toBe(false);
-  await expect(page.locator('#loading-screen')).toBeHidden();
+  // The fade needs frames, and the software renderer draws none for a few seconds as the streamed
+  // view is first drawn (BUGS.md #49).
+  await expect(page.locator('#loading-screen')).toBeHidden({ timeout: 20_000 });
   await expect
     .poll(async () => (await loadingOf(page))?.terrainReady, { timeout: 30_000 })
     .toBe(true);
@@ -148,7 +151,7 @@ test('the loading screen is up before anything of the game, then fades in from w
         const shown = all.findIndex((s) => s.overlay);
         return shown >= 0 && all.slice(shown).some((s) => s.fading || !s.overlay);
       },
-      { message: 'a frame sampled after the screen opened', timeout: 10_000 },
+      { message: 'a frame sampled after the screen opened', timeout: 25_000 },
     )
     .toBe(true);
   const samples = await sampled();
@@ -163,6 +166,6 @@ test('the loading screen is up before anything of the game, then fades in from w
   expect(flashed, `HUD shown before the screen opened: ${JSON.stringify(flashed[0])}`).toEqual([]);
   // It turned white and faded (not a cut), then the HUD shows.
   expect(samples[fade]?.fading).toBe(true);
-  await expect(page.locator('#loading-screen')).toBeHidden();
+  await expect(page.locator('#loading-screen')).toBeHidden({ timeout: 20_000 });
   await expect(page.locator('#hotbar')).toBeVisible();
 });

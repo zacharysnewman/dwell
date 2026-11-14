@@ -8,6 +8,7 @@ import {
   INDEX_KEY,
   newWorldId,
   parseSeed,
+  testWorldId,
   typeOfGenerator,
   WorldIndex,
   type KeyValueStore,
@@ -57,6 +58,30 @@ describe('world seeds', () => {
   });
 });
 
+describe('test worlds (docs/DEV_TOOLS.md "Play a test world")', () => {
+  it("a ?worldgen= link's world has its own id and record, which keeps the config", () => {
+    const store = memoryStore();
+    expect(testWorldId('test:tall_peak', 7)).toBe('test-test-tall-peak-s7');
+    const w = new WorldIndex(store).adoptTest('test:tall_peak', 7, 1000);
+    expect(w.id).toBe(testWorldId('test:tall_peak', 7));
+    expect(w).toMatchObject({ type: 'terrain', seed: 7, worldgen: 'test:tall_peak' });
+    expect(w.generatorVersion).toBe(GENERATORS.terrain);
+    // Reopened (a later page, then played, copied): the same config.
+    const again = new WorldIndex(store);
+    expect(again.adoptTest('test:tall_peak', 7, 2000)).toEqual(w);
+    again.touch(w.id, 3000);
+    expect(again.get(w.id)?.worldgen).toBe('test:tall_peak');
+    expect(again.copy(w, 4000, sequence(0.5)).worldgen).toBe('test:tall_peak');
+  });
+
+  it("the New world form's worlds have no worldgen config (the build's terrain)", () => {
+    const index = new WorldIndex(memoryStore());
+    const w = index.create({ name: 'Plain', type: 'terrain', seed: 7 }, 1000, sequence(0.1));
+    expect('worldgen' in w).toBe(false);
+    expect('worldgen' in (index.adopt('local-g8-s7', 1000) ?? {})).toBe(false);
+  });
+});
+
 describe('world index', () => {
   it('creates worlds with the type’s current generator, newest played first', () => {
     const index = new WorldIndex(memoryStore());
@@ -68,6 +93,34 @@ describe('world index', () => {
     expect(index.list().map((w) => w.name)).toEqual(['Beta', 'Alpha']);
     index.touch(a.id, 3000);
     expect(index.list().map((w) => w.name)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('records the host’s mode switch, keeping fields it doesn’t know', () => {
+    const store = memoryStore();
+    const index = new WorldIndex(store);
+    const w = index.create({ name: 'M', type: 'terrain', seed: 1, mode: 'adventure' }, 1);
+    const raw = JSON.parse(store.data[INDEX_KEY] ?? '[]') as Record<string, unknown>[];
+    store.setItem(INDEX_KEY, JSON.stringify([{ ...raw[0], future: 42 }]));
+    new WorldIndex(store).setMode(w.id, 'creative');
+    expect(new WorldIndex(store).get(w.id)?.mode).toBe('creative');
+    const [stored] = JSON.parse(store.data[INDEX_KEY] ?? '[]') as Record<string, unknown>[];
+    expect(stored?.future).toBe(42);
+  });
+
+  it('keeps a bigger terrain world’s size, and none for today’s (BIG_MAP.md M2b)', () => {
+    const store = memoryStore();
+    const index = new WorldIndex(store);
+    const big = index.create({ name: 'B', type: 'terrain', seed: 1, radiusScale: 2 }, 1);
+    const plain = index.create({ name: 'A', type: 'terrain', seed: 1, radiusScale: 1 }, 2);
+    const flat = index.create({ name: 'F', type: 'flat', seed: 1, radiusScale: 2 }, 3);
+    const odd = index.create({ name: 'O', type: 'terrain', seed: 1, radiusScale: 3 }, 4);
+    const again = new WorldIndex(store);
+    expect(again.get(big.id)?.radiusScale).toBe(2);
+    // Today's size, a flat world and a size the data doesn't name record nothing (as before).
+    for (const w of [plain, flat, odd])
+      expect('radiusScale' in (again.get(w.id) ?? {})).toBe(false);
+    // A copy is the same size.
+    expect(again.copy(big, 5).radiusScale).toBe(2);
   });
 
   it('keeps a new world’s chosen spawn, and none for the usual one', () => {

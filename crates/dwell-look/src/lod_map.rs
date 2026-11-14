@@ -40,3 +40,30 @@ pub struct LodMapTunables {
     /// river's water level.
     pub valley_margin_m: f64,
 }
+
+impl LodMapTunables {
+    /// Water's brightness (a factor on its linear colour) over `depth` m of water: 1 at the
+    /// surface, toward `water_deep_shade` over `water_depth_m`. The generated map's (`dwell-client`
+    /// `lod_map.rs`) and the explored map's and minimap's (`dwell_game::minimap`), so exploring
+    /// the sea reads as the generated sea does.
+    pub fn water_shade(&self, depth: f64) -> f64 {
+        let k = 1.0 - (-depth.max(0.0) / self.water_depth_m).exp();
+        1.0 + (self.water_deep_shade - 1.0) * k
+    }
+
+    /// How far (m) a scan follows water down for its colour: three `water_depth_m`, where
+    /// [`Self::water_shade`] is within 5% of its deepest.
+    pub fn water_colour_depth_m(&self) -> f64 {
+        self.water_depth_m * 3.0
+    }
+}
+
+/// `0xRRGGBB` (sRGB) scaled by `k` in linear light, as [`LodMapTunables::water_shade`] applies.
+pub fn shade_srgb(c: u32, k: f64) -> u32 {
+    let ch = |s: u32| {
+        let v = crate::srgb_to_linear(f64::from((c >> s) & 0xff) / 255.0) * k;
+        let b = (crate::daynight::linear_to_srgb(v.max(0.0)).clamp(0.0, 1.0) * 255.0 + 0.5).floor();
+        (b as u32) << s
+    };
+    ch(16) | ch(8) | ch(0)
+}

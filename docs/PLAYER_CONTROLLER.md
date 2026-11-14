@@ -167,9 +167,11 @@ The server tick (ARCHITECTURE §4.2) runs, for every player, **before** `Physics
 | 9 | `step_horizontal` | `PPCMovementLayerSystem` | Absorb external; on ground steeper than 44° the slide (§6.8); else during a sprint slide the sprint slide (§6.9); else the walking rule on the whole velocity in the platform's frame: on the ground accel/reverse along the input up to the walking speed, friction above it and when nothing is held; in the air input only adds, up to `max(walk speed, |v|)`, and turns a faster body (§6.12); step-up; edge guard |
 | 10 | `step_vertical` | `PPCVerticalLayerSystem` | Gravity; walk-off keeps platform Y; ceiling cancel; launch detection; ground following + snap |
 | 10b | `step_fall` | — (Dwell) | In a waterfall's sheet (`dwell_world::falls::push_at`): drawn down and out, never rising; on the ground carried out (§6.4) |
+| 10c | `step_portal` | — (Dwell) | In the top of a portal's shaft (`VoxelWorld::portals`, `PortalShafts::exit_push`): airborne and rising fast, pushed along the facing so it arcs out of the opening (BIFACIAL_WORLD.md §12.3) |
 | 10a | `step_impact` | — (Dwell) | This tick's hit from the new contacts, the landing and a ceiling cancel: `IMPACTED` (§6.10) |
 | 11 | `step_aggregate` | `PPCAggregateSystem` | `target = exclusive ? layer.velocity : horizontal.contribution + (0, vertical.target_y, 0)`; set the body's linear velocity |
-| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle |
+| 12 | `step_state` | `PPCStateSystem` | Priority: Climbing > Swimming > Flying > Sliding (§6.8, §6.9) > Crouching > Jumping/Falling > Running/Walking/Idle; ◆ moving is the target velocity less the platform's carry (`base_velocity`): still on a moving body is `Idle`, walking against its motion `Walking` (0.50.65) |
+| 13 | `step_vitals` | — (Dwell) | Stamina and oxygen (§6.13): this tick's activity (running, swimming, treading water) spends stamina, else it rests; the head under water spends air |
 | — | *`Physics::step(1/60)`* | Quantum physics step | Contacts resolved; deviations are absorbed next tick |
 
 Each pass's behaviour is exactly the PPC Quantum system's, including its fixes over the Unity
@@ -320,7 +322,7 @@ without catching on internal edges (`walking_across_chunk_seams_in_every_directi
 no loss of ground crossing chunk borders in 8 directions). With `f64` positions it is exact anywhere
 in the world, so it needs no regions, anchors or seams between bodies. **Shaped cells** (Phase 18)
 collide as one Parry `TriMesh` per chunk (`FIX_INTERNAL_EDGES`, at the chunk's corner) of their
-derived shapes' faces that no neighbour covers; a chunk's collision reads a two-cell apron: a
+derived shapes' faces that no neighbour covers, and so do octagonal logs (0.51.0, ADR 0072: the prism of `dwell_blocks::octagon`, squared where same-axis logs join); a chunk's collision reads a two-cell apron: a
 chunk is rebuilt when it changes, and a chunk with shaped cells also when any of the 27 chunks
 around it changes stamp or collision revision (an empty chunk watches only itself; full cubes read only their
 own cells, 0.49.29). The collision revision (`Chunk::collision_revision`, 0.49.34) counts only the writes
@@ -339,10 +341,23 @@ meshes keeps the ground (`walking_a_grass_field_across_chunk_seams_never_loses_t
   apart from the cells it should (`solid`), and the chunks behind; each `tick_terrain` ends with
   `catch_up`: every behind cell within the players' reach (the box above) and the pieces' boxes at
   once — an edit's near cells the same tick, as before — then up to `COLLISION_CELLS_PER_TICK`
-  (8,192) more, in a fixed order (server and prediction alike); dropped chunks' cells come out the
+  (8,192) more, in a fixed order (server and prediction alike; a phone's prediction takes 1,024,
+  `Players::set_collision_cells_per_tick`, the cells in reach the same); dropped chunks' cells come out the
   same way. `ensure_box` puts its box's cells in at once. Counted as `collisionCells`
   (`Server::tick_counts`; `dwell-sim` `tests/teleport_cost.rs`: ≤ 8,829 cells a teleport's tick,
   65,536 before).
+- **[built]** The chunks a moving player is heading into are built before its reach (above) gets
+  there (`TerrainCollision::ahead_chunks` / `ensure_ahead`, `CollisionAhead`, WORK_QUEUE item 16): the
+  chunks within the reach plus `margin_metres` (1 m) of the path `seconds` (1 s) of travel along the
+  velocity (at most `max_metres`, 48 m; within the 2 chunks kept), nearest first, at most
+  `chunks_per_tick` a tick (2; a phone's prediction 1, `shared/render/streaming.json`
+  `collisionAhead`), for a player moving at least `min_speed` (1 m/s). A chunk is built ahead only
+  once the world holds (or generates) the 26 around it: a streamed chunk's shapes read its
+  neighbours, and one built before they arrive is rebuilt in the tick they do. `catch_up` puts those
+  chunks' cells in first from its background budget. What is built ahead only arrives sooner (the
+  reach's cells are all in either way), so the player moves the same (`tests/collision_ahead.rs`,
+  both faces); `CollisionStats` counts the chunks built when reached (`reach_loads`, 0 once a moving
+  player is loaded), built ahead, and the cells the reach put in.
 - Rapier caps body speed at 400 m/s by default; spawning a player raises the world's limit to
   cover creative flight at its top speed (`Physics::raise_max_linear_velocity`, §6.7).
 
@@ -470,6 +485,17 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
   layer's wish velocity has the water's current where the body is added (`VoxelWorld::currents`,
   the same vector face-locally), so an idle swimmer drifts with it and swimming is in the water's
   frame (`a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame`, both faces).
+- **A portal's exit push** (BIFACIAL_WORLD.md §12.3; owner 2026-11-12: "land beside the hole"):
+  `step_portal`, after `step_fall`, not while climbing, flying, swimming or grounded, asks
+  `VoxelWorld::portals` (`dwell_world::portal_shafts`, filled from the generator and seed by the
+  server and by the client's `Game::set_world`, so the prediction pushes as the server does; nothing
+  new on the wire) whether the body is in a shaft's footprint with its feet within `exit.depth` m
+  over the opening, rising, and having passed the opening at `exit.minRise` m/s or more
+  (`rise² + 2g·(feet − top)` under the player's gravity; over the opening, clear of the shaft's
+  wall a player who walked in rises against, BUGS.md #107); then it adds `exit.push` × dt along the
+  face-local facing to the horizontal `external` (kept in the air as momentum, like a fall's push).
+  A jump and a ladder climb are never pushed (`tests/portal_exit.rs`, `tests/portal_crossing.rs`,
+  `tests/predictor.rs`).
 - **Waterfalls** (Phase 53 G6, WATER_SURFACE_GRID.md §2e; owner 2026-11-06: a fall pushes what is in
   it down and out by how much flows, and can't be swum up): `step_fall`, after the vertical layer and
   not while climbing or flying, asks `dwell_world::falls::push_at` (the falls found from the water
@@ -495,6 +521,16 @@ openings), **crouch height 0.9** (fits 1-tall crawlspaces with skin to spare).
 
 ### 6.6 Interaction with Tier 1 bodies and other players
 - **Being pushed / hit:** natural solver response; absorbed as external velocity and decayed.
+  Uncapped: a body swung into a player throws them as hard as the solver says (owner, 2026-11-08: "we
+  shouldn't be capping player kick like that"; a 900 kg log at 10 m/s throws them at ~9.3 m/s).
+- **Pinned, not squeezed out [built, BUGS.md #52].** The capsule is frictionless, so a body coming down
+  on a grounded player (a felled trunk's slanted underside) could only squeeze it out sideways, at the
+  descent over the slant's slope, unbounded as the slant flattens (155 m flings). A Rapier contact hook
+  (`physics::PinchGrip`, every `Physics::step`; the player's collider sets
+  `ActiveHooks::MODIFY_SOLVER_CONTACTS`) gives a piece's contact whose push-out normal toward the
+  player points down (face-local y < −`PINCH_MIN_DOWN`, 0.5) the piece's own friction
+  (`PIECE_FRICTION`, 0.8): the player is held or carried at the body's speed there. The ground, walls,
+  side hits and other players stay frictionless. The same in the prediction (its `Physics`).
 - **Riding:** `step_platform` uses the Tier 1 body's linear + angular velocity at the player's
   position; the horizontal layer accelerates in that frame, and the vertical layer follows its
   vertical velocity, so standing on a falling slab or tipping tower needs no input. `yaw_delta`
@@ -535,12 +571,13 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
 - **Input.** `fly` is a *mode* bit held in every input frame while flight is on (`input_buttons::FLY`);
   the client toggles it (`dwell-game`'s `FlightToggle`: the F key, `input::FLY_KEY`, or the touch
   Fly button; Jump pressed twice is two jumps — owner, 2026-10-15). The server clears the bit for players its flight policy
-  excludes (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
+  excludes, and for everyone in a game mode without `flight` (adventure; ADR 0065) (`dwell-server --flight everyone|ops|nobody`, default everyone; `Welcome` says whether
   this player may fly), so a client that sends it anyway just walks.
 - **Layer.** `step_fly` runs before crouch, so flying cancels climbing and swimming and stands a
   crouched player up (the exclusive rule of `step_crouch`). While flying there is no gravity: the
-  body's velocity is eased towards the wish with exponential `fly.drag` — horizontal from the move
-  input along the camera's yaw, up with jump, down with crouch — at
+  body's velocity is eased towards the wish with exponential `fly.drag` — from the move input where
+  the camera looks (forward tilted by the look's pitch with `fly.follow_pitch`, on: fly where you look,
+  BUGS.md #155; `controller::fly_direction`), up with jump, down with crouch on top — at
   `fly.speed × run × fly_speed_factor(input.fly_speed)` (run = `fly.run_factor` while running,
   else 1), the same at every height (owner, 2026-10-26: the speed-up with height was removed).
   `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 11, carried in bits
@@ -559,6 +596,18 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   Only the wire format's range holds a position: |x|, |y|, |z| stop at `fly.position_limit`
   (`POS64_LIMIT` − 1 km), the velocity clamped to arrive exactly. Spawning a player raises the
   physics world's velocity limit (Rapier's default is 400 m/s) above the fastest flight speed.
+- **Far flight and gravity per grid** (MOON_WORLD.md §7.1, M-7 partial). `Players::set_far_fly_speed`
+  gives flight a least speed (the server sets it from the distance to every grid's slab, `grids.json`
+  `travel.farFlight`: 0 within 2 km, then 0.12/s × the distance up to 20 km/s), so the moon's ~597 km
+  take about 90 s. `Players::set_gravity_scale` (a grid's `gravityScale`, the moon's ⅙) scales
+  gravity wherever the layers apply it (fall, swim band, slides, the vertical layer) with the jump's
+  take-off speed kept, so a jump rises 1/scale as high (scale 1: the same bits). Neither is on the
+  wire: the predictor predicts the slider's speed and home gravity until M-7b's client follow-up. The
+  server (M-7b, MOON_WORLD.md §7.2) sets both on every player each tick (far flight from its world
+  position; the grid's scale when carried in, 1 when carried home) and runs an away player's
+  controller in its grid's space; `travel::carry` moves it between the spaces. A player
+  moved into another grid's space keeps its controller state (`restore`) and takes that grid's face
+  (`settle_face`, the vertical state mirrored as at a midplane crossing).
 - **Leaving flight** hands back to the normal layers with the current velocity, like leaving
   water: the player falls, and a hard landing does impact damage (§6.10). Landing while flying does
   not end flight (the vertical layer, which reports `LANDED`, is skipped), and flight is exempt
@@ -797,9 +846,11 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 - **Damage** (server, `dwell-sim` `after_controller_tick`): `PlayerControllerConfig::impact_damage`
   of the speed, read as the free-fall height that lands at it (`h = v² ÷ 2g`; a landing speed
   written as a drop, never the distance fallen: horizontal speed and time in the air never
-  count): nothing up to `damage.impact_safe_height` (10 m, 20 m/s), all of `MAX_HEALTH` (100) at
-  `impact_lethal_height` (20 m, 28.3 m/s; owner, 2026-11-06, 0.49.22: *"Scale it so approximately
-  safe is 10m and lethal is 20m"*; 5 m and 12 m in 0.49.18–0.49.20),
+  count): nothing up to `damage.impact_safe_height` (5 m, 14.1 m/s), all of `MAX_HEALTH` (100) at
+  `impact_lethal_height` (15 m, 24.5 m/s; owner, 2026-11-14: *"Fall damage is a bit too forgiving
+  now"* … *"Let's modify dwell to be about 5m - 15m"*; 10 m and 20 m from 0.49.22, owner,
+  2026-11-06: *"Scale it so approximately safe is 10m and lethal is 20m"*; 5 m and 12 m in
+  0.49.18–0.49.20),
   and between them `MAX_HEALTH × t ^ impact_curve_exponent` (2) for `t` the height's share of the
   way, at least 1 point (owner, 2026-11-06, 0.49.18: *"I don't want to get nickeled and dimed all
   the time for small drops"*, *"a higher threshold for taking damage and a smaller area between
@@ -812,11 +863,11 @@ Owner (2026-10-21): fall damage became **impact damage**, by the angle of the su
 
 | Case | Speed counted | Damage |
 |---|---|---|
-| 5 m / 8 m / 10 m drop, flat | 14.0 / 17.9 / 20.0 m/s | 0 (0.49.18–0.49.20: 0 / 18 / 51; until 0.49.18: 16 / 47 / 64) |
-| 12 m / 14 m / 15 m / 16 m / 18 m / 19 m drop, flat | 21.9 – 27.6 m/s | 4 / 16 / 25 / 36 / 64 / 81 (`tests/impact.rs`) |
-| 20 m drop or more, flat | 28.3 m/s | 100: lethal from full health (12 m in 0.49.18–0.49.20, ~15 m before) |
+| Up to a 5 m drop, flat | up to 14.1 m/s | 0 |
+| 6 m / 8 m / 10 m / 12 m / 14 m drop, flat | 15.5 / 17.9 / 20.0 / 21.9 / 23.7 m/s | 1 / 9 / 25 / 49 / 81 on the curve; a dropped body lands a touch under its drop (8 m deals 8, 12 m 45; `tests/impact.rs`). From 0.49.22 to 2026-11-14 (10 m / 20 m): 0 / 0 / 0 / 4 / 16; 0.49.18–0.49.20: 9 / 18 / 51 / 100; until 0.49.18: 28 / 47 / 64 |
+| 15 m drop or more, flat | 24.5 m/s | 100: lethal from full health (20 m from 0.49.22, 12 m in 0.49.18–0.49.20, ~15 m before) |
 | 35 m/s straight down, at 60° or along a ½ m ramp (from 0.6 m over it) | the downward speed × 0.894 | less than the same hit on the flat; along the slope under the safe height, nothing (the whole speed into the ramp until 0.49.1; 0 in 0.49.2) |
-| 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down × 0.707 | 51 (112 on the flat; 0 in 0.49.2) |
+| 25 m/s straight down onto a 1 m ramp (45°) | 26.0 m/s down × 0.707 | 12 (142 on the flat; 51 and 112 under the 0.49.18 curve; 0 in 0.49.2) |
 | Launched along the ground at 25 m/s into a 45° slope | ~0 m/s down | 0 (into the slope: ~46 until 0.49.1) |
 | Launched at 25 m/s into a wall | 25 m/s (a wall) | 0 (104 when walls hurt) |
 | Launched at 25 m/s along a wall, 1 m/s into it | < 2 m/s | 0 |
@@ -969,6 +1020,40 @@ jump with nothing held went 8 → 6.5 m/s in 0.5 s, and holding sideways halved 
   differed far from the origin. Both faces, far from the origin, and bit-exact under
   `wasm32-wasip1`.
 
+### 6.13 Stamina and oxygen (Dwell addition) **[built, 0.50.57]**
+
+ADR 0069. In a world whose mode has the `stamina` and `oxygen` abilities (adventure), the
+controller carries `PlayerController::vitals` (`dwell_protocol::vitals::Vitals`: stamina, seconds
+of air, whether exhausted, ticks since the last spend) and gates on it. `Players::set_vitals`
+switches the rules for the whole world (the server from its mode each tick; the predictor from the
+mode it was told, on a server whose Welcome has `VITALS`); off, the vitals stay rested and nothing
+below applies (creative).
+
+- **Spending (`step_vitals`, after `step_state`):** the tick's activity, at most one: `swim` in the
+  water (swimming, submerged past `swim.enter_fraction`) with any move input or swim-up, `tread` in
+  the water with none, `sprint` in the `Running` state. Each drains its `stamina.drains` rate; a
+  tick without one counts toward `regenDelaySeconds`, past which `regenPerSecond` comes back.
+  Oxygen drains 1 s a second while `swim.submerged ≥ oxygen.headFraction` and refills at
+  `refillPerSecond` otherwise. The rule is `Vitals::step`, one pure function.
+- **Exhaustion:** stamina reaching 0 exhausts the player until it is back to
+  `recoverFraction × max` (25 %); a rested player spends below 25 % freely. While exhausted:
+  `step_input` reads the run input as not held (no sprint, no sprint slide), and `step_swim` turns
+  the buoyancy ("treading water") off, ignores swim-up and pulls the wish down by
+  `exhaustedSinkSpeed`, so the body sinks; sideways swimming still works and spends, while sinking
+  limp rests. Axe swings are refused (the client doesn't start one; the server refuses it).
+- **Prediction:** the vitals are not on `ControllerState`; a replay keeps the predicted value from
+  history. The server sends `Vitals` (seq, stamina, oxygen, flags) with each snapshot to a client
+  that said `VitalsHello`; `Predictor::on_vitals` patches the tick at that seq when it differs
+  (`Vitals::differs`: 0.5 point, 0.1 s, or exhaustion) and replays to the present. A swing's cost
+  (server only) arrives that way.
+- **Tunables:** `shared/vitals/vitals.json` (ADR 0069's table; ARCHITECTURE.md §7.4), generated by
+  `shared/vitals/gen.mjs` into `dwell_protocol::vitals::VITALS`.
+- **Tests:** `tests/vitals.rs` (both faces through `DWELL_FACE=b`): sprint drains and is refused
+  when exhausted; a rested swimmer floats and an exhausted one sinks; it rests back past the share
+  and treads again, draining below it without a lockout; air drains with the head under and
+  refills out; creative never drains. `tests/predictor.rs`
+  `prediction_runs_stamina_out_as_the_server_does_and_takes_its_corrections`.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the
@@ -1009,6 +1094,7 @@ PPC default for voxels.
 | | `grab_reach` ◆ | 0.25 m | (the trigger box) | How far in front of a ladder's plate it grabs (the least that still catches a walk off its ledge) |
 | `swim` ◆ | `speed` / `enter_fraction` / `exit_fraction` | 3 m/s / 0.6 / 0.4 | — | Dwell addition |
 | | `buoyancy` / `drag` / `float_fraction` | 12 m/s² / 2 /s / 0.7 | — | |
+| | (vitals) ◆ | `shared/vitals/vitals.json` | — | Stamina and oxygen (§6.13, ADR 0069): data, not `PlayerControllerConfig`: drains (sprint 12, swim 6, tread 4 /s), regen 20 /s after 1 s, recover at 25 %, exhausted sink 1.2 m/s; air 20 s, refill 10 s/s, head under at 0.9 submerged |
 | `band` ◆ | `boost_gravities` | 2 | — | The flip band (§11) |
 | `fly` ◆ | `speed` / `run_factor` / `drag` | 8 m/s / 2.5 / 8 /s | — | Dwell addition (§6.7): speed × 2^(speed level / 2), the same at every height (11 m/s with a speed-up by height until 2026-10-26) |
 | | `position_limit` | 33,553 km | — | \|x\|, \|y\|, \|z\| (the wire range; no world limit, Phase 16) |
@@ -1019,7 +1105,7 @@ PPC default for voxels.
 | `sprint_slide` ◆ | `min_start_speed` / `start_boost` / `max_speed` | 6.5 m/s / 1.5 m/s / 14 m/s | — | Dwell addition (§6.9): crouch while sprinting; horizontal speeds |
 | | `friction` / `slope_gravity` | 5 m/s² / 1 | — | Deceleration; `gravity × slope_gravity × tilt` along the slide (6 / 1 until 2026-11-02; 1.5 from then to 0.49.5; 1 again, owner 2026-11-06: plain gravity) |
 | | `steer_rate` / `cooldown_ticks` | 90 °/s / 30 ticks (0.5 s, at most 255: the wire's `u8`) | — | Turning toward the move input; before another slide |
-| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 10 m / 20 m / 2 (20 / 28.3 m/s) | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.18; until then 12 m/s and 8 points per m/s, linear) |
+| `damage` ◆ | `impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` | 5 m / 15 m / 2 (14.1 / 24.5 m/s) | — | From the `IMPACTED` event's speed into the surface, read as a fall height (§6.10, 0.49.18; until then 12 m/s and 8 points per m/s, linear) |
 | | `impact_surfaces` / `impact_measure` | `Ground` / `DownwardIntoSurface` | — | The contacts that hit (§6.10): `Ground`, a normal no steeper than `probes.max_slope_angle` (floors and ramps); `All`, every contact. The speed: `DownwardIntoSurface`, the downward speed × the surface's cos θ (owner, 2026-11-06); `IntoSurface`, the whole speed into the normal |
 | | `crush_speed` / `crush_ticks` | 4 m/s / 6 | — | Phase 20 |
 | `step_view` ◆ | `slope` / `max_slope` / `min_speed` | 0.5 / 1.0 / 1 m/s | (PPC `SmoothSteps`: 4 m/s) | Client camera only (§9, Steps): the virtual ramp the eye follows over a step; never read by the sim |
@@ -1068,8 +1154,10 @@ Owned by the `Predictor` (the same `Physics` settings as the server):
   the server never simulates, so every later snapshot snaps the player back: a server stalled
   generating terrain for a fast flyer once skipped them and rubber-banded the player (docs/BUGS.md 1,
   fixed 2026-10-26). So the **client holds its prediction** instead, while the server reports 30 or
-  more of its inputs queued (until it reports 6 or fewer) or while 45 of its inputs are
-  unacknowledged (a stalled server sends no snapshots): `BUFFER_HOLD`, `BUFFER_RESUME`,
+  more of its inputs queued (until it reports 6 or fewer) or while 90 of its inputs are
+  unacknowledged (a stalled server sends no snapshots; a slow frame's whole catch-up, 60, plus half a
+  second of round trip and snapshot lag, under the server's 96: at 45 a 48-tick frame dropped its last
+  3 ticks, the server repeated the last input for them, docs/BUGS.md 58): `BUFFER_HOLD`, `BUFFER_RESUME`,
   `UNACKED_HOLD` in dwell-client `game.rs`. The
   client catches up at most 60 ticks a frame (1 s; `MAX_TICKS_PER_FRAME`), so a device drawing
   1 fps or more keeps the server's time: one that dropped time would predict fewer ticks than the

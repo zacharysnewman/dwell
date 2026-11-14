@@ -2,14 +2,21 @@
 // volumes, the menus' delegated UI sounds, and the music (§6a). Once per page, whoever asks first
 // (the game page, or the main menu, which the launcher shows without WASM).
 import { audio, type AudioEngine } from './engine';
-import { browserMusicEnv, chooseTrack, MusicPlayer, musicEnabled } from './music';
+import { browserMusicEnv, musicEnabled } from './music';
 import { MUSIC_DATA } from './music.gen';
+import type { MusicContext } from './musicTypes';
+import { MusicPlaylist } from './playlist';
 import { loadVolumes } from './settings';
 import { installUiSounds } from './uiSounds';
 
 let installed = false;
+let playlist: MusicPlaylist | null = null;
 
-export function installPageSounds(doc: Document = document): AudioEngine {
+/**
+ * `context`: the main menu's page (music at once) or the game's (the first track after a random
+ * wait, unless the menu's carries over): `shared/music/music.json` `playlist.contexts`.
+ */
+export function installPageSounds(context: MusicContext, doc: Document = document): AudioEngine {
   const sfx = audio();
   if (installed) return sfx;
   installed = true;
@@ -24,11 +31,13 @@ export function installPageSounds(doc: Document = document): AudioEngine {
     __dwellMusic?: () => Record<string, unknown> | null;
   };
   w.__dwellSounds = () => [...sfx.recent];
-  const music = installMusic(sfx, doc);
+  const music = installMusic(sfx, doc, context);
+  playlist = music;
   w.__dwellMusic = () =>
     music
       ? {
-          track: music.track.title,
+          track: music.track?.title ?? null,
+          history: [...music.history],
           state: music.state,
           routed: music.routed,
           time: music.time,
@@ -40,21 +49,32 @@ export function installPageSounds(doc: Document = document): AudioEngine {
   return sfx;
 }
 
+/** The listener's daylight (0 night – 1 day) for the music's day and night tracks (§6a). */
+export function setMusicDaylight(day: number): void {
+  playlist?.setDaylight(day);
+}
+
 /** The music, from the first screen (the menu, the loading screen, the game): off for tests. */
-function installMusic(sfx: AudioEngine, doc: Document): MusicPlayer | null {
+function installMusic(
+  sfx: AudioEngine,
+  doc: Document,
+  context: MusicContext,
+): MusicPlaylist | null {
   let store: Storage | null;
   try {
     store = typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     store = null;
   }
-  const track = chooseTrack(MUSIC_DATA);
-  if (!track || !musicEnabled(location.search, store)) return null;
-  const player = new MusicPlayer(
-    track,
-    `${__MEDIA_BASE__}${track.file}`,
+  if (!musicEnabled(location.search, store)) return null;
+  const player = new MusicPlaylist(
+    MUSIC_DATA,
+    (t) => `${__MEDIA_BASE__}${t.file}`,
     sfx,
     browserMusicEnv(doc),
+    Math.random,
+    ['always'],
+    context,
   );
   sfx.onVolumes((v) => {
     player.setVolumes(v);

@@ -22,7 +22,7 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 2 — Physics player controller | ✅ Complete (playtested; follow-up fixes made; 2026-10-20: the step-up reworked, consistent at every approach angle and speed; 2026-10-21: fall damage became impact damage by the speed into the surface, on the ground only (walls and ceilings never hurt); 2026-10-21: a jump grabs again a ladder let go of while still in its cells, a jump off one never does; 2026-11-06: impacts hurt by the downward speed × the surface's cos θ, on floors and ramps, so a fast hit into a slope never hurts and a steep ramp softens a fall, `damage.impact_measure`, PLAYER_CONTROLLER.md §6.10) |
 | 3 — Terrain generation & streaming | 🚧 In progress — every sub-phase built (3a–3e: 3d block edits and meshing workers, 3e persistence and debug tooling). Outstanding: playtests for the long walk (3b) and walking/jumping/swimming the terrain |
 | 4 — World LOD & whole-world view | 🚧 In progress — 4a, 4b and 4c built, the dev camera replaced by creative flight; playtest follow-ups built: fog off (now a fixed height fog from look data, no sliders), super tall mountains (generator version 4), chunks shown first on slow devices, no popping when turning and matching distant colours, flight/HUD/transport fixes and the distant-water comparison, distant terrain at its true height and tinted distant water, seamless see-through distant water without cracks at section borders, no z-fighting on distant water, height fog with a settings menu and playtested defaults, full-detail chunks beyond the view on request (protocol v8) (its velocity lookahead removed 2026-10-14: it looked bad), a flight speed slider (protocol v9) that is a true minimum near the ground, caves deep underground drawn without requesting buried chunks, an FPS counter, the LOD view held within its cache budget with its pixel error in CSS pixels, one draw call per LOD section, static transforms and GPU-only vertex data, the LOD's pixel error and memory as settings, batched terrain behind `?batch=1` and a `?scale=` resolution switch, a memory readout in F3 and a phone memory budget, clipped ancestor stand-ins for the holes on the forced path to the chunks (chopped mountains, `FIX_SPEC_LOD_SKY_FLIP.md` item 1), flight toggled by a dedicated F key instead of a double-tapped Space or Jump (owner, 2026-10-15; the touch Fly button unchanged), distant colours that match full detail (owner, 2026-10-21: risers coloured by the fine rise they stand for, `shared/look/lodcolour.json`; tops untinted), the dirt z-fighting through the grass from high up (owner, 2026-10-21: reversed scene depth, top skirts off the section plane in the ground's colour, a known bug class with its guards and the `lod-zfight` bench check; the owner's look on a phone outstanding), terrain behind the camera that loads without turning round and a loading screen on joining (owner, 2026-10-21: no off-view penalty within the full-detail distance; the screen waits for the near ring in every direction, data `shared/look/loading.json`, `?loading=off`; then shown before anything of the game, no HUD flash, with a fade in from white; then the respawn preloaded during the death screen, data `respawnPreload`, so the respawn's screen opens at once; then the start's stages listed with their times (owner, 2026-11-06), data `stages`; CI and the owner's review outstanding); outstanding: the frame-rate check on a desktop and a mobile device; `package.json` raised to 0.11.13, a patch release of the 0.11 line |
-| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
+| 5 — Multiplayer ready (menus, web hosting, master on Cloudflare, lobby list) | 🚧 In progress — every sub-phase built: 5a (main menu, world management, game menu), 5b (master Worker skeleton, signing, CI, deploy workflow; the master runs at `dwell-master.dropkick.workers.dev`), 5c (friend worlds: host from the browser, join by code), 5d (dedicated servers on the master, join by address, On your network), 5e (lobby list, receipts, server browser). Follow-up, the main menu redesign (owner, 2026-11-09): M1 (logo screen, home column, pages; 0.51.4), M2 (world cards; 0.51.6) and M3 (Settings a full page in the menu's look, Versions aligned; 0.52.33) built and unit tested, M3's changed e2e selectors none; outstanding for M3: the e2e run in CI, a look in a world (in-game Settings not screenshotted) and the owner's review. Outstanding: the manual phone checks (5a, 5c, 5d) and the TURN key |
 | 6 — Versioned releases: builds by tag, version launcher, version-locked worlds, license | 🚧 In progress — 6a (release pipeline, launcher, version-locked worlds, license) complete; 6b (a user-facing version selector: `/dwell/?versions`, a Versions link in the menu) built, unit and site e2e tests passing; follow-up: the site retention policy (each line's newest, the 10 newest, 0.10 pinned); outstanding: the phone-width check; follow-up (owner, 2026-11-06, built, ADR 0061): an older line's world opens in a newer build after a warning, as a copy or upgraded; outstanding: the owner's check in a browser |
 | 7 — Fantasy look: a first pass at colour (rendering only) | ✅ Complete — shared look module, face tints, sky gradient with matched haze, tone mapping and an exposure slider, retuned palette, turquoise water, screenshot script; `package.json` 0.1.1; follow-up built: one sky sphere that turns as a unit; the owner approved the before/after and the frame time (2026-10-06) |
 | 8 — Block registry: namespaced block states and palettes | ✅ Complete — namespaced block states, the registry and string palettes in world files (`package.json` 0.2.0, the new compatibility line); paletted in-memory chunks were measured and deferred |
@@ -43,15 +43,15 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 22 — Sleep / re-bake | ⏸ Waits for Phases 6–19 (2026-10-05; the baseline rework, 14–19, added 2026-10-12) |
 | 23 — Dedicated servers & packaging | ⏳ Not started |
 | 25 — Ray-marched renderer comparison | ✖ Dropped at A7 by the owner (2026-10-20: "Ray marching is massively slower… Mesher / raster is definitely our way forward"; ADR 0044). A0–A4c and A5a were built and measured (at A4c, marching every frame cost 1.5–3× raster's whole GPU frame); the marcher, compare mode and the renderer switch are removed from main, their code kept as the `archive/ray-marcher` tag and branch. Kept: A1's shared frame and GPU timing (water's W2) and `bench --compare` for raster configurations. Follow-up: the face-B "stray dark slabs" bug, deferred in case marching replaced the mesher, now needs fixing in the mesher |
-| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look; **follow-up (owner, 2026-11-06): the water slowed phones close to the surface** — reflections of land and clouds only where the water reflects over 5 %, caustics from their tile at every distance, a phone's cheaper Medium reflections (WATER_RENDERING.md §8 "Cost close to the water"); measured on an Apple GPU, outstanding: a check on the owner's phone |
+| 26 — Water and fluid looks | 🚧 In progress — W1a (fluid data, the eye-under-fluid uniform) done; W2 built (it is Phase 25's A1, built once there; the owner approved its image differences, 2026-10-14); W1b (the water shader, the underwater fog stub, the water quality setting) built and checked in Chrome on an M1, outstanding: the owner's look; W3 (refraction, depth absorption, shoreline foam, sparkle, and caustics brought forward from W4, above and under the surface) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded per-tier cost measurement; W5a (reflections of land by screen-space reflection, and of the clouds, brought forward from W5 at the owner's report) built and checked in Chrome on an M1, outstanding: the owner's look and an unloaded cost measurement; water cost work (WATER_RENDERING.md §8, "Cost"): cheaper hashing, noise and caustic tiles, frame pacing against the stalls, Medium the desktop default — Medium +1.6 ms and High +1.7 ms over Low on the shore view before the reflections, which now add the most (outstanding: W5a's reflection cost against the 2/3 ms targets); next: W4; W6 dropped with the ray marcher (A7, ADR 0044); `package.json` raised to 0.12.1, a patch release of the 0.11 line; **follow-up (owner, 2026-10-20): shore water** (WATER_RENDERING.md §9) built and tested — the sea floods natural top blocks below sea level (generator version 17, a new compatibility line for the owner to raise, 0.19.0), fluid sides clipped to the surface and to shaped neighbours, side faces' backs seen from the air take the outside look; outstanding: the owner's look; **follow-up (owner, 2026-11-06): the water slowed phones close to the surface** — reflections of land and clouds only where the water reflects over 5 %, caustics from their tile at every distance, a phone's cheaper Medium reflections (WATER_RENDERING.md §8 "Cost close to the water"); measured on an Apple GPU, outstanding: a check on the owner's phone; **follow-up (owner, 2026-11-07): the waterline** — W4a built: the view split per pixel at the surface along a straight line with a band of real thickness, and a clearer underwater fog, as look data (WATER_RENDERING.md §12; 0.50.20 §12.1); W4b built: Snell's window, total internal reflection and the underside's texture from below; polished against the owner's reference photos (0.50.22, §12.2: broken underside cells with a sun patch fading into the fog, the band's broken ripples, rippled mirror and anti-aliased rim, no body shadow); outstanding: the owner's look, Snell's window's colour and edge, light shafts (separate); **follow-up (owner, 2026-11-07): cheaper water tiers** (proposals/WATER_GPU_SURFACE.md C1, half of C2) — the tiers as data (`shared/look/watertiers.json`), Low see-through with no scene copy (no pass split, for phones), High folded into Medium, the opaque tier the CPU adapter's only, the caustic tile every other frame; outstanding: the owner's look and a check on the owner's phone, the copy rectangle (C2), the copy-free bank band (C4); **the GPU heightfield (C6a, 0.50.69)** — the switch as data (off), level tiles from the eighths on both faces, the corner rule, the grid, the atlas's slots, the mesher's water-tops flag through the mesh job, the vertex shader (validated); the draw over it (0.50.72: atlas on the client, grid draws, the streamer's flag), measured dearer on the river (+1 ms) and darker past a step, so still off; 0.50.77: dry columns collapsed (no pixels) and the re-mesh skip for level-only changes (re-meshed once settled), built and tested, switch still off; outstanding: the darker water past a step, a measure on the river and a flood, the switch on; C6b the drops' skirts; **follow-up (owner, 2026-11-10): the moon on the water** (0.52.32, WATER_RENDERING.md §15) — the discs mirrored and glitter paths for the moon and a low sun, as data per tier and body, built and tested; outstanding: the cost against main, a lake view, the owner's look; **follow-up (owner, 2026-11-11): the surface from below** (0.52.49, WATER_RENDERING.md §16) — Snell's window onto the real sky refracted by Snell's law, the sun and moon discs in it, its glow by the sky's light, the cells as look data; built and tested, seen against main on the bench; outstanding: the owner's look, the discs caught in frame at sunset and night; **follow-up (owner, 2026-11-11): underwater at night** (0.52.53, §16.1) — the window shows the sky pass's own sky (stars, moon, clouds) with no glow over it, the water from inside greyed by moonlight as above; built and tested, seen above and below on the bench; outstanding: the owner's look |
 | 27 — Structure sandbox | 🚧 In progress — S0 (ADR 0031), S1 (the structure format, `gen.mjs`, the Rust loader, the playground converted), S2a (floor block, sandbox world type), S2b (the structures store: save, load through the region paste, export and import) and S3a (region edits, the region tools) done, S2a's e2e check outstanding; `package.json` raised to 0.11.0, the new compatibility line (S2a's registry change; the owner's decision, 2026-10-14); next: S3b (anchor, touch) and the S3 sandbox e2e outstanding; S4a (worldgen placement as interim data, the owner's pines in groves, generator v18, ADR 0043) built and tested natively and in Chrome on the GPU — it changes the terrain a seed generates, so it needs a new compatibility line (0.20.0), which the owner raises; outstanding: CI and the owner's look; S4b (the rules moved into Phase 17's terrain definitions) waits for Phase 17; `package.json` raised to 0.11.11, a patch release of the 0.11 line |
-| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); F7 "sounds for everything" built and tested (wall and ceiling impacts, hurt/death/respawn, torch place/break/crackle, wind, night); outstanding: the owner listens to the WAV renders and approves them, answers `AUDIO.md` §9, and F7 is heard in the running game; F8 music (the owner's Starry Sunshine, streamed, started on the first gesture, Music volume) built and tested, the owner to listen and set its level; `package.json` raised to 0.11.12, a patch release of the 0.11 line |
+| 28 — Sound effects | 🚧 In progress — F0–F6 built and tested (procedural Web Audio, no library; sound data and generator, the registry's `sound` field, Rust sound events, synth, variation, mixer, spatial playback, menu and game-action sounds, volume sliders, offline WAV renders); F7 "sounds for everything" built and tested (wall and ceiling impacts, hurt/death/respawn, torch place/break/crackle, wind, night); outstanding: the owner listens to the WAV renders and approves them, answers `AUDIO.md` §9, and F7 is heard in the running game; F8 music (the owner's Starry Sunshine, streamed, started on the first gesture, Music volume) built and tested, the owner to listen and set its level; F9 recorded samples (Universal Sound FX, per block material, slides procedural) built and tested in 0.52.15, the owner to listen to the picks; `package.json` raised to 0.11.12, a patch release of the 0.11 line; 0.52.20 ambience beds (ADR 0077: wind, sea, river, stream, birds, leaves by the listener's surroundings, an Ambience volume), creature, breathing/gasp/strain and felling sounds — built and tested, unheard in a browser (outstanding: the owner's listen); 0.52.31 round 2b (AUDIO.md §2e): sticks snap, leaves brushed, a fire bed, the felling crack and landing split, piece impacts by material, hit chips per material and other players' hits — built and tested natively, unheard in a browser |
 | 29 — Motion effects (speed FOV and wind) | 🚧 In progress — built and tested (the FOV widening with the camera's speed for the renderer and the LOD alike, the wind streaks, vignette and edge blur in the shared frame's composite, tunables as data, the settings, bench scenarios and screenshots; fix 2026-10-20: the edge blur keeps the clouds seen from above); outstanding: the owner's look in a browser and approval, CI; `package.json` raised to 0.11.7, a patch release of the 0.11 line |
 | 30 — Tree growth | 🚧 In progress — G-ADR (ADR 0033) and the G0 prototype page built and verified in Chromium; outstanding for G0: publishing the page and the owner's review; next: G1; G2 needs Phase 27 (S2a/S3); G3 is a new compatibility line (the owner decides the bump) and needs Phase 20 for felling and the day/night cycle's day length; `package.json` raised to 0.11.14, a patch release of the 0.11 line |
-| 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing; fix 2026-10-21: from tens of km up the deck covers the whole flat world, not a circle round the eye, bench `clouds-far-above`); outstanding: CI, a phone's frame time; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
+| 31 — Sky clouds | 🚧 In progress — C0–C5 built and tested: a 2D cloud deck in the composite's sky (ADR 0034, `CLOUDS.md`), tunables as data (`shared/look/clouds.json`, generator and CI stale check), the Clouds setting (Off / Low / High), the drift on the server's tick, bench scenarios and screenshots, GPU cost measured (about +0.9 ms composite on High at 720p, Apple GPU); the owner approved the look (2026-10-15) and asked for clouds from above (C5, built: the deck over the terrain by the stored depth, sunlit tops, a fogged crossing; fix 2026-10-21: from tens of km up the deck covers the whole flat world, not a circle round the eye, bench `clouds-far-above`); outstanding: CI, a phone's frame time; **follow-up (owner, 2026-11-11): volumetric clouds** (C8, `CLOUDS.md` §8) — built and tested: a ray-marched layer in its own reduced-resolution pass accumulated over frames (tiers as data: High ½ opt-in, Medium ¼ the desktop default, Low the 2D deck), plumes with a colour as data, Beer/powder light; outstanding: Medium 0.1 ms over its 0.8 ms budget from above (the pass's fixed cost, to trace), the owner's look; future, not started: weather-driven coverage (C6), cloud shadows on the terrain (C7); `package.json` raised to 0.13.1, a patch release of the 0.11 line |
 | 32 — Day/night cycle | 🚧 In progress — D0–D5 built and tested: world time (the server's tick, no protocol change) drives a keyframed sky, light, fog, exposure and saturation (ADR 0035, `DAY_NIGHT.md`), data in `shared/look/daynight.json` (generator, CI stale check), a limb-darkened sun, a moon with phases and maria, stars, per-face light on both faces, the clouds and the water's glint lit by it, `?time`/`?moon`/`?timespeed`, F3, bench `time`/`timelapse` steps; screenshots and GPU cost (about +0.1 ms composite, 720p, Apple GPU); outstanding: the owner's look and answers to `DAY_NIGHT.md` §8, CI, a phone's frame time; `package.json` raised to 0.11.16, a patch release of the 0.11 line |
 | 33 — Transparent blocks (render modes, cross geometry, tall grass) | 🚧 In progress — render modes as block data and cutout (see-through) ladders shipped on the 0.11 line (0.11.18; no registry-hash change); on `claude/transparent-blocks` for the 0.13.0 line (with wood and leaves): the cross look with wind and fade, placement rules and `medium`, `dwell:tall_grass` grown by world generation (decorations as data, generator version 13; a partial reversal of B10 for plants), the Plant sway setting, the marcher's classes, all tested and checked in a browser (about +0.3 ms GPU for a 150-plant field); follow-up 2026-10-20: plants sit on their support's drawn surface (`cross.sitOnSupport`); follow-up 2026-10-21: ladders are aimed at by their plate (a `selectionBox` turned per facing); outstanding: hillside screenshots of generated grass (T9), the owner's look, the e2e suite on CI; `package.json` raised to 0.13.0, the new compatibility line (new blocks: log, leaves, tall grass; generator v13; the owner's decision, 2026-10-16) |
-| 34 — Brushes | 🚧 In progress — B1 built and tested (brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data, strokes as `KEEP` pastes behind the `brushes` Welcome flag, the brush tool, HUD panel and keys). The owner answered `BRUSHES.md` §5 (2026-10-19); B2 (the rest of VoxelSniper's brushes, §7), B3 (the exact-cell preview) and B4 (predicted strokes and edits, protocol v16: a new compatibility line) built and tested; touch brushes later (owner). Follow-up (2026-11-06, 0.49.28): brushes in every world (game modes as data, all creative), 256 m reach, the aim clamped to the farthest editable cell, constant-pixel outlines. Outstanding: the owner's try-out, CI |
+| 34 — Brushes | 🚧 In progress — B1 built and tested (brushes, performers and sculpt in `dwell-world` `brush.rs`, presets and the per-world-type policy as data, strokes as `KEEP` pastes behind the `brushes` Welcome flag, the brush tool, HUD panel and keys). The owner answered `BRUSHES.md` §5 (2026-10-19); B2 (the rest of VoxelSniper's brushes, §7), B3 (the exact-cell preview) and B4 (predicted strokes and edits, protocol v16: a new compatibility line) built and tested; touch brushes later (owner). Follow-up (2026-11-06, 0.49.28): brushes in every world (game modes as data, all creative), 256 m reach, the aim clamped to the farthest editable cell, constant-pixel outlines. Follow-up (0.50.30, ADR 0065): the game modes moved to `shared/modes/modes.json` with named abilities; creative and adventure (no brushes) per world. Outstanding: the owner's try-out, CI |
 | 35 — Sliding on steep ground (stacks on 18, uses 28) | 🚧 In progress — built and tested natively (controller, netcode, sound events and data, the shell's loop voices, WAV renders) and in a browser (the bench); outstanding: CI (the WASM divergence run and the e2e suite, not run on the branch), the owner's review of the feel and of the slide WAV renders; `package.json` raised to 0.12.0, the new compatibility line (protocol 13; adaptive blocks change collision and terrain; the owner's decision, 2026-10-16) Follow-up fix (2026-10-20): no flicker between sliding and walking at a 45° face's foot (PLAYER_CONTROLLER.md §6.8, "The ramp's foot").; follow-up (owner, 2026-11-06, built): a steep ramp's foot is no wall (walk up its toe, slide back), and a crouched slide carries up steep faces against gravity and friction alone (`slide.crouch_uphill_deceleration` 0), PLAYER_CONTROLLER.md §6.8 |
 | 36 — Block registry sync | 🚧 In progress — built and tested natively and in Vitest (ADR 0038, `BLOCK_REGISTRY.md` §8): the server's registry sent at join (`BlockRegistry`, protocol 14), ids mapped at the session boundary, the join prompt (no refusals), the fallback look, server-registered blocks, placeholders for unknown states in world files; outstanding: CI, the e2e suite (WebRTC join fixed: parts fit a WebRTC message, larger messages are fragmented), the owner's review of the prompt; ships in the next minor (0.14.0), coordinated with Phase 16's protocol bump |
 | 37 — Sprint slide (stacks on 35) | 🚧 In progress — built and tested natively (controller, predictor, netcode, protocol 15 vectors): crouch while sprinting slides on, crouched, with friction and slopes, limited steering, a jump out and a cooldown (`PLAYER_CONTROLLER.md` §6.9), checked in Chrome (the `sprint-slide` bench); outstanding: CI (the WASM divergence run and the e2e suite), the owner's review; a protocol change (15): the owner raises `package.json` to a new minor; follow-up (owner, 2026-11-05, built): sprint and crouch change nothing in the air (air control keeps the speed the player has), so a crouched landing slides without sprint held; a crouched steep slide slides on where the ground flattens, and the ground is a floor (grounded vertical speed is momentum, one limit `movement.ground_stick_speed` for every movement: off crests, lips, step-ups and downhill edges at speed the body flies; PLAYER_CONTROLLER.md §6.11); outstanding the owner's feel review; 2026-11-06: `slope_gravity` back to 1 (plain gravity); a slide has its own ground limits (0.49.18): it flies off a ramp's top at the ramp's angle on its own rise, and is glued to ramps going down; the walking rule (0.49.18, PLAYER_CONTROLLER.md §6.12): input only adds, up to the target, never stacking on momentum, and in the air never slows a body or builds speed past `max(walk, |v|)`, only turning a faster one |
@@ -70,7 +70,12 @@ them (see `CLAUDE.md`). This table summarizes the state of each phase on this br
 | 50 — Terrain volumes (the cliffs) | 🚧 In progress — the cliffs are the terrain's default since 0.35.0 (WORLD_GENERATION.md §5): a density node graph as data (`shared/worldgen/volume.json`, `strength` 0–1 the slider for biomes later), shaped first then the surface, kept off the water. 0.35.1: the LOD draws the undersides. 0.38.0 (owner: "redesign to look more like real cliffs"): terraces along the hill (the `terrace` node), stepped country and escarpments by region, more in the mountains, slight overhangs; built and tested, the owner's look outstanding. 0.38.1: 1.9–2.3× faster, the same cells. Outstanding: a coarse lattice; waterfalls (with moving water); caves and floating islands not started |
 | 51 — Built bodies | 🚧 In progress — B1 built (0.41.0, a new compatibility line: protocol v21; editing moving pieces, splits, body kinds as data); B2 built (0.41.1: the build platform, built bodies taking blocks and never settling, saved with the world, sent to joiners); B3 built (0.41.2: floating by buoyancy per cell); 0.41.3 corrects the platform (the ground a held object is built on, not its first block; owner, 2026-11-02). 0.41.4–0.41.5 playtest fixes: floating rafts pushable, never frozen, steady underfoot, true outlines; the push predicted (the controller's push pass, stand-ins carried to the present, near bodies drawn at the present); pieces settle once. 0.41.6 tuning: weight as in life (a person's push less the ground's friction, a 1 m log sliding at ~0.5 m/s; water drag by area and speed squared, rafts gliding; a rider presses a raft down; the stand-ins slowed alike). Outstanding: the owner's look at a raft in a lake; later: driving. Designed (ADR 0052, [`BUILT_BODIES.md`](./BUILT_BODIES.md), the owner's answers 2026-11-02): editing moving pieces (B1), the build platform and built bodies saved with the world (B2), floating (B3). B1 opens a new compatibility line (0.41.0, the owner raises it). Open questions for the owner: hollow hulls, `maxBodies`, edit prediction, interest |
 | 52 — Water flow | ✖ Replaced by Phase 53 (ADR 0060): its basins, outlets and pool graph were removed from the game in 0.48.2, when the water surface grid's runtime (G2a) took their place; what was built is in its section below, and its outstanding items (G4–G6, W3–W5) are carried by Phase 53 |
-| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a and G3b built: currents for swimmers and floating bodies, free water's by the law and untouched rivers' by the map, sent as optional `WaterCurrents` datagrams. G3d built: the flow shown (carried ripples, foam streaks, drifting flecks, each a setting). Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3c (the water's own client layer, deferred); G4a built (0.49.1: the grid's settings and liquids as data), G4's pools, sources and per-world values follow G2b and G1b. G5 built: the water off the tick thread (ADR 0062: its own native thread, a browser water worker; a flood no longer slows the water or the tick); its follow-up built: the LOD of the chunks the water rewrites held and from kept bases, and the browser server's generation and LOD in a server-jobs worker (a dam's ticks 58 → 13 ms at worst). Follow-up (0.49.19, BUGS.md #38): generated rivers carry the map's flow through both layers, so a dam on a level reach backs the river up (seed 0's dam site 139.50 → 140.07 m in 20 water minutes; saved worlds fixed on load) and level and shallow reaches have a current. Follow-up (0.49.20, BUGS.md #39): the slope over a river's step is a closed wedge, so a diagonal river's staircase steps show no triangle holes. Follow-up (0.49.23, BUGS.md #40): a column built up into a dam no longer keeps its rest-layer spring, so water stops standing on a raised dam. Follow-up (0.49.24, BUGS.md #42): a river reach held level runs on its course's mean fall, and currents are sent as far as the flow is drawn (4 chunks). Follow-up (0.49.25, BUGS.md #41): the reach below a dam leaves the rest layer down the rest's own flow (`restCut`/`restBack`), so it dries completely to the next inflow and sleeps (seed 0's dam site: 575 water columns left → none). G6 built (0.49.31): waterfalls (a sheet with foam and spray, a push down and out, a rushing sound, the Waterfalls setting). Follow-up (0.49.43, BUGS.md #47): a freed river column still in the rest shows the map's current (`riverCurrentBandM`), so the river no longer slows beside an edit. Follow-up (0.49.44, BUGS.md #41b, partly): a sleeping chunk passes its edges' flow on, so a fixture reservoir spilling over its dam sleeps; deep water's slosh (seed 0's reservoirs) still keeps them awake |
+| 53 — Water surface grid | 🚧 In progress — G2a built (0.48.2): the runtime grid in `dwell-sim` replaces the basins; generated water held at rest as found, edits free it, a rest layer keeps drawn rivers exactly at rest under the law, sleeping chunks with a 5 mm sleep and 5 cm wake band and smooth waking, written as blocks, saved as `DWG1`; both faces tested; a dam across seed 0's river backs it up 0.5 m in the browser. G0's prototype done but for the owner's look at the eroded rivers. G1a built (0.49.0): no river lips (BUGS.md #29 fixed), the pool graph removed. G3a and G3b built: currents for swimmers and floating bodies, free water's by the law and untouched rivers' by the map, sent as optional `WaterCurrents` datagrams. G3d built: the flow shown (carried ripples, foam streaks, drifting flecks, each a setting). Outstanding: G1b (the water computed from the map where the world loads: no beds or stepped levels; replaces the design's whole-world fill, measured too slow), G1c (erosion), G2b (pools, the held sea, the water layer's own storage), G3c (the water's own client layer, deferred); G4a built (0.49.1: the grid's settings and liquids as data), G4's pools, sources and per-world values follow G2b and G1b. G5 built: the water off the tick thread (ADR 0062: its own native thread, a browser water worker; a flood no longer slows the water or the tick); its follow-up built: the LOD of the chunks the water rewrites held and from kept bases, and the browser server's generation and LOD in a server-jobs worker (a dam's ticks 58 → 13 ms at worst). Follow-up (0.49.19, BUGS.md #38): generated rivers carry the map's flow through both layers, so a dam on a level reach backs the river up (seed 0's dam site 139.50 → 140.07 m in 20 water minutes; saved worlds fixed on load) and level and shallow reaches have a current. Follow-up (0.49.20, BUGS.md #39): the slope over a river's step is a closed wedge, so a diagonal river's staircase steps show no triangle holes. Follow-up (0.49.23, BUGS.md #40): a column built up into a dam no longer keeps its rest-layer spring, so water stops standing on a raised dam. Follow-up (0.49.24, BUGS.md #42): a river reach held level runs on its course's mean fall, and currents are sent as far as the flow is drawn (4 chunks). Follow-up (0.49.25, BUGS.md #41): the reach below a dam leaves the rest layer down the rest's own flow (`restCut`/`restBack`), so it dries completely to the next inflow and sleeps (seed 0's dam site: 575 water columns left → none). G6 built (0.49.31): waterfalls (a sheet with foam and spray, a push down and out, a rushing sound, the Waterfalls setting). Follow-up (0.49.43, BUGS.md #47): a freed river column still in the rest shows the map's current (`riverCurrentBandM`), so the river no longer slows beside an edit. Follow-up (0.49.44, BUGS.md #41b, partly): a sleeping chunk passes its edges' flow on, so a fixture reservoir spilling over its dam sleeps; deep water's slosh (seed 0's reservoirs) still keeps them awake. Tuning (0.50.50, owner 2026-11-09): river currents doubled (`riverCurrentScale` 2, `riverCurrentMaxMs` 3 m/s) |
+| 54 — Skinned characters | 🚧 In progress — S1 built and tested natively and in Chrome on the GPU (ADR 0070, `CHARACTERS.md` §11): the import pipeline (Blender headless, FBX → GLB with the palette remap), `shared/models` (data, generator, validation, a fixture model), `dwell-models` (GLB reader, clips, blending, role → clip player), GPU skinning in the renderer, other players drawn as the Peasant on both faces, the seven animals in the data and the Model Viewer. S2 partly built (0.51.7): held items in the skinned hand (`hand` in models.json), your shadow as the Peasant; 0.52.35: the Peasant posed from the rig's clips (`retarget` in models.json), checked in Chrome on the GPU. Outstanding: CI; the owner's look and confirmation that the packs may ship in a web build; S2's first-person arms and own body (they stay rigid: no arms mesh in the pack). S3 built (0.51.13, ADR 0073): animals spawned near players by data, wandering, despawned far away, drawn skinned; outstanding: the owner's answers on behaviour (ADR 0073), CI. S4 (0.51.24): the tools pack's 53 models imported as props (`props.json`, Model Viewer Props view), an item look by prop (the stone pickaxe) loose and on the hotbar; 0.52.21: the six tools (stone and metal axe, pickaxe, shovel; `objects` picks a stacked FBX's parts) as items held in the hand as their models, on the hotbar, a tool class and tier each (`tools.json` `breaking`); 0.52.22: each tool's hold pose as data; 0.52.52: the grip as data (props.json `hand` and each tool's measured `handle`, `hold` scale and roll; the lean in the hand's `tool` pose), on the Peasant too, checked in Chrome on the GPU; outstanding: a break duration for the tier speeds to act on (breaks are instant), CI. S5 (0.52.1): Model detail setting (decimated, flat-shaded levels as data), the doe and the wolf, herd mix, only deer and wolves spawn; outstanding: the owner's default level, CI |
+| 57 — Systemic terrain | 🚧 In progress — T1 built (0.52.7, ADR 0075): the rain shadow (wind and rain keys in `terrain.json` `biomeMap`, `biomemap::rainfall` per face's map, the wetness blended by `rainShare`, 0 by default: goldens byte-identical), Chisel's sliders and rainfall overlay; follow-up (0.52.8): the wind sees a 3 km smoothed ground (`windSmoothM`), and 14 preset biomes (`biomes/presets/`, Chisel's "Add from preset"); T2 built (0.52.9): rock types, strata stacks and provinces as data (`shared/worldgen/rocks.json`, `geology.rs`), rule-based shaping by rock (hard-over-soft caprock terraces, walls and talus; vertical jointing sheer; massive unstepped), `strength` 0 by default (goldens byte-identical), a biome's `rockStack` (the mesa and badlands presets), Chisel's rock overlay and sliders; T3 built (0.52.14): soil depth and type per rock and vegetation kinds as climate envelopes on placements (`shared/worldgen/vegetation.json`), the tree line and dry lees emerging, a biome's `vegetation` share 0 by default (goldens byte-identical), five presets opting in, Chisel's soil and vegetation overlays and sliders; T4 built (0.52.17): rule-based erosion from the world map's drainage (`rocks.json` `erosion`, `DrainageField`): isolated mesas, buttes and spires with sheer walls and talus on a flat floor, badlands rills, a biome's `erosion`/`gullies` 0 by default (goldens byte-identical), the mesa and badlands presets opting in, Chisel's erosion overlay and sliders; T5 built (0.52.18): tectonics at realistic scale, one plate boundary across the island and one hotspot chain offshore as data (`terrain.json` `tectonics`, `tectonics.rs`), added to the world map's sampled field before the uplift and erosion: a convergent range (kept rising as uplift) and trench, a divergent rift with shoulders, or transform offset ridges; a dormant volcanic arc of concave cratered cones behind a convergent line; hotspot islands rising from the sea, lower and broader down the chain; the uplift layer's random ranges and plates off while the tectonics are on; rock provinces from them (`rocks.json` `tectonic`: volcanoes basalt, the old core granite); `kind` 0 and no hotspots by default (goldens byte-identical), Chisel's tectonics knobs and overlay; outstanding: CI, the owner's look and tuning (T3's rain field is weak at the defaults; T4 and T5 not yet seen in game). Next: T3b (snow line from temperature, soil blocks, grass and items as kinds), a simulated erosion pass to compare with T4, eruptions (§5 q5); tall peaks (0.52.25): `coneHardness` and the `test:tall_peak` 4800 m fixture, built and tested; test worlds playable (0.52.27: `?worldgen=`, Chisel's Play in game, the record keeps the config), the peak seen in game (frame time as flat; the map tint goes on past 400 m); Rainier (0.52.40): ridges, an offset summit, shoulder and flank cones, an ice-domed crater and a snow line from temperature as tectonics data (neutral by default); glacier ice and a snow block (0.52.45): ice over the summit and crater above `iceBelowC`, snow below; outstanding: LOD holes and walls near the summit, the owner's look; 0.52.66: arches on erosion-grown fins (`arches.fins`) in a chosen rock (`arches.rock`), the mesa's red sandstone beds at every height (`dwell:red_sandstone`); outstanding: T3b in normal biomes, Rainier detail, those seen in game |
+| 58 — Block damage | 🚧 In progress — pieces, combining and tool wear built (0.52.46: 8 pieces a cell, recipes as data applied by the server behind `inventory_flags::COMBINE`, the backpack's Combine section, the stone axe's 32-hit durability; outstanding: CI, the owner's review); D1 and D2 built (0.52.28, ADR 0078, `BLOCK_DAMAGE.md` §5–6): each block's `damage` data (default and per tool class or item, its look; validated, generated for Rust and TS), the server's hits to break by the held tool in both modes (0.52.51: creative breaks any block in one hit without a tool, `instantBreaks`, BLOCK_DAMAGE.md §7), the per-cell damage saved in an optional world table, per-hit and destroy drops, the damage synced to clients (optional `DamageHello`/`Damage`) with the struck point, drawn as shards, scoops and cracks on the struck faces, the material's hit sound; 0.52.31: hit particles per material (`damage.chips`) and other players' hits heard and seen. Outstanding: the e2e suite (not run locally), CI, the owner's look review; D3 tuning (per-hit drop quantities with the owner) |
+| 56 — Biomes and Chisel | 🚧 In progress — B1 built (0.51.14, ADR 0074): the world's elevation and water stay in `terrain.json`, biomes as data layered on it (`shared/worldgen/biomes/<name>.json`: fine relief, surface bands, rule references; the default biome today's, goldens byte-identical), validated and generated into `BIOMES`; the generator reads a biome's surface blocks (`with_biome`). B2 built (0.51.15): the biome map (`biomemap.rs`: biomes weighted by temperature, wetness, elevation and coast distance, dithered borders, blended fine relief), elevation bands as a list, a desert fixture by data alone; goldens byte-identical. B3 built (0.51.16): the default biome a fallback (a fitting biome takes its place at weight 1), Chisel's page (`client/chisel.html`: biomes, sliders from the validation's ranges, a live preview from the real generator in a worker, overlays, Export/Import, stored edits); outstanding: CI, the owner's look. B4 built (0.51.17): water banks per biome (`banks`, blended), a water look per biome (`waterLook`, resolved and blended per column; the game's water shader not fed yet), the archipelago's world knob (`islands`) with an example world and fixture biome, Chisel's sliders, hue picker and world knobs; goldens byte-identical. Follow-up (0.52.11): Chisel's world overview (the whole disc beside the preview, same overlay, click to move). Follow-up (0.52.19): Chisel's 3D section view and relief shading on the 2D views. B7 started (0.52.27 test worlds; 0.52.37: Play in game carries the whole edit to every generator; 0.52.38: guests get the config, the dedicated server's `--worldgen`); the in-game editor's first slice built (a local creative world's Chisel page: biome sliders retune the world, the chunks near the player generated again with edits kept, the config saved in the world file; host only); outstanding: the in-game editor's rest (far LOD live, more groups, guests), the new-world biome choice, a browser check of the panel and of a guest, CI, the owner's look. B5 built in part (0.52.39): a biome's placements gate where each rule stands and its `trees` densities scale them, `broadleaf_groves` and `boulders` rules, the presets' picks, Chisel's sliders, placements overlay and trees in the 3D view; 0.52.41: ground items per biome (`ground`, the chunk's `GroundDensity` to the server, mesh jobs and crosshair, Chisel sliders and overlay); outstanding: decorations per biome, CI, the owner's look. B6 built (0.52.42): Chisel's **Textures** tab (the Painterly Texture Lab folded in: a block material's layers as sliders and palette pickers, the tile, 3 × 3 and a cube painted by `paint.mjs` itself, bit-identical to the baked atlas; the palette with art-direction warnings; Export of `materials.json` / `palette.json`; the 3D section tinted live by the edit, `ChiselPreview.set_tints`); outstanding: CI, the owner's look, new materials and blocks by data, water and sky colours, item and model textures (§5b). B8 built in part (0.52.43): arches and overhangs as a biome's `arches` (carved under a lintel, column tops unchanged, so the LOD ignores them); outstanding: fins for arches, a stack filter, the LOD and 3D section showing openings, CI, the owner's look. Next: B7 Chisel in game, the rest of B5, the rest of B8 |
+| 55 — Octagonal logs | 🚧 In progress — T1 built (0.51.0, a new compatibility line; ADR 0072): `crossSection` as block data, the octagon squared where same-axis logs join, drawn and collided (terrain) on both faces. T2's felling as wedges built (0.51.0): `dwell:log_ramp`, a wood's `fellWedge`, the stump's ramp and the trunk's upside-down ramp, shaped piece cells as hulls; follow-up: the matching trunk wedge by default, tipped by the wood's `fellTip` (the log's 1). T3's bark ring on the caps follows the octagon, none along joined sides (`crossSection.ring`/`heart`). T4: felled trunks draw as octagons, the wood ramps are the octagon cut by their slant (mesh, terrain collision; `crossSection: "of"`); the bodies' octagon prism colliders built and tested but not switched on (an octagonal log wasn't pushed on land). Outstanding: the owner's bench check of T1 and a felled tree; switching the prism colliders on; the carved notch on the octagon; the trunk's riding wedge collides square (deviation) |
 
 Phase numbering: Phase 4 was inserted on 2026-09-29 for the planet-scale world (ADRs 0011, 0012);
 the former Phases 4–7 are now 5–8, and Phase 3's former 3c and 3d are now 3d and 3e.
@@ -259,6 +264,8 @@ is three data numbers, `damage.impact_safe_height` (5 m), `impact_lethal_height`
 `impact_curve_exponent` (2), the hit's speed read as a fall height; it replaces
 `impact_damage_min_speed` / `impact_damage_per_speed` (linear from 3.6 m, lethal at ~15 m).
 Then (owner, 2026-11-06, built, 0.49.22): safe 10 m (a 20 m/s landing) and lethal 20 m (28.3 m/s).
+Then (owner, 2026-11-14, built: *"Fall damage is a bit too forgiving now"* … *"about 5m - 15m"*): safe
+5 m (14.1 m/s) and lethal 15 m (24.5 m/s), the exponent still 2.
 Later finding: jumping onto a block while holding forward gave a
 burst of speed as the player came down on the edge — the step-up's forward nudge was added on top
 of the tick's movement (also on every slab step, and on slopes every tick); it is now taken out of
@@ -3070,7 +3077,7 @@ underwater rendering and reflections in quality tiers
 ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md),
 [`WATER_RENDERING.md`](./WATER_RENDERING.md)).
 
-**Status:** In progress — W1a done (fluid looks in the registry, the surface drop and opacity read
+**Status:** In progress — follow-up 0.52.53: underwater at night, Snell's window shows the sky pass's own sky (stars, moon, clouds) and the water from inside takes the moonlight's grey (WATER_RENDERING.md §16.1; outstanding: the owner's look). Follow-up 0.52.49: Snell's window onto the real sky from under the surface (WATER_RENDERING.md §16; outstanding: the owner's look). Follow-up 0.52.32: the sun and moon reflected with glitter paths (WATER_RENDERING.md §15; low-moon and sunset paths seen and tuned; outstanding: cost against main, the owner's look). W1a done (fluid looks in the registry, the surface drop and opacity read
 from them, the eye-under-fluid test in the frame uniform); W2 built (Phase 25's A1); W1b built (the
 water shader, `water_fs`, with the fluid id per vertex, the fluid buffer, the underwater fog stub and
 the water quality setting; WATER_RENDERING.md §8), outstanding: the owner's look; W3 built (the water
@@ -3108,8 +3115,19 @@ Deliverables
   with it.
 - [x] **W3** — Refraction with the depth check, Beer–Lambert absorption (replacing the fixed alpha),
   shoreline foam; caustics, brought forward from W4 (WATER_RENDERING.md §8, W3).
-- [ ] **W4** — Underwater: absorption fog, the water line, Snell's window and total internal
-  reflection, distortion (god rays with W5's High tier). Caustics moved to W3.
+- [x] **W4a** — The water line per pixel (a lens point on each view ray against the surface, the
+  line's waves, a meniscus band) and a clearer underwater fog (a clear distance and a density), as
+  data per fluid (`shared/look/underwater.json`; WATER_RENDERING.md §12, owner's request of
+  2026-11-07). 0.50.20 (§12.1): the lens a plane (a straight line moving smoothly with the eye, a
+  pop-free reach), the meniscus replaced by the band (the owner's follow-up), the underside's texture,
+  the player's shadow blotch. Outstanding: the owner's look.
+- [x] **W4b** — Snell's window and total internal reflection seen from under the surface (the
+  critical angle, the mirror textured by the underside's cells; WATER_RENDERING.md §12.1, 0.50.20).
+  Outstanding: the owner's look.
+- [ ] **W4** — The rest of the underwater view: refraction of the scene above through the window,
+  distortion. Caustics moved to W3. God rays moved out (0.50.24): built as the light shafts, in the
+  air and under water, with their own High/Low/Off setting (ADR 0064); torch and lamp shafts built
+  in 0.50.26 (the nearest placed and held lights, the same setting).
 - [x] **W5a** — Screen-space reflections of land and the clouds in reflections (brought forward from
   W5, the owner's report of 2026-10-16), per water quality as data (`shared/look/reflections.json`;
   WATER_RENDERING.md §8, W5a).
@@ -3142,7 +3160,7 @@ Deviations (W5a):
 Deviations (W3):
 - Caustics came forward from W4 (the owner asked for them, under the surface most of all): on the
   floor seen through the surface, and in the composite on every opaque pixel under the surface
-  while the eye is submerged. God rays stay in W4.
+  while the eye is submerged. God rays stayed in W4, then were built as the light shafts (ADR 0064, 0.50.24).
 - The copy is full resolution on Medium and High in W3 (no half-res copy yet): Medium and High
   look the same until W5. The copy is colour only; the water reads the view depth directly (the
   water half doesn't attach it), so no depth copy.
@@ -3402,7 +3420,7 @@ Deliverables
   and prune at obstacles; cuts by Phase 20; skeleton-jitter variation, no grafting, no space
   colonization; the owner's persistence model; procedural and planted trees; compatibility); the
   owner's answers recorded (`TREE_GROWTH.md` §7).
-- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html`: load an exported structure,
+- [x] **G0** — The prototype page `docs/prototypes/tree-growth.html` (now `tree-growth-skeleton.html`; since 0.52.50 `tree-growth.html` shows species and growth stages): load an exported structure,
   show its extracted skeleton, scrub the age, roll variant seeds, place obstacles, export the
   `growth` and `variants` sections; three sample trees whose mature stages equal their models
   (checked in the page); verified in Playwright's Chromium (samples, ages, variants, an obstacle,
@@ -3454,7 +3472,9 @@ GPU. The owner approved the look and answered `CLOUDS.md` §6 (2026-10-15); C5 (
 is built. Follow-up fix (2026-10-21, owner's iPhone report): from tens of km up the sphere deck sank
 behind the flat world's far sea and showed only in a circle round the eye; seen from above, it is now
 in front of anything below its altitude. Outstanding: CI and a phone's frame time. Future, not started: C6 (weather-driven
-coverage) and C7 (cloud shadows on the terrain). Built on Phase 25's A1 (branch
+coverage) and C7 (cloud shadows on the terrain). Follow-up (owner, 2026-11-11): C8, volumetric clouds
+(`CLOUDS.md` §8): built (the march in a reduced-resolution pass with accumulation, Medium and High
+tiers and plumes as data); outstanding: Medium from above 0.1 ms over budget, the owner's look. Built on Phase 25's A1 (branch
 `claude/a1-shared-frame`).
 
 Deliverables
@@ -3660,7 +3680,12 @@ menu's hover, click and error). Outstanding: the owner's listening review of the
 open questions (`AUDIO.md` §9). F7 (sounds for everything, 2026-10-21) built and tested; not yet
 heard in the running game in a browser (unit, controller and offline-render checks only). F8 (music, 2026-10-21: the owner's Starry Sunshine) built and
 tested, checked playing after the first click in Chromium; outstanding: the owner's listen and level. Needs
-Phase 24 only. Defaults chosen without the owner's
+Phase 24 only. Round 2 (0.52.20, ADR 0077, AUDIO.md §2c–§2d): ambience beds, creature, body and felling
+sounds built and tested natively (Vitest, `dwell-game` tests on both faces); not yet heard in a browser. Round 2b
+(0.52.31, AUDIO.md §2e): sticks snap underfoot and on a hit, leaves brushed through, a fire bed, the felling crack at
+the tip and the impact at the landing (by trunk size), piece impacts by material (rate-limited), hit chips per material
+as data and other players' hits heard and seen — built and tested natively, not yet heard in a browser. Not built: a
+blast's separate debris rattle; remote players' brushing and stick snaps (local player only). Defaults chosen without the owner's
 answers (the owner gave the brief directly); open questions in `AUDIO.md` §9.
 
 Deliverables
@@ -3700,8 +3725,30 @@ Deliverables
   the e2e suite and the bench; the file shipped once per site under `/dwell/media/`
   (`scripts/media.ts`, `site.ts media`). Plays from the first screen (the main menu, the loading
   screen, the game) and carries its position from one page to the next.
+- [x] **F9** — Recorded samples (owner, 2026-11-10; [ADR 0076](./adr/0076-recorded-sound-samples.md),
+  `AUDIO.md` §2b): a sound's `samples` (files in `shared/sounds/samples/`, level, pitch range) and
+  `play` (`samples` | `procedural`), validated (a missing file, a bad name, a loop with samples,
+  the 5 MB budget) and shipped content-hashed under `media/` beside the music; the engine decodes
+  them on the first gesture and plays one per event (never the same twice running), its layers
+  until then. 43 sounds of the owner's *Universal Sound FX* pack picked by name (~0.8 MB); the
+  slides and the loops stay procedural.
+- [x] **Round 2b** (0.52.31, `AUDIO.md` §2e): ground kinds' `step`/`hit` sound events (a stick's
+  snap), the `brush` and `impact` set events (leaves moved through, rate-limited by speed; a piece's
+  material on landing, rate-limited for all), a `fire` ambience bed, `fell_land` at the felled
+  trunk's stop (by its size) after the crack at the tip, blocks' `damage.chips` (hit particles per
+  material) and other players' hits from the damage updates (not doubled for the hitter).
 
 Exit criteria
+- [x] Round 2b: each trigger fires once (a stick cell stepped onto, the rustle's rate limit, the
+  fire bed's gain by distance under the cap, the felling crack then the impact at the stop, a
+  piece's material impact and the all-pieces limit, a remote hit from a damage update and not our
+  own echo); chip looks from data with a fixture block (`node --test shared/tools`, Rust, Vitest).
+- [ ] Round 2b: heard and seen in a browser (the owner's listen).
+- [x] F9: bad sample entries fail naming the sound; a fixture material set with samples plays its
+  own files on its block by data alone, and its layers before they are decoded and on
+  `play: "procedural"`; the slide stays procedural; the shipped total is ≤ 5 MB (Vitest).
+- [ ] F9: the owner listens to the picks in the game and swaps any by data; confirms the pack's
+  licence covers commercial use in the game.
 - [x] F8: the music data validates with messages naming the entry, and a fixture track works by
   data alone; the unlock (blocked → the first gesture starts it, once), the hidden tab, volume 0,
   the routing, the fades, the position across pages and `?music=off` (Vitest, mocked element);
@@ -5383,6 +5430,10 @@ from the map's hydrology (its fill-and-spill lakes and river discharges), as ter
   generated rivers carry the map's flow, so a dam backs them up
   (`every_reach_of_a_river_runs_level_ones_too`, `a_dam_across_a_flat_river_backs_it_up_by_the_maps_flow`,
   `a_dam_across_a_generated_flat_reach_backs_the_river_up`).
+  Tuning (0.50.50; owner, 2026-11-09: "double the river current speeds generally"): the current is
+  the law's speed times `riverCurrentScale` (2), capped at `riverCurrentMaxMs` 3 m/s (was 1.5); a
+  patch, the current being found at runtime and sent, never saved (`a_rivers_current_runs_twice_its_law`,
+  `a_swimmer_in_a_river_drifts_at_twice_its_law`).
 - [x] G3d — The flow shown (owner, 2026-11-05: all three, each a setting): the current table around
   the eye as a texture, ripples carried by it, foam streaks along it and flecks drifting on it, per
   liquid as data (`shared/look/waterflow.json`), the Water settings' three switches
@@ -5442,4 +5493,698 @@ Exit criteria
 - [ ] A world is created in under a minute with rivers and lakes in place (measured natively and in
   the browser).
 - [ ] The owner's look at rivers without beds, a dam filling and a lake draining in game.
+
+## Phase 54 — Skinned Characters
+
+**Status:** 🚧 In progress — S1 built; S2 partly built (0.51.7: held items in the skinned hand, your
+shadow as the Peasant); outstanding: CI, the owner's look and licence confirmation, S2's first-person
+arms and own body (they stay rigid, below). S3 built (0.51.13): the animals wander in the world;
+outstanding: the owner's answers on their behaviour (ADR 0073's open questions). S4 (0.51.24): the
+tools pack imported as props, an item look by prop loose and on the hotbar; 0.52.21: the six tools
+(stone and metal axe, pickaxe, shovel) as items held as their models, on the hotbar, a class and tier
+each as data; 0.52.22: each tool's hold pose as data (props.json `hold`); outstanding: a break duration for the tier speeds to act on, CI. S5 (0.52.1): the Model detail setting (levels
+as data, decimated and flat shaded at import), the doe and the wolf as import variants, herds with a
+mix, only deer and wolves spawning; outstanding: the owner's pick of the default level, CI.
+
+- [x] S5: model-detail levels in every skinned GLB (data, validated, a fixture level), flat normals,
+  the Model detail setting picking the level live (tests in `dwell-models`, `skinned.rs`, vitest)
+- [x] S5: the doe (no antler vertices, the deer's skeleton and clips), the wolf (the dog's mesh, grey,
+  2×), a rule's group `mix` (deterministic, tested), only deer and wolves spawning
+
+The owner's decision (2026-11-09): skinned models from the Asset Store packs replace the rigid-part
+characters (ADR 0070, [`CHARACTERS.md`](./CHARACTERS.md) §11).
+
+**S1 — the pipeline, the renderer, other players**
+
+- [x] ADR 0070 and `CHARACTERS.md` §11
+- [x] The import (`shared/models/import.mjs`, `blender_import.py`): FBX → GLB, one mesh, the palette remap per face, clips by name
+- [x] The data and generator (`shared/models/models.json`, `gen.mjs` → `dwell-models`), validation and `gen.test.mjs` (bad clips, missing GLBs, a fixture model by data alone); in CI
+- [x] `dwell-models`: the GLB reader, clip sampling and blending, joint matrices, the role → clip player (tests: joints and clips read, a turned joint moves its vertex, role mapping, cross-fades)
+- [x] GPU skinning (`render/skinned.rs`): lit and shadowed as the characters, both faces (`both_faces!` test)
+- [x] Other players drawn as the Peasant, driven by their roles (checked in Chrome on the GPU with the `puppets` tool, faces A and B)
+- [x] The seven animals imported, in the data and the Model Viewer (`docs/prototypes/model-viewer.html`), not spawned
+- [ ] CI green; the owner's look; the owner confirms the packs may ship in a web build
+
+**S2 — you as the model** [in progress, 0.51.7]
+
+- [x] Held items on the skinned hand: `hand` in `models.json` (joint, rig bone, offset, turn; validated
+  by `gen.mjs`, the fixture's by data alone), `skinned::hand_frame`, the item drawn by the rigid
+  renderer there with the item's own turns and its held light (tests: `the_held_item_follows_the_skinned_hand_joint`,
+  `a_held_item_is_posed_on_the_skinned_hand`, both faces; bench: puppets holding the axe and a torch)
+- [x] Your shadow as the Peasant (the `cast_only` body skinned, nearest cascade only; bench checked)
+- [x] 0.52.35: the Peasant posed from the rig's clips (`models.json` `retarget`, validated, a fixture
+  map; `dwell_models::retarget`; alignment tests: hands and feet within 9.2 % of the limb, the
+  skinned hand within 0.15 m and 5.2° of the rigid hand on both faces; CHARACTERS.md §11.9)
+- [x] 0.52.35 retarget: checked in Chrome on the GPU with the bench's puppets (idle, walk, sprint,
+  slide, crouch, jump, swim, climb; holding the stone axe and swinging it, front and three-quarter
+  views) and your own shadow at a low sun: limbs read naturally, feet on the ground, the axe in the
+  hand; no role fell back to the Peasant's own clips
+- [ ] Your first-person arms and your own body in first person from the skinned model: deferred, the
+  Peasant has no arms mesh or first-person clips (ADR 0070 §7); the rigid-part meshes stay for them
+  and for the held items
+
+**S3 — the animals in the world** [built, 0.51.13] ([ADR 0073](./adr/0073-creatures.md))
+
+- [x] ADR 0073 with the open questions for the owner (behaviour, biomes, saving, who adds them)
+- [x] The data and generator (`shared/creatures/creatures.json`, `gen.mjs` → `dwell-sim`), validation
+  and `gen.test.mjs` (bad models, blocks, groups), a fixture creature by data alone; in CI
+- [x] Spawning near players by the rules, deterministic per chunk column and face; wandering on
+  walkable ground, out of water, not off cliffs; despawn far from every player (`dwell_sim::creatures`
+  tests, both faces; `tests/creatures.rs` through the server, both faces)
+- [x] The optional wire: `inventory_flags::CREATURES`, `CreaturesHello`, `Creatures` (round trip test)
+- [x] The client: creatures smoothed, the clip by speed (`role_for_speed` test), drawn by the skinned
+  renderer with a mesh per model; bench `creatureCamera` step and `__dwell.creatures()`; checked in
+  Chrome on the GPU (horses near the seed-7 spawn, walking between shots)
+- [ ] The owner's answers on behaviour (ADR 0073)
+
+**S4 — the tools pack as props** [in progress, 0.51.24] (ADR 0070 §8–9, `CHARACTERS.md` §11.8)
+
+- [x] The import handles static models (`import.mjs --props`, `blender_props.py`): all 53 FBX → GLB
+  with the per-face palette remap, the pack's colour layers removed first, scaled to their category's
+  length, centred
+- [x] The data and generator (`shared/models/props.json`, `gen.mjs` → `PROPS`), validation (missing
+  GLB, skin or clips, no `COLOR_0`, bad category or length) and `gen.test.mjs`, a fixture prop by data
+  alone; `dwell-models` tests: every prop GLB reads with more than one colour at its length
+- [x] The Model Viewer's Props view (checked in Chrome)
+- [x] An item look by prop (`look.model`, `LookShape::Model`): the stone pickaxe, loose and on the
+  hotbar from the prop's triangles (`dwell_mesh` tests: the mesh is the prop's, lying, in its colours;
+  the swatch is drawn in several colours)
+- [x] Licence notices for the pack
+- [x] The prop in the hand (0.52.21): a tool with a model look is `Held::Model` (its hold's pose, the
+  prop's triangles on the hold's socket at its `grip`, far end along the hand's +z, each colour a
+  material row past the characters' own), in the first-person arms and the skinned hand
+  (`render/characters.rs` `prop_mesh`; tests: every breaking tool is held as its model at the grip)
+- [x] Which props become items (owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal
+  variants"), and the multi-object files split: a prop's `objects` keeps only the FBX objects it
+  names (an unknown name fails the import; `gen.mjs` checks the list), the metal axe the
+  DoubleHeadedAxe head on the MetalAxe handle (not the red SingleHeadedAxe); `gen.test.mjs`: the metal
+  axe has no fire-axe red. Other stacked files (bag, flutes, knives, claves, katanas, staves, wands,
+  bats, scythes, wrenches, lamps on/off, chest lids) are still imported whole: none is an item yet
+- [x] The six tools (0.52.21): stone and metal axe, pickaxe and shovel as items with model looks
+  (`inventory.json`), on the creative hotbar (`items.json` `tool`; a pickaxe or shovel places nothing),
+  a class and tier each (`tools.json` `breaking`: pickaxe on stone, shovel on dirt, grass and sand, axe
+  on wood; tier speeds stone 1.5, metal 2.5; `dwell_protocol::chopping::break_speed`), the metal axe a
+  chopping tool with a deeper bite (0.2 m vs 0.12 m)
+- [ ] The break speed acting on a break: breaks are instant today (one click, one cell), so
+  `break_speed` has nothing to shorten until a break takes time (hold-to-break), the owner's call
+
+**Deviation (S3):** biome-free and behaviour-free by design (the owner hasn't specified behaviour):
+only idle and walk; the tiger, dog, kitty and penguin are not spawned. Every model's GLB is now built
+into the client (~1.6 MB of WASM) rather than fetched.
+
+**Deviations:** the Peasant pack has only idle and walk: sprint, crouch-walk and slide play the walk
+at other speeds and the other roles idle. S1 drew no held item on the skinned body; S2 does. The bench
+`puppets` step's `held` now holds the axe when the hotbar's slot is the axe (it held only blocks).
+
+## Phase 55 — Octagonal Logs
+
+**Status:** 🚧 In progress — T1 built in 0.51.0 (a new compatibility line); T2's felling as wedges
+built in 0.51.0 (the wood ramp blocks ship in the line's first release). Outstanding: the owner's
+bench check of T1 and of a felled tree; T2's carved notch on the octagon and felled pieces as
+octagons. T3's bark ring on the octagon built (0.51.0); T2 follow-up (owner, 2026-11-09): the
+matching trunk wedge with the old tip, as data (`fellTip`). T4 (owner, 2026-11-09: "everything
+log/tree should be octagonal") partly built (0.51.0): felled trunks draw as the terrain's octagons and
+the wood ramps are the octagon cut by their slant (mesh, terrain collision); the felled bodies'
+octagon prism colliders are built and tested but not switched on (a player's push no longer slid a
+log, below). Outstanding: that switch, the trunk's riding wedge's octagon hull, the carved notch on
+the octagon, and the owner's bench check.
+
+Owner (2026-11-09): "trees should be octagons around. But smoothly connect when placed next to each
+other, full width sides where they meet." A real shape with collision (owner's choice).
+[ADR 0072](./adr/0072-octagonal-logs.md).
+
+**T1 — the shape, drawn and collided** [built, 0.51.0]
+
+- [x] `crossSection` block data (`kind: octagon`, `chamfer`, `joins`), validated by
+  `shared/blocks/gen.mjs`, emitted as `StateInfo::cross_section`, carried by the registry sync (rule
+  tag 13); `dwell:log` a regular octagon in the `dwell:wood` group; the fixture's `test:post` by data
+  alone (`a_cross_section_added_by_data_alone_joins_the_logs`).
+- [x] One geometry (`dwell_blocks::octagon`): the outline, the prism and its open faces, the join rule
+  (same group, same axis) read from the neighbours, no new states (`octagon_tests.rs`).
+- [x] Mesher: logs drawn whole as their prism, bark sides and chamfers, end-grain caps, squared and
+  unseamed where they join (`a_lone_log_meshes_as_an_octagonal_prism`,
+  `two_same_axis_logs_join_full_width_and_different_axes_do_not`, both faces).
+- [x] Terrain collision: logs in the chunk's triangle mesh as their prism
+  (`a_log_collides_as_its_octagon_squared_where_it_joins`, both faces: a ray past a lone log's cut
+  corner misses; at a join it hits; different axes don't join).
+- [ ] Bench screenshots of a trunk and a log wall checked by the owner.
+
+**T2 — cutting and felling on the octagon** [in progress: felling as wedges built, 0.51.0]
+
+- [x] The wood ramp as data: `dwell:log_ramp` (a `family: ramp` entry of the log: stored cardinal
+  ramps, `half: top` the upside-down one; a carrier; not in the palette or on the hotbar; the axe's
+  swing clears it, `breakWith: axe`, breaking it drops a log); a wood's `fellWedge` (the ramp block)
+  and `fellWedgeTrunk` (`open`, the default, or `matching`) in `shared/tools/tools.json`, validated
+  by `shared/tools/gen.mjs` (a non-ramp or non-carrier wedge fails naming it), with the fixture's
+  `test:post_ramp` as a fixture wood's wedge by data alone (`gen.test.mjs`).
+- [x] Felling as wedges (owner, 2026-11-09): the cut cell becomes the stump's ramp rising away from
+  the notch, the log above it the trunk's upside-down ramp, released with **no push** (the scripted
+  topple spin is gone for a wedged fell); physics tips it toward the notch
+  (`dwell_sim::felling::fell_wedges`; `notching_fells_a_trunk_in_about_ten_swings_toward_the_notch`,
+  both faces: the stump's and the trunk's states, then down past 60° toward the notch in 36 ticks;
+  `the_fell_wedges_are_…_meeting_at_the_hinge`).
+- [x] Collision for both wedges: the stump in the terrain mesh as any stored ramp; a piece's shaped
+  cell as its shape's convex hull (`PieceCell::hull`, `piece_hull`, never merged;
+  `a_shaped_piece_cell_is_its_own_convex_hull_never_merged`), on the server and in the clients'
+  stand-ins.
+- [ ] The carved notch on an octagonal log: moved to T4 (still open there).
+- [ ] Felled pieces' body colliders as octagons: moved to T4 (built there, not switched on).
+- [x] The wedges' octagonal outline: built in T4.
+- [ ] Bench screenshots of a felled tree mid-fall and its stump checked by the owner.
+- [x] Follow-up (owner, 2026-11-09: "You can make the tree tip if needed, like we used to, maybe 3/4
+  of the force"): `fellWedgeTrunk` defaults to `matching` (`open` stays a value), and a wood's
+  **`fellTip`** (shared/tools, validated in [0, 2], 0: none) releases the trunk with that share of
+  the old scripted topple spin (`Felling::detach`'s `away_from` share). The log's is 1
+  (`notching_fells_a_trunk_in_about_ten_swings_toward_the_notch`, both faces: down past 60° toward
+  the notch in ~75 ticks, not sideways; `gen.test.mjs`: a bad `fellTip` fails, the defaults).
+
+**T3 — the end caps' bark ring on the octagon** [built, 0.51.0]
+
+- [x] Owner (2026-11-09): "On the octagon log, the outside bark ring should follow the octagon, it
+  doesn't, it gets cut off on the corners." `crossSection.ring` (the band's width, a fraction of the
+  shorter side) and `crossSection.heart` (the tile inside it; `logHeart`, the ringless end grain in
+  `shared/textures/materials.json`), validated by `shared/blocks/gen.mjs` and carried by the sync's
+  tag 13. `dwell_blocks::octagon::cap_pieces` splits a cap into the heart (the outline moved in by
+  the ring's width) and a bark band along each edge of the octagon that is not joined, chamfers
+  included; the mesher draws the band with the side tile. A joined side has no band, so a joined
+  wall's top reads as one surface of end grain (`a_lone_logs_bark_ring_follows_the_octagon`,
+  `joined_sides_have_no_ring`; the mesher's `a_lone_logs_cap_rings_the_octagon_in_bark` and
+  `joined_logs_tops_have_no_ring_between_them`, both faces, red before the fix). The fixture's
+  `test:post` has a ring with no heart by data alone.
+- [ ] Bench screenshots of a lone trunk's end and a joined wall's top checked by the owner.
+
+**T4 — everything log/tree octagonal** [in progress, 0.51.0]
+
+- [x] Felled bodies draw as octagons: a piece's mesh is the terrain mesher's (pieces mesh their cells
+  as chunks), so its logs' octagons and joins match the terrain's (seen in the bench's `axe` run).
+- [x] The octagon prism collider for a piece's logs, built and tested: a cell with `hull: Some(log)`
+  is its octagon prism; `merged_boxes` (`octagon_prisms`) joins each cell's sides to the same axis's
+  logs beside it in the piece (as the terrain's, `PieceCell::joined`) and merges a run of one log
+  along its axis into one prism (`octagon_hull_points`).
+  `a_felled_trunks_logs_collide_as_one_octagonal_prism` (red before: one cuboid, the ray past the
+  cut corner hit it; a joined pair's corner squared) and, on both faces (`DWELL_FACE=b`),
+  `a_felled_octagonal_trunk_falls_and_settles_on_a_flat_side` (`tests/pieces.rs`).
+- [ ] Switched on for felled logs (`piece_hull` giving a log its octagon): with it on,
+  `pushing_a_log_on_land_is_predicted_without_snaps_at_150_ms_rtt` (dwell-sim netcode) failed: a
+  player walking into an upright 2-cell log square on pushed it 0 m (1.5–4 m as a box), at its corner
+  0.57 m. `ground_friction` reads the same 0.4 for both, so the cause is in the contact (the convex
+  hull on the terrain's triangles) and not found in T4's box. `piece_hull` keeps a log's box until
+  that is fixed.
+- [x] The wood ramps take the log's octagon by data (`crossSection: "of"` on the family entry,
+  `shared/blocks/gen.mjs`; a ramp family may carry one): `octagon::state_faces` clips the prism to
+  the state's convex shape (its slant a `Part::Cut`, end grain), so the wedge is the octagon cut by
+  its slant in the mesh and the terrain's collision; a non-convex ramp state stays square
+  (`section_of`). Its whole end meets the log above or below flush (a cap is hidden only against a
+  neighbour's *whole* cap, `cap_whole`); sides join only the same shape. Tests:
+  `a_wood_ramp_is_the_log_octagon_cut_by_its_slant` (dwell-blocks),
+  `a_stumps_wood_ramp_is_the_octagon_cut_by_its_slant` (mesher, both faces, red with the square
+  ramp: no chamfers on it), `a_wood_ramp_collides_as_the_octagon_cut_by_its_slant` (terrain, both
+  faces).
+- [ ] The trunk's riding wedge (`half: top`, a piece cell) collides as its octagon: it keeps its
+  square ramp's hull (deviation below); drawn octagonal.
+- [ ] The carved notch on an octagonal log (`carve.rs` clips the cube's rectangle per step along the
+  grain; clipping the octagon polygon instead was not attempted in T4's box).
+- [ ] Bench screenshots of a felled trunk on the ground and a stump checked by the owner.
+
+**Deviations (T4):** felled logs still collide as boxes (the push finding above). With the trunk's riding wedge collided as the octagon cut by its slant, the felling
+test's trunk (`notching_fells_a_trunk_in_about_ten_swings_toward_the_notch`) no longer fell toward
+the notch: on face A it leant ~26° the other way after 4 s, on face B it rolled off sideways — the
+octagon's hinge is its 0.41 m side, not the square's full metre, and the terrain's friction (0)
+averages the contact to 0.4 under the slant's 0.5. With the square hull for that one cell (the logs
+above it and the stump octagonal) the test passes on both faces, so the riding wedge keeps the
+square ramp's hull; its corners reach 0.15 m past the drawn octagon until it settles.
+
+**Deviations (T2):** the owner's default was the trunk's upside-down ramp *matching* the stump's
+(parallel, the cut cell split along its diagonal) and, if it didn't tip, a steeper 2-cell 45° wedge.
+Measured in the sim test (2026-11-09): the matching wedge dropped ½ m onto the 26.6° slope and stood
+there (friction 0.8 holds it: tan 26.6° = 0.5); the 45° two-cell split tipped on face B but on face
+A slid toward the notch and toppled back over the hinge. So the default is `open`: the trunk's
+upside-down ramp reaches down at the hinge, the two ramps meet on the hinge's edge in a V open
+toward the notch (a real open-face notch), and the trunk, on that edge with its weight over the
+notch, pivots into it on both faces. `matching` stays a data value. The cut cell's notch-side
+half is chips. Reversed by the owner the same day: the default is `matching` again, with the old
+tip restored as the wood's `fellTip`. The owner suggested 3/4 of the old force; measured
+(`tests/chopping.rs`, the 3.5 m test trunk): at 0.75 and 0.85 it leant ~5° and rocked back upright
+on the matching wedge's slope, at 1 it is down past 60° toward the notch in ~1.25 s on both faces,
+so the log's `fellTip` is 1 (a data value to lower for taller trees).
+
+**Deviations:** targeting, the selection box and the LOD treat a log as its cube (T1 changes the
+drawn and collided shape only).
+
+## Phase 56 — Biomes and Chisel
+
+**Status:** 🚧 In progress — B1 built (0.51.14), B2 built (0.51.15), B3 built (0.51.16: the default biome as a fallback, the Chisel page; CI and the owner's look outstanding; follow-up 0.52.11: the world overview, the whole disc beside the detail preview). Design: [ADR 0074](./adr/0074-biomes-and-chisel.md), B6 built (0.52.42): Chisel's **Textures** tab (the Painterly Texture Lab folded in: a block material's layers as sliders and palette pickers, the tile, 3 × 3 and a cube painted by `paint.mjs` itself, bit-identical to the baked atlas; the palette with art-direction warnings; Export of `materials.json` / `palette.json`; the 3D section tinted live by the edit, `ChiselPreview.set_tints`); outstanding: CI, the owner's look, new materials and blocks by data, water and sky colours, item and model textures (§5b).
+[`proposals/BIOME_SANDBOX.md`](./proposals/BIOME_SANDBOX.md) (the owner's request and answers,
+2026-11-10). Chisel is the biome and texture editor. Each sub-phase is ≤ 45 min.
+
+**B1 — the biome file format (built, 0.51.14)**
+
+- [x] `shared/worldgen/biomes/<name>.json`: a biome's groups (`detail`, `bands`) moved from
+  `terrain.json` with their names and meanings, and references by name (`decorations`, `placements`,
+  `water`); `terrain.json` keeps the world's elevation and water (`inland`, `seaFloor`, `hills`,
+  `bumps`, `rivers`, `mouths`, `lakes`, `spawn`) and names the `defaultBiome`.
+- [x] `shared/worldgen/gen.mjs` validates the biomes (unknown fields, ranges, blocks, rule names, a
+  fluid, duplicates, the default) and emits `BIOMES`, `HEIGHT` and `SURFACE` (the default's) into
+  `terrain.gen.rs`; `gen.test.mjs` adds a fixture biome by data alone and checks the errors.
+- [x] The generator reads the biome: `TerrainGenerator::with_biome` (the surface blocks); a fixture
+  biome changes the generated columns' tops on both faces (`tests/terrain.rs`).
+- [x] Exit: the worldgen goldens byte-identical (`cargo run -p dwell-worldgen --example goldens`, no
+  diff; `tests/golden.rs` passes).
+
+**Deviations:** ground items (`shared/ground/ground.json`) were not referenced by the biome (done in
+B5, 0.52.41); the biome's height and shaping fields are read through `HEIGHT` and
+`SURFACE` (the default's) until B2's biome map weights them per column.
+
+**B2 — the biome map and blending (built, 0.51.15)**
+
+- [x] Biome data: `where` (a weight and eased `temperature`, `wetness`, `elevation`, `coast` ranges),
+  `shaping`, and `bands` as a list of elevation bands (blocks by slope; the default's `meadow` and
+  `snow` from 1,550 m, today's snow line); `terrain.json` `biomeMap` (the climate gradient, lapse rate,
+  wet reach, dither); `gen.mjs` validates them (`gen.test.mjs`: each error) and emits them, with the
+  test fixtures (`biomes/fixtures/*.json` → `FIXTURE_BIOMES`).
+- [x] The biome field (`biomemap.rs`): per column the geography from the world map (elevation, chamfer
+  distances to the sea and to rivers/lakes, the climate gradient less the lapse rate) and each biome's
+  weight, normalised; none built for one biome.
+- [x] Blending: the surface by a dithered choice on the weights, the fine relief weighted, the band
+  edges and rock band the chosen biome's; the height field never changed (`TerrainGenerator::with_biomes`,
+  `biome_mix`, `Column::palette`).
+- [x] Fixture: `test:desert` (dunes → mesa → tundra, dry and warm) by data alone; `tests/terrain.rs`
+  `a_second_biome_blends_in_by_geography` on both faces: weights sum to 1, both appear, a transect
+  changes gradually (biggest step < 0.05, > 30 columns between), dunes are sand and the high band tundra.
+- [x] Exit: the worldgen goldens byte-identical with the default alone (`--example goldens`, no diff;
+  `tests/golden.rs`).
+
+**Deviations:** a band's own fine relief and decoration/placement rules are not per band yet (the
+biome's `detail`, `decorations`, `placements`; per band with B5); the soil depth (`underDepth`) is read
+world-wide from the default (`soil_rows`); the rock band, shore and band edges come from the chosen
+biome (dithered), not blended numerically.
+
+**B4 — Water banks, water hue and the archipelago (built, 0.51.17)**
+
+- [x] Banks per biome: a biome's `banks` group (`riverSlope` the valley's rise from its bank, `lake` and
+  `lakeSlope` the ground round a lake, `beach` the shore block on dry ground within that many m of a
+  river's or lake's water), blended by the biomes' weights (`terrain.rs` `blended_banks`); the elevation
+  still places the water (`rivers.bank` stays the world's: the map's river levels read it). The default
+  biome carries today's values: goldens byte-identical. Test: `tests/terrain.rs`
+  `a_biomes_banks_change_the_bank_columns` (both faces).
+- [x] Water hue per biome: an optional `waterLook` (`scatter` "#rrggbb", `absorption` per m) over the
+  fluid's look (`shared/blocks/dwell.json` `fluids`), validated in `biomes.mjs`; `water_tint_of` and
+  `TerrainGenerator::water_look_at` (blended by weight). Clients compute it from the build's biome data
+  as they generate terrain: no wire change. Test: `a_biomes_water_look_resolves_and_blends` (both faces).
+- [x] The archipelago: terrain.json's world group `islands` (`amplitude` 0 by default, off), the coast
+  capped at `cap` and broken by a noise (`base.rs`); `WorldMap::for_height` builds a map over other
+  height-field knobs; the example world setting `shared/worldgen/worlds/archipelago.json` (emitted as
+  `FIXTURE_WORLDS`) and the `test:archipelago` fixture biome. Tests: `the_archipelago_setting_makes_many_islands`
+  (≥ 12 islands in 24 km, a shallow sea, both faces); `chisel::tests::the_archipelago_knobs_break_the_preview_into_islands`
+  (the sea between the islands survives the world map).
+- [x] Chisel: `banks` sliders, a water hue picker, the world knobs (`islands`, `seaFloor`, `inland`,
+  hills' amplitude) with an Archipelago preset (the map rebuilt in the worker when they change), the
+  preview's water tinted by the look; `state.test.ts` round trip of the archipelago edit.
+
+**Deviations:** the game's water shader still draws one look per fluid: the per-column `water_look_at`
+is not yet fed to the renderer (Chisel's preview shows it); a sea pocket enclosed by land is filled as a
+depression by the world map, so the archipelago's `cap` keeps the sea the larger share (−300); the
+fixture's beaches read speckled in the preview where the shallow shelf sits within a row of sea level;
+palms are the pines (no palm structure).
+
+**B3 — Chisel: the prototype page (built, 0.51.16)**
+
+- [x] The default biome as a fallback (`biomemap.rs` `fallback_weights`): a biome other than the
+  default takes `weight` × its fit, the default only what is left of 1, so a biome that fits takes its
+  place at an ordinary weight of 1 (B2 needed 100); the desert fixture back to weight 1; goldens
+  unchanged (one biome); `tests/terrain.rs` `the_default_biome_takes_only_the_weight_left`.
+- [x] The validation shared without Node (`shared/worldgen/biomes.mjs`: the ranges, `validateBiome`,
+  `validateBiomeMap`), read by `gen.mjs` and by Chisel.
+- [x] Chisel's page (`client/chisel.html`, a Vite entry of the client build; dev at
+  `/dwell/chisel.html`): the biomes (list, add from the default or a fixture, duplicate, remove), sliders
+  made from the validation's ranges for `where`, `detail`, `shaping`, `biomeMap`, band heights and
+  block pickers (the registry's full blocks); a live top-down preview (1–16 km) from the real generator
+  in a worker (`ChiselPreview`, `dwell-client` `chisel.rs`: the JSON on `with_biomes_on`, the big map's
+  raster tinted by height), coarse 64² then 256² (~70–110 ms each on an M1 for 256²), overlays for the
+  biome weights, temperature and wetness; Export/Import JSON validated by `biomes.mjs`; edits kept in
+  the browser (`dwell.chisel`, append-only) with Reset.
+- [x] Tests: `client/src/chisel/state.test.ts` (state ↔ JSON round trip, validation messages, import of
+  one biome file, the stored record keeping unknown fields); `dwell-client` `chisel::tests` (the JSON
+  biomes equal the generated tables; a bad block fails with its name; an edited desert band changes
+  preview texels only where the desert is).
+
+**Deviations:** the page is served by the client build, not saved under `docs/prototypes/` (it runs the
+generator's WASM, so it can't be a standalone artifact); no main-menu link yet (open it by URL; the
+in-game Chisel is B7); no side profile or 3D view; the preview's regeneration is one worker (fast
+enough: the refined pass is ~0.1 s); a `where.weight` slider runs to 2 (the data allows 1,000).
+
+**B4 — water banks and hue, the archipelago**
+
+- [ ] Bank steepness and the water hue per biome; an archipelago biome.
+
+**B5 — trees, ground items and structures per biome (built in part, 0.52.39; ground items 0.52.41)**
+
+- [x] The biome's placements read by the generator: a placement stands only where a biome listing
+  it has weight, scaled by its `trees` density (0–3); validated in `biomes.mjs` and `config.rs`
+  (named errors); the default world unchanged (goldens byte-identical); `tests/trees.rs` (counts by
+  density in a patch, two biomes each standing its own, a fixture biome by data alone, the messages,
+  both faces).
+- [x] Two placement rules by data (`broadleaf_groves`, `boulders` from the structures store's
+  prototype tree and rock) and the presets' picks.
+- [x] Chisel: a density slider per placement per biome, the `placements` overlay, trees and boulders
+  as boxes in the 3D section (≤ 1 km squares); vitest round trip.
+- [x] Ground items per biome (0.52.41): a biome's `ground` (kind → density 0–3; none: all 1),
+  carried to the server, the mesh jobs and the crosshair as each chunk column's `GroundDensity` from
+  the generator; validated (named errors, `biomes.mjs`, `config.rs`); presets' picks; Chisel sliders
+  and the placements overlay (ground items, boulders grey); tests: counts by density in a fixture
+  patch, the mesh job and the server alike in a two-biome world, the default world unchanged, a
+  fixture biome by data alone, the messages, both faces, Chisel's round trip.
+- [ ] Decorations per biome (the biome's `decorations` list is still not read: every decoration
+  rule grows everywhere its rules allow).
+- [ ] Spacing per biome; the player's saved structures as placement sources.
+
+**B6 — Chisel: the texture tab**
+
+- [x] The Painterly Texture Lab folded into Chisel as a tab (0.52.42): `client/src/chisel/textures.ts`
+  (the build's painter, palette warnings, URL state `tab=textures&tex=`, export, block tints) and
+  `texturesTab.ts`; `textures.test.ts`: every atlas tile previews bit-identical to `painterly.rgba`, an
+  edit round-trips through the exported JSON and `gen.mjs`'s `bake` to the same pixels, bad recipes fail
+  with the validation's message, the URL state; `chisel_section.rs`
+  `a_texture_tint_recolours_its_blocks_and_leaves_the_rest`. Deviations: the 3D section shows a block's
+  far colour (the tile's mean), so an edit tints it rather than texturing it; the slider ranges are a
+  table in `textures.ts` mirroring `paint.mjs`'s validation; the cube shows the picked tile on all three
+  faces. Left for later (§5b): new materials and blocks by data, water and sky colours from the palette,
+  item and model textures.
+
+**B7 — Chisel in the game**
+
+- [x] Play in game carries the whole edit (0.52.37): a test world's maps carry its worldgen config
+  (`dwell-worldgen` `config.rs`, `WorldMap::worldgen`, the codec's `WG` trailer), so every instance's
+  generators put the edit's biomes, biome map, geology, erosion, vegetation and tectonics on the ground;
+  an install replaces a seed's other map; portal sites cached per config (`tests/worldgen_config.rs`:
+  game = preview columns on both faces, the round trip, the install red → green; goldens unchanged).
+  Deviation: the game's cliffs volume stays over the edit's ground (Chisel's preview has none).
+- [x] A guest joining a test world gets its config (0.52.38): a required `WorldSettings` tag `WORLDGEN`
+  with the config's hash (sent, never saved; an older guest refuses), `WorldgenRequest` / `WorldgenConfig`
+  for the text (`MAX_FIELD_BYTES` is 1 KB, an edit ~15 KB), checked against the hash before the join;
+  the guest builds its maps from it; the dedicated server's `--worldgen FILE|test:NAME`
+  (`dwell-client` `tests/worldgen_guests.rs`: a default join unchanged, the guest's maps the host's on
+  both faces, a hash mismatch and an older guest refused; `dwell-server` `tests/host.rs`). Deviation:
+  `--worldgen` is not saved in the world file (give it on every start); the browser two-tab check not
+  run (native session-level check only).
+- [x] The in-game editor, first slice (WORK_QUEUE item 34): a local creative world's game menu **Chisel**
+  page (biome sliders: `detail`, `shaping`, `banks` per biome, Undo, Reset, debounced 400 ms); a change
+  retunes the world (`Server::retune_worldgen`, `config::retune_worldgen`: the maps re-wrapped, no
+  recompute; a ground-moving edit refused), the chunks within 3 chunks of the player generated again with
+  the player's edits kept (`rebase_chunk`), saved and sent whole, their LOD sections dirty; the config saved
+  in the world file's settings (`worldgen`, which also answers B7's earlier "not saved in the world file"
+  for local worlds) and installed when it opens; the page's and workers' generators re-made over the new
+  maps. Host only (refused with guests). Tests: `dwell-sim` `tests/chisel_in_game.rs` (a near chunk the new
+  config's, a player edit kept, saved and reopened with the build's maps installed first, a far chunk under
+  the saved config, a ground-moving edit refused; both faces); `client/src/chisel/inGame.test.ts`.
+  Deviations: edited chunks outside the radius keep the old ground; unmodified chunks in the radius are
+  saved whole (marked modified, so a client's stale generator can't stand in); the client's far LOD and far
+  terrain follow only when the world reopens; the water grid is not re-read; no browser run (cloud session,
+  no GPU); the dedicated server's `--worldgen` still not saved.
+- [ ] The new-world biome choice; the in-game editor's rest (the far LOD refreshed live, the other groups:
+  bands, where, placements; guests).
+
+**B8 — arches**
+
+- [x] A biome's `arches` (data, validated in `biomes.mjs` and `config.rs`, emitted by `gen.mjs`): arches
+  through fins and overhangs into scarps, carved per site from the height field (`arches.rs`,
+  `TerrainGenerator::arches_near` / `carve_arches`); the default world none (goldens unchanged); the
+  `red_rock_mesa` preset and the `test:arches` fixture (`tests/arches.rs`: rock over air over rock on
+  both faces, the carve the same from every chunk across a seam, validation). Chisel's sliders
+  (0.52.43).
+- [ ] Fins for arches (the erosion leaves few), a rock-stack filter, the openings in the LOD and in
+  Chisel's 3D section (a voxel slice), the caprock lip; in-game screenshots of an arch.
+
+## Phase 57 — Systemic terrain
+
+**Status:** 🚧 In progress — T1 built (0.52.7; smoothed wind 0.52.8), the presets built (0.52.8), T2 built (0.52.9), T3 built (0.52.14; T3b: the snow line, soil blocks, grass and items as kinds), T4 built (0.52.17: rule-based erosion, isolated mesas and buttes); CI, the owner's look and tuning outstanding. Design:
+[ADR 0075](./adr/0075-systemic-terrain.md), [`proposals/SYSTEMIC_TERRAIN.md`](./proposals/SYSTEMIC_TERRAIN.md)
+(the owner's direction and answers, 2026-11-10). Every layer ships **neutral** in the default world
+(goldens byte-identical) and is tuned in Chisel; the tuned layers are adopted together on one new
+compatibility line. Each sub-phase is ≤ 45 min.
+
+**T1 — the rain shadow (built, 0.52.7)**
+
+- [x] Data: `terrain.json` `biomeMap` gains `windDirection`, `windReach`, `baseRain`, `upliftRain`,
+  `leeDry`, `rainShare` (ranges in `biomes.mjs`, emitted into `BIOME_MAP`; `gen.test.mjs` checks bad
+  entries); `rainShare` 0 by default.
+- [x] The moisture field: `biomemap::rainfall`, the wind marched across each face's map once per biome
+  field; the wetness blends the rivers' and the rainfall by `rainShare`.
+- [x] Chisel: the keys' sliders (the biome map group), a rainfall overlay, older stored edits loaded with
+  the new keys at their defaults.
+- [x] Tests: `tests/rain_shadow.rs` (a ridge fixture wetter windward than lee; bounded; the air loses
+  what rained; each face's map of seed 7 with a strong wind, windward slopes > 2× the lee's; `rainShare`
+  0 the same geography whatever the wind); Chisel's windy edit by data alone (`chisel.rs`) and its state
+  round trip (`state.test.ts`); the worldgen goldens unchanged.
+- [ ] Exit: the owner's look in Chisel and a tuned default for the climate (when the layers are adopted).
+
+- [x] Follow-up (0.52.8): the wind sees a smoothed ground (`biomeMap.windSmoothM`, 3 km, a tent
+  low-pass of the map heights, `biomemap::smooth_ground`), so the rain follows ranges, not each hillside;
+  test: behind a whole range with hillsides on it, every lee cell for 2.3 km is drier than half the
+  windward flank's mean (and on the raw map it is not).
+
+**Presets (built, 0.52.8)** (owner, 2026-11-10: "We need a lot of prefabbed biomes as options to use as
+starting points")
+
+- [x] Data: `shared/worldgen/biomes/presets/*.json`, 14 biomes of today's blocks and rules (prototype
+  content): temperate meadow, mixed forest, pine/boreal, cold rainforest, alpine tundra, snowfield,
+  steppe, savanna, sand desert, red-rock canyon/mesa, badlands, tropical beach, wetland/marsh, coastal
+  cliffs; each with its `where`, bands, relief, banks and water look, and the format's new optional
+  `label` (≤ 40) and `description` (≤ 200), required of presets (`biomes.mjs` `validatePresets`: distinct
+  names and labels, not a world biome's name). Not in the default world's biome list.
+- [x] Emitted: `PRESET_BIOMES` in `terrain.gen.rs` (`gen.mjs`, CI checks stale output).
+- [x] Chisel: "Add from preset" lists them by label, the description shown beneath.
+- [x] Tests: `gen.test.mjs` (every preset validates; bad label, description, duplicates fail; an extra
+  preset by data alone validates); `tests/presets.rs` (every preset beside the default builds a
+  generator, both faces; a world of the desert, tundra, forest, steppe and beach places each where it
+  fits: the desert warmer and drier than the land's mean, the tundra 300 m higher and colder, the beach
+  under 60 m, both faces); `chisel.rs` (each preset file parses to its `PRESET_BIOMES` entry);
+  `state.test.ts` (Chisel lists them by label; all added at once validate and round-trip).
+- [ ] Exit: the owner's look in Chisel.
+
+**Deviations:** the wind's direction is data, not chosen from the seed; the climate keys live in
+`biomeMap` (the biome map's geography group) rather than a separate `climate` group, so Chisel's
+sliders, stored state and parsing carry them unchanged; the rainfall does not feed the rivers' flow.
+
+**T2 — rock provinces and rock types (built, 0.52.9)** (hardness, jointing, the blocks a rock shows),
+neutral by default.
+
+- [x] Data: `shared/worldgen/rocks.json`: 5 prototype rocks (sandstone, shale, granite, basalt,
+  limestone: hardness, jointing `bedded`/`vertical`/`massive`, bed thickness, solubility (unused yet),
+  `face`/`cap`/`scree` blocks, a colour), 5 strata stacks (layers top to bottom), `provinces.wavelength`,
+  `shaping` (`strength` 0, `tread`, `sheer`); checked by `biomes.mjs` `validateRocks` (shared with
+  Chisel), emitted as `rocks.gen.rs` (`ROCKS`, `STACKS`, `GEOLOGY`) by `gen.mjs`. A biome may name a
+  `rockStack` (validated against the stacks): the red-rock mesa preset `dwell:red_beds`, badlands
+  `dwell:badland_beds`.
+- [x] Provinces: a 2-octave noise of `wavelength` m picks a stack by the stacks' weights, the shaping
+  fading out within 0.03 of a border so a province edge is no cliff; a biome's own stack wins where it is.
+- [x] Shaping (`geology::Profile`, `TerrainGenerator::rock_shaping`): each stack is a monotone
+  piecewise-linear profile over its period (layers repeating from sea level): a hard bed a wall over
+  (1 − hardness)^sheer of its height and a tread over hardness² × tread; a soft bed a talus slope;
+  vertical jointing one sheer wall the unit's height; massive unstepped. The ground moves `strength` of
+  the way to the profile's (bounded by a period), blended by the biomes' weights, none under the sea or
+  at rivers and lakes. At half strength or more a wall shows its rock's face, talus its scree, a tread its
+  cap (rock palettes after the biomes'). Both faces (face-local heights).
+- [x] Chisel: a "Rock" group (strength, tread, sheer, province wavelength sliders from `GEOLOGY`'s
+  ranges), a rock overlay (each rock's colour, darker on walls, lighter on treads), the geology in the
+  edit (`geology`, optional: an older edit loads with the build's).
+- [x] Tests: `tests/rocks.rs` (the build's geology changes no column, both faces; a hard-over-soft
+  fixture profile: a 20 m wall over < 1 m of input, wide treads and talus, monotone; at full strength
+  on seed 7 the land gathers on the caps' levels (> 5× mid-slope), ≥ 3 walls of ≥ 4 m between columns
+  2 m apart, scree and stone tops, both faces; a massive rock leaves the ground unstepped, both faces);
+  the goldens unchanged; `gen.test.mjs` (the data generates the checked-in Rust, a rock and stack by data
+  alone, bad entries named); `chisel.rs` (the JSON is `GEOLOGY`; a fixture rock and stack by data alone
+  show in the rock overlay and reshape the blocks; unknown rocks and stacks named); `state.test.ts` (the
+  mesa with strong shaping round-trips; a bad jointing and a missing stack named).
+- [ ] Exit: the owner's look in Chisel and tuning.
+
+**Deviations (T2):** the rule-based shaping (proposal §6 q3's "rule-based first") is T2's, not T4's: T4
+keeps the isolated buttes and the simulated erosion to compare. Rocks show today's blocks (stone, sand,
+dirt) until rocks of their own; their colour shows in Chisel's overlay only. The shaping maps height
+alone, so terraces follow every contour (stepped hills); isolated mesas and buttes on a flat floor need
+the erosion's plan view (T4). Massive rock is unstepped, not yet domed. Solubility is unused.
+
+**T3 — soil and vegetation from climate (built, 0.52.14)** (soil depth, the tree line from temperature),
+neutral by default.
+
+- [x] Data: `shared/worldgen/vegetation.json`: the climate's °C scale (`zeroC`, `perUnitC`: ≈ 6.5 °C/km
+  with the biome map's lapse), soil types (sandy, loamy, rocky), each rock's soil (depth, type; a
+  `fallback`), the soil rules (`flatSlopeDeg`, `valley`), one kind (`dwell:conifers` on `pine_groves`: 6.5–28
+  °C, moisture ≥ 0.04, soil ≥ 0.15 m, ≤ 40°); checked by `biomes.mjs` `validateVegetation` (shared with
+  Chisel), emitted as `vegetation.gen.rs`. A biome's optional `vegetation` (0..1, absent 0); the boreal,
+  cold rainforest, savanna, sand desert and alpine tundra presets at 1 (savanna and tundra list the pine
+  groves).
+- [x] Climate per column (`TerrainGenerator::climate_at`/`climate_with`): °C, moisture (the wetness:
+  rivers + T1 rainfall by `rainShare`), soil depth and type from the surface rock, thinner with slope,
+  deeper on wet floors; each kind's density (`Vegetation::density`, faded edges) scales a placement's
+  chance by the biomes' share (`trees_in_with`, the LOD canopy's `canopy_at_with`), asked of kept
+  candidates only.
+- [x] Chisel: soil and vegetation overlays, the "Soil and vegetation" group (°C scale, soil rules, each
+  kind's tree-line temperature and least moisture), a per-biome vegetation slider; the edit's
+  `vegetation` (optional: an older edit loads with the build's).
+- [x] Tests: `tests/vegetation.rs` (both faces: share 0 places the same trees whatever the envelope; a
+  fixture 11 °C tree line: no tree colder, fewer and lower trees; a fixture moisture floor: no tree in a
+  drier column; soil on steep columns < half that of flat wet floors, granite at 30° < ⅕ a shale floor);
+  `placements.rs` (a factor of 1 places the same, 0 on one side none there); `vegetation.rs` units; the
+  goldens and presets unchanged; `gen.test.mjs` (the data generates the checked-in Rust, a kind and soil
+  type by data alone, bad entries named); `chisel.rs` (the JSON is `VEGETATION`; a fixture kind by data
+  alone changes the overlay; unknown placement and soil type named); `state.test.ts` (the presets opt in;
+  a tuned tree line round-trips; bad kinds named).
+- [ ] Exit: the owner's look in Chisel and tuning (the rain field is weak at the default `baseRain`: the
+  river wetness dominates the moisture).
+
+**Deviations (T3):** the soil changes no block yet (the dirt's depth is the bands' `underDepth`); the
+snow line from temperature, grass/decorations and ground items as kinds are left for **T3b**; the climate
+needs the biome map (two or more biomes; a one-biome world reads none).
+
+**T4 — rule-based erosion (built, 0.52.17)**: isolated mesas and buttes on a cut floor from the world
+map's plan view, neutral by default.
+
+- [x] Data: `rocks.json` `erosion` (strength, reach, valley, resist, relief, threshold, snap, wall,
+  talusWidth, talusShare, outline, outlineWavelength, gullyWavelength, gullyDepth), checked by
+  `validateRocks`, emitted in `rocks.gen.rs`; a biome's `erosion` and `gullies` (0..1, absent 0); the
+  red-rock mesa preset at erosion 1, badlands at erosion 1 and gullies 1.
+- [x] The cut-back (`geology::DrainageField`: flow accumulation and the distance to the nearest drainage
+  line with its height and accumulation; `TerrainGenerator::cut_back`, `erosion_shaping`, `erosion_at`;
+  `geology::eroded`: floor, talus skirt, wall, standing), the walls showing the cap rock's face and the
+  talus the soft rock's scree; the badlands' rills.
+- [x] Chisel: the Erosion group's sliders, a biome's erosion and gullies sliders, the erosion overlay.
+- [x] Tests: `tests/erosion.rs` (both faces: no build biome erodes and erosion 0 changes nothing; the
+  fixture mesa stack with strong erosion: > 50 % of the land on the floor, < 15 % between levels, ≥ 5
+  separate remnants, walls ≥ 8 m over 4 m; gullies roughen the ground > 1.5×; more reach cuts more; the
+  profile rule); the goldens, presets, rocks and vegetation tests unchanged; `gen.test.mjs` (the knobs by
+  data alone, bad ones named; a biome's erosion and gullies range).
+- [ ] Exit: the owner's look in Chisel and in game, and tuning.
+
+**Deviations (T4):** the remnants' tops keep the height field's gentle tilt (not snapped to the cap's
+level); the floor between two drainage lines blends their heights; massive rock is not domed; the
+simulated erosion pass to compare is left for later.
+
+**T5 — tectonics** at real scale (built, 0.52.18; ADR 0075 T5): one plate boundary across the island,
+hotspots offshore making island chains; volcanoes dormant landforms (eruptions still open, §5 q5).
+
+- [x] Data: `terrain.json` `tectonics` (the boundary's kind, angle, offset, width, range, trench, rift and
+  shift; the arc's count, distance, spacing, cone height and radius, crater; the hotspot chain's start,
+  heading, count, spacing, height, radius, decay and widening; the core distance), checked by
+  `biomes.mjs` `TERRAIN.tectonics`, emitted into `HeightField::tectonics`; `rocks.json` `tectonic` (the
+  volcanic and core stacks), checked by `validateRocks`. Off by default.
+- [x] The world map: `tectonics.rs` landforms added in `hydrology::from_heights_with` before the sea and
+  erosion (the boundary also as uplift; the uplift layer's random ranges and plates off while on; islands
+  from the sea take no uplift strength); rock provinces from them (`geology::Resolved::with_tectonics`).
+- [x] Chisel: the tectonics world knobs (sliders), the tectonics overlay (detail and overview).
+- [x] Tests: `tests/tectonics.rs` (both faces: no plates leave the map identical; a fixture ridge along the
+  line, three cratered arc cones on volcanic rock, the old core granite, a hotspot chain above the sea
+  lower down the chain); the goldens, presets, rocks, vegetation and erosion tests unchanged;
+  `gen.test.mjs` (the default off, a fixture by data alone, bad keys named); Chisel's round trip.
+- [x] Tall peaks (0.52.25; owner, 2026-11-10: "at least 5000m tall elevations"): `tectonics.coneHardness`
+  (the cones shielded from the erosion, the crater kept open), the fixture world `test:tall_peak` (a
+  4800 m cone; Chisel's Tall peak example), `tests/tall_peaks.rs` (both faces: summit ≥ 4400 m on the map
+  and in the chunks, its chunk in bounds and not skipped as air, LOD levels 4–7 hold it); goldens unchanged.
+- [x] Play a test world (0.52.27): `?worldgen=<fixture>` links and Chisel's Play in game open a local
+  world whose maps are built over the config's height field (`chisel::worldgen_height`,
+  `buildWorldMap(seed, face, worldgen)`, keyed apart by `worldMapKeys(seed, worldgen)`); the world
+  record keeps the config (`WorldMeta.worldgen`), so it reopens the same (`worldIndex.test.ts`,
+  `chisel/state.test.ts`, `worldMaps.test.ts`, `chisel::tests`: the default key and record unchanged).
+  Deviation: only the height field travels; an edit's biomes, geology and vegetation and the map's
+  tectonics (rock provinces) are the build's in game; local worlds only.
+- [x] Tall peaks in game, looked at (0.52.27, M1, Chrome on the GPU, `bench --compare`, seed 7): the
+  cone reads from 20 km at the cloud deck (1800 m) and above it, the deck crossing its flanks without
+  artefacts; fog lightens it at 20 km but does not wash it out. Frame time at the peak equals the flat
+  world's (CPU p95 ~1 ms, GPU composite p95 2.3–2.9 ms in all three, 0 dropped frames). Map tint: past
+  `highM` the colour goes toward white (`peakLighten` 0.4 at `peakM` 5000 m; nothing below 400 m
+  changed; `high_ground_keeps_a_gradient_past_400_m`, red at 0). Honest look: a symmetric stepped cone
+  in grey stone with a lake in its crater, more Fuji than Rainier (no snow, no glaciers, no ridges or
+  parasitic cones).
+- [x] Rainier (0.52.40): the arc cones' shape as data on `terrain.json` `tectonics`, neutral by default
+  (`Tectonics::shaped_cone`): `ridgeCount`/`ridgeDepth`/`ridgeWarp` radial ridges with sharp crests and
+  round glacier-cut valleys (deepest below the summit, none at the foot), `summitOffset`/`summitAngle`
+  an off-centre summit over the unmoved foot (one flank steeper, the rim uneven), a shoulder peak
+  (`shoulder*`) and flank cones (`vent*`); `iceAbove`/`iceDome`: a crater whose rim is above the line
+  holds an ice dome, not a hollow (no crater lake); the snow line from temperature (`snowBelowC`,
+  `snowMaxSlope`; the biome map's temperature with its lapse rate, a one-biome world the gradient's
+  middle; the cover `rocks.json` `tectonic.snow`, `dwell:snowy_grass`, as there is no ice block): snow
+  on cold ground no steeper than the slope, bare rock on steeper cold faces. `test:tall_peak` opts in
+  (14 ridges, the summit 900 m off, a shoulder, three vents, ice above 3000 m, snow below 0 °C ≈
+  1970 m). `tests/tall_peaks.rs` (both faces): ridges round a 3 km ring (> 150 m span, ≥ 8 crests; the
+  plain cone less than half), the summit ≥ 500 m off the centre, no water within 800 m of the summit
+  (the open crater a hollow, the dome over the rim), snow on gentle ground over 2300 m, none under
+  1600 m nor on faces steeper than `snowMaxSlope`; goldens, tectonics, presets, vegetation and
+  worldgen_config unchanged. Deviation: no glacier or ice block exists, so the cover is snowy grass.
+- [x] Glacier ice (0.52.45; owner approved the block 2026-11-11): `dwell:glacier_ice` (a painterly pale
+  blue-white with deeper blue cracks and a painted sheen, opaque; pickaxe 4 hits, hands can't; drops itself;
+  stone's sounds; stored ramps) and `dwell:snow` (plain snow, shovel; snow's sounds), both in the creative
+  catalogue; `terrain.json` `tectonics.iceBelowC` (−100 off) puts `rocks.json` `tectonic.ice` on gentle ground
+  colder than it, and the snow line's cover is now `dwell:snow`. `test:tall_peak` takes ice below −10 °C
+  (≈ 3500 m). `tests/tall_peaks.rs` (both faces): ice on ≥ 80 % of the gentle summit (> 4200 m) and on the
+  crater's dome, snow and no ice at 2300–3000 m, neither under 1600 m; goldens' chunk and LOD hashes unchanged
+  (their registry line moved with the two new blocks).
+- [ ] Tall peaks, open: LOD holes and walls near the summit (BUGS.md #68: a hole showing the sky on the cone's flank
+  and tall vertical skirts where LOD sections meet, from 5300 m looking down into the crater); a glacier
+  ice block; cirque floors and moraines (the valleys are a profile, not carved by a glacier model).
+- [ ] Exit: the owner's look in Chisel and in game, and tuning.
+
+**Deviations (T5):** one boundary and one hotspot chain (lists later, by data); `kind` is a whole number
+(the world groups' keys are numbers); the boundary is straight; the hotspot islands are shields without
+a crater; at the map's 100 m cells and after the erosion the cones keep less relief than their profile.
+
+## Phase 58 — Block damage
+
+**Status:** 🚧 In progress — D1 and D2 built (0.52.28). Outstanding: hit particles, the e2e suite (not run
+locally), CI, the owner's review of the look; D3. Design: [`BLOCK_DAMAGE.md`](./BLOCK_DAMAGE.md),
+[ADR 0078](./adr/0078-block-damage.md) (the owner's direction and answers, 2026-11-10). Each sub-phase is ≤ 45 min.
+
+**Deviation (0.52.51, owner 2026-11-11):** creative no longer damages blocks over several hits except
+with a tool: "I should be able to break any block while holding anything or nothing with the
+exception of tools" (the mode ability `instantBreaks`, `BLOCK_DAMAGE.md` §7). Adventure unchanged.
+
+**Pieces, combining and tool wear (built, 0.52.46; owner, 2026-11-11)**
+
+- [x] A ½ m cell breaks into 8 pieces of its material (rock shards, dirt clumps, wood chunks), half over
+  the hits; tall grass drops grass fiber; the random rock kept (tests: `inventory.rs`, `damage.rs`).
+- [x] Recipes as data (`inventory.json` `recipes`, validated, a fixture by data alone), applied by the
+  server (`InventoryAction::Combine`, only to a server with `inventory_flags::COMBINE`); the backpack's
+  Combine section (tests: `inventory.rs`, `items.rs`, `backpack.test.ts`; seen in Chrome on the GPU).
+- [x] Tool durability as data (`tools.json` `durability`: the stone axe 32, `creativeWear` false), worn by
+  chops and break hits, broken at none with a sound, a wear bar on the slot (tests: `inventory.rs`,
+  `damage.rs`, `gen.test.mjs`, `backpack.test.ts`). Not seen in game yet (the bench can't chop a tree).
+- Deviation: the CRAFTING.md proposal is shelved (owner); only these recipes are built.
+
+**D1 — damage state, hits by tool and tier, drops, saved (built, 0.52.28)**
+
+- [x] Data: a block's `damage` (`default`, per tool class or item) in `shared/blocks/dwell.json` for stone,
+  soil, sand and their ramps; `shared/tools/gen.mjs` validates it and emits `BLOCK_DAMAGE` (Rust, TS);
+  `gen.test.mjs` adds a fixture block by data alone and checks the failure messages.
+- [x] `dwell_protocol::damage`: `hits_to_break` (item, else class ÷ tier speed, else default), the
+  drop split (`hit_share`, `destroy_share`: totals the block's drops), the per-cell `Damage` record and
+  its bytes (tests, a fixture block and tool table).
+- [x] Server: a Break by the held tool records a hit short of the count (acked as refused), breaks on
+  the last, refuses a block that can't be broken so; the same rate limit; the same in creative (the
+  hotbar's tool by `ChopAction::Held`) and adventure; a changed cell's damage cleared.
+- [x] Drops: half the certain drops over the hits, the rest on the destroy (adventure).
+- [x] Saved in the optional `block_damage` table; a world without it loads undamaged
+  (`crates/dwell-sim/tests/damage.rs`, both faces where face-local).
+- [x] Client: predicts only one-hit breaks; sends its held pickaxe or shovel.
+- [x] e2e specs changed: `edit.spec.ts` and `menu.spec.ts` hit until the cell breaks; the palette test
+  picks the stone pickaxe for stone. (Not run locally: CI.)
+
+**Deviations (D1):** logs keep the axe's chopping and have no `damage` (felling unchanged); the hit mark's
+point is the face's centre until the request carries the struck point; with today's one-item drops a hit
+drops nothing (tuning); native tests break in one hit through
+`ServerConfig::one_hit_breaks`.
+
+**D2 — the looks, synced (built, 0.52.28)**
+
+- [x] Sync: `inventory_flags::DAMAGE`, `DamageHello`, `Damage` (all after the hello, then each change;
+  optional: older builds never see them); `crates/dwell-sim/tests/damage.rs` checks a second client
+  is told and told when it breaks, and a client that didn't ask is sent nothing.
+- [x] The struck point: an optional field of the break request (only to a DAMAGE server), recorded in
+  the hit mark.
+- [x] The look as data (`damage.look`: shards, scoops, chips; size, colours), validated (`gen.test.mjs`),
+  drawn by the mesher as decals with cracks growing with the damage (`damage_mesh.rs`, a both-faces test);
+  collision unchanged. Screenshots in Chrome on the GPU (stone after 1, 3, 4 pickaxe hits; dirt after 2, 4
+  shovel hits).
+- [x] Feedback: the material's `Hit` sound at the struck point.
+- [ ] Hit particles per material (the chips are the woods' only).
+
+**D3 — tuning with the owner; repair later.**
 

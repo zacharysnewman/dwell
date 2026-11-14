@@ -1,7 +1,7 @@
 // Touch controls for phones and tablets (iOS Safari, Android, Capacitor): a floating joystick on the
 // left half of the screen, drag-to-look on the right half, and Break/Place, build mode, Fly, Run,
-// Crouch and Jump buttons. The DOM is here; what the pointers mean (stick deflection, taps, latched buttons)
-// is the Rust client's (dwell-game's touch.rs), which these elements forward their events to.
+// Crouch and Jump buttons (Break on a stick or rock knocks it loose). The DOM is here; what the
+// pointers mean (stick deflection, taps, latched buttons) is the Rust client's (dwell-game's touch.rs), which these elements forward their events to.
 import { audio } from '../audio/engine';
 import type { Client } from '../engine/wasm';
 import { BUILD_MODES } from './buildModes.gen';
@@ -28,6 +28,7 @@ export class TouchControls {
   private readonly stickKnob: HTMLDivElement;
   private readonly flyButton: HTMLButtonElement;
   private readonly buildButton: HTMLButtonElement;
+  /** Shown under the crosshair while it is on a ground item: a tap picks it up (ADR 0071). */
 
   constructor(
     parent: HTMLElement,
@@ -55,7 +56,18 @@ export class TouchControls {
     buttons.append(...made);
     const debug = this.button('debug', 'i', 'touch-debug');
     debug.setAttribute('aria-label', 'Debug overlay');
-    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug);
+    // The bag (docs/ITEMS.md §6a): opens and closes the inventory view, the shell's (not touch.rs).
+    const bag = document.createElement('button');
+    bag.type = 'button';
+    bag.id = 'touch-bag';
+    bag.textContent = 'Bag';
+    bag.setAttribute('aria-label', 'Inventory');
+    bag.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.onBag?.();
+    });
+    this.root.append(moveZone, lookZone, this.stickBase, buttons, debug, bag);
     parent.append(this.root);
 
     moveZone.addEventListener('pointerdown', (e) => {
@@ -86,6 +98,25 @@ export class TouchControls {
     lookZone.addEventListener('pointercancel', (e) => {
       client.lookUp(e.pointerId, e.timeStamp, true, performance.now());
     });
+    // iOS Safari can drop a finger's pointerup/pointercancel (a system gesture, the controls hidden
+    // under it); the game then held that finger and ignored every later one: no look, no taps
+    // (BUGS #57). When the page sees no finger down, or loses focus, held fingers are released.
+    const liftedAll = (e: TouchEvent) => {
+      if (e.touches.length === 0) client.touchesLifted();
+    };
+    document.addEventListener('touchend', liftedAll, { passive: true });
+    document.addEventListener('touchcancel', liftedAll, { passive: true });
+    window.addEventListener('blur', () => {
+      client.touchesLifted();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) client.touchesLifted();
+    });
+    // A zone that loses its pointer without an up or cancel lets it go too.
+    moveZone.addEventListener('lostpointercapture', stickUp);
+    lookZone.addEventListener('lostpointercapture', (e) => {
+      client.lookUp(e.pointerId, e.timeStamp, true, performance.now());
+    });
     // iOS Safari: no page scrolling, rubber-banding, double-tap zoom, or callout while playing.
     for (const type of ['touchstart', 'touchmove', 'gesturestart', 'contextmenu'] as const) {
       this.root.addEventListener(
@@ -98,8 +129,20 @@ export class TouchControls {
     }
   }
 
+  private onBag: (() => void) | null = null;
+
+  /** What the bag button does (opens or closes the inventory view). */
+  setOnBag(f: () => void): void {
+    this.onBag = f;
+  }
+
   set visible(v: boolean) {
     this.root.hidden = !v;
+  }
+
+  /** Whether the touch controls are on screen (a phone, or a tablet touched). */
+  get shown(): boolean {
+    return !this.root.hidden;
   }
 
   /** The build mode's label on its button (a `buildMode` event). */

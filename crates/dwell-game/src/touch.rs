@@ -195,6 +195,11 @@ pub struct TouchControls {
     stick_origin: (f64, f64),
     stick_offset: (f64, f64),
     look_pointer: Option<LookPointer>,
+    /// A held look finger was replaced before its lift arrived: its hold ends next frame.
+    hold_lost: bool,
+    /// The held tool keeps swinging while Break is held (its `repeatOnHold`; WORK_QUEUE item 17):
+    /// a still hold in Break mode is then a hold too, not nothing.
+    pub hold_breaks: bool,
     buttons: [TouchButtonState; 7],
     run_latched: bool,
     stick_run: bool,
@@ -208,6 +213,8 @@ impl Default for TouchControls {
             stick_origin: (0.0, 0.0),
             stick_offset: (0.0, 0.0),
             look_pointer: None,
+            hold_lost: false,
+            hold_breaks: false,
             buttons: TouchButton::ALL.map(|b| TouchButtonState::new(b.spec().mode)),
             run_latched: false,
             stick_run: false,
@@ -285,11 +292,29 @@ impl TouchControls {
         });
     }
 
+    /// No finger is on the screen any more (the page's `touches` list is empty, or the page lost
+    /// focus): any finger still held here is one whose lift never arrived. iOS Safari can drop a
+    /// pointerup or pointercancel (a system gesture, the controls hidden under a finger), and a held
+    /// finger made every later one be ignored: no look, no taps (BUGS #57). Releases them; a lost
+    /// hold ends at the next [`Self::hold_due`].
+    pub fn all_lifted(&mut self) {
+        if self.stick_pointer.take().is_some() {
+            self.update_stick(0.0, 0.0);
+        }
+        if self.look_pointer.take().is_some_and(|p| p.held) {
+            self.hold_lost = true;
+        }
+    }
+
     /// Each frame (`now_ms` on the events' clock): [`TouchEvent::Hold`] once, when the look finger
-    /// has been held still for HOLD_MS in Place mode.
+    /// has been held still for HOLD_MS in Place mode, or in Break mode with a tool that keeps
+    /// swinging held ([`hold_breaks`](Self::hold_breaks)).
     pub fn hold_due(&mut self, now_ms: f64) -> Option<TouchEvent> {
-        let place = self.button_active(TouchButton::Edit);
-        let p = self.look_pointer.as_mut().filter(|p| !p.held && place)?;
+        if std::mem::take(&mut self.hold_lost) {
+            return Some(TouchEvent::HoldEnd);
+        }
+        let holds = self.button_active(TouchButton::Edit) || self.hold_breaks;
+        let p = self.look_pointer.as_mut().filter(|p| !p.held && holds)?;
         let (sx, sy, st) = p.start;
         let (lx, ly) = p.last;
         let still = (lx - sx).hypot(ly - sy) <= TAP_SLOP;
@@ -415,6 +440,56 @@ mod tests {
         [b.press(), b.release()]
     }
 
+    // BUGS #57 (owner, 2026-11-09): on iOS Safari touch stopped doing anything (no look, taps
+    // neither break nor build) while the game ran on. A finger whose pointerup/pointercancel never
+    // arrived (a system gesture, the controls hidden under it) held the look slot, and every later
+    // finger was ignored. When the page sees no finger down, held ones are released.
+    #[test]
+    fn a_finger_whose_lift_never_arrived_does_not_block_the_next() {
+        let mut t = TouchControls::new();
+        let mut look = Look::default();
+        t.look_down(1, 100.0, 100.0, 0.0); // its pointerup is lost
+        t.all_lifted(); // the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        let before = look.yaw;
+        t.look_move(2, 260.0, 200.0, &mut look);
+        assert_ne!(look.yaw, before, "the new finger turns the view");
+    }
+
+    #[test]
+    fn a_tap_after_a_lost_lift_still_taps() {
+        let mut t = TouchControls::new();
+        t.look_down(1, 100.0, 100.0, 0.0); // its pointerup is lost
+        t.all_lifted(); // the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        assert_eq!(t.look_up(2, 5_080.0, false), Some(TouchEvent::Tap));
+    }
+
+    #[test]
+    fn a_held_build_whose_lift_never_arrived_ends_when_a_new_finger_comes() {
+        let mut t = TouchControls::new();
+        t.button_down(TouchButton::Edit);
+        t.button_up(TouchButton::Edit); // Place mode latched
+        t.look_down(1, 100.0, 100.0, 0.0);
+        assert_eq!(t.hold_due(HOLD_MS + 1.0), Some(TouchEvent::Hold));
+        t.all_lifted(); // finger 1's lift was lost; the page sees no finger down
+        t.look_down(2, 200.0, 200.0, 5_000.0);
+        assert_eq!(t.hold_due(5_001.0), Some(TouchEvent::HoldEnd));
+        assert_eq!(t.hold_due(5_002.0), None);
+    }
+
+    #[test]
+    fn a_new_stick_finger_takes_over_a_lost_one() {
+        let mut t = TouchControls::new();
+        t.stick_down(1, 50.0, 500.0); // its pointerup is lost
+        t.all_lifted();
+        assert_eq!(t.stick_view(), None, "the lost finger's stick is gone");
+        t.stick_down(2, 60.0, 500.0);
+        t.stick_move(2, 60.0, 500.0 - STICK_RADIUS);
+        assert!(t.stick_view().is_some());
+        assert!(t.state.move_y > 0.9, "the new finger drives the stick");
+    }
+
     #[test]
     fn crouch_is_held_not_toggled() {
         let mut crouch = TouchButtonState::new(TouchButton::Crouch.spec().mode);
@@ -476,6 +551,25 @@ mod tests {
         assert_eq!(t.hold_due(5000.0 + 50.0), None);
         assert_eq!(t.look_up(4, 5000.0 + 60.0, false), Some(TouchEvent::Tap));
         const { assert!(HOLD_MS < TAP_MS) };
+    }
+
+    #[test]
+    fn a_still_hold_in_break_mode_with_a_repeating_tool_swings_on_until_it_lifts() {
+        // WORK_QUEUE item 17: holding a tool that keeps swinging (an axe, a pickaxe).
+        let mut t = TouchControls::new();
+        t.hold_breaks = true;
+        t.look_down(1, 100.0, 100.0, 0.0);
+        assert_eq!(t.hold_due(HOLD_MS - 1.0), None);
+        assert_eq!(t.hold_due(HOLD_MS), Some(TouchEvent::Hold));
+        assert_eq!(t.hold_due(HOLD_MS + 16.0), None, "once");
+        assert_eq!(
+            t.look_up(1, HOLD_MS + 500.0, false),
+            Some(TouchEvent::HoldEnd)
+        );
+        // A quick tap still taps (one swing).
+        t.look_down(2, 100.0, 100.0, 2000.0);
+        assert_eq!(t.hold_due(2000.0 + 50.0), None);
+        assert_eq!(t.look_up(2, 2000.0 + 60.0, false), Some(TouchEvent::Tap));
     }
 
     // Beyond the TS suite (whose controls needed a DOM): the state machine the listeners feed.

@@ -7,7 +7,7 @@ import { DEBUG_KEYS, KEYBOARD, START_HINT, TOUCH, keyLabel, keysLabel } from './
 describe('controls', () => {
   it('names every debug key the client handles (dwell-game input.rs toggles)', () => {
     const keys = DEBUG_KEYS.flatMap((c) => c.keys);
-    for (const k of ['F3', 'F4', 'F6']) expect(keys).toContain(k);
+    for (const k of ['F3', 'F4', 'F6', 'F8']) expect(keys).toContain(k);
     for (const k of ['F3', 'F4']) expect(START_HINT).toContain(k);
   });
 

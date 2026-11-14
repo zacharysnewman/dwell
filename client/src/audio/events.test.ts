@@ -17,9 +17,13 @@ const kind = (name: string): number => {
 };
 const state = (s: string): number => {
   // A block's name alone is its default state (`dwell:sand` is `dwell:sand[flooded=false]`,
-  // `dwell:water` is `dwell:water[fill=8]`).
+  // `dwell:water` is `dwell:water[fill=8]`, `dwell:tall_grass` is `dwell:tall_grass[stage=3]`).
   const d = STATE_DEFS.find(
-    (x) => x.state === s || x.state === `${s}[flooded=false]` || x.state === `${s}[fill=8]`,
+    (x) =>
+      x.state === s ||
+      x.state === `${s}[flooded=false]` ||
+      x.state === `${s}[fill=8]` ||
+      x.state === `${s}[stage=3]`,
   );
   if (!d) throw new Error(`no state ${s}`);
   return d.id;
@@ -202,5 +206,42 @@ describe('sound events', () => {
     player.playAll([{ ...event('step', stone, gait('walk')), at: [1, 2, 3] }]);
     expect(pans).toEqual([undefined]);
     expect(ats.at(-1)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('sounds round 2b (AUDIO.md §5)', () => {
+  const ev = (name: string, block: number): SoundEvent => ({
+    kind: kind(name),
+    block,
+    intensity: 1,
+    at: [1, 2, 3],
+    gait: null,
+    voice: null,
+  });
+  const plays = (name: string, block: number): string[] =>
+    soundsFor(ev(name, block), SOUND_DATA).map((p) => p.sound);
+
+  it("lands a piece with its material's impact and a thud", () => {
+    expect(plays('piece_land', state('dwell:stone'))).toEqual([
+      'dwell:stone_impact',
+      'dwell:body_thud',
+    ]);
+    expect(plays('piece_land', state('dwell:log[axis=y,width=4]'))).toEqual([
+      'dwell:wood_impact',
+      'dwell:body_thud',
+    ]);
+    expect(plays('piece_land', state('dwell:dirt'))).toEqual([
+      'dwell:dirt_land',
+      'dwell:body_thud',
+    ]);
+  });
+
+  it('rustles foliage only, snaps a stick and lands a felled trunk', () => {
+    expect(plays('brush', state('dwell:leaves'))).toEqual(['dwell:leaf_brush']);
+    expect(plays('brush', state('dwell:tall_grass'))).toEqual(['dwell:leaf_brush']);
+    expect(plays('brush', state('dwell:sand'))).toEqual([]);
+    expect(plays('stick_snap', 0)).toEqual(['dwell:stick_snap']);
+    expect(plays('fell_land', 0)).toEqual(['dwell:fell_impact']);
+    expect(plays('fell', 0)).toEqual(['dwell:fell_crack']);
   });
 });

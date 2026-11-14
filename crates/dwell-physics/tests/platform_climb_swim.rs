@@ -4,6 +4,7 @@
 mod common;
 use common::*;
 use dwell_blocks::require;
+use dwell_physics::controller::State;
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DQuat, Vec3, controller::events as ev};
 
@@ -77,6 +78,49 @@ fn walking_on_a_moving_platform_is_relative_to_it() {
     w.step(ticks(0.8));
     assert!(approx(w.vel(e).x, 5.0, 0.02), "{:?}", w.vel(e));
     assert!(approx(w.vel(e).z, 3.0, 0.03), "{:?}", w.vel(e));
+}
+
+/// Standing still on a moving platform is standing still (owner, 2026-11-09: walking animations
+/// played while carried): the state is the motion relative to the ground carrying the player.
+#[test]
+fn standing_still_on_a_moving_platform_is_idle() {
+    let mut w = PlayerTestWorld::new();
+    w.boxed(
+        v(0.0, -0.5, 0.0),
+        v(10.0, 0.5, 10.0),
+        DQuat::IDENTITY,
+        v(0.0, 0.0, 3.0),
+        0.0,
+    );
+    let e = w.spawn(Vec3::ZERO);
+    w.step(ticks(0.8));
+    assert!(approx(w.vel(e).z, 3.0, 0.03), "carried: {:?}", w.vel(e));
+    assert_eq!(w.c(e).state, State::Idle);
+}
+
+/// Walking on a moving platform walks, with its motion or against it, even where the two cancel
+/// and the player stands still in the world.
+#[test]
+fn walking_on_a_moving_platform_walks_even_against_its_motion() {
+    for platform_x in [3.0, -5.0] {
+        let mut w = PlayerTestWorld::new();
+        w.boxed(
+            v(0.0, -0.5, 0.0),
+            v(10.0, 0.5, 10.0),
+            DQuat::IDENTITY,
+            v(platform_x, 0.0, 0.0),
+            0.0,
+        );
+        let e = w.spawn(Vec3::ZERO);
+        w.set_input(|_, _| mv(-1.0, 0.0)); // strafe left: +X at yaw 0, 5 m/s
+        w.step(ticks(0.8));
+        assert!(
+            approx(w.vel(e).x, 5.0 + platform_x, 0.05),
+            "{platform_x}: {:?}",
+            w.vel(e)
+        );
+        assert_eq!(w.c(e).state, State::Walking, "{platform_x}");
+    }
 }
 
 #[test]
@@ -664,5 +708,30 @@ fn a_swimmer_drifts_with_the_current_and_swims_in_the_waters_frame() {
     assert!(
         approx(with - own, 0.6, 0.1),
         "{with} with the current, {own} without"
+    );
+}
+
+/// Owner, 2026-11-09: "double the river current speeds generally". A river reach 1 m deep on a
+/// fall of 0.0005 runs 0.745 m/s by Manning's law; its current (`FlowData::river_speed`, what the
+/// server's water grid gives the untouched river) is twice that, so an idle swimmer in it is
+/// carried about 1.49 m a second. Red before: ~0.75 m. Face B by the mirror suite
+/// (`DWELL_FACE=b`).
+#[test]
+fn a_swimmer_in_a_river_drifts_at_twice_its_law() {
+    let law = 0.0005f64.sqrt() / 0.03;
+    let current = dwell_world::flow::FLOW.river_speed(0.0005, 0.0, 1.0) as f32;
+    let mut w = PlayerTestWorld::new();
+    pool(&mut w);
+    pool_current(&mut w, 0.0, current);
+    let e = w.spawn(v(0.5, -1.2, 1.0));
+    w.set_input(move |_, _| look(0.0, 0.0, 0.0, 0.0));
+    w.step(ticks(1.0));
+    assert!(w.c(e).swim.swimming);
+    let z = w.pos(e).z;
+    w.step(ticks(1.0));
+    let carried = w.pos(e).z - z;
+    assert!(
+        approx(carried, 2.0 * law as f32, 0.15),
+        "carried {carried} m in a second in a {current} m/s current (the law's {law})"
     );
 }

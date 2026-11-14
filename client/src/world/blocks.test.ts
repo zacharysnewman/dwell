@@ -100,9 +100,10 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
     // torch, Phase 47, after the stored ramps, placed at their own slots; the bedrock between the
     // faces after it, 2026-10-21; the snowy grass, its ramp and the snowy leaves of the world map,
     // generator 21, after that; the build platform of built bodies, 2026-11-02, after those; the
-    // running water of the water flow, 2026-11-03; dynamite and its lit state, 2026-11-06, last).
+    // running water of the water flow, 2026-11-03; dynamite and its lit state, 2026-11-06; the
+    // felling wedge's wood ramp, 0.51.0; snow and glacier ice with their ramps, 0.52.45; red sandstone and its ramp, 0.52.66; basalt and obsidian, lava V1; lava; the species' saplings, ADR 0079 S4; the moon's dust and its maria's darker dust; red sand and the ramps of basalt, obsidian, the moon's dusts and red sand, 0.59.0; red dirt, its ramp and sagebrush's brush, 0.64, last).
     expect(data.blocks.findIndex((b) => b.name === 'sandbox_floor')).toBe(7);
-    expect(data.blocks.map((b) => b.name).slice(-14)).toEqual([
+    expect(data.blocks.map((b) => b.name).slice(-40)).toEqual([
       'torch',
       'torch_upper',
       'bedrock',
@@ -117,8 +118,36 @@ describe('block registry (docs/BLOCK_REGISTRY.md)', () => {
       'lit_dynamite_blue',
       'dynamite_green',
       'lit_dynamite_green',
+      'dynamite_yellow',
+      'lit_dynamite_yellow',
+      'log_ramp',
+      'snow',
+      'snow_ramp',
+      'glacier_ice',
+      'glacier_ice_ramp',
+      'red_sandstone',
+      'red_sandstone_ramp',
+      'basalt',
+      'obsidian',
+      'lava',
+      'oak_sapling',
+      'pine_sapling',
+      'palm_sapling',
+      'moon_dust',
+      'moon_mare_dust',
+      'red_sand',
+      'basalt_ramp',
+      'obsidian_ramp',
+      'moon_dust_ramp',
+      'moon_mare_dust_ramp',
+      'red_sand_ramp',
+      'red_dirt',
+      'red_dirt_ramp',
+      'brush',
     ]);
-    expect(STATE_DEFS.at(-1)?.state).toBe('dwell:lit_dynamite_green');
+    expect(STATE_DEFS.at(-1)?.state).toBe(
+      'dwell:brush[flooded=true]',
+    );
     const floor = STATE_DEFS[stateId('dwell:sandbox_floor')];
     expect(floor).toMatchObject({ look: 'cube', color: 0xffffff, placeable: false });
     expect(floor?.textures).toEqual({ top: 'grid', side: 'grid', bottom: 'grid' });

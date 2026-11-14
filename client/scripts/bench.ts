@@ -9,29 +9,55 @@
 //   --swiftshader    software WebGPU (no GPU: CI, Linux sandboxes); default is Chrome on the GPU
 //   --unthrottled    no vsync or frame-rate cap: frame intervals show the frame's real cost
 //   --file FILE      another scenarios file
+//   --cpu-throttle N slow the page's CPU N× (CDP Emulation.setCPUThrottlingRate): a phone-like CPU
+//   --touch          a touch device (coarse pointer, touch events): the phone's touch UI
 //   --compare        each scenario once per configuration, compared (scripts/compare.ts)
 //   --configs A,B    with --compare: these configurations (and the baseline) only
 //   --configs-file F with --compare: another configurations file (default bench/configs.json)
+//   --spot NAME      shoot a saved spot (bench/spots.json, e.g. starter:broadleaf) in its own world
+//   --spots-file F   another spots file
+//   --warm           the warm prebuilt client (scripts/warmClient.ts): built only when its sources
+//                    changed, served by a long-lived preview on :4174
+//   --stall-s S      a load not playing within S s (60) is retried once in a fresh page
 // Build first: `npm run build:wasm && npm run build`. Per scenario, OUT/<name>/ gets report.json
 // (each `record` step: telemetry summary, raw frames, ticks, long tasks, state), the screenshots and
 // traces; a summary prints as it goes.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium, type Browser, type Page } from '@playwright/test';
+import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { CODEC, compare, decode, type ScenarioReport } from './compare.ts';
 import { flickerOf, type Flicker } from './compareReport.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
+  buildPage,
   parseScenarios,
   scenarioUrl,
+  spotScenario,
   scenarioView,
   timelapseTimes,
+  clipStripCamera,
+  clipStripSheet,
+  clipStripTimes,
+  swingClip,
+  overBudget,
   type Scenario,
   type Step,
   type Vec3,
 } from './scenarios.ts';
+import {
+  eyeOver,
+  findSpot,
+  groundRows,
+  OPEN_HEIGHT_M,
+  parseSpots,
+  spotParams,
+  type Placement,
+  type Spot,
+} from './spots.ts';
 import { viewStorage } from './views.ts';
+import { warmServe } from './warmClient.ts';
+import { CELL_HEIGHT } from '../src/protocol/constants.gen.ts';
 import type { GotoResult } from '../src/debug/find.ts';
 
 interface Options {
@@ -44,7 +70,21 @@ interface Options {
   compare: boolean;
   configs: string[];
   configsFile: string;
+  cpuThrottle: number;
+  touch: boolean;
+  /** Saved spots to shoot (`--spot NAME`, bench/spots.json), each in its own world. */
+  spots: string[];
+  spotsFile: string;
+  /** Use the warm prebuilt client (scripts/warmClient.ts) and its long-lived preview server. */
+  warm: boolean;
+  /** A load not playing within this many seconds is retried once in a fresh page. */
+  stallS: number;
 }
+
+/** The page emulation every scenario's context gets (`--cpu-throttle`, `--touch`). */
+const emulation = { cpuThrottle: 1, touch: false };
+/** The run's saved spots and the stall bar (`--spots-file`, `--stall-s`). */
+const runWide: { spots: Spot[]; stallS: number } = { spots: [], stallS: 60 };
 
 function options(argv: string[]): Options {
   const o: Options = {
@@ -57,6 +97,12 @@ function options(argv: string[]): Options {
     compare: false,
     configs: [],
     configsFile: 'bench/configs.json',
+    cpuThrottle: 1,
+    touch: false,
+    spots: [],
+    spotsFile: 'bench/spots.json',
+    warm: false,
+    stallS: 60,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -73,7 +119,17 @@ function options(argv: string[]): Options {
     else if (a === '--compare') o.compare = true;
     else if (a === '--configs') o.configs = value().split(',').filter(Boolean);
     else if (a === '--configs-file') o.configsFile = value();
-    else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
+    else if (a === '--cpu-throttle') {
+      o.cpuThrottle = Number(value());
+      if (!(o.cpuThrottle >= 1)) throw new Error('--cpu-throttle needs a number ≥ 1');
+    } else if (a === '--touch') o.touch = true;
+    else if (a === '--spot') o.spots.push(value());
+    else if (a === '--spots-file') o.spotsFile = value();
+    else if (a === '--warm') o.warm = true;
+    else if (a === '--stall-s') {
+      o.stallS = Number(value());
+      if (!(o.stallS >= 5)) throw new Error('--stall-s needs a number of seconds ≥ 5');
+    } else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.names.push(a);
   }
   return o;
@@ -89,8 +145,9 @@ async function reachable(url: string): Promise<boolean> {
 
 /** A served build: `--base`, one already on :4173, or `vite preview` started for the run. */
 async function serve(base: string | null): Promise<{ url: string; server: ChildProcess | null }> {
-  // The server's root; a base given with the build's path (`…/dwell/`) works too.
-  if (base) return { url: base.replace(/\/$/, '').replace(/\/dwell$/, ''), server: null };
+  // The server's root, or a build's path (`…/dwell/`, a release's `…/dwell/v/<version>/`):
+  // `buildPage` opens either.
+  if (base) return { url: base.replace(/\/+$/, ''), server: null };
   const url = 'http://localhost:4173';
   if (await reachable(`${url}/dwell/`)) return { url, server: null };
   const server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort'], {
@@ -164,6 +221,18 @@ const LONG_TASKS = `
       for (const e of list.getEntries()) globalThis.__benchLongTasks.push([e.startTime, e.duration]);
     }).observe({ type: 'longtask', buffered: true });
   } catch {}
+  // The page's frame gaps over 100 ms in its first 30 s ([startMs, ms]): a screen that did not
+  // repaint (the main thread held, or the browser's compositor waiting on the GPU process).
+  globalThis.__benchFrameGaps = [];
+  try {
+    let last = null;
+    const tick = (t) => {
+      if (last !== null && t - last > 100) globalThis.__benchFrameGaps.push([last, t - last]);
+      last = t;
+      if (t < 30000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch {}
 `;
 
 interface Telemetry {
@@ -206,6 +275,128 @@ interface Run {
   camera?: { position: [number, number, number]; yaw: number; pitch: number };
   /** Each `goto` step's result (`__dwell.goto`): what it found and where it put the camera. */
   gotos: GotoResult[];
+  /** The saved spots (bench/spots.json) a `spot` step names. */
+  spots: Spot[];
+  /** Each placed `shot`'s camera and how long its view took to settle. */
+  shots: ShotResult[];
+  /** Each `flyTo` step's trip (`__dwell.flyTo`: debug/moonTrip.ts `MoonTrip`, `HomeTrip`) and
+   * each `moonLand`'s (`MoonLanding` with the frame's `calls`, `triangles`, `meshBytes`). */
+  trips: Record<string, unknown>[];
+}
+
+interface ShotResult {
+  name: string;
+  eye: Vec3;
+  yaw: number;
+  pitch: number;
+  face: 'a' | 'b';
+  /** The ground's top under an `above` shot (m), or null. */
+  groundY: number | null;
+  /** Seconds from the step's start to the shot; `settled` false: shot at `maxS` regardless. */
+  s: number;
+  settled: boolean;
+}
+
+/** The top of the ground's column at x, z on `face` among the loaded chunks (m), or null. */
+async function groundAt(page: Page, x: number, z: number, face: 'a' | 'b'): Promise<number | null> {
+  const rows = groundRows(face, GROUND_SCAN_M, CELL_HEIGHT);
+  const row = await call<number | null>(
+    page,
+    `(() => { const rows = ${JSON.stringify(rows)}; for (const r of rows) if (d.voxel(${String(Math.floor(x))}, r, ${String(Math.floor(z))}) !== 0) return r; return null; })()`,
+  );
+  return row === null ? null : eyeOver(face, row, CELL_HEIGHT, 0);
+}
+/** How far from the midplane an `above` shot looks for the ground (m). */
+const GROUND_SCAN_M = 1200;
+
+/**
+ * A placed shot: flies the player to the place (so its full-detail chunks stream), finds the
+ * ground under an `above` placement (descending until its chunks hold it), places the camera
+ * exactly, waits for the view to settle — the LOD with nothing to generate, mesh or ask for,
+ * nothing waiting in view and the chunks meshed, for 1 s, then `quietFrames` frames — and shoots.
+ */
+async function placedShot(
+  run: Run,
+  name: string,
+  p: Placement,
+  quietFrames: number,
+  maxS: number,
+): Promise<void> {
+  const { page } = run;
+  const start = Date.now();
+  const up = p.face === 'b' ? -1 : 1;
+  const [x, z] = p.at ? [p.at[0], p.at[2]] : [p.above[0], p.above[1]];
+  await call(page, 'd.fly(true)');
+  let eyeY: number;
+  let groundY: number | null = null;
+  if (p.at) {
+    eyeY = p.at[1];
+    await call(page, `d.teleport(${JSON.stringify([x, eyeY - 1.6 * up, z])})`);
+  } else {
+    const feet = (await call<Vec3 | null>(page, 'd.state()?.feet ?? null')) ?? [
+      x,
+      OPEN_HEIGHT_M * up,
+      z,
+    ];
+    // Over the spot at the feet's height (or the open height if far below it), then down a
+    // chunk's worth at a time until the column's ground has streamed in.
+    let y = Math.abs(feet[0] - x) + Math.abs(feet[2] - z) < 2 ? feet[1] : OPEN_HEIGHT_M * up;
+    await call(page, `d.teleport(${JSON.stringify([x, y, z])})`);
+    while (Date.now() - start < maxS * 1000) {
+      await page.waitForTimeout(1000);
+      groundY = await groundAt(page, x, z, p.face);
+      if (groundY !== null) break;
+      if (y * up > 32) {
+        y -= 48 * up;
+        await call(page, `d.teleport(${JSON.stringify([x, y, z])})`);
+      }
+    }
+    if (groundY === null)
+      throw new Error(`shot ${name}: no ground under ${f(x)}, ${f(z)} on face ${p.face}`);
+    eyeY = groundY + p.above[2] * up;
+    const feetY = up > 0 ? Math.max(eyeY - 1.6, groundY) : Math.min(eyeY + 1.6, groundY);
+    await call(page, `d.teleport(${JSON.stringify([x, feetY, z])})`);
+  }
+  const eye: Vec3 = [x, eyeY, z];
+  await until(
+    page,
+    `d.placeCamera(${JSON.stringify(eye)}, ${String(p.yaw)}, ${String(p.pitch)})`,
+    30_000,
+  );
+  run.camera = { position: eye, yaw: p.yaw, pitch: p.pitch };
+  let quiet: number | null = null;
+  let settled = false;
+  while (Date.now() - start < maxS * 1000) {
+    const st = await call<{
+      lod?: { generating: number; meshing: number; asking: number; waitingInView: number };
+      terrain?: { dirty: number; meshing: number };
+    } | null>(page, 'd.state()');
+    const lod = st?.lod;
+    const t = st?.terrain;
+    const idle =
+      !!lod &&
+      lod.generating === 0 &&
+      lod.meshing === 0 &&
+      lod.asking === 0 &&
+      lod.waitingInView === 0 &&
+      (!t || t.dirty + t.meshing === 0);
+    const now = Date.now();
+    quiet = idle ? (quiet ?? now) : null;
+    if (quiet !== null && now - quiet >= 1000) {
+      settled = true;
+      break;
+    }
+    await page.waitForTimeout(100);
+  }
+  await page.evaluate(
+    `new Promise((done) => { let n = ${String(quietFrames)}; const tick = () => (n-- <= 0 ? done(null) : requestAnimationFrame(tick)); tick(); })`,
+  );
+  await page.screenshot({ path: join(run.dir, `${name}.png`) });
+  const s = (Date.now() - start) / 1000;
+  run.shots.push({ name, eye, yaw: p.yaw, pitch: p.pitch, face: p.face, groundY, s, settled });
+  console.log(
+    `  shot ${name}: eye [${eye.map((c) => f(c)).join(', ')}] yaw ${f(p.yaw)} pitch ${f(p.pitch)}${groundY === null ? '' : ` (${f(p.above?.[2] ?? 0)} m over the ground at ${f(groundY)})`}, ${settled ? 'settled' : 'NOT settled'} in ${f(s)} s`,
+  );
 }
 
 /** The local server's figures (`__dwell.serverStats`, a second each) for `seconds`, saved as `name`. */
@@ -240,7 +431,7 @@ async function serverSamples(run: Run, name: string, seconds: number): Promise<v
   );
 }
 
-async function record(run: Run, name: string): Promise<void> {
+async function record(run: Run, name: string): Promise<Telemetry> {
   const { page } = run;
   const data = await call<{
     telemetry: Telemetry;
@@ -261,6 +452,7 @@ async function record(run: Run, name: string): Promise<void> {
   );
   run.records[name] = { ...data, longTasks, seconds: (data.now - run.markMs) / 1000 };
   summarise(name, data.telemetry, longTasks, (data.now - run.markMs) / 1000);
+  return data.telemetry;
 }
 
 const f = (v: number, digits = 2): string => v.toFixed(v < 10 ? digits : 1);
@@ -305,7 +497,7 @@ function summarise(name: string, t: Telemetry, longTasks: number[][], seconds: n
     );
   }
   for (const [k, s] of Object.entries(t.samples)) {
-    if (s && k.startsWith('gpu.')) {
+    if (s && (k.startsWith('gpu.') || k === 'pacing.done')) {
       console.log(
         `    ${k.padEnd(22)} n ${String(s.n).padStart(5)}  ms mean ${f(s.mean)} p50 ${f(s.p50)} p95 ${f(s.p95)} p99 ${f(s.p99)}`,
       );
@@ -334,6 +526,65 @@ const DAY_LENGTH_S = ((c: { dayS: number; nightS: number }) => c.dayS + c.nightS
  * of day runs on from it at the world clock's rate, set every animation frame (the bench holds it
  * still otherwise), so the light moves between the frames as it does in play.
  */
+/** One swing frame by frame, from each view, and a contact sheet (docs/DEV_TOOLS.md "Clip strip"). */
+async function clipStrip(run: Run, s: Extract<Step, { do: 'clip-strip' }>): Promise<void> {
+  const { page } = run;
+  const characters = JSON.parse(
+    readFileSync(new URL('../../shared/characters/characters.json', import.meta.url), 'utf8'),
+  ) as unknown;
+  const { clip, duration } = swingClip(characters, s.vertical);
+  const times = clipStripTimes(duration, s.frames);
+  const [ax, ay, az] = s.at;
+  // A stand-in holding your tool, 4 m ahead of `at` (puppet 0 stands at x − 10, z + 4).
+  const feet = await call<Vec3>(page, 'd.state().feet');
+  const origin: Vec3 = [feet[0] + ax + 10, feet[1] + ay, feet[2] + az];
+  const standIn: Vec3 = [origin[0] - 10, origin[1], origin[2] + 4];
+  const third = s.views.some((v) => v !== 'fp');
+  if (third) {
+    await call(page, `d.puppets(1, ${JSON.stringify(origin)}, ${String(run.up)}, 65535)`);
+  }
+  const frame = (): Promise<unknown> =>
+    page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  const rows: { view: string; frames: { t: number; src: string }[] }[] = s.views.map((view) => ({
+    view,
+    frames: [],
+  }));
+  const width = Math.max(2, String(times.length - 1).length);
+  try {
+    for (const [i, t] of times.entries()) {
+      await call(page, `d.holdSwing(${String(s.vertical)}, ${String(t)})`);
+      for (const [k, view] of s.views.entries()) {
+        if (view === 'fp') await call(page, 'd.releaseCamera()');
+        else {
+          const c = clipStripCamera(view, standIn, run.up);
+          await call(
+            page,
+            `d.placeCamera(${JSON.stringify(c.position)}, ${String(c.yaw)}, ${String(c.pitch)})`,
+          );
+        }
+        await frame();
+        await frame();
+        const path = join(run.dir, `${s.name}-${view}-${String(i).padStart(width, '0')}.png`);
+        const png = await page.screenshot({ path });
+        rows[k]?.frames.push({ t, src: `data:image/png;base64,${png.toString('base64')}` });
+      }
+    }
+  } finally {
+    await call(page, 'd.holdSwing(false, -1)');
+    if (third) await call(page, 'd.puppets(0, [0, 0, 0], 1, 0)');
+    await call(page, 'd.releaseCamera()');
+    run.camera = undefined;
+  }
+  const sheet = await run.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  try {
+    await sheet.setContent(clipStripSheet(`${s.name}: ${clip}, ${String(s.frames)} frames`, rows));
+    await sheet.screenshot({ path: join(run.dir, `${s.name}-sheet.png`), fullPage: true });
+  } finally {
+    await sheet.close();
+  }
+  console.log(`  clip-strip ${s.name}: ${clip} at ${times.map((t) => t.toFixed(2)).join(', ')} s`);
+}
+
 async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void> {
   const { page } = run;
   if (s.clock !== undefined) {
@@ -453,6 +704,29 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'releaseCamera':
       await call(page, 'd.releaseCamera()');
       return;
+    case 'creatureCamera': {
+      // The nearest creature to the feet, seen from 6 m off its side, 2.5 m up, looking at it.
+      const at = await call<number[] | null>(
+        page,
+        `(() => { const f = d.state().feet; const cs = d.creatures(); if (!cs.length) return null; cs.sort((a, b) => Math.hypot(a.x - f[0], a.z - f[2]) - Math.hypot(b.x - f[0], b.z - f[2])); const c = cs[0]; return [c.x, c.y, c.z, cs.length]; })()`,
+      );
+      if (!at) throw new Error('creatureCamera: no creature drawn');
+      const [cx, cy, cz, n] = at as [number, number, number, number];
+      const up = run.up;
+      const position: [number, number, number] = [cx - 4, cy + 2.5 * up, cz - 4.5];
+      const yaw = (Math.atan2(cx - position[0], cz - position[2]) * 180) / Math.PI;
+      const pitch = -20;
+      await until(
+        page,
+        `d.placeCamera(${JSON.stringify(position)}, ${String(yaw)}, ${String(pitch)})`,
+        30_000,
+      );
+      run.camera = { position, yaw, pitch };
+      console.log(
+        `  creatureCamera: ${String(n)} creatures, nearest at ${[cx, cy, cz].map((v) => f(v)).join(', ')}`,
+      );
+      return;
+    }
     case 'goto': {
       const find = s.find;
       const options = Object.fromEntries(
@@ -475,6 +749,10 @@ async function step(run: Run, s: Step): Promise<void> {
     case 'shadows':
       await call(page, `d.setShadows(${JSON.stringify(s.quality)})`);
       return;
+    case 'view': {
+      await call(page, `d.setView(${JSON.stringify({ ...s, do: undefined })})`);
+      return;
+    }
     case 'water':
       await call(
         page,
@@ -486,6 +764,11 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     case 'select':
       await call(page, `d.select(${String(s.slot)})`);
+      return;
+    case 'pick':
+      if ((await call<boolean | null>(page, `d.pick(${JSON.stringify(s.item)})`)) !== true) {
+        throw new Error(`pick: ${s.item} is not a creative item here`);
+      }
       return;
     case 'brush':
       await call(page, `d.brush(${JSON.stringify(s.command)})`);
@@ -516,6 +799,15 @@ async function step(run: Run, s: Step): Promise<void> {
         page,
         `(() => { const f = d.state().feet; return d.puppets(${String(s.count)}, [f[0] + ${String(x)}, f[1] + ${String(y)}, f[2] + ${String(z)}], ${String(s.face ?? 1)}, ${held}); })()`,
       );
+      return;
+    }
+    case 'npcs': {
+      const r = await call<string | null>(
+        page,
+        `d.spawnNpcs(${String(s.count)}, ${String(s.radius ?? 3)})`,
+      );
+      if (r === null) throw new Error('npcs: not a local world');
+      console.log(`  npcs: ${r}`);
       return;
     }
     case 'settle': {
@@ -560,6 +852,175 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'probe': {
+      const feet = await call<[number, number, number]>(page, 'd.state().feet');
+      const points = s.at.flatMap((p) => [feet[0] + p[0], feet[1] + p[1], feet[2] + p[2]]);
+      await call(page, `d.setProbe(${JSON.stringify(points)})`);
+      console.log(`  probe: ${JSON.stringify(points)}`);
+      return;
+    }
+    case 'carry': {
+      const ok = await call<boolean | null>(
+        page,
+        `d.carry(${String(s.speed)}, ${String(s.yaw)}, ${String(s.s)}, ${String(s.lift ?? 1)})`,
+      );
+      if (ok !== true) throw new Error('carry: not a local world');
+      await page.waitForTimeout(s.s * 1000);
+      return;
+    }
+    case 'lava': {
+      const r = await call<string | null>(
+        page,
+        `d.lava(${JSON.stringify(s.op)}, ${JSON.stringify(s.args)})`,
+      );
+      if (r === null) throw new Error('lava: not a local world');
+      console.log(`  lava ${s.op}: ${r}`);
+      if (r.includes('"error"')) throw new Error(`lava ${s.op}: ${r}`);
+      return;
+    }
+    case 'herd': {
+      const kind = s.kind === undefined ? 'undefined' : JSON.stringify(s.kind);
+      const list = await call<
+        { species: string; distance: number; bearing: number; size: number }[]
+      >(page, `d.herds(${kind})`);
+      console.log(
+        `  herds: ${String(list.length)} on this face; nearest ${list
+          .slice(0, 3)
+          .map(
+            (h) =>
+              `${h.species} ×${h.size.toFixed(0)} ${h.distance.toFixed(0)} m at ${h.bearing.toFixed(0)}°`,
+          )
+          .join(', ')}`,
+      );
+      const r = await call<string | null>(page, `d.goToHerd(${kind}, ${String(s.back ?? 40)})`);
+      if (r === null) throw new Error('herd: not a local world');
+      console.log(`  goToHerd: ${r}`);
+      if (r === 'null' || r.includes('"error"')) throw new Error(`herd: ${r}`);
+      await page.waitForTimeout(500);
+      return;
+    }
+    case 'flyTo': {
+      const options = Object.fromEntries(
+        Object.entries(s).filter(([k]) => k !== 'do' && k !== 'to'),
+      );
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.flyTo(${JSON.stringify(s.to)}, ${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`flyTo ${s.to}: ${r?.error ?? 'not playing'}`);
+      run.trips.push(r.ok);
+      const n = (k: string): string => (typeof r.ok?.[k] === 'number' ? f(r.ok[k]) : '–');
+      console.log(
+        s.to === 'moon'
+          ? `  flyTo moon: captured after ${n('captureS')} s, down in ${n('descentS')} s, landed in ${n('landS')} s; fell at ${n('fallMps2')} m/s² (the moon's ${n('gravity')})`
+          : `  flyTo home: released after ${n('releaseS')} s, home's ground back in ${n('returnS')} s`,
+      );
+      return;
+    }
+    case 'flyAtMoon': {
+      // As a player flies there (BUGS.md #155): real held keys, the look kept on the moon.
+      type M = {
+        grid: string;
+        distance: number;
+        look: { yaw: number; pitch: number };
+        upMps: number;
+        feet: number[];
+      };
+      const moon = (): Promise<M | null> => call<M | null>(page, 'd.moon()');
+      const snaps = (): Promise<number> => call<number>(page, 'd.state()?.stats?.snaps ?? 0');
+      await call(page, 'd.fly(true)');
+      await call(page, 'd.flySpeed(11)');
+      const m0 = await moon();
+      if (!m0) throw new Error('flyAtMoon: no moon report');
+      await call(page, `d.look(${String(m0.look.yaw)}, ${String(m0.look.pitch)})`);
+      const snaps0 = await snaps();
+      const maxS = s.maxS ?? 120;
+      const every = s.shotEveryS ?? 10;
+      const t0 = Date.now();
+      let nextShot = 0;
+      let shot = 0;
+      let last = m0;
+      let lastT = 0;
+      let capturedS: number | null = null;
+      await call(page, `d.press('KeyW', true)`);
+      if (s.run) await call(page, `d.press('ShiftLeft', true)`);
+      try {
+        for (;;) {
+          const t = (Date.now() - t0) / 1000;
+          const m = await moon();
+          if (!m) throw new Error('flyAtMoon: the moon report went away');
+          if (m.grid === 'moon') {
+            capturedS = t;
+            break;
+          }
+          if (t > maxS) break;
+          await call(page, `d.look(${String(m.look.yaw)}, ${String(m.look.pitch)})`);
+          const closing = t > lastT ? (last.distance - m.distance) / (t - lastT) : 0;
+          if (t >= nextShot) {
+            console.log(
+              `  t ${f(t)} s: ${f(m.distance / 1000)} km to go, look (${f(m.look.yaw)}, ${f(m.look.pitch)}), closing ${f(closing)} m/s, up ${f(m.upMps)} m/s, snaps ${String((await snaps()) - snaps0)}`,
+            );
+            await page.screenshot({
+              path: join(run.dir, `${s.name}-${String(shot).padStart(2, '0')}.png`),
+            });
+            shot += 1;
+            nextShot += every;
+          }
+          last = m;
+          lastT = t;
+          await page.waitForTimeout(500);
+        }
+      } finally {
+        await call(page, `d.press('KeyW', false)`);
+        if (s.run) await call(page, `d.press('ShiftLeft', false)`);
+      }
+      const snapped = (await snaps()) - snaps0;
+      await page.screenshot({ path: join(run.dir, `${s.name}-end.png`) });
+      run.trips.push({ flyAtMoon: s.name, capturedS, snaps: snapped, fromM: m0.distance });
+      console.log(
+        `  flyAtMoon ${s.name}: ${capturedS === null ? `NOT captured in ${f(maxS)} s` : `captured after ${f(capturedS)} s`}, ${String(snapped)} snaps`,
+      );
+      if (capturedS === null) throw new Error(`flyAtMoon: not captured in ${f(maxS)} s`);
+      return;
+    }
+    case 'moonLand':
+    case 'sunLand': {
+      const options = {
+        ...(s.face ? { face: s.face } : {}),
+        ...(s.do === 'sunLand' && s.river ? { river: true } : {}),
+        ...(s.maxS ? { maxS: s.maxS } : {}),
+      };
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.${s.do}(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`${s.do}: ${r?.error ?? 'not playing'}`);
+      await sleep(page, s.waitS ?? 3);
+      const stats = await call<{ calls: number; triangles: number; meshBytes: number } | null>(
+        page,
+        'd.renderStats()',
+      );
+      const drawn = {
+        calls: stats?.calls ?? null,
+        triangles: stats?.triangles ?? null,
+        meshBytes: stats?.meshBytes ?? null,
+      };
+      run.trips.push({ ...r.ok, ...drawn });
+      const landS = typeof r.ok.landS === 'number' ? f(r.ok.landS) : '–';
+      console.log(
+        `  ${s.do}: on the ${s.do === 'sunLand' ? 'sun' : 'moon'}'s ground in ${landS} s; drawn: ${String(drawn.calls)} calls, ${String(drawn.triangles)} triangles, meshes ${String(drawn.meshBytes === null ? null : Math.round(drawn.meshBytes / 1e6))} MB`,
+      );
+      return;
+    }
+    case 'give': {
+      const ok = await call<boolean | null>(
+        page,
+        `d.give(${JSON.stringify(s.item)}, ${String(s.count)})`,
+      );
+      if (ok !== true) throw new Error('give: not a local world');
+      await page.waitForTimeout(300);
+      return;
+    }
     case 'die': {
       // The respawn's timeline (ARCHITECTURE.md §6.3): killed, the death screen (the respawn
       // preload streams the spawn meanwhile), the respawn, then playing behind the loading screen.
@@ -590,17 +1051,48 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, 'd.telemetryReset()');
       run.markMs = await page.evaluate<number>('performance.now()');
       return;
-    case 'record':
-      return record(run, s.name);
-    case 'shot':
-      await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
+    case 'record': {
+      const t = await record(run, s.name);
+      const over = s.budget ? overBudget(t.frames, s.budget, t.samples) : [];
+      if (over.length > 0) {
+        const tag = s.reportOnly ? 'OVER BUDGET (report only)' : 'OVER BUDGET';
+        for (const o of over) console.log(`    ${tag} [${s.name}] ${o}`);
+        if (!s.reportOnly) throw new Error(`record ${s.name} over its budget: ${over.join('; ')}`);
+      } else if (s.budget) {
+        console.log(`    within budget [${s.name}]`);
+      }
       return;
+    }
+    case 'shot':
+      if (s.place) await placedShot(run, s.name, s.place, s.quietFrames, s.maxS);
+      else await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
+      return;
+    case 'spot': {
+      const spot = findSpot(run.spots, s.spot);
+      await placedShot(run, s.name, spot.place, 30, 90);
+      return;
+    }
     case 'time':
       await call(
         page,
         `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
       );
       return;
+    case 'theater': {
+      // Load (a path, or a preset expanded around its subject) and play; wait for the end.
+      const path =
+        s.path ??
+        (await call<unknown>(
+          page,
+          `d.theater('preset', ${JSON.stringify({ name: s.preset, params: s.params ?? {}, subject: s.subject ?? 'player' })})`,
+        ));
+      await call(page, `d.theater('hud', ${JSON.stringify({ shown: s.hud })})`);
+      await call(page, `d.theater('play', ${JSON.stringify({ path })})`);
+      if (s.wait) {
+        await until(page, `d.theater('state', {})?.finished === true`, 3_600_000);
+      }
+      return;
+    }
     case 'waterDebug':
       await call(page, `d.waterDebug(${JSON.stringify(s.names)})`);
       return;
@@ -617,6 +1109,8 @@ async function step(run: Run, s: Step): Promise<void> {
     }
     case 'burst':
       return burst(run, s);
+    case 'clip-strip':
+      return clipStrip(run, s);
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,
@@ -670,16 +1164,27 @@ function formatStageTimes(stages: StageTime[]): string {
     .join(', ');
 }
 
-async function runScenario(
+/** A scenario's page, opened and playing; or, not playing within `stallS`, closed as stalled. */
+async function openPage(
   browser: Browser,
-  base: string,
-  dir: string,
   sc: Scenario,
-  params: Record<string, string> = {},
-): Promise<ScenarioReport> {
-  mkdirSync(dir, { recursive: true });
-  const context = await browser.newContext({ viewport: sc.window });
+  url: string,
+  stallS: number,
+): Promise<
+  | { context: BrowserContext; page: Page; errors: string[]; openedAt: number; gpu: unknown }
+  | { stalled: { stalledS: number; errors: string[] } }
+> {
+  const { pixelRatio, ...viewport } = sc.window;
+  const context = await browser.newContext({
+    viewport,
+    ...(pixelRatio === undefined ? {} : { deviceScaleFactor: pixelRatio }),
+    ...(emulation.touch ? { hasTouch: true, isMobile: true } : {}),
+  });
   const page = await context.newPage();
+  if (emulation.cpuThrottle > 1) {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: emulation.cpuThrottle });
+  }
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => {
@@ -693,7 +1198,6 @@ async function runScenario(
     // No music (docs/AUDIO.md §6a): its streaming and decoding are not what the bench measures.
     { ...viewStorage(scenarioView(sc)), 'dwell.music': '"off"' },
   );
-  const url = scenarioUrl(`${base}/dwell/`, sc, params);
   const openedAt = Date.now();
   await page.goto(url);
   const gpu = await page.evaluate<unknown>(`(async () => {
@@ -701,9 +1205,37 @@ async function runScenario(
     return a ? { ...a.info, vendor: a.info.vendor, architecture: a.info.architecture,
       device: a.info.device, description: a.info.description } : null;
   })()`);
-  if (!(await until(page, 'd.state()?.terrainReady === true', 120_000))) {
-    throw new Error(`${sc.name}: the game did not start (${errors.join('; ')})`);
+  if (!(await until(page, 'd.state()?.terrainReady === true', stallS * 1000))) {
+    await context.close();
+    return { stalled: { stalledS: (Date.now() - openedAt) / 1000, errors } };
   }
+  return { context, page, errors, openedAt, gpu };
+}
+
+async function runScenario(
+  browser: Browser,
+  base: string,
+  dir: string,
+  sc: Scenario,
+  params: Record<string, string> = {},
+): Promise<ScenarioReport> {
+  mkdirSync(dir, { recursive: true });
+  const url = scenarioUrl(buildPage(base), sc, params);
+  // A load that isn't playing within the stall bar (`--stall-s`) is retried once in a fresh page
+  // (fresh loads at far spots have stalled now and then); the report lists it in `stalls`.
+  const stalls: { stalledS: number; errors: string[] }[] = [];
+  let opened = await openPage(browser, sc, url, runWide.stallS);
+  if ('stalled' in opened) {
+    console.log(`  not playing after ${f(runWide.stallS)} s: retrying once in a fresh page`);
+    stalls.push(opened.stalled);
+    opened = await openPage(browser, sc, url, 120);
+    if ('stalled' in opened) {
+      throw new Error(
+        `${sc.name}: the game did not start, twice (${opened.stalled.errors.join('; ')})`,
+      );
+    }
+  }
+  const { context, page, errors, openedAt, gpu } = opened;
   // The join's timeline (ARCHITECTURE.md §6.3): page opened → playing, and the loading screen's
   // wait (its near ring drawn, or its timeout).
   const joined = {
@@ -713,8 +1245,33 @@ async function runScenario(
     stages: await page.evaluate<StageTime[]>(
       '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, beganMs: s.beganMs, endedMs: s.endedMs, firstMs: s.firstMs }))',
     ),
+    // The main thread's long tasks (> 50 ms) from the page's start to playing: [startMs, ms].
+    longTasks: await page.evaluate<number[][]>('globalThis.__benchLongTasks ?? []'),
+    frameGaps: await page.evaluate<number[][]>('globalThis.__benchFrameGaps ?? []'),
+    // The renderer's start, group by group (`dwell:create:<group>` marks, each at its group's end).
+    createMarks: await page.evaluate<[string, number][]>(
+      "performance.getEntriesByType('mark').filter((m) => m.name.startsWith('dwell:create:')).map((m) => [m.name.slice(13), m.startTime])",
+    ),
   };
   if (joined.stages.length) console.log(`  stages: ${formatStageTimes(joined.stages)}`);
+  if (joined.createMarks.length) {
+    // Each group's time since the one before (the first: since the graphics stage began).
+    const began = joined.stages.find((s) => s.id === 'graphics')?.beganMs ?? 0;
+    const steps = joined.createMarks.map(
+      ([n, t], i) => `${n} ${f(t - (i ? joined.createMarks[i - 1][1] : began))}`,
+    );
+    console.log(`  create (ms): ${steps.join(', ')}`);
+  }
+  if (joined.frameGaps.length) {
+    const gaps = joined.frameGaps.map(([t, ms]) => `${f(ms)} ms at ${f(t / 1000)} s`);
+    console.log(`  start's frame gaps > 100 ms: ${gaps.join(', ')}`);
+  }
+  if (joined.longTasks.length) {
+    const longest = joined.longTasks.reduce((a, b) => (b[1] > a[1] ? b : a));
+    console.log(
+      `  start's long tasks: ${String(joined.longTasks.length)}, longest ${f(longest[1])} ms at ${f(longest[0] / 1000)} s`,
+    );
+  }
   console.log(
     `  playing ${f(joined.playingS)} s after opening the page${typeof joined.loading?.openedS === 'number' ? ` (loading screen ${f(joined.loading.openedS)} s${joined.loading.timedOut ? ', timed out' : ''})` : ''}`,
   );
@@ -732,6 +1289,9 @@ async function runScenario(
     servers: {},
     up: sc.face === 'b' ? -1 : 1,
     gotos: [],
+    spots: runWide.spots,
+    shots: [],
+    trips: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -746,6 +1306,9 @@ async function runScenario(
     bursts: run.bursts,
     gotos: run.gotos,
     servers: run.servers,
+    shots: run.shots,
+    trips: run.trips,
+    stalls,
     url,
   };
   writeFileSync(join(dir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
@@ -756,6 +1319,8 @@ async function runScenario(
 
 async function main(): Promise<void> {
   const o = options(process.argv.slice(2));
+  emulation.cpuThrottle = o.cpuThrottle;
+  emulation.touch = o.touch;
   const all = parseScenarios(JSON.parse(readFileSync(o.file, 'utf8')) as unknown);
   const unknown = o.names.filter((n) => !all.some((s) => s.name === n));
   if (unknown.length) {
@@ -763,8 +1328,18 @@ async function main(): Promise<void> {
       `no scenario ${unknown.join(', ')} (have ${all.map((s) => s.name).join(', ')})`,
     );
   }
-  const chosen = o.names.length ? all.filter((s) => o.names.includes(s.name)) : all;
-  const { url, server } = await serve(o.base);
+  runWide.stallS = o.stallS;
+  runWide.spots = parseSpots(JSON.parse(readFileSync(o.spotsFile, 'utf8')) as unknown);
+  const spotRuns = o.spots.map((n) => {
+    const spot = findSpot(runWide.spots, n);
+    return { sc: spotScenario(spot), params: spotParams(spot) };
+  });
+  const chosen = o.names.length
+    ? all.filter((s) => o.names.includes(s.name))
+    : spotRuns.length
+      ? []
+      : all;
+  const { url, server } = o.warm ? await warmServe() : await serve(o.base);
   const browser = await launch(o);
   console.log(
     `bench: ${url} → ${o.out} (${o.swiftshader ? 'SwiftShader' : 'GPU'}${o.unthrottled ? ', unthrottled' : ''}${o.compare ? ', compare' : ''})`,
@@ -784,6 +1359,10 @@ async function main(): Promise<void> {
       for (const sc of chosen) {
         console.log(`${sc.name}: ${sc.notes}`);
         await runScenario(browser, url, join(o.out, sc.name), sc);
+      }
+      for (const { sc, params } of spotRuns) {
+        console.log(`${sc.name}: ${sc.notes}`);
+        await runScenario(browser, url, join(o.out, sc.name), sc, params);
       }
     }
   } finally {

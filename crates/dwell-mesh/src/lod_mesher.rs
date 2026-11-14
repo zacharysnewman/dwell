@@ -10,6 +10,7 @@
 //! As in the TS, arithmetic is in `f64` and the per-column tables that are `Float32Array`s there
 //! are `f32` here, so heights round the same way.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use dwell_blocks::{STATES, StateId};
@@ -23,6 +24,7 @@ use crate::textures::{
 };
 use dwell_look::face_tint;
 use dwell_look::lod_colour::LOD_COLOUR;
+use dwell_world::tree_tint::Tint;
 
 const N: i32 = SECTION_CELLS;
 const NU: usize = SECTION_CELLS as usize;
@@ -80,7 +82,7 @@ fn fill_of(m: StateId) -> f64 {
     dwell_blocks::try_info(m).map_or(1.0, |s| f64::from(s.fill).clamp(0.0, 1.0))
 }
 
-fn is_liquid(m: StateId) -> bool {
+pub(crate) fn is_liquid(m: StateId) -> bool {
     static LIQUID: OnceLock<Vec<bool>> = OnceLock::new();
     let table = LIQUID.get_or_init(|| {
         (0..STATES.len())
@@ -189,7 +191,7 @@ fn ramp_tint_ratio(axis: usize, sign: i32) -> [f64; 3] {
     std::array::from_fn(|i| ramp[i] / wall[i])
 }
 
-fn linear_rgb(color: u32, tint: [f64; 3]) -> [f32; 3] {
+pub(crate) fn linear_rgb(color: u32, tint: [f64; 3]) -> [f32; 3] {
     [
         (srgb_to_linear(((color >> 16) & 0xff) as u8) * tint[0]) as f32,
         (srgb_to_linear(((color >> 8) & 0xff) as u8) * tint[1]) as f32,
@@ -392,8 +394,39 @@ pub fn mesh_section(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
 ) -> Result<SectionMeshes, LengthError> {
+    mesh_section_tinted(cells, options, &[])
+}
+
+/// [`mesh_section`] with its trees' leaf tints (ADR 0079): (`lod::cell_index` of the cell in
+/// `cells`' own rows, the tint of the tree owning it), as the generator lists them
+/// (`BifacialTerrain::lod_tints`); a leaf cell not listed keeps its colour.
+pub fn mesh_section_tinted(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+    tints: &[(u32, Tint)],
+) -> Result<SectionMeshes, LengthError> {
+    mesh_section_trees(cells, options, tints, true)
+}
+
+/// [`mesh_section_tinted`], with its tree cells (leaves and logs, `lod_trees`) drawn or not:
+/// Graphics → Far trees (WORK_QUEUE item 30). Without them the section draws its ground alone.
+pub fn mesh_section_trees(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+    tints: &[(u32, Tint)],
+    trees: bool,
+) -> Result<SectionMeshes, LengthError> {
+    let map: HashMap<u32, Tint> = tints.iter().copied().collect();
+    let mirror = options.mirror;
+    // Meshed face-local: a mirrored section's row y is the listed row N − 1 − y.
+    let tint = move |x: i32, y: i32, z: i32| {
+        let y = if mirror { N - 1 - y } else { y };
+        map.get(&(dwell_world::lod::cell_index(x, y, z) as u32))
+            .copied()
+            .unwrap_or(Tint::NONE)
+    };
     let m = if options.mirror {
-        let m = mesh_section_above(&mirror_rows(cells), options)?;
+        let m = mesh_section_above(&mirror_rows(cells), options, &tint, trees)?;
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         let skirts = [s0, s1, s3, s2, s4, s5].map(flip_mesh_y);
         SectionMeshes {
@@ -402,7 +435,7 @@ pub fn mesh_section(
             skirts,
         }
     } else {
-        mesh_section_above(cells, options)?
+        mesh_section_above(cells, options, &tint, trees)?
     };
     Ok(SectionMeshes {
         opaque: mesh_to_metres(m.opaque),
@@ -420,6 +453,8 @@ fn col(x: i32, z: i32) -> usize {
 fn mesh_section_above(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
+    tint: &dyn Fn(i32, i32, i32) -> Tint,
+    trees: bool,
 ) -> Result<SectionMeshes, LengthError> {
     if cells.len() != LOD_VOLUME {
         return Err(LengthError {
@@ -427,6 +462,28 @@ fn mesh_section_above(
             got: cells.len(),
         });
     }
+    // The ground is meshed as if the section's trees weren't there (BUGS.md #95): a tree cell
+    // neither hides the ground's top under it nor holds the column's surface, so the ground is
+    // closed under every trunk and crown, whether the tree pass draws them (`lod_trees`, over the
+    // ground) or leaves them out (Far trees off, the impostors standing on it). Every tree cell
+    // was skipped by the ground pass already; the near chunks are meshed apart and unchanged.
+    let tree_cells = cells;
+    let ground: Vec<u16>;
+    let cells = if cells.iter().any(|&m| crate::lod_trees::tree_kind(m) != 0) {
+        ground = cells
+            .iter()
+            .map(|&m| {
+                if crate::lod_trees::tree_kind(m) != 0 {
+                    0
+                } else {
+                    m
+                }
+            })
+            .collect();
+        &ground[..]
+    } else {
+        cells
+    };
     let water_drop = options.water_drop;
     let mut opaque = Builder::default();
     let mut water_mesh = Builder::default();
@@ -594,6 +651,16 @@ fn mesh_section_above(
                 }
             }
         }
+    }
+    if trees {
+        // Leaves and logs are drawn whole as the chunks draw them, over the closed ground.
+        crate::lod_trees::tree_cells(
+            tree_cells,
+            |x, y, z| i32::from(special.y[col(x, z)]) == y,
+            lod_color,
+            &mut opaque.m,
+            tint,
+        );
     }
     emit_surfaces(
         cells,

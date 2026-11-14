@@ -30,6 +30,10 @@ pub trait Jobs {
     /// are done): the pool collects the result and starts the next queued job then, so a slow
     /// page's workers don't sit idle until its next frame.
     fn on_done(&mut self, _wake: Rc<dyn Fn()>) {}
+    /// Installs a retuned world's maps where the generation jobs run (Chisel in the game, Phase 56
+    /// B7): each generation worker installs them and makes its generator again. Inline jobs share
+    /// this instance's maps, so they need nothing.
+    fn install_maps(&mut self, _maps: &[Vec<u8>]) {}
 }
 
 /// Runs jobs on the calling thread when polled (tests, and a fallback without workers).
@@ -79,14 +83,34 @@ pub enum Purpose {
     Bounds(i32, i32, i32),
     Section(u64),
     SectionMesh(u64),
+    /// A grid LOD's jobs (`crate::grid_lod`), each with its instance's epoch.
+    GridBounds(u64, i32, i32, i32),
+    GridSection(u64, u64),
+    GridSectionMesh(u64, u64),
     /// The verification chunk's hash (§6.3).
     Verify,
     /// The F4 map.
     Map,
+    /// The big map's debug layer of a field on a face (`Job::Map`'s `layer`, REALISTIC_WORLD.md R6).
+    MapLayer(u8, u8),
     /// The F3 overlay's regenerate-and-diff of a chunk.
     Diff(Coord),
+    /// An edited chunk as generated, for the ground items' rules (ADR 0071).
+    Base(Coord),
     /// A strip of the LOD colour map (`crate::lod_map`).
     LodMap(crate::lod_map::TileJob),
+    /// A slab of the clouds' shape noise: the detail texture's (else the base's), from slice z0.
+    CloudNoise(bool, u32),
+    /// An impostor atlas layer's bake (`Job::ImpostorBake`).
+    ImpostorBake(u32),
+    /// A tile of far trees (`Job::FarTrees`): face (0 A, 1 B) and the tile's indices.
+    FarTrees(u8, i32, i32),
+    /// A tile of the big map (`crate::map_reveal`): face (0 A, 1 B), tile indices and its zoom
+    /// level's cell side (m).
+    Reveal(u8, i32, i32, i32),
+    /// A tile of generated colours for explored cells the terrain has not shown (ADR 0068):
+    /// face (0 A, 1 B) and tile indices, the same job as [`Purpose::Reveal`]'s.
+    ExploreTile(u8, i32, i32),
 }
 
 impl Purpose {
@@ -99,10 +123,22 @@ impl Purpose {
             Purpose::Bounds(..) => ("job.bounds.wait", "job.bounds.run"),
             Purpose::Section(..) => ("job.section.wait", "job.section.run"),
             Purpose::SectionMesh(..) => ("job.section_mesh.wait", "job.section_mesh.run"),
+            Purpose::GridBounds(..) => ("job.grid_bounds.wait", "job.grid_bounds.run"),
+            Purpose::GridSection(..) => ("job.grid_section.wait", "job.grid_section.run"),
+            Purpose::GridSectionMesh(..) => {
+                ("job.grid_section_mesh.wait", "job.grid_section_mesh.run")
+            }
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
+            Purpose::MapLayer(..) => ("job.map_layer.wait", "job.map_layer.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
+            Purpose::Base(..) => ("job.base.wait", "job.base.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
+            Purpose::CloudNoise(..) => ("job.cloud_noise.wait", "job.cloud_noise.run"),
+            Purpose::Reveal(..) => ("job.reveal.wait", "job.reveal.run"),
+            Purpose::ImpostorBake(..) => ("job.impostor_bake.wait", "job.impostor_bake.run"),
+            Purpose::FarTrees(..) => ("job.far_trees.wait", "job.far_trees.run"),
+            Purpose::ExploreTile(..) => ("job.explore_tile.wait", "job.explore_tile.run"),
         }
     }
 }
@@ -121,9 +157,52 @@ pub struct Pool {
     in_flight: [usize; 2],
     /// Results collected between frames ([`Jobs::on_done`]), for the next [`Self::poll`].
     ready: Vec<Done>,
+    /// Chunk meshes take their liquid tops (false while the scene draws the heightfield).
+    pub water_tops: bool,
+    /// Chunk meshes carry leaf cards (false on a CPU adapter, `Scene::draws_cards`).
+    pub cards: bool,
+    /// The share of cross plants chunk meshes carry, percent (Graphics → Tall grass,
+    /// `Scene::plant_percent`).
+    pub plants: u8,
+    /// LOD sections draw their trees (Graphics → Far trees, `Scene::draws_far_trees`).
+    pub trees: bool,
+    /// Where the player is (m; [`Self::set_focus`]): chunk jobs near it start first.
+    focus: Option<[f64; 3]>,
+    /// How many times the usual chunk meshes are in flight (`set_frame_ms`).
+    frame_scale: usize,
+}
+
+/// Chunk generations (and the ground items' bases) within this distance (m) of the focus start
+/// before every other queued generation job, nearest first; the rest, and every mesh job (the
+/// streamer starts its chunk meshes nearest first), start in the order they were queued. BUGS #54:
+/// on a long trip the chunks coming into the near ring waited seconds behind far chunks' and the
+/// LOD's generations queued first.
+pub const NEAR_JOBS_M: f64 = 128.0;
+
+/// A slow page's chunk meshes in flight grow with its frame interval, up to this many times the
+/// usual (`Pool::set_frame_ms`): the streamer starts its meshes in the frame and takes them in at
+/// the next, so at CI's ~5 fps (or a slow phone's) the usual few a frame left the workers idle most
+/// of each frame, and the loading screen waited its whole timeout for the near ring's level-1
+/// sections (their chunks beyond the ring included) to be meshed. The pool queues the extra and
+/// starts each as a worker frees, between frames.
+pub const SLOW_FRAME_MESHES_MAX: f64 = 8.0;
+/// The frame interval (ms) at which the usual number is in flight.
+const USUAL_FRAME_MS: f64 = 1000.0 / 60.0;
+
+/// How many times the usual chunk meshes a frame interval of `frame_ms` keeps in flight.
+pub fn slow_frame_scale(frame_ms: f64) -> usize {
+    let s = (frame_ms / USUAL_FRAME_MS).clamp(1.0, SLOW_FRAME_MESHES_MAX);
+    if s.is_finite() { s.floor() as usize } else { 1 }
 }
 
 pub type PoolRef = Rc<RefCell<Pool>>;
+
+impl Pool {
+    /// [`Jobs::install_maps`].
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.jobs.install_maps(maps);
+    }
+}
 
 impl Pool {
     pub fn new(jobs: Box<dyn Jobs>) -> PoolRef {
@@ -135,6 +214,12 @@ impl Pool {
             queued: Default::default(),
             in_flight: [0; 2],
             ready: Vec::new(),
+            water_tops: true,
+            cards: true,
+            plants: 100,
+            trees: true,
+            focus: None,
+            frame_scale: 1,
         }));
         let weak = Rc::downgrade(&pool);
         // A result between frames: collected, and the worker given the next queued job. Never
@@ -184,10 +269,49 @@ impl Pool {
         true
     }
 
+    /// Sets where the player is (m): queued chunk generations within [`NEAR_JOBS_M`] of it start
+    /// first, nearest first. None: every job in the order queued (the respawn preload, whose
+    /// second ring the streamer and the LOD order).
+    pub fn set_focus(&mut self, at: Option<[f64; 3]>) {
+        self.focus = at;
+    }
+
+    /// Sets the last frame's interval (ms): a slow page keeps more chunk meshes in flight
+    /// ([`SLOW_FRAME_MESHES_MAX`]).
+    pub fn set_frame_ms(&mut self, frame_ms: f64) {
+        self.frame_scale = slow_frame_scale(frame_ms);
+    }
+
+    /// The queued job of `kind` to start next: the chunk generation within [`NEAR_JOBS_M`] nearest
+    /// the focus, else the oldest.
+    fn next_of(&mut self, kind: usize) -> Option<(u32, Job)> {
+        let Some(f) = self.focus else {
+            return self.queued[kind].pop_front();
+        };
+        let q = &self.queued[kind];
+        let first = q
+            .iter()
+            .enumerate()
+            .filter_map(|(at, (id, _))| match self.purposes.get(id)?.0 {
+                Purpose::Chunk(c, _) | Purpose::Base(c) => {
+                    let m = dwell_world::chunk_centre_m(dwell_world::ChunkCoord::from_array(c));
+                    let d: f64 = (0..3).map(|i| (m[i] - f[i]).powi(2)).sum();
+                    (d <= NEAR_JOBS_M * NEAR_JOBS_M).then_some((d, at))
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, at)| at);
+        match first {
+            Some(at) => self.queued[kind].remove(at),
+            None => self.queued[kind].pop_front(),
+        }
+    }
+
     fn pump(&mut self) {
         for kind in 0..2 {
             while self.in_flight[kind] < self.jobs.capacity(kind == 1) {
-                let Some((id, job)) = self.queued[kind].pop_front() else {
+                let Some((id, job)) = self.next_of(kind) else {
                     break;
                 };
                 self.in_flight[kind] += 1;
@@ -228,6 +352,67 @@ impl Pool {
         self.jobs.memory()
     }
 
+    /// The pool for the streaming report (docs/DEV_TOOLS.md): per kind of job (`chunk`,
+    /// `chunk_mesh`, `section`, …) how many are queued and running, and the oldest one's age (ms,
+    /// from `now_ms`); the focus, the slow-frame scale and the workers' capacity.
+    pub fn report(&self, now_ms: f64) -> serde_json::Value {
+        use serde_json::json;
+        let mut kinds: std::collections::BTreeMap<&str, [f64; 3]> = Default::default();
+        let queued: std::collections::HashSet<u32> =
+            self.queued.iter().flatten().map(|(id, _)| *id).collect();
+        for (id, (purpose, _)) in &self.purposes {
+            let name = purpose.telemetry_names().0;
+            let name = name
+                .strip_prefix("job.")
+                .and_then(|n| n.strip_suffix(".wait"))
+                .unwrap_or(name);
+            let e = kinds.entry(name).or_default();
+            e[usize::from(!queued.contains(id))] += 1.0;
+            if let Some((at, _)) = self.times.get(id) {
+                e[2] = e[2].max(now_ms - at);
+            }
+        }
+        let queues: serde_json::Map<String, serde_json::Value> = kinds
+            .into_iter()
+            .map(|(k, [q, f, age])| {
+                (
+                    k.to_string(),
+                    json!({ "queued": q, "inFlight": f, "oldestMs": age.round() }),
+                )
+            })
+            .collect();
+        json!({
+            "queues": queues,
+            "queued": [self.queued[0].len(), self.queued[1].len()],
+            "inFlight": self.in_flight,
+            "capacity": [self.jobs.capacity(false), self.jobs.capacity(true)],
+            "focus": self.focus,
+            "nearJobsM": NEAR_JOBS_M,
+            "slowFrameScale": self.frame_scale,
+            "workers": self.jobs.memory().len(),
+        })
+    }
+
+    /// Where a chunk's generation (`mesh` false) or mesh job stands: Some((position in its queue,
+    /// or None once started, kind)) while the pool holds one.
+    pub fn chunk_job(&self, coord: Coord, mesh: bool) -> Option<Option<usize>> {
+        let is = |p: &Purpose| match p {
+            Purpose::Chunk(c, _) | Purpose::Base(c) => !mesh && *c == coord,
+            Purpose::ChunkMesh(c, _) => mesh && *c == coord,
+            _ => false,
+        };
+        let id = self
+            .purposes
+            .iter()
+            .find(|(_, (p, _))| is(p))
+            .map(|(id, _)| *id)?;
+        Some(
+            self.queued[usize::from(mesh)]
+                .iter()
+                .position(|(q, _)| *q == id),
+        )
+    }
+
     /// Jobs queued or running: generation, meshing.
     pub fn pending(&self) -> [usize; 2] {
         [
@@ -253,6 +438,14 @@ impl ChunkSource for ChunkJobs {
     fn cancel(&mut self, coord: Coord) -> bool {
         self.0.borrow_mut().cancel_chunk(coord)
     }
+    fn generate_base(&mut self, coord: Coord) {
+        self.0.borrow_mut().submit(
+            Purpose::Base(coord),
+            Job::Generate {
+                coord: dwell_world::ChunkCoord::from_array(coord),
+            },
+        );
+    }
 }
 
 /// The streamer's mesher.
@@ -262,10 +455,16 @@ pub struct MeshJobs(pub PoolRef);
 impl Mesher for MeshJobs {
     type Meshes = dwell_mesh::ChunkMeshes;
     fn capacity(&self) -> usize {
-        // Enough in flight to keep every worker busy while results travel back.
-        2 * self.0.borrow().capacity(true)
+        // Enough in flight to keep every worker busy while results travel back, and on a slow
+        // page through the frame (`SLOW_FRAME_MESHES_MAX`).
+        let pool = self.0.borrow();
+        2 * pool.capacity(true) * pool.frame_scale
     }
     fn mesh(&mut self, job: MeshJob) {
+        let (water_tops, cards, plants) = {
+            let p = self.0.borrow();
+            (p.water_tops, p.cards, p.plants)
+        };
         self.0.borrow_mut().submit(
             Purpose::ChunkMesh(job.coord, job.token),
             Job::MeshChunk {
@@ -273,6 +472,12 @@ impl Mesher for MeshJobs {
                 light: job.light,
                 mirror: job.mirror,
                 origin: job.coord.map(|c| c * dwell_world::CHUNK_SIZE),
+                cuts: job.cuts,
+                damage: job.damage,
+                ground: job.ground.map(|(seed, gone)| (seed, gone, job.generated)),
+                water_tops,
+                cards,
+                plants,
             },
         );
     }
@@ -293,6 +498,7 @@ impl dwell_lod::SectionSource for ChunkJobs {
 
 impl dwell_lod::SectionMesher for MeshJobs {
     fn mesh_section(&mut self, job: dwell_lod::LodMeshJob, token: u64) {
+        let trees = self.0.borrow().trees;
         self.0.borrow_mut().submit(
             Purpose::SectionMesh(token),
             Job::MeshSection {
@@ -300,6 +506,40 @@ impl dwell_lod::SectionMesher for MeshJobs {
                 surface: job.surface,
                 water_drop: job.water_drop,
                 mirror: job.mirror,
+                tints: job.tints,
+                trees,
+            },
+        );
+    }
+}
+
+/// A grid LOD's jobs in the pool (`crate::grid_lod`).
+pub struct GridPool(pub PoolRef);
+
+impl crate::grid_lod::GridJobs for GridPool {
+    fn bounds(&mut self, grid: u8, epoch: u64, level: i32, i: i32, k: i32) {
+        self.0.borrow_mut().submit(
+            Purpose::GridBounds(epoch, level, i, k),
+            Job::GridLodBounds { grid, level, i, k },
+        );
+    }
+    fn section(&mut self, grid: u8, epoch: u64, c: LodCoord, token: u64) {
+        self.0.borrow_mut().submit(
+            Purpose::GridSection(epoch, token),
+            Job::GridLod { grid, coord: c },
+        );
+    }
+    fn mesh(&mut self, epoch: u64, job: dwell_lod::LodMeshJob, token: u64) {
+        let trees = self.0.borrow().trees;
+        self.0.borrow_mut().submit(
+            Purpose::GridSectionMesh(epoch, token),
+            Job::MeshSection {
+                cells: job.cells,
+                surface: job.surface,
+                water_drop: job.water_drop,
+                mirror: job.mirror,
+                tints: job.tints,
+                trees,
             },
         );
     }
@@ -308,6 +548,16 @@ impl dwell_lod::SectionMesher for MeshJobs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_page_keeps_more_chunk_meshes_in_flight() {
+        assert_eq!(slow_frame_scale(8.3), 1);
+        assert_eq!(slow_frame_scale(16.7), 1);
+        assert_eq!(slow_frame_scale(40.0), 2);
+        assert_eq!(slow_frame_scale(200.0), 8, "CI's ~5 fps: the most");
+        assert_eq!(slow_frame_scale(1500.0), 8);
+        assert_eq!(slow_frame_scale(f64::NAN), 1);
+    }
 
     #[derive(Default)]
     struct Held {
@@ -415,6 +665,33 @@ mod tests {
             held.borrow().started,
             vec![1, 2],
             "the next queued job starts"
+        );
+    }
+
+    #[test]
+    fn near_chunk_jobs_start_before_older_far_and_lod_ones_nearest_first() {
+        // BUGS #54: FIFO queues left the chunks coming into the near ring behind far chunks' and
+        // the LOD's jobs queued first.
+        let held = Rc::new(RefCell::new(Held {
+            cap: 1,
+            ..Default::default()
+        }));
+        let pool = Pool::new(Box::new(held.clone()));
+        pool.borrow_mut().set_focus(Some([16.0, 8.0, 16.0]));
+        let mut source = ChunkJobs(pool.clone());
+        source.generate([0, 0, 0], 1); // id 1, started at once
+        dwell_lod::SectionSource::lod_bounds(&mut source, 1, 0, 0); // id 2
+        source.generate([40, 0, 0], 2); // id 3: past NEAR_JOBS_M
+        source.generate([2, 0, 0], 3); // id 4
+        source.generate([1, 0, 0], 4); // id 5
+        for id in 1..=4 {
+            finish(&held, id);
+        }
+        let started = held.borrow().started.clone();
+        assert_eq!(
+            started,
+            vec![1, 5, 4, 2, 3],
+            "near nearest first, then in order"
         );
     }
 }

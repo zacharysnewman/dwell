@@ -17,6 +17,12 @@ pub struct ExplosiveLimits {
     pub blasts_per_tick: u32,
     /// The most cells one blast flings (the nearest first).
     pub max_pieces: u32,
+    /// The most of the blasts' pieces spawned a tick; the rest wait, the nearest a blast first.
+    pub pieces_per_tick: u32,
+    /// The clients' most smoke and dust puffs at once, shared by the blasts in flight.
+    pub max_puffs: u32,
+    /// The least share of its puffs a blast draws, however many are in the air.
+    pub min_puff_share: f64,
 }
 
 /// The flash: a short point light and a fireball billboard.
@@ -42,6 +48,9 @@ pub struct PuffLook {
     pub rise_ms: f64,
     pub opacity: f64,
     pub speed_ms: [f64; 2],
+    /// How far (0–1, times the blast's openness) each puff's way out turns toward the open side
+    /// (`open_dir`): smoke follows the blast's direction; a buried blast's spreads evenly.
+    pub open_bias: f64,
 }
 
 /// The boom's loudness: full within `full_m`, gone at `hear_m`.
@@ -68,6 +77,82 @@ pub struct BlastEffects {
     pub dust: PuffLook,
     pub boom: BoomLook,
     pub shake: ShakeLook,
+}
+
+/// What a blast does to its shell (`shell` in the table; docs/EXPLOSIVES.md §3.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellRule {
+    /// Flung out as pieces, along the open side, those whose path meets rock staying (`launching`).
+    Fling,
+    /// Only the cells that touched open space (air, liquid) before the blast become pieces, given no
+    /// push: they crumble and fall; the rest stays (owner, 2026-11-07).
+    Crack,
+}
+
+/// Which of a `Crack` blast's shell cells crack (docs/EXPLOSIVES.md §3.6): each of `shell`'s cells
+/// (world cells) cracks if one of its six neighbours was open before the blast (`open`, read before
+/// any cell clears), or, with `over_cleared`, if its cell below (`down`, the face's down in cells)
+/// is one the core destroys (`destroyed`).
+/// Whether the straight line from the charge (offset `[0, 0, 0]`) to the cell at offset `to` passes
+/// through water (`is_water`, by offset) in any cell strictly between them: that cell is shielded by
+/// the water ([`ExplosiveData::water_shields`]). The line runs between cell centres in metres
+/// (rows are ½ m tall), sampled finely enough to visit every cell it crosses.
+pub fn behind_water(to: [i32; 3], mut is_water: impl FnMut([i32; 3]) -> bool) -> bool {
+    let m = [f64::from(to[0]), f64::from(to[1]) * 0.5, f64::from(to[2])];
+    let len = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt();
+    if len < 1e-9 {
+        return false;
+    }
+    // Four samples a cell's smallest side (½ m) along the line.
+    let steps = (len / 0.125).ceil() as i32;
+    let mut last = [0, 0, 0];
+    for i in 1..steps {
+        let t = f64::from(i) / f64::from(steps);
+        let c = [
+            (m[0] * t + 0.5).floor() as i32,
+            (m[1] * t / 0.5 + 0.5).floor() as i32,
+            (m[2] * t + 0.5).floor() as i32,
+        ];
+        if c == last || c == to || c == [0, 0, 0] {
+            continue;
+        }
+        last = c;
+        if is_water(c) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn cracking(
+    shell: &[[i32; 3]],
+    down: [i32; 3],
+    over_cleared: bool,
+    vertical_only: bool,
+    mut open: impl FnMut([i32; 3]) -> bool,
+    destroyed: impl Fn([i32; 3]) -> bool,
+) -> Vec<bool> {
+    const SIDES: [[i32; 3]; 6] = [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+    ];
+    shell
+        .iter()
+        .map(|&c| {
+            let at = |o: [i32; 3]| [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
+            let up = [-down[0], -down[1], -down[2]];
+            let open_side = if vertical_only {
+                open(at(up)) || open(at(down))
+            } else {
+                SIDES.iter().any(|&o| open(at(o)))
+            };
+            (over_cleared && destroyed(at(down))) || open_side
+        })
+        .collect()
 }
 
 /// An explosive (`explosives` in the table; what each field means is in the data's `$comment`).
@@ -116,6 +201,23 @@ pub struct ExplosiveData {
     /// line's sideways part (`piece_dir`): a flush charge's pieces fly out in a cone, clear of the
     /// crater, not straight up and back in (0: as blended).
     pub open_spread_min: f64,
+    /// What the shell (`destroy_radius_m` to `radius_m`) does.
+    pub shell: ShellRule,
+    /// With [`ShellRule::Crack`]: a shell cell whose cell below (the face's down) the core destroys
+    /// cracks too, so a roof over the blast drops.
+    pub crack_over_cleared: bool,
+    /// With [`ShellRule::Crack`]: only cells open ABOVE or BELOW (the face's up and down) before
+    /// the blast count as exposed; a cell open only to its sides stays (owner, 2026-11-09: "anything
+    /// touching air on top or bottom, exclude blocks that are only touching 'side' air").
+    pub crack_vertical_only: bool,
+    /// A charge touching water (any of its six neighbours, or its own cell, a liquid) destroys and
+    /// dislodges no blocks: its wave, knockback, damage and chain reactions still happen (owner,
+    /// 2026-11-07: "not destroy or dislodge (physics) blocks when it's touching water").
+    pub water_spares_blocks: bool,
+    /// Water shields what is behind it: a cell whose straight line from the charge passes through
+    /// water (as the world stood before the blast) is neither destroyed nor dislodged (owner,
+    /// 2026-11-07: "it shouldn't destroy blocks or move them through water"). See [`behind_water`].
+    pub water_shields: bool,
     pub chain_delay_seconds: [f64; 2],
     pub effects: BlastEffects,
 }
@@ -698,5 +800,39 @@ mod tests {
         assert!(a > b && b > 0.0, "{a} {b}");
         assert_eq!(boom_level(e, e.effects.boom.hear_m), 0.0);
         assert!(shake_level(e, 1.0) > shake_level(e, 20.0));
+    }
+    #[test]
+    fn a_cell_behind_water_is_shielded_and_one_beside_it_is_not() {
+        // A wall of water at x == 2: the cell at x 4 straight behind it is shielded; one at x -3
+        // (the other way), one above the charge and the water cell itself are not.
+        let water = |c: [i32; 3]| c[0] == 2;
+        assert!(behind_water([4, 0, 0], water));
+        assert!(behind_water([3, 2, 1], water));
+        assert!(!behind_water([-3, 0, 0], water));
+        assert!(!behind_water([0, 6, 0], water));
+        assert!(
+            !behind_water([2, 0, 0], water),
+            "the end cell itself does not count"
+        );
+        assert!(!behind_water([1, 0, 0], water));
+        assert!(!behind_water([0, 0, 0], water));
+    }
+    #[test]
+    fn yellow_pushes_with_an_eighth_of_reds_force() {
+        // Owner (2026-11-07): "Reduce the explosion force by half", and again (2026-11-09): "halve
+        // the explosion physics force of the Yellow dynamite", and once more ("And half the force
+        // again"). Yellow's pieces fly at an eighth of the speed red's would (light and heavy
+        // cells, at and under the cap), and players are knocked back an eighth as hard.
+        let find = |n: &str| EXPLOSIVES.iter().find(|e| e.name == n).expect(n);
+        let (red, yellow) = (find("dwell:dynamite"), find("dwell:dynamite_yellow"));
+        for b in ["dwell:stone", "dwell:dirt", "dwell:sand"] {
+            let m = dwell_blocks::parse_state(b).expect(b);
+            let (r, y) = (fling_speed(red, m, 4.5), fling_speed(yellow, m, 4.5));
+            assert!(
+                (y - r / 8.0).abs() < 1e-9,
+                "{b}: yellow {y:.2} m/s, red {r:.2} m/s"
+            );
+        }
+        assert_eq!(yellow.knockback_ms, red.knockback_ms / 8.0);
     }
 }

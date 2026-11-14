@@ -4,7 +4,7 @@
 // this table describes them, one entry per action, so a new binding is a new entry here.
 
 import { BRUSH_PRESETS } from './brushes.gen';
-import { BUILD_MODES } from './buildModes.gen';
+import { BUILD_MODES, HOTBAR_KEYS } from './buildModes.gen';
 import { SPYGLASS } from './spyglass.gen';
 
 export interface Control {
@@ -53,6 +53,11 @@ export const KEYBOARD: ControlGroup[] = [
         when: BUILD_MODES.modes.map((m) => m.label).join(', '),
       },
       { action: 'Choose block', keys: ['1 – 9', 'Wheel'] },
+      {
+        action: 'Previous / next block',
+        keys: [keyLabel(HOTBAR_KEYS.prev), keyLabel(HOTBAR_KEYS.next), 'Swipe sideways'],
+        when: 'a touchpad’s two-finger swipe',
+      },
     ],
   },
   {
@@ -109,6 +114,12 @@ export const KEYBOARD: ControlGroup[] = [
         when: SPYGLASS.magnifications.map((m) => `${String(m)}×`).join(', '),
       },
       { action: 'Zoom further / back', keys: ['Wheel'], when: 'while zoomed' },
+      { action: 'World map', keys: ['M'], when: 'M, Esc or ✕ closes it' },
+      {
+        action: 'Map zoom / center on me',
+        keys: ['−', '=', 'C'],
+        when: 'while the world map is open',
+      },
     ],
   },
   {
@@ -128,6 +139,10 @@ export function keyLabel(code: string): string {
     BracketLeft: '[',
     BracketRight: ']',
     Backquote: '`',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
   };
   return named[code] ?? code.replace(/^Key|^Digit/, '');
 }
@@ -138,6 +153,16 @@ export const DEBUG_KEYS: Control[] = [
   { action: 'Terrain map', keys: ['F4'] },
   { action: 'Map zoom', keys: ['−', '='], when: 'while the map is open' },
   { action: 'Copy block info', keys: ['F6'], when: 'the targeted block, as JSON' },
+  {
+    action: 'Copy streaming report',
+    keys: ['F8'],
+    when: 'the chunks loading round you, as JSON for a bug report',
+  },
+  {
+    action: 'Pause the look',
+    keys: ['F7'],
+    when: 'clouds, water, plants and flames stand still; the game runs on',
+  },
 ];
 
 export const TOUCH: Control[] = [

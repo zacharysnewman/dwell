@@ -8,14 +8,20 @@
 // marked `phone: false` (the menu button, the only way to the menu there) always shows.
 
 import { HUD_ELEMENTS, type HudElement } from './hud.gen';
+import { MAP } from './map.gen';
 
 export interface HudSettings {
   /** Each part's id: whether it shows. */
   shown: Record<string, boolean>;
+  /** The minimap's height shading (ADR 0068; a toggle to compare, shared/ui/map.json's default). */
+  mapShading: boolean;
 }
 
 export function defaultHud(): HudSettings {
-  return { shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])) };
+  return {
+    shown: Object.fromEntries(HUD_ELEMENTS.map((e) => [e.id, e.shown])),
+    mapShading: MAP.heightShading.default,
+  };
 }
 
 /** The parts Settings offers on this device (a phone can't hide what it can't do without). */
@@ -39,7 +45,11 @@ export function sanitizeHud(
     const v = flags[e.id];
     shown[e.id] = typeof v === 'boolean' ? v : e.shown;
   }
-  return { shown };
+  const shading = (value as { mapShading?: unknown } | null)?.mapShading;
+  return {
+    shown,
+    mapShading: typeof shading === 'boolean' ? shading : MAP.heightShading.default,
+  };
 }
 
 /** The record to store: the stored one with this build's flags written over it. */
@@ -52,11 +62,19 @@ export function hudRecord(stored: unknown, settings: HudSettings): Record<string
     typeof kept.shown === 'object' && kept.shown !== null && !Array.isArray(kept.shown)
       ? (kept.shown as Record<string, unknown>)
       : {};
-  return { ...kept, shown: { ...keptShown, ...settings.shown } };
+  return {
+    ...kept,
+    shown: { ...keptShown, ...settings.shown },
+    mapShading: settings.mapShading,
+  };
 }
 
 /** Whether a part shows on this device. */
-export function partShown(part: HudElement, settings: HudSettings, mobile: boolean): boolean {
+export function partShown(
+  part: HudElement,
+  settings: Pick<HudSettings, 'shown'>,
+  mobile: boolean,
+): boolean {
   if (mobile && !part.phone) return true;
   return settings.shown[part.id] ?? part.shown;
 }
@@ -64,7 +82,7 @@ export function partShown(part: HudElement, settings: HudSettings, mobile: boole
 /** Shows and hides the parts. */
 export function applyHud(
   doc: Document,
-  settings: HudSettings,
+  settings: Pick<HudSettings, 'shown'>,
   mobile: boolean,
   parts: readonly HudElement[] = HUD_ELEMENTS,
 ): void {

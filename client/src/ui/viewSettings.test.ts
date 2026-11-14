@@ -8,7 +8,10 @@ import {
   CLOUD_QUALITIES,
   defaultClouds,
   sanitizeClouds,
+  sanitizeShafts,
+  SHAFT_QUALITIES,
   sanitizeFovSetting,
+  sanitizeLeafCards,
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
@@ -24,8 +27,8 @@ describe('exposure', () => {
 });
 
 describe('clouds setting', () => {
-  it('defaults to High on desktops and Low on phones', () => {
-    expect(defaultClouds(false)).toBe('high');
+  it('defaults to Medium on desktops and Low on phones', () => {
+    expect(defaultClouds(false)).toBe('medium');
     expect(defaultClouds(true)).toBe('low');
   });
 
@@ -35,10 +38,10 @@ describe('clouds setting', () => {
       expect(sanitizeClouds(q, true)).toBe(q);
     }
     for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }]) {
-      expect(sanitizeClouds(bad, false)).toBe('high');
+      expect(sanitizeClouds(bad, false)).toBe('medium');
       expect(sanitizeClouds(bad, true)).toBe('low');
     }
-    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'high']);
+    expect(CLOUD_QUALITIES).toEqual(['off', 'low', 'medium', 'high']);
   });
 });
 
@@ -57,8 +60,16 @@ describe('field of view', () => {
       fovDeg: 90,
       future: [1],
       showArms: true,
+      leafCards: true,
     });
-    expect(viewRecord('garbage', 80, false)).toEqual({ fovDeg: 80, showArms: false });
+    expect(viewRecord('garbage', 80, false, false)).toEqual({
+      fovDeg: 80,
+      showArms: false,
+      leafCards: false,
+    });
+    // A record from before the Leaf cards setting reads as on; one stored off stays off.
+    expect(sanitizeLeafCards({ fovDeg: 90, showArms: true })).toBe(true);
+    expect(sanitizeLeafCards({ leafCards: false })).toBe(false);
   });
 
   it('shows your arms unless the record turned them off', () => {
@@ -67,5 +78,14 @@ describe('field of view', () => {
     expect(sanitizeShowArms({ showArms: 'no' })).toBe(true);
     expect(sanitizeShowArms({ showArms: false })).toBe(false);
     expect(sanitizeShowArms(viewRecord({}, 75, false))).toBe(false);
+  });
+});
+
+describe('light shafts', () => {
+  it('keeps a stored tier and defaults to High on every device (owner, 2026-11-07)', () => {
+    for (const q of ['off', 'low', 'high'] as const) expect(sanitizeShafts(q)).toBe(q);
+    for (const bad of [null, undefined, 'ultra', 2, { q: 'low' }])
+      expect(sanitizeShafts(bad)).toBe('high');
+    expect(SHAFT_QUALITIES).toEqual(['off', 'low', 'high']);
   });
 });

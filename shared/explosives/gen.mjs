@@ -39,12 +39,15 @@ export const EXPLOSIVE_RANGES = {
 /** Each effect's numbers (and its colour, if it has one): field → [min, max]; pairs are [lo, hi] ranges. */
 export const EFFECT_RANGES = {
   flash: { strength: [0, 1000], lightRadiusM: [0, 200], seconds: [0, 10], sizeM: [0, 64] },
-  smoke: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], spreadM: [0, 64], riseMs: [0, 50], opacity: [0, 1] },
-  dust: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], speedMs: [0, 100, 'pair'], opacity: [0, 1] },
+  smoke: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], spreadM: [0, 64], riseMs: [0, 50], opacity: [0, 1], openBias: [0, 1] },
+  dust: { count: [0, 256], cpuCount: [0, 256], sizeM: [0, 32, 'pair'], seconds: [0, 60, 'pair'], speedMs: [0, 100, 'pair'], opacity: [0, 1], openBias: [0, 1] },
   boom: { fullM: [0, 1000], hearM: [0, 10000] },
   shake: { radiusM: [0, 1000], degrees: [0, 30], seconds: [0, 10], hz: [0, 120] },
 };
 const COLOURED = ['flash', 'smoke', 'dust'];
+/** What a blast's shell does (crates/dwell-world/src/explosives.rs `ShellRule`): `fling` flings it out
+ * (the open side, the path test); `crack` loosens only its cells that touched air, given no push. */
+export const SHELL_RULES = { fling: 'Fling', crack: 'Crack' };
 const COUNTS = ['count', 'cpuCount'];
 
 /** The registry's block names (`dwell:stone`) with whether each is placeable, from shared/blocks/dwell.json. */
@@ -82,16 +85,19 @@ export function validateExplosives(data, blocks = registryBlocks()) {
   object(data, '(root)');
   keys(data, '(root)', ['limits', 'explosives']);
   object(data.limits, 'limits');
-  keys(data.limits, 'limits', ['blastsPerTick', 'maxPieces']);
+  keys(data.limits, 'limits', ['blastsPerTick', 'maxPieces', 'piecesPerTick', 'maxPuffs', 'minPuffShare']);
   number(data.limits.blastsPerTick, 'limits.blastsPerTick', 1, 64, true);
   number(data.limits.maxPieces, 'limits.maxPieces', 1, 65536, true);
+  number(data.limits.piecesPerTick, 'limits.piecesPerTick', 1, 65536, true);
+  number(data.limits.maxPuffs, 'limits.maxPuffs', 1, 65536, true);
+  number(data.limits.minPuffShare, 'limits.minPuffShare', 0, 1);
   if (!Array.isArray(data.explosives) || data.explosives.length === 0) bad('explosives must be a non-empty list');
   const names = new Set();
   const used = new Map();
   data.explosives.forEach((e, i) => {
     const at = `explosives[${i}]`;
     object(e, at);
-    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', ...Object.keys(EXPLOSIVE_RANGES)]);
+    keys(e, at, ['name', 'block', 'lit', 'ignitedBy', 'chainDelaySeconds', 'effects', 'shell', 'crackOverCleared', 'crackVerticalOnly', 'waterSparesBlocks', 'waterShields', ...Object.keys(EXPLOSIVE_RANGES)]);
     if (typeof e.name !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(e.name)) bad(`${at}.name must be a namespaced name`);
     if (names.has(e.name)) bad(`${at}.name ${e.name} is listed twice`);
     names.add(e.name);
@@ -111,6 +117,13 @@ export function validateExplosives(data, blocks = registryBlocks()) {
     if (e.destroyRadiusM > e.radiusM) bad(`${at}.destroyRadiusM must be at most its radiusM`);
     if (e.loosenRadiusM < e.radiusM) bad(`${at}.loosenRadiusM must be at least its radiusM`);
     pair(e.chainDelaySeconds, `${at}.chainDelaySeconds`, 0, 60);
+    if (e.shell !== undefined && !Object.hasOwn(SHELL_RULES, e.shell)) bad(`${at}.shell ${JSON.stringify(e.shell)} must be one of ${Object.keys(SHELL_RULES).join(', ')}`);
+    if (e.crackOverCleared !== undefined && typeof e.crackOverCleared !== 'boolean') bad(`${at}.crackOverCleared must be true or false`);
+    if (e.crackOverCleared && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackOverCleared is only for shell "crack"`);
+    if (e.crackVerticalOnly !== undefined && typeof e.crackVerticalOnly !== 'boolean') bad(`${at}.crackVerticalOnly must be true or false`);
+    if (e.crackVerticalOnly && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackVerticalOnly is only for shell "crack"`);
+    if (e.waterSparesBlocks !== undefined && typeof e.waterSparesBlocks !== 'boolean') bad(`${at}.waterSparesBlocks must be true or false`);
+    if (e.waterShields !== undefined && typeof e.waterShields !== 'boolean') bad(`${at}.waterShields must be true or false`);
     object(e.effects, `${at}.effects`);
     keys(e.effects, `${at}.effects`, Object.keys(EFFECT_RANGES));
     for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
@@ -142,7 +155,7 @@ const rgb = (hex) => {
 export function explosivesRust(data) {
   const lines = [`// ${header}`, ''];
   lines.push('/// The explosives table (shared/explosives/explosives.json).');
-  lines.push(`pub const LIMITS: ExplosiveLimits = ExplosiveLimits { blasts_per_tick: ${data.limits.blastsPerTick}, max_pieces: ${data.limits.maxPieces} };`);
+  lines.push(`pub const LIMITS: ExplosiveLimits = ExplosiveLimits { blasts_per_tick: ${data.limits.blastsPerTick}, max_pieces: ${data.limits.maxPieces}, pieces_per_tick: ${data.limits.piecesPerTick}, max_puffs: ${data.limits.maxPuffs}, min_puff_share: ${rf(data.limits.minPuffShare)} };`);
   lines.push('');
   lines.push('pub const EXPLOSIVES: &[ExplosiveData] = &[');
   for (const e of data.explosives) {
@@ -152,6 +165,11 @@ export function explosivesRust(data) {
     lines.push(`        lit: ${JSON.stringify(e.lit)},`);
     lines.push(`        ignited_by: &[${e.ignitedBy.map((b) => JSON.stringify(b)).join(', ')}],`);
     for (const k of Object.keys(EXPLOSIVE_RANGES)) lines.push(`        ${snake(k)}: ${rf(e[k])},`);
+    lines.push(`        shell: ShellRule::${SHELL_RULES[e.shell ?? 'fling']},`);
+    lines.push(`        crack_over_cleared: ${e.crackOverCleared ? 'true' : 'false'},`);
+    lines.push(`        crack_vertical_only: ${e.crackVerticalOnly ? 'true' : 'false'},`);
+    lines.push(`        water_spares_blocks: ${e.waterSparesBlocks ? 'true' : 'false'},`);
+    lines.push(`        water_shields: ${e.waterShields ? 'true' : 'false'},`);
     lines.push(`        chain_delay_seconds: [${e.chainDelaySeconds.map(rf).join(', ')}],`);
     lines.push('        effects: BlastEffects {');
     for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {

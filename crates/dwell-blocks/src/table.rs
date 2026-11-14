@@ -26,6 +26,11 @@ pub enum Origin {
     Placeholder,
     /// Received from a server at join (registry sync), unknown to the build.
     Synced,
+    /// An **alias** (ADR 0063): a state named with a property or value this process doesn't know
+    /// (`dwell:leaves[flooded=true,mymod:wet=7]` in a build without `mymod:wet`), kept under that
+    /// exact string and behaving as its **base**, the state its known part names. A one-state
+    /// block entry of its own (so payloads carry it by name), whose row points at the base's block.
+    Alias,
 }
 
 impl Origin {
@@ -93,6 +98,8 @@ impl<T: Sync + Send> Store<T> {
 }
 
 static EXTRA_STATES: Store<StateInfo> = Store::new();
+/// Registered state index → its base, for aliases (ADR 0063).
+static ALIAS_BASE: Store<StateId> = Store::new();
 static EXTRA_BLOCKS: Store<Block> = Store::new();
 /// Registered states and blocks, published after their rows are stored.
 static STATE_LEN: AtomicUsize = AtomicUsize::new(0);
@@ -275,6 +282,54 @@ pub fn register(origin: Origin, block: NewBlock) -> Result<StateId, String> {
     STATE_LEN.fetch_add(block.states.len(), Ordering::AcqRel);
     BLOCK_LEN.fetch_add(1, Ordering::AcqRel);
     Ok(first as StateId)
+}
+
+/// Registers an alias (ADR 0063, [`Origin::Alias`]): state `name` (the full string as read)
+/// behaving as `base`. The same string returns the same id. Its row is the base's under the new
+/// name, pointing at the base's block, so [`block_of`] and the property functions read the base.
+pub fn register_alias(name: &str, base: StateId) -> Result<StateId, String> {
+    let base = base_state(base);
+    let row = *try_info(base).ok_or_else(|| format!("{name}: base {base} is not in the table"))?;
+    let _guard = WRITER.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(b) = blocks().find(|b| b.origin == Origin::Alias && b.name == name) {
+        return Ok(b.first_state);
+    }
+    let first = state_count();
+    if first + 1 > usize::from(StateId::MAX) + 1 {
+        return Err(format!("{name}: the block table is full"));
+    }
+    let block_index = block_count();
+    let name = leak(name);
+    let mut row = row;
+    row.name = name;
+    ALIAS_BASE.put(first - STATES.len(), Box::leak(Box::new(base)));
+    EXTRA_STATES.put(first - STATES.len(), Box::leak(Box::new(row)));
+    EXTRA_BLOCKS.put(
+        block_index - BLOCKS.len(),
+        Box::leak(Box::new(Block {
+            name,
+            first_state: first as StateId,
+            state_count: 1,
+            properties: &[],
+            origin: Origin::Alias,
+        })),
+    );
+    STATE_LEN.fetch_add(1, Ordering::AcqRel);
+    BLOCK_LEN.fetch_add(1, Ordering::AcqRel);
+    Ok(first as StateId)
+}
+
+/// The base of an alias (ADR 0063); `None` for any other state.
+#[inline]
+pub fn alias_base(id: StateId) -> Option<StateId> {
+    let i = usize::from(id).checked_sub(STATES.len())?;
+    ALIAS_BASE.get(i).copied()
+}
+
+/// The state `id` behaves as: an alias's base, else itself.
+#[inline]
+pub fn base_state(id: StateId) -> StateId {
+    alias_base(id).unwrap_or(id)
 }
 
 /// Two rows describe the same state (every field but the block index).

@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadNames, loadTools, validateTools } from '../tools/gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -51,22 +52,42 @@ export const stateName = (block, values) => {
   return keys.length ? `${block}[${keys.map((k) => `${k}=${values[k]}`).join(',')}]` : block;
 };
 
-/** Checks the items against `blocks` (id → definition); returns them. */
-export function validateItems(data, blocks, states = registryStates()) {
+/** The tools' item names (shared/tools/tools.json, validated): the chopping tools and the
+ * breaking tools (`breaking.tools`: a pickaxe, a shovel). */
+export function toolNames() {
+  const { items, blocks } = loadNames();
+  const d = validateTools(loadTools(), items, blocks);
+  return new Set([...d.tools.map((t) => t.name), ...d.breaking.tools.map((t) => t.item)]);
+}
+
+/** Checks the items against `blocks` (id → definition) and `tools` (the tools' item names); returns
+ * them. */
+export function validateItems(data, blocks, states = registryStates(), tools = toolNames()) {
   if (typeof data !== 'object' || data === null || Array.isArray(data)) fail('must be an object');
-  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'buildModes'].includes(k));
+  const extra = Object.keys(data).filter((k) => !['$comment', 'items', 'inventory', 'hotbar', 'buildModes'].includes(k));
   if (extra.length) fail(`unknown ${extra.join(', ')}`);
   if (!Array.isArray(data.items) || data.items.length === 0) fail('items must be a non-empty list');
   const names = new Set();
+  const categories = validateInventory(data.inventory);
   data.items.forEach((it, i) => {
     const at = `items[${i}]`;
     if (typeof it !== 'object' || it === null) fail(`${at} must be an object`);
-    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'block', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
+    const e = Object.keys(it).filter((k) => !['$comment', 'name', 'label', 'category', 'block', 'tool', 'rows', 'drag', 'state', 'facing', 'upper'].includes(k));
     if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
     if (typeof it.name !== 'string' || !NAME.test(it.name)) fail(`${at}.name must be namespace:name`);
     if (names.has(it.name)) fail(`${at}.name ${it.name} is listed twice`);
     names.add(it.name);
     if (typeof it.label !== 'string' || it.label === '') fail(`${at}.label must be a name to show`);
+    if (!categories.has(it.category)) fail(`${at}.category ${JSON.stringify(it.category)} must be one of inventory.categories (${[...categories].join(', ')})`);
+    // A tool (ADR 0067; owner, 2026-11-08: the axe on the creative hotbar): held, it places
+    // nothing; its item names a tool of shared/tools/tools.json.
+    if (it.tool !== undefined) {
+      if (it.block !== undefined) fail(`${at}: give block or tool (not both)`);
+      const placing = ['rows', 'drag', 'state', 'facing', 'upper'].filter((k) => it[k] !== undefined);
+      if (placing.length) fail(`${at}: a tool places nothing (${placing.join(', ')})`);
+      if (typeof it.tool !== 'string' || !tools.has(it.tool)) fail(`${at}.tool ${JSON.stringify(it.tool)} is not a tool of shared/tools/tools.json`);
+      return;
+    }
     const b = blocks.get(it.block);
     if (!b) fail(`${at}.block ${JSON.stringify(it.block)} is not in the registry`);
     // Placeable: `placeable`, or states listed in its `palette` (a ladder's facings).
@@ -101,18 +122,62 @@ export function validateItems(data, blocks, states = registryStates()) {
     if (drag === 'modes' && rules.length) fail(`${at}: ${it.block} has place rules (${rules.join(', ')}): drag must be vertical or none`);
     if (drag === 'vertical' && b.needsSupport !== 'behind') fail(`${at}: drag vertical is for a block hung on a wall (needsSupport behind)`);
   });
+  data.inventory.hotbar.forEach((n, i) => {
+    if (!names.has(n)) fail(`inventory.hotbar[${i}] ${JSON.stringify(n)} is not an item above`);
+  });
+  validateHotbar(data.hotbar);
   validateBuildModes(data.buildModes);
   return data;
+}
+
+/** The hotbar's slot count (shared/inventory/inventory.json `hotbarSlots`). */
+export function hotbarSlots() {
+  return JSON.parse(readFileSync(join(root, 'shared/inventory/inventory.json'), 'utf8')).hotbarSlots;
+}
+
+/** Checks the creative inventory view's groups and a new world's picks; returns the group names. */
+function validateInventory(v, slots = hotbarSlots()) {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) fail('inventory must be an object');
+  const extra = Object.keys(v).filter((k) => !['$comment', 'categories', 'hotbar'].includes(k));
+  if (extra.length) fail(`inventory: unknown ${extra.join(', ')}`);
+  if (!Array.isArray(v.categories) || v.categories.length === 0) fail('inventory.categories must be a non-empty list');
+  const names = new Set();
+  v.categories.forEach((c, i) => {
+    const at = `inventory.categories[${i}]`;
+    if (typeof c !== 'object' || c === null) fail(`${at} must be an object`);
+    const e = Object.keys(c).filter((k) => !['name', 'label'].includes(k));
+    if (e.length) fail(`${at}: unknown ${e.join(', ')}`);
+    if (typeof c.name !== 'string' || !/^[a-z0-9_]+$/.test(c.name)) fail(`${at}.name must be a lowercase word`);
+    if (names.has(c.name)) fail(`${at}.name ${c.name} is listed twice`);
+    names.add(c.name);
+    if (typeof c.label !== 'string' || c.label === '') fail(`${at}.label must be a name to show`);
+  });
+  if (!Array.isArray(v.hotbar) || v.hotbar.length !== slots) fail(`inventory.hotbar must list ${slots} items (inventory.json hotbarSlots)`);
+  return names;
+}
+
+/** Checks the hotbar's step keys and the wheel's accumulator. */
+function validateHotbar(h) {
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('hotbar must be an object');
+  const extra = Object.keys(h).filter((k) => !['$comment', 'prevKey', 'nextKey', 'wheelNotchPx', 'wheelGapMs'].includes(k));
+  if (extra.length) fail(`hotbar: unknown ${extra.join(', ')}`);
+  for (const k of ['prevKey', 'nextKey']) {
+    if (typeof h[k] !== 'string' || !KEY_CODE.test(h[k])) fail(`hotbar.${k} must be a KeyboardEvent.code, e.g. ArrowLeft`);
+  }
+  if (h.prevKey === h.nextKey) fail('hotbar.prevKey and hotbar.nextKey must differ');
+  if (typeof h.wheelNotchPx !== 'number' || !(h.wheelNotchPx >= 1 && h.wheelNotchPx <= 1000)) fail('hotbar.wheelNotchPx must be 1..1000 (px)');
+  if (!Number.isInteger(h.wheelGapMs) || h.wheelGapMs < 0 || h.wheelGapMs > 2000) fail('hotbar.wheelGapMs must be 0..2000 (ms)');
 }
 
 /** Checks the build modes (what holding Place does). */
 function validateBuildModes(m) {
   if (typeof m !== 'object' || m === null || Array.isArray(m)) fail('buildModes must be an object');
-  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'holdMs', 'modes'].includes(k));
+  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'holdMs', 'repeatS', 'modes'].includes(k));
   if (extra.length) fail(`buildModes: unknown ${extra.join(', ')}`);
   if (typeof m.key !== 'string' || !KEY_CODE.test(m.key)) fail('buildModes.key must be a KeyboardEvent.code, e.g. KeyL');
   if (typeof m.clearance !== 'number' || !(m.clearance >= 0 && m.clearance <= 0.5)) fail('buildModes.clearance must be 0..0.5 (m)');
   if (!Number.isInteger(m.holdMs) || m.holdMs < 0 || m.holdMs > 2000) fail('buildModes.holdMs must be 0..2000 (ms)');
+  if (typeof m.repeatS !== 'number' || !(m.repeatS >= 0.01 && m.repeatS <= 1)) fail('buildModes.repeatS must be 0.01..1 (s)');
   if (!Array.isArray(m.modes) || m.modes.length === 0) fail('buildModes.modes must be a non-empty list');
   const names = new Set();
   m.modes.forEach((mode, i) => {
@@ -136,9 +201,22 @@ export function itemsRust(data) {
   for (const it of data.items) {
     const pairs = (o) => `&[${Object.entries(o ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `(${JSON.stringify(k)}, ${JSON.stringify(v)})`).join(', ')}]`;
     const facing = it.facing ? `ItemFacing::${ITEM_FACINGS[it.facing]}` : 'ItemFacing::None';
-    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block)}, rows: ${it.rows}, drag: ItemDrag::${ITEM_DRAGS[it.drag ?? 'modes']}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
+    const tool = it.tool ? `Some(${JSON.stringify(it.tool)})` : 'None';
+    const drag = it.tool ? 'None' : ITEM_DRAGS[it.drag ?? 'modes'];
+    rs.push(`    ItemDef { name: ${JSON.stringify(it.name)}, label: ${JSON.stringify(it.label)}, block: ${JSON.stringify(it.block ?? '')}, tool: ${tool}, rows: ${it.rows ?? 1}, drag: ItemDrag::${drag}, state: ${pairs(it.state)}, facing: ${facing}, upper: ${pairs(it.upper)} },`);
   }
   rs.push('];', '');
+  rs.push('/// A new world\'s creative hotbar: the items it starts with, one per slot.');
+  rs.push(`pub const CREATIVE_HOTBAR: [&str; ${data.inventory.hotbar.length}] = [${data.inventory.hotbar.map((n) => JSON.stringify(n)).join(', ')}];`, '');
+  const h = data.hotbar;
+  const f = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
+  rs.push('/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).');
+  rs.push(`pub const HOTBAR_PREV_KEY: &str = ${JSON.stringify(h.prevKey)};`);
+  rs.push(`pub const HOTBAR_NEXT_KEY: &str = ${JSON.stringify(h.nextKey)};`, '');
+  rs.push('/// The wheel\'s travel (px) in one gesture that steps the hotbar one more slot.');
+  rs.push(`pub const WHEEL_NOTCH_PX: f64 = ${f(h.wheelNotchPx)};`, '');
+  rs.push('/// The quiet (ms) after which a wheel event starts a new gesture, stepping at once.');
+  rs.push(`pub const WHEEL_GAP_MS: f64 = ${f(h.wheelGapMs)};`, '');
   const m = data.buildModes;
   rs.push('/// The key that cycles the build modes (`KeyboardEvent.code`).');
   rs.push(`pub const BUILD_MODE_KEY: &str = ${JSON.stringify(m.key)};`, '');
@@ -146,6 +224,8 @@ export function itemsRust(data) {
   rs.push(`pub const BUILD_HOLD_MS: f64 = ${m.holdMs}.0;`, '');
   rs.push('/// How far (m) the player\'s own body must be clear of a cell before a block goes in it.');
   rs.push(`pub const BUILD_CLEARANCE: f64 = ${Number.isInteger(m.clearance) ? `${m.clearance}.0` : m.clearance};`, '');
+  rs.push('/// How often (s) a held stroke builds its next piece at most, by the clock (docs/BUGS.md #30).');
+  rs.push(`pub const BUILD_REPEAT_S: f64 = ${f(m.repeatS)};`, '');
   rs.push('/// What holding Place does after the first block, in the order the key cycles them.');
   rs.push(`pub const BUILD_MODES: [BuildModeDef; ${m.modes.length}] = [`);
   for (const mode of m.modes) {
@@ -168,6 +248,22 @@ export function buildModesTs(data) {
   ts.push(`  key: ${q(m.key)},`);
   ts.push('  modes: [');
   for (const x of m.modes) ts.push(`    { name: ${q(x.name)}, label: ${q(x.label)}, kind: ${q(x.kind)} },`);
+  ts.push('  ],');
+  ts.push('} as const;', '');
+  ts.push('/** The keys that step the hotbar one slot left / right (`KeyboardEvent.code`). */');
+  ts.push(`export const HOTBAR_KEYS = { prev: ${q(data.hotbar.prevKey)}, next: ${q(data.hotbar.nextKey)} } as const;`, '');
+  ts.push('/** The creative inventory view (docs/ITEMS.md §6a): its groups in order, every item in the');
+  ts.push(' * hotbar\'s order with its group, and a new world\'s picks. */');
+  ts.push('export const CREATIVE = {');
+  ts.push('  categories: [');
+  for (const c of data.inventory.categories) ts.push(`    { name: ${q(c.name)}, label: ${q(c.label)} },`);
+  ts.push('  ],');
+  ts.push('  items: [');
+  for (const it of data.items) ts.push(`    { name: ${q(it.name)}, label: ${q(it.label)}, category: ${q(it.category)} },`);
+  ts.push('  ],');
+  // One per line, as the client's Prettier writes a list too long for one.
+  ts.push('  hotbar: [');
+  for (const n of data.inventory.hotbar) ts.push(`    ${q(n)},`);
   ts.push('  ],');
   ts.push('} as const;', '');
   return ts.join('\n');

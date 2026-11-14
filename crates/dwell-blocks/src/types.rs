@@ -94,6 +94,24 @@ pub struct Cross {
     pub sit_on_support: bool,
 }
 
+/// An octagonal cross-section (block data `crossSection`, ADR 0072): `chamfer` is the corners' cut,
+/// a fraction of the cross-section's shorter side; it joins (full-width sides) with neighbours of
+/// the same `joins` group and the same axis. `ring` is the bark band round its end caps (a
+/// fraction of the shorter side, 0 for none; drawn with the side tile along the octagon's edges
+/// that are not joined, Phase 55 T3), and `heart` the tile inside the band (the caps' own tile when
+/// `None`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CrossSection {
+    pub chamfer: f32,
+    pub joins: &'static str,
+    pub ring: f32,
+    pub heart: Option<&'static str>,
+    /// The octagon's width across a vertical cell, a fraction of the cell (1: the full log; a
+    /// `crossSection.widths` property's value, ADR 0079): a narrower trunk centred in its cell,
+    /// joining nothing. A log lying along x or z is drawn full width.
+    pub width: f32,
+}
+
 /// Wind sway of a cross's top (block data `wind`): `strength` metres at the top, gusts at `speed`
 /// (1 = the default gust field's pace).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -235,9 +253,17 @@ pub struct StateInfo {
     /// How close to the eye (m) its faces dissolve (block data `nearFade`; 0 never): leaves, so a
     /// canopy the eye is inside shows round it without faces against the lens (docs/FELLING.md).
     pub near_fade: f32,
+    /// Leaves beside it lie flat against it (block data `leafFlush`: the logs; docs/TREE_GROWTH.md
+    /// §10): a leaf cell takes the face it shares with it as covered for its chamfers, so that side
+    /// is drawn flat and square rather than slanted, while still drawing the face itself.
+    pub leaf_flush: bool,
     /// A liquid's fill: how full its cell is (1 full, the default; `fillProperty`), its drawn
     /// surface that far up (docs/WATER_FLOW.md §15).
     pub fill: f32,
+    /// Its cross-section across its axis (block data `crossSection`, ADR 0072): an octagon whose
+    /// sides square off to full width where a neighbour of its join group lies on them
+    /// ([`crate::octagon`]); none for a plain cube.
+    pub cross_section: Option<CrossSection>,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

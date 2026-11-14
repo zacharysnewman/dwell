@@ -116,12 +116,12 @@ pub fn tiles(r: &Rect, texels: i64) -> Vec<Rect> {
 
 /// The colours the map paints with: each block state's LOD top colour (sRGB, the LOD mesher's
 /// `lod_color`) and the water's.
-fn top_rgb(state: dwell_blocks::StateId) -> [f64; 3] {
+pub(crate) fn top_rgb(state: dwell_blocks::StateId) -> [f64; 3] {
     let c = dwell_mesh::lod_color(state, 0);
     [16, 8, 0].map(|s| dwell_look::srgb_to_linear(f64::from((c >> s) & 0xff) / 255.0))
 }
 
-fn srgb_byte(v: f64) -> u8 {
+pub(crate) fn srgb_byte(v: f64) -> u8 {
     dwell_mesh::linear_to_srgb_byte(v)
 }
 
@@ -134,12 +134,36 @@ pub fn raster(
     texel_m: i64,
     rect: &Rect,
 ) -> Vec<u8> {
+    raster_into(terrain, t, texel_m, rect, None)
+}
+
+/// [`raster`], then each texel's height code (`dwell_game::minimap::height_code` as i16 LE, rows
+/// of x from `z0`; i16::MIN beyond the disc): the ground's face-local height (where the texel is
+/// water, its bed's: a river's under its channel) and the water bit (a river's where it covers half
+/// the texel), for the big map's height tint (`dwell_game::minimap::tint_rgb`). The big
+/// map's tiles and the explored cells' generated colours (`map_reveal`).
+pub fn raster_with_heights(
+    terrain: &TerrainGenerator,
+    t: &LodMapTunables,
+    texel_m: i64,
+    rect: &Rect,
+) -> Vec<u8> {
+    let mut heights = Vec::with_capacity((rect.width() * rect.height() * 2) as usize);
+    let mut out = raster_into(terrain, t, texel_m, rect, Some(&mut heights));
+    out.extend_from_slice(&heights);
+    out
+}
+
+fn raster_into(
+    terrain: &TerrainGenerator,
+    t: &LodMapTunables,
+    texel_m: i64,
+    rect: &Rect,
+    mut heights: Option<&mut Vec<u8>>,
+) -> Vec<u8> {
     let water_state = dwell_blocks::state(t.water_block).unwrap_or(0);
     let water = top_rgb(water_state);
-    let shade = |depth: f64| {
-        let k = 1.0 - (-depth.max(0.0) / t.water_depth_m).exp();
-        1.0 + (t.water_deep_shade - 1.0) * k
-    };
+    let shade = |depth: f64| t.water_shade(depth);
     let s = texel_m as f64;
     let min_half = 0.5 * t.river_min_texels * s;
     let mut out = Vec::with_capacity((rect.width() * rect.height() * 4) as usize);
@@ -149,17 +173,27 @@ pub fn raster(
             let col = terrain.column_lod(x, z, texel_m);
             if col.outside {
                 out.extend_from_slice(&[0, 0, 0, 0]);
+                if let Some(h) = heights.as_deref_mut() {
+                    h.extend_from_slice(&i16::MIN.to_le_bytes());
+                }
                 continue;
             }
+            let mut wet = col.water != Water::None;
+            // The bed under a river's channel (the column's own ground is its bank's).
+            let mut bed = f64::from(col.height);
             let mut c = if col.water != Water::None {
                 let k = shade(f64::from(col.level - col.height));
                 water.map(|v| v * k)
             } else {
-                top_rgb(TerrainGenerator::top_state(&col))
+                top_rgb(terrain.top_state(&col))
             };
             if let Some(r) = terrain.river_hit(x, z, min_half) {
                 // Coverage of the texel by the channel (its edge anti-aliased over one texel).
                 let a = ((r.half - r.d) / s + 0.5).clamp(0.0, 1.0);
+                if a >= 0.5 {
+                    wet = true;
+                    bed = bed.min(f64::from(col.height) - r.depth);
+                }
                 if a > 0.0 {
                     let k = shade(r.depth.min(t.water_depth_m * 0.5));
                     for (v, w) in c.iter_mut().zip(water) {
@@ -169,6 +203,12 @@ pub fn raster(
             }
             out.extend(c.map(srgb_byte));
             out.push(255);
+            if let Some(h) = heights.as_deref_mut() {
+                // Water's height is its bed's: the height bands colour it by depth.
+                let code = dwell_game::minimap::height_code(bed, wet)
+                    .clamp(i32::from(i16::MIN) + 1, i32::from(i16::MAX));
+                h.extend_from_slice(&(code as i16).to_le_bytes());
+            }
         }
     }
     out

@@ -523,6 +523,7 @@ fn die_far_from_the_spawn(f: &mut Fixture, h: &mut Held) -> (Welcome, ChunkCoord
 fn a_dead_players_client_gets_the_respawn_ring_and_keeps_the_body_s_view_until_the_respawn() {
     let mut f = Fixture::new(ServerConfig {
         respawn_preload_radius_chunks: Some(3),
+        mode: "adventure".into(), // the fall kills (ADR 0065: not in creative)
         ..flat()
     });
     let mut h = Held::default();
@@ -600,6 +601,7 @@ fn a_dead_players_client_gets_the_respawn_ring_and_keeps_the_body_s_view_until_t
 fn without_the_preload_the_respawn_ring_streams_only_after_the_respawn() {
     let mut f = Fixture::new(ServerConfig {
         respawn_preload_radius_chunks: None,
+        mode: "adventure".into(), // the fall kills (ADR 0065: not in creative)
         ..flat()
     });
     let mut h = Held::default();

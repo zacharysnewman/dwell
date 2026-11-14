@@ -37,6 +37,7 @@ fn meta() -> WorldMeta {
         app_version_created: "0.9.0".into(),
         app_version_last: "0.9.1".into(),
         settings: None,
+        spawn_grid: None,
     }
 }
 
@@ -86,6 +87,27 @@ fn everything_round_trips_through_a_file() {
             clear_lod: false,
             bodies: None,
             water: None,
+            inventories: vec![(key, vec![1, 2, 3])],
+            vitals: vec![(key, vec![1, 0, 0, 200, 66, 0, 0, 160, 64, 0])],
+            markers: vec![(key, vec![1, 0, 0])],
+            loose_items: Some(vec![9, 8]),
+            blueprints: Some(vec![1, 2, 0, 0, 0, 0, 0]),
+            cuts: Some(vec![1, 0, 0, 0, 0]),
+            ground_gone: Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0]),
+            damage: Some(vec![1, 0, 0, 0, 0]),
+            tree_growth: Some(vec![1, 0, 0, 0, 0]),
+            lava: Some(vec![1, 0, 0]),
+            ecology: Some(vec![1, 2, 3]),
+            grass: Some(vec![1, 1, 0, 0, 0, 0]),
+            // Another grid's chunk at the home chunk's coordinates (MOON_WORLD.md §7.2).
+            grid_chunks: vec![(
+                "dwell:moon".into(),
+                SavedChunk {
+                    coord: ChunkCoord::new(1, -2, 3),
+                    revision: 2,
+                    voxels: chunk_of(require("dwell:moon_dust")),
+                },
+            )],
         };
         db.save(&batch).expect("saves");
         db.set_setting("motd", "hello").expect("setting");
@@ -107,6 +129,7 @@ fn everything_round_trips_through_a_file() {
         .expect("permission");
     }
     let db = WorldDb::open(&path).expect("reopens");
+    assert_eq!(db.blueprints(), Some(vec![1, 2, 0, 0, 0, 0, 0]));
     let mut m = db.load_meta().expect("meta");
     assert_ne!(m.saved_at, 0);
     m.saved_at = 0;
@@ -115,12 +138,42 @@ fn everything_round_trips_through_a_file() {
     let c = db.load_chunk(ChunkCoord::new(1, -2, 3)).expect("chunk");
     assert_eq!(c.voxels, chunk_of(require("dwell:sand")));
     assert_eq!(db.load_chunk(ChunkCoord::new(0, 0, 0)), None);
+    // The other grids' chunks: their own table, by the grid's name, apart from home's.
+    let moon = db.grid_chunks("dwell:moon");
+    assert_eq!(moon.len(), 1);
+    assert_eq!(
+        (moon[0].coord, moon[0].revision),
+        (ChunkCoord::new(1, -2, 3), 2)
+    );
+    assert_eq!(moon[0].voxels, chunk_of(require("dwell:moon_dust")));
+    assert!(db.grid_chunks("dwell:other").is_empty());
     let p = db.load_player(&key).expect("player");
     assert_eq!(
         (p.feet, p.health, p.first_seen, p.last_seen),
         ([10.0, 20.0, 30.0], 80, 100, 200)
     );
     assert_eq!(db.setting("motd").as_deref(), Some("hello"));
+    // Inventories and loose items (ADR 0066): their own tables, records as the server gave them.
+    assert_eq!(db.load_inventory(&key), Some(vec![1, 2, 3]));
+    assert_eq!(
+        db.load_vitals(&key),
+        Some(vec![1, 0, 0, 200, 66, 0, 0, 160, 64, 0])
+    );
+    assert_eq!(db.load_inventory(&[1; 32]), None);
+    // Map markers (docs/MAP_MARKERS.md): the player's own record, none for anyone else.
+    assert_eq!(db.load_markers(&key), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&[1; 32]), None);
+    assert_eq!(db.loose_items(), Some(vec![9, 8]));
+    assert_eq!(db.cuts(), Some(vec![1, 0, 0, 0, 0]));
+    assert_eq!(db.damage(), Some(vec![1, 0, 0, 0, 0]));
+    assert_eq!(db.tree_growth(), Some(vec![1, 0, 0, 0, 0]));
+    assert_eq!(db.grass(), Some(vec![1, 1, 0, 0, 0, 0]));
+    assert_eq!(db.lava(), Some(vec![1, 0, 0]));
+    assert_eq!(db.ecology(), Some(vec![1, 2, 3]));
+    assert_eq!(
+        db.ground_gone(),
+        Some(vec![1, 1, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0])
+    );
     let mut perms = db.permissions();
     perms.sort_by_key(|p| p.at);
     assert_eq!(perms.len(), 2);
@@ -386,6 +439,78 @@ fn a_chunk_means_its_strings_not_the_runtime_ids() {
 }
 
 #[test]
+fn a_state_with_an_unknown_property_loads_as_its_base_and_saves_back_unchanged() {
+    // ADR 0063: a newer build's (or a mod's) property on a known block stays on the block.
+    let path = temp_path("alias");
+    let text = "dwell:leaves[flooded=true,mymod:wet=7]";
+    {
+        let db = WorldDb::open(&path).expect("creates");
+        db.save(&SaveBatch {
+            chunks: vec![SavedChunk {
+                coord: ChunkCoord::new(0, 0, 0),
+                revision: 1,
+                voxels: chunk_of(require("dwell:sand")),
+            }],
+            ..Default::default()
+        })
+        .expect("save");
+    }
+    {
+        // A newer build wrote id 0 (the dirt) with a property this build doesn't have.
+        let raw = Database::create(&path).expect("raw");
+        let txn = raw.begin_write().expect("write");
+        txn.open_table(BLOCK_STATES)
+            .expect("table")
+            .insert(0, text)
+            .expect("insert");
+        txn.commit().expect("commit");
+    }
+    let db = WorldDb::open(&path).expect("reopens");
+    let mut c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("kept");
+    let a = c.voxels[0];
+    let base = require("dwell:leaves[flooded=true]");
+    assert_eq!(
+        dwell_blocks::alias_base(a),
+        Some(base),
+        "an alias of the leaves"
+    );
+    let row = dwell_blocks::info(a);
+    assert_eq!(row.name, text);
+    assert_eq!(
+        (
+            row.solid,
+            row.passable,
+            row.flooded,
+            row.render,
+            row.shape_index
+        ),
+        {
+            let b = dwell_blocks::info(base);
+            (b.solid, b.passable, b.flooded, b.render, b.shape_index)
+        },
+        "it behaves as dwell:leaves"
+    );
+    c.voxels[2] = a;
+    c.revision = 2;
+    db.save(&SaveBatch {
+        chunks: vec![c],
+        ..Default::default()
+    })
+    .expect("save");
+    drop(db);
+    let db = WorldDb::open(&path).expect("reopens");
+    assert!(db.block_states().contains(&text.to_string()));
+    let c = db.load_chunk(ChunkCoord::new(0, 0, 0)).expect("chunk");
+    assert_eq!(
+        dwell_blocks::info(c.voxels[0]).name,
+        text,
+        "saved back unchanged"
+    );
+    assert_eq!(c.voxels[2], a);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn files_from_a_newer_build_are_refused() {
     let path = temp_path("newer");
     drop(WorldDb::open(&path).expect("creates"));
@@ -447,6 +572,58 @@ fn the_lod_cache_is_dropped_when_the_registry_changes() {
     assert!(db.load_meta().is_some(), "only the cache goes");
     let _ = std::fs::remove_file(&path);
     let _ = STATES.len();
+}
+
+#[test]
+fn the_lod_cache_is_dropped_when_it_was_saved_under_another_octree_root() {
+    // BIG_MAP.md M1: the root grew from level 12 to 15, so a saved LOD row's key (counted from the
+    // root's corner) means another section. A world saved before (no `lod_root`) or under another
+    // root opens with its LOD cache dropped (rebuilt from the chunks), its meta kept.
+    let path = temp_path("lod-root");
+    let row = SavedLodSection {
+        coord: LodCoord::new(1, 0, 0, 0),
+        revision: 1,
+        dirty: false,
+        encoded: vec![7],
+    };
+    for old in [None, Some(12u64)] {
+        {
+            let db = WorldDb::open(&path).expect("creates");
+            db.save(&SaveBatch {
+                meta: Some(meta()),
+                lod_sections: vec![row.clone()],
+                ..Default::default()
+            })
+            .expect("save");
+        }
+        assert_eq!(
+            WorldDb::open(&path).unwrap().lod_sections(8).0.len(),
+            1,
+            "same root: kept"
+        );
+        {
+            let raw = Database::create(&path).expect("raw");
+            let txn = raw.begin_write().expect("write");
+            {
+                let mut t = txn.open_table(META).expect("table");
+                match old {
+                    None => {
+                        t.remove("lod_root").expect("remove");
+                    }
+                    Some(v) => {
+                        t.insert("lod_root", v.to_le_bytes().as_slice())
+                            .expect("insert");
+                    }
+                }
+            }
+            txn.commit().expect("commit");
+        }
+        let db = WorldDb::open(&path).expect("reopens");
+        assert!(db.lod_sections(8).0.is_empty(), "{old:?}: dropped");
+        assert!(db.load_meta().is_some(), "only the cache goes");
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
 }
 
 #[test]
@@ -534,4 +711,25 @@ fn the_waters_record_is_saved_with_the_world_and_replaced_on_each_save() {
     })
     .expect("saved");
     assert_eq!(db.water(), Some(vec![1, 2, 3]));
+}
+
+#[test]
+fn each_players_markers_are_their_own_and_a_world_without_them_has_none() {
+    let db = WorldDb::in_memory().expect("db");
+    let (a, b) = ([3u8; 32], [4u8; 32]);
+    assert_eq!(db.load_markers(&a), None, "a world from before markers");
+    db.save(&SaveBatch {
+        markers: vec![(a, vec![1, 1, 0, 9]), (b, vec![1, 0, 0])],
+        ..Default::default()
+    })
+    .expect("save");
+    // A later save of one player's markers leaves the other's.
+    db.save(&SaveBatch {
+        markers: vec![(a, vec![1, 0, 0])],
+        ..Default::default()
+    })
+    .expect("save");
+    assert_eq!(db.load_markers(&a), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&b), Some(vec![1, 0, 0]));
+    assert_eq!(db.load_markers(&[5; 32]), None);
 }

@@ -2,18 +2,150 @@
 import type { MusicData } from './musicTypes';
 
 export const MUSIC_DATA: MusicData = {
+  "playlist": {
+    "order": "shuffle",
+    "gapMinS": 180,
+    "gapMaxS": 600,
+    "crossfadeS": 0,
+    "dayAt": 0.1,
+    "contexts": {
+      "menu": {
+        "firstDelayMinS": 0,
+        "firstDelayMaxS": 0
+      },
+      "game": {
+        "firstDelayMinS": 30,
+        "firstDelayMaxS": 180
+      }
+    }
+  },
   "tracks": [
     {
-      "id": "dwell:starry_sunshine",
-      "title": "Starry Sunshine",
-      "author": "Zachary Newman",
-      "source": "starry-sunshine.mp3",
-      "file": "starry-sunshine-6a6e6187.mp3",
-      "volume": 0.45,
-      "loop": true,
-      "fadeInS": 4,
-      "fadeOutS": 2,
-      "when": "always"
+      "id": "dwell:casual_classic_1",
+      "title": "Casual Classic #1",
+      "author": "Andrew Sitkov",
+      "source": "casual-classic-1.m4a",
+      "file": "casual-classic-1-f50ee0f0.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:close_your_eyes_and_fly_5",
+      "title": "Close Your Eyes And Fly - Variation #5",
+      "author": "Andrew Sitkov",
+      "source": "close-your-eyes-and-fly-5.m4a",
+      "file": "close-your-eyes-and-fly-5-27809f78.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:lyric_fantasy_theme_4",
+      "title": "Lyric Fantasy Theme #4",
+      "author": "Andrew Sitkov",
+      "source": "lyric-fantasy-theme-4.m4a",
+      "file": "lyric-fantasy-theme-4-38333eee.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:dream_on",
+      "title": "Dream On",
+      "author": "Andrew Sitkov",
+      "source": "dream-on.m4a",
+      "file": "dream-on-1b88947a.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:quiet_theme_1",
+      "title": "Quiet Theme #1",
+      "author": "Andrew Sitkov",
+      "source": "quiet-theme-1.m4a",
+      "file": "quiet-theme-1-5a55b2bc.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:positive_orchestral_2_theme_5",
+      "title": "Positive and Calm Orchestral Theme #5",
+      "author": "Andrew Sitkov",
+      "source": "positive-orchestral-2-theme-5.m4a",
+      "file": "positive-orchestral-2-theme-5-bf2871f1.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:sentimental_moment",
+      "title": "Sentimental Moment",
+      "author": "Andrew Sitkov",
+      "source": "sentimental-moment.m4a",
+      "file": "sentimental-moment-cd89f0f9.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "day",
+        "night"
+      ]
+    },
+    {
+      "id": "dwell:lyric_peaceful_space_2",
+      "title": "Lyric & Peaceful Space Theme #2",
+      "author": "Andrew Sitkov",
+      "source": "lyric-peaceful-space-2.m4a",
+      "file": "lyric-peaceful-space-2-7b0141e4.m4a",
+      "volume": 0.6,
+      "loop": false,
+      "fadeInS": 2,
+      "fadeOutS": 3,
+      "when": "always",
+      "times": [
+        "night"
+      ]
     }
   ]
 };

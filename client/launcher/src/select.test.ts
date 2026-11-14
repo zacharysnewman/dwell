@@ -9,6 +9,7 @@ import {
   parseWorldIndex,
   type Channel,
   canRegenerate,
+  RELEASES_URL,
   supportsMenuRoutes,
 } from './select';
 
@@ -108,7 +109,7 @@ describe('the launcher', () => {
     });
     expect(choose(SITE, request('?version=9.9.9'))).toEqual({
       kind: 'error',
-      message: 'Version 9.9.9 is not published.',
+      message: `Version 9.9.9 is not on the site: only the newest lines stay here, and every build is kept at ${RELEASES_URL}.`,
     });
   });
 

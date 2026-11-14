@@ -21,6 +21,7 @@ describe('volume settings', () => {
       effects: 0,
       ui: DEFAULT_VOLUMES.ui,
       music: DEFAULT_VOLUMES.music,
+      ambience: DEFAULT_VOLUMES.ambience,
     });
     expect(loadVolumes(memory({ [AUDIO_KEY]: '{not json' }))).toEqual(DEFAULT_VOLUMES);
     expect(loadVolumes(null)).toEqual(DEFAULT_VOLUMES);
@@ -28,8 +29,14 @@ describe('volume settings', () => {
 
   it('round-trip', () => {
     const store = memory();
-    saveVolumes({ master: 0.5, effects: 0.25, ui: 0, music: 0.3 }, store);
-    expect(loadVolumes(store)).toEqual({ master: 0.5, effects: 0.25, ui: 0, music: 0.3 });
+    saveVolumes({ master: 0.5, effects: 0.25, ui: 0, music: 0.3, ambience: 0.1 }, store);
+    expect(loadVolumes(store)).toEqual({
+      master: 0.5,
+      effects: 0.25,
+      ui: 0,
+      music: 0.3,
+      ambience: 0.1,
+    });
   });
 
   it('keep the music volume, 0 (off) included, and default it for an older record', () => {
@@ -37,7 +44,13 @@ describe('volume settings', () => {
     const old = memory({ [AUDIO_KEY]: JSON.stringify({ master: 0.4, effects: 0.5, ui: 0.2 }) });
     expect(loadVolumes(old).music).toBe(DEFAULT_VOLUMES.music);
     saveVolumes({ ...loadVolumes(old), music: 0 }, old);
-    expect(loadVolumes(old)).toEqual({ master: 0.4, effects: 0.5, ui: 0.2, music: 0 });
+    expect(loadVolumes(old)).toEqual({
+      master: 0.4,
+      effects: 0.5,
+      ui: 0.2,
+      music: 0,
+      ambience: DEFAULT_VOLUMES.ambience,
+    });
     expect(sanitizeVolumes({ music: 3 }).music).toBe(1);
     expect(sanitizeVolumes({ music: 'loud' }).music).toBe(DEFAULT_VOLUMES.music);
   });
@@ -47,12 +60,13 @@ describe('volume settings', () => {
     const store = memory({
       [AUDIO_KEY]: JSON.stringify({ master: 0.3, music: 0.7, future: { a: 1 } }),
     });
-    saveVolumes({ master: 0.9, effects: 1, ui: 0.5, music: 0.2 }, store);
+    saveVolumes({ master: 0.9, effects: 1, ui: 0.5, music: 0.2, ambience: 0.3 }, store);
     expect(JSON.parse(store.data[AUDIO_KEY] ?? '{}')).toEqual({
       master: 0.9,
       effects: 1,
       ui: 0.5,
       music: 0.2,
+      ambience: 0.3,
       future: { a: 1 },
     });
   });

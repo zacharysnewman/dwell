@@ -5,7 +5,8 @@
 use std::cmp::Ordering;
 
 /// The version this build carries, without build metadata: "0.1.0" for a release, "0.2.0-dev.42"
-/// for a dev build (build.rs: DWELL_VERSION, or client/package.json's as a local pre-release).
+/// for a dev build, "0.52.0-dev.local" for a local one (build.rs: DWELL_VERSION, or the line in
+/// shared/version/line.json).
 pub const APP_VERSION: &str = env!("DWELL_APP_VERSION");
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

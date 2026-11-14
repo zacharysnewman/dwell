@@ -40,6 +40,9 @@ pub(crate) struct MaterialStyle {
     /// Index into `SHAPES`.
     pub shape: usize,
     pub flooded: bool,
+    /// A molten block's heat stop (its `heat` property's place in `dwell_lava::DATA.heat`,
+    /// VOLCANOES.md §6.5), carried to the shader in its faces' vertex colour.
+    pub heat_stop: Option<u8>,
     /// The cross look's geometry, wind and distance fade.
     pub cross: Option<Cross>,
     pub wind: Option<Wind>,
@@ -54,6 +57,15 @@ pub(crate) struct MaterialStyle {
     /// The axis its ends lie along (0 x, 1 y, 2 z; block data `axisProperty`): its top and bottom
     /// tiles face along it.
     pub axis: usize,
+    /// An octagonal prism along `axis` (block data `crossSection`, ADR 0072), drawn whole by
+    /// `dwell_blocks::octagon` with its sides squared where it joins its neighbours.
+    pub octagon: bool,
+    /// Drawn as a canopy (shared/look/leaves.json `blocks`, by name): chamfered where exposed,
+    /// its normals leaning out of the crown (`mesher/leaves.rs`). Full cubes only.
+    pub leafy: bool,
+    /// Leaves beside it lie flat against it (block data `leafFlush`: the logs; WORK_QUEUE item 48):
+    /// a leaf cell takes the face it shares with it as covered for its chamfers (`mesher/leaves.rs`).
+    pub leaf_flush: bool,
 }
 
 /// The per-vertex fluid id of see-through faces that are not a fluid's ([`crate::NO_FLUID`]), or
@@ -76,6 +88,15 @@ fn cube_index() -> usize {
 
 /// The style of a state row, with `fluids` the table its `fluid` indexes (the build's, or a test
 /// registry's).
+/// The heat stop of state `name` (`dwell:lava[heat=warm]`): its `heat` value's place among
+/// `dwell_lava::DATA.heat`'s names; `None` without one.
+pub(crate) fn heat_stop(name: &str) -> Option<u8> {
+    let id = dwell_blocks::state(name)?;
+    let v = dwell_blocks::state_property(id, "heat")?;
+    let k = dwell_lava::DATA.heat.iter().position(|h| h.name == v)?;
+    u8::try_from(k).ok()
+}
+
 pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
     if !drawable(s, fluids) {
         return fallback_style(usize::from(s.shape_index), s.flooded);
@@ -110,6 +131,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         },
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
+        heat_stop: heat_stop(s.name),
         cross: s.cross,
         wind: s.wind,
         fade: s.fade,
@@ -124,6 +146,17 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
             dwell_blocks::Axis::Y => 1,
             dwell_blocks::Axis::Z => 2,
         },
+        // A shaped state (a wood ramp) is octagonal only when its shape is convex
+        // (`dwell_blocks::octagon::section_of`).
+        octagon: s.cross_section.is_some()
+            && SHAPES
+                .get(usize::from(s.shape_index))
+                .is_some_and(|sh| sh.convex),
+        leafy: look == Look::Cube
+            && dwell_look::leaves::LEAVES
+                .blocks
+                .contains(&block_id(s.name)),
+        leaf_flush: s.leaf_flush,
     }
 }
 
@@ -169,6 +202,7 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         ladder_face: None,
         shape,
         flooded,
+        heat_stop: None,
         cross: None,
         wind: None,
         fade: None,
@@ -176,6 +210,9 @@ fn fallback_style(shape: usize, flooded: bool) -> MaterialStyle {
         surface_drop: 0.0,
         fluid: None,
         axis: 1,
+        octagon: false,
+        leafy: false,
+        leaf_flush: false,
     }
 }
 

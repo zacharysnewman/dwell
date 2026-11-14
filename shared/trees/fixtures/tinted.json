@@ -1,0 +1,11 @@
+{
+  "$comment": "A test fixture: a species whose `variety` tints its leaves strongly (per-tree leaf tints, ADR 0079), added by data alone (dwell-worldgen's species tests, dwell-mesh's leaf tint tests); in no world.",
+  "name": "test:tinted",
+  "label": "Tinted shrub",
+  "blocks": { "log": "dwell:log", "leaf": "dwell:leaves" },
+  "trunk": { "height": { "sapling": 0.5, "mature": [1, 1.5] }, "heightStep": 0.5, "width": { "sapling": 0.25, "mature": 0.5, "step": 0.25 } },
+  "branches": { "kind": "none" },
+  "crown": { "shape": "lumpy", "centre": 0.5, "radius": [1.2, 0.8, 1.2], "lumps": { "radius": [0.5, 0.6], "height": [1, 1] }, "roughness": 0, "scale": [0.5, 1] },
+  "variety": { "crown": [1, 1], "lightness": [0.5, 0.6], "hue": [0.2, 0.25] },
+  "growth": { "stages": 3, "daysPerStage": 1, "wild": [1, 1, 1], "variants": 4 }
+}

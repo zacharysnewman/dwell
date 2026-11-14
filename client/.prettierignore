@@ -15,3 +15,7 @@ src/ui/loading.gen.ts
 ../docs/
 bench/out/
 src/ui/hud.gen.css
+src/ui/modes.gen.ts
+src/ui/inventory.gen.ts
+src/ui/layout.gen.ts
+src/ui/skyPresets.gen.ts

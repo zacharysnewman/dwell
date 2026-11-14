@@ -1,9 +1,13 @@
 name: CI
 
 on:
+  # Docs-only changes (owner, 2026-11-12: CI runs starved the Release queue) skip CI; a change that
+  # touches anything else, a pending release note included, still runs it in full.
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -23,15 +27,38 @@ jobs:
           node shared/protocol/gen.mjs
           node shared/blocks/gen.mjs
           node shared/structures/gen.mjs
+          node shared/trees/gen.mjs
+          node --test shared/trees/gen.test.mjs
           node shared/look/gen.mjs
           node shared/brushes/gen.mjs
+          node shared/modes/gen.mjs
+          node --test shared/modes/gen.test.mjs
+          node shared/vitals/gen.mjs
+          node --test shared/vitals/gen.test.mjs
+          node shared/defeat/gen.mjs
+          node --test shared/defeat/gen.test.mjs
+          node shared/inventory/gen.mjs
+          node --test shared/inventory/gen.test.mjs
+          node shared/tools/gen.mjs
+          node --test shared/tools/gen.test.mjs
           node shared/input/gen.mjs
           node shared/items/gen.mjs
           node --test shared/items/gen.test.mjs
+          node shared/ground/gen.mjs
+          node --test shared/ground/gen.test.mjs
+          node shared/creatures/gen.mjs
+          node --test shared/creatures/gen.test.mjs
+          node shared/blueprints/gen.mjs
+          node --test shared/blueprints/gen.test.mjs
+          node shared/ecology/gen.mjs
+          node --test shared/ecology/gen.test.mjs
           node --test shared/input/gen.test.mjs
+          node --test .claude/skills/record/scripts/take.test.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
+          node shared/look/watertiers.mjs
+          node --test shared/look/watertiers.test.mjs
           node shared/look/reflections.mjs
           node --test shared/look/reflections.test.mjs
           node shared/look/shadows.mjs
@@ -40,10 +67,14 @@ jobs:
           node --test shared/look/lodshadows.test.mjs
           node shared/look/spyglass.mjs
           node --test shared/look/spyglass.test.mjs
+          node shared/look/orbits.mjs
+          node --test shared/look/orbits.test.mjs
           node shared/look/loading.mjs
           node --test shared/look/loading.test.mjs
           node shared/look/fog.mjs
           node --test shared/look/fog.test.mjs
+          node shared/look/atmosphere.mjs
+          node --test shared/look/atmosphere.test.mjs
           node shared/physics/gen.mjs
           node --test shared/physics/gen.test.mjs
           node shared/explosives/gen.mjs
@@ -52,10 +83,14 @@ jobs:
           node --test shared/fluids/gen.test.mjs
           node shared/fluids/falls.mjs
           node --test shared/fluids/falls.test.mjs
+          node shared/fluids/lava.mjs --check
+          node --test shared/fluids/lava.test.mjs
           node shared/look/lodblend.mjs
           node --test shared/look/lodblend.test.mjs
           node shared/look/lodcolour.mjs
           node --test shared/look/lodcolour.test.mjs
+          node shared/look/leaves.mjs
+          node --test shared/look/leaves.test.mjs
           node shared/look/lodmap.mjs
           node --test shared/look/lodmap.test.mjs
           node shared/look/outline.mjs
@@ -74,6 +109,12 @@ jobs:
           node --test shared/look/motes.test.mjs
           node shared/look/waterflow.mjs
           node --test shared/look/waterflow.test.mjs
+          node shared/look/underwater.mjs
+          node --test shared/look/underwater.test.mjs
+          node shared/look/shafts.mjs
+          node --test shared/look/shafts.test.mjs
+          node shared/look/bloom.mjs
+          node --test shared/look/bloom.test.mjs
           node shared/look/waterfalls.mjs
           node --test shared/look/waterfalls.test.mjs
           node shared/look/daynight.mjs
@@ -82,6 +123,10 @@ jobs:
           node --test shared/textures/gen.test.mjs
           node shared/characters/gen.mjs
           node --test shared/characters/gen.test.mjs
+          node shared/models/gen.mjs
+          node --test shared/models/gen.test.mjs
+          node --test shared/models/painter.test.mjs
+          node --test shared/models/decor.test.mjs
           node shared/sounds/gen.mjs
           node shared/music/gen.mjs
           node shared/worldgen/gen.mjs

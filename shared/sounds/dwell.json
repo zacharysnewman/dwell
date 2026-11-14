@@ -1,38 +1,49 @@
 {
-  "$comment": "Sound effects of the built-in `dwell` namespace (docs/AUDIO.md). Every sound is procedural: layers of noise, oscillators and modal partials through filters and envelopes, composed here from a small fixed vocabulary that the client's synth (client/src/audio/synth.ts) understands. Blocks name a sound set with `\"sound\"` in shared/blocks/*.json. Run `node shared/sounds/gen.mjs` after editing; CI fails if the generated files are stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "$comment": "Sound effects of the built-in `dwell` namespace (docs/AUDIO.md). Every sound has a procedural form, and most also recorded `samples` (files in samples/, AUDIO.md §2b) played instead: layers of noise, oscillators and modal partials through filters and envelopes, composed here from a small fixed vocabulary that the client's synth (client/src/audio/synth.ts) understands. Blocks name a sound set with `\"sound\"` in shared/blocks/*.json. Run `node shared/sounds/gen.mjs` after editing; CI fails if the generated files are stale. The content is prototype (ARCHITECTURE.md §6.1).",
   "namespace": "dwell",
   "fallback": "stone",
   "gaits": {
-    "walk": {"stride": 2.0, "gain": 0.55},
-    "run": {"stride": 2.7, "gain": 0.85},
+    "walk": {"stride": 2.5, "gain": 0.55},
+    "run": {"stride": 2.8, "gain": 0.85},
     "crouch": {"stride": 1.1, "gain": 0.28},
     "climb": {"stride": 0.75, "gain": 0.6},
-    "swim": {"stride": 2.4, "gain": 0.7}
+    "swim": {"stride": 3.0, "gain": 0.45}
+  },
+  "brush": {
+    "$comment": "Moving through foliage (tall grass, leaves; AUDIO.md §5 `brush`, BUGS.md #103): on its feet a body rustles only with a footstep, at most one rustle a step; off them (falling, flying, climbing through leaves) one every `everyM` metres moved. Never closer than `minS` seconds either way, and never on entering a cell.",
+    "everyM": 2.5,
+    "minS": 0.3
+  },
+  "self": {
+    "$comment": "AUDIO.md §5a (BUGS.md #110): where the local player's own sounds are heard (an event's `self`; the game sends them without a position). Each placement is metres from the ear in the listener's own frame — `right`, `up`, `ahead` — so looking up or down never moves them behind the head: footsteps at the feet, a little ahead; a tool at the right hand. `stepM` moves alternate plays (each footstep) that far left and right; `reverb` is the share sent to the room on top of the sound's own. An event without `self` plays centred at the ear (your own voice: a gasp, a hurt).",
+    "feet": {"right": 0, "up": -1.5, "ahead": 0.6, "stepM": 0.15, "reverb": 0.08},
+    "body": {"right": 0, "up": -0.7, "ahead": 0.4, "reverb": 0.05},
+    "hand": {"right": 0.3, "up": -0.35, "ahead": 0.5}
   },
   "events": {
-    "step": {"set": "step"},
-    "climb": {"set": "step"},
-    "land": {"set": "land", "speed": [3.5, 16]},
-    "jump": {"set": "step", "sound": "jump"},
-    "break": {"set": "break"},
-    "place": {"set": "place"},
-    "hit": {"set": "hit"},
-    "enter": {"set": "enter", "speed": [1.5, 12]},
-    "exit": {"set": "exit", "speed": [1.0, 6]},
-    "swim": {"set": "swim"},
-    "crouch_on": {"sound": "crouch_on"},
-    "crouch_off": {"sound": "crouch_off"},
-    "sprint": {"sound": "sprint"},
-    "slide": {"set": "slide", "loop": "start", "speed": [0.5, 14]},
+    "step": {"set": "step", "self": "feet"},
+    "climb": {"set": "step", "self": "body"},
+    "land": {"set": "land", "speed": [3.5, 16], "self": "feet"},
+    "jump": {"set": "step", "sound": "jump", "self": "feet"},
+    "break": {"set": "break", "self": "hand"},
+    "place": {"set": "place", "self": "hand"},
+    "hit": {"set": "hit", "self": "hand"},
+    "enter": {"set": "enter", "speed": [1.5, 12], "self": "body"},
+    "exit": {"set": "exit", "speed": [1.0, 6], "self": "body"},
+    "swim": {"set": "swim", "self": "body"},
+    "crouch_on": {"sound": "crouch_on", "self": "body"},
+    "crouch_off": {"sound": "crouch_off", "self": "body"},
+    "sprint": {"sound": "sprint", "self": "body"},
+    "slide": {"set": "slide", "loop": "start", "speed": [0.5, 14], "self": "feet"},
     "slide_speed": {"loop": "update", "speed": [0.5, 14]},
-    "slide_end": {"set": "slide_stop", "loop": "stop", "speed": [0.5, 14]},
-    "rise": {"sound": "rise", "speed": [2.0, 30]},
-    "dive": {"sound": "dive", "speed": [2.0, 30]},
+    "slide_end": {"set": "slide_stop", "loop": "stop", "speed": [0.5, 14], "self": "feet"},
+    "rise": {"sound": "rise", "speed": [2.0, 30], "self": "body"},
+    "dive": {"sound": "dive", "speed": [2.0, 30], "self": "body"},
     "deny": {"sound": "deny"},
-    "tool": {"sound": "ui_click"},
-    "impact": {"set": "land", "sound": "body_thud", "speed": [2.0, 25]},
+    "tool": {"sound": "ui_click", "self": "hand"},
+    "impact": {"set": "land", "sound": "body_thud", "speed": [2.0, 25], "self": "body"},
     "fell": {"sound": "fell_crack"},
-    "piece_land": {"set": "land", "sound": "body_thud", "speed": [2.0, 20]},
+    "piece_land": {"set": "impact", "sound": "body_thud", "speed": [2.0, 20]},
     "hurt": {"sound": "hurt", "speed": [0, 80]},
     "death": {"sound": "death"},
     "respawn": {"sound": "respawn"},
@@ -42,11 +53,86 @@
     "fall": {"sound": "waterfall", "loop": "start"},
     "fall_level": {"loop": "update"},
     "fall_end": {"loop": "stop"},
-    "explode": {"set": "explode", "sound": "dynamite_boom"}
+    "explode": {"set": "explode", "sound": "dynamite_boom"},
+    "chop_bark": {"sound": "chop_bark", "self": "hand"},
+    "chop_wood": {"sound": "chop_wood", "self": "hand"},
+    "chop_creak": {"sound": "chop_creak", "self": "hand"},
+    "axe_clank": {"sound": "axe_clank", "self": "hand"},
+    "axe_swish": {"sound": "axe_swish", "self": "hand"},
+    "axe_rustle": {"sound": "axe_rustle", "self": "hand"},
+    "exhausted": {"sound": "breath_heavy"},
+    "gasp": {"sound": "gasp"},
+    "strain": {"sound": "strain"},
+    "creature_step": {"creature": "step"},
+    "creature_startle": {"creature": "startle"},
+    "creature_call": {"creature": "call"},
+    "fell_land": {"sound": "fell_impact", "speed": [1.0, 12]},
+    "brush": {"set": "brush", "fallback": false, "speed": [0.4, 6], "self": "feet"},
+    "stick_snap": {"sound": "stick_snap", "self": "feet"},
+    "steam_hiss": {"sound": "steam_hiss"},
+    "sizzle": {"sound": "sizzle", "self": "body"},
+    "swim_under": {"set": "swim_under", "fallback": false, "self": "body"}
+  },
+  "creatures": {
+    "$comment": "AUDIO.md §2d: each creature model's sounds — a footstep every stride walked, a startle when it breaks into a run, a call now and then (every callEveryS [min, max] seconds) — heard within radiusM.",
+    "radiusM": 32,
+    "models": {
+      "wolf": {"stride": 1.1, "step": "wolf_step", "startle": "wolf_growl", "call": "wolf_howl", "callEveryS": [50, 140]},
+      "deer": {"stride": 1.2, "step": "deer_step", "startle": "deer_snort"},
+      "doe": {"stride": 1.1, "step": "deer_step", "startle": "deer_snort"}
+    }
+  },
+  "underwater": {
+    "$comment": "AUDIO.md §3a (BUGS.md #104): with the eye under a fluid's surface every world sound is heard muffled: each listed bus goes through a low-pass at `lowpassHz` (Q `q`) and drops to `gain`, eased over `easeS` at the crossing; open, the filter sits at `openHz` (transparent). The UI and music buses are not listed, so they are never muffled.",
+    "buses": ["effects", "ambience"],
+    "lowpassHz": 800,
+    "q": 0.7,
+    "gain": 0.6,
+    "easeS": 0.25,
+    "openHz": 20000
   },
   "ambient": {
     "fire": {"radiusM": 10, "max": 4},
     "falls": {"radiusM": 40, "max": 3, "fullM3s": 2}
+  },
+  "ambience": {
+    "$comment": "AUDIO.md §2c: looping beds under the Ambience volume, each at its gain times every condition's ramp over the listener's surroundings; quiet flavour, never above cap.",
+    "volume": 0.35,
+    "fadeS": 2.5,
+    "cap": 0.4,
+    "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
+    "beds": {
+      "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
+        {"input": "height", "from": 12, "full": 60},
+        {"input": "open", "from": 0.2, "full": 1}
+      ]},
+      "sea": {"files": ["sea-loop-1.m4a"], "gain": 0.35, "when": [
+        {"input": "waterShare", "from": 0.15, "full": 0.5},
+        {"input": "waterM", "from": 40, "full": 4}
+      ]},
+      "river": {"files": ["river-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "flow", "from": 0.1, "full": 2},
+        {"input": "waterM", "from": 24, "full": 3}
+      ]},
+      "stream": {"files": ["stream-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "waterShare", "from": 0.15, "full": 0.01},
+        {"input": "waterM", "from": 12, "full": 2}
+      ]},
+      "birds": {"files": ["birds-loop-1.m4a"], "gain": 0.3, "when": [
+        {"input": "trees", "from": 0.05, "full": 0.35},
+        {"input": "day", "from": 0.1, "full": 0.6, "floor": 0.1}
+      ]},
+      "leaves": {"files": ["leaves-loop-1.m4a"], "gain": 0.25, "when": [
+        {"input": "trees", "from": 0.05, "full": 0.4},
+        {"input": "open", "from": 0, "full": 0.6, "floor": 0.3}
+      ]},
+      "fire": {"files": ["fire-loop-1.m4a"], "gain": 0.2, "when": [
+        {"input": "fireM", "from": 8, "full": 1.5}
+      ]},
+      "underwater": {"files": ["sea-loop-1.m4a"], "gain": 0.2, "when": [
+        {"input": "underwater", "from": 0, "full": 1}
+      ]}
+    }
   },
   "sets": {
     "stone": {
@@ -56,7 +142,8 @@
       "place": "stone_place",
       "hit": "stone_hit",
       "slide": "stone_slide",
-      "slide_stop": "stone_slide_stop"
+      "slide_stop": "stone_slide_stop",
+      "impact": "stone_impact"
     },
     "dirt": {
       "step": "dirt_step",
@@ -65,7 +152,8 @@
       "place": "dirt_place",
       "hit": "dirt_hit",
       "slide": "dirt_slide",
-      "slide_stop": "dirt_slide_stop"
+      "slide_stop": "dirt_slide_stop",
+      "impact": "dirt_land"
     },
     "grass": {
       "step": "grass_step",
@@ -74,7 +162,9 @@
       "place": "grass_place",
       "hit": "dirt_hit",
       "slide": "grass_slide",
-      "slide_stop": "grass_slide_stop"
+      "slide_stop": "grass_slide_stop",
+      "impact": "grass_land",
+      "brush": "leaf_brush"
     },
     "snow": {
       "step": "snow_step",
@@ -83,7 +173,9 @@
       "place": "grass_place",
       "hit": "sand_hit",
       "slide": "sand_slide",
-      "slide_stop": "sand_slide_stop"
+      "slide_stop": "sand_slide_stop",
+      "impact": "snow_land",
+      "brush": "leaf_brush"
     },
     "sand": {
       "step": "sand_step",
@@ -92,14 +184,16 @@
       "place": "sand_place",
       "hit": "sand_hit",
       "slide": "sand_slide",
-      "slide_stop": "sand_slide_stop"
+      "slide_stop": "sand_slide_stop",
+      "impact": "sand_land"
     },
     "wood": {
       "step": "wood_step",
       "land": "wood_land",
       "break": "wood_break",
       "place": "wood_place",
-      "hit": "wood_hit"
+      "hit": "wood_hit",
+      "impact": "wood_impact"
     },
     "torch": {
       "step": "wood_step",
@@ -107,7 +201,8 @@
       "break": "torch_break",
       "place": "torch_place",
       "hit": "wood_hit",
-      "burn": "torch_fire"
+      "burn": "torch_fire",
+      "impact": "wood_impact"
     },
     "dynamite": {
       "step": "wood_step",
@@ -115,7 +210,8 @@
       "break": "torch_break",
       "place": "wood_place",
       "hit": "wood_hit",
-      "explode": "dynamite_boom"
+      "explode": "dynamite_boom",
+      "impact": "wood_impact"
     },
     "lit_dynamite": {
       "step": "wood_step",
@@ -124,7 +220,8 @@
       "place": "fuse_light",
       "hit": "wood_hit",
       "burn": "fuse_fizz",
-      "explode": "dynamite_boom"
+      "explode": "dynamite_boom",
+      "impact": "wood_impact"
     },
     "water": {
       "step": "water_step",
@@ -134,7 +231,9 @@
       "hit": "water_exit",
       "enter": "water_enter",
       "exit": "water_exit",
-      "swim": "water_swim"
+      "swim": "water_swim",
+      "swim_under": "water_swim_under",
+      "impact": "water_enter"
     }
   },
   "actions": {
@@ -178,6 +277,7 @@
     "Keep building as you aim": ["event:place"],
     "Build mode": ["event:tool"],
     "Choose block": ["action:hotbar"],
+    "Previous / next block": ["action:hotbar"],
     "Select first corner": ["event:tool"],
     "Select second corner": ["event:tool"],
     "Clear the selection": ["event:tool"],
@@ -208,13 +308,18 @@
     "Debug overlay": ["action:overlay_on", "action:overlay_off"],
     "Terrain map": ["action:map_open", "action:map_close"],
     "Map zoom": ["action:map_zoom"],
+    "World map": ["action:map_open", "action:map_close"],
+    "Map zoom / center on me": ["action:map_zoom"],
     "Copy block info": ["action:copy"],
+    "Copy streaming report": ["action:copy"],
+    "Pause the look": ["action:overlay_on", "action:overlay_off"],
     "Break or place": ["event:break", "event:place", "event:hit", "event:deny", "action:touch_mode"],
     "Keep building as you look": ["event:place"],
     "Jump, Run, Crouch, Fly": ["event:jump", "event:sprint", "event:crouch_on", "action:fly_on"]
   },
   "sounds": {
     "stone_step": {
+      "samples": {"files": ["stone-step-1.m4a", "stone-step-2.m4a", "stone-step-3.m4a", "stone-step-4.m4a", "stone-step-5.m4a", "stone-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.022,
       "reverb": 0.099,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -261,6 +366,7 @@
       ]
     },
     "stone_land": {
+      "samples": {"files": ["stone-land-1.m4a", "stone-land-2.m4a", "stone-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.163,
       "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -300,6 +406,7 @@
       ]
     },
     "stone_break": {
+      "samples": {"files": ["stone-break-1.m4a", "stone-break-2.m4a", "stone-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.729,
       "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -348,6 +455,7 @@
       ]
     },
     "stone_place": {
+      "samples": {"files": ["stone-place-1.m4a", "stone-place-2.m4a", "stone-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.804,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -383,6 +491,7 @@
       ]
     },
     "stone_hit": {
+      "samples": {"files": ["stone-hit-1.m4a", "stone-hit-2.m4a", "stone-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.782,
       "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -403,6 +512,7 @@
       ]
     },
     "dirt_step": {
+      "samples": {"files": ["dirt-step-1.m4a", "dirt-step-2.m4a", "dirt-step-3.m4a", "dirt-step-4.m4a", "dirt-step-5.m4a", "dirt-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.546,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
@@ -428,6 +538,7 @@
       ]
     },
     "dirt_land": {
+      "samples": {"files": ["dirt-land-1.m4a", "dirt-land-2.m4a", "dirt-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.951,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
@@ -462,6 +573,7 @@
       ]
     },
     "dirt_break": {
+      "samples": {"files": ["dirt-break-1.m4a", "dirt-break-2.m4a", "dirt-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.327,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -495,6 +607,7 @@
       ]
     },
     "dirt_place": {
+      "samples": {"files": ["dirt-place-1.m4a", "dirt-place-2.m4a", "dirt-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.174,
       "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -525,6 +638,7 @@
       ]
     },
     "dirt_hit": {
+      "samples": {"files": ["dirt-hit-1.m4a", "dirt-hit-2.m4a", "dirt-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.56,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -546,6 +660,7 @@
       ]
     },
     "snow_step": {
+      "samples": {"files": ["snow-step-1.m4a", "snow-step-2.m4a", "snow-step-3.m4a", "snow-step-4.m4a", "snow-step-5.m4a", "snow-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -635,6 +750,7 @@
       ]
     },
     "snow_land": {
+      "samples": {"files": ["snow-land-1.m4a", "snow-land-2.m4a", "snow-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {
@@ -721,6 +837,8 @@
       ]
     },
     "grass_step": {
+      "samples": {"files": ["grass-step-1.m4a", "grass-step-2.m4a", "grass-step-3.m4a", "grass-step-4.m4a", "grass-step-5.m4a", "grass-step-6.m4a"], "gain": 0.4, "pitch": 1},
+      "voices": 2,
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.18},
@@ -755,6 +873,7 @@
       ]
     },
     "grass_land": {
+      "samples": {"files": ["grass-land-1.m4a", "grass-land-2.m4a", "grass-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.095,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.12},
@@ -790,6 +909,7 @@
       ]
     },
     "grass_break": {
+      "samples": {"files": ["grass-break-1.m4a", "grass-break-2.m4a", "grass-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.318,
       "reverb": 0.066,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -824,6 +944,7 @@
       ]
     },
     "grass_place": {
+      "samples": {"files": ["grass-place-1.m4a", "grass-place-2.m4a", "grass-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.359,
       "reverb": 0.066,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.1},
@@ -858,6 +979,7 @@
       ]
     },
     "sand_step": {
+      "samples": {"files": ["sand-step-1.m4a", "sand-step-2.m4a", "sand-step-3.m4a", "sand-step-4.m4a", "sand-step-5.m4a", "sand-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 1.546,
       "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.2},
@@ -883,6 +1005,7 @@
       ]
     },
     "sand_land": {
+      "samples": {"files": ["sand-land-1.m4a", "sand-land-2.m4a", "sand-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.023,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -916,6 +1039,7 @@
       ]
     },
     "sand_break": {
+      "samples": {"files": ["sand-break-1.m4a", "sand-break-2.m4a", "sand-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.511,
       "reverb": 0.055,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -948,6 +1072,7 @@
       ]
     },
     "sand_place": {
+      "samples": {"files": ["sand-place-1.m4a", "sand-place-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.323,
       "reverb": 0.044,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.12, "time": 0.12},
@@ -977,6 +1102,7 @@
       ]
     },
     "sand_hit": {
+      "samples": {"files": ["sand-hit-1.m4a", "sand-hit-2.m4a", "sand-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.296,
       "reverb": 0.044,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.12, "time": 0.12},
@@ -991,6 +1117,7 @@
       ]
     },
     "wood_step": {
+      "samples": {"files": ["wood-step-1.m4a", "wood-step-2.m4a", "wood-step-3.m4a", "wood-step-4.m4a", "wood-step-5.m4a", "wood-step-6.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 0.88,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1019,6 +1146,7 @@
       ]
     },
     "wood_land": {
+      "samples": {"files": ["wood-land-1.m4a", "wood-land-2.m4a", "wood-land-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.108,
       "reverb": 0.121,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1047,6 +1175,7 @@
       ]
     },
     "wood_break": {
+      "samples": {"files": ["wood-break-1.m4a", "wood-break-2.m4a", "wood-break-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.434,
       "reverb": 0.121,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1083,6 +1212,7 @@
       ]
     },
     "wood_place": {
+      "samples": {"files": ["wood-place-1.m4a", "wood-place-2.m4a", "wood-place-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.751,
       "reverb": 0.11,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -1111,6 +1241,7 @@
       ]
     },
     "wood_hit": {
+      "samples": {"files": ["wood-hit-1.m4a", "wood-hit-2.m4a", "wood-hit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.721,
       "reverb": 0.083,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
@@ -1126,6 +1257,7 @@
       ]
     },
     "water_step": {
+      "samples": {"files": ["water-step-1.m4a", "water-step-2.m4a", "water-step-3.m4a", "water-step-4.m4a"], "gain": 0.5, "pitch": 1},
       "gain": 2.094,
       "reverb": 0.083,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.18, "time": 0.15},
@@ -1150,7 +1282,8 @@
       ]
     },
     "water_swim": {
-      "gain": 1.16,
+      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.32, "pitch": 1.5, "shift": -2, "lowpassHz": 2500},
+      "gain": 0.7,
       "reverb": 0.099,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
       "layers": [
@@ -1167,20 +1300,33 @@
           "gain": 0.45,
           "filters": [{"type": "lowpass", "freq": 350}],
           "env": {"attack": 0.05, "decay": 0.25}
+        }
+      ]
+    },
+    "water_swim_under": {
+      "samples": {"files": ["water-swim-1.m4a", "water-swim-2.m4a", "water-swim-3.m4a", "water-swim-4.m4a"], "gain": 0.4, "pitch": 1.5, "shift": -12, "lowpassHz": 600},
+      "gain": 0.6,
+      "reverb": 0.15,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.2, "time": 0.15},
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [{"type": "lowpass", "freq": 300}],
+          "env": {"attack": 0.12, "hold": 0.1, "decay": 0.45}
         },
         {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 420,
-          "to": 1000,
-          "gain": 0.1,
-          "at": 0.08,
-          "env": {"attack": 0.002, "decay": 0.04},
-          "grains": {"count": [3, 6], "spread": 0.3, "gain": [0.3, 1], "pitch": 7}
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.2,
+          "filters": [{"type": "bandpass", "freq": 180, "q": 1.0, "to": 360}],
+          "env": {"attack": 0.1, "decay": 0.4}
         }
       ]
     },
     "water_enter": {
+      "samples": {"files": ["water-enter-1.m4a", "water-enter-2.m4a", "water-enter-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.018,
       "reverb": 0.138,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1224,6 +1370,7 @@
       ]
     },
     "water_exit": {
+      "samples": {"files": ["water-exit-1.m4a", "water-exit-2.m4a", "water-exit-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.49,
       "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
@@ -1249,6 +1396,7 @@
       ]
     },
     "water_place": {
+      "samples": {"files": ["water-place-1.m4a", "water-place-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 2.793,
       "reverb": 0.11,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
@@ -1272,6 +1420,7 @@
       ]
     },
     "jump": {
+      "samples": {"files": ["jump-1.m4a", "jump-2.m4a", "jump-3.m4a"], "gain": 0.4, "pitch": 1.5},
       "gain": 1.135,
       "reverb": 0.028,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
@@ -1360,7 +1509,7 @@
       ]
     },
     "stone_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1372,7 +1521,7 @@
       ]
     },
     "dirt_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1384,7 +1533,7 @@
       ]
     },
     "grass_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1396,7 +1545,7 @@
       ]
     },
     "sand_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1408,7 +1557,7 @@
       ]
     },
     "stone_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1419,7 +1568,7 @@
       ]
     },
     "dirt_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1429,7 +1578,7 @@
       ]
     },
     "grass_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1439,7 +1588,7 @@
       ]
     },
     "sand_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1480,7 +1629,8 @@
       ]
     },
     "deny": {
-      "gain": 0.879,
+      "samples": {"files": ["deny-knock-1.m4a"], "gain": 0.2, "pitch": 1},
+      "gain": 0.3,
       "reverb": 0.028,
       "variation": "none",
       "layers": [
@@ -1947,7 +2097,108 @@
         }
       ]
     },
+    "chop_bark": {
+      "samples": {"files": ["chop-bark-1.m4a", "chop-bark-2.m4a", "chop-bark-3.m4a"], "gain": 0.6, "pitch": 1},
+      "gain": 0.9, "reverb": 0.08,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 260, "gain": 0.32, "partials": [[1, 1, 0.07], [2.4, 0.45, 0.04]]},
+        {"source": "noise", "color": "pink", "gain": 0.32, "filters": [{"type": "bandpass", "freq": 1500, "q": 1.2}], "env": {"attack": 0.0005, "decay": 0.03}}
+      ]
+    },
+    "chop_wood": {
+      "samples": {"files": ["chop-wood-1.m4a", "chop-wood-2.m4a", "chop-wood-3.m4a"], "gain": 0.6, "pitch": 1},
+      "gain": 1.0, "reverb": 0.1,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 170, "gain": 0.4, "partials": [[1, 1, 0.12], [2.2, 0.5, 0.07], [3.9, 0.2, 0.04]]},
+        {"source": "noise", "color": "brown", "gain": 0.35, "filters": [{"type": "lowpass", "freq": 900, "q": 0.8}], "env": {"attack": 0.0005, "decay": 0.06}}
+      ]
+    },
+    "chop_creak": {
+      "samples": {"files": ["chop-creak-1.m4a", "chop-creak-2.m4a", "chop-creak-3.m4a"], "gain": 0.6, "pitch": 1},
+      "gain": 1.05, "reverb": 0.18,
+      "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
+      "layers": [
+        {"source": "modal", "freq": 150, "gain": 0.4, "partials": [[1, 1, 0.14], [2.3, 0.5, 0.08]]},
+        {"source": "noise", "color": "brown", "gain": 0.3, "filters": [{"type": "lowpass", "freq": 800, "q": 0.8}], "env": {"attack": 0.0005, "decay": 0.06}},
+        {"source": "modal", "freq": 620, "gain": 0.12, "at": 0.08, "partials": [[1, 1, 0.05], [2.6, 0.5, 0.03]], "grains": {"count": [5, 9], "spread": 0.45, "gain": [0.3, 1], "pitch": 6}}
+      ]
+    },
+    "axe_clank": {
+      "samples": {"files": ["axe-clank-1.m4a", "axe-clank-2.m4a", "axe-clank-3.m4a"], "gain": 0.6, "pitch": 1},
+      "gain": 0.9, "reverb": 0.1,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "modal", "freq": 1400, "gain": 0.22, "partials": [[1, 1, 0.09], [2.76, 0.5, 0.06], [5.4, 0.25, 0.03]]},
+        {"source": "noise", "color": "white", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.4}], "env": {"attack": 0.0005, "decay": 0.015}}
+      ]
+    },
+    "fell_impact": {
+      "samples": {"files": ["fell-impact-1.m4a", "fell-impact-2.m4a", "fell-impact-3.m4a"], "gain": 0.8, "pitch": 1},
+      "gain": 0.9, "reverb": 0.2,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "intensity": {"gain": [0.3, 1], "cutoff": [0.6, 1], "time": [0.8, 1.2]},
+      "layers": [
+        {"source": "osc", "wave": "sine", "freq": 90, "to": 40, "gain": 0.6, "env": {"attack": 0.004, "decay": 0.35}},
+        {"source": "noise", "color": "brown", "gain": 0.8, "filters": [{"type": "lowpass", "freq": 420, "q": 0.8}], "env": {"attack": 0.003, "decay": 0.3}}
+      ]
+    },
+    "stone_impact": {
+      "samples": {"files": ["stone-impact-1.m4a", "stone-impact-2.m4a", "stone-impact-3.m4a"], "gain": 0.6, "pitch": 1.5},
+      "gain": 0.6, "reverb": 0.08,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
+      "intensity": {"gain": [0.25, 1], "cutoff": [0.6, 1], "time": [0.8, 1.1]},
+      "layers": [
+        {"source": "modal", "freq": 620, "gain": 0.3, "partials": [[1, 1, 0.06], [2.7, 0.5, 0.04]]},
+        {"source": "noise", "color": "pink", "gain": 0.5, "filters": [{"type": "bandpass", "freq": 1400, "q": 1}], "env": {"attack": 0.001, "decay": 0.06}}
+      ]
+    },
+    "wood_impact": {
+      "samples": {"files": ["wood-impact-1.m4a", "wood-impact-2.m4a", "wood-impact-3.m4a"], "gain": 0.6, "pitch": 1.5},
+      "gain": 0.6, "reverb": 0.08,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
+      "intensity": {"gain": [0.25, 1], "cutoff": [0.6, 1], "time": [0.8, 1.1]},
+      "layers": [
+        {"source": "modal", "freq": 260, "gain": 0.35, "partials": [[1, 1, 0.08], [2.4, 0.5, 0.05]]},
+        {"source": "noise", "color": "brown", "gain": 0.6, "filters": [{"type": "lowpass", "freq": 700, "q": 0.8}], "env": {"attack": 0.002, "decay": 0.08}}
+      ]
+    },
+    "stick_snap": {
+      "samples": {"files": ["stick-snap-1.m4a", "stick-snap-2.m4a", "stick-snap-3.m4a"], "gain": 0.5, "pitch": 2},
+      "gain": 0.5, "reverb": 0.04,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.5, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.5}], "env": {"attack": 0.0005, "decay": 0.03}, "grains": {"count": [2, 4], "spread": 0.05, "gain": [0.4, 1], "pitch": 4}}
+      ]
+    },
+    "leaf_brush": {
+      "$comment": "A soft swish layered on a footstep through tall grass or leaves (BUGS.md #103): pink noise only, a slow attack, no grains (the old white-noise grains crackled at five rustles a second); one voice, never restarted.",
+      "gain": 0.16, "reverb": 0.03, "voices": 1, "minGapS": 0.25,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
+      "intensity": {"gain": [0.4, 1], "cutoff": [0.8, 1], "time": [1.1, 0.9]},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 1800, "q": 0.6}, {"type": "lowpass", "freq": 4500}], "env": {"attack": 0.05, "hold": 0.05, "decay": 0.22}}
+      ]
+    },
+    "axe_rustle": {
+      "gain": 0.6, "reverb": 0.06,
+      "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.45, "filters": [{"type": "bandpass", "freq": 2400, "q": 0.7}], "env": {"attack": 0.01, "hold": 0.05, "decay": 0.22}},
+        {"source": "noise", "color": "white", "gain": 0.2, "filters": [{"type": "highpass", "freq": 3500, "q": 0.6}], "env": {"attack": 0.002, "decay": 0.03}, "grains": {"count": [6, 11], "spread": 0.3, "gain": [0.3, 1], "pitch": 4}}
+      ]
+    },
+    "axe_swish": {
+      "samples": {"files": ["axe-swish-1.m4a", "axe-swish-2.m4a", "axe-swish-3.m4a"], "gain": 0.4, "pitch": 1.5},
+      "gain": 0.5, "reverb": 0.04,
+      "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.15, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 900, "q": 0.9}], "env": {"attack": 0.05, "decay": 0.12}}
+      ]
+    },
     "fell_crack": {
+      "samples": {"files": ["fell-crack-1.m4a", "fell-crack-2.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 1.2, "reverb": 0.25,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.1, "time": 0.12},
       "layers": [
@@ -1958,6 +2209,7 @@
       ]
     },
     "body_thud": {
+      "samples": {"files": ["body-thud-1.m4a", "body-thud-2.m4a", "body-thud-3.m4a"], "gain": 0.6, "pitch": 1},
       "gain": 0.6, "reverb": 0.08,
       "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.12, "time": 0.12},
       "intensity": {"gain": [0.22, 1], "cutoff": [0.5, 1], "time": [0.75, 1.2]},
@@ -1967,7 +2219,74 @@
         {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 700, "q": 1.2}], "env": {"attack": 0.001, "decay": 0.045}}
       ]
     },
+    "breath_heavy": {
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
+      "samples": {"files": ["breath-heavy-1.m4a"], "from": ["VOICE_MALE_Sigh_1"], "gain": 0.375, "pitch": 0.5},
+      "gain": 0.3, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 1100, "q": 0.8}], "env": {"attack": 0.15, "hold": 0.1, "decay": 0.4}},
+        {"source": "noise", "color": "pink", "gain": 0.25, "at": 0.7, "filters": [{"type": "bandpass", "freq": 800, "q": 0.8}], "env": {"attack": 0.2, "hold": 0.1, "decay": 0.5}}
+      ]
+    },
+    "gasp": {
+      "samples": {"files": ["gasp-1.m4a"], "from": ["GRUNT_Male_Hurt_With_Cough"], "gain": 0.45, "pitch": 0.5},
+      "gain": 0.5, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.35, "filters": [{"type": "bandpass", "freq": 1600, "q": 1, "to": 900}], "env": {"attack": 0.05, "hold": 0.08, "decay": 0.3}}
+      ]
+    },
+    "strain": {
+      "samples": {"files": ["strain-1.m4a"], "from": ["GRUNT_Male_Subtle_Hurt"], "gain": 0.4, "pitch": 0.5},
+      "gain": 0.4, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "osc", "wave": "triangle", "freq": 180, "to": 150, "gain": 0.2, "filters": [{"type": "lowpass", "freq": 900, "q": 0.7}], "env": {"attack": 0.05, "hold": 0.15, "decay": 0.25}}
+      ]
+    },
+    "wolf_step": {
+      "samples": {"files": ["grass-step-1.m4a", "grass-step-2.m4a", "grass-step-3.m4a", "grass-step-4.m4a"], "gain": 0.18, "pitch": 1.5},
+      "gain": 0.3, "reverb": 0.05,
+      "variation": {"pitch": 2, "gain": 2, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 900, "q": 1}], "env": {"attack": 0.002, "decay": 0.06}}
+      ]
+    },
+    "deer_step": {
+      "samples": {"files": ["dirt-step-1.m4a", "dirt-step-2.m4a", "dirt-step-3.m4a", "dirt-step-4.m4a"], "gain": 0.22, "pitch": 1.5},
+      "gain": 0.35, "reverb": 0.05,
+      "variation": {"pitch": 2, "gain": 2, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "modal", "freq": 420, "gain": 0.25, "partials": [[1, 1, 0.04], [2.4, 0.5, 0.02]]}
+      ]
+    },
+    "wolf_howl": {
+      "samples": {"files": ["wolf-howl-1.m4a", "wolf-howl-2.m4a"], "from": ["ANIMAL_Wolf_Howl_01", "ANIMAL_Wolf_Howl_02"], "gain": 0.4, "pitch": 1, "reverb": 0.1},
+      "gain": 0.4, "reverb": 0.3,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "osc", "wave": "sine", "freq": 420, "to": 640, "gain": 0.2, "env": {"attack": 0.4, "hold": 0.8, "decay": 1.2}}
+      ]
+    },
+    "wolf_growl": {
+      "samples": {"files": ["wolf-growl-1.m4a", "wolf-growl-2.m4a"], "from": ["ANIMAL_Dog_Growl_01_RR01", "ANIMAL_Dog_Growl_01_RR02"], "gain": 0.45, "pitch": 1},
+      "gain": 0.45, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "brown", "gain": 0.4, "filters": [{"type": "lowpass", "freq": 400, "q": 1}], "env": {"attack": 0.05, "hold": 0.4, "decay": 0.3}}
+      ]
+    },
+    "deer_snort": {
+      "samples": {"files": ["deer-snort-1.m4a", "deer-snort-2.m4a"], "from": ["ANIMAL_Horse_Snort_01_Dry", "ANIMAL_Horse_Snort_02_Dry"], "gain": 0.45, "pitch": 1},
+      "gain": 0.45, "reverb": 0.05,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 1400, "q": 0.8}], "env": {"attack": 0.005, "hold": 0.05, "decay": 0.15}}
+      ]
+    },
     "hurt": {
+      "samples": {"files": ["hurt-1.m4a", "hurt-2.m4a", "hurt-3.m4a", "hurt-4.m4a"], "from": ["GRUNT_Male_B_Hurt_Short_01", "GRUNT_Male_B_Hurt_Short_02", "GRUNT_Male_B_Hurt_Short_03", "GRUNT_Male_B_Hurt_Short_04"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.06,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.08, "time": 0.08},
       "intensity": {"gain": [0.55, 1], "cutoff": [0.7, 1], "time": [0.85, 1.15]},
@@ -1978,6 +2297,7 @@
       ]
     },
     "death": {
+      "samples": {"files": ["death-1.m4a"], "from": ["GROAN_Male_Hurt_Long"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.2,
       "variation": {"pitch": 0.5, "gain": 0.5},
       "layers": [
@@ -2033,6 +2353,22 @@
         {"source": "noise", "color": "crackle", "gain": 0.55, "filters": [{"type": "bandpass", "freq": 2800, "q": 0.8}, {"type": "highpass", "freq": 900}]}
       ]
     },
+    "steam_hiss": {
+      "gain": 1.2, "reverb": 0.15,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.45, "filters": [{"type": "bandpass", "freq": 4200, "q": 0.6, "to": 2600}, {"type": "highpass", "freq": 1800}], "env": {"attack": 0.08, "decay": 1.1}},
+        {"source": "noise", "color": "crackle", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 900, "q": 0.8}], "env": {"attack": 0.05, "decay": 0.7}}
+      ]
+    },
+    "sizzle": {
+      "gain": 1.0, "reverb": 0.04,
+      "variation": {"pitch": 2, "gain": 1.5, "cutoff": 0.15, "time": 0.1},
+      "layers": [
+        {"source": "noise", "color": "crackle", "gain": 0.5, "filters": [{"type": "bandpass", "freq": 3200, "q": 1.1}], "env": {"attack": 0.01, "decay": 0.45}},
+        {"source": "noise", "color": "white", "gain": 0.25, "filters": [{"type": "bandpass", "freq": 6000, "q": 0.8}, {"type": "highpass", "freq": 3000}], "env": {"attack": 0.02, "decay": 0.3}}
+      ]
+    },
     "fuse_fizz": {
       "gain": 1.1, "reverb": 0.05, "loop": true,
       "variation": {"pitch": 2, "gain": 1, "cutoff": 0.15},
@@ -2051,6 +2387,7 @@
       ]
     },
     "dynamite_boom": {
+      "samples": {"files": ["dynamite-boom-1.m4a", "dynamite-boom-2.m4a", "dynamite-boom-3.m4a"], "gain": 1.0, "pitch": 1},
       "gain": 2.4, "reverb": 0.45,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "intensity": {"gain": [0, 1], "cutoff": [0.35, 1]},

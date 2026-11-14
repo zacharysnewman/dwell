@@ -1,0 +1,69 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s13-14: rise to space",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    23100,
+    70,
+    -6500
+   ],
+   "look": [
+    90,
+    -12
+   ],
+   "fov": 53,
+   "timeOfDay": 0.3
+  },
+  {
+   "t": 3.5,
+   "position": [
+    23150,
+    1400,
+    -6500
+   ],
+   "look": [
+    90,
+    -30
+   ]
+  },
+  {
+   "t": 8.5,
+   "position": [
+    23300,
+    15000,
+    -6500
+   ],
+   "look": [
+    90,
+    -32
+   ]
+  },
+  {
+   "t": 12,
+   "position": [
+    23300,
+    15000,
+    -6500
+   ],
+   "look": [
+    90,
+    -32
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inQuad"
+  },
+  {
+   "move": "ease",
+   "easing": "outCubic"
+  },
+  {
+   "move": "pan"
+  }
+ ]
+}

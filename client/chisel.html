@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chisel</title>
+    <style>
+      :root {
+        --bg: #f4efe4;
+        --panel: #fffaf0;
+        --ink: #2b2620;
+        --muted: #7a6f60;
+        --line: #d9cfbd;
+        --accent: #8a5a2b;
+        --bad: #a3322a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1d1b18;
+          --panel: #26231f;
+          --ink: #ece4d6;
+          --muted: #a49886;
+          --line: #3b362f;
+          --accent: #d69a5c;
+          --bad: #ef7b70;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          13px/1.35 system-ui,
+          sans-serif;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(300px, 400px) 1fr;
+        height: 100vh;
+      }
+      aside {
+        overflow-y: auto;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        padding: 12px 14px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 2px;
+        letter-spacing: 0.02em;
+      }
+      h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 14px 0 6px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 120px 1fr 64px;
+        gap: 6px;
+        align-items: center;
+        margin: 2px 0;
+      }
+      .row input[type='number'] {
+        width: 64px;
+      }
+      .about {
+        color: var(--muted);
+        font-size: 12px;
+        margin: 0 0 6px;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin: 6px 0;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: inherit;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #errors {
+        color: var(--bad);
+        white-space: pre-wrap;
+      }
+      section.preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        overflow: hidden;
+      }
+      canvas {
+        width: min(calc(100vh - 80px), calc(100vw - 760px));
+        aspect-ratio: 1;
+        image-rendering: pixelated;
+        border: 1px solid var(--line);
+        background: #0b1a2b;
+      }
+      .world {
+        width: 288px;
+      }
+      #section {
+        width: min(640px, calc(100vw - 760px));
+        aspect-ratio: 4 / 3;
+        image-rendering: auto;
+        background: #9ebddb;
+        touch-action: none;
+        cursor: grab;
+      }
+      #overview {
+        width: 288px;
+        cursor: crosshair;
+        touch-action: none;
+      }
+      #status,
+      .sub {
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .num {
+        width: 80px;
+      }
+      .tex-views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      canvas.tex {
+        width: auto;
+        aspect-ratio: auto;
+        background: transparent;
+      }
+      #tex-cube {
+        border: none;
+        image-rendering: auto;
+      }
+      .chip {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1px solid var(--line);
+        margin-right: 3px;
+        vertical-align: middle;
+      }
+      input[type='color'] {
+        width: 34px;
+        height: 24px;
+        padding: 1px;
+      }
+      input[type='color'].warn {
+        outline: 2px solid var(--bad);
+      }
+      .warn-line,
+      .bad {
+        color: var(--bad);
+        white-space: pre-wrap;
+      }
+      .ramp-name {
+        width: 110px;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding: 4px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      @media (max-width: 760px) {
+        main {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+        canvas,
+        .world,
+        #section,
+        #overview {
+          width: calc(100vw - 32px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <aside id="panel"></aside>
+      <section class="preview">
+        <div id="textures-box" hidden>
+          <h2>Texture</h2>
+          <div class="tex-views">
+            <canvas id="tex-tile" class="tex" width="256" height="256" title="The tile"></canvas>
+            <canvas
+              id="tex-repeat"
+              class="tex"
+              width="288"
+              height="288"
+              title="3 × 3, to show it tiles"
+            ></canvas>
+            <canvas id="tex-cube" class="tex" width="320" height="320" title="The block"></canvas>
+          </div>
+          <div id="tex-status" class="sub"></div>
+        </div>
+        <div id="map-box">
+          <div class="bar" id="view"></div>
+          <canvas id="map" width="256" height="256"></canvas>
+          <div id="status"></div>
+        </div>
+        <div id="section-box" class="world3d" hidden>
+          <h2>3D section</h2>
+          <canvas id="section" width="640" height="480"></canvas>
+          <div id="section-status" class="sub"></div>
+        </div>
+        <div class="world" id="world-box">
+          <h2>World</h2>
+          <canvas id="overview" width="512" height="512"></canvas>
+          <div id="overview-status" class="sub"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/chisel/main.ts"></script>
+  </body>
+</html>

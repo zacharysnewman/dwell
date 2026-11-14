@@ -2,6 +2,368 @@
   "$comment": "Dev bench scenarios (docs/DEV_TOOLS.md; scripts/scenarios.ts describes the steps, scripts/bench.ts runs them). Each runs in a fresh local world: the player at the spawn, then the steps in order.",
   "scenarios": [
     {
+      "name": "forest-perf",
+      "notes": "THE tree performance reference (WORK_QUEUE item 32; docs/DEV_TOOLS.md \"The tree performance reference\"): the forest world (test:forest, old-growth forest everywhere, ~220 trees a hectare up to 26 m tall) at ?preset=high, the owner's target being High at 60 fps on an M1 MacBook Air (item 30). At each forest spot (inside the densest stand, across the canopy from the high ground, 25, 40 and 80 m straight over it, 150 m over it) the view settles, then 8 s are recorded. Budget: a 16.7 ms frame (frame.cpu p95, gpu.frame p95), report only until item 30 lands: a record over it prints OVER BUDGET (report only) and the run goes on. Run on the M1 Air before and after every tree, leaf or impostor change: npm run bench -- --warm forest-perf.",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:inside", "name": "inside" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "inside",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "edge",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:over25", "name": "over25" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "over25",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:over40", "name": "over40" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "over40",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:over80", "name": "over80" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "over80",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:above", "name": "above" },
+        { "do": "mark" },
+        { "do": "wait", "s": 8 },
+        {
+          "do": "record",
+          "name": "above",
+          "budget": { "frame.cpu.p95": 16.7, "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        }
+      ]
+    },
+    {
+      "name": "forest-overhead",
+      "notes": "forest-perf's overhead spots alone (WORK_QUEUE item 32, overhead round): 25 and 40 m over the densest stand looking down, at ?preset=high, shot, 6 s recorded each with the 16.7 ms budget (report only); for quick A/Bs by --compare.",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:over25", "name": "over25" },
+        { "do": "mark" },
+        { "do": "wait", "s": 6 },
+        {
+          "do": "record",
+          "name": "over25",
+          "budget": { "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        },
+        { "do": "spot", "spot": "forest:over40", "name": "over40" },
+        { "do": "mark" },
+        { "do": "wait", "s": 6 },
+        {
+          "do": "record",
+          "name": "over40",
+          "budget": { "gpu.frame.p95": 16.7 },
+          "reportOnly": true
+        }
+      ]
+    },
+    {
+      "name": "forest-edge",
+      "notes": "forest-perf's edge alone (WORK_QUEUE item 32), for quick A/Bs by --compare: forest:edge at ?preset=high, shot, 6 s recorded with the 16.7 ms budget (report only).",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" },
+        { "do": "wait", "s": 6 },
+        { "do": "record", "name": "edge", "budget": { "gpu.frame.p95": 16.7 }, "reportOnly": true }
+      ]
+    },
+    {
+      "name": "forest-edge-ablate",
+      "notes": "What the forest edge's GPU frame is made of (WORK_QUEUE items 31/32): forest:edge at ?preset=high, 4 s records of the frame with each suspect off in turn and back on between: the cutout meshes (leaf cards and tall grass, `grass` false hides them), sun shadows, the full-detail distance 192 → 96 m.",
+      "query": { "worldgen": "test:forest", "seed": "0", "fresh": "1", "preset": "high" },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "spot", "spot": "forest:edge", "name": "edge" },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "base" },
+        { "do": "view", "grass": false },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "cutout-off" },
+        { "do": "view", "grass": true },
+        { "do": "shadows", "quality": "off" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "shadows-off" },
+        { "do": "shadows", "quality": "high" },
+        { "do": "view", "distanceM": 96 },
+        { "do": "wait", "s": 6 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "distance-96" },
+        { "do": "view", "distanceM": 192 },
+        { "do": "wait", "s": 6 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "base-2" }
+      ]
+    },
+    {
+      "name": "lava-burn",
+      "notes": "Burning (VOLCANOES.md §6.3): an adventure-mode player on the starter's summit, the lake filled fast, the player put into the lava (`goto` the nearest dwell:lava): the red-orange screen edge and the sizzle.",
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "mode": "adventure",
+        "at": "30008.5,240,-8000.5"
+      },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 20 },
+        {
+          "do": "goto",
+          "find": "dwell:lava",
+          "radius": 40,
+          "height": 1.0,
+          "pitch": -20,
+          "move": true,
+          "maxS": 30
+        },
+        { "do": "wait", "s": 0.6 },
+        { "do": "shot", "name": "burning", "maxS": 1 }
+      ]
+    },
+    {
+      "name": "lava-glow",
+      "notes": "Lava's look by heat (VOLCANOES.md §6.5): every vent ×30 for 45 s, the summit lake by day and night, the face-B river running (hot), then the vents all but stopped for 40 s so the river cools by stop (warm, cooling, crusting).",
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "at": "30008.5,200,-8000.5"
+      },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 45 },
+        {
+          "do": "shot",
+          "name": "lake-day",
+          "at": [30006.5, 250, -8006.5],
+          "yaw": -45,
+          "pitch": -50,
+          "maxS": 20
+        },
+        {
+          "do": "shot",
+          "name": "lake-close",
+          "at": [30000.5, 240, -8000.5],
+          "yaw": -45,
+          "pitch": -65,
+          "maxS": 20
+        },
+        { "do": "time", "t": 0.02 },
+        {
+          "do": "shot",
+          "name": "lake-night",
+          "at": [30006.5, 250, -8006.5],
+          "yaw": -45,
+          "pitch": -50,
+          "maxS": 20
+        },
+        { "do": "time", "t": 0.45 },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-hot" },
+        { "do": "lava", "op": "rate", "args": [0.001] },
+        { "do": "wait", "s": 40 },
+        { "do": "lava", "op": "report" },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-cooling" },
+        { "do": "time", "t": 0.02 },
+        { "do": "spot", "spot": "starter:lava-river", "name": "river-night" }
+      ]
+    },
+    {
+      "name": "bloom",
+      "notes": "Bloom (WORK_QUEUE item 19): the starter's summit lava lake filled fast (its vent × 30), by night, shot and the frame recorded; run with --compare and configs that set ?bloom=off|low|high or ?preset= to see the glow and its GPU cost (gpu.bloom is inside gpu.frame).",
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "at": "30008.5,200,-8000.5"
+      },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 25 },
+        { "do": "time", "t": 0.95 },
+        {
+          "do": "shot",
+          "name": "lake-night",
+          "at": [30006.5, 250, -8006.5],
+          "yaw": -45,
+          "pitch": -50,
+          "maxS": 20
+        },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "lake-night" }
+      ]
+    },
+    {
+      "name": "herds",
+      "notes": "Finding animals (WORK_QUEUE item 46): the finder lists the far herds nearest first, goes to the nearest deer herd (40 m short, on the ground) and the nearest wolf pack, a shot of each as its group comes near; then 600 m short of a herd, where it is drawn far (billboards at least `minPx` tall, to ~2.5 km), and its frame timings.",
+      "query": { "local": "1", "seed": "1", "fresh": "1" },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "herd", "kind": "deer" },
+        { "do": "settle", "maxS": 30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "deer-near", "maxS": 10 },
+        { "do": "herd", "kind": "wolf", "back": 60 },
+        { "do": "settle", "maxS": 30 },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "wolves-near", "maxS": 10 },
+        { "do": "herd", "kind": "deer", "back": 600 },
+        { "do": "settle", "maxS": 30 },
+        { "do": "shot", "name": "deer-far", "maxS": 10 },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "herds" }
+      ]
+    },
+    {
+      "name": "lava-lake",
+      "notes": "Lava's look (VOLCANOES.md §6.3): the starter world's summit lava lake, its vent's rate × 30 (the dev `lava` step) so it fills in seconds, by day and by night, the frame near it; then a dev vent by the sea for lava meeting water (obsidian, steam).",
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "at": "30008.5,200,-8000.5"
+      },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "lava", "op": "report" },
+        { "do": "lava", "op": "rate", "args": [30] },
+        { "do": "wait", "s": 30 },
+        { "do": "lava", "op": "report" },
+        {
+          "do": "shot",
+          "name": "lake-20m",
+          "at": [30014.5, 250, -8014.5],
+          "yaw": -45,
+          "pitch": -45,
+          "maxS": 20
+        },
+        {
+          "do": "shot",
+          "name": "lake-day",
+          "at": [30006.5, 250, -8006.5],
+          "yaw": -45,
+          "pitch": -50,
+          "maxS": 20
+        },
+        {
+          "do": "shot",
+          "name": "lake-close",
+          "at": [30000.5, 240, -8000.5],
+          "yaw": -45,
+          "pitch": -65,
+          "maxS": 20
+        },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "near-lake" },
+        { "do": "time", "t": 0.02 },
+        {
+          "do": "shot",
+          "name": "lake-night",
+          "at": [30006.5, 250, -8006.5],
+          "yaw": -45,
+          "pitch": -50,
+          "maxS": 20
+        },
+        { "do": "time", "t": 0.45 },
+        {
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "sea",
+          "minDepth": 1,
+          "radius": 4000,
+          "height": 6,
+          "lookAt": "land",
+          "pitch": -30,
+          "maxS": 120
+        },
+        { "do": "lava", "op": "ventNear", "args": [-4, 0, 20, 1.5] },
+        { "do": "wait", "s": 4 },
+        {
+          "do": "shot",
+          "name": "steam-early",
+          "at": [30880.5, 40, -7113.5],
+          "yaw": -95,
+          "pitch": -35,
+          "maxS": 3
+        },
+        { "do": "wait", "s": 30 },
+        { "do": "lava", "op": "report" },
+        {
+          "do": "shot",
+          "name": "lava-meets-water",
+          "at": [30880.5, 40, -7113.5],
+          "yaw": -95,
+          "pitch": -35,
+          "maxS": 20
+        },
+        { "do": "lava", "op": "report" },
+        { "do": "mark" },
+        { "do": "wait", "s": 5 },
+        { "do": "record", "name": "elsewhere" }
+      ]
+    },
+    {
+      "name": "memory-phone",
+      "notes": "A phone's memory (BUGS.md #70; run with --touch for the phone tier): an iPhone-sized page, memory() at the end of loading and 30 s later. A test world by --compare with a params config ({\"worldgen\": \"test:starter\"}). Keep the total well under 1 GB: iOS Safari reloads a tab over ~1-1.5 GB.",
+      "window": { "width": 393, "height": 852, "pixelRatio": 3 },
+      "steps": [
+        { "do": "settle", "maxS": 120 },
+        { "do": "mark" },
+        { "do": "record", "name": "loaded" },
+        { "do": "wait", "s": 30 },
+        { "do": "mark" },
+        { "do": "record", "name": "after30" },
+        { "do": "shot", "name": "after30" }
+      ]
+    },
+    {
       "name": "idle-spawn",
       "notes": "Standing at the spawn looking at the horizon once the LOD has loaded: the steady-state frame.",
       "steps": [
@@ -850,6 +1212,81 @@
         {
           "do": "shot",
           "name": "down-on"
+        }
+      ]
+    },
+    {
+      "name": "water-flood",
+      "notes": "A flood for the water's re-mesh cost (proposals/WATER_GPU_SURFACE.md C6a): goes to the seed-7 spawn's nearest running river as water-river does, then clears a 29 × 29 m box from 1 m to 5 m under the feet (the river's bed and both banks under its level), so the river pours in from up- and downstream and fills the pit, viewed from 12 m up looking down. Records the 12 s of the fill; compare with the `heightfield` configuration (the near water from the GPU heightfield: level-only changes rewrite tiles instead of re-meshing).",
+      "settings": {
+        "timeOfDay": 0.45
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "scope": "world",
+          "water": "river",
+          "minDepth": 0.5,
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 2,
+          "pitch": -15,
+          "maxS": 120
+        },
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "before"
+        },
+        {
+          "do": "region",
+          "op": "clear",
+          "from": [-14, -5, -14],
+          "to": [14, -1, 14]
+        },
+        {
+          "do": "goto",
+          "find": "water",
+          "minCurrent": 0.1,
+          "aim": "downstream",
+          "height": 12,
+          "pitch": -70,
+          "maxS": 10
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 12
+        },
+        {
+          "do": "record",
+          "name": "flood"
+        },
+        {
+          "do": "shot",
+          "name": "flooding"
+        },
+        {
+          "do": "wait",
+          "s": 10
+        },
+        {
+          "do": "shot",
+          "name": "after"
         }
       ]
     },
@@ -5829,7 +6266,7 @@
     },
     {
       "name": "torch-cave-a",
-      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room.",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (picked into slot 6) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room.",
       "settings": {
         "timeOfDay": 0.0
       },
@@ -5895,10 +6332,8 @@
           "do": "shot",
           "name": "dark-no-torch"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "wait",
           "s": 0.8
@@ -5976,7 +6411,7 @@
     },
     {
       "name": "torch-cave-b",
-      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (slot 9) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room. On face B (its midnight is time 0.5).",
+      "notes": "A hill with a tunnel into a room (as tunnel-a), at midnight: walked into the dark, then holding the torch (picked into slot 6) and placing it on the floor (docs/LIGHTS.md). Shots: dark-no-torch, held-torch, held-torch-wall, placed-torch, placed-torch-room. On face B (its midnight is time 0.5).",
       "face": "b",
       "settings": {
         "timeOfDay": 0.5
@@ -6046,10 +6481,8 @@
           "do": "shot",
           "name": "dark-no-torch"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "wait",
           "s": 0.8
@@ -6136,10 +6569,8 @@
           "do": "settle",
           "maxS": 120
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "time",
           "t": 0
@@ -6200,6 +6631,48 @@
       ]
     },
     {
+      "name": "player-scale",
+      "notes": "The player model against its collider (BUGS.md: the player floating above the ground): on the flat world, your whole body seen from a placed camera side on at noon, a full-body view and one at the feet, then a villager beside you.",
+      "world": "flat",
+      "settings": { "timeOfDay": 0.45 },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "look", "yaw": 0, "pitch": 0 },
+        {
+          "do": "camera",
+          "position": [3, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "side" },
+        {
+          "do": "camera",
+          "position": [1.4, 0.15, 0],
+          "yaw": 270,
+          "pitch": -3,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 1.5 },
+        { "do": "shot", "name": "feet" },
+        { "do": "npcs", "count": 1, "radius": 1.5 },
+        { "do": "wait", "s": 3 },
+        {
+          "do": "camera",
+          "position": [4, 1, 0],
+          "yaw": 270,
+          "pitch": -2,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 2 },
+        { "do": "shot", "name": "villager" }
+      ]
+    },
+    {
       "name": "torch-scale-a",
       "notes": "The 1 m torch (two ½ m cells, docs/LIGHTS.md) placed on the ground ahead at noon, a stand-in player beside it for scale, then at midnight; and the held torch's flame (self-lit) by day and at night.",
       "settings": {
@@ -6210,10 +6683,8 @@
           "do": "settle",
           "maxS": 120
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6368,10 +6839,8 @@
           "do": "wait",
           "s": 0.8
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6422,10 +6891,8 @@
           "do": "shot",
           "name": "placed-pillar"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 75,
@@ -6527,10 +6994,8 @@
           "do": "wait",
           "s": 0.8
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 90,
@@ -6581,10 +7046,8 @@
           "do": "shot",
           "name": "placed-pillar"
         },
-        {
-          "do": "select",
-          "slot": 8
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:torch" },
         {
           "do": "look",
           "yaw": 75,
@@ -6969,7 +7432,7 @@
     },
     {
       "name": "felling",
-      "notes": "Felling (docs/FELLING.md): on the flat world, a log trunk (slot 6) with a leaf crown (slot 7) built before the player, its trunk broken near the base: it tips away, falls and settles as logs lying on the ground. Shots: tree, fall-a, fall-b, fall-c, settled.",
+      "notes": "Felling (docs/FELLING.md): on the flat world, a log trunk with a leaf crown (picked into slot 6) built before the player, its trunk broken near the base: it tips away, falls and settles as logs lying on the ground. Shots: tree, fall-a, fall-b, fall-c, settled.",
       "world": "flat",
       "steps": [
         {
@@ -6985,10 +7448,8 @@
           "yaw": 0,
           "pitch": 0
         },
-        {
-          "do": "select",
-          "slot": 5
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:log" },
         {
           "do": "region",
           "op": "fill",
@@ -6999,10 +7460,8 @@
           "do": "wait",
           "s": 2
         },
-        {
-          "do": "select",
-          "slot": 6
-        },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:leaves" },
         {
           "do": "region",
           "op": "fill",
@@ -7114,6 +7573,1863 @@
         {
           "do": "shot",
           "name": "settled"
+        }
+      ]
+    },
+    {
+      "name": "axe",
+      "notes": "The stone axe as weighty melee (ADR 0067, 0.50.38): on the flat world a log trunk 1.5 m ahead with a leaf crown; the axe (picked into slot 6) held in both grips, a free swing at the sky, a bounce off the ground, notching swings with shots of the impact, the deep notch, the lean, the leaves, and the fall.",
+      "world": "flat",
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "time", "t": 0.45 },
+        { "do": "look", "yaw": 0, "pitch": 0 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:log" },
+        { "do": "region", "op": "fill", "from": [0, 0, 2], "to": [0, 9, 2] },
+        { "do": "wait", "s": 2 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:leaves" },
+        { "do": "region", "op": "fill", "from": [-1, 7, 1], "to": [-1, 9, 3] },
+        { "do": "wait", "s": 1.5 },
+        { "do": "region", "op": "fill", "from": [1, 7, 1], "to": [1, 9, 3] },
+        { "do": "wait", "s": 1.5 },
+        { "do": "region", "op": "fill", "from": [0, 7, 1], "to": [0, 9, 1] },
+        { "do": "wait", "s": 1.5 },
+        { "do": "region", "op": "fill", "from": [0, 7, 3], "to": [0, 9, 3] },
+        { "do": "wait", "s": 1.5 },
+        { "do": "select", "slot": 5 },
+        { "do": "pick", "item": "dwell:stone_axe" },
+        { "do": "wait", "s": 1 },
+        { "do": "shot", "name": "01-idle-level" },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.6 },
+        { "do": "shot", "name": "02-idle-vertical" },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.6 },
+        { "do": "look", "yaw": 180, "pitch": 10 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.08 },
+        { "do": "shot", "name": "03-windup" },
+        { "do": "wait", "s": 0.15 },
+        { "do": "shot", "name": "04-follow-through" },
+        { "do": "wait", "s": 0.8 },
+        { "do": "edit", "action": "place" },
+        { "do": "look", "yaw": 180, "pitch": -55 },
+        { "do": "wait", "s": 0.3 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.2 },
+        { "do": "shot", "name": "05-bounce-stone" },
+        { "do": "wait", "s": 0.8 },
+        { "do": "edit", "action": "place" },
+        { "do": "wait", "s": 0.3 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.2 },
+        { "do": "shot", "name": "06-impact" },
+        { "do": "wait", "s": 0.7 },
+        {
+          "do": "camera",
+          "position": [1.8, 1.7, 0.3],
+          "yaw": -46,
+          "pitch": -4,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 0.6 },
+        { "do": "shot", "name": "07-deep-notch" },
+        {
+          "do": "camera",
+          "position": [-6, 3, 1.5],
+          "yaw": 90,
+          "pitch": 5,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 0.3 },
+        { "do": "shot", "name": "08-lean" },
+        { "do": "releaseCamera" },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        {
+          "do": "camera",
+          "position": [-5, 2.5, -1],
+          "yaw": 70,
+          "pitch": 15,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.6 },
+        { "do": "shot", "name": "09-leaves-falling" },
+        { "do": "wait", "s": 0.5 },
+        {
+          "do": "camera",
+          "position": [-6, 3, 1.5],
+          "yaw": 90,
+          "pitch": 5,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 0.2 },
+        { "do": "shot", "name": "10-lean-near-fall" },
+        { "do": "releaseCamera" },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": -1 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        { "do": "look", "yaw": 0, "pitch": 9 },
+        { "do": "wait", "s": 0.1 },
+        { "do": "edit", "action": "break" },
+        { "do": "wait", "s": 0.75 },
+        {
+          "do": "camera",
+          "position": [-7, 4, -3],
+          "yaw": 50,
+          "pitch": -8,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        { "do": "wait", "s": 3 },
+        { "do": "shot", "name": "11-felled" }
+      ]
+    },
+    {
+      "name": "damage-dents",
+      "notes": "Block damage's dents (docs/BLOCK_DAMAGE.md \u00a76): on the flat world, a dirt patch and a stone block before the player; the shovel hits the dirt twice (dirt-2) and twice more (dirt-4), the stone pickaxe hits the stone three times (stone-3).",
+      "world": "flat",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "time",
+          "t": 0.42
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -50
+        },
+        {
+          "do": "select",
+          "slot": 3
+        },
+        {
+          "do": "pick",
+          "item": "dwell:dirt"
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [-1, -0.4, 0.6],
+          "to": [1, -0.1, 3]
+        },
+        {
+          "do": "pick",
+          "item": "dwell:stone"
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [1.6, 0, 1.6],
+          "to": [2.4, 0.9, 2.4]
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "select",
+          "slot": 4
+        },
+        {
+          "do": "pick",
+          "item": "dwell:wooden_shovel"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-0"
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "dirt-2"
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "dirt-4"
+        },
+        {
+          "do": "look",
+          "yaw": 40,
+          "pitch": -15
+        },
+        {
+          "do": "select",
+          "slot": 5
+        },
+        {
+          "do": "pick",
+          "item": "dwell:stone_pickaxe"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "stone-3"
+        }
+      ]
+    },
+    {
+      "name": "dirt-relief",
+      "notes": "Block damage's carved dents (docs/BLOCK_DAMAGE.md §6.1): damage-dents' dirt patch dug 2 and 4 times, each shot from standing height and close up, by day (0.42) and at a low sun (0.27).",
+      "world": "flat",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "time",
+          "t": 0.42
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -50
+        },
+        {
+          "do": "select",
+          "slot": 3
+        },
+        {
+          "do": "pick",
+          "item": "dwell:dirt"
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [-1, -0.4, 0.6],
+          "to": [1, -0.1, 3]
+        },
+        {
+          "do": "pick",
+          "item": "dwell:stone"
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [1.6, 0, 1.6],
+          "to": [2.4, 0.9, 2.4]
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "select",
+          "slot": 4
+        },
+        {
+          "do": "pick",
+          "item": "dwell:wooden_shovel"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-0"
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "dirt-2"
+        },
+        {
+          "do": "camera",
+          "position": [0, 0.75, 0.75],
+          "yaw": 0,
+          "pitch": -55,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-2-close"
+        },
+        {
+          "do": "time",
+          "t": 0.27
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-2-close-lowsun"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-2-lowsun"
+        },
+        {
+          "do": "time",
+          "t": 0.42
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "dirt-4"
+        },
+        {
+          "do": "camera",
+          "position": [0, 0.75, 0.75],
+          "yaw": 0,
+          "pitch": -55,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-4-close"
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "record",
+          "name": "dent-close"
+        },
+        {
+          "do": "time",
+          "t": 0.27
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-4-close-lowsun"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "shot",
+          "name": "dirt-4-lowsun"
+        },
+        {
+          "do": "time",
+          "t": 0.42
+        },
+        {
+          "do": "wait",
+          "s": 0.3
+        }
+      ]
+    },
+    {
+      "name": "phone-moving",
+      "notes": "The phone's frame rate while moving (BUGS.md #72, WORK_QUEUE item 16): an iPhone-sized page walking, sprinting, then flying (level 4) +X from the spawn, 8 s each. Run with --touch (the phone tier) and --cpu-throttle 4 (a phone's CPU), at Low by a params config ({\"preset\": \"low\"}; the starter world with {\"worldgen\": \"test:starter\"}). Each record has a budget on the main thread's moving cost: frame.cpu p95, the finished meshes' upload (jobs.apply max, under a frame's byte budget, shared/render/streaming.json) and the loading (mesh_dirty p95); a record over it fails the scenario.",
+      "window": {
+        "width": 393,
+        "height": 852,
+        "pixelRatio": 3
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "walk",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "sprint",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "hold",
+          "code": "Space",
+          "s": 1.5
+        },
+        {
+          "do": "flySpeed",
+          "level": 4
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "traceStart"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 8
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "traceStop",
+          "name": "fly"
+        },
+        {
+          "do": "record",
+          "name": "fly",
+          "budget": {
+            "frame.cpu.p95": 18.5,
+            "jobs.apply.max": 10,
+            "mesh_dirty.p95": 13
+          }
+        },
+        {
+          "do": "shot",
+          "name": "fly-end"
+        }
+      ]
+    },
+    {
+      "name": "fell-tree",
+      "notes": "a one-cell log column on the flat world chopped at one aim, standing, level swings (BUGS.md #75): it falls on the 11th (the stone axe), and the scenario stops there: a 12th swing clears the stump's ramp and leaves it flat; shots of the notch, the fall and the stump from the notch side (item 24's gash)",
+      "world": "flat",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "time",
+          "t": 0.45
+        },
+        {
+          "do": "select",
+          "slot": 5
+        },
+        {
+          "do": "pick",
+          "item": "dwell:log"
+        },
+        {
+          "do": "region",
+          "op": "fill",
+          "from": [0, 0, 2],
+          "to": [0, 9, 2]
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "select",
+          "slot": 4
+        },
+        {
+          "do": "pick",
+          "item": "dwell:stone_axe"
+        },
+        {
+          "do": "wait",
+          "s": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 0.2
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "camera",
+          "position": [-1.3, 1.6, 0.6],
+          "yaw": 40,
+          "pitch": -28,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-6-notch"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 0.2
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "edit",
+          "action": "break"
+        },
+        {
+          "do": "wait",
+          "s": 1.1
+        },
+        {
+          "do": "wait",
+          "s": 3
+        },
+        {
+          "do": "camera",
+          "position": [3.5, 5, -2],
+          "yaw": -45,
+          "pitch": -40,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-over"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "camera",
+          "position": [-0.9, 1.2, 0.9],
+          "yaw": 30,
+          "pitch": -30,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-stump-notch-side"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "camera",
+          "position": [0.0, 0.9, 0.8],
+          "yaw": 0,
+          "pitch": -40,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-stump-close"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        },
+        {
+          "do": "camera",
+          "position": [-1.1, 0.9, 2.5],
+          "yaw": 90,
+          "pitch": -12,
+          "aroundPlayer": true,
+          "aboveFeet": true
+        },
+        {
+          "do": "wait",
+          "s": 0.6
+        },
+        {
+          "do": "shot",
+          "name": "fell-gash-profile"
+        },
+        {
+          "do": "releaseCamera"
+        },
+        {
+          "do": "wait",
+          "s": 0.4
+        }
+      ]
+    },
+    {
+      "name": "high-fly",
+      "notes": "WORK_QUEUE item 30, BUGS.md #89: the High preset flying (level 4) from the starter's mixed forest east toward the tall cone, each suspect switched off in turn mid-flight with High recorded between (clouds Low, speed effects, cards and tall grass, shadows Low, bloom and shafts), 4 s recorded each; run --unthrottled on the M1 for gpu.frame and frame.cpu per feature (docs/DEV_TOOLS.md, Flying at High on the M1).",
+      "window": { "width": 1280, "height": 800, "pixelRatio": 2 },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high",
+        "at": "-18100.5,140,-6500.5"
+      },
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "fly", "on": true },
+        { "do": "flySpeed", "level": 6 },
+        { "do": "hold", "code": "Space", "s": 3 },
+        { "do": "flySpeed", "level": 4 },
+        { "do": "look", "yaw": 90, "pitch": -10 },
+        { "do": "key", "code": "KeyW", "down": true },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high" },
+        { "do": "view", "clouds": "low" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-clouds-low" },
+        { "do": "view", "clouds": "medium" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high-2" },
+        { "do": "view", "speedEffects": false },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-speed-effects-off" },
+        { "do": "view", "speedEffects": true },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high-3" },
+        { "do": "view", "cards": false, "grass": false },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-trees-off" },
+        { "do": "view", "cards": true, "grass": true },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high-4" },
+        { "do": "shadows", "quality": "low" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-shadows-low" },
+        { "do": "shadows", "quality": "high" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high-5" },
+        { "do": "view", "bloom": "off", "shafts": "off" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-bloom-off" },
+        { "do": "view", "bloom": "high", "shafts": "high" },
+        { "do": "wait", "s": 1 },
+        { "do": "mark" },
+        { "do": "wait", "s": 4 },
+        { "do": "record", "name": "fly-high-6" },
+        { "do": "key", "code": "KeyW", "down": false },
+        { "do": "shot", "name": "fly-end" }
+      ]
+    },
+    {
+      "name": "high-forest",
+      "notes": "WORK_QUEUE item 30 (BUGS.md #78): the High preset in the starter's broadleaf forest, every costly feature switched off in turn mid-run (cards, shadows, torch shadows, shafts, bloom, clouds, water, tall grass, the full-detail distance, the render scale at full), each recorded 4 s; run --unthrottled on the M1 for gpu.frame per feature (docs/DEV_TOOLS.md, High on the M1).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:broadleaf",
+          "name": "forest"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "forest-high-again"
+        }
+      ]
+    },
+    {
+      "name": "high-open",
+      "notes": "high-forest's ablations on open ground (the starter's beach).",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:beach",
+          "name": "beach"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high"
+        },
+        {
+          "do": "view",
+          "cards": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-cards-off"
+        },
+        {
+          "do": "view",
+          "cards": true
+        },
+        {
+          "do": "shadows",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-low"
+        },
+        {
+          "do": "shadows",
+          "quality": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shadows-off"
+        },
+        {
+          "do": "shadows",
+          "quality": "high"
+        },
+        {
+          "do": "view",
+          "torchShadows": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-torch-off"
+        },
+        {
+          "do": "view",
+          "torchShadows": "low"
+        },
+        {
+          "do": "view",
+          "shafts": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-shafts-off"
+        },
+        {
+          "do": "view",
+          "shafts": "high"
+        },
+        {
+          "do": "view",
+          "bloom": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-bloom-off"
+        },
+        {
+          "do": "view",
+          "bloom": "high"
+        },
+        {
+          "do": "view",
+          "clouds": "off"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-clouds-off"
+        },
+        {
+          "do": "view",
+          "clouds": "medium"
+        },
+        {
+          "do": "water",
+          "quality": "low"
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-water-low"
+        },
+        {
+          "do": "water",
+          "quality": "medium"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-grass-off"
+        },
+        {
+          "do": "view",
+          "grass": true
+        },
+        {
+          "do": "view",
+          "distanceM": 128
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-distance-128"
+        },
+        {
+          "do": "view",
+          "distanceM": 256
+        },
+        {
+          "do": "view",
+          "renderScale": 1
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-scale-full"
+        },
+        {
+          "do": "view",
+          "renderScale": 0.5
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "open-high-again"
+        }
+      ]
+    },
+    {
+      "name": "high-mixed",
+      "notes": "high-forest at the starter mixed forest (denser trees): High, cards, the cutout meshes and the distance.",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "worldgen": "test:starter",
+        "seed": "0",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 60
+        },
+        {
+          "do": "spot",
+          "spot": "starter:mixed-forest",
+          "name": "mixed"
+        },
+        {
+          "do": "settle",
+          "maxS": 30
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-high"
+        },
+        {
+          "do": "view",
+          "grass": false
+        },
+        {
+          "do": "wait",
+          "s": 1.5
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "record",
+          "name": "mixed-grass-off"
+        }
+      ]
+    },
+    {
+      "name": "moon-draw",
+      "notes": "Does the moon's ground draw (BUGS.md #123; owner, 2026-11-13: \"We should just teleport to the moon to see if ground draws, flying there is an inefficient test of drawing\"): from the spawn, moonLand teleports onto the moon's ground on face A (no flight), waits until the player stands there with its chunk held, and prints the frame's draw calls, triangles and mesh bytes (saved in report.json's trips); a shot at noon looking across the ground and one looking down; then the same on face B after flyTo home.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "moonLand"
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "moon-a-across"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "moon-a-down"
+        },
+        {
+          "do": "flyTo",
+          "to": "home"
+        },
+        {
+          "do": "moonLand",
+          "face": "b"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "moon-b-across"
+        }
+      ]
+    },
+    {
+      "name": "sun-draw",
+      "notes": "Does the sun's ground draw (SUN_WORLD.md, the second slice): from the spawn, sunLand teleports onto the sun's dry crust on face A (its stand point, away from lava; no flight), waits until the player stands there with its chunk held, and prints the frame's draw calls, triangles and mesh bytes (saved in report.json's trips); a shot looking across the crust toward the lava and one looking down.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "sunLand"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 2
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-across"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -60
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "sun-a-down"
+        }
+      ]
+    },
+    {
+      "name": "moon-fly",
+      "notes": "A player's flight to the moon from home's ground (BUGS.md #155): flight at the top level, W held as a key, the look kept on the moon in the sky every ½ s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
+      "face": "b",
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "flyAtMoon", "name": "approach", "maxS": 100, "shotEveryS": 8 }
+      ]
+    },
+    {
+      "name": "moon-trip",
+      "notes": "The browser flight to the moon and back (MOON_WORLD.md §7.3; docs/DEV_TOOLS.md \"The moon\"): from the spawn, flyTo moon puts the player just outside the moon's capture sphere over its face A with the dev move, flies it in for real until captured, down to 40 m over the moon's ground, measures the fall with flight off (the run fails unless it is the moon's ⅙ g within 25 %) and lands; a shot on the moon at noon looking across its ground and one looking up; then flyTo home flies up past the release sphere, moves the player back to the spawn and waits until the client holds home's chunk under the feet again, and a last shot at home. The trips (capture, descent and landing seconds, the fall) are in report.json's trips.",
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 120
+        },
+        {
+          "do": "flyTo",
+          "to": "moon",
+          "maxS": 120
+        },
+        {
+          "do": "time",
+          "t": 0.5
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": -10
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "on-the-moon"
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": 45
+        },
+        {
+          "do": "wait",
+          "s": 1
+        },
+        {
+          "do": "shot",
+          "name": "moon-sky"
+        },
+        {
+          "do": "flyTo",
+          "to": "home",
+          "maxS": 120
+        },
+        {
+          "do": "wait",
+          "s": 4
+        },
+        {
+          "do": "shot",
+          "name": "home-again"
         }
       ]
     }

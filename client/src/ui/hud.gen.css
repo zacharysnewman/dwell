@@ -28,11 +28,23 @@ body.hud-hide-health #health {
   display: none !important;
 }
 
+body.hud-hide-vitals #vitals {
+  display: none !important;
+}
+
 body.hud-hide-controls-hint #start-hint {
   display: none !important;
 }
 
 body.hud-hide-notices #hud-note {
+  display: none !important;
+}
+
+body.hud-hide-minimap #minimap {
+  display: none !important;
+}
+
+body.hud-hide-waypoints #map-waypoints {
   display: none !important;
 }
 

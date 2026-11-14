@@ -1,0 +1,6 @@
+{ "formatVersion": 1, "name": "bifacial s1: outline edge-on, slow push in",
+  "keyframes": [
+    { "t": 0, "position": [160000, 13000, 32000], "target": [0, 0, 0], "fov": 50, "timeOfDay": 0.29 },
+    { "t": 10, "position": [118000, 9000, 23500], "target": [0, 0, 0], "fov": 50, "timeOfDay": 0.29 }
+  ],
+  "segments": [ { "move": "ease", "easing": "inOutSine" } ] }

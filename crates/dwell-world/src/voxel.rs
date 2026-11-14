@@ -276,9 +276,14 @@ pub fn diff_chunk(generated: &Chunk, current: &Chunk) -> Vec<VoxelDiff> {
         .collect()
 }
 
-/// A column (x, z) is inside the world's disc when x² + z² < R² (ADR 0011).
+/// A column (x, z) is inside the world's disc when x² + z² < R² (ADR 0011); a 1× world's
+/// (`WorldBounds::inside_disc` for a world's own).
 pub fn inside_world_disc(x: i64, z: i64) -> bool {
-    let r = i64::from(WORLD_RADIUS);
+    inside_disc_of(i64::from(WORLD_RADIUS), x, z)
+}
+
+/// [`inside_world_disc`] for a disc of `r` m.
+pub fn inside_disc_of(r: i64, x: i64, z: i64) -> bool {
     x * x + z * z < r * r
 }
 
@@ -289,8 +294,14 @@ pub enum DiscOverlap {
     Outside,
 }
 
-/// How a chunk column's 32 × 32 voxel columns lie relative to the disc.
+/// How a chunk column's 32 × 32 voxel columns lie relative to a 1× world's disc
+/// (`WorldBounds::chunk_disc_overlap` for a world's own).
 pub fn chunk_disc_overlap(cx: i32, cz: i32) -> DiscOverlap {
+    chunk_disc_overlap_of(i64::from(WORLD_RADIUS), cx, cz)
+}
+
+/// [`chunk_disc_overlap`] for a disc of `r` m.
+pub fn chunk_disc_overlap_of(r: i64, cx: i32, cz: i32) -> DiscOverlap {
     let s = i64::from(CHUNK_SIZE);
     let nearest = |c: i32| {
         let lo = i64::from(c) * s;
@@ -308,7 +319,7 @@ pub fn chunk_disc_overlap(cx: i32, cz: i32) -> DiscOverlap {
         let hi = lo + s - 1;
         if -lo > hi { lo } else { hi }
     };
-    let r2 = i64::from(WORLD_RADIUS) * i64::from(WORLD_RADIUS);
+    let r2 = r * r;
     let (nx, nz) = (nearest(cx), nearest(cz));
     if nx * nx + nz * nz >= r2 {
         return DiscOverlap::Outside;
@@ -527,9 +538,20 @@ pub struct VoxelWorld {
     /// The held chunks' placed light sources (docs/LIGHTS.md §4): the cells whose blocks give off a
     /// light source and block light (a torch's flame), kept with the flood light.
     sources: HashMap<ChunkCoord, Vec<[i32; 3]>>,
+    /// The chunk whose light is part way ([`Self::light_begin`]): its sources indexed once done.
+    light_pending: Option<ChunkCoord>,
     /// The water's currents (docs/WATER_SURFACE_GRID.md §2c): the server's water grid writes them,
     /// a client keeps the server's; swimmers and floating bodies read them.
     pub currents: crate::currents::Currents,
+    /// The portals' shafts and their exit push (docs/BIFACIAL_WORLD.md §12.3): the holder sets them
+    /// from the generator (`dwell_worldgen::portal_shafts_for_sized`), the server and the client's
+    /// prediction alike; the player controller reads them. None by default.
+    pub portals: crate::portal_shafts::PortalShafts,
+    /// The world's disc and build volume (docs/proposals/BIG_MAP.md M2): what bounds an edit's
+    /// cells (`edit::check_block_edit`, `region::check_region_edit`). The holder sets it from the
+    /// world's size, the server and the client's prediction alike (BUGS.md #109); a 1× world's
+    /// (the build's) by default.
+    pub bounds: crate::WorldBounds,
 }
 
 /// Whether a state is a placed light source: it gives off a light (`light`) and block light (the
@@ -539,6 +561,12 @@ pub fn is_light_source(m: StateId) -> bool {
 }
 
 impl VoxelWorld {
+    /// Whether the world's air test says chunk `c` is all air (never generated nor stored), as a
+    /// streamer sends it; false without a test.
+    pub fn is_air_chunk(&self, c: ChunkCoord) -> bool {
+        self.air.as_ref().is_some_and(|air| air(c))
+    }
+
     pub fn new(generator: ChunkGenerator, air: Option<AirChunkTest>) -> Self {
         Self {
             generator: Some(generator),
@@ -551,7 +579,10 @@ impl VoxelWorld {
             loaded_saved: 0,
             light: None,
             sources: HashMap::default(),
+            light_pending: None,
             currents: Default::default(),
+            portals: Default::default(),
+            bounds: crate::WorldBounds::DEFAULT,
         }
     }
 
@@ -578,9 +609,65 @@ impl VoxelWorld {
 
     /// The chunk is held (its voxels stored, or all air): lit, and its surroundings relit.
     pub fn light_load(&mut self, coord: ChunkCoord) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.load(&self.chunks, coord);
             self.index_sources(coord);
+        }
+    }
+
+    /// As [`Self::light_load`], lit a slice at a time by [`Self::light_resume`] (docs/BUGS.md #72:
+    /// one chunk's light was up to 20 ms of a frame on a phone's CPU). Any other light update
+    /// first finishes it.
+    pub fn light_begin(&mut self, coord: ChunkCoord) {
+        self.settle_light();
+        if let Some(l) = self.light.as_deref_mut() {
+            l.begin_load(&self.chunks, coord);
+            self.light_pending = Some(coord);
+        }
+    }
+
+    /// Goes on with the light part way for at most `steps` cells; whether it is done.
+    pub fn light_resume(&mut self, steps: usize) -> bool {
+        let Some(c) = self.light_pending else {
+            return true;
+        };
+        let done = self
+            .light
+            .as_deref_mut()
+            .is_none_or(|l| l.resume(&self.chunks, steps));
+        if done {
+            self.light_pending = None;
+            self.index_sources(c);
+        }
+        done
+    }
+
+    /// The chunk whose light is part way, if any.
+    pub fn light_pending(&self) -> Option<ChunkCoord> {
+        self.light_pending
+    }
+
+    /// Finishes a light part way before chunk `coord` changes, if the light may read it: a chunk
+    /// the light holds, in its column or the eight beside them (the light reaches 15 cells
+    /// sideways, under half a chunk; an open column's sky lost under a new chunk goes down any
+    /// distance). Others leave it be: the chunks arriving all round while it lights aren't held
+    /// until their own light, and the light reads only the chunks it holds (BUGS.md #72: finishing
+    /// it at each arrival put 14–19 ms into `jobs.apply` at CPU 6×).
+    fn settle_light_near(&mut self, coord: ChunkCoord) {
+        if let Some(c) = self.light_pending
+            && (c.x - coord.x).abs() <= 1
+            && (c.z - coord.z).abs() <= 1
+            && self.light.as_deref().is_some_and(|l| l.holds(coord))
+        {
+            self.settle_light();
+        }
+    }
+
+    /// Finishes a light part way, if any.
+    fn settle_light(&mut self) {
+        if self.light_pending.is_some() {
+            self.light_resume(usize::MAX);
         }
     }
 
@@ -649,6 +736,7 @@ impl VoxelWorld {
 
     /// The chunk is no longer held.
     pub fn light_unload(&mut self, coord: ChunkCoord) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.unload(&self.chunks, coord);
         }
@@ -657,6 +745,7 @@ impl VoxelWorld {
 
     /// The chunks are no longer held, relit in one update (`LightMap::unload_many`).
     pub fn light_unload_many(&mut self, coords: &[ChunkCoord]) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.unload_many(&self.chunks, coords);
         }
@@ -667,6 +756,7 @@ impl VoxelWorld {
 
     /// These world cells' blocks changed.
     pub fn light_edited(&mut self, cells: &[[i32; 3]]) {
+        self.settle_light();
         if let Some(l) = self.light.as_deref_mut() {
             l.edited(&self.chunks, cells);
             for &c in cells {
@@ -713,12 +803,18 @@ impl VoxelWorld {
 
     /// Generates a missing chunk (streamed worlds: creates an all-air one).
     pub fn get_or_create(&mut self, coord: ChunkCoord) -> &mut Chunk {
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         if !self.chunks.contains_key(&coord) {
             let mut chunk = None;
             if self.saved_has(coord)
-                && let Some(c) = self.saved.as_mut().and_then(|s| s.load(coord))
+                && let Some(mut c) = self.saved.as_mut().and_then(|s| s.load(coord))
             {
                 self.loaded_saved += 1;
+                // A multi-cell block saved without one of its cells (a torch's lone flame or
+                // stick) is removed (BUGS.md #171, crate::parts); a partner in a chunk not held
+                // is left alone.
+                crate::parts::repair_chunk(&mut c, coord, |p| self.voxel_if_held(p));
                 chunk = Some(c);
             }
             let chunk = chunk.unwrap_or_else(|| {
@@ -735,10 +831,18 @@ impl VoxelWorld {
         self.chunks.get_mut(&coord).expect("inserted")
     }
 
+    /// Whether a read of the chunk gives its real voxels: it is stored, or this world generates
+    /// its chunks (a streamed world's missing chunk reads as air until it arrives).
+    pub fn holds_or_generates(&self, coord: ChunkCoord) -> bool {
+        self.generator.is_some() || self.chunks.contains_key(&coord)
+    }
+
     pub fn find(&self, coord: ChunkCoord) -> Option<&Chunk> {
         self.chunks.get(&coord).map(|c| &**c)
     }
     pub fn find_mut(&mut self, coord: ChunkCoord) -> Option<&mut Chunk> {
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         self.chunks.get_mut(&coord).map(|c| &mut **c)
     }
 
@@ -770,6 +874,18 @@ impl VoxelWorld {
         })
     }
 
+    /// The voxel of a stored chunk, `None` where its chunk isn't held: a read that never generates.
+    pub fn voxel_if_held(&self, [x, y, z]: [i32; 3]) -> Option<StateId> {
+        let c = chunk_of(x, y, z);
+        self.chunks.get(&c).map(|ch| {
+            ch.get(
+                x - c.x * CHUNK_SIZE,
+                y - c.y * CHUNK_SIZE,
+                z - c.z * CHUNK_SIZE,
+            )
+        })
+    }
+
     pub fn get_voxel(&mut self, x: i32, y: i32, z: i32) -> StateId {
         let c = chunk_of(x, y, z);
         self.read(c).get(
@@ -777,6 +893,40 @@ impl VoxelWorld {
             y - c.y * CHUNK_SIZE,
             z - c.z * CHUNK_SIZE,
         )
+    }
+
+    /// The voxel as its chunk was generated: an unedited chunk's own, an edited one's generated
+    /// again into `cache` (kept for the next read; ground items' rules read the terrain as generated,
+    /// ADR 0071). A streamed world (no generator) has only its voxels now.
+    pub fn generated_voxel(
+        &mut self,
+        [x, y, z]: [i32; 3],
+        cache: &mut crate::hash::HashMap<ChunkCoord, Box<Chunk>>,
+    ) -> StateId {
+        let c = chunk_of(x, y, z);
+        let l = (
+            x - c.x * CHUNK_SIZE,
+            y - c.y * CHUNK_SIZE,
+            z - c.z * CHUNK_SIZE,
+        );
+        let k = self.read(c);
+        let now = k.get(l.0, l.1, l.2);
+        if k.revision() == 0 {
+            return now;
+        }
+        let Some(g) = &self.generator else {
+            return now;
+        };
+        if !cache.contains_key(&c) {
+            // A few chunks round an edit are enough; an explosion's span stays well under this.
+            if cache.len() >= 64 {
+                cache.clear();
+            }
+            let mut fresh = Chunk::default();
+            g(c, &mut fresh);
+            cache.insert(c, Box::new(fresh));
+        }
+        cache[&c].get(l.0, l.1, l.2)
     }
 
     /// The shape the voxel is drawn, collided and targeted as: its state's own (no block is shaped
@@ -856,43 +1006,44 @@ impl VoxelWorld {
         }
         let n = CHUNK_SIZE;
         let [ax, ay, az] = apron;
-        let (ex, ey, ez) = (n + 2 * ax, n + 2 * ay, n + 2 * az);
+        let (ex, ez) = (n + 2 * ax, n + 2 * az);
         let at =
             |dx: i32, dy: i32, dz: i32| ChunkCoord::new(coord.x + dx, coord.y + dy, coord.z + dz);
-        let missing = |dx: i32, dy: i32, dz: i32| {
-            (dx, dz) != (0, 0) && !self.chunks.contains_key(&at(dx, dy, dz))
+        // Each neighbour looked up once, and only the missing ones' parts of the apron visited
+        // (BUGS.md #72: a lookup per voxel of the 44 × 64 × 44 sky volume, at every chunk on the
+        // streamed view's edge, made `padded_box` the main thread's largest cost while moving).
+        // The part of the padded block along an axis on side `d` (-1, 0, 1) of the chunk.
+        let range = |d: i32, pad: i32| match d {
+            -1 => (0, pad),
+            0 => (pad, pad + n),
+            _ => (pad + n, n + 2 * pad),
         };
-        if !(-1..=1).any(|dy| (-1..=1).any(|dz| (-1..=1).any(|dx| missing(dx, dy, dz)))) {
-            return;
-        }
-        let side = |v: i32| -> i32 {
-            if v < 0 {
-                -1
-            } else if v >= n {
-                1
-            } else {
-                0
-            }
-        };
-        for py in 0..ey {
-            let y = py - ay;
-            let dy = side(y);
+        for dy in -1..=1 {
             let Some(own) = self.chunks.get(&at(0, dy, 0)) else {
                 continue;
             };
-            let ly = y - dy * n;
-            for pz in 0..ez {
-                let z = pz - az;
-                for px in 0..ex {
-                    let x = px - ax;
-                    let (dx, dz) = (side(x), side(z));
-                    if !missing(dx, dy, dz) {
+            let (y0, y1) = range(dy, ay);
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    if (dx, dz) == (0, 0) || self.chunks.contains_key(&at(dx, dy, dz)) {
                         continue;
                     }
-                    let v = own.voxels()[local_index(x.clamp(0, n - 1), ly, z.clamp(0, n - 1))];
-                    let info = dwell_blocks::info(v);
-                    if info.liquid || info.flooded {
-                        out[((pz + ez * py) * ex + px) as usize] = v;
+                    let (x0, x1) = range(dx, ax);
+                    let (z0, z1) = range(dz, az);
+                    for py in y0..y1 {
+                        let ly = py - ay - dy * n;
+                        for pz in z0..z1 {
+                            let lz = (pz - az).clamp(0, n - 1);
+                            let row = (pz + ez * py) * ex;
+                            for px in x0..x1 {
+                                let lx = (px - ax).clamp(0, n - 1);
+                                let v = own.voxels()[local_index(lx, ly, lz)];
+                                let info = dwell_blocks::info(v);
+                                if info.liquid || info.flooded {
+                                    out[(row + px) as usize] = v;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -924,6 +1075,8 @@ impl VoxelWorld {
 
     /// Inserts or replaces a chunk (streamed chunks; chunks generated off-thread).
     pub fn put(&mut self, coord: ChunkCoord, chunk: Chunk) {
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         self.store(coord, chunk);
     }
 
@@ -933,7 +1086,15 @@ impl VoxelWorld {
         self.chunks.insert(coord, Box::new(chunk));
         self.epoch += 1;
     }
+    /// Replaces the generator chunks are made with on access (a world retuned in the game,
+    /// Phase 56 B7); the chunks held stay as they are.
+    pub fn set_generator(&mut self, generator: ChunkGenerator) {
+        self.generator = Some(generator);
+        self.epoch += 1;
+    }
     pub fn remove(&mut self, coord: ChunkCoord) {
+        // A light part way reads the voxels as they were: finished before a change it may read.
+        self.settle_light_near(coord);
         if self.chunks.remove(&coord).is_some() {
             self.epoch += 1;
         }
@@ -944,6 +1105,8 @@ impl VoxelWorld {
     }
     /// Drops the chunks `evict` selects.
     pub fn evict(&mut self, evict: impl Fn(ChunkCoord, &Chunk) -> bool) -> usize {
+        // A light part way reads the voxels as they were: finished before any changes.
+        self.settle_light();
         let before = self.chunks.len();
         self.chunks.retain(|&c, chunk| !evict(c, chunk));
         let n = before - self.chunks.len();

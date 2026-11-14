@@ -35,7 +35,7 @@ export const OVERRIDE_FIELDS: readonly OverrideField[] = [
     "param": "spawn",
     "label": "Spawn",
     "kind": "choice",
-    "hint": "Each spawn is its own world file, so the others are untouched.",
+    "hint": "Each spawn is its own world file, so the others are untouched. The other worlds (the moon, the sun) come from shared/worldgen/grids.json; a build that can't go there starts at home.",
     "options": [
       {
         "value": "",
@@ -52,6 +52,22 @@ export const OVERRIDE_FIELDS: readonly OverrideField[] = [
       {
         "value": "portal-b",
         "label": "Portal, face B side"
+      },
+      {
+        "value": "moon",
+        "label": "Moon (face A)"
+      },
+      {
+        "value": "moon-b",
+        "label": "Moon (face B)"
+      },
+      {
+        "value": "sun",
+        "label": "Sun (face A)"
+      },
+      {
+        "value": "sun-b",
+        "label": "Sun (face B)"
       }
     ]
   },

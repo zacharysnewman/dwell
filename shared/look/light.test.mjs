@@ -22,6 +22,7 @@ test('values changed by data alone are in the output', () => {
   d.block.color = '#ff0000';
   d.block.strength = 0.5;
   d.characters.easeS = 0.4;
+  d.characters.bounce = { color: '#00ff00', strength: 0.75 };
   const rs = lightRust(validateLight(d));
   assert.match(rs, /falloff_vertical: 2,/);
   assert.match(rs, /sky_curve: 1\.0,/);
@@ -29,6 +30,8 @@ test('values changed by data alone are in the output', () => {
   assert.match(rs, /block_color: \[1\.0, 0\.0, 0\.0\],/);
   assert.match(rs, /block_strength: 0\.5,/);
   assert.match(rs, /character_ease_s: 0\.4,/);
+  assert.match(rs, /character_bounce_color: \[0\.0, 1\.0, 0\.0\],/);
+  assert.match(rs, /character_bounce_strength: 0\.75,/);
 });
 
 test('bad entries fail with their path named', () => {
@@ -41,6 +44,9 @@ test('bad entries fail with their path named', () => {
     [(d) => delete d.block.strength, /missing entry block\.strength/],
     [(d) => (d.sky.extra = 1), /unknown entry sky\.extra/],
     [(d) => (d.characters.easeS = -1), /characters\.easeS must be a number in \[0, 5\]/],
+    [(d) => delete d.characters.bounce, /missing entry characters\.bounce/],
+    [(d) => (d.characters.bounce.color = 'warm'), /characters\.bounce\.color must be "#rrggbb"/],
+    [(d) => (d.characters.bounce.strength = 3), /characters\.bounce\.strength must be a number in \[0, 2\]/],
   ];
   for (const [edit, re] of cases) {
     const d = data();

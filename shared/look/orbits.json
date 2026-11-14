@@ -1,0 +1,70 @@
+{
+  "$comment": "Orbits by seed (docs/proposals/REALISTIC_WORLD.md §8; owner 2026-11-12: \"Orbits should be seed determined.\"). A world that rolls an orbit (a Realistic world: its climate reads the sky) draws one from its seed in its preset's ranges at creation (dwell_look::orbits Orbit::roll) and keeps it as world settings (the clock in CLOCK, the moon's phase in MOON_PHASE, the rest in CELESTIAL, ADR 0054), so a later build's ranges never change its sky. Every other world keeps today's orbit (Orbit::today, read from daynight.json: pole 90 − sunPath.noonElevationDeg, pole yaw sunPath.riseYawDeg, distance 1, no tilt, today's clock and moon). presets: the New world → More options Sky choices (owner: \"proposed ranges, fixed day, day varies, more extreme with hotter/colder\"), `default` first and the default; each roll's entries are [min, max] ranges (a range of one value pins it): poleDeg the celestial pole's height over face A's horizon (face A's latitude, N; face B's the same S; the noon sun 90° − poleDeg), poleYawDeg its yaw (the sun's rising point, as sunPath.riseYawDeg), distance from the sun (1 today's; the climate's offset 288 K × (distance^−½ − 1) clamped to limits.offsetC), tiltDeg the axial tilt (seasons, O4; rolled within [min, min(max, limits.maxPoleDeg − poleDeg)], so a high-latitude world has mild seasons), yearDays the year in world days, yearPhase where a new world starts in it (0 spring), dayLengthS a whole day and night (s, rounded to whole seconds), dayShare face A's daylight share of it (face B has the rest), moon its month (cycleDays, new to new), inclinationDeg to the sun's path, nodeDeg and its phase at day 0; its distance is kept (its size in the sky, owner MOON_WORLD.md §12 Q8). limits: what every preset must keep for play (DAY_NIGHT.md, §8.4): poleDeg + tiltDeg ≤ maxPoleDeg (the noon sun high enough), both faces' daylight share within dayShare, the temperature offset within offsetC (°C). Run `node shared/look/orbits.mjs` after editing; CI fails if crates/dwell-look/src/orbits.gen.rs or client/src/ui/skyPresets.gen.ts is stale. Prototype tuning.",
+  "presets": {
+    "default": {
+      "label": "Default",
+      "description": "The proposed ranges: latitudes from subtropical to subarctic, the day fixed at 20 minutes.",
+      "roll": {
+        "poleDeg": [15, 55],
+        "poleYawDeg": [0, 360],
+        "distance": [0.97, 1.03],
+        "tiltDeg": [0, 23],
+        "yearDays": [16, 32],
+        "yearPhase": [0, 0],
+        "dayLengthS": [1200, 1200],
+        "dayShare": [0.6667, 0.6667],
+        "moon": {
+          "cycleDays": [7, 10],
+          "inclinationDeg": [0, 8],
+          "nodeDeg": [0, 360],
+          "phase": [0, 1]
+        }
+      }
+    },
+    "day_varies": {
+      "label": "Day varies",
+      "description": "As Default, with the day's length and its daylight rolled a little.",
+      "roll": {
+        "poleDeg": [15, 55],
+        "poleYawDeg": [0, 360],
+        "distance": [0.97, 1.03],
+        "tiltDeg": [0, 23],
+        "yearDays": [16, 32],
+        "yearPhase": [0, 0],
+        "dayLengthS": [1080, 1440],
+        "dayShare": [0.6, 0.7],
+        "moon": {
+          "cycleDays": [7, 10],
+          "inclinationDeg": [0, 8],
+          "nodeDeg": [0, 360],
+          "phase": [0, 1]
+        }
+      }
+    },
+    "extreme": {
+      "label": "Extreme",
+      "description": "Wider ranges: hotter and colder worlds, steeper seasons.",
+      "roll": {
+        "poleDeg": [10, 60],
+        "poleYawDeg": [0, 360],
+        "distance": [0.94, 1.06],
+        "tiltDeg": [0, 30],
+        "yearDays": [16, 32],
+        "yearPhase": [0, 0],
+        "dayLengthS": [1200, 1200],
+        "dayShare": [0.6667, 0.6667],
+        "moon": {
+          "cycleDays": [7, 10],
+          "inclinationDeg": [0, 8],
+          "nodeDeg": [0, 360],
+          "phase": [0, 1]
+        }
+      }
+    }
+  },
+  "limits": {
+    "maxPoleDeg": 62,
+    "dayShare": [0.2, 0.8],
+    "offsetC": [-9, 9]
+  }
+}

@@ -7,6 +7,6 @@ pub const WATER: WaterRules = WaterRules { drag_coefficient: 1.0, drag: 0.15, he
 
 /// The body kinds, in wire order (shared/physics/bodies.json).
 pub const BODY_KINDS: [BodyKind; 2] = [
-    BodyKind { name: "natural", place: false, breaks: true, split: true, settles: true, saved: true, built_on: &[] },
-    BodyKind { name: "built", place: true, breaks: true, split: true, settles: false, saved: true, built_on: &["dwell:build_platform"] },
+    BodyKind { name: "natural", place: false, breaks: true, split: true, settles: true, saved: true, settles_afloat: false, built_on: &[] },
+    BodyKind { name: "built", place: true, breaks: true, split: true, settles: false, saved: true, settles_afloat: false, built_on: &["dwell:build_platform"] },
 ];

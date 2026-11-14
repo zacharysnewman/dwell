@@ -97,6 +97,33 @@ rs.push("    /// level by their flow at `FALLS_FULL_M3S` (m³/s; docs/WATER_SURF
 rs.push(`    pub const FALLS_RADIUS_M: f64 = ${rf(am.falls.radiusM)};`);
 rs.push(`    pub const FALLS_MAX: usize = ${am.falls.max};`);
 rs.push(`    pub const FALLS_FULL_M3S: f64 = ${rf(am.falls.fullM3s)};`);
+rs.push("    /// The ambience probe's reach round the listener (m) and the blocks that count as trees");
+rs.push("    /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).");
+rs.push(`    pub const AMBIENCE_RADIUS_M: f64 = ${rf(data.ambience.probe.radiusM)};`);
+rs.push(`    pub const AMBIENCE_TREES: &[&str] = &[${data.ambience.probe.trees.map((t) => JSON.stringify(t)).join(", ")}];`);
+rs.push("}");
+rs.push("");
+const cr = data.creatures;
+rs.push("/// The creatures' sounds (shared/sounds `creatures`; docs/AUDIO.md §2d): heard within");
+rs.push("/// `RADIUS_M`; each model's stride (m between footsteps) and its call's interval (s), if it");
+rs.push("/// calls. A creature event's `block` is the model's index here.");
+rs.push("pub mod creature_sounds {");
+rs.push(`    pub const RADIUS_M: f64 = ${rf(cr.radiusM)};`);
+rs.push("    /// A model's name, stride and call interval.");
+rs.push("    pub type Model = (&'static str, f64, Option<(f64, f64)>);");
+rs.push("    pub const MODELS: &[Model] = &[");
+for (const [m, d] of Object.entries(cr.models))
+  rs.push(
+    `        (${JSON.stringify(m)}, ${rf(d.stride)}, ${d.callEveryS ? `Some(${rpair(d.callEveryS)})` : "None"}),`,
+  );
+rs.push("    ];");
+rs.push("}");
+rs.push("");
+rs.push("/// Brushing through foliage (shared/sounds `brush`; AUDIO.md §5, BUGS.md #103): on its feet a body");
+rs.push("/// rustles only with a footstep; off them every `EVERY_M` moved; never closer than `MIN_S`.");
+rs.push("pub mod brush_sounds {");
+rs.push(`    pub const EVERY_M: f64 = ${rf(data.brush.everyM)};`);
+rs.push(`    pub const MIN_S: f64 = ${rf(data.brush.minS)};`);
 rs.push("}");
 rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));

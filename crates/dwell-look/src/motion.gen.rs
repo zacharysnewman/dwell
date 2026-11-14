@@ -33,4 +33,5 @@ pub const MOTION: MotionTunables = MotionTunables {
     state_gain: [1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 0.0, 0.4, 1.0],
     teleport_m: 24.0,
     crossing_roll_s: 0.8,
+    grid_crossing_roll_s: 0.6,
 };

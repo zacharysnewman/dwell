@@ -19,16 +19,17 @@ function buildSha(): string {
 }
 
 /**
- * The app version this build carries (RELEASES.md §3). `package.json` holds the version the next
- * release will have; the release workflow passes the exact version as DWELL_VERSION (`0.1.0` for a
- * stable release, `0.1.0-dev.42+ab12cd3` for a dev build). Without it this is a local build, a
- * pre-release of the next version: `<version>-dev.local+<sha>`.
+ * The app version this build carries (RELEASES.md §3). The release workflow passes the exact version
+ * as DWELL_VERSION (`0.1.0` for a stable release, `0.1.0-dev.42+ab12cd3` for a dev build). Without it
+ * this is a local build on the compatibility line in `shared/version/line.json`:
+ * `<line>.0-dev.local+<sha>`, the version crates/dwell-sim/build.rs gives the WASM too (so both sides
+ * record and check worlds alike), and not `package.json`'s exact patch.
  */
 function appVersion(sha: string): string {
   const fromEnv = process.env.DWELL_VERSION;
   const version =
     fromEnv ??
-    `${(JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version}-dev.local+${sha.slice(0, 7)}`;
+    `${(JSON.parse(readFileSync('../shared/version/line.json', 'utf8')) as { line: string }).line}.0-dev.local+${sha.slice(0, 7)}`;
   if (!parseVersion(version)) throw new Error(`not a valid app version: ${version}`);
   return version;
 }
@@ -99,8 +100,8 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     rollupOptions: {
-      // The game's page, and `tools.js` at a fixed name for the launcher (src/tools.ts).
-      input: { index: 'index.html', tools: 'src/tools.ts' },
+      // The game's page, Chisel (the biome editor, ADR 0074 B3), and `tools.js` at a fixed name for the launcher (src/tools.ts).
+      input: { index: 'index.html', chisel: 'chisel.html', tools: 'src/tools.ts' },
       // Keep `tools.js`'s exports: nothing in the build imports them.
       preserveEntrySignatures: 'exports-only',
       output: {

@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for protocol constants (ARCHITECTURE.md §7.4, §8). Run `node shared/protocol/gen.mjs` after editing; CI fails if generated files are stale.",
-  "protocolVersion": 22,
+  "protocolVersion": 23,
   "simHz": 60,
   "snapshotHz": 20,
   "maxDatagramBytes": 1200,
@@ -14,7 +14,6 @@
   "maxInputsPerDatagram": 4,
   "players": {
     "maxHealth": 100,
-    "respawnSeconds": 5,
     "reconcileSnapDistance": 1.0,
     "interpDelayMs": 100,
     "predictProxyRadius": 16,
@@ -40,15 +39,28 @@
     "chunkBytesPerSecond": 1048576,
     "maxChunksPerTick": 32,
     "autosaveSeconds": 30,
+    "theaterViewpointHz": 4,
+    "theaterViewpointMaxM": 4096,
     "pos64Limit": 33554432
+  },
+  "worldSizes": {
+    "$comment": "The world sizes a world can be made at (docs/proposals/BIG_MAP.md §6 M0; owner, 2026-11-11: \"Perhaps even scope it as a 2x, 4x, 8x or 10x\"): each a whole radiusScale times world.worldRadius and world.islandRadius. A world's size is its own (WorldSettings tag WORLD_SIZE, optional, ADR 0054): a world without the tag is the default size, today's disc. Everything that follows the radius (the LOD's levels, the big map's cells, the hydrology grid's cell, the island's shape, the uplift's counts) is derived from it by dwell_protocol::world_size, the same at scale 1 as before. The default must have radiusScale 1. Changing a size's scale changes that size's worlds' terrain: give it a new name instead.",
+    "default": "1x",
+    "sizes": [
+      { "name": "1x", "radiusScale": 1 },
+      { "name": "2x", "radiusScale": 2 },
+      { "name": "4x", "radiusScale": 4 },
+      { "name": "8x", "radiusScale": 8 },
+      { "name": "10x", "radiusScale": 10 }
+    ]
   },
   "bounds": { "shape": "sphere", "center": [0, 0, 0], "radius": 50000 },
   "lod": {
     "sectionCells": 32,
-    "maxLevel": 12,
+    "maxLevel": 15,
     "indexLevel": 8,
-    "pixelErrorDesktop": 4,
-    "pixelErrorMobile": 8,
+    "pixelErrorDesktop": 3,
+    "pixelErrorMobile": 3,
     "nearSplitM": 1024,
     "cacheMbDesktop": 256,
     "cacheMbMobile": 96,
@@ -67,7 +79,8 @@
     "maxResyncChunks": 64,
     "maxLodIndexEntries": 16384,
     "maxEditAckRejected": 1024,
-    "maxPieceCells": 4096
+    "maxPieceCells": 4096,
+    "worldgenConfigMaxBytes": 524288
   },
   "regionEdit": {
     "maxSide": 32,
@@ -85,6 +98,8 @@
   "messageTypes": {
     "PlayerInput": 1,
     "DatagramPing": 2,
+    "SwingHello": 3,
+    "BitesHello": 4,
     "DatagramPong": 130,
     "WaterCurrents": 131,
     "StatusRequest": 64,
@@ -118,7 +133,32 @@
     "EntityDespawn": 23,
     "BodyEdit": 24,
     "BodyEditRequest": 83,
-    "WorldSettings": 84
+    "WorldSettings": 84,
+    "InventoryAction": 85,
+    "Inventory": 86,
+    "ItemDrops": 87,
+    "Chop": 88,
+    "Cuts": 89,
+    "HeldTools": 90,
+    "VitalsHello": 91,
+    "Vitals": 92,
+    "GroundGone": 93,
+    "Creatures": 94,
+    "CreaturesHello": 95,
+    "DamageHello": 96,
+    "Damage": 97,
+    "WorldgenRequest": 98,
+    "WorldgenConfig": 99,
+    "CausesHello": 100,
+    "EcologyHello": 101,
+    "Ecology": 102,
+    "SteamHello": 103,
+    "Steam": 104,
+    "Capabilities": 105,
+    "Swordplay": 106,
+    "TheaterViewpoint": 107,
+    "Markers": 108,
+    "Blueprints": 109
   },
   "rejectReasons": {
     "ProtocolVersion": 1,
@@ -180,6 +220,11 @@
   "slideFlags": {
     "active": 1
   },
+  "vitalsFlags": {
+    "exhausted": 1,
+    "stamina": 2,
+    "oxygen": 4
+  },
   "heldItem": {
     "blockMask": 32767,
     "brush": 32768
@@ -189,10 +234,20 @@
     "break": 64,
     "place": 128
   },
+  "swingKinds": {
+    "Plain": 0,
+    "ChopLevel": 1,
+    "ChopVertical": 2
+  },
   "welcomeFlags": {
     "flight": 1,
     "regionEdits": 2,
-    "brushes": 4
+    "brushes": 4,
+    "flightPolicy": 8,
+    "inventory": 16,
+    "chopping": 32,
+    "chopSweep": 64,
+    "vitals": 128
   },
   "groundKinds": {
     "None": 0,
@@ -209,7 +264,10 @@
   "damageCauses": {
     "Fall": 1,
     "Crush": 2,
-    "Explosion": 3
+    "Explosion": 3,
+    "Drown": 4,
+    "Burn": 5,
+    "Weapon": 6
   },
   "chunkForms": {
     "Generated": 0,
@@ -229,7 +287,8 @@
     "Fill": 1,
     "Replace": 2,
     "Hollow": 3,
-    "Paste": 4
+    "Paste": 4,
+    "Structure": 5
   },
   "voxelModificationReasons": {
     "Edit": 1,

@@ -1,6 +1,6 @@
 {
   "name": "@dwell/client",
-  "version": "0.49.48",
+  "version": "0.68.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "release:assign": "node --experimental-strip-types scripts/releaseAssign.ts",
     "build:wasm": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir client/src/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
     "e2e": "playwright test",
     "build:launcher": "vite build -c vite.launcher.config.ts",
@@ -24,7 +25,19 @@
     "build:probe": "cd .. && cargo build -p dwell-client --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir crates/dwell-client/www/pkg target/wasm32-unknown-unknown/release/dwell_client.wasm",
     "e2e:webgpu": "playwright test -c playwright.webgpu.config.ts",
     "bench": "node --experimental-strip-types scripts/bench.ts",
-    "sfx:render": "node --experimental-strip-types scripts/renderSfx.ts"
+    "bench:warm": "node --experimental-strip-types scripts/warmClient.ts",
+    "panoramas": "node --experimental-strip-types scripts/panoramas.ts",
+    "sfx:render": "node --experimental-strip-types scripts/renderSfx.ts",
+    "check:protocol": "node --experimental-strip-types scripts/check.ts protocol",
+    "check:data": "node --experimental-strip-types scripts/check.ts data",
+    "check:worldgen": "node --experimental-strip-types scripts/check.ts worldgen",
+    "check:mesh": "node --experimental-strip-types scripts/check.ts mesh",
+    "check:render": "node --experimental-strip-types scripts/check.ts render",
+    "check:sim": "node --experimental-strip-types scripts/check.ts sim",
+    "check:ui": "node --experimental-strip-types scripts/check.ts ui",
+    "check:audio": "node --experimental-strip-types scripts/check.ts audio",
+    "check:tools": "node --experimental-strip-types scripts/check.ts tools",
+    "check:all": "node --experimental-strip-types scripts/check.ts all"
   },
   "dependencies": {
     "qrcode-generator": "2.0.4"
@@ -35,6 +48,7 @@
     "@types/node": "22.20.4",
     "eslint": "10.11.0",
     "globals": "17.12.0",
+    "happy-dom": "^15.11.7",
     "prettier": "3.9.9",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",

@@ -26,6 +26,7 @@ PF = c["playerFlags"]
 PS = c["playerStates"]
 HI = c["heldItem"]
 SW = c["swingFlags"]
+SK = c["swingKinds"]
 GK = c["groundKinds"]
 EK = c["playerEventKinds"]
 DC = c["damageCauses"]
@@ -316,6 +317,12 @@ vectors = {
     "player_input": PLAYER_INPUT,
     "physics_snapshot": SNAPSHOT,
     "physics_snapshot_min": SNAPSHOT_MIN,
+    # WORK_QUEUE item 17: to a client that said SwingHello, the snapshot ends with each remote's
+    # swing kind (u8 count, the remotes' own, then a u8 each), here a level chop and plain.
+    "physics_snapshot_swing_kinds": SNAPSHOT
+    + struct.pack("<BBB", 2, SK["ChopLevel"], SK["Plain"]),
+    "physics_snapshot_min_swing_kinds": SNAPSHOT_MIN + struct.pack("<B", 0),
+    "swing_hello": struct.pack("<B", T["SwingHello"]),
     "entity_spawn": ENTITY_SPAWN,
     "entity_despawn": struct.pack("<BI", T["EntityDespawn"], 7),
     "body_edit_request_break": body_edit_request(9, (0, 3, -1), 5, BA["Break"]),
@@ -349,6 +356,10 @@ vectors = {
     "region_edit_replace": region_head(RO["Replace"], (10, -20, 30), (1, 32, 2))
     + struct.pack("<HH", 2, 6),
     "region_edit_paste": REGION_PASTE,
+    # A saved structure's placement (STRUCTURES.md §9): Paste's body under its own op, sent only to a
+    # server that announced the `structures.place` capability.
+    "region_edit_structure": region_head(RO["Structure"], (-3, 70, 8191990), PASTE_SIZE)
+    + region_cells(PASTE_CELLS),
     "region_edit_paste_keep": REGION_PASTE_KEEP,
     "voxel_modification": VOXEL_MOD,
     "chunk_resync": struct.pack("<BH", T["ChunkResync"], 2)
@@ -430,6 +441,40 @@ vectors["world_settings"] = world_settings(
     [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x9F, b"\x01\x02")]
 )
 vectors["block_registry_part"] = block_registry(1, 2, REGISTRY_PAYLOAD[40:])
+
+
+# Capabilities (ARCHITECTURE.md §8.3): u8 count, each name a u16 length and UTF-8. The server's in an
+# optional WorldSettings field (0x85, the join's), the client's answer as its own message.
+def capabilities(names):
+    out = struct.pack("<B", len(names))
+    for n in names:
+        b = n.encode()
+        out += struct.pack("<H", len(b)) + b
+    return out
+
+
+CAPS = capabilities(["structures.place", "mymod:wet"])
+vectors["capabilities"] = struct.pack("<B", T["Capabilities"]) + CAPS
+vectors["capabilities_none"] = struct.pack("<B", T["Capabilities"]) + capabilities([])
+vectors["world_settings_capabilities"] = world_settings(
+    [(0x01, f32s(800.0, 400.0, 7.0)), (0x81, f32s(1.0)), (0x85, CAPS)]
+)
+# TheaterViewpoint (docs/THEATER_MODE.md §7): u8 0 (cleared) or 1 then three f64.
+vectors["theater_viewpoint"] = struct.pack("<BBddd", T["TheaterViewpoint"], 1, 1200.5, 96.25, -40.0)
+vectors["theater_viewpoint_cleared"] = struct.pack("<BB", T["TheaterViewpoint"], 0)
+# Markers (WORK_QUEUE item 53, docs/MAP_MARKERS.md): u8 version 1, u16 count, each u32 id, str icon,
+# u8 r g b, str label, u8 face, three f32 (face-local), str auto kind ("" the player's own).
+def marker(mid, icon, rgb, label, face, pos, auto):
+    return struct.pack("<I", mid) + s(icon) + bytes(rgb) + s(label) + struct.pack("<B", face) + f32s(*pos) + s(auto)
+
+
+MARKERS = (
+    struct.pack("<BBH", T["Markers"], 1, 2)
+    + marker(1, "home", (0xE8, 0x32, 0x2A), "Base", 0, (12.5, 70.0, -3.0), "")
+    + marker(7, "skull", (0xF4, 0xF1, 0xEA), "Last death", 1, (-40.0, 66.5, 900.25), "death")
+)
+vectors["markers"] = MARKERS
+vectors["markers_none"] = struct.pack("<BBH", T["Markers"], 1, 0)
 vectors["edit_ack"] = edit_ack(7, [])
 vectors["edit_ack_rejected"] = edit_ack(0x01020304, [2, 0x01020303, 0x01020304])
 
@@ -438,6 +483,10 @@ malformed = {
     "!unknown_type": bytes([0xEE]),
     "!truncated_ping": vectors["ping"][:-1],
     "!trailing_byte": vectors["welcome"] + b"\x00",
+    # The swing kinds' count must be the remotes' (2), and nothing may follow them but the grid
+    # (`grid.frames`: a byte, 0 home, then nothing).
+    "!swing_kinds_count": SNAPSHOT + struct.pack("<BB", 1, SK["ChopLevel"]),
+    "!swing_kinds_trailing": SNAPSHOT + struct.pack("<BBBBB", 2, 1, 0, 0, 0),
     "!bad_utf8": struct.pack("<BH", T["ClientHello"], 1)
     + struct.pack("<H", 2) + b"\xC3\x28" + PK + s("Zack"),
     "!name_too_long": struct.pack("<BH", T["ClientHello"], 1)
@@ -490,7 +539,8 @@ malformed = {
     "!edit_ack_truncated": edit_ack(9, [1, 2])[:-2],
     "!edit_ack_too_many": struct.pack("<BIH", T["EditAck"], 99999, c["limits"]["maxEditAckRejected"] + 1)
     + b"".join(struct.pack("<I", i + 1) for i in range(c["limits"]["maxEditAckRejected"] + 1)),
-    "!region_edit_unknown_op": region_head(5, (0, 0, 0), (1, 1, 1)) + struct.pack("<H", 1),
+    "!region_edit_unknown_op": region_head(max(RO.values()) + 1, (0, 0, 0), (1, 1, 1))
+    + struct.pack("<H", 1),
     "!region_edit_empty_side": region_head(RO["Fill"], (0, 0, 0), (1, 0, 1)) + struct.pack("<H", 1),
     "!region_edit_side_too_long": region_head(RO["Fill"], (0, 0, 0), (1, c["regionEdit"]["maxSide"] + 1, 1))
     + struct.pack("<H", 1),
@@ -523,6 +573,19 @@ malformed = {
     + struct.pack("<iii", 0, 0, 0) * (c["limits"]["maxResyncChunks"] + 1),
     "!water_currents_bad_face": struct.pack("<BBii", T["WaterCurrents"], 2, 0, 0) + bytes(512),
     "!water_currents_truncated": struct.pack("<BBii", T["WaterCurrents"], 0, 0, 0) + bytes(511),
+    "!capabilities_twice": struct.pack("<B", T["Capabilities"]) + capabilities(["a.b", "a.b"]),
+    "!capabilities_bad_name": struct.pack("<B", T["Capabilities"]) + capabilities(["Upper"]),
+    "!capabilities_truncated": vectors["capabilities"][:-1],
+    "!capabilities_trailing": vectors["capabilities"] + b"\x00",
+    "!markers_bad_version": struct.pack("<BBH", T["Markers"], 2, 0),
+    "!markers_truncated": MARKERS[:-1],
+    "!markers_id_twice": struct.pack("<BBH", T["Markers"], 1, 2)
+    + marker(1, "home", (0, 0, 0), "", 0, (0.0, 0.0, 0.0), "") * 2,
+    "!markers_bad_face": struct.pack("<BBH", T["Markers"], 1, 1)
+    + marker(1, "home", (0, 0, 0), "", 2, (0.0, 0.0, 0.0), ""),
+    "!theater_viewpoint_bad_flag": struct.pack("<BB", T["TheaterViewpoint"], 2),
+    "!theater_viewpoint_truncated": vectors["theater_viewpoint"][:-1],
+    "!theater_viewpoint_not_finite": struct.pack("<BBddd", T["TheaterViewpoint"], 1, float("nan"), 0.0, 0.0),
     "!world_settings_truncated": world_settings([(0x01, f32s(800.0, 400.0, 7.0))])[:-1],
     "!world_settings_tag_twice": world_settings([(0x81, f32s(1.0)), (0x81, f32s(2.0))]),
     "!block_registry_zero_parts": block_registry(0, 0, b""),

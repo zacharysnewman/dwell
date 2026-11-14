@@ -16,6 +16,7 @@
 //! results whose token is no longer current are ignored.
 
 use dwell_world::hash::{HashMap, HashSet};
+use dwell_world::tree_tint::Tint;
 use std::collections::VecDeque;
 
 use dwell_mesh::{SURFACE_STRIDE, SectionMeshes, section_bytes};
@@ -24,11 +25,10 @@ use dwell_protocol::{
 };
 use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
-    child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
+    child, chunk_of_lod, in_world_of, kind_from_bounds_of, lod_of_chunk, parent, row_face,
+    section_size,
 };
-use dwell_world::{
-    CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, WORLD_RADIUS, chunk_of_pos, chunk_origin_m,
-};
+use dwell_world::{CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, chunk_of_pos, chunk_origin_m};
 
 use crate::fade::{Fade, FadeStats, Item, ItemKind, SwapFade};
 use crate::frustum::{Frustum, LodCamera, box_distance};
@@ -50,6 +50,9 @@ pub struct GeneratedSection {
     pub cells: Vec<u16>,
     pub surface: Option<Vec<f32>>,
     pub surface_b: Option<Vec<f32>>,
+    /// Its tree cells' leaf tints (ADR 0079; `dwell_worldgen::BifacialTerrain::lod_tints`):
+    /// (`cell_index`, tint) in the cells' own rows; empty for none.
+    pub tints: Vec<(u32, Tint)>,
 }
 
 /// The section generator (the worldgen pool). Each call starts a job; the host answers it later.
@@ -70,6 +73,8 @@ pub struct LodMeshJob {
     pub surface: Option<Vec<f32>>,
     pub water_drop: f64,
     pub mirror: bool,
+    /// The cells' leaf tints (`dwell_mesh::mesh_section_tinted`).
+    pub tints: Vec<(u32, Tint)>,
 }
 
 /// The section mesher (the worker pool).
@@ -119,6 +124,43 @@ pub trait ChunkReadiness {
     /// Received (and not unloaded), drawable or not yet (default: drawable).
     fn chunk_loaded(&self, coord: ChunkCoord) -> bool {
         self.chunk_drawable(coord)
+    }
+    /// A counter that changes whenever `chunk_drawable` or `chunk_loaded` may answer differently
+    /// (None, the default: unknown, and the LOD selects every frame).
+    fn drawable_revision(&self) -> Option<u64> {
+        None
+    }
+}
+
+/// What a selection was made from: the camera to the cell and a tenth of a degree, the settings,
+/// the system's own state and the chunks' (`LodSystem::update` skips the selection while it holds).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SelectionKey {
+    cell: [i64; 3],
+    angles: [i64; 2],
+    view: [i64; 5],
+    revision: u64,
+    chunks: u64,
+}
+
+impl SelectionKey {
+    fn of(camera: &LodCamera, revision: u64, chunks: u64) -> Self {
+        let p = camera.position;
+        Self {
+            // Half-metre cells (CELL_H) in all three axes.
+            cell: [p[0], p[1], p[2]].map(|v| (v * 2.0).floor() as i64),
+            angles: [camera.yaw_deg, camera.pitch_deg].map(|a| (a * 10.0).round() as i64),
+            view: [
+                camera.fov_y_deg,
+                camera.aspect,
+                camera.height_px,
+                camera.magnification,
+                camera.detail_magnification,
+            ]
+            .map(|v| (v * 1000.0).round() as i64),
+            revision,
+            chunks,
+        }
     }
 }
 
@@ -213,6 +255,14 @@ pub struct LodStats {
     /// ring's (the full-detail distance, schedule) means the full detail behind is there
     /// (`until nearBehind`).
     pub waiting: [usize; 3],
+    /// Sections the view wants that are not ready yet (this frame's traversal).
+    pub wanted: usize,
+    /// Sections meshed and held (built), drawn or not.
+    pub built: usize,
+    /// Leaves of the selection known to hold nothing (empty or buried): drawn as nothing.
+    pub empty: usize,
+    /// Sections dropped from the cache by its budget since the start (BUGS.md #108's counter).
+    pub evicted: u64,
 }
 
 impl Default for LodStats {
@@ -230,6 +280,10 @@ impl Default for LodStats {
             bytes_per_second: 0,
             fades: FadeStats::default(),
             waiting: [0, 0, 0],
+            wanted: 0,
+            built: 0,
+            empty: 0,
+            evicted: 0,
         }
     }
 }
@@ -244,6 +298,32 @@ pub struct Selection {
     pub chunks: Vec<LodCoord>,
     /// Holes filled by an ancestor's mesh clipped to them (see visit).
     pub stand_ins: Vec<StandIn>,
+}
+
+/// A chunk's level-1 section as the LOD holds it ([`LodSystem::section_report`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SectionReport {
+    /// The section's coordinate: level, i, j, k.
+    pub section: [i32; 4],
+    /// The LOD holds a node for it.
+    pub known: bool,
+    /// Empty, buried or content, once known.
+    pub kind: Option<&'static str>,
+    /// Waits on the server's answer before it is known.
+    pub needs_answer: bool,
+    pub generating: bool,
+    pub meshing: bool,
+    pub meshed: bool,
+    /// The LOD shows the section's chunks as chunks (in full or fading).
+    pub shows_chunks: bool,
+    /// Drawable around the camera: the traversal always reaches it (its chunks drawn).
+    pub forced: bool,
+    /// Known empty or buried: its chunks need not be drawn.
+    pub shows_nothing: bool,
+    /// The nearest ancestor (or the section itself) not split by the last selection — where
+    /// the traversal stopped above the chunks (level, i, j, k, and its kind's code: 0 unknown,
+    /// 1 empty, 2 buried, 3 content); none when it was split down to the section.
+    pub stopped_at: Option<[i32; 5]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -278,6 +358,18 @@ pub const CHUNK_REQUEST_RADIUS: i32 = world::RENDER_RADIUS_CHUNKS as i32 - 1;
 /// so a finer step can overflow: that scale is not tried again until the camera has moved
 /// RETRY_FINER_AFTER_M, or it would swing back and forth, reloading sections each time.
 pub const ERROR_SCALE_STEP: f64 = 1.15;
+/// The largest coarser step (a second): far over the budget the scale steps by the overshoot.
+pub const MAX_COARSER_STEP: f64 = 2.0;
+
+/// The coarser step for sections using `in_use` bytes of a `budget`: the view's sections go as
+/// 1 / scale² (a surface), so ×√(in use / budget) fits it in one step, between `ERROR_SCALE_STEP`
+/// and `MAX_COARSER_STEP` (BUGS.md: at ×1.15 a second a phone's loading view held 3.4× its
+/// budget for ~18 s, and iOS reloaded the tab).
+pub fn coarser_step(in_use: f64, budget: f64) -> f64 {
+    (in_use / budget.max(1.0))
+        .sqrt()
+        .clamp(ERROR_SCALE_STEP, MAX_COARSER_STEP)
+}
 pub const MAX_ERROR_SCALE: f64 = 16.0;
 const ROOM: f64 = 0.6;
 pub const COARSER_AFTER_MS: f64 = 1000.0;
@@ -382,6 +474,8 @@ struct Node {
     /// Each column's exact surface, as generated (a modified section's too: the mesher draws the
     /// columns its content still tops where generation did at their exact height, BUGS.md #43).
     surface: Option<Vec<f32>>,
+    /// Its generated tree cells' leaf tints (ADR 0079), kept with the cells.
+    tints: Vec<(u32, Tint)>,
     /// A modified section whose generated surface is still to be computed (`generate_surface`).
     wants_surface: bool,
     meshed: bool,
@@ -448,6 +542,11 @@ pub struct LodSystem {
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
     view_face: i32,
     near_rim: bool,
+    /// How near the rim the other face shows past the edge (m; `RIM_VIEW_M` for home, a grid's
+    /// scaled to its disc: `set_rim_view`).
+    rim_view_m: f64,
+    /// The world's disc and volume (its size's, BIG_MAP.md M2; `set_world`).
+    world: dwell_world::WorldBounds,
     position: Vec3,
     camera_chunk: ChunkCoord,
     /// Chunks asked of the server (and when), and the pacing of those requests.
@@ -473,9 +572,41 @@ pub struct LodSystem {
     options: LodOptions,
     /// The root is ready: LOD draws, and chunks show only where their level-1 section is refined.
     pub active: bool,
+    /// Bumped by everything that changes what a selection would be, apart from the camera and the
+    /// chunks: messages, job results, settings.
+    revision: u64,
+    /// The last selection's key, and whether nothing was left waiting after it (no job, request,
+    /// fade or time-driven change): then a frame with the same key selects nothing new.
+    last_key: Option<SelectionKey>,
+    settled: bool,
+    /// A level-1 section's chunks are drawable but not yet shown as chunks (FORCE_CHUNKS_AFTER_MS).
+    covering_soon: bool,
+    /// Selections made, and frames that skipped theirs (the bench's `lod.skipped`).
+    selections: u64,
+    skipped: u64,
+    /// When the last selection ran (ms; `update`'s clock), for the streaming report.
+    selected_ms: Option<f64>,
+    /// Sections the cache budget has dropped (`LodStats::evicted`).
+    evicted: u64,
 }
 
 impl LodSystem {
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2, from the join's settings):
+    /// which sections are in the world, and where its rim is (`near_rim`).
+    pub fn set_world(&mut self, world: dwell_world::WorldBounds) {
+        self.world = world;
+    }
+
+    /// How near the rim the other face is drawn past the edge (m; [`RIM_VIEW_M`] by default): a
+    /// grid smaller than home scales it to its disc, or a moon 12.5 km across would draw both faces
+    /// from everywhere (BUGS.md #159).
+    pub fn set_rim_view(&mut self, m: f64) {
+        if m != self.rim_view_m {
+            self.revision += 1;
+        }
+        self.rim_view_m = m;
+    }
+
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
             nodes: HashMap::default(),
@@ -507,6 +638,8 @@ impl LodSystem {
             detail_m: None,
             view_face: 1,
             near_rim: false,
+            rim_view_m: RIM_VIEW_M,
+            world: dwell_world::WorldBounds::DEFAULT,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
             chunk_asked: HashMap::default(),
@@ -525,6 +658,14 @@ impl LodSystem {
             too_fine: None,
             options,
             active: false,
+            revision: 0,
+            last_key: None,
+            settled: false,
+            covering_soon: false,
+            selections: 0,
+            skipped: 0,
+            selected_ms: None,
+            evicted: 0,
         };
         s.request_credit = s.rate();
         s
@@ -533,6 +674,9 @@ impl LodSystem {
     /// Draws chunks (every block) out to `m` from the camera, and level 1 at most beyond it
     /// (detail.rs); None goes back to the pixel error alone.
     pub fn set_detail_distance(&mut self, m: Option<f64>) {
+        if m != self.detail_m {
+            self.revision += 1;
+        }
         self.detail_m = m;
     }
 
@@ -542,6 +686,7 @@ impl LodSystem {
         if pixel_error == self.options.pixel_error && cache_bytes == self.options.cache_bytes {
             return;
         }
+        self.revision += 1;
         self.options.pixel_error = pixel_error;
         self.options.cache_bytes = cache_bytes;
         self.error_scale = 1.0;
@@ -552,6 +697,9 @@ impl LodSystem {
 
     /// Full-chunk mode (§6.3): nothing is generated here; every section comes from the server.
     pub fn set_full_mode(&mut self, full: bool) {
+        if full != self.full_mode {
+            self.revision += 1;
+        }
         self.full_mode = full;
     }
 
@@ -563,9 +711,94 @@ impl LodSystem {
     /// second view. None: the camera's view alone.
     pub fn set_second_area(&mut self, area: Option<(Vec3, Vec3)>) {
         if area != self.second {
+            self.revision += 1;
             self.second = area;
             self.second_since_ms = f64::NAN;
         }
+    }
+
+    /// How a chunk's level-1 section stands (the streaming report, docs/DEV_TOOLS.md): what the LOD
+    /// knows of it and whether it shows the chunk as a chunk.
+    pub fn section_report(&self, coord: ChunkCoord) -> SectionReport {
+        let c = parent(lod_of_chunk(coord));
+        let id = id_of(c);
+        let n = self.nodes.get(&id);
+        SectionReport {
+            section: [c.level, c.i, c.j, c.k],
+            known: n.is_some(),
+            kind: n.and_then(|n| n.kind).map(|k| match k {
+                LodKind::Empty => "empty",
+                LodKind::Buried => "buried",
+                LodKind::Content => "content",
+            }),
+            needs_answer: n.is_some_and(|n| n.needs_answer),
+            generating: n.is_some_and(|n| n.generating),
+            meshing: n.is_some_and(|n| n.meshing),
+            meshed: n.is_some_and(|n| n.meshed),
+            shows_chunks: self.chunk_visible(coord),
+            forced: self.covered.contains(&id),
+            shows_nothing: self.shows_nothing_at(coord),
+            stopped_at: self.stopped_at(c),
+        }
+    }
+
+    /// The highest ancestor of level-1 section `c` (or `c`) the last selection did not split.
+    fn stopped_at(&self, c: LodCoord) -> Option<[i32; 5]> {
+        let mut path = vec![c];
+        while path.last().is_some_and(|a| a.level < MAX_LEVEL) {
+            path.push(parent(*path.last().unwrap()));
+        }
+        path.into_iter().rev().find_map(|a| {
+            let n = self.nodes.get(&id_of(a));
+            let split = n.is_some_and(|n| n.split_frame == self.frame);
+            (!split).then(|| {
+                let k = match n.and_then(|n| n.kind) {
+                    None => 0,
+                    Some(LodKind::Empty) => 1,
+                    Some(LodKind::Buried) => 2,
+                    Some(LodKind::Content) => 3,
+                };
+                [a.level, a.i, a.j, a.k, k]
+            })
+        })
+    }
+
+    /// The cache budget (bytes, the Distant memory setting).
+    pub fn cache_budget(&self) -> usize {
+        self.options.cache_bytes
+    }
+
+    /// Drops every section held, their meshes off `view`, and the selection: the viewer left home's
+    /// grid (MOON_WORLD.md §7.3, BUGS.md #124), whose sections stayed uploaded, hidden, while away.
+    /// The index, the bounds, the settings and the jobs in flight are kept (a job's result finds
+    /// no section and is dropped); the next `update` builds again from the root.
+    pub fn drop_all<P>(&mut self, view: &mut dyn LodView<P>) {
+        let ids: Vec<LodId> = self.nodes.keys().copied().collect();
+        for id in ids {
+            self.remove(id, view);
+        }
+        view.show_lod_sections(&[]);
+        view.show_lod_stand_ins(&[]);
+        self.cache_bytes = 0;
+        self.in_use = 0;
+        self.selection = Selection::default();
+        self.chunk_fades.clear();
+        self.fade.clear();
+        self.covered.clear();
+        self.covered_ancestors.clear();
+        self.drawable_since.clear();
+        self.warm.clear();
+        self.asking.clear();
+        self.chunk_asked.clear();
+        self.active = false;
+        self.settled = false;
+        self.last_key = None;
+        self.revision += 1;
+    }
+
+    /// When the last selection ran (ms, `update`'s clock), or None before the first.
+    pub fn selected_ms(&self) -> Option<f64> {
+        self.selected_ms
     }
 
     pub fn chunk_visible(&self, coord: ChunkCoord) -> bool {
@@ -579,7 +812,11 @@ impl LodSystem {
     pub fn shows_nothing_at(&self, coord: ChunkCoord) -> bool {
         let mut c = parent(lod_of_chunk(coord));
         loop {
-            if let Some(n) = self.nodes.get(&id_of(c)) {
+            // A node not yet classified (made on the way down to forced chunks, under an empty
+            // parent that never classifies its children) defers to the nearest one known.
+            if let Some(n) = self.nodes.get(&id_of(c))
+                && (n.kind.is_some() || n.needs_answer)
+            {
                 return !n.needs_answer && matches!(n.kind, Some(LodKind::Empty | LodKind::Buried));
             }
             if c.level >= MAX_LEVEL {
@@ -602,6 +839,9 @@ impl LodSystem {
 
     /// The cross-fade's length (ms; 0: swaps in one frame). Swaps under way finish at once.
     pub fn set_fade_ms(&mut self, fade_ms: f64) {
+        if fade_ms != self.options.fade_ms {
+            self.revision += 1;
+        }
         self.options.fade_ms = fade_ms;
         self.fade.set_fade_ms(fade_ms);
     }
@@ -613,6 +853,7 @@ impl LodSystem {
     /// A message of the lod stream (LodIndex, LodIndexUpdate, LodData; others are ignored), of
     /// `byte_length` bytes on the wire.
     pub fn on_message(&mut self, m: &Message, byte_length: usize, now_ms: f64) {
+        self.revision += 1;
         self.received.push_back((now_ms, byte_length));
         match m {
             Message::LodIndex(x) => self.on_index(&x.entries),
@@ -677,7 +918,22 @@ impl LodSystem {
 
     /// One frame: selects what to draw for `camera`, hands the renderer its sections, and starts
     /// the jobs and requests the view is waiting for.
+    ///
+    /// A frame whose camera (to the cell and a tenth of a degree), settings, messages, job results
+    /// and chunks are those of the last selection, which left nothing waiting, selects nothing new
+    /// and is skipped: standing still with everything loaded it cost ~1 ms a frame (M1 Air).
     pub fn update<P>(&mut self, camera: &LodCamera, now_ms: f64, host: &mut dyn LodHost<P>) {
+        let key = host
+            .drawable_revision()
+            .map(|chunks| SelectionKey::of(camera, self.revision, chunks));
+        if self.settled && key.is_some() && key == self.last_key {
+            self.skipped += 1;
+            return;
+        }
+        self.last_key = key;
+        self.selections += 1;
+        self.selected_ms = Some(now_ms);
+        let scale_before = self.error_scale;
         self.frame += 1;
         let p = camera.position;
         let view_face = FaceFrame::at_height(p[1]).sign();
@@ -685,7 +941,7 @@ impl LodSystem {
             self.face_changed();
         }
         self.view_face = view_face;
-        self.near_rim = p[0].hypot(p[2]) > f64::from(WORLD_RADIUS) - RIM_VIEW_M;
+        self.near_rim = p[0].hypot(p[2]) > self.world.radius() as f64 - self.rim_view_m;
         self.position = p;
         let frustum = Frustum::new(*camera);
         self.camera_chunk = chunk_of_pos(p);
@@ -750,6 +1006,37 @@ impl LodSystem {
         self.evict(host);
         self.adapt(p, now_ms);
         self.stats = Some(self.compute_stats(now_ms, &frustum));
+        self.settled = self.error_scale == scale_before && self.nothing_waiting();
+    }
+
+    /// Selections made, and frames that skipped theirs (nothing could change).
+    pub fn selections(&self) -> (u64, u64) {
+        (self.selections, self.skipped)
+    }
+
+    /// After a selection: nothing left that the next frame would act on with the same camera,
+    /// messages and chunks (jobs, requests, fades, a section about to show its chunks, a scale
+    /// step, eviction, a second area). Sections waiting for their chunks wait on the chunks' revision.
+    fn nothing_waiting(&self) -> bool {
+        let fade = self.fade.stats();
+        let budget = self.options.cache_bytes as f64;
+        let in_use = self.in_use as f64;
+        let scale_holds = in_use <= budget
+            && (self.error_scale <= 1.0 || in_use >= budget * ROOM || self.too_fine.is_some());
+        self.active
+            && fade.swaps == 0
+            && fade.retiring == 0
+            && self.wanted.is_empty()
+            && self.wanted_chunks.is_empty()
+            && self.due.is_empty()
+            && self.remeshed.is_empty()
+            && self.asking.is_empty()
+            && self.generating == 0
+            && self.meshing == 0
+            && !self.covering_soon
+            && self.second.is_none()
+            && self.cache_bytes <= self.options.cache_bytes
+            && scale_holds
     }
 
     /// Hands the renderer this frame's draws with their fades, and keeps the meshes of the items
@@ -808,6 +1095,7 @@ impl LodSystem {
 
     /// The bounds of column (level, i, ·, k), or None when computing them failed (asked again).
     pub fn on_lod_bounds(&mut self, level: i32, i: i32, k: i32, bounds: Option<LodBounds>) {
+        self.revision += 1;
         let key = bounds_key(level, i, k);
         if !matches!(self.bounds.get(&key), Some(Bounds::Pending)) {
             return; // not asked for
@@ -825,6 +1113,7 @@ impl LodSystem {
 
     /// A generation job's result (None: it failed).
     pub fn on_generated(&mut self, token: u64, section: Option<GeneratedSection>) {
+        self.revision += 1;
         let Some(id) = self.gen_jobs.remove(&token) else {
             return;
         };
@@ -855,6 +1144,7 @@ impl LodSystem {
         }
         self.set_cells(id, Some(s.cells));
         let n = self.nodes.get_mut(&id).expect("node");
+        n.tints = s.tints;
         // A face-B section's surfaces are face-local, those of its mirror image. A section that
         // may hold rows of both faces (level ≥ 7) keeps face A's: it is meshed for the viewer's
         // face, without surfaces on face B (see mesh).
@@ -873,6 +1163,7 @@ impl LodSystem {
         meshes: P,
         view: &mut dyn LodView<P>,
     ) {
+        self.revision += 1;
         let Some(id) = self.mesh_jobs.remove(&token) else {
             return;
         };
@@ -904,6 +1195,7 @@ impl LodSystem {
     /// A meshing job failed (not in the TS, whose mesher never rejects): the pool slot is freed and
     /// the section is meshed again when its content or a neighbour's border next changes.
     pub fn on_mesh_failed(&mut self, token: u64) {
+        self.revision += 1;
         let Some(id) = self.mesh_jobs.remove(&token) else {
             return;
         };
@@ -960,9 +1252,10 @@ impl LodSystem {
             return Kids::of(k);
         }
         let (coord, modified) = (self.n(id).coord, self.n(id).modified);
+        let world = self.world;
         let kids: Vec<LodId> = (0..8)
             .map(|o| child(coord, o))
-            .filter(|&c| in_world(c))
+            .filter(|&c| in_world_of(c, &world))
             .map(|c| self.node(c, modified))
             .collect();
         let out = Kids::of(&kids);
@@ -995,7 +1288,24 @@ impl LodSystem {
             fallback
         };
         if ready && kind == Some(LodKind::Empty) {
-            selection.empty.push(coord);
+            // A section's kind is the terrain's: one holding only trees (their tops over the
+            // ground below it) is "empty". Up close the streamed chunks are the truth (BUGS.md
+            // #162: 25-40 m over a forest the treetops were missing below the camera), so the
+            // walk goes on to the covered chunks inside it; nothing else here is drawn.
+            if coord.level == 1 && self.covered.contains(&id) {
+                selection.chunks.push(coord);
+                self.split(id);
+            } else if self.covered_ancestors.contains(&id) {
+                self.split(id);
+                for &kid in self.kids(id).as_slice() {
+                    if self.covered.contains(&kid) || self.covered_ancestors.contains(&kid) {
+                        self.touch(kid);
+                        self.visit(kid, frustum, selection, None, host);
+                    }
+                }
+            } else {
+                selection.empty.push(coord);
+            }
             return;
         }
         if ready && kind == Some(LodKind::Buried) {
@@ -1211,6 +1521,7 @@ impl LodSystem {
     fn find_covered<P>(&mut self, p: Vec3, now_ms: f64, host: &dyn LodHost<P>) {
         self.covered.clear();
         self.covered_ancestors.clear();
+        self.covering_soon = false;
         let mut seen = HashSet::default();
         let at = section_at(1, p);
         let r = 2; // the streamed sphere (VIEW_RADIUS_CHUNKS) spans ±2 level-1 sections
@@ -1218,13 +1529,14 @@ impl LodSystem {
             for k in at.k - r..=at.k + r {
                 for i in at.i - r..=at.i + r {
                     let c = LodCoord::new(1, i, j, k);
-                    if !in_world(c) || !all_drawable(c, host) {
+                    if !in_world_of(c, &self.world) || !all_drawable(c, host) {
                         continue;
                     }
                     let id = id_of(c);
                     seen.insert(id);
                     let since = *self.drawable_since.entry(id).or_insert(now_ms);
                     if now_ms - since < FORCE_CHUNKS_AFTER_MS {
+                        self.covering_soon = true;
                         continue;
                     }
                     self.covered.insert(id);
@@ -1468,6 +1780,7 @@ impl LodSystem {
                     meshing: false,
                     cells: None,
                     surface: None,
+                    tints: Vec::new(),
                     wants_surface: false,
                     meshed: false,
                     remesh: false,
@@ -1699,7 +2012,8 @@ impl LodSystem {
                 return;
             }
         };
-        let kind = kind_from_bounds(c, &b);
+        // The world's own disc and volume (BUGS.md #108: the 1× test emptied a big world past 50 km).
+        let kind = kind_from_bounds_of(c, &b, &self.world);
         if kind != LodKind::Content && !self.neighbour_modified(c) {
             self.nodes.get_mut(&id).expect("node").kind = Some(kind);
             return;
@@ -1768,6 +2082,7 @@ impl LodSystem {
             water_drop: chunk_water_drop_rows() / cell_size(coord.level) as f64,
             // Face B's terrain faces down: meshed as its mirror image, turned back.
             mirror: is_face_b_section(coord),
+            tints: self.n(id).tints.clone(),
         };
         self.mesh_jobs.insert(token, id);
         host.mesh_section(job, token);
@@ -1779,6 +2094,7 @@ impl LodSystem {
         self.cache_bytes = (self.cache_bytes + new).saturating_sub(n.cell_bytes());
         if cells.is_none() {
             n.surface = None;
+            n.tints = Vec::new();
         }
         n.cells = cells;
     }
@@ -1865,7 +2181,7 @@ impl LodSystem {
             if self.last_step_finer {
                 self.too_fine = Some((self.error_scale, position));
             }
-            self.error_scale = MAX_ERROR_SCALE.min(self.error_scale * ERROR_SCALE_STEP);
+            self.error_scale = MAX_ERROR_SCALE.min(self.error_scale * coarser_step(in_use, budget));
             self.last_scale_ms = Some(now_ms);
             self.last_step_finer = false;
         } else if in_use < budget * ROOM && self.error_scale > 1.0 && since >= FINER_AFTER_MS {
@@ -1917,6 +2233,7 @@ impl LodSystem {
                 .and_then(|n| n.kids.take())
                 .unwrap_or_default();
             for kid in kids {
+                self.evicted += 1;
                 self.remove(kid, view);
             }
         }
@@ -1959,6 +2276,16 @@ impl LodSystem {
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
             fades: self.fade.stats(),
             waiting: self.waiting(frustum),
+            wanted: {
+                let mut seen = HashSet::default();
+                self.wanted
+                    .iter()
+                    .filter(|&&id| !self.ready(id) && seen.insert(id))
+                    .count()
+            },
+            built: self.nodes.values().filter(|n| n.meshed).count(),
+            empty: self.selection.empty.len(),
+            evicted: self.evicted,
         }
     }
 

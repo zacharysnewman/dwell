@@ -206,6 +206,8 @@ fn piece_boxes(e: &EntitySpawn) -> Vec<dwell_physics::PieceCell> {
                 } else {
                     dwell_physics::Collide::None
                 },
+                hull: None,
+                joined: 0,
             }
         })
         .collect()
@@ -239,6 +241,14 @@ fn playground_config() -> ServerConfig {
         generator_version: GENERATOR_FLAT,
         generator_override: Some(playground_generator()),
         ..ServerConfig::default()
+    }
+}
+
+/// [`playground_config`] in adventure mode (ADR 0065): players are hurt, no flight, no brushes.
+fn adventure_config() -> ServerConfig {
+    ServerConfig {
+        mode: "adventure".into(),
+        ..playground_config()
     }
 }
 
@@ -712,7 +722,8 @@ fn input_datagrams_are_rate_limited() {
 
 #[test]
 fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
-    let mut sim = NetSim::new(LinkConditions::default());
+    // In adventure: creative hurts no one (ADR 0065, tests/modes.rs).
+    let mut sim = NetSim::with(LinkConditions::default(), adventure_config());
     let (a, b) = (sim.join(None, false), sim.join(None, false));
     sim.step(10);
     let pa = sim.clients[a].player_id;
@@ -743,7 +754,7 @@ fn a_hard_fall_damages_a_lethal_one_kills_and_every_client_sees_the_respawn() {
         assert_eq!(sim.clients[c].count(PlayerEventKind::Death), 1);
     }
     assert_ne!(sim.clients[b].remotes[&pa].flags & player_flags::DEAD, 0);
-    sim.step(players::RESPAWN_SECONDS as i32 * SIM_HZ as i32 + 30);
+    sim.step(dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER) as i32 + 30);
     assert_eq!(sim.server.health_of(pa), players::MAX_HEALTH as i32);
     assert!(sim.clients[a].predictor.active());
     for c in [a, b] {
@@ -1246,6 +1257,7 @@ fn a_block_placed_by_one_player_blocks_another_on_the_server_and_in_its_predicti
                 material: stone,
                 rows: 1,
                 down: false,
+                point: None,
             };
             sim.send(a, Message::BlockEditRequest(edit));
             sim.step(8);
@@ -1336,6 +1348,44 @@ fn with_flight_off_the_server_ignores_the_fly_bit() {
         "{}",
         sim.clients[c].position()
     );
+}
+
+/// ADR 0065: adventure has no flight. The server clears the fly bit (the client, told by Welcome,
+/// sends none, but the server's check is what counts), and the prediction stays with the server.
+#[test]
+fn in_adventure_the_server_ignores_the_fly_bit() {
+    let mut sim = NetSim::with(LinkConditions::default(), adventure_config());
+    let c = sim.join(Some(fly_script()), false);
+    assert_eq!(sim.clients[c].welcome_flags & welcome_flags::FLIGHT, 0);
+    assert_ne!(
+        sim.clients[c].welcome_flags & welcome_flags::FLIGHT_POLICY,
+        0
+    );
+    sim.step(10);
+    let start = sim.clients[c].position().y;
+    sim.step(ticks(1.0));
+    assert!(
+        sim.clients[c].position().y < start + 2.0,
+        "{}",
+        sim.clients[c].position()
+    );
+}
+
+/// ADR 0065: the host turning a creative world into an adventure one grounds a flying player at
+/// once: the server stops taking its fly bit and it falls.
+#[test]
+fn the_host_changing_the_mode_to_adventure_grounds_a_flying_player() {
+    let mut sim = NetSim::new(LinkConditions::default());
+    let c = sim.join(Some(fly_script()), false);
+    sim.step(10);
+    let start = sim.clients[c].position().y;
+    sim.step(ticks(1.0));
+    let up = sim.clients[c].position().y;
+    assert!(up > start + 5.0, "flying in creative");
+    assert!(sim.server.set_mode("adventure"));
+    sim.step(ticks(4.0));
+    let now = sim.clients[c].position().y;
+    assert!(now < up - 3.0, "fell once flight went: {up} -> {now}");
 }
 
 #[test]
@@ -1524,6 +1574,11 @@ fn pool_generator() -> ChunkGenerator {
 /// A player swims into a 2 × 2 log raft (1,400 kg) floating in the pool and keeps swimming:
 /// returns how far the raft went, and the client.
 fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) {
+    pushing_a_raft_of(conditions, 1)
+}
+
+/// [`pushing_a_raft`], the raft a body of kind `kind` (0 natural: a felled trunk's; 1 built).
+fn pushing_a_raft_of(conditions: LinkConditions, kind: u8) -> (f64, Vec<f32>, NetSim, usize) {
     let log = require("dwell:log[axis=y]");
     let cells: Vec<([i32; 3], u16)> = (0..2)
         .flat_map(|x| (0..2).map(move |z| ([x, 0, z], log)))
@@ -1535,10 +1590,11 @@ fn pushing_a_raft(conditions: LinkConditions) -> (f64, Vec<f32>, NetSim, usize) 
         cells,
         to_world(29.5, G - 0.1, 0.0),
         "raft",
+        kind,
     )
 }
 
-/// A player (from x 25.5 at height `spawn_y`) goes on +x into a built body of `cells` added at
+/// A player (from x 25.5 at height `spawn_y`) goes on +x into a body of `kind` of `cells` added at
 /// `at` and settled for 3 s, and keeps going for 6 s: how far the body went, the stand-in's
 /// offsets from the server's body at each input the client saw it for, the sim and the client.
 fn pushing_a_body(
@@ -1548,6 +1604,7 @@ fn pushing_a_body(
     cells: Vec<([i32; 3], u16)>,
     at: DVec3,
     name: &str,
+    kind: u8,
 ) -> (f64, Vec<f32>, NetSim, usize) {
     let mut sim = NetSim::with_world(conditions, generator, [25.5, spawn_y, 0.5]);
     let swim = Rc::new(Cell::new(false));
@@ -1564,7 +1621,7 @@ fn pushing_a_body(
     );
     sim.step(ticks(0.5));
     // After the join (the harness drops what comes during it), as a body built then.
-    let raft = sim.server.add_body(1, cells, at.to_array());
+    let raft = sim.server.add_body(kind, cells, at.to_array());
     sim.step(ticks(3.0)); // the raft settles afloat
     let (start, _) = sim.server.body_pose(raft).expect("the raft");
     swim.set(true);
@@ -1620,6 +1677,7 @@ fn pushing_a_log_on_land_is_predicted_without_snaps_at_150_ms_rtt() {
         vec![([0, 0, 0], log), ([0, 1, 0], log)],
         to_world(29.5, G + 0.25, 0.0),
         "log",
+        1,
     );
     assert!((1.5..4.0).contains(&pushed), "the log went {pushed} m");
     let c = &sim.clients[a];
@@ -1652,4 +1710,65 @@ fn pushing_a_floating_raft_is_predicted_without_snaps_at_150_ms_rtt() {
     assert!(errs.len() > 100, "{} poses compared", errs.len());
     let off = percentile(errs.iter().map(|e| e.abs()).collect(), 0.95);
     assert!(off < 0.03, "the stand-in off by {off} m (p95)");
+}
+
+// face-a-only: the netcode sim joins on face A; felling.rs pins the drift on both faces.
+#[test]
+fn a_felled_trunk_afloat_stays_a_body_and_is_predicted_without_snaps() {
+    // Owner, 2026-11-12: floating trees "should never settle". A natural raft of logs (a felled
+    // trunk's kind) afloat stays a body after it comes to rest, and the server and the client
+    // agree on it as on a built one when a player pushes it. Red before: it settled into blocks
+    // about a second after it came to rest afloat, so there was no body to push.
+    let (pushed, errs, sim, a) = pushing_a_raft_of(lossy(), 0);
+    assert!(pushed > 0.8, "the trunk went {pushed} m");
+    let c = &sim.clients[a];
+    assert_eq!(c.predictor.stats().snaps, 0, "{:?}", c.predictor.stats());
+    let worst = percentile(c.corrections.clone(), 1.0);
+    assert!(worst < 0.03, "corrections max {worst} m");
+    assert!(errs.len() > 100, "{} poses compared", errs.len());
+    let off = percentile(errs.iter().map(|e| e.abs()).collect(), 0.95);
+    assert!(off < 0.03, "the stand-in off by {off} m (p95)");
+}
+
+// --- leaves (BUGS.md #94) ------------------------------------------------------------------------
+
+/// The flat world with a pine (`shared/structures/pine_tree.json`: leaves from 1 m up) at x 6.
+fn tree_generator() -> ChunkGenerator {
+    let pine = load("dwell:pine_tree").expect("the pine structure");
+    with_structure(
+        flat_generator(),
+        Arc::new(pine.place([6, dwell_world::FLAT_TOP_Y, 0], 0)),
+    )
+}
+
+/// BUGS.md #94: jumping into a tree's crown rubber-banded the player toward the ground. The server
+/// and the client's prediction must agree there: no replays, each acknowledged position exact.
+// face-a-only: the netcode sim joins on face A; buried.rs pins the server's side on both faces.
+#[test]
+fn jumping_into_a_trees_leaves_is_predicted_exactly_without_latency() {
+    let mut sim = NetSim::with_world(LinkConditions::default(), tree_generator(), [2.5, G, 0.5]);
+    let c = sim.join(
+        Some(Box::new(|tick, c| {
+            // Into the crown and back out, jumping all the while.
+            let x = if (tick / 120) % 2 == 0 { 6.5 } else { 2.5 };
+            let mut i = steer_to(c, x, 0.5, false);
+            i.jump = tick % 30 < 20;
+            i
+        })),
+        true,
+    );
+    let mut top = 0.0f32;
+    for _ in 0..ticks(8.0) {
+        sim.step(1);
+        top = top.max(sim.clients[c].position().y);
+    }
+    let c = &sim.clients[c];
+    assert!(top > G as f32 + 0.5, "jumped: {top}");
+    assert!(
+        c.predictor.stats().snapshots > 100,
+        "{:?}",
+        c.predictor.stats()
+    );
+    assert_eq!(c.predictor.stats().replays, 0, "{:?}", c.predictor.stats());
+    assert!(percentile(c.ack_errors.clone(), 1.0) < 0.001);
 }

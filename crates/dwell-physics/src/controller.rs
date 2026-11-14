@@ -5,8 +5,8 @@
 
 use dwell_blocks::{Facing, VoxelShape, info, shape::solid_span_at};
 use dwell_world::{
-    CELL_H, FaceFrame, MIDPLANE_M, VoxelWorld, centre_of_cell, chunk_distance, chunk_of_pos,
-    m_of_row, mirror_y, row_of_m, rows_for_m,
+    CELL_H, ChunkCoord, FaceFrame, MIDPLANE_M, VoxelWorld, centre_of_cell, chunk_distance,
+    chunk_of_pos, m_of_row, mirror_y, row_of_m, rows_for_m,
 };
 use rapier3d_f64::prelude::*;
 
@@ -15,6 +15,7 @@ use crate::frame::{FaceQuery, Frame};
 use crate::physics::{BodyHandle, DVec3, Layer, Physics, Vec3, groups};
 use crate::query::{Capsule, GroundRef, ProbeHit, VoxelQuery};
 use crate::terrain::TerrainCollision;
+pub use dwell_protocol::vitals::{Activity, VITALS, Vitals, VitalsRules};
 
 const DT: f32 = PlayerControllerConfig::dt();
 const RAD_TO_DEG: f32 = 180.0 / std::f32::consts::PI;
@@ -290,6 +291,10 @@ pub struct PlayerController {
     pub impact_normal: Vec3,
     /// The body last pushed, kept for a few ticks after its contact is lost (`step_push`).
     pub push: PushGrace,
+    /// ◆ Stamina and oxygen (§6.13, ADR 0069), stepped by `step_vitals` under the world's
+    /// [`Players::set_vitals`] rules. Not on the wire's `ControllerState`: a replay keeps the
+    /// predicted value, and the server's `Vitals` message corrects it.
+    pub vitals: Vitals,
 }
 
 /// How many ticks a push outlasts its contact (`Players::step_push`).
@@ -326,6 +331,7 @@ impl Default for PlayerController {
             impact_speed: 0.0,
             impact_normal: Vec3::ZERO,
             push: PushGrace::default(),
+            vitals: Vitals::default(),
         }
     }
 }
@@ -365,7 +371,7 @@ fn move_towards(current: Vec3, target: Vec3, max_delta: f32) -> Vec3 {
     current + delta * (max_delta / length)
 }
 
-/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.12, owner 2026-11-06): input pushes
+/// The air's walking rule (◆ Dwell, PLAYER_CONTROLLER.md §6.13, owner 2026-11-06): input pushes
 /// `step` m/s a tick along `wish` (a unit vector), and the result is no faster than `target` or the
 /// speed `v` already had, whichever is more. Under the target it speeds the body up to it; at or
 /// past it, it only turns the velocity toward the input (at `step ÷ |v|` radians a tick), never
@@ -427,6 +433,28 @@ pub fn move_direction(input: &Input) -> Vec3 {
     forward * input.move_y + camera_right(input.look_yaw) * input.move_x
 }
 
+/// Creative flight's wish direction (face-local, length ≤ 1; PLAYER_CONTROLLER.md §6.7): with
+/// `follow_pitch` forward goes where the camera looks, up or down with its pitch, so a player
+/// aiming at the moon and holding forward flies at it (BUGS.md #155); without, forward is level
+/// along the yaw. Jump rises and crouch sinks on top, the vertical held to the speed.
+pub fn fly_direction(input: &Input, follow_pitch: bool) -> Vec3 {
+    let mut d = move_direction(input);
+    let pitch = if follow_pitch {
+        input.look_pitch * DEG_TO_RAD
+    } else {
+        0.0
+    };
+    let (sin_p, cos_p) = (libm::sinf(pitch), libm::cosf(pitch));
+    let yaw = input.look_yaw * DEG_TO_RAD;
+    let forward = Vec3::new(libm::sinf(yaw), 0.0, libm::cosf(yaw));
+    // The forward share of the level move tilts with the pitch; the strafe stays level.
+    let along = forward * input.move_y;
+    d = d - along + along * cos_p;
+    let rise = f32::from(u8::from(input.jump)) - f32::from(u8::from(input.crouch));
+    d.y = (input.move_y * sin_p + rise).clamp(-1.0, 1.0);
+    d
+}
+
 pub type PlayerHandle = u32;
 
 struct Player {
@@ -448,6 +476,25 @@ struct Player {
     touched: Vec<DVec3>,
     /// This tick the ceiling probe stopped the rise: the ceiling is met before its contact.
     ceiling_stop: bool,
+    /// The grid's surface gravity × the config's (MOON_WORLD.md §7: the moon's ⅙):
+    /// [`Players::set_gravity_scale`]. The take-off speeds are kept, so a jump goes 1/scale as high.
+    gravity_scale: f32,
+    /// The far-flight speed (m/s) the server gives a flier far from every grid
+    /// ([`Players::set_far_fly_speed`]): flight is at least this fast. 0 near the ground.
+    far_fly_speed: f32,
+}
+
+impl Player {
+    /// The config under this player's gravity: gravity × the scale, the jump height ÷ it, so the
+    /// take-off speed is the config's (the same bits at scale 1).
+    fn scaled_cfg(&self) -> PlayerControllerConfig {
+        let mut c = self.cfg;
+        if self.gravity_scale != 1.0 {
+            c.body.gravity *= self.gravity_scale;
+            c.jump.height /= self.gravity_scale;
+        }
+        c
+    }
 }
 
 /// Ladder frame: facing axis and plate centre of the ladder in a cell.
@@ -544,10 +591,17 @@ pub struct Players {
     terrain_boxes: Vec<(DVec3, DVec3)>,
     /// The most new terrain chunks built a tick for `terrain_boxes`.
     terrain_boxes_per_tick: usize,
+    /// The most cells a tick puts in the collider besides those in the players' and boxes'
+    /// reach (`TerrainCollision::catch_up`; `COLLISION_CELLS_PER_TICK` by default).
+    collision_cells_per_tick: usize,
+    /// The chunks built ahead of each player (`TerrainCollision::ahead_chunks`).
+    collision_ahead: crate::terrain::CollisionAhead,
     ticks: u32,
     /// This tick's pushes: each body a player pushed, and the velocity it gave it (world, m/s).
     pushes: Vec<(BodyHandle, DVec3)>,
     ring: [Vec3; RING_RAYS],
+    /// The world's stamina and oxygen rules (its mode's abilities, ADR 0069): off by default.
+    vitals: VitalsRules,
 }
 
 impl Players {
@@ -558,14 +612,41 @@ impl Players {
             terrain: terrain.then(|| TerrainCollision::new(physics)),
             terrain_boxes: Vec::new(),
             terrain_boxes_per_tick: usize::MAX,
+            collision_cells_per_tick: crate::terrain::COLLISION_CELLS_PER_TICK,
+            collision_ahead: crate::terrain::CollisionAhead::default(),
             ticks: 0,
             pushes: Vec::new(),
             ring: ring(),
+            vitals: VitalsRules::default(),
         }
+    }
+
+    /// The world's stamina and oxygen rules (ADR 0069): the server's from its mode, the client's
+    /// prediction from the mode it was told.
+    pub fn set_vitals(&mut self, rules: VitalsRules) {
+        self.vitals = rules;
+    }
+    pub fn vitals(&self) -> VitalsRules {
+        self.vitals
     }
 
     pub fn terrain(&self) -> Option<&TerrainCollision> {
         self.terrain.as_ref()
+    }
+
+    /// The most cells a tick puts in the terrain collider outside every player's and box's reach
+    /// (docs/BUGS.md #72: the client's prediction on a phone, where the server's 8192 were 8–10 ms
+    /// of a tick at CPU 6×). The cells within reach go in at once whatever this is, so a player's
+    /// contacts are the same; the rest only wait longer.
+    pub fn set_collision_cells_per_tick(&mut self, cells: usize) {
+        self.collision_cells_per_tick = cells;
+    }
+
+    /// How far ahead of each player its terrain collision is built, and how many chunks a tick
+    /// (WORK_QUEUE item 16: the client's prediction on a phone builds fewer a tick). What is built
+    /// ahead only arrives sooner: a player's contacts are the same.
+    pub fn set_collision_ahead(&mut self, ahead: crate::terrain::CollisionAhead) {
+        self.collision_ahead = ahead;
     }
 
     /// Spawns a player standing with its feet at `feet`, on the face that position lies on.
@@ -583,7 +664,8 @@ impl Players {
             .unwrap_or(self.players.len()) as PlayerHandle;
         let mut c = PlayerController::default();
         c.input.look_yaw = yaw;
-        c.face = FaceFrame::at_height(feet.y);
+        // The home grid's frame (MOON_WORLD.md §2): the face of the side of its midplane.
+        c.face = dwell_world::GridFrame::HOME.face_at(feet.to_array());
         let center = feet
             + DVec3::new(
                 0.0,
@@ -614,6 +696,8 @@ impl Players {
             .restitution(0.0)
             .restitution_combine_rule(CoefficientCombineRule::Min)
             .collision_groups(groups(Layer::Character))
+            // A piece pressing the player down grips them (`physics::PinchGrip`, §6.6).
+            .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
             .build();
         let collider =
             physics
@@ -635,6 +719,8 @@ impl Players {
             pre_step: Vec3::ZERO,
             touched: Vec::new(),
             ceiling_stop: false,
+            gravity_scale: 1.0,
+            far_fly_speed: 0.0,
         };
         if handle as usize == self.players.len() {
             self.players.push(Some(p));
@@ -737,6 +823,36 @@ impl Players {
         let body = p.body;
         physics.set_position(body, position);
         physics.set_velocity(body, velocity.as_dvec3());
+    }
+
+    /// Puts the player on the face its body is on (mirroring the layers' vertical state, as a
+    /// midplane crossing does); true when it changed. For a player moved into another grid's space
+    /// (MOON_WORLD.md §7), whose face there is the side of that grid's midplane.
+    pub fn settle_face(&mut self, physics: &Physics, h: PlayerHandle) -> bool {
+        Self::update_face(physics, self.get_mut(h))
+    }
+
+    /// The player's gravity × the config's: its grid's surface gravity (MOON_WORLD.md §7, the
+    /// moon's ⅙). Take-off speeds are kept, so a jump rises 1/scale as high and falls as long.
+    pub fn set_gravity_scale(&mut self, h: PlayerHandle, scale: f32) {
+        assert!(scale > 0.0 && scale.is_finite(), "gravity scale {scale}");
+        self.get_mut(h).gravity_scale = scale;
+    }
+    pub fn gravity_scale(&self, h: PlayerHandle) -> f32 {
+        self.get(h).gravity_scale
+    }
+
+    /// The far-flight speed (m/s, MOON_WORLD.md §7): while flying, the player flies at least this
+    /// fast (0: the slider's speed alone). The server sets it from the distance to the nearest grid.
+    pub fn set_far_fly_speed(&mut self, physics: &mut Physics, h: PlayerHandle, speed: f32) {
+        let speed = speed.max(0.0);
+        if speed > 0.0 {
+            physics.raise_max_linear_velocity(f64::from(speed) * 1.1);
+        }
+        self.get_mut(h).far_fly_speed = speed;
+    }
+    pub fn far_fly_speed(&self, h: PlayerHandle) -> f32 {
+        self.get(h).far_fly_speed
     }
 
     /// Instant velocity change (knockback, explosions): absorbed next tick.
@@ -864,10 +980,12 @@ impl Players {
                 &self.terrain_boxes,
                 self.terrain_boxes_per_tick,
             );
+            let mut ahead: Vec<ChunkCoord> = Vec::new();
             for p in self.players.iter().flatten() {
                 let pos = physics.position(p.body);
                 // Capped: fast flight must not ask for kilometres of collision.
-                let speed = physics.velocity(p.body).length() as f32;
+                let velocity = physics.velocity(p.body);
+                let speed = velocity.length() as f32;
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
                 terrain.ensure_box(
                     physics,
@@ -875,6 +993,28 @@ impl Players {
                     pos - DVec3::splat(reach),
                     pos + DVec3::splat(reach),
                 );
+                // The chunks it is heading into, built a few a tick before the reach gets there
+                // (WORK_QUEUE item 16: a newly reached chunk's build was the tick's worst cost).
+                // A player standing (or nearly) has its reach's chunks: nothing to build ahead,
+                // and the collider's cells go in in the fixed order, as without the look-ahead.
+                if self.collision_ahead.chunks_per_tick > 0
+                    && speed >= self.collision_ahead.min_speed
+                {
+                    let mine = TerrainCollision::ahead_chunks(
+                        &self.collision_ahead,
+                        pos,
+                        velocity,
+                        reach,
+                        RETAIN_CHUNKS,
+                    );
+                    terrain.ensure_ahead(
+                        physics,
+                        world,
+                        &mine,
+                        self.collision_ahead.chunks_per_tick,
+                    );
+                    ahead.extend(mine);
+                }
             }
             self.ticks += 1;
             if self.ticks.is_multiple_of(RETAIN_EVERY_TICKS) {
@@ -909,7 +1049,7 @@ impl Players {
                 let reach = f64::from(3.0 + (speed * DT * 2.0).min(64.0));
                 near.push((pos - DVec3::splat(reach), pos + DVec3::splat(reach)));
             }
-            terrain.catch_up(physics, &near, crate::terrain::COLLISION_CELLS_PER_TICK);
+            terrain.catch_up(physics, &near, &ahead, self.collision_cells_per_tick);
         }
     }
 
@@ -922,7 +1062,7 @@ impl Players {
         self.pushes.clear();
         // Pass-major, like the PPC's Quantum system group.
         type Pass = fn(&mut Players, usize, &mut VoxelWorld, &mut Physics);
-        const PASSES: [Pass; 15] = [
+        const PASSES: [Pass; 17] = [
             Players::step_input,
             Players::step_probe,
             Players::step_platform,
@@ -934,10 +1074,12 @@ impl Players {
             Players::step_horizontal,
             Players::step_vertical,
             Players::step_fall,
+            Players::step_portal,
             Players::step_impact,
             Players::step_aggregate,
             Players::step_push,
             Players::step_state,
+            Players::step_vitals,
         ];
         for pass in PASSES {
             for i in 0..self.players.len() {
@@ -954,9 +1096,14 @@ impl Players {
 
     // 1 — PPCInputSystem
     fn step_input(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
+        let rules = self.vitals;
         let p = self.pl(i);
         p.c.previous_input = p.c.input;
         p.c.input = p.pending;
+        // Exhausted (§6.13): the run input reads as not held, so no sprint and no sprint slide.
+        if !p.c.vitals.can_exert(rules) {
+            p.c.input.run = false;
+        }
         let crossed = Self::update_face(physics, p);
         let c = &mut p.c;
         if crossed {
@@ -1666,8 +1813,9 @@ impl Players {
 
     // 7 — Swim (Dwell, §6.4): exclusive layer in water; also the flip band near the midplane.
     fn step_swim(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+        let rules = self.vitals;
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let position = Self::pos(physics, p);
         let body_velocity = Self::vel(physics, p);
         {
@@ -1725,8 +1873,13 @@ impl Players {
         );
         let mut wish = (forward * c.input.move_y + camera_right(c.input.look_yaw) * c.input.move_x)
             * cfg.swim.speed;
-        if c.input.jump {
+        // Exhausted (§6.13): no treading water, so no rising and no buoyancy; the body sinks.
+        let tired = !c.vitals.can_exert(rules);
+        if c.input.jump && !tired {
             wish.y = cfg.swim.speed;
+        }
+        if tired {
+            wish.y = wish.y.min(0.0) - VITALS.exhausted_sink_speed;
         }
         if c.input.crouch {
             wish.y = -cfg.swim.speed;
@@ -1745,7 +1898,7 @@ impl Players {
         }
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.swim.drag * DT));
-        if !dry || !band {
+        if (!dry || !band) && !tired {
             velocity +=
                 Vec3::Y * (cfg.swim.buoyancy * (c.swim.submerged - cfg.swim.float_fraction) * DT);
         }
@@ -1823,12 +1976,47 @@ impl Players {
         }
     }
 
+    // Dwell — a portal's exit push (docs/BIFACIAL_WORLD.md §12.3; owner 2026-11-12: "land beside
+    // the hole"): just over a portal's opening (`VoxelWorld::portals`, from `midplane.json`
+    // `portals.exit`; over it, clear of the shaft's wall, BUGS.md #107), an airborne body that rose
+    // out fast (swung up from the far face, not a jump) is
+    // pushed along its facing, a steady crosswind over a fixed depth, so it arcs out of the
+    // opening and lands on the ground beside it however fast it rose. Momentum, kept in the air like the waterfall's push; climbing, flying
+    // and swimming are never pushed.
+    fn step_portal(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
+        let p = self.players[i].as_mut().expect("live");
+        let c = &p.c;
+        if c.climb.climbing || c.fly.flying || c.swim.swimming || c.ground.grounded {
+            return;
+        }
+        if world.portals.shafts.is_empty() {
+            return;
+        }
+        let position = Self::pos(physics, p);
+        let feet = position.y - f64::from(p.cfg.half_height(c.crouching));
+        let yaw = c.input.look_yaw * DEG_TO_RAD;
+        let dir = Vec3::new(libm::sinf(yaw), 0.0, libm::cosf(yaw));
+        let gain = world.portals.exit_push(
+            c.face.face,
+            [position.x, feet, position.z],
+            c.vertical.target_y,
+            p.scaled_cfg().body.gravity,
+            DT,
+        );
+        if gain > 0.0 {
+            let c = &mut p.c;
+            c.horizontal.external += dir * gain;
+            c.horizontal.contribution += dir * gain;
+        }
+    }
+
     // Creative flight (◆ Dwell, §6.7): exclusive while the fly input is held.
     fn step_fly(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
         let cfg = p.cfg;
         let body_velocity = Self::vel(physics, p);
         let position = Self::pos(physics, p);
+        let far = p.far_fly_speed;
         let c = &mut p.c;
         if !c.fly.flying {
             if !c.input.fly {
@@ -1854,9 +2042,9 @@ impl Players {
         }
         // The slider's level sets the speed, the same at every height.
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
-        let speed = base * fly_speed_factor(c.input.fly_speed);
-        let mut wish = move_direction(&c.input) * speed;
-        wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
+        // Far from every grid the server raises it (far flight, MOON_WORLD.md §7).
+        let speed = (base * fly_speed_factor(c.input.fly_speed)).max(far);
+        let wish = fly_direction(&c.input, cfg.fly.follow_pitch) * speed;
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.fly.drag * DT));
         // No bound from the world (ADR 0025 D3): only the wire format's range holds a position.
@@ -2184,7 +2372,7 @@ impl Players {
     fn step_horizontal(&mut self, i: usize, world: &mut VoxelWorld, physics: &mut Physics) {
         let ring = self.ring;
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let m = cfg.movement;
         let grounded = p.c.ground.grounded;
         p.drive_lift = 0.0;
@@ -2367,7 +2555,7 @@ impl Players {
         actual: Vec3,
         last_contribution: Vec3,
     ) {
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let s = cfg.sprint_slide;
         let c = &mut p.c;
         let base = flat(c.platform.base_velocity);
@@ -2478,7 +2666,7 @@ impl Players {
     // 9 — PPCVerticalLayerSystem
     fn step_vertical(&mut self, i: usize, _: &mut VoxelWorld, physics: &mut Physics) {
         let p = self.players[i].as_mut().expect("live");
-        let cfg = p.cfg;
+        let cfg = p.scaled_cfg();
         let gravity = -cfg.body.gravity;
         let body_y = Self::vel(physics, p).y;
         let drive_lift = p.drive_lift;
@@ -2826,7 +3014,9 @@ impl Players {
         let p = self.pl(i);
         let min_angle = p.cfg.slide.min_angle;
         let c = &mut p.c;
-        let v = c.target_velocity;
+        // Moving is relative to the ground carrying the player (its `base_velocity`): standing
+        // still on a moving body is idle, walking against its motion still walks.
+        let v = c.target_velocity - c.platform.base_velocity;
         c.state = if c.climb.climbing {
             State::Climbing
         } else if c.swim.swimming {
@@ -2853,4 +3043,66 @@ impl Players {
             State::Idle
         };
     }
+
+    // ◆ Dwell — stamina and oxygen (§6.13, ADR 0069): this tick's activity spends stamina, a
+    // tick without one rests; the head under water spends air. After the state, so the server
+    // and the prediction step it from the same tick's outcome.
+    fn step_vitals(&mut self, i: usize, _: &mut VoxelWorld, _: &mut Physics) {
+        let rules = self.vitals;
+        let p = self.pl(i);
+        let cfg = p.cfg;
+        let c = &mut p.c;
+        let wet = c.swim.swimming && c.swim.submerged > cfg.swim.enter_fraction;
+        let activity = if wet {
+            // Swim-up is ignored while exhausted, so holding it then doesn't count.
+            let up = c.input.jump && c.vitals.can_exert(rules);
+            let moving = c.input.move_x != 0.0 || c.input.move_y != 0.0 || up;
+            Some(if moving {
+                Activity::Swim
+            } else {
+                Activity::Tread
+            })
+        } else if c.state == State::Running {
+            Some(Activity::Sprint)
+        } else {
+            None
+        };
+        // An exhausted swimmer isn't treading: it sinks, resting (swimming on still spends).
+        let activity = match activity {
+            Some(Activity::Tread) if !c.vitals.can_exert(rules) => None,
+            a => a,
+        };
+        let head_under = c.swim.submerged >= VITALS.head_fraction;
+        c.vitals.step(&VITALS, rules, activity, head_under, DT);
+    }
+}
+
+/// Moves a player from one space's players to another's (MOON_WORLD.md §7.1): despawned from
+/// `src`, spawned in `dst` at the grid-local `p`, `v` (already turned into `dst`'s frame) with its
+/// controller state, its face there settled (the vertical state mirrored as at a midplane crossing)
+/// and `dst`'s gravity scale. Returns its handle in `dst`. The server carries its home players to
+/// and from the other grids' spaces through this too, and the client's predictor its own player
+/// (`Predictor`, MOON_WORLD.md §7.3), so both carry it alike.
+pub fn carry(
+    src: (&mut Players, &mut Physics),
+    h: PlayerHandle,
+    dst: (&mut Players, &mut Physics),
+    gravity_scale: f32,
+    p: [f64; 3],
+    v: [f64; 3],
+) -> PlayerHandle {
+    let (src_players, src_physics) = src;
+    let (dst_players, dst_physics) = dst;
+    let state = *src_players.controller(h);
+    let cfg: crate::config::PlayerControllerConfig = *src_players.config(h);
+    src_players.despawn(src_physics, h);
+    let nh = dst_players.spawn(dst_physics, cfg, DVec3::from(p), state.input.look_yaw);
+    let (pd, vd) = (
+        DVec3::from(p),
+        Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32),
+    );
+    dst_players.restore(dst_physics, nh, &state, pd, vd);
+    dst_players.settle_face(dst_physics, nh);
+    dst_players.set_gravity_scale(nh, gravity_scale);
+    nh
 }

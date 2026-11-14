@@ -37,10 +37,28 @@ pub enum SoundKind {
     FallLevel = 30,
     FallEnd = 31,
     Explode = 32,
+    ChopBark = 33,
+    ChopWood = 34,
+    ChopCreak = 35,
+    AxeClank = 36,
+    AxeSwish = 37,
+    AxeRustle = 38,
+    Exhausted = 39,
+    Gasp = 40,
+    Strain = 41,
+    CreatureStep = 42,
+    CreatureStartle = 43,
+    CreatureCall = 44,
+    FellLand = 45,
+    Brush = 46,
+    StickSnap = 47,
+    SteamHiss = 48,
+    Sizzle = 49,
+    SwimUnder = 50,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 33] = [
+    pub const ALL: [SoundKind; 51] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -74,6 +92,24 @@ impl SoundKind {
         SoundKind::FallLevel,
         SoundKind::FallEnd,
         SoundKind::Explode,
+        SoundKind::ChopBark,
+        SoundKind::ChopWood,
+        SoundKind::ChopCreak,
+        SoundKind::AxeClank,
+        SoundKind::AxeSwish,
+        SoundKind::AxeRustle,
+        SoundKind::Exhausted,
+        SoundKind::Gasp,
+        SoundKind::Strain,
+        SoundKind::CreatureStep,
+        SoundKind::CreatureStartle,
+        SoundKind::CreatureCall,
+        SoundKind::FellLand,
+        SoundKind::Brush,
+        SoundKind::StickSnap,
+        SoundKind::SteamHiss,
+        SoundKind::Sizzle,
+        SoundKind::SwimUnder,
     ];
 
     /// The event's name in the data.
@@ -112,6 +148,24 @@ impl SoundKind {
             SoundKind::FallLevel => "fall_level",
             SoundKind::FallEnd => "fall_end",
             SoundKind::Explode => "explode",
+            SoundKind::ChopBark => "chop_bark",
+            SoundKind::ChopWood => "chop_wood",
+            SoundKind::ChopCreak => "chop_creak",
+            SoundKind::AxeClank => "axe_clank",
+            SoundKind::AxeSwish => "axe_swish",
+            SoundKind::AxeRustle => "axe_rustle",
+            SoundKind::Exhausted => "exhausted",
+            SoundKind::Gasp => "gasp",
+            SoundKind::Strain => "strain",
+            SoundKind::CreatureStep => "creature_step",
+            SoundKind::CreatureStartle => "creature_startle",
+            SoundKind::CreatureCall => "creature_call",
+            SoundKind::FellLand => "fell_land",
+            SoundKind::Brush => "brush",
+            SoundKind::StickSnap => "stick_snap",
+            SoundKind::SteamHiss => "steam_hiss",
+            SoundKind::Sizzle => "sizzle",
+            SoundKind::SwimUnder => "swim_under",
         }
     }
 
@@ -151,6 +205,24 @@ impl SoundKind {
             SoundKind::FallLevel => None,
             SoundKind::FallEnd => None,
             SoundKind::Explode => None,
+            SoundKind::ChopBark => None,
+            SoundKind::ChopWood => None,
+            SoundKind::ChopCreak => None,
+            SoundKind::AxeClank => None,
+            SoundKind::AxeSwish => None,
+            SoundKind::AxeRustle => None,
+            SoundKind::Exhausted => None,
+            SoundKind::Gasp => None,
+            SoundKind::Strain => None,
+            SoundKind::CreatureStep => None,
+            SoundKind::CreatureStartle => None,
+            SoundKind::CreatureCall => None,
+            SoundKind::FellLand => Some((1.0, 12.0)),
+            SoundKind::Brush => Some((0.4, 6.0)),
+            SoundKind::StickSnap => None,
+            SoundKind::SteamHiss => None,
+            SoundKind::Sizzle => None,
+            SoundKind::SwimUnder => None,
         }
     }
 }
@@ -170,11 +242,11 @@ impl Gait {
     /// Metres travelled between footsteps.
     pub const fn stride(self) -> f64 {
         match self {
-            Gait::Walk => 2.0,
-            Gait::Run => 2.7,
+            Gait::Walk => 2.5,
+            Gait::Run => 2.8,
             Gait::Crouch => 1.1,
             Gait::Climb => 0.75,
-            Gait::Swim => 2.4,
+            Gait::Swim => 3.0,
         }
     }
 }
@@ -190,4 +262,29 @@ pub mod ambient {
     pub const FALLS_RADIUS_M: f64 = 40.0;
     pub const FALLS_MAX: usize = 3;
     pub const FALLS_FULL_M3S: f64 = 2.0;
+    /// The ambience probe's reach round the listener (m) and the blocks that count as trees
+    /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).
+    pub const AMBIENCE_RADIUS_M: f64 = 16.0;
+    pub const AMBIENCE_TREES: &[&str] = &["dwell:leaves", "dwell:snowy_leaves", "dwell:log"];
+}
+
+/// The creatures' sounds (shared/sounds `creatures`; docs/AUDIO.md §2d): heard within
+/// `RADIUS_M`; each model's stride (m between footsteps) and its call's interval (s), if it
+/// calls. A creature event's `block` is the model's index here.
+pub mod creature_sounds {
+    pub const RADIUS_M: f64 = 32.0;
+    /// A model's name, stride and call interval.
+    pub type Model = (&'static str, f64, Option<(f64, f64)>);
+    pub const MODELS: &[Model] = &[
+        ("wolf", 1.1, Some((50.0, 140.0))),
+        ("deer", 1.2, None),
+        ("doe", 1.1, None),
+    ];
+}
+
+/// Brushing through foliage (shared/sounds `brush`; AUDIO.md §5, BUGS.md #103): on its feet a body
+/// rustles only with a footstep; off them every `EVERY_M` moved; never closer than `MIN_S`.
+pub mod brush_sounds {
+    pub const EVERY_M: f64 = 2.5;
+    pub const MIN_S: f64 = 0.3;
 }

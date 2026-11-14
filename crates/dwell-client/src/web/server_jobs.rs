@@ -15,11 +15,16 @@ pub struct ServerJobs {
 
 #[wasm_bindgen]
 impl ServerJobs {
-    /// For the world of generator `generator_version` and `world_seed` (its maps installed first).
+    /// For the world of generator `generator_version` and `world_seed` (its maps installed first),
+    /// of size `radius_scale` (BIG_MAP.md M2b; none: today's).
     #[wasm_bindgen(constructor)]
-    pub fn new(generator_version: u32, world_seed: u64) -> ServerJobs {
+    pub fn new(generator_version: u32, world_seed: u64, radius_scale: Option<u32>) -> ServerJobs {
         ServerJobs {
-            runner: JobRunner::for_world(generator_version, world_seed),
+            runner: JobRunner::for_world_sized(
+                generator_version,
+                world_seed,
+                dwell_protocol::world_size::WorldSize::playable(radius_scale),
+            ),
         }
     }
     /// A job's bytes run; its answer's (empty if the job can't be read).

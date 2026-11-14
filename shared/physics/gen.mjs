@@ -24,6 +24,7 @@ export const FELLING_RANGES = {
   settleEveryTicks: [1, 60, true],
   maxSeconds: [1, 600, false],
   maxSettles: [1, 255, true],
+  beachSeconds: [0, 60, false],
   hitSpeed: [0, 100, false],
   hitDamagePerSpeed: [0, 100, false],
   holdSpeed: [0, 100, false],
@@ -98,11 +99,12 @@ export function validateBodies(data, blocks = registryBlockNames()) {
   data.kinds.forEach((k, i) => {
     const at = `kinds[${i}]`;
     if (typeof k !== 'object' || k === null || Array.isArray(k)) bad(`${at} must be an object`);
-    for (const key of Object.keys(k)) if (!['$comment', 'name', 'builtOn', ...KIND_RULES].includes(key)) bad(`${at}: unknown ${key}`);
+    for (const key of Object.keys(k)) if (!['$comment', 'name', 'builtOn', 'settlesAfloat', ...KIND_RULES].includes(key)) bad(`${at}: unknown ${key}`);
     if (typeof k.name !== 'string' || !/^[a-z][a-z0-9_]*$/.test(k.name)) bad(`${at}.name must be a lower-case name`);
     if (names.has(k.name)) bad(`${at}.name ${k.name} is listed twice`);
     names.add(k.name);
     for (const r of KIND_RULES) if (typeof k[r] !== 'boolean') bad(`${at}.${r} must be true or false`);
+    if (k.settlesAfloat !== undefined && typeof k.settlesAfloat !== 'boolean') bad(`${at}.settlesAfloat must be true or false`);
     const started = k.builtOn ?? [];
     if (!Array.isArray(started)) bad(`${at}.builtOn must be a list of block names`);
     for (const b of started) {
@@ -125,7 +127,7 @@ export function bodiesRust(data) {
   lines.push(`pub const BODY_KINDS: [BodyKind; ${data.kinds.length}] = [`);
   for (const k of data.kinds) {
     const started = `&[${(k.builtOn ?? []).map((b) => JSON.stringify(b)).join(', ')}]`;
-    lines.push(`    BodyKind { name: ${JSON.stringify(k.name)}, ${KIND_RULES.map((r) => `${r === 'break' ? 'breaks' : r}: ${k[r]}`).join(', ')}, built_on: ${started} },`);
+    lines.push(`    BodyKind { name: ${JSON.stringify(k.name)}, ${KIND_RULES.map((r) => `${r === 'break' ? 'breaks' : r}: ${k[r]}`).join(', ')}, settles_afloat: ${k.settlesAfloat ?? false}, built_on: ${started} },`);
   }
   lines.push('];', '');
   return lines.join('\n');

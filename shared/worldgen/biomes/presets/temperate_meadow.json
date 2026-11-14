@@ -1,0 +1,57 @@
+{
+  "name": "preset:temperate_meadow",
+  "label": "Temperate meadow",
+  "description": "Open, rolling grassland with tall grass: mild, moist lowlands.",
+  "where": {
+    "weight": 1,
+    "celsius": {
+      "min": 4,
+      "max": 18,
+      "blend": 1.5
+    },
+    "rain": {
+      "min": 450,
+      "max": 1000,
+      "blend": 150
+    }
+  },
+  "detail": {
+    "amplitude": 1.5,
+    "wavelength": 160,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "meadow",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": ["broadleaf_groves"],
+  "trees": {"broadleaf_groves": 0.25},
+  "water": "dwell:water"
+}

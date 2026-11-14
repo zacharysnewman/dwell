@@ -398,8 +398,9 @@ fn the_flat_world_and_retired_versions_are_unchanged_by_the_sandbox() {
 
 #[test]
 fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
-    use dwell_worldgen::terrain::{Band, bands};
+    use dwell_worldgen::terrain::Band;
     let g = TerrainGenerator::new(0);
+    let snow = require("dwell:snowy_grass");
     let (cx, cz) = coast_on_axis(&g);
     let (mut water, mut grass, mut sand, mut decorated) = (0, 0, 0, 0);
     // Depths and the shore in rows of cells.
@@ -446,11 +447,8 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         } else if col.band == Band::Rock {
                             assert_eq!(m, M.stone);
                         } else {
-                            let top = if col.band == Band::Snow {
-                                bands().snow
-                            } else {
-                                M.grass
-                            };
+                            // The default biome's upper band (over the snow line) is snow.
+                            let top = if col.palette == 1 { snow } else { M.grass };
                             let want = if depth == 0 {
                                 top
                             } else if depth <= r(3.0) {
@@ -478,8 +476,17 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
     // near, the suitable land nearest the disc's centre first.
     let rule = dwell_worldgen::terrain::SURFACE;
     let mut by_river = 0;
+    // The spawn search's point (since 0.58 the spawn is the shrine nearest it, tests/shrines.rs).
     for seed in 0..16u64 {
-        let s = spawn_point_for(GENERATOR_TERRAIN, seed);
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
+        let a = t.local(dwell_world::Face::A);
+        let s = a.spawn_search_point();
+        // With no grid shrine near the point, the spawn's own shrine stands on the patch (seed 3):
+        // the patch is then the shrine's floor, not open air (tests/shrines.rs checks its stand).
+        let sh = a.shrines().expect("shrines");
+        let spawn = sh.spawn_shrine(a);
+        let built_here = (f64::from(spawn.x) + 0.5 - s[0]).hypot(f64::from(spawn.z) + 0.5 - s[2])
+            <= f64::from(sh.reach() + 6);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
         // The feet stand on the top of a level patch's top cell (row g): no ramp tops it.
         let (x, g, z) = (s[0].floor() as i32, row_of_m(s[1]) - 1, s[2].floor() as i32);
@@ -507,6 +514,9 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
             for dx in -4..=4 {
                 assert!(solid(world.get_voxel(x + dx, g, z + dz)), "seed {seed}");
                 // Open: air, or a decoration players walk through (tall grass).
+                if built_here {
+                    continue;
+                }
                 let at = world.get_voxel(x + dx, g + 1, z + dz);
                 assert!(at == M.air || (decoration(at) && !solid(at)), "seed {seed}");
                 // Headroom: 2 m clear above the plant's cell.
@@ -796,6 +806,62 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
     );
 }
 
+both_faces!(
+    /// WORK_QUEUE item 21 (owner, 2026-11-11: "Yes make the meadow grass fix"): tall grass grows over
+    /// the meadow's ½ m grass ramps too (decorations.json `onRamps`), in the cell over the ramp, at
+    /// about the share it grows on flat grass; never over a 1 m ramp. Red before: no ramp had any,
+    /// so ~40 % of a meadow's surface showed bare stripes. Read through the world on either face.
+    fn tall_grass_grows_over_half_metre_grass_ramps(f: FaceFrame) {
+        use dwell_blocks::state_property;
+        let seed = 7;
+        let terrain = bifacial::BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed).unwrap();
+        let g = terrain.local(f.face);
+        let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
+        let tall = require("dwell:tall_grass");
+        let grass_ramp = dwell_blocks::find_block("dwell:grass_ramp").expect("grass ramps");
+        let (mut flat, mut flat_tufts, mut ramps, mut ramp_tufts, mut steep_tufts) =
+            (0, 0, 0, 0, 0);
+        for (cx, cz) in [(0, 0), (1, 0), (0, 1), (-3, 5), (12, -7), (5, 5), (-6, -2)] {
+            for z in cz * S..cz * S + S {
+                for x in cx * S..cx * S + S {
+                    let top = g.ground_y(x, z).expect("inside");
+                    let mut at = |y: i32| {
+                        let [wx, wy, wz] = f.cell([x, y, z]);
+                        f.state(world.get_voxel(wx, wy, wz))
+                    };
+                    let (m, over) = (at(top), at(top + 1));
+                    let tuft = over == tall;
+                    if m == M.grass {
+                        flat += 1;
+                        flat_tufts += i32::from(tuft);
+                    } else if dwell_blocks::block_of(m).name == grass_ramp.name {
+                        match state_property(m, "shape") {
+                            Some("ramp") => {
+                                ramps += 1;
+                                ramp_tufts += i32::from(tuft);
+                            }
+                            _ => steep_tufts += i32::from(tuft),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            flat > 500 && ramps > 200,
+            "{flat} flat, {ramps} ramp grass tops"
+        );
+        let (on_flat, on_ramps) = (
+            f64::from(flat_tufts) / f64::from(flat),
+            f64::from(ramp_tufts) / f64::from(ramps),
+        );
+        assert!(
+            ramp_tufts > 20 && on_ramps > 0.5 * on_flat,
+            "tufts on {ramp_tufts} of {ramps} ramps ({on_ramps:.3}) against {on_flat:.3} on flat"
+        );
+        assert_eq!(steep_tufts, 0, "none over a 1 m ramp");
+    }
+);
+
 #[test]
 fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_shore() {
     // HALF_HEIGHT_GRID.md §4: each natural top is the rule's answer over its 9 columns' heights,
@@ -816,8 +882,18 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
     let (sx, sz) = steepest_near_centre(&g);
     let strips = [(cx - 3000, cx + 40, cz), (sx - 300, sx + 300, sz)];
     for (x0, x1, zc) in strips {
+        // A tree's trunk stands on a flat pad, no ramp (WORK_QUEUE item 44): its columns are not
+        // the rule's.
+        let pads: std::collections::HashSet<(i32, i32)> = g
+            .trees_in((x0, zc - 8), (x1 - 1, zc + 7))
+            .iter()
+            .flat_map(|t| g.planters()[t.planter as usize].pad(t).0)
+            .collect();
         for z in zc - 8..zc + 8 {
             for x in x0..x1 {
+                if pads.contains(&(x, z)) {
+                    continue;
+                }
                 let top = g.ground_y(x, z).expect("inside");
                 let around: Around = std::array::from_fn(|r| {
                     std::array::from_fn(|c| {
@@ -1371,7 +1447,19 @@ dwell_world::both_faces!(
                             let lower = back.water == Water::Sea
                                 || (back.water == Water::None
                                     && g.ground_y(x - dx, z - dz).is_some_and(|b| b < surface - 1));
-                            if top >= surface && lower {
+                            // Not where that lower ground is the bank of the river's own water
+                            // further down: a reach falling a row a cell (no dry chutes since
+                            // BUGS.md #62) is banked by a stair down beside it, not a ridge.
+                            let down_bank = || {
+                                [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                                    .into_iter()
+                                    .any(|(ex, ez)| {
+                                        let n = g.column_at(x - dx + ex, z - dz + ez);
+                                        n.water == Water::River && n.water_row() < surface
+                                    })
+                            };
+                            if top >= surface && lower && (back.water == Water::Sea || !down_bank())
+                            {
                                 ridges.push((x, z));
                             }
                         }
@@ -1467,4 +1555,404 @@ fn no_seam_at_the_reported_meeting_of_valleys() {
         steps.len(),
         &steps[..steps.len().min(5)]
     );
+}
+
+dwell_world::both_faces!(
+    /// Biomes (ADR 0074, B1): a fixture biome made by data alone (the default's fields with
+    /// another ground block) changes the generated columns' tops where the default puts its
+    /// ground, and nothing else; the default biome is the generator's own.
+    fn a_fixture_biome_changes_the_generated_columns(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, Biome, ElevationBand, SURFACE, find_biome};
+        let default = find_biome("dwell:default").expect("the default biome");
+        assert_eq!(BIOMES[0], *default, "the default biome is first");
+        assert_eq!(default.surface, SURFACE, "SURFACE is the default biome's");
+        let bands: Vec<ElevationBand> = default
+            .bands
+            .iter()
+            .map(|b| ElevationBand {
+                ground: if b.name == "meadow" {
+                    "dwell:sand"
+                } else {
+                    b.ground
+                },
+                ..*b
+            })
+            .collect();
+        let fixture = Biome {
+            name: "dwell:fixture",
+            bands: Box::leak(bands.into_boxed_slice()),
+            ..*default
+        };
+        let t = BifacialTerrain::height_field(7);
+        let g = t.local(f.face).clone();
+        let same = g.clone().with_biome(default);
+        let other = g.clone().with_biome(&fixture);
+        let (grass, sand) = (require("dwell:grass"), require("dwell:sand"));
+        let mut changed = 0;
+        for i in 0..400 {
+            let (x, z) = (21_000 + (i % 20) * 37, 2_000 + (i / 20) * 41);
+            let Some(y) = g.ground_y(x, z) else { continue };
+            for dy in [-1, 0] {
+                let base = g.state_at(x, y + dy, z);
+                assert_eq!(
+                    same.state_at(x, y + dy, z),
+                    base,
+                    "the default biome is the generator's"
+                );
+                let got = other.state_at(x, y + dy, z);
+                if base == grass {
+                    assert_eq!(got, sand, "the fixture's ground at ({x}, {}, {z})", y + dy);
+                    changed += 1;
+                } else {
+                    assert_eq!(
+                        got,
+                        base,
+                        "only the ground block changes at ({x}, {}, {z})",
+                        y + dy
+                    );
+                }
+            }
+        }
+        assert!(changed > 20, "grass tops found to change: {changed}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// The biome map (ADR 0074 B2): with the desert fixture (`biomes/fixtures/desert.json`, added
+    /// by data alone) beside the default, both appear on one world, placed by geography; every
+    /// column's weights sum to 1; a transect from one to the other changes the weights gradually
+    /// (no single-column flip); the desert's highest band is tundra, its lowest dunes; the world
+    /// height field is the same under either (biomes add only their bounded fine relief).
+    fn a_second_biome_blends_in_by_geography(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES};
+        let desert = *FIXTURE_BIOMES
+            .iter()
+            .find(|b| b.name == "test:desert")
+            .expect("the desert fixture");
+        let t = BifacialTerrain::height_field(7);
+        let g = t.local(f.face).clone().with_biomes(&[BIOMES[0], desert]);
+        let r = i64::from(WORLD_RADIUS) * 9 / 10;
+        let step = 512;
+        let mut samples = Vec::new();
+        for x in (-r..=r).step_by(step) {
+            for z in (-r..=r).step_by(step) {
+                if x * x + z * z > r * r {
+                    continue;
+                }
+                let m = g.biome_mix(x, z);
+                let sum: f64 = m.iter().map(|(_, w)| w).sum();
+                assert!(
+                    (sum - 1.0).abs() < 1e-5,
+                    "weights sum to 1 at ({x}, {z}): {sum}"
+                );
+                samples.push((x, z, m.weight(1)));
+            }
+        }
+        let deserts = samples.iter().filter(|s| s.2 > 0.95).count();
+        let defaults = samples.iter().filter(|s| s.2 < 0.05).count();
+        assert!(
+            deserts > 20 && defaults > 20,
+            "both biomes appear: {deserts} desert, {defaults} default of {}",
+            samples.len()
+        );
+        // A transect from a default column to its nearest desert one, metre by metre.
+        let (ax, az, _) = *samples
+            .iter()
+            .find(|s| {
+                s.2 < 0.05
+                    && samples.iter().any(|d| {
+                        d.2 > 0.95 && (d.0 - s.0).abs() + (d.1 - s.1).abs() <= 2 * step as i64
+                    })
+            })
+            .expect("a border");
+        let &(bx, bz, _) = samples
+            .iter()
+            .filter(|d| d.2 > 0.95)
+            .min_by_key(|d| (d.0 - ax).abs() + (d.1 - az).abs())
+            .expect("a desert column");
+        let n = (bx - ax).abs().max((bz - az).abs());
+        let (mut last, mut biggest, mut between) = (g.biome_mix(ax, az).weight(1), 0.0f64, 0);
+        for k in 1..=n {
+            let (x, z) = (ax + (bx - ax) * k / n, az + (bz - az) * k / n);
+            let w = g.biome_mix(x, z).weight(1);
+            biggest = biggest.max((w - last).abs());
+            between += i32::from(w > 0.1 && w < 0.9);
+            last = w;
+        }
+        assert!(
+            biggest < 0.05,
+            "a gradual transition: the biggest step was {biggest}"
+        );
+        assert!(between > 30, "a wide transition: {between} columns between");
+        // The desert's bands by its columns' tops: dunes low, tundra high.
+        let (sand, tundra) = (require("dwell:sand"), require("dwell:snowy_grass"));
+        let first = BIOMES[0].bands.len() as u16;
+        let (mut dunes, mut cold) = (0, 0);
+        for &(x, z, w) in samples.iter().filter(|s| s.2 > 0.95) {
+            let _ = w;
+            let col = g.column_at(x as i32, z as i32);
+            if col.band != dwell_worldgen::terrain::Band::Ground
+                || col.water_row() > g.ground_y(x as i32, z as i32).unwrap_or(0) + 1
+            {
+                continue;
+            }
+            let y = g.ground_y(x as i32, z as i32).expect("inside");
+            let top = material(g.state_at(x as i32, y, z as i32));
+            match col.palette.checked_sub(first) {
+                Some(0) => {
+                    assert_eq!(top, sand, "dunes at ({x}, {z})");
+                    dunes += 1;
+                }
+                Some(2) => {
+                    assert_eq!(top, tundra, "tundra at ({x}, {z})");
+                    cold += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(dunes > 5, "dune columns: {dunes}");
+        assert!(cold > 0, "tundra columns on the desert's heights: {cold}");
+        // The world's height field is the biomes' input, not their output.
+        assert_eq!(g.map().digest(), t.local(f.face).map().digest());
+    }
+);
+
+/// The default biome is a fallback (ADR 0074 B3): a biome that fits a place takes it at an ordinary
+/// weight of 1 (before B3 the default, fitting everywhere at weight 1, kept half of it, so a new
+/// biome needed weight 100 to dominate), the default takes only what is left, and where nothing
+/// else fits the default has it all.
+#[test]
+fn the_default_biome_takes_only_the_weight_left() {
+    // both-faces: pure arithmetic over a geography, no face.
+    use dwell_worldgen::biomemap::{Geography, fallback_weights};
+    use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES};
+    let desert = *FIXTURE_BIOMES
+        .iter()
+        .find(|b| b.name == "test:desert")
+        .expect("the desert fixture");
+    assert_eq!(
+        desert.place.weight, 1.0,
+        "the fixture is at an ordinary weight"
+    );
+    let set = [BIOMES[0], desert];
+    let hot_dry = Geography {
+        temperature: 0.9,
+        wetness: 0.0,
+        elevation: 50.0,
+        coast: 500.0,
+        ..Geography::default()
+    };
+    let w = fallback_weights(&set, &hot_dry);
+    assert_eq!(
+        w[0].1, 0.0,
+        "the default takes none where the desert fits fully: {w:?}"
+    );
+    assert_eq!(w[1].1, 1.0);
+    let cold = Geography {
+        temperature: 0.0,
+        ..hot_dry
+    };
+    let w = fallback_weights(&set, &cold);
+    assert_eq!(
+        (w[0].1, w[1].1),
+        (1.0, 0.0),
+        "nothing fits: the default has it"
+    );
+    // On the desert's eased edge the two share it.
+    let edge = Geography {
+        temperature: 0.4,
+        ..hot_dry
+    };
+    let w = fallback_weights(&set, &edge);
+    assert!(
+        (w[0].1 + w[1].1 - 1.0).abs() < 1e-9 && w[1].1 > 0.2 && w[1].1 < 0.8,
+        "{w:?}"
+    );
+}
+
+dwell_world::both_faces!(
+    /// Banks per biome (ADR 0074 B4): the elevation places the rivers, the biome shapes their
+    /// banks. The default biome with a beach and gentler valley sides (data alone, as a fixture
+    /// biome would set them) turns dry bank columns to its shore block and reshapes the valley,
+    /// on the same rivers; the map is the same.
+    fn a_biomes_banks_change_the_bank_columns(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, Band};
+        let t = BifacialTerrain::height_field(7);
+        let g0 = t.local(f.face).clone();
+        let mut sandy = BIOMES[0];
+        sandy.surface.beach = 8.0;
+        sandy.surface.river_valley_slope = 0.12;
+        let g1 = g0.clone().with_biome(&sandy);
+        let (mut beach0, mut beach1, mut reshaped, mut seen) = (0, 0, 0, 0);
+        for river in g0.map().rivers.iter().take(12) {
+            for v in river.path.iter().step_by(8).take(12) {
+                if v.surface < 2.0 {
+                    continue;
+                }
+                for dx in -40..=40 {
+                    let (x, z) = (v.x as i32 + dx, v.z as i32);
+                    let (a, b) = (g0.column_at(x, z), g1.column_at(x, z));
+                    seen += 1;
+                    beach0 += i32::from(a.band == Band::Shore && !a.wet());
+                    beach1 += i32::from(b.band == Band::Shore && !b.wet());
+                    reshaped += i32::from(a.height != b.height);
+                }
+            }
+        }
+        assert!(seen > 500, "bank columns sampled: {seen}");
+        assert!(
+            beach1 > beach0 + 50,
+            "the beach turns dry bank columns to shore: {beach0} -> {beach1}"
+        );
+        assert!(
+            reshaped > 50,
+            "the gentler valley reshapes the banks: {reshaped}"
+        );
+        assert_eq!(g0.map().digest(), g1.map().digest());
+    }
+);
+
+dwell_world::both_faces!(
+    /// Water looks per biome (ADR 0074 B4): the default water is the fluid's own look exactly; the
+    /// archipelago fixture's `waterLook` resolves where it is, and the look blends across its
+    /// border (the archipelago's weight between 0 and 1 gives a look between the two).
+    fn a_biomes_water_look_resolves_and_blends(f: FaceFrame) {
+        use dwell_worldgen::terrain::{BIOMES, FIXTURE_BIOMES, water_tint_of};
+        let fluid = dwell_blocks::require_fluid("dwell:water");
+        let plain = water_tint_of(&BIOMES[0]);
+        assert_eq!(
+            plain.absorption, fluid.absorption,
+            "the default water is today's"
+        );
+        let isles = *FIXTURE_BIOMES
+            .iter()
+            .find(|b| b.name == "test:archipelago")
+            .expect("the archipelago fixture");
+        let teal = water_tint_of(&isles);
+        assert_ne!(teal.scatter, plain.scatter);
+        let t = BifacialTerrain::height_field(7);
+        let g0 = t.local(f.face).clone();
+        let g = g0.clone().with_biomes(&[BIOMES[0], isles]);
+        let r = i64::from(WORLD_RADIUS) * 9 / 10;
+        let (mut full, mut between) = (0, 0);
+        for x in (-r..=r).step_by(256) {
+            for z in (-r..=r).step_by(256) {
+                if x * x + z * z > r * r {
+                    continue;
+                }
+                assert_eq!(
+                    g0.water_look_at(x, z),
+                    plain,
+                    "one biome: the default's look"
+                );
+                let w = g.biome_mix(x, z).weight(1) as f32;
+                let at = g.water_look_at(x, z);
+                for k in 0..3 {
+                    let want = plain.scatter[k] * (1.0 - w) + teal.scatter[k] * w;
+                    assert!(
+                        (at.scatter[k] - want).abs() < 1e-4,
+                        "blended by weight at ({x}, {z})"
+                    );
+                }
+                full += i32::from(w > 0.99);
+                between += i32::from(w > 0.05 && w < 0.95);
+            }
+        }
+        assert!(
+            full > 0 && between > 0,
+            "the look appears and blends: {full} full, {between} between"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The archipelago (ADR 0074 B4): the example world setting (`shared/worldgen/worlds/
+    /// archipelago.json`, the coast's `islands` knob, a shallow shelf) breaks the land into many
+    /// islands in a shallow sea, where the default world's knobs give the one island.
+    fn the_archipelago_setting_makes_many_islands(f: FaceFrame) {
+        use dwell_worldgen::base::BaseField;
+        use dwell_worldgen::terrain::{FIXTURE_WORLDS, HEIGHT};
+        let (_, h) = *FIXTURE_WORLDS
+            .iter()
+            .find(|(n, _)| *n == "test:archipelago")
+            .expect("the archipelago world");
+        let seed = bifacial::face_seed(7, f.face);
+        let islands = |field: &BaseField| {
+            // A 24 km square round the centre on a 100 m grid (the world map's), land's components.
+            let (n, cell) = (240i64, 100i64);
+            let land: Vec<bool> = (0..n * n)
+                .map(|k| {
+                    let (x, z) = ((k % n - n / 2) * cell, (k / n - n / 2) * cell);
+                    field
+                        .height_lod(x, z, cell)
+                        .is_some_and(|y| f64::from(y) > SEA_LEVEL_M)
+                })
+                .collect();
+            let mut seen = vec![false; land.len()];
+            let (mut count, mut shallow) = (0, 0usize);
+            for s in 0..land.len() {
+                if !land[s] || seen[s] {
+                    continue;
+                }
+                let mut stack = vec![s];
+                seen[s] = true;
+                let mut size = 0;
+                while let Some(k) = stack.pop() {
+                    size += 1;
+                    let (i, j) = ((k as i64) % n, (k as i64) / n);
+                    for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let (a, b) = (i + di, j + dj);
+                        if a < 0 || b < 0 || a >= n || b >= n {
+                            continue;
+                        }
+                        let q = (b * n + a) as usize;
+                        if land[q] && !seen[q] {
+                            seen[q] = true;
+                            stack.push(q);
+                        }
+                    }
+                }
+                count += i32::from(size >= 4);
+            }
+            for (k, l) in land.iter().enumerate() {
+                let (x, z) = ((k as i64 % n - n / 2) * cell, (k as i64 / n - n / 2) * cell);
+                let y = field.height_lod(x, z, cell).unwrap_or(0.0);
+                shallow += usize::from(!l && f64::from(y) > SEA_LEVEL_M - 12.0);
+            }
+            (count, shallow, land.iter().filter(|l| !**l).count())
+        };
+        let (many, shallow, sea) = islands(&BaseField::with_height(seed, h));
+        let (one, _, _) = islands(&BaseField::with_height(seed, HEIGHT));
+        assert!(many >= 12, "the archipelago's islands: {many}");
+        assert!(one <= 2, "the default world's: {one}");
+        assert!(
+            sea > 0 && shallow * 10 >= sea * 9,
+            "a shallow sea: {shallow} of {sea} sea cells"
+        );
+    }
+);
+
+#[test]
+fn existing_seeds_spawn_where_they_did() {
+    // both-faces: pins each face's spawn. WORLD_SCALE.md §3.2's bounded spawn search changes only
+    // searches that failed: seeds 0 and 7 spawn where they did before it (0.51.20), on both faces.
+    // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
+    // the search's, which is unchanged.
+    for (seed, a, b) in [
+        (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
+        (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
+    ] {
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
+        assert_eq!(
+            t.local(dwell_world::Face::A).spawn_search_point(),
+            a,
+            "seed {seed} face A"
+        );
+        let [x, y, z] = t.local(dwell_world::Face::B).spawn_search_point();
+        assert_eq!(
+            [x, dwell_world::FaceFrame::B.y(y), z],
+            b,
+            "seed {seed} face B"
+        );
+    }
 }

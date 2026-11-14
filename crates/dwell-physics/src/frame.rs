@@ -8,10 +8,55 @@
 //! through it.
 
 use dwell_blocks::StateId;
-use dwell_world::FaceFrame;
+use dwell_world::{FaceFrame, GridFrame};
 
-use crate::physics::{BodyHandle, DVec3, Vec3};
+use crate::physics::{BodyHandle, DQuat, DVec3, Vec3};
 use crate::query::{Capsule, ProbeHit, VoxelQuery};
+
+/// A body's pose as its grid's frame (MOON_WORLD.md §2, M-3): the body's cells are a grid at the
+/// body's position, turned by its rotation. `GridFrame`'s maps are glam's arithmetic term for term,
+/// so `grid_of_pose(p, r).to_world(x)` is `p + r * x` to the bit (`tests/grid_frame.rs`).
+pub fn grid_of_pose(position: DVec3, rotation: DQuat) -> GridFrame {
+    GridFrame::at_pose(
+        position.to_array(),
+        [rotation.x, rotation.y, rotation.z, rotation.w],
+    )
+}
+
+/// A body's frame moving with its velocity and spin (world).
+pub fn grid_of_motion(position: DVec3, rotation: DQuat, velocity: DVec3, spin: DVec3) -> GridFrame {
+    grid_of_pose(position, rotation).moving(velocity.to_array(), spin.to_array())
+}
+
+/// [`GridFrame`]'s maps in the physics' vector types.
+pub trait GridMaps {
+    fn to_grid_v(&self, p: DVec3) -> DVec3;
+    fn to_world_v(&self, p: DVec3) -> DVec3;
+    fn vector_to_grid_v(&self, v: DVec3) -> DVec3;
+    fn vector_to_world_v(&self, v: DVec3) -> DVec3;
+    /// The controller's frame for a point of this grid: the grid face it is on.
+    fn frame_at(&self, p: DVec3) -> Frame;
+}
+
+impl GridMaps for GridFrame {
+    fn to_grid_v(&self, p: DVec3) -> DVec3 {
+        DVec3::from(self.to_grid(p.to_array()))
+    }
+    fn to_world_v(&self, p: DVec3) -> DVec3 {
+        DVec3::from(self.to_world(p.to_array()))
+    }
+    fn vector_to_grid_v(&self, v: DVec3) -> DVec3 {
+        DVec3::from(self.vector_to_grid(v.to_array()))
+    }
+    fn vector_to_world_v(&self, v: DVec3) -> DVec3 {
+        DVec3::from(self.vector_to_world(v.to_array()))
+    }
+    fn frame_at(&self, p: DVec3) -> Frame {
+        Frame {
+            face: self.face_at(p.to_array()),
+        }
+    }
+}
 
 /// A player's face frame in the physics' vector types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

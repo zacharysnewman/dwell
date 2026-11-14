@@ -25,7 +25,11 @@ export interface ConnectOptions {
    * A terrain world's maps (ADR 0049; `world/worldMaps.ts`): the local world's server installs
    * them rather than computing its own on its thread.
    */
-  worldMaps?: (seed: bigint, generatorVersion: number) => Promise<Uint8Array[]> | null;
+  worldMaps?: (
+    seed: bigint,
+    generatorVersion: number,
+    radiusScale?: number,
+  ) => Promise<Uint8Array[]> | null;
   /** The local world's worker's loading stages (§6.3) as it reports them. */
   onStage?: StageReport;
 }
@@ -102,7 +106,12 @@ export async function connectLocal(
   const maps = (async (): Promise<Uint8Array[] | undefined> => {
     try {
       return (
-        (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined
+        (await options.worldMaps?.(
+          BigInt(world.worldSeed),
+          world.generatorVersion,
+          // A bigger world's own maps (BIG_MAP.md M2b; a saved world's from its record).
+          world.radiusScale,
+        )) ?? undefined
       );
     } catch (err) {
       // The server computes its own (slower to start, the same terrain).
@@ -116,12 +125,21 @@ export async function connectLocal(
   // `?serverjobs=inline`: the server's generation and LOD on its tick (the bench's before/after).
   const jobsInline =
     typeof location !== 'undefined' && /[?&]serverjobs=inline(&|$)/.test(location.search);
+  // `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse for the bench).
+  const growth =
+    typeof location !== 'undefined'
+      ? Number(new URLSearchParams(location.search).get('growth') ?? 'NaN')
+      : NaN;
+  // `?chop=v2`: the chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools).
+  const chop2 = typeof location !== 'undefined' && /[?&]chop=v2(&|$)/.test(location.search);
   const loopback = await LoopbackTransport.start(
     worker,
     {
       ...world,
       ...(waterInline ? { waterInline } : {}),
       ...(jobsInline ? { jobsInline } : {}),
+      ...(Number.isFinite(growth) && growth > 0 ? { growth } : {}),
+      ...(chop2 ? { chop2 } : {}),
     },
     options.onStage,
     maps,

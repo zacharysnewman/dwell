@@ -8,6 +8,54 @@
       "license": "MIT",
       "text": "qrcode-generator.txt",
       "used_in": "web client"
+    },
+    {
+      "name": "AMD FidelityFX Super Resolution 1 (EASU and RCAS, ported to WGSL)",
+      "version": "1.0",
+      "url": "https://github.com/GPUOpen-Effects/FidelityFX-FSR",
+      "license": "MIT",
+      "text": "fidelityfx-fsr.txt",
+      "used_in": "web client (crates/dwell-client/src/render/upscale.wgsl)"
+    },
+    {
+      "name": "Animals FREE - Animated Low Poly 3D Models (ithappy), 7 animals converted to GLB",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/publishers/ithappy",
+      "license": "Unity Asset Store EULA (Standard), ithappy, Animals FREE - Animated Low Poly 3D Models",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "shared/models/glb (model viewer; not in the game yet)"
+    },
+    {
+      "name": "Universal Sound FX (Imphenzia), selected sounds converted to mono AAC",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), Imphenzia, Universal Sound FX",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "web client (sound effects, shared/sounds/samples)"
+    },
+    {
+      "name": "Stylized NPC - Peasant Nolant (Winged Boots), converted to GLB",
+      "version": "Asset Store pack (DEMO)",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), Winged Boots, Stylized NPC - Peasant Nolant DEMO",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "web client (other players' bodies, shared/models/glb/peasant.glb)"
+    },
+    {
+      "name": "3D Low Poly Tools Weapons Containers (NexusArcadeStudios), 53 static models converted to GLB",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), NexusArcadeStudios, 3D Low Poly Tools Weapons Containers",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "shared/models/glb/props (model viewer); web client (the tool items' looks: shared/models/glb/props/stone_axes, metal_axe, stone_pickaxes, metal_pickaxes, wooden_shovel and metal_shovel .glb)"
+    },
+    {
+      "name": "Total Music Collection (Andrew Sitkov), 8 tracks converted to stereo AAC",
+      "version": "Asset Store pack",
+      "url": "https://assetstore.unity.com/",
+      "license": "Unity Asset Store EULA (Standard), Andrew Sitkov, Total Music Collection",
+      "text": "unity-asset-store-eula.txt",
+      "used_in": "web client (the music, shared/music)"
     }
   ]
 }

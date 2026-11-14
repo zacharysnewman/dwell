@@ -1,0 +1,17 @@
+[package]
+name = "dwell-ecology"
+description = "Dwell's far ecology (docs/ECOLOGY.md): herds and packs as data records over a face's island, stepped over whole days."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-worldgen = { path = "../dwell-worldgen" }
+
+[dev-dependencies]
+dwell-world = { path = "../dwell-world" }
+
+[lints]
+workspace = true

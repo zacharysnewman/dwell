@@ -43,6 +43,24 @@ impl JobWorker {
             ),
         }
     }
+    /// A worker for a world of size `radius_scale` (BIG_MAP.md M2b; none or 1: today's), with the
+    /// LOD colour map's river valleys when `valleys`.
+    #[wasm_bindgen(js_name = worldSized)]
+    pub fn world_sized(
+        generator_version: u32,
+        world_seed: u64,
+        radius_scale: Option<u32>,
+        valleys: bool,
+    ) -> JobWorker {
+        Self {
+            runner: Runner::world_sized(
+                generator_version,
+                world_seed,
+                dwell_protocol::world_size::WorldSize::playable(radius_scale),
+                valleys.then_some(dwell_look::lod_map::LOD_MAP.valley_margin_m),
+            ),
+        }
+    }
     /// A worker that only meshes.
     pub fn mesher() -> JobWorker {
         Self {
@@ -77,16 +95,48 @@ pub struct WebJobs {
     done: Rc<RefCell<VecDeque<Vec<u8>>>>,
     /// Called after a result arrives ([`Jobs::on_done`]).
     wake: Waker,
+    /// The generation workers' world (version, seed, size) and LOD valleys, for a re-init.
+    world: (u32, u64, dwell_protocol::world_size::WorldSize),
+    valleys: bool,
+}
+
+/// The generation workers' `init` message: the world they generate and its maps.
+fn generation_init(
+    world: (u32, u64, dwell_protocol::world_size::WorldSize),
+    maps: &[Uint8Array],
+    valleys: bool,
+) -> Result<Object, JsValue> {
+    let init = Object::new();
+    Reflect::set(&init, &"t".into(), &"init".into())?;
+    Reflect::set(&init, &"generatorVersion".into(), &world.0.into())?;
+    Reflect::set(
+        &init,
+        &"worldSeed".into(),
+        &js_sys::BigInt::from(world.1).into(),
+    )?;
+    // The world's size (BIG_MAP.md M2b): only a bigger world's, so 1×'s message is as before.
+    if !world.2.is_default() {
+        Reflect::set(&init, &"radiusScale".into(), &world.2.radius_scale.into())?;
+    }
+    // The world's maps (ADR 0049), copied to each worker, which installs them before making its
+    // generator.
+    let list = Array::new();
+    for m in maps {
+        list.push(m);
+    }
+    Reflect::set(&init, &"maps".into(), &list)?;
+    Reflect::set(&init, &"lodValleys".into(), &valleys.into())?;
+    Ok(init)
 }
 
 impl WebJobs {
     /// `make_worker` creates a worker running the job worker script; `world` is the generator
-    /// version and seed the generation workers load, `maps` its world maps' bytes.
+    /// version, seed and size the generation workers load, `maps` its world maps' bytes.
     pub fn new(
         make_worker: &Function,
         generators: usize,
         meshers: usize,
-        world: (u32, u64),
+        world: (u32, u64, dwell_protocol::world_size::WorldSize),
         maps: &[Uint8Array],
         valleys: bool,
     ) -> Result<Self, JsValue> {
@@ -116,24 +166,13 @@ impl WebJobs {
                     }
                 });
                 worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
-                let init = Object::new();
-                Reflect::set(&init, &"t".into(), &"init".into())?;
-                if kind == 0 {
-                    Reflect::set(&init, &"generatorVersion".into(), &world.0.into())?;
-                    Reflect::set(
-                        &init,
-                        &"worldSeed".into(),
-                        &js_sys::BigInt::from(world.1).into(),
-                    )?;
-                    // The world's maps (ADR 0049), copied to each worker, which installs them
-                    // before making its generator.
-                    let list = Array::new();
-                    for m in maps {
-                        list.push(m);
-                    }
-                    Reflect::set(&init, &"maps".into(), &list)?;
-                    Reflect::set(&init, &"lodValleys".into(), &valleys.into())?;
-                }
+                let init = if kind == 0 {
+                    generation_init(world, maps, valleys)?
+                } else {
+                    let init = Object::new();
+                    Reflect::set(&init, &"t".into(), &"init".into())?;
+                    init
+                };
                 worker.post_message(&init)?;
                 slots[kind].push(WorkerSlot {
                     worker,
@@ -148,6 +187,8 @@ impl WebJobs {
             running: Vec::new(),
             done,
             wake,
+            world,
+            valleys,
         })
     }
 }
@@ -163,6 +204,15 @@ impl Jobs for WebJobs {
     }
     fn on_done(&mut self, wake: Rc<dyn Fn()>) {
         *self.wake.borrow_mut() = Some(wake);
+    }
+    fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        let maps: Vec<Uint8Array> = maps.iter().map(|m| Uint8Array::from(&m[..])).collect();
+        let Ok(init) = generation_init(self.world, &maps, self.valleys) else {
+            return;
+        };
+        for slot in &self.slots[0] {
+            let _ = slot.worker.post_message(&init);
+        }
     }
     fn capacity(&self, mesh: bool) -> usize {
         // Two per worker: one running, one already there when it finishes.

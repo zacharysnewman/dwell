@@ -30,10 +30,14 @@ use dwell_world::{ChunkCoord, FaceFrame};
 
 use super::camera::{Mat4, V3, cross};
 
-/// The distant shadows an adapter draws: the Shadows setting's, none on a CPU adapter (the
-/// cheapest tier of everything there).
-pub fn lod_shadows_for(device_type: wgpu::DeviceType, quality: ShadowQuality) -> ShadowQuality {
-    if device_type == wgpu::DeviceType::Cpu {
+/// The distant shadows an adapter draws: the Shadows setting's while Graphics → Distant shadows
+/// is on (`distant`), none when it is off or on a CPU adapter (the cheapest tier of everything).
+pub fn lod_shadows_for(
+    device_type: wgpu::DeviceType,
+    quality: ShadowQuality,
+    distant: bool,
+) -> ShadowQuality {
+    if device_type == wgpu::DeviceType::Cpu || !distant {
         ShadowQuality::Off
     } else {
         quality
@@ -514,7 +518,7 @@ pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
     [
         wgpu::BindGroupLayoutEntry {
             binding: 11,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
@@ -524,7 +528,7 @@ pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
         },
         wgpu::BindGroupLayoutEntry {
             binding: 12,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
                 view_dimension: wgpu::TextureViewDimension::D2Array,
@@ -534,7 +538,7 @@ pub fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
         },
         wgpu::BindGroupLayoutEntry {
             binding: 13,
-            visibility: wgpu::ShaderStages::FRAGMENT,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
             count: None,
         },
@@ -672,11 +676,11 @@ pub struct LodShadowMaps {
     targets: Vec<Vec<wgpu::TextureView>>,
     /// Per layer, per mip from 1: the group reading the mip before.
     sources: Vec<Vec<wgpu::BindGroup>>,
-    mip_pipeline: wgpu::RenderPipeline,
+    mip_pipeline: crate::render::pipeline::Lazy,
     horizons: wgpu::Texture,
     pub horizon_view: wgpu::TextureView,
     horizon_targets: Vec<wgpu::TextureView>,
-    sweep_pipeline: wgpu::RenderPipeline,
+    sweep_pipeline: crate::render::pipeline::Lazy,
     sweep_uniform: wgpu::Buffer,
     sweep_group: wgpu::BindGroup,
     pub sampler: wgpu::Sampler,
@@ -692,49 +696,64 @@ fn full_screen_pipeline(
     layout: &wgpu::BindGroupLayout,
     (vs, fs): (&str, &str),
     color: Option<wgpu::TextureFormat>,
-) -> wgpu::RenderPipeline {
-    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::ShaderSource::Wgsl(source.into()),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some(label),
-        bind_group_layouts: &[Some(layout)],
-        immediate_size: 0,
-    });
-    let targets = color.map(|format| {
-        [Some(wgpu::ColorTargetState {
-            format,
-            blend: None,
-            write_mask: wgpu::ColorWrites::ALL,
-        })]
-    });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &module,
-            entry_point: Some(vs),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &module,
-            entry_point: Some(fs),
-            compilation_options: Default::default(),
-            targets: targets.as_ref().map_or(&[], |t| &t[..]),
-        }),
-        primitive: Default::default(),
-        depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
-            format: HEIGHT_DEPTH,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: Default::default(),
-            bias: Default::default(),
-        }),
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
+) -> crate::render::pipeline::Lazy {
+    // Made on first use (pipeline.rs, bug #71).
+    let (device, label, layout, vs, fs) = (
+        device.clone(),
+        label.to_owned(),
+        layout.clone(),
+        vs.to_owned(),
+        fs.to_owned(),
+    );
+    crate::render::pipeline::Lazy::new(move || {
+        let (device, label, layout, vs, fs) =
+            (&device, label.as_str(), &layout, vs.as_str(), fs.as_str());
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(label),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(label),
+            bind_group_layouts: &[Some(layout)],
+            immediate_size: 0,
+        });
+        let targets = color.map(|format| {
+            [Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })]
+        });
+        crate::render::pipeline::create(
+            device,
+            &wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some(vs),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some(fs),
+                    compilation_options: Default::default(),
+                    targets: targets.as_ref().map_or(&[], |t| &t[..]),
+                }),
+                primitive: Default::default(),
+                depth_stencil: color.is_none().then_some(wgpu::DepthStencilState {
+                    format: HEIGHT_DEPTH,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            },
+        )
     })
 }
 
@@ -1438,11 +1457,16 @@ mod tests {
     fn a_cpu_adapter_draws_no_distant_shadows() {
         for q in [ShadowQuality::Off, ShadowQuality::Low, ShadowQuality::High] {
             assert_eq!(
-                lod_shadows_for(wgpu::DeviceType::Cpu, q),
+                lod_shadows_for(wgpu::DeviceType::Cpu, q, true),
                 ShadowQuality::Off
             );
-            assert_eq!(lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q), q);
-            assert_eq!(lod_shadows_for(wgpu::DeviceType::IntegratedGpu, q), q);
+            assert_eq!(lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q, true), q);
+            assert_eq!(lod_shadows_for(wgpu::DeviceType::IntegratedGpu, q, true), q);
+            // WORK_QUEUE item 30: Graphics → Distant shadows has its own switch.
+            assert_eq!(
+                lod_shadows_for(wgpu::DeviceType::DiscreteGpu, q, false),
+                ShadowQuality::Off
+            );
         }
         assert_eq!(maps_size(None), (1, 1, 1));
         let t = tier();

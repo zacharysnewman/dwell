@@ -32,6 +32,42 @@ pub struct LocalCore {
     pub persisted: bool,
     /// Why it is not, when storage was given.
     pub storage_error: String,
+    /// The bench's `carry` rig: a raft under the player moved at a set velocity (dev tools).
+    carry: Option<Carry>,
+}
+
+/// A body carrying the local player (the bench's `carry` step, docs/DEV_TOOLS.md): moved at
+/// `velocity` (m/s, horizontal) at a held height for `ticks` more ticks, then stopped.
+#[derive(Clone, Copy, Debug)]
+struct Carry {
+    body: u32,
+    velocity: [f64; 2],
+    /// The raft's height over the ground (or water) under and just ahead of it (m).
+    lift: f64,
+    ticks: u32,
+}
+
+/// The carrying raft: `CARRY_SIDE` × `CARRY_SIDE` logs one cell thick.
+const CARRY_SIDE: i32 = 4;
+
+/// The cache keys of a terrain world's maps, faces A then B (ADR 0049; the shell's `worldMapKeys`):
+/// the build's map fingerprint, each face's seed, a test world's worldgen config and a bigger
+/// world's size (BIG_MAP.md M2b), so a map kept for another build, config or size is never read.
+pub fn world_map_keys(
+    world_seed: u64,
+    worldgen: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> Vec<String> {
+    [dwell_world::Face::A, dwell_world::Face::B]
+        .into_iter()
+        .map(|f| {
+            dwell_worldgen::config::worldgen_map_key_sized(
+                dwell_worldgen::bifacial::face_seed(world_seed, f),
+                worldgen,
+                size,
+            )
+        })
+        .collect()
 }
 
 impl LocalCore {
@@ -100,6 +136,40 @@ impl LocalCore {
         water: dwell_sim::water::host::Placement,
         jobs_worker: bool,
     ) -> Result<Self, LocalError> {
+        Self::create_tuned(
+            face,
+            portal,
+            at,
+            at_spawn,
+            upgrade,
+            world_seed,
+            generator_version,
+            storage,
+            entropy,
+            water,
+            jobs_worker,
+            |_| {},
+        )
+    }
+
+    /// [`LocalCore::create_spawning`] with `tune` given the server's configuration last: the
+    /// native harness (`dwell-native`, docs/DEV_TOOLS.md "Native harness") gives generation and
+    /// the LOD native threads where the browser has its server-jobs worker.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_tuned(
+        face: dwell_world::Face,
+        portal: bool,
+        at: Option<[f64; 3]>,
+        at_spawn: bool,
+        upgrade: bool,
+        world_seed: u64,
+        generator_version: u32,
+        storage: Option<impl StorageBackend>,
+        entropy: Box<dyn Entropy>,
+        water: dwell_sim::water::host::Placement,
+        jobs_worker: bool,
+        tune: impl FnOnce(&mut ServerConfig),
+    ) -> Result<Self, LocalError> {
         // The local player (player 1) lands on the point itself: its spawn spread taken back.
         let at_portal = portal
             .then(|| dwell_worldgen::portal_spawn_for(generator_version, world_seed, face))
@@ -133,6 +203,7 @@ impl LocalCore {
             water,
             ..ServerConfig::default()
         };
+        tune(&mut config);
         let (mut persisted, mut storage_error) = (false, String::new());
         if let Some(backend) = storage {
             match WorldDb::open_backend(backend) {
@@ -155,6 +226,7 @@ impl LocalCore {
             fixed: FixedStep::new(dwell_protocol::SIM_HZ),
             persisted,
             storage_error,
+            carry: None,
         })
     }
 
@@ -183,6 +255,41 @@ impl LocalCore {
         self.server
             .set_hosting(max_players, edits, flight, host_key);
     }
+    /// The host changes the world's game mode (ADR 0065): at once for everyone in it, saved with
+    /// the world. False for a name not in `shared/modes/modes.json`.
+    pub fn set_mode(&mut self, name: &str) -> bool {
+        self.server.set_mode(name)
+    }
+    /// The host turns theater mode on or off for guests (THEATER_MODE.md §7): at once, saved
+    /// with the world.
+    pub fn set_theater_guests(&mut self, on: bool) {
+        self.server.set_theater_guests(on);
+    }
+    /// Whether guests may use theater mode in this world.
+    pub fn theater_guests(&self) -> bool {
+        self.server.world_settings().theater_guests
+    }
+    /// The world's size (BIG_MAP.md M2b): a saved world's own, else the size it was created at.
+    pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
+        self.server.world_settings().size
+    }
+    /// The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+    /// within `radius` chunks of the local player generated again under `config`, their edits kept,
+    /// the config saved with the world (`Server::retune_worldgen`). Returns each face's new map
+    /// bytes, for the page's instances to install.
+    pub fn retune_worldgen(&mut self, config: &str, radius: i32) -> Result<Vec<Vec<u8>>, String> {
+        let center = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.feet_of(p))
+            .ok_or("no local player to tune around")?;
+        let r = self.server.retune_worldgen(config, center, radius)?;
+        Ok(r.maps)
+    }
+    /// The world's game mode's name.
+    pub fn mode(&self) -> &'static str {
+        self.server.world_settings().mode
+    }
     /// Tells the guests the host paused or resumed.
     pub fn host_status(&mut self, state: HostState) {
         self.server.broadcast_host_status(state);
@@ -207,6 +314,18 @@ impl LocalCore {
     /// Runs the simulation steps due for `elapsed_seconds` of real time; returns the tick.
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         for _ in 0..self.fixed.advance(elapsed_seconds) {
+            self.drive_carry();
+            self.server.step();
+        }
+        self.server.tick()
+    }
+
+    /// Steps the server exactly `ticks` times whatever the wall clock (a cinematic take, the record
+    /// skill's `render: "cinematic"`: the game moves 1 / fps a captured frame), with no catch-up cap;
+    /// the real-time accumulator is left as it was. Returns the server's tick.
+    pub fn step_ticks(&mut self, ticks: u32) -> u32 {
+        for _ in 0..ticks {
+            self.drive_carry();
             self.server.step();
         }
         self.server.tick()
@@ -214,6 +333,114 @@ impl LocalCore {
 
     pub fn take_outbox(&mut self) -> Vec<Outgoing> {
         self.server.take_outbox()
+    }
+
+    /// Puts a raft under the local player's feet, `lift_m` above them, stands the player on it
+    /// and moves it at `speed` m/s toward `yaw_deg` (0 = +Z, 90 = +X) for `seconds`, at a held
+    /// height (the bench's `carry` step: "carried by a moving body" bugs, docs/DEV_TOOLS.md). A
+    /// carry already running is replaced (its raft stops where it is). False without a living
+    /// local player.
+    /// face-a-only: a dev rig; the raft's cells and the held height are face A's (+y up), and a
+    /// player on face B is refused rather than carried upside down.
+    pub fn carry_local_player(
+        &mut self,
+        speed: f64,
+        yaw_deg: f64,
+        seconds: f64,
+        lift_m: f64,
+    ) -> bool {
+        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+            return false;
+        };
+        let Some(feet) = self.server.feet_of(p) else {
+            return false;
+        };
+        if dwell_world::FaceFrame::at_height(feet[1]) != dwell_world::FaceFrame::A
+            || ![speed, yaw_deg, seconds, lift_m]
+                .iter()
+                .all(|v| v.is_finite())
+        {
+            return false;
+        }
+        let log = dwell_blocks::require("dwell:log[axis=y]");
+        let cells: Vec<([i32; 3], u16)> = (0..CARRY_SIDE)
+            .flat_map(|x| (0..CARRY_SIDE).map(move |z| ([x, 0, z], log)))
+            .collect();
+        let half = f64::from(CARRY_SIDE - 1) / 2.0;
+        let top = feet[1] + lift_m.max(0.0);
+        let cell_h = dwell_world::CELL_H;
+        let y = top - cell_h / 2.0;
+        let body = self
+            .server
+            .add_body(1, cells, [feet[0] - half, y, feet[2] - half]);
+        let yaw = yaw_deg.to_radians();
+        self.carry = Some(Carry {
+            body,
+            velocity: [speed * yaw.sin(), speed * yaw.cos()],
+            lift: lift_m.max(0.0),
+            ticks: (seconds.max(0.0) * f64::from(dwell_protocol::SIM_HZ)).round() as u32,
+        });
+        self.teleport_local_player([feet[0], top + 0.05, feet[2]])
+    }
+
+    /// Whether a carry is still moving its raft.
+    pub fn carrying(&self) -> bool {
+        self.carry.is_some_and(|c| c.ticks > 0)
+    }
+
+    /// Before a step: the carrying raft's velocity, flat and unturned, its height held.
+    fn drive_carry(&mut self) {
+        let Some(c) = &mut self.carry else { return };
+        let moving = c.ticks > 0;
+        c.ticks = c.ticks.saturating_sub(1);
+        let (id, [vx, vz], lift) = (c.body, c.velocity, c.lift);
+        let Some(h) = self.server.body_handle(id) else {
+            self.carry = None;
+            return;
+        };
+        let (world, physics, _) = self.server.sim();
+        let at = physics.position(h);
+        let hz = f64::from(dwell_protocol::SIM_HZ);
+        // The highest filled cell under the raft and up to 3 m ahead of it, from 16 m above.
+        let half = f64::from(CARRY_SIDE - 1) / 2.0;
+        let speed = vx.hypot(vz).max(1e-9);
+        let row = dwell_world::row_of_m(at.y);
+        let mut ground = None;
+        for ahead in [0.0, 1.5, 3.0] {
+            for (ox, oz) in [
+                (-half, -half),
+                (half, -half),
+                (-half, half),
+                (half, half),
+                (0.0, 0.0),
+            ] {
+                let x = (at.x + half + ox + vx / speed * ahead).floor() as i32;
+                let z = (at.z + half + oz + vz / speed * ahead).floor() as i32;
+                if let Some(top) = (row - 32..row + 32)
+                    .rev()
+                    .find(|&y| world.get_voxel(x, y, z) != dwell_blocks::AIR)
+                {
+                    ground = ground.max(Some(top));
+                }
+            }
+        }
+        let cell_h = dwell_world::CELL_H;
+        let y = ground.map_or(at.y, |g| f64::from(g + 1) * cell_h + lift + cell_h / 2.0);
+        // Back to the held height within a few ticks, against gravity's pull this step.
+        let vy = (y - at.y) * hz / 4.0 + physics.gravity() / hz;
+        let v = if moving { [vx, vy, vz] } else { [0.0, vy, 0.0] };
+        physics.set_velocity(h, dwell_physics::DVec3::from_array(v));
+        physics.set_angular_velocity(h, dwell_physics::DVec3::ZERO);
+        physics.set_rotation(h, dwell_physics::DQuat::IDENTITY);
+    }
+
+    /// Gives the local player `count` of `item` (the bench's `give` step; dev tools): what didn't
+    /// fit (all of it without a local player).
+    pub fn give_local_player(&mut self, item: &str, count: u16) -> u16 {
+        match self.server.player_of_session(LOCAL_SESSION) {
+            Some(p) => self.server.give(p, item, count),
+            None => count,
+        }
     }
 
     /// Kills the local player (the bench's `die` step; dev tools).
@@ -227,16 +454,383 @@ impl LocalCore {
     /// docs/DEV_TOOLS.md): the server moves the body, the client's prediction snaps to it and the
     /// chunks stream around it. Only on the face the player is on (crossing has its own path,
     /// BIFACIAL_WORLD.md §6). False without a living local player or across the faces.
-    pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
-        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
-            return false;
+    /// The lava's dev tools (docs/DEV_TOOLS.md, VOLCANOES.md §6.3), JSON back: `"report"` the
+    /// fields (`Server::lava_report`); `"rate"` [k] every vent's rate × k (a lake fills fast);
+    /// `"vent"` [x, y, z, rateM3s, depthM] a lake vent at the world point (its face's), a
+    /// 12-column field.
+    pub fn lava_dev(&mut self, op: &str, args: &[f64]) -> String {
+        match (op, args) {
+            ("report", _) => self.server.lava_report(),
+            ("rate", [k]) => format!(r#"{{"vents":{}}}"#, self.server.scale_lava_rate(*k as f32)),
+            ("ventNear", [dx, dz, rate, depth]) => {
+                // `ventNear` [dx, dz, rate, depth]: a vent `dx`, `dz` m off the local player's
+                // feet, its bed looked for round their height.
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                self.lava_dev(
+                    "vent",
+                    &[feet[0] + dx, feet[1], feet[2] + dz, *rate, *depth],
+                )
+            }
+            ("vent", [x, y, z, rate, depth]) => {
+                let f = dwell_world::FaceFrame::at_height(*y);
+                let spot = dwell_sim::lava::VentSpot {
+                    fluid: "dwell:lava".into(),
+                    kind: dwell_sim::lava::VentKind::Lake,
+                    rate_m3s: *rate as f32,
+                    depth_m: *depth as f32,
+                    radius: 12,
+                };
+                let row = f.row(dwell_world::row_of_m(*y));
+                match self.server.place_lava_vent(
+                    f,
+                    [x.floor() as i32, z.floor() as i32],
+                    row,
+                    &spot,
+                ) {
+                    Ok(i) => format!(r#"{{"field":{i}}}"#),
+                    Err(e) => format!(r#"{{"error":{e:?}}}"#),
+                }
+            }
+            ("moonApproach", [margin, face]) => self.moon_approach(*margin, *face),
+            ("moonLand", [face]) => self.moon_land(*face),
+            ("sunLand", [face]) => self.grid_land("dwell:sun", *face),
+            // Beside a river head, where its lava field runs (BUGS.md #146).
+            ("sunLand", [face, river]) if *river != 0.0 => {
+                self.grid_land_by_river("dwell:sun", *face)
+            }
+            ("sunLand", [face, _]) => self.grid_land("dwell:sun", *face),
+            ("sunApproach", [margin, face]) => self.grid_approach("dwell:sun", *margin, *face),
+            ("placeHome", [x, y, z]) => self.place_home([*x, *y, *z]),
+            // `__dwell.teleport`, answered (BUGS.md #148: it failed silently).
+            ("teleport", [x, y, z]) => match self.teleport_checked([*x, *y, *z]) {
+                Ok(()) => serde_json::json!({ "at": [x, y, z] }).to_string(),
+                Err(e) => serde_json::json!({ "error": e }).to_string(),
+            },
+            ("npcsFight", []) => {
+                // Every NPC turns on the local player as if struck by it (its `npc.fight` rules
+                // then block and strike back; DEV_TOOLS.md): a duel without the first blow.
+                let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let Some(feet) = self.server.feet_of(p) else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let ids: Vec<u32> = self.server.creatures().iter().map(|c| c.id).collect();
+                let cs = self.server.creatures_mut();
+                let n = ids
+                    .into_iter()
+                    .filter(|&id| {
+                        let on = cs.attacked(id, feet);
+                        if on {
+                            cs.set_foe_player(id, p);
+                        }
+                        on
+                    })
+                    .count();
+                format!(r#"{{"fighting":{n}}}"#)
+            }
+            ("animalPose", [pose]) => {
+                // Every near animal drawn in pose `pose` (CREATURE_POSES' index; -1: as it
+                // idles), to judge a pose by eye (DEV_TOOLS.md).
+                let p = (*pose >= 0.0 && *pose < dwell_protocol::CREATURE_POSES.len() as f64)
+                    .then_some(*pose as u8);
+                self.server.force_animal_pose(p);
+                format!(r#"{{"pose":{p:?}}}"#)
+            }
+            ("animalsIgnorePlayers", [on]) => {
+                // The near animals see no player (filming their idles up close; DEV_TOOLS.md).
+                self.server.set_animals_ignore_players(*on != 0.0);
+                format!(r#"{{"ignore":{}}}"#, *on != 0.0)
+            }
+            ("spawnHerd", [kind, size, offset]) => {
+                // A herd (`kind` 0, deer) or a pack (1, wolves) of `size` put `offset` m along +x
+                // from the local player, brought in by the near ecology (DEV_TOOLS.md).
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let species = if *kind >= 1.0 {
+                    "dwell:wolf"
+                } else {
+                    "dwell:deer"
+                };
+                match self.server.spawn_group_dev(species, feet, *size, *offset) {
+                    Ok(id) => format!(r#"{{"record":{id}}}"#),
+                    Err(e) => format!(r#"{{"error":{e:?}}}"#),
+                }
+            }
+            ("goToHerd", [kind, back]) => {
+                // The finder (WORK_QUEUE item 46; DEV_TOOLS.md): the local player stood `back` m
+                // short of the nearest far herd (`kind` 0, deer) or pack (1, wolves; -1 either)
+                // on its face, on the generator's ground, so the group comes near.
+                self.go_to_herd(*kind, *back)
+            }
+            ("spawnNpcs", [n, radius, variant]) => {
+                // Not lava: the local server's dev ops share this channel. `n` villagers in a
+                // ring `radius` m round the local player's feet (DEV_TOOLS.md).
+                let Some(feet) = self
+                    .server
+                    .player_of_session(LOCAL_SESSION)
+                    .and_then(|p| self.server.feet_of(p))
+                else {
+                    return r#"{"error":"no local player"}"#.into();
+                };
+                let ids = self.server.spawn_npcs_dev(
+                    "dwell:villager",
+                    feet,
+                    (*n as usize).min(16),
+                    *radius,
+                    *variant as u32,
+                );
+                format!(r#"{{"ids":{ids:?}}}"#)
+            }
+            _ => format!(
+                r#"{{"error":"unknown lava op {op:?} with {} args"}}"#,
+                args.len()
+            ),
+        }
+    }
+
+    fn go_to_herd(&mut self, kind: f64, back: f64) -> String {
+        let Some(feet) = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.feet_of(p))
+        else {
+            return r#"{"error":"no local player"}"#.into();
         };
-        let (Some(h), Some(now)) = (self.server.player_handle_of(p), self.server.feet_of(p)) else {
-            return false;
+        let Some(snapshot) = self.server.ecology_message_from(Some(feet)) else {
+            return r#"{"error":"the ecology is not running"}"#.into();
+        };
+        let species = match kind {
+            k if k < 0.0 => None,
+            k if k >= 1.0 => Some("dwell:wolf"),
+            _ => Some("dwell:deer"),
+        };
+        let Some(h) = crate::far_herds::find(&snapshot, feet, species)
+            .into_iter()
+            .next()
+        else {
+            return "null".into();
+        };
+        let (version, seed) = {
+            let c = self.server.config();
+            (c.generator_version, c.world_seed)
+        };
+        let terrain = self
+            .map
+            .get_or_insert_with(|| dwell_worldgen::BifacialTerrain::for_generator(version, seed));
+        let Some(terrain) = terrain else {
+            return r#"{"error":"this world has no map (not the terrain generator)"}"#.into();
         };
         let f = dwell_world::FaceFrame::at_height(feet[1]);
-        if dwell_world::FaceFrame::at_height(now[1]) != f || !feet.iter().all(|v| v.is_finite()) {
-            return false;
+        let local = f.point(feet);
+        let (x, z) = crate::far_herds::approach((local[0], local[2]), (h.x, h.z), back.max(0.0));
+        let c = terrain
+            .local(f.face)
+            .column_at(x.floor() as i32, z.floor() as i32);
+        // Over the ground (and any water on it), a little up: the teleport stands it there.
+        let water = c.water != dwell_worldgen::terrain::Water::None;
+        let top = f64::from(if water {
+            c.height.max(c.level)
+        } else {
+            c.height
+        }) + 0.5;
+        let at = f.point([x, top, z]);
+        if !self.teleport_local_player(at) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        format!(
+            r#"{{"id":{},"species":{:?},"size":{:.1},"distance":{:.1},"at":[{:.1},{:.1},{:.1}]}}"#,
+            h.id, h.species, h.size, h.distance, at[0], at[1], at[2]
+        )
+    }
+
+    /// The bench's `flyTo: "moon"` (docs/DEV_TOOLS.md "The moon"): the local player, at home,
+    /// placed `margin_m` outside the moon's capture sphere over its spawn on face `face` (1 A, −1
+    /// B), moving with the moon, so a short real flight at it is captured (MOON_WORLD.md §7.3).
+    /// JSON `{"at":[x,y,z],"grid":[x,y,z],"distance":m}` (world and moon-local), or `{"error":…}`.
+    pub fn moon_approach(&mut self, margin_m: f64, face: f64) -> String {
+        self.grid_approach("dwell:moon", margin_m, face)
+    }
+
+    /// [`Self::moon_approach`] for any grid by name (`dwell:sun`: `sunApproach`).
+    pub fn grid_approach(&mut self, name: &str, margin_m: f64, face: f64) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home: on another grid already"}"#.into();
+        }
+        let f = if face < 0.0 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let map = self.server.grids().travel_map();
+        let seed = self.server.config().world_seed;
+        let none = format!(r#"{{"error":"this world has no {name}"}}"#);
+        let Some(local) = crate::moon_probe::grid_approach_point(&map, seed, name, f, margin_m)
+        else {
+            return none;
+        };
+        let Some(&(index, ..)) = map.grids.iter().find(|g| g.1.name == name) else {
+            return none;
+        };
+        let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
+        let (at, v) = map.frame(index, t).release(local, [0.0; 3]);
+        if !self.server.place_on_grid(id, at, v) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        let c = dwell_sim::travel::GRID_CENTRE;
+        let d = [0, 1, 2].map(|k| local[k] - c[k]);
+        serde_json::json!({
+            "at": at,
+            "grid": local,
+            "distance": (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
+        })
+        .to_string()
+    }
+
+    /// The bench's `moonLand` (docs/DEV_TOOLS.md "The moon"): a dev teleport onto the moon, no
+    /// flight (owner, 2026-11-13: "We should just teleport to the moon to see if ground draws").
+    /// The local player, at home, is put 1.5 m over the moon's spawn on face `face` (1 A, −1 B),
+    /// carried onto the moon at once (flying or not), so it stands on the moon's ground. JSON `{"at":[x,y,z],"grid":[x,y,z]}` (world and moon-local),
+    /// or `{"error":…}`.
+    pub fn moon_land(&mut self, face: f64) -> String {
+        self.grid_land("dwell:moon", face)
+    }
+
+    /// [`Self::moon_land`] for any grid by name (`dwell:sun`: the bench's `sunLand`, SUN_WORLD.md:
+    /// 1.5 m over its stand point, dry crust away from lava).
+    pub fn grid_land(&mut self, name: &str, face: f64) -> String {
+        self.grid_land_at(name, face, false)
+    }
+
+    /// [`Self::grid_land`] beside the river head nearest the grid's stand point, on dry ground
+    /// (`moon_probe::grid_river_bank_point`): the bench's `sunLand` with `river`, where the head's
+    /// lava field is placed and runs (BUGS.md #146: from the stand point, 390 m from the nearest
+    /// head on seed 7, none ran).
+    pub fn grid_land_by_river(&mut self, name: &str, face: f64) -> String {
+        self.grid_land_at(name, face, true)
+    }
+
+    fn grid_land_at(&mut self, name: &str, face: f64, river: bool) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home: on another grid already"}"#.into();
+        }
+        let f = if face < 0.0 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let map = self.server.grids().travel_map();
+        let seed = self.server.config().world_seed;
+        let landing = if river {
+            crate::moon_probe::grid_river_bank_point(seed, name, f, 1.5)
+        } else {
+            crate::moon_probe::grid_landing_point(&map, seed, name, f, 1.5)
+        };
+        let (Some(local), Some(&(index, ..))) =
+            (landing, map.grids.iter().find(|g| g.1.name == name))
+        else {
+            return if river {
+                format!(r#"{{"error":"no river head with a dry bank by {name}'s stand point"}}"#)
+            } else {
+                format!(r#"{{"error":"this world has no {name}"}}"#)
+            };
+        };
+        let t = f64::from(self.server.tick()) / f64::from(dwell_protocol::SIM_HZ);
+        let (at, _) = map.frame(index, t).release(local, [0.0; 3]);
+        // Carried onto the grid here, not left to the tick's capture, which takes only fliers
+        // (BUGS.md #147: from a fresh spawn the player stayed at home, out in space).
+        if !self.server.carry_onto_grid(id, index, local, [0.0; 3]) {
+            return format!(r#"{{"error":"could not move the player onto {name}"}}"#);
+        }
+        serde_json::json!({ "at": at, "grid": local }).to_string()
+    }
+
+    /// The local player, at home, stood with its feet at `feet` (world m, either face), at rest:
+    /// the bench's way back to where a trip started (`flyTo: "home"`). JSON `{"at":…}` or an error.
+    pub fn place_home(&mut self, feet: [f64; 3]) -> String {
+        let Some(id) = self.local_player_id() else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if self.server.grid_state_of(id).is_some_and(|g| g.0 != 0) {
+            return r#"{"error":"not at home"}"#.into();
+        }
+        let Some(h) = self
+            .server
+            .player_of_session(LOCAL_SESSION)
+            .and_then(|p| self.server.player_handle_of(p))
+        else {
+            return r#"{"error":"no local player"}"#.into();
+        };
+        if !feet.iter().all(|v| v.is_finite()) {
+            return r#"{"error":"feet must be finite"}"#.into();
+        }
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let half = {
+            let (_, _, players) = self.server.sim();
+            f64::from(players.half_height(h))
+        };
+        let centre = [feet[0], f.y(f.y(feet[1]) + half), feet[2]];
+        if !self.server.place_on_grid(id, centre, [0.0; 3]) {
+            return r#"{"error":"could not move the player"}"#.into();
+        }
+        serde_json::json!({ "at": feet }).to_string()
+    }
+
+    fn local_player_id(&self) -> Option<u16> {
+        self.server.player_of_session(LOCAL_SESSION)
+    }
+
+    pub fn teleport_local_player(&mut self, feet: [f64; 3]) -> bool {
+        self.teleport_checked(feet).is_ok()
+    }
+
+    /// [`Self::teleport_local_player`], saying why when it can't (the dev tools' `teleport`,
+    /// BUGS.md #148: a point far outside the disc was taken, the player left past the rim where
+    /// no world streams, and nothing said so). Refused: no local player at home, feet not finite,
+    /// a point on the other face (a teleport keeps the face), or one past the disc's rim.
+    pub fn teleport_checked(&mut self, feet: [f64; 3]) -> Result<(), String> {
+        if !feet.iter().all(|v| v.is_finite()) {
+            return Err("feet must be finite".into());
+        }
+        let Some(p) = self.server.player_of_session(LOCAL_SESSION) else {
+            return Err("no local player".into());
+        };
+        let (Some(h), Some(now)) = (self.server.player_handle_of(p), self.server.feet_of(p)) else {
+            return Err("no local player at home (on another grid?)".into());
+        };
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        if dwell_world::FaceFrame::at_height(now[1]) != f {
+            return Err(format!(
+                "y {:.1} is on face {}, the player on face {} (a teleport keeps the face)",
+                feet[1],
+                if f.is_b() { "B" } else { "A" },
+                if f.is_b() { "A" } else { "B" },
+            ));
+        }
+        let rim = dwell_world::WorldBounds::of(self.server.config().world_size).radius() as f64;
+        let out = feet[0].hypot(feet[2]);
+        if out > rim {
+            return Err(format!(
+                "({:.0}, {:.0}) is {out:.0} m from the disc's centre, past its rim ({rim:.0} m): no world there",
+                feet[0], feet[2]
+            ));
         }
         let (_, physics, players) = self.server.sim();
         let half = f64::from(players.half_height(h));
@@ -247,7 +841,7 @@ impl LocalCore {
             dwell_physics::DVec3::from_array(centre),
             dwell_physics::Vec3::ZERO,
         );
-        true
+        Ok(())
     }
 
     /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
@@ -387,9 +981,67 @@ pub fn with_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>,
 /// Wall-clock budget hint for hosts that cannot measure time (see dwell_sim::clock).
 pub const TICK_BUDGET: Duration = Duration::from_millis(4);
 
+/// How far south of a town site's centre the dev link `?spawn=town` stands the player (m): outside
+/// the hamlet's wall, looking north at it.
+pub const TOWN_SPAWN_BACK_M: f64 = 24.0;
+
+/// The face a dev town spawn key names: `town` face A, `town-b` face B (docs/DEV_TOOLS.md).
+pub fn town_spawn_face(key: &str) -> Option<dwell_world::Face> {
+    match key {
+        "town" => Some(dwell_world::Face::A),
+        "town-b" => Some(dwell_world::Face::B),
+        _ => None,
+    }
+}
+
+/// The dev link `?spawn=town`: the world's spawn by the town site nearest the face's spawn
+/// ([`TOWN_SPAWN_BACK_M`] south of it, so a player there founds it) and the player starting there.
+/// False (the config as it was) for a world without towns.
+pub fn spawn_by_town(c: &mut ServerConfig, face: dwell_world::Face) -> bool {
+    let Some([x, y, z]) = dwell_worldgen::town_spawn_for_sized(
+        c.generator_version,
+        c.world_seed,
+        c.world_size,
+        face,
+        TOWN_SPAWN_BACK_M,
+    ) else {
+        return false;
+    };
+    // The local player (player 1) lands on the point itself: its spawn spread taken back.
+    let [dx, dz] = dwell_sim::server::spawn_spread(1);
+    c.spawn = Some([x - dx, y, z - dz]);
+    c.join_at_spawn = true;
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    dwell_world::both_faces!(
+        fn the_town_link_spawns_by_a_town_site(f: FaceFrame) {
+            let key = if f.is_b() { "town-b" } else { "town" };
+            let face = town_spawn_face(key).expect("a town key");
+            assert_eq!(face, f.face);
+            let mut c = ServerConfig {
+                world_seed: 0,
+                generator_version: dwell_world::GENERATOR_TERRAIN,
+                ..ServerConfig::default()
+            };
+            assert!(spawn_by_town(&mut c, face));
+            let spawn = c.spawn.expect("a spawn");
+            assert_eq!(dwell_world::FaceFrame::at_height(spawn[1]), f);
+            assert!(c.join_at_spawn);
+            // The flat world has no towns: the config is left as it was.
+            let mut flat = ServerConfig {
+                generator_version: dwell_world::GENERATOR_FLAT,
+                ..ServerConfig::default()
+            };
+            assert!(!spawn_by_town(&mut flat, face));
+            assert!(flat.spawn.is_none());
+            assert_eq!(town_spawn_face("moon"), None);
+        }
+    );
 
     use dwell_protocol::*;
     use dwell_sim::entropy::SeededEntropy;
@@ -467,6 +1119,27 @@ mod tests {
             u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize,
             out.len()
         );
+    }
+
+    #[test]
+    fn a_stepped_world_runs_exactly_the_ticks_asked_for_with_no_cap() {
+        let mut core = LocalCore::create(
+            0,
+            dwell_world::GENERATOR_FLAT,
+            None::<SharedBytes>,
+            Box::new(SeededEntropy(1)),
+        )
+        .unwrap();
+        assert_eq!(join(&mut core), 1);
+        let t0 = core.step_ticks(0);
+        // A cinematic take at 30 fps: 2 ticks a frame for 900 frames (30 s), however long each took.
+        let mut t = t0;
+        for _ in 0..900 {
+            t = core.step_ticks(2);
+        }
+        assert_eq!(t - t0, 1800);
+        // No catch-up cap (real time's `advance` caps a call at 8 steps).
+        assert_eq!(core.step_ticks(40) - t, 40);
     }
 
     #[test]

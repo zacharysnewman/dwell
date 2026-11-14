@@ -2,7 +2,10 @@
 //! at level L a cell is 2^L level-0 cells on a side (2^L m wide and 2^L rows tall: cell space,
 //! HALF_HEIGHT_GRID.md §2) and a section 32³ cells, so level 0 is the chunk grid.
 //! Section coordinates count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶) cells: one root at
-//! `MAX_LEVEL` (131 km wide) holds the whole disc and build volume, centred on the origin.
+//! `MAX_LEVEL` (1 049 km wide since BIG_MAP.md M1: the largest world size's disc, `lod.maxLevel`
+//! checked by `shared/protocol/gen.mjs`) holds the whole disc and build volume, centred on the
+//! origin. A smaller world's sections above its own top level (`WorldSize::lod_max_level`, 12 for
+//! today's 50 km) are few and coarse.
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
 
@@ -112,12 +115,18 @@ pub fn ancestor(c: LodCoord, level: i32) -> LodCoord {
 
 const CHUNK_OFFSET_XZ: i32 = (-ORIGIN_X / CHUNK_SIZE as i64) as i32;
 const CHUNK_OFFSET_Y: i32 = (-ORIGIN_Y / CHUNK_SIZE as i64) as i32;
-const _: () = assert!(CHUNK_OFFSET_Y == 1 << 11);
+const _: () = assert!(CHUNK_OFFSET_Y == 1 << (MAX_LEVEL - 1));
 const _: () = assert!(
     -ORIGIN_Y >= crate::BUILD_VOLUME.y_range().1
         && ORIGIN_Y <= crate::BUILD_VOLUME.y_range().0
         && -ORIGIN_X >= WORLD_RADIUS as i64,
     "the root holds the disc and the build volume"
+);
+// BIG_MAP.md M1: the compiled root holds every world size (`lod.maxLevel` is the largest's).
+const _: () = assert!(
+    dwell_protocol::world_size::WorldSize::DEFAULT.fits_lod_root()
+        && dwell_protocol::world_size::WorldSize::LARGEST.fits_lod_root(),
+    "the root holds every world size"
 );
 
 /// The level-0 section that is this chunk.
@@ -141,6 +150,11 @@ pub fn chunk_of_lod(c: LodCoord) -> ChunkCoord {
 /// Inside the octree, within the world's rows, overlapping the world's disc and not wholly outside
 /// the build volume (sections that are, are never generated, stored or requested).
 pub fn in_world(c: LodCoord) -> bool {
+    in_world_of(c, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`in_world`] for a world of these bounds (its own disc and build volume, BIG_MAP.md M2).
+pub fn in_world_of(c: LodCoord, w: &crate::WorldBounds) -> bool {
     if c.level < 0 || c.level > MAX_LEVEL {
         return false;
     }
@@ -162,8 +176,9 @@ pub fn in_world(c: LodCoord) -> bool {
             0
         }
     };
-    inside_world_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
-        && crate::BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
+    w.inside_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
+        && w.volume()
+            .box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
             != crate::Overlap::Outside
 }
 
@@ -333,6 +348,54 @@ pub fn downsample_octant(
             }
         }
     }
+    // A surface cell (filled, air over it on its face) shows its columns' tops, the cells of the
+    // block over it included: where the ground steps up by a row across that block, too few of
+    // its cells are filled to fill it, and the cell under it would show the dirt under the higher
+    // columns' grass (speckled dirt on edited ground, BUGS.md #53).
+    for y in 0..h {
+        let face = row_face(parent_coord, oy + y);
+        let Some(over) = (match face {
+            Face::A => (y + 1 < h).then_some(y + 1),
+            Face::B => (y > 0).then(|| y - 1),
+        }) else {
+            continue;
+        };
+        if row_face(parent_coord, oy + over) != face {
+            continue;
+        }
+        // The four child rows from the top of the block over down (face-local).
+        let rows: [i32; 4] = match face {
+            Face::A => [2 * y + 3, 2 * y + 2, 2 * y + 1, 2 * y],
+            Face::B => [2 * y - 2, 2 * y - 1, 2 * y, 2 * y + 1],
+        };
+        for z in 0..h {
+            for x in 0..h {
+                let at = cell_index(ox + x, oy + y, oz + z);
+                let m = parent[at];
+                if !lod_solid(m) || parent[cell_index(ox + x, oy + over, oz + z)] != M.air {
+                    continue;
+                }
+                let mut tops = [M.air; 4];
+                for (col, top) in tops.iter_mut().enumerate() {
+                    let (cx, cz) = (2 * x + (col as i32 & 1), 2 * z + (col as i32 >> 1));
+                    *top = rows
+                        .iter()
+                        .map(|&r| child_at(cx, r, cz))
+                        .find(|&c| c != M.air && lod_drawn(c))
+                        .unwrap_or(M.air);
+                }
+                let solid = |c: StateId| lod_solid(c);
+                let best = tops.iter().copied().filter(|&c| solid(c)).max_by_key(|&c| {
+                    // The most common, ties to the first column's.
+                    let n = tops.iter().filter(|&&t| t == c).count();
+                    (n, std::cmp::Reverse(tops.iter().position(|&t| t == c)))
+                });
+                if let Some(best) = best {
+                    parent[at] = best;
+                }
+            }
+        }
+    }
 }
 
 pub fn downsample_chunk_octant(
@@ -428,9 +491,17 @@ pub fn first_face_a_row(c: LodCoord) -> i32 {
 }
 
 /// Empty or Buried when the bounds decide the section (with its apron), else Content. A section
-/// straddling the midplane is empty or buried only when both parts are.
+/// straddling the midplane is empty or buried only when both parts are. A 1× world's: a bigger one
+/// classifies with [`kind_from_bounds_of`] and its own bounds.
 pub fn kind_from_bounds(c: LodCoord, b: &LodBounds) -> LodKind {
-    if !in_world(c) || !b.any_inside {
+    kind_from_bounds_of(c, b, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`kind_from_bounds`] in a world of these bounds: a section outside *its* disc and build volume
+/// is empty (BUGS.md #108: with the 1× test a 4× world's sections past 50 km were empty, so the
+/// terrain stopped drawing there, and at 8× and 10× the spawn's own chunks never showed).
+pub fn kind_from_bounds_of(c: LodCoord, b: &LodBounds, w: &crate::WorldBounds) -> LodKind {
+    if !in_world_of(c, w) || !b.any_inside {
         return LodKind::Empty;
     }
     if !b.bifacial {
@@ -484,12 +555,28 @@ pub fn flat_lod_bounds(level: i32, i: i32, k: i32) -> LodBounds {
             all_inside &= inside_world_disc(x, z);
         }
     }
+    // Some column (with the apron) inside the disc: the point of the box nearest the axis. (Not
+    // `in_world(c)`: `c` is the column's bottom row, where the build sphere is only a few km
+    // across, so columns past ~1 km read as outside — BUGS #54.)
+    let nearest = |lo: i64, hi: i64| {
+        if lo > 0 {
+            lo
+        } else if hi < 0 {
+            hi
+        } else {
+            0
+        }
+    };
+    let any_inside = inside_world_disc(
+        nearest(o.x - cell, o.x + s + cell),
+        nearest(o.z - cell, o.z + s + cell),
+    );
     let top = f64::from(FLAT_TOP_Y); // rows, as the bounds are
     LodBounds {
         hi: top - 1.0,
         lo: if all_inside { top } else { f64::NEG_INFINITY },
         bifacial: false,
-        any_inside: in_world(c),
+        any_inside,
         ..LodBounds::default()
     }
 }

@@ -1,0 +1,6 @@
+{ "formatVersion": 1, "name": "bifacial v3 s2: crane over face A, through edge-on, under to face B, face A's up held",
+  "keyframes": [
+    { "t": 0, "position": [90000, 14000, 18000], "target": [0, 0, 0], "fov": 50, "timeOfDay": 0.29, "up": "a" },
+    { "t": 11, "position": [90000, -14000, -18000], "target": [0, 0, 0], "fov": 50, "timeOfDay": 0.29 }
+  ],
+  "segments": [ { "move": "orbit", "around": [0, 0, 0], "easing": "inOutSine" } ] }

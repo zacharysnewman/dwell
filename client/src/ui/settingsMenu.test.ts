@@ -53,7 +53,7 @@ describe('settings JSON', () => {
     const json = settingsJson({
       detail: { distanceM: 200.4, pixelError: 2.46, memoryMb: 511.7 },
       exposure: 1.2345,
-      audio: { master: 0.8049, effects: 1, ui: 0.333, music: 0.4567 },
+      audio: { master: 0.8049, effects: 1, ui: 0.333, music: 0.4567, ambience: 0.2 },
       clouds: 'low',
       water: {
         quality: 'medium',
@@ -63,17 +63,32 @@ describe('settings JSON', () => {
         waterfalls: true,
       },
       shadows: { quality: 'low', torch: 'high' },
-      motion: { speedEffects: false, fovBoost: 0.456, plantSway: false },
+      motion: { speedEffects: false, fovBoost: 0.456, plantSway: false, cameraSway: false },
       explosions: { flash: true, smoke: false, shake: true },
       fovDeg: 82.4,
       showArms: false,
-      hud: { shown: { hotbar: false } },
+      leafCards: false,
+      features: {
+        tallGrass: 0.456,
+        farTrees: false,
+        distantShadows: true,
+        hitShards: 0.5,
+        particles: 0.333,
+        farHerds: false,
+      },
+      hud: { shown: { hotbar: false }, mapShading: true },
+      renderScale: { scale: 0.67, upscaler: 'sharpen' },
+      shafts: 'low',
+      bloom: 'low',
+      menuBackground: 'lake-shore',
+      modelDetail: 'medium',
+      antialias: { mode: 'msaa4-fxaa', anisotropy: 16 },
     });
     const parsed = JSON.parse(json) as { detail: unknown };
     expect(parsed).toEqual({
       detail: { distanceM: 200, pixelError: 2.5, memoryMb: 512 },
       exposure: 1.23,
-      audio: { master: 0.8, effects: 1, ui: 0.33, music: 0.46 },
+      audio: { master: 0.8, effects: 1, ui: 0.33, music: 0.46, ambience: 0.2 },
       clouds: 'low',
       water: {
         quality: 'medium',
@@ -83,11 +98,26 @@ describe('settings JSON', () => {
         waterfalls: true,
       },
       shadows: { quality: 'low', torch: 'high' },
-      motion: { speedEffects: false, fovBoost: 0.46, plantSway: false },
+      motion: { speedEffects: false, fovBoost: 0.46, plantSway: false, cameraSway: false },
       explosions: { flash: true, smoke: false, shake: true },
       fovDeg: 82,
       showArms: false,
-      hud: { shown: { hotbar: false } },
+      leafCards: false,
+      features: {
+        tallGrass: 0.46,
+        farTrees: false,
+        distantShadows: true,
+        hitShards: 0.5,
+        particles: 0.33,
+        farHerds: false,
+      },
+      hud: { shown: { hotbar: false }, mapShading: true },
+      renderScale: { scale: 0.67, upscaler: 'sharpen' },
+      shafts: 'low',
+      bloom: 'low',
+      menuBackground: 'lake-shore',
+      modelDetail: 'medium',
+      antialias: { mode: 'msaa4-fxaa', anisotropy: 16 },
     });
     expect(sanitizeDetail(parsed.detail, defaultDetail(false))).toEqual({
       distanceM: 200,
@@ -129,8 +159,8 @@ describe('detail settings', () => {
     expect(DETAIL_LIMITS.pixelError).toEqual({ min: 1, max: 16 });
     expect(DETAIL_LIMITS.memoryMb).toEqual({ min: 32, max: 1024 });
     // The LOD's defaults are the protocol constants (LOD_PIXEL_ERROR, LOD_CACHE_MB).
-    expect(defaultDetail(false)).toEqual({ distanceM: 256, pixelError: 4, memoryMb: 256 });
-    expect(defaultDetail(true)).toEqual({ distanceM: 128, pixelError: 8, memoryMb: 96 });
+    expect(defaultDetail(false)).toEqual({ distanceM: 256, pixelError: 3, memoryMb: 256 });
+    expect(defaultDetail(true)).toEqual({ distanceM: 128, pixelError: 3, memoryMb: 96 });
   });
 
   it('clamp stored values, and take the default for anything missing or not a number', () => {
@@ -148,7 +178,7 @@ describe('detail settings', () => {
     // Settings kept before the LOD sliders existed keep their distance.
     expect(sanitizeDetail({ distanceM: 200 }, defaultDetail(false))).toEqual({
       distanceM: 200,
-      pixelError: 4,
+      pixelError: 3,
       memoryMb: 256,
     });
     expect(sanitizeDetail(null, defaultDetail(false))).toEqual(defaultDetail(false));

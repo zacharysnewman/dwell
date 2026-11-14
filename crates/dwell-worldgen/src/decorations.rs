@@ -31,6 +31,9 @@ pub struct Decoration {
     /// The ground's top (m above sea level, face-local) must lie in [min_height, max_height].
     pub min_height: i32,
     pub max_height: i32,
+    /// It also stands over a ½ m ramp of its ground (data `onRamps`; HALF_HEIGHT_GRID.md §5): in
+    /// the cell over the ramp, its foot drawn down to the ramp's surface (`sitOnSupport`).
+    pub on_ramps: bool,
 }
 
 mod table {
@@ -54,6 +57,7 @@ pub struct Placer {
     max_slope: i32,
     min_height: i32,
     max_height: i32,
+    on_ramps: bool,
 }
 
 /// The patches' soft edge: half its width in the patch noise's units.
@@ -82,6 +86,7 @@ impl Placer {
                     max_slope: rows_for_m(f64::from(d.max_slope)),
                     min_height: rows_for_m(f64::from(d.min_height)),
                     max_height: rows_for_m(f64::from(d.max_height)),
+                    on_ramps: d.on_ramps,
                 }
             })
             .collect()
@@ -110,27 +115,54 @@ impl Placer {
     /// whose top is row `top`, with neighbours' tops (rows) from `neighbour_top` (+x, −x, +z, −z).
     pub fn places(
         &self,
+        at: (i32, i32),
+        noise: (i64, i64),
+        ground: StateId,
+        top: i32,
+        neighbour_top: impl Fn(i32, i32) -> i32,
+    ) -> bool {
+        self.places_scaled(at, noise, ground, top, neighbour_top, || 1.0)
+    }
+
+    /// [`Placer::places`] with its chance times `factor` (0..1; the climate's, T3b), asked only of
+    /// a cell its own rolls keep.
+    pub fn places_scaled(
+        &self,
         (x, z): (i32, i32),
         (noise_x, noise_z): (i64, i64),
         ground: StateId,
         top: i32,
         neighbour_top: impl Fn(i32, i32) -> i32,
+        factor: impl FnOnce() -> f32,
     ) -> bool {
         if !self.on.contains(&ground) || top < self.min_height || top > self.max_height {
             return false;
         }
         let roll = unit(hash2(self.cell_seed, x, z));
-        if roll >= self.chance(noise_x, noise_z) {
+        let chance = self.chance(noise_x, noise_z);
+        if roll >= chance {
             return false;
         }
         [(1, 0), (-1, 0), (0, 1), (0, -1)]
             .iter()
             .all(|&(dx, dz)| (neighbour_top(x + dx, z + dz) - top).abs() <= self.max_slope)
+            && roll < chance * factor()
+    }
+
+    /// The cell's own roll (0..1) at (x, z): the cell gets it where the roll is under its chance
+    /// (grass growth's fertile columns use the same roll, ADR 0075 T3c).
+    pub fn roll(&self, x: i32, z: i32) -> f32 {
+        unit(hash2(self.cell_seed, x, z))
     }
 
     /// The block put.
     pub fn state(&self) -> StateId {
         self.state
+    }
+
+    /// Whether it also stands over a ½ m ramp of its ground (data `onRamps`).
+    pub fn on_ramps(&self) -> bool {
+        self.on_ramps
     }
 }
 
@@ -157,6 +189,7 @@ mod tests {
             max_slope: 1,
             min_height: 2,
             max_height: 10,
+            on_ramps: false,
         };
         let p = &Placer::resolve(&[rule], 3)[0];
         let dirt = dwell_blocks::require("dwell:dirt");

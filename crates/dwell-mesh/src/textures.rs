@@ -10,6 +10,8 @@
 
 use std::sync::OnceLock;
 
+// Laid out by its generator (as rustfmt would, but rustfmt packs a long array its own way).
+#[rustfmt::skip]
 #[path = "painterly.gen.rs"]
 mod painterly;
 pub use painterly::{PAINTERLY_TILE, PAINTERLY_TILES};
@@ -42,48 +44,17 @@ pub const ATLAS_SIZE: usize = CELL * ATLAS_CELLS;
 /// Tile slots in the atlas (cells × cells), the length of [`tile_grids`].
 pub const ATLAS_TILES: usize = ATLAS_CELLS * ATLAS_CELLS;
 
-/// The tiles in atlas order (the registry's texture names).
-pub const TILE_ORDER: [&str; 30] = [
-    "plain",
-    "grass",
-    "grassSide",
-    "dirt",
-    "stone",
-    "sand",
-    "water",
-    "ladder",
-    "grid",
-    "logSide",
-    "logTop",
-    "leaves",
-    "tallGrass",
-    // A dirt side under grass (dirt's `sideUnder`): the turf's skirt over the dirt's top edge.
-    "dirtSkirt",
-    // The torch's plain stick, its two cells (docs/LIGHTS.md; its flame is the flame effect, §6).
-    "torch",
-    "torchTop",
-    // The bedrock between the faces (docs/BIFACIAL_WORLD.md §2).
-    "bedrock",
-    // Snowy grass (its top, its side's fringe, dirt's skirt under it) and snowy leaves (ADR 0049).
-    "snow",
-    "snowSide",
-    "dirtSnowSkirt",
-    "snowyLeavesTop",
-    "snowyLeavesSide",
-    // The build platform's boards (docs/BUILT_BODIES.md §3).
-    "planks",
-    // Dynamite's sides and ends (docs/EXPLOSIVES.md).
-    "dynamite",
-    "dynamiteTop",
-    // The blue and green dynamites (docs/EXPLOSIVES.md §4).
-    "dynamiteBlue",
-    "dynamiteBlueTop",
-    "dynamiteGreen",
-    "dynamiteGreenTop",
-    // The fallback look of a state whose look or textures this build lacks (synced from a server,
-    // ADR 0038): a magenta and black checker, never content.
-    MISSING_TILE,
-];
+/// The tiles in atlas order: the texture set's own list (`PAINTERLY_TILES`, materials.json's
+/// `tiles` order), so the atlas lays out every tile the set paints and can't drift from it (0.59.1
+/// baked `redSand` but left it out of a hand-kept list, and red sand drew as the checker, BUGS.md
+/// #133). The registry's texture names, the utility tiles (`plain`, `grid`, `missing`), the crack
+/// stages and the looks' tiles are all in the set: `shared/textures/gen.mjs` fails on a name a
+/// block asks for that it doesn't paint.
+pub const TILE_ORDER: [&str; PAINTERLY_TILES.len()] = PAINTERLY_TILES;
+const _: () = assert!(
+    TILE_ORDER.len() <= ATLAS_TILES,
+    "the atlas holds every tile"
+);
 
 /// The fallback tile (ADR 0038 decision 7).
 pub const MISSING_TILE: &str = "missing";
@@ -131,14 +102,15 @@ pub fn tile_rect(name: &str) -> TileRect {
 }
 
 /// The grid lines of each atlas tile slot (index cx + cy × `ATLAS_CELLS`, `TILE_ORDER` order):
-/// `[every, strength, glow, 0]` (zero for none; the glow is [`tile_emissive`]). A tile's grid is the registry's `grid` look
+/// `[every, strength, glow, 0]` (zero for none; the glow is [`tile_emissive`], negated for a
+/// [`tile_molten`] tile: its sign tells the shader to move the slow heat pattern over it). A tile's grid is the registry's `grid` look
 /// option of the states drawn with it (an untextured state with the `plain` tile); `gen.mjs`
 /// rejects a tile whose states disagree, so the terrain shader can find a face's grid from its
 /// tile rectangle with nothing added to the vertex.
 pub fn tile_grids() -> [[f32; 4]; ATLAS_TILES] {
     let mut out = [[0.0; 4]; ATLAS_TILES];
     for (i, name) in TILE_ORDER.iter().enumerate() {
-        out[i][2] = tile_emissive(name);
+        out[i][2] = tile_glow_entry(name);
     }
     for s in &dwell_blocks::STATES {
         let names = s
@@ -165,6 +137,21 @@ pub fn tile_emissive(name: &str) -> f32 {
         .iter()
         .position(|t| *t == name)
         .map_or(0.0, |i| painterly::PAINTERLY_EMISSIVE[i])
+}
+
+/// Whether tile `name` is molten (its material's `molten`, WATER_RENDERING.md §17): lava, whose
+/// glow the terrain shader moves a slow heat pattern over (off on the CPU tier).
+pub fn tile_molten(name: &str) -> bool {
+    PAINTERLY_TILES
+        .iter()
+        .position(|t| *t == name)
+        .is_some_and(|i| painterly::PAINTERLY_MOLTEN[i])
+}
+
+/// The tile table's glow slot for `name`: its emissive, negative when molten.
+pub fn tile_glow_entry(name: &str) -> f32 {
+    let g = tile_emissive(name);
+    if tile_molten(name) { -g } else { g }
 }
 
 /// Whether tile `name` hangs from its block's top edge (its material's `hang`, a turf skirt): a side
@@ -335,7 +322,8 @@ mod tests {
 
     #[test]
     fn tiles_sit_in_the_atlas_with_wrapped_gutters() {
-        let r = tile_rect("grass");
+        // The second tile: the atlas's second cell of the bottom row.
+        let r = tile_rect(TILE_ORDER[1]);
         assert_eq!(r.u0, (CELL + GUTTER) as f64 / ATLAS_SIZE as f64);
         assert_eq!(r.v0, GUTTER as f64 / ATLAS_SIZE as f64);
         let atlas = build_atlas();
@@ -479,7 +467,7 @@ mod tests {
                 .textures
                 .map_or(["plain"; 3], |t| [t.top, t.side, t.bottom]);
             for name in names {
-                let glow = tile_emissive(name);
+                let glow = tile_glow_entry(name);
                 let near = table[TILE_ORDER.iter().position(|t| *t == name).expect("tile")][3];
                 assert!(
                     near >= s.near_fade,
@@ -517,6 +505,11 @@ mod tests {
             0.0
         );
         assert_eq!(table[0], [0.0; 4], "plain: no grid");
+        // Lava's tile glows and is molten: its slot is negative (the shader's heat drift).
+        let lava = dwell_blocks::info(dwell_blocks::require("dwell:lava"));
+        let t = lava.textures.expect("lava is textured").top;
+        assert!(tile_molten(t) && tile_emissive(t) > 0.0);
+        assert!(table[TILE_ORDER.iter().position(|n| *n == t).unwrap()][2] < 0.0);
     }
 }
 

@@ -73,7 +73,7 @@ export function choose(manifest: Manifest, req: Request): Choice {
       ? open(e, 'world')
       : {
           kind: 'error',
-          message: `No published build can open this world: it was last saved by Dwell ${worldVersion}, and a build on the ${compatibilityLine(worldVersion) ?? '?'} line, ${worldVersion} or newer, is needed.`,
+          message: `No published build can open this world: it was last saved by Dwell ${worldVersion}, and a build on the ${compatibilityLine(worldVersion) ?? '?'} line, ${worldVersion} or newer, is needed. Only the newest lines stay on the site; every build is kept at ${RELEASES_URL}.`,
         };
   }
 
@@ -101,14 +101,15 @@ export function choose(manifest: Manifest, req: Request): Choice {
 export const RELEASES_URL = 'https://github.com/zacharysnewman/dwell/releases';
 
 /**
- * Why a pinned version is not here. The site keeps the newest build of each compatibility line and
- * retires older patches (RELEASES.md §4): for one of those, name the build that opens its worlds.
+ * Why a pinned version is not here. The site keeps the newest build of the newest compatibility lines
+ * and retires older patches and lines (RELEASES.md §4): for a retired patch, name the build of its
+ * line that opens its worlds; for a retired line, point to GitHub Releases.
  */
 export function notOnSite(manifest: Manifest, version: string): string {
   const instead = isVersion(version) ? newest(manifest, (v) => canOpenWorld(v, version)) : null;
   return instead
     ? `Dwell ${version} is not on the site any more: older patches are retired. Dwell ${instead.version}, on the same line, opens its worlds.`
-    : `Version ${version} is not published.`;
+    : `Version ${version} is not on the site: only the newest lines stay here, and every build is kept at ${RELEASES_URL}.`;
 }
 
 /** The query to forward to the build: everything but the launcher's own parameters. */

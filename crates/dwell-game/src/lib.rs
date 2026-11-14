@@ -5,11 +5,13 @@
 //! client's chunk streaming. Platform-free: time is passed in, collaborators (renderer, mesher,
 //! worldgen, network) are traits or callbacks, so it all runs natively under test and in the browser.
 
+pub mod ambience;
 pub mod block_interaction;
 pub mod brush_tool;
 pub mod build_drag;
 pub mod chunk_diff;
 pub mod chunk_stream;
+pub mod creative_hotbar;
 pub mod edit_prediction;
 pub mod eye;
 pub mod face_flip;
@@ -21,10 +23,13 @@ pub mod hud_text;
 pub mod input;
 pub mod items;
 pub mod loading;
+pub mod minimap;
 pub mod region_tools;
 pub mod remotes;
 pub mod sound;
+pub mod stream_budget;
 pub mod touch;
+pub mod upload_budget;
 
 /// Rounds half up, like JavaScript's `Math.round`.
 pub(crate) fn js_round(v: f64) -> f64 {

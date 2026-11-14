@@ -1,27 +1,101 @@
 // The game menu: a button in the top-left corner (or Esc) opens a full-screen menu over the game
-// with pages — Settings (the detail settings, lod/detail.ts; the
-// tone-mapping exposure and the sky, render/look.ts; the water quality, ui/waterSettings.ts; the
-// sun and moon shadows, ui/shadowSettings.ts; the
-// volumes, audio/settings.ts; ARCHITECTURE.md §5, §6.6), Controls (every key
+// with pages, listed down the side (a row of tabs on phones) — the settings in four panes (owner,
+// 2026-11-07: "arranged concisely and mostly vertically", sound, graphics, etc. in their own panes):
+// Graphics (the Preset slider, ui/graphicsPresets.ts and shared/settings/graphics-presets.json; the
+// render scale, water, shadows, shafts, clouds and detail it sets; the exposure and the water's
+// flow), Sound (the volumes, audio/settings.ts), Gameplay (the view, motion and explosions) and On
+// screen (shared/ui/hud.json), one compact row a setting with Reset and Copy JSON under them
+// (ARCHITECTURE.md §5, §6.6); Controller (ui/controllerPanel.ts), Controls (every key
 // and touch control, ui/controls.ts), Debug (the debug tools as buttons, with their keys) and Host
 // (a local world's hosting, ui/hostPanel.ts) — and Resume and Quit to main menu (Phase 5a). The
 // settings are kept in this browser.
 import { defaultHud, hideableParts, hudRecord, sanitizeHud, type HudSettings } from './hudSettings';
 import { defaultDetail, detailLimits, sanitizeDetail, type DetailSettings } from './detailSettings';
+import {
+  RENDER_SCALE_KEY,
+  UPSCALE,
+  defaultRenderScale,
+  renderScaleRecord,
+  sanitizeRenderScale,
+  type RenderScaleSettings,
+} from './renderScaleSettings';
 import { DEFAULT_EXPOSURE, EXPOSURE_LIMITS, sanitizeExposure } from './viewSettings';
-import { CLOUD_QUALITIES, defaultClouds, sanitizeClouds, type CloudQuality } from './viewSettings';
+import { MODEL_DETAIL, MODEL_DETAIL_KEY, sanitizeModelDetail } from './modelDetailSettings';
+import {
+  ANTIALIAS,
+  ANTIALIAS_KEY,
+  type AntialiasSettings,
+  antialiasRecord,
+  defaultAntialias,
+  sanitizeAntialias,
+} from './antialiasSettings';
+import {
+  BLOOM_QUALITIES,
+  CLOUD_QUALITIES,
+  DEFAULT_BLOOM,
+  DEFAULT_SHAFTS,
+  SHAFT_QUALITIES,
+  defaultClouds,
+  sanitizeBloom,
+  sanitizeShafts,
+  type BloomQuality,
+  type CloudQuality,
+  type ShaftQuality,
+} from './viewSettings';
 import {
   DEFAULT_FOV,
   FOV_LIMITS,
   VIEW_KEY,
   sanitizeFovSetting,
+  sanitizeLeafCards,
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
+import {
+  GRAPHICS_PRESETS,
+  applyPreset,
+  defaultPreset,
+  findPreset,
+  type GraphicsPreset,
+  type PresetData,
+} from './graphicsPresets';
+import {
+  CLOUDS_KEY,
+  DETAIL_KEY,
+  EXPOSURE_KEY,
+  HUD_KEY,
+  MENU_KEY,
+  PRESET_KEY,
+  SHADOWS_KEY,
+  SHAFTS_KEY,
+  BLOOM_KEY,
+  WATER_KEY,
+  pinnedRecord,
+  pinsIn,
+  presetRecord,
+  resolveSettings,
+  settingFields,
+  storedPresetId,
+  type SettingField,
+} from './settingsPins';
 import { DEBUG_KEYS, KEYBOARD, TOUCH, keysLabel, type Control } from './controls';
+import {
+  BACKGROUNDS,
+  DEFAULT_MENU_BACKGROUND,
+  menuRecord,
+  RANDOM_BACKGROUND,
+  sanitizeMenuBackground,
+} from './menuBackground';
+import {
+  FEATURES_KEY,
+  defaultFeatures,
+  featureRecord,
+  sanitizeFeatures,
+  type FeatureSettings,
+} from './featureSettings';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
-import { loadVolumes, saveVolumes } from '../audio/settings';
+import { AUDIO_KEY, loadVolumes } from '../audio/settings';
 import {
   defaultWater,
   sanitizeWater,
@@ -89,6 +163,10 @@ export interface Settings {
   audio: Volumes;
   /** The sky's clouds: off, low or high (dwell-look's clouds.rs). */
   clouds: CloudQuality;
+  /** The light shafts: off, low or high (dwell-look's shafts.rs, ADR 0064). */
+  shafts: ShaftQuality;
+  /** Bloom, the glow round self-lit surfaces: off, low or high (dwell-look's bloom.rs). */
+  bloom: BloomQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** The sun's and moon's shadows (ui/shadowSettings.ts). */
@@ -101,23 +179,58 @@ export interface Settings {
   fovDeg: number;
   /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
   showArms: boolean;
+  /**
+   * The leaf cards on trees (shared/look/leaves.json `cards`): off draws none; on, the renderer's
+   * tier decides (none on a phone or a CPU adapter). Chunks meshed from then on follow it.
+   */
+  leafCards: boolean;
+  /**
+   * The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts): tall
+   * grass, far trees, distant shadows, hit shards, particles, far herds.
+   */
+  features: FeatureSettings;
   /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
   hud: HudSettings;
+  /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
+  renderScale: RenderScaleSettings;
+  /** The main menu's background (ui/menuBackground.ts, shared/ui/menu-backgrounds.json). */
+  menuBackground: string;
+  /** The skinned models' detail level, by id (ui/modelDetailSettings.ts, shared/models/models.json). */
+  modelDetail: string;
+  /** Anti-aliasing and anisotropic filtering (ui/antialiasSettings.ts, shared/render/antialias.json). */
+  antialias: AntialiasSettings;
 }
 
+/**
+ * The defaults: the graphics are the device's default preset's (ui/graphicsPresets.ts: Mobile on
+ * phones, High on desktops), over each setting's own default.
+ */
 export function defaultSettings(mobile: boolean, reducedMotion = false): Settings {
+  return applyPreset(baseSettings(mobile, reducedMotion), defaultPreset(mobile), mobile);
+}
+
+/** Each setting's own default, before the device's preset is written over the graphics. */
+export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
   return {
     detail: defaultDetail(mobile),
     exposure: DEFAULT_EXPOSURE,
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
+    shafts: DEFAULT_SHAFTS,
+    bloom: DEFAULT_BLOOM,
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
     explosions: defaultExplosions(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
+    leafCards: true,
+    features: defaultFeatures(),
     hud: defaultHud(),
+    renderScale: defaultRenderScale(),
+    menuBackground: DEFAULT_MENU_BACKGROUND,
+    modelDetail: MODEL_DETAIL.default,
+    antialias: defaultAntialias(),
   };
 }
 
@@ -135,8 +248,11 @@ export function settingsJson(s: Settings): string {
       effects: Math.round(s.audio.effects * 100) / 100,
       ui: Math.round(s.audio.ui * 100) / 100,
       music: Math.round(s.audio.music * 100) / 100,
+      ambience: Math.round(s.audio.ambience * 100) / 100,
     },
     clouds: s.clouds,
+    shafts: s.shafts,
+    bloom: s.bloom,
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -149,29 +265,84 @@ export function settingsJson(s: Settings): string {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
       plantSway: s.motion.plantSway,
+      cameraSway: s.motion.cameraSway,
     },
     explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
-    hud: { shown: { ...s.hud.shown } },
+    leafCards: s.leafCards,
+    features: {
+      ...s.features,
+      tallGrass: Math.round(s.features.tallGrass * 100) / 100,
+      hitShards: Math.round(s.features.hitShards * 100) / 100,
+      particles: Math.round(s.features.particles * 100) / 100,
+    },
+    hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
+    renderScale: { ...s.renderScale },
+    menuBackground: s.menuBackground,
+    modelDetail: s.modelDetail,
+    antialias: { ...s.antialias },
   };
   return JSON.stringify(rounded, null, 2);
 }
 
 // `dwell.fog` (the fog sliders, before the fog was fixed look data: shared/look/fog.json) is no
 // longer read or written. Builds before it still read it; it is left as it is.
-const DETAIL_KEY = 'dwell.detail';
-const EXPOSURE_KEY = 'dwell.exposure';
 // `dwell.skyRotation` (the sky rotation slider before the day/night cycle) is no longer read or
 // written: the time of day is the world's. Builds before it still read it; it is left as it is.
-/** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
-const CLOUDS_KEY = 'dwell.clouds';
-/** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
-const WATER_KEY = 'dwell.water';
-/** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
-const SHADOWS_KEY = 'dwell.shadows';
-/** A record, append-only: parts and fields a newer build stored are kept (ui/hudSettings.ts). */
-const HUD_KEY = 'dwell.hud';
+// The keys themselves: ui/settingsPins.ts, with the settings each holds.
+
+/** Every stored setting (ui/settingsPins.ts): the pins' vocabulary. */
+export const SETTING_FIELDS: readonly SettingField[] = settingFields({
+  motion: MOTION_KEY,
+  explosions: EXPLOSIONS_KEY,
+  view: VIEW_KEY,
+  renderScale: RENDER_SCALE_KEY,
+  audio: AUDIO_KEY,
+  modelDetail: MODEL_DETAIL_KEY,
+  antialias: ANTIALIAS_KEY,
+});
+
+/** The graphics settings a preset sets: changing one by hand pins it and reads Custom. */
+export const PRESET_PINS: ReadonlySet<string> = new Set(
+  SETTING_FIELDS.filter((f) => f.preset).map((f) => f.id),
+);
+
+/** Every setting pinned: what builds before 0.50.31 stored (`saveSettings`'s default). */
+export const ALL_PINS: ReadonlySet<string> = new Set(SETTING_FIELDS.map((f) => f.id));
+
+/**
+ * The settings with which of them the player pinned (ui/settingsPins.ts): a pinned one is stored
+ * and kept; any other follows this build's default for the device, the graphics ones the preset
+ * chosen (`preset`, its id) or, with none, the device's default preset.
+ */
+export interface SettingsState {
+  settings: Settings;
+  pins: ReadonlySet<string>;
+  preset: string | null;
+}
+
+/** Where the defaults come from: the presets data and each setting's own default (tests swap them). */
+export interface DefaultsSource {
+  presets?: PresetData;
+  /** Each setting's own default, before a preset is applied (`baseSettings`). */
+  base?: (mobile: boolean, reducedMotion: boolean) => Settings;
+}
+
+/**
+ * The defaults the unpinned settings follow: the preset chosen (if the data still lists it) or the
+ * device's default preset, over each setting's own default.
+ */
+export function settingsDefaults(
+  mobile: boolean,
+  preset: string | null,
+  reducedMotion = false,
+  src: DefaultsSource = {},
+): Settings {
+  const d = src.presets ?? GRAPHICS_PRESETS;
+  const p = (preset === null ? undefined : findPreset(preset, d)) ?? defaultPreset(mobile, d);
+  return applyPreset((src.base ?? baseSettings)(mobile, reducedMotion), p, mobile);
+}
 
 function load(key: string): unknown {
   try {
@@ -182,50 +353,195 @@ function load(key: string): unknown {
   }
 }
 
-/** The settings kept in this browser, or the defaults. */
-export function loadSettings(mobile: boolean): Settings {
-  const defaults = defaultSettings(mobile);
+/**
+ * The stored settings over `defaults`, each record read by its setting's own sanitizer: anything
+ * missing or unknown takes the default. The read path builds before 0.50.31 used as their whole
+ * `loadSettings`, so it is also how an older build reads this one's pinned-only records.
+ */
+export function storedSettings(mobile: boolean, defaults: Settings): Settings {
   return {
     detail: sanitizeDetail(load(DETAIL_KEY), defaults.detail, detailLimits(mobile)),
     exposure: sanitizeExposure(load(EXPOSURE_KEY)),
     audio: loadVolumes(),
-    clouds: sanitizeClouds(load(CLOUDS_KEY), mobile),
+    clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
+    shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
+    bloom: sanitizeBloom(load(BLOOM_KEY), defaults.bloom),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     explosions: sanitizeExplosions(load(EXPLOSIONS_KEY), defaultExplosions(prefersReducedMotion())),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
+    leafCards: sanitizeLeafCards(load(VIEW_KEY)),
+    features: sanitizeFeatures(load(FEATURES_KEY), defaults.features),
     hud: sanitizeHud(load(HUD_KEY)),
+    renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
+    menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
+    modelDetail: sanitizeModelDetail(load(MODEL_DETAIL_KEY) ?? defaults.modelDetail),
+    antialias: sanitizeAntialias(load(ANTIALIAS_KEY), ANTIALIAS, defaults.antialias),
   };
 }
 
-export function saveSettings(s: Settings): void {
+/** The settings kept in this browser, which of them are pinned, and the preset chosen. */
+export function loadSettingsState(mobile: boolean, src: DefaultsSource = {}): SettingsState {
+  const id = storedPresetId(load(PRESET_KEY));
+  // A preset the data no longer lists reads as none: the device's default.
+  const preset = id !== null && findPreset(id, src.presets ?? GRAPHICS_PRESETS) ? id : null;
+  const defaults = settingsDefaults(mobile, preset, prefersReducedMotion(), src);
+  const pins = pinsIn(SETTING_FIELDS, load);
+  const settings = resolveSettings(
+    SETTING_FIELDS,
+    defaults,
+    storedSettings(mobile, defaults),
+    pins,
+  );
+  return { settings, pins, preset };
+}
+
+/** The settings kept in this browser, or the defaults. */
+export function loadSettings(mobile: boolean): Settings {
+  return loadSettingsState(mobile).settings;
+}
+
+/**
+ * Stores the pinned settings and the preset chosen: each key's record keeps the fields it doesn't
+ * know (append-only) and holds the pinned fields; known fields that follow a default are taken
+ * out, and a key left with nothing is removed.
+ */
+export function saveSettingsState(state: SettingsState): void {
+  writeSettings(state.settings, state.pins);
   try {
-    localStorage.setItem(DETAIL_KEY, JSON.stringify(s.detail));
-    localStorage.setItem(EXPOSURE_KEY, JSON.stringify(s.exposure));
-    localStorage.setItem(CLOUDS_KEY, JSON.stringify(s.clouds));
-    localStorage.setItem(WATER_KEY, JSON.stringify(waterRecord(load(WATER_KEY), s.water)));
-    localStorage.setItem(SHADOWS_KEY, JSON.stringify(shadowRecord(load(SHADOWS_KEY), s.shadows)));
-    // Append-only: fields a newer build stored are kept.
-    localStorage.setItem(MOTION_KEY, JSON.stringify(motionRecord(load(MOTION_KEY), s.motion)));
-    localStorage.setItem(
-      VIEW_KEY,
-      JSON.stringify(viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)),
-    );
-    localStorage.setItem(HUD_KEY, JSON.stringify(hudRecord(load(HUD_KEY), s.hud)));
-    localStorage.setItem(
-      EXPLOSIONS_KEY,
-      JSON.stringify(explosionRecord(load(EXPLOSIONS_KEY), s.explosions)),
-    );
+    const rec = presetRecord(load(PRESET_KEY), state.preset);
+    if (rec) localStorage.setItem(PRESET_KEY, JSON.stringify(rec));
+    else localStorage.removeItem(PRESET_KEY);
   } catch {
     // Not kept: the settings still apply for this visit.
   }
-  saveVolumes(s.audio);
+}
+
+/** Stores the settings, by default every one pinned (as builds before 0.50.31 did); no preset. */
+export function saveSettings(s: Settings, pins: ReadonlySet<string> = ALL_PINS): void {
+  writeSettings(s, pins);
+}
+
+function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
+  // The whole record each key would hold, the stored one's unknown fields kept (append-only).
+  const full: [string, unknown][] = [
+    [DETAIL_KEY, { ...asRecord(load(DETAIL_KEY)), ...s.detail }],
+    [EXPOSURE_KEY, s.exposure],
+    [AUDIO_KEY, { ...asRecord(load(AUDIO_KEY)), ...s.audio }],
+    [CLOUDS_KEY, s.clouds],
+    [SHAFTS_KEY, s.shafts],
+    [BLOOM_KEY, s.bloom],
+    [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
+    [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
+    [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
+    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms, s.leafCards)],
+    [FEATURES_KEY, featureRecord(load(FEATURES_KEY), s.features)],
+    [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
+    [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
+    [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
+    [MENU_KEY, menuRecord(load(MENU_KEY), s.menuBackground)],
+    [MODEL_DETAIL_KEY, s.modelDetail],
+    [ANTIALIAS_KEY, antialiasRecord(load(ANTIALIAS_KEY), s.antialias)],
+  ];
+  for (const [key, value] of full) {
+    try {
+      const kept = pinnedRecord(SETTING_FIELDS, key, value, pins);
+      if (kept === undefined) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(kept));
+    } catch {
+      // Not kept: the settings still apply for this visit.
+    }
+  }
+}
+
+// What the menu does with the state, as plain functions (tested; the DOM part is thin).
+
+/** A control changed: its setting takes the new value and is pinned (even if that is the default). */
+export function changeSetting(state: SettingsState, pin: string, next: Settings): SettingsState {
+  return { ...state, settings: next, pins: new Set([...state.pins, pin]) };
+}
+
+/** A pin's marker pressed: the setting follows its default again (the preset's, if it sets it). */
+export function clearPin(
+  state: SettingsState,
+  pin: string,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set(state.pins);
+  pins.delete(pin);
+  return withDefaults({ ...state, pins }, mobile, src);
+}
+
+/**
+ * A preset chosen: its id is stored, and every setting it sets follows it (their pins cleared, so a
+ * later retune of the preset reaches them). Settings outside the presets keep their pins.
+ */
+export function choosePreset(
+  state: SettingsState,
+  id: string,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set([...state.pins].filter((p) => !PRESET_PINS.has(p)));
+  return withDefaults({ ...state, pins, preset: id }, mobile, src);
+}
+
+/** The Preset row's marker: back to the device's default preset, no graphics setting pinned. */
+export function clearPreset(
+  state: SettingsState,
+  mobile: boolean,
+  src: DefaultsSource = {},
+): SettingsState {
+  const pins = new Set([...state.pins].filter((p) => !PRESET_PINS.has(p)));
+  return withDefaults({ ...state, pins, preset: null }, mobile, src);
+}
+
+/** Reset: nothing pinned and no preset chosen, so everything follows this build's defaults. */
+export function resetSettings(mobile: boolean, src: DefaultsSource = {}): SettingsState {
+  return withDefaults(
+    { settings: baseSettings(mobile), pins: new Set(), preset: null },
+    mobile,
+    src,
+  );
+}
+
+/**
+ * The preset the Preset row shows: the one chosen (or the device's default) while no setting it
+ * sets is pinned; null (Custom) once one is. With one pinned the preset stays the base the other
+ * graphics settings follow, so the slider stays on it.
+ */
+export function shownPreset(
+  state: SettingsState,
+  mobile: boolean,
+  d: PresetData = GRAPHICS_PRESETS,
+): { base: GraphicsPreset; custom: boolean } {
+  const base =
+    (state.preset === null ? undefined : findPreset(state.preset, d)) ?? defaultPreset(mobile, d);
+  return { base, custom: [...state.pins].some((p) => PRESET_PINS.has(p)) };
+}
+
+/** The unpinned settings set again from the defaults (the preset's, then each setting's own). */
+function withDefaults(state: SettingsState, mobile: boolean, src: DefaultsSource): SettingsState {
+  const defaults = settingsDefaults(mobile, state.preset, prefersReducedMotion(), src);
+  return {
+    ...state,
+    settings: resolveSettings(SETTING_FIELDS, defaults, state.settings, state.pins),
+  };
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
 }
 
 interface SliderSpec {
   label: string;
+  /** The setting it changes (a SETTING_FIELDS id): changing it pins it. */
+  pin: string;
   hint: string;
   min: number;
   max: number;
@@ -236,147 +552,399 @@ interface SliderSpec {
 }
 
 /** The Look section's choices (a row of buttons each, as the water quality's). */
-const CHOICES: ChoiceSpec<CloudQuality>[] = [
+const CLOUD_CHOICE: ChoiceSpec<CloudQuality> = {
+  label: 'Clouds',
+  pin: 'clouds',
+  hint: 'Clouds in the sky: Low is flat and lightest, Medium and High are volumetric (High sharper and dearer)',
+  choices: CLOUD_QUALITIES,
+  labels: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' },
+  get: (s) => s.clouds,
+  with: (s, v) => ({ ...s, clouds: v }),
+};
+const CHOICES: ChoiceSpec<ShaftQuality>[] = [
   {
-    label: 'Clouds',
-    hint: 'Clouds in the sky; Low is lighter on the GPU',
-    choices: CLOUD_QUALITIES,
+    label: 'Light shafts',
+    pin: 'shafts',
+    hint: 'Sun rays through trees, clouds and water; Low is lighter on the GPU',
+    choices: SHAFT_QUALITIES,
     labels: { off: 'Off', low: 'Low', high: 'High' },
-    get: (s) => s.clouds,
-    with: (s, v) => ({ ...s, clouds: v }),
+    get: (s) => s.shafts,
+    with: (s, v) => ({ ...s, shafts: v }),
+  },
+  {
+    label: 'Bloom',
+    pin: 'bloom',
+    hint: 'The glow round lava, torches and flames; Low is lighter on the GPU (never on phones)',
+    choices: BLOOM_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.bloom,
+    with: (s, v) => ({ ...s, bloom: v }),
+  },
+];
+
+/** The Graphics section's choices, from the data (shared/render/upscale.json). */
+const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
+  {
+    label: 'Render scale',
+    pin: 'renderScale.scale',
+    hint: 'The share of the screen drawn, then upscaled; lower is lighter on the GPU',
+    choices: UPSCALE.scales.map((c) => String(c.value)),
+    labels: Object.fromEntries(UPSCALE.scales.map((c) => [String(c.value), c.label])),
+    get: (s) => String(s.renderScale.scale),
+    with: (s, v) => ({ ...s, renderScale: { ...s.renderScale, scale: Number(v) } }),
+  },
+  {
+    label: 'Upscaler',
+    pin: 'renderScale.upscaler',
+    hint: UPSCALE.upscalers.map((u) => `${u.label}: ${u.hint}`).join('. '),
+    choices: UPSCALE.upscalers.map((u) => u.id),
+    labels: Object.fromEntries(UPSCALE.upscalers.map((u) => [u.id, u.label])),
+    get: (s) => s.renderScale.upscaler,
+    with: (s, v) => ({ ...s, renderScale: { ...s.renderScale, upscaler: v } }),
+  },
+];
+
+/** The Graphics section's anti-aliasing choices, from the data (shared/render/antialias.json). */
+const ANTIALIAS_CHOICES: ChoiceSpec<string>[] = [
+  {
+    label: 'Anti-aliasing',
+    pin: 'antialias.mode',
+    hint: ANTIALIAS.hint,
+    choices: ANTIALIAS.modes.map((m) => m.id),
+    labels: Object.fromEntries(ANTIALIAS.modes.map((m) => [m.id, m.label])),
+    get: (s) => s.antialias.mode,
+    with: (s, v) => ({ ...s, antialias: { ...s.antialias, mode: v } }),
+  },
+  {
+    label: 'Anisotropic filtering',
+    pin: 'antialias.anisotropy',
+    hint: ANTIALIAS.anisotropyHint,
+    choices: ANTIALIAS.anisotropy.map((a) => String(a.value)),
+    labels: Object.fromEntries(ANTIALIAS.anisotropy.map((a) => [String(a.value), a.label])),
+    get: (s) => String(s.antialias.anisotropy),
+    with: (s, v) => ({ ...s, antialias: { ...s.antialias, anisotropy: Number(v) } }),
   },
 ];
 
 interface ToggleSpec {
   label: string;
+  pin: string;
   hint: string;
   get: (s: Settings) => boolean;
   with: (s: Settings, v: boolean) => Settings;
 }
 
-/** The menu's sliders; the detail ranges depend on the device (lod/detail.ts). */
-function sections(
-  mobile: boolean,
-): { title: string; sliders: SliderSpec[]; toggles?: ToggleSpec[] }[] {
+/** One row of a pane: a slider, a row of choices, or a checkbox. */
+type Row = { slider: SliderSpec } | { choice: ChoiceSpec<string> } | { toggle: ToggleSpec };
+
+/** A titled group of rows in a pane (no title: the pane's own rows). */
+interface Group {
+  title?: string;
+  rows: Row[];
+}
+
+/** The settings panes, each a page of the menu. */
+export type SettingsPane = 'graphics' | 'sound' | 'gameplay' | 'screen';
+export const SETTINGS_PANES: readonly SettingsPane[] = ['graphics', 'sound', 'gameplay', 'screen'];
+
+/** Each pane's rows, in groups; the detail ranges depend on the device (lod/detail.ts). */
+function panes(mobile: boolean): Record<SettingsPane, Group[]> {
   const DETAIL_LIMITS = detailLimits(mobile);
-  const volume = (label: string, hint: string, key: keyof Volumes): SliderSpec => ({
-    label,
-    hint,
-    min: 0,
-    max: 1,
-    log: false,
-    format: (v) => `${String(Math.round(v * 100))}%`,
-    get: (s) => s.audio[key],
-    with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+  const volume = (label: string, hint: string, key: keyof Volumes): Row => ({
+    slider: {
+      label,
+      pin: `audio.${key}`,
+      hint,
+      min: 0,
+      max: 1,
+      log: false,
+      format: (v) => `${String(Math.round(v * 100))}%`,
+      get: (s) => s.audio[key],
+      with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
+    },
   });
-  return [
-    {
-      title: 'Sound',
-      sliders: [
-        volume('Master', 'Everything Dwell plays', 'master'),
-        volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
-        volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
-        volume('Music', 'The music; 0% turns it off', 'music'),
-      ],
+  // A 0–1 share of a feature (ui/featureSettings.ts), as a percent slider.
+  const share = (
+    label: string,
+    key: 'tallGrass' | 'hitShards' | 'particles',
+    hint: string,
+  ): Row => ({
+    slider: {
+      label,
+      pin: `features.${key}`,
+      hint,
+      min: 0,
+      max: 1,
+      log: false,
+      format: (v) => `${String(Math.round(v * 100))}%`,
+      get: (s) => s.features[key],
+      with: (s, v) => ({ ...s, features: { ...s.features, [key]: v } }),
     },
-    {
-      title: 'Detail',
-      sliders: [
-        {
-          label: 'Full detail',
-          hint: 'How far every block is drawn; farther uses more memory',
-          ...DETAIL_LIMITS.distanceM,
-          log: false,
-          format: formatMetres,
-          get: (s) => s.detail.distanceM,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
-        },
-        {
-          label: 'Distant detail',
-          hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
-          ...DETAIL_LIMITS.pixelError,
-          log: true,
-          format: (v) => `${v.toFixed(1)} px`,
-          get: (s) => s.detail.pixelError,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
-        },
-        {
-          label: 'Distant memory',
-          hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
-          ...DETAIL_LIMITS.memoryMb,
-          log: true,
-          format: (v) => `${String(Math.round(v))} MB`,
-          get: (s) => s.detail.memoryMb,
-          with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
-        },
-      ],
-    },
-    {
-      title: 'Look',
-      sliders: [
-        {
-          label: 'Field of view',
-          hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
-          ...FOV_LIMITS,
-          log: false,
-          format: (v) => `${String(Math.round(v))}°`,
-          get: (s) => s.fovDeg,
-          with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
-        },
-        {
-          label: 'Exposure',
-          hint: 'How bright the picture is after tone mapping',
-          ...EXPOSURE_LIMITS,
-          log: true,
-          format: (v) => `${v.toFixed(2)}×`,
-          get: (s) => s.exposure,
-          with: (s, v) => ({ ...s, exposure: v }),
-        },
-      ],
-      toggles: [
-        {
-          label: 'Show your arms',
-          hint: 'Your hand and what it holds, in first person',
-          get: (s) => s.showArms,
-          with: (s, v) => ({ ...s, showArms: v }),
-        },
-      ],
-    },
-    {
-      title: 'Motion',
-      toggles: [
-        {
-          label: 'Speed effects',
-          hint: 'The view widens and wind streaks past when moving fast',
-          get: (s) => s.motion.speedEffects,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
-        },
-        {
-          label: 'Plant sway',
-          hint: 'Tall grass sways in the wind',
-          get: (s) => s.motion.plantSway,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
-        },
-      ],
-      sliders: [
-        {
-          label: 'FOV boost',
-          hint: 'How much the view widens at speed (0: not at all)',
-          min: 0,
-          max: 1,
-          log: false,
-          format: (v) => `${String(Math.round(v * 100))}%`,
-          get: (s) => s.motion.fovBoost,
-          with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
-        },
-      ],
-    },
-  ];
+  });
+  const choice = <T extends string>(spec: ChoiceSpec<T>): Row => ({
+    choice: spec as unknown as ChoiceSpec<string>,
+  });
+  return {
+    // WORK_QUEUE item 30 (owner, 2026-11-12: "Ensure all of our graphics have settings in our
+    // graphics menu"): every visual feature's setting, grouped; graphicsAudit.test.ts fails on a
+    // feature with none.
+    graphics: [
+      {
+        title: 'Display',
+        rows: [
+          ...RENDER_SCALE_CHOICES.map(choice),
+          ...ANTIALIAS_CHOICES.map(choice),
+          {
+            slider: {
+              label: 'Exposure',
+              pin: 'exposure',
+              hint: 'How bright the picture is after tone mapping',
+              ...EXPOSURE_LIMITS,
+              log: true,
+              format: (v) => `${v.toFixed(2)}×`,
+              get: (s) => s.exposure,
+              with: (s, v) => ({ ...s, exposure: v }),
+            },
+          },
+          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
+          // we can remove the slider and make 60% the default"): the level is models.json's
+          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
+        ],
+      },
+      {
+        title: 'Lighting',
+        rows: [
+          choice(SHADOW_CHOICE),
+          {
+            toggle: {
+              label: 'Distant shadows',
+              pin: 'features.distantShadows',
+              hint: 'Sun shadows on the distant terrain, at the Shadows quality; off is lighter on the GPU',
+              get: (s) => s.features.distantShadows,
+              with: (s, v) => ({ ...s, features: { ...s.features, distantShadows: v } }),
+            },
+          },
+          choice(TORCH_SHADOW_CHOICE),
+          ...CHOICES.map(choice),
+        ],
+      },
+      { title: 'Sky & weather', rows: [choice(CLOUD_CHOICE)] },
+      {
+        title: 'Water',
+        rows: [choice(WATER_CHOICE), ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle }))],
+      },
+      {
+        // BUGS.md #78 (owner: "I don't see 'tree' options in our settings for graphics").
+        title: 'Terrain & trees',
+        rows: [
+          {
+            toggle: {
+              label: 'Leaf cards',
+              pin: 'leafCards',
+              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
+              get: (s) => s.leafCards,
+              with: (s, v) => ({ ...s, leafCards: v }),
+            },
+          },
+          share(
+            'Tall grass',
+            'tallGrass',
+            'How much of the tall grass and small plants is drawn; less is lighter on the GPU',
+          ),
+          {
+            toggle: {
+              label: 'Far trees',
+              pin: 'features.farTrees',
+              hint: 'Trees on the distant terrain; off draws its ground alone',
+              get: (s) => s.features.farTrees,
+              with: (s, v) => ({ ...s, features: { ...s.features, farTrees: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Effects',
+        rows: [
+          share('Hit shards', 'hitShards', 'How many stone fragments fly from a pickaxe hit'),
+          share('Particles', 'particles', 'How many chips, sparks, falling leaves and steam puffs'),
+          {
+            toggle: {
+              label: 'Far herds',
+              pin: 'features.farHerds',
+              hint: 'Herds of animals far off, past the ones near you',
+              get: (s) => s.features.farHerds,
+              with: (s, v) => ({ ...s, features: { ...s.features, farHerds: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Distance',
+        rows: [
+          {
+            slider: {
+              label: 'Full detail',
+              pin: 'detail.distanceM',
+              hint: 'How far every block is drawn; farther uses more memory',
+              ...DETAIL_LIMITS.distanceM,
+              log: false,
+              format: formatMetres,
+              get: (s) => s.detail.distanceM,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, distanceM: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'Distant detail',
+              pin: 'detail.pixelError',
+              hint: 'Largest step in the distant terrain, in pixels; smaller is sharper and slower',
+              ...DETAIL_LIMITS.pixelError,
+              log: true,
+              format: (v) => `${v.toFixed(1)} px`,
+              get: (s) => s.detail.pixelError,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, pixelError: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'Distant memory',
+              pin: 'detail.memoryMb',
+              hint: 'Memory for the distant terrain; past it, distant detail coarsens to fit',
+              ...DETAIL_LIMITS.memoryMb,
+              log: true,
+              format: (v) => `${String(Math.round(v))} MB`,
+              get: (s) => s.detail.memoryMb,
+              with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
+            },
+          },
+        ],
+      },
+    ],
+    sound: [
+      {
+        rows: [
+          volume('Master', 'Everything Dwell plays', 'master'),
+          volume('Effects', 'Footsteps, blocks, water, other players', 'effects'),
+          volume('Interface', 'Menus, buttons and the hotbar', 'ui'),
+          volume('Music', 'The music; 0% turns it off', 'music'),
+          volume('Ambience', 'Wind, water, birds and leaves around you', 'ambience'),
+        ],
+      },
+    ],
+    gameplay: [
+      {
+        title: 'View',
+        rows: [
+          {
+            slider: {
+              label: 'Field of view',
+              pin: 'fovDeg',
+              hint: 'How much the view takes in, top to bottom (narrower on wide screens)',
+              ...FOV_LIMITS,
+              log: false,
+              format: (v) => `${String(Math.round(v))}°`,
+              get: (s) => s.fovDeg,
+              with: (s, v) => ({ ...s, fovDeg: Math.round(v) }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Show your arms',
+              pin: 'showArms',
+              hint: 'Your hand and what it holds, in first person',
+              get: (s) => s.showArms,
+              with: (s, v) => ({ ...s, showArms: v }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Motion',
+        rows: [
+          {
+            toggle: {
+              label: 'Speed effects',
+              pin: 'motion.speedEffects',
+              hint: 'The view widens and wind streaks past when moving fast',
+              get: (s) => s.motion.speedEffects,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, speedEffects: v } }),
+            },
+          },
+          {
+            slider: {
+              label: 'FOV boost',
+              pin: 'motion.fovBoost',
+              hint: 'How much the view widens at speed (0: not at all)',
+              min: 0,
+              max: 1,
+              log: false,
+              format: (v) => `${String(Math.round(v * 100))}%`,
+              get: (s) => s.motion.fovBoost,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, fovBoost: v } }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Plant sway',
+              pin: 'motion.plantSway',
+              hint: 'Tall grass sways in the wind',
+              get: (s) => s.motion.plantSway,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Camera sway',
+              pin: 'motion.cameraSway',
+              hint: 'The view leans and kicks a little with a swing of the axe (never your aim)',
+              get: (s) => s.motion.cameraSway,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, cameraSway: v } }),
+            },
+          },
+        ],
+      },
+      { title: 'Explosions', rows: EXPLOSION_TOGGLES.map((toggle) => ({ toggle })) },
+    ],
+    // What the screen shows, one row per part listed as data (shared/ui/hud.json).
+    screen: [
+      {
+        rows: hideableParts(mobile).map((part): Row => ({
+          toggle: {
+            label: part.label,
+            pin: `hud.shown.${part.id}`,
+            hint: part.hint,
+            get: (st) => st.hud.shown[part.id] ?? part.shown,
+            with: (st, v) => ({
+              ...st,
+              hud: { ...st.hud, shown: { ...st.hud.shown, [part.id]: v } },
+            }),
+          },
+        })),
+      },
+      {
+        title: 'Map',
+        rows: [
+          {
+            toggle: {
+              label: 'Minimap height shading',
+              pin: 'hud.mapShading',
+              hint: 'Higher ground lighter, slopes shaded, on the minimap',
+              get: (st) => st.hud.mapShading,
+              with: (st, v) => ({ ...st, hud: { ...st.hud, mapShading: v } }),
+            },
+          },
+        ],
+      },
+      // The backgrounds listed as data (shared/ui/menu-backgrounds.json).
+      { title: 'Main menu', rows: [choice(menuBackgroundChoice())] },
+    ],
+  };
 }
 
 /** A setting picked from a few named choices (a row of buttons). */
 interface ChoiceSpec<T extends string> {
   label: string;
+  pin: string;
   hint: string;
   choices: readonly T[];
   labels: Record<T, string>;
@@ -384,8 +952,26 @@ interface ChoiceSpec<T extends string> {
   with: (s: Settings, v: T) => Settings;
 }
 
+/** The main menu's background: one of the panoramas, by label (ui/menuBackground.ts). */
+export function menuBackgroundChoice(list = BACKGROUNDS): ChoiceSpec<string> {
+  return {
+    label: 'Menu background',
+    pin: 'menuBackground',
+    hint: 'The view of a world turning slowly behind the main menu',
+    // Random first (the default): a view picked at random, fading to another after each turn.
+    choices: [RANDOM_BACKGROUND, ...list.backgrounds.map((b) => b.name)],
+    labels: {
+      [RANDOM_BACKGROUND]: 'Random',
+      ...Object.fromEntries(list.backgrounds.map((b) => [b.name, b.label])),
+    },
+    get: (s) => s.menuBackground,
+    with: (s, v) => ({ ...s, menuBackground: v }),
+  };
+}
+
 const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
-  label: 'Quality',
+  label: 'Water',
+  pin: 'water.quality',
   hint: 'Ripples, reflections and glints on water; lower is faster on phones',
   choices: WATER_QUALITIES,
   labels: WATER_QUALITY_LABELS,
@@ -397,24 +983,28 @@ const WATER_CHOICE: ChoiceSpec<WaterQuality> = {
 const WATER_FLOW_TOGGLES: ToggleSpec[] = [
   {
     label: 'Flowing ripples',
+    pin: 'water.flowRipples',
     hint: 'Ripples on rivers and moving water are carried along with the current',
     get: (s) => s.water.flowRipples,
     with: (s, v) => ({ ...s, water: { ...s.water, flowRipples: v } }),
   },
   {
     label: 'Foam streaks',
+    pin: 'water.flowFoam',
     hint: 'Pale streaks along fast water, showing which way it runs',
     get: (s) => s.water.flowFoam,
     with: (s, v) => ({ ...s, water: { ...s.water, flowFoam: v } }),
   },
   {
     label: 'Drifting flecks',
+    pin: 'water.flowParticles',
     hint: 'Small flecks floating downstream on moving water',
     get: (s) => s.water.flowParticles,
     with: (s, v) => ({ ...s, water: { ...s.water, flowParticles: v } }),
   },
   {
     label: 'Waterfalls',
+    pin: 'water.waterfalls',
     hint: 'Water falling over a drop shows as a sheet, with foam and spray where it lands',
     get: (s) => s.water.waterfalls,
     with: (s, v) => ({ ...s, water: { ...s.water, waterfalls: v } }),
@@ -425,18 +1015,21 @@ const WATER_FLOW_TOGGLES: ToggleSpec[] = [
 const EXPLOSION_TOGGLES: ToggleSpec[] = [
   {
     label: 'Explosion flash',
+    pin: 'explosions.flash',
     hint: 'A blast lights up its surroundings for a moment, with a fireball',
     get: (s) => s.explosions.flash,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, flash: v } }),
   },
   {
     label: 'Smoke and dust',
+    pin: 'explosions.smoke',
     hint: 'A blast throws up dust and leaves a cloud of smoke',
     get: (s) => s.explosions.smoke,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, smoke: v } }),
   },
   {
     label: 'Screen shake',
+    pin: 'explosions.shake',
     hint: 'The view shakes a little when a blast goes off nearby',
     get: (s) => s.explosions.shake,
     with: (s, v) => ({ ...s, explosions: { ...s.explosions, shake: v } }),
@@ -445,6 +1038,7 @@ const EXPLOSION_TOGGLES: ToggleSpec[] = [
 
 const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
   label: 'Sun & moon shadows',
+  pin: 'shadows.quality',
   hint: 'Sun and moon shadows near you; Low is lighter on the GPU',
   choices: SHADOW_QUALITIES,
   labels: SHADOW_QUALITY_LABELS,
@@ -454,6 +1048,7 @@ const SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
 
 const TORCH_SHADOW_CHOICE: ChoiceSpec<ShadowQuality> = {
   label: 'Torch shadows',
+  pin: 'shadows.torch',
   hint: 'Shadows from the nearest torches, held and placed; High draws more of them, sharper',
   choices: SHADOW_QUALITIES,
   labels: SHADOW_QUALITY_LABELS,
@@ -469,16 +1064,84 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = 'settings' | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
+type Page =
+  SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host' | 'chisel';
+
+/** The pages in the order they are listed, whatever order they are added in. */
+const PAGE_ORDER: readonly Page[] = [
+  ...SETTINGS_PANES,
+  'controller',
+  'controls',
+  'theater',
+  'structures',
+  'debug',
+  'host',
+  'chisel',
+];
 
 const PAGE_TITLES: Record<Page, string> = {
-  settings: 'Settings',
+  graphics: 'Graphics',
+  sound: 'Sound',
+  gameplay: 'Gameplay',
+  screen: 'On screen',
   controller: 'Controller',
   controls: 'Controls',
+  theater: 'Theater',
   structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
+  chisel: 'Chisel',
 };
+
+/** A setting's row as the Settings page draws it: its label, the setting it changes, its kind. */
+export interface SettingsRowModel {
+  label: string;
+  pin: string;
+  kind: 'slider' | 'choice' | 'toggle';
+  /** Reads the row's value, and sets it (the same functions the drawn row calls). */
+  get: (s: Settings) => number | string | boolean;
+  with: (s: Settings, v: never) => Settings;
+  /** The values it offers: a choice's, a toggle's two, a slider's ends. */
+  values: readonly (number | string | boolean)[];
+}
+
+/**
+ * The Settings page's structure (menu M3): each settings pane in order, its title, and the rows
+ * it draws. Pure data from the same `panes()` the page is built from, so a test checks every
+ * stored setting has a row and every row is wired to its setting.
+ */
+export function settingsPageModel(
+  mobile: boolean,
+): { pane: SettingsPane; title: string; rows: SettingsRowModel[] }[] {
+  const groups = panes(mobile);
+  return SETTINGS_PANES.map((pane) => ({
+    pane,
+    title: PAGE_TITLES[pane],
+    rows: groups[pane].flatMap((g) =>
+      g.rows.map((row): SettingsRowModel => {
+        if ('slider' in row) {
+          const r = row.slider;
+          return { ...pick(r), kind: 'slider', values: [r.min, r.max] };
+        }
+        if ('choice' in row) {
+          const r = row.choice;
+          return { ...pick(r), kind: 'choice', values: r.choices };
+        }
+        const r = row.toggle;
+        return { ...pick(r), kind: 'toggle', values: [false, true] };
+      }),
+    ),
+  }));
+}
+
+function pick(r: {
+  label: string;
+  pin: string;
+  get: (s: Settings) => number | string | boolean;
+  with: (s: Settings, v: never) => Settings;
+}): Pick<SettingsRowModel, 'label' | 'pin' | 'get' | 'with'> {
+  return { label: r.label, pin: r.pin, get: r.get, with: r.with };
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -534,7 +1197,21 @@ export class SettingsMenu {
   private readonly toggles: { spec: ToggleSpec; input: HTMLInputElement }[] = [];
   /** Shows the JSON to copy by hand where the clipboard is unavailable. */
   private readonly fallback = document.createElement('textarea');
-  private settings: Settings;
+  /** Reset and Copy JSON, shown under the settings panes. */
+  private readonly tail = el('div', 'settings-tail');
+  /** The Graphics pane's preset slider and its label. */
+  private preset: {
+    input: HTMLInputElement;
+    value: HTMLSpanElement;
+    marker: HTMLButtonElement;
+  } | null = null;
+  /** The settings, which of them are pinned, and the preset chosen. */
+  private state: SettingsState;
+  /** Each row's pin marker. */
+  private readonly markers: { pin: string; button: HTMLButtonElement }[] = [];
+  private get settings(): Settings {
+    return this.state.settings;
+  }
   /** Told when the menu opens or closes (the touch controls step aside while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
 
@@ -542,8 +1219,14 @@ export class SettingsMenu {
     parent: HTMLElement,
     private readonly mobile: boolean,
     private readonly onChange: (settings: Settings) => void,
+    /**
+     * `world: false`: opened from the main menu (no world): no corner button, titled Settings; the
+     * pages that need a world are listed with a note (`addUnavailablePage`).
+     */
+    options: { world?: boolean } = {},
   ) {
-    this.settings = loadSettings(mobile);
+    const world = options.world ?? true;
+    this.state = loadSettingsState(mobile);
     const button = document.createElement('button');
     this.button = button;
     button.type = 'button';
@@ -558,7 +1241,9 @@ export class SettingsMenu {
 
     this.panel = document.createElement('div');
     this.panel.id = 'settings-menu';
-    this.panel.className = 'game-menu';
+    // From the main menu a full page over its panorama (menu M3); in a world, the same page over
+    // the dimmed game.
+    this.panel.className = world ? 'game-menu' : 'game-menu gm-full-page';
     this.panel.hidden = true;
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-modal', 'true');
@@ -567,16 +1252,18 @@ export class SettingsMenu {
     const sheet = el('div', 'gm-sheet');
     const head = el('header', 'gm-head');
     const titles = el('div', 'gm-titles');
-    titles.append(el('h1', 'gm-title', 'Paused'), this.subtitle);
-    const close = el('button', 'gm-close');
+    titles.append(el('h1', 'gm-title', world ? 'Paused' : 'Settings'), this.subtitle);
+    if (!world) this.panel.setAttribute('aria-label', 'Settings');
+    // Back, as on every menu page (ui/mainMenu.ts's page head): closes the page (Esc, B too).
+    const close = el('button', 'gm-close mm-back', 'Back');
     close.type = 'button';
-    close.setAttribute('aria-label', 'Close menu');
-    close.title = 'Close (Esc)';
+    close.setAttribute('aria-label', world ? 'Back to the game' : 'Back');
+    close.title = 'Back (Esc)';
     close.dataset.sound = 'none';
     close.addEventListener('click', () => {
       this.setOpen(false);
     });
-    head.append(titles, close);
+    head.append(close, titles);
     this.tabs.setAttribute('role', 'tablist');
     sheet.append(head, this.tabs, this.pagesBox, this.footer);
     this.panel.append(sheet);
@@ -585,7 +1272,9 @@ export class SettingsMenu {
       if (e.target === this.panel) this.setOpen(false);
     });
 
-    this.addPage('settings', this.settingsPage());
+    this.pagesBox.append(this.settingsTail());
+    const groups = panes(mobile);
+    for (const pane of SETTINGS_PANES) this.addPage(pane, this.settingsPage(pane, groups[pane]));
     this.addPage('controls', this.controlsPage());
 
     button.addEventListener('click', () => {
@@ -593,9 +1282,10 @@ export class SettingsMenu {
       // Unfocused, so Space (jump) doesn't press it again.
       button.blur();
     });
-    parent.append(button, this.panel);
-    this.set(this.settings);
-    this.show('settings');
+    if (world) parent.append(button);
+    parent.append(this.panel);
+    this.set(this.state);
+    this.show('graphics');
   }
 
   get current(): Settings {
@@ -611,8 +1301,11 @@ export class SettingsMenu {
     this.panel.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));
     document.body.classList.toggle('menu-open', open);
-    if (open) this.refreshDebug();
-    else this.leaveController?.();
+    if (open) {
+      this.refreshDebug();
+      // Keyboard and controller start on the page shown's tab (GAMEPAD.md: menus by controller).
+      this.tabs.querySelector<HTMLElement>('.gm-tab[aria-selected="true"]')?.focus();
+    } else this.leaveController?.();
     this.onOpenChange?.(open);
   }
 
@@ -659,6 +1352,45 @@ export class SettingsMenu {
     this.leaveController = onLeave;
   }
 
+  /**
+   * Adds the Theater page (docs/THEATER_MODE.md §2): a button that turns theater mode on (and
+   * closes the menu), with its key; `allowed` false (the host turned it off for guests) shows why.
+   */
+  addTheaterPage(key: string, enter: () => void, allowed: () => boolean): void {
+    const page = el('section');
+    const b = el('button', 'block-button theater-enter', 'Enter theater mode');
+    b.type = 'button';
+    b.id = 'menu-theater-enter';
+    const note = el(
+      'p',
+      'gm-lead gm-unavailable',
+      'The host has turned theater mode off for guests.',
+    );
+    b.addEventListener('click', () => {
+      if (!allowed()) return;
+      this.setOpen(false);
+      enter();
+    });
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        'A free camera, camera moves and keyframed paths, and recording the view to a file. ' +
+          'Your character stays where it is.',
+      ),
+      b,
+      ...keycaps(key),
+      note,
+    );
+    this.addPage('theater', page);
+    const tab = this.pages.get('theater')?.tab;
+    tab?.setAttribute('id', 'menu-theater');
+    tab?.addEventListener('click', () => {
+      b.disabled = !allowed();
+      note.hidden = allowed();
+    });
+  }
+
   /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */
   addHostPanel(panel: HTMLElement): void {
     panel.hidden = false;
@@ -673,6 +1405,26 @@ export class SettingsMenu {
     );
     this.addPage('host', page);
     this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
+  }
+
+  /**
+   * Adds the Chisel page (local worlds, Phase 56 B7): `panel` is ui/chiselPanel.ts's; `onShow`
+   * runs each time it is opened (the sliders redrawn for the world's mode then).
+   */
+  addChiselPanel(panel: HTMLElement, onShow: () => void): void {
+    const page = el('section');
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        "Tune this world's biomes: the terrain around you is generated again, your builds kept.",
+      ),
+      panel,
+    );
+    this.addPage('chisel', page);
+    const tab = this.pages.get('chisel')?.tab;
+    tab?.setAttribute('id', 'menu-chisel');
+    tab?.addEventListener('click', onShow);
   }
 
   /**
@@ -720,6 +1472,24 @@ export class SettingsMenu {
     this.addPage('debug', page);
   }
 
+  /**
+   * A page that needs a world, opened without one (the main menu): its tab listed, dimmed, and the
+   * page saying why it is empty.
+   */
+  addUnavailablePage(name: 'structures' | 'debug' | 'host', note: string): void {
+    const page = el('section');
+    page.append(el('p', 'gm-lead gm-unavailable', note));
+    this.addPage(name, page);
+    const tab = this.pages.get(name)?.tab;
+    tab?.classList.add('gm-tab-off');
+    tab?.setAttribute('title', note);
+  }
+
+  /** The pages listed, in order (their names). */
+  get pageNames(): string[] {
+    return [...this.tabs.querySelectorAll<HTMLElement>('.gm-tab')].map((t) => t.dataset.page ?? '');
+  }
+
   /** A line at the foot of the menu (the build). */
   setFootnote(text: string): void {
     let note = this.footer.querySelector<HTMLElement>('.gm-note');
@@ -737,7 +1507,7 @@ export class SettingsMenu {
   }
 
   private addPage(name: Page, page: HTMLElement): void {
-    const order: Page[] = ['settings', 'controller', 'controls', 'structures', 'debug', 'host'];
+    const order = PAGE_ORDER;
     const tab = el('button', 'gm-tab', PAGE_TITLES[name]);
     tab.type = 'button';
     tab.setAttribute('role', 'tab');
@@ -756,7 +1526,8 @@ export class SettingsMenu {
       after.page.before(page);
     } else {
       this.tabs.append(tab);
-      this.pagesBox.append(page);
+      // Before the settings' Reset / Copy JSON, which stay last.
+      this.pagesBox.insertBefore(page, this.tail);
     }
     this.pages.set(name, { tab, page });
     const shown = [...this.pages.values()].some((p) => !p.page.hidden && p.page !== page);
@@ -772,59 +1543,115 @@ export class SettingsMenu {
       page.hidden = n !== name;
       tab.setAttribute('aria-selected', String(n === name));
     }
+    // Reset and Copy JSON under every settings pane, not the other pages.
+    this.tail.hidden = !(SETTINGS_PANES as readonly Page[]).includes(name);
     this.pagesBox.scrollTop = 0;
   }
 
-  private settingsPage(): HTMLElement {
+  /** A settings pane: the Graphics pane's preset slider first, then its groups of rows. */
+  private settingsPage(pane: SettingsPane, groups: Group[]): HTMLElement {
     const page = el('section');
-    for (const section of sections(this.mobile)) {
+    page.classList.add('settings-pane');
+    if (pane === 'graphics') page.append(this.presetRow());
+    for (const g of groups) {
       const group = el('div', 'gm-group');
-      group.append(el('h2', undefined, section.title));
-      const grid = el('div', 'gm-grid');
-      for (const spec of section.toggles ?? []) grid.append(this.toggle(spec));
-      for (const spec of section.sliders) grid.append(this.slider(spec));
-      if (section.title === 'Look') {
-        for (const spec of CHOICES) grid.append(this.choice(spec));
-        grid.append(this.choice(SHADOW_CHOICE));
-        grid.append(this.choice(TORCH_SHADOW_CHOICE));
+      if (g.title) group.append(el('h2', undefined, g.title));
+      const list = el('div', 'gm-grid');
+      for (const row of g.rows) {
+        if ('slider' in row) list.append(this.slider(row.slider));
+        else if ('choice' in row) list.append(this.choice(row.choice));
+        else list.append(this.toggle(row.toggle));
       }
-      group.append(grid);
+      group.append(list);
       page.append(group);
     }
-    const water = el('div', 'gm-group');
-    water.append(el('h2', undefined, 'Water'));
-    const waterGrid = el('div', 'gm-grid');
-    for (const spec of WATER_FLOW_TOGGLES) waterGrid.append(this.toggle(spec));
-    waterGrid.append(this.choice(WATER_CHOICE));
-    water.append(waterGrid);
-    page.append(water);
-    const blasts = el('div', 'gm-group');
-    blasts.append(el('h2', undefined, 'Explosions'));
-    const blastGrid = el('div', 'gm-grid');
-    for (const spec of EXPLOSION_TOGGLES) blastGrid.append(this.toggle(spec));
-    blasts.append(blastGrid);
-    page.append(blasts);
-    // What the screen shows, one row per part listed as data (shared/ui/hud.json).
-    const screen = el('div', 'gm-group');
-    screen.append(el('h2', undefined, 'On screen'));
-    const screenGrid = el('div', 'gm-grid');
-    for (const part of hideableParts(this.mobile)) {
-      screenGrid.append(
-        this.toggle({
-          label: part.label,
-          hint: part.hint,
-          get: (st) => st.hud.shown[part.id] ?? part.shown,
-          with: (st, v) => ({ ...st, hud: { shown: { ...st.hud.shown, [part.id]: v } } }),
-        }),
-      );
-    }
-    screen.append(screenGrid);
-    page.append(screen);
+    return page;
+  }
+
+  /**
+   * The Preset slider (shared/settings/graphics-presets.json, cheapest first): moving it applies
+   * a preset (stored by id: its settings then follow the preset's current definition); it reads
+   * Custom once a setting it sets is changed by hand, the slider staying on the preset the others
+   * follow. Its marker goes back to the device's default preset.
+   */
+  private presetRow(): HTMLElement {
+    const presets = GRAPHICS_PRESETS.presets;
+    const row = document.createElement('label');
+    row.className = 'settings-row settings-preset';
+    row.id = 'graphics-preset';
+    const value = el('span', 'settings-value');
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = String(presets.length - 1);
+    input.step = '1';
+    input.title = 'A preset of the graphics settings: lower is lighter on the GPU';
+    input.addEventListener('input', () => {
+      const p = presets[Number(input.value)];
+      if (p) this.set(choosePreset(this.state, p.id, this.mobile));
+    });
+    const ticks = el('span', 'preset-ticks');
+    for (const p of presets) ticks.append(el('span', undefined, p.label));
+    const marker = this.marker('Preset', () => {
+      this.set(clearPreset(this.state, this.mobile));
+    });
+    row.append(el('span', 'settings-name', 'Preset'), value, input, marker, ticks);
+    this.preset = { input, value, marker };
+    return row;
+  }
+
+  /** Shows the preset the graphics follow, or Custom once one of them is pinned. */
+  private showPreset(): void {
+    if (!this.preset) return;
+    const { input, value, marker } = this.preset;
+    const { base, custom } = shownPreset(this.state, this.mobile);
+    value.textContent = custom ? 'Custom' : base.label;
+    input.value = String(GRAPHICS_PRESETS.presets.indexOf(base));
+    this.paint(input, GRAPHICS_PRESETS.presets.length - 1);
+    input.closest('.settings-preset')?.classList.toggle('custom', custom);
+    marker.hidden = !custom && this.state.preset === null;
+  }
+
+  /**
+   * A pinned setting's marker (owner, 2026-11-07): shown while the player has changed the setting,
+   * pressing it clears the pin, so the setting follows the build's default again. A button, so the
+   * keyboard (Tab) and a controller (ui/gamepadMenu.ts) reach it.
+   */
+  private marker(label: string, clear: () => void): HTMLButtonElement {
+    const b = el('button', 'settings-pin', '↺');
+    b.type = 'button';
+    b.title = 'Changed: press to go back to the default';
+    b.setAttribute('aria-label', `${label}: back to the default`);
+    b.hidden = true;
+    b.addEventListener('click', (e) => {
+      // Not the row's control (a label's click would toggle its checkbox).
+      e.preventDefault();
+      clear();
+      b.blur();
+    });
+    return b;
+  }
+
+  /** A row's marker for its setting, shown while the setting is pinned. */
+  private pinMarker(label: string, pin: string): HTMLButtonElement {
+    const b = this.marker(label, () => {
+      this.set(clearPin(this.state, pin, this.mobile));
+    });
+    this.markers.push({ pin, button: b });
+    return b;
+  }
+
+  private showMarkers(): void {
+    for (const { pin, button } of this.markers) button.hidden = !this.state.pins.has(pin);
+  }
+
+  /** Reset and Copy JSON, under each settings pane (shown with them, ui `show`). */
+  private settingsTail(): HTMLElement {
     const reset = el('button', 'quiet-button settings-reset', 'Reset');
     reset.type = 'button';
     reset.title = 'Back to the defaults';
     reset.addEventListener('click', () => {
-      this.set(defaultSettings(this.mobile, prefersReducedMotion()));
+      this.set(resetSettings(this.mobile));
     });
     const copy = el('button', 'quiet-button settings-copy', 'Copy JSON');
     copy.type = 'button';
@@ -838,8 +1665,8 @@ export class SettingsMenu {
     this.fallback.readOnly = true;
     this.fallback.rows = 10;
     this.fallback.hidden = true;
-    page.append(actions, this.fallback);
-    return page;
+    this.tail.append(actions, this.fallback);
+    return this.tail;
   }
 
   private controlsPage(): HTMLElement {
@@ -862,6 +1689,7 @@ export class SettingsMenu {
   private slider(spec: SliderSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row';
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const input = document.createElement('input');
@@ -872,19 +1700,20 @@ export class SettingsMenu {
     input.title = spec.hint;
     input.addEventListener('input', () => {
       const v = sliderToValue(Number(input.value), spec.min, spec.max, spec.log);
-      this.settings = spec.with(this.settings, v);
+      this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, v));
       value.textContent = spec.format(v);
       this.paint(input);
       this.apply();
     });
     const hint = el('span', 'settings-hint', spec.hint);
-    row.append(name, value, input, hint);
+    row.append(name, value, input, this.pinMarker(spec.label, spec.pin), hint);
     this.rows.push({ spec, input, value });
     return row;
   }
 
   private choice<T extends string>(spec: ChoiceSpec<T>): HTMLDivElement {
     const row = el('div', 'settings-row');
+    row.title = spec.hint;
     const name = el('span', 'settings-name', spec.label);
     const value = el('span', 'settings-value');
     const box = el('div', 'settings-choices');
@@ -895,7 +1724,7 @@ export class SettingsMenu {
       const b = el('button', 'settings-choice', spec.labels[c]);
       b.type = 'button';
       b.addEventListener('click', () => {
-        this.settings = spec.with(this.settings, c);
+        this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, c));
         this.showChoices();
         this.apply();
         b.blur();
@@ -904,7 +1733,7 @@ export class SettingsMenu {
       box.append(b);
     }
     const hint = el('span', 'settings-hint', spec.hint);
-    row.append(name, value, box, hint);
+    row.append(name, value, box, this.pinMarker(spec.label, spec.pin), hint);
     this.choiceRows.push({ get: spec.get, buttons });
     return row;
   }
@@ -919,16 +1748,18 @@ export class SettingsMenu {
   private toggle(spec: ToggleSpec): HTMLLabelElement {
     const row = document.createElement('label');
     row.className = 'settings-row settings-toggle';
+    row.title = spec.hint;
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.title = spec.hint;
     input.addEventListener('change', () => {
-      this.settings = spec.with(this.settings, input.checked);
+      this.state = changeSetting(this.state, spec.pin, spec.with(this.settings, input.checked));
       this.apply();
     });
     row.append(
       el('span', 'settings-name', spec.label),
       input,
+      this.pinMarker(spec.label, spec.pin),
       el('span', 'settings-hint', spec.hint),
     );
     this.toggles.push({ spec, input });
@@ -936,12 +1767,13 @@ export class SettingsMenu {
   }
 
   /** The slider's filled part, as a CSS variable the track's gradient reads. */
-  private paint(input: HTMLInputElement): void {
-    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / SLIDER_STEPS)}%`);
+  private paint(input: HTMLInputElement, max = SLIDER_STEPS): void {
+    input.style.setProperty('--fill', `${String((100 * Number(input.value)) / max)}%`);
   }
 
-  private set(settings: Settings): void {
-    this.settings = settings;
+  private set(state: SettingsState): void {
+    this.state = state;
+    const settings = state.settings;
     for (const { spec, input, value } of this.rows) {
       const v = spec.get(settings);
       input.value = String(valueToSlider(v, spec.min, spec.max, spec.log));
@@ -974,8 +1806,10 @@ export class SettingsMenu {
   }
 
   private apply(): void {
+    this.showPreset();
+    this.showMarkers();
     if (!this.fallback.hidden) this.fallback.value = settingsJson(this.settings);
     this.onChange(this.settings);
-    saveSettings(this.settings);
+    saveSettingsState(this.state);
   }
 }

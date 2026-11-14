@@ -51,8 +51,13 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new(config: ServerConfig) -> Self {
+        Self::with_entropy(config, Box::new(CountingEntropy(1)))
+    }
+
+    /// A fixture whose server rolls (drops, …) from `entropy`.
+    pub fn with_entropy(config: ServerConfig, entropy: Box<dyn Entropy>) -> Self {
         Self {
-            server: Server::new(config, Box::new(CountingEntropy(1))),
+            server: Server::new(config, entropy),
             binding: [0; 32],
             left: Vec::new(),
         }
@@ -129,10 +134,15 @@ impl Fixture {
                 Some(Message::WorldSettings(f)) => settings = Some(f),
                 Some(Message::Welcome(w)) => {
                     let defaults = self.server.world_settings();
+                    let settings = settings.expect("the world's settings before Welcome");
+                    // The server's capabilities ride in an optional settings field (§8.3).
                     assert_eq!(
-                        settings
-                            .expect("the world's settings before Welcome")
-                            .settings(defaults),
+                        settings.capabilities(),
+                        Some(dwell_protocol::capabilities::Capabilities::this_build()),
+                        "the join announces the server's capabilities"
+                    );
+                    assert_eq!(
+                        settings.settings(defaults),
                         Ok(defaults),
                         "the server's settings"
                     );
@@ -191,6 +201,8 @@ pub fn flat() -> ServerConfig {
     ServerConfig {
         generator_version: GENERATOR_FLAT,
         spawn: Some([0.5, dwell_world::FLAT_TOP_M, 0.5]),
+        // Tests that break a block break it with one click; block damage's own set it off.
+        one_hit_breaks: true,
         ..ServerConfig::default()
     }
 }

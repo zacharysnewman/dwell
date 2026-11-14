@@ -30,14 +30,29 @@ pub const ARMS: &str = "gpu.arms";
 pub const COMPOSITE: &str = "gpu.composite";
 /// The motion pass (the wind's blur and streaks over the finished image), while the wind is on.
 pub const MOTION: &str = "gpu.motion";
+/// The light shafts pass (ADR 0064), at the tier's resolution.
+pub const SHAFTS: &str = "gpu.shafts";
+/// The volumetric clouds pass (its march at the tier's resolution; docs/CLOUDS.md §8.6).
+pub const CLOUDS: &str = "gpu.clouds";
 /// The pixel-art preview's post pass (render/pixel_art.rs).
 pub const PIXEL_ART: &str = "gpu.pixelart";
+/// Render scale's upscale pass, or its two (EASU and RCAS, render/upscale.rs), onto the canvas.
+pub const UPSCALE: &str = "gpu.upscale";
+/// The Anti-aliasing setting's FXAA post pass (render/fxaa.rs).
+pub const FXAA: &str = "gpu.fxaa";
 /// The whole frame on the GPU: the first pass's start to the last one's end.
 pub const FRAME: &str = "gpu.frame";
+/// The frame's time between its timed passes (each pass's start after the one before ended,
+/// summed): the untimed work inside `gpu.frame`, such as copies, clears and the GPU idling
+/// between passes (docs/DEV_TOOLS.md, Cost profile).
+pub const GAPS: &str = "gpu.gaps";
+/// The part of `gpu.gaps` just before the water halves: the copy of the scene's colour that the
+/// water samples (render/mod.rs), which WebGPU cannot time on its own.
+pub const GAPS_COPY: &str = "gpu.gaps.copy";
 /// Readback buffers: the GPU runs a frame or two behind, so three keep one free.
 pub const RING: usize = 3;
 /// Passes a frame may time (each frame names its own, in order: `GpuTimer::pass`).
-pub const MAX_PASSES: usize = 12;
+pub const MAX_PASSES: usize = 15;
 
 const QUERIES: u32 = 2 * MAX_PASSES as u32;
 const BYTES: u64 = QUERIES as u64 * wgpu::QUERY_SIZE as u64;
@@ -82,6 +97,20 @@ pub fn samples(raw: &[u64], names: &[&'static str], period_ns: f64) -> Vec<(&'st
         && let Some(v) = ms(raw[0], raw[2 * n - 1])
     {
         out.push((FRAME, v));
+        // The untimed stretches between consecutive passes (none where they overlap).
+        let (mut gaps, mut copy) = (0u64, 0u64);
+        for i in 1..n {
+            let gap = raw[2 * i].saturating_sub(raw[2 * i - 1]);
+            gaps += gap;
+            if names[i] == FAR_WATER || names[i] == NEAR_WATER {
+                copy += gap;
+            }
+        }
+        let ms = |t: u64| t as f64 * period_ns / 1e6;
+        out.push((GAPS, ms(gaps)));
+        if names.iter().any(|n| *n == FAR_WATER || *n == NEAR_WATER) {
+            out.push((GAPS_COPY, ms(copy)));
+        }
     }
     out
 }
@@ -300,7 +329,8 @@ mod tests {
                 ("gpu.far", 1.0),
                 ("gpu.near", 0.5),
                 ("gpu.composite", 0.25),
-                ("gpu.frame", 1.95)
+                ("gpu.frame", 1.95),
+                ("gpu.gaps", 0.2)
             ]
         );
         // Ticks of another period scale.
@@ -313,7 +343,24 @@ mod tests {
             samples(&raw[..6], &[FAR, NEAR, COMPOSITE], 1.0)[1],
             ("gpu.near", 0.5)
         );
-        assert_eq!(samples(&raw, &[FAR, NEAR, COMPOSITE], 1.0).len(), 4);
+        assert_eq!(samples(&raw, &[FAR, NEAR, COMPOSITE], 1.0).len(), 5);
+    }
+
+    #[test]
+    fn the_gaps_between_passes_are_the_frames_untimed_time() {
+        // near 1.0 ms, a 0.75 ms gap (the colour copy), its water half 0.5 ms, an overlap of
+        // 0.1 ms into the composite (a tile GPU's passes overlap: no gap, not a negative one).
+        let raw = [
+            1_000_000, 2_000_000, 2_750_000, 3_250_000, 3_150_000, 3_400_000,
+        ];
+        let out = samples(&raw, &[NEAR, NEAR_WATER, COMPOSITE], 1.0);
+        let get = |k: &str| out.iter().find(|(n, _)| *n == k).map(|(_, v)| *v);
+        assert_eq!(get(FRAME), Some(2.4));
+        assert_eq!(get(GAPS), Some(0.75));
+        assert_eq!(get(GAPS_COPY), Some(0.75));
+        // Without a water half there is no copy to name.
+        let out = samples(&raw, &[NEAR, FAR, COMPOSITE], 1.0);
+        assert!(out.iter().all(|(n, _)| *n != GAPS_COPY));
     }
 
     #[test]

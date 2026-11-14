@@ -14,16 +14,20 @@ crate-type = ["cdylib", "rlib"]
 wgpu = { version = "30.0.1", default-features = false, features = ["webgpu", "wgsl"] }
 futures-channel = "0.3"
 bytemuck = "1"
+serde_json = "1"
 dwell-blocks = { path = "../dwell-blocks" }
 dwell-characters = { path = "../dwell-characters" }
+dwell-models = { path = "../dwell-models" }
 dwell-game = { path = "../dwell-game" }
 dwell-lod = { path = "../dwell-lod" }
 dwell-look = { path = "../dwell-look" }
+dwell-lava = { path = "../dwell-lava" }
 dwell-mesh = { path = "../dwell-mesh" }
 dwell-physics = { path = "../dwell-physics" }
 dwell-protocol = { path = "../dwell-protocol" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
+dwell-theater = { path = "../dwell-theater" }
 dwell-world = { path = "../dwell-world" }
 dwell-worldgen = { path = "../dwell-worldgen" }
 
@@ -38,7 +42,7 @@ web-sys = { version = "0.3", features = [
     "WebTransportSendStream", "WebTransportDatagramDuplexStream", "WebTransportCloseInfo", "RtcPeerConnection",
     "RtcPeerConnectionState", "RtcDataChannel", "RtcDataChannelInit", "RtcDataChannelState", "RtcDataChannelType",
     "RtcSdpType", "RtcSessionDescriptionInit", "FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
-    "Worker", "Performance", "console",
+    "Worker", "Performance", "PerformanceMark", "console",
 ] }
 
 [dev-dependencies]

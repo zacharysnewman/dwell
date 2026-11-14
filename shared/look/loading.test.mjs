@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VIEW_RADIUS_CHUNKS, loadingRust, loadingTs, preloadServerRust, validateLoading } from './loading.mjs';
+import { VIEW_RADIUS_CHUNKS, loadingRust, loadingTs, preloadServerRust, ringChunks, validateLoading } from './loading.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'loading.json'), 'utf8'));
@@ -112,6 +112,42 @@ test('bad stages fail with their entry named', () => {
   for (const [edit, message] of cases) {
     const d = data();
     edit(d);
+    assert.throws(() => validateLoading(d), message);
+  }
+});
+
+test('the estimate is data: the near ring counted, a stage cost by data alone in the shell', () => {
+  const d = data();
+  assert.equal(ringChunks(3), 179);
+  assert.equal(ringChunks(0), 1);
+  d.estimate.holdFraction = 0.9;
+  d.estimate.stages.worldFile.baseS = 2.5;
+  d.estimate.device.cpuFactor = 6;
+  const ts = loadingTs(validateLoading(d));
+  assert.match(ts, /holdFraction: 0\.9,/);
+  assert.match(ts, /worldFile: \{ scales: 'device', baseS: 2\.5, local: true \},/);
+  assert.match(ts, /cpuFactor: 6/);
+  assert.match(ts, /ringChunks: 179,/);
+});
+
+test('a bad estimate entry fails naming it', () => {
+  const cases = [
+    [(e) => (e.holdFraction = 1), /estimate\.holdFraction must be a number in \[0\.5, 0\.995\]/],
+    [(e) => (e.minSamples = 2.5), /estimate\.minSamples must be a whole number/],
+    [(e) => (e.device.cpuFactor = 'x'), /estimate\.device\.cpuFactor must be a number/],
+    [(e) => delete e.device.phoneFactor, /missing entry estimate\.device\.phoneFactor/],
+    [(e) => (e.wobble = 1), /unknown entry estimate\.wobble/],
+    [(e) => (e.stages.nope = { scales: 'device', baseS: 1 }), /estimate\.stages\.nope: no stage nope/],
+    [(e) => (e.stages.join.scales = 'magic'), /estimate\.stages\.join\.scales must be one of device, network/],
+    [(e) => (e.stages.join.perItemS = 1), /estimate\.stages\.join: perItemS, totalGuess and bytesPerS need a stage/],
+    [(e) => delete e.stages.game.bytesPerS, /estimate\.stages\.game: a bytes stage needs bytesPerS and totalGuess/],
+    [(e) => delete e.stages.terrain.perItemS, /estimate\.stages\.terrain: a count stage needs perItemS/],
+    [(e) => (e.stages.server.remote = true), /estimate\.stages\.server: local and remote cannot both be set/],
+    [(e) => (e.stages.spawn.local = 'yes'), /estimate\.stages\.spawn\.local must be true or false/],
+  ];
+  for (const [edit, message] of cases) {
+    const d = data();
+    edit(d.estimate);
     assert.throws(() => validateLoading(d), message);
   }
 });

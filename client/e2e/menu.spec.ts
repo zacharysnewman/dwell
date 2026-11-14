@@ -2,6 +2,7 @@
 // play it, quit to the menu (saving), reopen it, regenerate it and delete it; and a world saved
 // before versioned releases is ignored and can be deleted.
 import { expect, test, type Page } from '@playwright/test';
+import { openMenuPage } from './menuNav';
 
 type Vec3 = [number, number, number];
 interface DebugState {
@@ -69,9 +70,13 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   test.setTimeout(120_000);
   await page.goto('./');
   await expect(page.locator('#main-menu')).toBeVisible();
+  await openMenuPage(page, 'worlds');
+  // No worlds: the empty state's own big New world, the page's small one hidden.
   await expect(page.locator('.menu-empty')).toBeVisible();
+  await expect(page.locator('#new-world')).toBeHidden();
 
-  // Create: the form is open when there are no worlds.
+  // Create: New world opens the form on its own page.
+  await page.locator('.menu-empty-create').click();
   await page.locator('#world-name').fill('Test world');
   await page.locator('#world-seed').fill('1234');
   await page.locator('#world-type').selectOption('flat');
@@ -84,26 +89,44 @@ test('main menu: create a world with a seed, quit, reopen, regenerate and delete
   const cell = await aim(page);
   const before = await voxel(page, cell);
   expect(before).not.toBe(0);
-  expect(await call<boolean>(page, `d.edit('break')`)).toBe(true);
-  await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(0);
+  // Hit until it breaks (block damage, docs/BLOCK_DAMAGE.md: soil takes 11 hits by hand).
+  await expect
+    .poll(
+      async () => {
+        await call<boolean>(page, `d.edit('break')`);
+        return voxel(page, cell);
+      },
+      { timeout: 10_000, intervals: [150] },
+    )
+    .toBe(0);
   await quit(page);
-  await expect(world(page, 'Test world')).toContainText('Flat · seed 1234 · played');
+  await openMenuPage(page, 'worlds');
+  // The world's card: its type and when it was played, and the view it was left at (captured
+  // when the page went), with the seed under its ⋯ menu.
+  await expect(world(page, 'Test world')).toContainText('Flat · played');
+  await expect(world(page, 'Test world').locator('.world-thumb img')).toHaveCount(1);
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
+  await expect(world(page, 'Test world').locator('.world-menu')).toContainText('Seed 1234');
 
   // Reopen: the edit is there.
   await world(page, 'Test world').locator('.world-play').click();
   await ready(page);
   await expect.poll(() => voxel(page, cell), { timeout: 10_000 }).toBe(0);
   await quit(page);
+  await openMenuPage(page, 'worlds');
 
-  // Regenerate (asks first): same seed, the edit is gone.
+  // Regenerate (asks first, under ⋯): same seed, the edit is gone.
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
   const regenerate = world(page, 'Test world').getByRole('button', { name: 'Regenerate' });
   await regenerate.click();
   await world(page, 'Test world').getByRole('button', { name: 'Lose all changes?' }).click();
   await ready(page);
   expect(await voxel(page, cell)).toBe(before);
   await quit(page);
+  await openMenuPage(page, 'worlds');
 
-  // Delete (asks first).
+  // Delete (asks first, under ⋯).
+  await world(page, 'Test world').getByRole('button', { name: 'More for Test world' }).click();
   await world(page, 'Test world').getByRole('button', { name: 'Delete' }).click();
   await world(page, 'Test world').getByRole('button', { name: 'Delete forever?' }).click();
   await expect(page.locator('#menu-message')).toHaveText('Deleted "Test world".');
@@ -126,6 +149,7 @@ test('main menu: a world file without a versioned entry is ignored, and can be d
   });
 
   await page.goto('./');
+  await openMenuPage(page, 'worlds');
   // Not a world to play: listed apart, to delete.
   await expect(page.locator('.menu-empty')).toBeVisible();
   const old = page.locator('#legacy-worlds .world-item', { hasText: 'Flat world 77' });
@@ -142,10 +166,23 @@ test('main menu: shows the app version, and the licence notices from About', asy
   request,
 }) => {
   await page.goto('./');
+  await openMenuPage(page, 'home');
   await expect(page.locator('#app-version')).toContainText(/Dwell \d+\.\d+\.\d+/);
-  await page.getByRole('button', { name: 'About' }).click();
+  // A disclosure that says whether it is open (owner, 2026-11-12), and shows a chevron.
+  const about = page.getByRole('button', { name: 'About' });
+  await expect(about).toHaveAttribute('aria-expanded', 'false');
+  await expect(about).toHaveAttribute('aria-controls', 'about-details');
+  expect(await about.evaluate((el) => getComputedStyle(el, '::after').borderRightStyle)).toBe(
+    'solid',
+  );
+  await about.click();
+  await expect(about).toHaveAttribute('aria-expanded', 'true');
   const notices = page.getByRole('link', { name: 'Third-party notices' });
   await expect(notices).toBeVisible();
+  await about.click();
+  await expect(about).toHaveAttribute('aria-expanded', 'false');
+  await expect(notices).toBeHidden();
+  await about.click();
   const href = await notices.getAttribute('href');
   const response = await request.get(new URL(href ?? '', page.url()).href);
   expect(response.ok()).toBe(true);
@@ -173,6 +210,7 @@ test('main menu: a world from before versioned releases is listed to delete, nev
     );
   });
   await page.reload();
+  await openMenuPage(page, 'worlds');
   await expect(page.locator('#legacy-worlds')).toContainText('Ancient');
   await expect(page.locator('#legacy-worlds .world-play')).toHaveCount(0);
   // Opening it by link is refused with the reason.
@@ -183,6 +221,7 @@ test('main menu: a world from before versioned releases is listed to delete, nev
 
 test('main menu: joining asks for a join code, an address or an invite link', async ({ page }) => {
   await page.goto('./?debug=1');
+  await openMenuPage(page, 'online');
   await page.locator('#join-input').fill('not a link');
   await page.locator('.menu-join-form button').click();
   await expect(page.locator('#menu-message')).toContainText(

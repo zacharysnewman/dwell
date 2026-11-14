@@ -29,8 +29,12 @@ pub enum SessionState {
         world_seed: u64,
         generator_version: u32,
         verification_chunk: [i32; 3],
-        /// The server lets this player use creative flight (§8.3).
+        /// The server lets this player use creative flight now (§8.3): its flight policy and the
+        /// world's game mode (ADR 0065).
         may_fly: bool,
+        /// The flight policy alone (`welcome_flags::FLIGHT_POLICY`): `may_fly` again when the
+        /// host changes the world's mode.
+        flight_policy: bool,
         /// The server takes `RegionEdit`s (`welcome_flags::REGION_EDITS`; builds before them
         /// reject an unknown message, so the client sends none without it).
         region_edits: bool,
@@ -88,6 +92,8 @@ pub struct Session {
     /// order: reliable ones wait here until the game drains them, so none is lost while it loads.
     game: VecDeque<(Message, Vec<u8>)>,
     changed: bool,
+    /// The host changed the world's mode (`take_abilities_changed`).
+    abilities_changed: bool,
     /// `BlockRegistry` parts received so far, and how many the server announced.
     registry_parts: Vec<u8>,
     registry_next: u16,
@@ -99,8 +105,18 @@ pub struct Session {
     /// The world's settings as the server sent them (before Welcome), and as read.
     world_fields: Option<world_settings::SettingsFields>,
     world: Option<world_settings::WorldSettings>,
+    /// The server's capabilities (its settings' `CAPABILITIES` field, ARCHITECTURE.md §8.3); None
+    /// from a server that announced none (an older build), which is never sent `Capabilities`.
+    server_capabilities: Option<dwell_protocol::capabilities::Capabilities>,
+    /// The server simulates stamina and oxygen (Welcome's `VITALS`, ADR 0069).
+    vitals_server: bool,
     /// The Welcome waiting on the player's answer (Confirming).
     pending: Option<Welcome>,
+    /// The Welcome waiting on the world's worldgen config (ADR 0074 B7), with the hash the world's
+    /// settings named: `WorldgenRequest` sent, `WorldgenConfig` not here yet.
+    worldgen_wait: Option<(Welcome, u64)>,
+    /// The world's worldgen config, checked against its hash (`""`: the build's ground).
+    worldgen: String,
     /// A definitions hash the player said not to ask about again for this server.
     trusted_registry: Option<u64>,
     /// The game's ids of the edits sent and not yet acknowledged, in the order sent: the server
@@ -134,6 +150,7 @@ impl Session {
             out: Vec::new(),
             game: VecDeque::new(),
             changed: true,
+            abilities_changed: false,
             registry_parts: Vec::new(),
             registry_next: 0,
             registry_parts_total: 0,
@@ -141,7 +158,11 @@ impl Session {
             mapping: None,
             world_fields: None,
             world: None,
+            server_capabilities: None,
+            vitals_server: false,
             pending: None,
+            worldgen_wait: None,
+            worldgen: String::new(),
             trusted_registry: None,
             sent_edits: VecDeque::new(),
             edits_acked: 0,
@@ -160,9 +181,81 @@ impl Session {
         self.mapping.as_ref()
     }
 
+    /// The world's worldgen config (ADR 0074 B7), once joined: `""` for the build's ground, else the
+    /// text the server sent, its hash checked; the world's maps are built from it.
+    pub fn worldgen_config(&self) -> &str {
+        &self.worldgen
+    }
+
+    /// The world's size (BIG_MAP.md M2b: its settings' `WORLD_SIZE`), once its settings have
+    /// arrived; today's before, from a server without sizes, or past this build's LOD root.
+    pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
+        dwell_protocol::world_size::WorldSize::playable(self.world.map(|w| w.size.radius_scale))
+    }
+
     /// The world's settings (its clock, its water speed), once Welcome has arrived.
     pub fn world_settings(&self) -> Option<world_settings::WorldSettings> {
         self.world
+    }
+
+    /// The stamina and oxygen rules to predict (ADR 0069): the world's mode's, on a server that
+    /// simulates them (an older one doesn't, whatever its mode is called).
+    pub fn vitals_rules(&self) -> dwell_protocol::vitals::VitalsRules {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) if self.vitals_server => dwell_protocol::vitals::VitalsRules {
+                stamina: w.allows(Ability::Stamina),
+                oxygen: w.allows(Ability::Oxygen),
+            },
+            _ => Default::default(),
+        }
+    }
+
+    /// Whether the world's mode breaks every block in one hit without a tool (`instantBreaks`):
+    /// the default mode's until Welcome has arrived.
+    pub fn instant_breaks(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::InstantBreaks),
+            None => dwell_protocol::modes::default_mode().allows(Ability::InstantBreaks),
+        }
+    }
+
+    /// Whether the world's mode places saved structures from the player's library
+    /// (`structures`; STRUCTURES.md §9). A server that names no mode plays the default one.
+    pub fn structures(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::Structures),
+            None => dwell_protocol::modes::default_mode().allows(Ability::Structures),
+        }
+    }
+
+    /// Whether the world's mode makes theater mode's camera a simulation viewpoint
+    /// (`theaterViewpoint`, creative; THEATER_MODE.md §7). Used only with the `theater.viewpoint`
+    /// capability.
+    pub fn theater_viewpoint(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::TheaterViewpoint),
+            None => dwell_protocol::modes::default_mode().allows(Ability::TheaterViewpoint),
+        }
+    }
+
+    /// Whether the world lets guests use theater mode (`WorldSettings` `theater_guests`,
+    /// THEATER_MODE.md §7): true before the settings arrive and on a server that never sets it.
+    pub fn theater_guests(&self) -> bool {
+        self.world.is_none_or(|w| w.theater_guests)
+    }
+
+    /// Whether a capability (ARCHITECTURE.md §8.3) is on for this session: the server announced it
+    /// and this build has it. False before the settings arrive and on an older server.
+    pub fn capability(&self, name: &str) -> bool {
+        dwell_protocol::capability_names::ALL.contains(&name)
+            && self
+                .server_capabilities
+                .as_ref()
+                .is_some_and(|c| c.has(name))
     }
 
     /// The player chose Continue in the join prompt.
@@ -194,9 +287,74 @@ impl Session {
             generator_version: w.generator_version,
             verification_chunk: w.verification_chunk,
             may_fly: w.flags & welcome_flags::FLIGHT != 0,
+            flight_policy: w.flags & welcome_flags::FLIGHT_POLICY != 0,
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+        // A server that announced capabilities (ARCHITECTURE.md §8.3) hears this client's; an
+        // older one, which would end the session on the unknown message, never does.
+        if self.server_capabilities.is_some() {
+            self.send(&Message::Capabilities(
+                dwell_protocol::capabilities::Capabilities::this_client(),
+            ));
+        }
+        // A server that keeps inventories (ADR 0066) sends them once told this client understands.
+        if w.flags & welcome_flags::INVENTORY != 0 {
+            self.send(&Message::InventoryAction(InventoryAction::Hello));
+        }
+        // A server that chops (ADR 0067) sends its cuts once told (it answers with a `Cuts`).
+        if w.flags & welcome_flags::CHOPPING != 0 {
+            self.send(&Message::Chop(dwell_protocol::ChopAction::Hello));
+        }
+        // A server that simulates stamina and oxygen (ADR 0069) sends `Vitals` once told.
+        self.vitals_server = w.flags & welcome_flags::VITALS != 0;
+        if self.vitals_server {
+            self.send(&Message::VitalsHello);
+        }
+        // A server that sweeps swings along their path and passes held tools on (ADR 0067) says so
+        // with CHOP_SWEEP; it answers a first `Held` with the others' (`HeldTools`, at least one).
+        if w.flags & welcome_flags::CHOP_SWEEP != 0 {
+            self.send(&Message::Chop(dwell_protocol::ChopAction::Held {
+                tool: String::new(),
+                vertical: false,
+            }));
+        }
+    }
+
+    /// The world's settings again while joined: the host changed its game mode (ADR 0065; only a
+    /// server with modes sends them after join). Flight and brushes follow the new mode.
+    fn on_settings_changed(&mut self, f: world_settings::SettingsFields) {
+        let Some(old) = self.world else {
+            return;
+        };
+        // A setting written only when it differs from its default (theater for guests, off)
+        // reads as the default when the field is gone.
+        let defaults = world_settings::WorldSettings {
+            theater_guests: true,
+            ..old
+        };
+        let Ok(new) = f.settings(defaults) else {
+            return; // the server's checks still apply; keep predicting with the old ones
+        };
+        self.world = Some(new);
+        if let SessionState::Joined {
+            may_fly,
+            flight_policy,
+            brushes,
+            ..
+        } = &mut self.state
+        {
+            *may_fly = *flight_policy && new.allows(dwell_protocol::modes::Ability::Flight);
+            *brushes = new.allows(dwell_protocol::modes::Ability::Brushes);
+        }
+        self.abilities_changed = true;
+        self.changed = true;
+    }
+
+    /// Whether the world's mode changed what this player may do since the last call (flight,
+    /// brushes: read them again from `state()`).
+    pub fn take_abilities_changed(&mut self) -> bool {
+        std::mem::take(&mut self.abilities_changed)
     }
 
     fn fail(&mut self, message: String) {
@@ -228,6 +386,8 @@ impl Session {
             self.fail("The server sent no world settings.".into());
             return;
         };
+        let worldgen_hash = fields.worldgen_hash();
+        self.server_capabilities = fields.capabilities();
         match fields.settings(dwell_sim::server::default_settings(
             dwell_sim::water::FLOW.speed,
         )) {
@@ -255,8 +415,42 @@ impl Session {
                 return;
             }
         };
-        let differences = mapping.differences.clone();
         self.mapping = Some(mapping);
+        // A world made from a worldgen config (ADR 0074 B7): its text first, then on as usual.
+        if let Some(h) = worldgen_hash {
+            self.worldgen_wait = Some((w, h));
+            self.send(&Message::WorldgenRequest);
+            return;
+        }
+        self.welcome_mapped(w);
+    }
+
+    /// The world's worldgen config arrived (`WorldgenConfig`): checked against the hash its
+    /// settings named and parsed, then the join goes on.
+    fn on_worldgen_config(&mut self, text: String) {
+        let Some((w, h)) = self.worldgen_wait.take() else {
+            return;
+        };
+        if text.trim().is_empty() || dwell_worldgen::config::worldgen_hash(&text) != h {
+            self.fail("This world's terrain settings arrived damaged (their hash differs).".into());
+            return;
+        }
+        if let Err(e) = dwell_worldgen::config::world_config(&text) {
+            self.fail(format!(
+                "This world's terrain settings can't be used ({e})."
+            ));
+            return;
+        }
+        self.worldgen = text.trim().to_owned();
+        self.welcome_mapped(w);
+    }
+
+    /// Welcome with the ids mapped: join, or ask the player first.
+    fn welcome_mapped(&mut self, w: Welcome) {
+        let Some(mapping) = self.mapping.as_ref() else {
+            return;
+        };
+        let (differences, hash) = (mapping.differences.clone(), mapping.hash);
         if differences.is_empty() || self.trusted_registry == Some(hash) {
             self.join(w);
         } else {
@@ -396,7 +590,7 @@ impl Session {
                         e.material = id(e.material)?;
                         e.from = id(e.from)?;
                     }
-                    RegionEditOp::Paste => {
+                    RegionEditOp::Paste | RegionEditOp::Structure => {
                         // Brushes' KEEP cells name no state.
                         for c in e
                             .cells
@@ -531,7 +725,18 @@ impl Session {
                     | Message::LodIndex(_)
                     | Message::LodIndexUpdate(_)
                     | Message::LodData(_)
-            ) && (self.joined() || matches!(self.state, SessionState::Confirming { .. }))
+                    | Message::ItemDrops(_)
+                    | Message::Creatures(_)
+                    | Message::GroundGone(_)
+                    | Message::Cuts(_)
+                    | Message::Damage(_)
+                    | Message::HeldTools(_)
+                    | Message::Steam(_)
+                    | Message::Ecology(_)
+                    | Message::Swordplay(_)
+            ) && (self.joined()
+                || self.worldgen_wait.is_some()
+                || matches!(self.state, SessionState::Confirming { .. }))
             {
                 self.game.push_back((m, bytes.to_vec()));
             }
@@ -551,7 +756,23 @@ impl Session {
             Message::WorldSettings(f) if self.state == SessionState::Handshaking => {
                 self.world_fields = Some(f);
             }
+            Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
+            // A player's own map markers (docs/MAP_MARKERS.md): to the game, sent after `Welcome`.
+            Message::Markers(m) if self.joined() => {
+                self.game.push_back((Message::Markers(m), bytes.to_vec()));
+            }
+            // The world's blueprints (docs/BLUEPRINTS.md): to the game.
+            Message::Blueprints(m) if self.joined() => {
+                self.game
+                    .push_back((Message::Blueprints(m), bytes.to_vec()));
+            }
+            Message::Inventory(i) if self.joined() => {
+                self.game.push_back((Message::Inventory(i), bytes.to_vec()));
+            }
             Message::Welcome(w) if self.state == SessionState::Handshaking => self.on_welcome(w),
+            Message::WorldgenConfig(t) if self.state == SessionState::Handshaking => {
+                self.on_worldgen_config(t);
+            }
             Message::Reject(r) => {
                 self.set_state(SessionState::Rejected {
                     reason: r.reason,
@@ -579,6 +800,12 @@ impl Session {
                 if self.joined() {
                     self.game
                         .push_back((Message::PhysicsSnapshot(s), bytes.to_vec()));
+                }
+            }
+            // The local player's stamina and oxygen (ADR 0069): an optional datagram.
+            Some(Message::Vitals(v)) => {
+                if self.joined() {
+                    self.game.push_back((Message::Vitals(v), bytes.to_vec()));
                 }
             }
             // The water's currents (Phase 53 G3a): an optional datagram.
@@ -652,6 +879,11 @@ mod tests {
                 start_hour: 9.0,
             },
             water_speed: 2.0,
+            mode: "creative",
+            size: dwell_protocol::world_size::WorldSize::DEFAULT,
+            moon_phase: None,
+            orbit: None,
+            theater_guests: true,
         }
     }
 
@@ -766,6 +998,7 @@ mod tests {
                 generator_version: 0,
                 verification_chunk: [0, 2, 0],
                 may_fly: true,
+                flight_policy: false,
                 region_edits: false,
                 brushes: false,
             }
@@ -775,6 +1008,7 @@ mod tests {
             Channel::World,
             &Message::ChunkUnload(ChunkUnload {
                 coords: vec![[1, 2, 3]],
+                grid: 0,
             })
             .encode(),
             1000.0,
@@ -784,6 +1018,7 @@ mod tests {
             coord: [4, 5, 6],
             revision: 0,
             voxels: Vec::new(),
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let got: Vec<MessageType> = std::iter::from_fn(|| s.next_game())
@@ -908,6 +1143,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 1,
             voxels,
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let modification = Message::VoxelModification(VoxelModification {
@@ -956,6 +1192,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 3,
             voxels: vec![p.id_end() as u16; CHUNK_VOLUME],
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(bad).encode(), 1000.0);
         assert!(matches!(s.state(), SessionState::Closed { .. }));
@@ -978,6 +1215,7 @@ mod tests {
                 material,
                 rows: 1,
                 down: false,
+                point: None,
             })
         };
         s.send_control(&place(require("dwell:sand")));
@@ -1029,6 +1267,7 @@ mod tests {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }));
         assert_eq!(sent(&s.take_out()).len(), 1);
     }
@@ -1046,6 +1285,7 @@ mod tests {
                 material,
                 rows: 1,
                 down: false,
+                point: None,
             })
         };
         // The game's ids need not be in order (a stroke's queued edits were numbered first).
@@ -1121,6 +1361,248 @@ mod tests {
             };
             assert_eq!((*got, *got_brushes), (region_edits, brushes));
         }
+    }
+
+    /// ADR 0065: the host changes the world's mode while a player is in it; the server sends the
+    /// world's settings again, and flight and brushes follow the mode (flight only as far as the
+    /// flight policy allows it).
+    /// ADR 0066: a client says `Hello` only to a server whose Welcome has `INVENTORY` (an older
+    /// server rejects the message), and passes the inventory messages on to the game once joined.
+    #[test]
+    fn vitals_hello_and_rules_only_with_a_server_that_simulates_them() {
+        // ADR 0069: an older server (no VITALS) predicts no vitals, whatever its mode is called.
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        for flag in [0, welcome_flags::VITALS] {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let _ = s.take_out();
+            let flags = w.flags | flag;
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            let hello = sent(&s.take_out())
+                .iter()
+                .any(|m| matches!(m, Message::VitalsHello));
+            assert_eq!(hello, flag != 0, "flags {flags}");
+            // The suite's world is creative: no rules either way.
+            assert!(!s.vitals_rules().any());
+            let adventure = world_settings::WorldSettings {
+                mode: "adventure",
+                ..s.world_settings().unwrap()
+            };
+            let f = world_settings::SettingsFields::default().with(adventure);
+            s.on_reliable(
+                Channel::Control,
+                &Message::WorldSettings(f).encode(),
+                1000.0,
+            );
+            assert_eq!(s.vitals_rules().any(), flag != 0, "flags {flags}");
+            // A Vitals datagram reaches the game once joined.
+            s.on_datagram(
+                &Message::Vitals(dwell_protocol::VitalsMessage::default()).encode(),
+                1000.0,
+            );
+            assert!(matches!(s.next_game(), Some((Message::Vitals(_), _))));
+        }
+    }
+
+    /// ARCHITECTURE.md §8.3 "Capabilities": the client answers with its own only a server whose
+    /// settings announced some (an older server ends the session on the unknown message), and a
+    /// capability is on only when the server named it.
+    #[test]
+    fn capabilities_are_answered_only_to_a_server_that_announced_them() {
+        use dwell_protocol::capabilities::Capabilities;
+        use dwell_protocol::capability_names::STRUCTURES_PLACE;
+        let announced = |caps: Option<Capabilities>| {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let f = world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(caps.as_ref());
+            send_settings(&mut s, &f);
+            let _ = s.take_out();
+            assert!(!s.capability(STRUCTURES_PLACE), "nothing before Welcome");
+            s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+            assert!(s.joined(), "{:?}", s.state());
+            let answer = sent(&s.take_out()).into_iter().find_map(|m| match m {
+                Message::Capabilities(c) => Some(c),
+                _ => None,
+            });
+            (s.capability(STRUCTURES_PLACE), answer)
+        };
+        // An older server: no field, no answer, nothing on.
+        assert_eq!(announced(None), (false, None));
+        // This build's server: the answer is this build's, and the capability is on.
+        assert_eq!(
+            announced(Some(Capabilities::this_build())),
+            (true, Some(Capabilities::this_client()))
+        );
+        // A server that names others (a newer build's, a mod's) but not this one: answered, off.
+        assert_eq!(
+            announced(Some(Capabilities::of(["mymod:wet"]))),
+            (false, Some(Capabilities::this_client()))
+        );
+        // A name this build doesn't have is never on, whatever the server says.
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(Some(&Capabilities::of(["mymod:wet"]))),
+        );
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(!s.capability("mymod:wet"));
+    }
+
+    #[test]
+    fn hello_goes_only_to_a_server_that_keeps_inventories() {
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        for flag in [0, welcome_flags::INVENTORY] {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let _ = s.take_out();
+            let flags = w.flags | flag;
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            let hello = sent(&s.take_out())
+                .iter()
+                .any(|m| matches!(m, Message::InventoryAction(InventoryAction::Hello)));
+            assert_eq!(hello, flag != 0, "flags {flags}");
+        }
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        let flags = w.flags | welcome_flags::INVENTORY;
+        s.on_reliable(
+            Channel::Control,
+            &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+            1000.0,
+        );
+        let inv = Message::Inventory(InventoryMessage {
+            flags: inventory_flags::USES_ITEMS,
+            inventory: Default::default(),
+        });
+        s.on_reliable(Channel::Control, &inv.encode(), 1000.0);
+        let drops = Message::ItemDrops(ItemDrops::default());
+        s.on_reliable(Channel::World, &drops.encode(), 1000.0);
+        assert!(matches!(s.next_game(), Some((Message::Inventory(_), _))));
+        assert!(matches!(s.next_game(), Some((Message::ItemDrops(_), _))));
+        // Creatures (ADR 0073) and ground items gone (ADR 0071) reach the game too.
+        let creatures = Message::Creatures(dwell_protocol::CreaturesMessage::default());
+        s.on_reliable(Channel::World, &creatures.encode(), 1000.0);
+        assert!(matches!(s.next_game(), Some((Message::Creatures(_), _))));
+        s.on_reliable(
+            Channel::World,
+            &Message::GroundGone(vec![[1, 2, 3]]).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::GroundGone(_), _))));
+        // Steam (VOLCANOES.md §6.3) reaches the game: before, the session dropped it, so no puff
+        // or hiss ever showed though the server sent thousands of cells.
+        s.on_reliable(
+            Channel::World,
+            &Message::Steam(vec![[1, 2, 3]]).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::Steam(_), _))));
+        // The far ecology (docs/ECOLOGY.md §9) reaches the game: before, the session dropped it,
+        // so `__dwell.ecology()` stayed null and no far herd was drawn on any server.
+        s.on_reliable(
+            Channel::World,
+            &Message::Ecology(dwell_protocol::EcologyMessage::default()).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::Ecology(_), _))));
+    }
+
+    #[test]
+    fn a_mode_change_after_join_turns_flight_and_brushes_off_and_on() {
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        let abilities = |s: &Session| match s.state() {
+            SessionState::Joined {
+                may_fly, brushes, ..
+            } => (*may_fly, *brushes),
+            other => panic!("{other:?}"),
+        };
+        for (policy, flies) in [(true, true), (false, false)] {
+            let (_, mut s) = setup();
+            let flags = welcome_flags::REGION_EDITS
+                | welcome_flags::BRUSHES
+                | if flies { welcome_flags::FLIGHT } else { 0 }
+                | if policy {
+                    welcome_flags::FLIGHT_POLICY
+                } else {
+                    0
+                };
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            s.on_reliable(
+                Channel::Control,
+                &Message::Welcome(Welcome { flags, ..w.clone() }).encode(),
+                1000.0,
+            );
+            assert_eq!(abilities(&s), (flies, true));
+            let _ = s.take_abilities_changed();
+            let adventure = world_settings::WorldSettings {
+                mode: "adventure",
+                ..settings()
+            };
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(adventure),
+            );
+            assert!(s.take_abilities_changed());
+            assert_eq!(
+                abilities(&s),
+                (false, false),
+                "adventure: no flight, no brushes"
+            );
+            assert_eq!(s.world_settings().map(|w| w.mode), Some("adventure"));
+            send_settings(
+                &mut s,
+                &world_settings::SettingsFields::default().with(settings()),
+            );
+            assert!(s.take_abilities_changed());
+            assert_eq!(
+                abilities(&s),
+                (policy, true),
+                "creative again, as the policy allows"
+            );
+        }
+    }
+
+    #[test]
+    fn theater_for_guests_follows_the_worlds_settings_after_join() {
+        // THEATER_MODE.md §7: on until the host turns it off, then off, then on again.
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        let (_, mut s) = setup();
+        assert!(s.theater_guests(), "on before any settings");
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        s.on_reliable(Channel::Control, &Message::Welcome(w).encode(), 1000.0);
+        assert!(s.theater_guests());
+        let off = world_settings::WorldSettings {
+            theater_guests: false,
+            ..settings()
+        };
+        send_settings(&mut s, &world_settings::SettingsFields::default().with(off));
+        assert!(!s.theater_guests(), "the host turned it off");
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default().with(settings()),
+        );
+        assert!(s.theater_guests(), "and on again");
     }
 
     #[test]

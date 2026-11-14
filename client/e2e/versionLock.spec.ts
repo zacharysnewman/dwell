@@ -2,6 +2,7 @@
 // Worlds are locked to their compatibility line (RELEASES.md §6) in the browser too: the local-mode
 // core refuses a world file last saved by a version this build may not open, and says which.
 import { expect, test, type Page } from '@playwright/test';
+import { openMenuPage } from './menuNav';
 
 interface WorldFileHooks {
   worldFileVersion(bytes: Uint8Array): string | undefined;
@@ -54,6 +55,7 @@ test('a world saved by a newer version is refused, with the version to use, and 
 }) => {
   test.setTimeout(90_000);
   await page.goto('./');
+  await openMenuPage(page, 'new-world');
   await page.locator('#world-name').fill('Locked');
   await page.locator('#world-type').selectOption('flat');
   await page.locator('#create-world button[type=submit]').click();

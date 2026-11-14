@@ -248,7 +248,7 @@ fn a_fluid_added_by_data_alone_is_meshed_with_its_own_surface_drop_and_opacity()
         } else {
             "dwell:water"
         };
-        assert_eq!(FLUIDS[f as usize].name, want, "vertex {v}");
+        assert_eq!(FLUIDS[crate::fluid_id(f) as usize].name, want, "vertex {v}");
     }
     assert!(opaque.fluids.is_empty());
 }
@@ -367,6 +367,50 @@ fn a_flooded_ladder_draws_the_water_around_it() {
 fn tall_grass() -> u16 {
     require("dwell:tall_grass")
 }
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 30 (owner: "Ensure all of our graphics have settings in our graphics
+    /// menu"): Graphics → Tall grass meshes `ChunkFlags::plants` percent of the cross plants: a
+    /// field of grass draws all of them at 100, none at 0, and about half at 50, the half kept being
+    /// the same cells whichever face it is on (red before the flag: every density drew them all).
+    fn the_tall_grass_density_thins_the_cross_plants(f: FaceFrame) {
+        let mut cells = Vec::new();
+        for x in 0..32 {
+            for z in 0..32 {
+                cells.push((x, 7, z, cube_block()));
+                cells.push((x, 8, z, tall_grass()));
+            }
+        }
+        let padded = voxels(&cells);
+        let quads_n = usize::from(
+            dwell_blocks::info(tall_grass())
+                .cross
+                .expect("a cross")
+                .quads,
+        );
+        let plants = |percent: u8| {
+            let m = super::mesh_chunk_flags(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    plants: percent,
+                    ..ChunkFlags::default()
+                },
+            )
+            .expect("padded");
+            m.cutout.positions.len() / 3 / 4 / quads_n
+        };
+        assert_eq!(plants(100), 32 * 32);
+        assert_eq!(plants(0), 0);
+        let half = plants(50);
+        assert!((400..=624).contains(&half), "about half kept: {half}");
+        assert!(plants(25) < half && half < plants(75));
+    }
+);
 
 #[test]
 fn draws_tall_grass_as_crossed_cutout_quads_from_its_data() {
@@ -951,7 +995,7 @@ fn fluid_side_faces_stand_only_over_the_open_part_beside_them_and_under_the_flui
         let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
         // Every fluid face carries the water's fluid id (the water shader's parameters).
         for &i in t {
-            assert_eq!(m.fluids[i as usize], water_id);
+            assert_eq!(crate::fluid_id(m.fluids[i as usize]), water_id);
         }
         let n = [
             f64::from(m.normals[t[0] as usize * 3]),
@@ -1316,7 +1360,7 @@ fn a_plant_that_does_not_sit_on_its_support_keeps_to_its_cells_floor_by_data_alo
     let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
     let (reed, plant, water) = (
         id("test:reed"),
-        id("dwell:tall_grass"),
+        id("dwell:tall_grass[stage=3]"),
         id("dwell:water[fill=8]"),
     );
     // The fixture keeps the build's blocks first, so the build's ramp states are the fixture's.
@@ -1377,6 +1421,13 @@ fn local_mesh(f: FaceFrame, mut m: MeshArrays) -> MeshArrays {
         }
         for v in m.normals.iter_mut().skip(1).step_by(3) {
             *v = -*v;
+        }
+        // A leaf card's packed plane normal (`leaves::card_speed`, negative) is a normal too.
+        for speed in m.plants.iter_mut().skip(1).step_by(4) {
+            if *speed < 0.0 {
+                let n = leaves::card_normal_of(*speed);
+                *speed = leaves::card_speed([n[0], -n[1], n[2]]);
+            }
         }
         for t in m.indices.chunks_exact_mut(3) {
             t.swap(1, 2);
@@ -1574,13 +1625,15 @@ dwell_world::both_faces!(
     }
 );
 
-// face-a-only: a fluid side face of the face-local mesher, which meshes face B's chunks mirrored into the same frame.
+// face-a-only: a fluid surface of the face-local mesher, which meshes face B's chunks mirrored into the same frame.
 #[test]
 fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
     //! docs/BUGS.md 4 (gaps between water at height steps): an upper reach's column (water over
     //! water) beside a lower reach's last cell (air over it, its surface drawn `surface_drop` below
     //! its top) culled the face between them as fluid beside the same fluid, leaving an open strip
-    //! from the lower surface up to the upper column's next cell.
+    //! from the lower surface up to the upper column's next cell. Since BUGS.md #92 the open cell
+    //! over the lower water is a step cell: its slope runs from the upper surface at the shared
+    //! edge down to the lower one, closing the strip, and no face stands inside it.
     let st = stone();
     let mut cells = Vec::new();
     for x in 4..8 {
@@ -1593,21 +1646,24 @@ fn a_river_step_down_closes_the_strip_between_the_two_surfaces() {
     cells.push((6, 1, 5, water()));
     let m = mesh(&cells, false).transparent;
     let top = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
-    let mut strip = false;
+    let near = |p: &[f64; 3], x: f64, y: f64| (p[0] - x).abs() < 1e-6 && (p[1] - y).abs() < 1e-5;
+    let mut slope = false;
     for t in m.indices.chunks_exact(3) {
-        let n = m.normals[t[0] as usize * 3];
+        let n = normal_of(&m.positions, t[0], t[1], t[2]);
         let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
-        if n > 0.5 && ps.iter().all(|p| (p[0] - 6.0).abs() < 1e-6) {
-            let lo = ps.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
-            let hi = ps.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
-            if (lo - (1.0 + top)).abs() < 1e-5 && (hi - 2.0).abs() < 1e-5 {
-                strip = true;
-            }
+        if n[1] > 0.0 && n[0] > 0.0 {
+            slope |= ps.iter().any(|p| near(p, 6.0, 2.0 + top))
+                && ps.iter().any(|p| near(p, 7.0, 1.0 + top));
         }
+        let inside = ps
+            .iter()
+            .all(|p| (p[0] - 6.0).abs() < 1e-6 && p[1] > 1.0 + top + 1e-6);
+        assert!(!inside, "a face inside the step's water at x 6: {ps:?}");
     }
     assert!(
-        strip,
-        "no face closes the step between the surfaces at y {} and 2",
+        slope,
+        "no slope closes the step from y {} at x 6 down to y {} at x 7",
+        2.0 + top,
         1.0 + top
     );
 }
@@ -1624,23 +1680,31 @@ fn a_log_lying_along_x_shows_its_end_grain_on_its_ends_and_its_bark_along_it() {
     };
     for (axis, end_normal) in [("y", 1usize), ("x", 0), ("z", 2)] {
         let m = mesh(&[(4, 4, 4, log(axis))], false).opaque;
-        for q in 0..quads(&m) {
-            let n = [0, 1, 2].map(|k| m.normals[q * 12 + k]);
-            let along = n
-                .iter()
-                .position(|c| c.abs() == 1.0)
-                .expect("an axis normal");
-            let tile = [m.tiles[q * 16], m.tiles[q * 16 + 1]];
-            let want = if along == end_normal {
-                "logTop"
-            } else {
-                "logSide"
+        // Polygon by polygon (an octagonal log's caps have eight corners, ADR 0072): each
+        // triangle's first vertex carries its face's normal and tile; a triangle of a rectangle
+        // spans its face's v.
+        for t in m.indices.chunks_exact(3) {
+            let i = t[0] as usize;
+            let n = [0, 1, 2].map(|k| m.normals[i * 3 + k]);
+            let tile = [m.tiles[i * 4], m.tiles[i * 4 + 1]];
+            let Some(along) = n.iter().position(|c| c.abs() == 1.0) else {
+                // A chamfer (45 degrees): bark.
+                assert_eq!(tile, rect("logSide"), "axis {axis}, chamfer {n:?}");
+                continue;
             };
-            assert_eq!(tile, rect(want), "axis {axis}, face normal {n:?}");
+            if along == end_normal {
+                // The cap: the heart's end grain inside the bark ring (Phase 55 T3).
+                assert!(
+                    tile == rect("logHeart") || tile == rect("logSide"),
+                    "axis {axis}, cap tile {tile:?}"
+                );
+                continue;
+            }
+            assert_eq!(tile, rect("logSide"), "axis {axis}, face normal {n:?}");
             if along != end_normal {
                 // The bark's v runs along the log: over the face, v spans the log's own length
-                // (1 m along x or z, a ½ m cell along y), u the other way.
-                let vs: Vec<f32> = (0..4).map(|c| m.uvs[q * 8 + c * 2 + 1]).collect();
+                // (1 m along x or z, a half-metre cell along y), u the other way.
+                let vs: Vec<f32> = t.iter().map(|&c| m.uvs[c as usize * 2 + 1]).collect();
                 let span = vs.iter().fold(f32::MIN, |a, &b| a.max(b))
                     - vs.iter().fold(f32::MAX, |a, &b| a.min(b));
                 let length = if end_normal == 1 { 0.5 } else { 1.0 };
@@ -1930,5 +1994,1514 @@ dwell_world::both_faces!(
             holes.len(),
             &holes[..holes.len().min(4)]
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-07: "underwater leaves z fighting, I think they should be 'flooded' so
+    /// shouldn't get foam and stuff". A flooded leaf inside a pond draws its water as water: the
+    /// pond's mesh is the one it has with water in the leaf's cell (no surface or side faces round
+    /// the leaf, none on the leaf's faces), and the leaf is drawn inside it.
+    fn a_flooded_leaf_in_a_pond_draws_no_water_faces_round_it(f: FaceFrame) {
+        let c = ChunkCoord::new(0, 2, 0);
+        let n = CHUNK_SIZE;
+        let o = [c.x * n, c.y * n, c.z * n];
+        let pond = |middle: u16| {
+            let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            for y in 3..=8 {
+                for z in 3..=9 {
+                    for x in 3..=9 {
+                        let wall = y == 3 || x == 3 || x == 9 || z == 3 || z == 9;
+                        let m = if wall {
+                            stone()
+                        } else if y == 8 {
+                            0
+                        } else if [x, y, z] == [6, 5, 6] {
+                            middle
+                        } else {
+                            water()
+                        };
+                        source.set_voxel(o[0] + x, o[1] + y, o[2] + z, m);
+                    }
+                }
+            }
+            mesh_on_face(&mut source, c, f)
+        };
+        let all_water = pond(water());
+        let flooded = pond(require("dwell:leaves[flooded=true]"));
+        let dry = pond(require("dwell:leaves[flooded=false]"));
+        let water_area = |m: &ChunkMeshes| quad_area(&m.transparent);
+        assert!(
+            (water_area(&flooded) - water_area(&all_water)).abs() < 1e-3,
+            "the flooded leaf's water is the pond's: {} vs {}",
+            water_area(&flooded),
+            water_area(&all_water)
+        );
+        assert!(
+            water_area(&dry) > water_area(&all_water) + 1.0,
+            "a dry leaf has the water's faces round it"
+        );
+        // A lone leaf (shared/look/leaves.json): 6 faces and 12 edge cuts (quads) and 8 corner
+        // cuts (triangles, half a quad each); its cards (`cards`, a quad each) besides.
+        let cards = flooded
+            .cutout
+            .plants
+            .chunks(16)
+            .filter(|p| p[3] > 0.0)
+            .count();
+        assert_eq!(
+            quads(&flooded.cutout) - cards,
+            22,
+            "the leaf drawn inside the water"
+        );
+    }
+);
+
+/// The opaque mesh of `cells` with `cuts` carved (chunk-local, world-oriented), in cells.
+fn mesh_cut(cells: &[(i32, i32, i32, u16)], cuts: &[([i32; 3], Cut)], mirror: bool) -> MeshArrays {
+    in_cells(super::mesh_chunk_cut(&voxels(cells), &[], mirror, [0; 3], cuts).expect("padded"))
+        .opaque
+}
+
+/// The triangles of `m` as (corners, unit normal, whether its tile is `tile`).
+fn triangles(m: &MeshArrays, tile: &str) -> Vec<([[f64; 3]; 3], [f64; 3], bool)> {
+    let r = tile_rect(tile);
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&m.positions, t[k]));
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+            let i = t[0] as usize * 4;
+            let is = (f64::from(m.tiles[i]) - r.u0).abs() < 1e-6
+                && (f64::from(m.tiles[i + 1]) - r.v0).abs() < 1e-6;
+            (p, n.map(|c| c / l), is)
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    /// A cut log is meshed carved (ADR 0067 §11): a standing trunk notched 0.15 m into its −x
+    /// side with a kerf past it shows the V's fresh-wood faces sloping in to the apex 0.15 m deep
+    /// at the row's middle, the slit deeper, and no bark left over the notch's mouth; the cells
+    /// above and below stay cubes. A trunk lying along x notched down from its face-local top is
+    /// cut the same, from whichever world side is that face's up.
+    fn a_cut_log_is_carved_into_the_chunk_mesh(f: FaceFrame) {
+        let log = require("dwell:log");
+        let (x, z) = (5, 5);
+        let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
+        let mut cut = Cut::default();
+        cut.notch[0] = 0.15;
+        cut.kerf[0][1] = 0.05;
+        let m = mesh_cut(&cells, &[([x, 11, z], cut)], f.is_b());
+        let tris = triangles(&m, "logCut");
+        let fresh: Vec<_> = tris.iter().filter(|t| t.2).collect();
+        assert!(!fresh.is_empty(), "fresh-wood faces");
+        // Every fresh face lies in the cut: within 0.2 m of the −x side, inside the cut row.
+        for (p, n, _) in &fresh {
+            for q in p {
+                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.2 + 1e-6, "{q:?}");
+                assert!(q[1] >= 11.0 - 1e-6 && q[1] <= 12.0 + 1e-6, "{q:?}");
+            }
+            assert!(n[0] <= 1e-6, "faces out of the −x side: {n:?}");
+        }
+        // The V's apex line, 0.15 m in at the row's middle (a ½ m row: 1 cell).
+        let has = |px: f64, py: &dyn Fn(f64) -> bool| {
+            m.positions
+                .chunks_exact(3)
+                .any(|p| (f64::from(p[0]) - px).abs() < 1e-5 && py(f64::from(p[1])))
+        };
+        assert!(has(5.15, &|y| (y - 11.5).abs() < 1e-5), "the apex");
+        // The kerf's slit, 0.2 m in, in the face-locally upper band.
+        let upper = |y: f64| if f.is_b() { y < 11.5 } else { y > 11.5 };
+        assert!(has(5.2, &upper), "the kerf's slit in the upper band");
+        // No bark (a −x face on the side's plane) over the mouth: 2.5 × 0.15 = 0.375 m open.
+        let hw = 0.5 * 2.5 * 0.15 / 0.5;
+        for (p, n, is) in &tris {
+            let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+            let on_side = n[0] < -0.999 && (c[0] - 5.0).abs() < 1e-6;
+            assert!(
+                *is || !on_side || (c[1] - 11.5).abs() >= hw - 1e-3,
+                "a cube face left in the notch: {p:?}"
+            );
+        }
+        // Closed: the carved cell's faces' area vectors sum to zero but for its two end squares
+        // (hidden by the logs above and below), which cancel each other.
+        let mut sum = [0.0; 3];
+        for (p, _, _) in &tris {
+            let inside = p.iter().all(|q| {
+                q[0] > 5.0 - 1e-6 && q[0] < 6.0 + 1e-6 && q[1] > 11.0 - 1e-6 && q[1] < 12.0 + 1e-6
+            });
+            let flat = |y: f64| p.iter().all(|q| (q[1] - y).abs() < 1e-6);
+            if inside && !flat(11.0) && !flat(12.0) {
+                let e1 = [0, 1, 2].map(|k| p[1][k] - p[0][k]);
+                let e2 = [0, 1, 2].map(|k| p[2][k] - p[0][k]);
+                let c = [
+                    e1[1] * e2[2] - e1[2] * e2[1],
+                    e1[2] * e2[0] - e1[0] * e2[2],
+                    e1[0] * e2[1] - e1[1] * e2[0],
+                ];
+                sum = [0, 1, 2].map(|k| sum[k] + c[k]);
+            }
+        }
+        assert!(sum.iter().all(|c| c.abs() < 1e-4), "open: {sum:?}");
+        // Uncut: the column meshes as without cuts, with no fresh wood.
+        let plain = mesh_cut(&cells, &[], f.is_b());
+        assert!(triangles(&plain, "logCut").iter().all(|t| !t.2));
+        assert_eq!(plain, mesh_chunk(&voxels(&cells), f.is_b()).unwrap().opaque);
+
+        // A log lying along x, notched 0.1 m from its face-local top (world: the face's up).
+        let lying = dwell_blocks::state("dwell:log[axis=x]").expect("a lying log");
+        let up = f.vector([0.0, 1.0, 0.0]);
+        let side = (0..4)
+            .find(|&s| f64::from(dwell_protocol::chopping::side_normal(0, s)[1]) == up[1])
+            .expect("the up side");
+        let mut cut = Cut::default();
+        cut.notch[side] = 0.1;
+        let m = mesh_cut(&[(8, 10, 8, lying)], &[([8, 10, 8], cut)], f.is_b());
+        // 0.1 m of a ½ m row: 0.2 of a cell down from the face-local top, at x's middle.
+        let apex_y = if f.is_b() { 10.2 } else { 10.8 };
+        let apex = m.positions.chunks_exact(3).any(|p| {
+            (f64::from(p[0]) - 8.5).abs() < 1e-5 && (f64::from(p[1]) - apex_y).abs() < 1e-5
+        });
+        assert!(apex, "the lying log's apex at y {apex_y}");
+        assert!(triangles(&m, "logCut").iter().any(|t| t.2));
+    }
+);
+
+dwell_world::both_faces!(
+    /// The axe's bites (WORK_QUEUE item 26): one hit on a standing trunk's −x side, struck 0.45 m
+    /// along z (on the octagon's flat face), is carved as a V centred there, not a slit across
+    /// the side (red before item 26: the kerf's fresh wood ran from z 0 to 1), grown by the bite
+    /// rule (WORK_QUEUE item 18: its first of the swings to fell's share of half the log, so wider
+    /// and deeper than the head), its mouth in the notch's band round the row's middle and its two
+    /// faces both turned out of the notch: the lower one facing face-local up, the upper one
+    /// down (the gash's ramps' short sides at the cut); and the cell carries the wood's cracks
+    /// while its neighbours don't.
+    fn a_bitten_log_is_carved_where_it_was_struck_and_cracks(f: FaceFrame) {
+        let log = require("dwell:log");
+        let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
+        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
+        let (x, z) = (5, 5);
+        let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
+        let mut cut = Cut::default();
+        cut.swing(axe, 1, 0, 0, 1.0);
+        cut.bite(1, 0, 0, 0.45, &wood.cut.bite);
+        let m = mesh_cut(&cells, &[([x, 11, z], cut)], f.is_b());
+        let fresh: Vec<_> = triangles(&m, "logCut")
+            .into_iter()
+            .filter(|t| t.2)
+            .collect();
+        assert!(!fresh.is_empty(), "fresh-wood faces");
+        let deep = fresh
+            .iter()
+            .flat_map(|t| t.0.iter())
+            .fold(0.0f64, |a, q| a.max(q[0] - 5.0));
+        let b = wood.cut.bite;
+        assert!(
+            deep > 0.2 && deep < 0.6,
+            "the first swing's share of the rule: {deep}"
+        );
+        let half = 0.5 * (deep * b.width_per_depth).max(b.width_m) + 1e-4;
+        let (mut zlo, mut zhi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for (p, n, _) in &fresh {
+            for q in p {
+                zlo = zlo.min(q[2]);
+                zhi = zhi.max(q[2]);
+                assert!(
+                    (q[2] - 5.45).abs() <= half,
+                    "inside the grown bite round the hit: {q:?}"
+                );
+                assert!(
+                    (q[1] - 11.5).abs() <= 0.5 * b.band_m / dwell_world::CELL_H + 1e-4,
+                    "in the notch's band: {q:?}"
+                );
+                assert!(q[0] >= 5.0 - 1e-6 && q[0] <= 5.0 + deep + 1e-5, "{q:?}");
+            }
+            // Face-local: the row's lower half's face looks up and out of the notch (−x), the
+            // upper half's down and out.
+            let mid = (p[0][1] + p[1][1] + p[2][1]) / 3.0;
+            let below = if f.is_b() { mid > 11.5 } else { mid < 11.5 };
+            let up = if f.is_b() { -n[1] } else { n[1] };
+            if (mid - 11.5).abs() > 1e-3 && n[0] < -0.05 {
+                assert!(
+                    if below { up > 0.05 } else { up < -0.05 },
+                    "the V's faces turn out of the notch: {p:?} {n:?}"
+                );
+            }
+        }
+        assert!(
+            ((zlo + zhi) * 0.5 - 5.45).abs() < 0.03,
+            "centred where it struck: {zlo}..{zhi}"
+        );
+        // Its cracks: the cut cell's vertices carry the wood's first crack tile, the logs above
+        // and below none.
+        assert_eq!(
+            m.cracks.len(),
+            m.positions.len() / 3,
+            "the stream covers every vertex"
+        );
+        let first = wood.cut.cracks.unwrap().tiles[0];
+        let slot = crate::textures::TILE_ORDER
+            .iter()
+            .position(|t| *t == first)
+            .unwrap()
+            + 1;
+        for (v, p) in m.positions.chunks_exact(3).enumerate() {
+            let y = f64::from(p[1]);
+            let slot_here = (m.cracks[v] >> 16) & 0xff;
+            if y > 11.0 + 1e-4 && y < 12.0 - 1e-4 {
+                assert_eq!(slot_here as usize, slot, "the cut cell cracks: {p:?}");
+            } else if !(10.999..=12.001).contains(&y) {
+                assert_eq!(slot_here, 0, "a neighbour doesn't: {p:?}");
+            }
+        }
+    }
+);
+
+/// The opaque mesh of logs (`(x, y, z, axis)`, chunk-local) in chunk (0, 2, 0) of face `f`,
+/// read back face-local: each triangle's (centroid, normal).
+fn log_triangles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f64; 3])> {
+    let states: Vec<(i32, i32, i32, StateId)> = logs
+        .iter()
+        .map(|&(x, y, z, axis)| (x, y, z, require(&format!("dwell:log[axis={axis}]"))))
+        .collect();
+    state_triangles(f, &states)
+}
+
+/// As `log_triangles`, for face-local states.
+fn state_triangles(f: FaceFrame, cells: &[(i32, i32, i32, StateId)]) -> Vec<([f64; 3], [f64; 3])> {
+    let c = ChunkCoord::new(0, 2, 0);
+    let n = CHUNK_SIZE;
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    for &(x, y, z, m) in cells {
+        source.set_voxel(x, c.y * n + y, z, m);
+    }
+    let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
+    m.indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p: Vec<[f64; 3]> = t.iter().map(|&i| vertex(&m.positions, i)).collect();
+            let mid = std::array::from_fn(|a| (p[0][a] + p[1][a] + p[2][a]) / 3.0);
+            (mid, vertex(&m.normals, t[0]))
+        })
+        .collect()
+}
+
+fn diagonal(n: [f64; 3]) -> bool {
+    n.iter().filter(|c| c.abs() > 0.1).count() == 2
+}
+
+dwell_world::both_faces!(
+    /// A lone log is an octagonal prism (ADR 0072): eight bark sides round its axis, four of them
+    /// the 45° chamfers, and end-grain caps; nothing outside the octagon's corners is drawn.
+    fn a_lone_log_meshes_as_an_octagonal_prism(f: FaceFrame) {
+        let tris = log_triangles(f, &[(8, 8, 8, "y")]);
+        let normals: std::collections::BTreeSet<[i64; 3]> = tris
+            .iter()
+            .map(|(_, n)| n.map(|c| (c * 100.0).round() as i64))
+            .collect();
+        assert_eq!(normals.len(), 10, "8 sides and 2 caps: {normals:?}");
+        assert_eq!(
+            tris.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "4 chamfer quads"
+        );
+        // The chamfers cut the corners: nothing is drawn at a corner column of the cell.
+        for (mid, _) in &tris {
+            let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
+            assert!(!(u < 0.05 && v < 0.05), "a corner face at {mid:?}");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Two logs side by side along one axis join flat (owner, 2026-11-09: "full width sides where
+    /// they meet"): no face between them, no chamfer on the corners at the join, and their sides
+    /// run on flat across it. Logs of different axes keep their chamfers.
+    fn two_same_axis_logs_join_full_width_and_different_axes_do_not(f: FaceFrame) {
+        let joined = log_triangles(f, &[(8, 8, 8, "y"), (9, 8, 8, "y")]);
+        assert!(
+            joined.iter().all(|(m, _)| (m[0] - 9.0).abs() > 1e-6),
+            "a face on the shared plane x = 9"
+        );
+        assert_eq!(
+            joined.iter().filter(|(_, n)| diagonal(*n)).count(),
+            8,
+            "2 chamfers each"
+        );
+        let crossed = log_triangles(f, &[(8, 8, 8, "y"), (9, 8, 8, "z")]);
+        assert_eq!(
+            crossed.iter().filter(|(_, n)| diagonal(*n)).count(),
+            16,
+            "4 chamfers each"
+        );
+    }
+);
+
+/// The face-local top caps' triangles of logs (as `log_triangles`) with each one's tile.
+fn log_top_tiles(f: FaceFrame, logs: &[(i32, i32, i32, &str)]) -> Vec<([f64; 3], [f32; 2])> {
+    let c = ChunkCoord::new(0, 2, 0);
+    let n = CHUNK_SIZE;
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    for &(x, y, z, axis) in logs {
+        let m = require(&format!("dwell:log[axis={axis}]"));
+        source.set_voxel(x, c.y * n + y, z, m);
+    }
+    let m = local_mesh(f, mesh_on_face(&mut source, c, f).opaque);
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| vertex(&m.normals, t[0])[1] > 0.5)
+        .map(|t| {
+            let p: Vec<[f64; 3]> = t.iter().map(|&i| vertex(&m.positions, i)).collect();
+            let mid = std::array::from_fn(|a| (p[0][a] + p[1][a] + p[2][a]) / 3.0);
+            let i = t[0] as usize;
+            (mid, [m.tiles[i * 4], m.tiles[i * 4 + 1]])
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    /// Phase 55 T3 (owner, 2026-11-09: "the outside bark ring should follow the octagon, it
+    /// doesn't, it gets cut off on the corners"): a lone log's top is end grain (the ringless
+    /// heart tile) inside a band of bark that runs along all eight edges, the chamfers too. Red
+    /// before: the whole cap was the square-ringed end tile, its ring clipped at the corners.
+    fn a_lone_logs_cap_rings_the_octagon_in_bark(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y")]);
+        assert!(
+            tris.iter().any(|(_, t)| *t == rect_of("logHeart")),
+            "no heart"
+        );
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        // Bark at a chamfer: near the cut corner (u + v about the chamfer), on all four.
+        for (cu, cv) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            let near = bark.iter().any(|(m, _)| {
+                let (u, v) = ((m[0] - 8.0 - cu).abs(), (m[2] - 8.0 - cv).abs());
+                (0.2..0.45).contains(&(u + v)) && u < 0.4 && v < 0.4
+            });
+            assert!(near, "no bark along the chamfer at corner ({cu}, {cv})");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Joined logs' tops have no bark between them: no ring runs along the joined side, so a
+    /// joined wall's top reads as continuous wood; the open sides keep their ring.
+    fn joined_logs_tops_have_no_ring_between_them(f: FaceFrame) {
+        let tris = log_top_tiles(f, &[(8, 8, 8, "y"), (9, 8, 8, "y")]);
+        let bark: Vec<_> = tris
+            .iter()
+            .filter(|(_, t)| *t == rect_of("logSide"))
+            .collect();
+        assert!(!bark.is_empty(), "the open sides keep their ring");
+        assert!(
+            bark.iter().all(|(m, _)| (m[0] - 9.0).abs() > 0.15),
+            "bark along the joined side x = 9: {:?}",
+            bark.iter().map(|b| b.0).collect::<Vec<_>>()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): a stump's wood
+    /// ramp is the log's octagon prism cut by its slant: its slant and sides stay inside the
+    /// octagon (nothing at the cell's cut corners), and it meets the log below flat (neither cap
+    /// between them drawn). Red before: the square ramp drew its corners.
+    fn a_stumps_wood_ramp_is_the_octagon_cut_by_its_slant(f: FaceFrame) {
+        let log = require("dwell:log[axis=y]");
+        let ramp = require("dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]");
+        let tris = state_triangles(f, &[(8, 8, 8, log), (8, 9, 8, ramp)]);
+        let slant = |n: [f64; 3]| n[1].abs() > 0.1 && n[1].abs() < 0.99;
+        assert!(tris.iter().any(|(_, n)| slant(*n)), "a slant");
+        // The log's four chamfers are 8 triangles; the ramp's run on up its sides.
+        let chamfers = tris
+            .iter()
+            .filter(|(_, n)| n[1].abs() < 0.01 && diagonal(*n))
+            .count();
+        assert!(chamfers > 8, "the ramp's chamfers too: {chamfers}");
+        for (mid, n) in &tris {
+            let (u, v) = (mid[0] - 8.0, mid[2] - 8.0);
+            let corner = |a: f64| !(0.05..=0.95).contains(&a);
+            assert!(
+                !(corner(u) && corner(v)),
+                "a corner face at {mid:?} ({n:?})"
+            );
+        }
+        assert!(
+            !tris.iter().any(|(_, n)| n[1] > 0.99),
+            "no flat top: the log's cap is covered and the ramp's is its slant"
+        );
+        assert!(tris.iter().any(|(_, n)| n[1] < -0.99), "the log's bottom");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-10: "Top of water slopes from up river looking down, have some 'gap'
+    /// artifacts": thin see-through lines along a river's ½ m water steps seen from upstream. A
+    /// water step is watertight from above: every ray from the air over the upper pool down into
+    /// the water beyond the step (the upper top, the pour slope, the lower top) meets a water face
+    /// from its front first, never nothing or a face's back.
+    fn a_water_step_is_watertight_seen_from_upstream(f: FaceFrame) {
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        // Stone at row 4, the lower pool at row 5, the upper pool at row 6 where x ≤ 12.
+        for z in 2..=26 {
+            for x in 2..=26 {
+                source.set_voxel(o[0] + x, o[1] + 4, o[2] + z, stone());
+                source.set_voxel(o[0] + x, o[1] + 5, o[2] + z, water());
+                if x <= 12 {
+                    source.set_voxel(o[0] + x, o[1] + 6, o[2] + z, water());
+                }
+            }
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).transparent);
+        let mut rays = 0;
+        let mut holes = Vec::new();
+        for eye in [
+            [4.5, 9.0, 14.5],
+            [6.2, 7.6, 11.3],
+            [8.5, 12.0, 17.5],
+            [3.0, 7.2, 14.0],
+        ] {
+            for i in 0..=80 {
+                let x = 11.0 + f64::from(i) * 0.05;
+                for z in [6.37, 10.5, 13.01, 14.99, 15.0, 15.5, 18.73, 22.2] {
+                    // a point under both surfaces (in the stone's row), so the ray crosses one
+                    let target = [x, 4.6, z];
+                    let d = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+                    rays += 1;
+                    match first_hit(&m, eye, d) {
+                        None => holes.push((eye, target, "nothing")),
+                        Some((_, nrm)) => {
+                            if nrm[0] * d[0] + nrm[1] * d[1] + nrm[2] * d[2] > 0.0 {
+                                holes.push((eye, target, "a back"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            holes.is_empty(),
+            "{:?}: {} of {rays} rays from upstream met no water front first, e.g. {:?}",
+            f.face,
+            holes.len(),
+            &holes[..holes.len().min(6)]
+        );
+    }
+);
+
+/// The T-junctions of `m` across a crease: a vertex of one triangle lying inside an edge of
+/// another whose plane differs (where two surfaces meet at an angle, the rasterizer leaves a crack
+/// along such an edge: the sky or the bed shows through in a dashed hairline).
+fn crease_t_junctions(m: &MeshArrays) -> Vec<[f64; 3]> {
+    let tris: Vec<([[f64; 3]; 3], [f32; 3])> = m
+        .indices
+        .chunks_exact(3)
+        .map(|t| {
+            let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            let i = t[0] as usize * 3;
+            (ps, [m.normals[i], m.normals[i + 1], m.normals[i + 2]])
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (ps, n) in &tris {
+        for p in ps {
+            for (qs, nq) in &tris {
+                if n[0] * nq[0] + n[1] * nq[1] + n[2] * nq[2] > 0.999 {
+                    continue;
+                }
+                for e in 0..3 {
+                    let (a, b) = (qs[e], qs[(e + 1) % 3]);
+                    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                    let ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+                    let len2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+                    let t = (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / len2;
+                    if t <= 1e-6 || t >= 1.0 - 1e-6 {
+                        continue;
+                    }
+                    let off = [ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]];
+                    if off[0] * off[0] + off[1] * off[1] + off[2] * off[2] < 1e-12 {
+                        out.push(*p);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-10 (the dashed hairlines along a river's steps): where a pool's top meets
+    /// its pour slope, and the slope the lower top, no vertex of one lies inside an edge of the
+    /// other. The tops were merged into long rectangles while each slope is one cell wide, so
+    /// along the step the slopes' corners fell inside the tops' edges (T-junctions), and the
+    /// rasterizer left a crack at each that showed the bed through the water.
+    fn a_water_step_has_no_t_junctions_along_its_creases(f: FaceFrame) {
+        let n = CHUNK_SIZE;
+        let c = ChunkCoord::new(0, 2, 0);
+        let o = [c.x * n, c.y * n, c.z * n];
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        // Stone at row 4, the lower pool at row 5, the upper pool at row 6 where x ≤ 8; a second
+        // step in fill within row 5 (x ≥ 12 a lower fill), its riser vertical.
+        let low_fill = require("dwell:water[fill=4]");
+        for z in 2..=13 {
+            for x in 2..=13 {
+                source.set_voxel(o[0] + x, o[1] + 4, o[2] + z, stone());
+                let lower = if x >= 12 { low_fill } else { water() };
+                source.set_voxel(o[0] + x, o[1] + 5, o[2] + z, lower);
+                if x <= 8 {
+                    source.set_voxel(o[0] + x, o[1] + 6, o[2] + z, water());
+                }
+            }
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).transparent);
+        // along the steps, away from the pool's open sides (a river's are banks)
+        let ts: Vec<[f64; 3]> = crease_t_junctions(&m)
+            .into_iter()
+            .filter(|p| p[2] > 2.5 && p[2] < 13.5 && p[0] > 2.5 && p[0] < 13.5)
+            .collect();
+        assert!(
+            ts.is_empty(),
+            "{:?}: {} T-junctions along the step's creases, e.g. {:?}",
+            f.face,
+            ts.len(),
+            &ts[..ts.len().min(6)]
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Leaf cards (shared/look/leaves.json `cards`): a lone leaf's cards are in the cutout mesh
+    /// with the data's distance fade (none past `fade_end_m`) and no ink; meshed without cards (a
+    /// CPU adapter, the cheapest tier) the leaf draws none.
+    fn a_lone_leaf_carries_cards_that_fade_by_distance_and_none_on_the_cpu_tier(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(8, 8, 8, leaf)]);
+        let mesh = |cards: bool| {
+            in_cells(
+                super::mesh_chunk_flags(
+                    &padded,
+                    &[],
+                    f.is_b(),
+                    [0; 3],
+                    &[],
+                    None,
+                    ChunkFlags {
+                        water_tops: true,
+                        cards,
+                        ..ChunkFlags::default()
+                    },
+                )
+                .expect("padded"),
+            )
+            .cutout
+        };
+        let (with, without) = (mesh(true), mesh(false));
+        let look = dwell_look::leaves::LEAVES.cards;
+        let carded: Vec<usize> = (0..with.positions.len() / 3)
+            .filter(|&i| with.plants[i * 4 + 3] > 0.0)
+            .collect();
+        assert!(!carded.is_empty(), "a lone leaf has cards");
+        assert_eq!(carded.len() % 4, 0);
+        for &i in &carded {
+            assert_eq!(with.plants[i * 4 + 2], look.fade_start_m as f32);
+            assert_eq!(with.plants[i * 4 + 3], look.fade_end_m as f32);
+            assert_eq!(with.bare[i], 1.0);
+        }
+        assert_eq!(
+            with.positions.len() / 3,
+            without.positions.len() / 3 + carded.len()
+        );
+        // Its faces are a tree's leaves (`TREE_LEAF_FADE`): no sway, handed over to the far
+        // trees' impostors by the frame's distances (WORK_QUEUE item 31).
+        assert!(!without.plants.is_empty());
+        for v in without.plants.chunks(4) {
+            assert_eq!(v, [0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        }
+        let faces = (0..with.positions.len() / 3).filter(|&i| with.plants[i * 4 + 3] < 0.0);
+        assert_eq!(faces.count(), without.positions.len() / 3);
+    }
+);
+
+/// Face B's mirror re-packs a leaf card's packed normal y-flipped (`flip_arrays_y`); turning it
+/// back must give face A's bits, or a face-B card's normal drifts a grid step from its mirror's
+/// (`a_chunk_meshes_the_same_face_local_on_either_face`). Red before: on the odd 2047-step grid
+/// the octahedral fold falls between grid points.
+#[test]
+fn a_leaf_cards_packed_normal_flips_exactly() {
+    // both-faces: the packing's own y flip, the mirror between the faces.
+    let flip = |p: f32| {
+        let n = leaves::card_normal_of(p);
+        leaves::card_speed([n[0], -n[1], n[2]])
+    };
+    let mut checked = 0;
+    for i in 0..64 {
+        for j in 0..32 {
+            let (a, b) = (
+                f64::from(i) / 64.0 * std::f64::consts::TAU,
+                f64::from(j) / 31.0 * std::f64::consts::PI,
+            );
+            let n = [b.sin() * a.cos(), b.cos(), b.sin() * a.sin()];
+            let p = leaves::card_speed(n);
+            assert!(
+                p < 0.0 && (-p) < (1 << 24) as f32,
+                "{p} marks a card, exactly"
+            );
+            assert_eq!(flip(flip(p)), p, "{n:?} packs {p}, and back through a flip");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 64 * 32);
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #78: each leaf card carries its plane's normal packed in `plants.y` (negative: a
+    /// card, `leaves::card_speed`) for the vertex shader's far-side cull. On both faces it is
+    /// perpendicular to the card and on its lit side (with the vertex normals), so a card is dropped
+    /// only when seen from behind; face B's mirror re-packs it (red without: the y flips missed).
+    fn a_leaf_cards_packed_normal_is_its_plane_on_both_faces(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let m = in_cells(
+            super::mesh_chunk_flags(
+                &voxels(&[(8, 8, 8, leaf)]),
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: true,
+                    ..ChunkFlags::default()
+                },
+            )
+            .expect("padded"),
+        )
+        .cutout;
+        let carded: Vec<usize> = (0..m.positions.len() / 3)
+            .filter(|&i| m.plants[i * 4 + 3] > 0.0)
+            .collect();
+        assert!(!carded.is_empty());
+        let pos = |i: usize| -> [f64; 3] {
+            // Cells to metres (y rows are CELL_H tall) for the angle checks.
+            let c = |a: usize| f64::from(m.positions[i * 3 + a]);
+            [c(0), c(1) * CELL_H, c(2)]
+        };
+        for card in carded.chunks_exact(4) {
+            let speed = m.plants[card[0] * 4 + 1];
+            assert!(speed < 0.0, "a card's plants.y marks it: {speed}");
+            for &i in card {
+                assert_eq!(
+                    m.plants[i * 4 + 1],
+                    speed,
+                    "one normal for the card's corners"
+                );
+            }
+            let n = leaves::card_normal_of(speed);
+            let p0 = pos(card[0]);
+            for &i in &card[1..] {
+                let e: [f64; 3] = std::array::from_fn(|a| pos(i)[a] - p0[a]);
+                let len = e.iter().map(|v| v * v).sum::<f64>().sqrt();
+                let along = (0..3).map(|a| e[a] * n[a]).sum::<f64>() / len;
+                assert!(
+                    along.abs() < 0.01,
+                    "the packed normal {n:?} is off the card: {along}"
+                );
+            }
+            let vn: f64 = (0..3)
+                .map(|a| f64::from(m.normals[card[0] * 3 + a]) * n[a])
+                .sum();
+            assert!(
+                vn > 0.0,
+                "the packed normal {n:?} faces the card's lit side: {vn}"
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #78 (the M1 at High, owner: "the internal leaf cards may be sucking up a lot of
+    /// unneeded power"): a crown with a cavity inside (a 7-cell shell of leaves round a 3-cell
+    /// hollow) draws no card into the hollow, where every one would be hidden, and keeps its
+    /// outer faces' cards. Red before: the hollow's six inner walls carried cards.
+    fn a_crowns_inner_cavity_draws_no_cards(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let shell = 5..=11;
+        let hollow = 7..=9;
+        let mut cells = Vec::new();
+        for x in shell.clone() {
+            for y in shell.clone() {
+                for z in shell.clone() {
+                    if !(hollow.contains(&x) && hollow.contains(&y) && hollow.contains(&z)) {
+                        cells.push((x, y, z, leaf));
+                    }
+                }
+            }
+        }
+        let m = in_cells(
+            super::mesh_chunk_flags(
+                &voxels(&cells),
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: true,
+                    ..ChunkFlags::default()
+                },
+            )
+            .expect("padded"),
+        )
+        .cutout;
+        let carded: Vec<[f64; 3]> = (0..m.positions.len() / 3)
+            .filter(|&i| m.plants[i * 4 + 3] > 0.0)
+            .map(|i| std::array::from_fn(|a| f64::from(m.positions[i * 3 + a])))
+            .collect();
+        assert_eq!(carded.len() % 4, 0);
+        let (lo, hi) = (f64::from(*hollow.start()), f64::from(*hollow.end() + 1));
+        let inner = carded
+            .chunks_exact(4)
+            .filter(|card| {
+                // Its centre in the hollow (its corners may reach into the walls round it).
+                (0..3).all(|a| {
+                    let c = card.iter().map(|p| p[a]).sum::<f64>() / 4.0;
+                    c > lo + 1e-4 && c < hi - 1e-4
+                })
+            })
+            .count();
+        let total = carded.len() / 4;
+        assert_eq!(
+            inner, 0,
+            "{inner} of the crown's {total} cards lie in its hollow"
+        );
+        // The outer faces keep theirs: 6 faces of 7 × 7 cells, about one card per face or more.
+        assert!(
+            total > 6 * 49 / 2,
+            "the outer faces keep their cards: {total}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Leaf cards never reach into a trunk (owner, 2026-11-11: "lots of z-fighting on tree trunks
+    /// with the leaf cards"): a leaf with logs on its four sides and below it, as a crown's cell
+    /// beside a trunk, draws no card with a corner inside a log's cell, nor one lying within ε of a
+    /// log cell's face.
+    fn leaf_cards_stay_out_of_the_logs_beside_them(f: FaceFrame) {
+        let (leaf, log) = (require("dwell:leaves"), require("dwell:log[axis=y]"));
+        // Face-locally below the leaf: the row under it on A, over it in storage on B.
+        let below = if f.is_b() { 9 } else { 7 };
+        let logs = [(9, 8, 8), (7, 8, 8), (8, 8, 9), (8, 8, 7), (8, below, 8)];
+        let mut cells = vec![(8, 8, 8, leaf)];
+        cells.extend(logs.iter().map(|&(x, y, z)| (x, y, z, log)));
+        let m = in_cells(
+            super::mesh_chunk_flags(
+                &voxels(&cells),
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: true,
+                    ..ChunkFlags::default()
+                },
+            )
+            .expect("padded"),
+        )
+        .cutout;
+        let carded: Vec<[f64; 3]> = (0..m.positions.len() / 3)
+            .filter(|&i| m.plants[i * 4 + 3] > 0.0)
+            .map(|i| std::array::from_fn(|a| f64::from(m.positions[i * 3 + a])))
+            .collect();
+        assert_eq!(carded.len() % 4, 0);
+        const EPS: f64 = 0.02;
+        for &(x, y, z) in &logs {
+            let lo = [f64::from(x), f64::from(y), f64::from(z)];
+            for (q, card) in carded.chunks_exact(4).enumerate() {
+                for p in card {
+                    let inside = (0..3).all(|a| p[a] > lo[a] + 1e-4 && p[a] < lo[a] + 1.0 - 1e-4);
+                    assert!(!inside, "card {q} reaches into the log at {lo:?}: {p:?}");
+                }
+                for a in 0..3 {
+                    for plane in [lo[a], lo[a] + 1.0] {
+                        let along = card.iter().all(|p| (p[a] - plane).abs() < EPS);
+                        assert!(
+                            !along,
+                            "card {q} lies along the log at {lo:?}'s face: {card:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+);
+
+/// WORK_QUEUE item 26 round 2 (the in-game check: "no grain cracks seen round the bites … at 1, 3,
+/// 6 swings"): after 1, 3 and 6 hits at one spot of a standing log, the wood's crack strokes show
+/// on the bark left round the bites, not only inside the cut. Red before: the split runs along
+/// the grain through the newest bite, and the V filled the cell's height there, so every dark
+/// texel of the crack within the cell lay in the cut.
+#[test]
+fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
+    // both-faces: face-local geometry, no up (a face-B chunk's cut is mirrored first,
+    // `carve::mirror_cut`; the meshed cracks on both faces: `a_bitten_log_is_carved_…`).
+    use dwell_protocol::chopping as chop;
+    let wood = chop::wood("dwell:log").unwrap();
+    let axe = chop::tool("dwell:stone_axe").unwrap();
+    let look = wood.cut;
+    let face = face_of(0, -1);
+    let (pu, pv) = damage_mesh::plane_axes(0);
+    let size = |a: usize| if a == 1 { CELL_H } else { 1.0 };
+    for swings in [1, 3, 6] {
+        let mut cut = Cut::default();
+        for _ in 0..swings {
+            let band = cut.open_band(0, 0);
+            cut.swing(axe, 1, 0, band, 1.0);
+            cut.bite(1, 0, band, 0.5, &look.bite);
+        }
+        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0], None).expect("cracks");
+        let tile = crate::textures::TILE_ORDER[usize::from(layer.slot) - 1];
+        let ts = crate::textures::TILE as i64;
+        let (mut on_bark, mut in_cut) = (0, 0);
+        for i in 0..=80 {
+            for k in 0..=80 {
+                let (t, u) = (f64::from(i) / 80.0, f64::from(k) / 80.0);
+                let mut p = [0.0; 3];
+                p[1] = t;
+                p[2] = u;
+                let q = [p[pu] * size(pu), p[pv] * size(pv)];
+                let [a, b] = layer.uv(face, q);
+                if !(0.0..1.0).contains(&a) || !(0.0..1.0).contains(&b) {
+                    continue;
+                }
+                let px =
+                    crate::textures::texel_of(tile, (a * ts as f64) as i64, (b * ts as f64) as i64);
+                if px[0] >= 200 {
+                    continue;
+                }
+                if crate::carve::depth_at(1, &cut, &look, cut.progress(wood, 1), 0, t, u) > 1e-9 {
+                    in_cut += 1;
+                } else {
+                    on_bark += 1;
+                }
+            }
+        }
+        assert!(
+            on_bark > 0,
+            "{swings} swings: the crack shows on the bark ({on_bark} there, {in_cut} in the cut)"
+        );
+    }
+}
+
+/// WORK_QUEUE item 26 round 2 (the in-game check: "no grain cracks seen round the bites … on the
+/// dark bark"): each wood's crack strokes, at the wood's crack `strength`, darken its bark (its
+/// block's side tile) well past the bark's own darkest streaks, so a split reads on the bark.
+/// Red before: they were painted in the bark ramp's shadow, the colour of the bark's own streaks
+/// along the grain, at 0.6: a split the same dark as the grain it runs along.
+#[test]
+fn wood_cracks_read_darker_than_the_barks_own_streaks() {
+    // both-faces: texture data only, no up.
+    let lum =
+        |p: [u8; 4]| 0.2126 * f64::from(p[0]) + 0.7152 * f64::from(p[1]) + 0.0722 * f64::from(p[2]);
+    let ts = crate::textures::TILE as i64;
+    for w in dwell_protocol::chopping::WOODS {
+        let Some(cracks) = w.cut.cracks else { continue };
+        let side = dwell_blocks::info(require(w.block))
+            .textures
+            .map(|t| t.side)
+            .expect("the wood's side tile");
+        let mut bark: Vec<f64> = (0..ts * ts)
+            .map(|k| lum(crate::textures::texel_of(side, k % ts, k / ts)))
+            .collect();
+        bark.sort_by(f64::total_cmp);
+        let (darkest, median) = (bark[bark.len() / 20], bark[bark.len() / 2]);
+        for tile in cracks.tiles {
+            let crack = (0..ts * ts)
+                .map(|k| crate::textures::texel_of(tile, k % ts, k / ts))
+                .min_by(|a, b| lum(*a).total_cmp(&lum(*b)))
+                .unwrap();
+            // The shader's multiply: mix(1, crack, strength), on the bark's median texel.
+            let k = 1.0 - cracks.strength * (1.0 - lum(crack) / 255.0);
+            let split = median * k;
+            assert!(
+                split < 0.7 * darkest,
+                "{} {tile}: a split darkens the bark to {split:.0}, its own streaks are {darkest:.0}",
+                w.block
+            );
+        }
+    }
+}
+
+dwell_world::both_faces!(
+    /// docs/ECOLOGY.md §10: each growth stage of tall grass draws at its height from the block's
+    /// data (`cross.heights`), a sprout to full (the default, 0.85 as before), on either face.
+    fn tall_grass_draws_each_growth_stage_at_its_height(f: FaceFrame) {
+        let grass_block = require("dwell:tall_grass");
+        let stages: Vec<u16> = ["0", "1", "2", "3"]
+            .iter()
+            .map(|v| dwell_blocks::with_property(grass_block, "stage", v).expect("a stage"))
+            .collect();
+        assert_eq!(stages[3], grass_block, "the default is full height");
+        let c = ChunkCoord::new(0, dwell_world::MIDPLANE_CHUNK_Y + 4, 0);
+        let o = [0, c.y * CHUNK_SIZE, 0];
+        let mut tops = Vec::new();
+        for &s in &stages {
+            let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            for x in 0..8 {
+                source.set_voxel(o[0] + 4 + x, o[1] + 4, o[2] + 4, cube_block());
+                source.set_voxel(o[0] + 4 + x, o[1] + 5, o[2] + 4, s);
+            }
+            let m = local_mesh(f, mesh_on_face(&mut source, c, f).cutout);
+            let ys: Vec<f32> = m.positions.iter().skip(1).step_by(3).copied().collect();
+            assert!(!ys.is_empty(), "stage {s} drawn");
+            // The tallest of the 8 (their jitter scales each), above the cube's top at y 5.
+            tops.push(ys.iter().copied().fold(f32::MIN, f32::max) - 5.0);
+        }
+        for (i, &s) in stages.iter().enumerate() {
+            let cross = dwell_blocks::info(s).cross.expect("a cross");
+            assert!(
+                tops[i] <= cross.height + 1e-4 && tops[i] >= cross.height * cross.height_min - 1e-4,
+                "stage {i}: drawn {} for height {}",
+                tops[i],
+                cross.height
+            );
+        }
+        assert!(
+            tops.windows(2).all(|w| w[0] < w[1]),
+            "taller stage by stage: {tops:?}"
+        );
+        assert_eq!(dwell_blocks::info(stages[3]).cross.unwrap().height, 0.85);
+    }
+);
+
+/// The face-local upward water surface of `m` (transparent, after `local_mesh`): each triangle's
+/// corners whose normal points up (its tops and slopes, not its sides or undersides).
+fn up_triangles(m: &MeshArrays) -> Vec<[[f64; 3]; 3]> {
+    m.indices
+        .chunks_exact(3)
+        .filter_map(|t| {
+            let n = normal_of(&m.positions, t[0], t[1], t[2]);
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            (n[1] / l > 0.05).then(|| [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i)))
+        })
+        .collect()
+}
+
+/// The heights at (x, z) of every triangle of `tris` over it (projected on xz).
+fn heights_at(tris: &[[[f64; 3]; 3]], x: f64, z: f64) -> Vec<f64> {
+    heights_within(tris, x, z, 1e-9)
+}
+
+/// [`heights_at`] counting a triangle only where (x, z) is `margin` (barycentric) inside it:
+/// positive for strictly inside (a point on an edge two triangles share counts for neither),
+/// negative to count a point just outside.
+fn heights_within(tris: &[[[f64; 3]; 3]], x: f64, z: f64, margin: f64) -> Vec<f64> {
+    tris.iter()
+        .filter_map(|[a, b, c]| {
+            let d = (b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2]);
+            if d.abs() < 1e-12 {
+                return None;
+            }
+            let u = ((x - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (z - a[2])) / d;
+            let v = ((b[0] - a[0]) * (z - a[2]) - (x - a[0]) * (b[2] - a[2])) / d;
+            (u >= -margin && v >= -margin && u + v <= 1.0 + margin)
+                .then(|| a[1] + u * (b[1] - a[1]) + v * (c[1] - a[1]))
+        })
+        .collect()
+}
+
+/// BUGS.md #92's river (owner, 2026-11-12): a held river on sand stepping down ½ m (a cell) at
+/// a time in diagonal bands, its bed stepping with it on flooded sand ramps. Water level row 7
+/// where x + z ≤ 24, row 6 where x + z ≤ 34, row 5 beyond; two cells deep.
+fn diagonal_staircase(f: FaceFrame) -> MeshArrays {
+    let n = CHUNK_SIZE;
+    let c = ChunkCoord::new(0, 2, 0);
+    let o = [c.x * n, c.y * n, c.z * n];
+    let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+    let sand = require("dwell:sand[flooded=true]");
+    let ramp = require("dwell:sand_ramp[facing=south,flooded=true,half=bottom,shape=ramp]");
+    let top = |x: i32, z: i32| match x + z {
+        s if s <= 24 => 7,
+        s if s <= 34 => 6,
+        _ => 5,
+    };
+    for z in 0..=31 {
+        for x in 0..=31 {
+            let t = top(x, z);
+            // The bed steps where the next column upstream stands a level higher.
+            let stepped = top(x - 1, z) > t || top(x, z - 1) > t;
+            for y in 1..=t {
+                let m = if y >= t - 1 {
+                    if y == t - 1 && stepped { ramp } else { water() }
+                } else {
+                    sand
+                };
+                source.set_voxel(o[0] + x, o[1] + y, o[2] + z, m);
+            }
+        }
+    }
+    local_mesh(f, mesh_on_face(&mut source, c, f).transparent)
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #92 (owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope
+    /// transitions on downhill water."): a river stepping down ½ m in diagonal bands reads as one
+    /// continuous surface. Over every column inside the river exactly one upward water face (no
+    /// gap, no two slopes crossing in one cell, no top left under a slope), its height continuous
+    /// across every column edge (the steps blend into slopes, no vertical riser between), no
+    /// vertical water face standing above the lowest surface (the wedges where two steps met at a
+    /// corner), and no vertex of one surface inside another's edge across a crease (cracks).
+    fn a_diagonal_staircase_river_is_one_continuous_surface(f: FaceFrame) {
+        let m = diagonal_staircase(f);
+        let up = up_triangles(&m);
+        let full = 1.0 - dwell_blocks::require_fluid("dwell:water").surface_drop;
+        let lowest = 5.0 + full;
+        let inside = |p: &[f64; 3]| (4.0..=28.0).contains(&p[0]) && (4.0..=28.0).contains(&p[2]);
+        // One surface over each column, sampled off the cells' edges and diagonals.
+        let mut bad = Vec::new();
+        for z in 4..28 {
+            for x in 4..28 {
+                for (du, dv) in [(0.13, 0.31), (0.71, 0.18), (0.42, 0.87), (0.83, 0.57)] {
+                    let (px, pz) = (f64::from(x) + du, f64::from(z) + dv);
+                    // No gap (a crack): something over it, counting its edges; no overlap
+                    // (two slopes, or a top under a slope): one at most strictly inside.
+                    let loose = heights_within(&up, px, pz, 1e-6);
+                    let strict = heights_within(&up, px, pz, -1e-6);
+                    if loose.is_empty() || strict.len() > 1 {
+                        bad.push(([px, pz], loose));
+                    }
+                }
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "{:?}: {} points without exactly one surface over them, e.g. {:?}",
+            f.face,
+            bad.len(),
+            &bad[..bad.len().min(4)]
+        );
+        // Continuous across every column edge, along x and along z.
+        let mut jumps = Vec::new();
+        for z in 4..28 {
+            for x in 5..28 {
+                for t in [0.27, 0.64] {
+                    for (a, b) in [
+                        (
+                            [f64::from(x) - 0.01, f64::from(z) + t],
+                            [f64::from(x) + 0.01, f64::from(z) + t],
+                        ),
+                        (
+                            [f64::from(z) + t, f64::from(x) - 0.01],
+                            [f64::from(z) + t, f64::from(x) + 0.01],
+                        ),
+                    ] {
+                        let (ha, hb) = (heights_at(&up, a[0], a[1]), heights_at(&up, b[0], b[1]));
+                        if let (Some(ha), Some(hb)) = (ha.first(), hb.first())
+                            && (ha - hb).abs() > 0.05
+                        {
+                            jumps.push((a, *ha, *hb));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            jumps.is_empty(),
+            "{:?}: {} steps across a column edge, e.g. {:?}",
+            f.face,
+            jumps.len(),
+            &jumps[..jumps.len().min(4)]
+        );
+        // No vertical water face above the lowest surface inside the river.
+        let walls: Vec<[f64; 3]> = m
+            .indices
+            .chunks_exact(3)
+            .filter_map(|t| {
+                let nrm = normal_of(&m.positions, t[0], t[1], t[2]);
+                let l = (nrm[0] * nrm[0] + nrm[1] * nrm[1] + nrm[2] * nrm[2]).sqrt();
+                let ps = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+                let mid = std::array::from_fn(|a| (ps[0][a] + ps[1][a] + ps[2][a]) / 3.0);
+                ((nrm[1] / l).abs() < 0.05
+                    && inside(&mid)
+                    && ps.iter().any(|p| p[1] > lowest + 1e-6))
+                .then_some(mid)
+            })
+            .collect();
+        assert!(
+            walls.is_empty(),
+            "{:?}: {} vertical water faces inside the river, e.g. {:?}",
+            f.face,
+            walls.len(),
+            &walls[..walls.len().min(4)]
+        );
+        let ts: Vec<[f64; 3]> = crease_t_junctions(&m).into_iter().filter(inside).collect();
+        assert!(
+            ts.is_empty(),
+            "{:?}: {} T-junctions across the river's creases, e.g. {:?}",
+            f.face,
+            ts.len(),
+            &ts[..ts.len().min(6)]
+        );
+    }
+);
+
+/// A one-layer 3×3 crown round a trunk three logs tall: the leaves at y = 8 round the logs at
+/// (8, 7..=9, 8), chunk-local storage cells (symmetric in y, so the same cells on both faces).
+fn crown_round_a_trunk(leaf: u16, log: u16) -> Vec<(i32, i32, i32, u16)> {
+    let mut cells: Vec<(i32, i32, i32, u16)> = (7..=9).map(|y| (8, y, 8, log)).collect();
+    for z in 7..=9 {
+        for x in 7..=9 {
+            if (x, z) != (8, 8) {
+                cells.push((x, 8, z, leaf));
+            }
+        }
+    }
+    cells
+}
+
+/// WORK_QUEUE item 48's checks on a crown round a trunk at (8, _, 8) (cells): each leaf beside the
+/// log lies flat on the log's face (its inner face the whole 1×1 square there), no chamfer of
+/// those leaves leans toward the trunk, no leaf vertex lies inside a log's cell, and the leaves'
+/// surface is closed (its area vectors sum to zero: no gap or overlap at a seam).
+/// `bark`: whether the trunk is drawn (a fixture's post is not: the octagon is read from the
+/// built-in registry, where its id is another block); without it the leaf only must not overlap it.
+fn assert_flush_round_the_trunk(m: &ChunkMeshes, bark_drawn: bool) {
+    let c = &m.cutout;
+    // The leaf faces, not their cards (`bare` 1).
+    let tris: Vec<([[f64; 3]; 3], [f64; 3])> = c
+        .indices
+        .chunks_exact(3)
+        .filter(|t| c.bare.get(t[0] as usize).is_none_or(|&b| b < 0.5))
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&c.positions, t[k]));
+            (p, normal_of(&c.positions, t[0], t[1], t[2]))
+        })
+        .collect();
+    let o = &m.opaque;
+    let log_tris: Vec<([[f64; 3]; 3], [f64; 3])> = o
+        .indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&o.positions, t[k]));
+            (p, normal_of(&o.positions, t[0], t[1], t[2]))
+        })
+        .collect();
+    let len = |n: [f64; 3]| (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    // Closed: Σ area · n = 0 over the leaves and the bark they lie against (in their place, the
+    // leaf's missing face: the bark's area, turned toward the trunk).
+    let on_a_side = |p: &[[f64; 3]; 3]| {
+        let flat = |a: usize, v: f64| p.iter().all(|q| (q[a] - v).abs() < 1e-5);
+        let ys = p.iter().all(|q| q[1] > 8.0 - 1e-6 && q[1] < 9.0 + 1e-6);
+        ys && (flat(0, 8.0) || flat(0, 9.0) || flat(2, 8.0) || flat(2, 9.0))
+    };
+    let mut sum = [0.0; 3];
+    for (_, n) in &tris {
+        for a in 0..3 {
+            sum[a] += n[a] / 2.0;
+        }
+    }
+    for (_, n) in log_tris.iter().filter(|(p, _)| on_a_side(p)) {
+        for a in 0..3 {
+            sum[a] -= n[a] / 2.0;
+        }
+    }
+    assert!(
+        len(sum) < 1e-4,
+        "the crown's surface is open: Σ area·n = {sum:?}"
+    );
+    for (x, z) in [(9, 8), (7, 8), (8, 9), (8, 7)] {
+        let toward = [f64::from(8 - x), 0.0, f64::from(8 - z)];
+        let a = if x != 8 { 0 } else { 2 };
+        let plane = if toward[a] < 0.0 { 9.0 } else { 8.0 };
+        let (lo, hi) = (
+            [f64::from(x), 8.0, f64::from(z)],
+            [f64::from(x) + 1.0, 9.0, f64::from(z) + 1.0],
+        );
+        let mine = |p: &[[f64; 3]; 3]| {
+            p.iter()
+                .all(|q| (0..3).all(|b| q[b] > lo[b] - 1e-6 && q[b] < hi[b] + 1e-6))
+        };
+        let flat: f64 = tris
+            .iter()
+            .filter(|(p, n)| {
+                mine(p) && p.iter().all(|q| (q[a] - plane).abs() < 1e-5) && n[a] * toward[a] > 0.0
+            })
+            .map(|(_, n)| len(*n) / 2.0)
+            .sum();
+        // BUGS.md #167: the leaf draws its face only where the log's side doesn't lie: the two
+        // corner strips the octagon's chamfers leave, so leaf and bark are never coplanar.
+        let bark: f64 = log_tris
+            .iter()
+            .filter(|(p, n)| {
+                mine(p) && p.iter().all(|q| (q[a] - plane).abs() < 1e-5) && n[a] * toward[a] < 0.0
+            })
+            .map(|(_, n)| len(*n) / 2.0)
+            .sum();
+        let ok = if bark_drawn {
+            bark > 0.3 && (flat + bark - 1.0).abs() < 1e-4
+        } else {
+            flat + bark < 1.0 + 1e-4
+        };
+        assert!(
+            ok,
+            "the leaf at ({x}, 8, {z}) lies {flat} cells² flat on the log's face beside its \
+             {bark} of bark: not the square less the bark"
+        );
+        for (p, n) in tris.iter().filter(|(p, _)| mine(p)) {
+            let along = (n[0] * toward[0] + n[1] * toward[1] + n[2] * toward[2]) / len(*n);
+            let flat_face = (along - 1.0).abs() < 1e-6;
+            assert!(
+                along < 1e-6 || flat_face,
+                "the leaf at ({x}, 8, {z}) has a chamfer leaning to the trunk: {p:?}"
+            );
+        }
+    }
+    for y in 7..=9 {
+        let lo = [8.0, f64::from(y), 8.0];
+        for (p, _) in &tris {
+            for q in p {
+                let inside = (0..3).all(|b| q[b] > lo[b] + 1e-6 && q[b] < lo[b] + 1.0 - 1e-6);
+                assert!(!inside, "a leaf vertex inside the log at {lo:?}: {q:?}");
+            }
+        }
+    }
+    // The trunk's octagon stays inside its cells (its corners don't poke into the leaves).
+    for i in 0..o.positions.len() / 3 {
+        let q = vertex(&o.positions, i as u32);
+        assert!(
+            q[0] > 8.0 - 1e-5 && q[0] < 9.0 + 1e-5 && q[2] > 8.0 - 1e-5 && q[2] < 9.0 + 1e-5,
+            "the trunk pokes out of its cells: {q:?}"
+        );
+    }
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 48 (owner, 2026-11-12: "can we make it so the inside leave edges make a
+    /// flat side against the logs, so it doesn't leave quite so much gapping where they connect to
+    /// the tree"; "Flat leaf applied when a full Face touching"): a crown round a trunk of
+    /// `dwell:log` (block data `leafFlush`) lies flat on it with its seams closed.
+    fn leaves_lie_flat_against_a_trunk(f: FaceFrame) {
+        let cells = crown_round_a_trunk(require("dwell:leaves"), require("dwell:log[axis=y]"));
+        assert_flush_round_the_trunk(&mesh(&cells, f.is_b()), true);
+    }
+);
+
+dwell_world::both_faces!(
+    /// The same by data alone: shared/blocks/fixtures/test.json's `test:post` (an octagonal post
+    /// with `leafFlush`) takes a crown flat against it.
+    fn leaves_lie_flat_against_a_log_like_block_added_by_data(f: FaceFrame) {
+        use dwell_blocks::fixture::{FLUIDS, STATES};
+        let id = |name: &str| STATES.iter().position(|s| s.name == name).expect(name) as u16;
+        let kinds = Kinds::new(&STATES, &FLUIDS, Some(id("dwell:water[fill=8]")));
+        assert!(STATES[usize::from(id("test:post[axis=y]"))].leaf_flush);
+        let cells = crown_round_a_trunk(id("dwell:leaves[flooded=false]"), id("test:post[axis=y]"));
+        let m = mesh_chunk_with(&kinds, &voxels(&cells), f.is_b(), [0; 3]).expect("padded");
+        assert_flush_round_the_trunk(&m, false);
+    }
+);
+
+dwell_world::both_faces!(
+    /// The forest edge (WORK_QUEUE item 32): a chunk's cutout mesh has its trees' leaf faces last,
+    /// so a chunk past the far trees' hand-over draws `0..tree_leaves_from` (its plants, the
+    /// leaves' cards) and none of the leaves the shader would drop there. Leaves and tall grass
+    /// mixed along a row: every triangle before the split is a plant's or a card's, every one from
+    /// it a tree leaf's, and the leaves' faces are all still there.
+    fn a_chunks_cutout_puts_its_tree_leaves_after_its_plants(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let ground = cube_block();
+        let mut cells = Vec::new();
+        for x in 2..14 {
+            cells.push((x, 4, 8, ground));
+            cells.push((x, 5, 8, if x % 2 == 0 { tall_grass() } else { leaf }));
+            cells.push((x, 9, 8, leaf));
+        }
+        let padded = voxels(&cells);
+        let m = super::mesh_chunk_flags(
+            &padded,
+            &[],
+            f.is_b(),
+            [0; 3],
+            &[],
+            None,
+            ChunkFlags {
+                water_tops: true,
+                cards: true,
+                plants: 100,
+                ..ChunkFlags::default()
+            },
+        )
+        .expect("padded")
+        .cutout;
+        let leafy = |v: u32| m.plants[v as usize * 4 + 3] == crate::TREE_LEAF_FADE;
+        let split = crate::tree_leaves_from(&m);
+        assert!(
+            split > 0 && split < m.indices.len(),
+            "{split} of {}",
+            m.indices.len()
+        );
+        assert_eq!(split % 3, 0);
+        assert!(
+            m.indices[..split].iter().all(|&v| !leafy(v)),
+            "a leaf before the split"
+        );
+        assert!(
+            m.indices[split..].iter().all(|&v| leafy(v)),
+            "a plant after the split"
+        );
+        let leaf_vertices = (0..m.positions.len() as u32 / 3)
+            .filter(|&v| leafy(v))
+            .count();
+        let mut drawn: Vec<u32> = m.indices[split..].to_vec();
+        drawn.sort_unstable();
+        drawn.dedup();
+        assert_eq!(
+            drawn.len(),
+            leaf_vertices,
+            "every leaf face drawn from the split"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The shore foam's corners (WATER_RENDERING.md §21; owner, 2026-11-13: 'smoother or thicker
+    /// around corners'): each water top beside the bank carries its solid neighbours (face-local,
+    /// the same on either face), drawn alone so the mask is its own; open water carries none.
+    fn a_water_top_carries_its_shore_neighbours(f: FaceFrame) {
+        use dwell_look::waterflow::{SHORE_N, SHORE_NW, SHORE_SW, SHORE_W};
+        // face B meshed mirrored: the scene hung from the chunk's top, its sky toward −y
+        let scene: Vec<_> = shore_scene()
+            .into_iter()
+            .map(|(x, y, z, m)| (x, if f.is_b() { N - 1 - y } else { y }, z, m))
+            .collect();
+        let m = mesh(&scene, f.is_b()).transparent;
+        let mut seen = std::collections::HashMap::new();
+        for t in m.indices.chunks_exact(3) {
+            let ny = m.normals[t[0] as usize * 3 + 1];
+            if ny.abs() < 0.9 {
+                continue;
+            }
+            let [a, b, c] = [t[0], t[1], t[2]].map(|i| vertex(&m.positions, i));
+            let cell = (
+                ((a[0] + b[0] + c[0]) / 3.0).floor() as i32,
+                ((a[2] + b[2] + c[2]) / 3.0).floor() as i32,
+            );
+            let v = m.fluids[t[0] as usize];
+            for &i in t {
+                assert_eq!(m.fluids[i as usize], v, "one mask per triangle");
+            }
+            seen.insert(cell, crate::shore_of(v));
+        }
+        assert_eq!(seen.get(&(7, 5)), Some(&SHORE_W));
+        assert_eq!(seen.get(&(7, 4)), Some(&SHORE_NW), "an outer corner");
+        assert_eq!(
+            seen.get(&(6, 4)),
+            Some(&(SHORE_W | SHORE_N | SHORE_NW | SHORE_SW)),
+            "an inner corner"
+        );
+        assert!(seen.iter().any(|(c, &s)| c.0 >= 8 && s == 0), "open water");
+    }
+);
+
+/// BUGS.md #167's fixture: a standing trunk (8, 4..=9, 8) with leaves round it and on its top,
+/// and a log lying along x through them (its two ½ m halves at y 10 and 11), with leaves on
+/// either side of it, above and below.
+fn trunk_and_branch_in_leaves() -> Vec<(i32, i32, i32, u16)> {
+    let (leaf, up, along) = (
+        require("dwell:leaves"),
+        require("dwell:log[axis=y]"),
+        require("dwell:log[axis=x]"),
+    );
+    let mut cells: Vec<(i32, i32, i32, u16)> = (4..=9).map(|y| (8, y, 8, up)).collect();
+    for x in 9..=12 {
+        cells.push((x, 10, 8, along));
+        cells.push((x, 11, 8, along));
+    }
+    let taken =
+        |c: &[(i32, i32, i32, u16)], x, y, z| c.iter().any(|q| (q.0, q.1, q.2) == (x, y, z));
+    for y in 7..=13 {
+        for z in 6..=10 {
+            for x in 6..=13 {
+                if !taken(&cells, x, y, z) {
+                    cells.push((x, y, z, leaf));
+                }
+            }
+        }
+    }
+    cells
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #167 (owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't
+    /// be shown and they cause z fighting"): round a trunk and a lying branch in a crown, no leaf
+    /// face lies on the bark it touches: no two faces of the chunk (bark, end grain, leaves) are
+    /// coplanar and overlap. Red before the fix: each leaf beside the log drew its whole square
+    /// on the log's side.
+    fn no_leaf_face_lies_on_the_bark_it_touches(f: FaceFrame) {
+        let m = mesh(&trunk_and_branch_in_leaves(), f.is_b());
+        let mut tris =
+            crate::coplanar_tests::triangles(&m.opaque.positions, &m.opaque.indices, &[]);
+        tris.extend(crate::coplanar_tests::triangles(
+            &m.cutout.positions,
+            &m.cutout.indices,
+            &m.cutout.bare,
+        ));
+        assert!(tris.len() > 100, "{}", tris.len());
+        let hit = crate::coplanar_tests::coplanar_overlap(&tris, 1e-5, 1e-6);
+        assert!(hit.is_none(), "coplanar and overlapping: {hit:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #167: a leaf cell beside a standing log draws nothing on the bark it shares with
+    /// it: of the leaf's face toward the trunk, only the two corner strips the octagon's chamfers
+    /// leave are drawn (a chamfer's cut wide each), and none of it on the log's side.
+    fn a_leaf_beside_a_log_draws_only_the_octagons_corner_gaps(f: FaceFrame) {
+        let cells = crown_round_a_trunk(require("dwell:leaves"), require("dwell:log[axis=y]"));
+        let m = mesh(&cells, f.is_b());
+        let c = &m.cutout;
+        let tris = crate::coplanar_tests::triangles(&c.positions, &c.indices, &c.bare);
+        // The leaf at (9, 8, 8): its −x face, on x = 9.
+        let face: Vec<_> = tris
+            .iter()
+            .filter(|t| t.iter().all(|q| (q[0] - 9.0).abs() < 1e-5))
+            .collect();
+        let chamfer = f64::from(
+            dwell_blocks::octagon::section_of(require("dwell:log[axis=y]"))
+                .unwrap()
+                .0
+                .chamfer,
+        );
+        let area: f64 = face
+            .iter()
+            .map(|t| {
+                let (a, b) = (
+                    [t[1][1] - t[0][1], t[1][2] - t[0][2]],
+                    [t[2][1] - t[0][1], t[2][2] - t[0][2]],
+                );
+                (a[0] * b[1] - a[1] * b[0]).abs() / 2.0
+            })
+            .sum();
+        assert!(
+            (area - 2.0 * chamfer).abs() < 1e-4,
+            "{area} drawn of the face, not the two strips"
+        );
+        for t in &face {
+            for q in t.iter() {
+                assert!(
+                    q[2] < 8.0 + chamfer + 1e-4 || q[2] > 9.0 - chamfer - 1e-4,
+                    "a leaf point on the bark: {q:?}"
+                );
+            }
+        }
     }
 );

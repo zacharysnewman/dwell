@@ -22,6 +22,19 @@
   --glass-strong: rgb(14 20 30 / 80%);
   --glass-line: rgb(255 255 255 / 22%);
   --danger: #c8443a;
+  /* The main menu's glass (ui/mainMenu.ts; contrast.test.ts checks text against it). */
+  --mm-glass: rgb(246 250 255 / 62%);
+  --mm-glass-line: rgb(255 255 255 / 55%);
+  --mm-ink-soft: #33404d;
+  --mm-scrim: rgb(16 28 40 / 64%);
+  --mm-action-top: #467d26;
+  --mm-action: #3d6e21;
+  /* The small wordmark's edge on the light glass, and the world cards' mode badges. */
+  --mm-wordmark-edge: #2a3d22;
+  --mm-mode-creative: #46698f;
+  --mm-mode-adventure: #92562a;
+  /* Settings' glass in a world (menu M3): stronger, as the dimmed game behind it can be dark. */
+  --gm-glass: rgb(246 250 255 / 84%);
 
   --font-display:
     ui-rounded, 'SF Pro Rounded', 'Arial Rounded MT Bold', 'Nunito', system-ui, sans-serif;
@@ -189,14 +202,12 @@ kbd.phrase {
   color: var(--danger);
 }
 
-.menu-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+/* A quiet button that is a link to another page: the button's box, never an underlined link. */
+a.quiet-button,
+a.menu-button-small {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* ---------- Main menu (ui/mainMenu.ts) ---------- */
@@ -302,27 +313,77 @@ kbd.phrase {
   opacity: 0.92;
 }
 
-.menu-panel {
-  box-sizing: border-box;
-  max-width: 1080px;
-  min-height: 100%;
-  margin: 0 auto;
-  padding: calc(var(--safe-top) + 28px) var(--safe-right) calc(var(--safe-bottom) + 24px)
-    var(--safe-left);
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+/*
+ * The panorama of a real spot (ui/menuBackground.ts, shared/ui/menu-backgrounds.json), over the
+ * painted hills once loaded: two copies of the 360° strip side by side, moved left by one copy
+ * each turn (the duration and the strip's aspect are set from script), so it never jumps.
+ */
+.mm-panorama {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.8s ease;
 }
 
-.mm-hero {
-  text-align: center;
+.mm-panorama.loaded {
+  opacity: 1;
+}
+
+/* Two layers: a new view (the menu's `random` choice, after each full turn) fades in over the old. */
+.mm-pano-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+
+.mm-pano-layer.shown {
+  opacity: 1;
+}
+
+.mm-pano-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+  animation: mm-pano-turn 150s linear infinite;
+  will-change: transform;
+}
+
+/* A light veil, darker toward the bottom, so the menu's cards read over any view. */
+.mm-panorama::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0%) 40%, rgb(16 28 40 / 28%) 100%);
+}
+
+@keyframes mm-pano-turn {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-pano-strip {
+    animation: none;
+  }
+}
+
+/* The painted hills give way to the panorama once it has loaded. */
+.mm-backdrop:has(.mm-panorama.loaded)::before,
+.mm-backdrop:has(.mm-panorama.loaded)::after {
+  display: none;
 }
 
 /* The wordmark, extruded like a block: snow-white top, a grass layer, then earth. */
 .wordmark {
   margin: 0;
   color: #fff;
-  font: 900 clamp(64px, 13vw, 128px) / 0.95 var(--font-display);
+  font: 900 clamp(76px, 16vw, 152px) / 0.95 var(--font-display);
   letter-spacing: 0.02em;
   text-shadow:
     0 1px 0 #e3f1d6,
@@ -337,58 +398,547 @@ kbd.phrase {
     0 18px 24px rgb(31 43 56 / 28%);
 }
 
+/*
+ * The menu's type scale (owner, 2026-11-09): 14 / 16 / 20 / 28 px. Text sits on glass or a scrim,
+ * never bare on the panorama.
+ */
+
+/* The logo screen: the wordmark alone over the turning panorama, waiting for a key or a tap. */
+.mm-logo {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 40px;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: radial-gradient(ellipse 60% 45% at 50% 48%, rgb(16 28 40 / 26%), transparent 70%);
+  cursor: pointer;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mm-logo[hidden],
+.mm-shell[hidden] {
+  display: none;
+}
+
+.mm-press {
+  margin: 0;
+  padding: 10px 22px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 999px;
+  background: var(--mm-scrim);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  font: 700 16px/1.2 var(--font-display);
+  letter-spacing: 0.04em;
+  animation: mm-press-breathe 2.4s ease-in-out infinite;
+}
+
+.mm-logo:focus-visible .mm-press {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+@keyframes mm-press-breathe {
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-press {
+    animation: none;
+  }
+}
+
+/* The home column and the page beside it; the panorama fills the rest. */
+.mm-shell {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  min-height: 100%;
+  padding: calc(var(--safe-top) + 20px) calc(var(--safe-right) + 12px)
+    calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 12px);
+}
+
+/* Glass: the panorama shows through, blurred; a soft inner border catches the light. */
+.mm-glass {
+  box-sizing: border-box;
+  border-radius: 16px;
+  background: var(--mm-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px var(--mm-glass-line),
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    0 12px 32px rgb(31 43 56 / 18%);
+}
+
+.mm-home {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px 16px;
+}
+
+.mm-wordmark-small {
+  font-size: 56px;
+  /* A thin dark edge (contrast.test.ts) keeps the white top crisp on the light glass. */
+  -webkit-text-stroke: 1.5px var(--mm-wordmark-edge);
+  paint-order: stroke fill;
+  text-shadow:
+    0 1px 0 #e3f1d6,
+    0 2px 0 var(--grass),
+    0 3px 0 var(--grass-dark),
+    0 4px 0 var(--earth),
+    0 5px 0 var(--earth-dark),
+    0 8px 12px rgb(31 43 56 / 30%);
+}
+
 .mm-tagline {
-  margin: 14px 0 0;
+  margin: -6px 0 0;
   color: var(--ink);
   font: 600 16px/1.4 var(--font-display);
-  opacity: 0.8;
+}
+
+.mm-actions {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+/* The two big actions: block buttons, green over the warm earth edge. */
+.mm-action {
+  display: grid;
+  gap: 2px;
+  min-height: 64px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 22%),
+    0 4px 0 var(--earth),
+    0 8px 14px rgb(31 43 56 / 22%);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 80ms ease-out,
+    box-shadow 80ms ease-out;
+}
+
+.mm-action:hover {
+  filter: brightness(1.08);
+}
+
+.mm-action:active,
+.mm-action[aria-current='page'] {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 22%),
+    0 1px 0 var(--earth),
+    0 2px 4px rgb(31 43 56 / 22%);
+}
+
+.mm-action[aria-current='page'] {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.mm-action:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.mm-action-name {
+  font: 800 20px/1.2 var(--font-display);
+  text-shadow: 0 1px 0 rgb(0 0 0 / 25%);
+}
+
+.mm-action-note {
+  font: 500 14px/1.3 var(--font-body);
+}
+
+.mm-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 14px;
+}
+
+/* Settings and Versions (owner, 2026-11-11: "The buttons should be aligned to match the design of the
+   others instead of looking like web links"): the big actions' block buttons, smaller and in paper with
+   the same earth edge, side by side under them. */
+.mm-action-secondary {
+  min-height: 48px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, var(--paper-solid), #e4ecf4);
+  color: var(--ink);
+  font: 800 17px/1.2 var(--font-display);
+  text-align: center;
+}
+/* The pages: each slides in over the same backdrop. */
+.mm-pages {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 680px;
+}
+
+.mm-page {
+  padding: 16px 24px 24px;
+  animation: mm-page-in 220ms ease-out;
+}
+
+.mm-page[hidden] {
+  display: none;
+}
+
+@keyframes mm-page-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-page {
+    animation: none;
+  }
+}
+
+.mm-page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mm-page-head h2 {
+  flex: 1;
+  margin: 0;
+  color: var(--ink);
+  font: 800 28px/1.15 var(--font-display);
+  outline: none;
+}
+
+/* A page head's buttons: Back, and an action beside it (Versions' All versions), alike. */
+.mm-back,
+.mm-head-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: var(--ink);
+  font: 700 16px var(--font-body);
+  cursor: pointer;
+}
+
+.mm-head-button {
+  padding: 0 14px;
+  text-decoration: none;
+}
+
+.mm-back:hover,
+.mm-head-button:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.mm-back:active,
+.mm-head-button:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
+}
+
+.mm-back::before {
+  content: '‹';
+  margin-right: 6px;
+  font-size: 20px;
+  line-height: 0;
+}
+
+.mm-page .block-button,
+.mm-page .quiet-button {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* The pages' green buttons take the actions' darker green: white text at 4.5:1. */
+#new-world {
+  white-space: nowrap;
+}
+
+.mm-page .block-button {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+}
+
+.mm-page .block-button:hover {
+  filter: brightness(1.08);
+}
+
+.mm-page .menu-hint,
+.mm-home .menu-hint,
+.mm-page .world-details,
+.mm-page .menu-empty {
+  color: var(--mm-ink-soft);
+  font-size: 14px;
+}
+
+.mm-page .world-name {
+  font-size: 20px;
+}
+
+.mm-page .world-actions .menu-button-small {
+  min-height: 40px;
+  color: var(--mm-ink-soft);
+  font-size: 14px;
+}
+
+.mm-page .menu-field input,
+.mm-page .menu-field select,
+.mm-page .menu-join-form input,
+.mm-page .lobby-search-form input {
+  height: 40px;
+  padding: 0 12px;
+}
+
+.mm-page .menu-field {
+  grid-template-columns: 72px 1fr;
+  font-size: 16px;
+}
+
+#server-browser h2,
+#legacy-worlds h2 {
+  margin: 24px 0 8px;
+  color: var(--ink);
+  font: 800 20px/1.2 var(--font-display);
+}
+
+/* More options: Play advanced's overrides, folded under the basics. */
+.mm-more {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+/* Expandable sections (owner, 2026-11-12: "expandable sections that don't have good UI best practices
+   to indicate they can expand and collapse"): every <details> summary and disclosure button shows a
+   chevron that points right when closed and down when open, a hover and pressed background, and a
+   focus ring; the native marker is hidden so all of them look alike. */
+.mm-more summary,
+.version-earlier summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  color: var(--ink);
+  font: 700 16px var(--font-body);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mm-more summary::-webkit-details-marker,
+.version-earlier summary::-webkit-details-marker {
+  display: none;
+}
+
+.mm-more summary::before,
+.version-earlier summary::before,
+.mm-disclosure::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.mm-more[open] > summary::before,
+.version-earlier[open] > summary::before,
+.mm-disclosure[aria-expanded='true']::after {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.mm-more summary:hover,
+.version-earlier summary:hover,
+.mm-disclosure:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+.mm-more summary:active,
+.version-earlier summary:active,
+.mm-disclosure:active {
+  background: rgb(31 43 56 / 12%);
+}
+
+.mm-more summary:focus-visible,
+.version-earlier summary:focus-visible,
+.mm-disclosure:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* About: an inline disclosure button, the chevron after its name. */
+.mm-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: 700 13px var(--font-body);
+  cursor: pointer;
+}
+
+.mm-disclosure::after {
+  width: 6px;
+  height: 6px;
+  border-width: 2px;
 }
 
 #menu-message:empty {
   display: none;
 }
 
+/* Why the menu came up, or what an action did: a note at the foot, over whichever page shows. */
 #menu-message {
-  align-self: center;
-  max-width: 640px;
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 16px);
+  z-index: 1;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   margin: 0;
-  padding: 10px 16px;
+  padding: 12px 16px;
   border-radius: 12px;
   background: var(--paper-solid);
-  box-shadow: 0 6px 18px rgb(31 43 56 / 16%);
+  box-shadow: 0 10px 28px rgb(31 43 56 / 28%);
   color: var(--ink);
-  font-size: 14px;
-}
-
-.mm-columns {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 18px;
-  align-items: start;
-}
-
-@media (min-width: 860px) {
-  .mm-columns {
-    grid-template-columns: 1.15fr 1fr;
-  }
-}
-
-/* Versions (owner, 2026-10-28: first class, not a footer link): this build and what changed. */
-.mm-versions {
-  grid-column: 1 / -1;
+  font-size: 16px;
+  transform: translateX(-50%);
 }
 
 .mm-version-current {
+  margin-top: 4px;
   color: var(--ink);
-  font: 700 15px var(--font-body);
+  font: 800 20px/1.3 var(--font-display);
 }
 
+/* Versions' headings: the Settings groups' (a small grass block before each; menu M3). */
 .mm-version-label {
-  margin: 12px 0 2px;
-  color: var(--ink-soft);
-  font: 800 12px var(--font-body);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 4px;
+  color: var(--ink);
+  font: 800 16px var(--font-display);
+}
+
+.mm-version-label::before {
+  content: '';
+  width: 10px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--grass);
+  box-shadow: 0 3px 0 var(--earth);
+}
+
+.mm-versions .changes,
+.mm-versions ul {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* The version line at the foot of the home. */
+#about {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+#about .menu-hint {
+  margin: 0;
+  color: var(--mm-ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#about-details {
+  margin-top: 8px;
+}
+
+#about .menu-button-small {
+  min-height: 36px;
+}
+
+/* A phone: the home sits at the foot, the panorama above it; a page takes the screen. */
+@media (max-width: 720px) {
+  .mm-shell {
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+
+  .mm-home {
+    position: static;
+    flex: none;
+  }
+
+  #main-menu.mm-on-page .mm-home {
+    display: none;
+  }
+
+  #main-menu.mm-on-page .mm-shell {
+    justify-content: flex-start;
+  }
+
+  .mm-pages {
+    flex: none;
+    max-width: none;
+  }
+
+  .mm-page {
+    padding: 12px 16px 20px;
+  }
+
+  .mm-page-head {
+    gap: 8px;
+  }
+
+  .mm-page-head .block-button,
+  .mm-page-head .quiet-button,
+  .mm-head-button {
+    padding: 0 12px;
+  }
+}
+
+body:has(#main-menu) .game-menu {
+  z-index: calc(var(--z-menu) + 1);
+}
+
+.gm-tab.gm-tab-off {
+  opacity: 0.55;
 }
 
 /* What changed in a build (ui/changesView.ts): the menu's Versions card and the version page. */
@@ -411,7 +961,8 @@ kbd.phrase {
 }
 
 .version-earlier summary {
-  cursor: pointer;
+  font-size: 13px;
+  min-height: 40px;
 }
 
 .version-earlier-name {
@@ -424,44 +975,6 @@ kbd.phrase {
   font-size: 13px;
 }
 
-.mm-card {
-  min-width: 0;
-  padding: 18px 20px 20px;
-  border-radius: 18px;
-  background: var(--paper);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 1px 0 rgb(255 255 255 / 70%) inset,
-    0 14px 34px rgb(31 43 56 / 18%);
-}
-
-.mm-card h2,
-#server-browser h2,
-#legacy-worlds h2 {
-  margin: 0 0 12px;
-  color: var(--ink);
-  font: 800 19px/1.2 var(--font-display);
-}
-
-#server-browser h2,
-#legacy-worlds h2 {
-  margin-top: 22px;
-  font-size: 16px;
-}
-
-.mm-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 4px;
-}
-
-.mm-card-head h2 {
-  margin: 0;
-}
-
 .menu-hint {
   margin: 6px 0 8px;
   color: var(--ink-soft);
@@ -472,24 +985,13 @@ kbd.phrase {
 #create-world,
 #play-advanced {
   display: grid;
-  gap: 10px;
-  margin: 12px 0 4px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 70%);
+  gap: 12px;
+  margin: 16px 0 4px;
 }
 
 #create-world[hidden],
 #play-advanced[hidden] {
   display: none;
-}
-
-.mm-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 /* Play advanced's fields (ui/playAdvanced.ts): longer labels than the create form's. */
@@ -587,6 +1089,24 @@ kbd.phrase {
   font-size: 13px;
 }
 
+/* The world's game mode (ADR 0065) at the start of its details line, so creative and adventure
+   worlds tell apart at a glance. */
+.world-mode {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  background: #5b7fa8;
+  vertical-align: 1px;
+}
+
+.world-mode[data-mode='adventure'] {
+  background: #b0703a;
+}
+
 .world-actions {
   display: flex;
   flex-wrap: wrap;
@@ -617,6 +1137,212 @@ kbd.phrase {
 .menu-empty {
   padding: 10px 0 2px;
   color: var(--ink-soft);
+  font-size: 14px;
+}
+
+/* The Worlds page with no worlds: a block, a line, and the big New world. */
+#world-list .menu-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 40px 16px 32px;
+  text-align: center;
+}
+
+.menu-empty-art {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    var(--grass-light) 0 14%,
+    var(--grass) 14% 30%,
+    var(--grass-dark) 30% 38%,
+    var(--earth) 38% 76%,
+    var(--earth-dark) 76%
+  );
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 45%),
+    0 10px 20px rgb(31 43 56 / 22%);
+}
+
+#world-list .menu-empty-line {
+  margin: 0;
+  color: var(--ink);
+  font: 800 28px/1.15 var(--font-display);
+}
+
+#world-list .menu-empty-sub {
+  max-width: 34ch;
+  margin: 0 0 16px;
+  color: var(--mm-ink-soft);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+#world-list .menu-empty-create {
+  min-width: 220px;
+  min-height: 56px;
+  font-size: 20px;
+}
+
+/* The world cards (proposal E): a grid on wide screens, one column on phones. */
+#world-list.world-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+#world-list .world-card {
+  display: grid;
+  grid-template-columns: 100%;
+  grid-template-rows: auto 1fr auto;
+  justify-content: stretch;
+  align-items: start;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 72%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 80%),
+    0 6px 16px rgb(31 43 56 / 14%);
+  overflow: hidden;
+}
+
+/* The world's last view, standing on a grass-and-earth edge like the wordmark's. */
+.world-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--sky);
+  box-shadow: inset 0 -4px 0 var(--earth);
+}
+
+.world-thumb img {
+  display: block;
+  width: 100%;
+  height: calc(100% - 4px);
+  object-fit: cover;
+}
+
+/* No picture yet: the world's type painted in the palette's colours. */
+.world-thumb-empty {
+  background:
+    radial-gradient(ellipse 70% 40% at 30% 100%, #82bd45 60%, transparent 61%),
+    radial-gradient(ellipse 80% 45% at 85% 100%, #5f9e3e 60%, transparent 61%),
+    linear-gradient(180deg, #86b3ea, #d7e6f5 70%);
+}
+
+.world-thumb-empty[data-type='flat'] {
+  background:
+    linear-gradient(180deg, transparent 72%, #82bd45 72% 80%, #8e5d3d 80%),
+    linear-gradient(180deg, #86b3ea, #d7e6f5 72%);
+}
+
+.world-thumb-empty[data-type='sandbox'] {
+  background:
+    linear-gradient(90deg, rgb(31 43 56 / 12%) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(0deg, rgb(31 43 56 / 12%) 1px, transparent 1px) 0 0 / 20px 20px,
+    #e9eff6;
+}
+
+#world-list .world-thumb .world-mode {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  margin: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  background: var(--mm-mode-creative);
+  box-shadow: 0 2px 6px rgb(16 28 40 / 30%);
+}
+
+#world-list .world-thumb .world-mode[data-mode='adventure'] {
+  background: var(--mm-mode-adventure);
+}
+
+#world-list .world-card .world-info {
+  gap: 2px;
+  padding: 12px 14px 4px;
+}
+
+#world-list .world-card .world-actions {
+  flex-wrap: nowrap;
+  padding: 8px 14px 14px;
+}
+
+#world-list .world-card .world-play {
+  flex: 1;
+}
+
+.world-more {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 80%);
+  color: var(--ink);
+  font: 800 20px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.world-more:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.world-more:active {
+  transform: translateY(1px);
+}
+
+.world-more[aria-expanded='true'] {
+  background: var(--ink);
+  color: #fff;
+}
+
+.world-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.world-menu[hidden] {
+  display: none;
+}
+
+.world-menu-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--mm-ink-soft);
+  font-size: 14px;
+}
+
+.world-menu .menu-button-small {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.world-menu .menu-confirm,
+.world-menu .menu-confirm:hover {
+  border-color: var(--danger);
+  background: #fde9e7;
+  color: var(--danger);
+}
+
+.mm-page #nearby:has(#nearby-list:empty) > .menu-hint,
+.mm-page #lobby-status:not(:empty),
+.mm-page .menu-join-help {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 55%);
+  color: var(--mm-ink-soft);
   font-size: 14px;
 }
 
@@ -661,28 +1387,6 @@ kbd.phrase {
 .lobby-join:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-/* The version line at the foot of the main menu. */
-#about {
-  margin-top: auto;
-  padding-top: 8px;
-  color: var(--ink);
-  text-align: center;
-}
-
-#about .menu-hint {
-  color: var(--ink);
-  opacity: 0.85;
-}
-
-#about a {
-  color: var(--ink);
-}
-
-#about-details .menu-hint {
-  max-width: 560px;
-  margin: 6px auto;
 }
 
 /* ---------- The game menu (ui/settingsMenu.ts) ---------- */
@@ -806,23 +1510,52 @@ body.menu-open #menu-button {
   width: min(1000px, 100%);
   height: min(760px, 100%);
   overflow: hidden;
-  border-radius: 20px;
-  background: var(--paper-solid);
-  box-shadow: 0 24px 60px rgb(10 20 35 / 40%);
+  /* The menu's glass (menu M3): the game, or the menu's panorama, shows through blurred. */
+  border-radius: 16px;
+  background: var(--gm-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px var(--mm-glass-line),
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    0 24px 60px rgb(10 20 35 / 40%);
+}
+
+/* From the main menu (menu M3): a full page over the panorama, which needs no dimming; the
+   menu's own column steps aside while it shows. */
+.game-menu.gm-full-page {
+  padding: calc(var(--safe-top) + 20px) calc(var(--safe-right) + 12px)
+    calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 12px);
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* A page's frame, as the menu's pages: from the same top edge, the screen's height. */
+.game-menu.gm-full-page {
+  place-items: start center;
+}
+
+.gm-full-page .gm-sheet {
+  height: 100%;
+  background: var(--mm-glass);
+}
+
+body.menu-open #main-menu .mm-shell {
+  visibility: hidden;
 }
 
 .gm-head {
   grid-area: head;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: 16px 18px 10px 24px;
 }
 
 .gm-title {
   margin: 0;
-  font: 900 28px/1.1 var(--font-display);
+  font: 800 28px/1.15 var(--font-display);
 }
 
 .gm-sub {
@@ -835,31 +1568,9 @@ body.menu-open #menu-button {
   display: none;
 }
 
+/* Back (ui/settingsMenu.ts): the menu pages' .mm-back, first in the head. */
 .gm-close {
-  position: relative;
   flex: none;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: #fff;
-}
-
-.gm-close::before,
-.gm-close::after {
-  content: '';
-  position: absolute;
-  left: 11px;
-  top: 18.5px;
-  width: 16px;
-  height: 2.5px;
-  border-radius: 2px;
-  background: var(--ink);
-  transform: rotate(45deg);
-}
-
-.gm-close::after {
-  transform: rotate(-45deg);
 }
 
 .gm-tabs {
@@ -874,19 +1585,25 @@ body.menu-open #menu-button {
   padding: 10px 14px;
   border: 0;
   border-radius: 10px;
+  min-height: 44px;
   background: transparent;
-  color: var(--ink-soft);
-  font: 700 15px var(--font-display);
+  color: var(--mm-ink-soft);
+  font: 700 16px var(--font-display);
   text-align: left;
 }
 
 .gm-tab:hover {
-  background: rgb(31 43 56 / 6%);
+  background: rgb(255 255 255 / 45%);
   color: var(--ink);
 }
 
+.gm-tab:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: -3px;
+}
+
 .gm-tab[aria-selected='true'] {
-  background: #fff;
+  background: rgb(255 255 255 / 85%);
   box-shadow:
     inset 4px 0 0 var(--grass),
     0 2px 6px rgb(31 43 56 / 10%);
@@ -906,7 +1623,7 @@ body.menu-open #menu-button {
 
 .gm-lead {
   margin: 4px 0 14px;
-  color: var(--ink-soft);
+  color: var(--mm-ink-soft);
   font-size: 14px;
 }
 
@@ -932,29 +1649,47 @@ body.menu-open #menu-button {
   box-shadow: 0 3px 0 var(--earth);
 }
 
+/* Settings rows: one column, one line each (name, control, value); the hint is the row's title. */
 .gm-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 6px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 680px;
 }
 
 .settings-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(96px, 34%) 1fr minmax(44px, auto) auto;
+  align-items: center;
   gap: 2px 10px;
-  padding: 10px 12px 12px;
-  border-radius: 12px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border-radius: 10px;
   background: #fff;
   box-shadow: 0 1px 0 var(--line);
 }
 
 .settings-name {
+  grid-column: 1;
+  grid-row: 1;
   font: 700 14px var(--font-body);
 }
 
 .settings-value {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   color: var(--grass-dark);
   font: 700 13px var(--font-mono);
+  white-space: nowrap;
+}
+
+.settings-value:empty {
+  display: none;
+}
+
+.settings-row .settings-hint {
+  display: none;
 }
 
 .settings-hint {
@@ -964,18 +1699,101 @@ body.menu-open #menu-button {
   line-height: 1.35;
 }
 
+.gm-group {
+  margin-bottom: 14px;
+}
+
+.gm-group h2 {
+  margin: 2px 0 6px;
+  font-size: 14px;
+}
+
 /* Choices: a row of buttons, the pressed one filled with grass. */
 .settings-choices {
-  grid-column: 1 / -1;
+  grid-column: 2 / 4;
+  grid-row: 1;
   display: grid;
   grid-auto-columns: 1fr;
   grid-auto-flow: column;
   gap: 4px;
-  margin: 4px 0 2px;
+}
+
+/* The Graphics pane's preset slider: the names of its stops under it, Custom when none matches. */
+.settings-preset {
+  grid-template-columns: 1fr auto auto;
+  max-width: 680px;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+  padding: 8px 12px 6px;
+  box-shadow:
+    inset 4px 0 0 var(--grass),
+    0 1px 0 var(--line);
+}
+
+.settings-preset .settings-value {
+  grid-column: 2;
+}
+
+.settings-preset .settings-pin {
+  grid-column: 3;
+}
+
+/* A changed (pinned) setting's marker: pressing it goes back to the default (settingsPins.ts). */
+.settings-pin {
+  grid-column: 4;
+  grid-row: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper-solid);
+  color: var(--grass-dark);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.settings-pin:hover,
+.settings-pin:focus-visible {
+  border-color: var(--grass-dark);
+  background: var(--grass);
+  color: #fff;
+}
+
+.settings-pin[hidden] {
+  display: none;
+}
+
+.settings-row.settings-preset input[type='range'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.settings-preset .settings-name {
+  font: 800 15px var(--font-display);
+}
+
+.preset-ticks {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.settings-preset.custom .settings-value {
+  color: var(--ink-soft);
+}
+
+.settings-tail[hidden] {
+  display: none;
 }
 
 .settings-choice {
-  min-height: 32px;
+  min-height: 30px;
+  padding: 0 4px;
+  white-space: nowrap;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper-solid);
@@ -995,6 +1813,9 @@ body.menu-open #menu-button {
   cursor: pointer;
 }
 .settings-toggle input[type='checkbox'] {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   width: 20px;
   height: 20px;
   margin: 0;
@@ -1003,9 +1824,17 @@ body.menu-open #menu-button {
 }
 
 /* Sliders: a track filled with grass up to the value, and a block for a thumb. */
-.settings-row input[type='range'],
+.settings-row input[type='range'] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
 #flight-speed input[type='range'] {
   grid-column: 1 / -1;
+}
+
+.settings-row input[type='range'],
+#flight-speed input[type='range'] {
   width: 100%;
   height: 26px;
   margin: 2px 0;
@@ -1188,7 +2017,7 @@ body.menu-open #menu-button {
   gap: 10px 16px;
   padding: 14px 18px 16px 24px;
   border-top: 1px solid var(--line);
-  background: rgb(255 255 255 / 60%);
+  background: rgb(255 255 255 / 35%);
 }
 
 .menu-actions {
@@ -1196,15 +2025,21 @@ body.menu-open #menu-button {
   gap: 10px;
 }
 
+/* From the main menu the foot holds nothing (no Resume or Quit, no build line). */
+.gm-foot:empty {
+  display: none;
+}
+
 .gm-note {
   margin: 0;
-  color: var(--ink-soft);
+  color: var(--mm-ink-soft);
   font: 12px var(--font-mono);
 }
 
 /* Narrow or short screens (phones either way up): the sheet fills the screen, tabs in a row. */
 @media (max-width: 720px), (max-height: 520px) {
-  .game-menu {
+  .game-menu,
+  .game-menu.gm-full-page {
     padding: 0;
   }
 
@@ -1469,6 +2304,24 @@ body.menu-open #menu-button {
   pointer-events: none;
 }
 
+/* Burning (lava, VOLCANOES.md §6.3): a red-orange edge, its colour and opacity from
+   shared/fluids/lava.json `burnEdge` (hud.ts `setBurn`). */
+#burn-edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Defeat's fade to black and back (docs/CHARACTERS.md §11.13), under the centre message. */
+#defeat-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+}
+
 #crosshair {
   position: absolute;
   left: 50%;
@@ -1479,6 +2332,39 @@ body.menu-open #menu-button {
   border-radius: 50%;
   background: rgb(255 255 255 / 85%);
   box-shadow: 0 0 0 1.5px rgb(0 0 0 / 35%);
+}
+
+/* A held tool's swing line (ADR 0067): its path through the crosshair, level or vertical, fading
+   at its ends. */
+#crosshair .swing-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+#crosshair .swing-line.level {
+  width: 120px;
+  height: 2px;
+  margin: -1px 0 0 -60px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 70%) 30%,
+    rgb(255 255 255 / 70%) 70%,
+    transparent
+  );
+}
+#crosshair .swing-line.vertical {
+  width: 2px;
+  height: 120px;
+  margin: -60px 0 0 -1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(255 255 255 / 70%) 30%,
+    rgb(255 255 255 / 70%) 70%,
+    transparent
+  );
 }
 
 #health {
@@ -1503,6 +2389,53 @@ body.menu-open #menu-button {
 
 #health.hurt > div {
   background: #e2574a;
+}
+
+/* Stamina and air (ADR 0069): two short bars just above the health bar, each faded out while full.
+   A fixed part of shared/ui/layout.json, so the hotbar is placed above it. */
+#vitals {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 14px);
+  width: 200px;
+  height: 6px;
+  margin-left: -100px;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+#vitals .vital {
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+
+#vitals .vital.shown {
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+
+#vitals .vital > div {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.1s linear;
+}
+
+#vitals .air > div {
+  background: linear-gradient(180deg, #a9dcf5, #4f9fd1);
+}
+
+#vitals .stamina > div {
+  background: linear-gradient(180deg, #f6dc8a, #e0a93b);
+}
+
+#vitals .stamina.exhausted > div {
+  background: linear-gradient(180deg, #e9a08f, #c4553f);
 }
 
 #center-message {
@@ -1845,7 +2778,12 @@ body:has(#main-menu) #build-info {
   opacity: 0.7;
 }
 
+/* Narrowed by the HUD's layout (ui/hudLayout.ts), the row scrolls. */
 .hotbar-slots {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   display: flex;
   gap: 4px;
   padding: 4px;
@@ -2128,13 +3066,6 @@ body:has(#main-menu) #build-info {
     max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 2 * 52px);
   }
 
-  .hotbar-slots {
-    box-sizing: border-box;
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
   .hotbar-slot {
     flex: 0 1 40px;
     min-width: 30px;
@@ -2182,6 +3113,11 @@ body:has(#main-menu) #build-info {
   }
 
   #health {
+    width: 140px;
+    margin-left: -70px;
+  }
+
+  #vitals {
     width: 140px;
     margin-left: -70px;
   }
@@ -2244,6 +3180,67 @@ body:has(#main-menu) #build-info {
   #health {
     bottom: calc(var(--safe-bottom) + 4px);
   }
+
+  #vitals {
+    bottom: calc(var(--safe-bottom) + 18px);
+  }
+}
+
+/* Phones sideways: the buttons in a compact block at the right edge, two across (shared/ui/layout.json
+   keeps it clear of the held item, bottom centre, and of the minimap above it). */
+@media (pointer: coarse) and (orientation: landscape) {
+  .touch-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 54px);
+    grid-template-areas:
+      'edit build'
+      'fly run'
+      'crouch jump';
+    gap: 8px;
+    align-items: center;
+    justify-items: center;
+  }
+
+  .touch-buttons button {
+    width: 54px;
+    height: 54px;
+    font-size: 12px;
+  }
+
+  #touch-edit {
+    grid-area: edit;
+  }
+
+  #touch-build {
+    grid-area: build;
+  }
+
+  #touch-fly {
+    grid-area: fly;
+  }
+
+  #touch-run {
+    grid-area: run;
+  }
+
+  #touch-crouch {
+    grid-area: crouch;
+  }
+
+  .touch-buttons #touch-jump {
+    grid-area: jump;
+    width: 62px;
+    height: 62px;
+    font-size: 13px;
+  }
+}
+
+/* The safe area's box, read by the HUD's layout (ui/hudLayout.ts). */
+#safe-probe {
+  position: fixed;
+  inset: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  visibility: hidden;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2314,6 +3311,7 @@ body.loading-wait #brush-panel {
 }
 
 .ls-bar {
+  position: relative;
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
@@ -2328,29 +3326,52 @@ body.loading-wait #brush-panel {
   transition: width 120ms linear;
 }
 
-/* A stage without a known total: a band sweeping the bar, so the screen never looks stopped. */
-.ls-bar.ls-indeterminate .ls-fill {
-  width: 30%;
-  transition: none;
-  animation: ls-sweep 1.4s ease-in-out infinite;
+/* At the hold point short of full (ui/loadingEstimate.ts) while the game is not ready yet: a light
+   band moving along the bar, so it keeps visibly working. */
+.ls-bar.ls-holding::after {
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 60%), transparent);
+  animation: ls-shimmer 1.3s ease-in-out infinite;
+  content: '';
 }
 
-@keyframes ls-sweep {
+@keyframes ls-shimmer {
   from {
     transform: translateX(-100%);
   }
 
   to {
-    transform: translateX(340%);
+    transform: translateX(290%);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ls-bar.ls-indeterminate .ls-fill {
-    width: 100%;
-    opacity: 0.35;
-    animation: none;
+@keyframes ls-pulse {
+  50% {
+    opacity: 0.55;
   }
+}
+
+/* Reduced motion: a gentle pulse of the fill instead of the moving band. */
+@media (prefers-reduced-motion: reduce) {
+  .ls-bar.ls-holding::after {
+    content: none;
+  }
+
+  .ls-bar.ls-holding .ls-fill {
+    animation: ls-pulse 2s ease-in-out infinite;
+  }
+}
+
+/* The time left as estimated: "About 4 s" (empty under a second). */
+.ls-eta {
+  min-height: 1.4em;
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font: 600 13px/1.4 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* The start's stages so far (ui/loadingStages.ts): name, progress, time; the running one in ink. */
@@ -2406,4 +3427,1320 @@ body.loading-wait #brush-panel {
   .ls-title {
     font-size: 22px;
   }
+}
+
+/* Inventories (ADR 0066): a slot's count, the wallet, the backpack screen (ui/backpack.ts). */
+.hotbar-count {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  color: #fff;
+  font: 700 11px var(--font-body);
+  text-shadow: 0 1px 2px #000;
+}
+
+#hotbar-wallet {
+  align-self: center;
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: var(--glass);
+  color: #bff5d2;
+  font: 700 12px var(--font-body);
+}
+
+.hotbar-slots[hidden] {
+  display: none;
+}
+
+#hotbar-wallet[hidden] {
+  display: none;
+}
+
+#backpack,
+#creative-inventory {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: var(--z-widgets);
+  padding: 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+#backpack[hidden],
+#creative-inventory[hidden] {
+  display: none;
+}
+
+.backpack-title {
+  margin-bottom: 8px;
+  color: #fff;
+  font: 700 14px var(--font-body);
+}
+
+.backpack-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.backpack-slot {
+  width: 44px;
+  height: 44px;
+}
+
+.backpack-hotbar {
+  margin-top: 8px;
+}
+
+/* A wearing tool's bar (owner, 2026-11-11): the hits left, along the slot's foot. */
+.wear-bar {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  left: 4px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 55%);
+}
+
+.wear-bar > span {
+  display: block;
+  height: 100%;
+}
+
+/* The backpack's Combine section: a button per recipe the inventory can make. */
+.backpack-combine {
+  margin-top: 12px;
+}
+
+.backpack-combine[hidden] {
+  display: none;
+}
+
+.combine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.combine-recipe {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.combine-recipe:hover,
+.combine-recipe:focus-visible {
+  background: rgb(255 255 255 / 18%);
+}
+
+.combine-output {
+  font: 700 13px var(--font-body);
+}
+
+.combine-inputs {
+  grid-row: 2;
+  color: rgb(255 255 255 / 70%);
+  font: 400 11px var(--font-body);
+}
+
+.combine-times {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  align-self: center;
+  font: 700 13px var(--font-body);
+}
+
+.combine-none {
+  color: rgb(255 255 255 / 60%);
+  font: 400 12px var(--font-body);
+}
+
+/* The creative inventory view (docs/ITEMS.md §6a): the catalogue's groups, scrolling, over the
+   hotbar's six slots. */
+#creative-inventory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
+.inventory-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-head .backpack-title {
+  margin: 0;
+}
+
+.inventory-search {
+  width: 160px;
+  padding: 4px 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 25%);
+  color: #fff;
+  font: 13px var(--font-body);
+}
+
+.inventory-groups {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 52vh;
+}
+
+.inventory-group + .inventory-group {
+  margin-top: 8px;
+}
+
+.inventory-group-label {
+  margin-bottom: 4px;
+  color: rgb(255 255 255 / 75%);
+  font: 600 12px var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inventory-items {
+  display: grid;
+  grid-template-columns: repeat(8, 44px);
+  gap: 4px;
+}
+
+/* The Structures tab (docs/STRUCTURES.md §9): the player's saved structures, a button each. */
+.inventory-structures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 380px;
+}
+
+.inventory-structure {
+  min-height: 44px;
+}
+
+.inventory-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffd2c4;
+}
+
+.inventory-hotbar {
+  padding-top: 8px;
+  border-top: 1px solid var(--glass-line);
+}
+
+.inventory-view .hotbar-slot:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+@media (max-width: 480px) {
+  .inventory-items {
+    grid-template-columns: repeat(6, 44px);
+  }
+}
+
+/* The touch bag button (docs/ITEMS.md §6a): top left; while the inventory view is open the other
+   touch controls step aside and the bag closes it. */
+/* Below the menu button (both 44 px at the safe corner): 0.52.23 put it exactly under the menu button,
+   so on a phone it was hidden behind it (owner, 2026-11-10: "How to open inventory on mobile?"). */
+#touch-bag {
+  position: absolute;
+  top: calc(var(--safe-top) + 54px);
+  left: var(--safe-left);
+  z-index: 1;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 22px;
+  background: var(--glass);
+  color: #fff;
+  font: 700 14px var(--font-body);
+  touch-action: none;
+}
+
+body.inventory-open #touch-controls > :not(#touch-bag) {
+  display: none;
+}
+
+body.inventory-open #touch-controls {
+  z-index: calc(var(--z-widgets) + 1);
+}
+
+/* The minimap (ADR 0068; its size from shared/ui/map.json, set as --minimap-size): round, top right, the
+   heading up; a tap opens the explored map. */
+#minimap {
+  position: absolute;
+  right: calc(var(--safe-right) + 12px);
+  top: calc(var(--safe-top) + 12px);
+  width: var(--minimap-size, 168px);
+  height: var(--minimap-size, 168px);
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgb(20 22 28 / 55%);
+  box-shadow:
+    0 0 0 3px #1e1a14,
+    0 0 0 4.5px rgb(255 255 255 / 35%),
+    0 2px 10px rgb(0 0 0 / 40%);
+  cursor: pointer;
+  z-index: 5;
+}
+#minimap.map-off {
+  display: none;
+}
+/* Off home (the moon): the maps are home's terrain, so the disc gives way to a note. */
+#minimap .map-away-label {
+  display: none;
+}
+#minimap.map-away canvas {
+  display: none;
+}
+#minimap.map-away .map-away-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 13px;
+  color: rgb(255 255 255 / 85%);
+}
+#minimap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* The big map (ADR 0068; owner, 2026-11-09): a framed panel over the game, the world showing round
+   it (its share of the screen, the buttons' size and the colours from shared/ui/map.json, set as
+   --map-*); nearly full screen inside the safe area on a phone. */
+#world-map {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgb(8 10 14 / 35%);
+}
+#world-map[hidden] {
+  display: none;
+}
+#world-map .map-panel {
+  position: absolute;
+  left: calc(var(--safe-left, 0px) + var(--map-margin-x, 10vw));
+  right: calc(var(--safe-right, 0px) + var(--map-margin-x, 10vw));
+  top: calc(var(--safe-top, 0px) + var(--map-margin-y, 10vh));
+  bottom: calc(var(--safe-bottom, 0px) + var(--map-margin-y, 10vh));
+  display: flex;
+  flex-direction: column;
+  border: 3px solid var(--map-frame, #1e1a14);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--map-frame, #1e1a14);
+  box-shadow:
+    0 0 0 1.5px rgb(255 255 255 / 30%),
+    0 12px 40px rgb(0 0 0 / 55%);
+}
+#world-map .map-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 4px 4px 14px;
+  color: #f4ecd8;
+}
+#world-map .map-titlebar h2 {
+  margin: 0 auto 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+#world-map .map-hint {
+  flex: 1;
+  font-size: 12px;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#world-map .map-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--map-fog, #14161c);
+}
+#world-map canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+#world-map canvas.dragging {
+  cursor: grabbing;
+}
+#world-map .map-button {
+  min-width: var(--map-button, 36px);
+  height: var(--map-button, 36px);
+  padding: 0 10px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 8px;
+  background: rgb(30 26 20 / 88%);
+  color: #f4ecd8;
+  font:
+    600 18px/1 system-ui,
+    sans-serif;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+/* A hidden map button (the picker's Delete for a marker not yet placed; BUGS.md #122). */
+#world-map .map-button[hidden] {
+  display: none;
+}
+#world-map .map-button:hover:not(:disabled) {
+  background: rgb(60 52 40 / 95%);
+}
+#world-map .map-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#world-map .map-button span {
+  font-size: 13px;
+}
+#world-map .map-close {
+  font-size: 20px;
+}
+#world-map .map-controls {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+#world-map .map-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgb(30 26 20 / 85%);
+  color: #f4ecd8;
+  font-size: 13px;
+}
+#world-map .map-filters[hidden] {
+  display: none;
+}
+#world-map .map-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+#world-map .map-scale {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(30 26 20 / 75%);
+  color: #f4ecd8;
+  font:
+    600 12px/1 system-ui,
+    sans-serif;
+  pointer-events: none;
+}
+/* The tiles still building while the map is open: quiet, bottom right. */
+#world-map .map-progress {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(30 26 20 / 55%);
+  color: rgb(244 236 216 / 80%);
+  font:
+    500 11px/1 system-ui,
+    sans-serif;
+  pointer-events: none;
+}
+#world-map .map-progress[hidden] {
+  display: none;
+}
+#world-map .map-scale i {
+  display: block;
+  height: 6px;
+  border: 2px solid #f4ecd8;
+  border-top: none;
+}
+#world-map .map-panel.phone .map-hint {
+  display: none;
+}
+
+/* A creative slot under a dragged item or slot (0.52.24). */
+.inventory-view .hotbar-slot.drop-target {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -2px;
+}
+
+/* Theater mode's HUD switch (src/theater/hud.ts `setHud`): every child of body but the canvas and the
+   toolbar hidden; in a take, the toolbar too. */
+body.theater-clean > *:not(#view):not(#theater-bar):not(#theater-touch):not(script):not(style) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.theater-take > #theater-bar {
+  display: none !important;
+}
+
+body.theater-take > #theater-touch {
+  display: none !important;
+}
+
+/* Theater mode's flying controls on a phone (src/theater/touch.ts): the stick at the bottom left, Up
+   and Down beside it; just above the bottom sheet's top edge, open or collapsed (mode.ts `showTouch`
+   sets `bottom` from the sheet's rect; BUGS.md #160), beside the side sheet in landscape. */
+.theater-touch {
+  position: fixed;
+  left: var(--safe-left);
+  bottom: calc(var(--safe-bottom) + 8px);
+  z-index: var(--z-widgets);
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  touch-action: none;
+  user-select: none;
+}
+
+.theater-touch[hidden] {
+  display: none;
+}
+
+.theater-touch.tb-sheet-bottom[data-sheet='collapsed'] {
+  bottom: calc(var(--safe-bottom) + 84px);
+}
+
+.tt-stick {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 30%);
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 55%);
+  touch-action: none;
+}
+
+.tt-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 85%);
+  box-shadow: 0 2px 8px rgb(10 20 35 / 30%);
+  pointer-events: none;
+}
+
+.tt-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.tt-btn {
+  width: 64px;
+  height: 56px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(246 250 255 / 80%);
+  color: var(--ink);
+  font: 700 15px var(--font-body);
+  touch-action: none;
+}
+
+.tt-btn:active {
+  background: #fff;
+}
+
+/* Theater mode's panel (src/theater/mode.ts, docs/THEATER_MODE.md §2; owner, 2026-11-13: "Improve the UI
+   on the theater mode ... a proper X button or responsive layout"): the menu's glass, buttons, chips
+   and disclosure. Its layout by the viewport (src/theater/layout.ts `layoutFor`): docked beside the
+   view on a desktop, a bottom sheet in portrait, a side sheet in landscape. While a path plays or a
+   take records only its header shows (the state, Pause, Stop and the X). */
+.theater-bar {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  background: var(--gm-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px var(--mm-glass-line),
+    0 12px 32px rgb(10 20 35 / 30%);
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font-body);
+  accent-color: var(--mm-mode-creative);
+}
+
+.theater-bar *,
+.theater-bar *::before,
+.theater-bar *::after {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Desktop: a compact column docked at the left, under the safe area, the view left free. */
+.theater-bar.tb-docked {
+  top: var(--safe-top);
+  left: var(--safe-left);
+  width: 340px;
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+  border-radius: 16px;
+}
+
+/* A phone in portrait: a bottom sheet, the full width, large targets. */
+.theater-bar.tb-sheet-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 58%;
+  padding-bottom: var(--safe-bottom);
+  border-radius: 18px 18px 0 0;
+}
+
+/* A phone in landscape: a side sheet at the right, the full height. */
+.theater-bar.tb-sheet-side {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 48%);
+  padding-right: var(--safe-right);
+  border-radius: 18px 0 0 18px;
+}
+
+.theater-bar[hidden],
+.theater-open[hidden],
+.theater-bar [hidden] {
+  display: none !important;
+}
+
+.tb-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.tb-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  margin: 0 4px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 18px/1.2 var(--font-display);
+}
+
+.tb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+/* Busy (a path playing, a take recording): the header alone. */
+.theater-bar[data-busy='playing'] .tb-body,
+.theater-bar[data-busy='recording'] .tb-body {
+  display: none;
+}
+
+.theater-bar[data-busy='playing'],
+.theater-bar[data-busy='recording'] {
+  max-height: none;
+  bottom: auto;
+}
+
+.theater-bar[data-busy='playing'] .tb-collapse,
+.theater-bar[data-busy='recording'] .tb-collapse {
+  display: none;
+}
+
+.theater-bar.tb-docked[data-busy='playing'],
+.theater-bar.tb-docked[data-busy='recording'] {
+  width: auto;
+  max-width: calc(100% - var(--safe-left) - var(--safe-right));
+}
+
+.theater-bar.tb-sheet-bottom[data-busy='playing'],
+.theater-bar.tb-sheet-bottom[data-busy='recording'] {
+  top: auto;
+  bottom: 0;
+}
+
+/* The header's icon buttons: the X (close) and the sheet's collapse chevron. */
+.tb-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tb-close::before,
+.tb-close::after {
+  content: '';
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.tb-close::after {
+  transform: rotate(-45deg);
+}
+
+.tb-collapse::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-collapse[aria-expanded='false']::before {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* The collapse chevron only on the sheets (a desktop's docked panel is small already). */
+.tb-docked .tb-collapse {
+  display: none;
+}
+
+.tb-btn,
+.tb-tab,
+.tb-chip,
+.tb-keyrow,
+.tb-select,
+.tb-num,
+.tb-name {
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: inherit;
+  font: 600 14px var(--font-body);
+}
+
+.tb-btn,
+.tb-tab,
+.tb-chip,
+.tb-keyrow,
+.tb-icon {
+  cursor: pointer;
+}
+
+.tb-btn:hover,
+.tb-tab:hover,
+.tb-chip:hover,
+.tb-keyrow:hover,
+.tb-icon:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.tb-btn:active,
+.tb-chip:active,
+.tb-keyrow:active,
+.tb-icon:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
+}
+
+.tb-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The menu's focus ring on every control (item 23). */
+.theater-bar :is(button, select, input, summary):focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* The tools: a segmented row of tabs. */
+.tb-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: rgb(31 43 56 / 8%);
+}
+
+.tb-tab {
+  border-color: transparent;
+  background: transparent;
+  font-weight: 700;
+}
+
+.tb-tab[aria-selected='true'] {
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(31 43 56 / 18%);
+}
+
+.tb-primary {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  border-color: var(--mm-action);
+  color: #fff;
+}
+
+.tb-primary:hover {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  filter: brightness(1.08);
+}
+
+.tb-record {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.tb-record:hover {
+  background: var(--danger);
+  filter: brightness(1.08);
+}
+
+.tb-section {
+  margin: 0 0 12px;
+}
+
+.tb-section-title {
+  margin: 0 0 6px;
+  color: var(--mm-ink-soft);
+  font: 700 12px var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tb-field {
+  display: grid;
+  flex: 1 1 120px;
+  gap: 2px;
+}
+
+.tb-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.tb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tb-chip {
+  border-radius: 999px;
+}
+
+.tb-chip[aria-checked='true'] {
+  background: var(--mm-mode-creative);
+  border-color: var(--mm-mode-creative);
+  color: #fff;
+}
+
+.tb-select,
+.tb-name {
+  width: 100%;
+}
+
+.tb-num {
+  width: 100%;
+}
+
+.tb-sliders {
+  display: grid;
+  gap: 4px;
+}
+
+.tb-slider {
+  display: grid;
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.tb-range {
+  width: 100%;
+  min-height: 32px;
+}
+
+.tb-label,
+.tb-value,
+.tb-hint,
+.tb-status {
+  color: var(--mm-ink-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.tb-hint,
+.tb-status {
+  margin: 4px 0 0;
+}
+
+/* The key list: one row per key, the selected one marked. */
+.tb-keys {
+  display: grid;
+  gap: 4px;
+  max-height: 168px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow: hidden auto;
+  list-style: none;
+}
+
+.tb-keyrow {
+  width: 100%;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-keyrow[aria-pressed='true'] {
+  border-color: var(--mm-mode-creative);
+  box-shadow: inset 4px 0 0 var(--mm-mode-creative);
+}
+
+.tb-keys-empty {
+  padding: 8px 0;
+  color: var(--mm-ink-soft);
+  font-size: 13px;
+}
+
+/* Advanced: the menu's disclosure (item 23), the chevron right when closed and down when open. */
+.tb-more {
+  margin: 4px 0 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tb-more summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  font: 700 15px var(--font-body);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tb-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.tb-more summary::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-more[open] > summary::before {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.tb-more summary:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+/* The state: a red dot and the take's timer while recording; Playing or Paused. */
+.tb-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(31 43 56 / 10%);
+  font: 700 13px var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mm-mode-creative);
+}
+
+/* Recording (BUGS.md #159): a saturated red dot ringed in white on a light pill, so it reads on the
+   glass; a gentle pulse that never falls under 60 % (it never blinks out). */
+.tb-rec {
+  background: rgb(255 255 255 / 85%);
+  box-shadow: inset 0 0 0 1px rgb(214 32 24 / 45%);
+  color: #a3160f;
+}
+
+.tb-rec .tb-dot {
+  background: #e0201a;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 6px 1px rgb(224 32 26 / 70%);
+  animation: tb-rec-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes tb-rec-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-rec .tb-dot {
+    animation: none;
+  }
+}
+
+/* The sheets: larger targets for a finger. */
+.tb-sheet-bottom :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name),
+.tb-sheet-side :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name) {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.tb-sheet-bottom .tb-icon,
+.tb-sheet-side .tb-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.tb-timeline {
+  position: relative;
+  height: 28px;
+  margin: 8px 6px 4px;
+  border-radius: 8px;
+  background: rgb(29 39 51 / 10%);
+}
+
+.tb-seg {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  border-left: 1px solid rgb(29 39 51 / 25%);
+  padding-left: 14px;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--mm-ink-soft);
+}
+
+.tb-key {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  transform: rotate(45deg);
+  background: var(--mm-mode-creative);
+  touch-action: none;
+  cursor: grab;
+}
+
+.tb-key-on {
+  background: var(--danger);
+}
+
+.tb-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--danger);
+}
+
+/* The touch screen's way into theater mode, under the HUD's top-right buttons. */
+.theater-open {
+  position: fixed;
+  top: calc(var(--safe-top) + 52px);
+  right: var(--safe-right);
+  z-index: var(--z-widgets);
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--glass);
+  color: #fff;
+  font: inherit;
+}
+
+@media (max-width: 600px) {
+  .tb-btn,
+  .tb-tab,
+  .tb-select {
+    min-height: 40px;
+  }
+}
+
+/* Map markers (docs/MAP_MARKERS.md): the big map's picker and the world waypoints. */
+/* The big map's markers list (docs/MAP_MARKERS.md): a side panel, hidden while the picker is open. */
+#world-map .map-markers {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 48px;
+  width: min(280px, calc(100% - 80px));
+  padding: 8px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 10px;
+  background: rgb(30 26 20 / 92%);
+  color: #f4ecd8;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+#world-map .map-markers[hidden],
+#world-map .marker-picker:not([hidden]) ~ .map-markers {
+  display: none;
+}
+#world-map .map-markers h3 {
+  margin: 0 2px;
+  font-size: 15px;
+}
+#world-map .map-markers-rows {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+#world-map .map-markers-empty {
+  margin: 4px 2px;
+  opacity: 0.8;
+}
+#world-map .map-marker-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+#world-map .map-marker-go {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#world-map .map-marker-go:hover,
+#world-map .map-marker-go:focus-visible {
+  background: rgb(255 255 255 / 12%);
+}
+#world-map .map-marker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#world-map .map-marker-distance {
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+#world-map .map-marker-row .map-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  font-size: 13px;
+}
+#world-map .marker-picker {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: min(300px, calc(100% - 20px));
+  padding: 10px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 10px;
+  background: rgb(30 26 20 / 94%);
+  color: #f4ecd8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font:
+    14px/1.3 system-ui,
+    sans-serif;
+}
+#world-map .marker-picker[hidden] {
+  display: none;
+}
+#world-map .marker-picker h3 {
+  margin: 0;
+  font-size: 15px;
+}
+#world-map .marker-icons,
+#world-map .marker-colours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+#world-map .marker-icons .map-button {
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+#world-map .marker-colours .map-button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+#world-map .marker-picker .map-button.on {
+  outline: 2.5px solid #f4ecd8;
+  outline-offset: 1px;
+}
+#world-map .marker-label {
+  padding: 6px 8px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 35%);
+  color: inherit;
+  font: inherit;
+}
+#world-map .marker-actions {
+  display: flex;
+  gap: 6px;
+}
+#world-map .marker-actions .map-button {
+  font-size: 14px;
+}
+#map-waypoints {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+#map-waypoints .waypoint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  translate: -50% -50%;
+  color: #f4ecd8;
+  font:
+    600 12px/1.2 system-ui,
+    sans-serif;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+  white-space: nowrap;
+}
+#map-waypoints .waypoint.edge .waypoint-label {
+  display: none;
+}
+#map-waypoints .waypoint-distance {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4): compact, right of the crosshair. */
+.blueprint-panel {
+  position: fixed;
+  left: calc(50% + 28px);
+  top: calc(50% - 12px);
+  z-index: 6;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(20, 22, 28, 0.62);
+  color: #f2efe6;
+  font:
+    12px/1.35 system-ui,
+    sans-serif;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.blueprint-panel[hidden] {
+  display: none;
+}
+.blueprint-panel-head {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.blueprint-panel-row.short {
+  color: #ff8a78;
 }

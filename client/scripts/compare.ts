@@ -38,6 +38,10 @@ export interface ScenarioReport {
   bursts?: Record<string, Flicker>;
   /** Each `server` step's samples of the local server's figures, by name. */
   servers?: Record<string, unknown[]>;
+  /** Each placed `shot`'s camera and settle time (bench.ts `placedShot`). */
+  shots?: unknown[];
+  /** Loads that weren't playing within the stall bar and were retried in a fresh page. */
+  stalls?: { stalledS: number; errors: string[] }[];
   /** Page opened → playing (s), and the loading screen's state then (ARCHITECTURE.md §6.3). */
   join?: { playingS: number; loading: Record<string, unknown> | null };
   /** Each `until` step's seconds since the page was opened (null: not reached). */
@@ -47,6 +51,8 @@ export interface ScenarioReport {
   respawns?: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `goto` step's result: what it found and where it put the camera (docs/DEV_TOOLS.md). */
   gotos?: unknown[];
+  /** Each `flyTo` step's trip (debug/moonTrip.ts; docs/DEV_TOOLS.md "The moon"). */
+  trips?: unknown[];
   /** The page address it ran at. */
   url: string;
 }
@@ -64,10 +70,10 @@ export interface CompareOptions {
   run: (sc: Scenario, dir: string, params: Record<string, string>) => Promise<ScenarioReport>;
 }
 
-/** The `shot` names of `steps`, in order. */
+/** The `shot` and `spot` names of `steps` (each saves `<name>.png`), in order. */
 function shots(steps: readonly Step[]): string[] {
   return steps.flatMap((s) =>
-    s.do === 'shot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
+    s.do === 'shot' || s.do === 'spot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
   );
 }
 

@@ -1,0 +1,24 @@
+{
+  "$comment": "The tree performance reference world (WORK_QUEUE item 32; owner 2026-11-12: \"We should have a tall dense forest biome/climate for performance reference on trees.\"): gentle rolling land that is old-growth forest everywhere (`preset:old_growth`, its weight far above the default biome's, which every world lists first; no climate condition, so every column takes it), no plate boundary, cones or hotspots, low hills. Fixed: its terrain is the data's and seed's alone, so a tree, leaf or impostor change is measured on the same stand (the bench's forest-perf scenario and the forest:* spots, docs/DEV_TOOLS.md). Play it at ?worldgen=test:forest. Prototype content.",
+  "name": "test:forest",
+  "cliffs": 0,
+  "overrides": {
+    "inland": { "rise": 40, "halfDistance": 6000 },
+    "hills": { "amplitude": 18 },
+    "tectonics": { "kind": 0, "hotspotCount": 0, "arcCount": 0 }
+  },
+  "biomes": [
+    {
+      "biome": "dwell:default",
+      "where": {
+        "weight": 0.001
+      }
+    },
+    {
+      "biome": "preset:old_growth",
+      "where": {
+        "weight": 1000
+      }
+    }
+  ]
+}

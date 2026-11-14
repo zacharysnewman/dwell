@@ -149,11 +149,27 @@ pub struct ChunkData {
     pub coord: ChunkCoordNet,
     pub revision: u32,
     pub voxels: Vec<u16>,
+    /// The grid the chunk is of (its index in `shared/worldgen/grids.json`; 0 the home grid), in
+    /// that grid's own space (MOON_WORLD.md §7.2). Optional on the wire, a byte at the end, written
+    /// only when not 0: sent only to a client with the `grid.frames` capability.
+    pub grid: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChunkUnload {
     pub coords: Vec<ChunkCoordNet>,
+    /// The grid the chunks are of (as `ChunkData::grid`; a byte at the end when not 0).
+    pub grid: u8,
+}
+
+/// The local player's grid in a snapshot (MOON_WORLD.md §7.2, the `grid.frames` capability): the
+/// snapshot's `local` position and velocity are in this grid's space, and off home the grid's frame
+/// at the snapshot's tick (its origin in the world, its rotation `[x, y, z, w]`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GridView {
+    pub grid: u8,
+    pub origin: [f64; 3],
+    pub rotation: [f64; 4],
 }
 
 /// C→S: break the targeted cell, or place `material` against its `face` (0 +X, 1 −X, 2 +Y, 3 −Y,
@@ -169,6 +185,10 @@ pub struct BlockEditRequest {
     pub material: u16,
     pub rows: u8,
     pub down: bool,
+    /// Where a break struck the face (docs/BLOCK_DAMAGE.md): each axis in 1/255ths of the cell,
+    /// world-oriented. Optional on the wire (three bytes after the piece), sent only to a server
+    /// whose `Inventory` has `inventory_flags::DAMAGE`: an older server reads none.
+    pub point: Option<[u8; 3]>,
 }
 
 /// The tallest piece a place request may ask for (cells).
@@ -177,6 +197,9 @@ pub const MAX_PIECE_ROWS: u8 = 2;
 /// C→S: one edit of a box of cells (§6.5) — `size` cells from the `min` corner, each side
 /// 1..=`region_edit::MAX_SIDE`. Fill and Hollow set `material` (Hollow: the box's shell, air
 /// inside); Replace turns cells holding `from` into `material`; Paste sets the box to `cells`.
+/// Structure is a Paste that places a saved structure (STRUCTURES.md §9): the same body, refused by
+/// the server where the world's mode lacks the `structures` ability; sent only to a server that
+/// announced the `structures.place` capability (others get a plain Paste).
 /// Sent only to a server that announced `welcome_flags::REGION_EDITS`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RegionEdit {
@@ -187,7 +210,7 @@ pub struct RegionEdit {
     pub material: u16,
     /// Replace.
     pub from: u16,
-    /// Paste: `volume()` states in layer order, x fastest, then z, then y
+    /// Paste, Structure: `volume()` states in layer order, x fastest, then z, then y
     /// (`x + size.x · (z + size.z · y)`).
     pub cells: Vec<u16>,
 }
@@ -385,6 +408,10 @@ pub struct RemotePlayerState {
     pub held: u16,
     /// Its last swing (`swing_flags`: a count and break or place; v17).
     pub swing: u8,
+    /// Which swing that is (`SwingKind`'s value: `Plain` is the break or place `swing` says, the
+    /// axe's chops by their direction), sent only in a snapshot with `swing_kinds` (to a client
+    /// that said `SwingHello`); a value this build doesn't know reads as `Plain`. 0 otherwise.
+    pub swing_kind: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -396,6 +423,14 @@ pub struct PhysicsSnapshot {
     pub remotes: Vec<RemotePlayerState>,
     /// The falling pieces (docs/FELLING.md §3; protocol v20).
     pub pieces: Vec<PieceState>,
+    /// It ends with the remotes' swing kinds (`RemotePlayerState::swing_kind`, in their order):
+    /// only to a client that said `SwingHello`, so an older one (which refuses trailing bytes)
+    /// never gets it; an older server never writes it.
+    pub swing_kinds: bool,
+    /// The local player's grid (MOON_WORLD.md §7.2), after the swing kinds (which are written,
+    /// empty or not, whenever this is): only to a client with the `grid.frames` capability, which
+    /// says `SwingHello` too.
+    pub grid: Option<GridView>,
 }
 
 /// A falling piece's pose and motion in a snapshot: its origin (posfix), its rotation (each
@@ -476,6 +511,17 @@ pub struct PlayerEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Message {
     DatagramPing(DatagramPing),
+    /// C→S datagram, after the join (WORK_QUEUE item 17): this client draws others' swings by kind;
+    /// end my snapshots with the remotes' swing kinds (`PhysicsSnapshot::swing_kinds`). A datagram
+    /// because an older server drops one it can't read (a control message it can't read ends the
+    /// session), so the client sends it without asking and repeats it until a snapshot carries
+    /// the kinds (or gives up: an older server).
+    SwingHello,
+    /// C→S datagram, with `ChopAction::Hello` (WORK_QUEUE item 26): this client draws the axe's
+    /// bites; end my `Cuts` with them (`CutsMessage::bites`; the server sends them all again on the
+    /// first). A datagram for `SwingHello`'s reason: an older server drops it; the client repeats
+    /// it until a `Cuts` carries bites (or gives up: an older server).
+    BitesHello,
     DatagramPong(DatagramPong),
     WaterCurrents(WaterCurrents),
     StatusRequest,
@@ -526,6 +572,442 @@ pub enum Message {
     /// S→C reliable, control channel, before `Welcome` (protocol v22): the world's settings
     /// (`crate::world_settings`: its clock, its water speed) as tagged fields.
     WorldSettings(crate::world_settings::SettingsFields),
+    /// C→S reliable, control channel, only to a server whose Welcome has `welcome_flags::INVENTORY`
+    /// (ADR 0066): `Hello` first, then moves and the held slot.
+    InventoryAction(InventoryAction),
+    /// S→C reliable, control channel, only to a client that sent `InventoryAction::Hello`: the
+    /// player's whole inventory, when it changes (ADR 0066).
+    Inventory(InventoryMessage),
+    /// S→C reliable, world channel, only to a client that sent `InventoryAction::Hello`: loose
+    /// items that appeared or moved, and those gone (ADR 0066).
+    ItemDrops(ItemDrops),
+    /// S→C reliable, world channel, only to a client that sent `InventoryAction::GroundHello`
+    /// (ADR 0071): ground items gone (picked up or knocked loose), by world cell; at the hello,
+    /// all of them.
+    GroundGone(Vec<[i32; 3]>),
+    /// C→S reliable, world channel, only to a server whose Welcome has `welcome_flags::CHOPPING`
+    /// (ADR 0067): `Hello` first, then swings.
+    Chop(ChopAction),
+    /// S→C reliable, world channel, only to a client that sent `ChopAction::Hello`: wood cells'
+    /// cuts that changed, and cells whose cut is gone (ADR 0067).
+    Cuts(CutsMessage),
+    /// S→C reliable, world channel, only to a client that sent `ChopAction::Held` (so it
+    /// understands): the tools other players hold, by item name (ADR 0067; the held-item wire
+    /// carries blocks only). Each changed player's entry; an empty tool: none.
+    HeldTools(Vec<HeldTool>),
+    /// C→S reliable, control channel, only to a server whose Welcome has `welcome_flags::VITALS`:
+    /// this client understands `Vitals` and the `Drown` damage cause (ADR 0069).
+    VitalsHello,
+    /// S→C datagram, with each snapshot, only to a client that sent `VitalsHello` and while the
+    /// world's mode has stamina or oxygen (ADR 0069).
+    Vitals(VitalsMessage),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::CREATURES` (ADR 0073): this client draws creatures; send it `Creatures`.
+    CreaturesHello,
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::DAMAGE` (docs/BLOCK_DAMAGE.md): this client draws block damage; send it
+    /// `Damage` (every damaged cell now, then each change).
+    DamageHello,
+    /// S→C reliable, world channel, only to a client that sent `DamageHello`: damaged cells and
+    /// cells no longer damaged.
+    Damage(DamageMessage),
+    /// S→C reliable, world channel, only to a client that sent `CreaturesHello`: creatures that
+    /// appeared or moved, and those gone (ADR 0073).
+    Creatures(CreaturesMessage),
+    /// C→S reliable, control channel, only to a server whose `WorldSettings` has the required
+    /// `world_settings::tag::WORLDGEN` (ADR 0074 B7): send this world's worldgen config.
+    WorldgenRequest,
+    /// S→C reliable, control channel, only to a client that sent `WorldgenRequest`: the world's
+    /// worldgen config text (`dwell_worldgen::config::world_config`), whose hash the `WORLDGEN`
+    /// tag names. u32 length (at most `limits::WORLDGEN_CONFIG_MAX_BYTES`), UTF-8.
+    WorldgenConfig(String),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::CAUSES` (docs/proposals/VOLCANOES.md §6.2): this client understands every
+    /// damage cause up to this one (`DamageCause::MAX` as it was built); a cause past it (or `Drown`
+    /// without `VitalsHello`) goes to it as `Fall`.
+    CausesHello(u8),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::ECOLOGY` (docs/ECOLOGY.md §9): this client reads the far ecology; send it
+    /// `Ecology` (now, then at a low rate).
+    EcologyHello,
+    /// S→C reliable, world channel, only to a client that sent `EcologyHello`: the far herds and
+    /// packs on both faces (not those near players: those are creatures), for far rendering.
+    Ecology(EcologyMessage),
+    /// C→S reliable, control channel, only to a server whose `Inventory` has
+    /// `inventory_flags::STEAM` (docs/proposals/VOLCANOES.md §6.3): send this client the steam
+    /// where lava boils water away.
+    SteamHello,
+    /// S→C reliable, world channel, only to a client that sent `SteamHello`: the world cells
+    /// whose water lava just boiled away (the clients' puffs and hiss). u16 count (at most
+    /// `MAX_STEAM_PER_MESSAGE`), each cell three i32.
+    Steam(Vec<[i32; 3]>),
+    /// C→S reliable, control channel, only to a server whose `WorldSettings` had
+    /// `world_settings::tag::CAPABILITIES` (`crate::capabilities`, ARCHITECTURE.md §8.3), once
+    /// after `Welcome`: the capabilities this client has. A feature is used only when both sides
+    /// listed it.
+    Capabilities(crate::capabilities::Capabilities),
+    /// S→C reliable, world channel, only to a client with the `weapons.clash` capability
+    /// (WORK_QUEUE item 35, round 2): a strike's outcome on a raised blade, or who holds a raised
+    /// guard (`SwordplayMessage`).
+    Swordplay(SwordplayMessage),
+    /// C→S reliable, control channel, only to a server with the `theater.viewpoint` capability
+    /// (docs/THEATER_MODE.md §7, T-4): theater mode's camera position (world metres), at most
+    /// `world::THEATER_VIEWPOINT_HZ` a second while a camera path plays; `None` when it ends. The
+    /// server adds it to this player's interest only where the world's mode has the
+    /// `theaterViewpoint` ability. u8 0 (cleared) or 1 then three f64 (finite).
+    TheaterViewpoint(Option<[f64; 3]>),
+    /// Both ways, reliable, control channel, only with the `markers.private` capability on both
+    /// sides (WORK_QUEUE item 53, docs/MAP_MARKERS.md): a player's map markers in this world, the
+    /// whole record (`crate::markers::Markers`). S→C once after the client's `Capabilities`, that
+    /// player's saved record, to that player only; C→S on each change, replacing it.
+    Markers(crate::markers::Markers),
+    /// Both ways, reliable, world channel, only with the `blueprints.world` capability on both
+    /// sides (WORK_QUEUE item 56, docs/BLUEPRINTS.md): S→C every blueprint once after the client's
+    /// `Capabilities`, then each placed or gone; C→S a place or a removal.
+    Blueprints(crate::blueprints::BlueprintsMessage),
+}
+
+/// Who fights: a player (its id) or a creature (an NPC, its id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Fighter {
+    Player(u16),
+    Creature(u32),
+}
+
+/// A strike that met a raised blade, or a strike that connected (`Swordplay`'s kind 0): who struck
+/// whom with what weapon (an item name: its `guard.clash` look), the outcome, where (world m), and
+/// both stances (vertical, else level).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClashNet {
+    pub striker: Fighter,
+    pub defender: Fighter,
+    pub weapon: String,
+    pub outcome: crate::chopping::Clash,
+    pub point: [f32; 3],
+    pub striker_vertical: bool,
+    pub defender_vertical: bool,
+}
+
+/// A fighter's sword as others see it (`Swordplay`'s kind 1): its stance and whether its block is
+/// raised.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GuardNet {
+    pub who: Fighter,
+    pub vertical: bool,
+    pub raised: bool,
+}
+
+/// The most guards one `Swordplay` carries.
+pub const MAX_GUARDS_PER_MESSAGE: usize = 1024;
+
+/// `Swordplay` (0x6A): u8 kind; 0 a clash (`ClashNet`), 1 the guards (u16 count, each a
+/// `GuardNet`). A fighter is u8 0 and a u16 player id, or u8 1 and a u32 creature id.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SwordplayMessage {
+    Clash(ClashNet),
+    Guards(Vec<GuardNet>),
+}
+
+fn write_fighter(w: &mut ByteWriter, f: Fighter) {
+    match f {
+        Fighter::Player(id) => {
+            w.u8(0);
+            w.u16(id);
+        }
+        Fighter::Creature(id) => {
+            w.u8(1);
+            w.u32(id);
+        }
+    }
+}
+
+fn read_fighter(r: &mut ByteReader) -> Fighter {
+    match r.u8() {
+        0 => Fighter::Player(r.u16()),
+        k => {
+            r.check(k == 1);
+            Fighter::Creature(r.u32())
+        }
+    }
+}
+
+/// A clash outcome's byte.
+fn clash_byte(k: crate::chopping::Clash) -> u8 {
+    use crate::chopping::Clash;
+    match k {
+        Clash::Blocked => 0,
+        Clash::Glanced => 1,
+        Clash::Connected => 2,
+    }
+}
+
+/// The most groups one `Ecology` carries (more are left out).
+pub const MAX_ECOLOGY_GROUPS: usize = 1024;
+/// The longest species name on the wire.
+pub const MAX_SPECIES_NAME: usize = 64;
+
+/// A far herd or pack as sent (docs/ECOLOGY.md §9): its record's id, its face (0 face A, 1 face
+/// B), its species by name, its place (face-local metres on its face's island) and its head.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EcologyGroupNet {
+    pub id: u32,
+    pub face: u8,
+    pub species: String,
+    pub x: f32,
+    pub z: f32,
+    pub size: f32,
+}
+
+/// `Ecology`: the ecology's day and its far groups.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EcologyMessage {
+    pub day: f32,
+    pub groups: Vec<EcologyGroupNet>,
+}
+
+/// The most cells one `Steam` carries (more are dropped: a puff each is plenty).
+pub const MAX_STEAM_PER_MESSAGE: usize = 256;
+
+/// A creature as sent (ADR 0073): its skinned model (shared/models/models.json), its feet (world
+/// metres), its heading (degrees, 0 faces +z) and its speed (m/s; the client picks its clip by it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CreatureNet {
+    pub id: u32,
+    pub model: String,
+    pub position: [f32; 3],
+    pub yaw: f32,
+    pub speed: f32,
+}
+
+/// The most creatures one `Creatures` carries (more go in more messages).
+pub const MAX_CREATURES_PER_MESSAGE: usize = 512;
+/// The longest model name on the wire.
+pub const MAX_MODEL_NAME: usize = 64;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CreaturesMessage {
+    pub creatures: Vec<CreatureNet>,
+    pub gone: Vec<u32>,
+    /// The NPCs' part (WORK_QUEUE item 38), after `gone`: only to a client with the
+    /// `creatures.npcs` capability, so an older one (which refuses trailing bytes) never gets it;
+    /// `None` writes nothing.
+    pub npcs: Option<Vec<NpcNet>>,
+    /// The animals' idle poses (WORK_QUEUE item 39), after the NPCs' part: only to a client with
+    /// the `creatures.poses` capability (which has `creatures.npcs` too: the NPCs' part, empty if
+    /// need be, is written first); `None` writes nothing.
+    pub poses: Option<Vec<CreaturePoseNet>>,
+    /// The NPCs' carried loads (B5, docs/BLUEPRINTS.md §9), after the poses: only to a client with
+    /// the `npcs.carry` capability (which has `creatures.poses` too: the NPCs' part and the poses,
+    /// empty if need be, are written first); `None` writes nothing. An NPC carrying nothing is left
+    /// out.
+    pub carries: Option<Vec<CarryNet>>,
+}
+
+/// An NPC's carried load (`CreaturesMessage::carries`): its creature's id and its items, each a
+/// block state name (the server's registry's; the client maps it by name) and how many, in load
+/// order (the stack drawn on its back, bottom first).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CarryNet {
+    pub id: u32,
+    pub items: Vec<(String, u8)>,
+}
+
+/// The most kinds one carried load sends.
+pub const MAX_CARRY_KINDS: usize = 16;
+/// The longest block state name a carried load sends.
+pub const MAX_CARRY_NAME: usize = 128;
+
+/// A creature's idle pose (`CreaturesMessage::poses`): its id and the pose, by [`CREATURE_POSES`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CreaturePoseNet {
+    pub id: u32,
+    pub pose: u8,
+}
+
+/// The idle poses a creature is sent in, by `CreaturePoseNet::pose`: the ecology's
+/// (`dwell_ecology::IdlePose::NAMES`, the same order; a test in dwell-sim pins it).
+pub const CREATURE_POSES: [&str; 6] = ["stand", "graze", "lookUp", "earFlick", "sit", "lie"];
+
+/// An NPC's part of a `Creatures` message (CHARACTERS.md §11.11): its creature's `id`, its kind's
+/// name (`"dwell:villager"`, in shared/creatures/creatures.json), its idle `pose` (0 stand, 1 look
+/// around, 2 sit: `NPC_POSES`) and its palette `variant` seed (the client picks its colours by the
+/// kind's data from it).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NpcNet {
+    pub id: u32,
+    pub kind: String,
+    pub pose: u8,
+    pub variant: u32,
+}
+
+/// The idle poses an NPC is sent in, by `NpcNet::pose`.
+pub const NPC_POSES: [&str; 3] = ["stand", "look", "sit"];
+
+/// The poses after `NPC_POSES` an NPC is sent in while it swings its sword, to a client with the
+/// `npcs.swings` capability (WORK_QUEUE item 35): `NpcNet::pose` 3 level, 4 vertical.
+pub const NPC_STRIKE_POSES: [&str; 2] = ["strikeLevel", "strikeVertical"];
+
+/// The poses after `NPC_STRIKE_POSES` a defeated NPC is sent in, to a client with the
+/// `humans.defeat` capability (docs/CHARACTERS.md §11.13): `NpcNet::pose` 5 kneeling where it
+/// fell, 6 standing up at a shrine.
+pub const NPC_DEFEAT_POSES: [&str; 2] = ["kneel", "standUp"];
+
+/// The local player's stamina and oxygen as of its input `seq` (`Message::Vitals`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct VitalsMessage {
+    pub seq: u32,
+    pub stamina: f32,
+    /// Seconds of air left.
+    pub oxygen: f32,
+    /// `vitals_flags`: exhausted, and the mode's stamina and oxygen switches.
+    pub flags: u8,
+}
+
+/// A player's held tool (`Message::HeldTools`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldTool {
+    pub player_id: u16,
+    /// The tool's item name, empty for none.
+    pub tool: String,
+    /// Its swing's plane (the hold): vertical, else level.
+    pub vertical: bool,
+}
+
+/// What a client asks of chopping (ADR 0067).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChopAction {
+    /// This client understands cuts: send it `Cuts` from now on (all of them now).
+    Hello,
+    /// A swing of `tool` (an item name) at the wood in `cell`, hitting its face `face` (0..6,
+    /// `axis × 2 + positive`, world) at `point` (world metres), its plane `vertical` or level.
+    Swing {
+        tool: String,
+        cell: [i32; 3],
+        face: u8,
+        point: [f32; 3],
+        vertical: bool,
+    },
+    /// A swing of `tool` started along the look `look` (world, unit) in its plane `vertical` or
+    /// level, only to a server whose Welcome has `welcome_flags::CHOP_SWEEP`: the server sweeps
+    /// the tool's arc from its own eye and hits the first solid cell on the path.
+    Sweep {
+        tool: String,
+        look: [f32; 3],
+        vertical: bool,
+    },
+    /// What tool this player holds (an empty name: none) and its hold, only to a server with
+    /// `CHOP_SWEEP`: it tells the others (`HeldTools`), and this client gets theirs from now on.
+    Held { tool: String, vertical: bool },
+    /// Whether this player holds its weapon's block raised (WORK_QUEUE item 35, round 2), only to
+    /// a server with the `weapons.clash` capability: its stance is its `Held` plane, and its own
+    /// swing drops the block for the swing.
+    Guard { raised: bool },
+}
+
+/// The most players one `HeldTools` carries.
+pub const MAX_HELD_TOOLS: usize = 1024;
+
+/// The most cells one `Cuts` carries (more go in more messages).
+pub const MAX_CUTS_PER_MESSAGE: usize = 512;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CutsMessage {
+    pub cuts: Vec<([i32; 3], crate::chopping::Cut)>,
+    pub gone: Vec<[i32; 3]>,
+    /// It ends with the cuts' bites (`Cut::write_bites`, WORK_QUEUE item 26): only to a client
+    /// that said `BitesHello`, so an older one (which refuses trailing bytes) never gets them; an
+    /// older server never writes them (its cuts carry none, drawn as before).
+    pub bites: bool,
+}
+
+/// What a client asks of its inventory (ADR 0066).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InventoryAction {
+    /// This client understands inventories: send it `Inventory` and `ItemDrops` from now on.
+    Hello,
+    /// Move `count` (0: all) from slot `from` to slot `to` (`Inventory::move_items`).
+    Move { from: u8, to: u8, count: u16 },
+    /// The held hotbar slot.
+    Select { slot: u8 },
+    /// This client understands ground items (ADR 0071): send it `GroundGone` from now on. Sent only
+    /// to a server whose `Inventory` has `inventory_flags::GROUND`.
+    GroundHello,
+    /// The break action aimed at the ground item in world cell `cell` (ADR 0071, amended
+    /// 2026-11-09; the name is from when it picked the item up): the server checks it lies there
+    /// and is within reach, and knocks it loose (a loose item in a mode that uses items; in
+    /// creative it vanishes). Only to a server whose `Inventory` has `inventory_flags::GROUND`.
+    Pick { cell: [i32; 3] },
+    /// Make the recipe of this id once (`inventory::recipe_id`; owner, 2026-11-11: combining): the
+    /// server takes the inputs and adds the output, or changes nothing. Only to a server whose
+    /// `Inventory` has `inventory_flags::COMBINE` (an older one would read an unknown action as
+    /// malformed).
+    Combine { recipe: u32 },
+}
+
+/// `Inventory`'s flags.
+pub mod inventory_flags {
+    /// The world's mode uses items (no `unlimitedBlocks`): show the inventory, not the creative items.
+    pub const USES_ITEMS: u8 = 1;
+    /// The server keeps ground items (ADR 0071): it takes `GroundHello` and `Pick`.
+    pub const GROUND: u8 = 2;
+    /// The server keeps creatures (ADR 0073): it takes `CreaturesHello`.
+    pub const CREATURES: u8 = 4;
+    /// The server keeps block damage (docs/BLOCK_DAMAGE.md): it takes `DamageHello` and a break
+    /// request's struck point.
+    pub const DAMAGE: u8 = 8;
+    /// The server makes recipes (shared/inventory `recipes`): it takes `InventoryAction::Combine`.
+    pub const COMBINE: u8 = 16;
+    /// The server takes `CausesHello` (docs/proposals/VOLCANOES.md §6.2): it sends a damage cause
+    /// past the client's last known one (`Burn`, …) only to a client that said it knows it.
+    pub const CAUSES: u8 = 32;
+    /// The server runs a far ecology (docs/ECOLOGY.md §9): it takes `EcologyHello`.
+    pub const ECOLOGY: u8 = 64;
+    /// The server has lava (docs/proposals/VOLCANOES.md §6.3): it takes `SteamHello` and then
+    /// sends `Steam`.
+    pub const STEAM: u8 = 128;
+}
+
+/// The most cells one `Damage` carries (more go in more messages).
+pub const MAX_DAMAGE_PER_MESSAGE: usize = 512;
+
+/// `Damage`'s cells (docs/BLOCK_DAMAGE.md): each damaged cell's damage, and the cells whose damage
+/// is gone (broken, replaced).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DamageMessage {
+    pub cells: Vec<([i32; 3], crate::damage::DamageView)>,
+    pub gone: Vec<[i32; 3]>,
+    /// It ends with the cells' marks' chunks (`DamageView::write_chunks`, after
+    /// `damage::CHUNKS_MARK`): only to a client that listed the `damage.chunks` capability, so an
+    /// older one (which refuses trailing bytes) never gets them; without them every mark is ×1.
+    pub chunks: bool,
+}
+
+/// The most cells one `GroundGone` carries (more go in more messages).
+pub const MAX_GROUND_GONE_PER_MESSAGE: usize = 4096;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InventoryMessage {
+    /// `inventory_flags`.
+    pub flags: u8,
+    pub inventory: crate::inventory::Inventory,
+}
+
+/// A loose item as sent: where it is now (world metres).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ItemDropNet {
+    pub id: u32,
+    pub item: String,
+    pub count: u16,
+    pub position: [f32; 3],
+}
+
+/// The most loose items one `ItemDrops` carries (more go in more messages).
+pub const MAX_ITEM_DROPS_PER_MESSAGE: usize = 512;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ItemDrops {
+    pub items: Vec<ItemDropNet>,
+    pub gone: Vec<u32>,
 }
 
 impl Message {
@@ -567,6 +1049,33 @@ impl Message {
             M::EntityDespawn(_) => MessageType::EntityDespawn,
             M::BodyEditRequest(_) => MessageType::BodyEditRequest,
             M::WorldSettings(_) => MessageType::WorldSettings,
+            M::InventoryAction(_) => MessageType::InventoryAction,
+            M::Inventory(_) => MessageType::Inventory,
+            M::ItemDrops(_) => MessageType::ItemDrops,
+            M::GroundGone(_) => MessageType::GroundGone,
+            M::Chop(_) => MessageType::Chop,
+            M::Cuts(_) => MessageType::Cuts,
+            M::HeldTools(_) => MessageType::HeldTools,
+            M::VitalsHello => MessageType::VitalsHello,
+            M::Vitals(_) => MessageType::Vitals,
+            M::CreaturesHello => MessageType::CreaturesHello,
+            M::DamageHello => MessageType::DamageHello,
+            M::WorldgenRequest => MessageType::WorldgenRequest,
+            M::WorldgenConfig(_) => MessageType::WorldgenConfig,
+            M::CausesHello(_) => MessageType::CausesHello,
+            M::SteamHello => MessageType::SteamHello,
+            M::Capabilities(_) => MessageType::Capabilities,
+            M::Swordplay(_) => MessageType::Swordplay,
+            M::TheaterViewpoint(_) => MessageType::TheaterViewpoint,
+            M::Markers(_) => MessageType::Markers,
+            M::Blueprints(_) => MessageType::Blueprints,
+            M::SwingHello => MessageType::SwingHello,
+            M::BitesHello => MessageType::BitesHello,
+            M::Steam(_) => MessageType::Steam,
+            M::Damage(_) => MessageType::Damage,
+            M::Creatures(_) => MessageType::Creatures,
+            M::EcologyHello => MessageType::EcologyHello,
+            M::Ecology(_) => MessageType::Ecology,
             M::BodyEdit(_) => MessageType::BodyEdit,
         }
     }
@@ -1032,6 +1541,20 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.f16(v);
                 }
             }
+            if m.swing_kinds || m.grid.is_some() {
+                let count = m.remotes.len().min(255);
+                w.u8(count as u8);
+                for p in &m.remotes[..count] {
+                    w.u8(p.swing_kind);
+                }
+            }
+            if let Some(g) = &m.grid {
+                w.u8(g.grid);
+                if g.grid != 0 {
+                    g.origin.iter().for_each(|&v| w.f64(v));
+                    g.rotation.iter().for_each(|&v| w.f64(v));
+                }
+            }
         }
         M::PlayerEvent(m) => {
             w.u8(m.kind as u8);
@@ -1056,8 +1579,16 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             if m.form == ChunkForm::Explicit {
                 write_voxels(w, &m.voxels);
             }
+            if m.grid != 0 {
+                w.u8(m.grid);
+            }
         }
-        M::ChunkUnload(m) => write_coords(w, &m.coords, 0xFFFF),
+        M::ChunkUnload(m) => {
+            write_coords(w, &m.coords, 0xFFFF);
+            if m.grid != 0 {
+                w.u8(m.grid);
+            }
+        }
         M::BlockEditRequest(m) => {
             w.u8(m.action as u8);
             write_coord(w, &m.cell);
@@ -1067,6 +1598,11 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
             }
             // The piece: rows in the low bits, `down` the top bit.
             w.u8(m.rows | if m.down { 0x80 } else { 0 });
+            if let Some(p) = m.point {
+                for v in p {
+                    w.u8(v);
+                }
+            }
         }
         M::VoxelModification(m) => {
             w.u8(m.reason as u8);
@@ -1137,6 +1673,302 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
         }
         M::EntityDespawn(id) => w.u32(*id),
         M::WorldSettings(f) => f.write(w),
+        M::InventoryAction(a) => match *a {
+            InventoryAction::Hello => w.u8(0),
+            InventoryAction::Move { from, to, count } => {
+                w.u8(1);
+                w.u8(from);
+                w.u8(to);
+                w.u16(count);
+            }
+            InventoryAction::Select { slot } => {
+                w.u8(2);
+                w.u8(slot);
+            }
+            InventoryAction::GroundHello => w.u8(3),
+            InventoryAction::Pick { cell } => {
+                w.u8(4);
+                cell.iter().for_each(|v| w.i32(*v));
+            }
+            InventoryAction::Combine { recipe } => {
+                w.u8(5);
+                w.u32(recipe);
+            }
+        },
+        M::GroundGone(cells) => {
+            let n = cells.len().min(MAX_GROUND_GONE_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &cells[..n] {
+                c.iter().for_each(|v| w.i32(*v));
+            }
+        }
+        M::Inventory(m) => {
+            w.u8(m.flags);
+            m.inventory.write(w);
+        }
+        M::ItemDrops(m) => {
+            let n = m.items.len().min(MAX_ITEM_DROPS_PER_MESSAGE);
+            w.u16(n as u16);
+            for d in &m.items[..n] {
+                w.u32(d.id);
+                w.str(crate::bytes::clamp_str(
+                    &d.item,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                w.u16(d.count);
+                for v in d.position {
+                    w.f32(v);
+                }
+            }
+            let n = m.gone.len().min(MAX_ITEM_DROPS_PER_MESSAGE);
+            w.u16(n as u16);
+            for &id in &m.gone[..n] {
+                w.u32(id);
+            }
+        }
+        M::Chop(a) => match a {
+            ChopAction::Hello => w.u8(0),
+            ChopAction::Swing {
+                tool,
+                cell,
+                face,
+                point,
+                vertical,
+            } => {
+                w.u8(1);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                for &v in cell {
+                    w.i32(v);
+                }
+                w.u8(*face);
+                for &v in point {
+                    w.f32(v);
+                }
+                w.u8(u8::from(*vertical));
+            }
+            ChopAction::Sweep {
+                tool,
+                look,
+                vertical,
+            } => {
+                w.u8(2);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                for &v in look {
+                    w.f32(v);
+                }
+                w.u8(u8::from(*vertical));
+            }
+            ChopAction::Held { tool, vertical } => {
+                w.u8(3);
+                w.str(crate::bytes::clamp_str(
+                    tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                w.u8(u8::from(*vertical));
+            }
+            ChopAction::Guard { raised } => {
+                w.u8(4);
+                w.u8(u8::from(*raised));
+            }
+        },
+        M::VitalsHello => {}
+        M::CausesHello(n) => w.u8(*n),
+        M::Capabilities(c) => c.write(w),
+        M::Markers(m) => m.encode_into(w),
+        M::Blueprints(m) => m.encode_into(w),
+        M::TheaterViewpoint(at) => match at {
+            None => w.u8(0),
+            Some(p) => {
+                w.u8(1);
+                for &v in p {
+                    w.f64(v);
+                }
+            }
+        },
+        M::CreaturesHello
+        | M::DamageHello
+        | M::WorldgenRequest
+        | M::SteamHello
+        | M::SwingHello
+        | M::BitesHello
+        | M::EcologyHello => {}
+        M::Swordplay(SwordplayMessage::Clash(c)) => {
+            w.u8(0);
+            write_fighter(w, c.striker);
+            write_fighter(w, c.defender);
+            w.str(crate::bytes::clamp_str(
+                &c.weapon,
+                crate::inventory::MAX_ITEM_NAME,
+            ));
+            w.u8(clash_byte(c.outcome));
+            for &v in &c.point {
+                w.f32(v);
+            }
+            w.u8(u8::from(c.striker_vertical) | (u8::from(c.defender_vertical) << 1));
+        }
+        M::Swordplay(SwordplayMessage::Guards(list)) => {
+            w.u8(1);
+            let n = list.len().min(MAX_GUARDS_PER_MESSAGE);
+            w.u16(n as u16);
+            for g in &list[..n] {
+                write_fighter(w, g.who);
+                w.u8(u8::from(g.vertical) | (u8::from(g.raised) << 1));
+            }
+        }
+        M::Steam(cells) => {
+            let n = cells.len().min(MAX_STEAM_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &cells[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+        }
+        M::Ecology(m) => {
+            w.f32(m.day);
+            let n = m.groups.len().min(MAX_ECOLOGY_GROUPS);
+            w.u16(n as u16);
+            for g in &m.groups[..n] {
+                w.u32(g.id);
+                w.u8(g.face);
+                w.str(crate::bytes::clamp_str(&g.species, MAX_SPECIES_NAME));
+                w.f32(g.x);
+                w.f32(g.z);
+                w.f32(g.size);
+            }
+        }
+        M::WorldgenConfig(t) => {
+            // Too long to send: none (the guest's hash check then refuses, with a message).
+            let b: &[u8] = if t.len() <= limits::WORLDGEN_CONFIG_MAX_BYTES {
+                t.as_bytes()
+            } else {
+                &[]
+            };
+            w.u32(b.len() as u32);
+            w.bytes(b);
+        }
+        M::Damage(m) => {
+            let n = m.cells.len().min(MAX_DAMAGE_PER_MESSAGE);
+            w.u16(n as u16);
+            for (c, d) in &m.cells[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+                d.write(w);
+            }
+            let n = m.gone.len().min(MAX_DAMAGE_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.gone[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+            if m.chunks {
+                w.u8(crate::damage::CHUNKS_MARK);
+                for (_, d) in &m.cells[..m.cells.len().min(MAX_DAMAGE_PER_MESSAGE)] {
+                    d.write_chunks(w);
+                }
+            }
+        }
+        M::Creatures(m) => {
+            let n = m.creatures.len().min(MAX_CREATURES_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.creatures[..n] {
+                w.u32(c.id);
+                w.str(crate::bytes::clamp_str(&c.model, MAX_MODEL_NAME));
+                for v in c.position {
+                    w.f32(v);
+                }
+                w.f32(c.yaw);
+                w.f32(c.speed);
+            }
+            let n = m.gone.len().min(MAX_CREATURES_PER_MESSAGE);
+            w.u16(n as u16);
+            for &id in &m.gone[..n] {
+                w.u32(id);
+            }
+            let no_npcs = Vec::new();
+            let later = m.poses.is_some() || m.carries.is_some();
+            if let Some(npcs) = m.npcs.as_ref().or(later.then_some(&no_npcs)) {
+                let n = npcs.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &npcs[..n] {
+                    w.u32(c.id);
+                    w.str(crate::bytes::clamp_str(&c.kind, MAX_MODEL_NAME));
+                    w.u8(c.pose);
+                    w.u32(c.variant);
+                }
+            }
+            let no_poses = Vec::new();
+            if let Some(poses) = m.poses.as_ref().or(m.carries.as_ref().map(|_| &no_poses)) {
+                let n = poses.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &poses[..n] {
+                    w.u32(c.id);
+                    w.u8(c.pose);
+                }
+            }
+            if let Some(carries) = &m.carries {
+                let n = carries.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &carries[..n] {
+                    w.u32(c.id);
+                    let k = c.items.len().min(MAX_CARRY_KINDS);
+                    w.u8(k as u8);
+                    for (name, count) in &c.items[..k] {
+                        w.str(crate::bytes::clamp_str(name, MAX_CARRY_NAME));
+                        w.u8(*count);
+                    }
+                }
+            }
+        }
+        M::Vitals(m) => {
+            w.u32(m.seq);
+            w.f32(m.stamina);
+            w.f32(m.oxygen);
+            w.u8(m.flags);
+        }
+        M::HeldTools(list) => {
+            let n = list.len().min(MAX_HELD_TOOLS);
+            w.u16(n as u16);
+            for h in &list[..n] {
+                w.u16(h.player_id);
+                w.str(crate::bytes::clamp_str(
+                    &h.tool,
+                    crate::inventory::MAX_ITEM_NAME,
+                ));
+                w.u8(u8::from(h.vertical));
+            }
+        }
+        M::Cuts(m) => {
+            let n = m.cuts.len().min(MAX_CUTS_PER_MESSAGE);
+            w.u16(n as u16);
+            for (c, k) in &m.cuts[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+                k.write(w);
+            }
+            let n = m.gone.len().min(MAX_CUTS_PER_MESSAGE);
+            w.u16(n as u16);
+            for c in &m.gone[..n] {
+                for &v in c {
+                    w.i32(v);
+                }
+            }
+            if m.bites {
+                w.u8(crate::chopping::BITES_MARK);
+                for (_, k) in &m.cuts[..m.cuts.len().min(MAX_CUTS_PER_MESSAGE)] {
+                    k.write_bites(w);
+                }
+            }
+        }
         M::BodyEditRequest(m) => {
             w.u32(m.body);
             for v in m.cell {
@@ -1184,7 +2016,7 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.u16(m.from);
                     w.u16(m.material);
                 }
-                RegionEditOp::Paste => {
+                RegionEditOp::Paste | RegionEditOp::Structure => {
                     write_cells(w, m.volume(), |i| m.cells.get(i).copied().unwrap_or(0));
                 }
             }
@@ -1343,6 +2175,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     flags: r.u8(),
                     held: r.u16(),
                     swing: r.u8(),
+                    swing_kind: 0,
                 };
                 r.check(p.flags & !player_flags::ALL == 0);
                 remotes.push(p);
@@ -1370,12 +2203,38 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     angular,
                 });
             }
+            // Optional: the remotes' swing kinds, one each (a newer server's, to a client that
+            // said `SwingHello`).
+            let swing_kinds = r.ok() && !r.at_end();
+            if swing_kinds {
+                let n = r.u8();
+                r.check(usize::from(n) == remotes.len());
+                for p in &mut remotes {
+                    p.swing_kind = r.u8();
+                }
+            }
+            // Optional: the local player's grid (`grid.frames`).
+            let grid = (r.ok() && !r.at_end()).then(|| {
+                let grid = r.u8();
+                let mut g = GridView {
+                    grid,
+                    ..GridView::default()
+                };
+                if grid != 0 {
+                    g.origin = [r.f64(), r.f64(), r.f64()];
+                    r.check(g.origin.iter().all(|v| v.is_finite()));
+                    g.rotation = [r.f64(), r.f64(), r.f64(), r.f64()];
+                }
+                g
+            });
             M::PhysicsSnapshot(PhysicsSnapshot {
                 server_tick,
                 ack_input_seq,
                 local,
                 remotes,
                 pieces,
+                swing_kinds,
+                grid,
             })
         }
         T::PlayerEvent => {
@@ -1416,11 +2275,16 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             } else {
                 Vec::new()
             };
+            // Optional: the grid (`grid.frames`), a byte at the end, never 0 (home is no byte).
+            let tail = r.ok() && !r.at_end();
+            let grid = if tail { r.u8() } else { 0 };
+            r.check(!tail || grid != 0);
             M::ChunkData(ChunkData {
                 form,
                 coord,
                 revision,
                 voxels,
+                grid,
             })
         }
         T::HostStatus => M::HostStatus(HostState::from_u8(r.u8())?),
@@ -1455,6 +2319,406 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
         T::EntityDespawn => M::EntityDespawn(r.u32()),
         T::WorldSettings => M::WorldSettings(crate::world_settings::SettingsFields::read(r)?),
+        T::InventoryAction => M::InventoryAction(match r.u8() {
+            0 => InventoryAction::Hello,
+            1 => InventoryAction::Move {
+                from: r.u8(),
+                to: r.u8(),
+                count: r.u16(),
+            },
+            2 => InventoryAction::Select { slot: r.u8() },
+            3 => InventoryAction::GroundHello,
+            4 => InventoryAction::Pick {
+                cell: [r.i32(), r.i32(), r.i32()],
+            },
+            5 => InventoryAction::Combine { recipe: r.u32() },
+            _ => return None,
+        }),
+        T::GroundGone => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_GROUND_GONE_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                cells.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::GroundGone(cells)
+        }
+        T::Inventory => {
+            let flags = r.u8();
+            let inventory = crate::inventory::Inventory::read(r)?;
+            M::Inventory(InventoryMessage { flags, inventory })
+        }
+        T::ItemDrops => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ITEM_DROPS_PER_MESSAGE);
+            let mut items = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let item = r.str(crate::inventory::MAX_ITEM_NAME);
+                let count = r.u16();
+                let position = [r.f32(), r.f32(), r.f32()];
+                r.check(position.iter().all(|v| v.is_finite()));
+                items.push(ItemDropNet {
+                    id,
+                    item,
+                    count,
+                    position,
+                });
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ITEM_DROPS_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push(r.u32());
+            }
+            M::ItemDrops(ItemDrops { items, gone })
+        }
+        T::Chop => M::Chop(match r.u8() {
+            0 => ChopAction::Hello,
+            1 => {
+                let tool = r.str(crate::inventory::MAX_ITEM_NAME);
+                let cell = [r.i32(), r.i32(), r.i32()];
+                let face = r.u8();
+                r.check(face < 6);
+                let point = [r.f32(), r.f32(), r.f32()];
+                r.check(point.iter().all(|v| v.is_finite()));
+                let vertical = r.u8() != 0;
+                ChopAction::Swing {
+                    tool,
+                    cell,
+                    face,
+                    point,
+                    vertical,
+                }
+            }
+            2 => {
+                let tool = r.str(crate::inventory::MAX_ITEM_NAME);
+                let look = [r.f32(), r.f32(), r.f32()];
+                r.check(look.iter().all(|v| v.is_finite()));
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical: r.u8() != 0,
+                }
+            }
+            3 => ChopAction::Held {
+                tool: r.str(crate::inventory::MAX_ITEM_NAME),
+                vertical: r.u8() != 0,
+            },
+            4 => ChopAction::Guard {
+                raised: r.u8() != 0,
+            },
+            _ => return None,
+        }),
+        T::VitalsHello => M::VitalsHello,
+        T::CausesHello => M::CausesHello(r.u8()),
+        T::SteamHello => M::SteamHello,
+        T::Capabilities => M::Capabilities(crate::capabilities::Capabilities::read(r)?),
+        T::Markers => M::Markers(crate::markers::Markers::decode_from(r)),
+        T::Blueprints => M::Blueprints(crate::blueprints::BlueprintsMessage::decode_from(r)),
+        T::TheaterViewpoint => M::TheaterViewpoint(match r.u8() {
+            0 => None,
+            1 => {
+                let p = [r.f64(), r.f64(), r.f64()];
+                r.check(p.iter().all(|v| v.is_finite()));
+                Some(p)
+            }
+            _ => return None,
+        }),
+        T::SwingHello => M::SwingHello,
+        T::BitesHello => M::BitesHello,
+        T::Swordplay => M::Swordplay(match r.u8() {
+            0 => {
+                use crate::chopping::Clash;
+                let striker = read_fighter(r);
+                let defender = read_fighter(r);
+                let weapon = r.str(crate::inventory::MAX_ITEM_NAME);
+                let outcome = match r.u8() {
+                    0 => Clash::Blocked,
+                    1 => Clash::Glanced,
+                    2 => Clash::Connected,
+                    _ => return None,
+                };
+                let point = [r.f32(), r.f32(), r.f32()];
+                r.check(point.iter().all(|v| v.is_finite()));
+                let b = r.u8();
+                r.check(b < 4);
+                SwordplayMessage::Clash(ClashNet {
+                    striker,
+                    defender,
+                    weapon,
+                    outcome,
+                    point,
+                    striker_vertical: b & 1 != 0,
+                    defender_vertical: b & 2 != 0,
+                })
+            }
+            1 => {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_GUARDS_PER_MESSAGE);
+                let mut list = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let who = read_fighter(r);
+                    let b = r.u8();
+                    r.check(b < 4);
+                    list.push(GuardNet {
+                        who,
+                        vertical: b & 1 != 0,
+                        raised: b & 2 != 0,
+                    });
+                }
+                SwordplayMessage::Guards(list)
+            }
+            _ => return None,
+        }),
+        T::Steam => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_STEAM_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                cells.push([r.i32(), r.i32(), r.i32()]);
+            }
+            M::Steam(cells)
+        }
+        T::CreaturesHello => M::CreaturesHello,
+        T::DamageHello => M::DamageHello,
+        T::EcologyHello => M::EcologyHello,
+        T::Ecology => {
+            let day = r.f32();
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_ECOLOGY_GROUPS && day.is_finite());
+            let mut groups = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let face = r.u8();
+                let species = r.str(MAX_SPECIES_NAME);
+                let (x, z, size) = (r.f32(), r.f32(), r.f32());
+                r.check(face <= 1 && [x, z, size].iter().all(|v| v.is_finite()));
+                groups.push(EcologyGroupNet {
+                    id,
+                    face,
+                    species,
+                    x,
+                    z,
+                    size,
+                });
+            }
+            M::Ecology(EcologyMessage { day, groups })
+        }
+        T::WorldgenRequest => M::WorldgenRequest,
+        T::WorldgenConfig => {
+            let n = r.u32() as usize;
+            r.check(n <= limits::WORLDGEN_CONFIG_MAX_BYTES);
+            let b = r.bytes(n);
+            r.check(b.len() == n);
+            M::WorldgenConfig(String::from_utf8(b).ok()?)
+        }
+        T::Damage => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_DAMAGE_PER_MESSAGE);
+            let mut cells = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let c = [r.i32(), r.i32(), r.i32()];
+                cells.push((c, crate::damage::DamageView::read(r)));
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_DAMAGE_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push([r.i32(), r.i32(), r.i32()]);
+            }
+            let chunks = r.ok() && !r.at_end();
+            if chunks {
+                let mark = r.u8();
+                r.check(mark == crate::damage::CHUNKS_MARK);
+                for (_, d) in &mut cells {
+                    d.read_chunks(r);
+                }
+            }
+            M::Damage(DamageMessage {
+                cells,
+                gone,
+                chunks,
+            })
+        }
+        T::Creatures => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CREATURES_PER_MESSAGE);
+            let mut creatures = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let id = r.u32();
+                let model = r.str(MAX_MODEL_NAME);
+                let position = [r.f32(), r.f32(), r.f32()];
+                let (yaw, speed) = (r.f32(), r.f32());
+                r.check(position.iter().chain([&yaw, &speed]).all(|v| v.is_finite()));
+                creatures.push(CreatureNet {
+                    id,
+                    model,
+                    position,
+                    yaw,
+                    speed,
+                });
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CREATURES_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push(r.u32());
+            }
+            let npcs = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut npcs = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let (id, kind) = (r.u32(), r.str(MAX_MODEL_NAME));
+                    let pose = r.u8();
+                    r.check(
+                        usize::from(pose)
+                            < NPC_POSES.len() + NPC_STRIKE_POSES.len() + NPC_DEFEAT_POSES.len(),
+                    );
+                    npcs.push(NpcNet {
+                        id,
+                        kind,
+                        pose,
+                        variant: r.u32(),
+                    });
+                }
+                npcs
+            });
+            let poses = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut poses = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let id = r.u32();
+                    let pose = r.u8();
+                    r.check(usize::from(pose) < CREATURE_POSES.len());
+                    poses.push(CreaturePoseNet { id, pose });
+                }
+                poses
+            });
+            let carries = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut carries = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let id = r.u32();
+                    let k = usize::from(r.u8());
+                    r.check(k <= MAX_CARRY_KINDS);
+                    let mut items = Vec::new();
+                    for _ in 0..k {
+                        if !r.ok() {
+                            break;
+                        }
+                        items.push((r.str(MAX_CARRY_NAME), r.u8()));
+                    }
+                    carries.push(CarryNet { id, items });
+                }
+                carries
+            });
+            M::Creatures(CreaturesMessage {
+                creatures,
+                gone,
+                npcs,
+                poses,
+                carries,
+            })
+        }
+        T::Vitals => {
+            let m = VitalsMessage {
+                seq: r.u32(),
+                stamina: r.f32(),
+                oxygen: r.f32(),
+                flags: r.u8(),
+            };
+            r.check(m.stamina.is_finite() && m.oxygen.is_finite());
+            M::Vitals(m)
+        }
+        T::HeldTools => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_HELD_TOOLS);
+            let mut list = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                list.push(HeldTool {
+                    player_id: r.u16(),
+                    tool: r.str(crate::inventory::MAX_ITEM_NAME),
+                    vertical: r.u8() != 0,
+                });
+            }
+            M::HeldTools(list)
+        }
+        T::Cuts => {
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CUTS_PER_MESSAGE);
+            let mut cuts = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                let c = [r.i32(), r.i32(), r.i32()];
+                cuts.push((c, crate::chopping::Cut::read(r)));
+            }
+            let n = usize::from(r.u16());
+            r.check(n <= MAX_CUTS_PER_MESSAGE);
+            let mut gone = Vec::new();
+            for _ in 0..n {
+                if !r.ok() {
+                    break;
+                }
+                gone.push([r.i32(), r.i32(), r.i32()]);
+            }
+            let bites = r.ok() && !r.at_end();
+            if bites {
+                let mark = r.u8();
+                r.check(mark == crate::chopping::BITES_MARK);
+                for (_, k) in &mut cuts {
+                    k.read_bites(r);
+                }
+            }
+            M::Cuts(CutsMessage { cuts, gone, bites })
+        }
         T::BodyEditRequest => {
             let body = r.u32();
             let cell = [r.i16(), r.i16(), r.i16()];
@@ -1543,7 +2807,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                     m.from = r.u16();
                     m.material = r.u16();
                 }
-                RegionEditOp::Paste => {
+                RegionEditOp::Paste | RegionEditOp::Structure => {
                     let volume = m.volume();
                     let mut cells = vec![0u16; volume];
                     read_cells(r, volume, |i, v| cells[i] = v);
@@ -1552,9 +2816,13 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             }
             M::RegionEdit(m)
         }
-        T::ChunkUnload => M::ChunkUnload(ChunkUnload {
-            coords: read_coords(r, 0xFFFF),
-        }),
+        T::ChunkUnload => {
+            let coords = read_coords(r, 0xFFFF);
+            let tail = r.ok() && !r.at_end();
+            let grid = if tail { r.u8() } else { 0 };
+            r.check(!tail || grid != 0);
+            M::ChunkUnload(ChunkUnload { coords, grid })
+        }
         T::BlockEditRequest => {
             let action = BlockEditAction::from_u8(r.u8())?;
             let cell = read_coord(r);
@@ -1569,6 +2837,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
             let rows = piece & 0x7f;
             r.check((1..=MAX_PIECE_ROWS).contains(&rows));
             let down = piece & 0x80 != 0;
+            let point = (r.ok() && !r.at_end()).then(|| [r.u8(), r.u8(), r.u8()]);
             M::BlockEditRequest(BlockEditRequest {
                 action,
                 cell,
@@ -1576,6 +2845,7 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 material,
                 rows,
                 down,
+                point,
             })
         }
         T::VoxelModification => {
@@ -1683,4 +2953,255 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
         }
     };
     r.ok().then_some(m)
+}
+
+#[cfg(test)]
+mod ecology_tests {
+    use super::*;
+
+    #[test]
+    fn ecology_round_trips_and_rejects_bad_ones() {
+        let g = |id, face| EcologyGroupNet {
+            id,
+            face,
+            species: "dwell:deer".into(),
+            x: -1200.5,
+            z: 340.0,
+            size: 5.5,
+        };
+        let m = Message::Ecology(EcologyMessage {
+            day: 12.0,
+            groups: vec![g(3, 0), g(7, 1)],
+        });
+        let b = m.encode();
+        assert_eq!(b[0], MessageType::Ecology as u8);
+        assert_eq!(Message::decode(&b), Some(m.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        let h = Message::EcologyHello.encode();
+        assert_eq!(Message::decode(&h), Some(Message::EcologyHello));
+        // A face past B, and a NaN head, are malformed.
+        let bad = Message::Ecology(EcologyMessage {
+            day: 1.0,
+            groups: vec![g(1, 2)],
+        });
+        assert_eq!(Message::decode(&bad.encode()), None);
+        let mut nan = m.encode();
+        let at = nan.len() - 4;
+        nan[at..].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert_eq!(Message::decode(&nan), None);
+    }
+}
+
+#[cfg(test)]
+mod creature_tests {
+    use super::*;
+
+    #[test]
+    fn creatures_round_trip_and_reject_bad_ones() {
+        let m = Message::Creatures(CreaturesMessage {
+            creatures: vec![CreatureNet {
+                id: 9,
+                model: "deer".into(),
+                position: [1.5, 64.25, -3.0],
+                yaw: 90.0,
+                speed: 1.3,
+            }],
+            gone: vec![2, 5],
+            npcs: None,
+            poses: None,
+            carries: None,
+        });
+        let b = m.encode();
+        assert_eq!(Message::decode(&b), Some(m.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        let h = Message::CreaturesHello.encode();
+        assert_eq!(Message::decode(&h), Some(Message::CreaturesHello));
+        let mut nan = m.encode();
+        // The speed (the last f32 before the gone list: 2 + 2 x 4 bytes from the end) as NaN.
+        let at = nan.len() - 2 - 8 - 4;
+        nan[at..at + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert_eq!(Message::decode(&nan), None);
+    }
+
+    // WORK_QUEUE item 38: the NPCs' part rides after `gone`, written only when present (for a
+    // client with `creatures.npcs`); without it the bytes are the old message's, byte for byte.
+    #[test]
+    fn the_poses_part_follows_the_npcs_part_and_is_checked() {
+        // WORK_QUEUE item 39: the animals' idle poses ride after the NPCs' part (written empty
+        // when there are none), only for a client with `creatures.poses`.
+        let m = CreaturesMessage {
+            creatures: Vec::new(),
+            gone: vec![3],
+            npcs: None,
+            poses: Some(vec![CreaturePoseNet { id: 9, pose: 5 }]),
+            carries: None,
+        };
+        let bytes = Message::Creatures(m.clone()).encode();
+        let back = Message::decode(&bytes).unwrap();
+        assert_eq!(
+            back,
+            Message::Creatures(CreaturesMessage {
+                npcs: Some(Vec::new()),
+                ..m.clone()
+            })
+        );
+        // A pose past the list fails the message.
+        let mut bad = bytes.clone();
+        *bad.last_mut().unwrap() = CREATURE_POSES.len() as u8;
+        assert_eq!(Message::decode(&bad), None);
+        // Without it: the bytes end after the NPCs' part (or after `gone`).
+        let plain = Message::Creatures(CreaturesMessage {
+            poses: None,
+            carries: None,
+            npcs: None,
+            ..m
+        })
+        .encode();
+        assert!(plain.len() < bytes.len());
+    }
+
+    #[test]
+    fn the_carried_loads_follow_the_poses_and_are_checked() {
+        // B5 (docs/BLUEPRINTS.md §9): the NPCs' loads ride after the poses (the NPCs' part and the
+        // poses written empty when there are none), only for a client with `npcs.carry`.
+        let m = CreaturesMessage {
+            creatures: Vec::new(),
+            gone: vec![3],
+            npcs: None,
+            poses: None,
+            carries: Some(vec![CarryNet {
+                id: 7,
+                items: vec![("dwell:stone".into(), 4), ("dwell:log[axis=y]".into(), 6)],
+            }]),
+        };
+        let bytes = Message::Creatures(m.clone()).encode();
+        assert_eq!(
+            Message::decode(&bytes),
+            Some(Message::Creatures(CreaturesMessage {
+                npcs: Some(Vec::new()),
+                poses: Some(Vec::new()),
+                ..m.clone()
+            }))
+        );
+        // Too many kinds fails the message.
+        let mut bad = bytes.clone();
+        let at = bytes.len() - (2 + 11 + 1) - (2 + 17 + 1) - 1;
+        bad[at] = (MAX_CARRY_KINDS + 1) as u8;
+        assert_eq!(Message::decode(&bad), None);
+        // A client without it gets the poses' bytes: the part left out.
+        let without = Message::Creatures(CreaturesMessage { carries: None, ..m }).encode();
+        assert!(without.len() < bytes.len());
+    }
+
+    #[test]
+    fn the_npcs_part_is_optional_trailing_and_checked() {
+        let plain = CreaturesMessage {
+            creatures: vec![CreatureNet {
+                id: 3,
+                model: "peasant".into(),
+                position: [0.5, 10.0, 0.5],
+                yaw: 0.0,
+                speed: 0.0,
+            }],
+            gone: vec![],
+            npcs: None,
+            poses: None,
+            carries: None,
+        };
+        let with = CreaturesMessage {
+            npcs: Some(vec![NpcNet {
+                id: 3,
+                kind: "dwell:villager".into(),
+                pose: 2,
+                variant: 0xdead_beef,
+            }]),
+            ..plain.clone()
+        };
+        let (a, b) = (
+            Message::Creatures(plain.clone()).encode(),
+            Message::Creatures(with.clone()).encode(),
+        );
+        assert_eq!(b[..a.len()], a[..], "the old message, then the part");
+        assert_eq!(Message::decode(&a), Some(Message::Creatures(plain)));
+        assert_eq!(Message::decode(&b), Some(Message::Creatures(with)));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None, "truncated");
+        // A defeated NPC's poses (`humans.defeat`, WORK_QUEUE item 55): kneeling 5, standing up 6.
+        for pose in [5u8, 6] {
+            let mut ok = b.clone();
+            ok[b.len() - 5] = pose;
+            assert!(Message::decode(&ok).is_some(), "pose {pose}");
+        }
+        let mut bad = b.clone();
+        bad[b.len() - 5] =
+            (NPC_POSES.len() + NPC_STRIKE_POSES.len() + NPC_DEFEAT_POSES.len()) as u8; // the pose byte, before the u32 variant
+        assert_eq!(Message::decode(&bad), None, "an unknown pose");
+    }
+}
+
+#[cfg(test)]
+mod swordplay_tests {
+    use super::*;
+    use crate::chopping::Clash;
+
+    #[test]
+    fn swordplay_round_trips_and_rejects_bad_ones() {
+        let clash = Message::Swordplay(SwordplayMessage::Clash(ClashNet {
+            striker: Fighter::Player(7),
+            defender: Fighter::Creature(90_001),
+            weapon: "dwell:sword".into(),
+            outcome: Clash::Blocked,
+            point: [1.5, -40.25, 3.0],
+            striker_vertical: false,
+            defender_vertical: true,
+        }));
+        let b = clash.encode();
+        assert_eq!(b[0], MessageType::Swordplay as u8);
+        assert_eq!(Message::decode(&b), Some(clash.clone()));
+        assert_eq!(Message::decode(&b[..b.len() - 1]), None);
+        // An outcome past Connected, and stance bits past the two, are malformed.
+        let mut bad = b.clone();
+        let outcome_at = b.len() - 1 - 12 - 1;
+        bad[outcome_at] = 3;
+        assert_eq!(Message::decode(&bad), None);
+        let mut bad = b.clone();
+        *bad.last_mut().unwrap() = 4;
+        assert_eq!(Message::decode(&bad), None);
+        for outcome in [Clash::Glanced, Clash::Connected] {
+            let Message::Swordplay(SwordplayMessage::Clash(mut c)) = clash.clone() else {
+                unreachable!()
+            };
+            c.outcome = outcome;
+            let m = Message::Swordplay(SwordplayMessage::Clash(c));
+            assert_eq!(Message::decode(&m.encode()), Some(m));
+        }
+        let guards = Message::Swordplay(SwordplayMessage::Guards(vec![
+            GuardNet {
+                who: Fighter::Player(3),
+                vertical: true,
+                raised: true,
+            },
+            GuardNet {
+                who: Fighter::Creature(12),
+                vertical: false,
+                raised: false,
+            },
+        ]));
+        assert_eq!(Message::decode(&guards.encode()), Some(guards.clone()));
+        // A fighter kind past creature is malformed; so is an unknown kind.
+        let mut bad = guards.encode();
+        bad[4] = 2;
+        assert_eq!(Message::decode(&bad), None);
+        assert_eq!(
+            Message::decode(&[MessageType::Swordplay as u8, 2, 0, 0]),
+            None
+        );
+    }
+
+    #[test]
+    fn the_guard_action_round_trips() {
+        for raised in [true, false] {
+            let m = Message::Chop(ChopAction::Guard { raised });
+            assert_eq!(Message::decode(&m.encode()), Some(m));
+        }
+    }
 }

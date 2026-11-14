@@ -1,6 +1,7 @@
 //! The JS API (`wasm-bindgen`): what the page calls.
 
 pub mod app;
+pub mod chisel;
 pub mod jobs;
 pub mod local_worker;
 pub mod server_jobs;
@@ -74,10 +75,21 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
 
 /// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8): a ½ m piece of a full block
 /// shows as the world draws a ½ m cell, its tile's top half (`dwell_mesh::half_swatch`).
+/// Draws the fog preset `name` (shared/look/fog.json `presets`; `?haze=<name>`, a dev tool to
+/// compare them) instead of the fog every client draws. Called before the client is created (the
+/// shaders bake the fog in); returns whether `name` is a preset.
+#[wasm_bindgen(js_name = setHaze)]
+pub fn set_haze(name: &str) -> bool {
+    dwell_look::fog::select(name)
+}
+
 #[wasm_bindgen(js_name = hotbarSwatch)]
 pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     let palette = dwell_game::block_interaction::palette();
     palette.get(slot).map_or_else(Vec::new, |p| {
+        if p.tool.is_some() {
+            return tool_swatch(p.item);
+        }
         let mut px = dwell_mesh::swatch(p.material);
         let full = dwell_blocks::info(p.material).shape == dwell_blocks::VoxelShape::Full;
         if p.rows == 1 && full {
@@ -85,6 +97,81 @@ pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
         }
         px
     })
+}
+
+/// A tool's picture (ADR 0067): a handle across the tile, bottom left to top right, and a head in
+/// the item's colour at its top.
+pub fn tool_swatch(item: &str) -> Vec<u8> {
+    // A tool with a model look (the tool models) is drawn as its model, as everywhere else.
+    if let Some(look) = dwell_protocol::inventory::item(item).and_then(|d| d.look) {
+        return dwell_mesh::look_swatch(&look);
+    }
+    let n = dwell_mesh::TILE;
+    let mut px = vec![0u8; n * n * 4];
+    let head = dwell_protocol::inventory::item(item).map_or([125, 116, 104], |d| d.color);
+    let s = n as f64;
+    for y in 0..n {
+        for x in 0..n {
+            let (u, v) = ((x as f64 + 0.5) / s, 1.0 - (y as f64 + 0.5) / s);
+            // The handle: within 0.06 of the diagonal u = v, from 0.12 to 0.85.
+            let on_handle = (u - v).abs() < 0.085 && (0.12..0.85).contains(&(0.5 * (u + v)));
+            // The head: a block across the handle's top, to its upper left.
+            let (a, b) = (0.5 * (u + v), 0.5 * (v - u));
+            let on_head = (0.66..0.86).contains(&a) && (-0.04..0.26).contains(&b);
+            let c = if on_head {
+                head.map(|c| (f64::from(c) * (1.1 - 0.5 * b)).min(255.0) as u8)
+            } else if on_handle {
+                [122, 84, 50]
+            } else {
+                continue;
+            };
+            let i = (y * n + x) * 4;
+            px[i..i + 3].copy_from_slice(&c);
+            px[i + 3] = 255;
+        }
+    }
+    px
+}
+
+/// An inventory item's picture (ADR 0066): a block item's swatch, a non-block item's shaped look
+/// (`dwell_mesh::look_swatch`) or else its colour (a tool's drawn as one); empty for an item this build doesn't know.
+#[wasm_bindgen(js_name = itemSwatch)]
+pub fn item_swatch(item: &str) -> Vec<u8> {
+    if dwell_protocol::chopping::tool(item).is_some() {
+        return tool_swatch(item);
+    }
+    if let Some(b) = dwell_blocks::find_block(item) {
+        let m = (b.first_state..b.first_state + b.state_count)
+            .find(|&m| dwell_world::edit::placeable(m))
+            .unwrap_or(b.first_state);
+        return dwell_mesh::swatch(m);
+    }
+    let Some(def) = dwell_protocol::inventory::item(item) else {
+        return Vec::new();
+    };
+    // An item with a shaped look is drawn as that look: a stick as its rod, a rock as its lump.
+    if let Some(look) = def.look {
+        return dwell_mesh::look_swatch(&look);
+    }
+    let n = dwell_mesh::TILE;
+    let mut px = vec![0u8; n * n * 4];
+    // A rounded blob in its colour, so it doesn't read as a block.
+    let r = n as f64 * 0.32;
+    let c = (n as f64 - 1.0) / 2.0;
+    for y in 0..n {
+        for x in 0..n {
+            let d = ((x as f64 - c).powi(2) + (y as f64 - c).powi(2)).sqrt();
+            if d <= r {
+                let shade = 1.0 - 0.35 * (d / r);
+                let i = (y * n + x) * 4;
+                for k in 0..3 {
+                    px[i + k] = (f64::from(def.color[k]) * shade) as u8;
+                }
+                px[i + 3] = 255;
+            }
+        }
+    }
+    px
 }
 
 /// The hotbar pictures' side, pixels.
@@ -206,25 +293,72 @@ pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, 
 /// The cache keys of a terrain world's maps, faces A then B (ADR 0049): the build's map fingerprint
 /// and each face's seed, so a map kept by another build is never read.
 #[wasm_bindgen(js_name = worldMapKeys)]
-pub fn world_map_keys(world_seed: u64) -> Vec<String> {
-    [dwell_world::Face::A, dwell_world::Face::B]
-        .into_iter()
-        .map(|f| {
-            dwell_worldgen::worldmap::cache::key(dwell_worldgen::bifacial::face_seed(world_seed, f))
-        })
-        .collect()
+/// A test world's worldgen config (`worldgen`, `chisel::worldgen_height`) keys its maps apart.
+/// A bigger world's (`radius_scale`, BIG_MAP.md M2b: its `WorldSettings` size) keys its maps apart
+/// too; none or 1 is today's key.
+pub fn world_map_keys(
+    world_seed: u64,
+    worldgen: Option<String>,
+    radius_scale: Option<u32>,
+) -> Vec<String> {
+    crate::local::world_map_keys(
+        world_seed,
+        &worldgen.unwrap_or_default(),
+        dwell_protocol::world_size::WorldSize::playable(radius_scale),
+    )
 }
 
 /// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
 /// builder worker's job: ~1.3 s).
 #[wasm_bindgen(js_name = buildWorldMap)]
-pub fn build_world_map(world_seed: u64, face: u8) -> Vec<u8> {
+/// A test world's (`worldgen`) is built over its height field; throws when the config is bad.
+/// A bigger world's map (`radius_scale`, BIG_MAP.md M2b) is built over its own disc.
+/// `progress(step, fraction)` hears the build's steps as it runs (BUGS.md #91: the index of
+/// `dwell_worldgen::progress::MapStep::ALL`, `loading.json` `mapSteps`, and the fraction of it
+/// done), at most once per step per hundredth.
+pub fn build_world_map(
+    world_seed: u64,
+    face: u8,
+    worldgen: Option<String>,
+    radius_scale: Option<u32>,
+    progress: Option<js_sys::Function>,
+) -> Result<Vec<u8>, JsError> {
     let face = if face == 1 {
         dwell_world::Face::B
     } else {
         dwell_world::Face::A
     };
-    dwell_worldgen::worldmap::build_bytes(dwell_worldgen::bifacial::face_seed(world_seed, face))
+    let build = || {
+        dwell_worldgen::config::worldgen_map_bytes_sized(
+            dwell_worldgen::bifacial::face_seed(world_seed, face),
+            &worldgen.unwrap_or_default(),
+            dwell_protocol::world_size::WorldSize::playable(radius_scale),
+        )
+    };
+    let bytes = match progress {
+        None => build(),
+        Some(f) => {
+            let mut last: Option<(usize, f64)> = None;
+            dwell_worldgen::progress::with_sink(
+                move |step, fraction| {
+                    let k = step.index();
+                    if last
+                        .is_some_and(|(lk, lf)| lk == k && fraction < 1.0 && fraction - lf < 0.01)
+                    {
+                        return;
+                    }
+                    last = Some((k, fraction));
+                    let _ = f.call2(
+                        &JsValue::NULL,
+                        &JsValue::from(k as u32),
+                        &JsValue::from(fraction),
+                    );
+                },
+                build,
+            )
+        }
+    };
+    bytes.map_err(|e| JsError::new(&e))
 }
 
 /// Installs a world map's bytes in this instance, so its generators use it rather than computing

@@ -2,6 +2,7 @@
 // before the page loads): the left stick walks the player, Menu opens the game menu, the D-pad
 // moves its focus and B closes it.
 import { expect, test, type Page } from '@playwright/test';
+import { untilTicking } from './ticking';
 
 type Vec3 = [number, number, number];
 
@@ -57,7 +58,7 @@ test('controller: the stick walks, Menu opens the menu, the D-pad moves, B close
       },
     )
     .toBe(true);
-  await page.waitForTimeout(1000);
+  await untilTicking(page);
   const start = await feet(page);
   // Left stick up: forward.
   await pad(page, [], [0, -1, 0, 0]);

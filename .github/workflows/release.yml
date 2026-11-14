@@ -1,6 +1,10 @@
 name: Release
 
 # Every build is a git tag with a GitHub Release holding the built files (RELEASES.md §3):
+#   - a push to main that carries pending release notes (shared/releases/pending/*.json)
+#                           → the `assign` step gives each the next patch (client/scripts/releaseAssign.ts),
+#                             commits package.json and changes.json to main ("Release <version>"),
+#                             and this run releases that commit as stable;
 #   - a push to main        → a dev build, `v<next version>-dev.<run>` (a GitHub pre-release) —
 #                             or, if the push raised client/package.json above the newest
 #                             release (the baseline, a new line), that version as a stable release;
@@ -57,6 +61,8 @@ jobs:
       channel: ${{ steps.plan.outputs.channel }}
       archive: ${{ steps.plan.outputs.archive }}
       title: ${{ steps.plan.outputs.title }}
+      # The commit this run builds: the push's, or the `assign` step's release commit on main.
+      sha: ${{ steps.assign.outputs.sha }}
       notes: ${{ steps.plan.outputs.notes }}
       publish: ${{ steps.check.outputs.action }}
       event: ${{ steps.plan.outputs.event }}
@@ -69,6 +75,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Pending release notes (RELEASES.md §3): on a push to main, on main's newest commit (another
+      # merge may have landed since this push), give each note its version and push the release
+      # commit; a run that finds none (none merged, or an overlapping run took them) builds its own
+      # push as before. A push the GITHUB_TOKEN makes starts no workflow, so this run releases it.
+      - id: assign
+        working-directory: client
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha="$GITHUB_SHA"
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            pushed=false
+            for attempt in 1 2 3 4 5; do
+              git fetch --depth=2 origin main
+              git checkout -q --detach FETCH_HEAD
+              gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
+              assigned=$(node --experimental-strip-types scripts/releaseAssign.ts "$RUNNER_TEMP/releases.json" | sed -n 's/^assigned=//p')
+              if [ -z "$assigned" ]; then git checkout -q --detach "$GITHUB_SHA"; pushed=none; break; fi
+              git add -A package.json ../shared/releases
+              git commit -q -m "Release $assigned" -m "Pending release notes assigned by the Release workflow (RELEASES.md §3)."
+              if git push origin HEAD:main; then sha=$(git rev-parse HEAD); pushed=true; break; fi
+              echo "main moved: trying again"; sleep $((attempt * 5))
+            done
+            if [ "$pushed" = false ]; then echo "::error::could not push the release commit to main"; exit 1; fi
+          fi
+          echo "sha=$sha" | tee -a "$GITHUB_OUTPUT"
       - id: plan
         working-directory: client
         env:
@@ -76,6 +111,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           REQUESTED: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
+          SHA: ${{ steps.assign.outputs.sha }}
         run: |
           gh release list --limit 500 --json tagName > "$RUNNER_TEMP/releases.json"
           case "$GITHUB_REF" in
@@ -84,7 +120,7 @@ jobs:
             *) echo "::error::unexpected ref $GITHUB_REF"; exit 1 ;;
           esac
           previous=$(git show HEAD^1:client/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')
-          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" "$CHANNEL" | tee -a "$GITHUB_OUTPUT"
+          node --experimental-strip-types scripts/release.ts "$event" "$GITHUB_REF" "$GITHUB_RUN_NUMBER" "$SHA" "$RUNNER_TEMP/releases.json" "$REQUESTED" "$previous" "$CHANNEL" | tee -a "$GITHUB_OUTPUT"
           echo "event=$event" >> "$GITHUB_OUTPUT"
       # Call pages.yml here, or dispatch it on the default branch (release.ts siteDeploy).
       - id: site
@@ -102,10 +138,11 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
           CHANNEL: ${{ steps.plan.outputs.channel }}
           EVENT: ${{ steps.plan.outputs.event }}
+          SHA: ${{ steps.assign.outputs.sha }}
         run: |
           tag_commit=$(git ls-remote --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" "refs/tags/$TAG^{}" | sort -k2 | tail -1 | cut -f1)
           exists=false; gh release view "$TAG" >/dev/null 2>&1 && exists=true
-          node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$GITHUB_SHA" "${tag_commit:--}" "$exists" | tee -a "$GITHUB_OUTPUT"
+          node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$SHA" "${tag_commit:--}" "$exists" | tee -a "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ needs.plan.outputs.version }}
@@ -121,6 +158,8 @@ jobs:
       DWELL_VERSION: ${{ needs.plan.outputs.buildVersion }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -171,6 +210,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.plan.outputs.sha }}
           sparse-checkout: client
       - uses: actions/setup-node@v4
         with:
@@ -189,12 +229,13 @@ jobs:
           EVENT: ${{ needs.plan.outputs.event }}
           TITLE: ${{ needs.plan.outputs.title }}
           NOTES: ${{ needs.plan.outputs.notes }}
+          SHA: ${{ needs.plan.outputs.sha }}
         run: |
           # Again, just before publishing (release.ts publishAction): another run may have published
           # this version since the plan.
           tag_commit=$(git ls-remote --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" "refs/tags/$TAG^{}" | sort -k2 | tail -1 | cut -f1)
           exists=false; gh release view "$TAG" >/dev/null 2>&1 && exists=true
-          action=$(cd client && node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$GITHUB_SHA" "${tag_commit:--}" "$exists" | sed -n 's/^action=//p')
+          action=$(cd client && node --experimental-strip-types scripts/release.ts publish "$CHANNEL" "$EVENT" "$SHA" "${tag_commit:--}" "$exists" | sed -n 's/^action=//p')
           if [ "$action" != create ]; then
             echo "$TAG is already published (or this push is not its release): nothing to do."
             exit 0
@@ -203,12 +244,12 @@ jobs:
           files=("$ARCHIVE" client/dist/build.json)
           # Title and notes from release.ts releaseNotes: a dev build run by hand names its branch.
           if [ "$CHANNEL" = dev ]; then
-            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --prerelease --latest=false \
+            gh release create "$TAG" "${files[@]}" --target "$SHA" --prerelease --latest=false \
               --title "$TITLE" --notes "$NOTES"
           elif git ls-remote --exit-code --tags "https://github.com/$GH_REPO" "refs/tags/$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" "${files[@]}" --verify-tag --title "$TITLE" --generate-notes
           else
-            gh release create "$TAG" "${files[@]}" --target "$GITHUB_SHA" --title "$TITLE" --generate-notes
+            gh release create "$TAG" "${files[@]}" --target "$SHA" --title "$TITLE" --generate-notes
           fi
 
   site:

@@ -44,8 +44,9 @@ export const RETENTION_FILE = join(
  * tarballs) left on GitHub. Dev pre-releases follow `devKeep` alone.
  */
 export interface RetentionPolicy {
-  /** Keep the newest release of every compatibility line, so every line's worlds still open. */
-  newestPerLine: boolean;
+  /** Keep the newest release of this many of the newest compatibility lines, so their worlds still
+   *  open (owner, 2026-11-09: the last 20). */
+  newestLines: number;
   /** Keep this many of the newest stable releases. */
   newestOverall: number;
   /** Always kept: a compatibility line ("0.10", "1": all of its releases) or an exact release. */
@@ -56,7 +57,7 @@ export interface RetentionPolicy {
   sizeBudgetMB: number;
 }
 
-const POLICY_KEYS = ['newestPerLine', 'newestOverall', 'pinned', 'devKeep', 'sizeBudgetMB'];
+const POLICY_KEYS = ['newestLines', 'newestOverall', 'pinned', 'devKeep', 'sizeBudgetMB'];
 /** A compatibility line as a pin names it: `0.MINOR` before 1.0, `MAJOR` after. */
 const LINE_PIN = /^(0\.(0|[1-9]\d*)|[1-9]\d*)$/;
 
@@ -84,7 +85,6 @@ export function parseRetention(json: unknown, source = 'retention policy'): Rete
     }
     return n;
   };
-  if (typeof p.newestPerLine !== 'boolean') fail('"newestPerLine" must be true or false');
   if (!Array.isArray(p.pinned)) fail('"pinned" must be a list');
   const pinned = p.pinned as unknown[];
   for (const pin of pinned) {
@@ -101,7 +101,7 @@ export function parseRetention(json: unknown, source = 'retention policy'): Rete
     );
   }
   return {
-    newestPerLine: p.newestPerLine as boolean,
+    newestLines: count('newestLines'),
     newestOverall: count('newestOverall'),
     pinned: pinned as string[],
     devKeep: count('devKeep'),
@@ -158,7 +158,8 @@ export function planSite(releases: ReleaseInfo[], policy: RetentionPolicy): Site
   for (const tag of stable) {
     const version = tag.slice(1);
     const line = compatibilityLine(version) ?? version;
-    if (policy.newestPerLine && !lines.has(line)) kept.add(tag); // newest first: the first is the newest
+    // Newest first: a line's first release is its newest, and the lines come newest first.
+    if (!lines.has(line) && lines.size < policy.newestLines) kept.add(tag);
     lines.add(line);
     for (const pin of policy.pinned) {
       if (pin === version || pin === line) {

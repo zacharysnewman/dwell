@@ -10,12 +10,18 @@ export type ToWorker =
       file?: string;
       spawnFaceB?: boolean;
       spawnPortal?: boolean;
+      /** A spawn on another grid (local/world.ts `spawnGrid`: `moon`, `sun-b`). */
+      spawnGrid?: string;
       /** A spawn link: a saved world's player starts at the spawn too (local/world.ts). */
       spawnOnOpen?: boolean;
       /** Dev link `?at=x,y,z`: the spawn is that point, and the player starts there. */
       spawnAt?: [number, number, number];
       /** The player confirmed opening an older version line's world (local/world.ts). */
       upgrade?: boolean;
+      /** A new world's game mode by name (ADR 0065); a saved world keeps its own. */
+      mode?: string;
+      /** A new world's Sky preset (REALISTIC_WORLD.md §8); a saved world keeps its orbit. */
+      sky?: string;
       /** The world's maps (faces A and B, ADR 0049), installed before the world starts. */
       maps?: Uint8Array[];
       /**
@@ -28,6 +34,15 @@ export type ToWorker =
        * tick, not their own worker.
        */
       jobsInline?: boolean;
+      /** `?chop=v2`: the chopping prototype (docs/WORK_QUEUE.md item 7). */
+      chop2?: boolean;
+      /** Dev link `?growth=N`: trees grow N times as fast (ADR 0079; a time-lapse). */
+      growth?: number;
+      /**
+       * A new world's size's radius scale (BIG_MAP.md M2b: the New world form's World size,
+       * `?size=2x`); absent: today's. A saved world keeps its own.
+       */
+      radiusScale?: number;
       /**
        * The maps follow in a `maps` message (the page still shaping them): the worker opens the
        * world file and loads its WASM meanwhile, then waits for them (§6.3).
@@ -42,6 +57,15 @@ export type ToWorker =
   | { t: 'disconnect'; session: number }
   /** Save the world now (the page is being hidden or closed); answered with `saved`. */
   | { t: 'save' }
+  /** The host switches the world's game mode (ADR 0065, by name); answered with `mode`. */
+  | { t: 'setMode'; mode: string }
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7); saved at once. */
+  | { t: 'theaterGuests'; on: boolean }
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+   * within `radius` chunks of the player generated again, edits kept, saved; answered with `retuned`.
+   */
+  | { t: 'retune'; worldgen: string; radius: number }
   /** Friend-world hosting (§10.2): start hosting with these limits and policies. */
   | {
       t: 'host';
@@ -56,6 +80,10 @@ export type ToWorker =
   | { t: 'closeGuests' }
   /** Kill the local player (the bench's `die` step). */
   | { t: 'kill' }
+  /** Give the local player items (the bench's `give` step). */
+  | { t: 'give'; item: string; count: number }
+  /** Carry the local player on a moving raft (the bench's `carry` step). */
+  | { t: 'carry'; speed: number; yaw: number; seconds: number; lift: number }
   /** The respawn preload (ARCHITECTURE.md §6.3) on or off (`?respawnPreload=off`). */
   | { t: 'respawnPreload'; on: boolean }
   /** The water near a cell (a diagnostic for the block dump); answered with `waterReport`. */
@@ -74,11 +102,25 @@ export type ToWorker =
       radius: number;
       face: number;
       minDepth: number;
-    };
+    }
+  /** The lava's dev tools (local.rs `lava_dev`); answered with `lavaDev`. */
+  | { t: 'lavaDev'; op: string; args: number[] }
+  /**
+   * A cinematic take (THEATER_MODE.md §6.1): `manual` stops the real-time clock (the world moves only
+   * by `step`), off resumes it from now with no catch-up.
+   */
+  | { t: 'clock'; manual: boolean }
+  /** Steps exactly `ticks` server ticks (a cinematic take's frame); answered with `stepped`. */
+  | { t: 'step'; ticks: number };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
-  | { t: 'ready'; persisted: boolean }
+  /** `mode`: the world's game mode (ADR 0065), as its file has it. */
+  | { t: 'ready'; persisted: boolean; mode?: string; theaterGuests?: boolean }
+  /** The world's game mode after a `setMode` (unchanged if the name was refused). */
+  | { t: 'mode'; mode: string }
+  /** After a `retune`: faces A's and B's new maps for the page's instances, or the refusal. */
+  | { t: 'retuned'; maps: Uint8Array[]; error?: string }
   | { t: 'error'; message: string }
   /**
    * A loading stage of the world's start (shared/look/loading.json `stages`, by id) began or ended;
@@ -98,6 +140,10 @@ export type FromWorker =
   | { t: 'waterReport'; report: string }
   /** The map's nearest water as JSON, or `null` (in reply to `findOnMap`). */
   | { t: 'findOnMap'; result: string }
+  /** The lava's dev tools' answer as JSON (in reply to `lavaDev`). */
+  | { t: 'lavaDev'; result: string }
+  /** The server's tick after a `step`, its outbox flushed first. */
+  | { t: 'stepped'; tick: number }
   /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */
   | { t: 'stats'; stats: ServerStats };
 

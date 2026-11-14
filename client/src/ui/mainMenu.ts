@@ -1,14 +1,20 @@
-// The main menu (ARCHITECTURE.md §2.1, Phase 5a): the local worlds (create with a seed, play,
+// The main menu (ARCHITECTURE.md §2.1, Phase 5a; since the M1 redesign a logo screen, a home and
+// pages over the panorama, ui/menuNav.ts): the local worlds (create with a seed, play,
 // regenerate, delete) and Join (a join code, a server address or an invite link; servers and friend
 // worlds on this network; recently joined servers), and the server browser (the lobby list, Phase
 // 5e). The launcher shows it (RELEASES.md §5), so it is the same whichever build plays: every
 // choice is a route the launcher sends to the build that carries it out (ui/launch.ts) — creating
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
+import { WORLD_CHOICES } from './worldChoices';
+import { ORBIT_WORLDS, SKY_PRESETS, skyOptions } from './sky';
+import { DEFAULT_MODE, GAME_MODES } from './modes.gen';
+import { modeLabel } from './modes';
 import { changesFor } from '../version/changes';
 import { changesView } from './changesView';
 import {
   cleanName,
+  parseSeed,
   typeLabel,
   WORLD_TYPES,
   type WorldIndex,
@@ -18,8 +24,21 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
-import { playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { moreOptionsFields, playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { WORLD_SIZES } from '../local/world';
+import { prefersTouch } from './touchControls';
+import { World } from '../protocol/constants.gen';
 import { audio } from '../audio/engine';
+import { DEFAULT_MENU_BACKGROUND, MenuPanorama } from './menuBackground';
+import {
+  afterIntro,
+  back,
+  firstView,
+  introSeen,
+  isIntro,
+  markIntroSeen,
+  type MenuView,
+} from './menuNav';
 
 export interface MainMenuDeps {
   index: WorldIndex;
@@ -41,6 +60,15 @@ export interface MainMenuDeps {
   /** The version page and the licence notices. */
   versionsHref: string;
   noticesHref: string;
+  /** The background (shared/ui/menu-backgrounds.json, Settings → On screen); default the data's. */
+  background?: string;
+  /**
+   * Shows or hides Settings (every pane; ui/menuPage.ts): the menu's `settings` page (menu M3),
+   * opened by the Settings link and closed by Back, Esc or B. Its own Back calls `settingsClosed`.
+   */
+  openSettings?: (open: boolean) => void;
+  /** The worlds' thumbnails (local/worldThumbs.ts); without it every card shows its placeholder. */
+  thumbs?: { get(id: string): string | null; remove(id: string): void };
   /** Whether a world can be regenerated (the build that opens it carries out `?regenerate=`). */
   canRegenerate?(world: WorldMeta): boolean;
   /** The master server (Phase 5d), when this build has one: addresses and nearby games. */
@@ -75,10 +103,71 @@ export function formatPlayed(at: number, now: number): string {
   return `played ${String(days)} day${days === 1 ? '' : 's'} ago`;
 }
 
+/**
+ * A world's game mode as the world list shows it (owner, 2026-11-09: "The world should show in the
+ * menu as creative or adventure so you can tell"): the mode it was created in (`WorldMeta.mode`,
+ * ADR 0065), the default mode when it has none; a mode this build doesn't know shows its name.
+ */
+export function worldModeLabel(world: WorldMeta): { name: string; label: string } {
+  const name = world.mode ?? DEFAULT_MODE;
+  const mode = GAME_MODES.find((m) => m.name === name);
+  return { name, label: mode ? mode.label : name };
+}
+
 /** A world's details line: "Terrain · seed 42 · played 3 h ago · v0.1.0". */
 export function worldDetails(world: WorldMeta, now: number): string {
   const version = world.appVersion ? ` · v${world.appVersion}` : '';
   return `${typeLabel(world.type)} · seed ${String(world.seed)} · ${formatPlayed(world.lastPlayedAt, now)}${version}`;
+}
+
+/** What a world's card shows: the mode badge, "Terrain · played 3 h ago", and its seed and version. */
+export function worldCardData(
+  world: WorldMeta,
+  now: number,
+): { mode: string; modeLabel: string; details: string; note: string } {
+  const mode = worldModeLabel(world);
+  const version = world.appVersion ? ` · last played in v${world.appVersion}` : '';
+  return {
+    mode: mode.name,
+    modeLabel: mode.label,
+    details: `${typeLabel(world.type)} · ${formatPlayed(world.lastPlayedAt, now)}`,
+    note: `Seed ${String(world.seed)}${version}`,
+  };
+}
+
+/**
+ * The menu's own button classes (owner, 2026-11-11: "The buttons should be aligned to match the
+ * design of the others instead of looking like web links"): every action on the main menu, a
+ * `<button>` or a link to another page, carries one of these, each with its hover, pressed and focus
+ * states in style.css; none is a bare underlined link (mainMenu.test.ts pins both).
+ */
+export const MENU_BUTTON_CLASSES = [
+  'mm-action',
+  'mm-back',
+  'mm-head-button',
+  'mm-disclosure',
+  'block-button',
+  'quiet-button',
+  'menu-button-small',
+  'world-more',
+] as const;
+
+/** A menu button that goes to another page (an `<a>`, so it opens as a link), styled as a button. */
+function linkButton(
+  label: string,
+  href: string,
+  className: string,
+  newTab = false,
+): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.className = className;
+  a.href = href;
+  a.textContent = label;
+  if (newTab) {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  }
+  return a;
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -115,6 +204,96 @@ function confirmButton(label: string, confirm: string, onConfirm: () => void): H
   return b;
 }
 
+/** The New world form's values, as the player left them (empty = the default). */
+export interface NewWorldValues {
+  name: string;
+  seed: string;
+  type: string;
+  mode: string;
+  spawn: string;
+  /** An offered world file's name (worldChoices.ts), or '' for the build's terrain. */
+  worldgen?: string;
+  /** A bigger world's size by name (`2x`, BIG_MAP.md M2b), or '' / `1x` for today's. */
+  size?: string;
+  /** A Realistic world's Sky preset (REALISTIC_WORLD.md §8, orbits.json), or '' for the default. */
+  sky?: string;
+}
+
+/**
+ * The New world form's World size choices (docs/proposals/BIG_MAP.md M2b; `worldSizes` in
+ * shared/protocol/constants.json): every named size with its disc's width, today's first. None on a
+ * touch page (owner, 2026-11-11: desktop first; a phone can't hold a bigger world's maps yet).
+ */
+export function worldSizeChoices(touch: boolean): { value: string; label: string }[] {
+  if (touch) return [];
+  return WORLD_SIZES.map((s) => {
+    const km = (2 * World.worldRadius * s.radiusScale) / 1000;
+    const across = `${km.toLocaleString('en-US')} km across`;
+    return {
+      value: s.name,
+      label: s.radiusScale === 1 ? `Normal (${across})` : `${s.name} (${across})`,
+    };
+  });
+}
+
+/** The route the New world form opens: the build that opens it creates the world. */
+export function newWorldRoute(v: NewWorldValues): Record<string, string> {
+  return {
+    new: '1',
+    name: cleanName(v.name, 'New world'),
+    seed: v.seed.trim(),
+    type: v.type,
+    ...(v.spawn ? { spawn: v.spawn } : {}),
+    ...(v.mode && v.mode !== DEFAULT_MODE ? { mode: v.mode } : {}),
+    ...(v.worldgen ? { worldgen: v.worldgen } : {}),
+    // A bigger terrain world only (the flat and sandbox worlds are 1×); today's adds nothing.
+    ...(v.size &&
+    v.type === 'terrain' &&
+    WORLD_SIZES.some((s) => s.name === v.size && s.radiusScale !== 1)
+      ? { size: v.size }
+      : {}),
+    // A world that rolls an orbit (Realistic) only: the others keep today's sky.
+    ...skyOptions(v.worldgen, v.sky),
+  };
+}
+
+/**
+ * More options' Play (a one-off visit, `?local=1`): the New world form's Type or World, Seed and
+ * Spawn as Play advanced's parameters, so each is asked once (BUGS.md). A text seed is the number
+ * the form's world would get; an offered world file (Realistic) goes as `worldgen` with its Sky.
+ */
+export function moreOptionsRoute(v: NewWorldValues): Record<string, string> {
+  const worldgen = v.worldgen ?? '';
+  return {
+    seed: String(parseSeed(v.seed)),
+    ...(worldgen === '' && v.type !== 'terrain' ? { world: v.type } : {}),
+    ...(v.spawn ? { spawn: v.spawn } : {}),
+    ...(worldgen ? { worldgen } : {}),
+    ...skyOptions(worldgen, v.sky),
+  };
+}
+
+/** A page's title row: Back, the title, and actions at the end. */
+function pageHead(title: string, onBack: () => void, ...actions: HTMLElement[]): HTMLElement {
+  const head = document.createElement('div');
+  head.className = 'mm-page-head';
+  const backButton = button('Back', 'mm-back', onBack);
+  const h = document.createElement('h2');
+  h.textContent = title;
+  h.tabIndex = -1;
+  head.append(backButton, h, ...actions);
+  return head;
+}
+
+/** `sessionStorage`, or null where it is blocked. */
+function session(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
 export class MainMenu {
   readonly root = document.createElement('div');
   private readonly list = document.createElement('ul');
@@ -122,6 +301,26 @@ export class MainMenu {
   private readonly form = document.createElement('form');
   /** Worlds saved before versioned releases (RELEASES.md §6): listed only to be deleted. */
   private readonly legacy = document.createElement('section');
+  /** The panorama behind the menu (ui/menuBackground.ts). */
+  private readonly panorama: MenuPanorama;
+  /** The view shown (ui/menuNav.ts), and each view's element. */
+  private view: MenuView;
+  private readonly views = new Map<MenuView, HTMLElement>();
+  private readonly shell = document.createElement('div');
+  /** The Worlds page's own New world, hidden while the empty state offers its big one. */
+  private newWorldHead!: HTMLButtonElement;
+  /** The New world form's values as the player left them (its submit and More options' Play). */
+  private formValues: () => NewWorldValues = () => ({
+    name: '',
+    seed: '',
+    type: 'terrain',
+    mode: '',
+    spawn: '',
+  });
+  /** New world → More options' World size (BIG_MAP.md M2b); none on a touch page. */
+  private sizeField: HTMLLabelElement | null = null;
+  /** New world → More options' Sky (REALISTIC_WORLD.md §8): shown for a world that rolls an orbit. */
+  private skyField: HTMLLabelElement | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -132,79 +331,270 @@ export class MainMenu {
     const backdrop = document.createElement('div');
     backdrop.className = 'mm-backdrop';
     backdrop.setAttribute('aria-hidden', 'true');
-    const panel = document.createElement('div');
-    panel.className = 'menu-panel';
-    const hero = document.createElement('header');
-    hero.className = 'mm-hero';
-    const title = document.createElement('h1');
-    title.className = 'wordmark';
-    title.textContent = 'Dwell';
-    const tagline = document.createElement('p');
-    tagline.className = 'mm-tagline';
-    tagline.textContent = 'Build a world, alone or with friends.';
-    hero.append(title, tagline);
+    // Over it, once loaded: the panorama of a real spot, turning slowly.
+    this.panorama = new MenuPanorama(deps.background ?? DEFAULT_MENU_BACKGROUND);
+    backdrop.append(this.panorama.root);
     this.message.id = 'menu-message';
     this.message.setAttribute('aria-live', 'polite');
     this.message.textContent = deps.message ?? '';
 
-    // Your worlds: the list, with New world opening the form above it.
-    const worlds = document.createElement('section');
-    worlds.className = 'mm-card mm-worlds';
-    const worldsHead = document.createElement('div');
-    worldsHead.className = 'mm-card-head';
-    const worldsTitle = document.createElement('h2');
-    worldsTitle.textContent = 'Your worlds';
-    const create = button('New world', 'quiet-button', () => {
-      this.form.hidden = !this.form.hidden;
-      create.setAttribute('aria-expanded', String(!this.form.hidden));
-      if (!this.form.hidden) this.form.querySelector('input')?.focus();
-    });
-    create.id = 'new-world';
-    // Play advanced: a one-off world by link with overrides (ui/playAdvanced.ts).
-    const advanced = playAdvancedPanel((route) => {
-      this.deps.go(route);
-    });
-    const advancedButton = button('Play advanced', 'quiet-button', () => {
-      advanced.hidden = !advanced.hidden;
-      advancedButton.setAttribute('aria-expanded', String(!advanced.hidden));
-    });
-    advancedButton.id = 'play-advanced-toggle';
-    advancedButton.setAttribute('aria-controls', advanced.id);
-    advancedButton.setAttribute('aria-expanded', 'false');
-    const headActions = document.createElement('div');
-    headActions.className = 'mm-card-actions';
-    headActions.append(advancedButton, create);
-    worldsHead.append(worldsTitle, headActions);
+    // The home column, and the pages it opens over the same panorama, each with Back.
     this.list.id = 'world-list';
     this.buildForm();
     this.legacy.id = 'legacy-worlds';
-    worlds.append(worldsHead, advanced, this.form, this.list, this.legacy);
+    this.shell.className = 'mm-shell';
+    const home = this.homeView();
+    this.views.set('home', home);
+    const pages = document.createElement('div');
+    pages.className = 'mm-pages';
+    const add = (view: MenuView, el: HTMLElement) => {
+      this.views.set(view, el);
+      pages.append(el);
+    };
+    add('worlds', this.worldsPage());
+    add('new-world', this.newWorldPage());
+    add('online', this.onlinePage());
+    add('versions', this.versionsPage());
+    this.shell.append(home, pages, this.message);
+    const logo = this.logoView();
+    this.views.set('logo', logo);
+    this.root.append(backdrop, logo, this.shell);
+    parent.append(this.root);
+    this.view = firstView(introSeen(session()), Boolean(deps.message));
+    this.show(this.view, false);
+    this.render();
+    void this.adoptSavedWorlds();
+  }
 
-    // Play with others: join by code, address or link; games nearby; recent servers; the lobby.
-    const online = document.createElement('section');
-    online.className = 'mm-card mm-online';
-    online.append(this.joinSection());
-    const master = deps.master;
+  /** The view shown: `logo`, `home` or a page (ui/menuNav.ts). */
+  get current(): MenuView {
+    return this.view;
+  }
+
+  /** Back to the page's parent (Esc, a controller's B); on an intro screen, on to the next. */
+  back(): void {
+    if (isIntro(this.view)) this.leaveIntro();
+    else this.show(back(this.view));
+  }
+
+  private leaveIntro(): void {
+    markIntroSeen(session());
+    this.show(afterIntro(this.view));
+  }
+
+  /** Shows a view: the home column stays beside a page on wide screens; the logo stands alone. */
+  /** Settings' own Back closed it: the menu leaves its `settings` page for the home. */
+  settingsClosed(): void {
+    if (this.view === 'settings') this.show(back('settings'));
+  }
+
+  private show(view: MenuView, focus = true): void {
+    const from = this.view;
+    this.view = view;
+    this.root.dataset.view = view;
+    // Settings is ui/settingsMenu.ts's page, drawn over the menu's panorama (menu M3).
+    if (view === 'settings') this.deps.openSettings?.(true);
+    else if (from === 'settings') this.deps.openSettings?.(false);
+    for (const [v, el] of this.views) {
+      if (v !== 'home') el.hidden = v !== view;
+    }
+    this.shell.hidden = isIntro(view);
+    this.root.classList.toggle('mm-on-page', !isIntro(view) && view !== 'home');
+    // The home's action for the page shown (or its parent's, for New world) reads as pressed.
+    const section = view === 'new-world' ? 'worlds' : view;
+    for (const opener of this.root.querySelectorAll<HTMLElement>('.mm-home [data-opens]')) {
+      if (opener.dataset.opens === section) opener.setAttribute('aria-current', 'page');
+      else opener.removeAttribute('aria-current');
+    }
+    if (!focus) {
+      if (view === 'logo') this.views.get('logo')?.focus();
+      return;
+    }
+    if (view === 'home') {
+      // Back on the home: focus the action that opened the page left.
+      const opener = this.root.querySelector<HTMLElement>(`[data-opens="${from}"]`);
+      (opener ?? this.root.querySelector<HTMLElement>('.mm-action'))?.focus();
+    } else this.views.get(view)?.querySelector<HTMLElement>('h2')?.focus();
+  }
+
+  /** The logo screen: the wordmark over the turning panorama, waiting for a key or a tap. */
+  private logoView(): HTMLElement {
+    const screen = document.createElement('div');
+    screen.id = 'menu-logo';
+    screen.className = 'mm-logo';
+    screen.tabIndex = 0;
+    screen.setAttribute('role', 'button');
+    const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const prompt = touch ? 'Tap to start' : 'Press any key';
+    screen.setAttribute('aria-label', `Dwell. ${prompt}`);
+    const title = document.createElement('h1');
+    title.className = 'wordmark';
+    title.textContent = 'Dwell';
+    const press = document.createElement('p');
+    press.className = 'mm-press';
+    press.textContent = prompt;
+    screen.append(title, press);
+    // A click, not a pointerdown: the press then can't land on the home's buttons beneath. The
+    // same gesture unlocks audio (audio/engine.ts listens for it on the document).
+    screen.addEventListener('click', () => {
+      if (isIntro(this.view)) this.leaveIntro();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!isIntro(this.view) || e.key === 'Escape' || e.repeat) return;
+      if (e.key === 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      this.leaveIntro();
+    });
+    return screen;
+  }
+
+  /** The home: a column with the small logo, the two big actions, and Settings and Versions. */
+  private homeView(): HTMLElement {
+    const nav = document.createElement('nav');
+    nav.id = 'menu-home';
+    nav.className = 'mm-home mm-glass';
+    nav.setAttribute('aria-label', 'Main menu');
+    const title = document.createElement('h1');
+    title.className = 'wordmark mm-wordmark-small';
+    title.textContent = 'Dwell';
+    const tagline = document.createElement('p');
+    tagline.className = 'mm-tagline';
+    tagline.textContent = 'Build a world, alone or with friends.';
+    const action = (id: string, label: string, note: string, opens: MenuView) => {
+      const b = button('', 'mm-action', () => {
+        this.show(opens);
+      });
+      b.id = id;
+      b.dataset.opens = opens;
+      const name = document.createElement('span');
+      name.className = 'mm-action-name';
+      name.textContent = label;
+      const small = document.createElement('span');
+      small.className = 'mm-action-note';
+      small.textContent = note;
+      b.append(name, small);
+      return b;
+    };
+    const actions = document.createElement('div');
+    actions.className = 'mm-actions';
+    actions.append(
+      action('home-worlds', 'Worlds', 'Play yours or make a new one', 'worlds'),
+      action('home-online', 'Play with others', 'Join a friend or a server', 'online'),
+    );
+    const links = document.createElement('div');
+    links.className = 'mm-links';
+    if (this.deps.openSettings) {
+      const settings = button('Settings', 'mm-action mm-action-secondary', () => {
+        this.show('settings');
+      });
+      settings.id = 'menu-settings';
+      settings.dataset.opens = 'settings';
+      settings.setAttribute('aria-controls', 'settings-menu');
+      links.append(settings);
+    }
+    const versions = button('Versions', 'mm-action mm-action-secondary', () => {
+      this.show('versions');
+    });
+    versions.id = 'home-versions';
+    versions.dataset.opens = 'versions';
+    links.append(versions);
+    nav.append(title, tagline, actions, links, this.aboutSection());
+    return nav;
+  }
+
+  private page(id: string, ...children: HTMLElement[]): HTMLElement {
+    const page = document.createElement('section');
+    page.id = id;
+    page.className = 'mm-page mm-glass';
+    page.hidden = true;
+    page.append(...children);
+    return page;
+  }
+
+  /** Worlds: the list, New world (its own page), and the legacy worlds. */
+  private worldsPage(): HTMLElement {
+    const create = button('New world', 'block-button', () => {
+      this.show('new-world');
+    });
+    create.id = 'new-world';
+    create.dataset.opens = 'new-world';
+    this.newWorldHead = create;
+    return this.page(
+      'menu-page-worlds',
+      pageHead(
+        'Worlds',
+        () => {
+          this.show(back('worlds'));
+        },
+        create,
+      ),
+      this.list,
+      this.legacy,
+    );
+  }
+
+  /** New world: the basics up top, the rest under More options (Play advanced's overrides). */
+  private newWorldPage(): HTMLElement {
+    const more = document.createElement('details');
+    more.id = 'more-options';
+    more.className = 'mm-more';
+    const summary = document.createElement('summary');
+    summary.id = 'play-advanced-toggle';
+    summary.textContent = 'More options';
+    // Play advanced: a one-off world by link with overrides (ui/playAdvanced.ts).
+    // Its fields less the form's (Type, World, Seed, Spawn), which its Play takes from the form.
+    const advanced = playAdvancedPanel(
+      (route) => {
+        this.deps.go(route);
+      },
+      moreOptionsFields(),
+      () => moreOptionsRoute(this.formValues()),
+    );
+    advanced.hidden = false;
+    more.append(
+      summary,
+      ...(this.sizeField ? [this.sizeField] : []),
+      ...(this.skyField ? [this.skyField] : []),
+      advanced,
+    );
+    return this.page(
+      'menu-page-new-world',
+      pageHead('New world', () => {
+        this.show(back('new-world'));
+      }),
+      this.form,
+      more,
+    );
+  }
+
+  /** Play with others: join by code, address or link; games nearby; recent servers; the lobby. */
+  private onlinePage(): HTMLElement {
+    const page = this.page(
+      'menu-page-online',
+      pageHead('Play with others', () => {
+        this.show(back('online'));
+      }),
+      this.joinSection(),
+    );
+    const master = this.deps.master;
     if (master) {
       const browser = new ServerBrowser({
         lobby: (query) => master.lobby(query),
         ping: (server) => master.ping(server),
         go: (route) => {
-          deps.go(route);
+          this.deps.go(route);
         },
-        protocol: deps.protocol,
-        version: deps.version,
+        protocol: this.deps.protocol,
+        version: this.deps.version,
       });
-      online.append(browser.root);
+      page.append(browser.root);
     }
-    const columns = document.createElement('div');
-    columns.className = 'mm-columns';
-    columns.append(worlds, online, this.versionsCard());
-    panel.append(hero, this.message, columns, this.aboutSection());
-    this.root.append(backdrop, panel);
-    parent.append(this.root);
-    this.render();
-    void this.adoptSavedWorlds();
+    return page;
+  }
+
+  /** Shows another background (Settings changed it). */
+  setBackground(name: string): void {
+    this.panorama.show(name);
   }
 
   /**
@@ -212,25 +602,26 @@ export class MainMenu {
    * what changed in it (shared/releases/changes.json) and the launcher's page of every build
    * (RELEASES.md §5).
    */
-  private versionsCard(): HTMLElement {
-    const card = document.createElement('section');
-    card.className = 'mm-card mm-versions';
-    card.id = 'versions-card';
-    const head = document.createElement('div');
-    head.className = 'mm-card-head';
-    const title = document.createElement('h2');
-    title.textContent = 'Versions';
-    const all = document.createElement('a');
+  private versionsPage(): HTMLElement {
+    // The head's other button, beside Back and alike: not a link-styled pill.
+    const all = linkButton('All versions', this.deps.versionsHref, 'mm-head-button');
     all.id = 'versions-link';
-    all.className = 'quiet-button';
-    all.href = this.deps.versionsHref;
-    all.textContent = 'All versions';
-    head.append(title, all);
+    const card = this.page(
+      'versions-card',
+      pageHead(
+        'Versions',
+        () => {
+          this.show(back('versions'));
+        },
+        all,
+      ),
+    );
+    card.classList.add('mm-versions');
     const current = document.createElement('div');
     current.className = 'mm-version-current';
     const { version, channel } = this.deps;
     current.textContent = `Dwell ${version} · ${channel === 'stable' ? 'this build' : `${channel} build`}`;
-    card.append(head, current);
+    card.append(current);
     const changes = changesFor(version);
     const view = changes && changesView([{ version, changes }]);
     if (view) {
@@ -249,12 +640,16 @@ export class MainMenu {
     const line = document.createElement('p');
     line.className = 'menu-hint';
     const { version, channel } = this.deps;
-    line.append(
-      `Dwell ${version} (${channel}) · `,
-      button('About', 'menu-link', () => {
-        details.hidden = !details.hidden;
-      }),
-    );
+    // A disclosure (owner, 2026-11-12: expandable sections must show they expand and collapse): a
+    // chevron that turns, aria-expanded and aria-controls, like the <details> summaries.
+    const about = button('About', 'mm-disclosure', () => {
+      details.hidden = !details.hidden;
+      about.setAttribute('aria-expanded', String(!details.hidden));
+    });
+    about.id = 'about-toggle';
+    about.setAttribute('aria-expanded', 'false');
+    about.setAttribute('aria-controls', 'about-details');
+    line.append(`Dwell ${version} (${channel}) · `, about);
     line.id = 'app-version';
     const details = document.createElement('div');
     details.id = 'about-details';
@@ -262,11 +657,13 @@ export class MainMenu {
     const text = document.createElement('p');
     text.className = 'menu-hint';
     text.textContent = `${this.deps.detail} Dwell is not open source: all rights reserved, and the source is public for reference only. `;
-    const notices = document.createElement('a');
-    notices.href = this.deps.noticesHref;
-    notices.target = '_blank';
-    notices.rel = 'noopener';
-    notices.textContent = 'Third-party notices';
+    const notices = linkButton(
+      'Third-party notices',
+      this.deps.noticesHref,
+      'menu-button-small',
+      true,
+    );
+    notices.id = 'about-notices';
     details.append(text, notices);
     section.append(line, details);
     return section;
@@ -279,7 +676,6 @@ export class MainMenu {
   private buildForm(): void {
     const f = this.form;
     f.id = 'create-world';
-    f.hidden = true;
     const field = (label: string, control: HTMLElement): HTMLLabelElement => {
       const l = document.createElement('label');
       l.className = 'menu-field';
@@ -314,6 +710,56 @@ export class MainMenu {
       option.textContent = s.label;
       spawn.append(option);
     }
+    // The world's game mode (ADR 0065, shared/modes/modes.json); experimental ones say so.
+    const mode = document.createElement('select');
+    mode.id = 'world-mode';
+    for (const m of GAME_MODES) {
+      const option = document.createElement('option');
+      option.value = m.name;
+      option.textContent = modeLabel(m);
+      if (m.description) option.title = m.description;
+      if (m.name === DEFAULT_MODE) option.selected = true;
+      mode.append(option);
+    }
+    // The world: the build's terrain, or a world file offered as data (worldChoices.ts).
+    const world = document.createElement('select');
+    world.id = 'world-world';
+    const terrainOption = document.createElement('option');
+    terrainOption.value = '';
+    terrainOption.textContent = 'Default';
+    world.append(terrainOption);
+    for (const c of WORLD_CHOICES) {
+      const option = document.createElement('option');
+      option.value = c.name;
+      option.textContent = c.label;
+      if (c.description) option.title = c.description;
+      world.append(option);
+    }
+    // The Sky (REALISTIC_WORLD.md §8, desktop and phone): the orbit's preset, for a world that rolls
+    // one (its climate reads the sky); hidden for the others, which keep today's sky.
+    const sky = document.createElement('select');
+    sky.id = 'world-sky';
+    for (const p of SKY_PRESETS) {
+      const option = document.createElement('option');
+      option.value = p.name;
+      option.textContent = p.label;
+      option.title = p.description;
+      sky.append(option);
+    }
+    this.skyField = field('Sky', sky);
+    this.skyField.id = 'world-sky-field';
+    this.skyField.title =
+      "The world's orbit, rolled from its seed: its latitude, its day and its moon.";
+    const showSky = (): void => {
+      if (this.skyField) this.skyField.hidden = !ORBIT_WORLDS.includes(world.value);
+    };
+    showSky();
+    // A world file is terrain: the Type follows it.
+    world.addEventListener('change', () => {
+      if (world.value) type.value = 'terrain';
+      type.disabled = world.value !== '';
+      showSky();
+    });
     const submit = document.createElement('button');
     submit.type = 'submit';
     submit.className = 'block-button';
@@ -325,28 +771,54 @@ export class MainMenu {
       field('Name', name),
       field('Seed', seed),
       field('Type', type),
+      ...(WORLD_CHOICES.length ? [field('World', world)] : []),
+      field('Mode', mode),
       field('Spawn', spawn),
       hint,
       submit,
     );
+    // The world's size (BIG_MAP.md M2b), under More options on a desktop page only; a terrain
+    // world's alone (the Type follows a bigger size).
+    const sizes = worldSizeChoices(prefersTouch());
+    const size = document.createElement('select');
+    size.id = 'world-size';
+    for (const c of sizes) {
+      const option = document.createElement('option');
+      option.value = c.value;
+      option.textContent = c.label;
+      size.append(option);
+    }
+    size.addEventListener('change', () => {
+      if (size.selectedIndex > 0) type.value = 'terrain';
+    });
+    type.addEventListener('change', () => {
+      if (type.value !== 'terrain') size.selectedIndex = 0;
+    });
+    if (sizes.length) {
+      this.sizeField = field('World size', size);
+      this.sizeField.id = 'world-size-field';
+      this.sizeField.title = 'A bigger world takes longer to create. Desktop only for now.';
+    }
+    this.formValues = () => ({
+      name: name.value,
+      seed: seed.value,
+      type: type.value,
+      mode: mode.value,
+      spawn: spawn.value,
+      worldgen: world.value,
+      ...(sizes.length ? { size: size.value } : {}),
+      sky: sky.value,
+    });
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
-      this.deps.go({
-        new: '1',
-        name: cleanName(name.value, 'New world'),
-        seed: seed.value.trim(),
-        type: type.value,
-        ...(spawn.value ? { spawn: spawn.value } : {}),
-      });
+      this.deps.go(newWorldRoute(this.formValues()));
     });
   }
 
   private joinSection(): HTMLElement {
     const section = document.createElement('section');
     section.className = 'menu-join';
-    const title = document.createElement('h2');
-    title.textContent = 'Play with others';
     const form = document.createElement('form');
     form.className = 'menu-join-form';
     const input = document.createElement('input');
@@ -386,7 +858,15 @@ export class MainMenu {
         audio().ui('error');
       }
     });
-    section.append(title, form);
+    section.append(form);
+    if (!this.deps.master && this.deps.recent.length === 0) {
+      // Nothing else to list here: say what to join with, so the page reads as finished.
+      const help = document.createElement('p');
+      help.className = 'menu-join-help';
+      help.textContent =
+        'A host shows a join code like KQ7-XM4. A server prints its code and an invite link when it starts. Paste either above.';
+      section.append(help);
+    }
     if (this.deps.master) section.append(this.nearbySection(this.deps.master));
     if (this.deps.recent.length > 0) {
       const recent = document.createElement('ul');
@@ -466,45 +946,104 @@ export class MainMenu {
     const now = this.deps.now();
     this.renderLegacy();
     this.list.replaceChildren();
+    this.list.classList.toggle('world-cards', worlds.length > 0);
+    this.newWorldHead.hidden = worlds.length === 0;
     if (worlds.length === 0) {
-      const empty = document.createElement('li');
-      empty.className = 'menu-empty';
-      empty.textContent = 'No worlds yet. Name one below, or just press Create and play.';
-      this.list.append(empty);
-      this.form.hidden = false;
+      this.list.append(this.emptyState());
       return;
     }
-    for (const world of worlds) {
-      const item = document.createElement('li');
-      item.className = 'world-item';
-      item.dataset.id = world.id;
-      const info = document.createElement('div');
-      info.className = 'world-info';
-      const name = document.createElement('span');
-      name.className = 'world-name';
-      name.textContent = world.name;
-      const details = document.createElement('span');
-      details.className = 'world-details';
-      details.textContent = worldDetails(world, now);
-      info.append(name, details);
-      const actions = document.createElement('div');
-      actions.className = 'world-actions';
-      actions.append(
-        button('Play', 'block-button world-play', () => {
-          this.deps.go({ play: world.id });
-        }),
-        ...((this.deps.canRegenerate?.(world) ?? true)
-          ? [
-              confirmButton('Regenerate', 'Lose all changes?', () => {
-                this.deps.go({ regenerate: world.id });
-              }),
-            ]
-          : []),
-        confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
-      );
-      item.append(info, actions);
-      this.list.append(item);
-    }
+    for (const world of worlds) this.list.append(this.worldCard(world, now));
+  }
+
+  /** No worlds yet: a line and a big New world, not a strip. */
+  private emptyState(): HTMLElement {
+    const empty = document.createElement('li');
+    empty.className = 'menu-empty';
+    const art = document.createElement('div');
+    art.className = 'menu-empty-art';
+    art.setAttribute('aria-hidden', 'true');
+    const line = document.createElement('p');
+    line.className = 'menu-empty-line';
+    line.textContent = 'No worlds yet.';
+    const sub = document.createElement('p');
+    sub.className = 'menu-empty-sub';
+    sub.textContent = 'Make one: pick a name and a type, or keep the defaults.';
+    const create = button('New world', 'block-button menu-empty-create', () => {
+      this.show('new-world');
+    });
+    create.dataset.opens = 'new-world';
+    empty.append(art, line, sub, create);
+    return empty;
+  }
+
+  /** A world's card: its last view (or a placeholder by type), name, mode, type and Play. */
+  private worldCard(world: WorldMeta, now: number): HTMLElement {
+    const card = worldCardData(world, now);
+    const item = document.createElement('li');
+    item.className = 'world-item world-card';
+    item.dataset.id = world.id;
+    const thumb = document.createElement('div');
+    thumb.className = 'world-thumb';
+    thumb.dataset.type = world.type;
+    const image = this.deps.thumbs?.get(world.id) ?? null;
+    if (image) {
+      const img = document.createElement('img');
+      img.src = image;
+      img.alt = '';
+      img.decoding = 'async';
+      thumb.append(img);
+    } else thumb.classList.add('world-thumb-empty');
+    const badge = document.createElement('span');
+    badge.className = 'world-mode';
+    badge.dataset.mode = card.mode;
+    badge.textContent = card.modeLabel;
+    thumb.append(badge);
+    const info = document.createElement('div');
+    info.className = 'world-info';
+    const name = document.createElement('span');
+    name.className = 'world-name';
+    name.textContent = world.name;
+    const details = document.createElement('span');
+    details.className = 'world-details';
+    details.textContent = card.details;
+    info.append(name, details);
+
+    // Play is the card's action; the rest sit under the "⋯" button.
+    const more = document.createElement('div');
+    more.className = 'world-menu';
+    more.hidden = true;
+    more.id = `world-menu-${world.id}`;
+    const about = document.createElement('p');
+    about.className = 'world-menu-note';
+    about.textContent = card.note;
+    more.append(
+      about,
+      ...((this.deps.canRegenerate?.(world) ?? true)
+        ? [
+            confirmButton('Regenerate', 'Lose all changes?', () => {
+              this.deps.go({ regenerate: world.id });
+            }),
+          ]
+        : []),
+      confirmButton('Delete', 'Delete forever?', () => void this.remove(world)),
+    );
+    const toggle = button('⋯', 'world-more', () => {
+      more.hidden = !more.hidden;
+      toggle.setAttribute('aria-expanded', String(!more.hidden));
+    });
+    toggle.setAttribute('aria-label', `More for ${world.name}`);
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', more.id);
+    const actions = document.createElement('div');
+    actions.className = 'world-actions';
+    actions.append(
+      button('Play', 'block-button world-play', () => {
+        this.deps.go({ play: world.id });
+      }),
+      toggle,
+    );
+    item.append(thumb, info, actions, more);
+    return item;
   }
 
   private renderLegacy(): void {
@@ -541,6 +1080,7 @@ export class MainMenu {
       return;
     }
     this.deps.index.remove(world.id);
+    this.deps.thumbs?.remove(world.id);
     this.say(`Deleted "${world.name}".`);
     this.render();
   }

@@ -30,6 +30,7 @@ fn brk(cell: [i32; 3], face: u8) -> BlockEditRequest {
         material: 0,
         rows: 1,
         down: false,
+        point: None,
     }
 }
 fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
@@ -40,6 +41,7 @@ fn place(cell: [i32; 3], face: u8, material: StateId) -> BlockEditRequest {
         material,
         rows: 1,
         down: false,
+        point: None,
     }
 }
 fn check(
@@ -98,14 +100,30 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:ladder[facing=south,flooded=false]",
             "dwell:ladder[facing=west,flooded=false]",
             "dwell:sand[flooded=false]",
-            "dwell:log[axis=y]",
-            "dwell:leaves",
-            "dwell:tall_grass",
+            "dwell:log[axis=y,width=4]",
+            "dwell:leaves[flooded=false]",
+            "dwell:tall_grass[stage=3]",
             "dwell:torch",
             "dwell:snowy_grass[flooded=false]",
-            "dwell:snowy_leaves",
+            "dwell:snowy_leaves[flooded=false]",
             "dwell:build_platform",
-            "dwell:dynamite"
+            "dwell:dynamite",
+            "dwell:dynamite_blue",
+            "dwell:dynamite_green",
+            "dwell:dynamite_yellow",
+            "dwell:snow[flooded=false]",
+            "dwell:glacier_ice[flooded=false]",
+            "dwell:red_sandstone[flooded=false]",
+            "dwell:basalt[flooded=false]",
+            "dwell:obsidian[flooded=false]",
+            "dwell:oak_sapling",
+            "dwell:pine_sapling",
+            "dwell:palm_sapling",
+            "dwell:moon_dust[flooded=false]",
+            "dwell:moon_mare_dust[flooded=false]",
+            "dwell:red_sand[flooded=false]",
+            "dwell:red_dirt[flooded=false]",
+            "dwell:brush[flooded=false]",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));
@@ -648,7 +666,7 @@ fn plants_go_only_into_their_medium() {
     let kelp = row("test:kelp[flooded=true]");
     assert!(medium_allows(kelp, row("dwell:water[fill=8]")));
     assert!(!medium_allows(kelp, row("dwell:air")));
-    let grass = row("dwell:tall_grass");
+    let grass = row("dwell:tall_grass[stage=3]");
     assert!(medium_allows(grass, row("dwell:air")));
     assert!(!medium_allows(grass, row("dwell:water[fill=8]")));
     assert!(medium_allows(
@@ -954,5 +972,63 @@ dwell_world::both_faces!(
             let depth = if ox != 0.0 { extent[0] } else { extent[2] };
             assert!((depth - 0.125).abs() < 1e-6, "{facing}: {lo:?}..{hi:?}");
         }
+    }
+);
+
+dwell_world::both_faces!(
+    /// Speckled dirt on edited ground (owner, 2026-11-09: "these 'edited' chunks look like they
+    /// have speckled dirt instead of grass at lower LODs"): an edited chunk's level-1 section is
+    /// the downsample of its cells, and where ground steps up by one ½ m row across a LOD cell's
+    /// top, the upper LOD cell (three of eight cells filled) is air and the one under it showed the
+    /// dirt under the higher columns' grass. The generated section shows the surface's grass
+    /// there, so each edited chunk's distant ground was speckled with dirt.
+    fn a_downsampled_step_in_the_ground_shows_its_grass_not_the_dirt_under_it(f: FaceFrame) {
+        let (grass, dirt) = (s("dwell:grass"), s("dwell:dirt"));
+        // A chunk ~140 m up its face: in each 2 × 2 patch one column's surface is the chunk's
+        // face-local row 9, the other three's row 10; grass on top, dirt below.
+        let c = f.chunk(ChunkCoord::new(0, (140.0 / CELL_H) as i32 / CHUNK_SIZE, 0));
+        let surface = |x: i32, z: i32| if x % 2 == 0 && z % 2 == 0 { 9 } else { 10 };
+        let at = |x: i32, y: i32, z: i32| {
+            // `y` is the chunk's own row in world order; its face-local row:
+            let ly = if f.is_b() { CHUNK_SIZE - 1 - y } else { y };
+            let top = surface(x, z);
+            if ly > top {
+                0
+            } else if ly == top {
+                grass
+            } else {
+                dirt
+            }
+        };
+        let level0 = lod::lod_of_chunk(c);
+        let octant = (level0.i & 1) | ((level0.j & 1) << 1) | ((level0.k & 1) << 2);
+        let parent = lod::parent(level0);
+        let mut cells = vec![0; lod::VOLUME];
+        lod::downsample_octant(at, parent, octant, &mut cells);
+        let h = lod::SECTION_CELLS / 2;
+        let (ox, oy, oz) = (
+            (octant & 1) * h,
+            ((octant >> 1) & 1) * h,
+            ((octant >> 2) & 1) * h,
+        );
+        let mut tops = 0;
+        for z in 0..h {
+            for x in 0..h {
+                for y in 1..h - 1 {
+                    let cell = |y: i32| cells[lod::cell_index(ox + x, oy + y, oz + z)];
+                    let over = if f.is_b() { cell(y - 1) } else { cell(y + 1) };
+                    if cell(y) != 0 && over == 0 {
+                        tops += 1;
+                        assert_eq!(
+                            cell(y),
+                            grass,
+                            "the LOD cell ({x}, {y}, {z}) under the air shows {}, not grass",
+                            dwell_blocks::info(cell(y)).name
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(tops, h * h, "one surface cell per column");
     }
 );

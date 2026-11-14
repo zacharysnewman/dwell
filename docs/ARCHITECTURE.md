@@ -122,7 +122,13 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
    type, seed, generator, when it was last played and **[built, Phase 6]** the app version that
    last played it (§6.4); per-seed files it doesn't list (saved before the menu) are adopted when
    the menu opens, as worlds saved before versioned releases, which are listed only to be deleted. The game menu's Quit to main menu asks the worker to
-   save (answered with `saved`) before leaving.
+   save (answered with `saved`) before leaving. **[built, 0.51.6]** The Worlds page shows each world as a card with
+   a thumbnail of its last view: while a local world plays, `local/worldThumbs.ts` copies the canvas's last frame
+   into a 320×180 WebP (JPEG where WebP can't be encoded) every 30 s and when the page is hidden or closed, at the
+   best quality under a 28 000-character data URL (~20 KB), into a second local-storage store, `dwell.worldThumbs`
+   (`{ <world id>: { image, at } }`, at most 48, the oldest captured dropped first; deleting a world drops its
+   picture). Like the index it is append-only: unknown fields of a record and records it can't read are kept on
+   rewrite. A world without one shows a placeholder painted by its type.
 5. **One Rust codebase, one WASM module.** `npm run build:wasm` builds `dwell-client` for
    `wasm32-unknown-unknown` (release) and runs `wasm-bindgen --target web` into `client/src/pkg`
    (not committed); Vite bundles that one module, and the page (the game client), every job worker
@@ -148,8 +154,13 @@ GitHub Pages only serves static files. Consequences that shape the architecture:
   patch after the newest published release, or `client/package.json`'s version if that is higher
   (`package.json` is a floor, raised by hand only to start a new line; nothing is bumped after a
   release), or one named in the manual run's *version* input or by the tag, which must be newer than
-  the newest release. Each build is made with `DWELL_VERSION` (read by
-  `client/vite.config.ts` and `crates/dwell-sim/build.rs`), with the Rust client's WASM built for it,
+  the newest release. **[built]** On a push to `main` the workflow first assigns the
+  pending release notes (`shared/releases/pending/*.json`, `client/scripts/releaseAssign.ts`): each
+  the next patch, its `changes.json` entry and `package.json`, committed to `main` by the workflow
+  ("Release <version>") and released from that commit, so PRs carry no version bump (RELEASES.md §3).
+  Each build is made with `DWELL_VERSION` (read by
+  `client/vite.config.ts` and `crates/dwell-sim/build.rs`; without it a local build is
+  `<line>.0-dev.local`, the line from `shared/version/line.json`, so a patch release recompiles nothing), with the Rust client's WASM built for it,
   for the base `/dwell/v/<version>/`, and attached to its GitHub Release as `dwell-<version>.tar.gz`
   with its `build.json` (version, channel, date, commit, `protocolVersion`, generator versions,
   `minLauncher`). The version is Semantic Versioning 2.0.0, one for the whole app; before `1.0.0`
@@ -268,14 +279,29 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
   /dwell-mesh        Chunk and LOD-section meshers, the block texture atlas and hotbar swatches.
   /dwell-look        The look as data: palette, face tints, the day/night cycle (clock, sun path,
                      keyframed sky, lights and fog, generated from shared/look/daynight.json), the
-                     sky and its WGSL, height fog, exposure, the sky's clouds (tunables generated
+                     sky and its WGSL, height fog, exposure, the atmosphere thinning the sky to
+                     space with altitude (shared/look/atmosphere.json), the sky's clouds (tunables generated
                      from shared/look/clouds.json), the spyglass's zoom (shared/look/spyglass.json),
                      the dynamic lights' falloff, flicker and choice (shared/look/lights.json).
+  /dwell-ecology     The far ecology (§5.4, ECOLOGY.md): herds and packs as records on a face's
+                     island grid, the forage per cell, the day step (ecology.gen.rs from
+                     shared/ecology; a fixture for tests), its bytes for saving. No dependency on
+                     the server core; dwell-sim holds one per face (server/ecology.rs).
+  /dwell-theater     Theater mode's camera engine (§5.5, THEATER_MODE.md): camera paths as data
+                     (keyframes, segments with a move kind and an easing), a path at a time → a
+                     camera pose (both faces through FaceFrame), a frame-rate independent player
+                     with smoothed tracking, presets from shared/theater/presets.json.
   /dwell-characters  Characters (§5.3, CHARACTERS.md): the tables generated from shared/characters
                      (characters.gen.rs: rigs, looks composed into parts on bones, items, clips,
                      materials; characters.tiles: the brush tiles; fixture.gen.rs for tests), part
                      meshes (rigid, one bone a vertex), clip sampling, layering and cross-fades,
                      and the animator: clip selection from the controller state.
+  /dwell-models      Skinned models (§5.3, CHARACTERS.md §11, ADR 0070): the table generated from
+                     shared/models (models.gen.rs; fixture.gen.rs for tests), the player model's GLB
+                     built in, a GLB reader (one skinned mesh, its skin, its clips; or a static
+                     prop's, `parse_static`), clip sampling and blending, joint matrices, the role →
+                     clip player, and the props' table (`PROPS`; the GLBs of the props an item's
+                     look names built in, `PROP_GLBS`; ADR 0070 §8).
   /dwell-game        Client game logic: input and touch state machines, flight, the eye and face
                      flip, remote players, block interaction, the chunk streamer, HUD text, sound
                      events (sound.rs, with sound.gen.rs from shared/sounds).
@@ -290,6 +316,14 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      renderer, camera, WGSL), web/ (the `Client` app, browser transports, job
                      workers, `LocalWorld` on OPFS, the JS API); www/ holds the WebGPU probe page
                      (`npm run build:probe`, `npm run e2e:webgpu`).
+  /dwell-native      **[built, a dev tool; never shipped]** The native performance harness
+                     (DEV_TOOLS.md "Native harness"): `dwell-client`'s game, renderer and
+                     `LocalCore` in a winit window on wgpu's Metal backend, the local server on its
+                     own thread (server.rs, the local-mode worker's loop), the client's jobs on
+                     threads (jobs.rs, the job workers one for one, the same encoded bytes),
+                     keyboard and mouse into the same `KeyboardMouseInput`, the perf line in the
+                     title, and `--scenario` running a bench scenario into the bench's
+                     report.json shape. No menus, HUD or audio.
 /client              TypeScript shell (Vite): the DOM UI over the Rust client (§5).
   /src/engine        wasm.ts (loads the module, once per context), jobWorker.ts (a job worker).
   /src/audio         Sound effects (§5.2): the synth, mixer, variation, engine, event mapping, UI
@@ -316,16 +350,19 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      dwell-blocks, TS for the shell's block dump) and vectors.txt; fixtures/: test-only
                      namespaces (`test:oil`) generated into the test registry.
 /shared/sounds       Sound data (dwell.json: sounds, block sound sets, events, gaits, actions, UI,
-                     controls) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
+                     controls), samples/ (recorded variations, mono .m4a) + gen.mjs (→ TS for client/src/audio, Rust for dwell-game) and
                      validate.mjs (also used by shared/blocks/gen.mjs and the client's tests).
-/shared/music        Music (music.json: tracks — title, author, file, volume, loop, fades, when —
-                     and their audio files, the owner's Starry Sunshine) + gen.mjs (→ TS
+/shared/music        Music (music.json: the playlist — order, gaps, cross-fade — and tracks — title,
+                     author, file, volume, loop, fades, when — with their .m4a files, the owner's
+                     four tracks by Andrew Sitkov) + gen.mjs (→ TS
                      music.gen.ts, each file's published name with its content hash), validate.mjs.
-/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the height field's parameters, decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
+/shared/worldgen     golden/: chunk and LOD-section hashes of generator version 23 (§6.3); terrain.json: the world's elevation and water (the height field, rivers, lakes, spawn, the `defaultBiome`), biomes/: the biomes layered on it (where they belong, fine relief, banks, water look, elevation bands, rule references; fixtures/ for tests; ADR 0074), worlds/: example world settings (the archipelago), decorations.json: the terrain's decoration rules, placements.json: the structure placements (the pines, ADR 0043; broadleaf trees and boulders that preset biomes list, ADR 0074 B5; tree species by name, ADR 0079), midplane.json: the bedrock between the faces and the portals through it, gen.mjs (→ Rust tables for dwell-worldgen) (§6.3).
 /shared/structures   Structure files (*.json; test/ holds fixtures) + gen.mjs (→ Rust tables for
                      dwell-world) and gen.test.mjs; format.mjs, the format's rules, shared by gen.mjs
                      and the client's structures store; playground.json is the movement playground
                      the tests stamp (§6.3).
+/shared/trees        Tree species (oak, pine, palm; fixtures/ for tests) + gen.mjs (→ species.gen.rs
+                     for dwell-worldgen's tree builder) and gen.test.mjs (ADR 0079).
 /shared/textures     palette.json (the storybook palette: named ramps and swatches, ART_DIRECTION.md),
                      materials.json (painterly materials as stroke layers; block, character and sky
                      materials) + paint.mjs (the generator, shared with the editor page and the
@@ -336,6 +373,25 @@ There are **no official game servers**; players host (ADR 0003, details in §10)
                      Character Lab page, docs/prototypes/character-lab.html, and the Rust tables
                      for dwell-characters), fixtures/ (test-only parts), gen.test.mjs
                      (CHARACTERS.md, ADR 0041).
+/shared/creatures    creatures.json (the animals and NPCs: model, speeds, wandering, an NPC's idles, look-at, sidestep,
+                     colours, held item; health, hit radius and drops; spawn rules with a group mix, spacing, biomes, limits; ADR 0073),
+                     gen.mjs → dwell-sim creatures.gen.rs, a fixture creature
+/shared/ecology      ecology.json (the far ecology: island grid, forage grounds, species' group,
+                     breeding, hunger, diet, flee and disperse rules; §5.4) + gen.mjs →
+                     dwell-ecology ecology.gen.rs, fixtures/ (test-only species), gen.test.mjs
+/shared/theater      presets.json (theater mode's camera presets: a move kind, an easing, parameters'
+                     defaults and slider ranges; THEATER_MODE.md §4), read and validated by
+                     dwell-theater (no generator: paths are runtime data in the same format)
+/shared/models       models.json (the model-detail levels, ADR 0070 §10; each skinned model's GLB, scale, yaw, role → clip map, palette
+                     remap; the player model) + glb/ (the checked-in GLBs, the source of truth) +
+                     import.mjs and blender_import.py (FBX → GLB with the palette remap, Blender
+                     headless, run by hand from the unpacked packs) + gen.mjs (validates against
+                     the GLBs and the palette, → Rust for dwell-models), fixtures/ (the two-joint
+                     test model and its maker), gen.test.mjs (CHARACTERS.md §11, ADR 0070);
+                     parts/ + parts.mjs (each model's part map: a part a vertex, what an NPC's
+                     colours recolour; seeded from the mesh, rendered to PNGs; CHARACTERS.md §11.11);
+                     props.json + glb/props/ (the static props: tools, weapons, containers, … by
+                     category, sizes validated; import.mjs --props with blender_props.py; ADR 0070 §8).
 /shared/brushes      brushes.json (brush presets and the game modes' brush policy) + gen.mjs
                      (→ Rust for dwell-world brushes.gen.rs, TS for the shell's controls table; §6.5).
 /shared/version      vectors.txt: version precedence, compatibility lines and "may open" cases that the
@@ -417,7 +473,9 @@ at most 2 ms. Rapier steps on the tick's thread. **Built (Phase 2):** each `Serv
 input per joined player from its jitter-buffered queue (§9.3), runs the player controller pipeline,
 applies its server-side consequences (impact damage; there is no void: a body that leaves the disc
 falls toward the midplane and is carried across the midplane by the flip band, §6.3), steps
-physics, respawns dead players after `RESPAWN_SECONDS`, and every 3rd tick sends each client a
+physics, stands defeated players up after their defeat's kneel and fade (`shared/defeat`; humans never
+die, CHARACTERS.md §1a, §11.13) at the resurrection shrine nearest where they fell on its face
+([`SHRINES.md`](./SHRINES.md)), and every 3rd tick sends each client a
 `PhysicsSnapshot`. Sessions are kept in id order, so every pass over them is deterministic.
 **Built (Phase 3a):** the world generates from `(worldSeed, generatorVersion)` (§6.3); players
 spawn at the generator's spawn point. **Built (Phase 3b):** each step first integrates the chunks
@@ -496,19 +554,23 @@ returns. Without WebGPU (no `navigator.gpu`, no adapter or device) the page show
 
 | Module | Responsibility |
 |---|---|
-| `web/app.rs` **[built]** | `Client`, the wasm-bindgen API one page holds: `Client.create(canvas, options)` starts WebGPU on the canvas (rejecting without it), takes the identity (`setIdentity`: the device's public key and a JS signing function, ADR 0004), connects (`connectWebTransport`, `connectWebRtc`, or `connectTransport` for a JS transport object the shell made), runs `frame(now)`, takes keyboard, mouse, touch and wheel events, block edits and palette selection, the region tools (`tool`; for the structures store, `selection`, `voxels` — a box of states in layer order — and `loadStructure`), flight and its speed, exposure, Clouds (`setClouds`; `setCloudCoverage` for a weather system), detail and motion-effect settings (`setMotion`), the Field of view setting (`setFov`) and whether the game menu is open (`setMenuOpen`), and reports `sessionState`, `hud`, `debugState` (what the `window.__dwell` test hooks read), `renderStats`, the workers' memory and the dev telemetry (`telemetry`, `telemetryFrames`, `telemetryTicks`, `telemetryReset`), and the dev tools' place search (`find`, `viewFound`, `camera`; `find.rs`, DEV_TOOLS.md "Finding places"); **[Phase 28]** `takeSounds` (the frame's sound events, 7 numbers each) and `listener` (the camera's eye, forward and up), §5.2. |
+| `web/app.rs` **[built]** | `Client`, the wasm-bindgen API one page holds: `Client.create(canvas, options)` starts WebGPU on the canvas (rejecting without it), takes the identity (`setIdentity`: the device's public key and a JS signing function, ADR 0004), connects (`connectWebTransport`, `connectWebRtc`, or `connectTransport` for a JS transport object the shell made), runs `frame(now)`, takes keyboard, mouse, touch and wheel events, block edits and palette selection, the region tools (`tool`; for the structures store, `selection`, `voxels` — a box of states in layer order — `loadStructure` and `structuresAllowed`), flight and its speed, exposure, Clouds (`setClouds`; `setCloudCoverage` for a weather system), detail and motion-effect settings (`setMotion`), the Field of view setting (`setFov`) and whether the game menu is open (`setMenuOpen`), and reports `sessionState`, `hud`, `debugState` (what the `window.__dwell` test hooks read), `renderStats`, the workers' memory and the dev telemetry (`telemetry`, `telemetryFrames`, `telemetryTicks`, `telemetryReset`), and the dev tools' place search (`find`, `viewFound`, `camera`; `find.rs`, DEV_TOOLS.md "Finding places"); **[Phase 28]** `takeSounds` (the frame's sound events, 7 numbers each) and `listener` (the camera's eye, forward and up), §5.2. |
 | `dwell-world::hash` **[built]** | `HashMap`/`HashSet` with FxHash for the integer keys of the hot maps (chunk coordinates, LOD section ids, job ids) in the voxel world, the LOD system, the chunk streamer, the renderer, the job pool, physics terrain and the server sim: std's SipHash was a third of the client's main-thread time when flying (DEV_TOOLS.md). Not DoS-resistant, so never for keys a peer chooses. |
-| `dwell-world::light` **[built, Phase 45]** | The **flood light** ([`DAY_NIGHT.md`](./DAY_NIGHT.md) §11, [ADR 0045](./adr/0045-flood-light.md); data `shared/look/light.json` → `light.gen.rs`, and the blocks' `lightFilter` and `emits`): `LightMap`, two channels per cell (sky and block light, 0–15, packed in a byte; a chunk all one value stored as that value), kept by the **client only** for the chunks its streamer holds (`VoxelWorld::enable_light`; never saved or sent, the server keeps none). Sky light enters at full strength where a cell's face-local above is in a chunk not held, falls straight down without loss through cells that filter nothing (face-local, so face B's falls toward −y), and spreads by flood fill losing `falloff` per cell (across or vertical) or the cell's filter if more; block light spreads the same way from emitters. Updates are the standard removal and addition passes (brightest first, a bucket per level): `load` (fast paths for open-sky and shut chunks; lit first, then the cells below that saw the sky through its place are cleared and relit unless still at full sky light under full sky light), `unload_many` (every chunk dropped together in one update, the removal seeded from their own border levels; a cell with its own source as bright — its column's sky, or the open sky now entering — is kept in any removal, so an unload doesn't cascade through the columns beside and below it), `edited`; the result is the fixed point over the chunks held, whatever their order (`relit_from_scratch` is the tests' reference). It records which chunks' meshes a change touches (borders included: `take_changed`) and gives the mesher a chunk's light with a one-cell apron (`padded`; cells not held read as open sky). |
+| `dwell-world::light` **[built, Phase 45]** | The **flood light** ([`DAY_NIGHT.md`](./DAY_NIGHT.md) §11, [ADR 0045](./adr/0045-flood-light.md); data `shared/look/light.json` → `light.gen.rs` (its `characters` block also eases bodies' light and sets their warm ground bounce, the shaders' `body_bounce`, BUGS.md #158), and the blocks' `lightFilter` and `emits`): `LightMap`, two channels per cell (sky and block light, 0–15, packed in a byte; a chunk all one value stored as that value), kept by the **client only** for the chunks its streamer holds (`VoxelWorld::enable_light`; never saved or sent, the server keeps none). Sky light enters at full strength where a cell's face-local above is in a chunk not held, falls straight down without loss through cells that filter nothing (face-local, so face B's falls toward −y), and spreads by flood fill losing `falloff` per cell (across or vertical) or the cell's filter if more; block light spreads the same way from emitters. Updates are the standard removal and addition passes (brightest first, a bucket per level): `load` (fast paths for open-sky and shut chunks; lit first, then the cells below that saw the sky through its place are cleared and relit unless still at full sky light under full sky light), `unload_many` (every chunk dropped together in one update, the removal seeded from their own border levels; a cell with its own source as bright — its column's sky, or the open sky now entering — is kept in any removal, so an unload doesn't cascade through the columns beside and below it), `edited`; the result is the fixed point over the chunks held, whatever their order (`relit_from_scratch` is the tests' reference). It records which chunks' meshes a change touches (borders included: `take_changed`) and gives the mesher a chunk's light with a one-cell apron (`padded`; cells not held read as open sky). |
 | `telemetry.rs` **[built]** | Dev telemetry ([DEV_TOOLS.md](./DEV_TOOLS.md)): per-frame series (named spans and counts: the frame's phases — network, job polling and applying, ticks, chunk meshing, the LOD update, encoding and presenting — and GPU uploads), event samples (each job kind's queue and run times, from the pool) and a trace of the predicted controller's ticks, kept for the last 600 frames and summarised as percentiles. Always on, one per thread; the bench (`client/scripts/bench.ts`) drives scenarios in a real browser and reads it. |
 | `web/transport.rs`, `net/` **[built]** | Browser transports over `web-sys`: WebTransport to dedicated servers (certificate-hash pinning, the §8.1 framing; a closing connection first reads the control stream to its end so the server's last message — a `Reject` such as `Replaced` — is not lost; datagram writes never queue — one in flight and only the newest waiting per message type, `net/datagram.rs`, so slow frames cannot build input latency) and WebRTC to their ICE-lite endpoint (the server's answer built locally from the invite, `net/sdp.rs`); a JS transport object (friend-world peers, local mode's loopback) wrapped as a third kind. All deliver into one event queue the frame drains. `net/session.rs`: the join handshake and connection health as a poll-driven state machine (signing is the host's: the session asks the shell's function on a `Challenge`), reliable and datagram RTT. `net/netsim.rs`: `?netsim=rtt,jitter,loss%`. `web/mod.rs` `pingServer`: a lobby entry's `StatusRequest` round trip over a fresh connection (5 s timeout). |
-| `game.rs` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with `dwell-physics`'s `Predictor` (the same controller and Rapier setup as the server, against the client's streamed `VoxelWorld`), sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the predictor, nudges its tick rate from the server's input buffer, streams terrain around the player (`dwell-game`'s chunk streamer, mesh jobs within a 4 ms frame budget), drives the first-person camera (per-tick eye height with crouch smoothing and step-ups/downs drawn along a virtual ramp (`dwell-game` `eye.rs` `StepSmoother`, tunables `step_view`, PLAYER_CONTROLLER.md §9), the turn-over across the midplane, and the motion effects: each drawn frame it steps dwell-look's `MotionFx` from the predicted velocity and controller state — reading them, never writing — and hands the frame's FOV to the renderer and the LOD camera alike, and the wind to the renderer; held while the menu is open), block targeting and its outline, the whole-world view (`dwell-lod`), the HUD text and the F3 overlay, and **[Phase 28]** sound events (§5.2): the local player's predicted state each tick and each remote player's interpolated state each frame through `dwell-game`'s `sound.rs`, its own edits on the request and others' from `VoxelModification`s (the cells' old states read before they apply), kept for `takeSounds`. A tool can place the camera (`set_view`, a `ViewOverride`): the renderer and the LOD view from it while the player stays put (named views, §6.3). Platform-free behind a `Scene` trait (the renderer) and a job pool, so `tests/game_local.rs` plays a local world natively through the real session and handshake. |
-| `dwell-game` **[built]** | `remotes.rs`: snapshot buffer and interpolation `INTERP_DELAY_MS` in the past. `input.rs`: keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F to fly (`FLY_KEY`), F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, `L` the build mode (data), number keys and the wheel pick a block) and input quantization. `flight.rs`, `flight_speed.rs`: the creative-flight toggle (Phase 4: the F key or the touch Fly button; only if `Welcome` allows it; §9.1) and the speed level. `touch.rs`: touch controls for phones and tablets (floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places, and in Place mode a still hold (`HOLD_MS`) places and builds on as it drags — held Jump and Crouch buttons (Jump only jumps), latching Run and Break/Place buttons, a Build (mode) button, a Fly button, an ⓘ button toggling the F3 overlay, one captured pointer per control, merged into the same sampled input; the DOM elements are the shell's `ui/touchControls.ts`). `gamepad.rs` **[built, 0.28.3]** ([`GAMEPAD.md`](./GAMEPAD.md)): controller support — the W3C standard mapping's buttons and sticks fed by the shell every frame (`input/gamepad.ts`), held jump/crouch/run and pressed actions (break, place — held, it builds on — the build mode, hotbar, fly, fly speed, spyglass, map, menu), the right stick's look on both faces, bindings and tunables as data (`shared/input/gamepad.json` → `gamepad.gen.rs`, `gamepad.gen.ts`), rebound in Settings → Controller (`dwell.gamepad`, append-only); the menus by controller are the shell's (`input/gamepadMenu.ts`). `eye.rs`, `face_flip.rs`: the eye (its steps decayed along a virtual ramp by `StepSmoother`, reusable for a drawn body; its swing across the body at a crossing) and the camera across the midplane (the look continued pointing the same way, the view rolled upright about its forward; BIFACIAL_WORLD.md §6). `items.rs` **[built, 0.29.0]** ([`ITEMS.md`](./ITEMS.md)): the creative hotbar's items from data (`shared/items/items.json` → `items.gen.rs`): a block and its height (½ m pieces only since 0.38.8; `rows` up to 2 for a taller piece), and for slopes (0.40.8) the state it places (`state`), its `facing` turned by the look (`toward`: a stone slope's uphill ahead) and a 2-row piece's upper state (`upper`: the steep slope, placed as two ordinary places), and what holding Place does with it (`drag`: the build modes, a vertical line for ladders, or none); a place request carries the piece (`rows`, `down`; protocol 19), and a break takes the one cell aimed at, and the placement rules are block data checked by `dwell_world::edit::check_block_edit` (`needsSupport` below or behind, `placeOn`, `onSlopes`, `moldable`). `build_drag.rs` **[built, 0.38.4]** ([`ITEMS.md`](./ITEMS.md) §5): drag building — holding Place after the first block builds on as the aim moves, in the build mode from data (`items.json` `buildModes`: `line` straight out of the clicked face, `level` the cells swept at the first block's level), the pieces sent as one-piece `RegionEdit` Fills (no line of sight needed) at 1 a tick, plain blocks only, each clear of the body where it is and a little back along its motion (`lagged_offset` without the round trip, `buildModes.clearance`; the server holds a piece its lagging view of the body is in, `EDIT_HOLD_TICKS`), a refused one retried; ladders as a vertical line up or down their wall, each held by it (`held_in_place`, the server's region pass too); towering (a line up under the player: a block a jump, a first press in the body waiting for it to clear); bridging help (Place with nothing targeted builds at the edge looked toward, at the level stood on, a ghost outline showing it; held, Line walks ahead and Flat paints that level, a level joining only what it touches); a stroke builds on only after `holdMs` (a click is one block), one piece a frame, a line up to the aim's crossing and only once the server has answered its last piece (a refused or skipped one built again); a ladder may go where the body is; held by the right button, the controller's place button or a still touch hold, switched by `L`, the controller's `buildMode` and the touch Build button. `block_interaction.rs` (§6.5): the target under the crosshair (`raycast_block` from the eye, `REACH_DISTANCE`), the palette (every placeable state, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. `region_tools.rs` (§6.5): the region tools — box selection, fill / hollow / replace / remove, copy, paste with rotate and mirror, undo/redo of steps of one or more edits, a queue paced by the server's cell rate — turned into `RegionEdit`s, and their keys (`tool_for_key`). `brush_tool.rs` (§6.5, [`BRUSHES.md`](./BRUSHES.md)): the brush tool — the preset, brush, performer and size, ranged aim, the exact-cell ghost preview (`ghost_faces`), arrow/gunpowder strokes and the replace pick — and its keys (`brush_key`, live while V has it on). `chunk_stream.rs`: **[built, Phase 45]** with a store that keeps the flood light, lights each chunk that arrives, nearest the player first, within `mesh_dirty`'s light budget, then starts mesh jobs within its mesh budget (each its own: the game's `stream_budget_ms`, 4 ms or a tenth of a slow frame up to 25 ms) before meshing it or its neighbours, unloads a `ChunkUnload`'s chunks in one store update (`ChunkStore::unload_chunks`, one relight), relights at once on edits and predicted edits, and marks every chunk whose light changed for meshing (`ChunkStore::light_chunk`, `light_changed`, `mesh_light`); applies `ChunkData` (Generated through the generation workers, Explicit decoded) and `ChunkUnload` to the streamed world, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first (each job's padded voxels copied row by row from the chunk and its 26 neighbours, each looked up once), and tells the game when the terrain around the player is loaded (`gate.rs`, §6.3) and how much of the loading screen's near ring is drawn (`near_progress`); with a second centre (`set_second_centre`, the respawn preload while dead, §6.3) it lights and meshes the near ring around the player, then the second ring, then the rest. `loading.rs` (§6.3): the loading screen's gate (closed from its creation until the join places the player, and from each placement until the near ring is drawn or `timeoutS` passes; never, opted out; it counts its openings for the shell's fade), its near ring (`near_ring_offsets`) and its readout; tunables from `loading.gen.rs`. `chunk_diff.rs`: the F3 overlay's chunk regenerated and diffed. `hud_text.rs`: the HUD's lines (background work such as terrain loading is a small status in the bottom-left corner, never over the view). **[Phase 28]** `sound.rs` (§5.2): `MoverSounds` turns a body's motion into footsteps per gait stride, climbing and swimming strokes, landings by impact speed, jumps, water entry and exit, crouch, sprint, the slide's continuous scrape (one voice per mover: start, speed, end) and flight whooshes; `EditSounds` the break/place sounds (echo of our own edits suppressed by cell); event kinds, gaits, strides and speed ranges from `sound.gen.rs`. |
-| `jobs/`, `pool.rs`, `web/jobs.rs` **[built]** | Background jobs (§5.1): chunk generation (and the verification hash), LOD bounds and sections, the F4 map's height samples, chunk and section meshing. `jobs/codec.rs` encodes jobs and results as bytes (one transferred buffer each way); `pool.rs` keeps at most the workers' capacity in flight per kind (generation, meshing), cancels queued chunk jobs on unload and routes results to the streamer, the LOD system and the debug tools; `web/jobs.rs` posts to the least busy worker (**[0.38.3]** a generation job to its column's worker, `dwell_world::affinity`, while that has fewer than two). A result that arrives between frames wakes the pool (`Jobs::on_done`), which collects it and starts the next queued job at once; the results are applied at the next frame. Refilled only at a frame's poll, a slow page's workers idled: at CI's 2–15 s frames chunks waited 5–17 s for a worker that ran each in ~0.1 s. Natively the same jobs run inline (tests). |
-| `dwell-mesh` **[built, Phase 3d; LOD 4c]** | Greedy chunk mesher: a chunk's voxels with a one-voxel apron (34³) in — or, from the client's mesh jobs, **[built, Phase 43]** with the deeper sky apron (`dwell_world::SKY_APRON`, 6 cells across and 16 rows up and down: 44 × 64 × 44, `VoxelWorld::padded_box`), whose one-voxel block inside is meshed as before (**[built, 0.28.1]** in a streamed world a missing horizontal neighbour reads as air, except that where the chunk's own edge column holds a fluid the apron goes on with it, so water at the streamed view's edge meshes no wall into the unknown; docs/BUGS.md 8); positions, normals, face-tinted colours, texture coordinates and per-vertex atlas tile rectangles out (**[built, 2026-10-21]** a face's texture coordinates are a function of its face-local place alone, never of the quad it merged into, so an edit that re-merges faces leaves every other face's texture where it was: across a face in world blocks, up a side in world metres — a 1 m tile spans two ½ m cells — except a tile whose material `hang`s (`shared/textures/materials.json`; the turf skirts `grassSide` and `dirtSkirt`), which runs down from each block's own top edge so the fringe hangs from every block, its side quads kept one cell tall), one mesh per render mode (§6.1 **[built, Phase 33]**): opaque, translucent (fluids) and cutout (ladders and plants, with a fourth per-vertex `plants` stream for wind sway and distance fade), chosen by the state's `render`; the transparent mesh, and an LOD section's water mesh, also carry each vertex's **fluid id** (`fluids`: the index of the fluid whose look it is drawn with, `NO_FLUID` for a see-through face that is no fluid's; Phase 26 W1b). Faces are culled like collision (hidden by opaque full cubes — a see-through neighbour hides nothing, and faces between two cells of one see-through block are skipped; a fluid by the same fluid; a ladder draws only its facing plate, and a flooded ladder's cell draws its water like a flooded shape's; the cross look's quads, jittered by world position — mesh jobs carry the chunk's origin, `mesh_chunk_at` — are drawn whole); a fluid's top, under a cell that is not the same fluid, is drawn its fluid's `surfaceDrop` below the cell's top (water: 1/8, at 0.875), read from the registry, and **[built, 2026-10-20]** a fluid's side faces stop at that drawn surface and, against a shaped neighbour, cover only the part above its profile (`fluid_side`; [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9); faces of full cubes and water merge into rectangles of one material per slice, ladders stay one quad per face. **Ambient light [built, Phase 43]** ([`DAY_NIGHT.md`](./DAY_NIGHT.md) §9; `sky.rs`; data `shared/look/ambient.json`): the opaque and cutout meshes carry a fifth stream, `light` (one float per vertex: corner occlusion × sky visibility, 0–1), baked from an occupancy of the light-blocking cells (full cubes that are not translucent: leaves block, glass, fluids, plants, ladders and shaped blocks don't) over the whole volume, face-local (a face-B chunk's is mirrored with it). Cell faces take the classic corner occlusion (side, side, corner: levels 0–3) and the sky visibility at their lattice vertices — the share of `rays` cosine-weighted rays about the normal, mirrored above the face-local horizon, that run `lengthM` through the cells and have nothing over their end within `probeM` — with the ray cells of each face direction and each of 16 turns walked once into offset tables, the turn picked by a hash of the vertex's face-local world position (so a border vertex gets the same value from either chunk); faces merge only where their four corner keys match too, and a quad is split along its brighter diagonal. Ramps (shaped faces) take sky visibility only, walked per vertex (cached per point and normal); a plant takes its ground's (the top vertex at its cell's corner); the transparent mesh has no light. Rays past the volume count as open, so a mesh from the one-voxel block reads open past it. **Flood light [built, Phase 45]** (`flood.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): mesh jobs carry the chunk's packed light with a one-cell apron (`MeshJob::light`, `mesh_chunk_lit`; empty: open sky), mirrored with a face-B chunk; the opaque and cutout meshes carry a sixth stream, `flood` (sky and block level / 15 per vertex): a cell face's corner averages the cells around it in the front layer (the corner occlusion's cells, leaving out light-blocking cells that hold no light), in quarter levels in the merge key; a shaped face takes the brightest of its cell and the cells it faces along each axis it leans on; a plant its own cell. Render meshes only: collision stays in `dwell-physics` (§6.1), so prediction collides with exactly the server's geometry. LOD sections (`lod_mesher.rs`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. **Block textures** (`textures.rs`) **[built, Phase 39]**: one texture set, the storybook tiles of [`ART_DIRECTION.md`](./ART_DIRECTION.md) painted from data (`shared/textures/materials.json`) at build time and checked in as `painterly.rgba` (`PAINTERLY_TILES` naming them; [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md), [ADR 0040](./adr/0040-painterly-textures.md)), every tile seamless across blocks: grass (top, a side with a hanging turf skirt), dirt (and `dirtSkirt`, the grass side's skirt on a dirt side under grass), stone, sand, water, tall grass (`tallGrass`: tapering blades whose alpha is a distance field, 0.5 on the edge), `logSide` / `logTop`, `leaves` and ladders (cutout: each texel has an alpha, 255 but in cutout tiles, and a tile's average colour counts only its covered texels), and the utility tiles, painted from the same data: `plain` (white, tinted by an untextured state's colour), `grid` (white with a one-texel line along two edges, so every block edge gets a faint line; the sandbox floor's) and `missing` (the magenta and black checker of a state this build can't draw, ADR 0038); named by the registry's texture names; one texel lookup serves the atlas, cutout detection, the averages (cached once, as the LOD colour table is) and the swatches; packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters, mipmapped down to the level where the gutter is one texel wide (five levels, two texels per tile at the last): filtering a smaller level at a tile's edge would reach past the gutter into the neighbouring tiles and the atlas's empty space, which a grazing view of distant ground samples; the hotbar's swatches are cut from it (`hotbarSwatch`). Each tile's average colour in linear light is the flat colour of LOD faces. **Side tiles from the block above [built]:** a block's data may give `sideUnder` (block id above → side tile; dirt: `{ "dwell:grass": "dirtSkirt" }`, so the turf's skirt hangs over a dirt face below a grass slope at a step or cliff), validated by `shared/blocks/faces.mjs` and emitted as `StateInfo::side_under` (a look: registry-sync look tag `0x8b`); the chunk mesher gives a side face the rule's tile when the cell above holds that block and that block doesn't show a full side there itself (a full grass cube hangs its own skirt), with the rule in the greedy merge key. The LOD draws no skirt tiles: its risers take the colour of the fine rise they stand for (§6.6 "Colour"), the side tile's top band (the fringe) by its share of that rise, so a gentle hillside stays green and a cliff stays dirt. |
+| `game.rs` **[built]** | `Game`: the fixed 60 Hz loop — samples input, predicts with `dwell-physics`'s `Predictor` (the same controller and Rapier setup as the server, against the client's streamed `VoxelWorld`), sends `PlayerInput` (newest 4), feeds snapshots and knockback events to the predictor, nudges its tick rate from the server's input buffer, streams terrain around the player (`dwell-game`'s chunk streamer: the flood light of arrived chunks and the mesh job starts within one frame-aware budget, `stream_budget.rs`, §7.4), drives the first-person camera (per-tick eye height with crouch smoothing and step-ups/downs drawn along a virtual ramp (`dwell-game` `eye.rs` `StepSmoother`, tunables `step_view`, PLAYER_CONTROLLER.md §9), the turn-over across the midplane, and the motion effects: each drawn frame it steps dwell-look's `MotionFx` from the predicted velocity and controller state — reading them, never writing — and hands the frame's FOV to the renderer and the LOD camera alike, and the wind to the renderer; held while the menu is open), block targeting and its outline, the whole-world view (`dwell-lod`), the HUD text and the F3 overlay, and **[Phase 28]** sound events (§5.2): the local player's predicted state each tick and each remote player's interpolated state each frame through `dwell-game`'s `sound.rs`, its own edits on the request and others' from `VoxelModification`s (the cells' old states read before they apply), kept for `takeSounds`. A tool can place the camera (`set_view`, a `ViewOverride`): the renderer and the LOD view from it while the player stays put (named views, §6.3). Platform-free behind a `Scene` trait (the renderer) and a job pool, so `tests/game_local.rs` plays a local world natively through the real session and handshake. |
+| `dwell-game` **[built]** | `remotes.rs`: snapshot buffer and interpolation `INTERP_DELAY_MS` in the past. `input.rs`: keyboard + pointer-lock input (WASD, Space, Shift, C/Ctrl, F to fly (`FLY_KEY`), F3, F4 and its zoom `-`/`=`; while the pointer is locked, left/right click break/place, `L` the build mode (data), number keys, ←/→ (data, `shared/items/items.json` `hotbar`) and the wheel or a sideways touchpad swipe pick a block, the wheel through a notch accumulator, `WheelAccumulator`, docs/ITEMS.md §6) and input quantization. `flight.rs`, `flight_speed.rs`: the creative-flight toggle (Phase 4: the F key or the touch Fly button; only if `Welcome` allows it; §9.1) and the speed level. `touch.rs`: touch controls for phones and tablets (floating left-half joystick, drag-to-look right half — a short, still touch there is a *tap* that breaks or places, and in Place mode a still hold (`HOLD_MS`) places and builds on as it drags — held Jump and Crouch buttons (Jump only jumps), latching Run and Break/Place buttons, a Build (mode) button, a Fly button, an ⓘ button toggling the F3 overlay, one captured pointer per control, merged into the same sampled input; the DOM elements are the shell's `ui/touchControls.ts`). `gamepad.rs` **[built, 0.28.3]** ([`GAMEPAD.md`](./GAMEPAD.md)): controller support — the W3C standard mapping's buttons and sticks fed by the shell every frame (`input/gamepad.ts`), held jump/crouch/run and pressed actions (break, place — held, it builds on — the build mode, hotbar, fly, fly speed, spyglass, map, menu), the right stick's look on both faces, bindings and tunables as data (`shared/input/gamepad.json` → `gamepad.gen.rs`, `gamepad.gen.ts`), rebound in Settings → Controller (`dwell.gamepad`, append-only); the menus by controller are the shell's (`input/gamepadMenu.ts`). `eye.rs`, `face_flip.rs`: the eye (its steps decayed along a virtual ramp by `StepSmoother`, reusable for a drawn body; its swing across the body at a crossing) and the camera across the midplane (the look continued pointing the same way, the view rolled upright about its forward; BIFACIAL_WORLD.md §6). `items.rs` **[built, 0.29.0]** ([`ITEMS.md`](./ITEMS.md)): the creative hotbar's items from data (`shared/items/items.json` → `items.gen.rs`): a block and its height (½ m pieces only since 0.38.8; `rows` up to 2 for a taller piece), and for slopes (0.40.8) the state it places (`state`), its `facing` turned by the look (`toward`: a stone slope's uphill ahead) and a 2-row piece's upper state (`upper`: the steep slope, placed as two ordinary places), and what holding Place does with it (`drag`: the build modes, a vertical line for ladders, or none); a place request carries the piece (`rows`, `down`; protocol 19), and a break takes the one cell aimed at, and the placement rules are block data checked by `dwell_world::edit::check_block_edit` (`needsSupport` below or behind, `placeOn`, `onSlopes`, `moldable`). `build_drag.rs` **[built, 0.38.4]** ([`ITEMS.md`](./ITEMS.md) §5): drag building — holding Place after the first block builds on as the aim moves, in the build mode from data (`items.json` `buildModes`: `line` straight out of the clicked face, `level` the cells swept at the first block's level), the pieces sent as one-piece `RegionEdit` Fills (no line of sight needed) at 1 a tick, plain blocks only, each clear of the body where it is and a little back along its motion (`lagged_offset` without the round trip, `buildModes.clearance`; the server holds a piece its lagging view of the body is in, `EDIT_HOLD_TICKS`), a refused one retried; ladders as a vertical line up or down their wall, each held by it (`held_in_place`, the server's region pass too); towering (a line up under the player: a block a jump, a first press in the body waiting for it to clear); bridging help (Place with nothing targeted builds at the edge looked toward, at the level stood on, a ghost outline showing it; held, Line walks ahead and Flat paints that level, a level joining only what it touches); a stroke builds on only after `holdMs` (a click is one block), one piece a frame, a line up to the aim's crossing and only once the server has answered its last piece (a refused or skipped one built again); a ladder may go where the body is; held by the right button, the controller's place button or a still touch hold, switched by `L`, the controller's `buildMode` and the touch Build button. `block_interaction.rs` (§6.5): the target under the crosshair (`raycast_block` from the eye, `REACH_DISTANCE`), the palette (every placeable state, ladders as one slot whose facing follows the placement) and its selection, and break/place actions turned into `BlockEditRequest`s at most once per `BLOCK_EDIT_INTERVAL_MS`. `region_tools.rs` (§6.5): the region tools — box selection, fill / hollow / replace / remove, copy, paste with rotate and mirror, undo/redo of steps of one or more edits, a queue paced by the server's cell rate — turned into `RegionEdit`s, and their keys (`tool_for_key`). `brush_tool.rs` (§6.5, [`BRUSHES.md`](./BRUSHES.md)): the brush tool — the preset, brush, performer and size, ranged aim, the exact-cell ghost preview (`ghost_faces`), arrow/gunpowder strokes and the replace pick — and its keys (`brush_key`, live while V has it on). `chunk_stream.rs`: **[built, Phase 45]** with a store that keeps the flood light, lights each chunk that arrives, nearest the player first, within `mesh_dirty`'s light budget, then starts mesh jobs within its mesh budget (each its own: the game's `stream_budget_ms`, 4 ms or a tenth of a slow frame up to 25 ms) before meshing it or its neighbours, unloads a `ChunkUnload`'s chunks in one store update (`ChunkStore::unload_chunks`, one relight), relights at once on edits and predicted edits, and marks every chunk whose light changed for meshing (`ChunkStore::light_chunk`, `light_changed`, `mesh_light`); applies `ChunkData` (Generated through the generation workers, Explicit decoded) and `ChunkUnload` to the streamed world, applies `VoxelModification`s in revision order (holding those of chunks still generating; a gap sends `ChunkResync`), starts mesh jobs for changed chunks nearest first (each job's padded voxels copied row by row from the chunk and its 26 neighbours, each looked up once), and tells the game when the terrain around the player is loaded (`gate.rs`, §6.3) and how much of the loading screen's near ring is drawn (`near_progress`); with a second centre (`set_second_centre`, the respawn preload while dead, §6.3) it lights and meshes the near ring around the player, then the second ring, then the rest. `loading.rs` (§6.3): the loading screen's gate (closed from its creation until the join places the player, and from each placement until the near ring is drawn or `timeoutS` passes; never, opted out; it counts its openings for the shell's fade), its near ring (`near_ring_offsets`) and its readout; tunables from `loading.gen.rs`. `chunk_diff.rs`: the F3 overlay's chunk regenerated and diffed. `hud_text.rs`: the HUD's lines (background work such as terrain loading is a small status in the bottom-left corner, never over the view). **[Phase 28]** `sound.rs` (§5.2): `MoverSounds` turns a body's motion into footsteps per gait stride, climbing and swimming strokes, landings by impact speed, jumps, water entry and exit, crouch, sprint, the slide's continuous scrape (one voice per mover: start, speed, end) and flight whooshes; `EditSounds` the break/place sounds (echo of our own edits suppressed by cell); event kinds, gaits, strides and speed ranges from `sound.gen.rs`. |
+| `jobs/`, `pool.rs`, `web/jobs.rs` **[built]** | Background jobs (§5.1): chunk generation (and the verification hash), LOD bounds and sections, the F4 map's height samples, chunk and section meshing. `jobs/codec.rs` encodes jobs and results as bytes (one transferred buffer each way); `pool.rs` keeps at most the workers' capacity in flight per kind (generation, meshing), cancels queued chunk jobs on unload and routes results to the streamer, the LOD system and the debug tools; `web/jobs.rs` posts to the least busy worker (**[0.38.3]** a generation job to its column's worker, `dwell_world::affinity`, while that has fewer than two). A result that arrives between frames wakes the pool (`Jobs::on_done`), which collects it and starts the next queued job at once; the results are applied at the next frame. Refilled only at a frame's poll, a slow page's workers idled: at CI's 2–15 s frames chunks waited 5–17 s for a worker that ran each in ~0.1 s. Natively the same jobs run inline (tests), or on threads in the native harness (`dwell-native` `jobs.rs`). |
+| `dwell-mesh` **[built, Phase 3d; LOD 4c]** | Greedy chunk mesher: a chunk's voxels with a one-voxel apron (34³) in — or, from the client's mesh jobs, **[built, Phase 43]** with the deeper sky apron (`dwell_world::SKY_APRON`, 6 cells across and 16 rows up and down: 44 × 64 × 44, `VoxelWorld::padded_box`), whose one-voxel block inside is meshed as before (**[built, 0.28.1]** in a streamed world a missing horizontal neighbour reads as air, except that where the chunk's own edge column holds a fluid the apron goes on with it, so water at the streamed view's edge meshes no wall into the unknown; docs/BUGS.md 8); positions, normals, face-tinted colours, texture coordinates and per-vertex atlas tile rectangles out (**[built, 2026-10-21]** a face's texture coordinates are a function of its face-local place alone, never of the quad it merged into, so an edit that re-merges faces leaves every other face's texture where it was: across a face in world blocks, up a side in world metres — a 1 m tile spans two ½ m cells — except a tile whose material `hang`s (`shared/textures/materials.json`; the turf skirts `grassSide` and `dirtSkirt`), which runs down from each block's own top edge so the fringe hangs from every block, its side quads kept one cell tall), one mesh per render mode (§6.1 **[built, Phase 33]**): opaque, translucent (fluids) and cutout (ladders and plants, with a fourth per-vertex `plants` stream for wind sway and distance fade), chosen by the state's `render`; the transparent mesh, and an LOD section's water mesh, also carry each vertex's **fluid id** (`fluids`: the index of the fluid whose look it is drawn with, `NO_FLUID` for a see-through face that is no fluid's; Phase 26 W1b; **[built, 2026-11-13]** a liquid top beside solid blocks is drawn alone and carries its 8 solid neighbours' mask packed over the id, id + 256 × mask, for the shore foam's round corners, WATER_RENDERING.md §21). Faces are culled like collision (hidden by opaque full cubes — a see-through neighbour hides nothing, and faces between two cells of one see-through block are skipped; a fluid by the same fluid; a ladder draws only its facing plate, and a flooded ladder's cell draws its water like a flooded shape's; the cross look's quads, jittered by world position — mesh jobs carry the chunk's origin, `mesh_chunk_at` — are drawn whole); a fluid's top, under a cell that is not the same fluid, is drawn its fluid's `surfaceDrop` below the cell's top (water: 1/8, at 0.875), read from the registry, and **[built, 2026-10-20]** a fluid's side faces stop at that drawn surface and, against a shaped neighbour, cover only the part above its profile (`fluid_side`; [`WATER_RENDERING.md`](./WATER_RENDERING.md) §9); faces of full cubes and water merge into rectangles of one material per slice, ladders stay one quad per face. **Ambient light [built, Phase 43]** ([`DAY_NIGHT.md`](./DAY_NIGHT.md) §9; `sky.rs`; data `shared/look/ambient.json`): the opaque and cutout meshes carry a fifth stream, `light` (one float per vertex: corner occlusion × sky visibility, 0–1), baked from an occupancy of the light-blocking cells (full cubes that are not translucent: leaves block, glass, fluids, plants, ladders and shaped blocks don't) over the whole volume, face-local (a face-B chunk's is mirrored with it). Cell faces take the classic corner occlusion (side, side, corner: levels 0–3) and the sky visibility at their lattice vertices — the share of `rays` cosine-weighted rays about the normal, mirrored above the face-local horizon, that run `lengthM` through the cells and have nothing over their end within `probeM` — with the ray cells of each face direction and each of 16 turns walked once into offset tables, the turn picked by a hash of the vertex's face-local world position (so a border vertex gets the same value from either chunk); faces merge only where their four corner keys match too, and a quad is split along its brighter diagonal. Ramps (shaped faces) take sky visibility only, walked per vertex (cached per point and normal); a plant takes its ground's (the top vertex at its cell's corner); the transparent mesh has no light. Rays past the volume count as open, so a mesh from the one-voxel block reads open past it. **Carved cut cells [built, 0.50.60]** (`carve.rs`; ADR 0067 §11): `mesh_chunk_cut` takes the chunk's cut wood cells and draws each opaque cube among them as its carved faces (§ the stone axe, below) instead of the cube's, all in the opaque mesh with the same streams. **Leaves as a canopy [built, 0.52.56]** (`mesher/leaves.rs`; data `shared/look/leaves.json`; [`TREE_GROWTH.md`](./TREE_GROWTH.md) §10): the blocks it names (`dwell:leaves`, `dwell:snowy_leaves`, by name; nothing on the wire) are drawn whole, each cell a cube cut back by `chamfer` (0.28 cells) on the edges and corners whose faces are both (all three) exposed, cells inside the crown drawing nothing, and the part of a shared face that a neighbour's cut uncovers drawn by clipping it by the neighbour's planes (no gaps where a chamfer ends); a face against a block whose data says `leafFlush` (the log; look tag `0x93`) is drawn flat, counted as covered for the cuts, so the edge cuts running into it end square (WORK_QUEUE item 48), and **[built, BUGS.md #167]** less the log's own faces lying on it (its side or cap there, `leaves::flush_holes`, `subtract`): only the octagon's corner gaps are filled, nothing coplanar with the bark, so they don't z-fight; each vertex's normal leans `canopyBlend` (0.75) toward the crown's outward direction (away from the centroid of the leaf cells within 3 m, from prefix sums over the padded chunk, the reach cut equally both ways at the padding so chunks agree at a border), its face tint `normal_tint` of that normal; light and flood from the faces it looks out of. **Leaf cards [built, 0.52.56]** (`cards`): per exposed leaf face a hashed number of alpha-cut quads standing off it, facing out of the crown, in the cutout mesh with the `plants` stream's sway and distance fade (**[built, BUGS.md #78]** 24–40 m, was 48–64: near trees only) and no ink; **[built, BUGS.md #78]** a face whose way out is blocked by another leaf cell within `interiorCells` (4) straight out of it (a cavity inside the crown) gets none, and each card carries its plane's normal octahedral-packed in `plants.y` (negative, −(1 + packed); a plant's is its wind speed ≥ 0; face B's mirror re-packs it) so the cutout vertex shader (`card_dropped`) moves a card whole outside the clip volume when the eye is more than `backCullM` (0.5 m) behind its plane (the crown's far side) or every corner is past its fade's end + 2 m; **[built, 2026-11-12]** the fade drop applies to every plant with a fade, tall grass too (it was drawn to the full-detail distance and discarded per fragment past its 88 m fade; WORK_QUEUE item 32); **[built, 0.52.x]** meshed per renderer tier by data (`cards.tiers`: desktop on, phone off, CPU adapter off; `render::cards_for`, a `?cards=0|1` dev override wins → the mesh job's `ChunkFlags::cards`, codec bit 2), and none with a corner reaching into a neighbouring block that is neither leaves nor empty (a trunk: it z-fought, BUGS.md #72). Painted with the `leafCard` tile (`cards.tile`, the `leaf_clump` material; the texture generator bakes the looks' tiles, `lookTiles`). **LOD trees [built, 0.52.57]** (`lod_trees.rs`): at the LOD levels holding trees' own cells (1 m, 2 m), the section mesher draws leaf cells chamfered with crown-leaning normals and tints and log cells as octagonal columns, as the chunks do (TREE_GROWTH.md §10); **[built, 2026-11-12]** drawn only with `?impostors=0`: the far trees are **impostors** (below, the client's `render/impostors.rs`) and the sections mesh their ground alone (`mesh_section_trees(…, false)`). **Tree leaves' hand-over [built, 2026-11-12]** (WORK_QUEUE item 31): a cutout leaf face carries `TREE_LEAF_FADE` (−1) as its `plants` fade, so the cutout shader hands it to the far trees' impostors by the frame block's `far_trees` vec4 (the Far trees tier's `fromM`/`fadeM`, `shared/trees/impostors/impostors.json` `far.tiers`): dithered out across the fade (`near_tree_share`, the impostor keeping exactly the other pixels or samples) and dropped whole past it (`card_dropped`), and a chunk wholly past both the hand-over and every plant's fade (`render::impostors::cutout_reach`) submits no cutout draw at all; **[built, 2026-11-13]** the mesher orders a chunk's cutout triangles with its tree leaf faces last (`tree_leaves_last`; `dwell_mesh::tree_leaves_from` the split, uploaded as the cutout mesh's second index range), so a chunk wholly past the hand-over but within the plants' fades draws its plants and leaf cards alone, not the leaves the shader would drop (`render::impostors::cutout_draw`, from the tier's data; WORK_QUEUE item 32, the forest edge). **Octagonal logs [built, 0.51.0]** ([ADR 0072](./adr/0072-octagonal-logs.md)): a state with a `crossSection` (logs) is drawn whole as an octagonal prism along its axis (`octagon_voxel`, geometry from `dwell_blocks::octagon`): bark on its eight sides, end grain on its caps inside a bark ring that follows the octagon (`octagon::cap_pieces`, `crossSection.ring` and `heart`: a band of the side tile along each unjoined edge, chamfers too, none along a joined side, so a joined wall's top is one surface of end grain; Phase 55 T3); a side across the axis whose neighbour joins it (same join group, same axis; **[built, 0.52.2]** for a log lying along x or z, across a level side, also the same half, lower or upper, as read from the log cells above and below it, so a log a row higher or lower beside it stays its own octagon, BUGS.md #63) is squared to full width and drawn by neither cell, so logs side by side meet flat; it covers no neighbour's face (its corners are open). **[built, 0.51.0, Phase 55 T4]** a shaped
+state with a cross-section (the wood ramps, `crossSection: "of"`) is the prism clipped to its convex
+shape (`octagon::state_faces`; the slant a `Cut`, drawn as end grain); a cap is hidden only against a
+neighbour's whole cap. A falling piece's mesh is this mesher's, so felled logs draw the same octagons.
+A cut log is still carved as its cube (T2). **Flood light [built, Phase 45]** (`flood.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §11): mesh jobs carry the chunk's packed light with a one-cell apron (`MeshJob::light`, `mesh_chunk_lit`; empty: open sky), mirrored with a face-B chunk; the opaque and cutout meshes carry a sixth stream, `flood` (sky and block level / 15 per vertex): a cell face's corner averages the cells around it in the front layer (the corner occlusion's cells, leaving out light-blocking cells that hold no light), in quarter levels in the merge key; a shaped face takes the brightest of its cell and the cells it faces along each axis it leans on; a plant its own cell. Render meshes only: collision stays in `dwell-physics` (§6.1), so prediction collides with exactly the server's geometry. LOD sections (`lod_mesher.rs`, §6.6): 34³ cells in, flat-coloured greedy meshes in cell units plus per-side skirts out. **Block textures** (`textures.rs`) **[built, Phase 39]**: one texture set, the storybook tiles of [`ART_DIRECTION.md`](./ART_DIRECTION.md) painted from data (`shared/textures/materials.json`) at build time and checked in as `painterly.rgba` (`PAINTERLY_TILES` naming them; [`PAINTERLY_TEXTURES.md`](./PAINTERLY_TEXTURES.md), [ADR 0040](./adr/0040-painterly-textures.md)), every tile seamless across blocks: grass (top, a side with a hanging turf skirt), dirt (and `dirtSkirt`, the grass side's skirt on a dirt side under grass), stone, sand, water, tall grass (`tallGrass`: tapering blades whose alpha is a distance field, 0.5 on the edge), `logSide` / `logTop`, `leaves` and ladders (cutout: each texel has an alpha, 255 but in cutout tiles, and a tile's average colour counts only its covered texels), and the utility tiles, painted from the same data: `plain` (white, tinted by an untextured state's colour), `grid` (white with a one-texel line along two edges, so every block edge gets a faint line; the sandbox floor's) and `missing` (the magenta and black checker of a state this build can't draw, ADR 0038); named by the registry's texture names; one texel lookup serves the atlas, cutout detection, the averages (cached once, as the LOD colour table is) and the swatches; packed in a 512² atlas (8 × 8 cells) with 16-texel wrapped gutters, mipmapped down to the level where the gutter is one texel wide (five levels, two texels per tile at the last): filtering a smaller level at a tile's edge would reach past the gutter into the neighbouring tiles and the atlas's empty space, which a grazing view of distant ground samples; the hotbar's swatches are cut from it (`hotbarSwatch`). Each tile's average colour in linear light is the flat colour of LOD faces. **Side tiles from the block above [built]:** a block's data may give `sideUnder` (block id above → side tile; dirt: `{ "dwell:grass": "dirtSkirt" }`, so the turf's skirt hangs over a dirt face below a grass slope at a step or cliff), validated by `shared/blocks/faces.mjs` and emitted as `StateInfo::side_under` (a look: registry-sync look tag `0x8b`); the chunk mesher gives a side face the rule's tile when the cell above holds that block and that block doesn't show a full side there itself (a full grass cube hangs its own skirt), with the rule in the greedy merge key. The LOD draws no skirt tiles: its risers take the colour of the fine rise they stand for (§6.6 "Colour"), the side tile's top band (the fringe) by its share of that rise, so a gentle hillside stays green and a cliff stays dirt. |
 | `dwell-look` **[built, Phase 7]** | The look as plain data shared by both meshers, the lights, the sky and the fog (WORLD_GENERATION.md §1): one per-face RGB tint table — warm on top, cooler on the sides, blue underneath — in the chunk and LOD meshers alike (`normal_tint` for shaped faces); a warm sun and a green-bounce hemisphere light per face; the exposure (`DEFAULT_EXPOSURE`); the **sky** (`sky_color` and its generated WGSL twin, `sky_wgsl`), the **day/night cycle** (`daynight.rs` **[built, Phase 32]**, §6.6 Day/night cycle: the clock, the sun's path, the keyframes and the `DaySky` block; data in `shared/look/daynight.json`, generated into `daynight.gen.rs` by `shared/look/daynight.mjs`), the height fog (`fog.rs`: the model, unit-tested, and the one fixed fog, data in `shared/look/fog.json`, generated into `fog.gen.rs` by `shared/look/fog.mjs`) and **the sky's clouds** (`clouds.rs` **[built, Phase 31]**, §6.6 Clouds: the deck, the noise and their generated WGSL, `cloud_wgsl`; tunables as data in `shared/look/clouds.json`, generated into `clouds.gen.rs` by `shared/look/clouds.mjs`, which validates them; CI fails on stale output) and **the water's reflections per quality** (`reflections.rs` **[built, Phase 26 W5a]**: march steps, refine steps, reach, cloud octaves and self-shadow per tier, packed into the frame uniform by `reflection_uniforms`; data in `shared/look/reflections.json`, generated into `reflections.gen.rs` by `shared/look/reflections.mjs`, validated, CI stale check). **[built, Phase 29]** `motion.rs`: the motion effects' model (speed → FOV boost as a zoom-out percentage and wind, a critically damped spring, the zoom formula with a 120° safety clamp, the vanishing point, resets) over tunables generated from `shared/look/motion.json` by `shared/look/gen.mjs` (`motion.gen.rs`, validated, CI fails on stale output). **[built, Phase 38]** `spyglass.rs`: the spyglass ([`SPYGLASS.md`](./SPYGLASS.md), [ADR 0039](./adr/0039-spyglass.md)): the zoom's state (toggle, wheel steps, an eased transition in log-magnification space, instant under reduced motion), `zoom_fov` (`2·atan(tan(fov/2) / magnification)`) and the LOD's detail magnification (`min(m, detailBoost)`), over tunables generated from `shared/look/spyglass.json` by `shared/look/spyglass.mjs` (`spyglass.gen.rs`, and the key and steps for the controls table in `client/src/ui/spyglass.gen.ts`; validated, CI stale check). **[built, Phase 39 follow-up; preview, off by default]** `outline.rs`: the ink outline's modes ([`ART_DIRECTION.md`](./ART_DIRECTION.md) §7), generated from `shared/look/outline.json` by `shared/look/outline.mjs` (`outline.gen.rs`, the ink resolved by name from `shared/textures/palette.json`; validated, CI stale check), the mode `?outline=` picks, the frame block's three outline vec4s (`outline_uniforms`) and a CPU twin of the composite's edge rule and fade. **[built, Phase 42]** `lod_blend.rs`: the LOD swaps' cross-fade time, dither pattern (a CPU twin and its WGSL `fade_threshold`) and the selection's hysteresis (§6.6 Swaps), generated from `shared/look/lodblend.json` by `shared/look/lodblend.mjs` (`lodblend.gen.rs`; validated, CI stale check). Block colours and tiles are tuned to the measured palette; water is turquoise. |
-| `render/` **[built]** | The wgpu renderer (WebGPU only, WGSL; [ADR 0028](./adr/0028-rust-port.md)): terrain chunks (a texture repeated once per metre across merged quads, anchored in the world (`dwell-mesh`) — `tile.xy + fract(uv) × tile.zw` sampled with explicit gradients so mip selection has no seams — from a mipmapped sRGB atlas, averaged in linear light, crisp up close), LOD sections (§6.6: a section's surface and its six skirts in one vertex and index buffer, each skirt a range drawn when its side shows; stand-ins clipped to their box in the fragment shader), players as full bodies (`characters.rs`, §5.3: drawn in the scene passes with the opaque draws, through the composite like everything else; your first-person arms in a pass of their own after the world's), the targeted block's outline, the region tools' boxes (§6.5; drawn over everything), debug line segments, and the sky. Lighting replicates the Three.js build's look: Lambert shading with a sun or moon and a hemisphere light, each weighted to the fragment's own face — **[built, Phase 43]** the hemisphere light on terrain and cutout fragments scaled by the vertex's baked `light` above a floor, and **[built, Phase 45]** by its flood light (`terrain_light`: ambient `floor + (1 − floor) × sky × (light + (1 − light)(1 − sky))`, `sky` the flood sky level's brightness on `light.json`'s curve, so open ground keeps the baked light alone and deep in a cave only the flood light counts; the block light a warm glow; the direct sun and moon × the sky level's ramp, the shadow maps' stand-in past their last cascade, below; `AMBIENT_FLOOR` from `shared/look/ambient.json`, the rest from `light.json`; LOD sections and LOD water take open sky; chunk water and see-through faces take their mesh's flood light (the body, foam and glass by `terrain_light`, the glint and sparkle by its direct share under the shadow maps, the sky's reflection by the sky light's brightness), so they are dark in a cave with Shadows Off; players, your arms and held items take the flood light sampled where they are, eased over `characters.easeS` (`TerrainLight`, `Instance::light`); [`DAY_NIGHT.md`](./DAY_NIGHT.md) §9, §11) — and **[built, Phase 44]** the direct sun and moon term, and nothing else, multiplied by a **shadow** factor from **cascaded shadow maps** (`shadows.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §10; data `shared/look/shadows.json`, generated into `dwell-look` `shadows.gen.rs`): the light over the viewer's face (the sun, else the moon; `dwell_look::shadows::caster`, its strength faded in with its elevation) gets up to four orthographic depth maps (a `Depth32Float` array, a layer per cascade), each a **box around the eye** covering everything within its distance (the practical split of the shadow distance; the box doesn't depend on where the camera looks, as Minecraft shaderpacks centre their shadow map on the player), its half-size rounded up to a step and, for the far cascades, `slack` wider, its origin snapped to whole texels across the light (so moving doesn't shimmer the edges); the maps see the light in steps of `lightStepDeg` along its path (`shadows::stepped`), their texel grid running through an anchor that holds while the light holds its step and moves, when it steps, to where the nearest cascade was drawn (`Cache::anchor`), so the clock turning the light every frame doesn't turn the grid under every shadow edge every frame (it did: the moving noise in the shadows, 2026-10-21), deep enough toward the light to hold casters `casterReachM` above it; the spyglass stretches the shadow distance by its magnification up to a cap. **Kept maps** (`shadows::Cache`): the nearest cascade is drawn every frame; a far one is kept and read where it was drawn until the eye leaves its slack, the light turns `lightTurnDeg`, the casters in its box change (an order-free signature of their mesh identities, skirts and whether they fade) or other players are about (every `refreshFrames`), and at most `farPerFrame` far cascades are drawn in a frame, the most urgent first, so no frame draws them all (one not drawn yet reads nothing: its fragments take the next cascade or the far shadows). Before the scene passes, a depth-only pass per drawn cascade (timed together as `gpu.shadows`; `shadow.drawn` counts them) draws the casters whose box overlaps its box: chunk terrain and LOD sections (depth only; a draw in an LOD swap, or a clipped stand-in, through a fragment stage that keeps the texels its dither keeps, so both levels of a swap share the map as they share the screen), cutout plants (alpha-tested, faded by the eye's distance as on screen), other players' bodies and your own (a body drawn into the nearest cascade's map only, so you have a shadow in first person and a kept far map holds no stale one), with a frame uniform per cascade whose `view_proj` is the cascade's matrix (its group has no binding of the maps it draws); casters drawn in full take a depth-only vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`; no fragment stage), the rest the scene's vertex stages; opaque casters draw their faces toward the light, slope-scaled depth bias. The scene's fragments (`shadow_light` in every `scene_out`, skipped on a face turned away from both lights, `lit_by_direct`; the characters' key light, the water's glint, sparkle and in-scatter) pick the first cascade that holds them, look it up normal-offset by its texels with a soft PCF (a grid of 2×2 hardware compares, its radius and taps per tier), and over the last share of the shadow distance (from the eye) fade to the first layer's stand-in (direct × sky light) shaded by **[built, Phase 46]** the **distant terrain's shadows** with no edge (`lod_shadows.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §12, [ADR 0046](./adr/0046-distant-terrain-shadows.md); data `shared/look/lodshadows.json`: heightmaps of the chunks, LOD sections and stand-ins drawn from above through `FaceFrame` into a `Depth32Float` array around the eye — one or two levels, each two layers, filled a budgeted slice of casters a frame, with max mips, again only when the eye has moved or seconds have passed — and per level an `r16float` horizon map swept from them toward the light a band of rows a frame, again only when its heightmap was refilled or the light has turned; a far fragment reads its column's horizon against the light's elevation, one sample, and `dwell_look::lod_shadows::combine` blends it with the cascades over their fade band; the frame group binds the horizon maps at 11–13; none on a CPU adapter; timed as `gpu.lodshadows` and `gpu.lodsweep`); `cloud_shadow` is the hook for clouds' shadows (a future item). The frame group binds the maps at 8–10 (uniform block, depth array, compare sampler; a 1×1 stand-in while Off, made again with the groups when the setting changes). The **Shadows setting** (Off / Low / High: cascades, resolution, distance and filter per tier as data) defaults to Low on phones and High on desktops, Low at most on a CPU adapter (`shadows_for`), kept in the browser's append-only `dwell.shadows` record (`ui/shadowSettings.ts`), `?shadows=` overriding it for the bench; **[built, Phase 47 T1]** **dynamic point lights** (`lights.rs`, [`LIGHTS.md`](./LIGHTS.md) §3, [ADR 0047](./adr/0047-torches-and-dynamic-lights.md); data `shared/look/lights.json` → `dwell-look` `lights.gen.rs`, the light sources in the block registry): the lights held in hands this frame (`characters::held_light`: your arms' or body's, every other player's from the snapshots' held item, at the held item's light point), the nearest `maxLights` within `cullM` of the eye (`dwell_look::lights::pick`), flickering by their holder's phase, packed into one uniform block at frame binding 14 that every lit surface reads (`point_lights` in `scene_out`, the water's body and foam, see-through faces, the characters by their own normal; the falloff on the flood light's block-light curve, the cosine wrapped; `TerrainLight::points` added to the Lambert sum); never in the flood light (a placed torch lights through the flood light, its `emits`); counted as `lights.drawn`; **[built, Phase 47 T2]** **Torch shadows** (`point_shadows.rs`, [`LIGHTS.md`](./LIGHTS.md) §4; data `lights.json` `shadows`): the nearest lights that may cast (held, and with the setting on placed torches near the eye from the client's light-source index, `VoxelWorld::light_sources_near`, drawn at a share of their strength over their flood light and only with a map) get a cube of six perspective depth maps each (a `Depth32Float` array, six layers a slot; frame bindings 15–16, the cascades' compare sampler), drawn with the cascades' depth-only pipelines from the light, of the held chunks' opaque terrain within its radius, kept frame to frame (`dwell_look::lights::TorchShadowCache`: drawn again only when new, moved or the terrain near it changed, `redrawsPerFrame` at most; timed as `gpu.torchshadows`, counted as `torchshadow.drawn`); a fragment picks its face by its largest axis and multiplies the light's contribution by a 2×2 grid of hardware compares; the **Torch shadows setting** (Off / Low / High: how many lights and how large) defaults to Off on phones and Low on desktops, none on a CPU adapter (`torch_shadows_for`), kept as the `torch` field of the append-only `dwell.shadows` record, `?torchshadows=` overriding it; and **[built, Phase 47 T1b]** a texture's glow, its material's `emissive` (`tile_grids`' z for blocks, `Material::emissive` for characters): in the terrain, cutout and character shaders a surface's lit colour is replaced by up to all of its self-lit colour (`emitted`; 1 or more fully self-lit, as the torch's flame: unaffected by the sun, ambient, flood light, AO and shadows, shown as the tone curve shows its colour at the reference exposure whatever the frame's, `glow`, its brightest channel `glowPeak` at most), and a fully self-lit pixel flags the **view depth's second bit** (`self_lit_depth`; `frame_depth` clears both bits) so the composite leaves it out of the time of day's desaturation (`scene_self_lit_at`, `scene_display`); **[built, Phase 47 T1c]** **flames** (`flames.rs`, [`LIGHTS.md`](./LIGHTS.md) §6; data `shared/look/flames.json` → `dwell-look` `flames.gen.rs`, a light source's `flame` naming its look): where a light source with a flame burns — the placed light sources within `drawM` from the client's light-source index (`placed_flames`, a flame's base `baseM` over its cell's floor, on the cell's face), other players' held torches and your own in the arms view (`CharacterRenderer::held_flames`, at the item's light point, `heldScale`) — two camera-facing billboards per flame built on the CPU each frame (its up the face's up projected on the view plane, `dwell_look::flames::billboard` through `FaceFrame`): a glow quad added behind it and the flame's quad, a teardrop of rising value noise narrow at its base, its top split into tongues, coloured along its look's ramp in painted bands (`flame_shade`, its CPU twin in `dwell-look`), and a few CPU-placed ember discs; its height and glow follow the light's flicker (`lights::flicker`, same seed and clock); drawn in the near scene pass after its opaque draws, depth-tested and writing no depth, the flames and embers writing the view depth at the flame flagged self-lit and uninked (with see-through water in the pass, that mask before the water and the colour after it, in the water's half), your own in the arms pass; shown as the tone curve shows its colour whatever the exposure (`flame_light`, `glow` with the flames' `peak`); still (no noise, no embers) on a CPU adapter (`flames_animated`); counted as `flames.drawn`; **[built, Phase 48 M]** **portal motes** (BIFACIAL_WORLD.md §12.1; data `shared/look/motes.json` → `dwell-look` `motes.gen.rs`, a portal's look named in `shared/worldgen/midplane.json` `portals.motes`): the game takes the portals' axes from the announced generator and seed (`dwell_worldgen::portal_axes_for`, at join) and each frame the portals whose crossing point is within `drawM` of the eye (`flames::portals_near`); their motes (`dwell_look::motes::portal_motes`: circling the axis, rising and falling in a band either side of the midplane, half on each face's side through `FaceFrame`, pulsing each at its own phase) are camera-facing discs added in the flames' ember run (kind 3: self-lit and masked like an ember, `mote_shade`), `maxMotes` a frame, `cpuCount` (none) on a CPU adapter; counted as `motes.drawn`; then ACES filmic tone mapping with the exposure, a manual sRGB encode (the canvas is a non-sRGB format), then the height fog mixed toward the sky's colour in output space. **[built, Phase 27 S2a]** Terrain faces of a block with the registry's `grid` look option (below) are darkened along world-aligned lines every `every` blocks (`grid_shade`: 0.12 blocks wide, antialiased by the pixel's footprint, its coverage spread over the footprint once that outgrows the line and faded to its average beyond half a period, so distant grids neither shimmer nor alias), before lighting. The vertex carries nothing for it: the shader finds a face's grid from its tile rectangle (the atlas cell it starts in) in a 64-entry uniform table (`tile_grids`, frame group binding 3, written once from `dwell_mesh::tile_grids`), so the terrain vertex stays at 18 floats (with the baked `light` and the `flood` pair). **[built, Phase 33]** Cutout meshes (`render: cutout`: ladders, plants) draw after the opaque ones in their own pipeline (`cutout_vs`/`cutout_fs`, vertex = the terrain's plus a `plants` vec4 and a `bare` float: 1 where the block's `outline` is false, the cross plants' default): depth-writing, not culled (both sides; the back takes the normal mirrored in the horizontal only, so a ladder's back is lit as itself and up-leaning plant normals stay lit), alpha-tested with **alpha-to-coverage done in the shader**: the texel's alpha is sharpened to its edge over one pixel, times the distance fade, and covers that share of the pixel's samples through `@builtin(sample_mask)` (the samples picked per pixel by a noise, so overlapping blades add up), covered samples writing alpha 1 so the premultiplied frame stays right; with one sample (CPU adapters) it is a plain test, dithered while fading. The atlas mips of tiles with transparent texels keep the full-size tile's alpha coverage (`preserve_coverage`: each level's alpha scaled so the share at or above the edge matches, never emptying a tile at its last 2 × 2 levels; tested for both texture sets), so cutout tiles don't thin out with distance. Fluids (chunk water and LOD water alike) draw after the opaque and cutout meshes, far to near, with their own vertex format (position, normal, colour, fluid id; 40 bytes) and **water shader** (`fluid_vs`, `water_fs`, `water.rs`; Phase 26 W1b, the row below): blended, both sides, no depth writes. The frame uniform's `water` vec4 carries whether the eye is under a fluid's drawn surface, its fluid id and the surface's world y (`dwell_world::fluid::eye_fluid`, set by the game each frame from the camera eye: the cell at `floor(eye)` holds a fluid and, when the cell above — toward the face's up — is not the same fluid, the eye is below the top drawn `surfaceDrop` under the cell's top; on face B mirrored), and in w the water quality; `fog.z` carries the seconds since the renderer started (the ripples' scroll). Everything is drawn **camera-relative**: the eye is f64, each mesh's origin offset from it is computed in f64 and passed as f32, so precision holds ~8,000 km out. Two depth passes split at `LOD_NEAR_SPLIT_M` (§6.6), 4× MSAA. A **CPU adapter** (SwiftShader: CI, machines without a GPU) draws the cheapest tier of everything whatever the settings, since every pixel there is the CPU's time: no MSAA (`samples_for`), no clouds (`clouds_for`), Low water (`water_for`: no refraction or caustics, no copy of the scene), no stars (`stars_for`), no wind edge blur (`motion_blur_for`), and a drawing buffer at `CPU_RESOLUTION` (0.5) of the pixel ratio on each axis (`pixel_ratio_for`, applied in `Client::resize`), a 32-bit float depth buffer. **The shared frame [built]** (`frame.rs`; water's W2, [ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)): the two depth passes draw into offscreen targets, not the canvas — lit, *linear* colour into an `rgba16float` target, premultiplied by coverage (cleared to 0, so alpha is how much of the pixel something covers; water blends into it in linear light), multisampled and resolved by the near pass; and each opaque fragment's **view depth** (metres along the view axis) into an `r32float` target both passes share (the far pass clears it, the near one draws over it: one meaning across the split, where the depth buffer is cleared between the passes and holds each pass's own projection). WebGPU can't resolve `r32float`, so the view depth is multisampled like the scene and stored, and its readers load its samples; the depth buffer stays attachment-only and discarded. A **composite** pass (a full-screen triangle into the canvas) then tone-maps and encodes the resolved colour, fogs it by the mean view depth of the samples it covers, and lays it over the sky of the pixel's view direction by its coverage — the sky is no longer drawn into the scene, and tone mapping and fog run once per pixel instead of in every lit fragment shader. The outline, the region and brush boxes and debug lines draw last, over the composite in output colour (unlit and unfogged, as before), with the near pass's projection, single-sampled, each segment a screen-space quad a constant `LINE_WIDTH_CSS_PX` (2) CSS pixels × the pixel ratio wide with square caps, whatever its distance (`line_vs`, cut at the near plane; the frame block's `lines` vec4; owner, 2026-11-06: far outlines stay readable; a few quads, so no CPU-adapter tier), depth-tested in the shader against the stored view depth sample by sample (the debug lines untested). Tone mapping after the MSAA resolve and water blended in linear light change the picture slightly (antialiased edges, the sea's colour), and the outline is no longer multisampled. **GPU pass timing** (`timing.rs`): with `Features::TIMESTAMP_QUERY` (requested when the adapter has it), each pass (far, near, composite) writes timestamps at its start and end, resolved into one of a ring of three `MAP_READ` buffers, mapped after the submit and read on a later frame (a frame finding all three still in flight goes untimed: reading never waits on the GPU), and reported as telemetry samples `gpu.far`, `gpu.near`, `gpu.composite`, `gpu.motion` (while the wind is on), `gpu.frame` (DEV_TOOLS.md); each frame names the passes it times (up to nine: the water's halves add theirs; `gpu.shadows` spans the shadow cascades' passes, its start written by the first and its end by the last). `camera.rs`: the field of view — the player's **Field of view setting** (default 75° vertical, 60–100°), narrowed on screens wider than ≈ 1.55 so the horizontal stays what the setting gives there (100° at the default; `dwell_lod::base_fov`, one rule for the renderer and the LOD, re-exported) — and the view turned over across the midplane. **[built, Phase 39 follow-up; preview, off by default]** The composite draws the **ink outline** while a mode is on (`?outline=`, `__dwell.setOutline`; the frame block's `outline*` vec4s, zero when off, which skips it): edges found in the shared frame's view depth alone (it has no normal or id targets) — one sample per tap over a 3 × 3 at half the line's width (CSS pixels × the pixel ratio); a silhouette where inverse depth's second difference is large, a crease where its slope turns (rows, columns and between the outer ones), block edges where the voxel cell behind the surface (position and normal reconstructed from the depth) changes; drawn in the palette's ink before the wind, faded out over the mode's distance (× the spyglass's magnification), fogged toward the sky by the height fog as the ground is, under the cloud deck where it is in front, and dropped below the sea's surface seen from above (the water writes no view depth, so the seabed would show through). Pixels past the fade return after one load. A surface whose block says `outline: false` (block data; the cross plants' default, so tall grass takes no ink) flags the **view depth's lowest bit** (`frame_depth`, which every writer of the view depth calls, a test checks it; one unit in the last place, below what any reader resolves): no ink on a flagged pixel, and the edge rule sees through flagged taps (each takes what the plane through the pixel and the opposite tap gives), so a plant's edges against the ground or the sky draw nothing either (a level fading out in an LOD swap flags its pixels the same way, §6.6 Swaps, so the dither's seams draw no lines); the block's `outline` reaches the frame in the cutout mesh's `bare` stream (registry sync: look tag `0x8c`, sent only where it differs from the look's default). Not drawn with the eye under water. **[preview, off by default; a prototype, not adopted]** The **pixel-art preview** ([`proposals/PIXEL_ART_LOOK.md`](./proposals/PIXEL_ART_LOOK.md); `?pixelart=<preset>`, `__dwell.setPixelArt`; palettes and presets as data in `shared/look/pixelart.json`, generated into `dwell-look` `pixelart.gen.rs` by `shared/look/pixelart.mjs`, validated, CI stale check; the maths, a CPU twin of the quantize and the post shader in `dwell-look` `pixel_art.rs` and `pixel_art.wgsl`): with a preset on, the frame draws at a fixed low height (`pixel_art::grid`: the integer scale nearest the preset's height with the overhang cropped, or the largest that fits it with bars; one low-res pixel of margin each side, the projection widened so the rows shown keep the FOV setting) — the scene targets, the composite and the lines at that size, the composite into a low-res picture in the canvas's format instead of the canvas — and two post passes (`render/pixel_art.rs`, timed `gpu.pixelart`) snap it to the preset's palette at low res, by nearest colour in OKLab with a 4 × 4 Bayer ordered dither between the nearest two colours, and draw that on the canvas, each canvas pixel one texel (nearest-neighbour integer upscale); the frame block's `pixel_art`/`pixel_tint` vec4s (zeros when off) put the sun's and moon's share (N·L × shadow) and optionally the ambient on toon levels in `lambert_lit` and tint the unlit part toward a cool hue; the preset's 1-pixel edge replaces the ink outline (black at a darkening strength, near side only, `outline_cfg.z`); the atlas is sampled nearest (with or without mips, separate samplers, the frame groups made again); no wind pass (blur and streaks off); optionally the eye snapped to the low-res pixel grid on a plane ahead with the remainder shifting the upscale (`snap_eye`). A CPU adapter skips it (`pixel_art_for`). The DOM HUD is unaffected. **Motion effects [built, Phase 29]** ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)): the frame draws with the vertical FOV the game chose (`set_fov`: the base from the setting, zoomed out by the speed boost, `2·atan(tan(base/2)·(1 + boost))`, then narrowed by the **spyglass** **[built, Phase 38]** ([`SPYGLASS.md`](./SPYGLASS.md): a toggle key, `` ` ``, and the wheel's steps while zoomed; mouse look scaled by 1/magnification; a DOM vignette in the HUD, `ui/spyglass.ts`) — the projection, the sky's view rays and each pass's culling all use it, as the LOD selection does; and while there is any **wind** (`set_wind`; six `wind_*` vec4s in the frame block; `motion_pass`) the composite draws the finished picture into a **finished image** (`finished_fs` into an `rgba16float` target the drawing's size, made the first time and kept until a resize, `frame::Finished`) and a **motion pass** (`motion_fs`, timed `gpu.motion`) draws the wind from it into the canvas, before the lines: procedural streaks radiating from the vanishing point of the camera's velocity (hashed angular cells, no textures), faded in toward the screen's edges so the crosshair stays clear, a denser layer for fast flight, an edge vignette, and a radial blur toward the vanishing point at the edges (four jittered taps, each a texel of the finished image). **Post effects that sample neighbours read the finished image**: every per-pixel effect of the composite lives in one function (`composite_pixel`: the fog, the sky, the clouds, the ink), nothing but the dither comes after it, and a neighbour-sampling effect never re-composites the scene, so whatever is added to the composite is in its taps (three times it was not: the clouds from below and from above, then the ink, vanished outside the blur's inner circle; shader-source tests pin the structure). Without wind the composite draws straight into the canvas (`composite_fs`); on `fly-low-fast` the split frame is cheaper than the old inline taps, which re-composited four pixels each (MOTION_EFFECTS.md, Cost); `display.rs`: `?scale=` (0.25–2) renders at a fraction of the resolution. `stats()` reports the frame's draw calls, triangles and GPU memory (F3). Each chunk and section is its own draw. Meshes live in **arena pages** (`arena.rs`): a few 32 MiB GPU buffers per vertex format (terrain, flat, lines, fluids), each holding many meshes' interleaved vertices and u32 indices, allocated first-fit from a coalescing free list and written with `Queue::write_buffer` (ordered after the frames already submitted, so a reused region never changes an earlier frame); a run of draws from one page binds its vertex and index buffers once and each draw is one `drawIndexed` (its first index and base vertex). Each draw's uniforms (offset, clip box, the LOD cross-fade in the clip box's last float (§6.6 Swaps), tint, turn; a fluid draw's origin wrapped to 1,024 m in the turn's zw) are an element of one storage array the shaders index by the draw's instance (draw k is drawn as instance k: no bind per draw, 80 bytes uploaded per draw). The opaque draws are ordered by pipeline and page and then near to far (each pipeline and page bound once; nearer meshes reject what they hide before it is shaded), and a section's surface and the skirts drawn with it, consecutive in its index buffer, draw as one call — each WebGPU call crosses from WASM to JS, which was most of the frame's encoding time (DEV_TOOLS.md). A replaced or removed mesh returns its regions to its page; pages, targets and the draw uniforms are **destroyed** explicitly when they go: WebGPU frees them on `destroy()` or whenever the page's garbage collector gets to them, and wgpu's WebGPU backend does nothing on drop. Native tests run the renderer on wgpu's noop device. |
+| `render/` **[built]** | The wgpu renderer (WebGPU only, WGSL; [ADR 0028](./adr/0028-rust-port.md)): terrain chunks (a texture repeated once per metre across merged quads, anchored in the world (`dwell-mesh`) — `tile.xy + fract(uv) × tile.zw` sampled with explicit gradients so mip selection has no seams — from a mipmapped sRGB atlas, averaged in linear light, crisp up close), LOD sections (§6.6: a section's surface and its six skirts in one vertex and index buffer, each skirt a range drawn when its side shows; stand-ins clipped to their box in the fragment shader), players as full bodies (`characters.rs`, §5.3: drawn in the scene passes with the opaque draws, through the composite like everything else; your first-person arms in a pass of their own after the world's), the targeted block's outline, the region tools' boxes (§6.5; drawn over everything), debug line segments, and the sky. Lighting replicates the Three.js build's look: Lambert shading with a sun or moon and a hemisphere light, each weighted to the fragment's own face — **[built, Phase 43]** the hemisphere light on terrain and cutout fragments scaled by the vertex's baked `light` above a floor, and **[built, Phase 45]** by its flood light (`terrain_light`: ambient `floor + (1 − floor) × sky × (light + (1 − light)(1 − sky))`, `sky` the flood sky level's brightness on `light.json`'s curve, so open ground keeps the baked light alone and deep in a cave only the flood light counts; the block light a warm glow; the direct sun and moon × the sky level's ramp, the shadow maps' stand-in past their last cascade, below; `AMBIENT_FLOOR` from `shared/look/ambient.json`, the rest from `light.json`; LOD sections and LOD water take open sky; chunk water and see-through faces take their mesh's flood light (the body, foam and glass by `terrain_light`, the glint and sparkle by its direct share under the shadow maps, the sky's reflection by the sky light's brightness), so they are dark in a cave with Shadows Off; players, your arms and held items take the flood light sampled where they are, eased over `characters.easeS` (`TerrainLight`, `Instance::light`); [`DAY_NIGHT.md`](./DAY_NIGHT.md) §9, §11) — and **[built, Phase 44]** the direct sun and moon term, and nothing else, multiplied by a **shadow** factor from **cascaded shadow maps** (`shadows.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §10; data `shared/look/shadows.json`, generated into `dwell-look` `shadows.gen.rs`): the light over the viewer's face (the sun, else the moon; `dwell_look::shadows::caster`, its strength faded in with its elevation) gets up to four orthographic depth maps (a `Depth32Float` array, a layer per cascade), each a **box around the eye** covering everything within its distance (the practical split of the shadow distance; the box doesn't depend on where the camera looks, as Minecraft shaderpacks centre their shadow map on the player), its half-size rounded up to a step and, for the far cascades, `slack` wider, its origin snapped to whole texels across the light (so moving doesn't shimmer the edges); the maps see the light in steps of `lightStepDeg` along its path (`shadows::stepped`), their texel grid running through an anchor that holds while the light holds its step and moves, when it steps, to where the nearest cascade was drawn (`Cache::anchor`), so the clock turning the light every frame doesn't turn the grid under every shadow edge every frame (it did: the moving noise in the shadows, 2026-10-21), deep enough toward the light to hold casters `casterReachM` above it; the spyglass stretches the shadow distance by its magnification up to a cap. **Kept maps** (`shadows::Cache`): the nearest cascade is drawn every frame; a far one is kept and read where it was drawn until the eye leaves its slack, the light turns `lightTurnDeg`, the casters in its box change (an order-free signature of their mesh identities, skirts and whether they fade; a falling piece's identity is its id and part, not its pose, since 0.50.15) or moving casters touch its box — other players, falling pieces, not loose items (ADR 0066), which only spin in place and show in the nearest cascade — (every `refreshFrames`; a player or piece anywhere else redrew every far cascade until 0.58.x, WORK_QUEUE item 32), and at most `farPerFrame` far cascades are drawn in a frame, the most urgent first, so no frame draws them all (one not drawn yet reads nothing: its fragments take the next cascade or the far shadows). Before the scene passes, a depth-only pass per drawn cascade (timed together as `gpu.shadows`; `shadow.drawn` counts them) draws the casters whose box overlaps its box: chunk terrain and LOD sections (depth only; a draw in an LOD swap, or a clipped stand-in, through a fragment stage that keeps the texels its dither keeps, so both levels of a swap share the map as they share the screen), cutout plants (alpha-tested, faded by the eye's distance as on screen), other players' bodies and your own (a body drawn into the nearest cascade's map only, so you have a shadow in first person and a kept far map holds no stale one), with a frame uniform per cascade whose `view_proj` is the cascade's matrix (its group has no binding of the maps it draws); casters drawn in full take a depth-only vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`; no fragment stage), the rest the scene's vertex stages; opaque casters draw their faces toward the light, slope-scaled depth bias. The scene's fragments (`shadow_light` in every `scene_out`, skipped on a face turned away from both lights, `lit_by_direct`; the characters' key light, the water's glint, sparkle and in-scatter) pick the first cascade that holds them, look it up normal-offset by its texels with a soft PCF (a grid of 2×2 hardware compares, its radius and taps per tier), and over the last share of the shadow distance (from the eye) fade to the first layer's stand-in (direct × sky light) shaded by **[built, Phase 46]** the **distant terrain's shadows** with no edge (`lod_shadows.rs`, [`DAY_NIGHT.md`](./DAY_NIGHT.md) §12, [ADR 0046](./adr/0046-distant-terrain-shadows.md); data `shared/look/lodshadows.json`: heightmaps of the chunks, LOD sections and stand-ins drawn from above through `FaceFrame` into a `Depth32Float` array around the eye — one or two levels, each two layers, filled a budgeted slice of casters a frame, with max mips, again only when the eye has moved or seconds have passed — and per level an `r16float` horizon map swept from them toward the light a band of rows a frame, again only when its heightmap was refilled or the light has turned; a far fragment reads its column's horizon against the light's elevation, one sample, and `dwell_look::lod_shadows::combine` blends it with the cascades over their fade band; the frame group binds the horizon maps at 11–13; none on a CPU adapter; timed as `gpu.lodshadows` and `gpu.lodsweep`); `cloud_shadow` is the hook for clouds' shadows (a future item). The frame group binds the maps at 8–10 (uniform block, depth array, compare sampler; a 1×1 stand-in while Off, made again with the groups when the setting changes). The **Shadows setting** (Off / Low / High: cascades, resolution, distance and filter per tier as data) defaults to Low on phones and High on desktops, Low at most on a CPU adapter (`shadows_for`), kept in the browser's append-only `dwell.shadows` record (`ui/shadowSettings.ts`), `?shadows=` overriding it for the bench; **[built, Phase 47 T1]** **dynamic point lights** (`lights.rs`, [`LIGHTS.md`](./LIGHTS.md) §3, [ADR 0047](./adr/0047-torches-and-dynamic-lights.md); data `shared/look/lights.json` → `dwell-look` `lights.gen.rs`, the light sources in the block registry): the lights held in hands this frame (`characters::held_light`: your arms' or body's, every other player's from the snapshots' held item, at the held item's light point), the nearest `maxLights` within `cullM` of the eye (`dwell_look::lights::pick`), flickering by their holder's phase, packed into one uniform block at frame binding 14 that every lit surface reads (`point_lights` in `scene_out`, the water's body and foam, see-through faces, the characters by their own normal; the falloff on the flood light's block-light curve, the cosine wrapped; `TerrainLight::points` added to the Lambert sum); never in the flood light (a placed torch lights through the flood light, its `emits`); counted as `lights.drawn`; **[built, Phase 47 T2]** **Torch shadows** (`point_shadows.rs`, [`LIGHTS.md`](./LIGHTS.md) §4; data `lights.json` `shadows`): the nearest lights that may cast (held, and with the setting on placed torches near the eye from the client's light-source index, `VoxelWorld::light_sources_near`, drawn at a share of their strength over their flood light and only with a map) get a cube of six perspective depth maps each (a `Depth32Float` array, six layers a slot; frame bindings 15–16, the cascades' compare sampler), drawn with the cascades' depth-only pipelines from the light, of the held chunks' opaque terrain within its radius, kept frame to frame (`dwell_look::lights::TorchShadowCache`: drawn again only when new, moved or the terrain near it changed, `redrawsPerFrame` at most; timed as `gpu.torchshadows`, counted as `torchshadow.drawn`); a fragment picks its face by its largest axis and multiplies the light's contribution by a 2×2 grid of hardware compares; the **Torch shadows setting** (Off / Low / High: how many lights and how large) defaults to Off on phones and Low on desktops, none on a CPU adapter (`torch_shadows_for`), kept as the `torch` field of the append-only `dwell.shadows` record, `?torchshadows=` overriding it; and **[built, Phase 47 T1b]** a texture's glow, its material's `emissive` (`tile_grids`' z for blocks, `Material::emissive` for characters): in the terrain, cutout and character shaders a surface's lit colour is replaced by up to all of its self-lit colour (`emitted`; 1 or more fully self-lit, as the torch's flame: unaffected by the sun, ambient, flood light, AO and shadows, shown as the tone curve shows its colour at the reference exposure whatever the frame's, `glow`, its brightest channel `glowPeak` at most), and a fully self-lit pixel flags the **view depth's second bit** (`self_lit_depth`; `frame_depth` clears both bits) so the composite leaves it out of the time of day's desaturation (`scene_self_lit_at`, `scene_display`); **[built, Phase 47 T1c]** **flames** (`flames.rs`, [`LIGHTS.md`](./LIGHTS.md) §6; data `shared/look/flames.json` → `dwell-look` `flames.gen.rs`, a light source's `flame` naming its look): where a light source with a flame burns — the placed light sources within `drawM` from the client's light-source index (`placed_flames`, a flame's base `baseM` over its cell's floor, on the cell's face), other players' held torches and your own in the arms view (`CharacterRenderer::held_flames`, at the item's light point, `heldScale`) — two camera-facing billboards per flame built on the CPU each frame (its up the face's up projected on the view plane, `dwell_look::flames::billboard` through `FaceFrame`): a glow quad added behind it and the flame's quad, a teardrop of rising value noise narrow at its base, its top split into tongues, coloured along its look's ramp in painted bands (`flame_shade`, its CPU twin in `dwell-look`), and a few CPU-placed ember discs; its height and glow follow the light's flicker (`lights::flicker`, same seed and clock); drawn in the near scene pass after its opaque draws, depth-tested and writing no depth, the flames and embers writing the view depth at the flame flagged self-lit and uninked (with see-through water in the pass, that mask before the water and the colour after it, in the water's half), your own in the arms pass; shown as the tone curve shows its colour whatever the exposure (`flame_light`, `glow` with the flames' `peak`); still (no noise, no embers) on a CPU adapter (`flames_animated`); counted as `flames.drawn`; **[built, Phase 48 M]** **portal motes** (BIFACIAL_WORLD.md §12.1; data `shared/look/motes.json` → `dwell-look` `motes.gen.rs`, a portal's look named in `shared/worldgen/midplane.json` `portals.motes`): the game takes the portals' axes from the announced generator and seed (`dwell_worldgen::portal_axes_for`, at join) and each frame the portals whose crossing point is within `drawM` of the eye (`flames::portals_near`); their motes (`dwell_look::motes::portal_motes`: circling the axis, rising and falling in a band either side of the midplane, half on each face's side through `FaceFrame`, pulsing each at its own phase) are camera-facing discs added in the flames' ember run (kind 3: self-lit and masked like an ember, `mote_shade`), `maxMotes` a frame, `cpuCount` (none) on a CPU adapter; counted as `motes.drawn`; then ACES filmic tone mapping with the exposure, a manual sRGB encode (the canvas is a non-sRGB format), then the height fog mixed toward the sky's colour in output space. **[built, Phase 27 S2a]** Terrain faces of a block with the registry's `grid` look option (below) are darkened along world-aligned lines every `every` blocks (`grid_shade`: 0.12 blocks wide, antialiased by the pixel's footprint, its coverage spread over the footprint once that outgrows the line and faded to its average beyond half a period, so distant grids neither shimmer nor alias), before lighting. The vertex carries nothing for it: the shader finds a face's grid from its tile rectangle (the atlas cell it starts in) in a 64-entry uniform table (`tile_grids`, frame group binding 3, written once from `dwell_mesh::tile_grids`), so the terrain vertex stays at 18 floats (with the baked `light` and the `flood` pair). **[built, Phase 33]** Cutout meshes (`render: cutout`: ladders, plants) draw after the opaque ones in their own pipeline (`cutout_vs`/`cutout_fs`, vertex = the terrain's plus a `plants` vec4 and a `bare` float: 1 where the block's `outline` is false, the cross plants' default): depth-writing, not culled (both sides; the back takes the normal mirrored in the horizontal only, so a ladder's back is lit as itself and up-leaning plant normals stay lit), alpha-tested with **alpha-to-coverage done in the shader**: the texel's alpha is sharpened to its edge over one pixel, times the distance fade, and covers that share of the pixel's samples through `@builtin(sample_mask)` (the samples picked per pixel by a noise, so overlapping blades add up), covered samples writing alpha 1 so the premultiplied frame stays right; with one sample (CPU adapters) it is a plain test, dithered while fading. The atlas mips of tiles with transparent texels keep the full-size tile's alpha coverage (`preserve_coverage`: each level's alpha scaled so the share at or above the edge matches, never emptying a tile at its last 2 × 2 levels; tested for both texture sets), so cutout tiles don't thin out with distance. Fluids (chunk water and LOD water alike) draw after the opaque and cutout meshes, far to near, with their own vertex format (position, normal, colour, fluid id; 40 bytes) and **water shader** (`fluid_vs`, `water_fs`, `water.rs`; Phase 26 W1b, the row below): blended, both sides, no depth writes. The frame uniform's `water` vec4 carries whether the eye is under a fluid's drawn surface, its fluid id and the surface's world y (`dwell_world::fluid::eye_fluid`, set by the game each frame from the camera eye: the cell at `floor(eye)` holds a fluid and, when the cell above — toward the face's up — is not the same fluid, the eye is below the top drawn `surfaceDrop` under the cell's top; on face B mirrored), and in w the water quality; `fog.z` carries the seconds since the renderer started (the ripples' scroll). Everything is drawn **camera-relative**: the eye is f64, each mesh's origin offset from it is computed in f64 and passed as f32, so precision holds ~8,000 km out. Two depth passes split at `LOD_NEAR_SPLIT_M` (§6.6), 4× MSAA. A **CPU adapter** (SwiftShader: CI, machines without a GPU) draws the cheapest tier of everything whatever the settings, since every pixel there is the CPU's time: no MSAA (`samples_for`), no clouds (`clouds_for`), Low water (`water_for`: no refraction or caustics, no copy of the scene), no stars (`stars_for`), no wind edge blur (`motion_blur_for`), and a drawing buffer at `CPU_RESOLUTION` (0.5) of the pixel ratio on each axis (`pixel_ratio_for`, applied in `Client::resize`), a 32-bit float depth buffer. **The shared frame [built]** (`frame.rs`; water's W2, [ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md)): the two depth passes draw into offscreen targets, not the canvas — lit, *linear* colour into an `rgba16float` target, premultiplied by coverage (cleared to 0, so alpha is how much of the pixel something covers; water blends into it in linear light), multisampled and resolved by the near pass; and each opaque fragment's **view depth** (metres along the view axis) into an `r32float` target both passes share (the far pass clears it, the near one draws over it: one meaning across the split, where the depth buffer is cleared between the passes and holds each pass's own projection). WebGPU can't resolve `r32float`, so the view depth is multisampled like the scene and stored, and its readers load its samples; the depth buffer stays attachment-only and discarded. A **composite** pass (a full-screen triangle into the canvas) then tone-maps and encodes the resolved colour, fogs it by the mean view depth of the samples it covers, and lays it over the sky of the pixel's view direction by its coverage — the sky is no longer drawn into the scene, and tone mapping and fog run once per pixel instead of in every lit fragment shader. The outline, the region and brush boxes and debug lines draw last, over the composite in output colour (unlit and unfogged, as before), with the near pass's projection, single-sampled, each segment a screen-space quad a constant `LINE_WIDTH_CSS_PX` (2) CSS pixels × the pixel ratio wide with square caps, whatever its distance (`line_vs`, cut at the near plane; the frame block's `lines` vec4; owner, 2026-11-06: far outlines stay readable; a few quads, so no CPU-adapter tier), depth-tested in the shader against the stored view depth sample by sample (the debug lines untested). Tone mapping after the MSAA resolve and water blended in linear light change the picture slightly (antialiased edges, the sea's colour), and the outline is no longer multisampled. **GPU pass timing** (`timing.rs`): with `Features::TIMESTAMP_QUERY` (requested when the adapter has it), each pass (far, near, composite) writes timestamps at its start and end, resolved into one of a ring of three `MAP_READ` buffers, mapped after the submit and read on a later frame (a frame finding all three still in flight goes untimed: reading never waits on the GPU), and reported as telemetry samples `gpu.far`, `gpu.near`, `gpu.composite`, `gpu.motion` (while the wind is on), `gpu.frame` (DEV_TOOLS.md); each frame names the passes it times (up to nine: the water's halves add theirs; `gpu.shadows` spans the shadow cascades' passes, its start written by the first and its end by the last). `camera.rs`: the field of view — the player's **Field of view setting** (default 75° vertical, 60–100°), narrowed on screens wider than ≈ 1.55 so the horizontal stays what the setting gives there (100° at the default; `dwell_lod::base_fov`, one rule for the renderer and the LOD, re-exported) — and the view turned over across the midplane. **[built, Phase 39 follow-up; preview, off by default]** The composite draws the **ink outline** while a mode is on (`?outline=`, `__dwell.setOutline`; the frame block's `outline*` vec4s, zero when off, which skips it): edges found in the shared frame's view depth alone (it has no normal or id targets) — one sample per tap over a 3 × 3 at half the line's width (CSS pixels × the pixel ratio); a silhouette where inverse depth's second difference is large, a crease where its slope turns (rows, columns and between the outer ones), block edges where the voxel cell behind the surface (position and normal reconstructed from the depth) changes; drawn in the palette's ink before the wind, faded out over the mode's distance (× the spyglass's magnification), fogged toward the sky by the height fog as the ground is, under the cloud deck where it is in front, and dropped below the sea's surface seen from above (the water writes no view depth, so the seabed would show through). Pixels past the fade return after one load. A surface whose block says `outline: false` (block data; the cross plants' default, so tall grass takes no ink) flags the **view depth's lowest bit** (`frame_depth`, which every writer of the view depth calls, a test checks it; one unit in the last place, below what any reader resolves): no ink on a flagged pixel, and the edge rule sees through flagged taps (each takes what the plane through the pixel and the opposite tap gives), so a plant's edges against the ground or the sky draw nothing either (a level fading out in an LOD swap flags its pixels the same way, §6.6 Swaps, so the dither's seams draw no lines); the block's `outline` reaches the frame in the cutout mesh's `bare` stream (registry sync: look tag `0x8c`, sent only where it differs from the look's default). Not drawn with the eye under water. **[preview, off by default; a prototype, not adopted]** The **pixel-art preview** ([`proposals/PIXEL_ART_LOOK.md`](./proposals/PIXEL_ART_LOOK.md); `?pixelart=<preset>`, `__dwell.setPixelArt`; palettes and presets as data in `shared/look/pixelart.json`, generated into `dwell-look` `pixelart.gen.rs` by `shared/look/pixelart.mjs`, validated, CI stale check; the maths, a CPU twin of the quantize and the post shader in `dwell-look` `pixel_art.rs` and `pixel_art.wgsl`): with a preset on, the frame draws at a fixed low height (`pixel_art::grid`: the integer scale nearest the preset's height with the overhang cropped, or the largest that fits it with bars; one low-res pixel of margin each side, the projection widened so the rows shown keep the FOV setting) — the scene targets, the composite and the lines at that size, the composite into a low-res picture in the canvas's format instead of the canvas — and two post passes (`render/pixel_art.rs`, timed `gpu.pixelart`) snap it to the preset's palette at low res, by nearest colour in OKLab with a 4 × 4 Bayer ordered dither between the nearest two colours, and draw that on the canvas, each canvas pixel one texel (nearest-neighbour integer upscale); the frame block's `pixel_art`/`pixel_tint` vec4s (zeros when off) put the sun's and moon's share (N·L × shadow) and optionally the ambient on toon levels in `lambert_lit` and tint the unlit part toward a cool hue; the preset's 1-pixel edge replaces the ink outline (black at a darkening strength, near side only, `outline_cfg.z`); the atlas is sampled nearest (with or without mips, separate samplers, the frame groups made again); no wind pass (blur and streaks off); optionally the eye snapped to the low-res pixel grid on a plane ahead with the remainder shifting the upscale (`snap_eye`). A CPU adapter skips it (`pixel_art_for`). The DOM HUD is unaffected. **Anti-aliasing and anisotropic filtering [built, 0.52.30]** (`render/mod.rs` `samples_for`, `anisotropy_for`, `fxaa_for`, `atlas_sampler_descriptor`; `render/fxaa.rs`, `fxaa.wgsl`; data `shared/render/antialias.json`, read and validated by the shell's `ui/antialiasSettings.ts`, its modes checked against the renderer by a Rust test; stored per browser under `dwell.antialias`, an append-only record): Settings → Graphics's **Anti-aliasing** is Off, MSAA 4× or MSAA 4× + FXAA (WebGPU allows only 1 or 4 samples per render target, so no 8×/16×). The sample count is fixed when the renderer is made (`Client.create`'s `samples`), so a change applies on the next load; FXAA applies live: with it on the composite and lines draw into the pass's input picture at the render size, and the FXAA 3.11-style pass (`gpu.fxaa`) draws it onto the upscale's picture or the canvas. **Anisotropic filtering** (Off, 2×–16×, default 8×) is the block atlas sampler's `maxAnisotropy`, applied live (the frame groups made again); above 1 every filter is linear (WebGPU's rule) and the shaders sample level 0 at texel centres (`atlas_crisp`) so texels stay crisp up close. The atlas's 16-texel wrapped gutters and its mip chain stopped where a gutter is one texel keep trilinear taps off the neighbouring tiles; an anisotropic footprint spreads its taps along its long axis, which showed far grazing ground as a grey grid (bench, 0.52.30), so the shaders cap that axis at 2 × the gutter in level-0 texels (`atlas_grads`; a cap past the last mip, so Off is unchanged). A CPU adapter draws 1 sample, no FXAA and anisotropy 1. `?aa=<mode>` and `?aniso=<n>` override them for a visit (the bench). Not part of the graphics presets. **Render scale and upscaling [built; 100 % by default]** (`render/upscale.rs`, `upscale.wgsl`; data `shared/render/upscale.json`, read by the shell's `ui/renderScaleSettings.ts` and validated there, its upscaler ids checked against the renderer's by a Rust test; DEV_TOOLS.md, Render scale and upscaling): the **Render scale** setting (100 / 75 / 67 / 50 % per axis) and **Upscaler** (a fixed vocabulary: `stretch`, `sharpen`; `stretch-pass` for the bench only), Settings → Graphics, kept in the browser's append-only `dwell.renderScale` record, `?renderscale=`/`?upscaler=` overriding it (`Client::setRenderScale`; `upscale::sizes` turns the page's CSS size, the pixel ratio, the scale and the kind into the canvas's and the scene's sizes, applied in `Client::resize`). **Stretch** makes the canvas's drawing buffer itself smaller and the browser stretches it to the page (CSS, bilinear): every pass, the post passes included, runs at the low size, and the browser's compositing of the canvas shrinks with it. **Sharpen** keeps a full-size canvas: the scene targets, the composite, the wind and the lines draw at the scene's size into a low-res picture in the canvas's format, then a port of AMD FSR 1 (MIT, `shared/licenses`) brings it up — EASU (12 taps, an edge-oriented Lanczos-2-like kernel, clamped to the four nearest texels) into a full-size picture, then RCAS (5 taps, contrast-adaptive sharpening at `sharpenStops`) onto the canvas; timed together as `gpu.upscale`. The LOD's pixel error and the lines' width follow the scene's pixels per CSS pixel. A CPU adapter ignores the scale (its own `CPU_RESOLUTION` buffer, stretched); the pixel-art preview takes precedence over it. Not built: temporal upscaling (FSR 2/3, DLSS-style; needs motion vectors and jitter) and MetalFX (native only). The DOM HUD stays at full resolution in both. **Motion effects [built, Phase 29]** ([`MOTION_EFFECTS.md`](./MOTION_EFFECTS.md)): the frame draws with the vertical FOV the game chose (`set_fov`: the base from the setting, zoomed out by the speed boost, `2·atan(tan(base/2)·(1 + boost))`, then narrowed by the **spyglass** **[built, Phase 38]** ([`SPYGLASS.md`](./SPYGLASS.md): a toggle key, `` ` ``, and the wheel's steps while zoomed; mouse look scaled by 1/magnification; a DOM vignette in the HUD, `ui/spyglass.ts`) — the projection, the sky's view rays and each pass's culling all use it, as the LOD selection does; and while there is any **wind** (`set_wind`; six `wind_*` vec4s in the frame block; `motion_pass`) the composite draws the finished picture into a **finished image** (`finished_fs` into an `rgba16float` target the drawing's size, made the first time and kept until a resize, `frame::Finished`) and a **motion pass** (`motion_fs`, timed `gpu.motion`) draws the wind from it into the canvas, before the lines: procedural streaks radiating from the vanishing point of the camera's velocity (hashed angular cells, no textures), faded in toward the screen's edges so the crosshair stays clear, a denser layer for fast flight, an edge vignette, and a radial blur toward the vanishing point at the edges (four jittered taps, each a texel of the finished image). **Post effects that sample neighbours read the finished image**: every per-pixel effect of the composite lives in one function (`composite_pixel`: the fog, the sky, the clouds, the ink), nothing but the dither comes after it, and a neighbour-sampling effect never re-composites the scene, so whatever is added to the composite is in its taps (three times it was not: the clouds from below and from above, then the ink, vanished outside the blur's inner circle; shader-source tests pin the structure). Without wind the composite draws straight into the canvas (`composite_fs`); on `fly-low-fast` the split frame is cheaper than the old inline taps, which re-composited four pixels each (MOTION_EFFECTS.md, Cost); `display.rs`: `?scale=` (0.25–2) renders at a fraction of the resolution. `stats()` reports the frame's draw calls, triangles and GPU memory (F3). Each chunk and section is its own draw. Meshes live in **arena pages** (`arena.rs`): a few 32 MiB GPU buffers per vertex format (terrain, flat, lines, fluids), each holding many meshes' interleaved vertices and u32 indices, allocated first-fit from a coalescing free list and written with `Queue::write_buffer` (ordered after the frames already submitted, so a reused region never changes an earlier frame); a run of draws from one page binds its vertex and index buffers once and each draw is one `drawIndexed` (its first index and base vertex). Each draw's uniforms (offset, clip box, the LOD cross-fade in the clip box's last float (§6.6 Swaps), tint, turn; a fluid draw's origin wrapped to 1,024 m in the turn's zw) are an element of one storage array the shaders index by the draw's instance (draw k is drawn as instance k: no bind per draw, 80 bytes uploaded per draw). The opaque draws are ordered by pipeline and page and then near to far (each pipeline and page bound once; nearer meshes reject what they hide before it is shaded), and a section's surface and the skirts drawn with it, consecutive in its index buffer, draw as one call — each WebGPU call crosses from WASM to JS, which was most of the frame's encoding time (DEV_TOOLS.md). A replaced or removed mesh returns its regions to its page; pages, targets and the draw uniforms are **destroyed** explicitly when they go: WebGPU frees them on `destroy()` or whenever the page's garbage collector gets to them, and wgpu's WebGPU backend does nothing on drop. Native tests run the renderer on wgpu's noop device. |
 | `render/seam.rs` **[built]** | The terrain's data side: `Scene`'s terrain calls are a `TerrainRenderer` (`set_chunk`, `set_section` — `None` removes — `show_sections`, `show_stand_ins`, `clear`, `gpu_bytes`) over the mesher's `ChunkMeshes` and `SectionMeshes`, which the meshing jobs make (`jobs/`, the codec carries them); the camera, players, outline, lines and stats are the rest of `Scene`. `Recording` holds what it is given, for the game's native tests. The streamer and the LOD system pass the meshes through (`TerrainView<M>`, `LodView<P>`, `SectionPayload` counting a section's bytes against the LOD cache). The mesher is the only terrain renderer: a ray-marched one was built beside it and dropped by the owner at Phase 25's A7 ([ADR 0044](./adr/0044-mesher-over-ray-marching.md); its code is the `archive/ray-marcher` tag and branch). |
-| `render/` water **[in progress, Phase 26]** | **Built (W1b):** the water shader over the shared frame ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md), [`WATER_RENDERING.md`](./WATER_RENDERING.md) §8). The registry's fluid table is packed into a storage buffer (frame group binding 4; `water.rs` `pack_fluids`: absorption and opacity, linear scatter colour and roughness, IOR, normal and wave scales, flow speed, foam, F0 from the IOR, caustic strength, surface drop, scattering, refraction, caustic scale and depth, sparkle, and its flow look from `shared/look/waterflow.json` by name; 144 bytes per fluid) in the frame's bind group, indexed by each vertex's fluid id. `water_fs`: still geometry, ripples in the shading — up to three scrolling layers of gradient-noise normal detail (sampled from the noise tile, below) by the fluid's normal scale, wave scale and flow speed, each faded out where a pixel covers more than ⅛–½ of its wavelength, the slope it loses widening the glint instead (no shimmer, a readable colour far away); the detail wraps every 1,024 m on a per-draw wrapped origin, exact at any distance; Schlick's Fresnel (F0 from the IOR), a GGX sun and moon glint by the fluid's roughness, the sky reflected (`dwell_sky` taken back into the scene's linear light through the composite's inverse tone mapping), the body (the scatter colour lit from the face's up) at the fluid's opacity; the alpha leaves what is behind visible through the share neither reflected nor hidden. Face-aware: on face B the mirrored surface's normal points down, and so does the rippled one. From below: total internal reflection outside Snell's window. While the eye is under a fluid, the composite replaces the height fog with the fluid's Beer–Lambert absorption and in-scatter over the distance in it (to what the pixel shows, or the surface; the W4 stub). The **water quality** (Low, Medium, High) is in the settings menu (`ui/waterSettings.ts`, stored in `dwell.water`, an append-only record; Low on phones, Medium on desktops): Low draws one layer of ripples, Medium and High three; every tier adds the sun's sparkle off a fine ripple layer. **Built (W3):** on Medium and High a raster scene pass with water splits into an opaque half (colour resolved, depth kept), a copy of the colour into the under-water copy (`frame.rs`, `rgba16float`, only on those tiers), and a water half (timed as `gpu.far.water`/`gpu.near.water`) drawing `water_scene_fs`, which reads that copy and the view depth (group 2, `frame::under_layout`): refraction offset by the ripples with the foreground-bleed check, Beer–Lambert colour over the ray's length in the water (absorption + the fluid's scattering) and the light's way down, the lit body in-scattered, caustics on the floor behind, shoreline foam where the water is thin, then reflection, glint and sparkle (alpha 1). Caustics (brought forward from W4): procedural moving Worley edges by the fluid's caustic strength, scale and fade depth, shifted along the refracted sun, faded where a pixel covers a cell; under the surface the composite lights every opaque pixel below it by the light that came down and the same caustics before the fluid's fog. LOD water shades the same way, so near and far match. Low keeps W1b's pass and look with no copy. **Built (W5a, brought forward from W5):** reflections of land and clouds — on Medium and High, `water_scene_fs` marches the reflected ray on screen through the view depth (`ssr_trace`; its tested twin is `render/reflection.rs`), even steps clipped to the screen with 1/depth interpolated, a hit where the scene's surface lies within a step (plus a thickness), pinned by binary steps; the hit is read from the under-water copy, fogged by its distance and faded at the screen's edges and the end of the reach into the sky. The sky in reflections carries the cloud deck (`reflected_env`: the composite's `dwell_cloud_deck`/`dwell_clouds` from the surface point, under the frame's lights, so day/night follows; the deck's footprint from the calm mirror ray, in uniform control flow), on Medium and High only. The scene hides the glint and sparkle where it is reflected. Per tier as data (`shared/look/reflections.json` → `dwell-look` `reflections.rs`/`reflections.gen.rs` by `shared/look/reflections.mjs`, validated, CI stale check): march and refine steps, reach, cloud octaves (capped by the Clouds setting) and self-shadow, carried in the frame uniform's `reflect` and `reflect_sky`; a phone's own overrides of them (`phone`, the renderer's `set_phone` from the shell's `prefersTouch`). The land is marched and the clouds drawn in the reflection only where the surface reflects more than `minReflectance` (Schlick, `reflection.rs` `land_share`; looking down at water they are skipped, WATER_RENDERING.md §8 "Cost close to the water"). **Built (cost, 2026-10-19; WATER_RENDERING.md §8 "Cost"):** the **water tiles** (`water_tiles.rs`, frame group bindings 5–7, a repeating linear sampler): gradient noise with derivatives over 32 cells (512² `rgba16float`, drawn once) that the ripples, sparkle and foam sample, and per fluid this frame's two caustic layers' cell-edge distances over 16 cells (512² `rg16float` array layer, drawn each Medium/High frame with water or the eye under it, timed as `gpu.water.tiles`), sampled at every distance (`water::CAUSTIC_EXACT_TEXELS` 0, 2026-11-06: per-pixel evaluation close up cost a phone its frame rate); periods round to whole tiles (`water::tile_cells`). The marcher's composite binds and draws its own. High adds the fine caustic layer to twice the distance; Medium is the desktop default. `?waterdbg=` turns pieces of the water's shading off for cost isolation (`water::DEBUG_SWITCHES`, the frame's `wrap.z`). **Frame pacing** (`pacing.rs`): at most two frames in flight on the GPU (`Queue::on_submitted_work_done`); the app skips a draw while two are (`draw.skipped`, giving up after 1 s), so a backed-up GPU no longer blocks the main thread in the frame's encoding. **Planned (W4–W5):** the water line, Snell's window with refraction to the scene above, god rays; half-res copies and the tiers' remaining differences (Ultra), Low on phones. The surface geometry stays still; an eye-submerged test that matches the drawn surface (0.875 of a cell for water) drives the underwater view. |
+| `render/` water **[in progress, Phase 26]** | **Built (W1b):** the water shader over the shared frame ([ADR 0030](./adr/0030-fluid-looks-and-water-rendering.md), [`WATER_RENDERING.md`](./WATER_RENDERING.md) §8). The registry's fluid table is packed into a storage buffer (frame group binding 4; `water.rs` `pack_fluids`: absorption and opacity, linear scatter colour and roughness, IOR, normal and wave scales, flow speed, foam, F0 from the IOR, caustic strength, surface drop, scattering, refraction, caustic scale and depth, sparkle, its flow look from `shared/look/waterflow.json` and its underwater look from `shared/look/underwater.json` by name, the shore foam's bands from `waterflow.json`'s `shore`; 272 bytes per fluid) in the frame's bind group, indexed by each vertex's fluid id. `water_fs`: still geometry, ripples in the shading — up to three scrolling layers of gradient-noise normal detail (sampled from the noise tile, below) by the fluid's normal scale, wave scale and flow speed, each faded out where a pixel covers more than ⅛–½ of its wavelength, the slope it loses widening the glint instead (no shimmer, a readable colour far away); the detail wraps every 1,024 m on a per-draw wrapped origin, exact at any distance; Schlick's Fresnel (F0 from the IOR), a GGX sun and moon glint by the fluid's roughness, the sky reflected (`dwell_sky` taken back into the scene's linear light through the composite's inverse tone mapping), the body (the scatter colour lit from the face's up) at the fluid's opacity; the alpha leaves what is behind visible through the share neither reflected nor hidden. Face-aware: on face B the mirrored surface's normal points down, and so does the rippled one. From below: total internal reflection outside Snell's window (the critical angle tested in the composite too, `sees_out`), the underside lit unshadowed and textured by broken caustic cells with a sun patch toward the sun's image through the window, faded into the fog over the distance to the surface (`underside_look`, `sun_through`; 0.50.22, WATER_RENDERING.md §12.2); the body from above takes no shadow (the glint and sparkle do). While the eye is under a fluid, the composite replaces the height fog with the fluid's Beer–Lambert absorption and in-scatter over the distance in it (to what the pixel shows, or the surface; the W4 stub). The **water quality tiers are data** (0.50.29, owner 2026-11-07: `shared/look/watertiers.json` → `watertiers.mjs` → `dwell-look` `water_tiers.rs`/`watertiers.gen.rs`, validated, CI stale check; the shell reads the JSON in `ui/waterSettings.ts`): each tier names whether it reads the scene, its opacity and surface caustics in the blended pass, its ripple layers, flow streaks and the bank band, whether Settings offers it and whether it is the CPU adapter's; the renderer's `WaterQuality` indexes the list and the frame uniform's `water.w` carries the tier's switches as bits (`tier_bits`, the WGSL's `water_tier_*`). Settings offers Low and Medium (stored in `dwell.water`, an append-only record; Low on phones, Medium on desktops; a stored `high`, the tier folded into Medium, reads as Medium and is kept as stored, `aliases`); the opaque tier is the CPU adapter's only (`water_for`). Low sees through **without the scene copy** (no pass split, for phones' tile GPUs; owner 2026-11-07): drawn blended in the scene pass at 0.9 of the fluid's opacity, the caustic tile's lines added on the water, one ripple layer, no flow streaks, no land march; Medium reads the scene and draws three layers, the streaks and SSR. The **bank band** (`bank_band`: the reflected ray's point a few metres out projected once, the scene copy's colour there taken as a soft darkened strip) is built for a scene-reading tier but drawn by none; every tier adds the sun's sparkle off a fine ripple layer. **Built (W3):** on the tiers that read the scene (Medium) a raster scene pass with water splits into an opaque half (colour resolved, depth kept), a copy of the colour into the under-water copy (`frame.rs`, `rgba16float`, only on those tiers), and a water half (timed as `gpu.far.water`/`gpu.near.water`) drawing `water_scene_fs`, which reads that copy and the view depth (group 2, `frame::under_layout`): refraction offset by the ripples with the foreground-bleed check, Beer–Lambert colour over the ray's length in the water (absorption + the fluid's scattering) and the light's way down, the lit body in-scattered, caustics on the floor behind, shore foam (0.52.6, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §14, §20: a contact line feathering into the water and soft pulsing bands rolling out from the shore by the distance to it, the depth or the ray's path to a wall, tunables per liquid in `waterflow.json` `shore`, the softness in the fluid table's last vec4), then reflection, glint and sparkle (alpha 1). Caustics (brought forward from W4): procedural moving Worley edges by the fluid's caustic strength, scale and fade depth, shifted along the refracted sun, faded where a pixel covers a cell; under the surface the composite lights every opaque pixel below it by the light that came down and the same caustics before the fluid's fog. LOD water shades the same way, so near and far match. Low and the CPU adapter's opaque tier keep W1b's single pass with no copy. **Built (W5a, brought forward from W5):** reflections of land and clouds — on Medium, `water_scene_fs` marches the reflected ray on screen through the view depth (`ssr_trace`; its tested twin is `render/reflection.rs`), even steps clipped to the screen with 1/depth interpolated, a hit where the scene's surface lies within a step (plus a thickness), pinned by binary steps; the hit is read from the under-water copy, fogged by its distance and faded at the screen's edges and the end of the reach into the sky. The sky in reflections carries the cloud deck (`reflected_env`: the composite's `dwell_cloud_deck`/`dwell_clouds` from the surface point, under the frame's lights, so day/night follows; the deck's footprint from the calm mirror ray, in uniform control flow), on Medium and High only. The scene hides the glint and sparkle where it is reflected. **Built (0.52.32, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §15):** the sun and moon on the water — on a tier with `bodyPath` (reflections.json; not the CPU adapter's) the discs (the moon in its phase) are mirrored in the reflected sky under the reflected clouds (`reflected_bodies`) and each lays a glitter path, a GGX lobe of its disc's light off the rippled normal (`body_paths`; the sun's only while low, faded by the cloud cover), tunables per body in reflections.json `bodies` (`render/glitter.rs`, its tested twin); `reflect_sky.y` carries the tier's bits (self-shadow, path). Per tier as data (`shared/look/reflections.json` → `dwell-look` `reflections.rs`/`reflections.gen.rs` by `shared/look/reflections.mjs`, validated, CI stale check): march and refine steps, reach, cloud octaves (capped by the Clouds setting) and self-shadow, carried in the frame uniform's `reflect` and `reflect_sky`; a phone's own overrides of them (`phone`, the renderer's `set_phone` from the shell's `prefersTouch`). The land is marched and the clouds drawn in the reflection only where the surface reflects more than `minReflectance` (Schlick, `reflection.rs` `land_share`; looking down at water they are skipped, WATER_RENDERING.md §8 "Cost close to the water"). **Built (cost, 2026-10-19; WATER_RENDERING.md §8 "Cost"):** the **water tiles** (`water_tiles.rs`, frame group bindings 5–7, a repeating linear sampler): gradient noise with derivatives over 32 cells (512² `rgba16float`, drawn once) that the ripples, sparkle and foam sample, and per fluid this frame's two caustic layers' cell-edge distances over 16 cells (512² `rg16float` array layer, drawn every `causticEveryFrames` (2) frames while the tier draws caustics (Medium's floors, Low's surface lines) with water in view or the eye under it, at once on the first such frame, `water_tiles::caustics_due`; timed as `gpu.water.tiles`), sampled at every distance (`water::CAUSTIC_EXACT_TEXELS` 0, 2026-11-06: per-pixel evaluation close up cost a phone its frame rate); periods round to whole tiles (`water::tile_cells`). The marcher's composite binds and draws its own. Medium is the desktop default. `?waterdbg=` turns pieces of the water's shading off for cost isolation (`water::DEBUG_SWITCHES`, the frame's `wrap.z`). **Frame pacing** (`pacing.rs`): at most two frames in flight on the GPU (`Queue::on_submitted_work_done`); the app skips a draw while two are (`draw.skipped`, giving up after 1 s), so a backed-up GPU no longer blocks the main thread in the frame's encoding. Its readouts (0.50.2, DEV_TOOLS.md § the performance line): `pacing.in_flight` and `draw.paced` per frame, `pacing.done` (submit to the answer, ms), and the performance line's drawn of animation frames with the skips by reason. **Built (the waterline, 0.50.17, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §12):** `dwell_world::fluid::eye_fluid` finds the eye's fluid surface when the eye is under it or above it within the looks' reach (`dwell_look::underwater::line_reach_m`: the lens times the longest view ray plus the line's waves and the band, so the switch changes no pixel), matching the drawn surface (0.875 of a cell for water), on both faces. `frame.water.x` (`render/mod.rs` `waterline_state`): 1 deep under (the whole view under, one uniform branch, as before), 2 or 3 near the surface under or above it; there the composite decides each pixel by its own ray (`waterline_m`: the pixel's point on the lens plane, the fluid's `lensM` ahead along the camera's forward axis, against the surface, less the line's waves, so the line is straight and moves smoothly with the eye; CPU twin `water.rs` `waterline_m`), shows the ordinary composite, or only the underwater one and under the line the **band** (0.50.20, §12.1: the surface's slab seen edge-on, coloured by the mirrored scene above and the water below, textured, a dark rim over a bright line; `waterline_band`); the fluid shaders discard the eye's own surface on the far side of the line (`waterline_hides`). The underwater fog starts past the look's `clearM` and scales the fluid's rates by its `density`. No extra pass; every water tier, the CPU adapter's included. **Built (Snell's window onto the real sky, 0.52.49, [`WATER_RENDERING.md`](./WATER_RENDERING.md) §16):** from under the surface the window shows the sky along the ray bent out by Snell's law at the rippled surface (`water_exit`; CPU twins `water.rs` `water_exit`, `critical_angle`, `window_radius`), the sky pass's own sky above the horizon in it (`sky_above_with_clouds`, one function for both: the gradient, the stars, the moon in its phase, the sun's disc, the clouds; 0.52.53, §16.1) on every tier, its glow scaled by the sky's light straight up (water's glow 0: none), and the underside's cells over it only at the look's `window.cells` share; the water seen from inside takes the time of day's saturation as the scene above does (`moonlit`) (`underwater.json` `window`, the fluid table's 17th vec4; 272 bytes per fluid). **Built (light shafts, 0.50.24, [ADR 0064](./adr/0064-light-shafts.md)):** the god rays, in the air and under water, and Snell's window's glow (§6.7 *Light shafts*). **Planned (W4–W5):** the scene above (land, not only the sky) through Snell's window; half-res copies and the tiers' remaining differences (Ultra), Low on phones. The surface geometry stays still. **In progress (the GPU heightfield, C6a, 0.50.69; [`WATER_RENDERING.md`](./WATER_RENDERING.md) §4):** a tier's `heightfield` switch (data, all off) for drawing the near surface from per-chunk level tiles (`dwell-mesh` `heightfield.rs`: filled from the eighths, both faces; `HeightAtlas` slots) on one shared grid whose vertex shader reads them (`render/heightfield.rs`, validated), the chunk mesher leaving liquid tops to it (`ChunkFlags::water_tops`, the streamer's `Pool::water_tops` from `Scene::draws_heightfield`); 0.50.72: drawn as one `heightfield_vs` grid draw per tiled chunk from an `rg32float` atlas (levels and flood light; group 3 of the water pipelines, `HeightfieldGpu`), chunk meshes carrying their tile from the worker; 0.50.77: the grid unindexed, six vertices a column, a dry column's collapsed to one point (no pixels; `heightfield::grid_vertex` the reference), and a chunk whose only changes are its water's levels gets its tile rewritten on the main thread (`heightfield::water_tile` through the streamer's `TerrainView::set_water_levels`) with no mesh job, re-meshed once after `WATER_SETTLE_PASSES` (60) quiet mesh passes; 0.51.5 (W1, W2): the skip covers any water-only change (each changed cell air or a liquid before and after, the same liquid where both: the wet front advancing or drying too; `chunk_stream` `water_only`), making a tile for a chunk's first water and freeing it when dry, and the water's sides to open air are drawn from the tile as **skirts** (the same draw's vertices past the grid's, 24 a column: from the surface's edge down to a lower neighbour's water or the column's own floor, packed into the tile's second channel over the light, `heightfield::pack_column`; `skirt_vertex` the reference), so the mesher leaves those sides out under the same flag (`skirt_covers`; falls, pour slopes, same-water steps and sides against shaped or see-through blocks stay meshed); still off in every tier: measured in 0.51.5 (M1, Medium, `--compare --configs heightfield`) `water-flood` chunk uploads 248 → 223 a second (−10 %; most of the rest is the view streaming after the move and the settle re-meshes), `upload.chunk` 3.05 → 2.71 ms and `jobs.apply` 3.52 → 3.20 ms a frame, but `gpu.near.water` 2.54 → 3.63 ms (flood) and 2.44 → 3.15 ms (river): the skirts' vertices cost more than they save, and they look wrong (bright strips along the banks and at the river's steps, where a skirt stands in front of a shaped bank; holes and column seams in the flooding pit), forced per page with `?heightfield=0|1` (a dev switch, DEV_TOOLS.md). |
 | `local.rs`, `web/local_worker.rs` **[built]** | Local mode (§2.1): `LocalCore`, the `dwell-sim` server with its world file, stepped by elapsed time; `LocalWorld`, its wasm-bindgen face for the local-mode worker, with the world file on an OPFS sync access handle (§6.4), carrying the water host's batches to and from the water worker (`takeWaterOut`, `waterIn`, `requestWaterRecord`, `waterStats`; §6.7 G5); `web/water_worker.rs`'s `WaterWorker`, the water grid in its own worker (§5.1); `worldFileVersion` / `setWorldFileVersion` read and rewrite a world file's version (debug tools and the version-lock e2e test); for the dev tools (DEV_TOOLS.md "Finding places"), through the worker's own messages (not the network protocol), `teleport` (the local player moved, `teleport_local_player`) and `findOnMap` (the world map's nearest sea, river or lake, `find_on_map`). |
 | `physics/` | **[planned, Phase 21]** The client's debris world (a local Rapier world); the prediction world is the predictor's (§9.3). |
 | `interp/` | **[planned, Phase 20]** Tier 1 transform interpolation (and bounded extrapolation); player interpolation is in `dwell-game`'s `remotes.rs`. |
@@ -521,15 +583,136 @@ returns. Without WebGPU (no `navigator.gpu`, no adapter or device) the page show
 | `main.ts`, `engine/` **[built]** | Creates the `Client` on the canvas, forwards DOM input (keys, pointer lock, mouse, wheel, touch) to it, runs the frame loop, sizes the drawing buffer, applies the settings, and shows the HUD, hotbar and debug tools; `engine/wasm.ts` loads the module once per JS context, `engine/jobWorker.ts` is a job worker (§5.1). |
 | `net/` **[built]** | `connect.ts`: chooses how to reach a server — a dedicated server by invite (the Rust client opens the connection: `connectWebTransport`, falling back to `connectWebRtc`; `?transport=` forces one), a friend world through its room, or local mode — and hands friend-world peers and the loopback to the client as `Transport` objects (`Transport.ts`: `sendReliable`, `sendDatagram`, handlers, `binding`); invite parsing (`invite.ts`). `LoopbackTransport` (`loopback.ts`): the local-mode worker's messages. **[built, Phase 5b–5c]** The master client (`master.ts`: signed requests, rooms, TURN credentials, the room socket URL; `roomSocket.ts`: the signaling WebSocket); `peer.ts`: `PeerTransport`, full WebRTC to a browser-hosted friend world negotiated through the room, and `HostPeer`, the host's side of one guest; `hosting.ts`: the host's relay between the room, its guests' peer connections and the local-mode worker (§10.2); `connectToRoom` joins by code (`joinCode.ts`). **[built, Phase 5d]** `connectToCode` resolves a code first: a dedicated server is joined like an invite link (`serverInvite`), a friend world through its room; the master client also resolves typed addresses and lists games on the player's network. **[built, Phase 6]** The master reports the host's app version: `connectToCode` throws `HostVersionError` for a host on another version line (§10.5), and the page then opens the launcher with `?code=…&v=<host version>`. **[built, Phase 5e]** The lobby list (`MasterClient.lobby`, with search and filters) and join receipts (`connectToCode` posts one once it has joined a dedicated server it resolved). |
 | `identity/` **[built]** | Device key (§10.4): non-extractable Ed25519 WebCrypto key in IndexedDB; it signs the handshake for the Rust session. |
-| `local/` **[built]** | Local mode: the module worker (`worker.ts`) running the Rust `LocalWorld` (`wasmCore.ts`), stepping it every 4 ms of real time and posting its outbox; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handle, opened by the worker before the core starts; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalWorld` throws when the world file is locked to another version. **[built, Phase 27 S2b]** `structureStore.ts`: the structures store in OPFS (`dwell/structures/`, append-only, §6.3); `structures.ts`: structures from voxels, checked with `shared/structures/format.mjs`, printed as the committed files are. |
-| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); under it the **performance line** (`perfLine.ts`, owner 2026-11-06): frames *drawn* a second (`fps.ts`, per full second; an animation frame skipped while the GPU is behind, `render/pacing.rs`, isn't counted — `Client::frame` says whether it drew), the CPU's time per frame (`frame.cpu`) and the GPU's (`gpu.frame`, where the browser times the GPU; `Client::perf`), the server's ticks a second (from the tick it sends, any server) and a local server's time per tick (the local worker's `perf` message); **what shows on screen** is a setting (Settings, On screen; owner 2026-11-06): the parts as data (`shared/ui/hud.json` → `shared/ui/gen.mjs` → `hud.gen.ts` and `hud.gen.css`, validated, CI stale check; id, label, selector, default, and whether a phone may hide it — the menu button it may not), `hudSettings.ts` (the `dwell.hud` record, append-only) toggling a body class per part that the generated stylesheet hides (the page's CSP takes no inline styles); HUD (`hud.ts`: crosshair, health, death message, the texts the client returns) and the F3 debug overlay (a capped, scrolling panel headed by its tools with their keys — Copy block info F6, Map F4, Close F3; on touch screens the connection status and the overlay stack below the top hotbar) and a hint of the keys when a game starts (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation; the memory line, `memory.ts`); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns around the player sampled by a generation worker, coloured by height and hill-shaded, with the player's heading; `-` and `=` zoom from 8 m per column out to the whole disc at 128 km, centred on the origin, with the player a dot on it); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot, the selected one highlighted and named; tapping a slot selects it); the flight speed slider (`flightSpeedControl.ts`); the game menu (`settingsMenu.ts`, `viewSettings.ts`, `detailSettings.ts`: a ☰ button in the top-left corner, or Esc, opens a full-screen menu over the dimmed game, with pages — **Settings**: **[Phase 28]** Master, Effects and Interface volumes; sliders for the full-detail distance, distant detail and memory, §6.6, the tone-mapping exposure, **Clouds** (Off / Low / High, a row of buttons; High on desktops, Low on touch devices; `dwell.clouds`, its own key in the append-only store) and the Field of view (60–100°, default 75°, the append-only `dwell.view` record), and Motion — Speed effects on or off (off by default under `prefers-reduced-motion`) the FOV boost's strength and **[Phase 33]** Plant sway (tall grass in the wind; off by default under `prefers-reduced-motion`) (`motionSettings.ts`, its record append-only) — applied live and kept in local storage; Reset, and Copy JSON to share them — selected in a text box where the clipboard is unavailable; **Controls**: every key and touch control from `controls.ts`, one data table that also feeds the Debug page, the overlay's key hints and the start hint; **Structures** (Phase 27 S2b, `structuresPanel.ts`, §6.3): save, the saved structures with load, export, rename and delete, and import; **Debug**: the debug tools as buttons with their keys; **Host**, in a local world — and Quit to main menu and Resume at its foot; the touch controls are hidden while it is open, so they never take its taps). The screen stacks, bottom to top: the canvas, the touch zones, the HUD (its buttons above the zones), the HUD widgets, the menu button, the menus; menus and play work upright and sideways on phones (no rotate prompt). The look (`style.css`): a daylight sky over terraced voxel hills; main buttons are grass blocks, the title is extruded like a block. **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, 0.37.3]** New world's **Spawn** (face A, face B, either side of the portal; Play advanced's Spawn choices): the world's first spawn, kept in its index entry (`spawn`, append-only) and read only when its file is created. **[built, 0.31.3]** **Play advanced** beside New world (`playAdvanced.ts`, DEV_TOOLS.md § Play advanced): a local world by link (`?local=1`; a world file per type, seed and spawn, and a spawn puts the player at it on every open) with overrides that are existing URL parameters (world type, seed, spawn, time of day, moon, clock speed, ink outline, pixel art, distant terrain), one field per entry of `shared/play/overrides.json` (generated into `playOverrides.gen.ts` by `shared/play/gen.mjs`, validated, CI stale check); only the fields set are passed, and every route drops them (`ROUTE_PARAMS`), so nothing carries over. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, in the main menu below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (`pingServer`, at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices; **[built, 0.38.7]** a **Versions** card of its own (owner, 2026-10-28: first class, not a footer link): this build, what changed in it (`shared/releases/changes.json`, `version/changes.ts`) and All versions, the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
-| `audio/` **[in progress, Phase 28]** | Sound effects (§5.2, [`AUDIO.md`](./AUDIO.md)): `synth.ts` (the vocabulary in plain Web Audio), `mixer.ts` (buses, room reverb, soft limiter), `variation.ts`, `engine.ts` (the AudioContext, unlock on the first gesture, volumes, muting while hidden, spatial plays, the listener), `events.ts` (the Rust events → sounds), `uiSounds.ts` and `page.ts` (delegated menu sounds, on the game page and the main menu), `settings.ts` (the volumes' append-only store), `render.ts`, `renderPlan.ts`, `wav.ts` (offline renders, `npm run sfx:render`), `sounds.gen.ts` (generated). |
-| `debug/`, `world/`, `protocol/`, `version/` **[built]** | The block dump (`debug/blockDump.ts`, §6.3; in a local world with the server's water near the player, `Water::report`, and its last block edits, `Server::edit_log_json`, DEV_TOOLS.md) over the generated TS block tables (`world/blocks.gen.ts`, `blocks.ts`: canonical state strings); the generated protocol constants (`protocol/constants.gen.ts`); the app version's rules (`version/semver.ts`, §10.5). |
+| `local/` **[built]** | Local mode: the module worker (`worker.ts`) running the Rust `LocalWorld` (`wasmCore.ts`), stepping it every 4 ms of real time and posting its outbox; `world.ts` reads `?world=` and `?seed=`. **[built, Phase 3e]** `worldFiles.ts`: the world file's OPFS sync access handle, opened by the worker before the core starts; the page asks for a save when hidden or closed. **[built, Phase 5a]** `worldIndex.ts`: the world list (names, seeds, types, last played) in local storage, seeds from text, adoption of per-seed files; `worldFiles.ts` also lists and deletes world files. **[built, Phase 6]** The index records each world's `appVersion` and is a cross-version contract (append-only; unknown fields and unreadable records are preserved on rewrite); worlds without a version are listed apart; `worldAccess.ts` says whether this build may open a world (§6.4); `LocalWorld` throws when the world file is locked to another version. **[built, Phase 27 S2b]** `structureStore.ts`: the structures store in OPFS (`dwell/structures/`, append-only, §6.3); `structures.ts`: structures from voxels, checked with `shared/structures/format.mjs`, printed as the committed files are. `structureLibrary.ts` **[built, item 12]**: the player's library's tiled files and limits (`shared/structures/library.json`, §6.3). |
+| `ui/` **[built]** | Connection status overlay (transport, player id, RTTs, server tick); under it the **performance line** (`perfLine.ts`, owner 2026-11-06): frames *drawn* a second of the browser's animation frames (`fps.ts`, per full second; an animation frame skipped while the GPU is behind, `render/pacing.rs`, isn't counted — `Client::frame` says whether it drew — and the skips are counted by reason, GPU-wait or no-surface, from `Client::perf`; 0.50.2), the CPU's time per frame (`frame.cpu`) and the GPU's (`gpu.frame`, where the browser times the GPU; `Client::perf`), the server's ticks a second (from the tick it sends, any server) and a local server's time per tick (the local worker's `perf` message); **what shows on screen** is a setting (Settings, On screen; owner 2026-11-06): the parts as data (`shared/ui/hud.json` → `shared/ui/gen.mjs` → `hud.gen.ts` and `hud.gen.css`, validated, CI stale check; id, label, selector, default, and whether a phone may hide it — the menu button it may not), `hudSettings.ts` (the `dwell.hud` record, append-only) toggling a body class per part that the generated stylesheet hides (the page's CSP takes no inline styles); **[built, 0.50.41] where the parts go** is data too (owner, 2026-11-08: "The UI needs a relayout on mobile, it's all overlapping itself"): `shared/ui/layout.json` (→ `shared/ui/gen.mjs` → `layout.gen.ts`, validated, CI stale check) gives each part an anchor (a corner or the top or bottom edge), a priority, a narrowest width it may shrink to, `flush` (it must touch its edge), `after` (it stacks below, or above, another part), overrides for touch screens and either orientation, and fixed parts (the crosshair, the health bar) and regions kept clear (the held item, bottom centre-right, on a phone sideways) that the others avoid; `hudLayout.ts`'s solver places the visible parts in priority order (each takes its row's free stretch on its side, else the next row down — or up — with room; a part with no room hides until there is) so none overlap and each stays in the safe area, and moves them by inline left/top (CSSOM, allowed by the CSP) on a resize, when a part changes size (a ResizeObserver: shown, hidden, its text or rows) and when a part is made, never otherwise (restyling the blurred parts costs frames on a software renderer). On a phone the minimap takes the top-right corner under the info button (beside it sideways, so the touch buttons have the right edge's height) at its compact size, the hotbar the top up to it (its row scrolls), the status and performance lines go below the hotbar on the left, the flight slider under the minimap, and the touch buttons a two-wide block in the bottom right (`style.css`; four rows upright, three sideways). Tests: `hudLayout.test.ts` solves phone, tablet and desktop sizes (none overlapping, a part hidden from Settings reflowing the rest, a fixture part added by data alone), `e2e/hudLayout.spec.ts` measures the page on an iPhone both ways up; HUD (`hud.ts`: crosshair, health, death message, the texts the client returns) and the F3 debug overlay (a capped, scrolling panel headed by its tools with their keys — Copy block info F6, Copy streaming F8, Map F4, Close F3; on touch screens the overlay sits below the top hotbar) and a hint of the keys when a game starts (PLAYER_CONTROLLER.md §9; Phase 3e adds the player's chunk regenerated and diffed against the world's: its revision and how many voxels differ from generation; the memory line, `memory.ts`); the F4 terrain map (`mapOverlay.ts`, Phase 3e: 128² columns around the player sampled by a generation worker, coloured by height and hill-shaded, with the player's heading; `-` and `=` zoom from 8 m per column out to the whole disc at 128 km, centred on the origin, with the player a dot on it); the block hotbar (`hotbar.ts`, §6.5: a swatch per palette slot, the selected one highlighted and named; tapping a slot selects it); the flight speed slider (`flightSpeedControl.ts`); the game menu (`settingsMenu.ts`, `viewSettings.ts`, `detailSettings.ts`: a ☰ button in the top-left corner, or Esc, opens a full-screen menu over the dimmed game, with pages listed down the side (a row of tabs on phones; the controller's D-pad moves through them) — **[built, 0.50.28]** the settings in four panes (owner, 2026-11-07: "arranged concisely and mostly vertically", each kind in its own pane), one column of compact one-line rows (name, control, value; the hint is the row's title): **Graphics** — the **Preset** slider (Low → Mobile → Medium → High → Ultra, `graphicsPresets.ts` over `shared/settings/graphics-presets.json`: each preset sets the render scale and upscaler, water quality, sun and torch shadows, light shafts, clouds and the three detail sliders by name, validated against each setting's own choices; moving it applies one and stores its id (**[built, 0.50.31]** the append-only `dwell.graphicsPreset` record, `{ "id": … }`), so the settings it sets follow that preset's *current* definition and a retuned preset reaches its players; changing one of them by hand pins it and reads Custom, the preset staying the base the others follow; a new player starts on the data's default, Mobile on phones and High on desktops; `?preset=<id>` draws a visit at one, for the bench), then those settings in groups (**[built, WORK_QUEUE item 30]** every visual feature has one, `graphicsAudit.test.ts`): Display (Render scale, Upscaler, Anti-aliasing, Anisotropic filtering, the tone-mapping exposure), Lighting (Sun & moon shadows, Distant shadows, Torch shadows, Light shafts, Bloom), Sky & weather (Clouds), Water (Water and the water's flow switches), Terrain & trees (Leaf cards, Tall grass, Far trees), Effects (Hit shards, Particles, Far herds) and Distance (Full detail, Distant detail, Distant memory, §6.6); **Sound** — Master, Effects, Interface and Music volumes; **Gameplay** — the Field of view (60–100°, default 75°, the append-only `dwell.view` record) and Show your arms, Motion — Speed effects on or off (off by default under `prefers-reduced-motion`), the FOV boost's strength and Plant sway (`motionSettings.ts`, its record append-only) — and the explosions' flash, smoke and shake; **On screen** — each part of the interface (`shared/ui/hud.json`). Each setting keeps its own key in the append-only store (`dwell.clouds`, `dwell.renderScale`, …), applied live. **[built, 0.50.31] Defaults or pinned** (`settingsPins.ts`; owner, 2026-11-07: "marked as default so if we change defaults they shift too"): a setting is either default — not stored, so it takes the running build's default for the device (the chosen preset's, or the device's default preset, for the graphics) — or pinned by the player, who changed it: then stored and kept whatever the defaults become. What is stored is what is pinned (a record holds only its pinned fields, beside the fields it doesn't know; a bare-value key is removed), so nothing new marks a pin and an older build reads the records as before, taking its own defaults for the missing fields. Builds before 0.50.31 wrote every field, so their players' settings read as pinned and are kept (owner: "Keep their saved value"; no migration). One vocabulary (`SETTING_FIELDS`: each setting's path, key and record field) drives loading, saving and the pins, a test checking it covers every setting. A pinned row shows a ↺ marker (a button: Tab and the controller reach it) that clears the pin; the Preset row's goes back to the device's default preset; Reset clears every pin and the preset. Reset and Copy JSON under every pane — selected in a text box where the clipboard is unavailable; **Controller** (`controllerPanel.ts`); **Controls**: every key and touch control from `controls.ts`, one data table that also feeds the Debug page, the overlay's key hints and the start hint; **Structures** (Phase 27 S2b, `structuresPanel.ts`, §6.3): save, the saved structures with load, export, rename and delete, and import; **Debug**: the debug tools as buttons with their keys (**[built, 0.50.45]** among them F7 **Pause the look**, also `?pause=1` and `__dwell.pause`: the client's one **render clock**, `render_clock.rs`, which every drawn animation reads — the frame block's time for the water and plants, flames, motes, flecks, lights' flicker, the day clock, the clouds' drift, the eye's adaptation — stands still at one instant while the simulation and network run on the wall clock; DEV_TOOLS.md § Pausing the look); **Host**, in a local world — and Quit to main menu and Resume at its foot; the touch controls are hidden while it is open, so they never take its taps). The screen stacks, bottom to top: the canvas, the touch zones, the HUD (its buttons above the zones), the HUD widgets, the menu button, the menus; menus and play work upright and sideways on phones (no rotate prompt). The look (`style.css`): a daylight sky over terraced voxel hills; main buttons are grass blocks, the title is extruded like a block. **[built, 0.51.4] The main menu's layout** (menu redesign M1; owner, 2026-11-09: "everything is very big, unnested … fully opaque"): a **logo screen** first — the wordmark alone over the turning panorama, waiting for a key or a tap (the gesture that also unlocks audio), skipped on later visits in the same tab (`sessionStorage` `dwell.menuIntroSeen`) and when the menu opens with a message; a studio intro is a view to add before it (`INTRO_VIEWS`); then the **home**, a glass column (smaller wordmark, the two actions **Worlds** and **Play with others**, small Settings and Versions links, the version and About) with the panorama filling the rest, on phones too (the column at the foot); each action opens its **page** over the same backdrop with Back (Esc and a controller's B go back too): Worlds (the list, New world), **New world** on its own page (name, seed, type, mode, spawn; Play advanced's overrides under More options), Play with others (Join, nearby, recent, the server browser), Versions. The flow is pure state (`menuNav.ts`, tested); messages show as a note at the foot. Glass panels at 62 % with a 20 px blur and a soft inner border; one type scale (14 / 16 / 20 / 28 px), 40 px fields, 44 px buttons; text only on glass or a scrim, its contrast checked against the panels over light and dark backdrops (`contrast.ts`, `contrast.test.ts` reading the tokens from `style.css`, ≥ 4.5:1). **[built, 0.50.43] Menu backgrounds** (owner, 2026-11-08: "a 360° slowly rotating background image of a real spot in a world"): over the painted hills, once loaded, a level 360° panorama of a real spot (`menuBackground.ts`): a CSS strip of two copies of the image moved left by one copy per turn (`turnS`, 150 s; still under `prefers-reduced-motion`), no game engine, so it is cheap on phones. The backgrounds are data (`shared/ui/menu-backgrounds.json`: name, label, seed, position, yaw, time of day, image; a default; the turn time and how they are shot → `shared/ui/gen.mjs` → `menuBackgrounds.gen.ts`, which imports each image so the build ships it; validated, the image checked to exist, CI stale check), the images WebP in `shared/ui/menu-backgrounds/` (shots of 2160 px since 0.52.4, a strip ~6800 × 1950; each with a half-size `-small` copy, also checked to exist, that a phone loads — the screen's shorter side under 600 px, `backgroundUrl` — for a quarter of the memory), rendered from the real game by one tool (`npm run panoramas`, `client/scripts/panoramas.ts`, DEV_TOOLS.md § Menu panoramas) — the look paused so every shot is of one instant, and each strip column blended from the two overlapping shots either side of it (0.50.45), so the joins don't show: a new background is an entry and one run. Which one is a setting (On screen → Main menu → Menu background; the append-only `dwell.menu` record, `{ "background": … }`; default the beach). **[built, 0.50.43] Settings from the main menu** (owner: "All settings"): the home's Settings link opens the same `SettingsMenu` (`world: false`: no corner button, titled Settings) with every pane, **[built, 0.52.33] as a full page in the menu's look** (menu M3): the menu's `settings` view (`menuNav.ts`, Back to the home; `MainMenu` opens and closes the panel through `openSettings(open)`, and the panel's own Back calls `settingsClosed`), the sheet on the menu's glass (`--mm-glass`) over the undimmed panorama from the pages' top edge, the home column stepping aside while it shows; in a world the same sheet over the dimmed game on a stronger glass (`--gm-glass`, 84 %, its text checked at 4.5:1 over black in `contrast.test.ts`). Both have the menu pages' head — Back (`.mm-back`; Esc and a controller's B too) then the 28 px title — the sections down a left rail (a scrolling row of tabs on phones and short screens), 44 px tabs in the menu's display type, focus on the shown tab when it opens (keyboard and controller); the Versions page's headings take the Settings groups' grass-block mark. `settingsPageModel` (the panes, their titles and rows, from the same `panes()` the page draws) lets `settingsPage.test.ts` check that every stored setting has a row (but the model detail, which has no control since 0.52.5, and the menu button's toggle, which a phone may not hide) and that each row sets and reads back its setting; the Controller page included (the menu page's own controller poller captures the rebinds), saved the same way; Structures, Debug and Host, which need a world, are listed dimmed with a note. **[built, Phase 5a]** The main menu (`mainMenu.ts`: world list with create / play / regenerate / delete — the last two ask to confirm — and Join: paste an invite link, or pick a recently joined server, `recentServers.ts`); in a game the ☰ panel is also the game menu (Resume, Quit to main menu; opened when the pointer is released with Esc); `launch.ts` decides what the page opens. **[built, 0.37.3]** New world's **Spawn** (face A, face B, either side of the portal; Play advanced's Spawn choices): the world's first spawn, kept in its index entry (`spawn`, append-only) and read only when its file is created. **[built, 0.31.3]** **Play advanced** (since 0.51.4 under New world's More options) (`playAdvanced.ts`, DEV_TOOLS.md § Play advanced): a local world by link (`?local=1`; a world file per type, seed and spawn, and a spawn puts the player at it on every open) with overrides that are existing URL parameters (world type, seed, spawn, time of day, moon, clock speed, ink outline, pixel art, distant terrain), one field per entry of `shared/play/overrides.json` (generated into `playOverrides.gen.ts` by `shared/play/gen.mjs`, validated, CI stale check); only the fields set are passed, and every route drops them (`ROUTE_PARAMS`), so nothing carries over. **[built, Phase 5c]** Host… in the game menu of a local world (`hostPanel.ts`: guest limit by platform, who may build and fly; then the join code, invite link, QR code, guests playing and Stop hosting; wired to the page's lifecycle in `src/hostWorld.ts`), and join codes in the Join box and as `?code=` links. **[built, Phase 5d]** The Join box also takes a server address (`host[:port]`, looked up through the master); "On your network" on the join screen lists servers and friend worlds hosted on the player's network; the host dialog's visibility (code only / code + same network). **[built, Phase 5e]** The server browser (`serverBrowser.ts`, on the menu's Play with others page below Join): the lobby list with a search box and a "New servers" filter; each dedicated server is pinged (`pingServer`, at most four at a time) and one running another protocol version is marked with the handshake's reason and can't be joined; friend worlds show their players; Join opens it by code. The host dialog's third visibility, Public (server list). **[built, Phase 6]** The menu shows the app version and, under About, the licence notices; **[built, 0.38.7]** a **Versions** page of its own (a card before 0.51.4) (owner, 2026-10-28: first class, not a footer link): this build, what changed in it (`shared/releases/changes.json`, `version/changes.ts`) and All versions, the launcher's version page (Phase 6b); each world shows the version that last played it; worlds saved before versioned releases are listed apart to delete; every route opens through the launcher; the server browser labels a host on another version line and joins it through the launcher (`otherLineNote`). |
+| `audio/` **[in progress, Phase 28]** | Sound effects (§5.2, [`AUDIO.md`](./AUDIO.md)): `synth.ts` (the vocabulary in plain Web Audio), `mixer.ts` (buses, room reverb, soft limiter), `variation.ts`, `engine.ts` (the AudioContext, unlock on the first gesture, volumes, muting while hidden, spatial plays, the listener, recorded samples), `samples.ts` (the decoded samples and the draw per play), `events.ts` (the Rust events → sounds), `uiSounds.ts` and `page.ts` (delegated menu sounds, on the game page and the main menu), `settings.ts` (the volumes' append-only store), `render.ts`, `renderPlan.ts`, `wav.ts` (offline renders, `npm run sfx:render`), `sounds.gen.ts` (generated). |
+| `debug/`, `world/`, `protocol/`, `version/` **[built]** | The block dump (`debug/blockDump.ts`, §6.3; in a local world with the server's water near the player, `Water::report`, and its last block edits, `Server::edit_log_json`, DEV_TOOLS.md); **[built, 0.51.23]** the streaming report (`debug/streamingReport.ts`: F8, the Debug page and the overlay's button, `__dwell.streamingReport()`; DEV_TOOLS.md § Streaming report, BUGS.md #54): the game's part from `Game::streaming_report` (`dwell-client` `game/streaming_report.rs`: the near ring's ±3 chunks with their streamer state, `ChunkStreamer::chunk_status`, their level-1 section's, `LodSystem::section_report`, and what each chunk not drawn in full waits on; the pool's queues, `Pool::report`; the streamer, the server's unloads of the last 30 s, the LOD and the last 10 s of frames) with the build, device, settings and world, copied as JSON under 200 KB over the generated TS block tables (`world/blocks.gen.ts`, `blocks.ts`: canonical state strings); the generated protocol constants (`protocol/constants.gen.ts`); the app version's rules (`version/semver.ts`, §10.5). |
 
 The client never mutates the voxel grid on its own authority. Edits are sent as requests; the
 client **predicts** them (§6.5, edit prediction): each shows at once, the server's changes to its
 cells are held back until the server acknowledges the edit (`EditAck`), and then the cells show the
 server's state — the prediction confirmed, or rolled back and replaced.
+
+**The minimap and the explored map [built, 0.50.37]** ([ADR 0068](./adr/0068-minimap-and-explored-map.md)).
+Looks and sizes in `shared/ui/map.json` (`shared/ui/gen.mjs` → `dwell-game` `map.gen.rs`,
+`client/src/ui/map.gen.ts`). `dwell-game` `minimap.rs` reads the columns' tops within the disc
+(64 m) from the client's streamed voxels on the player's face (`FaceFrame`; LOD colours, water
+darkened by depth, a hill over the scan followed to its top) into a face-local grid — on each texel
+moved only the strip it uncovers, and every column (from its last top) every `refreshSeconds` — and draws the round RGBA disc
+turned to the heading (the player's right on the right on both faces), height-shaded when the
+setting is on, only on a move or a turn; it marks the 8 m cells whose centres are within its radius
+of the player (a 2D distance on their face, whatever the height or what is loaded; 0.50.47), each
+coloured by the loaded terrain's tops, else the generator's (the revealed map's tiles below, asked for
+at most `revealed.jobsInFlight` at once in the job workers), else `explored.pendingColor`, reporting
+new and changed ones with their colour and their height (a height code, the same source as the colour;
+0.50.48); **[built, 0.52.10]** the disc draws a texel the scan found nothing in (not loaded yet,
+only the LOD drawn, or ground below its reach) from the **generator's 1 m top** there, never coarser
+(owner, 2026-11-10: "It shouldn't ever be coarse"): `minimap::Generated` holds the big map's closest
+level's tiles (1 m cells, below) within the disc's radius and a tile of the player, named by the
+wasm `minimapWants` and handed over by the shell (`minimapTile`) from its tile cache, or built first
+of anything (`RevealCache.feedMinimap`); loaded columns override them. The client's `minimapFrame`, `minimapDots`,
+`mapPose`, `takeExplored`, `shadeMap` and `mapAllowed` (the mode's `map` ability) feed the shell's
+`ui/minimap.ts`: the disc top right (placed by the HUD's layout, `shared/ui/layout.json`; compact when the screen's short side is under `compactBelowPx`, a phone either way up; a `hud.json` part; the height shading a toggle in Settings →
+On screen), the dots, and the big map (M, a tap or the controller's View; M, Esc, B or its ✕ closes):
+**[built, 0.50.48]** a framed panel over the game (`bigMap.panelFraction` of the screen, nearly full
+screen inside the safe area on a phone, bigger buttons there) with a title bar, + / − zoom buttons
+(stepping between **[built, 0.52.13] three fixed zoom levels**, `bigMap.levels` (five from 0.50.61 to 0.52.12): the closest the
+minimap's area at 1 m a cell, the widest **[built, 0.50.63]** the whole world disc centred
+(`worldRadius` × 2 across the panel's short side, at any aspect, its sea included), geometric between,
+each its own cell size: 1, 16, 256 m), "Center on me", a scale bar (1, 2 or 5 × 10ⁿ m), drag to pan with a grab
+cursor, scroll, pinch or + / − to step a level about the pointer, and the controller (stick and D-pad pan,
+a trigger or bumper press steps a level, Y centres; `bigMap.pad*`, button names from `shared/input/gamepad.json`); the
+game holds still while it is open (`setMenuOpen`). Its state and controls are a page-free
+`BigMapState`. It draws each level's cells on fog as tile images (`revealed.tileCells`² cells of the level, made
+again when a cell in or bordering them changes) in **[built, 0.50.61] block colours lightly tinted by
+height** (owner, 2026-11-09; replacing 0.50.52's height bands, which hid the sand):
+`dwell_game::minimap::tint_rgb` scales a cell's colour in brightness by its height above sea level
+(`heightTint`: `darkest` at `lowM` to `brightest` at `highM`, then above it toward white, `peakLighten` of the way at `peakM`,
+0.52.27, so a tall peak's slopes keep a gradient past 400 m; nothing below `highM` changed), water untinted (darkened by depth
+already); the minimap's height-shading toggle shows the same look. The shell hands each tile's
+screen-order cells (inside a one-cell border, unread) to `shadeMap` (`shade_grid`). Explored
+cells and their heights are kept per world in this browser (IndexedDB `dwell-explored`, append-only:
+`heights` beside `cells`), not on the server. **[built, WORK_QUEUE item 53] Map markers**
+([MAP_MARKERS.md](MAP_MARKERS.md)): the player's own markers — an icon from a vector set, a colour, a
+label — on the big map (a click places or edits one, a drag moves it), the minimap and in the world (a
+waypoint over the spot, faded with distance, clamped to the screen's edge), plus the auto markers
+(spawn, last death; portals once there are any). The set, palette, auto kinds and limits are data
+(`shared/ui/markers.json` → `shared/ui/gen.mjs` → `markers.gen.ts` and `dwell-protocol`'s
+`markers.gen.rs`); the record is saved per player in the world's `markers` table and synced to that
+player only (`markers.private`). **[built, WORK_QUEUE item 56] Blueprints**
+([BLUEPRINTS.md](BLUEPRINTS.md)): a structure placed as an entity shown as ghost blocks (the brush
+preview's renderer; red where the player lacks the block), placed from the game menu's Structures page
+where the mode has the `blueprints` ability (creative and adventure), seen and built by everyone in the
+world: Place aimed into one fills only its ghost cells with their own blocks, from what the player has,
+one piece every `player.paceMs` (one-cell region fills), and a compact panel shows each item's have/need.
+Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
+blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
+→ `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, the 0.67 line] The
+storehouse and the work loop** (B5, BLUEPRINTS.md §9): a town plan's `storehouse` blueprint is built first and
+holds the town's stock (`unlimited` for now); builders of the blueprints near it carry up to their job's
+`carryMax` (`blueprints.json` `jobs`) from it to the site and back, items moving only through
+`dwell_world::stock::transfer` (the seam for carters and foresters); the storehouses and the builders' loads are
+saved in the `blueprints` record, and the loads are drawn on the villagers' backs (`npcs.carry`). **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
+change) hands the store only the cells changed since the last one (`ExploredChanges`,
+`client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
+(`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
+and writes the whole record, ~150 ms of structured clone at 100 000 cells, which on the page was a
+dropped frame every ~10 s on a well-explored world. Cost (`minimap.scan`, `minimap.draw`
+samples, DEV_TOOLS.md): ~1 ms a read with its draw flying at 8 m/s, the 2 s refresh 5–9 ms.
+**[built, 0.50.76] The closest levels from the loaded terrain** (owner, 2026-11-09: "big map closest
+zooms should use 1m"): a level whose `cellM` is at most `revealed.liveMaxCellM` (the 1 m and 2 m levels)
+is drawn, while the map is open, from the loaded chunks as the minimap reads them
+(`dwell_game::minimap::scan_tile`, the wasm `liveTile`, `map_reveal::live_tile`: each cell its column's
+top block, builds and edits included), at most `revealed.liveTilesPerFrame` tiles a frame and each again
+every `revealed.liveRefreshMs` (`RevealCache.pumpLive`), kept in memory only; cells not loaded (or whose
+top lies under a chunk not yet streamed) show the generator's tile below. ADR 0068's 0.50.76 amendment.
+**[built, 0.52.13] Three levels, the coarse ones built whole** (owner, 2026-11-10: "Maybe we just have 3
+zoom levels. The two coarse ones load along with the area around you in 1m. The 1m is always streamed"):
+each level's `reach` (data) says where the background builds it, map open or shut: the 1 m level
+(`player`) within `prebuildSpans` of its span round the player (from the loaded terrain while the map
+is open, the generator's tiles below), the 16 m level (`island`, ~7 500 tiles) every tile touching the
+island (`islandRadius`), the 256 m level (`disc`, ~120 tiles) every tile touching the world disc. The
+open view's tiles are asked for before anything; then `RevealCache.pump` builds the player level, then
+the coarse levels coarsest first, each nearest the open view's centre (else the player) first, listed
+again when that centre moves four of the level's tiles; up to `revealed.jobsInFlight` at once while
+the map is open, `revealed.backgroundJobs` while it is shut, passing over at most 4 096 kept tiles a
+frame. The count left needs no scan (each coarse level's reach total less its kept tiles); a quiet
+"Mapping · N tiles" count shows in the panel's bottom-right corner (`.map-progress`) while any are left.
+ADR 0068's 0.52.13 amendment (replacing 0.52.10's every-level build round the view).
+
+**[built, REALISTIC_WORLD.md R6] The big map's debug layers** (owner, 2026-11-12, §7 q8: the plates and climate
+overlays "also on the big map"): layers as data (`shared/ui/mapLayers.json`, checked by `shared/ui/gen.mjs`), each
+naming a field of the generator's fixed vocabulary (`dwell-worldgen` `map_layers.rs` `MapField`: plates, uplift,
+rain, rocks) with its colours (category `colors` and an `outlineColor`, or a value `ramp`) and `opacity`. The shell
+(`mapLayers.ts`) asks for a field over the face's disc once per face (`requestMapLayer`, `samples`² samples) and
+the job workers sample it (`Job::Map` with `layer` = the field's index + 1; `LayerGrid::encode`: the categories'
+names and own colours, then a category, id and value per sample; nothing for a world without the field); the
+big map draws the coloured grid over its tiles, mirrored as the face's view is. The map's Layer button and the
+data's `key` (L) step through the layers.
+
+**[built, 0.50.46; per level and kept, 0.50.61] The big map's tiles** (owner, 2026-11-08: "big map should be fully explored on
+creative"; 2026-11-09: built "only once", "invisibly"): every level's ground comes from the generator, a
+tile at the level's cell size at a time (`requestReveal(face, ti, tk, cellM)`), kept per world and compatibility line (0.50.75: a new patch reuses them) in
+IndexedDB `dwell-map-tiles` (append-only, a tile written once) and built in the **background**
+(`revealed.backgroundJobs` at a time, each level by its `reach`: the 1 m round the player, the 16 m the
+whole island, the 256 m the whole world disc, once the kept tiles are read; every level's tiles clipped to the world
+disc only, the sea's built too, so no holes inside the world; off the disc the panel shows `fogColor`), so opening or zooming the map waits for
+nothing and a return to the world builds nothing; adventure fogs every level by the explored cells
+(`ExploredLevels`), which draw their own colours at 8 m and coarser. In a mode with the `mapRevealed` ability (creative; `mapRevealed()`) nothing is fogged.
+Ground not yet explored takes its colour from the terrain generator the client already runs from the
+seed: the shell's `RevealCache` asks for the view's tiles (`revealed.tileCells`² explored cells, nearest
+the view's centre first, at most `revealed.jobsInFlight` at once) with `requestReveal`, which
+`map_reveal.rs` runs as the LOD colour map's `Job::LodMap` raster in the generation workers (a texel an
+explored cell: its column's top block's LOD colour — the colour explored cells average — water darkened
+by depth (`LodMapTunables::water_shade`, `shared/look/lodmap.json`, in linear light; the minimap's scan
+and the explored cells shade water they read by the same ramp, so an explored sea reads as the
+generated one, 0.52.36), rivers from their polylines; with `heights`, each cell's height code after the colours,
+`raster_with_heights`); `takeReveal` returns finished tiles, which the shell takes for
+at most `revealed.budgetMs` a frame and draws as images under the explored cells (redrawn at most every
+`redrawMs`; beyond the world's edge transparent). The main thread
+generates nothing (`job.reveal.run` p50 ~36 ms a 32² tile on a worker; the open map's worst frame
+17.7 ms while filling, a Mac). Adventure keeps the fog as before.
 
 ### 5.1 Threads and workers
 
@@ -539,23 +722,36 @@ Per [ADR 0007](./adr/0007-threading-model.md):
 |---|---|---|
 | Main thread | The Rust `Client`: input, prediction, networking, streaming, LOD selection, rendering; the TS shell's DOM UI | Main loop (tick); Rapier steps on it |
 | Sim core (integrated server) | **[built]** `LocalWorld` in a module worker (local mode and friend worlds), single-threaded | Native, on the main loop |
-| Generation (chunks, the verification chunk, LOD bounds and sections, the F4 map) | **[built]** Job workers (cores − 2, 1–4; at most 2 on phones), each its own WASM instance; LOD jobs queue behind chunk jobs. The local-mode server's own (the chunks it wants generated, its modified LOD sections) run in the **server-jobs worker** the local-mode worker starts (`local/serverJobsWorker.ts`, `web/server_jobs.rs`; the world's maps installed), a job and its answer one transferred buffer each, the air test's sky floors (at most 8 out, §6.3) before a chunk job, a chunk job before a LOD one and at most 4 chunks out at once; without nested workers or with `?serverjobs=inline`, on its tick within budgets | **[built]** Thread pool (cores − 2, at least 1) |
+| Generation (chunks, the verification chunk, LOD bounds and sections, the F4 map) | **[built]** Job workers (cores − 2, 1–4; at most 2 on phones; `?workers=N`, 1–8, overrides it for a visit, a dev switch, docs/DEV_TOOLS.md "Flight loading"), each its own WASM instance; LOD jobs queue behind chunk jobs. The local-mode server's own (the chunks it wants generated, its modified LOD sections) run in the **server-jobs worker** the local-mode worker starts (`local/serverJobsWorker.ts`, `web/server_jobs.rs`; the world's maps installed), a job and its answer one transferred buffer each, the air test's sky floors (at most 8 out, §6.3) before a chunk job, a chunk job before a LOD one and at most 4 chunks out at once; without nested workers or with `?serverjobs=inline`, on its tick within budgets | **[built]** Thread pool (cores − 2, at least 1) |
 | Meshing (chunks, LOD sections; lighting later) | **[built]** A second set of job workers, as many | — (the server does not mesh; it downsamples LOD sections on its LOD thread, §6.6) |
 | Storage (redb) | **[built]** Inside the local-mode worker (an OPFS sync access handle), committed on the tick | **[built]** Save thread |
 | Water grid (§6.7; [ADR 0062](./adr/0062-water-off-the-tick-thread.md)) | **[built, G5]** The **water worker**, a second module worker the local-mode worker starts (`local/waterWorker.ts`, `web/water_worker.rs`: its own WASM instance, the world's maps installed), fed binary batches both ways (transferred `ArrayBuffer`s); without nested workers, or with `?water=inline`, on the sim core's thread | **[built, G5]** Its own thread (`dwell-water`, channels); inline in tests |
 | Networking | Browser APIs (WebTransport, WebRTC) on the main thread | **[built]** `dwell-net`'s tokio threads |
+
+The native performance harness (`crates/dwell-native`, a dev tool, §3) keeps this split on native
+threads: the game and renderer on the main thread, the local server on a thread of its own (stepped
+every 4 ms like the local-mode worker), the client's generation and meshing jobs on two sets of
+threads (as many as the page's workers, the jobs and results still encoded), and the server's
+generation, LOD and water on its native pools (`LocalCore::create_tuned`; one thread each by
+default, as the browser's one server-jobs worker).
 
 Workers share no memory: every job and result is one transferred `ArrayBuffer` (`jobs/codec.rs`), and
 each worker keeps two jobs (one running, one waiting). Pool sizes are capped, lower on mobile.
 
 ### 5.2 Sound effects **[in progress, Phase 28]**
 
-([ADR 0032](./adr/0032-audio.md), [`AUDIO.md`](./AUDIO.md).) Every sound is **procedural**,
-synthesised at play time in plain Web Audio (no library, no recorded assets). Sounds are **data**
+([ADR 0032](./adr/0032-audio.md), [ADR 0076](./adr/0076-recorded-sound-samples.md), [ADR 0077](./adr/0077-ambience-beds.md), [`AUDIO.md`](./AUDIO.md).) Every sound has a **procedural**
+form, synthesised at play time in plain Web Audio (no library); since 0.52.15 most also have
+**recorded samples** (AUDIO.md §2b: the owner's Imphenzia *Universal Sound FX* pack, a few mono AAC
+variations each in `shared/sounds/samples/`, ≤ 5 MB in all, validated): a sound with `samples` plays
+one of them (never the previous one, pitch and level drawn) unless it says `"play": "procedural"`
+or the samples are not decoded yet, when its layers play. Loop sounds (the slide, fires, the
+waterfall) stay procedural. The samples ship once per site under `media/` (content-hashed, as the
+music), and the engine fetches and decodes them all on the first gesture. Sounds are **data**
 (`shared/sounds/*.json`): each a few layers of a fixed vocabulary — noise (white, pink, brown,
 crackle: sparse pops), oscillator, modal partials; biquad filters with sweeps; an attack/hold/decay envelope; grains;
 round-robin alternatives — with per-sound variation ranges (pitch, gain, cutoff, time, or `"none"`)
-and an intensity mapping. A block names its **sound set** (`"sound": "dwell:stone"`, §6.1); a set
+and an intensity mapping. A block names its **sound set** — its sound material — (`"sound": "dwell:stone"`, §6.1); a set
 gives the sound per event (step, land, break, place, hit; enter, exit, swim for liquids; slide;
 burn, the loop of a burning light source such as the torch's `dwell:torch` set); the data
 also holds the event kinds, the ambient tunables (`ambient`: the fires' radius and voice cap; the
@@ -564,6 +760,17 @@ vocabulary (hover, click, back, tab, toggle on/off, slider, error, success — n
 sounds of every control of `ui/controls.ts` (a test fails on an action without one).
 `shared/sounds/gen.mjs` validates it and generates `client/src/audio/sounds.gen.ts` and
 `crates/dwell-game/src/sound.gen.rs`; CI fails on stale output.
+**Ambience [built, 0.52.20]** (ADR 0077, AUDIO.md §2c): the data's `ambience` beds — recorded loops
+(wind, sea, river, stream, birds, leaves, fire) on their own ambience bus under the **Ambience** volume
+(default 0.35) — each at its `gain` × its conditions' ramps over the listener's surroundings, capped
+(`cap`) and glided (`fadeS`) by `client/src/audio/ambience.ts`. The surroundings come from
+`dwell-game` `ambience.rs`'s probe (four times a second, face-local: a 9 × 9 grid of columns over
+`probe.radiusM` — the height above the sea and the ground, the share open to the sky, the water's
+share, distance and fastest current, the share of `probe.trees` blocks — plus daylight from the clock
+and the nearest fire), handed over as 9 numbers by `Client.ambience()`. **Creatures** (AUDIO.md §2d):
+`sound.rs` `CreatureSounds` emits `creature_step` / `creature_startle` / `creature_call` per the
+data's `creatures` models (stride, sounds, call interval; within `radiusM`), the event's block field
+carrying the model's index; `VitalSounds` emits `exhausted`, `gasp` and `strain` from the vitals.
 
 **Events** come from the Rust game (`dwell-game` `sound.rs`): footsteps by distance per gait,
 landing by impact speed, jump, water, crouch, sprint, flight, edits (ours on the request,
@@ -603,9 +810,12 @@ ones need no wiring; `data-sound` overrides or silences one. Offline renders
 (`npm run sfx:render`) play every sound through the same synth and mixer in Chromium's
 `OfflineAudioContext`, check them (non-silent, peak < 1.0, sensible length) and write WAVs.
 
-**Music** **[built, Phase 28 F8]** ([`AUDIO.md`](./AUDIO.md) §2a, §6a). The one recorded asset: the
-owner's track *Starry Sunshine*, as data in `shared/music/music.json` (title, author, file, volume,
-loop, fades, `when` — only `always` so far; the first matching track plays), validated and
+**Music** **[built, Phase 28 F8]** ([`AUDIO.md`](./AUDIO.md) §2a, §6a). The streamed assets: 20
+casual tracks (Andrew Sitkov's Total Music Collection, AAC 96 kbps at −18 LUFS), as data in
+`shared/music/music.json` (each track's title, author, file, volume, loop, fades, `when` — only
+`always` so far; and one `playlist`: `shuffle`, a gap drawn in [`gapMinS`, `gapMaxS`], `crossfadeS`),
+played by `client/src/audio/playlist.ts` (a shuffled bag, never the same track twice in a row, one
+player per track), validated and
 generated into `client/src/audio/music.gen.ts` (CI fails on stale output). The shell streams it with
 an `<audio>` element, never decoded whole, routed once the AudioContext runs into the mixer's
 **music** bus (`createMediaElementSource` → gain → music → master); before that it plays straight
@@ -618,7 +828,102 @@ suite and the bench). The file is served once per site at `/dwell/media/<name>-<
 than in each version directory: release builds load it from the site root (`__MEDIA_BASE__`,
 `client/scripts/media.ts`), and the Pages workflow moves each build's copy there (`site.ts media`).
 
-### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned]**
+### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players and your shadow drawn as skinned models, held items in the skinned hand (S1, S2), wandering animals (S3, ADR 0073); your first-person arms and your own body in first person from the Peasant (0.54)]**
+
+**Skinned models [in progress, Phase 54 S1–S2]** ([ADR 0070](./adr/0070-skinned-models.md),
+[`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
+replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the
+Peasant model (`shared/models/models.json` `player`), and so is your own shadow (S2); since 0.54
+your first-person arms (`firstPerson`, CHARACTERS.md §11.10) and your own body seen in first person
+(`firstPerson.body`, §11.12: the mesh less its head and arms by skin weight, a third index buffer,
+posed as your shadow and placed as the rigid body below was) are drawn from it too, the rigid
+parts only under `?fparms=rigid`. Since
+0.52.35 the Peasant is **posed from the rigid rig's animator pose** (the same clips, times and
+blends): `models.json` `retarget` maps rig bones to skin joints with rest-pose corrections
+(validated by `gen.mjs`), `dwell_models::retarget` turns each mapped joint by its bone's turn from
+rest, keeping the model's bone lengths, and `SkinnedDraw::rig_pose` carries the pose (the model's own
+clips are the fallback without one; CHARACTERS.md §11.9, ADR 0070's amendment). The data (`shared/models/models.json`)
+lists each model's GLB (`shared/models/glb/`, checked in: the source of truth), scale, yaw, which of
+its clips plays each role (`body_role`'s names, with a speed; a `fallback` role for the rest) and a
+palette remap. `shared/models/import.mjs` makes the GLBs once from the packs' FBX with Blender
+headless (`blender_import.py`): one mesh per **model-detail level** (`models.json` `detail`: the
+full mesh and Decimate-collapsed copies at each level's `ratio`, all on one skin, meshes `detail_0`,
+`detail_1`, …; ADR 0070 §10), each face one colour (the pack's texture sampled at the face and snapped
+to the nearest palette stop, taking its ramp's base, or a `remap` entry), **flat shaded** (a normal a
+face), no texture or UVs, at most four joints a vertex, clips named by their last word, sampled at 15
+keys a second; a `source.remove` rule deletes parts (the doe: the deer without antlers); a `coat`
+paints a model by body region with soft blends instead of a colour a face (`coat.mjs`, ADR 0070 §12).
+Every skinned model draws `detail.default`'s level (60 % since 0.52.5; no Settings control any more,
+a pin stored before still applies, `?modeldetail=<id>` overrides it; `setModelDetail` re-uploads the
+meshes live). `gen.mjs` validates the data against the GLBs (clips
+present, ≤ 64 joints, a mesh per detail level, the levels themselves, known roles, palette names) and writes `dwell-models`' table; CI fails on stale output. `dwell-models` reads the
+GLB (`glb.rs`: positions, normals, colours, joints, weights, the node tree, the skin's inverse bind
+matrices, linear and step channels), samples and blends clips (`anim.rs`: nlerp, looped by the
+player) and gives the joint matrices; its `Player` maps a role to its clip and cross-fades 0.2 s
+when the clip changes (the same clip at another speed keeps its phase). **Props** (static models,
+ADR 0070 §8, `shared/models/props.json`): the tools pack's 53 models, imported by the same pipeline
+without skin or clips, scaled to their category's lengths, validated by `gen.mjs`; an inventory item's
+look may name one (`look.model`, `LookShape::Model`), drawn loose and on the hotbar from its
+triangles (`dwell_mesh::model_faces`) and in the hand as `Held::Model` (0.52.21: the prop's
+triangles on its hold item's bone, 0.52.52: its handle laid through the fist, `PropData::in_hand`:
+props.json `hand` gives the closed fist's centre, grip axis and edge in the rig's hand bone's frame;
+a prop's `handle` span is measured from its GLB by `gen.mjs` into its handle axis and the grip on
+it; `hold` is `scale` and `roll` about the handle, `dwell_models::PropHold`; the lean is the hold
+item's pose of the hand, the `tool` hold for tools that name none; docs/ITEMS.md §1a), each
+colour a character material row after the data's; `render/characters.rs` `prop_mesh`). A prop's
+`objects` (optional) names the FBX objects it keeps, for the pack's files that stack alternates (the
+axes file's three axes); the import fails on an unknown name. The six tools (stone and metal axe,
+pickaxe, shovel) carry a class and tier in `shared/tools/tools.json` `breaking` (block → class, tier →
+speed; `dwell_protocol::chopping::break_speed`, 1 for anything else). **Block damage [built, D1 0.52.28;
+ADR 0078, docs/BLOCK_DAMAGE.md]:** a block's `damage` (block data, generated into
+`dwell_protocol::chopping::BLOCK_DAMAGE` and `tools.gen.ts`) gives its hits to break by bare hands and per
+tool class or item (`dwell_protocol::damage::hits_to_break`: item, else class ÷ tier speed, else
+default; none: can't); the server keeps each damaged cell's state, hits and up to four hit marks
+(`dwell_protocol::damage::Damage`), acks a hit short of the count as refused (the block stays), breaks
+it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; in a
+mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool breaks every block in one hit
+(`dwell_protocol::damage::hits_to_break_for`, asked by the server and the client's prediction alike); the
+client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
+`ChopAction::Held`. **Hits at contact [built, WORK_QUEUE item 25]:** a break made holding a tool with a
+`contactS` (`breaking.tools` in `shared/tools/tools.json`: the pickaxes and shovels, 0.26 s, the arms'
+`break` clip's strike; `dwell_protocol::chopping::break_contact_s`) is sent at the click and held in the
+session's edit queue until `contactS` after it arrives (never before the client's contact; later edits'
+acks wait behind it), dropped if the tool is no longer in hand then; its damage, mark, drops and wear land
+at that tick. The client shows its hit's sound and chips (a one-hit break's sound) at the contact
+(`hit_feedback::PendingHits`), does not predict a tool's one-hit break (the server's change at the
+contact shows it), and starts one tool swing at a time. Wire unchanged. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
+(`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
+(`dwell_mesh::mesh_chunk_damaged`), and the mesher **carves** each struck face (BLOCK_DAMAGE.md §6.2,
+built): the face leaves the greedy merge and is meshed as a tensor grid over its marks' reach whose
+vertices are pushed in by a height field (`mesher/relief.rs` `Carve`: soils' merged bowls, smooth-lit;
+stone's angular facets round each hit, flat-lit), with the face's uvs, corner light, and a darker, more
+occluded floor; the field is 0 on the cell's edge, so the face's outline and its neighbours' are
+unchanged (watertight); each cell's struck faces share a triangle budget (`damage.look` `profile`,
+`facets`, `grid`, `triangles`). The decals and §6.1's per-pixel relief quads are no longer emitted (the
+shader's relief path is unreached, kept until the owner's look review); face-local through the face-B
+turn-over; collision unchanged), from the block's `damage.look` data. **Cracks [built, 0.54.x]**
+(BLOCK_DAMAGE.md §6.3): past its look's first `cracks.stages` fraction a cell leaves the merge on every
+exposed face (unstruck ones one flat quad each), and each vertex carries the crack overlay in the opaque
+mesh's optional `cracks` stream (four unorm bytes: the crack tile's s and t round the hit nearest the
+face, the stage tile's atlas slot + 1, the strength; empty for a chunk without cracks, filled with 0 in
+the terrain buffer, whose vertex grows 72 → 76 bytes); `terrain_fs` multiplies the face by the stage's
+painterly crack tile (`shared/textures/cracks.json`), one atlas lookup on cracked faces only, every tier. A hit short of breaking plays the
+material's `Hit` sound at the struck point.
+**Drawing** (`render/skinned.rs`, inside `CharacterRenderer`): the model's one mesh (36-byte
+vertices: position, normal, sRGB colour, 4 × u8 joints, 4 × unorm8 weights; the Peasant 1,834
+vertices, 66 KB), per body one block of uniforms (3,328 bytes, a dynamic offset: 64 joints' 3 × 4
+matrices to eye-relative world space, and its flood light) and one indexed draw, both sides (the
+packs' meshes aren't closed). The vertex shader sums its four joints; the fragment shader builds the
+characters' ramp from the vertex's palette colour (cool shadow, warm light, half-Lambert key light,
+the flood light, shadow maps and point lights, `CHARACTER_EXPOSURE`); no per-pixel cost beyond the
+rigid characters', so no CPU-adapter tier. Bodies cast into the shadow maps. The body's frame is
+`place_frame` (upside down on face B, lying on its back when dead). Your own body's shadow
+(`cast_only`) is a skinned body drawn into the nearest cascade only. **Held items** (S2): a model's
+`hand` (`models.json`: the skin joint, the rigid rig's hand bone, an offset and turn) gives
+`skinned::hand_frame`, the hand joint's world matrix with the scale taken out, turned onto the rigid
+hand bone's frame; `SkinnedRenderer::prepare` returns it per body and the rigid renderer draws the
+held item's mesh alone there (an item-only draw, the item's own turns of the hand on top), and the
+held light comes from the same frame.
 
 ([ADR 0041](./adr/0041-characters.md), [`CHARACTERS.md`](./CHARACTERS.md).) Characters (the
 player's full body, its first-person arms, and creatures: a wolf and a deer so far) are **data**
@@ -658,7 +963,9 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   sent, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
-  hand holds something; a break or place swing on the `action` layer when the snapshot's swing
+  hand holds something; a break or place swing (a break tool's own `clip` on your arms, `fp_break_<item>`, its head fitted onto
+  the crosshair at its `contactS`; others' bodies the plain `break`), or a tool's level or vertical chop when the
+  snapshot carries its kind (`SwingHello`, §8.3), on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
   Over steps a remote body is drawn at its feet plus the step view's offset (`dwell-game`'s
@@ -666,7 +973,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   and each foot is planted on the render-side ground under it (`bodies.rs` `ground_at`,
   `MoveInput::foot_ground`, the animator's two-bone `plant_feet`); `Bodies::step_started` is
   the hook for a step pose.
-- **Drawing** (`render/characters.rs`): per character one block of uniforms (1,280 bytes, a dynamic
+- **Drawing** (`render/characters.rs`; since Phase 54 the held items only, every body being skinned,
+  above, and your rigid arms and body under `?fparms=rigid`): per character one block of uniforms (1,280 bytes, a dynamic
   offset: 24 bones' 3 × 4 transforms to eye-relative world space, the held block's atlas tiles,
   settings) and two indexed draws (body and item), each with an **inverted-hull outline** in
   `ink_soft` (front faces culled, pushed out ~6 mm along the normal, widening a little with
@@ -677,7 +985,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   a faint rim, scaled by the frame's light on the fragment's face (so day, night and face B's own
   lights reach characters as they reach terrain); the held block (`$block`) is its atlas tiles (top,
   side, bottom) lit by `lambert`, cutout texels discarded. A body on face B is turned a half turn
-  about its forward axis (a proper rotation, so the winding holds); a dead one lies on its back.
+  about its forward axis (a proper rotation, so the winding holds); always upright (a defeated one
+kneels by its clip, CHARACTERS.md §11.13; the lying body is gone).
   Bodies draw in the scene passes they reach, after the opaque draws and before see-through water,
   writing colour and view depth, so the composite tone-maps, fogs, inks and edge-blurs them.
 - **The arms pass**: after the world's passes (the last of which then keeps its colour instead of
@@ -686,7 +995,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   10 m far): the arms never clip into terrain and keep their size under the speed FOV. Hidden while
   dead, zoomed in the spyglass, in a placed camera, or with the **Show your arms** setting off (the
   view record, append-only). Timed as `gpu.arms`.
-- **Your own body in first person** **[built, C1b]** ([`CHARACTERS.md`](./CHARACTERS.md) §5.1): the
+- **Your own body in first person** **[built, C1b; the Peasant since 0.54, the rigid one below under
+  `?fparms=rigid`]** ([`CHARACTERS.md`](./CHARACTERS.md) §5.1, §11.12): the
   full body from the neck down, playing the clips others see, drawn in the scene passes under the
   arms (`BodyDraw::first_person`, set by the game in first person and not from a placed camera or
   while dead). Data, `firstPerson.body`: the bones and parts it leaves out (the head and its hat,
@@ -707,9 +1017,140 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   triangles and 4 draws each, within the noise of `gpu.frame` (12.4–13.1 ms with 0–32 bodies on a
   busy machine); 41 KB of instance uniforms a frame at 32.
 
+### 5.4 The far ecology **[in progress: the data-level core, the server's tick and save, and individuals near players built; not yet drawn far away or in local worlds]**
+
+([`ECOLOGY.md`](./ECOLOGY.md), WORK_QUEUE item 11.) Away from players the deer and wolves are
+**data only**: one record per herd or pack (`dwell_ecology::Group`: face-local position, size,
+hunger and energy averages, activity) on a coarse grid of the face's island (`Island`, 200 m cells
+sampled once from its world map: sea and lakes unwalked, each land cell's most forage and refuge by
+its ground). Each cell's **forage** is a number grazing depletes and time regrows; the real tall grass
+is not touched. `step(island, data, eco, days)` fast-forwards the whole island over days in steps
+of at most `stepDays` (5), each rate integrated in closed form, so 100 days at once land within a
+few percent of 100 single days; deterministic from the seed (hashes, no carried generator). Deer
+move to the best forage away from packs (toward refuges when threatened), packs close on herds and
+kill within reach, groups split above their cap and merge when small. **No floor**: a group under
+its `dieBelow` is gone and a species can die out, but the system resists it (owner, 2026-11-11):
+predation is a Holling type III response (kills fall off with the square of the prey a pack can
+find, outside refuges), refuge grounds (crags) shield part of a herd, breeding is fastest at low
+density (a Ricker step), hungry packs disperse and lose members, starving is slow. Breeding slows
+to nothing as a species nears its island **carrying capacity** (deer: the forage regrown a day;
+wolves: that over their prey a head), so none runs away. Data: `shared/ecology/ecology.json`
+(`gen.mjs` → `ecology.gen.rs`, a fixture with species added by data alone). Face-local: one
+ecology per face, on that face's map.
+
+**On the server** (`dwell-sim` `server/ecology.rs`): one `Ecosystem` per face, made once both faces'
+world maps are in the process (never computed on the tick; worlds without a map, such as the flat
+world, have none), stepped by the world clock's days × the world's ecology `speed` on a schedule
+that depends only on how far behind it is and whether anyone is online: a day at a time online,
+nothing until 10 days behind when idle, `stepDays` steps when 10 or more behind (a load of an older
+world, an idle stretch), at most `MAX_STEPS_PER_TICK` (4) a tick. Saved in the world's optional
+`ecology` table with its `enabled` switch (a world can opt out; new worlds default on,
+`ServerConfig::ecology`) and its speed. A dev read-out (`Server::ecology_snapshot`: each group's face,
+species, position, size, hunger, energy, activity) is server-side only for now. The browser's local
+server computes no world map itself (the server-jobs worker does), so a local world's ecology does
+not run yet.
+
+**Near players** (`dwell-sim` `herds.rs`, ECOLOGY.md §8): a record within `near.spawnM` (64 m) of a
+player on its face becomes its individuals — ADR 0073's creatures (the species' `near.creature`),
+`driven` (they walk only where they are sent and are never despawned by the creature rules) — with
+the record's hunger and energy, and leaves the far step; once no player is within `near.foldM`
+(96 m, the hysteresis) it folds back (size the survivors, needs averaged, place their centroid), and
+a save while near writes it folded. Every `near.thinkS` each individual follows the owner's mockup as
+data (each species' `near`): flee, sleep (tired, or at night by chance: each face's own night), eat
+(a grazer the island cell's forage and, by chance, the real block its data names — the only world
+change, near players only; a hunter chases at a sprint and kills within reach, feeding its pack),
+mate (a young up to the group's cap), keep company or wander. While the ecology runs, the creature
+rules that spawn the species' creatures are left out (`Creatures::reserved`).
+
 ---
 
+### 5.5 Theater mode **[built: T-1 to T-4; T-5, an MCP server, a nice-to-have]**
+
+Design: [`THEATER_MODE.md`](THEATER_MODE.md) (WORK_QUEUE item 41). A viewer-only camera toolset: the
+character stays put while the camera follows a **camera path** — JSON keyframes (world position, a look or a
+target, field of view, the viewer's time of day, a playback speed) joined by segments of a fixed move vocabulary
+(`cut`, `linear`, `ease`, `orbit`, `track`, `dolly` with the dolly zoom, `crane`, `pan`) and easings — or a
+**preset** (`shared/theater/presets.json`) expanded into one. `crates/dwell-theater` parses and validates paths
+and presets, evaluates a path at a time into a pose and plays it frame-rate independently (tracking a moving
+player, creature or NPC with exponential smoothing; a creature's or NPC's position itself is followed smoothed,
+the path's `followSmoothingS`). The client steps it before each frame
+(`Game::step_theater`) into the placed view (`ViewOverride`, with an optional field of view) and a viewer-only
+time of day (`theater_time`). Dev API `__dwell.theater`, the bench's `theater` step.
+
+**The mode in game [built, T-2, T-3]** (`client/src/theater/`, THEATER_MODE.md §2, §6): a panel that is one of
+the panels `ui/panels.ts` owns (`theater`: it frees the mouse, its X or Esc closes it and locks the mouse again),
+docked on a desktop and a bottom or side sheet on a phone (`layout.ts`), worked by the controller's d-pad; the free
+camera (keys, mouse drag, sticks, a phone's stick and Up/Down buttons, `touch.ts`), presets and keyframes, a
+creature or NPC picked to follow by id (`Client.theaterSubjects`), the path store, and recording: MediaRecorder on
+the canvas in real time, or **frame-exact** path takes (the path stepped one frame of the rate per drawn frame,
+`Client.theaterExact`/`theaterAdvance`; the canvas encoded by WebCodecs and written as WebM by `webm.ts`), and
+**cinematic takes** (THEATER_MODE.md §6.1, `src/theater/cinematic.ts`, settings in `shared/theater/cinematic.json`): the
+local world's worker stops its real-time clock and steps exactly each frame's ticks (`clock`/`step` messages,
+`LocalCore::step_ticks`), the client's clock is held and set from the frame count (`step_clock` behind
+`telemetry::now_ms`), each frame waits for the view to load, and the sound is stepped with the frames (the
+AudioContext suspended between them, plays scheduled at their frame's time). The
+host's `theaterGuests` world setting (`WorldSettings` 0x87) turns the mode off for guests; the host (the loopback
+session or an op) always may, and the server ignores a guest's viewpoint while it is off.
+
+**The simulation viewpoint [built, T-4]** (THEATER_MODE.md §7): the one thing on the wire. Where the server has
+the `theater.viewpoint` capability (§8.3) and the world's mode the `theaterViewpoint` ability (creative), the
+client sends the playing path's eye as `TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3; at
+most `world.theaterViewpointHz` = 4 a second and only when it moved ½ m, `dwell_theater::viewpoint::Sender`) and
+one clear when the path stops. The server keeps one per player (`server/theater.rs`; a faster one waits for its
+turn, a clear is taken at once) and uses it **only while the world's mode has the ability**
+(`Server::viewpoint_of`, so a mode change applies at once and an adventure client gains nothing), held within
+`world.theaterViewpointMaxM` = 4096 m of the body: the body's view sphere is streamed around it after the body's
+own view and the respawn preload, from the same per-player chunk budget (kept from unloading, chunk requests
+within the render radius of it answered, `StreamStats::viewpoint_sent`); worldgen prefetches and keeps its
+chunks; the LOD's propagation, creature spawning and despawning, the near ecology's groups and the lava run near
+it as near a body (`Server::presence_points`). It only brings the world near: animals don't flee it and NPCs
+don't look at it or get bumped by it (`herds::World::near` vs `players`). Tests:
+`crates/dwell-sim/tests/theater_viewpoint.rs` (both faces).
+
 ## 6. Voxel World
+
+
+**Tall grass growth** (ADR 0075 T3c, ECOLOGY.md §10) **[built]**: `shared/worldgen/grass.json` →
+`dwell_worldgen::grass` (a face-local step capped by the T3b climate envelope); the server's grass step
+(`dwell-sim` `server/grass.rs`, every 5 s, loaded chunks, bounded catch-up) and its optional
+`grass_growth` world table (the switch, each chunk's last day; on for new worlds only). The ecology's
+island forage is scaled by the same climate share.
+
+**Other grids on the server** (MOON_WORLD.md §7.2, M-7b) **[in progress: server and wire built]**:
+`dwell-sim` `server/grids.rs` holds a space per grid with its own generator (the moon's: its voxels in
+its local frame, physics, players) beside the home world, carries fliers into it inside its
+`captureM` and home past × `releaseFactor` (`travel::carry`, nothing jumps), streams its chunks to an
+away `grid.frames` client and applies an away player's edits to it. Its edited chunks are saved in the
+optional `grid_chunks` world table ((grid name, cx, cy, cz) → (revision, chunk blob); additive). The
+client's predictor carries its player across grids as the server does (MOON_WORLD.md §7.3: a
+`GridTravel` hook, `dwell-sim` `TravelMap`, run before each predicted tick; history per grid), and the
+game client follows it (M-7c, behind `grid.frames`, which the client now says): its streamer holds the
+chunks of the predictor's grid only (all dropped at a crossing; another grid's chunk messages ignored),
+the view is drawn in that grid's local frame (the look carried across with `look_across`, the sky's
+directions turned into the frame, the moon's far disc hidden, home's LOD hidden while away; its sky space, the
+grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easing upright over `motion.json`
+`gridCrossingRollS` at a crossing; the maps hidden with a label while away). **The moon up close [built,
+M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
+mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
+drawn frame, a piece the shadows skip, the far disc then hidden. **On a grid [built, 0.63.0; BUGS.md #143–#145]:**
+its distant terrain is drawn by an LOD tree of its own when `grids.json` says `lod: true` (BUGS.md #159): home's
+`LodSystem` (§6.6: pixel-error selection, graded levels, fades, stand-ins) over the grid's disc
+(`WorldBounds::grid`, its rim view scaled to the disc, `LodSystem::set_rim_view`), one instance at a time for the
+grid the view is on, made on its first frame there and dropped at every crossing (`dwell-client` `grid_lod.rs`).
+Its sections are generated in the job workers (`Job::GridLod`, `Job::GridLodBounds`, the grid's `grids.json`
+index; each result carries the instance's epoch) by one builder over the grid generator's columns
+(`dwell-worldgen` `grid_lod.rs`: the `GridColumns` trait, ground at a cell's scale, its block, a fluid over it;
+the `cratered` and `volcanic` kinds implement it), meshed by home's LOD mesher, so they take the block looks'
+LOD colours as home's far terrain does. A grid has no LOD index and asks the server for nothing; its section
+ids in the renderer carry `grid_lod::ID_BIT`, apart from home's (dropped while away); on it `Game::chunk_fade`
+asks its tree. Home has no sky disc (`skyDisc` false): from the moon
+its `nearMesh`, made from its world maps (`HomeFar`), is drawn at its place at every distance (M-6). A grid's
+`light` rig lights it (`grid_light.rs`): the sun kept or not (`sunlit`), up to two bodies by the sunlight they
+reflect (albedo × phase × apparent size², toward them; the `DaySky` uniform's `rig0`/`rig1`, added in
+`lambert_lit`), an ambient floor and a ground `glow` (the sun's lava); on the moon its own halo and moonlight, on
+the sun its own disc and halo, are not drawn. Grid generators shape stored ramps by their `ramps` rule. The server
+sends a `grid.frames` client the moon's chunks as voxels and forgets its home stream at the capture, so
+home streams again from nothing on the release.
 
 ### 6.1 Grid & chunks **[in progress]**
 
@@ -751,11 +1192,19 @@ around each player (out to 3 m plus twice a tick's travel, capped), re-synced in
 an edit or a streamed chunk, and dropped every 64 ticks when more than 2 chunks from every player;
 **[built, 0.49.42]** a chunk's full cubes enter (and leave) the collider a little a tick, those within
 the players' and pieces' reach at once (`TerrainCollision::catch_up`, `COLLISION_CELLS_PER_TICK`;
-PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick;
+PLAYER_CONTROLLER.md §5), so a teleport's buried chunks no longer land on one tick; the client's
+prediction on a phone takes fewer of the rest a tick (`Players::set_collision_cells_per_tick`,
+`shared/render/streaming.json` `collisionCellsPerTick`; the cells within reach still at once);
+**[built]** the chunks a moving player is heading into are built **ahead** of its reach, a few a tick
+(`CollisionAhead`: along the velocity a second of travel, at most 48 m, within the reach plus 1 m, for a
+player moving at least 1 m/s; 2 chunks a tick on the server and a desktop's prediction, 1 on a phone's,
+`Players::set_collision_ahead`, `shared/render/streaming.json` `collisionAhead`), their cells first in
+the background budget, so no tick builds a chunk its player just reached (WORK_QUEUE item 16; a chunk
+waits until the world holds the 26 around it, or a streamed neighbour's arrival would rebuild it);
 a chunk with no solid cell holds nothing, so open sky costs no collision memory. Cells that collide
 as their full cube go into the `Voxels` collider; **shaped cells** — the generated ramps (below,
 Phase 41) — go into **one triangle mesh per chunk** (Parry `TriMesh`, `FIX_INTERNAL_EDGES`, placed
-at the chunk's corner) of the faces of their shapes that no neighbour covers. A chunk's
+at the chunk's corner) of the faces of their shapes that no neighbour covers; **[built, 0.51.0]** so do **octagonal logs** (ADR 0072): their prism's open faces (`dwell_blocks::octagon::open_faces`, the mesher's geometry), squared where they join, so a lone log's cut corner is not standable and joined logs are flat; a wood ramp is the octagon cut by its slant (Phase 55 T4). A chunk's
 collision reads its voxels with a two-cell apron (a shape reads the columns around it, and its faces
 are culled against its neighbours' shapes): a chunk is rebuilt when it changes, and a chunk with
 shaped cells also when any of the 27 chunks around it changes (watched by stamp and revision; an
@@ -788,7 +1237,14 @@ before `Welcome` (§8.3), and the client maps the server's ids to its own at the
 generated array plus a lock-free run-time extension) for states it lacks or whose rules differ.
 A difference never refuses the join: the client adopts the server's rules and asks the player (the
 join prompt). Unknown looks draw with the fallback checker; job workers receive the synced states
-in a broadcast. Runtime ids stay on the wire (the server's) and in memory (the client's) (a `u16` per voxel: a
+in a broadcast. **Alias states [built, 0.50.0, ADR 0063]:** a state named with a property or value
+the build doesn't know (`dwell:leaves[flooded=true,mymod:wet=7]`), in a world file, a structure or a
+server's registry, is registered at run time as an **alias** (`dwell_blocks::parse_state`,
+`register_alias`): a new id under the exact string whose row is its base's (the known part, unknown
+keys dropped, unknown values at their defaults), so it draws, collides and plays as the base and is
+saved and sent back unchanged; the client maps such a server state to an alias when its rules are
+the base's. Adding a property (default "as before") or a value is therefore compatible from the 0.50
+line on; unknown whole blocks are still placeholders. Runtime ids stay on the wire (the server's) and in memory (the client's) (a `u16` per voxel: a
 bit-packed chunk-local palette would be 7× smaller but 2.7× slower to scan with the current access
 pattern, ADR 0015 — deferred); on disk, chunk palettes hold **world state ids** mapped to strings
 (§6.4).
@@ -863,7 +1319,10 @@ don't enter the registry hash.
 
 **The cross look and plants [built, Phase 33]** (same ADR and design doc). `"look": "cross"`: 2–4
 vertical quads through the cell's centre, evenly turned, double-sided (one face each, drawn by the
-cutout pipeline without culling), with data options `cross` (`height`; `quads`; `jitter`: offset,
+cutout pipeline without culling), with data options `cross` (`height`; **[built, 2026-11-12]** `heights`:
+`{ property, heights }`, each value of a property its own height, the default's the block's `height`, the
+state's selection box scaled with it — tall grass's growth `stage`, docs/ECOLOGY.md §10; per state, so the
+registry sync's cross field carries it; `quads`; `jitter`: offset,
 turn and height scale, seeded by the cell's **world** position — mesh jobs carry the chunk's
 origin, `mesh_chunk_at` — so a plant is the same on every client and re-mesh), `wind` (strength,
 speed: the mesher writes each vertex's sway, 0 at the foot, into the cutout mesh's `plants` stream;
@@ -877,7 +1336,7 @@ field's half-height top and follows a slope; sent as an optional last byte of th
 field, only when false). Normals lean up (0.8) so plants are lit like the ground from every side; the tint is
 that normal's face tint. Crosses need `"shape": "empty"`: no collider. **Placement rules** are block
 data too, checked by the server (§6.5): `placeOn` (block ids the block below must be),
-`needsSupport` (`"below"`: removed with what it stands on, in the same modification), **[built, 0.36.0]** `support` and `passable` (what a block counts as for holding things up — logs carry, leaves ride — and players passing through it: leaves; BLOCK_REGISTRY.md, [`FELLING.md`](./FELLING.md)), `replaceable`
+`needsSupport` (`"below"`: removed with what it stands on, in the same modification), **[built, 0.51.0]** `crossSection` (`{ kind: "octagon", chamfer, joins, ring?, heart? }`: an octagonal prism across the block's axis, its sides squared where a neighbour of the same `joins` group and axis lies; logs; on a `family: ramp` entry `"of"` takes its base block's, the prism cut by the ramp's convex shape (the wood ramps, Phase 55 T4); a rule, registry-sync tag 13; **[built, 0.52.59]** `widths: { property, metres }` names a property whose values narrow a standing log's octagon about its cell's centre (`CrossSection::width`, sync tag 14; the log's `width`, ¼ m steps, default full; a narrow log joins nothing; [ADR 0079](./adr/0079-tree-species.md)); [ADR 0072](./adr/0072-octagonal-logs.md)), **[built, 0.36.0]** `support` and `passable` (what a block counts as for holding things up — logs carry, leaves ride — and players passing through it: leaves; BLOCK_REGISTRY.md, [`FELLING.md`](./FELLING.md)), `replaceable`
 (placing into its cell replaces it) `selectionBox` (a smaller box in the cell for targeting,
 line of sight and the outline, `dwell_world::edit::target_box`; on a block with a `facingProperty`
 written for facing north and turned per facing by `gen.mjs` (the ladder's is its plate, ⅛ m against
@@ -923,7 +1382,13 @@ are the only shaped natural ground; a placed natural block is a flat cell. **[ge
 rule (a ramp needs its downhill neighbour lower, the uphill one not, and both sides and back
 diagonals not lower, or is a one-wide path) runs with the 1 m snap off: V2, the owner's choice
 over option A's Sobel facing (`HALF_HEIGHT_GRID.md` §4); hillsides are ½ m steps and ½ m ramps,
-with 45° ramps where a column stands a metre over its downhill neighbour. The geometry is
+with 45° ramps where a column stands a metre over its downhill neighbour. **[built, 0.59.0]** where the rock
+shapes the ground (rocks.json `shaping.strength` > 0 and `shaping.notched`), `top_of_notched` also ramps
+columns on diagonal contours (notched ramps); **[built, 0.64]** `shaping.notched` is a word (`none` | `mesaEdges` |
+`all`), the build's `mesaEdges`: only a column that is or touches a rock wall (`Column::wall`) is notched, the
+straight-edge rule elsewhere (owner, 2026-11-13); every block a worldgen surface rule places has a ramp family
+(`shared/worldgen/gen.mjs` `validateSurfaceRamps`); a falling block's families fall too and settle as
+its `settlesAs` says (`"full"`: the base block; `dwell_blocks::settled_state`) (`HALF_HEIGHT_GRID.md` §10). The geometry is
 baked once by
 `shared/blocks/shapes.mjs` (`gen.mjs`) into the generated tables: each shape's closed, outward-wound
 polygons tagged with the cell face they lie on (or the sloped surface), its side profiles for
@@ -1009,7 +1474,9 @@ current *content* — one island, its heights and surface materials — is proto
 the generator down to an **interim** one: one island at the origin, a 2D height field and a fill by
 depth — no continents, plates, rivers, lakes, climate, biomes, tints, mountain cascade, 3D density,
 caves, ores, trees, boulders or slope stage (their ADRs 0017–0022 are superseded). Its height
-field's parameters are data (`shared/worldgen/terrain.json`, since generator version 15); the island
+field's parameters are data (`shared/worldgen/terrain.json`, since generator version 15; since 0.51.14
+the fine relief and surface bands live in the default biome, `shared/worldgen/biomes/default.json`, see
+"Biomes" below); the island
 layout's and the fill's are code constants. Phase 17 replaces it with an evaluator of terrain
 definitions (data, [ADR 0026](./adr/0026-terrain-definitions.md)). **[built, Phase 16]** The world is the 50 km disc
 with the midplane at 0, the 10-layer core and sea level `h` = 32 (generator version 14); the island
@@ -1038,7 +1505,11 @@ playground** (generator 1 until Phase 15) is now a **structure file**
 the flat world; no world uses it. Players spawn on a dry, level 9 × 9 patch (top voxels at
 one height; `SPAWN_CLEAR`, wide enough for the spread of spawning players to build beside
 themselves) in a lowland by a river (`terrain.json` `spawn`: the map's suitable cells nearest the
-disc's centre, each searched in an 8 m spiral), standing on the
+disc's centre, each searched in an 8 m spiral; failing those, the origin's spiral to 5,000 legs,
+probed natively in batches over the cores with the first in spiral order kept; failing that
+(a wide island, WORLD_SCALE.md §3.2; 0.51.21), at most 256 suitable cells spread one per
+800 m block, river-side first, searched with the patch's level relaxed to within 1, then 2 rows,
+and at last the nearest suitable cell's ground, never the origin's peak), standing on the
 surface (`TerrainGenerator::surface_y_at`: the top voxel's shape — on a level patch, its top).
 Water is generated in open cells below sea level and below a river's or lake's surface; a flooded
 ramp under it holds water in its open part (§6.1). Debug tooling: **named
@@ -1078,7 +1549,8 @@ eroded by stream power, its lakes filled and its rivers traced (`hydrology/`, th
 `shared/worldgen/hydrology.json`: ranges ~2,300–2,500 m). The kept map holds the eroded heights,
 the sea, each cell's flow direction (D8: for moving water later), the lakes and the river
 polylines; derived on load: the rivers' smoothed channels in a 64 m bucket index and each lake's
-shore distance field. Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
+shore distance field, indexed in buckets of 16 map cells (a column reads only the lakes whose
+field reaches its bucket; 0.51.21, WORLD_SCALE.md §3.1). Columns (`terrain.rs`) take the map's height bicubic (C1) plus detail noise,
 carve river channels and valleys (water in ½ m terraces down the river; broad levees where the land
 is lower, none at sea level; a joining river at the other's level across its channel, generator
 25), fill lakes flat to their
@@ -1089,7 +1561,11 @@ noisy, slope-aware snow line, rock where the landform is steep over a hillside's
 (`$DWELL_MAP_CACHE`, else the temp directory); in the browser built in two job workers
 (`buildMap`), kept in IndexedDB (`client/src/world/worldMaps.ts`, `dwell-world-maps`, the 8 most
 recent) and installed in every WASM instance (the page, the job workers, the local world's server)
-before its generator is made, while the loading screen lists "Shaping the world map" with the faces ready (§6.3, *The start's stages*). The bytes
+before its generator is made, while the loading screen lists "Shaping the world map" with the faces ready (§6.3, *The start's stages*). A map's
+biome set (the biomes' palettes and, with more than one biome, the whole-map grids of the biome field and
+the drainage: ~60 MB a face for the starter world) is likewise built once per map and process
+(`terrain::shared_biomes`, keyed by the map's `Arc` and seed) and shared by every generator made of it (a
+job worker makes four: 0.52.68, BUGS.md #70). The bytes
 (`worldmap::codec`) are lossless, end in a checksum and carry the build's map fingerprint
 (`build.rs`, over the inputs' sources and data) and a generation-settings hash slot (constant until
 per-world settings); a seed's map digest is pinned and checked natively and under WASM. The
@@ -1119,12 +1595,16 @@ its precision decisions stand):
   (`shared/protocol/gen.mjs`) rejects an unknown shape or a bad parameter with a message. A voxel is
   inside when its centre is; a box (a chunk, an LOD section, a region edit) is classified
   conservatively (`Overlap::{Inside, Partial, Outside}`), in exact integer arithmetic. Everything
-  that bounds the world reads it: **edits** (the server's `check_block_edit` and `check_region_edit`
+  that bounds the world reads it **[built, BIG_MAP.md M2a]** through the world's `WorldBounds`
+  (`dwell_world::world_bounds`: a 1× world's disc and volume are the build's; a bigger world's disc
+  is `radius_scale` × as wide, its volume `BuildVolume::sized`, as wide as the disc and as tall as
+  today's, so the rows are every size's): **edits** (the server's `check_block_edit` and `check_region_edit`
   refuse a cell or box outside, `OutOfWorld`; the client's `BlockInteraction::act` and region tools
   don't send one), **generation and storage** (chunks wholly outside are air — the generators
   return nothing, the air tests say so, so they are never generated or stored; partial chunks are
   clipped voxel by voxel), **streaming** (the server streams and the ChunkRequest handler accepts
-  only chunks that may hold something; the client waits for no others) and the **LOD** (`in_world`:
+  only chunks that may hold something; the client waits for no others, by its world's volume,
+  **[built, M2b]** `ChunkStreamer::set_volume`) and the **LOD** (`in_world`:
   sections wholly outside are never generated, stored or requested; the rows `first_row`/
   `last_row` and `MIN_CHUNK_Y`/`MAX_CHUNK_Y` = −1 563/1 562 come from the volume's height). The rim
   lies on the sphere's equator: 50 km of build height over the centre, ~9.9 km at 49 km out, ~1 km
@@ -1181,6 +1661,23 @@ over them coarser; the hydrology prototype ignores them (they don't change the h
 dev link `?spawn=portal` (`portal-b`) spawns a local world's player on the rim over the
 ladder of the portal nearest the centre (`portal_spawn_for`), on every open of its world file, and
 bench scenarios take `portal`; a new world from the menu can start there too (New world's Spawn).
+
+**Resurrection shrines** **[built, 0.58]** ([`SHRINES.md`](./SHRINES.md); owner 2026-11-12: "You respawn at
+the nearest shrine when you die"): `dwell-worldgen` `shrines.rs`, data `shared/worldgen/shrines.json`
+(→ `shrines.gen.rs`, and its `design` → `shared/structures/shrine.json`, both by `shared/worldgen/gen.mjs`;
+CI fails on stale output). Each face's ground is cut into 2 km cells, each holding at most one shrine at
+the first of its seeded points near the centre whose footprint is dry, inland, in the height band, level
+enough and clear of the portals; a cell's shrine is a pure function of the face's seed, the cell and the
+height field, so chunks find the ones reaching them in any order. The structure stands as a monument does
+(the same `monuments_near` path: chunks, the sky test, the LOD at cells ≤ `lodCellM`), turned the quarter
+nearest downhill (the seed's turn on flat ground); no tree grows on it. The spawn is a shrine: the spawn
+search's point moved to the shrine nearest it, or a shrine built at the point when none lies within
+`spawnWithin` (looked for only by chunks with no grid shrine near, so most never run the search). The
+server respawns a dead player at the shrine nearest its death on its face (`ShrineRespawn`,
+`Server::respawn_after_death`; every mode), the respawn preload streaming that shrine's ring; the client
+guesses the same shrine from its own terrain for its preload. The big map and the minimap show the explored ones
+(`mapShrines`, `ui/mapShrines.ts`, the markers' `shrine` icon); the map's filters hide the shrines or
+any marker kind. Generator change: the 0.58 line.
 The rock above the bedrock is ordinary stone and can be dug through, in the flat test world too,
 which has no face B and no bedrock. The flat worlds (the flat test world and
 the structure sandbox) fill the midplane up to `FLAT_TOP_Y` = 32, their surface. The anchor for
@@ -1220,6 +1717,57 @@ player on face B stands upside down in the world.
   mirroring outside the frame and on plain tests that name a face without running on both. The dev link `?spawn=b`
   (and a bench scenario's `"face": "b"`) starts a local world on face B's spawn
   (`spawn_point_b`, its own world file `…-faceb`); real worlds spawn on face A.
+- **Grid frames [built, M-3, 2026-11-12] ([`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §2).**
+  A voxel grid with its own transform (the home world, a built body; the moon later) crosses world ↔
+  grid ↔ face-local through **`dwell_world::GridFrame`** (`grid.rs`): its origin (f64), orientation
+  (a unit quaternion), velocity, spin and gravity scale; points, vectors and looks each way, the face
+  of a world point (the side of the grid's midplane), each face's up and gravity, the cell of a world
+  point and a cell's world corner and centre, and capture/release of a point and velocity into a
+  moving grid. Code placing something in a grid takes `(GridFrame, FaceFrame)`. `GridFrame::HOME`
+  is the identity and returns its input bit for bit; its rotation is glam's `DQuat * DVec3` term for
+  term, so `dwell-physics` `frame::grid_of_pose` (a body's pose as a grid frame, with the `GridMaps`
+  trait in the physics' types) gives the same bits as the bodies' old hand transforms. Through it
+  today: the bodies' crosshair ray (`dwell-client` `pieces.rs` `raycast`), a felled piece's hits on
+  players and its snap to the grid (`dwell-sim` `felling.rs` `hits`, `follow_pose`, `resample`), the
+  home world's targeting (`dwell-world` `edit::raycast_block_in`, called by `dwell-game`'s
+  `target_hit` with `HOME`), and the controller's face at spawn and the predictor's stand-in frames
+  (`HOME`). Not yet: the renderer still draws a body by its (offset, quaternion) pair and the home
+  chunks unrotated (a model matrix per grid comes with M-5's LOD per grid), and chunk storage,
+  streaming and the protocol carry no grid id (M-7's follow-up).
+- **Travel between grids [in progress, M-7 partial, 2026-11-12] ([`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §7.1).**
+  `dwell-sim` `travel.rs`: a **space per grid** (`GridSpace`: its own `VoxelWorld` generating its
+  chunks from its generator in its local frame, its own `Physics` and `Players`), so the controller
+  and collision run unchanged in each grid's local frame and a player in the moon's space moves with
+  it. The moon's frame at a tick is M-4's orbit (`grid_frame_at`: position, tidally locked axes,
+  velocity and spin). `Travel::update` captures a flier inside a grid's `captureM` and releases it
+  past `captureM × releaseFactor` (`grids.json` `travel`), keeping its world position and velocity
+  (`GridFrame::release` → `capture`), its controller state, the new grid's face and its gravity
+  (`Players::set_gravity_scale`); far from every grid it sets the far-flight speed
+  (`Players::set_far_fly_speed`, `travel.farFlight`). Native and tested only: the server's session
+  loop, chunks and snapshots per grid (the `grid.frames` capability) are the follow-up. The both-faces check's rule 3 fails
+  on a world point turned into a grid's space by hand (`inverse * (p − origin)`) outside `grid.rs`
+  unless marked `// grid-boundary: <reason>`.
+- **The sun's grid [built natively, S-1..S-3, 2026-11-13] ([`proposals/SUN_WORLD.md`](./proposals/SUN_WORLD.md)).**
+  `grids.json` `dwell:sun`: frame kind `sunPath` (`Celestial::sun_position`/`sun_axes`: today's sun
+  direction × `daynight.json` `sun.distanceM`, face A toward home), the `volcanic` generator
+  (`dwell-worldgen` `volcanic.rs`: lava oceans, rift rivers, crater lakes, basalt and obsidian), held by the
+  same travel, server grids and `TravelMap` as the moon (grid index 2). Its face A's bake shares the moon's
+  storage buffer (`render/moon.rs` `SUN_BASE`) and shades the sky's sun disc by `sun.surface`; the disc's
+  size, glow and the sunlight are unchanged.
+  **Lava on other grids [built natively, the second slice]:** each `GridSlot` holds its own `dwell_sim::lava::Lava`
+  fields (not saved; their cells are in `grid_chunks`); a `volcanic` generator's optional `flow` rules
+  (`FlowRule`) place a river vent at each `cellM` cell's river head (`VolcanicTerrain::river_heads`) within `nearM`
+  of a player on that grid, at most `maxFields` (the farthest unoccupied dropped first), `maxTiles` each, and only
+  fields near a player run (`Lava::tick_with(.., far: false)`); changed chunks go whole to that grid's clients. An
+  away player burns by lava's rules (a field's lava, or any cell of a hot fluid's block, `lava::hot_fluid_of`) and a
+  death there takes it out of the grid (`remove_away`), inventory kept, up again at the world's spawn grid or home.
+- **Spawns on any grid (MOON_WORLD.md §8, M-8) [built].** A spawn key per non-home grid face from `grids.json`
+  (`grids::spawn_keys`: `moon`, `moon-b`, `sun`, `sun-b`; the shell's Spawn choice gets the same list from
+  `shared/play/gen.mjs` `optionsAlso: gridSpawns`). `ServerConfig::spawn_grid`, saved in the world meta's optional
+  `spawn_grid` key (an older build ignores it and spawns at `spawn`): a player spawned at the spawn, or up again
+  after a death on another grid, is carried to the grid's stand point (`grids::stand_point`: the moon's spawn
+  search, the sun's dry crust 16 m from any lava) once its client says `grid.frames` and the grid's capability,
+  within 10 s; otherwise it stays at home's spawn. No shrine on other grids yet: the respawn is the stand point.
 - **Generation.** `dwell_worldgen::BifacialTerrain` (`bifacial.rs`) holds two `TerrainGenerator`s working
   in face-local coordinates: face A's is seeded by the world seed as ever, face B's by
   `face_seed(seed, B)`, a hash through streams no stage uses — its own island and hills. A chunk of
@@ -1237,7 +1785,9 @@ player on face B stands upside down in the world.
   brakes a body, so a fall of the rim's 2 km passes through at speed and gravity (toward the
   midplane on both sides) draws it back: it swings across the midplane (BIFACIAL_WORLD.md §10).
 - **Crossing.** A player climbs through a **portal** (a shaft through the bedrock with a ladder the
-  whole way, generated from the seed: *Bedrock and portals* above), digs down through the core's
+  whole way, generated from the seed: *Bedrock and portals* above) or drops into one (it swings
+  across the midplane and the shaft's exit push carries it out of the far opening onto the ground
+  beside it: `portals.exit`, the controller's `step_portal`, BIFACIAL_WORLD.md §12.3), digs down through the core's
   stone to the bedrock, or goes over the rim, and the face switches (with 5 cm of hysteresis) when the body is across the midplane; the
   controller state is mirrored with the frame, the body turns over and the view keeps pointing
   exactly the same way: the look continues across (heading kept, pitch mirrored; on the crossing
@@ -1328,6 +1878,30 @@ centre — the anchor is not used yet), **Download** and **Copy** (the file as s
 into `shared/structures/` and passes `gen.mjs` unchanged — a test validates an export with the
 generator's own `loadDir`), **Rename** and **Delete**; **Import** takes a file or pasted JSON.
 
+**The player's structure library [built, WORK_QUEUE item 12; STRUCTURES.md §9]**. The same store is
+also each player's library of placements (owner, 2026-11-11: per player, usable in any world they
+create; placed copies editable, not protected): per player **per device** (the browser's shared,
+append-only store; not per world, not synced). A selection that fits one file (32 across, 64 tall)
+is saved as one `voxels` structure, readable by older builds; a larger one as a **tiled** file
+(`kind: "tiles"`: one palette, `tileSize`, and `tiles` of `{at, layers}`, each a voxels body at
+most `tileSize` a side, all-kept tiles left out), up to the limits in
+`shared/structures/library.json` (`tileSize` 32, `maxTiles` [4, 2, 4]: 128 × 64 × 128), checked by
+`client/src/local/structureLibrary.ts` (each tile by `format.mjs`'s own `validate`). Older builds
+list a tiled file as kept (unknown kind) and never rewrite it. Placing: the creative inventory's
+**Structures** tab (`ui/creativeInventory.ts`) lists the library where the world's mode has the
+`structures` ability (`shared/modes/modes.json`, creative only for now; `Client.structuresAllowed`);
+a click loads it into paste mode as the page's Load does (ghost, R turns 90°, M mirrors, right click
+places). A structure over one edit's side is pasted as **one undo step of `Paste` region edits of at
+most 32 a side** (`RegionTools::paste_tiles`), queued and sent as the rate allows; the server
+validates and applies each as any paste, under the world's rules (reach, the build volume, players,
+and the mode: without `unlimitedBlocks` every cell is paid in items, ADR 0066). The placed blocks are
+ordinary blocks. `RegionTools::load_clipboard` refuses without the ability and over
+`MAX_CLIPBOARD_CELLS` (a memory guard above the data's limit, a test checks). To a server that
+announced the `structures.place` capability (§8.3) every tile goes as `RegionEditOp::Structure`
+(`RegionTools::structure_ops`), which the server refuses as such where the world's mode lacks the
+`structures` ability (`RegionCheck::NotInMode`, nothing paid); an older server gets plain `Paste`s,
+validated as any paste.
+
 **Tree growth [planned, Phase 30]** ([ADR 0033](./adr/0033-tree-growth.md),
 [`TREE_GROWTH.md`](./TREE_GROWTH.md)). A tree is a structure whose model is the mature tree: its
 palette marks roles (`wood`, `leaf`, optional `trunk`, `root`, `core`) and a `growth` block gives the
@@ -1348,6 +1922,128 @@ Executed per chunk. Every stage reads only noise of world coordinates, never ano
 so chunks can be generated in any order and in parallel. The 2D fields are sampled on a 4-column
 lattice and interpolated bilinearly; the chunk path and the point queries (`column_at`, `solid_at`,
 `ground_y`) share that arithmetic.
+
+**Biomes [in progress; B1 built, 0.51.14; B2 built, 0.51.15; B4 built, 0.51.17]** (ADR 0074, Phase 56). B4: a biome's `banks` (river valley slope, lake bank and slope, beach width; blended by weight) shape the banks of the water the elevation placed; an optional `waterLook` (scatter colour, absorption) over its fluid's look is resolved per column (`TerrainGenerator::water_look_at`, blended) from the build's biome data, so nothing is sent (the renderer does not read it yet; Chisel's preview does); terrain.json's `islands` group (off by default) breaks the coast into an archipelago, `WorldMap::for_height` builds a map over other height-field knobs, and `shared/worldgen/worlds/` holds example world settings (`FIXTURE_WORLDS`). A biome is one data file,
+`shared/worldgen/biomes/<name>.json` (`namespace:name`), layered on the world's elevation: `where` (where
+it belongs: a `weight` and optional eased ranges of `temperature`, `wetness`, `elevation`, `coast`),
+`detail` (bounded fine relief), `shaping` (the band edges' noise and slope lift, the rock band, the
+shore, the soil depth), `bands` (its **elevation bands**, lowest first: each a `name`, a `from` height
+but the lowest, and its `ground`, `under`, `rock`, `shoreBlock` blocks; the default's are `meadow` and
+`snow` from 1,550 m, today's snow line) and references by name (`decorations`, `placements` rule names with their `trees` densities,
+the `water` fluid). The elevation and water (`inland`, `seaFloor`, `hills`,
+`bumps`, `rivers`, `mouths`, `lakes`) and `spawn` stay one world-scale system in `terrain.json`, which
+names the `defaultBiome`. `shared/worldgen/gen.mjs` validates them and emits `HEIGHT` (the world's),
+`BIOMES` (the default first, each surface merged with the world's water shaping) and `SURFACE` (the
+default's) into `terrain.gen.rs`; every world is the default biome today (the goldens unchanged).
+**Arches and overhangs [built in part, ADR 0074 B8, 0.52.43]** (`dwell-worldgen` `arches.rs`): a biome's optional `arches` cuts openings under a `lintel` of rock, through fins (an arch) or into scarps from their low side (an overhang), after the chunk's fill and the terrain volume's carve, before trees. Sites lie on a 32 m grid drawn from the world position; their numbers are the centre column's chosen biome's; the fin test reads the columns (`column_at`), so every chunk carves the same cells. Column tops change only at a mouth (cut down to the floor so the opening is open): the LOD, spawn, the maps and the water read the height field as before and do not show the openings (a recorded deviation, as the cliffs' LOD). Face-local, mirrored on face B with the chunk. None in the default world. A biome's `arches.fins` (0.52.66) adds a fin rule to the T4 cut-back (a fin on the crest where the fronts from drainage lines on either side meet; `DrainageField::fronts`) and slides a site to a fin within 12 m; `arches.rock` keeps arches in one rock of the stack (a rock of `rocks.json` and, for a biome with its own `rockStack`, one of its layers: `biomes.mjs` `checkArches`). A biome with its own `rockStack` shows the stack's layer at the ground's height on the cut-back's walls and standing tops at any shaping strength.
+
+**The biome map [built, B2]** (`dwell-worldgen` `biomemap.rs`): a generator's biomes (the build's
+`BIOMES`, or `TerrainGenerator::with_biomes`; tests add `FIXTURE_BIOMES`, `shared/worldgen/biomes/fixtures/`,
+never on a world's map; **the presets [built, Phase 57, 0.52.8]**, `shared/worldgen/biomes/presets/`, are
+starting points Chisel offers by their `label` and `description` (validated by `biomes.mjs`
+`validatePresets`, emitted as `PRESET_BIOMES` for tests), never on the default world's map either) are weighted per column from its geography, computed from the face's world map
+after the height field (which biomes never change beyond their bounded fine relief): the elevation (the
+map's height), the distance to the sea and to the nearest river or lake cell (two chamfer distance grids
+on the map's 100 m cells, built once per generator), and the temperature, a slow climate gradient across
+the island (along a direction from the seed, bent by a noise) less a lapse rate with height
+(`terrain.json` `biomeMap`). The wetness may also take rain (**the rain shadow [built, Phase 57 T1,
+0.52.7; ADR 0075]**): `biomemap::rainfall` marches a prevailing wind (`biomeMap.windDirection`) across
+the face's map once per biome field, upwind cells first, the sea refilling the air, rising ground
+raining it out (`baseRain`, `upliftRain`), falling ground raining less (`leeDry`), the air losing what
+rained over `windReach`, so the lee of high ground is dry; the wind sees the ground low-passed over
+`windSmoothM` m (a tent filter, `biomemap::smooth_ground`; 3 km), so whole ranges lift and shadow the air,
+not each hillside; the wetness is `(1 − rainShare)` × the
+rivers' + `rainShare` × the rainfall, `rainShare` 0 in the default world (neutral). A biome's weight is its `weight` × each range's smoothstep fit over ± its
+`blend`; the world's default biome is a **fallback** taking only what is left of 1 after the others (`fallback_weights`, B3), so a fitting biome takes its place at an ordinary weight of 1; then normalised (at most four per column; the default takes a column nothing fits). The column takes
+its surface from one biome, chosen against the cumulative weights by a dithered threshold (a noise and a
+per-column hash, `biomeMap.dither`; the pick reads each weight to the power `biomeMap.sharpen`, 1 by default, the weights as they are, so a higher one gives the strongest biome more of a shared climate and less speckle, 0.52.63), so borders are ragged and gradual; its fine relief is the weighted
+sum of each biome's; its rock band, shore and band edges are the chosen biome's, and so are its decorations (the rules its `decorations` lists, with more than one biome; 0.52.63); its elevation band
+picks a **palette** (`Column::palette`, the biome's band's resolved blocks) the fill reads. A world with
+one biome builds no map: its weight is 1 everywhere and its columns are exactly that biome's (the
+goldens byte-identical).
+**Geology [built, Phase 57 T2, 0.52.9; ADR 0075]** (`shared/worldgen/rocks.json` → `rocks.gen.rs`,
+`dwell-worldgen` `geology.rs`): rock types (hardness, jointing, bed, solubility, face/cap/scree blocks, a
+colour), strata stacks, rock provinces (a noise picks a stack by weight; a biome's `rockStack` wins where
+it is) and a rule-based shaping: each stack a monotone profile of height (hard beds walls and treads,
+soft beds talus; since 0.59.0 a soft bedded bed's talus is ramped runs broken by `shaping.ledge` m ledges every
+`ledgeEvery` of the bed, and treads rise over `treadRelief` of a bed), the column's ground moved `shaping.strength` of the way to it before the rivers and
+lakes cut it, its walls, talus and treads showing the rock's blocks (rock palettes after the biomes'). A
+rock's treads take its `cap`, or (0.60, BUGS.md #134) the first entry of its optional `capBy` whose climate
+holds (`[{"arid": block}]`; the vocabulary `geology::CapClimate`, only `arid` so far), by the column's
+geography against rocks.json `arid` (rain ≤ `rain` mm where the world has a climate, wetness ≤ `wetness`,
+°C ≥ `celsius`; a one-biome world has no geography: the `cap`): sandstone's treads are red sand in arid
+places, red sandstone elsewhere. The `capBy` palettes follow every other palette. **[built, 0.64]** rocks.json
+`blends`: an ordered blend of ground blocks by stack (`geology::Blend`: blocks in order with shares, a low-frequency
+noise through its normal CDF plus the slope, never pushed into the last tone, dithered so neighbours are at most one
+tone apart); every palette whose ground or under is in the family gets one variant per tone, after all the others
+(`BiomeSet::blend_first`, each variant reading as its band's biome); mesa country's `dwell:mesa_country` on the red
+desert beds (red dirt, red sand, tan sand). `mesaRelief`: the erosion's standing tops undulate, tilt and carry knobs,
+its floors rise from their drainage line with mounds, talus fans and washes (`TerrainGenerator::mesa_relief`), the
+wall and talus between following both; absent in an edit: flat as before. The
+strength is 0 in the default world, so it changes nothing (goldens byte-identical) until tuned in Chisel.
+**Tectonics [built, Phase 57 T5, 0.52.18; ADR 0075]** (`terrain.json` `tectonics`, `tectonics.rs`; `hydrology::from_heights_with`): one plate boundary across the island and one hotspot chain offshore as data (`terrain.json` `tectonics`, `tectonics.rs`), added to the world map's sampled field before the uplift and erosion: a convergent range (kept rising as uplift) and trench, a divergent rift with shoulders, or transform offset ridges; a dormant volcanic arc of concave cratered cones behind a convergent line (each next one `arcDecay` of the last's height, 1 by default, 0.52.63; a test world's `cliffs`, 0..1, sets the terrain volume's strength in it, 0 none, 0.52.64; a world file with `newWorld` is offered in the New world form's World and recorded as the world's `worldgen`; a biome's `spacing`, placement → blocks, sets that placement's spacing where it is the anchor's biome, 0.52.65); hotspot islands rising from the sea, lower and broader down the chain; the uplift layer's random ranges and plates off while the tectonics are on; rock provinces from them (`rocks.json` `tectonic`: volcanoes basalt, the old core granite); `kind` 0 and no hotspots by default (goldens byte-identical). The map keeps the tectonics it was made with (`WorldMap::tectonics`, not stored: a map from bytes is the build's) for the provinces. **Tall peaks (0.52.25):** `coneHardness` (0..1, default 0) scales the arc cones' erodibility by 1 − hardness × a smooth step toward each summit (`Tectonics::shield`), and nothing settles above a shielded cell's uneroded ground (the crater stays open), so a tall cone keeps its relief on the 100 m map; the fixture world `test:tall_peak` (`shared/worldgen/worlds/tall_peak.json`, Chisel's Tall peak example) raises a 4800 m cone whose summit stands ≥ 4400 m (`tests/tall_peaks.rs`, both faces: the map, the chunks, the summit's chunk in the build volume, the LOD sections at levels 4–7 holding it). Nothing caps ground below 5000 m: heights are f32 on the map, the build volume's sphere reaches 25 km, the LOD octree classifies sections by their columns' bounds at any height, the map's height codes are i16 quarter-metres (to ~8190 m), and the flight cap is a speed level, not an altitude. Chisel: world knobs and a tectonics overlay. **Rainier (0.52.40):** the arc cones' shape is data on `tectonics`, neutral by default (`Tectonics::shaped_cone`, used only when a shape key is set): `ridgeCount`/`ridgeDepth`/`ridgeWarp` radial ridges (|sin| of the warped angle: sharp crests, round glacier-cut valleys, deepest just below the summit, none at the foot), `summitOffset`/`summitAngle` an off-centre summit over the unmoved foot circle (one flank steeper, the crater rim uneven), a shoulder peak (`shoulderHeight`/`Distance`/`Angle`/`Radius`) and `ventCount` flank cones (`vent*`); `iceAbove`/`iceDome`: a crater whose rim stands above `iceAbove` m holds an ice dome over its rim instead of a hollow, so no crater lake forms up there. The snow line from temperature (`snowBelowC`, `snowMaxSlope`; −100 °C off): `BiomeSet::snow_cover` reads the biome map's temperature with its lapse rate (a one-biome world: the climate gradient's middle, 0.5, less the lapse rate) in °C (`vegetation.json` `climate`); colder than the line and no steeper than the slope (the map's gradient) the column's top is `rocks.json` `tectonic.snow` (`dwell:snow`), and where colder still than `iceBelowC` (0.52.45, −100 °C off) `tectonic.ice` (`dwell:glacier_ice`), colder and steeper it is bare rock (the volcano's basalt face). `test:tall_peak` opts in (14 ridges 450 m deep, the summit 900 m off, a shoulder, three vents, ice above 3000 m, snow below 0 °C, about 1970 m at 0.3/km); `tests/tall_peaks.rs` checks the ridges, the off-centre summit, no water within 800 m of the summit, snow above and none below the line or on steep faces, both faces. **Test worlds in game (0.52.27):** a local world may
+carry a worldgen config (`WorldMeta.worldgen` in the world index, optional: a fixture world's name or a
+Chisel edit's JSON; set only by the dev link `?worldgen=<fixture>` and Chisel's Play in game, never by
+the New world form): the page builds its world maps over that height field
+(`dwell-client` `chisel::worldgen_height`, `buildWorldMap(seed, face, worldgen)` → `WorldMap::for_height`)
+and keys them apart in IndexedDB (`worldMapKeys(seed, worldgen)`: the build's key plus the config's
+hash), and every WASM instance installs them as for any world, so the server, the LOD and the water
+generate the fixture's ground; the record keeps the config, so the world reopens the same. **The whole
+edit (0.52.37, B7):** the parser moved to `dwell-worldgen` `config.rs` (`world_config`, `edit_from_json`;
+Chisel re-exports it), and a test world's maps carry the config's text in a tagged trailer of their bytes
+(`WorldMap::worldgen`, codec tag `WG`; the build's maps have none, byte-identical), so every generator
+built over them (`TerrainGenerator::with_map`: the server, the chunk and LOD jobs, the water) puts the
+edit's biomes, biome map, geology (erosion included) and vegetation on the ground, and the map's
+tectonics are the config's (decoded from it, so the rock provinces follow the edit's plates). An instance
+that already holds another map for the seed takes the installed one (`worldmap::cache::install`
+replaces a map whose config differs), and the portal sites are cached per (seed, rules, the faces'
+configs). Keys: the build's key plus `-c<hash>` for any config. **Guests (0.52.38, B7):** a server
+whose world has a config (`dwell-worldgen` `config::installed_worldgen`: face A's installed map's text;
+`Server::worldgen_text`) adds the required `WorldSettings` tag `WORLDGEN` (2: the config's u64 FNV-1a
+hash, `config::worldgen_hash`) to the fields it sends, never to the saved ones; a guest that knows it
+sends `WorldgenRequest`, gets `WorldgenConfig` (the text), checks the hash and parses it, then joins and
+asks the shell for the maps under it (`prepareWorld(seed, version, worldgen)`), so its generators make
+the host's ground. An older build reads the tag as an unknown required one and refuses ("This world
+needs a newer version of Dwell."); a default world's join is byte-identical. The dedicated server takes
+`--worldgen FILE|test:NAME` (installed before it starts; not saved, given on every start). **In the game (B7, WORK_QUEUE item 34):** a local world's
+game menu has a **Chisel** page (`client/src/ui/chiselPanel.ts`, logic in `client/src/chisel/inGame.ts`: the
+world's config opened as an edit, sliders for its biomes' `detail`, `shaping` and `banks` from `biomes.mjs`
+`TERRAIN`, Undo, Reset to the config it opened with, a 400 ms debounce), offered in creative worlds. A change
+goes to the local-world worker (`retune`) and the server (`dwell-sim` `server/chisel.rs`
+`Server::retune_worldgen`): each face's installed map re-wrapped with the new config
+(`config::retune_worldgen`: decoded and encoded again, nothing recomputed; an edit that moves the ground
+itself, another height field, is refused as a new world), the generators made again (the world's, its
+pool, the LOD's bases), and every loaded or saved chunk within 3 chunks of the player horizontally
+generated again under it with the player's edits kept on top (the cells where the chunk differs from the
+old config's generation, `rebase_chunk`), marked modified, saved and sent whole to the clients streaming it,
+its LOD section marked dirty. The config is saved in the world file's settings (`worldgen`) and installed
+before the generators when the world opens (a re-wrap when the ground matches, else the maps computed);
+the world index's `WorldMeta.worldgen` follows so the page builds the right maps first. The page installs
+the new maps in its instance and re-inits its generation workers (`installWorldMaps`, `Jobs::install_maps`),
+the worker its server-jobs worker. Host only: refused while guests are in the world. Not yet: chunks out of
+the radius that carry edits keep the old ground until a retune reaches them; the client's far LOD sections
+and its far terrain stay the old config's until the world reopens; the water grid is not re-read. The game's
+terrain volume (the cliffs) is over the edit's ground, where Chisel's
+preview has none (docs/DEV_TOOLS.md "Play a test world").
+
+**Erosion [built, Phase 57 T4, 0.52.17; ADR 0075]** (`rocks.json` `erosion`, `geology.rs` `DrainageField`, `eroded`; `TerrainGenerator::erosion_shaping` after the rock's shaping): rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. The drainage field is built once per generator from the world map, only when a biome erodes.
+**Soil and vegetation [built, Phase 57 T3, 0.52.14; ADR 0075]** (`shared/worldgen/vegetation.json` →
+`vegetation.gen.rs`, `dwell-worldgen` `vegetation.rs`): a column's climate (`TerrainGenerator::climate_at`:
+°C from the biome map's temperature, the moisture its wetness, the soil depth and type from the surface
+rock, the slope) and vegetation kinds, each a placement's climate envelope; a biome's `vegetation` share
+scales its placements' chance by the kind's density (`placements::trees_in_with`, `canopy_at_with` for the
+LOD's canopy), so the tree line and dry lees emerge. The default biome's share is 0 and a one-biome world
+has no biome map, so the default world is unchanged (goldens byte-identical).
+**Chisel [built, B3; Textures tab B6]** (`client/chisel.html`, a second page of the client build; `client/src/chisel/`):
+the biome editor. Its state is the biomes' JSON (the default first) and `terrain.json`'s `biomeMap`,
+checked by `shared/worldgen/biomes.mjs` (the same rules `gen.mjs` applies; the sliders are made from its
+ranges) and kept in the browser (`dwell.chisel`, append-only). A worker loads the client's WASM
+(`ChiselPreview`, `dwell-client` `chisel.rs`): the face A height field built once per seed, the edit
+parsed and put on it (`TerrainGenerator::with_biomes_on`, `BiomeField::with_params`), tiles rasterised
+by the big map's rules (`lod_map::raster_with_heights`, `tint_rgb`) or as overlays (biome weights,
+temperature, wetness, rainfall, rock, soil, vegetation, erosion), 64² then 256² per change; the edit may carry the geology
+(`rocks.json`'s shape: the Rock group's sliders) and the soil and vegetation (`vegetation.json`'s shape). The world overview (0.52.11; owner, 2026-11-10: "a world map preview for this tool when we can blend between biomes"): beside the detail preview, the whole disc (island and sea, `WORLD_RADIUS`) from the same edit and overlay, 128² (~0.78 km texels) then 512² (~0.2 km), the frame from `chisel::overview_frame` (`ChiselPreview.overview_frame`); the worker runs the detail lane first, splits the overview's passes into 128² chunks, drops a lane's older generation when a newer edit arrives and caches the chunks by the edit state (`client/src/chisel/overview.ts`); the detail region drawn as a rectangle, a click or drag moving its centre. Relief and the 3D section (0.52.19): a hill shade on both 2D views (`chisel_section::hillshade`, a toggle), and a WebGPU view of a 256 m–8 km square (`client/src/chisel/section.ts`) meshed by the worker's third lane (`section`, between the detail and the overview; `ChiselPreview.section`, `dwell-client` `chisel_section.rs`: `column_lod` heights on ½ m cells, a top quad a column, walls to lower neighbours, a baked sun shadow, translucent water at each wet column's level), coarse then fine, a newer edit cancelling older passes; Chisel's own small WebGPU renderer, not the game's (no new dependency). Face A only (Chisel has no face toggle; face B is its mirror). The texture tab (B6) and Chisel in the game (B7)
+follow. **The Textures tab (B6, 0.52.42):** the painterly materials and palette edited in the page by `shared/textures/paint.mjs` itself (the bake's painter: unchanged, bit-identical to `painterly.rgba`), with the palette's art-direction warnings and Export of the two files; the 3D section takes the edit as per-block tints of its far colours (`ChiselPreview.set_tints`, `chisel_section::section_tinted`).
 
 1. **Layout (2D).** The coast distance of the interim island (above).
 2. **Height (2D).** On land the ground rises from sea level at the coast toward 320 m inland
@@ -1420,9 +2116,47 @@ lattice and interpolated bilinearly; the chunk path and the point queries (`colu
    candidates whose boxes come within the spacing the lower priority hash is dropped, so a chunk
    decides every tree reaching into it from the cells around it alone (three reaches and the
    spacing; the ground for them is the height field over the chunk and a 15 m margin), in any
-   order. A tree's voxels go over air and replaceable cells only. Today one rule: the owner's two
+   order. A tree's voxels go over air and replaceable cells only. **Trunk pads [built, 0.55; WORK_QUEUE
+   item 44]:** a rule's `pad` (`"trunk"`, the default for a rule of tree species, or `"none"`)
+   levels the ground under each trunk column (the structure's lowest cells, a species tree's foot
+   logs, from its data; no ring) up to the row under the trunk's base with the column's own ground
+   (its surface block on top, its soil under), and makes any ramp there full cells, so a tree on a
+   slope stands flat (`Planter::pad`, `placements::pads_over`; `generate`'s column fill, the LOD's
+   tree levels too). The ground outside the trunk's columns is unchanged; the pads come from the
+   same `trees_in` as the trees, so chunks agree in any order. Generation only: grown and planted
+   trees stand on the ground as it is. Today one rule: the owner's two
    pines in groves on grass, at most 400 m up, more on higher ground, a random quarter turn and a
-   60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). The sky test (step 3) leaves room
+   60/40 mix ([`WORLD_GENERATION.md`](./WORLD_GENERATION.md) §2). **Per biome [built, 0.52.39,
+   ADR 0074 B5]:** a rule stands only where a biome that lists it in `placements` has weight, its
+   chance times the biomes' `trees` densities by weight (0–3, 1 when not given;
+   `TerrainGenerator::tree_density_at`, with the climate's factor on candidates and the LOD canopy);
+   a rule no biome of the world lists stands nowhere. Two more rules, `broadleaf_groves` and
+   `boulders`, are listed by preset biomes only, so the default world (the pines at 1) is unchanged.
+   **Tree species [built in part, 0.52.58; ADR 0079]:** a placement's `structures` may name a tree
+   species (`shared/trees/*.json`: oak, pine, palm; validated and emitted as `species.gen.rs` by
+   `shared/trees/gen.mjs`, fixtures in `shared/trees/fixtures`). `dwell_worldgen::species::grow` builds
+   a tree's cells as a pure function of (species, seed, stage) on the ½ m grid (trunk, `heavy`/`whorl`
+   branches as axis-turned logs, `lumpy`/`cone`/`fronds` crowns; palms lean in whole-cell steps one
+   axis at a time, a step's knee one squared log); the planter grows `growth.variants` seeds per
+   species at stages drawn by `growth.wild` into ordinary `Structure`s (`Structure::from_cells`).
+   `broadleaf_groves` stands oaks (presets only); `conifer_groves` (pines) and `palm_coasts` (palms)
+   are listed by the starter world only; the default world keeps its hand-built pines (goldens
+   unchanged). **[built, 0.52.59]** trunks stand on the log's narrower widths by stage; `trees_in` asks
+   the ground columns of its margin lazily (cached), not all up front. **[built, 0.52.60]**
+   growth over time (`dwell_worldgen::growth`, the server's growers step every 5 s over loaded
+   chunks, records in the world's optional `tree_growth` table; ADR 0079 S3). **[built]** per-tree
+   leaf tints (ADR 0079): `TerrainGenerator::tree_tints` lists the species trees reaching a chunk's
+   columns (anchor, placed bounds, the seed's tint from its species' `variety`: a hue shift and a
+   lightness factor; `dwell_world::tree_tint`), the client's mesh worker asks it for a chunk holding
+   leaves and passes it to `dwell_mesh::mesh_chunk_trees`; a leaf cell (and its cards) takes the tint
+   of its owning tree (`tree_tint::owner`: the nearest anchor across, of the trees whose bounds hold
+   it), so chunks agree at a border. LOD sections at the tree levels carry `lod_tints` (cell index,
+   tint) from generation through `GeneratedSection` and the `MeshSection` job to
+   `mesh_section_tinted`, each cell's owner asked at its centre voxel, so the far tree matches the
+   near one. Placed leaves (no tree) and the default world (no species) are untinted. Not built:
+   frond blades.
+   Ground items follow a biome's `ground` the same way (§ Ground items, 0.52.41).
+   `trees_sparse` finds the same trees asking columns per candidate (Chisel's 3D section). The sky test (step 3) leaves room
    for the tallest structure over the highest ground; the spawn's level patch is clear of trees.
    The trees are voxels of the generated chunk — seed terrain, saved whole with the chunk once it
    is edited, as any edit is — not TREE_GROWTH.md §5a's layer (they don't grow). The LOD draws the
@@ -1550,8 +2284,31 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   chunks only count as loaded (nothing stored or meshed). Pending
   generations still queued are cancelled on unload. Render meshes are built by the meshing workers (§5
   `dwell-mesh`): changed chunks are sent nearest first, a few jobs per worker in flight, their voxels
-  (with the apron) copied out of the client's world within a 4 ms frame budget; a chunk arriving marks
-  its loaded neighbours for re-meshing, and a chunk waits while a neighbour is still being generated.
+  (with the apron) copied out of the client's world, and the flood light of chunks that arrived computed,
+  within one per-frame budget (`dwell-game` `stream_budget.rs`, 0.50.14): what is left until
+  `STREAM_DEADLINE_MS` after the frame's start (the finished jobs taken in and the ticks counted), at
+  least `STREAM_MIN_MS`, the light stopping short of the `STREAM_MESH_SHARE` kept for the mesh starts, and
+  each stopping before an item its running cost estimate says would pass the deadline; a late frame runs one
+  item past the deadline at most, the light's or a mesh start's, in turn (BUGS.md #72). A chunk's flood light
+  runs a slice at a time across frames (`LightMap::begin_load`/`resume`, `LIGHT_SLICE_CELLS` 1024 cells
+  between looks at the clock; the same steps in the same order as the one-shot load, kept between frames), the
+  chunk unlit for meshing, its own and its neighbours', until done; any other light update, and any change to
+  the world's voxels, first finishes it (`VoxelWorld::settle_light`). Finished chunk meshes
+  are uploaded under a per-frame byte budget by tier (`shared/render/streaming.json` `uploadBytesPerFrame`,
+  loaded by `dwell-client` `render/streaming.rs`; the queue is `dwell-game` `upload_budget.rs`): oldest first,
+  the first of a frame always, the rest the next frame. A mesh over the budget on its own is written a
+  slice a frame into room reserved in the arena's pages (`dwell-client` `render/staged.rs`, pumped before
+  each draw), the chunk's old mesh drawn until all of it is there, and no further mesh is handed over
+  meanwhile (`Scene::uploads_waiting`). A mesh job's sky volume continues fluids only into the missing
+  neighbours' parts of its apron (each neighbour looked up once), and its message is written into one
+  buffer sized up front (`jobs/codec.rs`); a chunk arriving marks
+  its loaded neighbours for re-meshing, and a chunk waits while a neighbour is still being generated;
+  within the near-first order (without a second centre) a chunk in the server's view (`VIEW_RADIUS_CHUNKS`) not drawn yet is
+  meshed before the re-meshes of drawn chunks, which show their last mesh meanwhile (BUGS #54, 0.51.3).
+  The worker pool (`dwell-client` `pool.rs`) starts queued chunk generations within `NEAR_JOBS_M`
+  (128 m) of the player (`Pool::set_focus`) before the other generation jobs, nearest first, the rest
+  and the mesh jobs in the order queued; with a second centre (the respawn preload) everything in the
+  order queued (0.51.3: a FIFO queue left the chunks coming into the near ring seconds behind far chunks' and the LOD's jobs).
   Voxel modifications (§6.5) apply in revision order: those of a chunk still being generated are
   held until it arrives, one for a chunk held as Air creates it, stale ones are dropped, and a gap
   sends `ChunkResync` for the chunk (answered with its current state) and ignores it until then. Prediction starts once the chunks within 1 of the player
@@ -1601,16 +2358,35 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   screen lists the stages begun so far, in the order they began: each one's label, its progress
   where it has one and its time, the running one counting up (a 100 ms timer, so it moves before
   the client draws a frame) and marked slow past `slowS` (3 s); the headline and the bar follow the
-  latest running stage (its count's fraction, or a sweeping band without a total; still for reduced
-  motion); on phones the list is one line a stage in small type. **Data:** `loading.json`'s
+  latest running stage's label (since 0.51.19 the bar is the time estimate below); on phones the list is one line a stage in small type. **Data:** `loading.json`'s
   `stages` (`list`: `id` lowerCamel and unique, `label` ≤ 32 characters with no ellipsis, optional
   `progress` `bytes` or `count`; `slowS`), validated and generated by `loading.mjs` into
   `loading.gen.ts` (`LOADING_STAGES`, the `LoadingStageId` union); a stage nobody reports never
   shows. **Reported by id** (`StageTracker.begin` / `progress` / `end`; once a wait; an unknown id
-  is ignored with a warning): `page` (opening the page to the script running), `game` (the
+  is ignored with a warning): `page` (opening the link to the script running: from the launcher's opening when it sent the
+  page here, its `performance.timeOrigin` stamped in session storage `dwell.launchAt` and read
+  once by `pageStartMs`, a negative time on the page's clock; else from the page's opening), `game` (the
   WASM's download, counted as it streams by `engine/wasm.ts` `countedResponse`: of the total when
   the response is not compressed, else MB so far; and its instantiation), `graphics`
-  (`Client.create`), `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
+  (`Client.create`: one task on the main thread, ~50–65 ms on an M1 with a cold shader cache since
+  0.52.75, mostly the block atlas and its mips (`atlas_levels`; the mips convert bytes to linear light
+  through a 256-entry table, `srgb_linear_table`, rather than a `powf` per channel, which was ~40 of
+  ~90 ms). The pipelines' compiling is not in this task: Chrome makes them in its GPU process, which
+  then stalls the page's frames after the stage ends; wgpu 30 has no
+  `createRenderPipelineAsync`. So `ui/startStages.ts` `runStartStages` paints each of `game` and
+  `graphics` (`LoadingScreen.painted`: a frame and the task after it) before its work starts, and
+  the screen names the stage that holds the thread rather than the one before it. With Chrome's
+  Metal shader cache empty (a new build's shaders; bug #71, M-series Mac) the stage is
+  ~1.8 s, nearly all the device request (`dwell:create:device` mark), the renderer's own groups
+  ~40 ms), `shaders` (bug #71: from `create`'s end until `Client.gpuSettled`, a
+  `Queue::on_submitted_work_done` fence, resolves; not awaited, so the world's stages run beside
+  it). The renderer's pipelines are lazy (`render/pipeline.rs`: `Lazy`, made on first use; only the
+  water tiles' two are made in `with_samples`): each compiles in the GPU process when it is made, and
+  making all 38 at once froze the page's paints ~9 s on a cold cache. While they are not all made the
+  client's draw is skipped and `Renderer::warm_pipelines` makes the next one (`Warmup`: one a frame,
+  the next only once a queue fence says the GPU did the last), in the order a frame needs them,
+  leaving out a tier that is off (shadows, distant shadows, clouds, light shafts), made when it is
+  switched on; cold, the longest no-paint gap after `create` is ~0.7 s, `worldFile` (from the page's `?fresh=1` deletion to the worker's OPFS open),
   `worldMap` (the maps' faces, `worldMaps`' `onProgress`; a cached map ends it in milliseconds),
   `server` (the worker's WASM), `spawn` (the maps installed and `LocalWorld::new`: the world file
   read, the spawn found and its region pre-generated), `connect` (a dedicated server or friend
@@ -1643,9 +2419,40 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   page's WASM loads (before the graphics), the map builder's workers could be the client's job
   workers rather than new ones each instantiating the WASM, and the spawn's pre-generated region
   could be generated in the server-jobs worker; each is worth ≤ 0.2 s on the Mac, more on a phone.
+- **The bar as a time estimate** **[built, 0.51.19]** (`ui/loadingEstimate.ts`,
+  `ui/loadingScreen.ts`). Owner (2026-11-10): *"The map loading progress bar speed should be a best
+  guess for how long it will take to load the game on the current device … When it reaches the end,
+  it keeps visually showing it's doing stuff … I'd rather we estimate this somehow without a
+  previous run if possible."* Nothing is stored between runs. **The time left** is the work still
+  to do at the rates measured as it runs: the running stages' (a download's bytes left at its
+  measured bytes/s; a count's items left at its measured time per item, blended in from the guess
+  over its first `minSamples`; a stage without progress its guess less its time, or past it
+  `overrunFraction` of its time again) plus an opening guess for each stage after the latest begun
+  (in the list's order) that the route runs (`local` stages only for a world on this device,
+  `remote` only when joining a server; stages before the latest that never began are taken as not
+  run, so a respawn waits for `terrain` alone). **The opening guess** per stage is its `baseS` plus
+  `perItemS` for each item (`totalGuess` of them, the terrain's being the near ring's chunk count,
+  179 at radius 3, computed by `loading.mjs`), over the workers where `perWorker`, for the reference
+  desktop, scaled for a `device` stage by a read of the device at the start (`readDevice`:
+  `navigator.hardwareConcurrency` against `referenceCores`, clamped; × `phoneFactor` on a touch
+  device; × `lowMemoryFactor` under `lowMemoryGB` of `navigator.deviceMemory` where the browser
+  says; × `cpuFactor` once the client reports a CPU adapter) and by the device's measured speed:
+  each ended `device` stage's time over its guess, to `calibrationPower` (damped, so one cold or
+  quick stage doesn't swing the rest; within [0.25, 8]). **The bar** fills by elapsed / (elapsed +
+  left), eased over `easeS`, never backward, and holds at `holdFraction` (95 %) until the screen
+  opens, when it completes under the fade; at the hold point a light band moves along it (with
+  `prefers-reduced-motion` the fill pulses instead) while the stage list keeps counting. **The
+  label** "About N s" (whole seconds, steps of 5 from `roundAboveS`) changes at most every
+  `labelEveryS`, only when the estimate moved by `labelHysteresisS` or `labelHysteresisFraction` of
+  itself, and hides under `hideBelowS`. **Data:** `loading.json`'s `estimate`, validated (numbers
+  in range, each stage entry naming a listed stage with the fields its progress kind needs) and
+  generated into `loading.gen.ts` (`LOADING_ESTIMATE`); the bench reads `window.__dwellLoadingBar()`
+  (fill, label, holding). **Measured** (2026-11-10, the Mac's GPU, `vite` dev, a new world): the
+  label read 15 → 6 → 8 → 4 → 2 → 3 → 1 s over a 15.4 s load; the terrain's last few chunks
+  (177/179 for 2 s) run slower than its measured rate, so the bar held with the shimmer for ~3 s.
 - **The respawn preload** **[built]** (`dwell-sim` `server.rs`, `dwell-game` `chunk_stream.rs`,
   `dwell-lod` `system.rs`, `dwell-client` `game.rs`). Owner (2026-10-21): *"We could preload terrain
-  at spawn once you die too?"* From a death until the respawn (`RESPAWN_SECONDS`, 5 s) the
+  at spawn once you die too?"* From a defeat until the stand (the defeat's `kneelS` + `fadeS`, 5 s, `shared/defeat`) the
   respawn's near ring is made ready while the death screen shows, so the loading screen on
   respawning opens at once. The respawn point is decided on the server: the world's spawn, spread by
   player id (`respawn_feet`; there are no beds). **Server:** the kill records the chunk the body will
@@ -1692,14 +2499,24 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 
 | Table | Contents |
 |---|---|
-| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock and water speed, unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
+| `meta` | Scalars by name: format version, block registry hash, world seed, generator version, spawn, world time (`world_tick`, the server's tick: the day/night cycle's clock, §6.6), **[built, 0.42.0]** the world's settings (`world_settings`: the `WorldSettings` fields as sent, its clock, water speed and **[built, 0.50.30]** game mode (ADR 0065), **[built, M0 of docs/proposals/BIG_MAP.md]** world size (`WORLD_SIZE`, optional, a radius scale of `constants.json` `worldSizes`, written only above 1×; a world without it is 1×; the LOD levels, big map cells, hydrology cell, island shape and uplift counts derive from it in `dwell_protocol::world_size`, **[built, the 0.56 line]** and the hydrology's lengths by `hydrology.json` `bigWorlds` (`HydrologyParams::sized`: the ranges' coast distances × the scale, the least lake × the scale² and its depth × the scale, ridges eroded as at the profile's cell, river lips by √Q past 100 m³/s; BUGS.md #77; 1× unchanged), **[built, M2a]** the server, its generators (map, disc, build volume, spawn) and its LOD read it natively, `dwell_world::WorldBounds`; **[built, M2b]** in the browser too: a new local world takes it from New world → More options' World size (desktop pages only) or the dev link `?size=2x`, the world index keeps it (`WorldMeta.radiusScale`, optional) so the page builds its maps at that size (`worldMapKeys`/`buildWorldMap` with the radius scale, the IndexedDB key `-x<scale>` above 1×), and every worker (the local world's, its server-jobs and job workers) builds its generators sized; the client reads the join's size (`Session::world_size`) for its job workers, `Game::set_world` (the streamer's volume, the LOD's `set_world`, the big map's levels `big_map_levels_sized`, and the shell's map disc, `setMapWorldSize`); Chisel and the flat and sandbox worlds are 1× only), unknown optional fields kept; a new world takes this build's clock and the server's `water_speed`), timestamps, **[built, Phase 6]** the app versions that created and last saved the world; **[planned]** preview image |
 | `settings` | Name, MOTD, max players, edit and flight policies, autosave interval, allow-list switch, the server key **[built]**; **[planned]** icon, visibility, password hash, online/offline mode, physics/view caps, backup policy; **[planned, Phase 30]** the growth-speed multiplier (default 1), applied by the server to tree growth |
 | `block_states` | **[built, Phase 8]** world state id → canonical string (§6.1), ids assigned densely in order of first use and stable for the life of the file |
 | `chunks` | Modified chunks only: `(cx, cy, cz)` → revision, generator version, LZ4 palette + RLE blob (same encoding as `ChunkData Explicit`, but the palette lists **world state ids** of `block_states`, not runtime ids) |
 | `lod_sections` | **[built, Phase 4b]** Cache of modified LOD sections (§6.6): `(level, i, j, k)` → `lodRevision`, dirty flag, generator version, LZ4 palette + RLE blob of the 34³ cells (empty while dirty and never computed); derivable from `chunks` (its cells are runtime ids: dropped when `meta`'s registry hash changes), rebuilt on a generator or registry change |
-| `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; later inventory), first/last seen |
+| `players` | Keyed by device public key: display name, state blob (version 1: feet `f64×3`, health; the inventory is its own table), first/last seen |
 | `permissions` | `(public key, kind)` with kind `op` / `ban` / `allow` → reason, granted by, when |
 | `bodies` | **[built, Phase 51 B2]** The world's moving bodies, rewritten whole each save: kind, pose, velocities, cells (states by name; BUILT_BODIES.md §7) |
+| `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
+| `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
+| `blueprints` | **[built, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 3: the next id, a count, then each record, then the town sites founded, then the villagers' work: the storehouses (box, face, building blueprint, stock) and the builders' carried loads; versions 1 (no towns) and 2 (no work) are still read; BLUEPRINTS.md §2, §6, §9). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
+| `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
+| `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
+| `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
+| `ecology` | **[built]** One record (key 0), rewritten each save: the far ecology (docs/ECOLOGY.md §6; `dwell-sim` `server/ecology.rs`, version 1: the world's `enabled` switch and `speed`, then each face's `Ecosystem::to_bytes`: its seed, day, forage grid, species by name, groups). Optional: a world without it starts a fresh ecology from its seed and catches up its days; older builds leave it; an unreadable record is kept, not overwritten |
+| `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067; then, when any cell has bites, u8 1 and each cell's bites, WORK_QUEUE item 26: an older build can't read such a record and keeps it unread, an older record loads with no bites). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
@@ -1713,9 +2530,10 @@ it does not cover; each autosave writes the sections written since the last save
 to compute (flagged dirty) in the same transaction as the chunks. `WorldDb` translates runtime ids
 to world state ids on save (a state new to the file gets the next id and its string is stored, in
 the save's transaction) and back on load through the canonical strings, so a world outlives
-changes to the code's runtime ids; a chunk holding a string the build's registry does not know is
-unreadable and is generated again (aliases, upgrade rules and an unknown-state placeholder are
-deferred to world upgrades, `FUTURE.md`). `bodies` and `water` are optional tables, added without a format bump: a build on the line that doesn't know one leaves it.
+changes to the code's runtime ids; a string naming a known block with a property or value the build
+doesn't know loads as an alias (ADR 0063), a string missing a property as the build's state at its
+default, and an unknown block as a placeholder under its string (ADR 0038); upgrade rules are deferred
+to world upgrades, `FUTURE.md`. `bodies` and `water` are optional tables, added without a format bump: a build on the line that doesn't know one leaves it.
 
 - **Same code everywhere:** `dwell-storage` (`WorldDb`, the file's tables and records;
   `WorldStore`, the server's handle on it) runs natively on a file and in the browser on a redb
@@ -1959,14 +2777,19 @@ high above the disc — is drawn, at a detail that drops with distance.
 
 **Grid.** A 3D octree of **sections**. At level L a cell is a 2^L m cube and a section is 32³
 cells (32 × 2^L m on a side); **level 0 is the chunk grid**. Section coordinates `(L, i, j, k)`
-count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶), so cells of consecutive levels nest exactly and
-one root section at `LOD_MAX_LEVEL` = 12 (131 km), centred on the origin, holds the whole disc and
-build volume (**Phase 16**; 19 and 16,777 km before). Sections wholly outside the build volume are
+count from the root's corner (−2¹⁹, −2¹⁹, −2¹⁹), so cells of consecutive levels nest exactly and
+one root section at `LOD_MAX_LEVEL` = 15 (1,049 km), centred on the origin, holds the whole disc and
+build volume of the largest world size (**[built, BIG_MAP.md M1]**, protocol v23: `lod.maxLevel` is
+checked by `shared/protocol/gen.mjs` against `worldSizes`, 10× = 500 km; a world's own top level is
+`WorldSize::lod_max_level`, 12 for today's 50 km; levels 13–15 over a 1× disc are a handful of
+coarse sections; **Phase 16** had 12 and 131 km, 19 and 16,777 km before that). A saved world's LOD
+rows carry the root they were keyed under (`meta.lod_root`): rows from another root (a world saved
+before M1) are dropped at open and rebuilt from the chunks. Sections wholly outside the build volume are
 not in the world (`in_world`): never generated, stored or requested; the rows of a level are those
 the volume's height reaches (3,126 at level 0, one at the root). Section ids pack (level, i, row, k)
-in 12 bits each (`dwell-lod` `lod_id`). **Phase 13:** a row belongs to the face of its centre.
+in 15 bits each (`dwell-lod` `lod_id`, exact in a double). **Phase 13:** a row belongs to the face of its centre.
 **Phase 16:** with the midplane at 0, a section boundary at every level below the root, sections up
-to `MAX_ALIGNED_LEVEL` = 11 lie wholly on one face (the only straddling section is the root, each
+to `MAX_ALIGNED_LEVEL` = 14 (11 before M1) lie wholly on one face (the only straddling section is the root, each
 of its cells taking the face of its centre). **The thin crust:** a face's crust is its 10-layer
 core plus the ground (≥ 20 layers in all), thinner than one cell from level 4 up; a cell is filled
 from its bottom voxel, so a face's section by the midplane is solid in its bottom row and its apron
@@ -1986,6 +2809,7 @@ Column bounds carry both faces (`LodBounds`: `lo`/`hi` and, in face-local terms,
 | 1–4 | 2–16 m | 64–512 m | From the edge of the streamed view to ~5.6 km |
 | 5–8 | 32–256 m | 1–8 km | 5.6–90 km; level 8 is the LOD index level |
 | 9–12 | 512 m–4 km | 16–131 km | Beyond 90 km: the whole disc from altitude, the root from far out |
+| 13–15 | 8–32 km | 262–1,049 km | Only from far out over a 1× disc; a bigger world's far levels (BIG_MAP.md M1) |
 
 (Level L is drawn from about 176 × 2^L m under those settings; the world is flat, so from the
 ground the view reaches the rim wherever terrain does not block it. `LOD_PIXEL_ERROR` was 2 px
@@ -1996,7 +2820,9 @@ the LOD system's scenario test — so the defaults are 4 px desktop, 8 px mobile
 `dwell-lod` `grid.rs` adds the client's float helpers), downsampling, LOD generation for every
 generator (the terrain's in `dwell-worldgen` `terrain.rs` and `bifacial.rs`; the flat world's in
 `dwell-world` `lod.rs`) and the column bounds that classify sections without generating them
-(`lod_bounds_at`, `kind_from_bounds`). The client runs them in its generation workers (§5.1).
+(`lod_bounds_at`, `kind_from_bounds`; a sized world's with `kind_from_bounds_of` and its own
+`WorldBounds`, so a section past the 1× disc is not empty in a bigger world, BUGS.md #108). The client
+runs them in its generation workers (§5.1).
 
 **Content.** A section is 34³ `u16` materials: its 32³ cells and a one-cell apron from its
 neighbours for culling border faces, in layer order (x fastest, then z, then y — the chunk
@@ -2021,7 +2847,10 @@ order (`dwell-protocol` `encode_lod_cells`); a terrain section near the surface 
   are deeper than the sea instead of showing its floor). The material is the most common one
   among the **top filled cell of each of the block's four columns** (the surface seen from
   above), ties to the upper cells — so surface materials survive to the coarsest levels instead
-  of the rock beneath them (`downsample_block`, tested on crafted layouts). The flat world's
+  of the rock beneath them (`downsample_block`, tested on crafted layouts). **[built, 0.50.51]** A
+  surface cell (filled, air over it on its face) takes the most common top of its four columns over
+  its block and the block over it (`downsample_octant`), so ground stepping up a ½ m row across a
+  coarse cell's top shows its grass, not the dirt under the higher columns' (BUGS.md #53). The flat world's
   generated sections equal the downsample of its chunks exactly (levels 1–3, tested).
 - Sections that the generator's column height bounds prove all air, or buried with no exposed
   face, are skipped without generating anything: the bounds of a column of sections
@@ -2069,7 +2898,12 @@ request is answered `Explicit` (unmodified sections generated by the server's LO
 Every player's builds are therefore visible from anywhere.
 
 **Client** **[built, Phase 4c]** (`dwell-lod` `system.rs`, `dwell-mesh` `lod_mesher.rs`, `dwell-client` `render/`).
-Each frame the octree is walked from the root around the **camera** (the eye):
+Each frame the octree is walked from the root around the **camera** (the eye), except while the
+walk cannot change (0.50.14): a frame whose camera (to the ½ m cell and a tenth of a degree, its
+FOV, aspect, height and magnification), settings, LOD messages and job results, and chunks (the
+streamer's `drawable_revision`) are those of the last walk, which left nothing waiting (no job,
+request, cross-fade, scale step, eviction, second area, or level-1 section about to show its
+chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing still on an M1 Air):
 - **A second area** **[built]** (`set_second_area`, the respawn preload, §6.3): while the player
   is dead, after the camera's walk, the sections over the respawn ring's box and their ancestors
   are walked down to level 1 without drawing (touched, so kept in the cache; wanted while not
@@ -2136,7 +2970,9 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   at 1440 × 900 at 2×, standing still: 8,700 drawn sections and a 1.7 GB heap after 150 s, still
   growing, and 70 ms of script per frame with drawing off — the playtest's falling frame rate and
   growing memory). So while the bytes of the sections the walk reaches exceed `LOD_CACHE_MB`,
-  the pixel error is multiplied by 1.15 (at most once a second, up to ×16), and divided again
+  the pixel error is multiplied (at most once a second, up to ×16) by √(in use / budget), between
+  1.15 and 2 (`coarser_step`: the sections go as 1 / scale², so a view far over the budget, a
+  phone's at the end of loading, fits within seconds; 0.52.68, BUGS.md #70), and divided by 1.15 again
   when they use under 60% of it (at most every 10 s); a finer step that overflows (the sections
   needed change in jumps, a band of distance refining at once) is not retried until the camera
   has moved 512 m, so it settles instead of swinging. The same view now holds at ~1,000–1,500
@@ -2203,7 +3039,7 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   (a playtest regression: frame time and RTT climbing while standing still). *(Playtest fix: caves deep inside the world were streamed and collidable but
   never drawn; only sections at the rim, whose bounds are open below, showed their caves.)*
 - Empty and buried sections come from their column's bounds (one `lodBounds` job per column of
-  sections), the rest from LOD generation in the generation workers (a queue behind chunk jobs) and
+  sections; in the world's own disc and volume, `LodSystem::set_world`), the rest from LOD generation in the generation workers (a queue behind chunk jobs) and
   meshing in the meshing workers, with at most the pools' capacities in flight. Jobs go in order of
   **projected cell size** (largest first): a parent always before its children, coarse before
   fine and near before far — ADR 0012's "coarsest first, then nearest" globally left the camera's
@@ -2278,8 +3114,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   test by straight-line distance could miss terrain toward the sides of the view, where it is
   nearer than the split in depth but farther in distance), so a section straddling the split is clipped at it.
   The far pass's near plane is just inside the split (0.95 × `LOD_NEAR_SPLIT_M`) and moves out to
-  0.8 × the camera's face-local altitude when that is farther (nothing is nearer up there),
-  keeping depth precise from orbit.
+  0.8 × the camera's face-local altitude over the terrain's top when that is farther (nothing is
+  nearer up there), keeping depth precise from orbit. The top is the higher of 1024 m and the
+  highest box of the sections, stand-ins and chunks shown (`render/mod.rs` `far_pass_near`,
+  `drawn_top`; after 0.52.92, BUGS.md #68: over a 4800 m peak a fixed 1024 m clipped the cone).
   **Reversed depth [built, 2026-10-21]** (`render/camera.rs` `perspective_reversed`, `frame.rs`
   `DEPTH_CLEAR`, `DEPTH_COMPARE`): both passes map their near plane to 1 and their far plane to 0
   in the `depth32float` buffer, cleared to 0 and tested greater-or-equal, so a float's dense end
@@ -2386,6 +3224,33 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   only): `?time=0..1`, `?moon=0..1`, `?timespeed=N`, `__dwell.setTime`, the bench's `time` and
   `timelapse` steps, the F3 line (the clock, the day, the solar angles, the keyframes between, the
   moon). Measured GPU cost: see §7.4.
+  **Orbits by seed [built, O1–O2; the climate's reading (O3) planned]** (`dwell-look` `orbits.rs`,
+  `shared/look/orbits.json` validated and generated by `orbits.mjs` into `orbits.gen.rs` and the New
+  world form's `client/src/ui/skyPresets.gen.ts`; [`proposals/REALISTIC_WORLD.md`](./proposals/REALISTIC_WORLD.md)
+  §8): a world with a Sky preset (Default, Day varies, Extreme: ranges as data) rolls its orbit from its
+  seed at creation (`Orbit::roll`, pure; `ServerConfig::sky`, `--sky`, the browser's `sky` from New world →
+  More options → Sky, shown only for a world file whose climate reads the sky, `ui/sky.ts`) and keeps it in
+  its settings (the clock in `CLOCK`, the moon's phase in `MOON_PHASE`, the rest in `CELESTIAL` 0x86), so a
+  later build's ranges never move its sky. `orbits::day_night_for(&WorldSettings)` is the world's cycle:
+  the sun's path from the pole (noon 90° − pole, rising at its yaw), its clock, its moon's month, phase,
+  inclination and node, over this build's looks; the server's celestial model (`Celestial::for_world`) and
+  every client's sky (`Game::set_world_settings`) draw it. Without `CELESTIAL` it is today's cycle exactly
+  (`Orbit::today()`, read from `daynight.json`: pole 30°, yaw 31°; a golden test). Only Realistic worlds
+  roll (owner, 2026-11-12); the tilt and the year are kept for the seasons (O4); the sun's size by distance
+  is not drawn (the sky shader's `SUN_RADIUS` is a constant).
+  **The celestial model [built, M-4; not drawn yet]** (`dwell-look` `celestial.rs`,
+  [`proposals/MOON_WORLD.md`](./proposals/MOON_WORLD.md) §6, DAY_NIGHT.md §14): the sun, the home
+  disc and the moon as bodies, pure functions of the world clock (server and clients agree with no
+  message). The sun is today's direction exactly; the moon goes round a circle `moonOrbit.distanceM`
+  (596.8 km: the moon grid's 12.5 km at `moon.radiusDeg` 1.2°, checked against `grids.json` by
+  `daynight.mjs`) out, inclined `inclinationDeg` (5°) to the sun's path, once a month (`cycleDays` 8,
+  new to new) against the sky's turn, its node turning against the sun every `nodeTurnDays` (96);
+  tidally locked (the moon grid's up, its face A's, at the home disc's centre: `Celestial::moon_axes`,
+  the grid's frame for M-3). The phase and the lit share (a flat disc: n·s of the face seen, physical)
+  follow from the geometry, the same from either home face; moonlight = today's × (`moon.nightFloor`
+  0.15 + the rest × lit share × the disc's share over the face's horizon); the halo is today's × the
+  lit share. The month's start is the world's (`WorldSettings` optional tag `MOON_PHASE` 0x84; absent,
+  `moon.startPhase`). Since M-2 the sky draws the moon from the celestial model and its baked terrain (M-2): its direction `Celestial::view`'s, its face A (tidally locked) baked once at the join (`dwell-worldgen` `bake_far`, 256², `render/moon.rs`), packed with mips into one storage buffer (frame group binding 20: the composite already binds WebGPU's 16 sampled textures), each texel lit as N·L of its baked normal (slopes × `moon.relief` 8) by the real sun direction, its albedo the bake's over its brightest (so the lit part is today's `moon.color`); halo × the lit share; moonlight `nightFloor` + the rest × lit share. A CPU adapter packs no normals (a flat disc by the albedo). Same angular size (1.2°) and glow constants. Owner, 2026-11-12, changing Q3: "You mentioned a dome something, maybe do that": `moon.domeBias` (1: a ball) shapes the disc as a sphere, its normals tilted by the baked slopes (polish round: a 0.6 mix left a 135° crescent nearly invisible), so phases read as crescents, halves and gibbous with the craters on top, and the lit share (`celestial::disc_lit`, the mean N·L of that domed disc over full's) drives the halo and the moonlight: one model for the drawn moon and its light. The disc reflects by Lommel-Seeliger (`moon.lunarLambert` 1, `celestial::moon_shade`), so the full moon is lit evenly to its edge (a Lambert ball's bright part ended at 0.87 of its radius).
 - **Clouds [built, Phase 31]** ([ADR 0034](./adr/0034-sky-clouds.md), [`CLOUDS.md`](./CLOUDS.md)): a
   2D cloud layer drawn as part of the sky in the composite pass (not volumetric, no geometry). A thin
   deck lies `altitudeM` above the viewer's own face's sea level, on a sphere about a centre
@@ -2423,6 +3288,36 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   `face`) and samples another part of the noise. Clients draw the clouds as visuals only: they go
   over no network and don't affect the simulation. The Clouds setting: Off, Low (3 octaves, no
   self-shadow) or High (5 octaves and the self-shadow). Measured GPU cost: see §7.4.
+  **Volumetric clouds [in progress, 2026-11-11]** (`CLOUDS.md` §8, ADR 0034's amendment): the
+  setting is Off / Low / Medium / High, each tier data (`clouds.json` `tiers`: march steps, light
+  samples, resolution divisor, history blend; 0 steps is the 2D deck: Low). On Medium (desktops'
+  default, ¼ resolution) and High (opt-in, ½) a **clouds pass** before the composite ray-marches a
+  layer between `volume.baseM` and `topM` (`clouds_fs` → `dwell_cloud_march`, jittered per pixel and
+  frame by a baked blue-noise tile, early exit at 98 % opacity) into a reduced `rgba16float` buffer
+  (premultiplied colour, cover) and an `rgba16float` scene span and first-cloud distance; a **resolve**
+  (`clouds_resolve_fs`, BUGS.md #90) then blends it with the last frame's buffer reprojected by
+  direction (a `CloudPrev` uniform with the last camera; reset on new buffers or a jump), the history
+  clamped into the box of this frame's 3 × 3 matching neighbours, and the result is copied to the
+  history. Near or in the layer a tier takes its `nearSteps` and `nearDivisor`. The composite
+  upsamples it in place of the eye's deck (`upsampled_clouds`, depth-aware by the texels' scene
+  spans, §8.9). **Shape** (`CLOUDS.md` §9): the deck's noise as the weather map (cover, cloud type
+  along `cloudTypes`' axis, precipitation), height profiles per cloud type as data (stratus to
+  cumulonimbus with an anvil), the base shape from a baked tiling 3D Perlin–Worley texture remapped by
+  the cover, its edges eroded by a baked Worley detail texture distorted by curl noise, sheared
+  downwind; the two textures (`form.baseSize`³, `form.detailSize`³ RGBA8, group 3 bindings 6–8 with a
+  repeating sampler) baked once in the job workers (`Job::CloudNoise` slabs) when a volume tier first
+  draws, the deck standing in until they are whole. The light march samples the base shape only.
+  Beer and powder lighting; no samples at all with no coverage. **Run-time plumes** (`CLOUDS.md`
+  §8.7): columns of cloud (steam, smoke, ash) the game adds, moves and removes by name in a list
+  (`dwell_look::plumes::PlumeList`, `plumeSlots` of them, `clouds.json`'s `plumes` its defaults),
+  packed each frame into a uniform at the clouds pass's group 3 binding 4 (`CloudPlumes`: the eye's
+  face's plumes within the march's reach, nearest first, axes relative to the eye) and marched apart
+  from the layer, `plumeSteps` samples (per tier; none on Low, Off or the CPU adapter) over each
+  plume's own span for the plumes the ray crosses, with rising billows (`riseMps`). Sources: the
+  world's lava vents (`dwell-client` `vent_plumes`: the worldgen config's `lavaVents`, a plume over
+  the vent column's top molten cell while it has one, look `sources.lavaVent`); `__dwell.plume`. Snell's window, the reflections and the other face's sky keep the deck. The
+  deck's CPU in-cloud fog is off on a volume tier (the march fogs by density). Telemetry
+  `gpu.clouds`.
 - Coarse sections: where a cell is taller than the relief, the column's top cell takes the
   material of the column's surface (not the bedrock its bottom voxel samples; a regression test
   covers it); a sea whose water no cell samples (the cell is deeper than the sea) shows water on
@@ -2474,7 +3369,10 @@ Each frame the octree is walked from the root around the **camera** (the eye):
 - Debug: the F3 overlay shows sections drawn per level, those shown as chunks, nodes, jobs in
   flight (generation, meshing, requests), cache use (and the view's share of it), the pixel
   error's scale and LOD bytes/s, and the frame's draw calls and triangles over both passes;
-  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off. (Before the port, the
+  `?lodcolors=1` tints sections by level, `?lod=0` turns the LOD off; `?loddebug=` takes a comma list of
+  renderer switches — `skirts` (the shown skirts drawn magenta), `noskirts`, `nocull` (no per-section
+  culling), `nostandins`, `levels` (sections tinted by level, as `?lodcolors=1`) — to tell which part
+  draws a seam (BUGS.md #68). (Before the port, the
   TypeScript selection measured ~2–4 ms per frame for ~2,800 drawn sections under Node; the Rust
   one has not been measured yet.)
 - **Memory (F3, `ui/memory.ts`):** a phone's browser closes a tab that uses too much, without
@@ -2493,6 +3391,301 @@ Each frame the octree is walked from the root around the **camera** (the eye):
   Three.js build's experimental `?batch=1` went with it (the parameter is not read). `?scale=0.5` (0.25–2) renders at a fraction of the resolution: a frame
   rate that rises with it is bound by pixels rather than draws (`render/display.rs`).
 
+**Game modes [built, 0.50.30]** (ADR 0065). A world plays one game mode from `shared/modes/modes.json`
+(generated into `dwell_protocol::modes` and `client/src/ui/modes.gen.ts` by `shared/modes/gen.mjs`):
+a name and the abilities it allows, from a fixed vocabulary — `damage` (every damage cause, through
+`Server::damage`), `flight` (with the flight policy; the server clears the fly bit otherwise),
+`brushes` (brush strokes' `KEEP` cells and the brush reach; refused otherwise), `unlimitedBlocks`
+(without it placing uses items up and breaking drops them: inventories, below) and `map` (0.50.37,
+ADR 0068: the client shows the minimap and the explored map; both modes have it) and `mapRevealed`
+(0.50.46: the big map shows the whole world, unexplored ground coloured from the generator; creative
+only), and `stamina` and `oxygen` (0.50.57, ADR 0069: below; adventure only), and `instantBreaks` (0.52.51,
+docs/BLOCK_DAMAGE.md §7: anything but a tool breaks any block in one hit; creative only), `structures` (saved
+structures placed; creative only) and `theaterViewpoint` (theater mode's camera as a simulation viewpoint, §5.5,
+THEATER_MODE.md §7; creative only). Creative (the
+default: new worlds, and worlds saved before modes) has flight, brushes and unlimited blocks and no
+damage; adventure (experimental) has damage, stamina and oxygen. The mode is a `WorldSettings` field (optional tag
+`0x82`), saved with the world; the New world form picks it, and the host changes it at runtime
+(`Server::set_mode`, sent to the joined clients as `WorldSettings` again). **[built, 0.51.10]** The
+switch is offered in game and on the dedicated server (owner, 2026-11-08): the game menu's **Host**
+page of a local world has a **Mode** choice (the modes from the data, experimental ones marked;
+`hostPanel.ts`), which the local worker applies (`setMode`, answered with `mode`; the world saved at
+once) and the world list's mode badge follows (`WorldIndex.setMode`, append-only); the dedicated
+server's `--mode <name>` (checked against the data: an unknown name fails naming the modes) makes a
+new world in it and switches a saved one on start, logging it. Switching takes flight away live:
+the server clears every queued fly bit, and a player in the air then lands unhurt
+(`flight_grace`, that one landing only); the client follows the settings' flight as before. The
+inventory (ADR 0066) is the player's in every mode: creative neither uses nor drops it, so the
+adventure inventory and wallet are as they were when the world switches back.
+
+**Stamina and oxygen [built, 0.50.57]** (ADR 0069). The tunables are data
+(`shared/vitals/vitals.json`, generated by `shared/vitals/gen.mjs` into `dwell_protocol::vitals`
+and `client/src/ui/vitals.gen.ts`): each activity's stamina drain from a fixed vocabulary (`sprint`,
+`swim`, `tread`), the regen and its delay, the 25 % recover share, the exhausted sink speed, the air
+capacity and refill, the head's submerged share and the drowning damage. The vitals live in the
+player controller (`PlayerController::vitals`, PLAYER_CONTROLLER.md §6.13), stepped by one pure rule
+(`Vitals::step`) on the server and in the client's prediction alike, under the world's rules
+(`Players::set_vitals`: the mode's `stamina` and `oxygen`). Exhausted (stamina run to 0, until it is
+back to 25 %): no sprint, no treading water (the swimmer sinks), no axe swings (the server refuses
+them; a swing otherwise draws its tool's `staminaCost`). Out of air, `Server::damage` deals
+`drownDamage` each `drownIntervalSeconds` with cause `Drown`. The server sends each hello'd client
+its vitals with each snapshot (`Vitals`, §8.3), which corrects the prediction (`Predictor::on_vitals`,
+a patch and a replay); they are saved per player in the `vitals` table. The HUD shows a stamina and
+an air bar above the health bar while not full (`#vitals`, a `shared/ui/hud.json` part and a fixed
+`shared/ui/layout.json` part).
+
+**Inventories and block drops [built, 0.50.33]** (ADR 0066). Items are namespaced names: every
+block is an item of its own name, and `shared/inventory/inventory.json` lists the items that are not
+blocks (rocks, sticks, grass seed, gems; prototype content) with their simple look, and the numbers
+(6 hotbar and 30 backpack slots since 0.52.23, the same 36 indices as the 9 + 27 before, stacks of 64, loose items gone after 300 s, picked up within
+1.5 m, at most 2,048 in a world) and the wallets (the starting one holds 99). What a block drops is
+its `drops` in the block data (absent: itself; a stored ramp its base's; liquids, extra cells and
+indestructible blocks nothing), each rule a chance and an item or a weighted pick (tall grass's
+gems). `shared/inventory/gen.mjs` checks both and emits `dwell_protocol::inventory` (the tables and
+the `Inventory` model) and `client/src/ui/inventory.gen.ts`. In a mode without `unlimitedBlocks`
+the server (`dwell-sim` `server/items.rs`) takes one of a block's item (its `cost`: a ramp its base)
+for every place, block, region or body edit (none held: refused; a torch held against dynamite
+lights it and is kept), and drops the broken block's items; a defeated player keeps every item and
+the wallet, nothing dropped (CHARACTERS.md §11.13). Loose items (`dwell-sim` `loose_items.rs`) are light server entities,
+not Rapier bodies: a point that falls toward the midplane through `FaceFrame` and rests on the top
+of the first solid cell. Currency items (a `value`) go to the wallet, whole items up to its
+capacity. The client draws loose items as small turning copies of their block through the pieces'
+renderer (`dwell-client` `loose_items.rs`), and in such a world its hotbar is the inventory's first
+six slots with counts and the wallet, and E opens the backpack screen (`client/src/ui/backpack.ts`) with its Combine section. Pieces,
+combining and tool wear (0.52.46, ADR 0066's amendment, docs/ITEMS.md §9): a ½ m cell breaks into 8
+pieces of its material (its `drops`); recipes are `inventory.json` `recipes`, applied by the server on
+`InventoryAction::Combine` (a recipe-name hash) where it sets `inventory_flags::COMBINE` (16); tools wear
+by `tools.json` `durability` (the stone axe 32, creative not), the wear a slot's `Stack::wear`, carried in
+the inventory record as entries an older build skips. In creative the hotbar's six slots hold items picked in the creative inventory view (E, the touch Bag, the controller's `inventory`; `client/src/ui/creativeInventory.ts`, `dwell-game` `creative_hotbar.rs`, the groups as `items.json` `category` data, picks saved per world in the browser; docs/ITEMS.md §6a).
+
+**Creatures [built, 0.51.13]** (ADR 0073). Animals as light server entities (`dwell_sim::creatures`, not
+Rapier bodies): spawned in groups near players by `shared/creatures/creatures.json`'s rules (the ground
+block, a chance per chunk column rolled once from the seed, a group size; `limits`: 2 chunks around each
+player, despawn past 128 m, at most 64), generated by `shared/creatures/gen.mjs` into
+`dwell-sim/src/creatures.gen.rs`; each idles, then walks to a random point within `wanderM`, a step
+taken only onto a solid full block with `rows` open dry cells over it within `climbRows`/`dropRows`
+(water and cliffs stop it); face-local through `FaceFrame`. Not saved. Clients draw them with the
+skinned renderer (a mesh per model, `render/skinned.rs`), smoothed toward the server's points, the clip
+by speed (`dwell-client` `creatures.rs`).
+
+**Weapons [built: the server and the data; WORK_QUEUE item 35].** A tool of kind `weapon`
+(`shared/tools/tools.json`; the sword, `dwell:sword`) has no cutting fields and a `weapon`: `damage`,
+`knockbackM`, `knockbackMps` and `liftMps` (the push a connecting NPC strike gives a player, m/s away
+along the ground and up; item 38), `maxTargets`, `durability` (merged into the tools' `durability` table) and `guard`, its
+swordplay (owner, 2026-11-12, the Wii Resort model: "you can only hold the sword vertical or
+horizontal, and you can choose to block or not. Attacking drops block, if you hit enemy sword within an
+angle threshold of perpendicular you're blocked, if within an angle of parallel it connects"): each
+stance's blade roll (`stances.level` 0, `vertical` 90), `blockWithinDeg`, `connectWithinDeg`, a
+glance's `glanceDamage` share between them, a block's `recoilS` and the guarded `frontDeg`
+(`dwell_protocol::chopping::{WeaponDef, GuardDef, Clash}`; a fixture weapon by data alone,
+`shared/tools/fixtures/tools.json` → `chopping::fixture`). Its swing goes on the wire as the axe's
+(`ChopAction::Sweep`, `SwingKind` chop level or vertical): the server times it to its contact — the
+first creature its head meets on the arc, else the block that stops it (`dwell_world::swing::reaches`)
+— and then sweeps again from the eye (`server/weapons.rs`): `Creatures::crossed` finds the creatures
+whose body (a post from the feet up its `rows`, `hitRadiusM` round) a step's segment comes within,
+on the eye's face, in the order the head meets them, at most `maxTargets`; players are never
+targets. Each is struck (`Creatures::strike`): a creature holding a raised sword facing the striker
+(`Creature::guard`, the **defender API** NPCs use: weapon, stance, raised, its own swing's ticks —
+attacking drops the block) clashes by the blades' angle (`GuardDef::clash`, the holder's roll mirrored
+into the striker's view): blocked (nothing lands, the striker's next swing waits `recoilS`), glanced or
+connected; what lands takes `damage` × its share from the creature's `health` (shared/creatures, per
+creature with its `hitRadiusM` and `drops`; none: it can't be hurt), slides it `knockbackM` away along
+walkable ground (`KNOCK_SPEED_MPS`) and sets its `hurt_from` for the near ecology's reaction
+(docs/ECOLOGY.md §8.1). A creature with an `attack` (shared/creatures; the wolf's bite, round 2)
+turns on its striker for `angryS` (`Creatures::provoke`), its near mind closing on where that
+player stands (`Creature::chase_to`), and bites them in `reachM` and `frontDeg` every `cooldownS`
+(`Creatures::step_attacks`, `Server::step_creature_attacks`): `damage` through the damage rules,
+cause `Weapon`, and a push; at 0 health the player is defeated (CHARACTERS.md §11.13). Only the
+striker is bitten; players still never strike players. A connecting hit shows on clients as the
+creature's `hurtLook` (a fading tint flash and a flinch from the blow, by data; the skinned
+instance's `light.w` carries the packed tint). A creature killed is removed (the clients told) and drops its `drops` as loose
+items; the weapon wears once a creature struck. The client's sweep treats a wood as a bounce for a
+weapon. **Swordplay [built: server, wire, client logic; the raised poses' clips and drawing local]**
+(round 2), behind the `weapons.clash` capability: (1) each strike on a creature goes as `Swordplay`'s
+clash (`ClashNet`: striker and defender, `Fighter::Player` or `Creature`; the weapon; the outcome,
+blocked / glanced / connected, a strike on no block connecting; where the blades met — the middle of the two blades' nearest points where the swing's arc, finely between its steps, comes nearest the defender's raised blade, each stance's from the holder's feet by data (`guard.stances.*.blade`: grip and tip, right / up / ahead, fitted to the third-person raised pose and kept within 0.1 m of it by a `clip_probe` test), or on the striking blade nearest the body when no raised blade met it (BUGS.md #86); both stances) to
+the joined clients with the capability within the weapon's `guard.clash.hearM`, an older client never;
+the client (`dwell-client` `swordplay.rs`) plays `guard.clash.sound` (a sound event by name: the
+sword's `axe_clank`, the metal sample) at the glance share for a glance, bursts `guard.clash.sparks`
+(chips by data, after the blocks' in `chips::chip_looks`) and, when it struck and was blocked, recoils
+its view (the swing's kick at `bounce` over `recoilS`); a connect shows none. (2) The player's block:
+Place held with a weapon (right-click, the controller's Place, the touch Place: their existing
+bindings as data) past `guard.raiseAfterS` raises it in the current stance (the swing's plane; a tap
+turns the stance as before), let go it drops; the client says it with `ChopAction::Guard` (only to a
+server with the capability); the server keeps it (`Server::player_guard`: raised, a weapon held, not
+mid-swing: its own swing, `WeaponSwing`, drops it) and tells the others' capable clients as
+`Swordplay` guards (`GuardNet`), the raised guards there are coming to a client that says the
+capability; a stance change or putting the weapon away is told too. Each stance's first-person raised
+pose is data (`guard.stances.*.raisedPose`). (3) NPC fights (`npc.fight` in shared/creatures, defaults
+in `shared/creatures/gen.mjs`; `Creatures::step_fights`, `Server::step_npc_fights`): an NPC whose
+`fightBack` triggered and that holds a weapon reads the player it fights (`FoeView`: the player's
+`WeaponSwing` phase, coming up to its contact, then recovering): it raises its block in its `stance`
+(`counter`: `GuardDef::counter`, the stance perpendicular to the coming swing; `random`) while the
+blade is coming, lowers it otherwise, swings back while the player recovers within `strikeWithinM`
+once its `cooldownS` is over, and gives up `giveUpS` after the last strike; its guard changes go to the
+capable clients. Its blow lands at its swing's middle, against the player's raised block when the
+player faces it (the weapon's `frontDeg`): blocked (the NPC recoils), glanced or connected — sent as a
+clash. **An NPC's strike hurts the player** (WORK_QUEUE item 38; owner, 2026-11-12: "Villagers should
+be able to hurt players."): past the block (glanced or connected) it takes the weapon's `damage` (a
+glance its `glanceDamage` share, rounded) through the server's `damage`, cause `Weapon` (6; sent as
+`Fall` to a client that never said it knows `Weapon`, as `Burn`), and pushes the player
+(`Server::knockback`, a `Knockback` event) `knockbackMps` away from the NPC along the ground and
+`liftMps` up, through the face's frame; a mode without the `damage` ability (creative) is neither hurt
+nor pushed, the clash still sent (`Server::npc_hit`; `Server::npc_strikes` logs each blow's outcome and
+health taken). Players never strike players. Not yet: slash clips of its own
+(CHARACTERS.md §5), the raised poses' clips and others' raised swords drawn (local). An NPC whose `npc.held` is a weapon holds it as its guard (its stance, lowered) from its spawn, and a strike on an NPC also calls its `fightBack` hook (`Creatures::attacked`); the villager has health (`health` 40, no drops).
+
+**NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
+follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block
+in `creatures.json` (the villager: the Peasant model): idles picked by weight from a fixed vocabulary of
+poses (stand, look around, sit) for their `seconds` (a sit idle's `seat`, `on: ground` with `levelM`, sits
+only where the ground round it is level, else it stands; looking around holds the heading, the `look` clip
+scans the head and chest), each drawn by its role's clip (`sit`, `look`); turning (`turnDegPerS`) to face the nearest player
+within `lookAtM` while idling; stepping `sidestepM` away from a player or another NPC within `bumpM`;
+a held item, a disposition (`neutral`) and a combat hook (`fightBack`: `Creatures::attacked` stops it and
+turns it on its attacker; the sword stances come with WORK_QUEUE item 35); per part colours (the
+model's palette ramp `from`, the ramps `to`) picked from a seeded `variant` per NPC
+(`creatures::npc_colours`, deterministic). A rule's `spacingM` keeps groups apart and `biomes` limits it
+to columns whose biome (the face terrain's `biome_mix`) is listed. Simulated with the animals
+(`Creatures::step_near`, given the players), near players only; validated by `gen.mjs` (poses, palette
+ramps, items, biome names); a fixture NPC (`fixtures/npcs.json`) proves a kind by data alone.
+
+**Ground items [built, 0.50.68]** (ADR 0071). Sticks under the trees and rocks at the cliffs' feet
+(and rarely on open grass) are scattered over each chunk as it loads, not saved terrain and not a
+worldgen change: `dwell_world::ground` (`Rules::item_at`, `scatter_chunk`) puts at most one in an
+open cell over a full block, by the rules in `shared/ground/ground.json` (each a kind, the blocks it
+lies on, optionally the canopy blocks within some rows above or a wall some rows tall within some
+cells, and a density; the first rule that holds and whose roll hits wins), rolled from a hash of
+the world seed and the face-local cell (face B mirrors face A). **Per biome [built, 0.52.41, ADR 0074 B5]:** a biome's
+optional `ground` (kind → density 0–3) multiplies each kind's rules' densities where it has weight
+(no `ground`: every kind 1, so the default world's scatter is unchanged; a `ground` that does not
+name a kind: none of it). The biome weights reach the scatter as a per-chunk-column table,
+`GroundDensity` (each kind's multiplier at the column's four corners, eased bilinearly over its
+cells), from `TerrainGenerator::ground_density_chunk` (`BifacialTerrain::ground_density`, the
+chunk's face): the client's mesh jobs compute it in the worker that holds the generator and hand it
+back with the mesh (`ChunkMeshes::ground`, the job codec) for the crosshair; the server computes it
+lazily (`dwell_worldgen::ground_density_for`, built only when a biome of the world has a `ground`)
+and caches it per chunk; all three pass it to `Rules::with_density`. A multiplier of exactly 1 rolls
+as before. `shared/ground/gen.mjs` checks the
+names against the blocks and the inventory items and emits `dwell-world` `ground.gen.rs`. The
+server, the client's crosshair and the client's mesh jobs run the same function on their own blocks
+(the mesh jobs on their sky volume: rules look at most 16 rows and 6 cells away, the apron). **The
+rules read the terrain as generated** (0.50.75, owner: "keep sticks under cleared leaves";
+`Rules::item_over(get(cell, generated))`); only the item's own cell (open) and its ground (a flat
+full block) are read as they are now. The server reads an edited chunk's generation from its
+generator (`VoxelWorld::generated_voxel`, cached in `ground_generated`); the client's streamer keeps
+each edited loaded chunk as generated (`ChunkStreamer::generated`: the voxels before its first edit,
+or, for one that arrived edited, a `Job::Generate` for it, `ChunkSource::generate_base` /
+`on_generated_base`) and hands mesh jobs their sky volume as generated (`MeshJob::generated`, empty
+when no chunk in it is edited). The
+client bakes them into the chunk's opaque mesh (`dwell-mesh` `mesher/ground_mesh.rs`: a rod or a
+lump of a few polygons with a block's side tile, turned and scaled per item): no draw call, no
+collision. The break action aimed at one, when it is nearer than the block behind it
+(`Rules::hit_before`; a click, touch's Break, the controller's, an axe's swing), sends `Pick`
+(0.50.74: no pick-up key or button); the server checks and knocks it loose as a loose item of the
+kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack; walking near collects it;
+in creative it vanishes, as breaking drops nothing), keeps the cell in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
+again without it. Breaking the block under one knocks it loose (a loose item in adventure; gone in
+creative); it vanishes with no write when its ground goes by other edits (regions, blasts,
+felling), and may come back if the same cells return. Edits round it (its canopy, a cliff) leave it.
+
+**Item looks [built, 0.50.73]** (ADRs 0066, 0071). An inventory item may carry one shaped `look`
+(`shared/inventory/inventory.json`: `shape` rod, lump or cluster (0.50.75: a heap of six tiny
+lumps, the grass seed), `size`, a block's `texture`, a `color` tint), generated into `dwell_protocol::inventory::ItemDef::look`; a ground kind takes its item's
+look (`shared/ground/gen.mjs` copies it and fails when the item has none). The one look is drawn
+everywhere: on the ground (`mesher/ground_mesh.rs`), loose (`dwell_mesh::look_mesh`, every side, in
+`loose_items.rs`), on the hotbar and backpack (`dwell_mesh::look_swatch`, the shape rasterised in
+its tinted tile, through `itemSwatch`) and in the hand (`Held::Look`: the characters item of its
+shape, `rod`, `lump` or `cluster`, its `$block` material the look's tile and tint). A block's hand item is its
+`held`, or by its look (`HELD_BY_LOOK`, `shared/blocks/lights.mjs`): a ladder the `card`, a cross
+plant the `cross`, drawn with the characters' `plane` part kind (one sheet, both sides, no edges).
+
+**Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
+with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
+bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
+by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops,
+its `chips` look); a tool's `held` names the characters' item a hand shows; a block's `breakWith`
+(block data) names the tool kind breaking it needs where blocks are not unlimited (the log: an
+axe, so in adventure hands can't break logs; the server refuses the edit; creative breaks anything);
+`shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
+`client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
+per side across the grain, an open notch and a kerf in each of two bands along it: a swing cuts
+`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level; vertical
+along the look only for a tool with a second stance, a `heldVertical`: since 2026-11-14 the axe has one
+mode, its level swing, and the server sweeps an older client's vertical ask level) and the grain, face-locally through `FaceFrame`;
+both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
+checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
+`cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
+tips what it held toward the notch, the uncut side its hinge, as real felling falls; **[built,
+0.51.0]** a wood with a `fellWedge`, the log's `dwell:log_ramp`, splits instead: the stump keeps a
+wood ramp facing the notch, the log above becomes the trunk's upside-down ramp (`fellWedgeTrunk`:
+`matching`, the default, parallel to the stump's; `open`, meeting it on the hinge's edge), and the
+trunk is released tipping toward the notch with the wood's `fellTip` share of the topple spin (the
+log's 1; 0: by physics alone);
+ADR 0067 §5a, `felling::fell_wedges`; a piece's shaped cell collides as its shape's convex hull,
+`PieceCell::hull`; the wood ramps are the octagon cut by their slant, ADR 0072 T4) and bucks a
+lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
+client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
+the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
+`tool` entries). **The chopping prototype [built, 0.52.61, behind a switch]** (`chop2` in the tools data, off; dev
+`?chop=v2` on a local world: `ServerConfig::chop2`, the client's `chop::set_crosshair_aim`): the
+server takes a sweep's chop where the look meets the wood (`crosshair_hit`), a chop removes the
+tool's `chop2.bite` of the section (`Cut::chop2`; along the grain the wood's `chop2.along` of it),
+the first side cut is the notch and another side's a flat back cut (in the same `Cut`), and a
+standing wood falls past `chop2.fellFraction` toward its notch, the split keeping it (`open`
+wedges; ADR 0067's 0.52.61 amendment). Round 2 (0.52.62): the look reaches the target outline's
+`REACH_DISTANCE`, clears only what it passes through and stops at a wood's fell wedge; the share cut
+is what all sides' slabs leave (`Cut::removed`: adjacent sides add up); an octagonal log's cut is
+carved inside its octagon (`carve::carve_in`, the mesher's `carve_outline`: clipped to the prism,
+the chamfers bark, `carve::Part::Inner`). **Cuts are carved into the terrain mesh [built, 0.50.60]:** the client's
+`ChunkStreamer::set_cut` keeps the server's cuts by cell and meshes a changed cell's chunk again
+(a job in flight for it dropped, as `hide_cells` does); a mesh job carries its chunk's cuts
+(`MeshJob::cuts`, `Job::MeshChunk`, chunk-local) and `dwell_mesh::mesh_chunk_cut` meshes each cut
+opaque cube as carved geometry (`dwell-mesh` `carve.rs`) instead of the cube: what is left at each
+point along the grain is the cross-section trimmed by each side's depth, so each side's notch is a
+V across the side (its opening the wood's `cut.open` × its depth) and each band's kerf past it a
+slit (`cut.kerfWidthM` wide) with walls square to the grain (a cut without bites, an older
+server's or save's); **[built, WORK_QUEUE item 26]** a cut whose hits recorded where they struck
+(`Cut::bites`) is carved instead as head-sized V bites (`carve/bites.rs`): each side's bark face a
+height field, the notch's V and each band's kerf V under the mask of that band's bites (each
+`cut.bite.widthM` across, its ends sloping over `endsM`), so the notch is the union of the bites;
+the face's outline never moves (watertight); the wood's `cut.cracks` (the `wood` set) overlay every
+face of the cell from its stage by the share of the fell fraction cut, centred on the newest bite;
+the bark left on a side and the ends
+are drawn as the cube's faces (hidden where a neighbour covers them), the faces cut in take the
+wood's `cut.tile` (`logCut`, the painterly `fresh_wood`) × `cut.tint`, lit by the sky the side
+sees (sky rays from its plane) and darker the deeper they lie; face-local, a face-B chunk's cuts
+mirrored with it (`carve::mirror_cut`). So the cuts take the terrain's lighting, shadows and CPU
+tier as any face. It draws (`chips.rs`, draw-only, through the blasts' billboard pass:
+`PuffKind::Chip`) each swing's wood chips (the wood's count, a CPU
+adapter a third, out of the cut along the swing, falling face-locally), and plays the arms'
+`chop_level`/`chop_vertical` clips with the `stone_axe` item in hand (`shared/characters`).
+**The swing as melee (0.50.39):** a tool's `swing` data (wind-up, the arc's sweep, hit-stop,
+recoveries after a hit and a miss, reach, arc, samples, the camera's kick, a stamina cost unused
+until stamina exists, its swish and bounce sound events) drives both sides. A swing goes at any
+time; its path is what hits: `dwell_world::swing::sweep` turns the look through the arc
+face-locally (a level swing from the screen's right to its left, `FaceFrame::handed`; a vertical
+one top to bottom) and the first solid cell any step's ray meets within the reach is hit, but
+**[built, 0.50.62]** the head goes through the blocks of the tool's `clears` (the stone axe:
+leaves and snowy leaves; validated names), recording each it touches (`Sweep { cleared, hit }`).
+The client sends the swing's start (`ChopAction::Sweep`: the look, the plane) at the click; the server
+starts it on arrival (spending `swingSeconds`; one too soon is refused), finds its contact by a sweep then
+(`windupS` and the arc's time to the step it hits, or to its first cleared cell; the prototype's
+crosshair chop and the aimed `Swing`: the arc's middle) and lands it that long after (WORK_QUEUE item 25;
+`Server::land_swings`, dropped if the tool is no longer in hand), when it sweeps the
+same arc from its own eye, breaking the cleared cells in one `Edit` modification (what they leave
+unsupported falls; in a mode that uses items each drops its block's `drops`), then cutting a wood
+it meets and spending the swing on anything else. A swing that only clears is a miss with a rustle
+(the swing's `rustle` event) and `rustleLeaves` falling leaves per cleared cell, not a bounce. The
+client predicts the same sweep for the feel (`chop.rs` `SwingRun`: the arms' clip driven through
+the hit-stop and back, `Animator::drive_action`; the camera's wind-up, sweep and jolt; at the
+impact the chips, the hit's sound by how far the wood is cut (the wood's `sounds`), leaves shaken
+from the tree's leaf blocks (`leaves`), or a clank off stone). A tool's holds are characters' items
+(`held`, and `heldVertical` for a second stance: the sword's). A standing tree cut
+past its `sway.fromFraction` leans toward the notch (`chop.rs` `TreeLean`, the frame uniform's
+`lean_*` vec4s, applied in the terrain and cutout vertex shaders). The reticle draws the swing's
+line through the crosshair. Others see the held tool by name (`HeldTools`).
+
 **Seeing it from above: creative flight** **[built, Phase 4]** (§9.1, PLAYER_CONTROLLER.md §6.7).
 The player flies — the body itself, simulated by the server and predicted like any movement — with
 no ceiling (Phase 16, ADR 0025 D3: the build sphere bounds building, not movement); from ~150 km up
@@ -2502,6 +3695,8 @@ top level's speed, 11.3 km/s, above). In the browser test (local mode, SwiftShad
 flies high above the disc and the whole disc is drawn by the time it arrives.
 
 ---
+
+**Far trees as impostors [built, 2026-11-12]** (WORK_QUEUE item 31, [`proposals/TREE_IMPOSTORS.md`](./proposals/TREE_IMPOSTORS.md) I-3; client `render/impostors.rs`). Every far tree is one camera-facing quad from an atlas baked from the real tree (`dwell_worldgen::impostor`: per species 3 stages × 4 seed variants, 25 views (6 azimuths × 0°, 20°, 40°, 60° and the top; BUGS.md #154), albedo + normal + depth). The atlas is a `texture_2d_array` (one layer a baked tree; texels a view by tier: desktop 64, phone 32, CPU adapter 16), baked by the job workers (`Job::ImpostorBake`) at first use and uploaded a layer at a time; the trees come from `TerrainGenerator::far_trees` by 64 m tile (`Job::FarTrees`), kept within the tier's reach of the eye on its face (`toM`, else 1024 m) and drawn nearest tile first in one instanced draw (20 bytes an instance: world foot through `FaceFrame::point`, layer, quarter turns, the tree's leaf tint) in each scene pass with the opaque draws (bind group 3, bindings 20–23). `imp_fs` draws each tree's nearest baked view (`Config::nearest`, its WGSL twin `imp_nearest`; one view for every pixel of a tree, BUGS.md #157: a per-pixel dither between views stippled a still camera's trees), samples it at the quad point projected into that view, lights the texel with the scene's sun, ambient, fog and received shadows (`scene_out`) at its baked depth's position, a leaf texel with `impostors.json` `leafShade`'s ambient share and albedo scale (it has no baked sky light or occlusion; BUGS.md #106) (the quad itself writes the depth buffer, standing at its bounding sphere's near side scaled toward the eye so it covers the same pixels, `near_side`: at the centre the near tree's still-drawn trunk and branches showed in front of the crown, BUGS.md #106; a `frag_depth` offset disabled early depth and cost more than it fixed), and keeps exactly the pixels (or samples) the near leaves give up. **The hand-over is per tree and in time (BUGS.md #154, client `render/tree_fade.rs`):** each tree is its real leaves or its impostor, switched by its crown's distance with hysteresis (`far.tiers` `inM`/`outM`) and cross-faded over `fadeS` seconds at each switch, never a steady blend by distance; the states live in a byte map of the near share about the eye (one texel a metre, `window()` square, recentred in 8 m steps, frame group binding 21, the frame uniform's `far_trees` the eye's offset in it and the leaves' reach `outM` + 10 m), each texel the share of the tree whose crown covers it (the nearest foot within its bounding radius), which the near leaves read at their fragment (`tree_near_share`) and the impostor at its tree's foot (`imp_vs`), so a tree's leaves and its impostor fade as one; leaves past the reach are dropped whole in the vertex stage. A tree's leaf cards switch the same way, in time (BUGS.md #157): on once its crown is nearer than leaves.json `cards.fadeStartM`, off past the middle of `fadeStartM`–`fadeEndM`, each switch over `fadeS`, in the map's second plane (`tree_cards_share`; cards are dropped whole past that + 10 m); with no map (`?impostors=0`, the tier `off`) they fade by distance as before. They cast no shadows (I-5). The Far trees setting picks the tier (`on`: impostor past 58 m, the real tree again inside 54 m, a 0.3 s fade; `off`: none). **Felled trees** are left out (2026-11-13): each listed tree carries its stem (the bottom cell of the trunk column nearest its anchor and the solid cells straight up from it, at most 16, `Planter::stem`), and the game draws a tile short of the trees whose stem it holds with air in it (`impostors::standing_trees`, `impostor::stem_seen`; a cut takes the trunk above it away as a piece), remembering them once their chunks unload; a tile is filtered again when a chunk of it arrives or changes. Trees whose stem the client holds nothing of are the generator's. **Baked occlusion and mips (opt-in data, off until the owner approves the look):** `impostors.json` `ao` (strength × the share of the tree's cells within `radiusM` of a texel's hit, carried in the albedo's alpha as 128–255 so coverage stays alpha ≥ ½) and `mips` (each view's square halved alone, a texel covered when half its base texels are, the commonest covered colour kept so leaf texels stay the palette's leaf; `imp_fs` takes the level from the pixel's footprint in a view's texels). A phone bakes the 32 px atlas (`impostors::tier_for`, a quarter of the desktop's bytes).
 
 ### 6.7 Water **[in progress, Phase 53: the runtime grid built (G2a, 0.48.2), currents (G3a, G3b), off the tick thread (G5); generation fill (G1), pools (G2b), the rest of the data (G4) planned]**
 
@@ -2522,6 +3717,10 @@ in 0.48.2.
   `editReach` columns; a free column `releaseM` (2.5 cm) off its rest frees the held columns beside
   it, so a dam's backwater spreads upstream and a cut lake drains as far as the change reaches. Free
   water spreads into dry neighbours (a ring of columns found as it wets), never into unloaded world.
+- **Leaves let water through** **[built, WORK_QUEUE item 45]**: a `passable` block with a `flooded`
+  state (leaves) is open to the flow and kept, drawn flooded under the water and dry over it, never
+  replaced by water blocks (`water/cells.rs` `PASS_*`); the scan's levels are unchanged, so generated
+  water is as it was (WATER_SURFACE_GRID.md §2d).
 - **The rest layer.** Drawn rivers are flat pools in steps, not a steady flow: freed as they are,
   every step would pour. Each chunk carries the water **as generated** beside the water as it is,
   stepped by the same law with its depths fixed; a free column changes by how far its flows differ
@@ -2640,13 +3839,61 @@ in 0.48.2.
   or its course's mean over `riverFallReachM` 256 m up and down stream where steeper: a reach held level
   where the land dips runs as the river round it, 0.49.24, BUGS.md #42) or its flow
   over its depth where faster (so level and shallow reaches run, 0.49.18), at most
-  `riverCurrentMaxMs` (1.5 m/s: a swimmer, at 3 m/s, still makes headway); a lake is still.
+  times `riverCurrentScale` (2 since 0.50.50, owner 2026-11-09), at most `riverCurrentMaxMs` (3 m/s: at it a
+  swimmer, at 3 m/s, makes no way upstream; `FlowData::river_speed`); a lake is still.
   A freed column still its river's (0.49.43, BUGS.md #47: in the rest, `Water::share`, with a rest
   velocity) shows that map current too, times how much of the rest's speed it still runs
   downstream (0..=1), blended to its own velocity as its depth leaves its generated depth by up to
   `riverCurrentBandM` (0.2 m, `flow.json`; `Water::as_river`): the river by an edit runs as the
   river round it, while a pool behind a dam, a drained or diverted reach and placed water keep
   their own. Only the current reported changes, not the water's movement.
+- **[built, pending release] Bloom** (WORK_QUEUE item 19; data `shared/look/bloom.json` → `dwell-look`
+  `bloom.gen.rs` by `shared/look/bloom.mjs`, validated, a retuned tier by data alone, CI stale check;
+  `render/bloom.rs`): the glow round self-lit surfaces, keyed on emissive, not on brightness. After the
+  light shafts, a bright pass (`bloom_bright_fs`, its own module, over `frame::scene_read_layout`) takes
+  only the pixels the scene flags self-lit (`self_lit_depth`: lava, flames, lamps), each one's linear
+  light above `threshold` by its brightest channel × its self-lit sample share, averaged over its
+  footprint into the first level of an `rgba16float` chain (`frame::BloomChain`, one texture whose mips
+  halve) at the tier's share of the drawing buffer; down passes (`bloom_down_fs`, the dual filter's five
+  taps) to the last level, then up passes (`bloom_up_fs`, a 3 × 3 tent `radius` texels apart, added by
+  blending) back into the second level, which the composite samples filtered (scene group binding 6,
+  `with_bloom` first in `with_shafts`): × `intensity`, added to the pixel's linear light before the tone
+  curve (the composite's colour taken back through `inverse_display`, only the difference the glow makes
+  added, so a pixel without glow is unchanged). Settings → Graphics → Bloom (`dwell.bloom`; a preset
+  field `bloom`): High (High and Ultra) ½ per axis with 5 levels, Low (Medium) ¼ with 4, Off (Low and
+  Mobile) none; a CPU adapter and the phone tier never draw it (`bloom_for`; the owner plays on Low on an
+  iPhone); `?bloom=` overrides it for the bench. Its three pipelines are lazy (`pipeline::Lazy`): an off
+  tier builds none, and its chain is 1 × 1 (the composite's `with_bloom` returns at once).
+- **[built, 0.50.24] Light shafts** ([ADR 0064](./adr/0064-light-shafts.md); data `shared/look/shafts.json` →
+  `dwell-look` `shafts.gen.rs` by `shared/look/shafts.mjs`, validated, a fixture fluid by data alone,
+  CI stale check): one pass after the scene passes (`shafts_fs`, `gpu.shafts`) into an
+  `rgba16float` buffer (rgb the placed and held lights' glow in its colours, a the sun's, moon's or fluid's) at the tier's share of the drawing buffer (Settings → Graphics → Light shafts:
+  High ½ per axis and 24 samples, Low ¼ and 12, Off none; stored in `dwell.shafts`, High on every
+  device; the CPU adapter draws none, `shafts_for`; `?shafts=` overrides it for the bench), reading the
+  scene's colour and view depth through `frame::scene_read_layout`; the composite samples it filtered,
+  a 3 × 3 box of bilinear taps a texel apart that averages the pass's 3 × 3 tile of sample strata
+  (`shaft_jitter`, `shaft_blur`: nine times the steps, no history; BUGS.md #97)
+  (scene group bindings 2 and 3, `with_shafts` inside `composite_pixel`) and screens it over the
+  picture. In the air a radial blur toward the sun's (by night faintly the moon's) screen point over
+  the open sky, faded by the light's height and off screen (`dwell_look::shafts::air_weight`); under a
+  fluid a march of the view ray that looks up the surface along the refracted sun at each point
+  (world-space shafts that converge on the sun's image, flickering with two drifting noise layers),
+  faded by depth and distance. The frame block carries `shafts`, `shafts_cfg`, `shafts_color` and
+  `shafts_window` (`shaft_uniforms`). Snell's window takes the fluid's window glow (water's 0 since 0.52.53: the window is the sky above) with a softened rim.
+  **[built, 0.50.26] Torch and lamp shafts:** the nearest placed and held lights in front of the
+  camera, within `lights.rangeM`, not too far off screen (`dwell_look::shafts::pick_shaft_lights`:
+  the tier's 4 or 2, weighed by the light source's `lights.kinds` strength by its name, the near,
+  range and screen fades and a day share), packed into the frame block's `torch_shafts` (a header and
+  two vec4s a light, `light_shaft_uniforms`); in the same pass each is a radial blur toward its
+  screen point over what doesn't hide it (the view depth behind the flame or the sky), weighed by its
+  halo (`discM` over its depth), so a torch glows in the air and casts soft rays past what stands in
+  front of it. The pass runs when either part draws. Not under a fluid (left for later).
+- **[built] The underwater look** (WATER_RENDERING.md §12; data `shared/look/underwater.json` →
+  `dwell-look` `underwater.gen.rs` by `shared/look/underwater.mjs`, validated, a fixture fluid by
+  data alone, CI stale check; per fluid by its name, a `default` for the rest): `lensM`, the line's
+  waves (`amplitudeM`, `wavelengthM`, `speed`), the band (`depthM`, `tint`, `streaks`, `glints`, `rimPx`, `rimShade`, `linePx`,
+  `lineGlow`; 0.50.20, replacing the meniscus), the underside's texture (`underside.texture`) and the
+  fog (`clearM`, `density`).
 - **[built, G3d] The flow shown** (owner, 2026-11-05: all three, each a setting; data
   `shared/look/waterflow.json` → `dwell-look` `waterflow.gen.rs` by `shared/look/waterflow.mjs`,
   validated, a fixture liquid by data alone, CI stale check; per liquid by its fluid's name). The
@@ -2704,10 +3951,11 @@ in 0.48.2.
 cell at the share of its height its cells fill (`downsample_block`, 0.44.1); a flooded ramp's water
 drawn at the fill of the water beside it (0.44.5). The generator still draws rivers with beds and
 stepped levels (`terrain.rs`) until G1b; **[built, G1a, 0.49.0]** without lips: a step is the water
-falling a row from one pool to the next (BUGS.md #29), a chute (steps closer than a row every 2.5 m,
-`river_rows.rs`) or a river's column two rows or more over another river's water beside it (a
-junction) drawn as a dry bed a row under its surface with a stream down it, so no wall of water
-stands; the pool graph went with the basins.
+falling a row from one reach to the next (BUGS.md #29), the bed under each at its river's depth
+however steep (from 0.52.0 no dry chute beds, which stood over the pool above as grass humps across
+the channel: BUGS.md #62), so a channel's bed only falls downstream; where a river joins one lower
+than it reaches its surface steps down to the other's water a row a cell, as water (no wall of water,
+no dry bed); the pool graph went with the basins.
 
 **Planned (Phase 53):** G1b the generated water as a pure function of the seed, computed where the
 world loads as terrain is (no drawn beds or stepped levels: the map's lakes at their levels, each
@@ -2717,12 +3965,106 @@ prototype's 4 km² window: an hour on one core); later, water as its own layer o
 the surface meshed from depth; deferred by the owner, 2026-11-05: clients keep water as blocks); G4 the grid's settings as data
 (`shared/water/*.json`), pools for still water and the held sea as in the prototype.
 
+### 6.8 Lava **[in progress: the simulation core and the server built (V1), rivers that grow to the sea (V2 logic); not yet drawn]**
+
+([`proposals/VOLCANOES.md`](./proposals/VOLCANOES.md) §6, WORK_QUEUE item 8.) Lava is a **hot fluid
+on its own surface grid** (`dwell_lava::Field`), not a second liquid on the water grid (§6.7): the
+water grid holds one depth and one law per column across 2,000 lines of sleeping chunks, the held sea
+and its own thread, and lava needs a heat per column and a different law. A field is a set of
+**tiles** of 8 × 8 face-local 1 m columns (bed, lava depth, heat 0–1, a water flag and the water's
+surface, open or a wall), keyed by tile, with its vents and its schedule (V2, VOLCANOES.md §6.3).
+
+- **Growing with its flow (V2):** a growing field (`Field::growing`, every field the server places)
+  asks for the tile past an edge its lava reaches and reads it from the world as it runs (the run's
+  `Ground`: a column's bed and water, `None` a wall), up to `maxTiles` (data: the cap on its area; a
+  refused tile is a wall), and drops the tiles that are all rock (no lava in or beside them, no vent,
+  nothing written as lava left) at the end of a run. A step visits only the molten tiles' columns and
+  the columns their flow reaches out of them (cost by molten area, `Field::work`), with a cached link
+  per column across tile edges. V1's fixed rectangle (`Field::new`) never grows: its edges are walls.
+
+- **The law:** a viscous gravity current, flow per metre of width `g h³ × slope / 3ν` through the depth
+  above the higher bed less the fluid's yield depth (a Bingham plug: a thin front stands as a lobe);
+  explicit, each substep at most `cfl × cell² / (4 g h³ / 3ν)` with `h` at most `stepDepthM` (data),
+  outflow limited to what a column holds, and each face's flow to its stable share of the two
+  surfaces' difference (`cfl / 4`: it binds only in ponds deeper than `stepDepthM`, which level instead
+  of ringing or shrinking every substep).
+- **Hardening by rule (2026-11-13, VOLCANOES.md §6.6):** a column's heat is its rest clock. Lava moving
+  faster than `stillMs` (its throughflow over twice its depth) is flowing and held at heat 1; at rest it
+  loses heat at `1 / restSeconds`, and at 0 its lava joins its bed as the fluid's `rock` (`dwell:basalt`),
+  the rows it filled a `LavaEvent::Rock`: lava hardens where it stops, never while it flows, its volume
+  kept as land. Sources never harden by rest: each vent's column, the lava joined to it through at most
+  `sourceKeepM` m of lava columns (breadth first along the connected lava), and a lake vent's columns
+  below its level (a lake convects) are held hot. Water quenches any lava, a source's included.
+- **Breakouts (V2):** a column remembers the rock its own lava laid (`crust`); molten lava
+  `breakoutDepthM` deep beside a dry column of it standing over its bed melts it down to the bed again
+  (`LavaEvent::Melt`, cleared to air by the server before the lava is written), so a pond behind a
+  dam of its own frozen overflow runs on.
+- **Quench:** lava that runs into a water column turns at once to `quench.rock` (`dwell:obsidian`),
+  raising the sea floor, with a `LavaEvent::Steam` (one per quenched row) taking `steamWaterM` of that
+  water; once the rock stands above the water's surface the column is dry land (V2: a river builds
+  the coastline out).
+- **Vents** (`VentDef`, data): `lake` (holds its column's surface at `levelM`, at most `rateM3s`) or
+  `river` (a steady `rateM3s`). Placed on cones by a world's data (below); the build's own list is
+  test fixtures.
+- **Schedule (as the water):** a field with a player within `nearRadiusM` runs every lava tick; a far
+  one owes its time and runs it at once when it owes `farEverySeconds`, at the same stable substeps,
+  so the far run lands where the near one does (tested).
+- **Damage:** `Burn` gives `damagePerSecond` while a player's feet are in it (`Field::submerged`) and
+  `burnDamagePerSecond` for `burnSeconds` after, as whole points for the server's `damage`.
+- **Saves:** `record_of` / `field_of`, a versioned record for an optional `lava` table: version 2
+  (fluid by name, origin, time owed, whether it grows, each tile's columns, vents); version 1 (V1's
+  rectangle) still reads, as a fixed field. Another version, an unknown fluid or a damaged record
+  reads as none (an older build keeps a version 2 record unread, not written over).
+- **Data:** `shared/fluids/lava.json` (`lava.mjs` → `crates/dwell-lava/src/lava.gen.rs`, validated: ranges,
+  names, the rocks against the block registry; a fixture with a fluid and vents added by data alone).
+  Its look by heat is data too (`heat` stops hottest first: seam colour, emissive, crust cover;
+  `heatHysteresis`; `LavaData::heat_stop`): the server writes each lava cell as its column's stop's state
+  of `dwell:lava`'s `heat` property, rewriting a column only when its stop changes; the mesher passes the
+  stop in the faces' vertex colour and the terrain shader draws that stop's row of a table generated from
+  the data (`render/shaders.rs` `lava_wgsl`; VOLCANOES.md §6.5).
+- **Faces:** face-local; world points and cells cross only through `FaceFrame` (`submerged`,
+  `is_near`, `LavaEvent::cells`); the crate is in the both-faces scan.
+
+**In the server** (`dwell-sim` `lava.rs`, `server/lava.rs`): the world's fields (`Lava`), each on one
+face, placed round a vent (`Server::place_lava_vent`, a `VentSpot`: fluid by name, lake or river, rate,
+a lake's depth over the vent's bed, the radius its field starts with) with their beds and water read
+from the world, the vent at the field's column (0, 0); each grows as its lava runs, reading new tiles'
+beds and water from the world's cells round the bed beside them (`ground_at`, loading chunks); ticked every `tickEvery` server ticks (near a player every lava tick, far ones owing their time). Each
+tick's changes go out as one `Rebake` modification through the edit path (the water grid is told, as
+of any edit): each column of the tiles its steps visited (`Field::take_touched`) has its molten rows (`Field::lava_rows`, ½ m cell rows) are the fluid's block
+(`dwell:lava`: no collision, `emits` the fluid's `light`, a placeholder look), written only into open
+cells and cleared to air where the lava has gone; a `Rock` event's rows become the rock; a `Steam` event
+takes `steamWaterM` off the top of that column's water and is queued for the clients
+(`take_lava_steam`; not on the wire yet). A player whose feet are in lava burns (`Burn` per session,
+reset at death) through the server's `damage` (none in creative), cause `Burn` (5), sent as `Fall` to a
+client that never said it knows `Burn` (`CausesHello`, on the wire below). An NPC's sword strike is
+cause `Weapon` (6; "Weapons"). Saved with the world
+as one record in an optional `lava` table (`Lava::to_bytes`: each field's face and `record_of`),
+written only when the world has lava; a record this build can't read is kept, not written over.
+
+**A world's vents [built, slice 3]:** worldgen data on the cones (`terrain.json` `tectonics.lavaVents`,
+opt-in, none by default: each a cone by kind and index, lake or river, fluid by name, rate, depth, field
+radius, offset from the summit; checked by `biomes.mjs` `checkLavaVents`, read by
+`dwell_worldgen::config::lava_vent_sites`), placed by the server on each face when its world is created
+or first loaded with no lava (`place_world_vents`, at the cone's summit as generated). The starter world
+lists a lake vent on its youngest hotspot island's summit and, on face B only (a vent's optional
+`faces`: each face generates its own cone), a river vent on its flank 1.3 km from the sea
+(VOLCANOES.md §6.2, §6.4; the river reaching it on the generated terrain is open: it spreads into a
+sheet ~630 m down). **Edits:** every change through the
+edit path but the lava's own (`TickChanges::lava`) marks its column in a field over it (`Lava::touch`);
+the field reads that column's bed (up through blocks set on it, down through cells dug out) and water
+again at its next lava tick, so a dug channel takes the lava.
+
+**Not yet:** the lava's look (light, glow, crust) and the steam's particles and sound on the clients;
+the water grid's own columns as the fields' water flags (a field reads them from the world's cells);
+eruptions (V3–V5).
+
 ## 7. Physics Pipeline
 
 ### 7.1 Voxel Awakening & Clustering **[in progress: built for felling, 0.37.0]**
 
-**Built for trees** ([`FELLING.md`](./FELLING.md), ADR 0051): the support rule is block data (`support`: ground, carrier, rider, falls — sand, 0.40.0; `dwell_world::support::detached_pieces`, budgeted by `max_cells`; loose leaves resting on something stay); after a tick's edits the server (`dwell-sim` `felling.rs`) detaches what lost its support in one `Collapse` modification and makes each piece one Rapier body (`Physics::add_piece`: its cells merged into boxes, runs of alike cells — the same size, mass and collision — joined greedily along x, z, then y (`merged_boxes`: the same mass, centre of mass and surface; a 1.5 m sand column one box, not three), each box drawn in `PIECE_SKIN` (1 cm) a face so pieces packed side by side and against walls don't touch until they move together (0.49.29: boxes the cells' size touched exactly, and the solver held a cut's packed sand by its walls' friction for the 30 s `maxSeconds`), the cells' centres kept for the water (`collider_centres`); `Collide::All` for carriers (sand `Collide::World`: it passes players, hurting them by the hit check, and slides off beside one when it lands where they stand), `Collide::None` for riders of a trunk (mass only), `Collide::World` for leaves falling on their own (terrain and pieces, not players: they land); tipped away from the nearest player), its terrain collision loaded round every piece (`Players::set_terrain_boxes`: the piece's own bounds plus two ticks' travel, at most `terrainChunksPerTick` new chunks a tick nearest first, `TerrainCollision::ensure_boxes_within`, 0.40.5); a hard hit hurts a player (`Felling::hits`, `Crush`), and a piece slower than `holdSpeed` is held from players' contacts (a dominance group) and moved by the controller's push instead (`Players::step_push`: a person's push, `max_push_force` 3,050 N at a standstill falling to nothing at the player's speed, less the body's friction on the ground, so a 1 m log slides at ~0.5 m/s, 0.41.6; a player standing on a held body presses it down by their weight and landing, 0.41.6; `maxPushForce`, 0.41.5), which the prediction applies to its stand-ins (carried on to the predicted present from the input their snapshot acknowledged) and the client draws near pieces at that present (BUILT_BODIES.md §6); tunables in `shared/physics/felling.json`; pieces go out as `EntitySpawn` and in snapshots — each player's snapshot carrying the pieces of the highest priority, which grows every snapshot a piece is left out (more for a near or fast one), pieces at rest sent once (`felling::PieceBook`, 0.40.13; nearest first had left all past ~28 unsent) — and clients draw them interpolated, past the newest snapshot going on at its velocity and spin for up to 250 ms (`dwell-client` `pieces.rs`, a quaternion per draw in the renderer) and stand them in as kinematic bodies in the prediction — only those that could touch the local
-player soon (`dwell_physics::predictor::stands_in`, 0.49.34; EXPLOSIVES.md §3). **[in progress, Phase 51]** Built bodies ([`BUILT_BODIES.md`](./BUILT_BODIES.md), ADR 0052). **[built, B1, 0.41.0]** Pieces edited while they move: a body kind as data (`shared/physics/bodies.json` → `dwell-sim` `bodies.gen.rs`: natural ones break only and settle), the client aiming at a body's cells by a ray in its frame (`pieces.rs` `raycast`, the outline turned with it), `BodyEditRequest` / `BodyEdit`, `Felling::break_cell` taking the cell (`Physics::set_piece_cells`) and splitting a body a break disconnects into bodies of its kind. **[built, B2, 0.41.1; corrected 0.41.3]** The build platform (`dwell:build_platform`, the `built` kind's `builtOn`) is a grid block; a block placed on its top starts a built body there, held (Rapier fixed) while it rests on a platform and released when none is under it (`Felling::divert`, `place_diverted`, `release_unheld`), and blocks placed touching a held body, by click or drag fill, join it; blocks placed against a built body join it (`BodyEditRequest` Place, `Felling::place_cell`); built bodies never settle; every body is sent to a player joining; bodies are saved with the world (`dwell-storage`'s `bodies` table, `SaveBatch::bodies`, rewritten each save, states by name) and restored on load. **[built, B3, 0.41.2]** Floating: each tick `Felling::float` pushes every cell of every body up (face-locally) by the liquid it displaces (`cell_in_liquid`: the share under, the liquid's block density), at its centre, and slows a body in water by `shared/physics/bodies.json`'s `water` rules: sideways as real water does, by the area under water facing the motion and the speed squared (`dragCoefficient`) and a light `drag`, its bob by `heaveDrag` (`felling::water_drag`, which the clients' stand-ins are slowed by too, **[built, 0.41.6]**); a cell's share under is measured exactly per column, so the buoyancy changes smoothly with depth (0.41.6). What follows describes the general pipeline (terrain and builds, Phases 20–21).
+**Built for trees** ([`FELLING.md`](./FELLING.md), ADR 0051): the support rule is block data (`support`: ground, carrier, rider, falls — sand, 0.40.0; `dwell_world::support::detached_pieces`, budgeted by `max_cells`; loose leaves resting on something stay); after a tick's edits the server (`dwell-sim` `felling.rs`) detaches what lost its support in one `Collapse` modification and makes each piece one Rapier body (`Physics::add_piece`: its cells merged into boxes, runs of alike cells — the same size, mass and collision — joined greedily along x, z, then y (`merged_boxes`: the same mass, centre of mass and surface; a 1.5 m sand column one box, not three), each box drawn in `PIECE_SKIN` (1 cm) a face so pieces packed side by side and against walls don't touch until they move together (0.49.29: boxes the cells' size touched exactly, and the solver held a cut's packed sand by its walls' friction for the 30 s `maxSeconds`), the cells' centres kept for the water (`collider_centres`); `Collide::All` for carriers (sand `Collide::World`: it passes players, hurting them by the hit check, and slides off beside one when it lands where they stand), `Collide::None` for riders of a trunk (mass only), `Collide::World` for leaves falling on their own (terrain and pieces, not players: they land); tipped away from the nearest player), its terrain collision loaded round every piece (`Players::set_terrain_boxes`: the piece's own bounds plus two ticks' travel, at most `terrainChunksPerTick` new chunks a tick nearest first, `TerrainCollision::ensure_boxes_within`, 0.40.5); a hard hit hurts a player (`Felling::hits`, `Crush`), and a piece slower than `holdSpeed` is held from players' contacts (a dominance group) and moved by the controller's push instead (`Players::step_push`: a person's push, `max_push_force` 3,050 N at a standstill falling to nothing at the player's speed, less the body's friction on the ground, so a 1 m log slides at ~0.5 m/s, 0.41.6; a player standing on a held body presses it down by their weight and landing, 0.41.6; `maxPushForce`, 0.41.5), which the prediction applies to its stand-ins (carried on to the predicted present from the input their snapshot acknowledged) and the client draws near pieces at that present (BUILT_BODIES.md §6); tunables in `shared/physics/felling.json`; pieces go out as `EntitySpawn` and in snapshots — each player's snapshot carrying the pieces of the highest priority, which grows every snapshot a piece is left out (more for a near or fast one), pieces at rest sent once (`felling::PieceBook`, 0.40.13; nearest first had left all past ~28 unsent) — and clients draw them interpolated `INTERP_DELAY_MS` behind the server's clock, each pose timed by the server tick it was taken at (0.50.59: timed by the frame that read its snapshot, a moving piece was drawn at 0.75–1.5× its speed by turns, the shake of every moving piece; the clock is the least-delayed snapshot's offset, slewed at 3 %, `Timeline`), past the newest snapshot going on at its velocity and spin for up to 250 ms (`dwell-client` `pieces.rs`, a quaternion per draw in the renderer); a near piece drawn at its stand-in is drawn between the stand-in's last two prediction ticks as the player is (`tick_present`, the frame's alpha; 0.50.59) and stand them in as kinematic bodies in the prediction — only those that could touch the local
+player soon (`dwell_physics::predictor::stands_in`, 0.49.34; EXPLOSIVES.md §3). **[in progress, Phase 51]** Built bodies ([`BUILT_BODIES.md`](./BUILT_BODIES.md), ADR 0052). **[built, B1, 0.41.0]** Pieces edited while they move: a body kind as data (`shared/physics/bodies.json` → `dwell-sim` `bodies.gen.rs`: natural ones break only and settle), the client aiming at a body's cells by a ray in its frame (`pieces.rs` `raycast`, the outline turned with it), `BodyEditRequest` / `BodyEdit`, `Felling::break_cell` taking the cell (`Physics::set_piece_cells`) and splitting a body a break disconnects into bodies of its kind. **[built, B2, 0.41.1; corrected 0.41.3]** The build platform (`dwell:build_platform`, the `built` kind's `builtOn`) is a grid block; a block placed on its top starts a built body there, held (Rapier fixed) while it rests on a platform and released when none is under it (`Felling::divert`, `place_diverted`, `release_unheld`), and blocks placed touching a held body, by click or drag fill, join it; blocks placed against a built body join it (`BodyEditRequest` Place, `Felling::place_cell`); built bodies never settle; every body is sent to a player joining; bodies are saved with the world (`dwell-storage`'s `bodies` table, `SaveBatch::bodies`, rewritten each save, states by name) and restored on load. **[built, B3, 0.41.2]** Floating: each tick `Felling::float` pushes every cell of every body up (face-locally) by the liquid it displaces (`cell_in_liquid`: the share under, the liquid's block density), at its centre, and slows a body in water by `shared/physics/bodies.json`'s `water` rules: sideways as real water does, by the area under water facing the motion and the speed squared (`dragCoefficient`) and a light `drag`, its bob by `heaveDrag` (`felling::water_drag`, which the clients' stand-ins are slowed by too, **[built, 0.41.6]**); a cell's share under is measured exactly per column, so the buoyancy changes smoothly with depth (0.41.6). **[built, WORK_QUEUE item 45]** A body afloat (a cell in a liquid, lighter than it on the whole) of a kind whose `settlesAfloat` is false (natural) never settles: its still and age count from `beachSeconds` (2 s) after it was last afloat, so it drifts with the current until it beaches (BUILT_BODIES.md §6a). What follows describes the general pipeline (terrain and builds, Phases 20–21).
 
 Triggered when the server registers an explosion, a block removal, or a structural failure.
 
@@ -2748,7 +4090,13 @@ Triggered when the server registers an explosion, a block removal, or a structur
 5. **Tier classification** (§7.2) by block count and materials.
 6. **Awakening (Tier 1 only).** One Rapier body per cluster (`dwell-physics`):
    - Shape: a compound collider of cuboids, the cells merged into boxes (built for felling,
-     0.49.29, above).
+     0.49.29, above); a shaped cell (a stored ramp, e.g. a felled trunk's upside-down wood ramp) is
+     its shape's convex hull, never merged (`PieceCell::hull`, 0.51.0); **[in progress, 0.51.0]** a
+     cell whose hull is an octagonal log (ADR 0072, Phase 55 T4) is its octagon prism's hull, its
+     sides joined to the same axis's logs beside it in the piece as the terrain's
+     (`PieceCell::joined`) and a run of one log along its axis merged into one prism
+     (`merged_boxes`, `octagon_hull_points`); `piece_hull` doesn't give logs that hull yet (a
+     player's push didn't slide an octagonal log), so felled logs collide as boxes.
    - Mass / center of mass / inertia from per-voxel material density.
    - Inherits impulse from the triggering explosion, if any.
    - Assigned a `NetworkEntityID` (`uint32`, never reused within a session) and added to the
@@ -2762,7 +4110,7 @@ felling's bodies. An explosives table as data (`shared/explosives/explosives.jso
 → `dwell-world` `explosives.gen.rs`, validated against the registry, CI stale check): each explosive's
 placed and lit blocks (`dwell:dynamite`, `dwell:lit_dynamite`), what lights it, its fuse, radius, destroy radius
 (**[built, 0.49.38]**), impulse, falloff, lift, speed cap, players' reach, knockback and damage, water radius, chain delay range and
-the clients' effects; `limits` (blasts a tick, pieces a blast). A Place with a torch held, aimed at
+the clients' effects; `limits` (blasts a tick, pieces a blast, pieces spawned a tick (`piecesPerTick`: the rest wait in a queue, nearest first, their cells already cleared; 0.51.12, EXPLOSIVES.md §3.12), and the clients' puffs at once, shared by the blasts in flight, 0.50.16). The clients' smoke and dust puffs are lit once each, at their centre in the vertex shader (the shadow maps read there; the frame group's shadow bindings visible to the vertex stage), the shape per pixel (0.51.11, [`EXPLOSIVES.md`](./EXPLOSIVES.md) §4). A Place with a torch held, aimed at
 dynamite, lights it (`check_block_edit` → `explosives::ignites`, shared with the prediction). The server
 (`dwell-sim` `blasts.rs` `Fuses`, `Server::blast`) burns fuses after the tick's edits and blows the
 ones out (at most `blastsPerTick`): one `Explosion` modification clears the explosive and every cell in
@@ -2776,14 +4124,15 @@ host refills the crater) and the water within `waveReachM` is kicked outward (`w
 `Wave` sent to the water host as `In::Wave`; held water within `waveFreeM` freed, so the wave runs to
 the banks and reflects; EXPLOSIVES.md §3.5, WATER_SURFACE_GRID.md §2f; **[built, 0.49.48]**), `indestructible` blocks stay, explosives caught in it are lit with a short
 random fuse; bodies are pushed by their distance (players' damage is `DamageCause::Explosion`); what it leaves unsupported falls. **[built, 0.49.41]** Two options as data, both off in the
-shipped dynamite (5 m since 0.49.46, EXPLOSIVES.md §3.3): `loosenRadiusM` (cells from `radiusM` out to it become pieces
+shipped explosives (5 m since 0.49.46, EXPLOSIVES.md §3.3; a short `noPieceContactS` measured again in 0.50.15 and
+not adopted, EXPLOSIVES.md §3.9): `loosenRadiusM` (cells from `radiusM` out to it become pieces
 with no impulse) and `noPieceContactS` (a blast's pieces kept apart from one another for that long:
 `dwell_physics` `Physics::set_apart` moves their colliders from the Tier 1 group to a fourth group,
 `APART`, that every layer's filter takes but its own; past the window `Server::rejoin_apart` returns each
-once `overlaps_pieces` finds it overlapping no other piece). Saved worlds re-light lit explosives when their chunks
+once `overlaps_pieces` finds it overlapping no other piece). A third option, `shell` `crack` (yellow dynamite, **[built, 0.49.50]**): only the shell's cells that touched open space before the blast, or (`crackOverCleared`) sit on the cleared core, become pieces, given no push; the rest stays (`explosives::cracking`, EXPLOSIVES.md §3.6). Saved worlds re-light lit explosives when their chunks
 load. Clients start a blast's effects when an `Explosion` modification turns a lit explosive's cell to
 air (`dwell-client` `blasts.rs`): a flash (a point light and a fireball), smoke and dust billboards
-(`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`), the `explode` sound by distance and
+(`render/blasts.rs`, the flames' pass; a CPU adapter's `cpuCount`) turned toward the blast's open side by `openBias`, read from the client's own cells before they clear (`blasts::open_way`, **[built, 0.49.51]**), the `explode` sound by distance and
 a screen shake of the drawn view, each a setting (Settings → Explosions, `dwell.explosions`). No new
 wire message. A 4 m blast natively: 512 pieces, its tick 9.5 ms, ~18 s until all are blocks again.
 **Its cost** **[built, 0.49.33]**: a client meshes a one-cell piece once per state (and face) and keeps
@@ -2842,6 +4191,15 @@ a second for 2–3 s once the world's LOD has settled — EXPLOSIVES.md §6.
 
 ### 7.4 Tunable constants
 
+Bloom's look and tiers are data in `shared/look/bloom.json` (threshold 0.05 of the scene's linear
+light, intensity 0.9, the up taps 1 texel apart; High ½ resolution and 5 levels, Low ¼ and 4).
+
+The light shafts' tiers, strengths, reaches, decays and per-fluid looks are data in
+`shared/look/shafts.json` (ADR 0064; High: ½ resolution, 24 samples, 4 lights at 12 samples each;
+Low: ¼, 12, 2 lights at 6; the sun 0.6, the moon 0.06, water 2.0; the placed and held lights'
+`lights`: within 20 m, faded out nearer than 1.5 m, 0.4 of the strength by day, the torch 0.35 with
+a 1.2 m halo, the fuse 0.15 with 1 m, a halo at most half a screen height).
+
 The source spec left several thresholds unspecified. The values below are **initial defaults**
 to be tuned. Shared ones live in `shared/protocol/constants.json`, generated into Rust
 (`dwell_protocol`, `crates/dwell-protocol/src/constants.gen.rs`: `SIM_HZ`, `world::…`, `lod::…`,
@@ -2854,8 +4212,10 @@ in the code yet.
 | Constant | Default | Meaning |
 |---|---|---|
 | `SIM_HZ` | 60 | Physics steps per second (server and client prediction) |
-| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; a wave of 3 m/s outward within 6 m, held water freed within 24 m (0.49.48); chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the effects' numbers **[built, 0.49.32]** |
-| felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
+| explosives (`shared/explosives/explosives.json`) | see [`EXPLOSIVES.md`](./EXPLOSIVES.md) §2 | Dynamite: a 3 s fuse, 5 m radius, the inner 2 m destroyed outright (0.49.38; 4 m and no core before), impulse 9,000 N·s, falloff 1.5, lift 0.5, at most 22 m/s; players within 7 m: 22 m/s knockback by (1 − d / 7)^1.5; 160 damage by (1 − d / 2)^1.5, none past 2 m; water blown out within 3 m; a wave of 3 m/s outward within 6 m, held water freed within 24 m (0.49.48); chained fuses 0.15–0.6 s; at most 1 blast a tick and 1,200 pieces a blast; the clients' smoke and dust at most 64 puffs at once, each blast at least 0.15 of its own (0.50.16); the effects' numbers **[built, 0.49.32]** |
+| felling tunables (`shared/physics/felling.json`) | see [`FELLING.md`](./FELLING.md) §5 | The support search's reach and bounds, a falling piece's topple spin (about its foot, its farthest point at most `toppleTipSpeed` 4 m/s, 0.40.6), sleep (`sleepSeconds` 1 s, `restDrift` 0.1 m, 0.49.29) and timeouts, settles batched every `settleEveryTicks` (6), hit damage (`hitSpeed` 4 m/s, `hitDamagePerSpeed` 6), held from players' contacts while slower than `holdSpeed` (1 m/s) or pushed in the last `pushHoldSeconds` (0.25 s), moved by their push (0.41.5); a piece settles once and stays (`maxSettles` 1, 0.41.5) **[built, 0.37.1]**; a piece afloat settles only `beachSeconds` (2 s) out of the water (bodies.json `settlesAfloat` false for natural ones; BUILT_BODIES.md §6a) **[built, item 45]**; the clients' settle glide (`settleGlideSeconds` 0.3 s, `settleBounce` 0.12) **[built, 0.40.3]**; terrain collision built round pieces at most `terrainChunksPerTick` (4) chunks a tick **[built, 0.40.5]** |
+| vitals (`shared/vitals/vitals.json`) | see ADR 0069 | Stamina: 100 points; sprint 12, swim 6, tread 4 a second; regen 20 a second after 1 s without spending; exhausted at 0 until back to 25 %; an exhausted swimmer sinks at 1.2 m/s; an axe swing its tool's `staminaCost` (8). Oxygen: 20 s with the head under (0.9 of the capsule submerged), refilled 10 s a second; out of air, 10 damage a second **[built, 0.50.57]** |
+| skinned models (`shared/models/models.json`, `dwell-models`) | see ADR 0070 | Per model: scale, yaw, each role's clip and speed (the Peasant's sprint is its walk at 1.8×), the fallback role, the hand (joint `hand.R` onto `hand_r`, 5 cm along the joint, turned −2°, 1°, −175°); in code: 0.2 s cross-fade (`anim::BLEND_S`), at most 64 joints (`MAX_JOINTS`), 4 joints a vertex, clips sampled at 15 keys a second by the import **[built, Phase 54 S1]** |
 | `SNAPSHOT_HZ` | 20 | Snapshot broadcast rate |
 | `probes.max_slope_angle` (`config.rs`) | 56° | The steepest ground (above the 45° ramps); steeper faces are walls (PLAYER_CONTROLLER.md §6.2) |
 | `slide.min_angle` / `friction` / `terminal_speed` (`config.rs`) | 44° / 0.3 / 14 m/s | Ground under the player steeper than this slides (owner, 2026-10-15), pulled by `g (sin θ − friction cos θ)` up to the terminal speed along the slope (PLAYER_CONTROLLER.md §6.8) |
@@ -2867,7 +4227,7 @@ in the code yet.
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). Walking, running and momentum; walking and running keep the ground |
 | `movement.slide_stick_rise_speed` / `slide_stick_drop_speed` (`config.rs`) | 0 / ∞ m/s | The same limits for a slide (a sprint slide, a crouched steep slide; owner, 2026-11-06; PLAYER_CONTROLLER.md §6.11): none of its rise is taken, so it flies off a ramp's top at the ramp's angle on its own momentum, and it follows every ramp down (glued) |
 | `movement.acceleration` / `deceleration` / `reverse_deceleration` / `air_control` (`config.rs`) | 50 / 15 / 60 m/s², 0.2 | The walking rule (owner, 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.12): the horizontal layer works on the whole velocity; input adds up to the walking speed and never stacks on momentum; `deceleration` is the ground's friction for any speed above that or with nothing held; in the air the push (`acceleration × air_control`) never slows the body or builds speed past `max(walk speed, |v|)`, only turning a faster body (no strafe-jumping) |
-| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 10 m / 20 m / 2 (landing at 20 / 28.3 m/s) | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; 10 m / 20 m in 0.49.22; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
+| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 5 m / 15 m / 2 (landing at 14.1 / 24.5 m/s) | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; 10 m / 20 m in 0.49.22; 5 m / 15 m from 2026-11-14; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
 | `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
@@ -2893,7 +4253,7 @@ in the code yet.
 | Controller tuning | see `PLAYER_CONTROLLER.md` §7 | Capsule, speeds, jump, crouch, climb, swim, push, damage |
 | `RECONCILE_SNAP_DISTANCE` | 1.0 m | Correction above this snaps instead of smoothing |
 | `PREDICT_PROXY_RADIUS` | 16 m | Tier 1 bodies within this use present-time proxies |
-| `RESPAWN_SECONDS` | 5 s | Death → respawn delay |
+| defeat `kneelS`, `fadeS`, `standS` | 4 s, 1 s, 1.4 s | Defeat → kneel, fade, stand at the shrine (`shared/defeat/defeat.json`, per character) |
 | `MAX_HEALTH` | 100 | Player health |
 | `MAX_INPUTS_PER_DATAGRAM` | 4 | Input redundancy per `PlayerInput` |
 | `REACH_DISTANCE` | 5 m | Block break/place reach from the eye (§6.5; the server allows 1 m more for latency) |
@@ -2917,6 +4277,7 @@ in the code yet.
 | `CORE_ANCHOR_LAYERS` | 8 | Rows (4 m on ½ m cells) either side of the midplane that anchor both faces (Phase 20); within `CORE_LAYERS` (checked at compile time) |
 | `bedrock.thickness` (`shared/worldgen/midplane.json`) | 1 m (2 rows) per face | The indestructible bedrock's rows from the midplane on each face (Phase 48); within `CORE_LAYERS` (validated) |
 | `portals` (`shared/worldgen/midplane.json`) | 4–8, ≥ 3 km apart, within 26 km, ≤ 40 m above sea, radius 2.5 m | The seeded portals through the bedrock: count, spacing, siting, shaft radius, rim (stone, 1 m × ½ m), ladder (south wall), 4 m clear ground (Phase 48, BIFACIAL_WORLD.md §12) |
+| `portals.exit` (`shared/worldgen/midplane.json`) | push 30 m/s², depth 2 m, minRise 10 m/s | The shaft's exit push: a body rising fast through the 2 m over a shaft's opening is pushed along its facing and lands ~6 m from the axis on the ground beside the opening (the controller's `step_portal`, BIFACIAL_WORLD.md §12.3) |
 | `WORLD_RADIUS` | 50 000 m | Radius of the world disc; beyond it, the void |
 | `ISLAND_RADIUS` | 25 000 m | The interim island's mean radius, absolute (owner, 2026-10-15; the terrain definition's layout in Phase 17) |
 | `FLAT_TOP_Y` | 64 rows (32 m) | The flat worlds' surface (the flat test world, the structure sandbox); metre twin `FLAT_TOP_M` |
@@ -2931,12 +4292,20 @@ in the code yet.
 | `UNLOAD_MARGIN_CHUNKS` | 1 | Hysteresis before chunks leaving the view are unloaded |
 | `CHUNK_BYTES_PER_SECOND` | 1 MiB/s | Terrain bandwidth budget per client |
 | `MAX_CHUNKS_PER_TICK` | 32 | Chunk messages per client per tick |
+| `STREAM_DEADLINE_MS` (client, `dwell-game` `stream_budget.rs`) | 8 ms | When a frame's terrain loading (the flood light of arrived chunks, then the mesh job starts) stops, after the frame's start: ~9 ms of `frame.cpu` with the LOD and the draw after it (measured: 9.0–9.6 ms mean in flight, 7 ms gave 8.2–8.5). One budget for both (0.50.14; before, 4 ms each, `mesh_dirty` 6–7.5 ms a frame in flight, docs/DEV_TOOLS.md "Flight loading") |
+| `STREAM_MIN_MS` / `STREAM_FRAME_SHARE` / `STREAM_MIN_MAX_MS` (client, `stream_budget.rs`) | 2 ms / 0.15 / 50 ms | The least a frame's loading gets however late the frame: 2 ms, or 0.15 of the last frame's interval on a slow page (CI's ~5 fps: 30 ms), at most 50 ms |
+| `SLOW_FRAME_MESHES_MAX` (client, `pool.rs`) | 8× | A slow page keeps more chunk meshes in flight: the usual number × its frame interval / 16.7 ms, at most 8×, queued in the pool and started as workers free between frames (at CI's ~5 fps a few starts a frame left the workers idle and the loading screen waited its 20 s timeout) |
+| `STREAM_MESH_SHARE` (client, `stream_budget.rs`) | 0.4 | The budget's share the light leaves to the mesh starts while chunks wait to be meshed |
+| `LIGHT_SLICE_CELLS` (client, `chunk_stream.rs`) | 1024 | Cells of a chunk's flood light between looks at the clock: ~0.1 ms natively, ~0.5 ms on a phone's CPU; one chunk's light was 15–20 ms of a frame at CPU 6× (BUGS.md #72) |
+| `collisionCellsPerTick` (client prediction, data: `shared/render/streaming.json`) | desktop 8192 (the server's `COLLISION_CELLS_PER_TICK`), phone 1024 | Terrain collider cells a prediction tick puts in outside the player's reach; the cells within reach go in at once, so the player moves the same. The 8192 were 8–10 ms of a tick at CPU 6× (BUGS.md #72) |
+| `collisionAhead` (server and client prediction, data: `shared/render/streaming.json`; the server's `CollisionAhead::default`) | 1 s of travel, ≤ 48 m, reach + 1 m, ≥ 1 m/s; desktop/server 2 chunks a tick, phone 1 | Terrain collision built for the chunks a moving player is heading into before its reach gets there; what is built ahead only arrives sooner, so the player moves the same. Natively flying at level 6 over the seed-0 terrain no chunk was reached unbuilt (62 were) and the worst terrain tick fell (BUGS.md #72 round 7) |
+| `uploadBytesPerFrame` (client, data: `shared/render/streaming.json`) | desktop 4 MiB, phone 512 KiB | The chunk mesh bytes one frame uploads (the first mesh always goes; the rest wait in order); a mesh larger than it is written over several frames, this much a frame (`render/staged.rs`). On the bench's phone page at CPU 4× an upload costs ~4 ms a MB and moving brought bursts of 1.8–3.7 MB in a frame (BUGS.md #72) |
 | **LOD (§6.6), Phase 4** | | |
 | `LOD_SECTION_CELLS` | 32 | Cells per LOD section edge (level 0 = a chunk) |
-| `LOD_MAX_LEVEL` | 12 | Root level (131 km); one section holds the whole disc and build volume (Phase 16, was 19) |
+| `LOD_MAX_LEVEL` | 15 | Root level (1,049 km); one section holds the largest world size's disc and build volume (BIG_MAP.md M1, protocol v23; Phase 16 had 12, before it 19) |
 | `LOD_INDEX_LEVEL` | 8 | Level of the modified-section index sent to clients |
 | `LOD_PIXEL_ERROR` | 4 px (desktop) / 8 px (mobile), CSS pixels; a setting (1–16) | Refine a node while its cells project larger than this (ADR 0012's 2 px drew ~3× the sections, §6.6), times the error scale below |
-| LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps, 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
+| LOD error scale (client, `dwell-lod` `system.rs`) | ×1.15 steps finer, ×√(in use / budget) in 1.15–2 coarser (`MAX_COARSER_STEP`), 1–16 | Coarser (≤ 1/s) while the view's sections exceed `LOD_CACHE_MB`, finer (≤ 1/10 s) under 60% of it; an overflowing finer step is retried after 512 m (§6.6) |
 | LOD cross-fade (`shared/look/lodblend.json` `fadeS`, `pattern`) | 0.4 s, `bayer4` | How long a swap between levels cross-fades, and the per-pixel dither it fades by (0 s: in one frame; §6.6 Swaps) |
 | LOD hysteresis (`shared/look/lodblend.json` `coarsenRatio`) | 1.3 | A refined node coarsens only once its cells project under the pixel error / this (and chunks within the full-detail distance stay out to this × it; 1: none) |
 | Full-detail distance (client, `dwell-lod` `detail.rs`) | 256 m desktop / 128 m mobile (96–352 m) | Chunks are drawn out to it (a setting; §6.6) |
@@ -2952,7 +4321,7 @@ in the code yet.
 | Sky floors out (`sky_columns.rs` `IN_FLIGHT`); inline budget (`server.rs` `SKY_FLOOR_BUDGET`); cached (`air_columns.rs` `MAX_CACHED`) | 8; 1 ms (at least one a tick); 16,384 columns | The air test's costly part off the tick (§6.3, *Sky floors off the tick*): at the server-jobs worker or the thread at once; computed on the tick without either; the cache starts again past it |
 | Exposure (client, `dwell-look` `DEFAULT_EXPOSURE`) | 1.0 (0.4–2.5) | Tone-mapping exposure, a slider in the settings menu (Phase 7); the time of day's keyframe exposure multiplies it (Phase 32) |
 | Day length (`shared/look/daynight.json` `clock`) | 20 min day + 10 min night; 07:00 at tick 0 | The day/night cycle's clock (Phase 32), shared with tree growth; public API (every build of a line must agree) |
-| Shadows (`shared/look/shadows.json`; DAY_NIGHT.md §10) | Low: 2 cascades of 1024², 80 m, split λ 0.6, PCF 1.25 texels × 2² taps, moving casters every 6 frames; High: 3 of 2048², 160 m, λ 0.75, 1.25 texels × 2², every 4 frames; both at most 1 far cascade drawn a frame; far boxes 10 % wider than their distance (the slack), drawn again after the light turns 0.25°; the maps' light in steps of 0.05° along its path; first range from 0.5 m, radius step 1 m, casters 120 m toward the light, the last 20 % faded to the stand-in, spyglass up to 640 m; normal offset 1.5 texels, compare bias 0.04 m, slope scale 1.5; the sun's shadows fade in from 0° to 8° of elevation, the moon's from 2° to 12°, both at strength 1 | The sun's and moon's cascaded shadow maps (Phase 44): how many maps, how big and how far per Shadows setting; the bias against acne and peter-panning on ½ m steps and ramps; how the shadows follow the time of day |
+| Shadows (`shared/look/shadows.json`; DAY_NIGHT.md §10) | Low: 2 cascades of 1024², 80 m, split λ 0.6, PCF 1.25 texels × 2² taps, moving casters every 6 frames; High: 3 of 2048², 160 m, λ 0.75, 1.25 texels × 2², every 4 frames; both at most 1 far cascade drawn a frame; far boxes 10 % wider than their distance (the slack), drawn again after the light turns 0.25°; the maps' light in steps of 0.05° along its path; first range from 0.5 m, radius step 1 m, casters 120 m toward the light, the last 20 % faded to the stand-in, spyglass up to 640 m; normal offset 1.5 texels (a tree's leaves at least 0.35 m, every cascade), compare bias 0.04 m, slope scale 1.5; plants in the nearest 1 (Low) or 2 (High) cascades, a tree's leaves in all; cascades blended over their boxes' outer 15 %; the sun's shadows fade in from 0° to 8° of elevation, the moon's from 2° to 12°, both at strength 1 | The sun's and moon's cascaded shadow maps (Phase 44): how many maps, how big and how far per Shadows setting; the bias against acne and peter-panning on ½ m steps and ramps; how the shadows follow the time of day |
 | Distant terrain shadows (`shared/look/lodshadows.json`; DAY_NIGHT.md §12) | Heights −16 to 4096 m face-local (over the highest ground, ~2.6 km; was 1536 m until 2026-10-26, docs/BUGS.md 3); march from 1.5 texels, bias 1.5 m, penumbra 1.5°, edge fade 20 %; refill after ⅛ of a map's half-width moved or 10 s, re-sweep after the light turns 0.5°; Low: one 512² map of 8 m, 16 steps to 2 km, fills of 60k triangles / 64 draws a frame, 32 rows swept a frame; High: two 1024² maps of 4 m and 16 m, 24 steps to 5 km, 80k / 96, 32 rows |
 | Torch shadows (`shared/look/lights.json` `shadows`; LIGHTS.md §4) | Low 2 lights of 6 × 256², High 4 of 6 × 384²; 2 lights' maps drawn again a frame at most; placed torches within 24 m at 0.6 of their strength; near 0.05 m, bias 0.06 m, normal offset 0.04 m, faces 2·atan(1.08) wide | The Torch shadows setting's maps (Phase 47 T2) |
 | Portal motes (`shared/look/motes.json`; BIFACIAL_WORLD.md §12.1) | Drawn within 64 m of a portal's crossing point, 256 a frame at most; `dwell:portal`: 40 motes (none on a CPU adapter) of 0.05 m, #4f9dff with a #d8f0ff core, glow 1.6, within 2.1 m of the axis and 3 m either side of the midplane, 0.08 turns/s, drifting 0.18 m/s, wandering 0.25 m, pulsing 0.5 Hz to 60 % | The blue motes at a portal's crossing (Phase 48 M, owner 2026-10-21) |
@@ -2960,21 +4329,25 @@ in the code yet.
 | Dynamic lights (`shared/look/lights.json`; LIGHTS.md §3) | 8 lights a frame (the shader holds 16), within 64 m of the eye, nearest first; falloff on curve 3 (the block light's), wrap 0.5; a self-lit surface's brightest channel 0.7 at most (`glowPeak`); the torch (`dwell:torch` in `shared/blocks/dwell.json`): #ff8a3d × 3.8 at the flame, 14 m radius, flicker 16 % at 6 Hz | The held torches' light, per fragment (Phase 47) |
 | Ambient light (`shared/look/ambient.json`; DAY_NIGHT.md §9) | AO strength 0.6; 16 rays of 4 m, a 3.5 m probe; floor 0.08; sky apron 6 cells across, 16 rows up and down (`dwell_world::SKY_APRON`, code constant) | The baked corner occlusion and sky visibility of terrain vertices (Phase 43): each occlusion level below open darkens the ambient by strength/3; a ray escapes if it runs its length through no light-blocking cell and nothing is within the probe above its end; a fully occluded vertex keeps the floor of the hemisphere light. The reach must fit the apron (checked at build time), and an edit within the apron of a border re-meshes the chunk across it |
 | Flood light (`shared/look/light.json`; DAY_NIGHT.md §11) | Falloff 1 level per cell across and vertically; sky curve 4, block curve 3; direct from level 8 (none) to 15 (all); block light #ff9a52 × 1.2; blocks: leaves filter 2, water 1, full non-see-through cubes 15 (default), the rest 0 | Per-cell sky and block light on the client (Phase 45): light spreads 15 m across, 7.5 m vertically; the sky curve sets how dark a tunnel gets with depth (about the floor 10 m in), the direct ramp how far daylight reaches in (none past about 7 m) |
-| Day/night look (`shared/look/daynight.json`) | 14 keyframes; noon elevation 60°; sun 1.5° (×1.4 at the horizon); moon 1.2°, 8-day phases, 55% light at new moon; stars 6% of 160² cells per cube face | First pass, for the owner's review (`DAY_NIGHT.md` §8). GPU: about +0.1 ms `gpu.composite` for the sun, moon and stars at 1280×720 (Apple GPU, `day-night-cost`) |
+| Day/night look (`shared/look/daynight.json`) | 14 keyframes; noon elevation 60°; sun 1.5° (×1.4 at the horizon); moon 1.2°, 8.25-day phases, 55% light at new moon; stars 6% of 160² cells per cube face | First pass, for the owner's review (`DAY_NIGHT.md` §8). GPU: about +0.1 ms `gpu.composite` for the sun, moon and stars at 1280×720 (Apple GPU, `day-night-cost`) |
+| Atmosphere (`shared/look/atmosphere.json`; DAY_NIGHT.md §15) **[built]** | Base 3 km, top 80 km above sea level (face-local), scale height 9 km; space #020309; stars at full in space; limb 1.6° wide at the rim 50 km away; sun 85% to white, bloom 0.3; fog × (1 − thinning); clouds' and plumes' tops under the top (clouds.mjs, `PlumeList::pack`) | Today's sky exactly at or below the base (golden test); one uniform-gated branch in `dwell_sky`, so every tier, the CPU adapter included, pays nothing on the ground |
 | Water ripples (client, `render/water.rs` `LAYERS`, `FADE_LO`/`FADE_HI`, `WRAP_M`, `MIN_ALPHA`) | 3 layers at 1, 0.43, 0.17 × the fluid's wave scale; fade over ⅛–½ wavelength per pixel; wrap 1,024 m; glint α ≥ 0.05 | The water shader's normal detail (Phase 26 W1b); per-fluid values are registry data |
 | Water tiles (client, `render/water.rs` `NOISE_TILE`/`NOISE_TEXELS`, `CAUSTIC_TILE`/`CAUSTIC_TEXELS`) | noise 32 cells × 16 texels (512²); caustics 16 cells × 32 texels (512²) | What the ripples and caustics sample (WATER_RENDERING.md §8 "Cost"); periods round to whole tiles |
 | Frames in flight (client, `render/pacing.rs` `MAX_IN_FLIGHT`, `GIVE_UP_MS`) | 2; 1,000 ms | A draw is skipped while the GPU is this far behind |
-| Water quality (client, `ui/waterSettings.ts`) | High on desktops, Low on phones | Settings menu; W1b: Low one ripple layer, Medium and High three |
+| Graphics presets (client, `shared/settings/graphics-presets.json`; DEV_TOOLS.md, Graphics presets) | Low, Mobile, Medium, High, Ultra; default High on desktops, Mobile on phones; High and below at 50 % Stretch, Ultra 100 % | Settings → Graphics's Preset slider; each preset names every graphics setting it sets |
+| Feature settings (client, `ui/featureSettings.ts`, the append-only `dwell.features` record; WORK_QUEUE item 30) **[built]** | Tall grass 100 %, Far trees on, Distant shadows on (at the Shadows tier), Hit shards 100 %, Particles 100 %, Far herds on, in every preset (what was drawn before them) | Settings → Graphics: Tall grass → the mesh job's `ChunkFlags::plants` (percent of cross plants kept by cell hash, `dwell_mesh::plant_kept`; codec byte after the flag bits); Far trees → the far tree impostors' tier (`impostors.json` `far.tiers` `on`/`off`, render/impostors.rs; the LOD sections' tree cells, `Job::MeshSection` bit 1, only with `?impostors=0`); Distant shadows → `render::lod_shadows::lod_shadows_for`'s `distant`; Hit shards and Particles → `effect_share::Share` on `hit_shards`, `chips` (chips, sparks, leaves) and `steam`; Far herds → `Game::far_herds_shown`. Chunks and sections meshed after a change follow it. `graphicsAudit.test.ts` fails on a tier function, look file, `ChunkFlags` field or CPU-tiered effect module with no setting or stated reason |
+| Render scale (client, `shared/render/upscale.json` `default`) | 50 % Stretch (100 % before 0.50.28) | A new player's default; a stored choice is kept |
+| Water quality (client, `ui/waterSettings.ts`; tiers in `shared/look/watertiers.json`) | Medium on desktops (High and Ultra presets), Low on phones (Low and Mobile presets); the opaque tier on a CPU adapter | Settings menu; Low: blended, no copy, opacity 0.9, surface caustics (0.6 m, gain 0.3), one ripple layer, no streaks; Medium: copy, three layers, streaks, SSR. Bank band (no tier) `reachM` 6, `depthSlack` 0.6, taps 6/4 px, `darken` 0.25, `strength` 0.85; caustic tile every 2 frames; heightfield (no tier yet) `joinM` 0.2 |
 | Water grid's budgets (`shared/fluids/flow.json` `stepBudget`, `threadStepBudget`, `maxOwedS`; §6.7) | 40,000 column-substeps a water tick inline; 200,000 a run on its own thread; 360 water s owed at most | Inline the rest of a tick's water time is lost; on its own thread it is owed, past `maxOwedS` dropped (ADR 0062) |
 | Water record lead (`dwell-sim` `server.rs` `WATER_RECORD_LEAD_TICKS`, `WATER_CLOSE_WAIT`) | 30 ticks; 1 s | The record is asked for this long before an autosave; closing a world waits this long for a fresh one |
 | Spyglass (client, `shared/look/spyglass.json` → `dwell-look` `spyglass.gen.rs`) | Key `` ` ``; steps 4× and 8×; detail boost 4; 0.25 s transition; vignette clear to 0.95, 60 % of #05070a from 1.6 half-heights | The zoom, the LOD's detail inside its cone and its look ([`SPYGLASS.md`](./SPYGLASS.md)) |
 | Loading screen (client, `shared/look/loading.json` → `dwell-game` `loading.gen.rs`) | Near ring: the view sphere of 3 chunks (≤ `VIEW_RADIUS_CHUNKS`); timeout 20 s | How long the join waits behind its loading screen (§6.3) |
 | Respawn preload (`shared/look/loading.json` `respawnPreload` → `loading.gen.rs`, `dwell-sim` `respawn_preload.gen.rs`) | On; the view sphere of 3 chunks around the respawn (≤ `VIEW_RADIUS_CHUNKS`); chunk requests within 2 chunks past it | What a death streams and readies for the respawn (§6.3) |
 | Loading fade (shell, `shared/look/loading.json` `fade` → `client/src/ui/loading.gen.ts`) | `#fffdf6`, hold 0.12 s, 0.8 s ease-out power 3; CPU adapter 0.2 s; reduced motion 0 (none) | The fade in from white when the loading screen opens (§6.3) |
-| Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 10 stages (page, game, graphics, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
+| Loading stages (shell, `shared/look/loading.json` `stages` → `client/src/ui/loading.gen.ts`) | 11 stages (page, game, graphics, shaders, worldFile, worldMap, server, spawn, connect, join, terrain); slow past 3 s | What the loading screen lists while the game starts, with times (§6.3) |
 | `OFF_VIEW_PRIORITY` (client, `dwell-lod` `system.rs`) | 1/8, beyond the full-detail distance only | The LOD's load order outside the view (§6.6) |
 | Water reflections (client, `shared/look/reflections.json` → `dwell-look` `reflections.gen.rs`) | Low: sky only; Medium: 12 march + 8 refine steps, 24 km, 3 cloud octaves; High: 28 + 10, 48 km, 5 octaves with self-shadow; thickness 1.5 m + 3 %, edge fade 12 % of the screen height (top and bottom only), distance fade 30 %, the land's ray steered by 0.3 of the ripples' slope; land and clouds reflected only where the surface reflects over 5 % (faded in to 10 %); a phone's Medium: 8 + 5 steps, 2 octaves | Screen-space reflections of land and the clouds in the water (Phase 26 W5a, `WATER_RENDERING.md` §8) |
-| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); High costs about 0.9 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, Low about 0.7 ms; from above with the deck over most of the screen about 0.9 ms |
+| Clouds (client, `shared/look/clouds.json` → `dwell-look` `clouds.gen.rs`) | deck 1.8 km up on a 400 km sphere, 1 km cells repeating every 128 km, 5 / 3 octaves (High / Low), coverage 42%, wind 6 m/s toward 70° | The sky's cloud layer (§6.6 Clouds, `CLOUDS.md`); Low (the deck) costs about 0.7 ms more composite GPU time than Off at 1280 × 720 on an Apple GPU, from above about 0.9 ms; the volume (layer 1350–2700 m): High (½ resolution, 16 steps, 1 light sample) about +0.5 ms from the ground and +1.5 ms from above, Medium (¼, 10 steps) +0.3 and +0.9 ms (`CLOUDS.md` §8.3) |
 | Height fog (client, `shared/look/fog.json` → `dwell-look` `fog.gen.rs` `FOG`) | distance 16 km, density 95%, height 1.8 km | Fixed, look data, not a setting (§6.6; owner, 2026-10-21: a clear day, about 100 km visibility, so the island's far side reads hazy like a mountain 40 mi off) |
 | Footstep strides (client, `shared/sounds` `gaits`) | walk 2.0 m, run 2.7 m, crouch 1.1 m, climb 0.75 m, swim 2.4 m | Distance between footsteps, climbing and swim strokes (§5.2), with each gait's loudness |
 | Sound speed ranges (client, `shared/sounds` `events.*.speed`) | land 3.5–16 m/s, enter 1.5–12, exit 1–6, rise/dive 2–30 | Speed at which an event starts sounding and at which its intensity reaches 1 |
@@ -3067,7 +4440,7 @@ protocol v5); `LodIndex` 0x13, `LodIndexUpdate` 0x14, `LodData` 0x15, `LodReques
 state and flags, and the wider `pos64` range for creative flight (Phase 4; protocol v7); `ChunkRequest`
 0x4D for full detail beyond the view (Phase 4; protocol v8); the flight speed level in `PlayerInput`'s
 `buttons` (Phase 4; protocol v9); `HostStatus` 0x4E and the `ServerClosing` reject reason
-(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21); `WaterCurrents` 0x83, an optional datagram (water currents, Phase 53 G3a, §6.7; still protocol v22: a client that doesn't know it drops it as any unknown datagram) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
+(Phase 5c; protocol v10); the block registry hash in `Welcome` (Phase 8; protocol v11); the row `j` in `LodIndex` entries and the `faceB` bits of `controllerFlags` and `playerFlags` (Phase 13; protocol v12); `RegionEdit` 0x4F and the `regionEdits` Welcome flag (structure sandbox S3; still protocol v12, an addition within the 0.10 line negotiated by the flag, §10.5); the `KEEP` paste cell and the `brushes` Welcome flag (Phase 34; still protocol v12, negotiated by the flag); `BlockRegistry` 0x50 and the definitions hash in `Welcome` (registry sync, ADR 0038; protocol v14); `slideFlags` and the slide cooldown in the local player's controller state (the sprint slide, Phase 37; protocol v15); `EditAck` 0x51 (edit prediction, Phase 34 B4; protocol v16); `HeldItem` 0x52 and each remote player's `held` and `swing` in `PhysicsSnapshot` (characters, Phase 40 C1; protocol v17); ½ m cells (Phase 41, ADR 0042; protocol v18: no layout change, but positions, chunk rows and the registry's shapes mean ½ m cells, and the registry's `adaptive` rule flag is gone); the piece byte (`rows`, `down`) on every `BlockEditRequest` and the registry's `onSlopes` flag, `moldable` field and `behind` support (items and placement rules, 0.29.0, [`ITEMS.md`](./ITEMS.md); protocol v19); `EntitySpawn` 0x16, `EntityDespawn` 0x17 and the pieces in `PhysicsSnapshot` (falling pieces, 0.37.0, [`FELLING.md`](./FELLING.md); protocol v20); the body kind in `EntitySpawn`, `BodyEditRequest` 0x53 and `BodyEdit` 0x18 (editing moving bodies, 0.41.0, [`BUILT_BODIES.md`](./BUILT_BODIES.md); protocol v21); `WaterCurrents` 0x83, an optional datagram (water currents, Phase 53 G3a, §6.7; still protocol v22: a client that doesn't know it drops it as any unknown datagram); `Capabilities` 0x69, the `CAPABILITIES` settings field and `RegionEdit`'s `Structure` op (capabilities, below; still protocol v22, negotiated by them) — layouts pinned by `shared/protocol/vectors.txt` (made by the independent Python
 reference encoder, including half floats; the Rust codec, `dwell-protocol`, round-trips every
 vector byte for byte and rejects every malformed one). The Rust port kept protocol v12's layouts. **Protocol v13** (Phase 18) changed no layout: client and server derived the same adaptive shapes from the same table, so a build that shaped differently could not connect (the adaptive blocks were removed in Phase 41, protocol v18). The remaining formats below are drafts, finalized in the
 phase that builds them. Enumerations and bit sets (`inputButtons`, `playerStates`, `playerFlags`,
@@ -3142,6 +4515,24 @@ u8   pieceCount                 // [built, protocol v20] the falling pieces (doc
 repeat pieceCount:
   u32 id, i32×3 position (posfix: the piece's reference cell's centre),
   i16×4 rotation (unit quaternion x, y, z, w, each × 32767), f16×3 velocity, f16×3 spin
+optional, only to a client that said SwingHello (below):
+u8   swingKindCount             // = remotePlayerCount
+repeat swingKindCount:
+  u8 swingKind                  // SwingKind of that remote's last swing: 0 Plain (the break or
+                                //   place `swing` says), 1 ChopLevel, 2 ChopVertical; unknown: Plain
+```
+**Swing kinds: `SwingHello` (datagram) [built]** (WORK_QUEUE item 17). The swing byte says
+break or place only; an axe's chop steps it as a break (what a client without the kinds plays) and
+the server keeps which swing it was (`SwingKind`, `shared/protocol/constants.json` `swingKinds`, the
+animator's roles by name: `chop_level`, `chop_vertical`). A client asks for the kinds with a
+`SwingHello` **datagram**: no `Welcome` or `Inventory` flag is free to advertise it, and an older
+server drops a datagram it can't read (a control message it can't read ends the session). The
+client sends it on a snapshot and again each second until a snapshot ends with the kinds, ten tries
+at most (`dwell-game` `remotes::SwingHello`); from then on that client's snapshots carry them, sized
+into the datagram with the remotes. An older client never says it, so it is never sent the trailing
+bytes (it refuses them) and keeps seeing a `break`; an older server never writes them.
+```
+C→S  SwingHello 0x03, datagram: (empty)
 ```
 **Client → Server: `HeldItem` (reliable, `control`) [built, Phase 40 C1; protocol v17]** — `u16 held`
 (as above, the client's block mapped to the server's id): sent when the hand changes (the hotbar's
@@ -3150,7 +4541,9 @@ empty hand) and puts it in every snapshot, so a late joiner sees it at once and 
 costs nothing; 3 bytes a remote player against an event on change, which would need its own state
 sync for joiners (CHARACTERS.md §10 Q9). Swings: the server steps a player's swing count on each
 `BlockEditRequest` (break or place) and `RegionEdit` (place: brush strokes and region tools) it
-receives; the others start the swing when they see the count change.
+receives, and on each axe swing (`ChopAction::Swing` or `Sweep`) it takes when the axe is ready (a
+break, its kind the chop's direction, above); the others start the swing when they see the count
+change.
 Phase 20 adds, for riding Tier 1 bodies (§9.4), a `u32 groundEntityId` to the local and remote
 blocks (positions become body-local when it is non-zero), and the Tier 1 entity list:
 ```
@@ -3187,16 +4580,43 @@ S→C  BlockRegistry u16 part, u16 parts, u32 length, u8[length] — part of the
                    maps every state id it receives or sends through it
 S→C  WorldSettings 0x54 (protocol v22): u8 count, each u8 tag, u16 length, bytes — the
                    world's settings (`dwell_protocol::world_settings`): tag 1 the clock
-                   (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32);
+                   (f32 day s, f32 night s, f32 start hour), 0x81 the water speed (f32),
+                   0x82 the game mode's name (UTF-8, ADR 0065; a build before modes skips
+                   it, an unknown name reads as creative), 0x85 the server's
+                   capabilities (the join's, never saved; below), 0x86 the world's orbit
+                   (`CELESTIAL`, REALISTIC_WORLD.md §8, O2 **[built]**: u8 version 1, f32
+                   pole height, pole yaw, distance, tilt, year days, year phase, the moon's
+                   month, inclination, node; written at creation only by a world with a Sky
+                   preset, a Realistic one; absent: today's orbit, byte-identical joins),
+                   0x87 whether guests may use theater mode (`THEATER_GUESTS`, u8 0 off;
+                   written only when off, THEATER_MODE.md §7);
                    a tag with the top bit set is optional (skipped by a build that doesn't
                    know it), any other must be understood ("This world needs a newer
                    version of Dwell."); before Welcome. The client uses the world's clock
-                   for the sky, not its own
+                   for the sky, not its own. Sent again while joined when the host changes
+                   the world's game mode (ADR 0065) or theater for guests; older clients
+                   ignore it then.
+                   **[built, 0.52.38]** Tag 2 (required) the world's worldgen config hash
+                   (u64 FNV-1a of its text, ADR 0074 B7), only for a world made from a
+                   config (a Chisel edit or a fixture), never saved: an older build refuses
+                   it; this one sends WorldgenRequest after Welcome and joins once the text
+                   arrives and matches. **[built, M-4]** Tag 0x84 (optional) the moon's
+                   phase at day 0 (f32, 0 new, 0.5 full; MOON_WORLD.md §6): written only
+                   for a world that sets one, absent = the build's `moon.startPhase`
+C→S  WorldgenRequest 0x62: empty, only to a server whose WorldSettings has tag 2
+S→C  WorldgenConfig  0x63: u32 length (at most 512 KiB), UTF-8 — the world's worldgen config
+                   text (`dwell_worldgen::config::world_config`); answers WorldgenRequest
 S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serverTick,
                    i32×3 verificationChunk, u8 flags (WelcomeFlags: 1 = flight — this
                    player may use creative flight; 2 = regionEdits — the server takes
                    RegionEdit, §6.5; 4 = brushes — pastes may hold KEEP cells and region
-                   edits reach the world type's brush reach, §6.5), u64 registryHash (the
+                   edits reach the brush reach, §6.5 — set in game modes with `brushes`,
+                   ADR 0065; 8 = flightPolicy — the flight policy alone, which with the
+                   mode's `flight` gives flight again after a mode change; 16 = inventory —
+                   the server keeps inventories, ADR 0066; 32 = chopping — the server keeps
+                   cuts and takes axe swings, ADR 0067; 64 = chopSweep — it sweeps swings
+                   along their path and passes held tools on, ADR 0067; 128 = vitals — it
+                   simulates stamina and oxygen, ADR 0069), u64 registryHash (the
                    definitions hash: FNV-1a 64 of the registry payload sent before it,
                    §6.1; logs and the join prompt's "don't ask again")
      or Reject     u8 reason (ProtocolVersion, Banned, Full, NotAllowListed, AuthFailed,
@@ -3206,6 +4626,193 @@ S→C  Welcome       u16 playerId, u64 worldSeed, u32 generatorVersion, u32 serv
 C→S  WorldgenCheck u64 hash — FNV-1a 64 of the client-generated verification chunk (u16 LE
                    voxels in chunk index order); 0 asks for full-chunk mode. Once, after
                    Welcome; the server streams nothing before it (§6.3)
+```
+
+**Inventories: `InventoryAction`, `Inventory`, `ItemDrops` (reliable) [built, 0.50.33]** (ADR 0066).
+New message types an older build of the line doesn't know (it would close or reject on them), so
+neither side sends one unasked: a client sends `InventoryAction` only to a server whose Welcome has
+`inventory` (16), and the server sends the other two only to a client that said `Hello`.
+```
+C→S  InventoryAction 0x55, control: u8 kind — 0 Hello (send me inventories); 1 Move: u8 from,
+                     u8 to, u16 count (0: all; onto empty or the same item merges, onto another
+                     swaps); 2 Select: u8 slot (the held hotbar slot: places take from it first)
+S→C  Inventory       0x56, control, when it changes: u8 flags (1 = the mode uses items), then
+                     the inventory record (as the `inventories` table's)
+S→C  ItemDrops       0x57, world: u16 n, each u32 id, str item, u16 count, f32×3 point; then
+                     u16 n gone ids (at most 512 each); all of them after Hello, then what
+                     appeared, changed or moved (moves 20 times a second) and what went
+```
+
+**Creatures: `CreaturesHello`, `Creatures` (reliable) [built, 0.51.13]** (ADR 0073). The server says it
+keeps creatures in `Inventory`'s flags (4 = `CREATURES`; older clients ignore the bit); a client sends
+`CreaturesHello` only to a server that set it, and only such a client gets `Creatures`.
+```
+C→S  CreaturesHello  0x5f, control: no body (send me Creatures)
+S→C  Creatures       0x5e, world: u16 n (at most 512), each u32 id, str model (≤ 64), f32×3 feet,
+                     f32 yaw (deg), f32 speed (m/s); then u16 n, each u32 id gone. All of them
+                     every 6 ticks, and at a spawn; to a `creatures.npcs` client then u16 n, each
+                     u32 id, str kind (≤ 64), u8 pose (0 stand, 1 look, 2 sit), u32 variant: the
+                     NPCs among the message's creatures
+                     (written empty for a `creatures.poses` client); to a `creatures.poses`
+                     client then u16 n, each u32 id, u8 pose (1 graze, 2 lookUp, 3 earFlick, 4 sit,
+                     5 lie): the message's creatures not standing (WORK_QUEUE item 39)
+```
+
+**Ground items: `InventoryAction` 3 and 4, `GroundGone` (reliable) [built, 0.50.68]** (ADR 0071).
+The Welcome flags byte is full, so the server says it keeps ground items in `Inventory`'s flags
+(2 = `GROUND`; older clients ignore the bit). A client sends the two new `InventoryAction` kinds
+only to a server that set it, and the server sends `GroundGone` only to a client that said
+`GroundHello`.
+```
+C→S  InventoryAction 0x55 kinds: 3 GroundHello (send me GroundGone); 4 Pick: i32×3 cell, the
+                     break action on it (the server checks an item lies there, not gone, within
+                     5.5 m of the eye, and knocks it loose: a loose item, or gone in creative)
+S→C  GroundGone      0x5d, world: u16 n (at most 4,096), each i32×3 cell gone (knocked loose);
+                     all of them (at least one message) after GroundHello
+```
+
+**Chopping: `Chop`, `Cuts`, `HeldTools` (reliable) [built, 0.50.34; Sweep, Held, HeldTools
+0.50.39]** (ADR 0067). New message types sent only when asked, as the inventory's: a client sends
+`Chop` only to a server whose Welcome has `chopping` (32), its kinds 2 and 3 only with `chopSweep`
+(64); the server sends `Cuts` only to a client that said `Hello`, `HeldTools` only to one that sent
+a `Held`.
+```
+C→S  Chop  0x58: u8 kind — 0 Hello (send me cuts; answered with at least one Cuts); 1 Swing:
+           str tool, i32×3 cell, u8 face (axis × 2 + positive, world), f32×3 point (world),
+           u8 vertical (else level); 2 Sweep: str tool, f32×3 look (world, unit), u8 vertical
+           (the server sweeps the tool's arc from its eye); 3 Held: str tool (empty: none),
+           u8 vertical (the hold; answered with at least one HeldTools)
+S→C  HeldTools 0x5A, world: u16 n, each u16 player id, str tool (empty: none), u8 vertical
+S→C  Cuts  0x59, world: u16 n, each i32×3 cell and its cut (per side f32 notch, f32×2 kerfs);
+           then u16 n gone cells (at most 512 each); all of them after Hello, then each change;
+           then, only to a client that said BitesHello, u8 1 and each cell's bites (per side u8
+           n ≤ 12, each f32 u across the side, u8 band)
+C→S  BitesHello 0x04, datagram: (empty) — send my Cuts with their bites (WORK_QUEUE item 26)
+```
+
+**The axe's bites: `BitesHello` (datagram) [built]** (WORK_QUEUE item 26). Each hit records where it
+struck across the side (`Cut::bites`, the look only: felling still reads the notch and kerfs), and
+the client carves a head-sized V there (`dwell-mesh` `carve/bites.rs`). Asked for as `SwingHello`'s
+kinds are (no Welcome flag is free; an older server drops an unknown datagram, an older client
+refuses trailing bytes): a client that has had a `Cuts` sends `BitesHello` once a second, at most ten
+times, until a `Cuts` ends with bites; the server sends all its cuts again on the first. A cut with no
+bites (an older server's or save's) is drawn as before: the notch across the side, the kerfs as
+slits.
+
+**Block damage: `DamageHello`, `Damage` (reliable), a break's struck point [built, 0.52.28]**
+(ADR 0078, docs/BLOCK_DAMAGE.md). Optional, as the creatures': a server that keeps damage sets
+`inventory_flags::DAMAGE` (8) in `Inventory` (older clients ignore the bit); a client that sees it
+sends `DamageHello` and adds the struck point to its breaks; the server sends `Damage` only to a
+client that said it. An older server never sees either; an older client is never sent `Damage`.
+```
+C→S  DamageHello      0x60: empty (send me damage; answered with every damaged cell)
+C→S  BlockEditRequest … then, optional (only to a DAMAGE server), u8×3 the struck point
+                      (1/255ths of the cell, world-oriented)
+S→C  Damage           0x61, world: u16 n (at most 512), each i32×3 cell, u8 fraction (hits /
+                      hits to break, 0..255), u8 marks (at most 4), each u8 face, u8×3 point;
+                      then u16 n gone cells; all of them after DamageHello, then each change
+```
+
+**Vitals: `VitalsHello` (reliable), `Vitals` (datagram) [built, 0.50.57]** (ADR 0069). As the
+inventory's: a client sends `VitalsHello` only to a server whose Welcome has `vitals` (128), and the
+server sends `Vitals` and the `Drown` damage cause (4) only to a client that said it (the others
+hear a drowning as `Fall`).
+```
+C→S  VitalsHello 0x5B, control: empty (send me Vitals; I know the Drown cause)
+S→C  Vitals      0x5C, datagram with each snapshot while the mode has stamina or oxygen: u32 seq
+                 (the input it is as of), f32 stamina, f32 seconds of air, u8 flags
+                 (VitalsFlags: 1 exhausted, 2 the stamina rule, 4 the oxygen rule)
+```
+
+**Damage causes: `CausesHello` (reliable) [built, slice 3]** (VOLCANOES.md §6.2). A client sends
+`CausesHello` only to a server whose `Inventory` has `inventory_flags::CAUSES` (32): the last damage
+cause it knows (`DamageCause::MAX` as built). The server sends a cause past it (from `Burn`, 5; `Weapon`, 6) to that
+client as `Fall`, as it does `Drown` to a client without `VitalsHello`; a later cause needs no new hello.
+```
+C→S  CausesHello 0x64, control: u8 the last DamageCause this client knows
+```
+
+**Steam: `SteamHello` / `Steam` (reliable) [built]** (VOLCANOES.md §6.3). A client sends `SteamHello`
+only to a server whose `Inventory` has `inventory_flags::STEAM` (128); from then on, each tick lava
+boiled water away, the server sends it `Steam`: the world cells whose water went (at most 256), drawn
+as rising puffs (`dwell-client` `steam.rs`, through the blasts' puffs). A client that never said it
+(an older build) never gets the message.
+```
+C→S  SteamHello 0x67, control: (empty)
+S→C  Steam 0x68, world: u16 count, then count × (i32 x, i32 y, i32 z) world cells
+```
+
+**Capabilities: the `CAPABILITIES` settings field, `Capabilities` (reliable) [built]** (WORK_QUEUE
+item 12). **New optional features add a capability, not a flag bit.** Both `Welcome`'s flags and
+`Inventory`'s flags are full, an extra `Welcome` byte breaks older clients (they refuse trailing
+bytes), and an unknown control message ends the session on either side; capabilities are the
+extendable way to negotiate what's left. They are named by string in a data table,
+`shared/protocol/capabilities.json` (name, description; validated by `shared/protocol/capabilities.mjs`:
+lowercase `[a-z0-9_.:-]`, a mod prefixes its own, `mymod:thing`; every name must fit one settings
+field), generated by `gen.mjs` into `dwell_protocol::capability_names` (`STRUCTURES_PLACE`, `ALL`)
+and the TS constants. A feature adds an entry and checks it by name. The exchange
+(`dwell_protocol::capabilities`):
+
+1. The server lists the capabilities it has in an **optional** `WorldSettings` field (tag 0x85,
+   before `Welcome`): a build that doesn't know the tag skips it, as any optional field. It is the
+   join's, added to what the server sends (`Server::join_settings`), never saved with the world
+   (`SettingsFields::with` drops it).
+2. A client that saw the field answers once after `Welcome` with `Capabilities`: the ones it has.
+   It never sends one to a server whose settings had no field (an older server), and an older
+   client never sends one (the server keeps an empty set for it).
+3. A feature is used on a session only when **both** sides listed its name (`Session::capability`
+   on the client: the server named it and this build has it; `Server::client_capabilities` on the
+   server). A name a build doesn't know (a newer build's, a mod's) is kept and matches nothing.
+
+Existing flags and hellos stay as they are. The first capability is `structures.place` (a saved
+structure's placement as `RegionEdit`'s `Structure` op, below). The second is `grid.frames`
+(MOON_WORLD.md §7.2): `PhysicsSnapshot` ends with the local player's grid (a byte, its index in
+`grids.json`, 0 home; off home the grid's frame, origin f64 × 3 and rotation f64 × 4, and `local` in
+the grid's space), and `ChunkData`/`ChunkUnload` end with their grid's byte when not home (a trailing
+0 is malformed). The server lists it and this build's client says it (M-7c: its predictor and view
+follow another grid); an older client never gets a grid id: a player off home is sent its world
+position. The third is `damage.chunks`
+(BLOCK_DAMAGE.md §9): `Damage` ends with `0xC4` and each cell's hit marks' chunks (a byte a mark, the
+piece's size in sixteenths of the block's mark; a metal tool's 32), only to a client that listed it;
+without it every mark is ×1.
+The fourth is `creatures.npcs` (WORK_QUEUE
+item 38): `Creatures` ends with its NPCs' part (above); an older client gets the message without it and
+draws an NPC as its model's plain creature. The fifth is `weapons.clash` (WORK_QUEUE item 35, "Weapons"
+above): the server sends `Swordplay` 0x6A (S→C, reliable, world: u8 kind; 0 a clash: fighter striker,
+fighter defender, str weapon, u8 outcome 0 blocked 1 glanced 2 connected, f32×3 point, u8 bits
+striker vertical 1 | defender vertical 2; 1 the guards: u16 count, each a fighter and u8 bits vertical
+1 | raised 2; a fighter is u8 0 + u16 player id or u8 1 + u32 creature id), and the client sends
+`Chop`'s action 4, `Guard` (u8 raised); neither goes to a peer without the capability. The sixth is
+`creatures.poses` (WORK_QUEUE item 39): `Creatures` ends, after the NPCs' part, with the animals' idle
+poses (above), drawn from `models.json` `poses` (CHARACTERS.md §11.6); without it the animals play
+their idle clip. The seventh is `npcs.swings` (WORK_QUEUE item 35): while an NPC swings its sword,
+its NPC part's pose is 3 (level) or 4 (vertical) (`NPC_STRIKE_POSES`), and the client plays the rig's
+chop clip; without it the server sends the NPC's idle pose, as older clients (whose decode refuses a
+pose past 2) read it. Then `humans.defeat` (WORK_QUEUE item 55, CHARACTERS.md §11.13): a defeated NPC's
+pose is 5 (kneeling where it fell) or 6 (standing up at a shrine; `NPC_DEFEAT_POSES`), played as the
+characters' `kneel` and `stand` clips; without it the server sends pose 0. The eighth is `theater.viewpoint` (THEATER_MODE.md §7, §5.5): the client sends
+`TheaterViewpoint` 0x6B (C→S, control: u8 0 cleared | 1 then f64 × 3, finite) while a camera path plays,
+used by the server only in a mode with `theaterViewpoint`; an older server is never sent one. The ninth
+is `hits.at_contact` (BUGS.md #111, BLOCK_DAMAGE.md §11): a breaking tool's `BlockEditRequest` (one with a
+`contactS`) leaves at its swing's contact, naming the cell aimed at then, and the server lands it on
+arrival instead of `contactS` after; without it on either side the request leaves at the click and the
+server waits, as before. The message itself is unchanged. The tenth is `markers.private`
+([MAP_MARKERS.md](MAP_MARKERS.md), WORK_QUEUE item 53): `Markers` 0x6C (both ways, control: the player's
+whole markers record, `dwell_protocol::markers`) — the server sends a player their own saved record once
+after their `Capabilities`, to them alone, and the client sends its whole record again on each change;
+without it neither is sent and the client's markers last the session. The eleventh is `blueprints.world`
+([BLUEPRINTS.md](BLUEPRINTS.md), WORK_QUEUE item 56): `Blueprints` 0x6D (both ways: S→C `All` once after the
+client's `Capabilities`, then `Added` / `Removed` to every client with it; C→S `Place` / `Remove`, taken only
+where the mode has the `blueprints` ability) carrying `dwell_protocol::blueprints::Blueprint` records (a
+structure's cells as runs, face-local, turned); without it neither is sent. **[built, the 0.67 line]**
+`npcs.carry` ([BLUEPRINTS.md](BLUEPRINTS.md) §9, WORK_QUEUE item 57): a `Creatures` message ends, after the
+poses' part (it and the NPCs' part written empty if need be), with the carrying NPCs' loads (`CarryNet`: `u16`
+count, each `u32` id, `u8` kinds ≤ 16, each `str` block state name and `u8` count), drawn as a stack on the back
+(`blueprints.json` `carryLook`); without it the part is left out.
+```
+S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
+C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
+                  only to a server whose settings had field 0x85
 ```
 
 **Client → Server: `BlockEditRequest` (reliable, `control`) [built, Phase 3d]** (§6.5)
@@ -3221,7 +4828,7 @@ Place only: u16 material        // the block placed against the face
 sent only to a server whose `Welcome` has the `regionEdits` flag
 ```
 u8   type = 0x4F
-u8   op                         // Fill 1 | Replace 2 | Hollow 3 | Paste 4
+u8   op                         // Fill 1 | Replace 2 | Hollow 3 | Paste 4 | Structure 5
 i32×3 min                       // the box's min corner (world voxel)
 u8×3 size                       // cells along x, y, z: each 1..REGION_EDIT_MAX_SIDE (32)
 Fill, Hollow: u16 material      // Hollow: the box's shell; air inside
@@ -3230,6 +4837,10 @@ Paste:        palette + RLE (as ChunkData Explicit) of size.x·size.y·size.z st
               x fastest, then z, then y; a state 0xFFFF (KEEP) leaves its cell as it is —
               sent only to a server whose Welcome has the brushes flag (older ones reject it
               as an unknown state)
+Structure:    as Paste: a saved structure's placement (STRUCTURES.md §9), which the server
+              refuses (`RegionCheck::NotInMode`) where the world's mode lacks the `structures`
+              ability; sent only to a server that announced the `structures.place` capability
+              (an older one would end the session on the unknown op: it gets plain Pastes)
 ```
 
 **Client → Server: `ChunkResync` (reliable, `control`) [built, Phase 3d]** — a revision gap (§6.3)
@@ -3499,18 +5110,20 @@ animated from `State` and flags in snapshots.
   fall and a fast hit into a slope does not hurt at all; on the ground only (`damage.impact_surfaces`: a normal no
   steeper than `probes.max_slope_angle`), floors and ramps, never walls, steep faces or ceilings (the wall and ceiling impact
   sounds stay: they are read from motion), once per contact, the largest of a tick's; read as
-  a fall height, nothing up to `damage.impact_safe_height` 10 m (20 m/s), then `MAX_HEALTH × t ^
-  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 20 m (28.3 m/s); flight,
+  a fall height, nothing up to `damage.impact_safe_height` 5 m (14.1 m/s), then `MAX_HEALTH × t ^
+  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 15 m (24.5 m/s); flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every
-  client; a dead player's body leaves the physics world, and snapshots mark it `dead` where it
-  died. The server respawns the player at the spawn point after `RESPAWN_SECONDS`.
-- On death clients currently draw the body lying down (a cosmetic pose), seen from a third-person
-  camera on the face the body lies on (`game.rs` `death_camera`, 0.49.6: the controller has no
-  body while dead and its face is not the body's). The **cosmetic ragdoll**
-  (in the client's local Rapier world, Tier 2 rules — local, unsynchronized, despawned on respawn)
-  arrives with the client debris world in Phase 21.
+  client (`Death` on the wire is the defeat: humans never die, CHARACTERS.md §1a); a defeated
+  player's body leaves the physics world, and snapshots mark it `dead` where it fell, with the yaw
+  it knelt with. The server stands the player up at the nearest shrine after its defeat's `kneelS`
+  and `fadeS` (`shared/defeat`).
+- On a defeat clients draw the body kneeling (the characters' `kneel` / `kneel_sword` clip), the
+  defeated player's own view eased out to a third-person camera on the face the body is on
+  (`game.rs` `defeat_camera`, its distance, height, pitch and ease from the data), fading to black,
+  then standing up at the shrine (`stand` / `stand_sword`, input held for `standS`) as it fades back
+  in (CHARACTERS.md §11.13).
 
 ### 9.7 Anti-cheat implications
 Clients only send inputs, never positions, so speed/teleport/fly hacks are structurally
@@ -3553,7 +5166,8 @@ trusted certificates.
   The heartbeat (its JSON built by `dwell-server`) carries the port, RTC port and ICE
   credentials, the current certificate SHA-256, the LAN addresses (`if-addrs`: IPv4 and
   non-link-local IPv6, no loopback), name, MOTD, players and limit, protocol version,
-  visibility, tags (`--tags a,b`, Phase 5e: for the lobby list's search) and heartbeat interval; `--advertise` is sent only when given. `--visibility
+  visibility, tags (`--tags a,b`, Phase 5e: for the lobby list's search) and heartbeat interval; `--advertise` is sent only when given. `--mode
+  <name>` (0.51.10, ADR 0065): a new world's game mode, and a saved world switches to it on start. `--visibility
   public|unlisted|none` (default unlisted; public also puts it in the lobby list, Phase 5e; `none` never contacts the master; CI and the Electron
   smoke test use it), `--master <url>` (default the deployed master). The server prints its join
   code and a `?code=` link once the master answers, and on shutdown (after its players'
@@ -3737,8 +5351,8 @@ Direct invite links (`?join=host:port&cert=<sha256>`) work without the master se
 - **App version** ([ADR 0014](./adr/0014-versioned-releases.md), [`RELEASES.md`](./RELEASES.md)):
   Semantic Versioning 2.0.0, one for the whole app, kept in `client/package.json` as the version the
   next release can have at least (a floor, §2.1), embedded in every build (TS shell: `__APP_VERSION__`; Rust:
-  `dwell_sim::app_version::APP_VERSION`, set by `crates/dwell-sim/build.rs` from `DWELL_VERSION` or
-  `package.json`) and recorded in `build.json`. The declared public API is the saved
+  `dwell_sim::app_version::APP_VERSION`, set by `crates/dwell-sim/build.rs` from `DWELL_VERSION` or,
+  locally, `<line>.0-dev.local` from `shared/version/line.json`, package.json's MAJOR.MINOR) and recorded in `build.json`. The declared public API is the saved
   world format, the terrain a seed generates, the network protocols and the cross-version storage
   contract. Releases are stable (`0.1.0`); pushes to `main` are dev pre-releases
   (`0.2.0-dev.42`, with the commit as build metadata).

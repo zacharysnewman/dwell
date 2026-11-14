@@ -13,12 +13,25 @@ type Init = {
   maps?: Uint8Array[];
   /** The LOD colour map's river valleys in this world's LOD sections (`?lodmap=on`). */
   lodValleys?: boolean;
+  /** The world's size's radius scale (BIG_MAP.md M2b); absent: today's. */
+  radiusScale?: number;
 };
-type BuildMap = { t: 'buildMap'; seed: bigint; face: number };
+type BuildMap = {
+  t: 'buildMap';
+  seed: bigint;
+  face: number;
+  worldgen?: string;
+  /** A bigger world's map (BIG_MAP.md M2b); absent or 1: today's. */
+  radiusScale?: number;
+};
 
 interface WorkerScope {
   postMessage(
-    message: ArrayBuffer | { memory: number } | { map?: Uint8Array; error?: string },
+    message:
+      | ArrayBuffer
+      | { memory: number }
+      | { map?: Uint8Array; error?: string }
+      | { step: number; fraction: number },
     transfer?: Transferable[],
   ): void;
   onmessage: ((e: MessageEvent<ArrayBuffer | Init | BuildMap>) => void) | null;
@@ -52,7 +65,16 @@ scope.onmessage = (e) => {
   if (msg.t === 'buildMap') {
     void loadWasm().then(() => {
       try {
-        const map = buildWorldMap(msg.seed, msg.face);
+        const map = buildWorldMap(
+          msg.seed,
+          msg.face,
+          msg.worldgen || undefined,
+          msg.radiusScale ?? undefined,
+          // Each step as it runs (BUGS.md #91): the loading screen's "rivers (5/6)".
+          (step: number, fraction: number) => {
+            scope.postMessage({ step, fraction });
+          },
+        );
         scope.postMessage({ map }, [map.buffer as ArrayBuffer]);
       } catch (err) {
         scope.postMessage({ error: err instanceof Error ? err.message : String(err) });
@@ -66,9 +88,16 @@ scope.onmessage = (e) => {
     const w =
       msg.generatorVersion === undefined || msg.worldSeed === undefined
         ? JobWorker.mesher()
-        : msg.lodValleys
-          ? JobWorker.worldWithValleys(msg.generatorVersion, msg.worldSeed)
-          : JobWorker.world(msg.generatorVersion, msg.worldSeed);
+        : msg.radiusScale !== undefined && msg.radiusScale !== 1
+          ? JobWorker.worldSized(
+              msg.generatorVersion,
+              msg.worldSeed,
+              msg.radiusScale,
+              msg.lodValleys === true,
+            )
+          : msg.lodValleys
+            ? JobWorker.worldWithValleys(msg.generatorVersion, msg.worldSeed)
+            : JobWorker.world(msg.generatorVersion, msg.worldSeed);
     worker = w;
     for (const job of queued.splice(0)) run(w, job);
   });

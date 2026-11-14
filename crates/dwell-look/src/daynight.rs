@@ -49,6 +49,11 @@ pub struct SunLook {
     pub bloom: f64,
     pub glow_deg: f64,
     pub glow: f64,
+    /// From the home disc's centre to the sun world's (m; `crate::celestial`, docs/proposals/SUN_WORLD.md),
+    /// keeping its grid's radius at `radius_deg`.
+    pub distance_m: f64,
+    /// How much the sun world's baked ground shades the sky's disc (0 none; sky.wgsl `dwell_sun_disc`).
+    pub surface: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +70,31 @@ pub struct MoonLook {
     pub glow: f64,
     pub glow_color: Rgb,
     pub new_moon_light: f64,
+    /// The sky moon's baked normals' slopes × this (render/moon.rs).
+    pub relief: f64,
+    /// How much of a sphere's shape the sky moon's disc takes (0 flat, 1 a ball; `celestial::disc_lit`), its
+    /// normals then tilted by the baked slopes (sky.wgsl `dwell_moon`).
+    pub dome_bias: f64,
+    /// How the sky moon's disc reflects (`celestial::moon_shade`): 0 Lambert (darkening toward its
+    /// limb even at full), 1 Lommel-Seeliger (lit to its edge where it faces the sun).
+    pub lunar_lambert: f64,
+    /// The celestial model's share of the moonlight on a moonless night (`crate::celestial`; M-2
+    /// draws with it in place of `new_moon_light`).
+    pub night_floor: f64,
+}
+
+/// The moon's orbit (`crate::celestial`, docs/proposals/MOON_WORLD.md §6); its month is
+/// [`MoonLook::cycle_days`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MoonOrbit {
+    /// The orbit's tilt to the sun's path.
+    pub inclination_deg: f64,
+    /// The ascending node's angle along the sun's path from the sun, at day 0.
+    pub node_deg: f64,
+    /// Days for the node to turn once against the sun (0: never).
+    pub node_turn_days: f64,
+    /// From the home disc's centre to the moon's (m).
+    pub distance_m: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -132,6 +162,7 @@ pub struct DayNight {
     pub sun_path: SunPath,
     pub sun: SunLook,
     pub moon: MoonLook,
+    pub moon_orbit: MoonOrbit,
     pub stars: StarLook,
     pub sky: SkyShape,
     pub eye: EyeLook,
@@ -426,18 +457,33 @@ impl DayNight {
         let days = day as f64 + time_of_day;
         let solar_deg = self.solar_deg(time_of_day);
         let sun = self.sun_direction(solar_deg);
-        let moon_phase = moon.map_or_else(|| self.moon_phase(days), |m| m.rem_euclid(1.0));
+        // The moon from the celestial model (MOON_WORLD.md §6, M-4), seen from the home disc's
+        // centre at the moment the (possibly overridden) time of day names; a `moon` override
+        // starts the month so that moment has that phase.
+        let world_t = (days - self.clock.start_hour / 24.0) * self.day_length_s();
+        let start = moon.map(|m| m - days / self.moon.cycle_days);
+        let view = crate::celestial::Celestial::new(*self, start).view(world_t, [0.0; 3]);
         DayState {
             time_of_day,
             day,
             solar_deg,
             sun,
-            moon: sun.map(|c| -c),
+            moon: view.direction,
             axis: self.sky_axis(),
-            moon_phase,
-            moon_lit: Self::moon_lit(moon_phase),
+            moon_phase: view.phase,
+            moon_lit: view.lit,
             a: self.sample(solar_deg),
             b: self.sample(solar_deg + 180.0),
+            air: crate::atmosphere::Air::GROUND,
+            moon_shown: true,
+            clouds_shown: true,
+            airless: false,
+            on_moon: false,
+            on_sun: false,
+            rig: [RigLight::default(); 2],
+            sun_off: false,
+            hemi: None,
+            hemi_floor: [0.0; 3],
         }
     }
 }
@@ -461,6 +507,45 @@ pub struct DayState {
     /// Each face's look.
     pub a: Sample,
     pub b: Sample,
+    /// The viewer's air (docs/DAY_NIGHT.md §15): how far its sky has thinned toward space, in the
+    /// viewer's face's frame. [`Air::GROUND`](crate::atmosphere::Air::GROUND) from [`DayNight::state`];
+    /// [`DayState::at_altitude`] sets it.
+    pub air: crate::atmosphere::Air,
+    /// Whether the sky draws the moon's far disc: false for a viewer on the moon itself
+    /// (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
+    pub moon_shown: bool,
+    /// Whether the sky draws home's clouds: false for a viewer on another grid, whose sky has no
+    /// cloud deck of its own yet (MOON_WORLD.md §7.3; true from [`DayNight::state`]).
+    pub clouds_shown: bool,
+    /// Whether the viewer's grid has no air (`grids.json` `atmosphere` false, the moon): its sky is
+    /// space at every height, [`Air::SPACE`](crate::atmosphere::Air::SPACE) (MOON_WORLD.md §7.3;
+    /// false from [`DayNight::state`]).
+    pub airless: bool,
+    /// Whether the viewer stands on the sky's moon itself (the `dwell:moon` grid; false from
+    /// [`DayNight::state`]): its sky has no moon halo and its ground no moonlight, as well as no
+    /// disc (BUGS.md #143).
+    pub on_moon: bool,
+    /// Whether the viewer stands on the sky's sun itself (`dwell:sun`): its sky draws no sun disc
+    /// or sun halo (BUGS.md #145).
+    pub on_sun: bool,
+    /// A grid's light rig's lights (`grids.json` `light.bodies`, BUGS.md #145): the bodies that
+    /// light it by their reflected light, both faces; zero on home.
+    pub rig: [RigLight; 2],
+    /// The sun lights nothing (`light.sunlit` false: the viewer is on the sun).
+    pub sun_off: bool,
+    /// The hemisphere's sky and ground light (linear) in place of the keyframes' on both faces
+    /// (a light rig's ambient and glow); `None` the keyframes'.
+    pub hemi: Option<(Rgb, Rgb)>,
+    /// The least hemisphere light (linear, each channel) on both faces: a light rig's `ambient`.
+    pub hemi_floor: Rgb,
+}
+
+/// A directional light of a grid's light rig: toward it (unit, the drawn frame) and its linear
+/// colour × intensity; zero is none.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct RigLight {
+    pub direction: Rgb,
+    pub light: Rgb,
 }
 
 impl Default for DayState {
@@ -507,6 +592,34 @@ impl DayState {
         )
     }
 
+    /// This moment for a viewer `altitude` m above sea level on its own face (face-local): the sky
+    /// thinned toward space above the atmosphere's base (docs/DAY_NIGHT.md §15).
+    pub fn at_altitude(mut self, altitude: f64) -> Self {
+        self.air = if self.airless {
+            crate::atmosphere::Air::SPACE
+        } else {
+            crate::atmosphere::ATMOSPHERE.air(altitude)
+        };
+        self
+    }
+
+    /// [`DayState::at_altitude`] for a viewer `from_axis_m` from the disc's axis in a world of
+    /// radius `world_radius_m`: past the rim the limb fades out (BUGS.md #102).
+    pub fn at_eye(mut self, altitude: f64, from_axis_m: f64, world_radius_m: f64) -> Self {
+        self.air = if self.airless {
+            crate::atmosphere::Air::SPACE
+        } else {
+            crate::atmosphere::ATMOSPHERE.air_at(altitude, from_axis_m, world_radius_m)
+        };
+        self
+    }
+
+    /// Face `face`'s fog density this moment in the viewer's air: [`fog_density`], thinned with
+    /// the air to none in space.
+    pub fn fog_density(&self, face: FaceFrame) -> f64 {
+        fog_density(self.of(face)) * self.air.fog()
+    }
+
     /// Face `face`'s look.
     pub fn of(&self, face: FaceFrame) -> &Sample {
         if face.is_b() { &self.b } else { &self.a }
@@ -527,8 +640,15 @@ impl DayState {
         let v = self.of(face);
         let o = self.of(face.other());
         let saturation = self.viewer(adapted_a).saturation;
-        let moon_light =
-            DAY_NIGHT.moon.new_moon_light + (1.0 - DAY_NIGHT.moon.new_moon_light) * self.moon_lit;
+        // The celestial model's moonlight (M-4): the night floor plus the rest by the lit share
+        // (each face's own horizon weighs it in the shaders, `own`).
+        // None on the moon itself: it neither glows nor shines in its own sky (BUGS.md #143).
+        let moon_light = if self.on_moon {
+            0.0
+        } else {
+            DAY_NIGHT.moon.night_floor + (1.0 - DAY_NIGHT.moon.night_floor) * self.moon_lit
+        };
+        let moon_glow = if self.on_moon { 0.0 } else { self.moon_lit };
         let mut u = [0.0f32; DAY_SKY_FLOATS];
         let mut i = 0;
         let mut put = |v: [f64; 4]| {
@@ -549,18 +669,35 @@ impl DayState {
         put(with(v.sky_horizon, saturation));
         put(with(v.glow, v.glow_strength));
         put(with(v.band, v.band_strength));
-        put(with(v.sun_disc, v.moon_glow * self.moon_lit.max(0.25)));
+        put(with(v.sun_disc, v.moon_glow * moon_glow));
         put([
-            v.stars,
+            self.air.stars(v.stars),
             seconds.rem_euclid(3600.0),
             pixel_angle,
-            self.moon_lit,
+            moon_glow,
         ]);
+        let sun_k = if self.sun_off { 0.0 } else { 1.0 };
         for s in [&self.a, &self.b] {
-            put(lit(s.sun_light, s.sun_intensity));
+            put(lit(s.sun_light, s.sun_intensity * sun_k));
             put(lit(s.moon_light, s.moon_intensity * moon_light));
-            put(lit(s.hemi_sky, s.hemi_intensity));
-            put(lit(s.hemi_ground, s.hemi_intensity));
+            let floor = |c: [f64; 4]| {
+                [
+                    c[0].max(self.hemi_floor[0]),
+                    c[1].max(self.hemi_floor[1]),
+                    c[2].max(self.hemi_floor[2]),
+                    0.0,
+                ]
+            };
+            match self.hemi {
+                Some((sky, ground)) => {
+                    put(floor([sky[0], sky[1], sky[2], 0.0]));
+                    put(floor([ground[0], ground[1], ground[2], 0.0]));
+                }
+                None => {
+                    put(floor(lit(s.hemi_sky, s.hemi_intensity)));
+                    put(floor(lit(s.hemi_ground, s.hemi_intensity)));
+                }
+            }
         }
         // The other face's sky, for the rays that cross into its air: down a shaft, or past the
         // rim (docs/BUGS.md 10, 13); y its fog density (× the fog data's).
@@ -568,15 +705,31 @@ impl DayState {
         put(with(o.sky_horizon, o.saturation));
         put(with(o.glow, o.glow_strength));
         put(with(o.band, o.band_strength));
-        put(with(o.sun_disc, o.moon_glow * self.moon_lit.max(0.25)));
-        put([o.stars, fog_density(o), 0.0, 0.0]);
+        put(with(o.sun_disc, o.moon_glow * moon_glow));
+        // z: the viewer is on the sun (its disc and halo not drawn, BUGS.md #145).
+        put([
+            self.air.stars(o.stars),
+            self.fog_density(face.other()),
+            if self.on_sun { 1.0 } else { 0.0 },
+            0.0,
+        ]);
+        // The viewer's air (docs/DAY_NIGHT.md §15): x the thinning, y the limb's elevation sine.
+        // z how much of the limb shows (past the rim it fades out: BUGS.md #102).
+        // w: the moon's far disc drawn (1) or not (0: the viewer is on the moon).
+        let shown = if self.moon_shown { 1.0 } else { 0.0 };
+        put([self.air.thin, self.air.limb, self.air.limb_weight, shown]);
+        // A grid's light rig (BUGS.md #145): each light's direction and linear light.
+        for r in &self.rig {
+            put([r.direction[0], r.direction[1], r.direction[2], 0.0]);
+            put([r.light[0], r.light[1], r.light[2], 0.0]);
+        }
         u
     }
 }
 
 /// A face's fog density this moment: the fog data's, times its time of day's (at most 1).
 pub fn fog_density(s: &Sample) -> f64 {
-    (crate::fog::FOG.density * s.fog_density).min(1.0)
+    (crate::fog::active().density * s.fog_density).min(1.0)
 }
 
 /// The eye's adaptation to the face it is on (docs/DAY_NIGHT.md §13): how far toward face A's
@@ -605,7 +758,7 @@ impl EyeAdaptation {
 }
 
 /// Floats in the `DaySky` uniform block.
-pub const DAY_SKY_FLOATS: usize = 23 * 4;
+pub const DAY_SKY_FLOATS: usize = 28 * 4;
 
 /// The uniform block the renderer's frame carries (`frame.day`): the cycle's state for this frame.
 /// Sky colours are sRGB (the sky is drawn in output colour); lights are linear × intensity. Clouds
@@ -644,6 +797,16 @@ struct DaySky {
     other_band: vec4f,
     other_disc: vec4f,
     other_stars: vec4f,
+    // The viewer's air (docs/DAY_NIGHT.md §15): x how far the sky has thinned toward space (0 the
+    // ground's sky, exactly), y the limb's elevation sine in the viewer's face's frame, z how much
+    // of the limb shows (0 for a viewer far past the rim), w whether the moon's far disc is drawn.
+    space: vec4f,
+    // A grid's light rig (grids.json `light.bodies`, BUGS.md #145): each light's direction (xyz,
+    // toward it) and its linear light (rgb); zero on home.
+    rig0_dir: vec4f,
+    rig0: vec4f,
+    rig1_dir: vec4f,
+    rig1: vec4f,
 };
 ";
 
@@ -823,11 +986,18 @@ mod tests {
             D.sun_path.rise_yaw_deg,
             1e-9,
         );
-        // The sun is up in the morning; the moon is opposite.
-        let morning = D.state(0.0, Some(0.3), None);
+        // The sun is up in the morning; the moon is where the celestial model puts it (M-2), at
+        // full (the override) about opposite the sun, off it by at most the orbit's tilt.
+        let morning = D.state(0.0, Some(0.3), Some(0.5));
         assert!(morning.sun[1] > 0.3);
-        for i in 0..3 {
-            near(morning.moon[i], -morning.sun[i], 1e-12);
+        let opposite: f64 = (0..3).map(|i| -morning.moon[i] * morning.sun[i]).sum();
+        assert!(opposite > D.moon_orbit.inclination_deg.to_radians().cos() - 1e-9);
+        let c = crate::celestial::Celestial::new(D, None);
+        let t = (0.3 - D.clock.start_hour / 24.0) * D.day_length_s();
+        let real = D.state(0.0, Some(0.3), None).moon;
+        let want = c.view(t, [0.0; 3]).direction;
+        for (r, w) in real.iter().zip(want) {
+            near(*r, w, 1e-9);
         }
         // Face B's solar angle is face A's + 180°: its sky turns over when face A's does.
         assert_eq!(morning.b, D.sample(morning.solar_deg + 180.0));
@@ -835,22 +1005,31 @@ mod tests {
 
     #[test]
     fn the_moon_goes_through_its_phases() {
-        assert_eq!(D.moon.cycle_days, 8.0);
+        // A fractional month (owner, 2026-11-12: "Sounds good" to 8.25 days), so the full moon
+        // comes at another clock time each month.
+        let m = D.moon.cycle_days;
+        assert_eq!(m, 8.25);
         near(D.moon_phase(0.0), D.moon.start_phase, 1e-12);
-        near(D.moon_phase(8.0), D.moon_phase(0.0), 1e-12);
+        near(D.moon_phase(m), D.moon_phase(0.0), 1e-12);
         near(
-            D.moon_phase(4.0),
+            D.moon_phase(m / 2.0),
             (D.moon.start_phase + 0.5).rem_euclid(1.0),
             1e-12,
         );
         near(DayNight::moon_lit(0.5), 1.0, 1e-12);
         near(DayNight::moon_lit(0.0), 0.0, 1e-12);
         near(DayNight::moon_lit(0.25), 0.5, 1e-12);
-        // Driven by the day count: a day moves the phase on by 1/8.
+        // Driven by the day count: a day moves the phase on by 1/month.
         let a = D.state(0.0, Some(0.0), None).moon_phase;
         let b = D.state(D.day_length_s(), Some(0.0), None).moon_phase;
-        near((b - a).rem_euclid(1.0), 1.0 / 8.0, 1e-9);
-        assert_eq!(D.state(0.0, None, Some(0.25)).moon_phase, 0.25);
+        // (by the celestial model's geometry, M-4: within the orbit's tilt of the count)
+        near((b - a).rem_euclid(1.0), 1.0 / m, 2e-3);
+        near(D.state(0.0, None, Some(0.25)).moon_phase, 0.25, 2e-3);
+        // Domed phases (owner, `domeBias`): full lit at full, part-lit at quarters, dark at new.
+        assert!(D.state(0.0, None, Some(0.5)).moon_lit > 0.99);
+        let quarter = D.state(0.0, None, Some(0.25)).moon_lit;
+        assert!(quarter > 0.25 && quarter < 0.5, "domed: {quarter}");
+        assert_eq!(D.state(0.0, None, Some(0.0)).moon_lit, 0.0);
     }
 
     #[test]
@@ -935,13 +1114,37 @@ mod tests {
         assert!((u[34] - 0.002).abs() < 1e-9);
     }
 
+    /// MOON_WORLD.md §7.3: on the moon the sky draws no far moon disc (`space.w` 0); everywhere
+    /// else it does, as before.
+    #[test]
+    fn the_moons_disc_is_drawn_unless_the_viewer_is_on_it() {
+        // `space.w`, the 24th vec4's last float.
+        const SPACE_W: usize = 23 * 4 + 3;
+        let day = D.state(0.0, Some(0.0), Some(0.5));
+        assert!(day.moon_shown);
+        assert_eq!(day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[SPACE_W], 1.0);
+        let away = DayState {
+            moon_shown: false,
+            ..day
+        };
+        let u = away.pack(FaceFrame::A, 1.0, 0.0, 0.001);
+        assert_eq!(u[SPACE_W], 0.0);
+        assert_eq!(
+            &u[..SPACE_W],
+            &day.pack(FaceFrame::A, 1.0, 0.0, 0.001)[..SPACE_W]
+        );
+        assert!(crate::sky_wgsl().contains("day.space.w < 0.5"));
+    }
+
     #[test]
     fn the_debug_line_reads_the_clock() {
         let day = D.state(0.0, Some(0.5), Some(0.5));
         assert_eq!(day.clock_text(), "12:00");
         let line = day.debug_line();
         assert!(
-            line.starts_with("time 12:00") && line.contains("sun 90°") && line.contains("100% lit"),
+            line.starts_with("time 12:00")
+                && line.contains("sun 90°")
+                && (line.contains("100% lit") || line.contains("99% lit")),
             "{line}"
         );
         assert_eq!(D.state(0.0, Some(0.0), None).clock_text(), "00:00");

@@ -347,6 +347,37 @@ impl Structure {
         })
     }
 
+    /// A structure built in code from its cells (x fastest, then z, then y; `None` keeps what is
+    /// there), e.g. a tree grown from its species (dwell-worldgen `species`, ADR 0079). It turns by
+    /// the four quarter turns; `hash` names this build of it.
+    pub fn from_cells(
+        name: &'static str,
+        hash: u64,
+        size: [i32; 3],
+        anchor: [i32; 3],
+        cells: &[Option<StateId>],
+    ) -> Self {
+        assert_eq!(
+            cells.len(),
+            size.iter().product::<i32>() as usize,
+            "structure {name}: {} cells for size {size:?}",
+            cells.len()
+        );
+        Self {
+            name,
+            hash,
+            size,
+            anchor,
+            cells: cells
+                .iter()
+                .map(|c| c.map_or(Cell::Keep, Cell::State))
+                .collect(),
+            choices: Vec::new(),
+            rotations: vec![0, 1, 2, 3],
+            mirrors: vec![None],
+        }
+    }
+
     /// The orientation a seed picks from the structure's rotate and mirror variants.
     pub fn orientation(&self, seed: u64) -> Orientation {
         let pick = |stream: u64, n: usize| (mix(seed, stream) % n as u64) as usize;

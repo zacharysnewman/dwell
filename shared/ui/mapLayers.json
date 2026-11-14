@@ -1,0 +1,50 @@
+{
+  "$comment": "The big map's debug layers (docs/proposals/REALISTIC_WORLD.md R6; owner 2026-11-12, §7 q8: the plates, uplift, rain and rock overlays \"also on the big map\"). Each layer names a `field` from the generator's fixed vocabulary (`dwell-worldgen` `map_layers.rs`: plates, uplift, rain, rocks) and how it is drawn over the revealed ground: `opacity` 0..1; a category field's `colors` by category name (the plates' kinds; a rock's own rocks.json colour unless named here) and `outlineColor` where neighbouring samples' ids differ (the plates' boundaries); a value field's `ramp` (value → #rrggbb stops, ascending, in the field's unit: m for uplift, mm a year for rain). `samples` is the grid across the face (the face's disc, once per layer and face). A layer shows only in a world that has its field (plates and uplift: a world whose tectonics come from plates; rain: a world with a climate; rocks: every world). The `L` key (`key`) steps through them; the map's Layer button too. Prototype colours.",
+  "key": "KeyL",
+  "samples": 256,
+  "layers": [
+    {
+      "name": "plates",
+      "label": "Plates",
+      "field": "plates",
+      "opacity": 0.55,
+      "colors": { "continental": "#c8a060", "oceanic": "#3a6ea8" },
+      "outlineColor": "#ff3030"
+    },
+    {
+      "name": "uplift",
+      "label": "Uplift",
+      "field": "uplift",
+      "opacity": 0.6,
+      "ramp": [
+        { "at": -1500, "color": "#2040a0" },
+        { "at": -200, "color": "#80a0d0" },
+        { "at": 0, "color": "#f0f0e8" },
+        { "at": 400, "color": "#e0a050" },
+        { "at": 1500, "color": "#a03020" },
+        { "at": 3000, "color": "#501010" }
+      ]
+    },
+    {
+      "name": "rain",
+      "label": "Rain",
+      "field": "rain",
+      "opacity": 0.6,
+      "ramp": [
+        { "at": 0, "color": "#c09050" },
+        { "at": 250, "color": "#e8d080" },
+        { "at": 700, "color": "#90c070" },
+        { "at": 1500, "color": "#3090a0" },
+        { "at": 3000, "color": "#2040a0" }
+      ]
+    },
+    {
+      "name": "rocks",
+      "label": "Rocks",
+      "field": "rocks",
+      "opacity": 0.6,
+      "colors": {},
+      "outlineColor": "#202020"
+    }
+  ]
+}

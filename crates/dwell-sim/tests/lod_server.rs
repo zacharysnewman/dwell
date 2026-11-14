@@ -236,6 +236,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
             material: M.sand,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let edit_tick = f.server.tick();
@@ -323,6 +324,7 @@ fn an_edit_reaches_a_far_client_index_update_then_explicit_only_where_it_changed
             material: M.sand,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     for _ in 0..120 {

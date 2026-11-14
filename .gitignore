@@ -4,3 +4,4 @@
 
 # Rust workspace build output (ADR 0028).
 /target/
+/target-*/

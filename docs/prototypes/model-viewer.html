@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Viewer</title>
+<!--
+  Dwell's skinned models (docs/CHARACTERS.md §11, ADR 0070): every model of shared/models/models.json,
+  its GLB as imported (palette colours, no texture), playing the clip each role maps to. Reads the
+  data and the GLBs from the repo, so serve the repo's root (`python3 -m http.server` there) and open
+  /docs/prototypes/model-viewer.html. `?role=walk` picks the role on load. The Props view
+  (`?view=props`) lays out the static props of shared/models/props.json (ADR 0070 §8), one row per
+  category, each standing at its imported size; a prop with a `grip` shows it as a small red dot.
+  The Detail buttons (`?detail=low`) show each model at one of models.json's `detail.levels` (the
+  GLB's meshes detail_0, detail_1, …: decimated and flat shaded, ADR 0070 §10).
+-->
+<style>
+  :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffcc; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #2a2530; --ink: #f0f8f8; --panel: #241c28cc; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px system-ui, sans-serif; }
+  #bar { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    background: var(--panel); padding: 8px 10px; border-radius: 10px; }
+  #bar button { font: inherit; border: 1px solid #43354a55; background: transparent; color: inherit; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  #bar button.on { background: #82bd45; color: #241c28; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="bar"><strong>Model Viewer</strong><span id="views"></span><span id="roles"></span><span id="detail"></span><span id="status"></span></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const base = new URL('../../shared/models/', location.href);
+const data = await (await fetch(new URL('models.json', base))).json();
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 200);
+camera.position.set(0, 3.2, 9.5);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.7, 0);
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x8e5d3d, 1.1));
+const sun = new THREE.DirectionalLight(0xfff1c2, 2.2);
+sun.position.set(4, 8, 6);
+sun.castShadow = true;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
+sun.shadow.camera.right = sun.shadow.camera.top = 8;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ color: 0x82bd45 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const models = new THREE.Group();
+scene.add(models);
+const props = new THREE.Group();
+scene.add(props);
+const propData = await (await fetch(new URL('props.json', base))).json();
+const loader = new GLTFLoader();
+const byCat = {};
+for (const [name, p] of Object.entries(propData.props)) (byCat[p.category] ??= []).push([name, p]);
+let row = 0;
+const labels = [];
+for (const [cat, list] of Object.entries(byCat)) {
+  const z = -row * 1.2;
+  await Promise.all(list.map(async ([name, p], i) => {
+    const gltf = await loader.loadAsync(new URL(p.glb, base).href);
+    const root = gltf.scene;
+    const box = new THREE.Box3().setFromObject(root);
+    root.position.set((i - (list.length - 1) / 2) * 0.62, -box.min.y, z);
+    root.traverse((o) => {
+      if (o.isMesh) {
+        o.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+        o.castShadow = true;
+      }
+    });
+    if (p.grip) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.02), new THREE.MeshBasicMaterial({ color: 0xd04040 }));
+      dot.position.set(...p.grip);
+      root.add(dot);
+    }
+    root.userData.name = name;
+    props.add(root);
+  }));
+  labels.push([cat, z]);
+  row++;
+}
+let view = new URLSearchParams(location.search).get('view') ?? 'models';
+function show(v) {
+  view = v;
+  models.visible = v === 'models';
+  props.visible = v === 'props';
+  document.querySelector('#roles').style.display = v === 'models' ? '' : 'none';
+  if (v === 'props') {
+    camera.position.set(0, 3.6, 4.2);
+    controls.target.set(0, 0.2, -(row - 1) * 0.6);
+  } else {
+    camera.position.set(0, 3.2, 9.5);
+    controls.target.set(0, 0.7, 0);
+  }
+  for (const b of document.querySelectorAll('#views button')) b.classList.toggle('on', b.dataset.view === v);
+  document.querySelector('#status').textContent = v === 'props'
+    ? ` ${props.children.length} props: ${labels.map(([c]) => propData.categories[c].label).join(', ')} (rows, front to back)`
+    : ` ${loaded.length} models`;
+}
+for (const [v, label] of [['models', 'Models'], ['props', 'Props']]) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.dataset.view = v;
+  b.onclick = () => show(v);
+  document.querySelector('#views').appendChild(b);
+}
+
+const roles = [...new Set(Object.values(data.models).flatMap((m) => Object.keys(m.roles)))];
+let role = new URLSearchParams(location.search).get('role') ?? 'idle';
+const loaded = [];
+const levelMeshes = [];
+const levels = data.detail?.levels ?? [{ id: 'full', label: '100 %' }];
+let detail = new URLSearchParams(location.search).get('detail') ?? data.detail?.default ?? 'full';
+const names = Object.keys(data.models);
+const cols = 4;
+await Promise.all(names.map(async (name, i) => {
+  const m = data.models[name];
+  const gltf = await new GLTFLoader().loadAsync(new URL(m.glb, base).href);
+  const root = gltf.scene;
+  root.scale.setScalar(m.scale);
+  root.rotation.y = THREE.MathUtils.degToRad(m.yaw ?? 0);
+  root.position.set(((i % cols) - (cols - 1) / 2) * 2.6, 0, (Math.floor(i / cols) - 0.5) * 3);
+  root.traverse((o) => {
+    if (o.isMesh) {
+      o.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      levelMeshes.push(o);
+      o.castShadow = true;
+    }
+  });
+  models.add(root);
+  const mixer = new THREE.AnimationMixer(root);
+  loaded.push({ name, m, mixer, clips: gltf.animations, action: null });
+}));
+show(view);
+
+function play(r) {
+  role = r;
+  for (const l of loaded) {
+    const rc = l.m.roles[r] ?? l.m.roles[l.m.fallback];
+    const clip = l.clips.find((c) => c.name === rc.clip);
+    const next = l.mixer.clipAction(clip);
+    next.timeScale = rc.speed ?? 1;
+    if (l.action !== next) {
+      next.reset().play();
+      if (l.action) l.action.crossFadeTo(next, 0.2, false);
+      l.action = next;
+    }
+  }
+  for (const b of document.querySelectorAll('#roles button')) b.classList.toggle('on', b.textContent === r);
+}
+for (const r of roles) {
+  const b = document.createElement('button');
+  b.textContent = r;
+  b.onclick = () => play(r);
+  document.querySelector('#roles').appendChild(b);
+}
+play(role);
+/** Shows each model's mesh for one detail level (a GLB without levels: its one mesh). */
+function showDetail(id) {
+  detail = id;
+  const k = Math.max(0, levels.findIndex((l) => l.id === id));
+  for (const o of levelMeshes) {
+    let n = o;
+    while (n && !/^detail_\d+$/.test(n.name)) n = n.parent;
+    o.visible = !n || n.name === `detail_${k}`;
+  }
+  for (const b of document.querySelectorAll('#detail button')) b.classList.toggle('on', b.dataset.id === id);
+}
+for (const l of levels) {
+  const b = document.createElement('button');
+  b.textContent = l.label;
+  b.dataset.id = l.id;
+  b.onclick = () => showDetail(l.id);
+  document.querySelector('#detail').appendChild(b);
+}
+showDetail(detail);
+// `?focus=wolf&yaw=90`: frames one model close up (the others hidden), seen from `yaw` degrees
+// round it (0 its front, 90 its left side) — for comparing a model's look (its coat) with a reference.
+const focus = new URLSearchParams(location.search);
+const focused = loaded.find((l) => l.name === focus.get('focus'));
+if (focused) {
+  for (const l of loaded) l.mixer.getRoot().visible = l === focused;
+  const root = focused.mixer.getRoot();
+  root.position.set(0, 0, 0);
+  // The bind pose's bounds (a skinned mesh's world box follows its bones), at the model's scale.
+  let mesh;
+  root.traverse((o) => { if (o.isMesh && !mesh) mesh = o; });
+  mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox.clone();
+  box.min.multiplyScalar(focused.m.scale);
+  box.max.multiplyScalar(focused.m.scale);
+  const c = box.getCenter(new THREE.Vector3());
+  const r = box.getSize(new THREE.Vector3()).length();
+  const a = THREE.MathUtils.degToRad(Number(focus.get('yaw') ?? 90) + (focused.m.yaw ?? 0));
+  controls.target.copy(c);
+  camera.position.set(c.x + Math.sin(a) * r * 1.3, c.y + r * 0.25, c.z + Math.cos(a) * r * 1.3);
+}
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  for (const l of loaded) l.mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+window.viewerReady = true;
+</script>
+</body>
+</html>

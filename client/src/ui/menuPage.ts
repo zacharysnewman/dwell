@@ -1,6 +1,7 @@
 // The main menu as a page (RELEASES.md §5): the launcher shows it at `/dwell/`; a build served at
 // the launcher's path (a local or preview build, the e2e suite) shows it itself. DOM only, no WASM:
 // pinging a server is passed in (the build's own client, or the latest build's `tools.js`).
+import { WorldThumbs } from '../local/worldThumbs';
 import { IndexedDbKeyStore, loadOrCreateDeviceKey } from '../identity/deviceKey';
 import { WorldIndex, type WorldMeta } from '../local/worldIndex';
 import { deleteWorldFiles, listWorldFiles } from '../local/worldFiles';
@@ -10,6 +11,11 @@ import { MainMenu, type MainMenuDeps } from './mainMenu';
 import { loadRecent } from './recentServers';
 import { installPageSounds } from '../audio/page';
 import { startMenuGamepad } from '../input/gamepad';
+import { loadGamepadSettings, saveGamepadSettings } from '../input/gamepadSettings';
+import { ControllerPanel } from './controllerPanel';
+import { SettingsMenu } from './settingsMenu';
+import { prefersTouch } from './touchControls';
+import { audio } from '../audio/engine';
 
 /** Most time a lobby ping may take, connecting included (§8.3). */
 export const PING_TIMEOUT_MS = 5000;
@@ -78,16 +84,57 @@ function menuMaster(ping: MenuPageOptions['ping']): MainMenuDeps['master'] {
 /** Shows the main menu over the page. */
 export function showMenu(options: MenuPageOptions): MainMenu {
   // Its buttons sound (docs/AUDIO.md §6), in plain TS: the launcher has no WASM.
-  installPageSounds();
+  installPageSounds('menu');
   // A controller moves through it too (docs/GAMEPAD.md); B is Esc.
-  startMenuGamepad(document, () => {
+  const pad = startMenuGamepad(document, () => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
     );
   });
   const master = menuMaster(options.ping);
-  return new MainMenu(document.body, {
+  // Settings, every pane (owner, 2026-11-08: "All settings" from the main menu): the same menu as
+  // in a world, saved the same way; the pages that need a world say so.
+  let menu: MainMenu | null = null;
+  const settings = new SettingsMenu(
+    document.body,
+    prefersTouch(),
+    (s) => {
+      audio().setVolumes(s.audio);
+      menu?.setBackground(s.menuBackground);
+    },
+    { world: false },
+  );
+  const controller = new ControllerPanel({
+    settings: loadGamepadSettings(),
+    apply: saveGamepadSettings,
+    capture: (done) => {
+      pad.capture = done;
+    },
+    connected: () => pad.active,
+  });
+  settings.addControllerPanel(
+    controller.element,
+    () => {
+      controller.refresh();
+    },
+    () => {
+      controller.cancel();
+    },
+  );
+  addWorldPages(settings);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // Esc (a controller's B) closes Settings, else goes back a page (ui/menuNav.ts).
+    if (settings.isOpen) settings.setOpen(false);
+    else menu?.back();
+  });
+  menu = new MainMenu(document.body, {
+    background: settings.current.menuBackground,
+    openSettings: (open) => {
+      settings.setOpen(open);
+    },
     index: new WorldIndex(storage()),
+    thumbs: new WorldThumbs(storage()),
     recent: loadRecent(storage()),
     listFiles: listWorldFiles,
     deleteFiles: deleteWorldFiles,
@@ -103,4 +150,20 @@ export function showMenu(options: MenuPageOptions): MainMenu {
     ...(master ? { master } : {}),
     ...(options.canRegenerate ? { canRegenerate: options.canRegenerate } : {}),
   });
+  // Settings' own Back (or a click beside it) closes it: the menu leaves its page for the home.
+  settings.onOpenChange = (open) => {
+    if (!open) menu.settingsClosed();
+  };
+  return menu;
+}
+
+/** The pages that need a world, listed in Settings from the main menu with what they are for. */
+export const WORLD_PAGES = [
+  ['structures', 'Open a world to save structures from it and load them into it.'],
+  ['debug', 'Open a world to use the debug tools: the overlay, the map and the block dump.'],
+  ['host', 'Open one of your worlds to host it for friends.'],
+] as const;
+
+function addWorldPages(settings: SettingsMenu): void {
+  for (const [page, note] of WORLD_PAGES) settings.addUnavailablePage(page, note);
 }

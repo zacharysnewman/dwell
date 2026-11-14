@@ -1,0 +1,57 @@
+{
+  "$comment": "A biome (docs/proposals/BIOME_SANDBOX.md, ADR 0074; Chisel, the biome editor, edits these files): what is layered on the world's elevation (terrain.json, one world-scale system: the height field, the coast's taper, mountains, rivers and lakes) to make a landscape read as one place. `detail` the fine relief over the map's height (more of it at altitude: mountains get their look from the elevation); `where` where it belongs in the world's geography (B2: temperature, wetness, elevation, distance to the coast; a weight); `shaping` how its surface is laid out (band edges, bare rock on steep faces, the shore); `bands` its elevation bands, each with its surface blocks (today's snow line is the default's second band); `decorations` and `placements` the rules (by name, shared/worldgen/decorations.json and placements.json) that may grow here; `water` the fluid block its water is drawn as. The fields keep their former terrain.json meanings (its comments' units, gen.mjs's ranges). Prototype content (ARCHITECTURE.md §6.1). The world's default biome (terrain.json `defaultBiome`) shapes every world today: changing any value changes the terrain a seed generates (regenerate the goldens, a new compatibility line). Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:default",
+  "where": {
+    "$comment": "Where the biome belongs (ADR 0074 B2): each range optional (`min`, `max`, each eased over ± `blend`, in the field's units: temperature 0..1 from the island's climate gradient less the lapse rate with height, wetness 0..1 near rivers and lakes, elevation m above the sea, coast m to the sea); the biome's weight in a column is `weight` × how well the column fits each range (1 is an ordinary weight); the world's default biome is the fallback, taking only what the others leave of 1 (ADR 0074 B3); then normalised over the biomes. No ranges: it fits everywhere.",
+    "weight": 1
+  },
+  "detail": {
+    "$comment": "Fine relief over the map's bicubic height: a fractal sum of `wavelength` and `octaves`, about ±amplitude m in the lowlands, rising to ±mountainAmplitude between mountainFrom and mountainFull m; faded to nothing within waterFade m of a river's channel or a lake's shore.",
+    "amplitude": 2,
+    "wavelength": 128,
+    "octaves": 4,
+    "mountainAmplitude": 14,
+    "mountainFrom": 300,
+    "mountainFull": 1800,
+    "waterFade": 30
+  },
+  "shaping": {
+    "$comment": "How the surface is laid out: each band's lower edge moved ±edgeNoise m by a noise of edgeWavelength m and raised edgeSlopeLift m per unit of slope (so the snow line is not a flat contour); bare rock where the landform is steep: its slope taken over ± rockWindow m (a hillside's, not a map cell's, so rock comes as whole faces and cliff bands; owner 2026-10-26), against a threshold easing from rockSlope at sea level to rockSlopeHigh at rockHigh m (the soil thins with height); the band's shore block up to shore m above sea level and under water; its under block below a top block to underDepth m.",
+    "edgeNoise": 150,
+    "edgeWavelength": 320,
+    "edgeSlopeLift": 350,
+    "rockSlope": 0.85,
+    "rockSlopeHigh": 0.55,
+    "rockHigh": 1550,
+    "rockWindow": 150,
+    "shore": 2,
+    "underDepth": 3
+  },
+  "banks": {
+    "$comment": "How the banks of the world's rivers and lakes look here (ADR 0074 B4; the elevation decides where the water is): the river valley's rise from its bank (riverSlope m per m: steep rocky banks high, wide gentle ones low), the ground round a lake at least lake m over its water, falling lakeSlope m per m from 2 m out, and a beach: the shore block on dry ground within beach m of a river's or lake's water (0: none beyond the shore height). Blended by the biomes' weights along the banks.",
+    "riverSlope": 0.45,
+    "lake": 0.5,
+    "lakeSlope": 0.25,
+    "beach": 0
+  },
+  "bands": [
+    {
+      "name": "meadow",
+      "ground": "dwell:grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    },
+    {
+      "name": "snow",
+      "from": 1550,
+      "ground": "dwell:snowy_grass",
+      "under": "dwell:dirt",
+      "rock": "dwell:stone",
+      "shoreBlock": "dwell:sand"
+    }
+  ],
+  "decorations": ["meadow_grass"],
+  "placements": ["pine_groves"],
+  "water": "dwell:water"
+}

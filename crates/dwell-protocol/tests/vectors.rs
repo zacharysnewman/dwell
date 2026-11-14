@@ -107,6 +107,31 @@ fn decoded_fields_are_the_vectors_values() {
         (5, true)
     );
     assert_eq!((s.remotes[1].held, s.remotes[1].swing), (0, 0));
+    // Without the kinds (an older server's, or to a client that didn't say `SwingHello`): plain.
+    assert!(!s.swing_kinds && s.remotes.iter().all(|r| r.swing_kind == 0));
+    // WORK_QUEUE item 17: to a client that said it, each remote's swing kind follows.
+    let Some(Message::PhysicsSnapshot(k)) = Message::decode(&get("physics_snapshot_swing_kinds"))
+    else {
+        panic!("physics_snapshot_swing_kinds")
+    };
+    assert!(k.swing_kinds);
+    assert_eq!(
+        (k.remotes[0].swing_kind, k.remotes[1].swing_kind),
+        (SwingKind::ChopLevel as u8, SwingKind::Plain as u8)
+    );
+    assert_eq!(
+        PhysicsSnapshot {
+            swing_kinds: false,
+            remotes: s.remotes.clone(),
+            ..k.clone()
+        },
+        s,
+        "the same snapshot, the kinds after it"
+    );
+    assert_eq!(
+        Message::decode(&get("swing_hello")),
+        Some(Message::SwingHello)
+    );
     // v20: a falling piece's pose (docs/FELLING.md).
     let p = s.pieces[0];
     assert_eq!((p.id, p.position), (7, [10.5, 40.25, -3.5]));
@@ -153,6 +178,11 @@ fn decoded_fields_are_the_vectors_values() {
             start_hour: 0.0,
         },
         water_speed: 9.0,
+        mode: "creative",
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
+        orbit: None,
+        theater_guests: true,
     };
     let s = f
         .settings(d)
@@ -184,6 +214,65 @@ fn decoded_fields_are_the_vectors_values() {
     assert_eq!(r.cells, [1, 1, 1, 1, 4, 0, 4, 0, 0, 0, 0, 0]);
     // Layer order: x fastest, then z, then y.
     assert_eq!(r.cells[RegionEdit::cell_index(r.size, 0, 1, 1)], 4);
+    // A structure placement: Paste's body under its own op (STRUCTURES.md §9).
+    let Some(Message::RegionEdit(st)) = Message::decode(&get("region_edit_structure")) else {
+        panic!("region_edit_structure")
+    };
+    assert_eq!(st.op, RegionEditOp::Structure);
+    assert_eq!((st.min, st.size, &st.cells), (r.min, r.size, &r.cells));
+    // Capabilities (ARCHITECTURE.md §8.3): the client's message, and the server's settings field.
+    let Some(Message::Capabilities(c)) = Message::decode(&get("capabilities")) else {
+        panic!("capabilities")
+    };
+    assert_eq!(
+        c.names().collect::<Vec<_>>(),
+        [capability_names::STRUCTURES_PLACE, "mymod:wet"]
+    );
+    let Some(Message::Capabilities(none)) = Message::decode(&get("capabilities_none")) else {
+        panic!("capabilities_none")
+    };
+    assert!(none.is_empty());
+    // A player's map markers (docs/MAP_MARKERS.md): face-local points, the auto kind by name.
+    let Some(Message::Markers(m)) = Message::decode(&get("markers")) else {
+        panic!("markers")
+    };
+    assert_eq!(m.0.len(), 2);
+    assert_eq!(
+        (m.0[0].icon.as_str(), m.0[0].label.as_str()),
+        ("home", "Base")
+    );
+    assert_eq!(
+        (m.0[1].face, m.0[1].position, m.0[1].auto.as_str()),
+        (1, [-40.0, 66.5, 900.25], "death")
+    );
+    let Some(Message::Markers(none)) = Message::decode(&get("markers_none")) else {
+        panic!("markers_none")
+    };
+    assert!(none.0.is_empty());
+    let Some(Message::WorldSettings(f)) = Message::decode(&get("world_settings_capabilities"))
+    else {
+        panic!("world_settings_capabilities")
+    };
+    assert_eq!(f.capabilities(), Some(c));
+    // An older build skips the optional field: the same settings as without it.
+    let Some(Message::WorldSettings(plain)) = Message::decode(&get("world_settings")) else {
+        panic!("world_settings")
+    };
+    assert_eq!(plain.capabilities(), None);
+    let d = world_settings::WorldSettings {
+        clock: world_settings::WorldClock {
+            day_s: 1.0,
+            night_s: 1.0,
+            start_hour: 0.0,
+        },
+        water_speed: 9.0,
+        mode: "creative",
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
+        orbit: None,
+        theater_guests: true,
+    };
+    assert_eq!(f.settings(d), plain.settings(d));
     let Some(Message::RegionEdit(r)) = Message::decode(&get("region_edit_paste_keep")) else {
         panic!("region_edit_paste_keep")
     };

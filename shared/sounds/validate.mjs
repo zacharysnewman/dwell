@@ -1,6 +1,22 @@
 // Validation and resolution of the sound data (docs/AUDIO.md §2): shared by shared/sounds/gen.mjs,
 // shared/blocks/gen.mjs (the blocks' `sound` references) and the client's Vitest suites. A bad
 // entry throws an Error whose message names it.
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Where a sound's recorded `samples` live (AUDIO.md §2b): beside the data, in `samples/`. */
+export const SAMPLES_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "samples",
+);
+/** A sample file: lower-case words and dashes, a format every browser decodes (AAC in MP4). */
+const SAMPLE_FILE = /^[a-z0-9][a-z0-9-]*\.(m4a|mp3)$/;
+/** Every sample shipped, together, may be at most this large (owner, 2026-11-10: ~5 MB). */
+export const SAMPLES_MAX_BYTES = 5_000_000;
+/** How a sound with samples plays: the recordings, or its procedural layers. */
+export const PLAY_MODES = ["samples", "procedural"];
 
 const NAME = /^[a-z0-9_]+$/;
 const ID = /^[a-z0-9_]+:[a-z0-9_]+$/;
@@ -31,6 +47,9 @@ export const SET_EVENTS = [
   "slide_stop",
   "burn",
   "explode",
+  "impact",
+  "brush",
+  "swim_under",
 ];
 /** An event's part in a continuous (looped) sound: start a voice, update it, stop it. */
 export const LOOP_PARTS = ["start", "update", "stop"];
@@ -68,12 +87,17 @@ const LAYER_KEYS = [
   "alts",
 ];
 const SOUND_KEYS = [
+  "$comment",
   "gain",
+  "voices",
+  "minGapS",
   "reverb",
   "variation",
   "intensity",
   "loop",
   "layers",
+  "samples",
+  "play",
 ];
 const INTENSITY_KEYS = ["gain", "cutoff", "time", "pitch"];
 const TOP_KEYS = [
@@ -87,8 +111,32 @@ const TOP_KEYS = [
   "ui",
   "controls",
   "ambient",
+  "ambience",
+  "underwater",
+  "creatures",
+  "brush",
+  "self",
   "sounds",
 ];
+/** A placement's keys (AUDIO.md §5a): metres from the ear in the listener's frame. */
+export const SELF_KEYS = ["right", "up", "ahead", "stepM", "reverb"];
+/** A creature event's part (AUDIO.md §2d): which of the creature's sounds it plays. */
+export const CREATURE_PARTS = ["step", "startle", "call"];
+/** The surroundings an ambience bed's conditions read (crates/dwell-game ambience.rs `INPUTS`). */
+export const AMBIENCE_INPUTS = [
+  "altitude",
+  "height",
+  "open",
+  "waterShare",
+  "waterM",
+  "flow",
+  "trees",
+  "day",
+  "fireM",
+  "underwater",
+];
+/** The mixer's buses (AUDIO.md §3); the underwater filter names the ones it muffles. */
+export const BUSES = ["effects", "ambience", "ui", "music"];
 
 function fail(where, message) {
   throw new Error(`shared/sounds: ${where}: ${message}`);
@@ -253,6 +301,12 @@ export function validateSound(where, s) {
   keysIn(where, s, SOUND_KEYS);
   number(`${where}.gain`, s.gain, 0, 4);
   number(`${where}.reverb`, s.reverb, 0, 1, { optional: true });
+  // At most this many plays of the sound at once (more are dropped, never restarted), and no
+  // second play within `minGapS` seconds of the last (BUGS.md #103).
+  number(`${where}.voices`, s.voices, 1, 24, { optional: true });
+  if (s.voices !== undefined && !Number.isInteger(s.voices))
+    fail(`${where}.voices`, "must be a whole number");
+  number(`${where}.minGapS`, s.minGapS, 0, 2, { optional: true });
   if (s.variation !== "none") {
     const v = s.variation;
     if (!isObject(v))
@@ -281,6 +335,143 @@ export function validateSound(where, s) {
   if (!Array.isArray(s.layers) || s.layers.length === 0 || s.layers.length > 12)
     fail(`${where}.layers`, "must list 1 to 12 layers");
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
+  if (s.samples !== undefined) {
+    const sm = s.samples;
+    keysIn(`${where}.samples`, sm, ["files", "from", "gain", "pitch", "shift", "lowpassHz", "reverb"]);
+    if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
+    if (
+      !Array.isArray(sm.files) ||
+      sm.files.length === 0 ||
+      sm.files.length > 16
+    )
+      fail(`${where}.samples.files`, "must list 1 to 16 files");
+    for (const f of sm.files)
+      if (typeof f !== "string" || !SAMPLE_FILE.test(f))
+        fail(
+          `${where}.samples.files`,
+          `"${f}" is not a lower-case .m4a or .mp3 name`,
+        );
+    if (sm.from !== undefined) {
+      // The pack's own name of each file (AUDIO.md §2b), one per file: its category is the
+      // name's first word (`GRUNT_Male_…`, `MONSTER_…`, `ANIMAL_…`).
+      if (!Array.isArray(sm.from) || sm.from.length !== sm.files.length)
+        fail(`${where}.samples.from`, "must name the pack's file for each of files, in order");
+      for (const n of sm.from)
+        if (typeof n !== "string" || !/^[A-Z]+_[A-Za-z0-9_-]+$/.test(n))
+          fail(`${where}.samples.from`, `"${n}" is not a pack file name (CATEGORY_Name)`);
+    }
+    number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
+    number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
+    number(`${where}.samples.reverb`, sm.reverb, 0, 1, { optional: true });
+    number(`${where}.samples.shift`, sm.shift, -24, 12, { optional: true });
+    number(`${where}.samples.lowpassHz`, sm.lowpassHz, 100, 20000, { optional: true });
+  }
+  if (s.play !== undefined) {
+    oneOf(`${where}.play`, s.play, PLAY_MODES);
+    if (s.samples === undefined)
+      fail(`${where}.play`, "needs samples to choose between");
+  }
+}
+
+/**
+ * The ambience (AUDIO.md §2c): `volume` (the Ambience volume's default), `fadeS` (the beds' glide
+ * time constant), `cap` (no bed louder), `probe` (`radiusM`, the `trees` blocks), and `beds`: each
+ * `{ files, gain, when: [{ input, from, full, floor? }] }`, its level `gain` times every
+ * condition's ramp (0 at `from`, 1 at `full`, either way round; never under `floor`).
+ */
+function validateAmbience(ns, a) {
+  keysIn("ambience", a, ["$comment", "volume", "fadeS", "cap", "probe", "beds"]);
+  number("ambience.volume", a.volume, 0, 1);
+  number("ambience.fadeS", a.fadeS, 0.05, 30);
+  number("ambience.cap", a.cap, 0, 1);
+  keysIn("ambience.probe", a.probe, ["radiusM", "trees"]);
+  number("ambience.probe.radiusM", a.probe.radiusM, 2, 64);
+  if (!Array.isArray(a.probe.trees)) fail("ambience.probe.trees", "must list block ids");
+  for (const t of a.probe.trees)
+    if (typeof t !== "string" || !ID.test(t))
+      fail("ambience.probe.trees", `"${t}" is not a block id like "dwell:leaves"`);
+  if (!isObject(a.beds)) fail("ambience.beds", "must be an object");
+  const beds = {};
+  for (const [name, b] of Object.entries(a.beds)) {
+    const where = `ambience bed ${ns}:${name}`;
+    if (!NAME.test(name)) fail(where, "bad name");
+    keysIn(where, b, ["files", "gain", "when"]);
+    if (!Array.isArray(b.files) || b.files.length === 0 || b.files.length > 4)
+      fail(`${where}.files`, "must list 1 to 4 loop files");
+    for (const f of b.files)
+      if (typeof f !== "string" || !SAMPLE_FILE.test(f))
+        fail(`${where}.files`, `"${f}" is not a lower-case .m4a or .mp3 name`);
+    number(`${where}.gain`, b.gain, 0, 1);
+    if (b.gain > a.cap) fail(`${where}.gain`, `${b.gain} is over the cap ${a.cap}`);
+    if (!Array.isArray(b.when)) fail(`${where}.when`, "must list conditions");
+    b.when.forEach((c, i) => {
+      const w = `${where}.when[${i}]`;
+      keysIn(w, c, ["input", "from", "full", "floor"]);
+      if (!AMBIENCE_INPUTS.includes(c.input))
+        fail(`${w}.input`, `unknown input "${c.input}" (one of ${AMBIENCE_INPUTS.join(", ")})`);
+      number(`${w}.from`, c.from, -1000, 1000);
+      number(`${w}.full`, c.full, -1000, 1000);
+      if (c.from === c.full) fail(w, "from and full must differ");
+      number(`${w}.floor`, c.floor, 0, 1, { optional: true });
+    });
+    beds[`${ns}:${name}`] = b;
+  }
+  return { volume: a.volume, fadeS: a.fadeS, cap: a.cap, probe: a.probe, beds };
+}
+
+/** The file's content hash (8 hex digits): its published name changes with its bytes. */
+function contentHash(bytes) {
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+}
+
+/**
+ * Checks every sound's sample files against `dir` (each exists; all of them fit the budget) and
+ * rewrites each to its published name (`name-<hash>.m4a`, served once per site under `media/`);
+ * returns the files to ship, `{ file, source }`, and their total size.
+ */
+function resolveSamples(sounds, dir, beds = {}) {
+  const ship = new Map();
+  let bytes = 0;
+  for (const [id, b] of Object.entries(beds)) {
+    const files = b.files.map((f) => {
+      const path = join(dir, f);
+      if (!existsSync(path))
+        fail(`ambience bed ${id}.files`, `no file "${f}" in shared/sounds/samples/`);
+      const data = readFileSync(path);
+      const published = f.replace(/[.](\w+)$/, (_, ext) => `-${contentHash(data)}.${ext}`);
+      if (!ship.has(published)) {
+        ship.set(published, f);
+        bytes += data.length;
+      }
+      return published;
+    });
+    beds[id] = { ...b, files };
+  }
+  for (const [id, s] of Object.entries(sounds)) {
+    if (!s.samples) continue;
+    const files = s.samples.files.map((f) => {
+      const path = join(dir, f);
+      if (!existsSync(path))
+        fail(`sound ${id}.samples`, `no file "${f}" in shared/sounds/samples/`);
+      const data = readFileSync(path);
+      const published = f.replace(/\.(\w+)$/, `-${contentHash(data)}.$1`);
+      if (!ship.has(published)) {
+        ship.set(published, f);
+        bytes += data.length;
+      }
+      return published;
+    });
+    sounds[id] = { ...s, samples: { ...s.samples, files } };
+  }
+  if (bytes > SAMPLES_MAX_BYTES)
+    fail(
+      "samples",
+      `${bytes} bytes is over the ${SAMPLES_MAX_BYTES}-byte budget`,
+    );
+  return {
+    files: [...ship].map(([file, source]) => ({ file, source })),
+    bytes,
+  };
 }
 
 /**
@@ -289,6 +480,32 @@ export function validateSound(where, s) {
  * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e). (No wind loop: removed, owner
  * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
+/**
+ * The underwater muffle (AUDIO.md §3a, BUGS.md #104): `buses` (which of the mixer's go through
+ * the low-pass), `lowpassHz` and `q` (the filter under water), `gain` (their level under water),
+ * `easeS` (the glide at the crossing) and `openHz` (the filter's frequency in air: transparent).
+ */
+export function validateUnderwater(u) {
+  keysIn("underwater", u, ["$comment", "buses", "lowpassHz", "q", "gain", "easeS", "openHz"]);
+  if (!Array.isArray(u.buses) || u.buses.length === 0) fail("underwater.buses", "must list buses");
+  for (const b of u.buses) oneOf("underwater.buses", b, BUSES);
+  if (new Set(u.buses).size !== u.buses.length) fail("underwater.buses", "lists a bus twice");
+  number("underwater.lowpassHz", u.lowpassHz, 100, 8000);
+  number("underwater.q", u.q, 0.1, 10);
+  number("underwater.gain", u.gain, 0, 1);
+  number("underwater.easeS", u.easeS, 0.01, 2);
+  number("underwater.openHz", u.openHz, 4000, 24000);
+  if (u.openHz <= u.lowpassHz) fail("underwater.openHz", "must be above lowpassHz");
+  return {
+    buses: u.buses,
+    lowpassHz: u.lowpassHz,
+    q: u.q,
+    gain: u.gain,
+    easeS: u.easeS,
+    openHz: u.openHz,
+  };
+}
+
 function validateAmbient(a) {
   keysIn("ambient", a, ["fire", "falls"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
@@ -310,16 +527,21 @@ function qualify(ns, name) {
  * Validates every namespace's file and merges them into the data the client plays
  * (`client/src/audio/sounds.gen.ts`): names fully qualified, events in id order.
  */
-export function resolveSounds(files) {
+export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
   const out = {
     fallback: "",
     gaits: {},
+    self: {},
     events: [],
     sets: {},
     actions: {},
     ui: {},
     controls: {},
     ambient: undefined,
+    ambience: undefined,
+    underwater: undefined,
+    creatures: undefined,
+    brush: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -339,13 +561,37 @@ export function resolveSounds(files) {
       validateSound(`sound ${id}`, s);
       out.sounds[id] = s;
     }
+    if (file.ambience !== undefined) {
+      if (out.ambience) fail("ambience", "given twice");
+      out.ambience = validateAmbience(ns, file.ambience);
+    }
   }
+  if (!out.ambience) fail("ambience", "missing (the ambience beds)");
+  const samples = resolveSamples(out.sounds, samplesDir, out.ambience.beds);
   const sound = (where, ns, name) => {
     if (typeof name !== "string") fail(where, "must name a sound");
     const id = qualify(ns, name);
     if (!(id in out.sounds)) fail(where, `unknown sound "${name}"`);
     return id;
   };
+  // The local player's own sounds' placements (AUDIO.md §5a, BUGS.md #110).
+  for (const file of sorted) {
+    for (const [name, p] of Object.entries(file.self ?? {})) {
+      if (name === "$comment") continue;
+      const where = `self ${name}`;
+      if (!NAME.test(name)) fail(where, "bad name");
+      if (name in out.self) fail(where, "defined twice");
+      keysIn(where, p, SELF_KEYS);
+      for (const k of ["right", "up", "ahead"]) number(`${where}.${k}`, p[k], -3, 3);
+      // Behind the ears is what BUGS.md #110 was: an own sound is never placed behind the head.
+      if (p.ahead < 0) fail(`${where}.ahead`, "must not be behind the head (BUGS.md #110)");
+      if (p.stepM !== undefined) number(`${where}.stepM`, p.stepM, 0, 1);
+      if (p.reverb !== undefined) number(`${where}.reverb`, p.reverb, 0, 1);
+      out.self[name] = { right: p.right, up: p.up, ahead: p.ahead,
+        ...(p.stepM !== undefined ? { stepM: p.stepM } : {}),
+        ...(p.reverb !== undefined ? { reverb: p.reverb } : {}) };
+    }
+  }
   for (const file of sorted) {
     const ns = file.namespace;
     for (const [name, set] of Object.entries(file.sets ?? {})) {
@@ -369,9 +615,12 @@ export function resolveSounds(files) {
       const where = `event ${name}`;
       if (!NAME.test(name)) fail(where, "bad name");
       if (out.events.some((e) => e.name === name)) fail(where, "defined twice");
-      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback"]);
+      keysIn(where, def, ["set", "sound", "speed", "loop", "fallback", "creature", "self"]);
+      if (def.self !== undefined && !(def.self in out.self))
+        fail(`${where}.self`, `unknown placement "${def.self}" (shared/sounds self)`);
+      if (def.creature !== undefined) oneOf(`${where}.creature`, def.creature, CREATURE_PARTS);
       if (def.loop !== undefined) oneOf(`${where}.loop`, def.loop, LOOP_PARTS);
-      const plays = def.set !== undefined || def.sound !== undefined;
+      const plays = def.set !== undefined || def.sound !== undefined || def.creature !== undefined;
       if (def.loop === "update") {
         if (plays) fail(where, "a loop update plays nothing of its own");
       } else if (!plays && def.loop !== "stop")
@@ -406,6 +655,8 @@ export function resolveSounds(files) {
         ...(def.speed !== undefined ? { speed: def.speed } : {}),
         ...(def.loop !== undefined ? { loop: def.loop } : {}),
         ...(def.fallback === false ? { fallback: false } : {}),
+        ...(def.creature !== undefined ? { creature: def.creature } : {}),
+        ...(def.self !== undefined ? { self: def.self } : {}),
       });
     }
     if (file.gaits !== undefined) {
@@ -442,8 +693,51 @@ export function resolveSounds(files) {
       if (out.ambient) fail("ambient", "given twice");
       out.ambient = validateAmbient(file.ambient);
     }
+    if (file.underwater !== undefined) {
+      if (out.underwater) fail("underwater", "given twice");
+      out.underwater = validateUnderwater(file.underwater);
+    }
   }
   if (!out.ambient) fail("ambient", "missing (the fire and night tunables)");
+  if (!out.underwater) fail("underwater", "missing (the underwater muffle)");
+  // Creatures (AUDIO.md §2d): each model's stride and sounds.
+  for (const file of sorted) {
+    const c = file.creatures;
+    if (c === undefined) continue;
+    if (out.creatures) fail("creatures", "given twice");
+    keysIn("creatures", c, ["$comment", "radiusM", "models"]);
+    number("creatures.radiusM", c.radiusM, 1, 128);
+    if (!isObject(c.models)) fail("creatures.models", "must be an object");
+    const models = {};
+    for (const [m, d] of Object.entries(c.models)) {
+      const where = `creature ${m}`;
+      if (!NAME.test(m)) fail(where, "bad model name");
+      keysIn(where, d, ["stride", ...CREATURE_PARTS, "callEveryS"]);
+      number(`${where}.stride`, d.stride, 0.1, 20);
+      const r = { stride: d.stride };
+      for (const part of CREATURE_PARTS)
+        if (d[part] !== undefined) r[part] = sound(`${where}.${part}`, file.namespace, d[part]);
+      if (d.callEveryS !== undefined) {
+        pair(`${where}.callEveryS`, d.callEveryS, 1, 3600, { ordered: true });
+        if (r.call === undefined) fail(`${where}.callEveryS`, "needs a call");
+        r.callEveryS = d.callEveryS;
+      }
+      models[m] = r;
+    }
+    out.creatures = { radiusM: c.radiusM, models };
+  }
+  if (!out.creatures) out.creatures = { radiusM: 32, models: {} };
+  // Brushing through foliage (AUDIO.md §5 `brush`, BUGS.md #103).
+  for (const file of sorted) {
+    const b = file.brush;
+    if (b === undefined) continue;
+    if (out.brush) fail("brush", "given twice");
+    keysIn("brush", b, ["$comment", "everyM", "minS"]);
+    number("brush.everyM", b.everyM, 0.1, 20);
+    number("brush.minS", b.minS, 0, 5);
+    out.brush = { everyM: b.everyM, minS: b.minS };
+  }
+  if (!out.brush) fail("brush", "missing (the foliage rustle's rate)");
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every
@@ -497,6 +791,8 @@ export function resolveSounds(files) {
       if (!known) fail(where, `unknown sound reference "${r}"`);
     }
   }
+  out.sampleFiles = samples.files;
+  out.sampleBytes = samples.bytes;
   return out;
 }
 

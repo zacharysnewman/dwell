@@ -247,8 +247,14 @@ pub fn count(name: &'static str, n: f64) {
     with(|t| t.count(name, n));
 }
 
-/// A monotonic clock in milliseconds: `performance.now()` in the browser.
+/// A monotonic clock in milliseconds: `performance.now()` in the browser, unless a cinematic take
+/// holds the stepped clock (`step_clock`).
 pub fn now_ms() -> f64 {
+    crate::step_clock::at(wall_ms())
+}
+
+/// The wall clock in milliseconds: `performance.now()` in the browser.
+pub fn wall_ms() -> f64 {
     #[cfg(target_arch = "wasm32")]
     {
         web_sys::window()
@@ -262,6 +268,18 @@ pub fn now_ms() -> f64 {
         static START: OnceLock<Instant> = OnceLock::new();
         START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
     }
+}
+
+/// A User Timing mark `name` on the page's Performance timeline (a Chrome trace's Timings track,
+/// `performance.getEntriesByName`); nothing natively. The renderer's start marks its groups
+/// (`dwell:create:<group>`, docs/DEV_TOOLS.md).
+pub fn mark(name: &str) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(p) = web_sys::window().and_then(|w| w.performance()) {
+        let _ = p.mark(name);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = name;
 }
 
 /// Runs `f`, adding its time to this frame's `name`.

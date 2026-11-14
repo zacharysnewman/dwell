@@ -31,8 +31,10 @@ pub struct ItemDef {
     pub name: &'static str,
     /// What the hotbar calls it.
     pub label: &'static str,
-    /// The block it places (namespaced id).
+    /// The block it places (namespaced id; empty for a tool).
     pub block: &'static str,
+    /// The tool it is instead (an item of `shared/tools/tools.json`: held, it places nothing).
+    pub tool: Option<&'static str>,
     /// Its height in ½ m cells.
     pub rows: u8,
     pub drag: ItemDrag,
@@ -47,7 +49,10 @@ pub struct ItemDef {
 mod table {
     include!("items.gen.rs");
 }
-pub use table::{BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, ITEMS};
+pub use table::{
+    BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, BUILD_REPEAT_S, CREATIVE_HOTBAR,
+    HOTBAR_NEXT_KEY, HOTBAR_PREV_KEY, ITEMS, WHEEL_GAP_MS, WHEEL_NOTCH_PX,
+};
 
 /// The item named `name`.
 pub fn item(name: &str) -> Option<&'static ItemDef> {
@@ -61,6 +66,20 @@ mod tests {
     #[test]
     fn every_item_places_a_placeable_block_at_a_height_the_protocol_takes() {
         for i in &ITEMS {
+            // A tool places nothing: it names a tool of the tools data (ADR 0067), a chopping
+            // one or a breaking one (a pickaxe, a shovel).
+            if let Some(t) = i.tool {
+                assert!(
+                    dwell_protocol::chopping::tool(t).is_some()
+                        || dwell_protocol::chopping::BREAK_TOOLS
+                            .iter()
+                            .any(|b| b.item == t),
+                    "{}",
+                    i.name
+                );
+                assert!(i.block.is_empty(), "{}", i.name);
+                continue;
+            }
             let block = dwell_blocks::find_block(i.block).unwrap_or_else(|| panic!("{}", i.name));
             assert!(
                 (block.first_state..block.first_state + block.state_count)
@@ -85,5 +104,18 @@ mod tests {
             item("dwell:ladder").map(|i| i.drag),
             Some(ItemDrag::Vertical)
         );
+    }
+
+    #[test]
+    fn the_stone_axe_is_a_creative_hotbar_slot_that_places_nothing() {
+        // Owner, 2026-11-08 (ADR 0067 Q3): the axe on the creative hotbar.
+        let slots = crate::block_interaction::palette();
+        let axe = slots
+            .iter()
+            .find(|s| s.item == "dwell:stone_axe")
+            .expect("the axe's slot");
+        assert_eq!(axe.tool, Some("dwell:stone_axe"));
+        assert_eq!(axe.material, 0, "places nothing");
+        assert_eq!(slots.len(), ITEMS.len(), "every item, tools too, is a slot");
     }
 }

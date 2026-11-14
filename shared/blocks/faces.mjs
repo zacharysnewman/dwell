@@ -31,5 +31,7 @@ export function blockTiles(def) {
   const t = def.textures;
   if (t === undefined) return [];
   const base = typeof t === 'string' ? [t, t, t] : [t.top, t.side, t.bottom];
-  return [...base, ...Object.values(def.sideUnder ?? {})];
+  // An octagonal cross-section's heart tile (inside its caps' bark ring, ADR 0072).
+  const heart = def.crossSection?.heart ? [def.crossSection.heart] : [];
+  return [...base, ...Object.values(def.sideUnder ?? {}), ...heart];
 }

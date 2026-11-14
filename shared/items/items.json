@@ -1,14 +1,16 @@
 {
-  "$comment": "What the creative hotbar places (docs/ITEMS.md). Each item names the block it places (shared/blocks) and its height in ½ m cells (`rows`, up to 2). Owner, 2026-10-28: the hotbar's blocks are ½ m (the 1 m items are gone; `rows` stays for a taller piece later). `drag`: what holding Place does with it (docs/ITEMS.md §5): `modes` (the default) builds on in the build mode, for a plain block only; `vertical` a line straight up or down only, each piece where it is held (ladders on their wall); `none` one click at a time (a block with other cells or something to stand on). `state`: property values of the state it places (a slope's shape); `facing`: `toward` turns its `facing` property to point back at the player, `away` along the look (a stored ramp's facing is its downhill side: `toward` puts uphill ahead, owner 2026-10-30); `upper`: a 2-row piece's upper cell, its state with these values over the lower's (the steep slope's top half), placed with it. The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
+  "$comment": "What the creative hotbar places (docs/ITEMS.md). Each item names the block it places (shared/blocks) and its height in ½ m cells (`rows`, up to 2). Owner, 2026-10-28: the hotbar's blocks are ½ m (the 1 m items are gone; `rows` stays for a taller piece later). `drag`: what holding Place does with it (docs/ITEMS.md §5): `modes` (the default) builds on in the build mode, for a plain block only; `vertical` a line straight up or down only, each piece where it is held (ladders on their wall); `none` one click at a time (a block with other cells or something to stand on). `state`: property values of the state it places (a slope's shape); `facing`: `toward` turns its `facing` property to point back at the player, `away` along the look (a stored ramp's facing is its downhill side: `toward` puts uphill ahead, owner 2026-10-30); `upper`: a 2-row piece's upper cell, its state with these values over the lower's (the steep slope's top half), placed with it. `tool` (instead of `block`): a tool of shared/tools/tools.json by item name, which places nothing (the stone axe: held, it chops; ADR 0067). The order is the hotbar's. Prototype content. Run `node shared/items/gen.mjs` after editing; CI fails if crates/dwell-game/src/items.gen.rs is stale.",
   "items": [
     {
       "name": "dwell:stone",
+      "category": "blocks",
       "label": "Stone",
       "block": "dwell:stone",
       "rows": 1
     },
     {
       "name": "dwell:stone_slope",
+      "category": "shapes",
       "label": "Stone slope",
       "block": "dwell:stone_ramp",
       "rows": 1,
@@ -21,6 +23,7 @@
     },
     {
       "name": "dwell:stone_steep_slope",
+      "category": "shapes",
       "label": "Stone steep slope",
       "block": "dwell:stone_ramp",
       "rows": 2,
@@ -36,18 +39,21 @@
     },
     {
       "name": "dwell:dirt",
+      "category": "blocks",
       "label": "Dirt",
       "block": "dwell:dirt",
       "rows": 1
     },
     {
       "name": "dwell:grass",
+      "category": "blocks",
       "label": "Grass",
       "block": "dwell:grass",
       "rows": 1
     },
     {
       "name": "dwell:ladder",
+      "category": "shapes",
       "label": "Ladder",
       "block": "dwell:ladder",
       "rows": 1,
@@ -55,24 +61,94 @@
     },
     {
       "name": "dwell:sand",
+      "category": "blocks",
       "label": "Sand",
       "block": "dwell:sand",
       "rows": 1
     },
     {
       "name": "dwell:log",
+      "category": "blocks",
       "label": "Log",
       "block": "dwell:log",
       "rows": 1
     },
     {
+      "name": "dwell:stone_axe",
+      "category": "tools",
+      "label": "Stone axe",
+      "tool": "dwell:stone_axe"
+    },
+    {
+      "name": "dwell:metal_axe",
+      "category": "tools",
+      "label": "Metal axe",
+      "tool": "dwell:metal_axe"
+    },
+    {
+      "name": "dwell:stone_pickaxe",
+      "category": "tools",
+      "label": "Stone pickaxe",
+      "tool": "dwell:stone_pickaxe"
+    },
+    {
+      "name": "dwell:metal_pickaxe",
+      "category": "tools",
+      "label": "Metal pickaxe",
+      "tool": "dwell:metal_pickaxe"
+    },
+    {
+      "name": "dwell:wooden_shovel",
+      "category": "tools",
+      "label": "Wooden shovel",
+      "tool": "dwell:wooden_shovel"
+    },
+    {
+      "name": "dwell:metal_shovel",
+      "category": "tools",
+      "label": "Metal shovel",
+      "tool": "dwell:metal_shovel"
+    },
+    {
+      "name": "dwell:sword",
+      "category": "weapons",
+      "label": "Sword",
+      "tool": "dwell:sword"
+    },
+    {
       "name": "dwell:leaves",
+      "category": "plants",
       "label": "Leaves",
       "block": "dwell:leaves",
       "rows": 1
     },
     {
+      "name": "dwell:oak_sapling",
+      "category": "plants",
+      "label": "Oak sapling",
+      "block": "dwell:oak_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
+      "name": "dwell:pine_sapling",
+      "category": "plants",
+      "label": "Pine sapling",
+      "block": "dwell:pine_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
+      "name": "dwell:palm_sapling",
+      "category": "plants",
+      "label": "Palm sapling",
+      "block": "dwell:palm_sapling",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
       "name": "dwell:tall_grass",
+      "category": "plants",
       "label": "Tall grass",
       "block": "dwell:tall_grass",
       "rows": 1,
@@ -80,12 +156,14 @@
     },
     {
       "name": "dwell:build_platform",
+      "category": "special",
       "label": "Build platform",
       "block": "dwell:build_platform",
       "rows": 1
     },
     {
       "name": "dwell:torch",
+      "category": "special",
       "label": "Torch",
       "block": "dwell:torch",
       "rows": 1,
@@ -93,6 +171,7 @@
     },
     {
       "name": "dwell:dynamite",
+      "category": "explosives",
       "label": "Dynamite",
       "block": "dwell:dynamite",
       "rows": 1,
@@ -100,6 +179,7 @@
     },
     {
       "name": "dwell:dynamite_blue",
+      "category": "explosives",
       "label": "Blue dynamite",
       "block": "dwell:dynamite_blue",
       "rows": 1,
@@ -107,29 +187,75 @@
     },
     {
       "name": "dwell:dynamite_green",
+      "category": "explosives",
       "label": "Green dynamite",
       "block": "dwell:dynamite_green",
       "rows": 1,
       "drag": "none"
     },
     {
+      "name": "dwell:dynamite_yellow",
+      "category": "explosives",
+      "label": "Yellow dynamite",
+      "block": "dwell:dynamite_yellow",
+      "rows": 1,
+      "drag": "none"
+    },
+    {
       "name": "dwell:snowy_grass",
+      "category": "blocks",
       "label": "Snowy grass",
       "block": "dwell:snowy_grass",
       "rows": 1
     },
     {
+      "name": "dwell:snow",
+      "category": "blocks",
+      "label": "Snow",
+      "block": "dwell:snow",
+      "rows": 1
+    },
+    {
+      "name": "dwell:glacier_ice",
+      "category": "blocks",
+      "label": "Glacier ice",
+      "block": "dwell:glacier_ice",
+      "rows": 1
+    },
+    {
       "name": "dwell:snowy_leaves",
+      "category": "plants",
       "label": "Snowy leaves",
       "block": "dwell:snowy_leaves",
       "rows": 1
     }
   ],
+  "inventory": {
+    "$comment": "The creative inventory view (docs/ITEMS.md §6a; owner, 2026-11-10): every item above in a catalogue grouped by its `category`, the groups in this order with these labels; the player picks the hotbar's slots (shared/inventory/inventory.json hotbarSlots) from it, saved per world in the browser. `hotbar`: a new world's picks, one per hotbar slot.",
+    "categories": [
+      { "name": "blocks", "label": "Blocks" },
+      { "name": "shapes", "label": "Shapes" },
+      { "name": "plants", "label": "Plants" },
+      { "name": "tools", "label": "Tools" },
+      { "name": "weapons", "label": "Weapons" },
+      { "name": "explosives", "label": "Explosives" },
+      { "name": "special", "label": "Special" }
+    ],
+    "hotbar": ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:log", "dwell:stone_axe", "dwell:stone_pickaxe"]
+  },
+  "hotbar": {
+    "$comment": "Stepping the hotbar's selection without number keys (docs/ITEMS.md §6; owner, 2026-11-07: on a sensitive touchpad with no wheel it was almost impossible to pick a piece). `prevKey` / `nextKey` (KeyboardEvent.code) step one slot left / right, wrapping, held keys repeating. The wheel and a touchpad's two-finger swipes (vertical, and horizontal as `deltaX`) step it too, through an accumulator: the first wheel event after `wheelGapMs` of quiet steps one slot at once (a mouse notch), and then every `wheelNotchPx` of travel in the same gesture steps one more, so a sensitive pad's stream of small deltas and its momentum don't skip several slots. A reversed direction starts over.",
+    "prevKey": "ArrowLeft",
+    "nextKey": "ArrowRight",
+    "wheelNotchPx": 120,
+    "wheelGapMs": 200
+  },
   "buildModes": {
-    "$comment": "What holding Place does after the first block (docs/ITEMS.md §5; owner, 2026-10-28): keep building as the aim moves, in the mode chosen. `key` (KeyboardEvent.code) cycles the modes, as does the controller's buildMode button (shared/input/gamepad.json) and the touch Build button; the first is the default. Kinds (the engine's vocabulary, crates/dwell-game/src/build_drag.rs): `line` builds on in a straight line out of the face first clicked, as far as the aim reaches along it; `level` paints the cells the aim sweeps over at the first block's level (floors and ceilings). `clearance` (m): how far the player's own body must be clear of a cell before a block goes in it (above it, jumping, when towering): the server sees the body a little later, and refuses a block placed into it. `holdMs`: how long Place is held before it builds on, so a click places one block (owner, 2026-10-28); a touch hold waits its own 350 ms instead.",
+    "$comment": "What holding Place does after the first block (docs/ITEMS.md §5; owner, 2026-10-28): keep building as the aim moves, in the mode chosen. `key` (KeyboardEvent.code) cycles the modes, as does the controller's buildMode button (shared/input/gamepad.json) and the touch Build button; the first is the default. Kinds (the engine's vocabulary, crates/dwell-game/src/build_drag.rs): `line` builds on in a straight line out of the face first clicked, as far as the aim reaches along it; `level` paints the cells the aim sweeps over at the first block's level (floors and ceilings). `clearance` (m): how far the player's own body must be clear of a cell before a block goes in it (above it, jumping, when towering): the server sees the body a little later, and refuses a block placed into it. `holdMs`: how long Place is held before it builds on, so a click places one block (owner, 2026-10-28); a touch hold waits its own 350 ms instead. `repeatS`: once it builds on, a held stroke builds its next piece at most this often (s), by the clock, whatever the frame rate (docs/BUGS.md #30: it was one a frame, and a line waited for the server's answer to each piece, so a page at a few frames a second built a piece or two a second).",
     "key": "KeyL",
     "clearance": 0.15,
     "holdMs": 200,
+    "repeatS": 0.05,
     "modes": [
       {
         "name": "dwell:line",

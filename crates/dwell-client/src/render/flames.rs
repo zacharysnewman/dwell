@@ -488,6 +488,9 @@ struct FlameVary {
     @location(2) rest: vec3f,
     @location(3) @interpolate(flat) info: u32,
     @location(4) @interpolate(flat) seed: u32,
+    // A blast's smoke or dust puff: the light at its centre (`puff_light`, render/blasts.rs), lit
+    // once per puff here rather than per pixel; 0 for every other kind.
+    @location(5) @interpolate(flat) lit: vec3f,
 };
 
 @vertex
@@ -499,6 +502,11 @@ fn flame_vs(v: FlameIn) -> FlameVary {
     o.rest = v.rest;
     o.info = v.info;
     o.seed = v.seed;
+    o.lit = vec3f(0.0);
+    let kind = (v.info >> 8u) & 0xffu;
+    if (kind == 8u || kind == 9u) {
+        o.lit = puff_light(puff_centre(v.rel, v.uv, v.rest.z));
+    }
     return o;
 }
 
@@ -519,7 +527,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     let fw = fwidth(i.uv);
     let width_px = 2.0 / max(max(fw.x, fw.y), 1e-6);
     let look = flame_look(i.info & 0xffu);
-    let kind = i.info >> 8u;
+    let kind = (i.info >> 8u) & 0xffu;
     if (kind == 1u) {
         let c = flame_glow(look, i.uv, i.rest.z, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 1e-4) {
@@ -537,7 +545,7 @@ fn flame_colour(i: FlameVary) -> vec4f {
     if (kind >= 8u) {
         // A blast's smoke, dust or fireball (render/blasts.rs): smoke and dust lit over what is
         // behind, the fireball added.
-        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed);
+        let c = blast_colour(kind, i.info & 0xffu, i.uv, i.rest, i.rel, i.seed, i.info >> 16u, i.lit);
         if (max(c.a, max(max(c.r, c.g), c.b)) < 0.005) {
             discard;
         }
@@ -615,15 +623,15 @@ fn flame_lit_fs(i: FlameVary) -> SceneOut {
 @fragment
 fn flame_mask_fs(i: FlameVary) -> SceneOut {
     let look = flame_look(i.info & 0xffu);
-    if ((i.info >> 8u) >= 4u) {
+    if (((i.info >> 8u) & 0xffu) >= 4u) {
         discard;
     }
-    if ((i.info >> 8u) == 3u) {
+    if (((i.info >> 8u) & 0xffu) == 3u) {
         let c = mote_shade(mote_look(i.info & 0xffu), i.uv, i.rest.y);
         if (max(max(c.r, c.g), c.b) < 0.1) {
             discard;
         }
-    } else if ((i.info >> 8u) == 2u) {
+    } else if (((i.info >> 8u) & 0xffu) == 2u) {
         if (max(flame_ember(look, i.uv, i.rest.y).r, 0.0) < 0.1) {
             discard;
         }
@@ -646,14 +654,19 @@ pub enum Group {
 
 /// The flames' pipelines and this frame's vertices.
 pub struct FlameRenderer {
-    mask: wgpu::RenderPipeline,
-    scene: wgpu::RenderPipeline,
-    lit: wgpu::RenderPipeline,
-    colour_only: wgpu::RenderPipeline,
+    mask: crate::render::pipeline::Lazy,
+    scene: crate::render::pipeline::Lazy,
+    lit: crate::render::pipeline::Lazy,
+    colour_only: crate::render::pipeline::Lazy,
     vertices: wgpu::Buffer,
     capacity: u64,
     /// Per group, its glows' and its embers' and flames' vertex ranges.
     ranges: [(Range<u32>, Range<u32>); 2],
+    /// Per group, where its mask's vertices end: the flames, embers and motes only. The flecks,
+    /// waterfalls and blast puffs after them never flag the view depth (`flame_mask_fs` would
+    /// discard every fragment of theirs), so the mask leaves them out: a chain of blasts' hundreds
+    /// of big puffs were rasterised again only to be discarded (docs/DEV_TOOLS.md, Worst-case blasts).
+    mask_ends: [u32; 2],
     /// Flames drawn this frame (telemetry).
     pub drawn: usize,
     /// Portal motes drawn this frame (telemetry).
@@ -682,6 +695,11 @@ const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
 };
 
 impl FlameRenderer {
+    /// Its pipelines, for the renderer's warm-up (pipeline.rs).
+    pub(crate) fn pipelines(&self) -> [&crate::render::pipeline::Lazy; 4] {
+        [&self.mask, &self.scene, &self.lit, &self.colour_only]
+    }
+
     pub fn new(
         device: &wgpu::Device,
         frame_layout: &wgpu::BindGroupLayout,
@@ -724,45 +742,54 @@ impl FlameRenderer {
                 shader_location: 4,
             },
         ];
-        let buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: VERTEX_BYTES,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &attributes,
-        })];
-        let make = |label: &str, fs: &str, targets: &[Option<wgpu::ColorTargetState>]| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("flame_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets,
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DEPTH,
-                    depth_write_enabled: Some(false),
-                    depth_compare: Some(DEPTH_COMPARE),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
+        // Made on first use (pipeline.rs, bug #71).
+        let make = |label: &'static str,
+                    fs: &'static str,
+                    targets: Vec<Option<wgpu::ColorTargetState>>| {
+            let (device, layout, module) = (device.clone(), layout.clone(), module.clone());
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_BYTES,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(label),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("flame_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(fs),
+                            compilation_options: Default::default(),
+                            targets: &targets,
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(false),
+                            depth_compare: Some(DEPTH_COMPARE),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             })
         };
         let colour = |write: bool| wgpu::ColorTargetState {
@@ -786,19 +813,19 @@ impl FlameRenderer {
         let mask = make(
             "flame mask",
             "flame_mask_fs",
-            &[Some(colour(false)), Some(view_depth(true))],
+            vec![Some(colour(false)), Some(view_depth(true))],
         );
         let scene = make(
             "flames",
             "flame_scene_fs",
-            &[Some(colour(true)), Some(view_depth(false))],
+            vec![Some(colour(true)), Some(view_depth(false))],
         );
         let lit = make(
             "flames (lit)",
             "flame_lit_fs",
-            &[Some(colour(true)), Some(view_depth(true))],
+            vec![Some(colour(true)), Some(view_depth(true))],
         );
-        let colour_only = make("flames (water)", "flame_fs", &[Some(colour(true))]);
+        let colour_only = make("flames (water)", "flame_fs", vec![Some(colour(true))]);
         let capacity = 64;
         Self {
             mask,
@@ -808,6 +835,7 @@ impl FlameRenderer {
             vertices: vertex_buffer(device, capacity),
             capacity,
             ranges: [(0..0, 0..0), (0..0, 0..0)],
+            mask_ends: [0, 0],
             drawn: 0,
             motes_drawn: 0,
             flecks_drawn: 0,
@@ -843,6 +871,7 @@ impl FlameRenderer {
         let (motes, n) = mote_quads(portals, eye, basis, seconds, self.animated);
         data.extend(motes);
         self.motes_drawn = n;
+        let scene_mask_end = (data.len() / VERTEX_FLOATS) as u32;
         // The flecks on moving water, a CPU adapter's few (`particle_cpu_count`).
         let max = dwell_look::waterflow::LIQUID_FLOWS
             .iter()
@@ -872,6 +901,7 @@ impl FlameRenderer {
         let g = scene_glows as u32;
         let a = scene_end + arms_glows as u32;
         self.ranges = [(0..g, g..scene_end), (scene_end..a, a..end)];
+        self.mask_ends = [scene_mask_end, end];
         self.drawn = scene.len() + usize::from(arms.is_some());
         let count = u64::from(end);
         if count > self.capacity {
@@ -884,6 +914,12 @@ impl FlameRenderer {
         }
     }
 
+    /// A group's vertices the mask draws: its embers, flames and motes (`mask_ends`).
+    pub(super) fn mask_range(&self, group: Group) -> Range<u32> {
+        let lit = &self.ranges[group as usize].1;
+        lit.start..self.mask_ends[group as usize].clamp(lit.start, lit.end)
+    }
+
     /// Whether a group has flames this frame.
     pub fn has(&self, group: Group) -> bool {
         !self.ranges[group as usize].1.is_empty()
@@ -892,7 +928,7 @@ impl FlameRenderer {
     /// The mask (into a scene pass with see-through water, after its opaque draws): the view
     /// depth flagged self-lit where the flames and their embers cover.
     pub fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, group: Group, calls: &mut u32) {
-        let (_, lit) = self.ranges[group as usize].clone();
+        let lit = self.mask_range(group);
         if lit.is_empty() {
             return;
         }
@@ -1119,10 +1155,10 @@ mod tests {
         // The pipelines that run them write the view depth's target; the glows' does not.
         let src = include_str!("flames.rs");
         assert!(src.contains(
-            "\"flame_mask_fs\",\n            &[Some(colour(false)), Some(view_depth(true))]"
+            "\"flame_mask_fs\",\n            vec![Some(colour(false)), Some(view_depth(true))]"
         ));
         assert!(src.contains(
-            "\"flame_lit_fs\",\n            &[Some(colour(true)), Some(view_depth(true))]"
+            "\"flame_lit_fs\",\n            vec![Some(colour(true)), Some(view_depth(true))]"
         ));
         let scene = WGSL
             .split("fn flame_scene_fs")

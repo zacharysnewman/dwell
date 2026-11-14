@@ -27,9 +27,16 @@ pub struct LakeHit {
     pub sdf: f64,
 }
 
+/// The lakes' index: map cells per bucket side (a bucket lists the fields whose box reaches it).
+const BUCKET: i64 = 16;
+
 #[derive(Debug, Default)]
 pub struct Shores {
     pub fields: Vec<Shore>,
+    /// Buckets per side, and per bucket (row-major) the fields reaching it, in `fields`' order, so
+    /// a query reads only the lakes near its column and breaks ties as a scan of all would.
+    side: i64,
+    buckets: Vec<Vec<u32>>,
 }
 
 impl Shores {
@@ -112,15 +119,60 @@ impl Shores {
                 sdf,
             });
         }
-        Self { fields }
+        Self::indexed(fields, n)
+    }
+
+    /// The fields with their index over a map `n` cells wide.
+    fn indexed(fields: Vec<Shore>, n: i64) -> Self {
+        let side = (n + BUCKET - 1) / BUCKET;
+        let mut buckets = vec![Vec::new(); (side * side) as usize];
+        for (k, f) in fields.iter().enumerate() {
+            let (b0, c0) = (f.i0 / BUCKET, f.j0 / BUCKET);
+            let b1 = ((f.i0 + f.w - 1) / BUCKET).min(side - 1);
+            let c1 = ((f.j0 + f.h - 1) / BUCKET).min(side - 1);
+            for c in c0..=c1 {
+                for b in b0..=b1 {
+                    buckets[(c * side + b) as usize].push(k as u32);
+                }
+            }
+        }
+        Self {
+            fields,
+            side,
+            buckets,
+        }
     }
 
     /// The lake whose field covers face-local (x, z) most deeply, if any.
     pub fn query(&self, map: &WorldMap, x: f64, z: f64) -> Option<LakeHit> {
         let u = (x - map.x0) / map.cell;
         let v = (z - map.x0) / map.cell;
+        let (b, c) = ((u / BUCKET as f64).floor(), (v / BUCKET as f64).floor());
+        let side = self.side as f64;
+        if !(0.0..side).contains(&b) || !(0.0..side).contains(&c) {
+            return None;
+        }
+        let near = &self.buckets[(c as i64 * self.side + b as i64) as usize];
+        Self::best_of(map, near.iter().map(|&k| &self.fields[k as usize]), u, v)
+    }
+
+    /// `query` by a scan of every lake (the index's reference in tests).
+    #[cfg(test)]
+    fn query_all(&self, map: &WorldMap, x: f64, z: f64) -> Option<LakeHit> {
+        let u = (x - map.x0) / map.cell;
+        let v = (z - map.x0) / map.cell;
+        Self::best_of(map, self.fields.iter(), u, v)
+    }
+
+    /// The deepest of `fields` covering map-grid point (u, v), the first on a tie.
+    fn best_of<'a>(
+        map: &WorldMap,
+        fields: impl Iterator<Item = &'a Shore>,
+        u: f64,
+        v: f64,
+    ) -> Option<LakeHit> {
         let mut best: Option<LakeHit> = None;
-        for f in &self.fields {
+        for f in fields {
             let (fu, fv) = (u - f.i0 as f64, v - f.j0 as f64);
             if fu < 0.0 || fv < 0.0 || fu > (f.w - 1) as f64 || fv > (f.h - 1) as f64 {
                 continue;
@@ -142,4 +194,90 @@ impl Shores {
         }
         best
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The points to compare at: a lattice over each field's box and a little past it (its edges,
+    /// where buckets split it, included), and a coarse one over the whole map.
+    fn points(map: &WorldMap, fields: &[Shore]) -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        let at = |u: f64| map.x0 + u * map.cell;
+        for f in fields {
+            for t in 0..=24 {
+                for s in 0..=24 {
+                    let u = f.i0 as f64 - 1.0 + (f.w + 1) as f64 * f64::from(s) / 24.0;
+                    let v = f.j0 as f64 - 1.0 + (f.h + 1) as f64 * f64::from(t) / 24.0;
+                    out.push((at(u), at(v)));
+                }
+            }
+        }
+        let n = map.n as f64;
+        for t in -2..=202 {
+            for s in -2..=202 {
+                out.push((at(n * f64::from(s) / 200.0), at(n * f64::from(t) / 200.0)));
+            }
+        }
+        out
+    }
+
+    dwell_world::both_faces!(
+        /// WORLD_SCALE.md §3.1: the lakes' index answers as the scan of every lake did, on each
+        /// face's map (seeds 0, 1 and 7).
+        fn the_lake_index_matches_a_scan_of_every_lake(f: dwell_world::FaceFrame) {
+            let mut hits = 0;
+            for seed in [0u64, 1, 7] {
+                let map = crate::worldmap::for_seed(crate::bifacial::face_seed(seed, f.face));
+                let shores = &map.shores;
+                let pts = points(&map, &shores.fields);
+                for &(x, z) in &pts {
+                    let (a, b) = (shores.query(&map, x, z), shores.query_all(&map, x, z));
+                    assert_eq!(a, b, "seed {seed} at ({x}, {z})");
+                    hits += usize::from(a.is_some());
+                }
+            }
+            assert!(hits > 100, "{hits} points hit a lake");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Many overlapping lakes (a fixture of 600 fields, ties included, over a face's map): the
+        /// index finds the deepest, the first on a tie, as the scan does.
+        fn the_lake_index_matches_a_scan_over_many_overlapping_lakes(f: dwell_world::FaceFrame) {
+            let map = crate::worldmap::for_seed(crate::bifacial::face_seed(0, f.face));
+            let n = map.n as i64;
+            let mut rng = 0x9E37_79B9_7F4A_7C15u64;
+            let mut next = |m: i64| {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                (rng % m as u64) as i64
+            };
+            let fields: Vec<Shore> = (0..600)
+                .map(|k| {
+                    let (w, h) = (1 + next(60), 1 + next(60));
+                    let (i0, j0) = (next(n - w), next(n - h));
+                    let sdf = (0..w * h).map(|_| (next(9) - 4) as f32).collect();
+                    Shore {
+                        lake: (k % map.lakes.len()) as u16,
+                        i0,
+                        j0,
+                        w,
+                        h,
+                        sdf,
+                    }
+                })
+                .collect();
+            let shores = Shores::indexed(fields, n);
+            let mut hits = 0;
+            for (x, z) in points(&map, &shores.fields) {
+                let (a, b) = (shores.query(&map, x, z), shores.query_all(&map, x, z));
+                assert_eq!(a, b, "at ({x}, {z})");
+                hits += usize::from(a.is_some());
+            }
+            assert!(hits > 10_000, "{hits} hits");
+        }
+    );
 }

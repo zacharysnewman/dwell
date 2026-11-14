@@ -45,6 +45,7 @@ fn breaking_a_lakes_wall_drains_its_top_row_and_clients_see_it() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let mut drained = Vec::new();
@@ -134,6 +135,7 @@ fn the_waters_modifications_reach_a_client_in_revision_order() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     let mut water = 0;
@@ -194,6 +196,7 @@ fn a_lake_cut_open_drains_on_after_its_player_leaves() {
             material: 0,
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     for _ in 0..7 {

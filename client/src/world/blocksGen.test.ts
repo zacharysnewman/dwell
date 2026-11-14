@@ -1,7 +1,15 @@
 // The block generator (shared/blocks/gen.mjs) over fixture data: a copy runs in a temporary tree
 // with its own block files, so entries are added by data alone and its validation is exercised.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +45,8 @@ function generate(blocks: object[]): { status: number | null; output: string; ru
   mkdirSync(sounds, { recursive: true });
   for (const f of ['load.mjs', 'validate.mjs', 'dwell.json'])
     copyFileSync(join(soundsDir, f), join(sounds, f));
+  // ... and the recorded samples its sounds name (AUDIO.md §2b).
+  cpSync(join(soundsDir, 'samples'), join(sounds, 'samples'), { recursive: true });
   const air = { name: 'air', density: 0, shape: 'empty', color: '#000000', opacity: 0 };
   writeFileSync(
     join(here, 'dwell.json'),
@@ -162,6 +172,47 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
     expect(r.rust).toMatch(
       /name: "dwell:tuft".*cross: Some\(Cross \{ height: 1\.0, quads: 2, offset: 0\.0, rotation_deg: 0\.0, height_min: 1\.0, height_max: 1\.0, sit_on_support: true \}\), wind: None/,
     );
+  });
+
+  it('gives each growth stage its height and selection by data (cross.heights)', () => {
+    const r = generate([
+      plant('sprouts', {
+        properties: { stage: ['2', '0', '1'] },
+        cross: {
+          height: 0.8,
+          heights: { property: 'stage', heights: { '0': 0.2, '1': 0.5, '2': 0.8 } },
+        },
+        selectionBox: [0.2, 0, 0.2, 0.8, 0.6, 0.8],
+      }),
+    ]);
+    expect(r.status, r.output).toBe(0);
+    expect(r.rust).toMatch(
+      /name: "dwell:sprouts\[stage=2\]".*cross: Some\(Cross \{ height: 0\.8,.*selection: Some\(\[0\.2, 0\.0, 0\.2, 0\.8, 0\.6, 0\.8\]\)/,
+    );
+    expect(r.rust).toMatch(
+      /name: "dwell:sprouts\[stage=0\]".*cross: Some\(Cross \{ height: 0\.2,.*selection: Some\(\[0\.2, 0\.0, 0\.2, 0\.8, 0\.15, 0\.8\]\)/,
+    );
+    for (const [heights, message] of [
+      [{ property: 'nope', heights: {} }, 'cross.heights.property must name a property'],
+      [
+        { property: 'stage', heights: { '0': 0.2, '1': 0.5 } },
+        'cross.heights.heights.2 must be a number in (0, 1]',
+      ],
+      [
+        { property: 'stage', heights: { '0': 0.2, '1': 0.5, '2': 0.7 } },
+        'cross.heights: the default value 2 must be cross.height',
+      ],
+      [
+        { property: 'stage', heights: { '0': 0.2, '1': 0.5, '2': 0.8, '9': 1 } },
+        'cross.heights.heights names a value the property lacks',
+      ],
+    ] as const) {
+      const bad = generate([
+        plant('bad', { properties: { stage: ['2', '0', '1'] }, cross: { height: 0.8, heights } }),
+      ]);
+      expect(bad.status, JSON.stringify(heights)).not.toBe(0);
+      expect(bad.output).toContain(`dwell:bad: ${message}`);
+    }
   });
 
   it('rejects bad cross, wind and fade values with the block named', () => {

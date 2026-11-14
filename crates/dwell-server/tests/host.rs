@@ -53,6 +53,7 @@ fn world_saved_by(path: &str, version: &str) {
         app_version_created: version.into(),
         app_version_last: version.into(),
         settings: None,
+        spawn_grid: None,
     };
     db.save(&SaveBatch {
         meta: Some(meta),
@@ -267,4 +268,110 @@ fn the_binary_starts_prints_its_invite_link_and_saves_on_sigint() {
     assert!(rest.contains("world saved"), "{rest}");
     let db = WorldDb::open(std::path::Path::new(&world)).unwrap();
     assert_eq!(db.load_meta().unwrap().app_version_last, APP_VERSION);
+}
+
+/// Opens `world` with `extra` options and starts a server on it; the `--mode` line it logs.
+fn start_in(world: &str, extra: &[&str]) -> (dwell_sim::server::Server, String) {
+    let mut list = vec!["--world", world, "--generator", "0"];
+    list.extend_from_slice(extra);
+    let mut o = parse_options(&args(&list)).unwrap();
+    open_world(&mut o).unwrap();
+    let mode = o.mode.clone();
+    let config = std::mem::take(&mut o.server);
+    let mut server =
+        dwell_sim::server::Server::new(config, Box::new(dwell_sim::entropy::SystemEntropy));
+    let line = switch_mode(&mut server, mode.as_deref());
+    (server, line)
+}
+
+fn save_and_close(mut server: dwell_sim::server::Server) {
+    server.save_now();
+    server.flush_store();
+}
+
+#[test]
+fn the_mode_option_makes_a_new_world_in_it_and_switches_a_saved_one() {
+    let s = Scratch::new("mode");
+    let world = s.file("m.dwellworld");
+    // A new world in adventure.
+    let (server, line) = start_in(&world, &["--mode", "adventure"]);
+    assert_eq!(server.world_settings().mode, "adventure");
+    assert_eq!(line, "world: game mode adventure");
+    save_and_close(server);
+    // Reopened without it: still adventure (the world keeps its mode).
+    let (server, _) = start_in(&world, &[]);
+    assert_eq!(server.world_settings().mode, "adventure");
+    save_and_close(server);
+    // Reopened with --mode creative: switched, logged, and saved.
+    let (server, line) = start_in(&world, &["--mode", "creative"]);
+    assert_eq!(server.world_settings().mode, "creative");
+    assert_eq!(
+        line,
+        "world: game mode creative (switched from adventure by --mode)"
+    );
+    save_and_close(server);
+    let (server, _) = start_in(&world, &[]);
+    assert_eq!(server.world_settings().mode, "creative");
+}
+
+#[test]
+fn the_size_option_makes_a_new_world_at_it_and_a_saved_one_keeps_its_own() {
+    // BIG_MAP.md M2a: `--size 2x` makes a 2× world; reopened with no option (or another size) it is
+    // still 2×, its bounds the 2× disc's.
+    use dwell_protocol::world_size::WorldSize;
+    let two = WorldSize::named("2x").unwrap();
+    let s = Scratch::new("size");
+    let world = s.file("s.dwellworld");
+    let (server, _) = start_in(&world, &["--size", "2x"]);
+    assert_eq!(server.world_settings().size, two);
+    assert_eq!(server.bounds().radius(), 100_000);
+    save_and_close(server);
+    let (server, _) = start_in(&world, &["--size", "4x"]);
+    assert_eq!(server.world_settings().size, two, "the world's own");
+    assert_eq!(server.bounds().radius(), 100_000);
+    assert!(
+        parse_options(&args(&["--size", "3x"])).is_err(),
+        "not a named size"
+    );
+}
+
+#[test]
+fn a_mode_name_not_in_the_data_fails_with_a_message() {
+    let s = Scratch::new("badmode");
+    let world = s.file("b.dwellworld");
+    let mut o = parse_options(&args(&["--world", &world, "--mode", "survival"])).unwrap();
+    let e = open_world(&mut o).unwrap_err();
+    assert!(
+        e.contains("\"survival\" is not a game mode") && e.contains("creative, adventure"),
+        "{e}"
+    );
+    assert!(
+        !std::path::Path::new(&world).exists(),
+        "nothing is written for a bad mode"
+    );
+}
+
+#[test]
+fn worldgen_installs_the_configs_maps_so_the_server_sends_it_to_guests() {
+    // both-faces: installs and checks both faces' maps. ADR 0074 B7.
+    let mut o = parse_options(&args(&["--seed", "47115", "--worldgen", "test:tall_peak"])).unwrap();
+    assert_eq!(o.worldgen, "test:tall_peak");
+    assert_eq!(install_worldgen(&o).unwrap(), "test:tall_peak");
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = dwell_worldgen::bifacial::face_seed(47115, face);
+        assert_eq!(
+            dwell_worldgen::worldmap::cache::for_seed(seed).worldgen_text(),
+            "test:tall_peak"
+        );
+    }
+    let config = std::mem::take(&mut o.server);
+    let server =
+        dwell_sim::server::Server::new(config, Box::new(dwell_sim::entropy::SeededEntropy(1)));
+    assert_eq!(server.worldgen_text(), "test:tall_peak");
+    o.worldgen = "test:no_such_world".into();
+    assert!(install_worldgen(&o).is_err());
+    assert_eq!(
+        install_worldgen(&parse_options(&args(&[])).unwrap()).unwrap(),
+        ""
+    );
 }

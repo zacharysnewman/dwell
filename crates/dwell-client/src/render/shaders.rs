@@ -37,6 +37,24 @@ struct Frame {
     // The lines (`line_vs`): x, y the drawing size (px), z a line's width (px: CSS px × the pixel
     // ratio, render/mod.rs `line_width_px`), so outlines read the same near and far.
     lines: vec4f,
+    // The light shafts (ADR 0064; dwell-look `shaft_uniforms`): shafts xy the light's NDC point in
+    // the air (under a fluid y the cells' drift, m/s), z the weight (0: none drawn), w the mode (0
+    // none, 1 air, 2 under a fluid); cfg x the samples, y the reach (a share of the way; under: m),
+    // z the decay (under: the fade depth, m), w the disc's radius (half screen heights; under: the
+    // cells' size, m); color rgb the light's (sRGB), w Snell's window's softened rim; window rgb
+    // its glow (sRGB), w how much of the window it is.
+    shafts: vec4f,
+    shafts_cfg: vec4f,
+    shafts_color: vec4f,
+    shafts_window: vec4f,
+    // The placed and held lights' shafts (dwell-look `light_shaft_uniforms`): [0] x the count (0:
+    // none), y the samples toward each, z the reach, w the decay; per light its NDC point, depth
+    // along the view (m) and halo radius (half screen heights), then its glow (sRGB × weight).
+    torch_shafts: array<vec4f, 9>,
+    // The clouds' edge round the disc's axis (dwell-look `cloud_disc`; BUGS.md #101): xy the eye's
+    // world x and z (m from the axis), z the edge's radius (the world's plus the margin), w the fade
+    // inside it. The decks and the volume are only over the disc.
+    cloud_disc: vec4f,
     // x eye height (world y), y face (±1), z exposure (× the eye's adaptation's), w the eye's face's
     // fog density (× its time of day's; the other face's is day.other_stars.y)
     eye: vec4f,
@@ -60,7 +78,7 @@ struct Frame {
     clouds_o: vec4f,
     cloud_cfg_o: vec4f,
     // The eye under a fluid's drawn surface: x 1 (else 0), y fluid id, z the surface's world y;
-    // w the water quality (0 Low, 1 Medium, 2 High).
+    // w the water tier's switches (dwell-look `tier_bits`, read by `water_tier_*`).
     water: vec4f,
     // The wind (docs/MOTION_EFFECTS.md; `wind_uniforms` in mod.rs). point: the vanishing point
     // (NDC xy), intensity 0–1, time (s). view: aspect, the flight layer 0–1, drawing height (px),
@@ -82,6 +100,17 @@ struct Frame {
     // screen height) and the hit thickness (m).
     reflect: vec4f,
     reflect_sky: vec4f,
+    // The tree being chopped leans toward its notch (crate::chop `TreeLean`, mod.rs
+    // `lean_uniforms`): the hinge (relative to the eye) and the radius; the tree's up and its
+    // height; the turn's axis and angle (radians; 0: nothing leans).
+    lean_hinge: vec4f,
+    lean_up: vec4f,
+    lean_axis: vec4f,
+    // The far trees' hand-over (render/tree_fade.rs, dwell-worldgen `impostor::Far`): xy the eye's
+    // face-local x and z from the tree map's corner, z the near leaves' reach (m; every leaf past it
+    // is the impostors'), w 1 when impostors draw (else the near trees' leaves draw to the
+    // full-detail distance as before).
+    far_trees: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -89,6 +118,26 @@ struct Frame {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+// An atlas uv moved to its level-0 texel's centre: with anisotropic filtering on, the sampler's
+// magnification is linear (WebGPU wants every filter linear), and sampling at texel centres keeps
+// texels crisp up close as the nearest filter did; far away the footprint spans many texels and
+// the half-texel move is lost in it (render/mod.rs `atlas_sampler_descriptor`).
+fn atlas_crisp(uv: vec2f) -> vec2f {
+    let size = vec2f(textureDimensions(atlas));
+    return (floor(uv * size) + 0.5) / size;
+}
+// Atlas gradients with the long axis capped so an anisotropic footprint stays inside the tile's
+// wrapped gutter: the sampler picks the level from the short axis (2^L texels), where the gutter is
+// GUTTER / 2^L texels, and spreads its taps along the long axis; keeping that axis within
+// 2 × GUTTER level-0 texels (or the short axis, past it) keeps the taps off the neighbouring tiles
+// and the atlas's empty space, the grey grid far ground showed at a grazing angle.
+fn atlas_grads(gx: vec2f, gy: vec2f) -> array<vec2f, 2> {
+    let size = vec2f(textureDimensions(atlas));
+    let lx = length(gx * size);
+    let ly = length(gy * size);
+    let cap = max(2.0 * f32(ATLAS_GUTTER), min(lx, ly));
+    return array<vec2f, 2>(gx * min(1.0, cap / max(lx, 1e-12)), gy * min(1.0, cap / max(ly, 1e-12)));
+}
 // Per atlas tile (index cx + cy × ATLAS_CELLS): its grid lines (x every, y strength; 0 for none),
 // from the registry's `grid` look option of the blocks that use the tile, z its glow, w how close
 // to the eye (m) its faces dissolve (block data `nearFade`: leaves; dwell-mesh tile_grids).
@@ -117,8 +166,44 @@ struct Fluid {
     flow: vec4f,
     // The streaks' colour (linear), a their strength at full
     flow_foam: vec4f,
-    // x a streak's length along the flow, y its width across (m)
+    // x a streak's length along the flow, y its width across (m), z the shore foam's bands, w the
+    // seconds one takes to roll out
     flow_shape: vec4f,
+    // The shore foam (WATER_RENDERING.md §14): x the contact line's width (m), y a band's width
+    // as it is born (m), z the foam's most, w how far noise varies the bands (0..1)
+    shore: vec4f,
+    // Its underwater look (shared/look/underwater.json, WATER_RENDERING.md §12): x the lens (m
+    // ahead of the eye: the plane where under or above is decided), y the fog's clear distance
+    // (m), z the fog's density (× its rates), w the band's depth (m on the lens plane)
+    under: vec4f,
+    // x the line's wave height (m), y its wavelength (m), z its cycles a second, w the underside's
+    // texture strength
+    line: vec4f,
+    // rgb the band's tint (a multiplier, output colour), a its streaks' strength
+    band: vec4f,
+    // x the dark rim's width (px), y its shade (×), z the bright line's width (px), w its glow (×)
+    rim: vec4f,
+    // x the band's glints, y how broken its ripples are, z how far (px) they shift and blur its
+    // mirror of the scene above, w the most of it that mirror is
+    band_extra: vec4f,
+    // The underside seen from below: x how broken its cells are (0: the caustic web; 1: bright
+    // cells, dark gaps), y the sun patch's strength, z its tightness (a power), w the cells'
+    // scale against the floor's caustics (a whole number, so the pattern still wraps)
+    underside: vec4f,
+    // Snell's window seen from below (WATER_RENDERING.md §16, §19): x the share of the underside's
+    // cells over the sky in it, y the sun's and moon's discs' strength in it, z the sun's glow in
+    // it (× the sun's light), w that glow's tightness (a power)
+    window: vec4f,
+    // The underwater colour grade (WATER_RENDERING.md §19): rgb the colour the fog's in-scatter
+    // is pulled toward (linear), a by how much (0: the fluid's scatter)
+    tone: vec4f,
+    // x the in-scatter's brightness (×), y the mirror's outside the window (×), z the share of the
+    // absorption the light down to the floor takes, w the window rim's glow (× the zenith's light)
+    lift: vec4f,
+    // The shore foam's softness (WATER_RENDERING.md §20): x the contact line's feather into the
+    // water (m), y how soft a band's sides are (0..1); its corners (§21): z an inner corner's
+    // fillet radius (m)
+    shore_soft: vec4f,
 };
 @group(0) @binding(4) var<storage, read> fluids: array<Fluid>;
 // The water's tiles (render/water_tiles.rs): gradient noise and its derivatives over NOISE_TILE
@@ -251,7 +336,65 @@ fn tile_near_fade(tile_origin: vec2f) -> f32 {
 // docs/LIGHTS.md): a torch's flame.
 fn tile_glow(tile_origin: vec2f) -> f32 {
     let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
-    return tile_grids[cell.x + cell.y * ATLAS_CELLS].z;
+    return abs(tile_grids[cell.x + cell.y * ATLAS_CELLS].z);
+}
+
+// Whether the tile at `tile_origin` is molten (its material's `molten`: lava; dwell-mesh
+// `tile_glow_entry` stores its glow negated) and the tier moves its heat (not the CPU tier).
+fn tile_molten(tile_origin: vec2f) -> bool {
+    let cell = vec2u(clamp(floor(tile_origin * f32(ATLAS_CELLS)), vec2f(0.0), vec2f(f32(ATLAS_CELLS - 1u))));
+    return tile_grids[cell.x + cell.y * ATLAS_CELLS].z < 0.0 && water_tier_molten();
+}
+
+// Lava's slow heat (WATER_RENDERING.md §17): the crust drifts at MOLTEN_DRIFT blocks a second
+// and two slow waves over the world brighten and dim its glowing cracks, 0.7–1.4 × the glow.
+const MOLTEN_DRIFT: vec2f = vec2f(0.012, 0.007);
+const MOLTEN_SPAN: f32 = 3.0;
+fn molten_heat(world_xz: vec2f, t: f32) -> f32 {
+    let a = sin(dot(world_xz, vec2f(0.41, 0.23)) - 0.45 * t);
+    let b = sin(dot(world_xz, vec2f(-0.17, 0.37)) + 0.31 * t + 1.7);
+    return 1.05 + 0.35 * (0.6 * a + 0.4 * b);
+}
+
+// Lava's crust plates (WATER_RENDERING.md §17.1): a cellular pattern in world metres, continuous
+// across blocks: plates MOLTEN_CELL m across whose seams (the distance to the second-nearest
+// plate's centre less the nearest's) glow. The plates' centres wander slowly (flowing crust) and
+// the plane is warped a little so the seams bend. Returns x the seam (1 on it, 0 inside a plate),
+// y a per-plate value (0–1, to vary the crust's darkness).
+const MOLTEN_CELL: f32 = 1.7;
+const MOLTEN_SEAM: f32 = 0.11;
+const MOLTEN_OPEN: f32 = 0.35;
+fn molten_hash2(c: vec2f) -> vec2f {
+    let p = vec2f(dot(c, vec2f(127.1, 311.7)), dot(c, vec2f(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453);
+}
+fn molten_plates(world: vec2f, t: f32, crust_cover: f32) -> vec2f {
+    let warp = vec2f(sin(world.y * 0.9 + t * 0.21), sin(world.x * 0.8 - t * 0.17)) * 0.22;
+    let p = (world + warp) / MOLTEN_CELL;
+    let base = floor(p);
+    var d1 = 9.0;
+    var d2 = 9.0;
+    var id = vec2f(0.0);
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i <= 1; i++) {
+            let c = base + vec2f(f32(i), f32(j));
+            let h = molten_hash2(c);
+            let centre = c + 0.5 + 0.38 * sin(6.2831853 * h + t * 0.08);
+            let d = length(p - centre);
+            if (d < d1) {
+                d2 = d1;
+                d1 = d;
+                id = h;
+            } else if (d < d2) {
+                d2 = d;
+            }
+        }
+    }
+    let gap = (d2 - d1) * MOLTEN_CELL;
+    // The seams widen as the crust thins (its stop's `crust`): hot lava is mostly molten channels
+    // between small plates, crusting lava all plate with hairline seams.
+    let w = (MOLTEN_SEAM + MOLTEN_OPEN * (1.0 - crust_cover)) * (0.7 + 0.6 * id.y);
+    return vec2f(1.0 - smoothstep(w * 0.4, w, gap), id.x);
 }
 
 // A level's brightness on `curve` (shared/look/light.json): x / (curve − (curve − 1)·x).
@@ -280,6 +423,18 @@ fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     );
 }
 
+// The warm light the sunlit ground throws back onto a body (shared/look/light.json
+// `characters.bounce`, BUGS.md #158), as `lambert_lit` gives a white top face (/ π): the sun's
+// light on the open ground (its height over the face's horizon), as open to the sky as the body
+// is. Without it a body's side away from the sun took the blue sky alone and its skin read cold.
+fn body_bounce(frag_y: f32, l: TerrainLight) -> vec3f {
+    let face = face_at(frag_y);
+    let d = frame.day;
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, face > 0.0);
+    let ground = max(dot(face_up(face), d.sun.xyz), 0.0) * own(d.sun.xyz, face);
+    return BODY_BOUNCE * sun * ground * l.ambient / PI;
+}
+
 // `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
 // hemisphere light by `l.ambient`, the sun and moon by `l.direct`, the block light's warm glow and
 // the dynamic lights (`l.points`).
@@ -295,7 +450,10 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     // preview's toon levels when it is on (`band`; smooth otherwise).
     let ks = band(max(dot(n, d.sun.xyz), 0.0) * own(d.sun.xyz, face) * l.direct, frame.pixel_art.x);
     let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct, frame.pixel_art.x);
-    let direct = ks * sun + km * moon;
+    // A grid's light rig (BUGS.md #145): the bodies lighting it by their reflected light.
+    let k0 = band(max(dot(n, d.rig0_dir.xyz), 0.0) * own(d.rig0_dir.xyz, face) * l.direct, frame.pixel_art.x);
+    let k1 = band(max(dot(n, d.rig1_dir.xyz), 0.0) * own(d.rig1_dir.xyz, face) * l.direct, frame.pixel_art.x);
+    let direct = ks * sun + km * moon + k0 * d.rig0.rgb + k1 * d.rig1.rgb;
     let ambient = band(l.ambient, frame.pixel_art.y);
     // The preview's hue-shifted shadows: the sky light where the sun doesn't reach takes the
     // tint's hue (the block light and torches keep theirs).
@@ -407,10 +565,71 @@ fn schlick(cos: f32, f0: f32) -> f32 {
 // The underwater fog, the W4 stub (WATER_RENDERING.md W4 builds the full underwater view): over
 // `dist` metres of the fluid, Beer–Lambert absorption of what is behind and the fluid's in-scatter,
 // lit as the face's up is.
+// The underwater look's fog: none over its clear distance, then its rates × its density.
+// The in-scatter is graded by the look's `tone` (WATER_RENDERING.md §19): its colour pulled toward
+// `tone.rgb` and brightened by `lift.x` (a fluid without a look: as before).
 fn underwater(lin: vec3f, dist: f32, f: Fluid) -> vec3f {
-    let t = exp(-(f.absorption.rgb + f.extra.w) * dist);
-    let inscatter = lambert(f.scatter.rgb, face_up(frame.eye.y), frame.eye.x);
+    let d = max(dist - f.under.y, 0.0) * f.under.z;
+    let t = exp(-(f.absorption.rgb + f.extra.w) * d);
+    let inscatter = lambert(mix(f.scatter.rgb, f.tone.rgb, f.tone.a), face_up(frame.eye.y), frame.eye.x) * f.lift.x;
     return lin * t + inscatter * (1.0 - t);
+}
+
+// The water tier's switches (shared/look/watertiers.json; dwell-look `tier_bits`): bit 0 the scene
+// copy is read, bit 1 flow streaks, bit 2 the bank band, bits 3-4 the ripple layers.
+fn water_tier_bits() -> u32 {
+    return u32(frame.water.w + 0.5);
+}
+fn water_reads_scene() -> bool {
+    return (water_tier_bits() & 1u) != 0u;
+}
+fn water_tier_streaks() -> bool {
+    return (water_tier_bits() & 2u) != 0u;
+}
+fn water_tier_band() -> bool {
+    return (water_tier_bits() & 4u) != 0u;
+}
+fn water_tier_layers() -> i32 {
+    return clamp(i32((water_tier_bits() >> 3u) & 3u), 1, WAVE_LAYERS);
+}
+// Bit 5: the caustic tile's lines on the water in the blended pass; bits 6-9: the share of the
+// fluid's opacity drawn there, in fifteenths.
+fn water_tier_caustics() -> bool {
+    return (water_tier_bits() & 32u) != 0u;
+}
+fn water_tier_opacity() -> f32 {
+    return f32((water_tier_bits() >> 6u) & 15u) / 15.0;
+}
+// Bit 10: molten surfaces (lava) move their heat (every tier but the CPU's: flat, still glow).
+fn water_tier_molten() -> bool {
+    return (water_tier_bits() & 1024u) != 0u;
+}
+
+// The fluid the eye is under or just above (`frame.water`).
+fn eye_fluid() -> Fluid {
+    return fluids[min(u32(frame.water.y), arrayLength(&fluids) - 1u)];
+}
+
+// The eye itself under a fluid's surface (`frame.water.x` 1 deep, 2 near the surface; 3 just
+// above it; render/mod.rs `waterline_state`).
+fn eye_under() -> bool {
+    return frame.water.x > 0.5 && frame.water.x < 2.5;
+}
+
+// The waterline (WATER_RENDERING.md §12; render/water.rs `waterline_m` is its CPU twin): how far
+// (m, along the face's up) the pixel's point on the lens plane (the fluid's lens ahead of the eye
+// along the camera's forward axis: `ray`, the view ray at view depth 1, times the lens) is above
+// the eye's fluid's surface, less the line's waves there. Negative: the pixel looks out from
+// under the surface. The lens points lie on a plane, so the line is straight at any eye height
+// and roll, and moves smoothly with the eye.
+fn waterline_m(ray: vec3f, f: Fluid) -> f32 {
+    let face = frame.eye.y;
+    let lens = ray * f.under.x;
+    let xz = frame.wrap.xy + lens.xz;
+    let k = 6.2831853 / f.line.y;
+    let t = 6.2831853 * f.line.z * frame.fog.z;
+    let wave = f.line.x * (0.6 * sin(xz.x * k + t) + 0.4 * sin((0.6 * xz.x + 0.8 * xz.y) * 1.7 * k - 1.3 * t));
+    return face_y(face, frame.eye.x + lens.y) - face_y(face, frame.water.z) - wave;
 }
 
 // The height fog (dwell-look's haze_amount, per pixel) in the eye's face's air: how much of the
@@ -419,6 +638,45 @@ fn fog_amount(rel: vec3f) -> f32 {
     let face = frame.eye.y;
     let cam = face_y(face, frame.eye.x);
     return dwell_haze(cam, cam + face_rise(face, rel), length(rel), frame.eye.w);
+}
+
+// The air colour a point at `rel` from the eye fades toward (aerial perspective, dwell-look
+// fog.rs `air_direction` and `air_tint`): its clear sky `clear`, or with the fog's aerial look the
+// sky at least HAZE_LIFT (a sine) above the horizon in its azimuth, warmer toward the sun and cooler
+// away by HAZE_SUN_TINT. HAZE_AERIAL is a constant: off, this is `clear`, the fade as before.
+fn haze_air(rel: vec3f, clear: vec3f) -> vec3f {
+    if (!HAZE_AERIAL) {
+        return clear;
+    }
+    let up = face_up(frame.eye.y);
+    let dir = normalize(rel);
+    let e = dot(dir, up);
+    let level = dir - e * up;
+    let len = length(level);
+    var air = clear;
+    if (e < HAZE_LIFT && len > 1e-6) {
+        air = sky(level / len * sqrt(1.0 - HAZE_LIFT * HAZE_LIFT) + HAZE_LIFT * up);
+    }
+    let sun = frame.day.sun.xyz;
+    let sh = sun - dot(sun, up) * up;
+    let lens = length(sh) * len;
+    let toward = select(0.0, dot(level, sh) / max(lens, 1e-6), lens > 1e-6);
+    let tint = mix(HAZE_COOL, HAZE_WARM, clamp(0.5 + 0.5 * toward, 0.0, 1.0));
+    return air * (1.0 + HAZE_SUN_TINT * (tint - 1.0));
+}
+
+// `c` (output colour) `dist` m off veiled before the haze (dwell-look fog.rs `veiled`): toward its
+// grey by HAZE_VEIL_SATURATION and its darks toward the air colour `air` by HAZE_VEIL_CONTRAST, half
+// of each by HAZE_VEIL_HALF metres. Off (HAZE_AERIAL false), `c`.
+fn haze_veiled(c: vec3f, air: vec3f, dist: f32) -> vec3f {
+    if (!HAZE_AERIAL) {
+        return c;
+    }
+    let k = 1.0 - exp2(-dist / HAZE_VEIL_HALF);
+    let lum = vec3f(0.2126, 0.7152, 0.0722);
+    let d = mix(c, vec3f(dot(c, lum)), HAZE_VEIL_SATURATION * k);
+    let dark = clamp(1.0 - dot(d, lum) / max(dot(air, lum), 1e-3), 0.0, 1.0);
+    return mix(d, air, HAZE_VEIL_CONTRAST * k * dark);
 }
 
 // `c` (output colour) at `rel` from the eye, fogged as the world is, not the viewer
@@ -431,7 +689,8 @@ fn fogged(c: vec3f, rel: vec3f, clear: vec3f) -> vec3f {
     let mid = face_y(face, FACE_MIDPLANE_Y);
     let rise = face_rise(face, rel);
     if (cam + rise >= mid || rise >= 0.0) {
-        return mix(c, clear, fog_amount(rel));
+        let air = haze_air(rel, clear);
+        return mix(haze_veiled(c, air, length(rel)), air, fog_amount(rel));
     }
     let dist = length(rel);
     let near = clamp((cam - mid) / -rise, 0.0, 1.0);
@@ -477,14 +736,17 @@ fn scene_out(albedo: vec3f, n: vec3f, rel: vec3f, alpha: f32, light: TerrainLigh
 const TERRAIN: &str = r"
 struct TerrainIn {
     @location(0) position: vec3f,
-    @location(1) normal: vec3f,
+    // snorm8x4, w 0 (render/mod.rs `packed_lit`).
+    @location(1) normal: vec4f,
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
-    // The baked ambient light (dwell-mesh sky.rs): corner occlusion × sky visibility.
-    @location(5) light: f32,
-    // The flood light (dwell-mesh flood.rs): sky and block level as shares of 15.
-    @location(6) flood: vec2f,
+    // unorm8x4: x the baked ambient light (dwell-mesh sky.rs: corner occlusion × sky visibility),
+    // yz the flood light (dwell-mesh flood.rs: sky and block level as shares of 15).
+    @location(5) lit: vec4f,
+    // The crack overlay (docs/BLOCK_DAMAGE.md §6.3; dwell-mesh `CrackLayer::pack`, unorm8x4): the
+    // crack tile's s and t over [−½, 1½], its atlas slot + 1 (/255; 0: none) and strength.
+    @location(6) crack: vec4f,
 };
 struct TerrainOut {
     @builtin(position) clip: vec4f,
@@ -496,6 +758,9 @@ struct TerrainOut {
     @location(5) @interpolate(flat) draw: u32,
     @location(6) light: f32,
     @location(7) flood: vec2f,
+    // The crack tile's s and t (0–1 on the tile), its atlas slot + 1 and strength (constant over
+    // a face).
+    @location(8) crack: vec4f,
 };
 
 @vertex
@@ -503,15 +768,38 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     let draw = draws[k];
     var o: TerrainOut;
     o.draw = k;
-    o.rel = draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w);
+    o.rel = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = qrot(draw.quat, v.normal);
+    o.normal = qrot(draw.quat, v.normal.xyz);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
-    o.light = v.light;
-    o.flood = v.flood;
+    o.light = v.lit.x;
+    o.flood = v.lit.yz;
+    o.crack = vec4f(v.crack.xy * CRACK_UV_RANGE + CRACK_UV_MIN, v.crack.z * 255.0, v.crack.w);
     return o;
+}
+
+// The crack overlay (docs/BLOCK_DAMAGE.md §6.3): a damaged block's faces multiplied by its crack
+// stage's tile (white, with dark cracks), centred on the hit. One texture lookup, on the faces of
+// cracked cells only (a branch constant over each face); `crack` as TerrainOut carries it. The
+// tile's level from its own uv's footprint; past the tile (a far corner from the hit) no crack.
+const CRACK_UV_MIN: f32 = -0.5;
+const CRACK_UV_RANGE: f32 = 2.0;
+fn crack_shade(crack: vec4f, gx: vec2f, gy: vec2f) -> vec3f {
+    let slot = u32(round(crack.z));
+    let st = crack.xy;
+    if (slot == 0u || any(st < vec2f(0.0)) || any(st > vec2f(1.0))) {
+        return vec3f(1.0);
+    }
+    let cell = slot - 1u;
+    let size = vec2f(textureDimensions(atlas));
+    let pitch = size / f32(ATLAS_CELLS);
+    let tile = (pitch - 2.0 * f32(ATLAS_GUTTER)) / size;
+    let origin = (vec2f(f32(cell % ATLAS_CELLS), f32(cell / ATLAS_CELLS)) * pitch + f32(ATLAS_GUTTER)) / size;
+    let grads = atlas_grads(gx * tile, gy * tile);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(origin + st * tile), grads[0], grads[1]);
+    return mix(vec3f(1.0), texel.rgb, crack.w);
 }
 
 // The grid of the atlas tile whose rectangle starts at `tile_origin` (its cell: the tile's origin
@@ -546,48 +834,97 @@ fn grid_shade(uv: vec2f, grid: vec2f) -> f32 {
 @fragment
 fn terrain_fs(i: TerrainOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
-    let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, dpdx(i.uv) * i.tile.zw, dpdy(i.uv) * i.tile.zw);
-    let n = select(-i.normal, i.normal, front);
+    // A molten tile (lava) drifts its crust slowly and breathes its cracks' heat.
+    let molten = tile_molten(i.tile.xy);
+    // Its tile spans MOLTEN_SPAN blocks (the tile wraps), so the crust plates are metres across
+    // and don't repeat block by block (at one block a tile they read as a checkerboard).
+    let span = select(1.0, 1.0 / MOLTEN_SPAN, molten);
+    let drift = select(vec2f(0.0), MOLTEN_DRIFT * frame.fog.z, molten);
+    let face_n = select(-i.normal, i.normal, front);
+    let n = face_n;
+    let atlas_uv = i.tile.xy + fract(i.uv * span + drift) * i.tile.zw;
+    let grads = atlas_grads(dpdx(i.uv) * span * i.tile.zw, dpdy(i.uv) * span * i.tile.zw);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     let shade = grid_shade(i.uv, tile_grid(i.tile.xy));
     if (fade_discard(draw, i.clip.xy)) {
         discard;
     }
     let alpha = select(draw.tint.a * texel.a, 1.0, draw.tint.a >= 1.0);
-    let albedo = i.color * texel.rgb * shade * draw.tint.rgb;
-    var o = scene_out(albedo, normalize(n), i.rel, alpha, terrain_light(i.light, i.flood));
-    let shine = tile_glow(i.tile.xy);
-    o.color = vec4f(emitted(o.color.rgb, albedo * alpha, shine), o.color.a);
-    o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), shine >= 1.0);
+    // A molten block's faces carry its heat stop in their colour (k, −1, −1; dwell-mesh
+    // `vertex_rgb`, VOLCANOES.md §6.5) and are white otherwise.
+    let coded = i.color.g < 0.0;
+    let vcol = select(i.color, vec3f(1.0), coded);
+    let stop = select(0u, min(u32(max(i.color.r, 0.0)), LAVA_STOPS - 1u), coded);
+    let look = lava_stop_look[stop];
+    let core = lava_stop_core[stop];
+    // The crack overlay's footprint, taken in uniform control flow.
+    let crack_gx = dpdx(i.crack.xy);
+    let crack_gy = dpdy(i.crack.xy);
+    var albedo = vcol * texel.rgb * shade * draw.tint.rgb * crack_shade(i.crack, crack_gx, crack_gy);
+    // Lava (§17.1): world-space crust plates over the painted tile, thin glowing seams between
+    // them, continuous across blocks; a top face takes the world's x z, a side its along and y.
+    var crack = smoothstep(0.25, 0.75, max(texel.r, texel.g));
+    if (molten) {
+        let world = vec3f(i.rel.x + frame.tan.z, i.rel.y + frame.eye.x, i.rel.z + frame.tan.w);
+        let side = abs(n.y) < 0.5;
+        let plane = select(world.xz, vec2f(world.x + world.z, world.y * 1.3), side);
+        let plate = molten_plates(plane, frame.fog.z, core.w);
+        // The tile's hue (orange) for the seams; the crust its darkest, one shade per plate with
+        // the painted strokes faint in it.
+        // The seams glow in the heat stop's colour (shared/fluids/lava.json `heat`); the crust is
+        // darker the more of the surface it covers.
+        let hue = texel.rgb / max(max(texel.r, texel.g), 0.05);
+        // The stop's core colour only at the middle of the seams.
+        let seam = mix(look.rgb, core.rgb, smoothstep(0.75, 1.0, plate.x) * (1.0 - core.w));
+        let grain = dot(texel.rgb, vec3f(0.3, 0.5, 0.2));
+        let crust = look.rgb * (0.04 + 0.03 * plate.y + 0.12 * (1.0 - core.w)) * (0.7 + 0.6 * grain);
+        albedo = mix(crust, seam, plate.x) * vcol * draw.tint.rgb;
+        crack = plate.x;
+    }
+    let lit = terrain_light(i.light, i.flood);
+    var o = scene_out(albedo, normalize(n), i.rel, alpha, lit);
+    // The heat brightens the glowing seams (or a still tile's bright cracks), not the crust.
+    let heat = select(1.0, mix(0.15, 1.1 * molten_heat(i.rel.xz + frame.tan.zw, frame.fog.z), crack), molten);
+    let shine = tile_glow(i.tile.xy) * heat * select(1.0, mix(1.0, look.w, crack), molten);
+    // Lava keeps its hue as it glows (the tone curve would wash a hot orange to mustard).
+    let glowing = select(emitted(o.color.rgb, albedo * alpha, shine), emitted_hue(o.color.rgb, albedo * alpha, shine), molten);
+    o.color = vec4f(glowing, o.color.a);
+    o.depth = self_lit_depth(frame_depth(o.depth, fade_inked(draw)), tile_glow(i.tile.xy) >= 1.0);
     return o;
 }
 
 // Cutout geometry (docs/TRANSPARENT_BLOCKS.md): the terrain vertex and a `plant` vec4 — how far
 // wind sways the vertex (m; 0 at a plant's base and on ladders), the wind's speed, and the distance
 // fade's start and end (m; end 0: no fade).
+// The normal (snorm8x4, w 0), the colour (unorm8x4: rgb over a scale 1 + 3a, so tints up to 4) and
+// `lit` (unorm8x4: light, flood sky, flood block, bare) are four bytes each (render/mod.rs
+// `packed_lit`, `scaled_rgb`: the forest's leaves are bound by their vertices).
 struct CutoutIn {
     @location(0) position: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) color: vec3f,
+    @location(1) normal: vec4f,
+    @location(2) color: vec4f,
     @location(3) uv: vec2f,
     @location(4) tile: vec4f,
     @location(5) plant: vec4f,
-    @location(6) bare: f32,
-    @location(7) light: f32,
-    @location(8) flood: vec2f,
+    @location(6) lit: vec4f,
 };
+// A face's tile and a plant's fade are the same at its every corner: flat, not interpolated
+// (WORK_QUEUE item 32: the forest edge's leaves are bound by their vertices' work).
 struct CutoutOut {
     @builtin(position) clip: vec4f,
     @location(0) rel: vec3f,
     @location(1) normal: vec3f,
     @location(2) color: vec3f,
     @location(3) uv: vec2f,
-    @location(4) tile: vec4f,
+    @location(4) @interpolate(flat) tile: vec4f,
     @location(5) @interpolate(flat) draw: u32,
-    @location(6) fade: vec2f,
+    @location(6) @interpolate(flat) fade: vec2f,
     @location(7) @interpolate(flat) bare: f32,
     @location(8) light: f32,
     @location(9) flood: vec2f,
+    // 1 for a tree's leaves (their faces and cards): their shadow lookup's normal offset is at
+    // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #156).
+    @location(10) @interpolate(flat) leaf: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -602,6 +939,75 @@ fn gust(p: vec2f, t: f32) -> f32 {
     return clamp(0.5 + 0.3 * a + 0.15 * b + 0.1 * c, 0.0, 1.0);
 }
 
+// The tree being chopped leans (frame.lean_*): a vertex above the hinge, within the radius across
+// and the height up, turned about the axis through it (crate::chop `TreeLean::apply`).
+fn tree_lean(rel: vec3f) -> vec3f {
+    let a = frame.lean_axis.w;
+    if (a == 0.0) {
+        return rel;
+    }
+    let d = rel - frame.lean_hinge.xyz;
+    let h = dot(d, frame.lean_up.xyz);
+    let across = d - frame.lean_up.xyz * h;
+    if (h <= 0.0 || h > frame.lean_up.w || length(across) > frame.lean_hinge.w) {
+        return rel;
+    }
+    let k = frame.lean_axis.xyz;
+    let c = cos(a);
+    let s = sin(a);
+    return frame.lean_hinge.xyz + d * c + cross(k, d) * s + k * dot(k, d) * (1.0 - c);
+}
+
+// A leaf card's `plant.y` is -(1 + its plane normal octahedral-packed on a 2048-step grid per
+// axis, u * 2049 + v) (dwell-mesh leaves.rs `card_speed`, `CARD_GRID`): a plant's is its wind
+// speed (>= 0), a card's 1.
+fn plant_speed(plant: vec4f) -> f32 {
+    return select(plant.y, 1.0, plant.y < 0.0);
+}
+fn card_normal(packed: f32) -> vec3f {
+    let q = -packed - 1.0;
+    let uq = floor(q / 2049.0);
+    let vq = q - uq * 2049.0;
+    let u = uq / 2048.0 * 2.0 - 1.0;
+    let v = vq / 2048.0 * 2.0 - 1.0;
+    var n = vec3f(u, 1.0 - abs(u) - abs(v), v);
+    if (n.y < 0.0) {
+        // Octahedral decoding's quadrant sign (not a face sign): +1 where the coordinate is >= 0.
+        n = vec3f((1.0 - abs(v)) * (step(0.0, u) * 2.0 - 1.0), n.y, (1.0 - abs(u)) * (step(0.0, v) * 2.0 - 1.0));
+    }
+    return normalize(n);
+}
+// BUGS.md #78 (the M1 at High): a leaf card the eye can't see costs no pixels. Dropped when the
+// eye is more than CARD_BACK_CULL_M behind its plane (the crown's far side, facing away; the
+// plane's distance is the same at its four corners, so a card goes whole). Any plant (a card, a
+// blade of tall grass) is dropped when its corner is past its fade's end by more than its size
+// (2 m: every corner is then past the end, so it goes whole): the forest's edge drew every blade
+// out to the full-detail distance, all discarded in the fragment stage (WORK_QUEUE item 32, the
+// edge's 14 ms of cutout). `rel` the corner before the wind's sway, `n` the card's normal in the
+// world. `back_cull` false in the shadow passes: what casts follows the light, not the side of
+// the crown the camera is on (BUGS.md #156: the cards on the crown's far side and on its top, seen
+// from below, cast nothing, and the crown's shadow on itself came and went as the camera moved).
+fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f, back_cull: bool) -> bool {
+    // A tree's leaf card (`plant.y` < 0) while the far trees' map is on switches with its tree in
+    // time (`tree_cards_share`, BUGS.md #157): dropped past the farthest a drawn one reaches.
+    let tree_card = plant.y < 0.0 && plant.w > 0.0 && frame.far_trees.w > 0.5;
+    if (tree_card) {
+        if (length(rel) > TREE_CARDS_REACH + 2.0) {
+            return true;
+        }
+    } else if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+        return true;
+    }
+    // A tree's leaf face (`TREE_LEAF_FADE`) past the near leaves' reach: the impostors' alone.
+    if (plant.w < 0.0 && frame.far_trees.w > 0.5 && length(rel) > frame.far_trees.z + 2.0) {
+        return true;
+    }
+    if (plant.y >= 0.0 || !back_cull) {
+        return false;
+    }
+    return CARD_BACK_CULL_M > 0.0 && dot(n, rel) > CARD_BACK_CULL_M;
+}
+
 // The wind sways a vertex by its `plant.x` (m): leaning with the gusts, a faster flutter on top.
 // frame.fog.z is the time (s), frame.fog.w the wind's scale (0 when effects are off).
 fn sway(rel: vec3f, plant: vec4f) -> vec3f {
@@ -609,7 +1015,7 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
     if (amount == 0.0) {
         return rel;
     }
-    let t = frame.fog.z * plant.y;
+    let t = frame.fog.z * plant_speed(plant);
     let p = frame.tan.zw + rel.xz;
     let g = gust(p, t);
     let flutter = sin(2.7 * t + dot(p, vec2f(0.73, 0.41))) * 0.25;
@@ -621,19 +1027,37 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
 
 @vertex
 fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    return cutout_vertex(v, k, true);
+}
+
+// The shadow passes' cutout vertices: as the scene's, but no card is dropped for the side of it
+// the camera is on (`card_dropped`'s `back_cull`).
+@vertex
+fn shadow_cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    return cutout_vertex(v, k, false);
+}
+
+fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    o.rel = sway(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w), v.plant);
+    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
+    o.rel = sway(still, v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    o.normal = qrot(draw.quat, v.normal);
-    o.color = v.color;
+    if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant, back_cull)) {
+        // Outside the clip volume, the same point for every corner: a card dropped whole draws
+        // nothing (one past the fade's margin only where all of it is faded out anyway).
+        o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+    }
+    o.normal = qrot(draw.quat, v.normal.xyz);
+    o.color = v.color.rgb * (1.0 + 3.0 * v.color.a);
     o.uv = v.uv;
     o.tile = v.tile;
     o.fade = v.plant.zw;
-    o.bare = v.bare;
-    o.light = v.light;
-    o.flood = v.flood;
+    o.bare = v.lit.w;
+    o.light = v.lit.x;
+    o.flood = v.lit.yz;
+    o.leaf = select(0.0, 1.0, v.plant.y < 0.0 || v.plant.w < 0.0);
     return o;
 }
 
@@ -668,7 +1092,8 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     let cap = 2.0 * min(length(gx), length(gy));
     gx *= min(1.0, cap / max(length(gx), 1e-12));
     gy *= min(1.0, cap / max(length(gy), 1e-12));
-    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_uv, gx, gy);
+    let grads = atlas_grads(gx, gy);
+    let texel = textureSampleGrad(atlas, atlas_sampler, atlas_crisp(atlas_uv), grads[0], grads[1]);
     // Up close the atlas is sampled nearest (crisp texels), which would cut blade edges into
     // stairs: there the alpha is filtered bilinearly by hand from the four texels around the
     // sample (level 0), so edges are smooth curves; from afar (a texel under a pixel) the mips'.
@@ -683,7 +1108,20 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
     var fade = 1.0;
     if (i.fade.y > 0.0) {
-        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        // A tree's leaf card (BUGS.md #157): on or off with its tree, faded in time, so a still
+        // eye sees no card half dissolved; other plants (and cards with no far trees' map) by
+        // distance.
+        if (i.leaf > 0.5 && frame.far_trees.w > 0.5) {
+            fade = tree_cards_share(i.rel);
+        } else {
+            fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        }
+        cover *= fade;
+    }
+    // A tree's leaf face hands over to the far trees' impostors by its tree's state, cross-faded
+    // in time (render/tree_fade.rs; `imp_fs` keeps the other pixels).
+    if (i.fade.y < 0.0) {
+        fade = tree_near_share(i.rel);
         cover *= fade;
     }
     // Near the eye a leaf's faces dissolve (dithered, as a fading plant), from a third of its
@@ -716,6 +1154,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
     let albedo = i.color * texel.rgb * draw.tint.rgb;
+    shadow_leaf_m = select(0.0, shadows.pcf.w, i.leaf > 0.5);
     let lit = scene_out(albedo, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
     // A glowing tile (a torch's flame) is self-lit: its colour whatever the light.
@@ -825,7 +1264,7 @@ fn shadow_flat_fs(i: FlatOut) {
 fn shadow_cutout_fs(i: CutoutOut) {
     let draw = draws[i.draw];
     let atlas_uv = i.tile.xy + fract(i.uv) * i.tile.zw;
-    let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_uv, 0.0).a;
+    let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_crisp(atlas_uv), 0.0).a;
     var fade = 1.0;
     if (i.fade.y > 0.0) {
         fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
@@ -1053,35 +1492,242 @@ fn cloud_in_front_of(t: f32, ray: vec3f, depth: f32) -> bool {
     return dwell_cloud_in_front(t, length(ray), depth, face_rise(frame.eye.y, ray), frame.cloud_cfg.w);
 }
 
-fn composited(p: vec2i, ndc: vec2f) -> Composited {
+// Each face's cloud deck hit along a pixel's ray with its footprint (`fw`, `fw_o`): the
+// composite's derivatives, taken in uniform control flow before any per-pixel branch.
+struct Decks {
+    deck: vec4f,
+    fw: f32,
+    deck_o: vec4f,
+    fw_o: f32,
+};
+
+fn composited_decks(ndc: vec2f) -> Decks {
+    let dir = normalize(view_ray(ndc));
+    let face = frame.eye.y;
+    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w, frame.cloud_disc);
+    return Decks(deck, max(fwidth(deck.x), fwidth(deck.y)), deck_o, max(fwidth(deck_o.x), fwidth(deck_o.y)));
+}
+
+fn composited(p: vec2i, ndc: vec2f, decks: Decks) -> Composited {
     let ray = view_ray(ndc);
     let dir = normalize(ray);
     let face = frame.eye.y;
-    // In uniform control flow, for the pixel's footprint on each face's deck.
-    let deck = dwell_cloud_deck(dir, face, frame.clouds, frame.cloud_cfg.w);
-    let fw = max(fwidth(deck.x), fwidth(deck.y));
-    let deck_o = dwell_cloud_deck(dir, -face, frame.clouds_o, frame.cloud_cfg_o.w);
-    let fw_o = max(fwidth(deck_o.x), fwidth(deck_o.y));
+    // The volumetric clouds (docs/CLOUDS.md §8) replace the eye's 2D deck here when the tier marches
+    // (cloud_inside.w): the deck's weight goes to 0 and its hit to the eye, so the layer below is
+    // the march's, in front of the scene out to the scene's distance. The sky pass's other users
+    // (Snell's window, reflections) keep the cheap deck.
+    let volume = frame.cloud_inside.w >= 1.0;
+    var deck = decks.deck;
+    if (volume) {
+        deck = vec4f(deck.xy, 0.0, 0.0);
+    }
+    let fw = decks.fw;
+    let deck_o = decks.deck_o;
+    let fw_o = decks.fw_o;
     let clear = sky(dir);
     let lights = cloud_lighting();
     let c = textureLoad(scene_color, p, 0);
-    var back = clear;
-    if (c.a < 1.0) {
-        back = sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o);
-    }
     var depth = 0.0;
     var self_lit = 0.0;
     if (c.a > 0.0) {
         depth = scene_depth_at(p).x;
         self_lit = scene_self_lit_at(p);
     }
-    var front = vec4f(0.0);
-    if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth)) {
+    var vol = vec4f(0.0);
+    if (volume) {
+        vol = upsampled_clouds(ndc, ray, select(0.0, depth, c.a > 0.0));
+    }
+    var back = clear;
+    if (c.a < 1.0) {
+        back = dwell_cloud_over(sky_behind_with_clouds(dir, clear, deck, fw, deck_o, fw_o), vol);
+    }
+    var front = vol;
+    if (!volume && c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth)) {
         front = dwell_cloud_layer(clear, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, lights);
     }
     var s = Composited(vec3f(0.0), ray, clear, back, front, deck.z);
     s.color = composited_scene(c, depth, self_lit, s);
     return s;
+}
+
+// The volume march's per-pixel step offset: the baked blue-noise tile (dwell_cloud_blue; BUGS.md
+// #90: was interleaved gradient noise), turned each frame (a golden-ratio step over 16 frames) so
+// the accumulation averages the steps' dither away (dwell-look cloud_jitter).
+fn cloud_jitter(p: vec2i, frame_index: u32) -> f32 {
+    return fract(dwell_cloud_blue(p) + f32(frame_index % 16u) * 0.618034);
+}
+
+// The volumetric clouds' accumulation (docs/CLOUDS.md §8.6): the last frame's camera (right, up,
+// forward, the half-angle tangents) and params: x the share of the new frame (1: no history),
+// y the frame index, z how far the eye moved since the last frame (m), w the pass's resolution
+// divisor.
+struct CloudPrev {
+    right: vec4f,
+    up: vec4f,
+    forward: vec4f,
+    tan: vec4f,
+    params: vec4f,
+};
+
+struct CloudOut {
+    @location(0) color: vec4f,
+    @location(1) dist: vec4f,
+};
+
+// The scene under the clouds pass's texel `p` (docs/CLOUDS.md §8.9, BUGS.md #88): its
+// full-resolution pixels' nearest and farthest scene (sample 0 of each), as distances along the
+// texel's ray (`ray_len` m per unit of view depth), the sky and past the reach at the reach. The
+// footprint is the divisor's square: at most CLOUD_DEPTH_TAPS² loads (Medium's ¼: 16).
+fn cloud_scene_span(p: vec2i, ray_len: f32) -> vec2f {
+    let full = vec2i(textureDimensions(scene_depth));
+    let k = clamp(vec2i(i32(cloud_prev.params.w)), vec2i(1), vec2i(CLOUD_DEPTH_TAPS));
+    var span = vec2f(CLOUD_VOL_MAX_DISTANCE, 0.0);
+    for (var y = 0; y < CLOUD_DEPTH_TAPS; y++) {
+        if (y >= k.y) {
+            break;
+        }
+        for (var x = 0; x < CLOUD_DEPTH_TAPS; x++) {
+            if (x >= k.x) {
+                break;
+            }
+            let q = min(p * k + vec2i(x, y), full - vec2i(1));
+            let d = textureLoad(scene_depth, q, 0).r;
+            let m = select(CLOUD_VOL_MAX_DISTANCE, min(d * ray_len, CLOUD_VOL_MAX_DISTANCE), d > 0.0);
+            span = vec2f(min(span.x, m), max(span.y, m));
+        }
+    }
+    return span;
+}
+
+// Four texels of a reduced buffer round `uv` (`size` texels): their coordinates and bilinear
+// shares, for the depth-aware filters (the history's and the composite's).
+struct CloudTaps {
+    at: array<vec2i, 4>,
+    share: vec4f,
+};
+
+fn cloud_taps(uv: vec2f, size: vec2i) -> CloudTaps {
+    let pos = uv * vec2f(size) - 0.5;
+    let base = vec2i(floor(pos));
+    let f = pos - floor(pos);
+    var t: CloudTaps;
+    for (var k = 0; k < 4; k++) {
+        let o = vec2i(k & 1, k >> 1u);
+        t.at[k] = clamp(base + o, vec2i(0), size - vec2i(1));
+        t.share[k] = mix(1.0 - f.x, f.x, f32(o.x)) * mix(1.0 - f.y, f.y, f32(o.y));
+    }
+    return t;
+}
+
+// The last frame's clouds at `uv` for a texel whose march now ends at `rec.y`: the four history
+// texels round it, each by its bilinear share and by whether its march ended where this one's does
+// (dwell_cloud_upsample_weight), so the cloud of the sky beside a peak doesn't smear onto the peak
+// as the view turns. `matched` (0-1): how much of the history is this texel's (0: none, a new frame).
+struct CloudHistory {
+    color: vec4f,
+    matched: f32,
+};
+
+fn cloud_history_at(uv: vec2f, rec: vec2f) -> CloudHistory {
+    let taps = cloud_taps(uv, vec2i(textureDimensions(cloud_history)));
+    var sum = vec4f(0.0);
+    var weight = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let w = taps.share[k] * dwell_cloud_upsample_weight(rec.y, textureLoad(cloud_dist_history, taps.at[k], 0).xy);
+        sum += w * textureLoad(cloud_history, taps.at[k], 0);
+        weight += w;
+    }
+    return CloudHistory(sum / max(weight, 1e-8), min(weight, 1.0));
+}
+
+// The clouds pass (docs/CLOUDS.md §8.6, §8.9, §9): the volume marched at the tier's reduced
+// resolution, to the farthest scene pixel under the texel (none of its cloud behind its rock; the
+// whole layer where any of it is sky): this frame's raw march, premultiplied by its cover, and the
+// scene's span under the texel (nearest, farthest; m along the ray) with the first cloud's distance
+// (z; 65000: none). The resolve (clouds_resolve_fs) puts it together with the history.
+@fragment
+fn clouds_fs(i: SkyOut) -> CloudOut {
+    let ray = view_ray(i.ndc);
+    let dir = normalize(ray);
+    let p = vec2i(i.clip.xy);
+    let rec = cloud_scene_span(p, length(ray));
+    let m = dwell_cloud_march(dir, frame.eye.y, dwell_cloud_march_end(rec), cloud_jitter(p, u32(cloud_prev.params.y)), frame.clouds, frame.cloud_cfg, frame.cloud_inside, cloud_lighting(), cloud_prev.tan.z, frame.cloud_disc);
+    // The sky behind is worked out only where there is cloud to haze toward it (§8.7's cut).
+    var layer = vec4f(0.0);
+    if (m.first >= 0.0) {
+        layer = dwell_cloud_hazed(m, sky(dir), frame.cloud_cfg);
+    }
+    let first = select(65000.0, m.first, m.first >= 0.0);
+    return CloudOut(vec4f(layer.rgb * layer.a, layer.a), vec4f(rec, first, 0.0));
+}
+
+// The clouds' resolve (BUGS.md #90; dwell-look neighbourhood_box, resolve): this frame's raw march
+// at the texel with the last frame's result reprojected by direction (the clouds are far) from the
+// history texels whose march ended where this one's does, clamped into the box of this frame's 3 × 3
+// neighbours whose scene matched (mean ± CLOUD_HISTORY_CLAMP deviations): a moving eye in or near
+// the layer keeps its history, clamped, instead of showing the raw jittered march.
+@fragment
+fn clouds_resolve_fs(i: SkyOut) -> @location(0) vec4f {
+    let ray = view_ray(i.ndc);
+    let dir = normalize(ray);
+    let p = vec2i(i.clip.xy);
+    let size = vec2i(textureDimensions(cloud_raw));
+    let cur = textureLoad(cloud_raw, p, 0);
+    let rec = textureLoad(cloud_dist_now, p, 0).xy;
+    var m1 = vec4f(0.0);
+    var m2 = vec4f(0.0);
+    var n = 0.0;
+    for (var k = 0; k < 9; k++) {
+        let q = clamp(p + vec2i(k % 3 - 1, k / 3 - 1), vec2i(0), size - vec2i(1));
+        if (dwell_cloud_upsample_weight(rec.y, textureLoad(cloud_dist_now, q, 0).xy) < 0.5) {
+            continue;
+        }
+        let c = textureLoad(cloud_raw, q, 0);
+        m1 += c;
+        m2 += c * c;
+        n += 1.0;
+    }
+    m1 /= max(n, 1.0);
+    let sd = sqrt(max(m2 / max(n, 1.0) - m1 * m1, vec4f(0.0)));
+    let lo = min(m1 - CLOUD_HISTORY_CLAMP * sd, cur);
+    let hi = max(m1 + CLOUD_HISTORY_CLAMP * sd, cur);
+    var out = cur;
+    let f = dot(dir, cloud_prev.forward.xyz);
+    if (cloud_prev.params.x < 1.0 && f > 1e-3) {
+        let pn = vec2f(dot(dir, cloud_prev.right.xyz) / (f * cloud_prev.tan.x), dot(dir, cloud_prev.up.xyz) / (f * cloud_prev.tan.y));
+        if (abs(pn.x) < 1.0 && abs(pn.y) < 1.0) {
+            let uv = vec2f(pn.x * 0.5 + 0.5, 0.5 - pn.y * 0.5);
+            let hist = cloud_history_at(uv, rec);
+            out = mix(clamp(hist.color, lo, hi), cur, mix(1.0, cloud_prev.params.x, hist.matched));
+        }
+    }
+    return out;
+}
+
+// The clouds pass's result at a full-resolution pixel (`ndc`, its `ray`, the scene's view depth
+// `depth`, 0: the sky) as a layer for dwell_cloud_over (§8.9): the four texels round it, each by its
+// bilinear share and by whether its march ended at this pixel's scene (dwell_cloud_upsample_weight,
+// a band in metres of the texel's depth range), so a rock pixel takes the cloud in front of the rock
+// and a sky pixel beside it the whole layer's. Only depths decide: no flicker frame to frame. A texel
+// that doesn't match and whose first cloud is past the pixel's scene adds its weight with no cloud
+// (dwell_cloud_upsample_split, BUGS.md #97), so leaves among sky gaps don't take the cloud behind.
+fn upsampled_clouds(ndc: vec2f, ray: vec3f, depth: f32) -> vec4f {
+    let uv = vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    let taps = cloud_taps(uv, vec2i(textureDimensions(clouds_tex)));
+    let e = select(CLOUD_VOL_MAX_DISTANCE, min(depth * length(ray), CLOUD_VOL_MAX_DISTANCE), depth > 0.0);
+    var sum = vec4f(0.0);
+    var weight = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let w = taps.share[k] * dwell_cloud_upsample_split(e, textureLoad(cloud_dist_tex, taps.at[k], 0).xyz);
+        sum += w.y * textureLoad(clouds_tex, taps.at[k], 0);
+        weight += w.x;
+    }
+    let c = sum / max(weight, 1e-8);
+    if (c.a <= 0.001) {
+        return vec4f(0.0);
+    }
+    return vec4f(c.rgb / c.a, c.a);
 }
 
 // The sky behind the world toward `dir` with both faces' clouds, the world's and not the viewer's
@@ -1093,18 +1739,28 @@ fn composited(p: vec2i, ndc: vec2f) -> Composited {
 fn sky_behind_with_clouds(dir: vec3f, clear: vec3f, deck: vec4f, fw: f32, deck_o: vec4f, fw_o: f32) -> vec3f {
     let face = frame.eye.y;
     let e = face_rise(face, dir);
-    var behind: vec3f;
     if (e >= 0.0) {
-        behind = dwell_sky_bodies(dir, face, frame.day, clear);
-    } else {
-        let o = dwell_other_day(frame.day);
-        let other_clear = dwell_sky(dir, -face, o);
-        var other = dwell_sky_bodies(dir, -face, o, other_clear);
-        other = dwell_clouds(other, other_clear, dir, -face, deck_o, fw_o, frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face));
-        let height = face_y(face, frame.eye.x) - face_y(face, FACE_MIDPLANE_Y);
-        behind = mix(other, clear, dwell_behind_haze(e, height, frame.eye.w));
+        return sky_above_with_clouds(dir, clear, deck, fw, 1.0);
     }
+    let o = dwell_other_day(frame.day);
+    let other_clear = dwell_sky(dir, -face, o);
+    var other = dwell_sky_bodies(dir, -face, o, other_clear);
+    other = dwell_clouds(other, other_clear, dir, -face, deck_o, fw_o, frame.clouds_o, frame.cloud_cfg_o, cloud_lighting_for(-face));
+    let height = face_y(face, frame.eye.x) - face_y(face, FACE_MIDPLANE_Y);
+    let behind = mix(other, clear, dwell_behind_haze(e, height, frame.eye.w));
     return dwell_clouds(behind, behind, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
+}
+
+// The sky toward `dir` above the eye's horizon (its `clear` sky, the eye's deck's hit `deck` with its
+// footprint `fw`): the stars, the moon and the sun (`dwell_sky_bodies`, at the strength `bodies`;
+// 1 for the sky pass) under the clouds. The sky pass and Snell's window both show this one sky.
+fn sky_above_with_clouds(dir: vec3f, clear: vec3f, deck: vec4f, fw: f32, bodies: f32) -> vec3f {
+    let face = frame.eye.y;
+    var lit = dwell_sky_bodies(dir, face, frame.day, clear);
+    if (bodies != 1.0) {
+        lit = mix(clear, lit, bodies);
+    }
+    return dwell_clouds(lit, lit, dir, face, deck, fw, frame.clouds, frame.cloud_cfg, cloud_lighting());
 }
 
 // A scene colour `c` (premultiplied by coverage) at view depth `depth`, composited along the
@@ -1141,15 +1797,82 @@ fn composited_of(c: vec4f, depth: f32, ray: vec3f, clear: vec3f, back: vec3f) ->
 // here is in their taps too. Three times a new effect vanished outside the blur's inner circle
 // while the taps re-composited the scene without it: the clouds from below (0.11.19) and above
 // (0.18.2), then the ink (0.20.1).
-fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
-    if (frame.water.x > 0.5) {
-        return composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0));
+
+// The light shafts over the finished picture (ADR 0064): the shafts pass's glow (`shafts_fs`, at
+// the tier's resolution, filtered up) × the light's colour and weight, screened over the colour so
+// it brightens softly and never clips. None when the frame draws none (uniform).
+fn with_shafts(composited: vec3f, p: vec2i) -> vec3f {
+    let color = with_bloom(composited, p);
+    let air = frame.shafts.w > 0.5 && frame.shafts.z > 0.0;
+    let lit = frame.torch_shafts[0].x > 0.5;
+    if (!air && !lit) {
+        return color;
     }
-    var s = composited(p, ndc);
+    let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
+    // The 3 × 3 box of the shafts' texels round the pixel (SHAFT_BLUR; bilinear taps a texel
+    // apart), which takes in every stratum of the pass's jitter tile (dwell-look shaft_blur).
+    let texel = 1.0 / vec2f(textureDimensions(shafts_tex));
+    var s = vec4f(0.0);
+    for (var k = 0; k < 9; k++) {
+        let o = vec2f(f32(k % 3 - 1), f32(k / 3 - 1)) * f32(SHAFT_BLUR);
+        s += textureSampleLevel(shafts_tex, scene_sampler, uv + o * texel, 0.0);
+    }
+    s /= 9.0;
+    let g = select(0.0, s.a * frame.shafts.z, air);
+    let glow = clamp(frame.shafts_color.rgb * g + select(vec3f(0.0), s.rgb, lit), vec3f(0.0), vec3f(1.0));
+    return color + glow * (1.0 - color);
+}
+
+// Bloom over the composited colour (WORK_QUEUE item 19, render/bloom.rs): the chain's blurred glow
+// of the self-lit pixels × BLOOM_INTENSITY added to the pixel's linear light before the tone curve
+// (the composite's colour taken back through `inverse_display`, and only the difference the glow
+// makes added, so a pixel without glow is exactly as it was). None with bloom off (its chain 1 × 1).
+fn with_bloom(color: vec3f, p: vec2i) -> vec3f {
+    if (textureDimensions(bloom_tex).x <= 1u) {
+        return color;
+    }
+    let uv = (vec2f(p) + 0.5) / vec2f(textureDimensions(scene_color));
+    let b = textureSampleLevel(bloom_tex, scene_sampler, uv, 0.0).rgb * BLOOM_INTENSITY;
+    if (max(max(b.r, b.g), b.b) < 1e-5) {
+        return color;
+    }
+    let lin = inverse_display(min(color, vec3f(0.995)));
+    return color + max(display(lin + b) - display(lin), vec3f(0.0));
+}
+
+fn composite_pixel(p: vec2i, ndc: vec2f) -> vec3f {
+    // Near or under a fluid's surface each pixel is under it or not by its own ray (the waterline,
+    // WATER_RENDERING.md §10), with the meniscus along the line between.
+    // Deep under it (x 1) the whole view is, as one uniform branch.
+    if (frame.water.x > 0.5 && frame.water.x < 1.5) {
+        return with_shafts(composite_underwater(p, view_ray(ndc), textureLoad(scene_color, p, 0)), p);
+    }
+    // Near the surface (x 2 or 3) a pixel under the line takes only the underwater composite and
+    // the band (the ordinary composite would be thrown away: computing it anyway cost the whole
+    // view's composite again with the eye just under). The composite's derivatives come first,
+    // in uniform control flow.
+    let decks = composited_decks(ndc);
+    var rim_above = 1.0;
+    if (frame.water.x > 1.5) {
+        let ray = view_ray(ndc);
+        let f = eye_fluid();
+        let d = waterline_m(ray, f);
+        if (d < 0.0) {
+            return with_shafts(waterline_band(p, composite_underwater(p, ray, textureLoad(scene_color, p, 0)), d, f), p);
+        }
+        // The pixel just above the line takes the rim's shade by the share of it the line covers
+        // (render/water.rs `line_shade`), so the rim's top edge is anti-aliased, not a whole
+        // pixel's step along the wave (WATER_RENDERING.md §12.2).
+        if (f.under.w > 0.0) {
+            rim_above = 1.0 + (band_edge(0.0, f) - 1.0) * clamp(1.0 - d / waterline_across(f).x, 0.0, 1.0);
+        }
+    }
+    var s = composited(p, ndc, decks);
+    s.color *= rim_above;
     if (frame.outline.x > 0.5) {
         s.color = outlined(s, p);
     }
-    return s.color;
+    return with_shafts(s.color, p);
 }
 
 // The finished picture, dithered, into the canvas (no wind this frame).
@@ -1174,34 +1897,488 @@ fn pixel_m(p: vec2i, ray: vec3f, depth: f32) -> f32 {
     return across / max(abs(normalize(ray).y), 0.15);
 }
 
+// The band (WATER_RENDERING.md §12; render/water.rs `band_t`, `band_edge`, `band_uv` are its CPU
+// twins): the surface's slab seen edge-on just under the line, over `c` (the pixel's underwater
+// view), `d` its waterline_m (negative). Its colour is its surroundings': the scene just above
+// the line, mirrored across it (the slab's underside reflects what is above edge-on), over the
+// underwater view toward its foot, times the look's tint; textured by the underside's cells on a
+// plane receding to the line (compressed toward it), with glints; along the top a dark rim over a
+// bright line, both following the wavy edge; faded into the underwater view at its foot. Only the
+// band's rows pay for it.
+fn waterline_band(p: vec2i, c: vec3f, d: f32, f: Fluid) -> vec3f {
+    let depth = f.under.w;
+    if (depth <= 0.0 || d <= -depth) {
+        return c;
+    }
+    let t = -d / depth;
+    let size = vec2f(textureDimensions(scene_color));
+    let across = waterline_across(f);
+    let px = -d / across.x;
+    let toward = across.yz;
+    let side = vec2f(-toward.y, toward.x);
+    // The underside's texture on a plane receding to the line (band_uv): along the line by the
+    // screen, down it by the inverse distance from the line, so cells shrink toward it.
+    let along = dot(vec2f(p), side) / size.y;
+    let uv = vec2f(along * 4.0, 1.0) / (t + 0.08) + vec2f(0.0, 0.2 * frame.fog.z);
+    // Above the line, mirrored: the scene there, or the sky where nothing is drawn; shifted and
+    // blurred by the ripples (two taps, `mirrorWarpPx` apart at most) so the land reads as a
+    // rippled reflection, not a second picture.
+    let warp = f.band_extra.z;
+    let wob = noise_t(vec2f(along * 9.0, t * 2.0 + 0.3 * frame.fog.z)).x;
+    let q0 = vec2f(p) + 0.5 + toward * (2.0 * px + 2.0);
+    let q1 = clamp(q0 + (side + 0.5 * toward) * (warp * wob), vec2f(0.5), size - 0.5);
+    let q2 = clamp(q0 - side * (0.6 * warp) + toward * (0.4 * warp * wob), vec2f(0.5), size - 0.5);
+    let above_c = 0.5 * (textureLoad(scene_color, vec2i(q1), 0) + textureLoad(scene_color, vec2i(q2), 0));
+    let ndc = vec2f(q1.x / size.x * 2.0 - 1.0, 1.0 - q1.y / size.y * 2.0);
+    var above = sky(normalize(view_ray(ndc)));
+    if (above_c.a > 0.0) {
+        above = mix(above, scene_display(above_c, 0.0), min(above_c.a, 1.0));
+    }
+    // At most `mirror` the mirrored scene, so a near bank reads as a tint.
+    let m = f.band_extra.w;
+    let base = mix(above, c, 1.0 - m + m * smoothstep(0.0, 1.0, t)) * f.band.rgb;
+    // Ripples, broken by `breakup`: warped by the noise's slope and coming and going under a
+    // second, finer noise, instead of smooth parallel stripes.
+    // Blurred along the band's rows (three taps BAND_BLUR_PX apart; owner, 2026-11-07: the band
+    // 'looks pixelated. Blurring is fine.'), where the receding plane packs the texture tightest.
+    // Each layer kept only under the pixel's Nyquist rate (band_footprint, band_keep; 0.50.25):
+    // toward the line the plane packs many noise cells into a pixel, which aliased into speckle.
+    let b = f.band_extra.y;
+    let s = t + 0.08;
+    let fp = vec2f(4.0 / size.y / s, across.x / depth / (s * s));
+    let duv = vec2f(4.0 * BAND_BLUR_PX / size.y / s, 0.0);
+    let r = (band_ripples(uv - duv, b, f, fp) + band_ripples(uv, b, f, fp) + band_ripples(uv + duv, b, f, fp)) / 3.0;
+    var col = base * r.x + vec3f(r.y);
+    // The dark rim along the top edge, then the bright line under it (band_edge).
+    col *= band_edge(px, f);
+    return mix(c, col, 1.0 - smoothstep(0.55, 1.0, t));
+}
+
+// The band's blur along its rows (px of the drawing buffer between taps).
+const BAND_BLUR_PX: f32 = 1.5;
+
+// The band's ripples at texture point `uv` (waterline_band): x the streaks' multiplier, y the
+// glint; broken by `b`, warped by the noise's slope and coming and going under a second, finer
+// noise, instead of smooth parallel stripes; each layer faded to its mean where a pixel spans `fp`
+// texture units too many for it (band_keep).
+fn band_ripples(uv: vec2f, b: f32, f: Fluid, fp: vec2f) -> vec2f {
+    let w = noise_t(uv * vec2f(0.45, 0.3) + 11.0) * band_keep(vec2f(0.45, 0.3), fp);
+    let n0 = noise_t(uv * vec2f(1.0 + 1.2 * b, 0.35) + w.yz * (0.35 * b)).x * band_keep(vec2f(1.0 + 1.2 * b, 0.35), fp);
+    let n1 = noise_t(uv * vec2f(2.6, 0.9) + 5.0).x * band_keep(vec2f(2.6, 0.9), fp);
+    let n = mix(n0, n0 * 1.8 * smoothstep(-0.25, 0.45, n1) + 0.25 * w.x, b);
+    let streak = clamp(1.0 + f.band.a * 2.5 * n, 0.3, 1.8);
+    let glint = smoothstep(0.3, 0.45, noise_t(uv * vec2f(2.1, 0.8) + 7.0).x) * f.band_extra.x * band_keep(vec2f(4.2, 1.6), fp);
+    return vec2f(streak, glint);
+}
+
+// How much of a band noise layer of frequency `k` (cycles a texture unit) is kept where a pixel
+// spans `fp` texture units (render/water.rs `band_keep`): whole under a quarter cycle a pixel,
+// none past Nyquist (half), where it would only alias into speckle.
+fn band_keep(k: vec2f, fp: vec2f) -> f32 {
+    return 1.0 - smoothstep(0.25, 0.5, max(k.x * fp.x, k.y * fp.y));
+}
+
+// How far `waterline_m` changes a pixel across the line (x, m; render/water.rs `meniscus_px_m`:
+// it is linear on the screen, its gradient a pixel the lens × 2 tan_y / height × the camera's
+// right and up axes' rise) and the screen direction from under the line toward it (yz).
+fn waterline_across(f: Fluid) -> vec3f {
+    let face = frame.eye.y;
+    let size = vec2f(textureDimensions(scene_color));
+    let g = vec2f(face_rise(face, frame.right.xyz), -face_rise(face, frame.up.xyz));
+    let px_m = f.under.x * 2.0 * frame.tan.y / size.y * max(length(g), 1e-4);
+    return vec3f(px_m, g / max(length(g), 1e-4));
+}
+
+// The band's edge `px` pixels under the line (render/water.rs `band_edge`): the dark rim's shade,
+// then the bright line's glow under it, else 1.
+fn band_edge(px: f32, f: Fluid) -> f32 {
+    let rim = 1.0 - smoothstep(f.rim.x - 0.75, f.rim.x + 0.25, px);
+    let bright = (1.0 - rim) * (1.0 - smoothstep(f.rim.x + f.rim.z - 0.75, f.rim.x + f.rim.z + 0.25, px));
+    return mix(1.0, f.rim.y, rim) * mix(1.0, f.rim.w, bright);
+}
+
+// The underside seen from below (look `underside`, WATER_RENDERING.md §12.2) at the surface
+// point `xz` (wrapped world m) along the view `dir` (unit): x the cells' multiplier, y the sun
+// patch's share (the cells' light × (1 + y)). The cells (`line.w`) are the caustic cells on
+// Medium and High, the noise tile on Low, projected on the plane (so perspective-correct, compressed
+// toward the horizon) and faded where a pixel covers a cell; `breakup` turns the caustic web's
+// bright lines into broken bright cells with dark gaps between, some lit more than others (a slow
+// noise over a few cells). The fog fades both over the distance to the surface (the caller's).
+fn underside_look(xz: vec2f, dir: vec3f, footprint: f32, f: Fluid, fluid: u32) -> vec2f {
+    let k = f.line.w;
+    var cells = 1.0;
+    if (k > 0.0) {
+        let scale = max(round(f.underside.w), 1.0);
+        let size = max(f.optics.y, 0.1) / scale;
+        let sharp = 1.0 - smoothstep(0.08, 0.3, footprint / size);
+        let b = f.underside.x;
+        let lit = smoothstep(-0.35, 0.45, noise_t(xz * (0.31 / size) + 5.3).x);
+        var c = noise_t(xz / size).x * 1.5;
+        c = mix(c, (c + 0.4) * (0.4 + 1.2 * lit) - 0.4, b);
+        if (water_reads_scene() && f.extra.y > 0.0) {
+            let web = caustic_pattern(xz * scale, f, footprint * scale, fluid);
+            let gaps = min(web * CAUSTIC_GAIN * 0.8, 1.0);
+            c = mix(web * CAUSTIC_GAIN - CAUSTIC_MEAN, (1.0 - 0.8 * gaps) * (0.2 + 1.3 * lit) - 0.35, b);
+        }
+        cells = max(1.0 + k * sharp * c, 0.0);
+    }
+    // The sun patch: brightest toward the sun's image through Snell's window (sun_through), so it
+    // follows the sun across the sky and sinks to the window's rim at sunset; gone at night.
+    // Hook: volumetric light shafts (a separate feature, being designed) would start from this
+    // patch (the same direction and strength), not from a second sun model.
+    let sun = frame.day.sun.xyz;
+    let glow = f.underside.y * pow(max(dot(dir, sun_through(sun, f.wave.x)), 0.0), max(f.underside.z, 1.0))
+        * own(sun, frame.eye.y);
+    return vec2f(cells, glow);
+}
+
+// The sun seen from under the surface (render/water.rs `sun_through`): its direction refracted
+// into the fluid (its slant from the face's up shrunk by 1 / ior; a sun on the horizon shows at
+// the critical angle).
+fn sun_through(sun: vec3f, ior: f32) -> vec3f {
+    let face = frame.eye.y;
+    let up = face_up(face);
+    let h = (sun - up * face_rise(face, sun)) / max(ior, 1.0);
+    return h + up * sqrt(max(1.0 - dot(h, h), 0.0));
+}
+
+// A ray `dir` (unit) from under a fluid of refractive index `ior` bent out through its surface,
+// whose normal is `n` (unit, toward the air: the face's up, tilted by the ripples), into the air
+// (render/water.rs `water_exit`; Snell's law): its slant from `n` grown by `ior`, so the window's
+// ~97° cone opens onto the whole sky. Past the critical angle it is clamped to the horizon of `n`
+// (the caller keeps those for the mirror).
+fn water_exit(dir: vec3f, n: vec3f, ior: f32) -> vec3f {
+    var h = (dir - n * dot(dir, n)) * ior;
+    let l = dot(h, h);
+    if (l > 1.0) {
+        h = h / sqrt(l);
+    }
+    return h + n * sqrt(max(1.0 - dot(h, h), 0.0));
+}
+
+// The sky seen through Snell's window along the ray `out` bent out of the fluid (`water_exit`;
+// `out_px` the next pixel's): the sky pass's own sky (`sky_behind_with_clouds` for a ray above the
+// horizon: the gradient, the stars, the moon in its phase, the sun's disc, the clouds), its
+// stars, moon and sun at the look's `window.bodies` strength (1: as above the surface).
+// WATER_RENDERING.md §16 (owner, 2026-11-11: looking up from just under the water should match
+// looking up from just above it).
+fn window_sky(out: vec3f, out_px: vec3f, bodies: f32) -> vec3f {
+    let face = frame.eye.y;
+    let deck = dwell_cloud_deck(out, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    let next = dwell_cloud_deck(out_px, face, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    let fw = max(abs(next.x - deck.x), abs(next.y - deck.y));
+    return sky_above_with_clouds(out, sky(out), deck, fw, bodies);
+}
+
 // The composite with the eye under a fluid's surface (the W4 stub): the fluid's fog over the
 // distance in it — to what the pixel shows, or to the surface where the ray reaches it first —
 // replaces the height fog; past the surface, the sky.
+// How far from the flat surface a pixel's depth may be and still count as the surface's own mesh
+// from below (m, along the face's up; render/water.rs `SURFACE_SLACK_M`).
+const SURFACE_SLACK_M: f32 = 0.3;
+
 fn composite_underwater(p: vec2i, ray: vec3f, c: vec4f) -> vec3f {
     let fluid = min(u32(frame.water.y), arrayLength(&fluids) - 1u);
-    let f = fluids[fluid];
+    let f = eye_fluid();
     let dir = normalize(ray);
     let rise = face_rise(frame.eye.y, dir);
     let below = max(face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x), 0.0);
     let to_surface = select(1e6, below / rise, rise > 1e-4);
-    let back = display(underwater(sky_radiance(dir), to_surface, f));
+    // Snell's window (render/water.rs `sees_out`): a ray reaching the surface leaves it only
+    // within the critical angle of the face's up, bent by the ripples there; flatter, the surface
+    // mirrors the water below (its in-scatter, rippled), so the line is the colour edge and the
+    // view up from under is a bright window in a mirrored ceiling.
+    // Only what the pixel needs is paid for: most pixels show a drawn surface or floor (c.a 1).
+    let ior = f.wave.x;
+    let reaches = to_surface < 1e5;
+    var hit = vec2f(0.0);
+    var leaves = false;
+    if (reaches) {
+        hit = frame.wrap.xy + dir.xz * min(to_surface, 64.0);
+        let slope = noise_t(hit * 0.9).yz * 0.18;
+        let bent = rise + dot(slope, dir.xz);
+        leaves = bent > 0.0 && 1.0 - bent * bent < 1.0 / (ior * ior);
+    }
+    var depth = 0.0;
+    var dist = 1e6;
+    if (c.a > 0.0) {
+        depth = scene_depth_at(p).x;
+        dist = select(1e6, depth * length(ray), depth > 0.0);
+    }
+    // A pixel showing the surface's own mesh from below (within `SURFACE_SLACK_M` of the surface
+    // the ray is measured to) takes the composite's surface: the window's sky or the mirror, not
+    // the mesh's tinted body, which near the window's rim (Fresnel) read as flat blue blobs in a
+    // brighter mirror (WATER_RENDERING.md §19). What stands above the surface (a tree seen
+    // through the window) still shows.
+    let slack = SURFACE_SLACK_M / max(rise, 0.05);
+    let past = dist > to_surface - slack;
+    let at_surface = reaches && c.a > 0.0 && abs(dist - to_surface) < slack;
+    var back = vec3f(0.0);
+    // The mirror and the window's share where the ray leaves (§19): toward the window's rim what
+    // the pixel shows past the surface fades into the mirror, as the sky does, so the rim has no
+    // hard-edged bits of the scene (the surface's mesh drawn opaque there by its Fresnel).
+    var rim_mirror = vec3f(0.0);
+    var rim_inside = 1.0;
+    if (reaches && (c.a < 1.0 || at_surface || past)) {
+        // The underside where the ray meets the surface: its cells and sun patch, under the fog
+        // over the distance to it (`underwater` to to_surface), so toward level they fade into
+        // the fog with no hard horizon (render/water.rs `underside_contrast`).
+        let fp = to_surface * 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y) / max(rise, 0.02);
+        let look = underside_look(hit, dir, fp, f, fluid);
+        let light = look.x * (1.0 + look.y);
+        // The mirror: the water's in-scatter, textured.
+        // Brighter by the look's `lift.y`, and round the window's rim a soft glow of the sky's light
+        // straight up (`lift.w`), so the ceiling reads as lit water, not a dark lid (§19).
+        let up_n = face_up(frame.eye.y);
+        let zen = sky_radiance(up_n);
+        let crit = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+        let near_rim = smoothstep(crit * 0.55, crit, rise) * f.lift.w;
+        let ceiling = underwater(vec3f(0.0), 1e6, f) * light * f.lift.y + zen * near_rim * 0.35;
+        let mirror = moonlit(display(underwater(ceiling, to_surface, f)));
+        if (leaves) {
+            // Out through the window: the sky, under the window's glow (shafts.json `window`: a
+            // bright white-cyan, strongest at its middle), with the patch's light round the sun;
+            // its rim softened into the mirror over the look's `edge` (ADR 0064).
+            // The sky is seen along the ray bent out of the fluid by Snell's law at the rippled
+            // surface (`water_exit`: the whole sky squeezed into the window's ~97° cone, so the
+            // sun and moon sit where they truly are), with their discs on a tier with `bodyPath`
+            // (reflections.json; not the CPU's). The window's glow is scaled by the sky's own
+            // light straight up, so it is bright at noon, warm at dusk and dim at night
+            // (WATER_RENDERING.md §16; owner, 2026-11-11).
+            let slope = noise_t(hit * 0.9).yz * 0.18;
+            let bent = rise + dot(slope, dir.xz);
+            let rim = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+            let inside = smoothstep(rim, rim + max(frame.shafts_color.w, 1e-3) * (1.0 - rim), bent);
+            let up = face_up(frame.eye.y);
+            let out = water_exit(dir, normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
+            // A pixel's step across the screen, bent out the same way: the clouds' footprint.
+            let step = 2.0 * frame.tan.y / f32(textureDimensions(scene_color).y);
+            let out_px = water_exit(normalize(dir + frame.right.xyz * step), normalize(up + vec3f(slope.x, 0.0, slope.y)), ior);
+            let seen = window_sky(out, out_px, f.window.y);
+            let zenith = sky_radiance(up);
+            let lift = inverse_display(frame.shafts_window.rgb) * max(zenith.r, max(zenith.g, zenith.b));
+            let sky_in = mix(inverse_display(seen), lift, frame.shafts_window.w * (0.55 + 0.45 * inside));
+            // The sky through the window, waved by the underside's cells at the look's share. The
+            // sun patch is the mirror's (the sun's own disc is in the window's sky), so it does not
+            // wash the sky with the water's colour.
+            // The sun's blown-out glow round its image (`window.z`, `window.w`; §19): the sun's light,
+            // brightest at the image and soft round it, so the window's sun reads as the reference's
+            // white disc with light radiating from it; gone at night with the sun.
+            let sun = frame.day.sun.xyz;
+            let sun_lit = select(frame.day.sun_b.rgb, frame.day.sun_a.rgb, frame.eye.y > 0.0);
+            let glow = sun_lit * f.window.z * pow(max(dot(dir, sun_through(sun, ior)), 0.0), max(f.window.w, 1.0))
+                * own(sun, frame.eye.y);
+            let window = display(underwater(sky_in * mix(1.0, look.x, f.window.x) + glow, to_surface, f));
+            back = mix(mirror, window, inside);
+            rim_mirror = mirror;
+            rim_inside = inside;
+        } else {
+            back = mirror;
+        }
+    } else if (c.a < 1.0) {
+        back = display(underwater(sky_radiance(dir), to_surface, f));
+    }
+    // Past a mirroring surface nothing above it shows.
+    if (at_surface || (reaches && !leaves && (c.a <= 0.0 || past))) {
+        return back;
+    }
     if (c.a <= 0.0) {
         return back;
     }
-    let depth = scene_depth_at(p).x;
-    let dist = select(1e6, depth * length(ray), depth > 0.0);
     var lit = c.rgb / c.a;
     // Caustics on what the pixel shows under the surface (W3, Medium and High): the seabed, walls,
     // anything opaque, before the fog takes its share over the distance to it.
-    if (frame.water.w >= 0.5 && depth > 0.0 && !water_off(DBG_UNDER)) {
+    if (water_reads_scene() && depth > 0.0 && !water_off(DBG_UNDER)) {
         let rel = ray * depth;
         let under = face_y(frame.eye.y, frame.water.z) - face_y(frame.eye.y, frame.eye.x + rel.y);
         // Lit by light that came down through the fluid, focused into caustics.
-        lit *= exp(-f.absorption.rgb * max(under, 0.0))
+        // The absorption's share `lift.z` (§19): lower, the floor keeps more of its colour.
+        lit *= exp(-f.absorption.rgb * f.lift.z * max(under, 0.0))
             * caustic_light(frame.wrap.xy + rel.xz, under, frame.eye.x + rel.y, pixel_m(p, ray, depth), UNDERWATER_CAUSTICS, f, fluid);
     }
-    let shown = display(underwater(lit, min(dist, to_surface), f));
-    return mix(back, shown, min(c.a, 1.0));
+    let shown = moonlit(display(underwater(lit, min(dist, to_surface), f)));
+    let out = mix(back, shown, min(c.a, 1.0));
+    if (reaches && leaves && past) {
+        return mix(rim_mirror, out, rim_inside);
+    }
+    return out;
+}
+
+// The time of day's saturation (`frame.day.horizon.a`, lower by moonlight) on a colour the water
+// shows from inside (the mirror, what is under it), as `scene_display` gives the scene above: at
+// night the water below is as grey as the sea seen from above, not a saturated glowing blue
+// (WATER_RENDERING.md §16). The sky through the window keeps its own colour, as the sky pass does.
+fn moonlit(c: vec3f) -> vec3f {
+    return mix(vec3f(dot(c, vec3f(0.2126, 0.7152, 0.0722))), c, frame.day.horizon.a);
+}
+";
+
+/// The light shafts pass (ADR 0064): the glow a pixel of the shafts' buffer (the tier's share of
+/// the drawing buffer) gathers, read by `with_shafts` in the composite.
+const SHAFTS: &str = r"
+// The most lights the shafts come from (dwell-look `MAX_SHAFT_LIGHTS`; `torch_shafts` holds 1 + 2 × it).
+const MAX_SHAFT_LIGHTS: u32 = 4u;
+// How many air samples share one look-up of the clouds' density.
+const SHAFTS_CLOUD_EVERY: i32 = 6;
+// The pass's 3 × 3 tile of sample strata and the composite's box half width over it (dwell-look
+// SHAFT_TILE, SHAFT_BLUR; BUGS.md #97).
+const SHAFT_TILE: array<u32, 9> = array<u32, 9>(0u, 5u, 7u, 8u, 3u, 1u, 4u, 6u, 2u);
+const SHAFT_BLUR: i32 = 1;
+
+// A per-texel offset (0–1) for the samples, so the steps band into noise, not rings: the 3 × 3
+// tile's stratum (dwell-look shaft_jitter, SHAFT_TILE; BUGS.md #97: was an interleaved gradient,
+// whose diagonal pattern showed), which the composite's 3 × 3 box (with_shafts) averages to nine
+// times the steps.
+fn shafts_jitter(p: vec2i) -> f32 {
+    let q = vec2i(p.x % 3, p.y % 3);
+    return (f32(SHAFT_TILE[q.x + 3 * q.y]) + 0.5) / 9.0;
+}
+
+// The full-resolution pixel at screen point `ndc` (clamped to the screen).
+fn shafts_pixel(ndc: vec2f, size: vec2f) -> vec2i {
+    return vec2i(clamp((vec2f(ndc.x, -ndc.y) * 0.5 + 0.5) * size, vec2f(0.0), size - 1.0));
+}
+
+// How much of the sky toward screen point `ndc` the cloud deck hides (0–1): the deck's density as
+// the composite finds it (dwell_cloud_layer), at most three octaves and with no self-shadow, so
+// the gaps between clouds let the shafts through. 0 with the clouds off.
+fn shafts_cloud(ndc: vec2f) -> f32 {
+    let octaves = min(i32(frame.cloud_cfg.y), 3);
+    if (octaves <= 0) {
+        return 0.0;
+    }
+    let deck = dwell_cloud_deck(normalize(view_ray(ndc)), frame.eye.y, frame.clouds, frame.cloud_cfg.w, frame.cloud_disc);
+    if (deck.w <= 0.0) {
+        return max(-deck.w, 0.0) * frame.cloud_cfg.x;
+    }
+    let p = cloud_warped(deck.xy, frame.clouds.zw, 0.0);
+    return deck.w * cloud_shape(cloud_fbm(p, octaves, 0.0), frame.cloud_cfg.x);
+}
+
+// In the air: a radial blur toward the light's screen point over the open sky (the scene's
+// coverage: geometry dark, sky bright, the clouds' density between), each sample weighed by the disc round the light and
+// decayed along the way, so gaps in trees, clouds' edges, cave mouths and hills cast soft rays.
+fn shafts_air(ndc: vec2f, j: f32, size: vec2f) -> f32 {
+    let light = frame.shafts.xy;
+    let steps = max(i32(frame.shafts_cfg.x), 1);
+    let delta = (light - ndc) * frame.shafts_cfg.y / f32(steps);
+    let aspect = size.x / size.y;
+    var q = ndc + delta * j;
+    var w = 1.0;
+    var sum = 0.0;
+    var total = 0.0;
+    // The clouds' density is found every SHAFTS_CLOUD_EVERY samples and held between (the
+    // deck's noise is the pass's dearest part; the per-pixel jitter blends the steps).
+    var cloud = 0.0;
+    for (var k = 0; k < steps; k++) {
+        if (k % SHAFTS_CLOUD_EVERY == 0) {
+            cloud = shafts_cloud(q + delta * (0.5 * f32(SHAFTS_CLOUD_EVERY - 1)));
+        }
+        let open = (1.0 - min(textureLoad(scene_color, shafts_pixel(q, size), 0).a, 1.0)) * (1.0 - cloud);
+        let r = length((q - light) * vec2f(aspect, 1.0)) / max(frame.shafts_cfg.w, 1e-3);
+        let disc = max(1.0 - r, 0.0);
+        sum += open * disc * disc * w;
+        total += w;
+        w *= frame.shafts_cfg.z;
+        q += delta;
+    }
+    return sum / max(total, 1e-4);
+}
+
+// Under a fluid: march the view ray (to what it shows, the surface or the reach), and at each
+// point look up the surface along the sun's refracted direction: lit where the underside's cells
+// are bright there (two drifting noise layers, so the shafts flicker as the reference's do), faded
+// by the depth under the surface and the distance along the ray.
+fn shafts_under(ndc: vec2f, j: f32, size: vec2f) -> f32 {
+    let f = eye_fluid();
+    let face = frame.eye.y;
+    let ray = view_ray(ndc);
+    let dir = normalize(ray);
+    let px = shafts_pixel(ndc, size);
+    var dist = frame.shafts_cfg.y;
+    if (textureLoad(scene_color, px, 0).a > 0.0) {
+        let d = scene_depth_at(px).x;
+        if (d > 0.0) {
+            dist = min(dist, d * length(ray));
+        }
+    }
+    let rise = face_rise(face, dir);
+    let below = max(face_y(face, frame.water.z) - face_y(face, frame.eye.x), 0.0);
+    if (rise > 1e-4) {
+        dist = min(dist, below / rise);
+    }
+    let sun = sun_through(frame.day.sun.xyz, f.wave.x);
+    let slant = sun.xz / max(face_rise(face, sun), 0.2);
+    let steps = max(i32(frame.shafts_cfg.x), 1);
+    let dt = dist / f32(steps);
+    let cell = max(frame.shafts_cfg.w, 0.05);
+    let drift = frame.shafts.y * frame.fog.z;
+    var sum = 0.0;
+    for (var k = 0; k < steps; k++) {
+        let t = (f32(k) + j) * dt;
+        let h = max(below - rise * t, 0.0);
+        let at = (frame.wrap.xy + dir.xz * t + slant * h) / cell;
+        let a = noise_t(at + vec2f(drift, 0.6 * drift) / cell).x;
+        let b = noise_t(at * 0.47 - vec2f(0.4 * drift, drift) / cell + 3.1).x;
+        let lit = smoothstep(0.2, 0.6, a) * smoothstep(-0.2, 0.4, b);
+        sum += lit * exp(-h / max(frame.shafts_cfg.z, 0.1) - t / max(frame.shafts_cfg.y, 0.1));
+    }
+    return sum * dt / max(frame.shafts_cfg.y, 0.1) * 3.0;
+}
+
+// From the placed and held lights (torches, lamps; ADR 0064): per light a radial blur toward its
+// screen point over what doesn't hide it (the scene behind the flame or the sky, by the view
+// depth's first sample), each sample weighed by the halo round the flame and decayed, so a torch
+// glows through the air and casts soft rays past what stands in front of it. A pixel whose
+// samples can't reach the halo skips the light.
+fn shafts_lights(ndc: vec2f, j: f32, size: vec2f) -> vec3f {
+    let head = frame.torch_shafts[0];
+    let count = min(u32(head.x), MAX_SHAFT_LIGHTS);
+    let steps = max(i32(head.y), 1);
+    let aspect = vec2f(size.x / size.y, 1.0);
+    var out = vec3f(0.0);
+    for (var i = 0u; i < count; i++) {
+        let a = frame.torch_shafts[1u + 2u * i];
+        let b = frame.torch_shafts[2u + 2u * i];
+        let rs = max(a.w, 1e-3);
+        if (length((ndc - a.xy) * aspect) * (1.0 - head.z) > rs) {
+            continue;
+        }
+        let delta = (a.xy - ndc) * head.z / f32(steps);
+        var q = ndc + delta * j;
+        var w = 1.0;
+        var sum = 0.0;
+        var total = 0.0;
+        for (var k = 0; k < steps; k++) {
+            let d = textureLoad(scene_depth, shafts_pixel(q, size), 0).r;
+            let open = select(smoothstep(a.z - 0.75, a.z - 0.25, d), 1.0, d <= 0.0);
+            let r = length((q - a.xy) * aspect) / rs;
+            let disc = max(1.0 - r, 0.0);
+            sum += open * disc * disc * w;
+            total += w;
+            w *= head.w;
+            q += delta;
+        }
+        out += b.rgb * (sum / max(total, 1e-4));
+    }
+    return out;
+}
+
+@fragment
+fn shafts_fs(i: SkyOut) -> @location(0) vec4f {
+    let size = vec2f(textureDimensions(scene_color));
+    let j = shafts_jitter(vec2i(i.clip.xy));
+    var g = 0.0;
+    if (frame.shafts.w > 1.5) {
+        g = shafts_under(i.ndc, j, size);
+    } else if (frame.shafts.w > 0.5) {
+        g = shafts_air(i.ndc, j, size);
+    }
+    var lit = vec3f(0.0);
+    if (frame.torch_shafts[0].x > 0.5) {
+        lit = shafts_lights(i.ndc, j, size);
+    }
+    return vec4f(lit, g);
 }
 ";
 
@@ -1304,7 +2481,7 @@ fn motion_composite(px: vec2i, ndc: vec2f) -> vec3f {
 fn motion_fs(i: SkyOut) -> @location(0) vec4f {
     let p = vec2i(i.clip.xy);
     var color = textureLoad(finished, p, 0).rgb;
-    if (frame.water.x <= 0.5) {
+    if (!eye_under()) {
         color = motion_composite(p, i.ndc);
     }
     return vec4f(color + dither(p), 1.0);
@@ -1517,6 +2694,11 @@ struct FluidOut {
     @location(4) @interpolate(flat) fluid: u32,
     @location(5) @interpolate(flat) draw: u32,
     @location(6) flood: vec2f,
+    // A water top's solid neighbours (dwell_look::waterflow::SHORE_W…, packed over the fluid id
+    // by dwell_mesh::fluid_with_shore; 0: none, or a mesh without them) and the fragment's place
+    // in the mesh's cells (x, z), whose fraction is its place in its cell (WATER_RENDERING.md §21).
+    @location(7) @interpolate(flat) shore: u32,
+    @location(8) cell_xz: vec2f,
 };
 
 // Fluid meshes: chunk water and LOD water alike (the draw's offset.w scales cells to metres;
@@ -1531,7 +2713,10 @@ fn fluid_vs(v: FluidIn, @builtin(instance_index) k: u32) -> FluidOut {
     o.normal = v.normal;
     o.color = v.color;
     o.wrapped = draw.rotation.zw + v.position.xz * draw.offset.w;
-    o.fluid = u32(v.fluid + 0.5);
+    let packed = u32(v.fluid + 0.5);
+    o.fluid = packed & 255u;
+    o.shore = packed >> 8u;
+    o.cell_xz = v.position.xz;
     o.flood = v.flood;
     return o;
 }
@@ -1686,7 +2871,7 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.w = vec3f(0.0);
     s.n = seen;
     if (abs(face_n.y) > 0.5) {
-        let layers = select(WAVE_LAYERS, 1, frame.water.w < 0.5);
+        let layers = water_tier_layers();
         // Carried by the current (docs/WATER_SURFACE_GRID.md §2c): two copies of the ripples half
         // a cycle apart, each carried downstream over its cycle and faded in and out, so neither
         // is stretched far (a flow map).
@@ -1711,7 +2896,11 @@ fn water_surface(i: FluidOut, front: bool, footprint: f32, f: Fluid, draw: Draw)
     s.light.points = point_lights(i.rel, face_up(s.up));
     s.sky = light_curve(i.flood.x, SKY_CURVE);
     s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);
-    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
+    // The body is the light scattered in the water under the surface, so a shadow on the surface
+    // (the player's own, standing in the water) doesn't darken it: at full strength it read as a
+    // dark blotch beside the eye (WATER_RENDERING.md §12), at 35 % (0.50.20) still a faint trace
+    // (§12.2). The glint and sparkle take the shadow.
+    s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, s.light);
     return s;
 }
 
@@ -1735,6 +2924,9 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     if (!water_off(DBG_GLINT)) {
         glint = ggx_glint(s.n, s.v, d.sun.xyz, a, f0) * select(d.sun_b.rgb, d.sun_a.rgb, s.on_a) * own(d.sun.xyz, s.up)
             + ggx_glint(s.n, s.v, d.moon.xyz, a, f0) * select(d.moon_b.rgb, d.moon_a.rgb, s.on_a) * own(d.moon.xyz, s.up);
+        if (reflect_path()) {
+            glint += body_paths(s, f0);
+        }
     }
     var reflected = refl.rgb;
     if (water_off(DBG_SKY)) {
@@ -1747,6 +2939,52 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
     return fres * reflected + (1.0 - refl.a) * (glint + spark) * s.shadow;
 }
 
+// The reflection tier's switches (`frame.reflect_sky.y`, dwell-look `reflection_uniforms`): bit 0
+// the deck's self-shadow, bit 1 the sun's and moon's discs and glitter paths (`bodyPath`).
+fn reflect_bits() -> u32 {
+    return u32(frame.reflect_sky.y + 0.5);
+}
+fn reflect_path() -> bool {
+    return (reflect_bits() & 2u) != 0u;
+}
+
+// How much of a body's glitter path shows with it `rise` (the sine of its elevation) over the
+// face's horizon (dwell-look `BodyPath::share`): whole under p.z, gone over p.w (radians).
+fn path_share(p: vec4f, rise: f32) -> f32 {
+    let e = asin(clamp(rise, -1.0, 1.0));
+    return 1.0 - smoothstep(p.z, max(p.w, p.z + 1e-4), e);
+}
+
+// The sun's and moon's glitter paths (WATER_RENDERING.md §15; render/glitter.rs): a GGX lobe of
+// each disc's own light off the rippled normal, a streak toward the viewer under the body broken
+// up by the ripples; the ripples' lost slope variance widens and dims it (calm water: bright and
+// tight). The moon's is its disc colour × its lit share (its phase); the sun's only while it is
+// low. The cloud cover takes PATH_CLOUD_FADE of it while clouds are drawn.
+fn body_paths(s: Surface, f0: f32) -> vec3f {
+    let d = frame.day;
+    let lost = 2.0 * s.w.z;
+    let am = sqrt(MOON_PATH.y * MOON_PATH.y + lost);
+    let asun = sqrt(SUN_PATH.y * SUN_PATH.y + lost);
+    let moon = ggx_glint(s.n, s.v, d.moon.xyz, am, f0) * MOON_PATH.x * d.stars.w
+        * path_share(MOON_PATH, face_rise(s.up, d.moon.xyz)) * own(d.moon.xyz, s.up);
+    let sun = ggx_glint(s.n, s.v, d.sun.xyz, asun, f0) * SUN_PATH.x
+        * path_share(SUN_PATH, face_rise(s.up, d.sun.xyz)) * own(d.sun.xyz, s.up);
+    let cover = select(0.0, frame.cloud_cfg.x * PATH_CLOUD_FADE, frame.cloud_cfg.y > 0.5);
+    return (moon * inverse_display(MOON_COLOR) + sun * inverse_display(d.disc.rgb)) * (1.0 - cover);
+}
+
+// The sun's and moon's discs (the moon in its phase) in the reflected sky `base` toward `r`, on a
+// tier with `bodyPath` (`dwell_sky_bodies`' bodies without the stars; a ripple's mirror is a
+// little blurred, so the edge is two pixels wide).
+fn reflected_bodies(r: vec3f, base: vec3f) -> vec3f {
+    let up = face_up(frame.eye.y);
+    let px = 2.0 * max(frame.day.stars.z, 1e-5);
+    let moon = dwell_moon(r, frame.day, px);
+    let c = mix(base, max(base, base * 0.4 + moon.rgb), moon.w);
+    let sun = dwell_sun_disc(r, up, frame.day, px);
+    return min(mix(c, max(c, sun.rgb), sun.w), vec3f(1.0));
+}
+
 // The sky along a reflected ray `r` from the surface point `rel`, with the cloud deck over it on
 // the tiers that reflect clouds (WATER_RENDERING.md §8; the composite's own sky and clouds, so
 // the day, night and dusk follow), in the scene's linear light. `fw` is the deck's footprint
@@ -1756,6 +2994,10 @@ fn surface_light(i: FluidOut, s: Surface, f: Fluid, fres: f32, footprint: f32, r
 fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
     let clear = sky(r);
     var c = clear;
+    if (reflect_path() && !water_off(DBG_GLINT)) {
+        c = reflected_bodies(r, clear);
+    }
+    let under = c;
     let octaves = frame.reflect_sky.x;
     if (octaves > 0.5 && clouds > 0.0 && !water_off(DBG_CLOUDS)) {
         let face = frame.eye.y;
@@ -1763,9 +3005,9 @@ fn reflected_env(r: vec3f, rel: vec3f, fw: f32, clouds: f32) -> vec3f {
         // point under it.
         let height = frame.cloud_cfg.w - face_rise(face, rel);
         let offsets = vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw);
-        let deck = dwell_cloud_deck(r, face, offsets, height);
-        let cfg = vec4f(frame.cloud_cfg.x, octaves, frame.reflect_sky.y, height);
-        c = mix(clear, dwell_clouds(clear, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
+        let deck = dwell_cloud_deck(r, face, offsets, height, vec4f(frame.cloud_disc.xy + rel.xz, frame.cloud_disc.zw));
+        let cfg = vec4f(frame.cloud_cfg.x, octaves, select(0.0, frame.cloud_cfg.z, (reflect_bits() & 1u) != 0u), height);
+        c = mix(under, dwell_clouds(under, clear, r, face, deck, fw, offsets, cfg, cloud_lighting()), clouds);
     }
     return inverse_display(c);
 }
@@ -1780,7 +3022,7 @@ fn reflected_deck_fw(rel: vec3f) -> f32 {
     let d = normalize(rel);
     let r = vec3f(d.x, abs(d.y) * up, d.z);
     let height = frame.cloud_cfg.w - face_rise(frame.eye.y, rel);
-    let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height);
+    let deck = dwell_cloud_deck(r, frame.eye.y, vec4f(frame.clouds.xy + rel.xz / CLOUD_SCALE, frame.clouds.zw), height, vec4f(frame.cloud_disc.xy + rel.xz, frame.cloud_disc.zw));
     return max(fwidth(deck.x), fwidth(deck.y));
 }
 
@@ -1920,6 +3162,49 @@ fn screen_clip(a: vec2f, delta: vec2f, size: vec2f) -> f32 {
     return max(t_end, 0.0);
 }
 
+// The bank band (shared/look/watertiers.json `band`; owner, 2026-11-07, for phones): the land
+// reflected without a march. The reflected ray's point BANK_REACH_M out from the surface point `p`
+// is looked up on screen once; where the scene there stands in front of it (within BANK_SLACK of
+// its view depth: the bank above the water's edge, not the sky or far land past it), a soft strip
+// of the bank's colour from the scene copy (four taps across and up the screen), darkened, over
+// `env` at BANK_STRENGTH × `land` (the share the surface reflects). xyz the colour, w its weight.
+fn bank_band(env: vec3f, p: vec3f, r: vec3f, size: vec2f, land: f32) -> vec4f {
+    let q = p + r * BANK_REACH_M;
+    let d = dot(q, frame.forward.xyz);
+    if (d <= 1e-3) {
+        return vec4f(env, 0.0);
+    }
+    let ndc = vec2f(dot(q, frame.right.xyz) / (d * frame.tan.x), dot(q, frame.up.xyz) / (d * frame.tan.y));
+    let px = vec2f((ndc.x * 0.5 + 0.5) * size.x, (0.5 - ndc.y * 0.5) * size.y);
+    if (any(px < vec2f(0.5)) || any(px > size - 0.5)) {
+        return vec4f(env, 0.0);
+    }
+    let behind = textureLoad(scene_depth, vec2i(px), 0).r;
+    if (behind <= 0.0 || behind > d * (1.0 + BANK_SLACK)) {
+        return vec4f(env, 0.0);
+    }
+    var c = vec4f(0.0);
+    let taps = array<vec2f, 4>(
+        vec2f(-BANK_SPREAD_PX, 0.0),
+        vec2f(BANK_SPREAD_PX, 0.0),
+        vec2f(-0.5 * BANK_SPREAD_PX, -BANK_BLUR_PX),
+        vec2f(0.5 * BANK_SPREAD_PX, BANK_BLUR_PX),
+    );
+    for (var k = 0; k < 4; k++) {
+        let at = clamp(px + taps[k], vec2f(0.5), size - 0.5);
+        c += textureSampleLevel(scene_color, scene_sampler, at / size, 0.0);
+    }
+    if (c.a <= 0.0) {
+        return vec4f(env, 0.0);
+    }
+    // Fades out toward the slack's end, so the strip has no hard edge where the bank stops.
+    let edge = 1.0 - smoothstep(0.5 * BANK_SLACK, BANK_SLACK, behind / d - 1.0);
+    let w = BANK_STRENGTH * land * edge * min(c.a * 0.25, 1.0);
+    let fog = fog_amount(view_ray(ndc) * behind);
+    let bank = mix(c.rgb / c.a * (1.0 - BANK_DARKEN), env, fog);
+    return vec4f(mix(env, bank, w), w);
+}
+
 // What the surface reflects (render/reflection.rs `reflected`): the scene at a screen-space hit,
 // from the copy and fogged by its distance as the composite would, over `env` (the sky and
 // clouds) by the hit's weight and coverage. a: the share that is the scene.
@@ -1967,7 +3252,7 @@ const SPARKLE_POWER: f32 = 2400.0;
 // open edge, or past a bank) is the fluid seen from outside, so it takes the outside look, not
 // the inside's flat body colour (WATER_RENDERING.md §9).
 fn seen_from_inside(i: FluidOut, front: bool) -> bool {
-    return !front && (abs(i.normal.y) > 0.5 || frame.water.x > 0.5);
+    return !front && (abs(i.normal.y) > 0.5 || eye_under());
 }
 
 // A surface's underside seen from outside the water (owner, 2026-11-05: flat blue sheets on
@@ -1975,16 +3260,38 @@ fn seen_from_inside(i: FluidOut, front: bool) -> bool {
 // of that pool's surface. Drawn as seen from inside it was a flat sheet of the body's colour; from
 // outside the water it isn't drawn, and the riser shows the bed behind it through the water.
 fn underside_from_outside(i: FluidOut, front: bool) -> bool {
-    return !front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5;
+    return !front && abs(i.normal.y) > 0.5 && !eye_under();
 }
 
-// A fluid's surface seen from inside (the W4 stub): the body's colour, out through Snell's window,
-// else totally reflected.
-fn from_below(s: Surface, f: Fluid) -> vec4f {
+// The eye's own surface hidden where the waterline puts the pixel on its other side
+// (WATER_RENDERING.md §10): its top seen from above where the pixel looks out from under it, its
+// underside seen from below where the pixel looks out above it. Each half of a split view then
+// shows its own side, and the line between them is the waterline's.
+// Only near the surface (`frame.water.x` 2 or 3: a uniform branch, nothing to test elsewhere);
+// else branch-free, so the fragment's derivatives after it stay in uniform control flow.
+fn waterline_hides(i: FluidOut, front: bool) -> bool {
+    if (frame.water.x < 1.5) {
+        return false;
+    }
+    let face = frame.eye.y;
+    let own = abs(face_y(face, frame.eye.x + i.rel.y) - face_y(face, frame.water.z)) <= 0.05;
+    let other_side = (waterline_m(i.rel / max(view_depth(i.rel), 1e-4), eye_fluid()) < 0.0) == front;
+    return (abs(i.normal.y) > 0.5) & own & other_side;
+}
+
+// A fluid's surface seen from inside: out through Snell's window, else totally reflected.
+// Lit unshadowed: the underside shows the water below it, not the shadow on the surface (the
+// player's own shadow read as a dark blotch overhead, WATER_RENDERING.md §12). The mirror carries
+// the underside's texture and sun patch (`underside_look` at the surface point `xz`, perspective-correct on
+// the mesh); inside the window what is above shows through by the Fresnel (the composite's
+// `back`: the sky, or the scene behind).
+fn from_below(s: Surface, f: Fluid, xz: vec2f, footprint: f32, fluid: u32) -> vec4f {
     let out_dir = refract(-s.v, s.n, f.wave.x);
     let tir = dot(out_dir, out_dir) < 0.5;
     let fres = select(schlick(abs(dot(out_dir, s.n)), f.extra.x), 1.0, tir);
-    return vec4f(s.body, 1.0 - (1.0 - fres) * (1.0 - f.absorption.a));
+    let body = lambert_lit(f.scatter.rgb, face_up(s.up), s.frag_y, TerrainLight(s.light.ambient, s.light.direct, s.light.glow, s.light.points));
+    let look = underside_look(xz, -s.v, footprint, f, fluid);
+    return vec4f(body * (look.x * (1.0 + look.y)), fres);
 }
 
 // A fluid's surface (WATER_RENDERING.md W1b; the Low water tier, which reads no copy of the
@@ -2001,7 +3308,8 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
     // A swap's water fades with its level's surface (the same pixels: neither blends twice).
-    if (fade_discard(draw, i.clip.xy)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);
@@ -2018,14 +3326,23 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (seen_from_inside(i, front)) {
-        o.color = from_below(s, f);
+        o.color = from_below(s, f, i.wrapped, footprint, i.fluid);
         return o;
     }
     let fres = schlick(s.ndv, f.extra.x);
-    let t = 1.0 - f.absorption.a;
-    let alpha = 1.0 - (1.0 - fres) * t;
+    // The tier's share of the fluid's opacity: less lets the floor behind show through (Low: see-
+    // through with no scene copy, so no pass split; owner, 2026-11-07).
+    let t = 1.0 - f.absorption.a * water_tier_opacity();
+    let alpha = max(1.0 - (1.0 - fres) * t, 1e-3);
     let refl = vec4f(reflected_env(reflected_dir(s), i.rel, deck_fw, reflect_share(fres)) * s.sky, 0.0);
-    o.color = vec4f((surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body) / alpha, alpha);
+    var lit = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * (1.0 - t) * s.body;
+    // The caustics in the blended pass (watertiers.json `caustics`): the tile's lines as if on a
+    // floor SURFACE_CAUSTICS_M down, added as light seen through the surface (no depth is read).
+    if (water_tier_caustics() && !water_off(DBG_CAUSTICS)) {
+        let m = caustic_light(i.wrapped, SURFACE_CAUSTICS_M, s.frag_y, footprint, 1.0, f, i.fluid);
+        lit += max(m - 1.0, 0.0) * SURFACE_CAUSTICS_GAIN * (1.0 - fres) * s.shadow * mix(s.body, vec3f(1.0), 0.3);
+    }
+    o.color = vec4f(lit / alpha, alpha);
     // Foam streaks along the current (docs/WATER_SURFACE_GRID.md §2c), opaque where they are.
     let streaks = flow_streaks(i, f, footprint);
     if (streaks > 0.0) {
@@ -2041,7 +3358,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
 // pixel covers more than a streak's width (no shimmer far off). 0 with the Foam streaks setting
 // off, for a liquid without a flow look, or in still water.
 fn flow_streaks(i: FluidOut, f: Fluid, footprint: f32) -> f32 {
-    if (!flow_on(FLOW_FOAM) || f.flow_foam.a <= 0.0 || f.flow.y <= 0.0) {
+    if (!flow_on(FLOW_FOAM) || !water_tier_streaks() || f.flow_foam.a <= 0.0 || f.flow.y <= 0.0) {
         return 0.0;
     }
     let cur = flow_at(i.wrapped, i.rel);
@@ -2098,7 +3415,8 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
-    if (fade_discard(draw, i.clip.xy)) {
+    let hidden = waterline_hides(i, front);
+    if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
     let count = arrayLength(&fluids);
@@ -2115,7 +3433,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let f = fluids[i.fluid];
     let s = water_surface(i, front, footprint, f, draw);
     if (seen_from_inside(i, front)) {
-        return from_below(s, f);
+        return from_below(s, f, i.wrapped, footprint, i.fluid);
     }
     let fres = schlick(s.ndv, f.extra.x);
     let size = vec2f(textureDimensions(scene_color));
@@ -2173,12 +3491,16 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
         hit = ssr_trace(i.rel, reflected_dir(calm), size);
         hit.z *= land;
     }
-    let refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw, land) * s.sky, hit, size);
+    var refl = ssr_reflected(reflected_env(reflected_dir(s), i.rel, deck_fw, land) * s.sky, hit, size);
+    // The tiers that march no land (Low) reflect the bank by the band instead.
+    if (water_tier_band() && land > 0.0 && hit.z <= 0.0) {
+        refl = bank_band(refl.rgb, i.rel, reflected_dir(calm), size, land);
+    }
     var color = surface_light(i, s, f, fres, footprint, refl) + (1.0 - fres) * through;
     // Shoreline foam where the water is thin.
     var foam = 0.0;
     if (!water_off(DBG_FOAM)) {
-        foam = foam_amount(i.wrapped, under, f);
+        foam = foam_amount(i.wrapped, min(min(under, length_in), shore_of(i, f)), f);
     }
     if (foam > 0.0) {
         let lit = lambert_lit(f.foam.rgb, vec3f(0.0, s.up, 0.0), s.frag_y, TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points));
@@ -2194,33 +3516,94 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
 
 const DEEP_M: f32 = 1e4;
 
-// Shoreline foam: where the water over what is behind is under the
-// fluid's foam depth, thin drifting lines lapping toward the shore, broken up by noise, densest at
-// the waterline.
-fn foam_amount(xz: vec2f, under: f32, f: Fluid) -> f32 {
-    let depth = f.foam.a;
-    if (depth <= 0.0 || under >= depth) {
+// The distance across the surface to the shore a water top's mask names (WATER_RENDERING.md §21;
+// owner, 2026-11-13: 'smoother or thicker around corners, so it doesn't looks so squared off'):
+// round an outer corner, filleted into an inner one. DEEP_M where the quad has no mask (open
+// water, LOD water, the heightfield) or the switch is off (`?waterdbg=corners`).
+fn shore_of(i: FluidOut, f: Fluid) -> f32 {
+    if (i.shore == 0u || water_off(DBG_CORNERS)) {
+        return DEEP_M;
+    }
+    return shore_xz(i.shore, fract(i.cell_xz), f.shore_soft.z);
+}
+
+// dwell_look::waterflow::shore_xz's mirror (its tests pin it): the Euclidean distance from `p`
+// (0..1 in the cell) to the solid neighbours `mask` names, with inner corners filleted by `r`.
+fn shore_xz(mask: u32, p: vec2f, r_in: f32) -> f32 {
+    let w = p.x;
+    let e = 1.0 - p.x;
+    let s = p.y;
+    let n = 1.0 - p.y;
+    var d = DEEP_M;
+    if ((mask & 1u) != 0u) { d = min(d, w); }
+    if ((mask & 2u) != 0u) { d = min(d, e); }
+    if ((mask & 4u) != 0u) { d = min(d, s); }
+    if ((mask & 8u) != 0u) { d = min(d, n); }
+    if ((mask & 16u) != 0u) { d = min(d, length(vec2f(w, s))); }
+    if ((mask & 32u) != 0u) { d = min(d, length(vec2f(e, s))); }
+    if ((mask & 64u) != 0u) { d = min(d, length(vec2f(w, n))); }
+    if ((mask & 128u) != 0u) { d = min(d, length(vec2f(e, n))); }
+    let r = clamp(r_in, 0.0, 0.5);
+    if (r > 0.0) {
+        d = min(d, fillet(mask, 1u, 4u, w, s, r));
+        d = min(d, fillet(mask, 2u, 4u, e, s, r));
+        d = min(d, fillet(mask, 1u, 8u, w, n, r));
+        d = min(d, fillet(mask, 2u, 8u, e, n, r));
+    }
+    return d;
+}
+
+// An inner corner's fillet: the land filled out by a quarter circle of radius r.
+fn fillet(mask: u32, a: u32, b: u32, u: f32, v: f32, r: f32) -> f32 {
+    if ((mask & a) == 0u || (mask & b) == 0u || u >= r || v >= r) {
+        return DEEP_M;
+    }
+    return max(r - length(vec2f(r - u, r - v)), 0.0);
+}
+
+// Shore foam (WATER_RENDERING.md §14, §20; owner, 2026-11-10: 'more like pulsing bands'; 2026-11-13:
+// the old soft edge with the new even one): by `shore`, the distance to the shore (the depth over a
+// slope, the ray's path through the water to a wall), a contact line where the water meets land or
+// a block, solid over its core and feathering into the water, and soft bands parallel to the
+// shore, each born at the edge and rolling out to the fluid's foam depth while it thins and fades,
+// a new one forming as the last goes. Slow noise shifts each band's timing and width along the
+// shore; it never multiplies the foam, so it cuts no holes. dwell_look::waterflow::shore_foam is
+// its mirror, whose tests pin the profile: keep the two in step.
+fn foam_amount(xz: vec2f, shore: f32, f: Fluid) -> f32 {
+    let reach = f.foam.a;
+    let most = f.shore.z;
+    let feather = f.shore_soft.x;
+    if (reach <= 0.0 || most <= 0.0 || shore >= reach + f.shore.y + feather) {
         return 0.0;
     }
-    let edge = 1.0 - under / depth;
     let t = frame.fog.z;
+    // slow noise along the shore, in -1..1 or so
     let n_cells = tile_cells(FOAM_CELL, NOISE_TILE);
     let cell = WRAP_M / n_cells;
-    let drift = vec2f(0.13, 0.09) * t / cell;
+    let drift = vec2f(0.03, 0.02) * t / cell;
     let q = xz / cell + (drift - n_cells * floor(drift / n_cells));
     let n = noise_t(q).x + 0.5 * noise_t(q * 2.0 + vec2f(0.5, 0.25)).x;
-    // Lines that move toward the shore (edge rises toward it) as time passes.
-    let lap = fract(edge * FOAM_LINES - t * FOAM_LAP_SPEED + n * 0.8);
-    let line = smoothstep(0.0, 0.18, lap) * (1.0 - smoothstep(0.3, 0.55, lap));
-    let breakup = smoothstep(-0.15, 0.35, n);
-    // At the waterline (where the water meets the bank, a thin line on screen): a soft rim.
-    let rim = smoothstep(0.55, 1.0, edge) * smoothstep(-0.35, 0.25, n);
-    return clamp(line * breakup * 0.45 * edge + rim * 0.8, 0.0, 0.8);
+    let wob = f.shore.w;
+    // the contact line: solid over its core (a hair wider or narrower along the shore), feathering
+    // into the water
+    let line_w = f.shore.x * (1.0 + 0.4 * wob * n);
+    var foam = 1.0 - smoothstep(line_w * 0.5, max(line_w, 1e-3) + feather, shore);
+    let bands = u32(f.flow_shape.z);
+    let period = max(f.flow_shape.w, 0.1);
+    let soft = f.shore_soft.y;
+    for (var k = 0u; k < min(bands, 4u); k++) {
+        // its age (0 born at the edge, 1 gone at the reach), shifted along the shore by the noise
+        let age = fract(t / period + f32(k) / f32(bands) + 0.25 * wob * n);
+        let at = f.shore.x + age * reach;
+        let w = f.shore.y * (1.0 - 0.7 * age) * (1.0 + 0.5 * wob * n);
+        let shape = 1.0 - smoothstep(w * 0.25 * (1.0 - soft), w * 0.5 * (1.0 + soft), abs(shore - at));
+        let fade = smoothstep(0.0, 0.12, age) * (1.0 - age) * (1.0 - age);
+        foam = max(foam, shape * fade * 0.8);
+    }
+    return clamp(foam * most, 0.0, 1.0);
 }
 
 const FOAM_CELL: f32 = 0.9;
-const FOAM_LINES: f32 = 1.6;
-const FOAM_LAP_SPEED: f32 = 0.12;
 
 // Caustics (WATER_RENDERING.md W3, brought forward from W4): the light the ripples focus on what is
 // `under` metres below the surface, at wrapped world `xz`, as a multiplier of its light (1: none).
@@ -2307,10 +3690,8 @@ fn caustic_pattern(xz: vec2f, f: Fluid, footprint: f32, fluid: u32) -> f32 {
     let texels = footprint / cell * CAUSTIC_TEXELS;
     let a = caustic_edge(p + warp, t.x, texels, fluid, 0);
     var c = exp(-a * 11.0);
-    // The finer layer only near, where a pixel is small against its cells; on High (an extra)
-    // twice as far out.
-    let reach = select(1.0, 2.0, frame.water.w > 1.5);
-    let fine = 1.0 - smoothstep(0.04 * reach, 0.12 * reach, footprint / cell);
+    // The finer layer only near, where a pixel is small against its cells.
+    let fine = 1.0 - smoothstep(0.04, 0.12, footprint / cell);
     if (fine > 0.0) {
         let b = caustic_edge(p * 2.0 + vec2f(0.37, 0.71) - 2.0 * warp, t.y, 2.0 * texels, fluid, 1);
         c += 0.6 * fine * exp(-b * 9.0);
@@ -2411,13 +3792,30 @@ fn scene_bindings(samples: u32) -> String {
     } else {
         "texture_2d<f32>"
     };
+    let bloom = dwell_look::bloom::BLOOM.intensity as f32;
+    let taps = dwell_look::clouds::MAX_DIVISOR;
+    let clamp = dwell_look::clouds::HISTORY_CLAMP as f32;
     format!(
         "const SCENE_SAMPLES: i32 = {samples};\n\
+         const BLOOM_INTENSITY: f32 = {bloom:?};\n\
          const SAMPLE_SLOTS: u32 = {samples}u;\n\
          @group(2) @binding(0) var scene_color: texture_2d<f32>;\n\
          @group(2) @binding(1) var scene_depth: {depth};\n\
          @group(3) @binding(0) var finished: texture_2d<f32>;\n\
-         @group(2) @binding(2) var scene_sampler: sampler;\n",
+         @group(2) @binding(2) var scene_sampler: sampler;\n\
+         @group(2) @binding(3) var shafts_tex: texture_2d<f32>;\n\
+         @group(2) @binding(4) var clouds_tex: texture_2d<f32>;\n\
+         @group(2) @binding(5) var cloud_dist_tex: texture_2d<f32>;\n\
+         @group(2) @binding(6) var bloom_tex: texture_2d<f32>;\n\
+         @group(3) @binding(1) var cloud_history: texture_2d<f32>;\n\
+         @group(3) @binding(2) var cloud_history_sampler: sampler;\n\
+         @group(3) @binding(3) var<uniform> cloud_prev: CloudPrev;\n\
+         @group(3) @binding(5) var cloud_dist_history: texture_2d<f32>;\n\
+         @group(3) @binding(9) var cloud_raw: texture_2d<f32>;\n\
+         @group(3) @binding(10) var cloud_dist_now: texture_2d<f32>;\n\
+         const CLOUD_DEPTH_TAPS: i32 = {taps};\n\
+         const CLOUD_HISTORY_CLAMP: f32 = {clamp:?};\n{}",
+        dwell_look::clouds::cloud_march_wgsl(3, 4, 6),
     )
 }
 
@@ -2425,22 +3823,29 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
-        super::flow::wgsl(),
+        super::flow::wgsl() + &super::tree_fade::wgsl(),
         scene_bindings(samples),
         water_slope()
-    )
+    ) + &super::heightfield::wgsl()
+        + &super::impostors::wgsl(dwell_worldgen::impostor::Config::get())
 }
 
 /// The flood light's shading constants (shared/look/light.json; docs/DAY_NIGHT.md §11).
 fn light_wgsl() -> String {
     let l = dwell_world::light::LIGHT;
     let c = l.block_color.map(|v| dwell_look::srgb_to_linear(v) as f32);
+    let b = l
+        .character_bounce_color
+        .map(|v| (dwell_look::srgb_to_linear(v) * l.character_bounce_strength) as f32);
     format!(
-        "const SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        "const BODY_BOUNCE: vec3f = vec3f({:?}, {:?}, {:?});\nconst SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        b[0],
+        b[1],
+        b[2],
         l.sky_curve as f32,
         f32::from(l.direct_from),
         f32::from(l.direct_full),
@@ -2452,23 +3857,45 @@ fn light_wgsl() -> String {
     )
 }
 
+/// Lava's look by heat (shared/fluids/lava.json `heat`, VOLCANOES.md §6.5), one row per stop, the
+/// hottest first: `lava_stop_look` the seams' colour (linear) and emissive, `lava_stop_core` the
+/// seams' core colour and the crust's cover. A molten cell's faces name their stop (dwell-mesh
+/// `vertex_rgb`).
+pub fn lava_wgsl() -> String {
+    let stops = dwell_lava::DATA.heat;
+    let row = |c: [f32; 3], w: f32| format!("vec4f({:?}, {:?}, {:?}, {w:?})", c[0], c[1], c[2]);
+    let look: Vec<String> = stops.iter().map(|s| row(s.linear(), s.intensity)).collect();
+    let core: Vec<String> = stops
+        .iter()
+        .map(|s| row(s.core_linear(), s.crust))
+        .collect();
+    let n = stops.len();
+    format!(
+        "const LAVA_STOPS: u32 = {n}u;\nvar<private> lava_stop_look: array<vec4f, {n}> = array<vec4f, {n}>({});\nvar<private> lava_stop_core: array<vec4f, {n}> = array<vec4f, {n}>({});\n",
+        look.join(", "),
+        core.join(", ")
+    )
+}
+
 /// The shared lighting: the constants, the fluids, the frame uniforms (group 0: `frame`, `atlas`,
 /// `atlas_sampler`), the sky, the clouds and the shading functions, without any pass's bindings or
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
         light_wgsl(),
+        lava_wgsl(),
         dwell_mesh::ATLAS_CELLS,
         dwell_mesh::ATLAS_TILES,
+        dwell_mesh::GUTTER,
         dwell_look::daynight::DAY_SKY_WGSL,
         super::water::wgsl(),
         super::reflection::wgsl(),
-        dwell_look::sky_wgsl(),
+        dwell_look::sky_wgsl_with(&super::moon::wgsl()),
         dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS),
         super::lights::wgsl(),
         super::point_shadows::wgsl(),
@@ -2480,6 +3907,26 @@ pub fn lighting_source() -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn molten_lava_draws_its_stop_hottest_bright_orange_red_past_white() {
+        // Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange." The seams glowed
+        // in a fixed mix of the tile's hue; now in each cell's heat stop's colour and emissive.
+        let src = super::lighting_source();
+        let stops = dwell_lava::DATA.heat;
+        assert!(src.contains(&format!("const LAVA_STOPS: u32 = {}u;", stops.len())));
+        let hot = stops[0];
+        assert!(hot.intensity > 1.0);
+        let [r, g, b] = hot.linear();
+        assert!(
+            r > 0.9 && g > 0.05 && g < 0.4 && b < 0.05,
+            "orange-red, not mustard: {r} {g} {b}"
+        );
+        assert!(
+            src.contains("emitted_hue("),
+            "lava keeps its hue as it glows"
+        );
+    }
+
+    #[test]
     fn the_block_outline_turns_with_its_draw_as_meshes_do() {
         // Owner, 2026-11-02: a moving body's hover outline was "tilted at uneven angles": the line
         // stage left out the draw's rotation, so the box about the body's origin didn't turn with
@@ -2489,7 +3936,7 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        for stage in ["terrain_vs", "cutout_vs", "line_vs"] {
+        for stage in ["terrain_vs", "cutout_vertex", "line_vs"] {
             assert!(
                 body(stage).contains("qrot(draw.quat, v.position * draw.offset.w)"),
                 "{stage} turns by the draw's rotation"
@@ -2540,7 +3987,7 @@ mod tests {
         let src = super::source(1);
         let at = src.find("fn underside_from_outside(").expect("the rule");
         let rule = &src[at..at + src[at..].find("\n}\n").expect("end")];
-        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && frame.water.x < 0.5"));
+        assert!(rule.contains("!front && abs(i.normal.y) > 0.5 && !eye_under()"));
         for entry in ["fn water_fs(", "fn water_scene_fs("] {
             let at = src.find(entry).expect(entry);
             let b = &src[at..at + src[at..].find("\n}\n").expect("end")];
@@ -2553,6 +4000,42 @@ mod tests {
                 "{entry} discards the underside before shading"
             );
         }
+    }
+
+    #[test]
+    fn the_shafts_jitter_tile_and_the_composites_box_are_dwell_looks() {
+        // BUGS.md #97: the pass's jitter is the 3 × 3 tile of strata and the composite the box over
+        // it (dwell-look `shaft_jitter`, `shaft_blur`, whose test measures the dither).
+        use super::{SHAFTS, TERRAIN};
+        use dwell_look::shafts::{SHAFT_BLUR, SHAFT_TILE};
+        let tile = SHAFT_TILE.map(|k| format!("{k}u")).join(", ");
+        assert!(SHAFTS.contains(&format!(
+            "const SHAFT_TILE: array<u32, 9> = array<u32, 9>({tile});"
+        )));
+        assert!(SHAFTS.contains(&format!("const SHAFT_BLUR: i32 = {SHAFT_BLUR};")));
+        assert!(SHAFTS.contains("let j = shafts_jitter(vec2i(i.clip.xy));"));
+        assert!(
+            !SHAFTS.contains("52.9829189"),
+            "the interleaved gradient is back"
+        );
+        let comp = &TERRAIN[TERRAIN.find("fn with_shafts").unwrap()..];
+        let comp = &comp[..comp.find("fn composite_pixel").unwrap()];
+        assert!(comp.contains("for (var k = 0; k < 9; k++)") && comp.contains("f32(SHAFT_BLUR)"));
+    }
+
+    #[test]
+    fn the_lights_shafts_block_holds_the_datas_lights_and_the_composite_adds_their_colour() {
+        use super::{FRAME, SHAFTS, TERRAIN};
+        use dwell_look::shafts::{LIGHT_SHAFT_VEC4S, MAX_SHAFT_LIGHTS};
+        assert!(FRAME.contains(&format!("torch_shafts: array<vec4f, {LIGHT_SHAFT_VEC4S}>,")));
+        assert!(SHAFTS.contains(&format!(
+            "const MAX_SHAFT_LIGHTS: u32 = {MAX_SHAFT_LIGHTS}u;"
+        )));
+        // The pass writes the lights' glow in rgb and the sun's, moon's or fluid's in a.
+        assert!(SHAFTS.contains("return vec4f(lit, g);"));
+        let comp = &TERRAIN[TERRAIN.find("fn with_shafts").unwrap()..];
+        let comp = &comp[..comp.find("fn composite_pixel").unwrap()];
+        assert!(comp.contains("s.a * frame.shafts.z") && comp.contains("s.rgb, lit"));
     }
 
     #[test]
@@ -2593,6 +4076,7 @@ mod tests {
                 "shadow_terrain_fs",
                 "shadow_flat_fs",
                 "shadow_cutout_fs",
+                "shadow_cutout_vs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -2622,10 +4106,12 @@ mod tests {
         // direct share, they don't replace a full one.
         assert!(surface.contains("s.light = terrain_light(1.0, i.flood);"));
         assert!(surface.contains("s.shadow = shadow_light(i.rel, face_up(s.up), s.light.direct);"));
-        assert!(
-            surface
-                .contains("TerrainLight(s.light.ambient, s.shadow, s.light.glow, s.light.points)")
-        );
+        // The body takes none of the shadow (WATER_RENDERING.md §12.2: at 35 % it still read as a
+        // trace of the player's shadow from above).
+        assert!(!surface.contains("BODY_SHADOW"));
+        assert!(surface.contains(
+            "s.body = lambert_lit(f.scatter.rgb * draw.tint.rgb, face_up(s.up), s.frag_y, s.light);"
+        ));
         assert!(
             !src.contains("TerrainLight(1.0, s.shadow"),
             "a fluid lit as open sky"
@@ -2695,7 +4181,7 @@ mod tests {
         // the stand-in, which the first layer's sky light replaces.
         let look = body("shadow_light");
         assert!(look.contains(
-            "let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);"
+            "let inside = mix(stand_in, shadow_cascades(c, rel, n) * lod_shadow(rel), shadows.cfg.y);"
         ));
         assert!(look.contains("return stand_in * cloud_shadow(rel);"));
         // Past the cascades, the stand-in shaded by the distant terrain (the third layer), and a
@@ -2733,7 +4219,7 @@ mod tests {
         assert!(
             c.contains("sky(")
                 && c.contains("sky_behind_with_clouds(")
-                && c.contains("dwell_cloud_deck(")
+                && body("composited_decks").contains("dwell_cloud_deck(")
         );
         assert!(body("composite_pixel").contains("composited("));
     }
@@ -2765,12 +4251,18 @@ mod tests {
         let c = body("composited");
         assert!(c.contains("dwell_cloud_layer(clear, dir,"));
         assert!(c.contains("cloud_in_front_of(deck.z, ray, depth)"));
-        // The deck's footprint is taken before any branch (derivatives need uniform control flow).
-        let c = body("composited");
-        let deck = c.find("dwell_cloud_deck(").expect("deck");
+        // The deck's footprint is taken before any branch (derivatives need uniform control
+        // flow): in composited_decks, which composite_pixel calls before its waterline branch.
+        let c = body("composited_decks");
+        assert!(c.contains("dwell_cloud_deck(") && c.contains("fwidth(") && !c.contains("if ("));
+        let px = body("composite_pixel");
+        let decks = px
+            .find("let decks = composited_decks(ndc);")
+            .expect("decks");
         assert!(
-            deck < c.find("if (").expect("branch")
-                && c.find("fwidth(").expect("fw") < c.find("if (").unwrap()
+            decks
+                < px.find("if (frame.water.x > 1.5)")
+                    .expect("the waterline branch")
         );
     }
 
@@ -2803,6 +4295,47 @@ mod tests {
     }
 
     #[test]
+    fn the_sun_and_moon_are_reflected_with_paths_only_on_a_body_path_tier() {
+        // WATER_RENDERING.md §15: the discs and glitter paths are gated on the reflection tier's
+        // bit (the CPU tier's is off: a simple highlight, the glint, only); the discs go under the
+        // reflected clouds; the clouds' cover dims the path.
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let light = body("surface_light");
+        assert!(light.contains("if (reflect_path()) {\n            glint += body_paths(s, f0);"));
+        let env = body("reflected_env");
+        let bodies = env
+            .find("reflected_bodies(r, clear)")
+            .expect("discs reflected");
+        assert!(env[..bodies].contains("reflect_path()"));
+        assert!(
+            bodies
+                < env
+                    .find("dwell_clouds(under")
+                    .expect("clouds over the discs")
+        );
+        let paths = body("body_paths");
+        assert!(
+            paths.contains("d.stars.w") && paths.contains("frame.cloud_cfg.x * PATH_CLOUD_FADE")
+        );
+        assert!(
+            paths.contains("face_rise(s.up, d.moon.xyz)") && paths.contains("own(d.sun.xyz, s.up)")
+        );
+        let cpu = dwell_look::water_tiers::cpu_tier();
+        let u = dwell_look::reflections::reflection_uniforms(
+            &dwell_look::reflections::REFLECTIONS,
+            cpu,
+            8,
+            true,
+            false,
+        );
+        assert_eq!(u[1][1] as u32 & 2, 0, "the CPU tier draws no path");
+    }
+
+    #[test]
     fn the_wind_is_drawn_by_the_motion_pass_only_while_there_is_any() {
         // The composite never draws the wind: with it on, the renderer draws the finished image
         // (`finished_fs`) and the motion pass over it (`motion_fs`, render/mod.rs `motion_pass`).
@@ -2817,7 +4350,7 @@ mod tests {
         let m = body("motion_fs");
         assert!(m.contains("motion_composite(p, i.ndc)") && m.contains("dither(p)"));
         // Under water the wind isn't drawn (as before the split).
-        assert!(m.contains("if (frame.water.x <= 0.5)"));
+        assert!(m.contains("if (!eye_under())"));
         // Procedural: no textures beyond the finished image, which the edge blur loads.
         let motion = &src[src.find("fn motion_hash(").expect("motion")
             ..src.find("const EDGE_DEPTH").expect("outline")];
@@ -2896,7 +4429,7 @@ mod tests {
             .find("s.color = outlined(s, p);")
             .expect("the ink is in the pixel");
         assert!(
-            pixel[ink..].contains("return s.color;"),
+            pixel[ink..].contains("return with_shafts(s.color, p);"),
             "nothing undoes it after"
         );
         assert!(body("finished_fs").contains("composite_pixel("));
@@ -2935,6 +4468,29 @@ mod tests {
         // And the height fog takes the ink toward the sky as it takes the ground.
         let o = body("outlined");
         assert!(o.contains("mix(frame.outline_ink.rgb, s.clear, fog_amount(rel))"));
+    }
+
+    #[test]
+    fn every_plant_past_its_fade_is_dropped_in_the_vertex_stage() {
+        // WORK_QUEUE item 32: the forest edge drew every blade of tall grass out to the
+        // full-detail distance and discarded it in the fragment stage (14 of the edge's 25 ms
+        // on the M1 at High). Any plant past its fade's end (plant.w) is dropped whole, not only
+        // leaf cards (plant.y < 0): the fade check comes before the cards-only return.
+        let src = super::source(4);
+        let at = src.find("fn card_dropped(").expect("card_dropped");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("end")];
+        let fade = body
+            .find("plant.w > 0.0 && length(rel) > plant.w + 2.0")
+            .expect("the fade drop");
+        let cards_only = body.find("plant.y >= 0.0").expect("the cards-only return");
+        assert!(
+            fade < cards_only,
+            "grass past its fade is not dropped:\n{body}"
+        );
+        assert!(
+            src.contains("if (card_dropped(still,"),
+            "cutout_vs drops by it"
+        );
     }
 
     #[test]
@@ -3047,7 +4603,7 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        assert!(body("cutout_vs").contains("o.bare = v.bare;"));
+        assert!(body("cutout_vertex").contains("o.bare = v.lit.w;"));
         assert!(
             body("cutout_fs").contains("frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw))")
         );
@@ -3144,7 +4700,7 @@ mod tests {
                 && c.contains("composited_scene(c, depth, self_lit, s)")
         );
         assert!(body("composited_scene").contains("var color = s.back;"));
-        assert!(body("composite_pixel").contains("composited(p, ndc)"));
+        assert!(body("composite_pixel").contains("composited(p, ndc, decks)"));
     }
 
     #[test]
@@ -3194,10 +4750,58 @@ mod tests {
         assert!(scene.contains("dwell_cloud_fog(color, frame.cloud_inside.x"));
         let c = body("composited");
         let layer = c.find("dwell_cloud_layer(").expect("layer");
-        assert!(c[..layer].contains("if (c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth))"));
+        assert!(
+            c[..layer]
+                .contains("if (!volume && c.a > 0.0 && cloud_in_front_of(deck.z, ray, depth))")
+        );
         assert!(body("motion_composite").contains("textureLoad(finished, vec2i(q), 0)"));
         // The layer is the clouds dwell_clouds draws, found once.
         let look = dwell_look::clouds::cloud_wgsl(&dwell_look::clouds::CLOUDS);
         assert!(look.contains("return dwell_cloud_over(under, dwell_cloud_layer(clear,"));
+    }
+
+    #[test]
+    fn only_the_composite_marches_the_volume_and_the_cheap_sky_keeps_the_deck() {
+        // docs/CLOUDS.md §8: the composite marches the volumetric clouds (once a pixel, out to the
+        // scene) in place of the eye's deck; Snell's window and the reflections sample
+        // sky_above_with_clouds, which stays the 2D deck (WATER_RENDERING.md §16).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        let c = body("composited");
+        assert!(c.contains("vol = upsampled_clouds(ndc, ray,"));
+        assert!(c.contains("deck = vec4f(deck.xy, 0.0, 0.0);"));
+        // The march runs in the clouds pass only (at the tier's resolution), accumulated.
+        assert_eq!(src.matches("= dwell_cloud_march(").count(), 1);
+        assert!(body("clouds_fs").contains("= dwell_cloud_march("));
+        // BUGS.md #90: the history goes in the resolve, clamped to the raw march's neighbourhood
+        // (not dropped as the eye moves), and the jitter is the baked blue noise.
+        let resolve = body("clouds_resolve_fs");
+        assert!(resolve.contains("cloud_history_at(uv, rec)"));
+        assert!(resolve.contains("mix(clamp(hist.color, lo, hi), cur,"));
+        assert!(!resolve.contains("parallax"));
+        assert!(!body("clouds_fs").contains("cloud_history"));
+        assert!(body("cloud_jitter").contains("dwell_cloud_blue(p)"));
+        let cheap = body("sky_above_with_clouds");
+        assert!(!cheap.contains("dwell_cloud_march") && !cheap.contains("upsampled_clouds"));
+        // BUGS.md #88: the march ends at the texel's farthest scene pixel, the texel keeps its
+        // scene span (not the jittered first cloud), and the upsample and the history weigh texels
+        // by it (dwell-look's upsample_weight twin), not by a ±5 % cut at the first cloud.
+        let fs = body("clouds_fs");
+        assert!(fs.contains("let rec = cloud_scene_span(p, length(ray));"));
+        assert!(fs.contains("dwell_cloud_march_end(rec)"));
+        assert!(fs.contains(
+            "return CloudOut(vec4f(layer.rgb * layer.a, layer.a), vec4f(rec, first, 0.0));"
+        ));
+        let up = body("upsampled_clouds");
+        assert!(up.contains("dwell_cloud_upsample_split(e, textureLoad(cloud_dist_tex"));
+        assert!(!up.contains("smoothstep(0.95, 1.05"));
+        assert!(body("cloud_history_at").contains("dwell_cloud_upsample_weight(rec.y,"));
+        assert!(src.contains(&format!(
+            "const CLOUD_DEPTH_TAPS: i32 = {};",
+            dwell_look::clouds::MAX_DIVISOR
+        )));
     }
 }

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use dwell_world::{
-    AirChunkTest, CHUNK_SIZE, ChunkCoord, DiscOverlap, Face, SEA_LEVEL, chunk_disc_overlap,
+    AirChunkTest, CHUNK_SIZE, ChunkCoord, DiscOverlap, Face, SEA_LEVEL, WorldBounds,
     face_local_chunk, face_of_chunk_y, flat_is_air,
 };
 
@@ -29,14 +29,31 @@ const MAX_CACHED: usize = 16384;
 /// The air test of a generator, its sky floors cached per chunk column and face.
 pub struct AirColumns {
     terrain: Option<Arc<BifacialTerrain>>,
+    /// The terrain's world (its size's disc and volume; a flat world's the build's).
+    world: WorldBounds,
     cache: Mutex<HashMap<SkyColumn, f32>>,
 }
 
 impl AirColumns {
     /// For a generator version: the terrain's (sky floors), or the flat world's (none needed).
     pub fn for_generator(version: u32, world_seed: u64) -> Arc<Self> {
+        Self::for_generator_sized(
+            version,
+            world_seed,
+            dwell_protocol::world_size::WorldSize::DEFAULT,
+        )
+    }
+
+    /// [`AirColumns::for_generator`] in a world of `size` (BIG_MAP.md M2).
+    pub fn for_generator_sized(
+        version: u32,
+        world_seed: u64,
+        size: dwell_protocol::world_size::WorldSize,
+    ) -> Arc<Self> {
+        let terrain = BifacialTerrain::for_generator_sized(version, world_seed, size).map(Arc::new);
         Arc::new(Self {
-            terrain: BifacialTerrain::for_generator(version, world_seed).map(Arc::new),
+            world: terrain.as_ref().map_or(WorldBounds::DEFAULT, |t| t.world()),
+            terrain,
             cache: Mutex::new(HashMap::new()),
         })
     }
@@ -46,7 +63,7 @@ impl AirColumns {
         self.terrain.as_ref()?;
         let y0 = face_local_chunk(c).y * CHUNK_SIZE;
         if !(SEA_LEVEL..terrain::FACE_MAX_Y).contains(&y0)
-            || chunk_disc_overlap(c.x, c.z) == DiscOverlap::Outside
+            || self.world.chunk_disc_overlap(c.x, c.z) == DiscOverlap::Outside
         {
             return None;
         }
@@ -67,7 +84,7 @@ impl AirColumns {
             return Ok(terrain.is_air_chunk(c));
         };
         match self.cache.lock().expect("air cache").get(&col) {
-            Some(&floor) => Ok(BifacialTerrain::is_air_chunk_with(c, floor)),
+            Some(&floor) => Ok(BifacialTerrain::is_air_chunk_with(&self.world, c, floor)),
             None => Err(col),
         }
     }
@@ -95,7 +112,7 @@ impl AirColumns {
             Err(col) => {
                 let floor = self.compute(col);
                 self.insert(col, floor);
-                BifacialTerrain::is_air_chunk_with(c, floor)
+                BifacialTerrain::is_air_chunk_with(&self.world, c, floor)
             }
         }
     }

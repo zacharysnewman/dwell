@@ -38,8 +38,8 @@ Each explosive: `block` (placed, unlit; `dwell:dynamite`, a hotbar item) and `li
 the fizz). Both one state (no properties): the generator refuses one with properties. `ignitedBy`,
 `fuseSeconds`, `radiusM`, `destroyRadiusM` (0 to `radiusM`, the generator refuses more), `loosenRadiusM`
 (at least `radiusM`, the generator refuses less), `impulse`, `falloff`, `flingFalloff`, `lift`, `maxSpeedMs`, `reachM`, `knockbackMs`,
-`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
-`maxPieces`). The `$comment` says what each means.
+`damage`, `waterRadiusM`, `noPieceContactS` (0–10 s), `openSenseM`, `openBlend`, `openPathM`, `openSpreadMin` (0–1), `shell` (optional: `fling`, the default, or `crack`) and `crackOverCleared` (optional, only with `crack`; §3.6), `chainDelaySeconds` and `effects` (§4); `limits` (`blastsPerTick`,
+`maxPieces`, `piecesPerTick` (§3.12), and the clients' `maxPuffs` and `minPuffShare`, §4). The `$comment` says what each means.
 
 **Lighting** (the existing input model, no new action): **Place with a torch held, aimed at dynamite,
 lights it** instead of placing the torch — `dwell_world::edit::check_block_edit` turns the target cell
@@ -56,7 +56,7 @@ it as usual. The server starts the fuse for every lit explosive an edit writes.
   (nearest first, at most `maxPieces` pieces) are cleared in one `Explosion` modification (its own cell
   first). A block within `destroyRadiusM` (`explosives::destroys`) is gone, no piece; each one beyond
   becomes a one-cell natural piece (felling's bodies, `Felling::spawn_body`, an
-  `EntitySpawn` each) flung along the line from the blast lifted toward the face's up by `lift`, at
+  `EntitySpawn` each; at most `piecesPerTick` of all blasts' pieces spawn a tick, the rest wait, §3.12) flung along the line from the blast lifted toward the face's up by `lift`, at
   `impulse` × (1 − d / radiusM)^`flingFalloff` over its mass (½ m³ × density), at most `maxSpeedMs`
   (0.49.46: `flingFalloff` 0, every piece alike; players and bodies keep `falloff`). Liquids
   within `waterRadiusM` are blown out (cleared; the water host refills the crater from round it),
@@ -245,6 +245,90 @@ grid's own law does the rest (it carries the wave, reflects it off banks and wal
   on as a seiche losing about a tenth of its height a crossing, and the pond sleeps again at about
   2,100 water s (about 30 real s at the 72× day).
 
+### 3.6 Variants (0.49.47, yellow 0.49.50)
+
+Four explosives, all by data (`shared/explosives/explosives.json`; blocks, items and painterly tints
+like red's, `shared/textures/materials.json`):
+
+| Explosive | Destroys | Shell (to `radiusM`) | Owner |
+|---|---|---|---|
+| `dwell:dynamite` (red) | 2 m | 2–5 m flung (`shell` `fling`), along the open side | 2026-11-06 |
+| `dwell:dynamite_blue` | 4 m | none (`radiusM` = `destroyRadiusM` = 4) | 2026-11-06: "just blows up 4m" |
+| `dwell:dynamite_green` | 4 m | 4–5 m flung as red's | 2026-11-06: "destroys 4m and adds force like red on 4-5m" |
+| `dwell:dynamite_yellow` | 4 m | 4–7 m cracked (`shell` `crack`, `crackOverCleared`; 4–5 m until 0.50.8) | 2026-11-07: "destroys 4m radius, and cracks anything touching air"; "anything touching air in 5m not queued for destruction"; "increase the radius … by 2 meters, for cracking range only" (flush on flat ground: 280 destroyed, pieces 114 → 366, surface cells 32 → 100); "reduce the explosion force by half" (0.50.9: impulse 13 500 N·s, speed cap 16.5 m/s, knockback 16.5 m/s, half of red's); "halve the explosion physics force of the Yellow dynamite" (0.50.54: impulse 6 750 N·s, speed cap 8.25 m/s, knockback 8.25 m/s, a quarter of red's); "and half the force again" (0.50.56: impulse 3 375 N·s, speed cap 4.125 m/s, knockback 4.125 m/s, an eighth of red's); and "anything touching air on top or bottom, exclude blocks that are only touching 'side' air" (0.50.56, `crackVerticalOnly`: only shell cells open above or below before the blast crack, plus the roof over the cleared core); "to make cave collapses cooler where the ceiling drops" |
+
+**Crack** (`ShellRule::Crack`, `Server::blast`, `dwell_world::explosives::cracking`): the open (air,
+liquid) cells round the charge are read before any cell clears; a shell cell cracks if one of its six
+neighbours was open then, or, with `crackOverCleared`, if its cell below (the face's down, through
+`FaceFrame`, so face B's roof is mirrored) is one the core destroys — a cave roof over the blast drops.
+A cracked (exposed) cell breaks loose and takes the blast's push whatever lies in its way, even when
+pushed into rock and moving little; every other shell cell stays as terrain. The exposure is judged on
+the world before the blast, so nothing goes live through the cleared core or behind other flying cells
+(0.50.10; owner, 2026-11-07: cells beside the destroyed core "aren't supposed to go live"; "the air check
+is supposed to happen before"). From 0.50.1 to 0.50.9 the rest of the shell was wall-checked as a fling
+shell's, so flush on flat ground 266 buried cells flew out through the crater and behind the surface
+(now only the 100 surface cells crack; `yellow_does_not_free_cells_beside_its_destroyed_core`, red on
+0.50.9). Before 0.50.1 cracked pieces got no push, so yellow looked like blue. Test: `tests/explosives.rs`
+`yellow_flings_every_exposed_cell_and_wall_checks_the_rest` (both faces: a charge in rock with a cliff
+open from 5 m; every exposed cell cracks loose, the roof cell 4.5 m over the core among them, the one
+facing the open cliff is flung > 5 m/s (red on 0.50.0: 0.33 m/s, no push), cells pushed into rock with
+no way out stay).
+
+### 3.7 Touching water (0.50.3)
+
+Owner, 2026-11-07: "Make dynamite not destroy or dislodge (physics) blocks when it's touching water."
+`waterSparesBlocks` (data, on every explosive): a charge whose own cell or any of its six neighbours is
+water (or a flooded block, such as dynamite placed into water) destroys and dislodges no blocks — no core
+cleared, no shell pieces. Its wave (§3.5), the players' and bodies' knockback and damage, and chain
+reactions still happen. Test: `tests/explosives.rs` `a_charge_touching_water_spares_the_blocks` (both
+faces, every explosive; red on 0.50.2: red dynamite flung pieces beside water).
+
+### 3.8 Water shields what is behind it (0.50.4)
+
+Owner, 2026-11-07: "it shouldn't destroy blocks or move them through water, so on the other side of water
+blocks". `waterShields` (data, on every explosive): a cell whose straight line from the charge passes
+through water (or a flooded block) in any cell between them, as the world stood before the blast, is
+neither destroyed nor dislodged (`dwell_world::explosives::behind_water`: cell centres in metres, rows
+½ m, sampled every 12.5 cm). Tests: the unit test `a_cell_behind_water_is_shielded_and_one_beside_it_is_not`
+and `tests/explosives.rs` `water_shields_the_rock_behind_it` (both faces: blue in rock with a water wall
+2 m out; red on 0.50.3: the rock 3 m out behind the water was destroyed).
+
+### 3.9 Cheaper pieces: three levers measured (0.50.15)
+
+The owner (2026-11-07), on why flying pieces cost so much ("they're not touching anything"), approved three
+levers: CCD only for fast pieces, sleeping pieces, and a short `noPieceContactS` for every explosive. Measured
+natively (`tests/explosives.rs` `measure_blast_cost`, release, the flat world; red flush 186 pieces, red
+buried 510, yellow flush 100; DEV_TOOLS.md "Blasts and floods (M1 Air)" has the whole table):
+
+- **CCD off** (every piece): no change within noise (red buried physics 2,136 → 2,128 ms, worst tick
+  27.6 → 27.6). Rapier's CCD costs only for bodies fast enough to need it, so limiting it to fast pieces
+  saves nothing measurable; not changed (the pieces keep CCD, so none tunnels).
+- **Sleeping pieces**: the same physics total (red flush 213 → 232 ms, red buried 2,136 → 2,168, yellow
+  144 → 143) and worst tick. A piece already turns back into blocks once it has been still for the settle's
+  `sleepTicks` (`felling.rs` `step`), which is when Rapier would put it to sleep, so sleeping saves nothing;
+  the cost is while pieces fly and jostle. One red flush run took 21.6 s instead of 11 to settle: a single
+  piece resting against sleeping ones jittered (0.03–0.8 m/s) until its time ran out. Not changed.
+- **A no-contact window** (0.3 s): natively on the flat ground the worst tick falls (red flush 15 → 5.6 ms,
+  red buried 28 → 17, yellow 48 → 4.5), but red's flung pieces then re-mix and pile inside one another, as
+  §3.1 found at 1 s: red flush settles in 16 s instead of 11 (0.1 s: 19.6 s), physics + terrain 323 → 666 ms,
+  and `a_surface_blast_…` left 4 pieces unsettled at 20 s. Yellow's cracked pieces (given no push) looked
+  like the safe case natively (physics 144 → 84 ms, settled 10.4 → 9.2 s), and a both-faces test pinned it
+  (no piece contact pairs 3 ticks after the blast; 366 without), **but in the game it was worse**: yellow on
+  the seed-0 spawn's hillside in Chrome (two runs with the window against one without) peaked at 162–166 ms
+  of physics in the second after the blast against 82, 491–520 ms over the 10 s against 391, the worst tick
+  unchanged (26–31 ms against 27: that is the blast's own tick). The pieces overlap when the window ends and
+  the solver pushes them apart. **Not adopted** for any explosive (every `noPieceContactS` stays 0).
+- **Solver iterations** (not asked; measured for the record): 2 instead of Rapier's 4 saves 4–30 % of
+  physics, 1 costs more (pieces jitter longer). Not changed.
+- **`enhanced-determinism`** is still required: the player controller's prediction is kept bit-identical natively and
+  in WASM (ARCHITECTURE.md, "Native and WASM physics are kept bit-identical"; the golden trace), and the
+  pieces share its `Physics`. It
+  also turns off Rapier's SIMD paths, and the server could not use its parallel solver anyway in the
+  browser's worker; Rapier's SIMD typically gives ~1.5–2× on the solver, so its cost here is estimated at
+  ~1/3–1/2 of the blast's physics time (not measured: it needs a second build of the physics crate). A
+  server-only build of the physics without it (pieces are server-authoritative) is a larger change, listed
+  in DEV_TOOLS.md.
+
 ## 4. Effects (clients)
 
 A client sees a blast where an `Explosion` modification turns a lit explosive's cell to air
@@ -255,6 +339,38 @@ A client sees a blast where an `Explosion` modification turns a lit explosive's 
 - **Smoke and dust** (Smoke and dust): `smoke` puffs spreading out and rising (`spreadM`, `riseMs`),
   `dust` thrown out and falling (`speedMs`), each with its colour, sizes, lives and opacity; billboards
   through the flames' pass (`render/blasts.rs`, kinds 8–10), lit. A CPU adapter draws `cpuCount`.
+  **Lit once per puff** (0.51.11): the vertex shader finds each smoke or dust puff's centre from its corner
+  (`puff_centre`: the corner less the camera's right·u + up·v times its half size, carried in the vertex's
+  rest z) and lights it there (`puff_light`: the sky light, the sun and moon by the shadow maps and the
+  distant terrain's shadow, facing the face's up), passed flat to the fragments, which keep the soft ragged
+  shape, the mottling and the opacity per pixel: colour × mottling × the puff's light, exactly what the
+  per-pixel `lambert_lit` gave at the centre (it is linear in the albedo). Before, every pixel of the large,
+  overlapping billboards ran the shadow maps' filtered taps and the lighting. The frame group's shadow
+  bindings (8–13) are visible to the vertex stage for it. The fireball stays self-lit; an axe's chips stay
+  lit per pixel (small, few). Measured on the M1 Air (bench, Chrome with vsync, 2560×1600 at 50 % Stretch,
+  default settings, noon, one run each): a 3 × 9 block of red dynamite at the seed-0 spawn lit with the
+  torch, 12 s recorded from the lighting, up to 337 billboards a frame: `gpu.frame` mean 12.3 → 11.5 ms, p95
+  17.4 → 15.5, p99 19.5 → 16.2 (`gpu.near` p95 7.83 → 7.64); 60 fps either way, the look unchanged. Tests: `render/blasts.rs` `every_vertex_of_a_puff_finds_its_centre` (both
+  faces, four views) and `smoke_and_dust_are_lit_in_the_vertex_shader_not_per_pixel`.
+  **They follow the blast's direction** (0.49.51; owner, 2026-11-07: "Make the smoke particles follow
+  explosion direction"): the client reads the blast's way out from its own cells round the charge,
+  before the modification clears them (`blasts::open_way`, the server's `explosives::open_dir`; no
+  protocol change), and each puff's way out is turned toward it by `openBias` × the openness
+  (`blasts::toward_open`; smoke 0.7, dust 0.6): a cliff charge's smoke billows out of the face, a cave
+  roof's down, flat ground's up as before; a buried blast (openness about 0) keeps the even spread.
+  Test: `blasts.rs` `the_smoke_follows_the_blasts_open_side_and_a_buried_one_spreads_evenly` (both
+  faces: the smoke's mean offset along the cliff's and the roof's open side, cos > 0.8, red with
+  `openBias` 0 at cos −0.31; the CPU's count unchanged; buried as before).
+  **Blasts in flight share a puffs budget** (0.50.16; owner, 2026-11-07: "a lot lower than 60FPS for
+  blasts, did you try more than 1 piece of dynamite?"): `limits.maxPuffs` (64) smoke and dust puffs at
+  once; a blast set off while others' puffs are in the air draws the share of its counts left, at least
+  `limits.minPuffShare` (0.15), fixed when it starts so none pops (`Blasts::start`, `Blast::share`); one
+  blast alone draws all of them. With see-through water the flames' mask (drawn before the water) leaves
+  the puffs, flecks and waterfalls out (`FlameRenderer::mask_range`): its shader discarded every fragment
+  of theirs, so it only rasterised them again. Eight charges by the dam site's river drew 459 puffs and held
+  the Air at 49 fps (docs/DEV_TOOLS.md "Worst-case blasts (M1 Air)"). Tests: `blasts.rs`
+  `blasts_in_flight_share_the_puffs_budget_and_none_pops` (342 puffs at once in a chain of eight
+  without it), `render/mod.rs` `the_flames_mask_leaves_the_blast_puffs_out`.
 - **Boom**: the sound event `explode` of the block's sound set (`dynamite_boom`), at the listener, its
   level full within `boom.fullM` and gone at `boom.hearM` (`boom_level`), so a far blast is heard past
   the panner's reach.
@@ -327,3 +443,75 @@ The streaming's cost (0.49.36) was the air test's: a chunk column's sky floor (i
 requests reached. It is now computed in the server-jobs worker (a thread natively, or within 1 ms a
 tick without either), the chunks waiting for it (ARCHITECTURE.md §6.3, *Sky floors off the tick*):
 in the browser `stream` went from 25–367 ms a second at a join to at most 1.5 ms.
+
+### 3.10 Pieces ignoring each other for 1 s: measured (2026-11-09)
+
+Owner: "Try performance with and without the ignore each other for 1s rule." `measure_blast_cost`
+(natively, flat world, `DWELL_LEVER_NOCONTACT`), `noPieceContactS` 0 against 1:
+
+| Blast | Physics + terrain (ms total) 0 s → 1 s | Worst tick (ms) 0 s → 1 s | Settled in (s) 0 s → 1 s |
+|---|---|---|---|
+| Red flush (186 pieces) | 318 → 927 | 15.2 → 6.8 | 11.0 → 16.6 |
+| Red buried (510) | 2 282 → 2 484 | 27.1 → 17.3 | 8.6 → 10.0 |
+| Yellow flush (100) | 44 → 2 117 | 2.9 → 11.9 | 6.5 → 29.8 |
+
+The window cuts the worst tick of the big red blasts but costs more in total and settles later; for
+yellow it costs ~50× more (pieces pass into each other, then fight once they collide). Not adopted:
+every explosive stays at 0.
+
+### 3.11 A blast destroys the pieces in its destroy radius (0.50.58)
+
+Owner, 2026-11-09: "Dynamite doesn't destroy nearby physics blocks in its destroy area, so chained
+dynamite still results in a ton of physics blocks that are affected by multiple explosion forces. Make
+it so physics blocks in the destroy radius are destroyed too." Before a blast pushes the moving bodies
+round it, every piece whose body centre is within `destroyRadiusM` is removed (`Felling::destroy_piece`,
+an `EntityDespawn` to clients; kinds that can't be broken are kept). Test: `tests/explosives.rs`
+`a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core` — the owner's case, a
+1-wide, 10-tall column of yellow going down into the ground: 253 pieces survived inside a later blast's
+core on 0.50.57, none now.
+
+### 3.12 A big blast's pieces spread over ticks (0.51.12)
+
+A blast clears all its cells in its one `Explosion` modification (the clients' flash and boom once), but
+its pieces join a queue (`Fuses::queued`, nearest the centre first, the blasts in order) and at most
+`limits.piecesPerTick` (64) of them spawn a tick (`Server::spawn_queued`, after the tick's blasts, so the
+first share is in that tick's physics step); a 1 200-piece blast takes 19 ticks (0.3 s). A piece waits
+at its cleared cell with its velocity: a later blast destroys a waiting one whose cell is within its
+`destroyRadiusM` and adds its push to the others' velocity, as it does to spawned bodies (§3.11). A
+world saved with pieces waiting (a few ticks at most) loses them. Merging tiny adjacent pieces into one
+body was not done: neighbours fly alike (`flingFalloff` 0) but spread and tumble apart, so a merged
+body would look like a lump; not measured.
+
+Measured natively (`tests/explosives.rs` `measure_chain_ticks`, release, M-series Mac, flat world, every
+tick until the pieces settle; `DWELL_PIECES_PER_TICK` overrides the budget):
+
+| Chain | Pieces | Most spawned a tick, unspread → 64 | Worst spawning tick (ms) | Worst within 0.5 s of a spawn (ms) | Worst tick (ms) |
+|---|---|---|---|---|---|
+| Red 3 × 9 block, flush | 276 | 119 → 64 | 9.2 → 8.8 (32: 6.9) | 14.9 → 8.8 | 34.5 → 36.2 (`terrain`) |
+| Yellow 10-tall column, down | 922 | 157 → 64 | 12.8 → 13.3 (32: 11.4) | 12.8 → 13.3 | 12.8 → 13.3 (`physics`) |
+
+On this machine no blast tick was over the 16.7 ms budget even unspread; the spread caps the spawning
+tick's work by count (machine-independent). The chain's worst tick is elsewhere: in the red block's
+case the `terrain` phase ~15 s in (the settling pieces' terrain colliders, 33–35 ms, unchanged by the
+spread), in the yellow column's the `physics` step with ~900 bodies in flight. Test (both faces):
+`a_chains_pieces_spawn_within_the_tick_budget_to_the_same_end` — the red block
+chained, no tick spawns more than the budget (red on the unspread code: 119 a tick), the same
+`Explosion` cells and blasts as with no budget, and the same pieces within 2% (a waiting piece a later
+core destroys is judged at its cell, not where it would have flown).
+
+### 3.13 Attached blocks are removed, never flung (2026-11-14)
+
+Owner, 2026-11-13 (BUGS.md #165): "Dynamite blows up (physics) tall grass that's wrong. It should just be
+destroyed if the block under it is moved or destroyed." The rule is block data, not a tall-grass case: an
+**attached block** is one with `needsSupport` (`below`: tall grass and its stages, a torch, the saplings;
+`behind`: a ladder), or a cell `partOf` one (a torch's upper cell) — `dwell_world::edit::attached`. In a
+blast such a block in the radius is removed (no piece), with its parts; the open-side sense and the path test
+count it as open. Every cell a blast clears, destroyed or flung, takes the attached blocks standing on it
+(`TickChanges::set_and_unsupport`, `edit_writes`' rule), so nothing is left floating past the radius over a
+flung cell and no piece carries a plant; so do the cells a collapse moves into a piece (`Server::fell`: sand
+under a torch). Where items are used (adventure) the removed blocks drop what breaking them drops
+(`Server::drop_attached`). Tests (`tests/explosives.rs`, both faces):
+`a_blast_over_tall_grass_flings_no_grass_and_removes_it` (red before: 68 grass pieces),
+`attached_blocks_on_flung_blocks_go_and_are_not_carried` (a dirt deck over the charge with grass, a torch and
+a sapling just past the radius; red before), `tall_grass_on_a_block_broken_by_a_tool_goes_with_it`,
+`a_torch_on_sand_that_falls_goes_and_is_not_left_floating` (red before: the torch stayed in the air).

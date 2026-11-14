@@ -2,6 +2,7 @@
 //! `shared/blocks/*.json` by `shared/blocks/gen.mjs`; code refers to blocks by name
 //! (`"dwell:sand"`), never by a numeric constant, and resolves names once at startup.
 
+pub mod octagon;
 mod registry;
 pub mod shape;
 pub mod sync;
@@ -25,12 +26,13 @@ pub mod fixture {
 
 pub use registry::*;
 pub use table::{
-    Block, NewBlock, Origin, Property, block, block_count, block_of, blocks, canonical,
-    collision_class, info, intern, is_build_state, register, same_definition, state_count,
-    try_info,
+    Block, NewBlock, Origin, Property, alias_base, base_state, block, block_count, block_of,
+    blocks, canonical, collision_class, info, intern, is_build_state, register, register_alias,
+    same_definition, state_count, try_info,
 };
 pub use tables::{
-    BLOCKS, FLUIDS, LIGHTS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SHAPE_FACES, SHAPES, STATES,
+    BLOCKS, FLUIDS, LIGHTS, PROPERTIES, PROPERTY_VALUES, REGISTRY_HASH, SETTLES_AS, SHAPE_FACES,
+    SHAPES, STATES,
 };
 pub use types::*;
 
@@ -49,7 +51,7 @@ pub fn state(name: &str) -> Option<StateId> {
     if let Some(i) = STATES.iter().position(|s| s.name == name) {
         return StateId::try_from(i).ok();
     }
-    parse_state(name).ok()
+    parse_known_state(name).ok()
 }
 
 /// The full state of liquid state `m` (fill 1, `fillProperty`'s default): one liquid at any
@@ -102,6 +104,26 @@ pub fn liquid_at_fill(m: StateId, frac: f64) -> StateId {
                 .total_cmp(&(f64::from(b.0) - frac).abs())
         })
         .map_or(full, |&(_, s)| s)
+}
+
+/// The state a falling block of state `m` settles as (its block's `settlesAs`, owner 2026-11-13: a
+/// fallen sand ramp lands as flat sand, never a lone ramp): its family's full block, keeping
+/// whether it is flooded; any other state is its own.
+pub fn settled_state(m: StateId) -> StateId {
+    let Some(s) = try_info(m) else {
+        return m;
+    };
+    let Some(b) = block(s.block) else {
+        return m;
+    };
+    let Some(&(_, to)) = SETTLES_AS.iter().find(|(from, _)| *from == b.name) else {
+        return m;
+    };
+    let Some(full) = state(to) else {
+        return m;
+    };
+    let flooded = if s.flooded { "true" } else { "false" };
+    with_property(full, "flooded", flooded).unwrap_or(full)
 }
 
 /// The build's own state with this exact canonical string (never a registered one).

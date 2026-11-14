@@ -33,9 +33,60 @@ export function registryTiles(blocks) {
  */
 export const ENGINE_TILES = ['plain', 'missing'];
 
-/** Every atlas tile the texture set must paint: the registry's tiles and the engine's. */
-export function atlasTiles(blocks) {
-  return [...ENGINE_TILES, ...registryTiles(blocks)];
+/** The tiles the woods' cut faces draw with (shared/tools/tools.json's `woods[].cut.tile`, ADR 0067). */
+export function toolTiles(tools = readJson(join(root, 'shared', 'tools', 'tools.json'))) {
+  return (tools.woods ?? []).map((w) => w.cut?.tile).filter((t) => typeof t === 'string');
+}
+
+/** The tiles the looks draw with: the leaf cards' (shared/look/leaves.json `cards.tile`). */
+export function lookTiles(leaves = readJson(join(root, 'shared', 'look', 'leaves.json'))) {
+  const t = leaves.cards?.tile;
+  return typeof t === 'string' ? [t] : [];
+}
+
+/** The most stages a crack set holds (BLOCK_DAMAGE.md §6.3). */
+export const MAX_CRACK_STAGES = 8;
+
+/**
+ * Checks the crack tile sets (shared/textures/cracks.json, BLOCK_DAMAGE.md §6.3): `span` (m, the
+ * width a crack tile covers round the hit, 0.5–4) and `sets`, each a family's crack tiles in stage
+ * order (1–8, no tile in two sets). Throws naming the bad entry.
+ */
+export function validateCracks(cracks) {
+  const fail = (m) => {
+    throw new Error(`cracks.json: ${m}`);
+  };
+  if (typeof cracks !== 'object' || cracks === null || Array.isArray(cracks)) fail('must be an object');
+  for (const k of Object.keys(cracks)) if (!['$comment', 'span', 'sets'].includes(k)) fail(`unknown entry ${k}`);
+  if (!(typeof cracks.span === 'number' && cracks.span >= 0.5 && cracks.span <= 4)) fail(`span must be a number of metres in [0.5, 4], got ${JSON.stringify(cracks.span)}`);
+  const sets = cracks.sets;
+  if (typeof sets !== 'object' || sets === null || Array.isArray(sets) || Object.keys(sets).length === 0) fail('sets must be a non-empty object');
+  const seen = new Map();
+  for (const [name, tiles] of Object.entries(sets)) {
+    if (!/^[a-z][a-z0-9_]*$/.test(name)) fail(`set name ${JSON.stringify(name)} must be lower_snake_case`);
+    if (!Array.isArray(tiles) || tiles.length === 0 || tiles.length > MAX_CRACK_STAGES) fail(`sets.${name} must list 1–${MAX_CRACK_STAGES} tiles, one a stage`);
+    for (const t of tiles) {
+      if (typeof t !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(t)) fail(`sets.${name}: a tile name must be camelCase, got ${JSON.stringify(t)}`);
+      if (seen.has(t)) fail(`sets.${name}: tile "${t}" is already in set ${seen.get(t)}`);
+      seen.set(t, name);
+    }
+  }
+  return cracks;
+}
+
+/** The crack tile sets (shared/textures/cracks.json), validated. */
+export function loadCracks() {
+  return validateCracks(readJson(join(here, 'cracks.json')));
+}
+
+/** The tiles the crack sets draw with, every set's stages. */
+export function crackTiles(cracks = loadCracks()) {
+  return Object.values(validateCracks(cracks).sets).flat();
+}
+
+/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles, the looks', the cracks' and the engine's. */
+export function atlasTiles(blocks, tools = toolTiles(), looks = lookTiles(), cracks = crackTiles()) {
+  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools, ...looks, ...cracks])];
 }
 
 /** Validates and paints: every atlas tile (`tiles`), in `materials.tiles` order, as { names, texels }. */
@@ -54,6 +105,14 @@ export function tileEmissive(materials, names) {
 }
 
 /**
+ * Whether each atlas tile is molten (its material's `molten`, WATER_RENDERING.md §17), in `tiles`
+ * order: the terrain shader moves a slow heat pattern over its glow (off on the CPU tier).
+ */
+export function tileMolten(materials, names) {
+  return names.map((n) => resolveMaterial(materials, materials.tiles[n]).molten ?? false);
+}
+
+/**
  * Whether each atlas tile hangs from its block's top edge (its material's `hang`, a skirt), in
  * `tiles` order: such a side shows the tile's top on every block; other tiles run in world metres.
  */
@@ -61,7 +120,7 @@ export function tileHang(materials, names) {
   return names.map((n) => resolveMaterial(materials, materials.tiles[n]).hang ?? false);
 }
 
-export function rustSource(names, emissive = names.map(() => 0), hang = names.map(() => false)) {
+export function rustSource(names, emissive = names.map(() => 0), hang = names.map(() => false), molten = names.map(() => false)) {
   // As rustfmt lays it out: one line if it fits in 100 columns, else one entry per line.
   const array = (head, items) => {
     const flat = `${head}${items.join(', ')}];`;
@@ -89,6 +148,7 @@ export function rustSource(names, emissive = names.map(() => 0), hang = names.ma
     emissive.map((v) => (Number.isInteger(v) ? `${v}.0` : `${v}`)),
   );
   const hangs = packed(`pub const PAINTERLY_HANG: [bool; ${names.length}] = [`, hang.map(String));
+  const moltens = packed(`pub const PAINTERLY_MOLTEN: [bool; ${names.length}] = [`, molten.map(String));
   return `// Generated by shared/textures/gen.mjs from shared/textures/materials.json and palette.json. Do not edit.
 
 /// Texels per tile edge the painterly set is painted at.
@@ -103,6 +163,10 @@ ${glow}
 /// Whether each tile hangs from its block's top edge (its material's \`hang\`): a side face shows
 /// the tile's top on every block, so it never merges up or down; other tiles run in world metres.
 ${hangs}
+
+/// Whether each tile is molten (its material's \`molten\`): the terrain shader moves a slow heat
+/// pattern over its glow (lava), off on the CPU tier.
+${moltens}
 
 /// Each painterly tile's RGBA8 texels (sRGB), row y = 0 (the tile's bottom) first.
 pub static PAINTERLY_TEXELS: &[u8; ${names.length * TILE * TILE * 4}] = include_bytes!("painterly.rgba");
@@ -207,7 +271,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     const { names, texels } = bake(materials, palette, tiles);
     const out = join(root, 'crates', 'dwell-mesh', 'src');
     writeFileSync(join(out, 'painterly.rgba'), texels);
-    writeFileSync(join(out, 'painterly.gen.rs'), rustSource(names, tileEmissive(materials, names), tileHang(materials, names)));
+    writeFileSync(join(out, 'painterly.gen.rs'), rustSource(names, tileEmissive(materials, names), tileHang(materials, names), tileMolten(materials, names)));
     const lab = join(root, 'docs', 'prototypes', 'painterly-texture-lab.html');
     writeFileSync(lab, labPage(readFileSync(lab, 'utf8'), readFileSync(join(here, 'paint.mjs'), 'utf8'), palette, materials));
     console.log(`painted ${names.length} atlas tiles (${Object.keys(materials.materials).length} materials)`);

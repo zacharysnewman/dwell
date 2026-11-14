@@ -3,6 +3,7 @@
 //! (`dwell-blocks`); built-in ones the engine needs are resolved once into [`M`].
 
 pub mod affinity;
+pub mod blueprint;
 pub mod bounds;
 pub mod brush;
 mod cell;
@@ -13,16 +14,26 @@ mod face;
 pub mod falls;
 pub mod flow;
 pub mod fluid;
+mod grid;
+pub mod ground;
 pub mod hash;
 pub mod light;
 pub mod lod;
+pub mod parts;
+pub mod portal_shafts;
 pub mod ramps;
 pub mod region;
+pub mod stock;
 pub mod structure;
 pub mod support;
+pub mod swing;
+pub mod tree_tint;
 mod voxel;
+pub mod world_bounds;
 
 pub use bounds::{BUILD_VOLUME, BoundsShape, BuildVolume, Overlap, inside_build_volume};
 pub use cell::*;
 pub use face::FaceFrame;
+pub use grid::{GridFrame, quat_axis_angle};
 pub use voxel::*;
+pub use world_bounds::WorldBounds;

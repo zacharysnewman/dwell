@@ -62,6 +62,7 @@ fn place(cell: [i32; 3], face: u8, m: u16) -> Message {
         material: m,
         rows: 1,
         down: false,
+        point: None,
     })
 }
 
@@ -77,6 +78,7 @@ fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
         let mut f = Fixture::new(ServerConfig {
             store: Some(store),
             water_speed: 3.0,
+            mode: "adventure".into(),
             ..flat()
         });
         assert_eq!(f.server.world_settings().water_speed, 3.0);
@@ -91,12 +93,65 @@ fn a_worlds_settings_are_saved_with_it_and_kept_over_a_new_servers_defaults() {
     });
     let s = f.server.world_settings();
     assert_eq!(s.water_speed, 3.0, "the world's own");
+    // ADR 0065: its game mode too, over the new-world default (creative).
+    assert_eq!(s.mode, "adventure");
     assert_eq!(
         s.clock,
         dwell_sim::server::default_settings(1.0).clock,
         "the clock it was made with"
     );
     f.join(1, &Client::new(1)); // checks the settings sent are these
+}
+
+#[test]
+fn a_worlds_size_is_saved_with_it_and_an_older_world_is_todays_size() {
+    // BIG_MAP.md M0: the size is a world setting (an optional tag, ADR 0054). A world made at 10×
+    // keeps it over a server whose new worlds are 1×; a world saved before sizes (no tag) and a
+    // default-size world (which writes none) open at today's size over a server set to make 10×.
+    use dwell_protocol::world_size::WorldSize;
+    let ten = WorldSize::named("10x").expect("a named size");
+    let scratch = Scratch::new("size");
+    let saved = |name: &str, size: WorldSize| {
+        let path = scratch.world(name);
+        let store = WorldStore::open_file(&path).expect("opens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            world_size: size,
+            ..flat()
+        });
+        assert_eq!(f.server.world_settings().size, size);
+        f.server.save_now();
+        f.server.flush_store();
+        path
+    };
+    let reopen = |path: &std::path::Path, size: WorldSize| {
+        let store = WorldStore::open_file(path).expect("reopens");
+        let mut f = Fixture::new(ServerConfig {
+            store: Some(store),
+            world_size: size,
+            ..flat()
+        });
+        f.join(1, &Client::new(1)); // checks the settings sent are the world's
+        // BIG_MAP.md M2: and the server's disc and build volume (its generators') are its size's.
+        let size = f.server.world_settings().size;
+        assert_eq!(f.server.bounds(), dwell_world::WorldBounds::of(size));
+        size
+    };
+    let big = saved("big", ten);
+    assert_eq!(reopen(&big, WorldSize::DEFAULT), ten, "the world's own");
+    let two = WorldSize::named("2x").expect("a named size");
+    let doubled = saved("two", two);
+    assert_eq!(
+        reopen(&doubled, WorldSize::DEFAULT),
+        two,
+        "a 2× world reopens at 2×"
+    );
+    let today = saved("today", WorldSize::DEFAULT);
+    assert_eq!(
+        reopen(&today, ten),
+        WorldSize::DEFAULT,
+        "no tag: today's size"
+    );
 }
 
 #[test]
@@ -468,6 +523,7 @@ fn the_waters_free_water_survives_a_server_restart() {
                 material: 0,
                 rows: 1,
                 down: false,
+                point: None,
             }),
         );
         for _ in 0..240 {
@@ -531,6 +587,7 @@ fn a_world_from_an_older_line_opens_on_this_builds_terrain() {
                     app_version_created: "0.40.0".into(),
                     app_version_last: "0.40.0".into(),
                     settings: None,
+                    spawn_grid: None,
                 }),
                 ..SaveBatch::default()
             })

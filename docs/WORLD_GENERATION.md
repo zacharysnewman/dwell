@@ -14,7 +14,10 @@
 > ADRs, 0017–0022, superseded); `ARCHITECTURE.md` §6.3 describes what is built.
 >
 > **The interim height field's relief (generator version 16, owner 2026-10-19: "I want terrain
-> steep enough to slide on").** Its parameters are data, `shared/worldgen/terrain.json`: the inland
+> steep enough to slide on").** Its parameters are data, `shared/worldgen/terrain.json` and (since
+> 0.51.14, ADR 0074) the default biome `shared/worldgen/biomes/default.json`, which holds the fine relief
+> (`detail`), the surface `shaping` and its elevation `bands` (B2, 0.51.15: a list, the default's
+`meadow` and `snow`; a biome map blends biomes by geography, `ARCHITECTURE.md` §6.3 "Biomes"): the inland
 > rise (320 m, half done 6 km inland), the sea floor (−20 m over 2.5 km), hills (±225 m, 1,024 m,
 > 5 octaves, faded in 0.5–4 km inland) and bumps (±5 m, 128 m, 3 octaves). The owner's targets:
 > steeper hills everywhere (not mountain regions), about 15 % of the land's surface steeper than
@@ -208,8 +211,22 @@ of `on` and dry. Of two kept candidates whose boxes come within the spacing, the
 priority hash is dropped, whether or not the higher one survives — so the answer needs only the
 neighbours, and a chunk finds every tree reaching into it from the cells around it (the chunk plus
 three reaches and the spacing), the same whichever chunk generates first. The tree's voxels go over
-air and replaceable cells only (tall grass), never into the ground or water. The sky test leaves
+air and replaceable cells only (tall grass), never into the ground or water. **Trunk pads (0.55,
+WORK_QUEUE item 44):** with `pad` "trunk" (the default for a placement of tree species; the pines'
+rule sets it) the ground under each trunk column — the structure's lowest cells, from its data — is
+filled up to the row under the trunk's base with the column's own ground (its surface block on top,
+its soil under), and a ramp there is made full cells, so a trunk on a slope stands flat on its 1 m
+pad instead of hanging over the drop (owner, 2026-11-12: "For now let's just do level pad, can just
+be the the tree width, 1m."). Only the trunk's columns change (no ring; uphill, the ground the trunk
+stands in is left); the LOD's 2 m level fills under a far tree's trunk the same way; impostors stand
+at the same anchors. Tested on both faces (`tests/tree_pads.rs`). The sky test leaves
 room over the highest ground for the tallest tree; the spawn's level patch is clear of trees.
+
+**Per biome** (ADR 0074 B5, 0.52.39): a rule stands only where a biome listing it in `placements`
+has weight; the biome's `trees` (rule → density 0–3, 1 when not given) multiplies the chance by the
+biomes' weights. The default biome lists the pines at 1 (the default world unchanged); the presets
+pick `broadleaf_groves` (the prototype broadleaf) and `boulders` (the prototype rock) and their
+densities. Chisel edits them per biome and draws a placements overlay (`tests/trees.rs`).
 
 **Measured** (seed 7 and others; `tests/placements.rs`): about 55 % of the candidates the data's
 chances keep survive the slope, footprint and overlap tests; in groves ~0.28 trees per 49 m² cell
@@ -246,8 +263,8 @@ rivers, etc … in game", mountains "up to 8000ft", snowy grass and snowy leaves
 0049](./adr/0049-world-map-terrain.md); ARCHITECTURE.md §6.3 (*The world map*). The hydrology
 prototype's map (proposal layers 0–1) is the terrain: per face, the base field on a 100 m grid,
 uplifted into ranges and eroded, its lakes and rivers found. Columns take its height (bicubic),
-fine detail (`terrain.json` `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
-(`lakes`) and their surface bands (`bands`: snow line 1,550 m ± 150 m, raised on slopes; sand to
+fine detail (the default biome's `detail`), river channels and valleys (`rivers`, `mouths`), flat lakes
+(`lakes`) and their surface bands (the default biome's `bands` and `shaping`: the `snow` band from 1,550 m ± 150 m, raised on slopes; sand to
 2 m above sea and under water; rock where the landform is steep — generator 24, owner 2026-10-26:
 "no random splotchy stone … structured random systems rooted in realism": the slope over ±
 `rockWindow` 150 m, never less than an LOD cell's width, so rock comes as whole faces, not as
@@ -262,7 +279,9 @@ where the river is at sea level (its water is the sea's, so a mouth opens into t
 joining another meets it at the other's level `joinMargin` 3 m plus its own half-width outside the
 other's channel (the other's water backing up into it where it lies lower) and falls to it at most
 `joinSlope` 0.25 m per m upstream (a short gorge where it hangs above), so the waters never stand
-side by side at two levels. A valley is carved by every channel whose valley reaches the column,
+side by side at two levels. A channel's bed is cut to its river's depth under its own surface row
+in every column, however steep the reach, so it only falls downstream (0.52.0, docs/BUGS.md 62: a
+steep reach's "chute" was a dry bed a row under its surface, a grass hump over the pool above). A valley is carved by every channel whose valley reaches the column,
 the lowest (generator 26, docs/BUGS.md 14: carved toward the nearest channel alone, the ground
 stepped by the two rivers' difference in level where the nearest changed, a wall up the hills
 between two valleys). Planned (owner, the same day): rivers filling the lower land beside them
@@ -385,3 +404,99 @@ only." Shipped to iterate on (owner: "Deploy as a release and we'll iterate on i
 - **Known gaps, to iterate on:** a 3 m soil band shows under each grass lip on a cliff face (the
   terrain's soil depth; `soilDepth` can't go below `underDepth`); the LOD has no undersides;
   overhangs have no ramps under them; caves and floating islands are not started.
+
+
+### 5a. Arches and overhangs (ADR 0074 B8) **[built in part, 0.52.43]**
+
+A biome's `arches` (opt-in; the default world has none): openings carved after the volume, each a half ellipse `span` m across and `rise` m high on a floor, `fin` m long, with at least `lintel` m of rock left over it where the ground stands that high; a mouth column (its ground under the roof and lintel) is cut down to the floor, so the opening is open; the LOD draws the height field's top as before (it does not show the opening). A site (32 m grid, `density` per km²) tries four axes: ground low on both sides is a fin, cut through (an arch, Arches NP's bedded sandstone fins); low on one side a scarp, cut into from below (an overhang, with `overhangs`). Dry columns only. Today's terrain has many scarps and few fins, so without fins most sites are overhangs. **Fins grown by the erosion, and arches in a chosen rock (0.52.66):** a biome's `arches.fins` (`approach`, `width`, `overrun` m; `arches.rs` `Fins`) is a fin rule in T4's cut-back: at a column, the drainage field's `fronts` gives the distance to the nearest drainage cell and to the nearest on the other side (the sources of the 4 × 4 map cells around it, the second more than a right angle from the first); where the two retreated fronts come within `approach` m of meeting, or have met by at most `overrun`, a fin `width` m wide stands on the crest between them (its margin `width`/2 − |d2 − d1|/2, kept if higher than the cut-back's, so walls and talus as at any scarp). With fins, a site whose centre is not a fin slides to one within 12 m (`site_near`: 6 and 12 m along the four axes both ways, the first arch; else the centre's overhang). `arches.rock` keeps only arches whose opening's mid-height lies in that rock of the site's stack (its `rockStack`, else the province's). The red-rock mesa preset has both (`approach` 150, `width` 12, `overrun` 400, `dwell:sandstone`). Measured on the starter's mesa (the 12 km square around the tour's spot, face A, seed 0): 1 arch and 15 overhangs before, 10 and 6 after (`tests/starter_world.rs` `the_mesas_fins_make_arches`; `mesa_arch_counts` prints them). Validated in `biomes.mjs` (`FINS`, the rock against rocks.json and, for a biome with its own `rockStack`, that stack's layers) and `config.rs` (the ranges and the rock's type), tested by data in `gen.test.mjs` and `tests/arches.rs`, with the filter itself tested on both faces (each kept site's mid-height in the named rock; a rock absent at arch heights keeps none); the default world has none (goldens unchanged).
+
+## Banks, water looks and the archipelago (2026-11-10, ADR 0074 B4)
+
+The elevation places the rivers and lakes; a biome shapes their banks (`banks`: the valley's rise from a
+river's bank, a lake's bank and its fall, a beach of the shore block on dry ground near the water),
+blended by the biomes' weights. A biome may tint its water (`waterLook`, over the fluid's look). The
+world's coast takes an `islands` knob in terrain.json (off by default): the coast distance capped and
+broken by a broad noise, so the land comes as many islands in a shallow sea
+(`shared/worldgen/worlds/archipelago.json`, with the `test:archipelago` fixture biome). Keep the sea the
+larger share: the world map fills sea pockets enclosed by land as depressions.
+
+## The rain shadow (2026-11-10, ADR 0075 T1)
+
+Systemic terrain's first layer: a prevailing wind carries moisture in from the sea and drops it where
+the ground rises along it, so the lee of high ground is dry (`terrain.json` `biomeMap`: `windDirection`,
+`windReach`, `baseRain`, `upliftRain`, `leeDry`, `rainShare`; `biomemap::rainfall`). It feeds the biome
+map's wetness by `rainShare`, 0 in the default world, so the terrain a seed generates is unchanged
+until the systemic layers are tuned in Chisel and adopted together on a new compatibility line. The wind
+sees the ground smoothed over `windSmoothM` (3 km), so the shadow falls behind whole ranges, not each
+hillside (0.52.8).
+
+## Rock types and shaping (2026-11-10, ADR 0075 T2)
+
+Systemic terrain's geology layer: `shared/worldgen/rocks.json` holds the rock types (hardness, jointing
+`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show,
+an optional `capBy` (the treads' block by the climate, against the geology's `arid`; 0.60), a
+colour), the strata stacks (layers top to bottom, repeating with height from sea level), the provinces
+(a stack per region by a noise of `provinces.wavelength` m, by the stacks' weights) and the shaping. A
+biome may name its own `rockStack` (the red-rock mesa and badlands presets). Each stack is a monotone
+profile of height (`geology::Profile`): a hard bed a near-vertical wall and a flat tread (caprock), a soft
+bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the ground moves
+`shaping.strength` of the way to it (0 in the default world: the terrain unchanged), and at half strength
+a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
+rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
+
+**Ledges, notched ramps and the red desert (0.59.0; owner, 2026-11-13).** Realistic's bedded slopes read as
+fields of single-cell ½ m stairs and its mesa tops were dead flat. `shaping.ledge` (2 m) and `ledgeEvery`
+(1: one a bed): a soft bedded rock's talus is ramped runs broken by a near-vertical ledge that tall every that share
+of its bed; `treadRelief` (0.08): every tread rises over that share of its bed (a mesa top keeps a little of
+the ground's roll); `notched` 1: where the shaping is on, the stored ramps also top diagonal contours
+(`HALF_HEIGHT_GRID.md` §10). The red-rock mesa's floors are `dwell:red_sand` (its preset's bands) and its own
+stack `dwell:red_desert_beds` (weight 0) is sandstone over a red `dwell:siltstone` whose talus is red sand.
+`tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded ground 61 % → 0 %, ledges of 2 m ~1.3×, red
+sand and no plain sand on the mesa's surface. Before/after top-down dump: `dump_a_bedded_slope` (ignored test).
+
+## Tectonics (2026-11-10, ADR 0075 T5)
+
+Systemic terrain's first layer, at realistic scale: one plate boundary across the island and one hotspot chain offshore as data (`terrain.json` `tectonics`, `tectonics.rs`), added to the world map's sampled field before the uplift and erosion: a convergent range (kept rising as uplift) and trench, a divergent rift with shoulders, or transform offset ridges; a dormant volcanic arc of concave cratered cones behind a convergent line; hotspot islands rising from the sea, lower and broader down the chain; the uplift layer's random ranges and plates off while the tectonics are on; rock provinces from them (`rocks.json` `tectonic`: volcanoes basalt, the old core granite); `kind` 0 and no hotspots by default (goldens byte-identical). Tuned in Chisel (the World group's
+tectonics sliders, the tectonics overlay in the detail and the world overview). Prototype content.
+
+Tall peaks (0.52.25): a cone's `coneHardness` shields it from the erosion so it keeps its height and crater; the fixture world `test:tall_peak` (Chisel's Tall peak example) raises a 4800 m Rainier-scale stratovolcano (summit ≥ 4400 m, `tests/tall_peaks.rs`). The default world is unchanged.
+
+Rainier's shape and snow line (0.52.40, ADR 0075 T5): the arc cones take radial ridges and glacier-cut valleys, an off-centre summit, a shoulder peak and flank cones, and an ice-domed crater (no crater lake above `iceAbove`), all `terrain.json` `tectonics` keys, off by default; and a snow line from temperature (`snowBelowC`, `snowMaxSlope`): snow (`rocks.json` `tectonic.snow`) where the T3 climate with its lapse rate is colder than the line, bare rock on faces steeper than the slope. Glacier ice (0.52.45): where colder still than `iceBelowC` (°C, −100 off) the gentle ground is `rocks.json` `tectonic.ice` (`dwell:glacier_ice`), so the summit, the crater's dome and the high gentle slopes are ice over a belt of snow (`dwell:snow`, a plain snow block; snowy grass stays the bands' cover). `test:tall_peak` opts in (ice below −10 °C, ≈ 3500 m); the default world is unchanged (goldens byte-identical).
+
+Rainier detail (ADR 0075 T5): the 100 m world map smoothed the ridges, so from a distance the cone was one smooth, fairly symmetric cone. More `tectonics` keys, all off by default, add **column-level detail** where the chunks generate (`Tectonics::peak_relief`, applied in the column generator over the map's cone and the biomes' fine relief, as the cliffs and the erosion are; placed once per map, `Tectonics::peak_details`): **cleavers** (`cleaverDepth`, `cleaverCount`; the valleys between the ridges' crests cut deeper with the crests left as cusps, along the map's ridges by default), a **broken summit** (`rimNotches`, `rimNotchDepth` cut the crater's rim; `cragCount`, `cragHeight`, `cragRadius` raise spires on and just outside it, the tallest the summit, off the crater's centre and over the ice dome), and **cirques** (`cirqueCount`, `cirqueDepth`, `cirqueRadius`, `cirqueDistance`: bowls at the heads of the valleys between ridges, their floors level under a steep headwall on the summit side, a lip downhill). The snow line reads the detail's slope too, so the crests and headwalls are bare rock and the cirques' gentle floors snow or, above the ice line, glacier ice. `test:tall_peak` and the starter opt in; the default world is unchanged (goldens byte-identical). Tests (`tests/tall_peaks.rs`, both faces): a 3 km ring of columns spans > 400 m with ≥ 10 crests and ≥ 100 m more relief than the map and the undetailed cone; the rim has its notches and crags, the highest column ≥ 200 m off the crater's centre; each cirque is a local minimum with a ≥ 20 m lip, a headwall steeper than 1, and an ice floor.
+
+The starter world (0.52.54): `shared/worldgen/worlds/starter.json` (`test:starter`) is a candidate default assembled by data alone: a fixture world may now carry its own `biomes` (by name, the default first, then presets, each a name or `{ "biome": name, ...keys }` replacing those keys; a renamed copy with `name`), `biomeMap` keys over terrain.json's and `geology` groups over rocks.json's; gen.mjs checks each biome and emits the Chisel edit it stands for (`FIXTURE_WORLD_EDITS`), which `config::world_config` uses for that name. The starter: a convergent boundary with a 600 m range and an arc of two Rainier-shaped 4800 m cones (tall_peak's keys; the arc's cones share one height today, so per-cone heights need an engine key), the snow and ice lines, a hotspot chain of four islands offshore east, the rain shadow on (`rainShare` 0.6), rock shaping on (`strength` 1; 0.25 from 0.52.55), and eleven biomes by climate (a broadleaf forest, the mixed forest, boreal, meadow, steppe, the warm coast, sand desert, red-rock mesa with erosion and some gullies, badlands, alpine tundra, wetland) with vegetation, ground and trees opted in, over the default at weight 0.25 as the fallback. Tree species (0.52.58, ADR 0079): the starter's forests stand oaks (`broadleaf_groves`) and the pine species (`conifer_groves` in place of the default's pine groves), its warm coast palms (`palm_coasts`, on sand). `tests/starter_world.rs`: it parses and generates on both faces, every listed biome wins ≥ 2 % of the land (seed 0: boreal ~20 %, steppe 13–17 %, alpine 11 %, desert 10 %, badlands 9–11 %, mesa 5–6 %, meadow 4–5 %, broadleaf 3–4 %, mixed 4 %, wetland 4 %, coast 3 %, default 9 %), the main cone stands ~4770 m; `STARTER_PNG=<dir>` writes the overview, and the ignored `tour` test prints `at=` spots. The default world is unchanged (goldens byte-identical). The tour (0.52.55, in game on the bench): with the rocks' shaping at full strength every hillside was bare stepped stone, the forests and the boreal hills alike, so the starter's `geology.shaping.strength` is 0.25: the broadleaf forest, the coast and the deserts read as themselves; the boreal spot's terraced hills still have no pines, and the range and the cones read best from far off. Tuning (0.52.63): the boreal spot had no pines because the pine species' climate floor (6.5 °C) put its uplands above the tree line and it lay in the range's dry lee (moisture 0); `dwell:conifer_species` now grows down to -1 °C and the starter's boreal needs a little wetness (`wetness.min` 0.06), so the driest cold lee falls to the default biome. A new biome-map key `sharpen` (the pick's exponent on the weights; 1 in terrain.json, the default unchanged) is 2 in the starter, with `dither` 0.2 (from 0.3), so the mesa and the badlands, which share a hot dry climate, speckle less. The balance (seed 0, faces A / B): broadleaf 8 / 5 % (from 3–4), boreal 5 / 11 % (from 20), steppe 15 / 9 % (from 13–17), mixed 5 %, meadow 5–6 %, mesa 3–4 %, badlands 12–16 %, desert 9–10 %, alpine 13 %, wetland 3 %, coast 3 %, the default 15–18 % (from 9: the cold dry lee). `tests/starter_world.rs` `the_boreal_spot_stands_pines` (red at 0 logs, then green) and `sharpen_gives_the_strongest_biome_more_columns`. The arc's cones fall off along it: a tectonics key `arcDecay` (each next cone that share of the last's height; 1 in terrain.json, all alike as before), 0.72 in the starter (4800 m, then ~3460 m; `tests/tectonics.rs` `the_arcs_cones_fall_off_by_arc_decay`).
+
+## Rule-based erosion (2026-11-10, ADR 0075 T4)
+
+Systemic terrain's erosion layer, from the world map's plan view: rule-based erosion from the world map's plan view (`rocks.json` `erosion`, `geology::DrainageField`, `geology::eroded`): drainage lines are map cells with at least `threshold` cells of flow accumulation (or the sea); a column nearer a line than the scarp's retreat (`reach` × (1 − `resist` × the cap rock's hardness) × (1 + `valley` × log2 of the line's accumulation over the threshold) × (1 ± `outline` noise) − `relief` × the hill's height over the floor) is cut down to the floor (the line's height, `snap` of the way down to the stack's lowest soft layer's top), farther it stands; a `wall` m sheer wall at the edge (the cap rock's face) and a `talusWidth` m skirt (the soft rock's scree) below; a biome's `gullies` cuts short-wavelength rills (`gullyWavelength`, `gullyDepth`). A biome opts in with `erosion` 0..1 (absent 0: the default world and goldens unchanged); the red-rock mesa preset at 1, badlands at 1 with gullies 1. **The mesa's beds at every height (0.52.66):** the starter's mesas showed grey stone above ~700 m because sandstone's blocks were `dwell:stone` and, at the starter's shaping `strength` 0.25, only the cut-back's walls, talus and floors showed rock: the remnants' standing tops kept the `mesa` band's stone, and the walls the cap rock's face whatever their height. Now a biome with its own `rockStack` shows its stack's layer at the ground's height on the cut-back's walls and its standing tops, at any shaping strength (`terrain.rs` `erosion_shaping`), and a new block `dwell:red_sandstone` (bedded red rock, its ramps, a painted `red_sandstone` tile on the `red_rock` palette ramp; prototype content, not on the hotbar) is sandstone's face and cap in rocks.json. High mesa tops showing the beds: ~64 % → ≥ 85 % over 300 m on both faces (`the_mesas_beds_show_at_every_height`). The default world uses no rocks (goldens' hashes unchanged; their registry line moved with the new block). Tuned in Chisel
+(the Erosion group, a biome's erosion and gullies, the erosion overlay).
+
+## Soil and vegetation from climate (2026-11-10, ADR 0075 T3)
+
+Systemic terrain's life layer: `shared/worldgen/vegetation.json` holds the climate's °C scale, each
+rock's soil (depth on flat ground, a soil type), the soil rules (thinning with slope, deeper on wet valley
+floors) and the vegetation kinds, each a placement's climate envelope (temperature °C, moisture, least
+soil, steepest slope, soil types, fades, density). A biome's `vegetation` (0..1) is how much the climate
+rules its placements: none in the default biome (the terrain unchanged), all in the boreal, rainforest,
+savanna, desert and alpine presets. The tree line is where the temperature falls below a kind's least; a
+dry lee has no trees. Tuned in Chisel (the Soil and vegetation group, the soil and vegetation overlays).
+Prototype content (§6.1 of the architecture).
+
+T3b (2026-11-11, ADR 0075): climate details in ordinary biomes, each opt-in per biome. A biome's `snow`
+(`belowC`, `maxSlope`, `block`, optional `iceBelowC`/`ice`) is its own snow line from the biome map's
+temperature with its lapse rate (the tectonic peaks' rule, for any biome; it replaces the world's line
+where it is the column's biome). A soil type may name `ground`/`under` blocks, shown in a biome with
+`soilBlocks` (the build's: sand under the grass on sandy soil). A vegetation kind may govern a
+`decoration` or a `ground` item kind in place of a placement, by a biome's `undergrowth` (0..1): tall
+grass thins with the moisture, sticks lie where trees could grow. The starter world opts in: every biome's
+undergrowth, snow lines for the alpine tundra, boreal and steppe, soil blocks for the steppe and meadow.
+
+## Preset biomes (2026-11-10, ADR 0075)
+
+Starting points for a world's biomes: `shared/worldgen/biomes/presets/*.json` (14: temperate meadow,
+mixed forest, pine/boreal, cold rainforest, alpine tundra, snowfield, steppe, savanna, sand desert,
+red-rock canyon/mesa, badlands, tropical beach, wetland/marsh, coastal cliffs), each a biome file with a
+`label` and a `description`, placed by its `where` (temperature, wetness, elevation, coast). Chisel adds
+them ("Add from preset"); none is on the default world's map. Prototype content (ARCHITECTURE.md §6.1).
+

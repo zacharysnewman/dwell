@@ -131,9 +131,252 @@ pub fn scene_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayou
     };
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scene"),
+        entries: &[
+            texture(0, false),
+            texture(1, samples > 1),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            filterable(3),
+            // The volumetric clouds' buffer and their first cloud's distance (CLOUDS.md §8.6).
+            filterable(4),
+            filterable(5),
+            // Bloom's blurred glow (its chain's second level; WORK_QUEUE item 19).
+            filterable(6),
+        ],
+    })
+}
+
+/// Bloom's down and up passes' group (0): one level of the chain they read and a filtering sampler.
+pub fn bloom_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("bloom level"),
+        entries: &[
+            filterable(0),
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+/// Bloom's chain's format: the glow's linear light.
+pub const BLOOM: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// Bloom's chain (WORK_QUEUE item 19): one texture whose levels halve, a view of each level (the
+/// passes draw into one and read the next), and a group over each level for the passes that read
+/// it. 1 × 1 with one level with bloom off.
+pub struct BloomChain {
+    pub texture: wgpu::Texture,
+    pub levels: Vec<wgpu::TextureView>,
+    pub groups: Vec<wgpu::BindGroup>,
+}
+
+impl BloomChain {
+    fn new(
+        device: &wgpu::Device,
+        (width, height, levels): (u32, u32, u32),
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+    ) -> Self {
+        let (width, height) = (width.max(1), height.max(1));
+        let fits = 32 - width.min(height).leading_zeros();
+        let count = levels.clamp(1, fits);
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("bloom"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: BLOOM,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let levels: Vec<_> = (0..count)
+            .map(|l| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("bloom level"),
+                    base_mip_level: l,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        let groups = levels
+            .iter()
+            .map(|view| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("bloom level"),
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                })
+            })
+            .collect();
+        Self {
+            texture,
+            levels,
+            groups,
+        }
+    }
+
+    /// The chain's first level's size and its level count.
+    pub fn size(&self) -> (u32, u32, u32) {
+        let s = self.texture.size();
+        (s.width, s.height, self.texture.mip_level_count())
+    }
+
+    /// The level the composite reads: the blurred glow (the second), or the only one with bloom off.
+    pub fn shown(&self) -> &wgpu::TextureView {
+        &self.levels[1.min(self.levels.len() - 1)]
+    }
+}
+
+/// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the last frame's
+/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the baked
+/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler).
+pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture_3d = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D3,
+            multisampled: false,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cloud march"),
+        entries: &[
+            cloud_prev_entry(),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(cloud_plume_bytes()),
+                },
+                count: None,
+            },
+            texture_3d(6),
+            texture_3d(7),
+            wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+fn cloud_prev_entry() -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding: 3,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(CLOUD_PREV_BYTES),
+        },
+        count: None,
+    }
+}
+
+/// The clouds' resolve's group (3, BUGS.md #90): the accumulated clouds of the last frame, a
+/// filtering sampler, the last frame's camera, the last frame's scene span per texel
+/// (`CLOUD_DIST`, §8.9), and this frame's raw march and span.
+pub fn cloud_history_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("cloud history"),
+        entries: &[
+            filterable(1),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            cloud_prev_entry(),
+            filterable(5),
+            filterable(9),
+            filterable(10),
+        ],
+    })
+}
+
+/// The run-time plumes' uniform (`CloudPlumes`): its head and `plume_slots` plumes
+/// (`dwell_look::plumes::PlumeList::pack`).
+pub fn cloud_plume_bytes() -> u64 {
+    let slots = dwell_look::clouds::CLOUDS.plume_slots as usize;
+    (4 * (dwell_look::plumes::HEAD_FLOATS + dwell_look::plumes::PLUME_FLOATS * slots)) as u64
+}
+
+/// The clouds pass's uniform (`CloudPrev`): five vec4s.
+pub const CLOUD_PREV_BYTES: u64 = 5 * 16;
+
+/// The volumetric clouds' buffer's format: premultiplied colour and cover.
+pub const CLOUDS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+/// The scene under each texel (docs/CLOUDS.md §8.9): its nearest and farthest pixel's distance
+/// along the ray (m; the sky and past the reach: the march's reach), where its march ended, and the
+/// first cloud's distance (the resolve's parallax).
+pub const CLOUD_DIST: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+fn filterable(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+/// The scene targets the light shafts pass reads (group 2: the colour and the view depth, as
+/// [`scene_layout`]'s first two), without the shafts' own buffer, which it draws into (ADR 0064).
+pub fn scene_read_layout(device: &wgpu::Device, samples: u32) -> wgpu::BindGroupLayout {
+    let texture = |binding, multisampled| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled,
+        },
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("scene (read)"),
         entries: &[texture(0, false), texture(1, samples > 1)],
     })
 }
+
+/// The light shafts' buffer's format (ADR 0064): rgb the placed and held lights' glow (its
+/// colour), a the sun's, moon's or fluid's (× `frame.shafts_color`).
+pub const SHAFTS: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 type Target = (wgpu::Texture, wgpu::TextureView);
 
@@ -149,6 +392,47 @@ pub struct Targets {
     pub scene: wgpu::BindGroup,
     /// The under-water copy and its bind group (`under_layout`), when the water reads the scene.
     pub under: Option<(Target, wgpu::BindGroup)>,
+    /// The light shafts' buffer (the tier's size; 1 × 1 with the shafts off) and the scene group
+    /// the shafts pass reads (ADR 0064).
+    pub shafts: Target,
+    pub scene_read: wgpu::BindGroup,
+    /// The volumetric clouds (CLOUDS.md §8.6, the tier's reduced size; 1 × 1 without them): this
+    /// frame's accumulated clouds, their first cloud's distance, the last frame's copy, and the
+    /// clouds pass's group over that copy.
+    pub clouds: Target,
+    pub cloud_dist: Target,
+    pub cloud_history: Target,
+    pub cloud_dist_history: Target,
+    pub cloud_group: wgpu::BindGroup,
+    /// The march's group (its camera, the plumes, the shape noise) and its raw output.
+    pub cloud_march_group: wgpu::BindGroup,
+    pub cloud_raw: (wgpu::Texture, wgpu::TextureView),
+    /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
+    pub bloom: BloomChain,
+}
+
+/// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
+/// layout, the filtering sampler, and the shafts' buffer size.
+pub struct SceneGroups<'a> {
+    pub layout: &'a wgpu::BindGroupLayout,
+    pub read_layout: &'a wgpu::BindGroupLayout,
+    pub sampler: &'a wgpu::Sampler,
+    pub shafts: (u32, u32),
+    /// The volumetric clouds' buffer size, the clouds pass's group layout and its uniform.
+    pub clouds: (u32, u32),
+    pub cloud_layout: &'a wgpu::BindGroupLayout,
+    pub cloud_prev: &'a wgpu::Buffer,
+    pub cloud_plumes: &'a wgpu::Buffer,
+    /// The march's group layout and the baked noise (base, detail, their sampler).
+    pub cloud_march_layout: &'a wgpu::BindGroupLayout,
+    pub cloud_noise: (
+        &'a wgpu::TextureView,
+        &'a wgpu::TextureView,
+        &'a wgpu::Sampler,
+    ),
+    /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
+    pub bloom: (u32, u32, u32),
+    pub bloom_layout: &'a wgpu::BindGroupLayout,
 }
 
 impl Targets {
@@ -156,9 +440,10 @@ impl Targets {
         device: &wgpu::Device,
         (width, height): (u32, u32),
         samples: u32,
-        layout: &wgpu::BindGroupLayout,
+        groups: &SceneGroups,
         under: Option<(&wgpu::BindGroupLayout, &wgpu::Sampler)>,
     ) -> Self {
+        let layout = groups.layout;
         let make = |format, label, samples, usage| {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -192,9 +477,162 @@ impl Targets {
         );
         let view_depth = make(VIEW_DEPTH, "view depth", samples, read);
         let depth = make(DEPTH, "depth", samples, attach);
+        let shafts = {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("light shafts"),
+                size: wgpu::Extent3d {
+                    width: groups.shafts.0.max(1),
+                    height: groups.shafts.1.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: SHAFTS,
+                usage: read,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let small = |format, label, size: (u32, u32), usage| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size.0.max(1),
+                    height: size.1.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let clouds = small(
+            CLOUDS,
+            "clouds",
+            groups.clouds,
+            read | wgpu::TextureUsages::COPY_SRC,
+        );
+        let cloud_raw = small(CLOUDS, "clouds (raw march)", groups.clouds, read);
+        let cloud_dist = small(
+            CLOUD_DIST,
+            "cloud distance",
+            groups.clouds,
+            read | wgpu::TextureUsages::COPY_SRC,
+        );
+        let cloud_dist_history = small(
+            CLOUD_DIST,
+            "cloud distance history",
+            groups.clouds,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
+        let cloud_history = small(
+            CLOUDS,
+            "cloud history",
+            groups.clouds,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
+        let cloud_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cloud history"),
+            layout: groups.cloud_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&cloud_history.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(groups.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: groups.cloud_prev.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist_history.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::TextureView(&cloud_raw.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist.1),
+                },
+            ],
+        });
+        let (base, detail, noise_sampler) = groups.cloud_noise;
+        let cloud_march_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cloud march"),
+            layout: groups.cloud_march_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: groups.cloud_prev.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: groups.cloud_plumes.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(base),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(detail),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::Sampler(noise_sampler),
+                },
+            ],
+        });
+        let bloom = BloomChain::new(device, groups.bloom, groups.bloom_layout, groups.sampler);
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&colour.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view_depth.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(groups.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&shafts.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&clouds.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&cloud_dist.1),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(bloom.shown()),
+                },
+            ],
+        });
+        let scene_read = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("scene (read)"),
+            layout: groups.read_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -240,7 +678,29 @@ impl Targets {
             depth,
             scene,
             under,
+            shafts,
+            scene_read,
+            clouds,
+            cloud_dist,
+            cloud_history,
+            cloud_dist_history,
+            cloud_group,
+            cloud_march_group,
+            cloud_raw,
+            bloom,
         }
+    }
+
+    /// The volumetric clouds' buffer size.
+    pub fn clouds_size(&self) -> (u32, u32) {
+        let s = self.clouds.0.size();
+        (s.width, s.height)
+    }
+
+    /// The shafts' buffer's size.
+    pub fn shafts_size(&self) -> (u32, u32) {
+        let s = self.shafts.0.size();
+        (s.width, s.height)
     }
 
     /// The colour attachment the scene passes draw into.
@@ -257,6 +717,12 @@ impl Drop for Targets {
         self.colour.0.destroy();
         self.view_depth.0.destroy();
         self.depth.0.destroy();
+        self.shafts.0.destroy();
+        self.clouds.0.destroy();
+        self.cloud_dist.0.destroy();
+        self.cloud_history.0.destroy();
+        self.cloud_dist_history.0.destroy();
+        self.bloom.texture.destroy();
         if let Some(((t, _), _)) = &self.under {
             t.destroy();
         }

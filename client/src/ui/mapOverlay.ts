@@ -4,6 +4,7 @@
 // to the whole disc. The colours are prototype (§6.1); the baseline has no biomes (ADR 0025).
 
 import { World } from '../protocol/constants.gen';
+import { worldRadiusM } from './minimap';
 
 /** Bytes per sampled column of the map (height i16 little-endian, outside flag; jobs/mod.rs). */
 export const MAP_COLUMN_BYTES = 3;
@@ -36,10 +37,16 @@ export interface MapView {
   step: number;
 }
 
-/** The view at a zoom for a player at (x, z): around them, or the whole disc about the origin. */
+/**
+ * The view at a zoom for a player at (x, z): around them, or the whole disc about the origin (the
+ * world's disc: a bigger world's, BIG_MAP.md M2b, set by the minimap's `setMapWorldSize`).
+ */
 export function mapView(zoom: number, x: number, z: number): MapView {
   const level = Math.max(0, Math.min(DISC_ZOOM, zoom));
-  const step = MAP_ZOOMS[level] ?? MAP_STEP;
+  const step =
+    level === DISC_ZOOM
+      ? Math.ceil((2 * worldRadiusM()) / MAP_SIZE)
+      : (MAP_ZOOMS[level] ?? MAP_STEP);
   const half = (MAP_SIZE / 2) * step;
   return level === DISC_ZOOM
     ? { x0: -half, z0: -half, step }

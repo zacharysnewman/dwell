@@ -1,0 +1,2658 @@
+//! The animation probe (docs/DEV_TOOLS.md "Clip probe"; owner, 2026-11-11: "make yourself some tools
+//! to properly observe animations, movement directions, positions over time"): samples a clip at N
+//! times through the same posing the game draws with and reports where a point (the held tool's
+//! head, tip or grip, a bone's pivot, an item part) is over time, in five views of the same swing:
+//!
+//! - `fp`: the first-person screen (what the player sees): NDC x right, y up, and the depth, from
+//!   the arms' animator (`Animator` in `Space::Arms`, the swing on its action layer driven to clip
+//!   time as `Bodies::drive_arms` does), the held item's turns (`with_item`), `arm_transforms` and
+//!   the arms pass's projection (the first person `fov`), the tool drawn as its model on the hold
+//!   (`prop_mesh`, `held_item`).
+//! - `top`, `side`, `front`: orthographic views in the player's frame (right, up, ahead; the eye at
+//!   the origin, looking level): from above (right vs ahead), from the player's right (ahead vs
+//!   up), and facing the player (right vs up, mirrored as the player's own right on the left).
+//! - `tp`: the whole body from behind and to the right: the body's animator (`Space::Body`, the
+//!   rig pose the skinned player model retargets), `bone_transforms`, the same model on the hand.
+//!
+//! [`probe`] gives the samples, the phases (from the tool's `swing` timings for a chop clip, else
+//! thirds), each phase's direction of travel in each view, the peak speed and when; [`table`],
+//! [`csv`] and [`svg`] print them. `examples/clip_probe.rs` is the CLI. Tests (`chop_swing_tests`)
+//! pin the axe swings' directions with it.
+//!
+//! face-independent: the arms are posed in view space and turned into the world by the camera's
+//! basis (`arms_frame`); the world space output does that for a chosen face (`FaceFrame`).
+
+use crate::render::camera::{Basis, aim};
+use crate::render::characters::{Held, arms_frame, held_item, prop_mesh};
+use dwell_characters::anim::{MAX_BONES, arm_transforms, bone_transforms, with_item};
+use dwell_characters::animator::{Animator, MoveInput, Space, Swing};
+use dwell_characters::math::Affine;
+use dwell_characters::{TABLES, View, mesh, player};
+use dwell_world::FaceFrame;
+
+/// The views a probe reports, by name (`--views`).
+pub const VIEWS: [&str; 5] = ["fp", "top", "side", "front", "tp"];
+
+/// What point is followed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Point {
+    /// The held tool's head: the far tenth of its model along the handle.
+    ToolHead,
+    /// Its far end.
+    ToolTip,
+    /// The hand's grip (where the handle sits in the fist).
+    Grip,
+    /// A bone's pivot (`elbow` is `forearm_r`'s, `shoulder` `arm_r`'s).
+    Bone(&'static str),
+    /// A part of the held characters item (`axe_blade`), its centre.
+    Part(&'static str),
+    /// 0.3 m ahead of a bone's pivot along its own +z (`head_ahead`: where the head faces), so a
+    /// turn of the bone shows as a path.
+    Ahead(&'static str),
+}
+
+impl Point {
+    pub fn parse(s: &str) -> Result<Point, String> {
+        Ok(match s {
+            "tool_head" | "head" => Point::ToolHead,
+            "tool_tip" | "tip" => Point::ToolTip,
+            "grip" | "hand" => Point::Grip,
+            "elbow" => Point::Bone("forearm_r"),
+            // The head bone's pivot (`head` is the tool's head).
+            "head_bone" | "neck" => Point::Bone("head"),
+            "shoulder" => Point::Bone("arm_r"),
+            other
+                if other.ends_with("_ahead")
+                    && player().bone(&other[..other.len() - 6]).is_some() =>
+            {
+                let bone = &other[..other.len() - 6];
+                Point::Ahead(Box::leak(bone.to_string().into_boxed_str()))
+            }
+            other => {
+                let name: &'static str = Box::leak(other.to_string().into_boxed_str());
+                if player().bone(name).is_some() {
+                    Point::Bone(name)
+                } else {
+                    Point::Part(name)
+                }
+            }
+        })
+    }
+
+    pub fn name(self) -> String {
+        match self {
+            Point::ToolHead => "tool_head".into(),
+            Point::ToolTip => "tool_tip".into(),
+            Point::Grip => "grip".into(),
+            Point::Bone("forearm_r") => "elbow".into(),
+            Point::Bone(b) | Point::Part(b) => b.into(),
+            Point::Ahead(b) => format!("{b}_ahead"),
+        }
+    }
+}
+
+/// What to probe.
+#[derive(Clone, Debug)]
+pub struct Probe {
+    /// The arms role (`chop_level`) or a clip's name (`fp_chop_level`).
+    pub clip: String,
+    /// The inventory item in hand (`dwell:stone_axe`); none: empty-handed.
+    pub item: Option<&'static str>,
+    pub points: Vec<Point>,
+    pub samples: usize,
+    /// The screen's width over its height.
+    pub aspect: f32,
+    /// The world space output's face, heading and pitch (degrees).
+    pub face: FaceFrame,
+    pub yaw: f64,
+    pub pitch: f64,
+}
+
+impl Probe {
+    pub fn new(clip: &str) -> Self {
+        Self {
+            clip: clip.into(),
+            item: Some("dwell:stone_axe"),
+            points: vec![Point::ToolHead, Point::Grip, Point::Bone("forearm_r")],
+            samples: 31,
+            aspect: 16.0 / 9.0,
+            face: FaceFrame::A,
+            yaw: 0.0,
+            pitch: 0.0,
+        }
+    }
+}
+
+/// One point at one time.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct At {
+    /// The player's frame: right, up, ahead (metres from the eye, looking level).
+    pub local: [f32; 3],
+    /// The first-person screen: NDC x right, y up (−1..1), and the depth (m ahead).
+    pub screen: [f32; 3],
+    /// Eye-relative world space on the probe's face, heading and pitch.
+    pub world: [f64; 3],
+    /// The body (third person): right, up, ahead from the feet (metres).
+    pub body: [f32; 3],
+}
+
+/// One sample: its clip time and each point's place.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sample {
+    pub t: f32,
+    pub at: Vec<At>,
+    /// How the tool and the arm are turned at `t`.
+    pub orient: Orient,
+    /// The view's sway at `t` for a chop (a miss's, the clip's timeline; crate::chop::swing_camera):
+    /// yaw toward the screen's right, pitch up, roll leaning right (degrees), bob right, up, back (m).
+    pub camera: Option<dwell_protocol::chopping::CameraOffset>,
+}
+
+/// What a glyph on the sheet stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Glyph {
+    /// The blade's edge: from the edge's centre outward (the way the edge faces).
+    Edge,
+    /// The handle: from the grip to the head.
+    Handle,
+    /// A bone's local axis (`ARM_BONES[bone]`, axis 0 x, 1 y, 2 z) from its pivot.
+    Axis(usize, usize),
+}
+
+/// The arm bones whose turns the probe reports, shoulder to hand.
+pub const ARM_BONES: [&str; 3] = ["arm_r", "forearm_r", "hand_r"];
+
+/// The tool's and the arm's orientation at one time (owner, 2026-11-11: "Ensure your tooling helps
+/// you tell rotation too").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Orient {
+    /// The way the blade's edge faces (unit; the player's frame), from the lashing to the edge.
+    pub blade: Option<[f32; 3]>,
+    /// The handle's axis, grip to head (unit; the player's frame).
+    pub handle: Option<[f32; 3]>,
+    /// Each arm bone's local x, y, z axes in the player's frame (`ARM_BONES` order).
+    pub axes: [[[f32; 3]; 3]; 3],
+    /// The hand's roll about its own long axis against the forearm (degrees).
+    pub hand_roll: f32,
+    /// Each arm bone's angular speed (degrees/s; from the sample before, 0 at the first).
+    pub spin: [f32; 3],
+    /// The angle between the blade's facing and the edge's motion (degrees; from the sample
+    /// before and after): under 90 the edge leads, over 90 it trails.
+    pub blade_vs_motion: Option<f32>,
+    /// Glyphs to draw: each a segment from one place to another.
+    pub glyphs: Vec<(Glyph, At, At)>,
+}
+
+/// A stretch of the clip and where the first point went over it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Phase {
+    pub name: &'static str,
+    pub from: f32,
+    pub to: f32,
+    /// The first point's travel in the first-person screen (NDC).
+    pub screen: [f32; 2],
+    /// Its travel in the player's frame (right, up, ahead; m).
+    pub local: [f32; 3],
+    /// Its travel on the body (right, up, ahead; m).
+    pub body: [f32; 3],
+}
+
+impl Phase {
+    /// The screen travel's dominant way: "right→left", "top→bottom", ….
+    pub fn screen_way(&self) -> &'static str {
+        way(self.screen[0], self.screen[1])
+    }
+    pub fn body_way(&self) -> &'static str {
+        way(self.body[0], self.body[1])
+    }
+}
+
+fn way(dx: f32, dy: f32) -> &'static str {
+    if dx.abs().max(dy.abs()) < 1e-4 {
+        "still"
+    } else if dx.abs() >= dy.abs() {
+        if dx < 0.0 {
+            "right→left"
+        } else {
+            "left→right"
+        }
+    } else if dy < 0.0 {
+        "top→bottom"
+    } else {
+        "bottom→top"
+    }
+}
+
+/// A probe's result.
+#[derive(Clone, Debug)]
+pub struct Report {
+    pub clip: &'static str,
+    pub duration: f32,
+    pub points: Vec<Point>,
+    pub samples: Vec<Sample>,
+    pub phases: Vec<Phase>,
+    /// The first point's fastest screen speed (NDC/s) and when.
+    pub peak_speed: f32,
+    pub peak_t: f32,
+    /// When a centred hit lands (s): the arc's middle (the swing's `time_of_step`), for a chop.
+    pub contact_t: Option<f32>,
+    /// A rest pose of the body's bones (pivots, body frame) and their parents, for the `tp` view.
+    pub skeleton: Vec<([f32; 3], Option<[f32; 3]>)>,
+}
+
+impl Report {
+    /// The phase named `name`.
+    pub fn phase(&self, name: &str) -> Option<&Phase> {
+        self.phases.iter().find(|p| p.name == name)
+    }
+    /// Point `k` at the sample nearest time `t`.
+    pub fn at(&self, k: usize, t: f32) -> At {
+        let s = self
+            .samples
+            .iter()
+            .min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+            .expect("samples");
+        s.at[k]
+    }
+}
+
+/// The swing the arms and body play for a role (`chop_level` → the level chop).
+/// A tool's `clips` role (the sword's `slash_level`, WORK_QUEUE item 35) is the chop of its kind.
+fn swing_of(role: &str) -> Option<Swing> {
+    match role {
+        "chop_level" => Some(Swing::ChopLevel),
+        "chop_vertical" => Some(Swing::ChopVertical),
+        "break" => Some(Swing::Break),
+        "place" => Some(Swing::Place),
+        // A break tool's own break clip (`breaking.tools[].clip`: `break_stone_pickaxe`).
+        _ if break_tool_of_role(role).is_some() => Some(Swing::Break),
+        _ => tool_of_role(role).map(|(_, vertical)| {
+            if vertical {
+                Swing::ChopVertical
+            } else {
+                Swing::ChopLevel
+            }
+        }),
+    }
+}
+
+/// The first tool whose `clips` name `role` (and whether it is its vertical swing's).
+fn tool_of_role(role: &str) -> Option<(&'static dwell_protocol::chopping::ToolDef, bool)> {
+    dwell_protocol::chopping::TOOLS.iter().find_map(|t| {
+        [false, true]
+            .into_iter()
+            .find(|&v| t.swing_role(v) == role)
+            .map(|v| (t, v))
+    })
+}
+
+/// The first break tool whose break swing plays `role` (its `clip`, not the plain `break`).
+fn break_tool_of_role(role: &str) -> Option<&'static dwell_protocol::chopping::BreakTool> {
+    dwell_protocol::chopping::BREAK_TOOLS
+        .iter()
+        .find(|b| b.clip == role && role != "break")
+}
+
+/// Starts swing `role` on `a` (a tool's clip role plays its own clip).
+fn start_swing(a: &mut Animator, role: &str) -> bool {
+    let Some(s) = swing_of(role) else {
+        return false;
+    };
+    let named = [s.role()]
+        .into_iter()
+        .chain(tool_of_role(role).map(|(t, v)| t.swing_role(v)))
+        .chain(break_tool_of_role(role).map(|b| b.clip))
+        .find(|r| *r == role)
+        .unwrap_or(s.role());
+    a.swing_as(s, named);
+    true
+}
+
+/// Defeat's input for one of its roles (`kneel`, `kneel_sword`: kneeling; `stand`, `stand_sword`:
+/// standing up), none for any other.
+fn defeat_of(role: &str) -> Option<dwell_characters::animator::Defeat> {
+    use dwell_characters::animator::Defeat;
+    let r = &dwell_protocol::defeat::ROLES;
+    if role == r.kneel || role == r.kneel_armed {
+        Some(Defeat::Kneel)
+    } else if role == r.stand || role == r.stand_armed {
+        Some(Defeat::Stand)
+    } else {
+        None
+    }
+}
+
+/// Whether `role` is one an idle NPC plays for its pose other than standing (`look`, `sit`;
+/// `creatures::npc_role`), which the player's animator has no state for.
+fn npc_idle_of(role: &str) -> bool {
+    (0..dwell_protocol::NPC_POSES.len() as u8)
+        .map(|i| crate::creatures::npc_role(0.0, i, false))
+        .any(|r| r == role && r != "idle")
+}
+
+/// A raised block's role (`guard_level`: a hold-layer clip the animator lays over the gait,
+/// `MoveInput::guard`), if `role` is one; the probe poses it as the game does instead of a swing.
+fn guard_of(role: &str) -> Option<&'static str> {
+    let fp = player().first_person?;
+    fp.clips
+        .iter()
+        .map(|(r, _)| *r)
+        .find(|r| *r == role && r.starts_with("guard_"))
+}
+
+/// The arms role and clip a probe names (a role, or a clip the arms or body play).
+fn resolve(name: &str) -> Result<(&'static str, &'static dwell_characters::Clip), String> {
+    let ch = player();
+    let fp = ch.first_person.ok_or("no first person")?;
+    if let Some(i) = ch.arms_clip(name) {
+        let role = fp
+            .clips
+            .iter()
+            .find(|(r, _)| *r == name)
+            .map(|(r, _)| *r)
+            .unwrap_or("idle");
+        return Ok((role, TABLES.clip(i)));
+    }
+    for &(role, _) in fp.clips {
+        if let Some(i) = ch.arms_clip(role)
+            && TABLES.clip(i).name == name
+        {
+            return Ok((role, TABLES.clip(i)));
+        }
+    }
+    // A body-only role (defeat's `kneel`, `stand`: CHARACTERS.md §11.13), or its clip.
+    for &(role, i) in ch.clips {
+        if role == name || TABLES.clip(i).name == name {
+            return Ok((role, TABLES.clip(i)));
+        }
+    }
+    Err(format!(
+        "no arms role or clip `{name}` (roles: {})",
+        fp.clips
+            .iter()
+            .map(|(r, _)| *r)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+/// The tool's swing timings for an axe role.
+fn swing_def(item: Option<&str>, role: &str) -> Option<dwell_protocol::chopping::SwingDef> {
+    if swing_of(role).is_none_or(|s| !matches!(s, Swing::ChopLevel | Swing::ChopVertical)) {
+        return None;
+    }
+    // A tool's own clip role (the sword's slash) is timed by that tool's swing.
+    let tool = item
+        .and_then(dwell_protocol::chopping::tool)
+        .filter(|t| {
+            role.starts_with("chop_") || t.swing_role(false) == role || t.swing_role(true) == role
+        })
+        .or_else(|| tool_of_role(role).map(|(t, _)| t))
+        .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"))?;
+    Some(tool.swing)
+}
+
+/// The hold (characters item) the hand shows for `item` swinging `role`.
+pub fn held_for(item: Option<&'static str>, role: &str) -> Held {
+    let Some(item) = item else {
+        return Held::Empty;
+    };
+    let tool = dwell_protocol::chopping::tool(item);
+    let hold = tool.and_then(|t| {
+        if swing_of(role) == Some(Swing::ChopVertical) {
+            t.held_vertical.or(t.held)
+        } else {
+            t.held
+        }
+    });
+    held_item(item, hold)
+}
+
+/// How a held tool's head shows in first person `t` s into `role` (16:9): its centre and the
+/// grip's on screen (NDC x, y and the depth ahead, m), and the head's size on screen (its
+/// silhouette's area, NDC²), the tool turned `extra_yaw` degrees more about its
+/// handle than its data says (0: as held; owner, 2026-11-14: "each tool should be rotated slightly
+/// around the Y(?) in your hand so you can see the head of it").
+#[derive(Clone, Copy, Debug)]
+pub struct HeadView {
+    pub head: [f32; 3],
+    pub grip: [f32; 3],
+    pub size: f32,
+}
+
+pub fn head_view(item: &'static str, role: &str, t: f32, extra_yaw: f32) -> Option<HeadView> {
+    let held = held_for(Some(item), role);
+    let (bone, verts) = held_vertices(held)?;
+    let g = dwell_models::HAND_GRIP;
+    let along = |v: &[f32; 3]| (0..3).map(|k| (v[k] - g.at[k]) * g.axis[k]).sum::<f32>();
+    let max = verts.iter().map(along).fold(f32::MIN, f32::max);
+    let min = verts.iter().map(along).fold(f32::MAX, f32::min);
+    let cut = max - 0.2 * (max - min);
+    // The extra turn about the handle (the hand's grip axis through the fist).
+    let (sn, cs) = extra_yaw.to_radians().sin_cos();
+    let ax = g.axis;
+    let turn = |v: [f32; 3]| {
+        let q = [0, 1, 2].map(|k| v[k] - g.at[k]);
+        let a = dot3(q, ax);
+        let par = ax.map(|x| x * a);
+        let perp = [0, 1, 2].map(|k| q[k] - par[k]);
+        let c = cross3(ax, perp);
+        [0, 1, 2].map(|k| g.at[k] + par[k] + perp[k] * cs + c[k] * sn)
+    };
+    let ch = player();
+    let fp = ch.first_person?;
+    let tan = (fp.fov.to_radians() / 2.0).tan();
+    let aspect = 16.0 / 9.0;
+    let (role, _) = resolve(role).ok()?;
+    let arms = arms_bones(role, held, t);
+    let screen = |b: usize, q: [f32; 3]| {
+        let v = arms[b].apply(q);
+        let z = v[2].max(1e-3);
+        [-v[0] / (z * tan * aspect), v[1] / (z * tan), v[2]]
+    };
+    // The head's triangles (the mesh's vertices go three to a triangle) on screen: half their
+    // summed area is about the head's silhouette (a closed mesh shows each place twice).
+    let mut head = Vec::new();
+    let mut area = 0.0f32;
+    for tri in verts.chunks_exact(3) {
+        if !tri.iter().all(|v| along(v) >= cut) {
+            continue;
+        }
+        let [a, b, c] = [tri[0], tri[1], tri[2]].map(|v| screen(bone, turn(v)));
+        area += ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])).abs() / 2.0;
+        head.extend([a, b, c]);
+    }
+    let (gb, gp) = local_point(held, Point::Grip)?;
+    Some(HeadView {
+        head: centroid(head.iter()),
+        grip: screen(gb, gp),
+        size: area / 2.0,
+    })
+}
+
+/// Point `p`'s place in its bone's frame, and that bone; None: the held thing has no such point.
+pub fn local_point(held: Held, p: Point) -> Option<(usize, [f32; 3])> {
+    let ch = player();
+    let hand = ch.bone(dwell_models::HAND_GRIP.bone)?;
+    match p {
+        Point::Grip => Some((hand, dwell_models::HAND_GRIP.at)),
+        Point::Bone(b) => Some((ch.bone(b)?, [0.0; 3])),
+        Point::Ahead(b) => Some((ch.bone(b)?, [0.0, 0.0, 0.3])),
+        Point::ToolHead | Point::ToolTip => {
+            let (bone, verts) = held_vertices(held)?;
+            // Along the grip's axis from the fist: the head is the far tenth, the tip the end.
+            let g = dwell_models::HAND_GRIP;
+            let along = |v: &[f32; 3]| (0..3).map(|k| (v[k] - g.at[k]) * g.axis[k]).sum::<f32>();
+            let max = verts.iter().map(along).fold(f32::MIN, f32::max);
+            let min = verts.iter().map(along).fold(f32::MAX, f32::min);
+            let cut = if p == Point::ToolTip {
+                max - 0.01 * (max - min)
+            } else {
+                max - 0.1 * (max - min)
+            };
+            Some((bone, centroid(verts.iter().filter(|v| along(v) >= cut))))
+        }
+        Point::Part(id) => {
+            let (name, _) = held.item()?;
+            let it = ch.item(name)?;
+            let part = it.parts.iter().find(|q| q.id == id)?;
+            let fp = ch.first_person?;
+            let m = mesh::build(std::slice::from_ref(part), View::Arms, fp.bones);
+            Some((usize::from(*m.bones.first()?), centroid(m.positions.iter())))
+        }
+    }
+}
+
+/// The held thing's vertices in its bone's frame: the model on the hold, or the item's parts.
+fn held_vertices(held: Held) -> Option<(usize, Vec<[f32; 3]>)> {
+    let ch = player();
+    let m = match held {
+        Held::Model { hold, model } => prop_mesh(ch, hold, model),
+        _ => {
+            let (name, _) = held.item()?;
+            let it = ch.item(name)?;
+            mesh::build(it.parts, View::Arms, ch.first_person?.bones)
+        }
+    };
+    let bone = usize::from(*m.bones.first()?);
+    Some((bone, m.positions))
+}
+
+fn centroid<'a>(it: impl Iterator<Item = &'a [f32; 3]>) -> [f32; 3] {
+    let (mut c, mut n) = ([0.0f32; 3], 0.0f32);
+    for v in it {
+        for k in 0..3 {
+            c[k] += v[k];
+        }
+        n += 1.0;
+    }
+    c.map(|v| v / n.max(1.0))
+}
+
+/// The arms' bone transforms (view space: +x left, +y up, +z ahead) `t` s into `role`'s swing, as
+/// the game poses them: the arms' animator at idle, the swing on its action layer driven to `t`.
+fn arms_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
+    let ch = player();
+    let mut a = Animator::new(&TABLES, ch, Space::Arms);
+    let input = MoveInput {
+        holding: held != Held::Empty,
+        guard: guard_of(role),
+        ..Default::default()
+    };
+    a.update(&input, 0.0);
+    if start_swing(&mut a, role) {
+        a.drive_action(Some(t));
+    }
+    let pose = a.update(&input, 0.0);
+    let hold = held.item().and_then(|(n, _)| ch.item(n));
+    arm_transforms(ch, &with_item(&pose, hold))
+}
+
+/// A fitted key: the arms' root offset (view space, as the clip keys it: +x left) or the body's
+/// chest twist (degrees about up), the swing's three arm bones (degrees), and where it puts the
+/// grip, the tool head and which way the blade's edge faces (the player's frame: right, up, ahead
+/// of the eye; the body's: right, up, ahead of the feet).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Fit {
+    pub body: bool,
+    pub root: [f32; 3],
+    pub chest: f32,
+    pub arm: [f32; 3],
+    pub forearm: f32,
+    pub hand: [f32; 3],
+    pub grip: [f32; 3],
+    pub head: [f32; 3],
+    pub blade: [f32; 3],
+}
+
+/// What a fitted key should do: the grip and the tool head there, and (if given) the blade's edge
+/// facing that way (a direction; the strike's way, so the edge leads the head).
+#[derive(Clone, Copy, Debug)]
+pub struct Target {
+    pub grip: [f32; 3],
+    pub head: [f32; 3],
+    pub blade: Option<[f32; 3]>,
+}
+
+impl Fit {
+    /// The key as the clip's JSON (`{ "t": …, "root": …, "bones": {…} }`; a body key keys the
+    /// chest instead of a root).
+    pub fn json(&self, t: f32) -> String {
+        let r = |v: f32| (v * 1000.0).round() / 1000.0 + 0.0;
+        let d = |v: f32| v.round() + 0.0;
+        let arms = format!(
+            r#""arm_r": [{}, {}, {}], "forearm_r": [{}, 0, 0], "hand_r": [{}, {}, {}]"#,
+            d(self.arm[0]),
+            d(self.arm[1]),
+            d(self.arm[2]),
+            d(self.forearm),
+            d(self.hand[0]),
+            d(self.hand[1]),
+            d(self.hand[2]),
+        );
+        if self.body {
+            format!(
+                r#"{{ "t": {t}, "bones": {{ "chest": [0, {}, 0], {arms} }} }}"#,
+                d(self.chest)
+            )
+        } else {
+            format!(
+                r#"{{ "t": {t}, "root": [{}, {}, {}], "bones": {{ {arms} }} }}"#,
+                r(self.root[0]),
+                r(self.root[1]),
+                r(self.root[2]),
+            )
+        }
+    }
+}
+
+/// Fits a key for `role`'s swing (the clip-authoring aid behind `clip_probe --fit`): the arm,
+/// elbow and wrist turns, with the arms' root offset (first person; a torso turn, kept small) or
+/// the chest's twist (`body`: the third-person rig, its frame from the feet), that put the grip
+/// and the tool head at `target`'s places and turn the blade's edge its way, within the rig's
+/// joint limits, starting from `from`. Coordinate descent on the game's own posing
+/// (`arm_transforms` / `bone_transforms` with the hold's turns), so the key plays where it was
+/// fitted.
+pub fn fit(role: &str, item: Option<&'static str>, body: bool, target: Target, from: Fit) -> Fit {
+    fit_at(role, item, body, target, from, 0.0)
+}
+
+/// [`fit`] for the key at clip time `t`: on the body, a defeat role's (`kneel_sword`, CHARACTERS.md
+/// §11.13) other bones are its clip's at `t` (the kneeling legs and bowed head), so the arm is
+/// fitted on the kneeling body; any other role's are at rest.
+pub fn fit_at(
+    role: &str,
+    item: Option<&'static str>,
+    body: bool,
+    target: Target,
+    from: Fit,
+    t: f32,
+) -> Fit {
+    let ch = player();
+    let held = held_for(item, role);
+    let base = if body && defeat_of(role).is_some() {
+        let mut a = Animator::new(&TABLES, ch, Space::Body);
+        let input = MoveInput {
+            holding: held != Held::Empty,
+            defeat: defeat_of(role),
+            armed: held.is_weapon(),
+            ..Default::default()
+        };
+        a.update(&input, 0.0);
+        a.update(&input, t)
+    } else {
+        dwell_characters::anim::Pose::REST
+    };
+    let hold = held.item().and_then(|(n, _)| ch.item(n));
+    let (gb, gp) = local_point(held, Point::Grip).expect("grip");
+    let (hb, hp) = local_point(held, Point::ToolHead).unwrap_or((gb, gp));
+    // The blade's facing as the probe measures it (`edge_points`).
+    let edge = edge_points(held);
+    let bone = |n: &str| ch.bone(n).expect("bone");
+    let (arm, fore, hand, chest) = (
+        bone("arm_r"),
+        bone("forearm_r"),
+        bone("hand_r"),
+        bone("chest"),
+    );
+    let place = |x: &[f32; 10]| {
+        let mut pose = base;
+        pose.set(arm, [x[0], x[1], x[2]]);
+        pose.set(fore, [x[3], 0.0, 0.0]);
+        pose.set(hand, [x[4], x[5], x[6]]);
+        let b = if body {
+            let c = base.rot[chest];
+            pose.set(chest, [c[0], c[1] + x[7], c[2]]);
+            bone_transforms(ch, &with_item(&pose, hold))
+        } else {
+            pose.root = [x[7], x[8], x[9]];
+            arm_transforms(ch, &with_item(&pose, hold))
+        };
+        let at = |(i, p): (usize, [f32; 3])| to_local(b[i].apply(p));
+        let blade = edge.map_or([0.0; 3], |(b, c, tip)| {
+            norm3(sub3(at((b, tip)), at((b, c))))
+        });
+        (at((gb, gp)), at((hb, hp)), blade)
+    };
+    // The rig's joint limits, and a torso turn of at most 0.25 m (arms) or 50° (body).
+    let (lo, hi) = if body {
+        (
+            [
+                -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -50.0, 0.0, 0.0,
+            ],
+            [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 50.0, 0.0, 0.0],
+        )
+    } else {
+        (
+            [
+                -180.0, -90.0, -180.0, -150.0, -80.0, -60.0, -40.0, -0.25, -0.2, -0.2,
+            ],
+            [70.0, 90.0, 30.0, 0.0, 80.0, 60.0, 40.0, 0.25, 0.2, 0.2],
+        )
+    };
+    let cost = |x: &[f32; 10]| {
+        let (g, h, b) = place(x);
+        let d2 = |a: [f32; 3], b: [f32; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>();
+        // The root costs a little (the arm does the work), the wrist's turn a little too.
+        let reg = if body {
+            1e-5 * x[7] * x[7]
+        } else {
+            0.3 * (x[7] * x[7] + x[8] * x[8] + x[9] * x[9])
+        } + 2e-6 * (x[4] * x[4] + x[5] * x[5] + x[6] * x[6]);
+        let behind = if !body && h[2] < 0.2 {
+            10.0 * (0.2 - h[2])
+        } else {
+            0.0
+        };
+        let facing = target
+            .blade
+            .map_or(0.0, |w| 0.05 * (1.0 - dot3(b, norm3(w))));
+        d2(g, target.grip) + d2(h, target.head) + reg + behind + facing
+    };
+    let mut x = [
+        from.arm[0],
+        from.arm[1],
+        from.arm[2],
+        from.forearm,
+        from.hand[0],
+        from.hand[1],
+        from.hand[2],
+        if body { from.chest } else { from.root[0] },
+        if body { 0.0 } else { from.root[1] },
+        if body { 0.0 } else { from.root[2] },
+    ];
+    let mut best = cost(&x);
+    let mut step = if body {
+        [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.0, 0.0]
+    } else {
+        [8.0f32, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0, 0.03, 0.03, 0.03]
+    };
+    for _ in 0..4000 {
+        let mut moved = false;
+        for k in 0..10 {
+            for dir in [1.0f32, -1.0] {
+                let mut y = x;
+                y[k] = (y[k] + dir * step[k]).clamp(lo[k], hi[k]);
+                let c = cost(&y);
+                if c < best {
+                    (x, best, moved) = (y, c, true);
+                    break;
+                }
+            }
+        }
+        if !moved {
+            step = step.map(|s| s * 0.5);
+            if step[0] < 0.05 {
+                break;
+            }
+        }
+    }
+    let (g, h, b) = place(&x);
+    Fit {
+        body,
+        root: if body { [0.0; 3] } else { [x[7], x[8], x[9]] },
+        chest: if body { x[7] } else { 0.0 },
+        arm: [x[0], x[1], x[2]],
+        forearm: x[3],
+        hand: [x[4], x[5], x[6]],
+        grip: g,
+        head: h,
+        blade: b,
+    }
+}
+
+/// The body's bone transforms (its frame: feet at the origin, +x left, +z ahead) `t` s into the
+/// swing, from the body's animator.
+fn body_bones(role: &str, held: Held, t: f32) -> [Affine; MAX_BONES] {
+    let ch = player();
+    // An NPC's idle role (`sit`, `look`: WORK_QUEUE item 38): posed as the game poses an NPC
+    // (`npc_rig_pose`, the role's clip at `t` with the held item's turns), not by the animator.
+    if npc_idle_of(role) {
+        let hold = held.item().and_then(|(n, _)| ch.item(n));
+        let pose = crate::render::characters::npc_rig_pose(ch, role, f64::from(t), hold);
+        return bone_transforms(ch, &pose);
+    }
+    let mut a = Animator::new(&TABLES, ch, Space::Body);
+    let input = MoveInput {
+        holding: held != Held::Empty,
+        guard: guard_of(role),
+        defeat: defeat_of(role),
+        armed: held.is_weapon(),
+        ..Default::default()
+    };
+    a.update(&input, 0.0);
+    if start_swing(&mut a, role) {
+        a.drive_action(Some(t));
+    }
+    // A defeat role plays from its start: `t` into it.
+    let dt = if input.defeat.is_some() { t } else { 0.0 };
+    let pose = a.update(&input, dt);
+    let hold = held.item().and_then(|(n, _)| ch.item(n));
+    bone_transforms(ch, &with_item(&pose, hold))
+}
+
+/// View space (+x left) to the player's frame (+x right).
+fn to_local(v: [f32; 3]) -> [f32; 3] {
+    [-v[0], v[1], v[2]]
+}
+
+/// The blade's edge centre and a point 0.12 m out from it along the edge's facing (the lashing to
+/// the edge), in the held bone's frame; none without an `axe_blade` and `axe_lashing`.
+pub fn edge_points(held: Held) -> Option<(usize, [f32; 3], [f32; 3])> {
+    let (eb, e) = local_point(held, Point::Part("axe_blade"))?;
+    let (lb, l) = local_point(held, Point::Part("axe_lashing"))?;
+    if eb != lb {
+        return None;
+    }
+    let d = norm3(sub3(e, l));
+    Some((eb, e, std::array::from_fn(|k| e[k] + 0.12 * d[k])))
+}
+
+/// The hand's roll about its long axis (its y) against the forearm, degrees: the angle from the
+/// forearm's x (laid flat across the hand's long axis) to the hand's x.
+pub fn hand_roll(forearm: [[f32; 3]; 3], hand: [[f32; 3]; 3]) -> f32 {
+    let y = hand[1];
+    let f = norm3(sub3(forearm[0], y.map(|v| v * dot3(forearm[0], y))));
+    dot3(cross3(f, hand[0]), y)
+        .atan2(dot3(f, hand[0]))
+        .to_degrees()
+}
+
+/// The angle (degrees) between two frames given by their axes.
+fn turn_between(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> f32 {
+    let tr: f32 = (0..3).map(|k| dot3(a[k], b[k])).sum();
+    ((tr - 1.0) / 2.0).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// Runs a probe.
+pub fn probe(p: &Probe) -> Result<Report, String> {
+    let ch = player();
+    let fp = ch.first_person.ok_or("no first person")?;
+    let (role, clip) = resolve(&p.clip)?;
+    let held = held_for(p.item, role);
+    let mut points = Vec::new();
+    for &pt in &p.points {
+        let lp = local_point(held, pt)
+            .ok_or_else(|| format!("no point `{}` on {:?}", pt.name(), held))?;
+        points.push((pt, lp));
+    }
+    let tan = (f64::from(fp.fov).to_radians() / 2.0).tan() as f32;
+    let basis: Basis = aim(p.yaw, p.pitch, p.face, 0.0);
+    let frame = arms_frame(&basis);
+    let n = p.samples.max(2);
+    let edge = edge_points(held);
+    let grip = local_point(held, Point::Grip);
+    let head = local_point(held, Point::ToolHead);
+    let arm_bones = ARM_BONES.map(|b| ch.bone(b));
+    // A body-only role (defeat's): the top, side and front views show the body (from its feet).
+    let body_only = ch.arms_clip(role).is_none();
+    let mut samples: Vec<Sample> = (0..n)
+        .map(|i| {
+            let t = clip.duration * i as f32 / (n - 1) as f32;
+            let arms = arms_bones(role, held, t);
+            let body = body_bones(role, held, t);
+            let at_of = |bone: usize, q: [f32; 3]| {
+                let v = arms[bone].apply(q);
+                let z = v[2].max(1e-3);
+                let w = frame.apply(v);
+                let b = body[bone].apply(q);
+                At {
+                    local: if body_only { to_local(b) } else { to_local(v) },
+                    screen: [-v[0] / (z * tan * p.aspect), v[1] / (z * tan), v[2]],
+                    world: w.map(f64::from),
+                    body: to_local(b),
+                }
+            };
+            let at = points
+                .iter()
+                .map(|&(_, (bone, q))| at_of(bone, q))
+                .collect();
+            let mut o = Orient::default();
+            if let Some((b, c, tip)) = edge {
+                let (a0, a1) = (at_of(b, c), at_of(b, tip));
+                o.blade = Some(norm3(sub3(a1.local, a0.local)));
+                o.glyphs.push((Glyph::Edge, a0, a1));
+            }
+            if let (Some((gb, g)), Some((hb, h))) = (grip, head) {
+                let (a0, a1) = (at_of(gb, g), at_of(hb, h));
+                o.handle = Some(norm3(sub3(a1.local, a0.local)));
+                o.glyphs.push((Glyph::Handle, a0, a1));
+            }
+            for (k, bone) in arm_bones.iter().enumerate() {
+                let Some(bone) = *bone else { continue };
+                let a0 = at_of(bone, [0.0; 3]);
+                for ax in 0..3 {
+                    let mut q = [0.0f32; 3];
+                    q[ax] = 0.05;
+                    let a1 = at_of(bone, q);
+                    o.axes[k][ax] = norm3(sub3(a1.local, a0.local));
+                    o.glyphs.push((Glyph::Axis(k, ax), a0, a1));
+                }
+            }
+            o.hand_roll = hand_roll(o.axes[1], o.axes[2]);
+            let camera = swing_def(p.item, role).map(|s| {
+                let vertical = swing_of(role) == Some(Swing::ChopVertical);
+                crate::chop::swing_camera(&s, vertical, None, f64::from(t))
+            });
+            Sample {
+                t,
+                at,
+                orient: o,
+                camera,
+            }
+        })
+        .collect();
+    // Angular speeds, and the blade's facing against the edge's motion.
+    for i in 0..samples.len() {
+        if i > 0 {
+            let dt = (samples[i].t - samples[i - 1].t).max(1e-6);
+            for k in 0..3 {
+                samples[i].orient.spin[k] =
+                    turn_between(samples[i - 1].orient.axes[k], samples[i].orient.axes[k]) / dt;
+            }
+        }
+        let (a, b) = (i.saturating_sub(1), (i + 1).min(samples.len() - 1));
+        let centre = |s: &Sample| {
+            s.orient
+                .glyphs
+                .iter()
+                .find(|g| g.0 == Glyph::Edge)
+                .map(|g| g.1.local)
+        };
+        if let (Some(blade), Some(p0), Some(p1)) = (
+            samples[i].orient.blade,
+            centre(&samples[a]),
+            centre(&samples[b]),
+        ) {
+            let m = sub3(p1, p0);
+            if dot3(m, m) > 1e-8 {
+                samples[i].orient.blade_vs_motion =
+                    Some(dot3(norm3(m), blade).clamp(-1.0, 1.0).acos().to_degrees());
+            }
+        }
+    }
+    let swing = swing_def(p.item, role);
+    let cuts: Vec<(&'static str, f32, f32)> = match swing {
+        Some(s) => {
+            let a = s.windup_s as f32;
+            let b = (s.windup_s + s.active_s) as f32;
+            vec![
+                ("wind-up", 0.0, a),
+                ("strike", a, b),
+                ("recovery", b, clip.duration),
+            ]
+        }
+        None => {
+            let d = clip.duration;
+            vec![
+                ("first", 0.0, d / 3.0),
+                ("middle", d / 3.0, 2.0 * d / 3.0),
+                ("last", 2.0 * d / 3.0, d),
+            ]
+        }
+    };
+    let (mut peak_speed, mut peak_t) = (0.0f32, 0.0f32);
+    for w in samples.windows(2) {
+        let (a, b) = (w[0].at[0].screen, w[1].at[0].screen);
+        let s = ((b[0] - a[0]).hypot(b[1] - a[1])) / (w[1].t - w[0].t).max(1e-6);
+        if s > peak_speed {
+            (peak_speed, peak_t) = (s, (w[0].t + w[1].t) / 2.0);
+        }
+    }
+    let mut report = Report {
+        clip: clip.name,
+        duration: clip.duration,
+        points: points.iter().map(|(p, _)| *p).collect(),
+        samples,
+        phases: Vec::new(),
+        peak_speed,
+        peak_t,
+        // A chop's contact is its arc's middle; a break tool's its `contactS` (the head on the
+        // crosshair then, owner 2026-11-14), the item's or the role's tool's.
+        contact_t: swing.map(|s| s.centre_s() as f32).or_else(|| {
+            p.item
+                .and_then(|i| {
+                    dwell_protocol::chopping::BREAK_TOOLS
+                        .iter()
+                        .find(|b| b.item == i && b.clip == role)
+                })
+                .or_else(|| break_tool_of_role(role))
+                .filter(|b| b.contact_s > 0.0)
+                .map(|b| b.contact_s as f32)
+        }),
+        skeleton: Vec::new(),
+    };
+    // The phases' travel, from exact samples at their ends (not the table's nearest).
+    let point0 = points[0].1;
+    let place = |t: f32| {
+        let arms = arms_bones(role, held, t);
+        let body = body_bones(role, held, t);
+        let v = arms[point0.0].apply(point0.1);
+        let z = v[2].max(1e-3);
+        (
+            [-v[0] / (z * tan * p.aspect), v[1] / (z * tan)],
+            to_local(v),
+            to_local(body[point0.0].apply(point0.1)),
+        )
+    };
+    report.phases = cuts
+        .into_iter()
+        .map(|(name, from, to)| {
+            let (s0, l0, b0) = place(from);
+            let (s1, l1, b1) = place(to);
+            Phase {
+                name,
+                from,
+                to,
+                screen: [s1[0] - s0[0], s1[1] - s0[1]],
+                local: std::array::from_fn(|k| l1[k] - l0[k]),
+                body: std::array::from_fn(|k| b1[k] - b0[k]),
+            }
+        })
+        .collect();
+    let rest = body_bones("idle", held, 0.0);
+    report.skeleton = ch
+        .bones
+        .iter()
+        .enumerate()
+        .take(MAX_BONES)
+        .map(|(i, b)| {
+            let parent =
+                (b.parent != dwell_characters::NO_PARENT).then(|| to_local(rest[b.parent].t));
+            (to_local(rest[i].t), parent)
+        })
+        .collect();
+    Ok(report)
+}
+
+/// The report as a text table: each sample's time and the first-person screen place of each
+/// point, the phases and the peak.
+pub fn table(r: &Report) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = writeln!(s, "clip {} ({:.2} s)", r.clip, r.duration);
+    let _ = write!(s, "{:>6}", "t");
+    for p in &r.points {
+        let _ = write!(
+            s,
+            " | {:^34}",
+            format!("{} fp x,y,depth / body r,u,a", p.name())
+        );
+    }
+    let _ = writeln!(
+        s,
+        " | edge∠motion | hand roll | spin arm,fore,hand °/s | camera yaw,pitch,roll ° bob r,u,b cm"
+    );
+    for smp in &r.samples {
+        let _ = write!(s, "{:>6.3}", smp.t);
+        for a in &smp.at {
+            let _ = write!(
+                s,
+                " | {:+.2} {:+.2} {:.2} / {:+.2} {:+.2} {:+.2}",
+                a.screen[0], a.screen[1], a.screen[2], a.body[0], a.body[1], a.body[2]
+            );
+        }
+        let o = &smp.orient;
+        let cam = smp.camera.map_or("-".to_string(), |c| {
+            format!(
+                "{:+.2} {:+.2} {:+.2} / {:+.1} {:+.1} {:+.1}",
+                c.yaw,
+                c.pitch,
+                c.roll,
+                c.bob[0] * 100.0,
+                c.bob[1] * 100.0,
+                c.bob[2] * 100.0
+            )
+        });
+        let _ = writeln!(
+            s,
+            " | {:>11} | {:>+8.0}° | {:>4.0} {:>4.0} {:>4.0} | {cam}",
+            o.blade_vs_motion
+                .map_or("-".to_string(), |a| format!("{a:.0}°")),
+            o.hand_roll,
+            o.spin[0],
+            o.spin[1],
+            o.spin[2]
+        );
+    }
+    let _ = writeln!(s, "phases of {} :", r.points[0].name());
+    for ph in &r.phases {
+        let _ = writeln!(
+            s,
+            "  {:<9} {:.2}–{:.2} s  screen {:+.2},{:+.2} ({})  body r{:+.2} u{:+.2} a{:+.2} ({})",
+            ph.name,
+            ph.from,
+            ph.to,
+            ph.screen[0],
+            ph.screen[1],
+            ph.screen_way(),
+            ph.body[0],
+            ph.body[1],
+            ph.body[2],
+            ph.body_way()
+        );
+    }
+    let _ = writeln!(
+        s,
+        "peak screen speed {:.1} NDC/s at {:.3} s",
+        r.peak_speed, r.peak_t
+    );
+    if let Some(c) = r.contact_t {
+        let a = r.at(0, c);
+        let _ = writeln!(
+            s,
+            "contact {c:.3} s: {} at screen {:+.2},{:+.2} (the crosshair is 0,0)",
+            r.points[0].name(),
+            a.screen[0],
+            a.screen[1]
+        );
+    }
+    s
+}
+
+/// The samples as CSV: one row per sample and point.
+pub fn csv(r: &Report) -> String {
+    let mut s = String::from(
+        "t,point,screen_x,screen_y,depth,right,up,ahead,world_x,world_y,world_z,body_right,body_up,body_ahead,cam_yaw,cam_pitch,cam_roll,cam_bob_right,cam_bob_up,cam_bob_back\n",
+    );
+    for smp in &r.samples {
+        let c = smp.camera.unwrap_or_default();
+        for (p, a) in r.points.iter().zip(&smp.at) {
+            s.push_str(&format!(
+                "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}\n",
+                smp.t,
+                p.name(),
+                a.screen[0],
+                a.screen[1],
+                a.screen[2],
+                a.local[0],
+                a.local[1],
+                a.local[2],
+                a.world[0],
+                a.world[1],
+                a.world[2],
+                a.body[0],
+                a.body[1],
+                a.body[2],
+                c.yaw,
+                c.pitch,
+                c.roll,
+                c.bob[0],
+                c.bob[1],
+                c.bob[2]
+            ));
+        }
+    }
+    s
+}
+
+/// A view's 2D place of a point (x right, y up on the panel) and its axes' labels.
+fn view_xy(view: &str, a: &At) -> [f32; 2] {
+    // The third-person camera: behind and to the right of the body, a little above, looking at the
+    // chest (perspective).
+    match view {
+        // Clamped: a point behind the eye projects far off; it is drawn at the sheet's edge.
+        "fp" if a.screen[2] <= 0.02 => [a.screen[0].signum() * 3.0, a.screen[1].signum() * 3.0],
+        "fp" => [a.screen[0].clamp(-3.0, 3.0), a.screen[1].clamp(-3.0, 3.0)],
+        "top" => [a.local[0], a.local[2]],
+        "side" => [a.local[2], a.local[1]],
+        "front" => [-a.local[0], a.local[1]],
+        _ => tp_project(a.body),
+    }
+}
+
+/// The third-person view: the body seen from behind and to the right (2.4 m back, 1.4 m right,
+/// 1.9 m up), looking at the chest; x right, y up on the panel (perspective, divided by depth).
+pub fn tp_project(p: [f32; 3]) -> [f32; 2] {
+    let eye = [1.4f32, 1.9, -2.4];
+    let target = [0.0f32, 1.2, 0.3];
+    let f = norm3(sub3(target, eye));
+    // The body frame here is right, up, ahead (a left-handed view of a right-handed rig): the
+    // camera's right is up × forward in it.
+    let r = norm3(cross3([0.0, 1.0, 0.0], f));
+    let u = cross3(f, r);
+    let d = sub3(p, eye);
+    let z = dot3(d, f).max(0.05);
+    [dot3(d, r) / z, dot3(d, u) / z]
+}
+
+fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|k| a[k] - b[k])
+}
+fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+fn norm3(a: [f32; 3]) -> [f32; 3] {
+    let l = dot3(a, a).sqrt().max(1e-9);
+    a.map(|v| v / l)
+}
+
+fn view_title(view: &str) -> &'static str {
+    match view {
+        "fp" => "first person (screen)",
+        "top" => "top (right → / ahead ↑)",
+        "side" => "side, from the right (ahead → / up ↑)",
+        "front" => "front, facing the player (player's right ←)",
+        _ => "third person, behind-right",
+    }
+}
+
+/// The report as an SVG sheet: one panel per view (`views`, from [`VIEWS`]), each point's path with
+/// time ticks (dots every sample, a label every fifth), arrows along it, the phases coloured
+/// (wind-up amber, strike red, recovery blue), the crosshair and contact in `fp`, the body's rest
+/// skeleton in `tp`.
+pub fn svg(r: &Report, views: &[&str]) -> String {
+    use std::fmt::Write;
+    // A square sheet (five views: three columns of two rows, 1080 × 1080) with a viewBox, so a
+    // thumbnailer that renders a square (`qlmanage -t`) shows every panel (it cropped the side
+    // panel of a wide sheet and the last of a tall one).
+    let cols = (views.len() as f32).sqrt().ceil().max(1.0) as usize;
+    let rows = views.len().div_ceil(cols).max(1);
+    let side = 360.0 * cols as f32;
+    let (pw, ph) = (side / cols as f32, (side - 24.0) / rows as f32);
+    let (w, h) = (side, side);
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="sans-serif" font-size="11">"#,
+    );
+    let _ = writeln!(
+        s,
+        r##"<rect width="100%" height="100%" fill="#fbfaf7"/><text x="8" y="16" font-size="13">{} — {} (dots every {:.0} ms; amber wind-up, red strike, blue recovery)</text>"##,
+        r.clip,
+        r.points
+            .iter()
+            .map(|p| p.name())
+            .collect::<Vec<_>>()
+            .join(", "),
+        1000.0 * r.duration / (r.samples.len() - 1).max(1) as f32
+    );
+    let colour = |t: f32| match r.phases.iter().find(|p| t >= p.from && t <= p.to) {
+        Some(p) if p.name == "wind-up" || p.name == "first" => "#d08a1c",
+        Some(p) if p.name == "strike" || p.name == "middle" => "#c8322a",
+        _ => "#2f6db5",
+    };
+    for (vi, &view) in views.iter().enumerate() {
+        let (ox, oy) = ((vi % cols) as f32 * pw, 24.0 + (vi / cols) as f32 * ph);
+        // The panel's bounds: every point of every sample (and the origin), padded.
+        let mut pts: Vec<[f32; 2]> = r
+            .samples
+            .iter()
+            .flat_map(|smp| smp.at.iter().map(|a| view_xy(view, a)))
+            .collect();
+        if view == "tp" {
+            for (b, _) in &r.skeleton {
+                pts.push(tp_project(*b));
+            }
+        }
+        pts.push([0.0, 0.0]);
+        if view == "fp" {
+            pts.extend([[-1.0, -1.0], [1.0, 1.0]]);
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for p in &pts {
+            (x0, y0, x1, y1) = (x0.min(p[0]), y0.min(p[1]), x1.max(p[0]), y1.max(p[1]));
+        }
+        let pad = 0.08 * (x1 - x0).max(y1 - y0).max(1e-3);
+        (x0, y0, x1, y1) = (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
+        let k = ((pw - 20.0) / (x1 - x0)).min((ph - 40.0) / (y1 - y0));
+        let map = |p: [f32; 2]| {
+            (
+                ox + 10.0 + (p[0] - x0) * k,
+                oy + ph - 10.0 - (p[1] - y0) * k,
+            )
+        };
+        let _ = writeln!(
+            s,
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="#bbb"/><text x="{:.1}" y="{:.1}">{}</text>"##,
+            ox + 4.0,
+            oy + 4.0,
+            pw - 8.0,
+            ph - 8.0,
+            ox + 10.0,
+            oy + 20.0,
+            view_title(view)
+        );
+        // The crosshair (fp) or the eye / feet (others).
+        let (cx, cy) = map([0.0, 0.0]);
+        let _ = writeln!(
+            s,
+            r##"<path d="M{:.1} {cy:.1}h12M{cx:.1} {:.1}v12" stroke="#555"/>"##,
+            cx - 6.0,
+            cy - 6.0
+        );
+        if view == "fp" {
+            let (a, b) = (map([-1.0, 1.0]), map([1.0, -1.0]));
+            let _ = writeln!(
+                s,
+                r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="none" stroke="#999" stroke-dasharray="4 3"/>"##,
+                a.0,
+                a.1,
+                b.0 - a.0,
+                b.1 - a.1
+            );
+        }
+        if view == "tp" {
+            for (b, parent) in &r.skeleton {
+                if let Some(pa) = parent {
+                    let (a, c) = (map(tp_project(*b)), map(tp_project(*pa)));
+                    let _ = writeln!(
+                        s,
+                        r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#c9c4ba" stroke-width="3"/>"##,
+                        a.0, a.1, c.0, c.1
+                    );
+                }
+            }
+        }
+        for (pi, p) in r.points.iter().enumerate() {
+            let width = if pi == 0 { 2.2 } else { 1.0 };
+            let path: Vec<(f32, (f32, f32))> = r
+                .samples
+                .iter()
+                .map(|smp| (smp.t, map(view_xy(view, &smp.at[pi]))))
+                .collect();
+            for w in path.windows(2) {
+                let ((t, a), (_, b)) = (w[0], w[1]);
+                let _ = writeln!(
+                    s,
+                    r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="{}" stroke-width="{width}" opacity="{}"/>"#,
+                    a.0,
+                    a.1,
+                    b.0,
+                    b.1,
+                    colour(t),
+                    if pi == 0 { 1.0 } else { 0.55 }
+                );
+            }
+            for (i, &(t, (x, y))) in path.iter().enumerate() {
+                let _ = writeln!(
+                    s,
+                    r#"<circle cx="{x:.1}" cy="{y:.1}" r="{}" fill="{}"/>"#,
+                    if pi == 0 { 2.4 } else { 1.4 },
+                    colour(t)
+                );
+                if pi == 0 && i % 5 == 0 {
+                    let _ = writeln!(
+                        s,
+                        r##"<text x="{:.1}" y="{:.1}" fill="#333" font-size="9">{:.2}</text>"##,
+                        x + 4.0,
+                        y - 4.0,
+                        t
+                    );
+                }
+                // An arrowhead every third segment, pointing along the travel.
+                if i % 3 == 1 && i + 1 < path.len() {
+                    let (nx, ny) = path[i + 1].1;
+                    let (dx, dy) = (nx - x, ny - y);
+                    let l = dx.hypot(dy);
+                    if l > 2.0 {
+                        let (ux, uy) = (dx / l, dy / l);
+                        let (tx, ty) = (x + dx * 0.5, y + dy * 0.5);
+                        let _ = writeln!(
+                            s,
+                            r#"<path d="M{:.1} {:.1}L{:.1} {:.1}L{:.1} {:.1}Z" fill="{}"/>"#,
+                            tx + ux * 5.0,
+                            ty + uy * 5.0,
+                            tx - ux * 3.0 - uy * 3.5,
+                            ty - uy * 3.0 + ux * 3.5,
+                            tx - ux * 3.0 + uy * 3.5,
+                            ty - uy * 3.0 - ux * 3.5,
+                            colour(path[i].0)
+                        );
+                    }
+                }
+            }
+            // The path's name at its start.
+            let (x, y) = path[0].1;
+            let _ = writeln!(
+                s,
+                r##"<text x="{:.1}" y="{:.1}" fill="#666" font-size="9">{}</text>"##,
+                x + 4.0,
+                y + 10.0,
+                p.name()
+            );
+        }
+        // Orientation glyphs every third sample: the handle (grey), the blade's edge facing (a dark
+        // red arrow), and every sixth the arm bones' axes (x red, y green, z blue), so a blade
+        // turned the wrong way or a wrist flip shows.
+        for (i, smp) in r.samples.iter().enumerate() {
+            if i % 3 != 0 {
+                continue;
+            }
+            for (g, a, b) in &smp.orient.glyphs {
+                let (p0, p1) = (map(view_xy(view, a)), map(view_xy(view, b)));
+                let (colour, width) = match g {
+                    Glyph::Handle => ("#8a7f70", 1.6),
+                    Glyph::Edge => ("#7a1010", 2.0),
+                    Glyph::Axis(_, ax) if i % 6 == 0 => {
+                        (["#d03030", "#30a040", "#3050d0"][*ax], 1.0)
+                    }
+                    Glyph::Axis(..) => continue,
+                };
+                let _ = writeln!(
+                    s,
+                    r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="{colour}" stroke-width="{width}" opacity="0.8"/>"#,
+                    p0.0, p0.1, p1.0, p1.1
+                );
+                if *g == Glyph::Edge {
+                    let _ = writeln!(
+                        s,
+                        r#"<circle cx="{:.1}" cy="{:.1}" r="2" fill="{colour}"/>"#,
+                        p1.0, p1.1
+                    );
+                }
+            }
+        }
+        if let Some(c) = r.contact_t {
+            let (x, y) = map(view_xy(view, &r.at(0, c)));
+            let _ = writeln!(
+                s,
+                r##"<circle cx="{x:.1}" cy="{y:.1}" r="6" fill="none" stroke="#111" stroke-width="1.5"/><text x="{:.1}" y="{:.1}" font-size="9">contact {c:.2}s</text>"##,
+                x + 8.0,
+                y + 3.0
+            );
+        }
+    }
+    s.push_str("</svg>\n");
+    s
+}
+
+#[cfg(test)]
+mod chop_swing_tests {
+    //! The axe's swings, observed with the probe (owner, 2026-11-11: "Should swing right to left for
+    //! horizontal and up to down for vertical"). Before the 0.52.x refit the level strike ran
+    //! bottom → top and left → right on screen and its wind-up took the head behind the eye; the
+    //! vertical one's head went behind the eye too (docs/clip_probe/*_before.txt).
+    use super::*;
+
+    fn run(role: &str) -> Report {
+        let mut p = Probe::new(role);
+        p.samples = 63;
+        probe(&p).expect("probe")
+    }
+
+    /// The tool head's samples within a phase.
+    fn within<'a>(r: &'a Report, name: &str) -> Vec<&'a Sample> {
+        let ph = r.phase(name).expect("phase");
+        r.samples
+            .iter()
+            .filter(|s| s.t >= ph.from - 1e-4 && s.t <= ph.to + 1e-4)
+            .collect()
+    }
+
+    // BUGS.md #86: the server puts a clash where the blades meet, from each stance's raised blade in
+    // the sword's data (shared/tools `guard.stances.*.blade`: grip and tip from the feet, right / up /
+    // ahead). Those must be where the third-person raised pose draws the blade (within 0.1 m).
+    // face-a-only: the body's frame (from the feet) is the same on both faces.
+    #[test]
+    fn the_raised_blades_data_is_where_the_raised_poses_draw_it() {
+        let g = dwell_protocol::chopping::tool("dwell:sword")
+            .and_then(|t| t.weapon)
+            .expect("the sword")
+            .guard;
+        for vertical in [false, true] {
+            let role = g.raised_pose(vertical).expect("a raised pose");
+            let mut p = Probe::new(role);
+            p.item = Some("dwell:sword");
+            p.points = vec![Point::Grip, Point::ToolTip];
+            p.samples = 2;
+            let r = probe(&p).expect("probe");
+            let s = &r.samples[0];
+            let b = g.blade(vertical);
+            for (name, want, got) in [("grip", b.grip, s.at[0].body), ("tip", b.tip, s.at[1].body)]
+            {
+                let d = (0..3)
+                    .map(|k| (want[k] - f64::from(got[k])).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                assert!(
+                    d <= 0.1,
+                    "{role} {name}: the data's {want:?} is {d:.2} m from the pose's {got:?}"
+                );
+            }
+        }
+    }
+
+    // WORK_QUEUE item 35: the sword's level block lies across the view and across the body: the
+    // blade within 20° of level, its tip well left of the grip (on screen, and on the body).
+    // face-a-only: the screen and the body's frame are the same on both faces.
+    #[test]
+    fn the_level_block_lies_across_the_view_and_the_body() {
+        let level = |v: [f32; 3]| {
+            let h = v[0].hypot(v[2]);
+            v[1].atan2(h).to_degrees().abs()
+        };
+        let mut p = Probe::new("fp_guard_level");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolHead];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let (grip, head) = (s.at[0], s.at[1]);
+        let d: [f32; 3] = std::array::from_fn(|k| head.local[k] - grip.local[k]);
+        assert!(
+            level(d) < 20.0,
+            "first person: {:.0}° off level {d:?}",
+            level(d)
+        );
+        assert!(
+            head.screen[0] < grip.screen[0] - 0.8,
+            "across the view: grip {:?} tip {:?}",
+            grip.screen,
+            head.screen
+        );
+        let mut p = Probe::new("guard_level");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolHead];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let d: [f32; 3] = std::array::from_fn(|k| s.at[1].body[k] - s.at[0].body[k]);
+        assert!(
+            level(d) < 20.0,
+            "the body: {:.0}° off level {d:?}",
+            level(d)
+        );
+        assert!(d[0] < -0.5, "across the body to its left: {d:?}");
+    }
+
+    // BUGS.md #87: the sword's vertical block stands upright ahead of the face (third person): the
+    // blade within 20° of upright, its tip over the grip, both well ahead of the body and the tip
+    // above the eyes, the fist before the chest (not out past the shoulder).
+    // face-a-only: the body's frame (from the feet) is the same on both faces.
+    #[test]
+    fn the_vertical_block_stands_upright_ahead_of_the_face() {
+        let mut p = Probe::new("guard_vertical");
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::Grip, Point::ToolTip];
+        p.samples = 2;
+        let r = probe(&p).expect("probe");
+        let s = &r.samples[0];
+        let (grip, tip) = (s.at[0].body, s.at[1].body);
+        let d: [f32; 3] = std::array::from_fn(|k| tip[k] - grip[k]);
+        let off = d[0].hypot(d[2]).atan2(d[1]).to_degrees();
+        assert!(
+            off < 20.0,
+            "{off:.0}° off upright: grip {grip:?} tip {tip:?}"
+        );
+        assert!(
+            grip[2] > 0.3 && tip[2] > 0.3,
+            "ahead of the body: grip {grip:?} tip {tip:?}"
+        );
+        assert!(tip[1] > 1.65, "the tip above the eyes: {tip:?}");
+        assert!(grip[0].abs() < 0.3, "the fist before the chest: {grip:?}");
+    }
+
+    #[test]
+    fn the_level_chop_strikes_right_to_left_across_the_screen() {
+        // face-a-only: the first-person screen is view space, the same on both faces (the world
+        // space test below checks both).
+        let r = run("chop_level");
+        let s = within(&r, "strike");
+        let (first, last) = (s[0].at[0].screen, s[s.len() - 1].at[0].screen);
+        assert!(
+            first[0] > 0.3,
+            "the strike starts right of centre: {first:?}\n{}",
+            table(&r)
+        );
+        assert!(
+            last[0] < -0.2,
+            "the strike ends left of centre: {last:?}\n{}",
+            table(&r)
+        );
+        let ph = r.phase("strike").unwrap();
+        assert!(
+            ph.screen[0] < -0.8 && ph.screen[0].abs() > 2.0 * ph.screen[1].abs(),
+            "the strike is mostly leftward: {ph:?}"
+        );
+        for w in s.windows(2) {
+            let dx = w[1].at[0].screen[0] - w[0].at[0].screen[0];
+            assert!(
+                dx < 0.02,
+                "the head never goes back right during the strike: {:.3}→{:.3} s, dx {dx:+.3}\n{}",
+                w[0].t,
+                w[1].t,
+                table(&r)
+            );
+        }
+    }
+
+    #[test]
+    fn no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing() {
+        // face-a-only: the first-person screen is view space, the same on both faces. WORK_QUEUE
+        // item 17's "blue sleeve blob": the level chop lifts the shoulder in front of the eye from
+        // the contact through the follow-through, and the swing arm's tunic sleeve (`upper_arm_r`,
+        // `sleeve_hem_r`) showed as a blob at the bottom right (visual pass 2's `level-sheet.png`
+        // at 0.446 s; the off arm isn't drawn in first person). The arms view draws the chain from
+        // the elbow down: no part on the upper arm is on screen in any look, and the forearm's
+        // elbow end (where the hidden sleeve would join it) stays below or past the screen's edge.
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        let tan = (fp.fov.to_radians() / 2.0).tan();
+        let aspect = 16.0 / 9.0;
+        let (arm, fore) = (ch.bone("arm_r").unwrap(), ch.bone("forearm_r").unwrap());
+        // `inset`: how far inside the edge counts (the elbow's rounded end may graze a corner for
+        // a frame as the vertical strike starts, at 0.32 s: NDC 1.0, -0.95).
+        let on_screen = |v: [f32; 3], inset: f32| {
+            let z = v[2];
+            let edge = 1.0 - inset;
+            z > 0.05 && (-v[0] / (z * tan * aspect)).abs() < edge && (v[1] / (z * tan)).abs() < edge
+        };
+        for look in ch.looks {
+            let m = mesh::build(look.parts, View::Arms, fp.bones);
+            for role in ["idle", "break", "place", "chop_level", "chop_vertical"] {
+                let held = held_for(Some("dwell:stone_axe"), role);
+                let clip = resolve(role).map(|(_, c)| c.duration).unwrap_or(1.0);
+                let n = 157;
+                for i in 0..n {
+                    let t = clip * i as f32 / (n - 1) as f32;
+                    let b = arms_bones(role, held, t);
+                    for (k, q) in m.positions.iter().enumerate() {
+                        let bone = usize::from(m.bones[k]);
+                        let near_elbow = bone == fore && q[1] > -0.05;
+                        if bone != arm && !near_elbow {
+                            continue;
+                        }
+                        let v = b[bone].apply(*q);
+                        assert!(
+                            !on_screen(v, if bone == arm { 0.0 } else { 0.1 }),
+                            "{}: {role} at {t:.3} s draws the {} at {v:?} on screen",
+                            look.name,
+                            if bone == arm {
+                                "upper arm (sleeve)"
+                            } else {
+                                "elbow's end"
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_vertical_chop_strikes_top_to_bottom_across_the_screen() {
+        // face-a-only: view space, as above.
+        let r = run("chop_vertical");
+        let s = within(&r, "strike");
+        let (first, last) = (s[0].at[0].screen, s[s.len() - 1].at[0].screen);
+        assert!(
+            first[1] > 0.4,
+            "the strike starts high: {first:?}\n{}",
+            table(&r)
+        );
+        assert!(
+            last[1] < -0.4,
+            "the strike ends low: {last:?}\n{}",
+            table(&r)
+        );
+        let ph = r.phase("strike").unwrap();
+        assert!(
+            ph.screen[1] < -1.0 && ph.screen[1].abs() > 2.0 * ph.screen[0].abs(),
+            "the strike is mostly downward: {ph:?}"
+        );
+        for w in s.windows(2) {
+            let dy = w[1].at[0].screen[1] - w[0].at[0].screen[1];
+            assert!(
+                dy < 0.02,
+                "the head never goes back up during the strike: {:.3}→{:.3} s, dy {dy:+.3}\n{}",
+                w[0].t,
+                w[1].t,
+                table(&r)
+            );
+        }
+    }
+
+    #[test]
+    fn the_head_meets_the_crosshair_at_contact_in_both_swings() {
+        // face-a-only: view space. The axe has one swing since 2026-11-14 (owner: "like the shovel
+        // and pick, without the multiple modes"): `chop_vertical` is no tool's swing now (the
+        // default vertical role a two-stance tool's data could name), so its level one.
+        {
+            let role = "chop_level";
+            let r = run(role);
+            let c = r.contact_t.expect("a chop has a contact time");
+            let a = r.at(0, c);
+            assert!(
+                a.screen[0].abs() < 0.12 && a.screen[1].abs() < 0.12 && a.screen[2] > 0.3,
+                "{role}: at contact ({c:.3} s) the head is on the crosshair, in front: {a:?}"
+            );
+            // And the strike is the swing's fastest stretch, peaking within it.
+            let ph = r.phase("strike").unwrap();
+            assert!(
+                r.peak_t >= ph.from && r.peak_t <= ph.to,
+                "{role}: the peak speed ({:.1} at {:.3} s) is in the strike {:.2}–{:.2}",
+                r.peak_speed,
+                r.peak_t,
+                ph.from,
+                ph.to
+            );
+        }
+    }
+
+    #[test]
+    fn the_wind_up_goes_the_other_way_and_the_recovery_returns_to_rest() {
+        // face-a-only: view space.
+        for (role, axis) in [("chop_level", 0), ("chop_vertical", 1)] {
+            let r = run(role);
+            let w = r.phase("wind-up").unwrap();
+            let s = r.phase("strike").unwrap();
+            assert!(
+                w.screen[axis] * s.screen[axis] < 0.0 && w.screen[axis].abs() > 0.15,
+                "{role}: the wind-up draws back against the strike: {w:?} vs {s:?}"
+            );
+            let (a, b) = (r.samples[0].at[0], r.samples[r.samples.len() - 1].at[0]);
+            for k in 0..3 {
+                assert!(
+                    (a.local[k] - b.local[k]).abs() < 1e-3,
+                    "{role}: the recovery ends where the swing began: {a:?} vs {b:?}"
+                );
+            }
+            // Never behind or inside the eye: everything held stays in front.
+            for smp in &r.samples {
+                assert!(
+                    smp.at[0].screen[2] > 0.15,
+                    "{role}: the head at {:.3} s is {:.3} m ahead",
+                    smp.t,
+                    smp.at[0].screen[2]
+                );
+            }
+        }
+    }
+
+    /// A point's path length (m, the player's frame) over samples.
+    fn travel(s: &[&Sample], k: usize) -> f32 {
+        s.windows(2)
+            .map(|w| {
+                let (a, b) = (w[0].at[k].local, w[1].at[k].local);
+                (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt()
+            })
+            .sum()
+    }
+
+    #[test]
+    fn the_arms_drive_the_strike_not_the_wrist() {
+        // face-a-only: view space. Owner review 2026-11-11: the head's arc was mostly a wrist
+        // turn, the grip and elbow nearly still (the grip went 0.2 m to the head's 1.1 m).
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            p.points = vec![Point::ToolHead, Point::Grip];
+            let r = probe(&p).expect("probe");
+            let s = within(&r, "strike");
+            let (head, grip) = (travel(&s, 0), travel(&s, 1));
+            assert!(
+                grip >= 0.4 * head && grip > 0.4,
+                "{role}: the hands travel the arc with the head: grip {grip:.2} m, head {head:.2} m"
+            );
+        }
+    }
+
+    #[test]
+    fn the_edge_faces_its_motion_through_the_strike() {
+        // face-a-only: view space. Owner, 2026-11-11: "Ensure your tooling helps you tell
+        // rotation too": the blade turned the wrong way is a rotation the head's path can't show.
+        // The axe's one swing (owner, 2026-11-14).
+        {
+            let role = "chop_level";
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            let r = probe(&p).expect("probe");
+            for s in within(&r, "strike") {
+                let a = s.orient.blade_vs_motion.expect("an axe has an edge");
+                assert!(
+                    a < 50.0,
+                    "{role}: at {:.3} s the edge faces {a:.0}° off its motion (want < 50°)\n{}",
+                    s.t,
+                    table(&r)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_wrist_never_flips() {
+        // face-a-only: view space. A wrist flip: the hand's roll about its own axis jumping
+        // between samples, or turning further than a wrist does over the swing.
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            let r = probe(&p).expect("probe");
+            let rolls: Vec<f32> = r.samples.iter().map(|s| s.orient.hand_roll).collect();
+            for (i, w) in r.samples.windows(2).enumerate() {
+                let rate = (rolls[i + 1] - rolls[i]).abs() / (w[1].t - w[0].t);
+                assert!(
+                    rate < 2000.0,
+                    "{role}: the hand rolls {rate:.0}°/s at {:.3} s (a flip)\n{}",
+                    w[0].t,
+                    table(&r)
+                );
+            }
+            let (lo, hi) = rolls
+                .iter()
+                .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+            assert!(
+                hi - lo < 120.0,
+                "{role}: the hand rolls through {:.0}° over the swing",
+                hi - lo
+            );
+        }
+    }
+
+    #[test]
+    fn the_level_strike_stays_level_on_screen() {
+        // face-a-only: view space. Round 2's refit drew the head back high off the top right, so
+        // the strike came down diagonally to the crosshair.
+        let mut p = Probe::new("chop_level");
+        p.samples = 121;
+        let r = probe(&p).expect("probe");
+        let s = within(&r, "strike");
+        let (mut dx, mut dy) = (0.0f32, 0.0f32);
+        for w in s.windows(2) {
+            let (a, b) = (w[0].at[0].screen, w[1].at[0].screen);
+            dx += (b[0] - a[0]).abs();
+            dy += (b[1] - a[1]).abs();
+        }
+        let high = s
+            .iter()
+            .map(|x| x.at[0].screen[1].abs())
+            .fold(0.0, f32::max);
+        assert!(
+            dy < 0.3 * dx && high < 0.45,
+            "the level strike runs across, not down: across {dx:.2}, up/down {dy:.2}, \
+             furthest off the crosshair's height {high:.2}\n{}",
+            table(&r)
+        );
+    }
+
+    #[test]
+    fn the_wind_up_draws_back_far_and_long_enough() {
+        // face-a-only: view space. Owner review: a 0.1 s flick with no draw back over the shoulder.
+        for role in ["chop_level", "chop_vertical"] {
+            let mut p = Probe::new(role);
+            p.samples = 121;
+            p.points = vec![Point::ToolHead, Point::Grip];
+            let r = probe(&p).expect("probe");
+            let w = r.phase("wind-up").unwrap();
+            let d = w.to - w.from;
+            assert!(
+                (0.25..=0.35).contains(&d),
+                "{role}: the wind-up takes {d:.2} s (want 0.25–0.35)"
+            );
+            let (a, b) = (r.at(0, w.from).local, r.at(0, w.to).local);
+            let head = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
+            let (a, b) = (r.at(1, w.from).local, r.at(1, w.to).local);
+            let grip = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
+            assert!(
+                head >= 0.45 && grip >= 0.35,
+                "{role}: the wind-up draws the head {head:.2} m and the hands {grip:.2} m back"
+            );
+        }
+    }
+
+    dwell_world::both_faces!(
+        fn the_swings_go_the_same_way_in_the_world_on_either_face(f: FaceFrame) {
+            // The arms are turned into the world by the camera's basis: the level strike moves
+            // the head along the view's left, the vertical one along its down, on either face and
+            // any heading.
+            for yaw in [0.0, 70.0, 200.0] {
+                for (role, way) in [("chop_level", 0usize), ("chop_vertical", 1)] {
+                    let mut p = Probe::new(role);
+                    (p.face, p.yaw, p.pitch) = (f, yaw, -10.0);
+                    let r = probe(&p).expect("probe");
+                    let s = within(&r, "strike");
+                    let (a, b) = (s[0].at[0].world, s[s.len() - 1].at[0].world);
+                    let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let basis = aim(yaw, -10.0, f, 0.0);
+                    let axis = if way == 0 { basis.right } else { basis.up };
+                    let along = (0..3).map(|k| d[k] * axis[k]).sum::<f64>();
+                    assert!(
+                        along < -0.2,
+                        "{role} at yaw {yaw}: the head travels {along:.3} m along the view's \
+                         {} (want left/down)",
+                        if way == 0 { "right" } else { "up" }
+                    );
+                }
+            }
+        }
+    );
+
+    /// The sword's own swings (WORK_QUEUE item 35): its `clips` roles, probed holding it.
+    const SWORD_SWINGS: [(&str, usize); 2] = [("slash_level", 0), ("slash_overhead", 1)];
+
+    fn run_sword(role: &str, samples: usize) -> Report {
+        let mut p = Probe::new(role);
+        p.item = Some("dwell:sword");
+        p.points = vec![Point::ToolHead, Point::Grip];
+        p.samples = samples;
+        probe(&p).expect("probe")
+    }
+
+    #[test]
+    fn every_tools_swing_clips_are_roles_of_the_player_and_its_arms() {
+        // face-a-only: data only. A tool's `clips` (shared/tools) name roles the player character
+        // (others see) and its first-person arms both play, else its swing would fall back.
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        for t in dwell_protocol::chopping::TOOLS {
+            for v in [false, true] {
+                let role = t.swing_role(v);
+                assert!(
+                    ch.clips.iter().any(|(r, _)| *r == role),
+                    "{}: no body clip for role {role}",
+                    t.name
+                );
+                assert!(
+                    fp.clips.iter().any(|(r, _)| *r == role),
+                    "{}: no arms clip for role {role}",
+                    t.name
+                );
+            }
+        }
+        let sword = dwell_protocol::chopping::tool("dwell:sword").expect("the sword");
+        assert_eq!(
+            (sword.swing_role(false), sword.swing_role(true)),
+            ("slash_level", "slash_overhead"),
+            "the sword plays its own clips, not the axe's"
+        );
+    }
+
+    #[test]
+    fn the_swords_slashes_strike_across_and_down_through_the_crosshair_at_contact() {
+        // face-a-only: view space (the world test below checks both faces). The level slash runs
+        // right to left on screen, the overhead cut top to bottom, monotonic through the strike;
+        // the head on the crosshair at the sword's contact (its `swing`: the arc's middle) and the
+        // swing's fastest stretch inside the strike; the wind-up the other way; back to rest;
+        // never behind the eye; the hands travelling with the blade.
+        let sword = dwell_protocol::chopping::tool("dwell:sword").expect("the sword");
+        let want = sword.swing.windup_s + sword.swing.active_s / 2.0;
+        for (role, axis) in SWORD_SWINGS {
+            let r = run_sword(role, 121);
+            let s = within(&r, "strike");
+            let ph = r.phase("strike").unwrap();
+            assert!(
+                ph.screen[axis] < -1.0 && ph.screen[axis].abs() > 2.0 * ph.screen[1 - axis].abs(),
+                "{role}: the strike runs along its way: {ph:?}\n{}",
+                table(&r)
+            );
+            for w in s.windows(2) {
+                let d = w[1].at[0].screen[axis] - w[0].at[0].screen[axis];
+                assert!(
+                    d < 0.02,
+                    "{role}: the blade never turns back in the strike: {:.3}→{:.3} s, {d:+.3}\n{}",
+                    w[0].t,
+                    w[1].t,
+                    table(&r)
+                );
+            }
+            let c = r.contact_t.expect("a swing has a contact time");
+            assert!(
+                (f64::from(c) - want).abs() < 0.02,
+                "{role}: contact at {c:.3} s, the sword's swing has it at {want:.3} s"
+            );
+            // The clip strikes on its own key at contact: the animation and the hit agree.
+            let clip = resolve(role).expect("the role").1;
+            assert!(
+                clip.channels
+                    .iter()
+                    .flat_map(|c| c.keys)
+                    .any(|k| (f64::from(k.t) - want).abs() < 0.01),
+                "{role}: no key at the contact ({want:.3} s)"
+            );
+            let a = r.at(0, c);
+            assert!(
+                a.screen[0].abs() < 0.12 && a.screen[1].abs() < 0.12 && a.screen[2] > 0.5,
+                "{role}: at contact ({c:.3} s) the blade's head is on the crosshair: {a:?}"
+            );
+            assert!(
+                r.peak_t >= ph.from && r.peak_t <= ph.to,
+                "{role}: the peak speed at {:.3} s is outside the strike {:.2}–{:.2}",
+                r.peak_t,
+                ph.from,
+                ph.to
+            );
+            let w = r.phase("wind-up").unwrap();
+            assert!(
+                w.screen[axis] * ph.screen[axis] < 0.0 && w.screen[axis].abs() > 0.15,
+                "{role}: the wind-up draws back against the strike: {w:?} vs {ph:?}"
+            );
+            let (first, last) = (r.samples[0].at[0], r.samples[r.samples.len() - 1].at[0]);
+            for k in 0..3 {
+                assert!(
+                    (first.local[k] - last.local[k]).abs() < 1e-3,
+                    "{role}: the recovery ends where the swing began"
+                );
+            }
+            for smp in &r.samples {
+                assert!(
+                    smp.at[0].screen[2] > 0.15,
+                    "{role}: the head at {:.3} s is {:.3} m ahead",
+                    smp.t,
+                    smp.at[0].screen[2]
+                );
+            }
+            let (head, grip) = (travel(&s, 0), travel(&s, 1));
+            assert!(
+                grip >= 0.2 * head && grip > 0.3, // a 1 m blade's head goes far past the hands
+                "{role}: the hands travel the arc with the blade: grip {grip:.2} m, head {head:.2} m"
+            );
+        }
+    }
+
+    #[test]
+    fn others_see_the_swords_slashes_on_the_body() {
+        // face-a-only: the body's frame (right, up, ahead of its feet) is face-local. The level
+        // slash sweeps from its right to its left, the overhead cut down, in front of it.
+        for (role, axis) in SWORD_SWINGS {
+            let r = run_sword(role, 63);
+            let s = r.phase("strike").unwrap();
+            assert!(
+                s.body[axis] < -1.0 && s.body[axis].abs() > 2.0 * s.body[1 - axis].abs(),
+                "{role}: the body's strike runs along its way: {s:?}"
+            );
+            let c = r.contact_t.expect("contact");
+            let a = r.at(0, c);
+            assert!(
+                a.body[2] > 0.8,
+                "{role}: the blade strikes in front of the body: {a:?}"
+            );
+        }
+    }
+
+    dwell_world::both_faces!(
+        fn the_swords_slashes_go_left_and_down_in_the_world(f: FaceFrame) {
+            for yaw in [0.0, 90.0, 225.0] {
+                for (role, way) in SWORD_SWINGS {
+                    let mut p = Probe::new(role);
+                    p.item = Some("dwell:sword");
+                    (p.face, p.yaw, p.pitch) = (f, yaw, -10.0);
+                    let r = probe(&p).expect("probe");
+                    let s = within(&r, "strike");
+                    let (a, b) = (s[0].at[0].world, s[s.len() - 1].at[0].world);
+                    let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let basis = aim(yaw, -10.0, f, 0.0);
+                    let axis = if way == 0 { basis.right } else { basis.up };
+                    let along = (0..3).map(|k| d[k] * axis[k]).sum::<f64>();
+                    assert!(
+                        along < -0.4,
+                        "{role} at yaw {yaw}: the blade travels {along:.3} m along the view's \
+                         {} (want left/down)",
+                        if way == 0 { "right" } else { "up" }
+                    );
+                }
+            }
+        }
+    );
+
+    #[test]
+    fn others_see_the_same_swing_on_the_body() {
+        // face-a-only: the body's rig is posed face-locally (right, up, ahead of its feet); its
+        // frame (`body_frame`) turns it onto either face like every other body.
+        let r = run("chop_level");
+        let s = r.phase("strike").unwrap();
+        assert!(
+            s.body[0] < -0.6 && s.body[0].abs() > 2.0 * s.body[1].abs(),
+            "the body's level strike sweeps from its right to its left: {s:?}"
+        );
+        let c = r.at(0, r.contact_t.unwrap());
+        assert!(
+            c.body[2] > 0.5 && c.body[0].abs() < 0.15,
+            "at contact the head is in front of the body: {c:?}"
+        );
+        let r = run("chop_vertical");
+        let s = r.phase("strike").unwrap();
+        assert!(
+            s.body[1] < -0.8 && s.body[1].abs() > 2.0 * s.body[0].abs(),
+            "the body's vertical strike comes down: {s:?}"
+        );
+        let w = r.phase("wind-up").unwrap();
+        assert!(w.body[1] > 0.2, "it is raised first: {w:?}");
+        // Both swings play their own body clips, not the generic break.
+        let ch = player();
+        for role in ["chop_level", "chop_vertical"] {
+            let clip = ch.clip(role).map(|i| TABLES.clip(i).name);
+            assert_eq!(clip, Some(&*format!("biped_{role}")), "{role}");
+        }
+    }
+
+    #[test]
+    fn the_sheet_draws_every_view_and_the_table_names_the_phases() {
+        let r = run("chop_level");
+        let s = svg(&r, &VIEWS);
+        for v in VIEWS {
+            assert!(s.contains(view_title(v)), "{v}");
+        }
+        assert!(s.starts_with("<svg") && s.trim_end().ends_with("</svg>"));
+        let t = table(&r);
+        assert!(t.contains("strike") && t.contains("right→left"), "{t}");
+        let c = csv(&r);
+        assert_eq!(c.lines().count(), 1 + r.samples.len() * r.points.len());
+        assert!(Point::parse("elbow").unwrap() == Point::Bone("forearm_r"));
+        assert!(Point::parse("head_ahead").unwrap() == Point::Ahead("head"));
+        assert_eq!(Point::Ahead("head").name(), "head_ahead");
+    }
+
+    #[test]
+    fn the_probe_prints_the_cameras_sway_turning_left_through_the_level_strike() {
+        // Each chop sample carries the view's sway (CHARACTERS.md §5.2), at rest at both ends.
+        let r = run("chop_level");
+        let cams: Vec<_> = r
+            .samples
+            .iter()
+            .map(|s| s.camera.expect("a chop"))
+            .collect();
+        assert_eq!(cams[0].size(), 0.0);
+        assert!(cams.last().unwrap().size() < 1e-6);
+        let strike = r.phase("strike").unwrap();
+        let yaw_at = |t: f32| {
+            r.samples
+                .iter()
+                .min_by(|a, b| (a.t - t).abs().total_cmp(&(b.t - t).abs()))
+                .and_then(|s| s.camera)
+                .unwrap()
+                .yaw
+        };
+        // The head goes right → left on screen and the view turns left with it.
+        assert_eq!(strike.screen_way(), "right→left");
+        assert!(yaw_at(strike.to) < yaw_at(strike.from) - 1.0);
+        let t = table(&r);
+        assert!(t.contains("camera yaw,pitch,roll"), "{t}");
+        assert!(csv(&r).starts_with("t,point,") && csv(&r).contains(",cam_yaw,"));
+        // A clip that is not a chop has none.
+        assert!(run("break").samples.iter().all(|s| s.camera.is_none()));
+    }
+
+    /// The tool head's first-person screen place (NDC x, y) each frame (60 fps) of one swing of
+    /// the stone axe played through the arms' animator as the game drives it
+    /// (`crate::chop::SwingRun::arms` applied each frame, `game.rs` `update_swing_run`), its path
+    /// meeting something at arc step `hit` (none: a miss), from its start to 1 s past its end.
+    fn played(role: &str, hit: Option<u32>) -> Vec<[f32; 2]> {
+        let ch = player();
+        let fp = ch.first_person.expect("first person");
+        let tan = (f64::from(fp.fov).to_radians() / 2.0).tan() as f32;
+        let tool = dwell_protocol::chopping::tool("dwell:stone_axe").expect("the axe");
+        let vertical = role == "chop_vertical";
+        let held = held_for(Some("dwell:stone_axe"), role);
+        let (bone, q) = local_point(held, Point::ToolHead).expect("a head");
+        let impact = hit.map(|step| crate::chop::Impact {
+            cell: [0, 0, 0],
+            face: 0,
+            point: [0.0; 3],
+            step,
+            wood: true,
+        });
+        let mut run = crate::chop::SwingRun::new(tool, vertical, 0.0, impact);
+        let input = MoveInput {
+            holding: true,
+            ..Default::default()
+        };
+        let mut a = Animator::new(&TABLES, ch, Space::Arms);
+        a.update(&input, 0.0);
+        a.swing(swing_of(role).unwrap());
+        let dt = 1.0 / 60.0;
+        let frames = ((run.length() + 1.0) / dt) as usize;
+        let mut live = true;
+        (0..frames)
+            .map(|i| {
+                let now_ms = i as f64 * dt * 1000.0;
+                if live {
+                    let d = run.arms(now_ms);
+                    d.apply(&mut a);
+                    live = d != crate::chop::ArmsDrive::Release;
+                    let _ = run.take_impact(now_ms);
+                }
+                let pose = a.update(&input, dt as f32);
+                let hold = held.item().and_then(|(n, _)| ch.item(n));
+                let v = arm_transforms(ch, &with_item(&pose, hold))[bone].apply(q);
+                let z = v[2].max(1e-3);
+                [-v[0] / (z * tan * 16.0 / 9.0), v[1] / (z * tan)]
+            })
+            .collect()
+    }
+
+    /// The strokes along one screen axis (`axis` 0 x, 1 y) going the strike's way (`sign` −1:
+    /// toward −): each stretch moving that way by more than `min` NDC in all, a stroke.
+    fn strokes(path: &[[f32; 2]], axis: usize, sign: f32, min: f32) -> Vec<(usize, f32)> {
+        let mut out = Vec::new();
+        let (mut from, mut run) = (0, 0.0f32);
+        for (i, w) in path.windows(2).enumerate() {
+            let d = (w[1][axis] - w[0][axis]) * sign;
+            if d > 1e-4 {
+                if run == 0.0 {
+                    from = i;
+                }
+                run += d;
+            } else if d < -1e-4 || i + 2 == path.len() {
+                if run > min {
+                    out.push((from, run));
+                }
+                run = 0.0;
+            }
+        }
+        if run > min {
+            out.push((from, run));
+        }
+        out
+    }
+
+    // BUGS.md #93 (owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double
+    // swings"; "The animation double swings"): one vertical swing must draw one down-stroke, a hit
+    // (the head stopped in the wood: the hit-stop, the pull-out) as well as a miss, and nothing
+    // after it ends. Before the fix a hit's pull-out played the clip backwards from contact to its
+    // start (the head back up over the shoulder and down again), and at its end the arms' clip was
+    // let go at that start and played on by itself: the whole swing a second time.
+    // face-a-only: the first-person screen (view space; the arms never depend on the face).
+    #[test]
+    fn one_swing_draws_one_stroke_hit_or_miss() {
+        let mid = swing_def(Some("dwell:stone_axe"), "chop_vertical")
+            .map(|s| s.samples / 2)
+            .unwrap();
+        for hit in [None, Some(mid), Some(2)] {
+            let v = played("chop_vertical", hit);
+            let downs = strokes(&v, 1, -1.0, 0.8);
+            assert_eq!(
+                downs.len(),
+                1,
+                "vertical, hit {hit:?}: one down-stroke, got {downs:?}\n{v:?}"
+            );
+            // And it ends at rest (the clip's first key, the idle arms' sway aside) and stays there.
+            let rest = v[0];
+            for p in &v[v.len() - 20..] {
+                assert!(
+                    (p[0] - rest[0]).abs() < 0.2 && (p[1] - rest[1]).abs() < 0.2,
+                    "vertical, hit {hit:?}: back at rest {rest:?} after the swing, at {p:?}"
+                );
+            }
+            // Level swings: one right → left stroke too.
+            let l = played("chop_level", hit);
+            let lefts = strokes(&l, 0, -1.0, 0.8);
+            assert_eq!(
+                lefts.len(),
+                1,
+                "level, hit {hit:?}: one right → left stroke, got {lefts:?}\n{l:?}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod defeat_tests {
+    //! The defeat clips by their data (WORK_QUEUE item 55; owner, 2026-11-13: "Head down, hand on
+    //! sword hilt, sword in the ground"; CHARACTERS.md §11.13), posed as the game poses the body
+    //! (`body_bones`: the body's animator with `MoveInput::defeat`), placed in the world on either
+    //! face through `place_frame` and read back face-locally.
+    use super::*;
+    use crate::render::characters::place_frame;
+    use dwell_world::FaceFrame;
+
+    /// A point of the body's pose at clip time `t` of `role` holding `item`, face-local metres from
+    /// feet standing at face-local `feet` on face `f` facing `yaw`: (right, up, ahead of the feet).
+    fn at(f: FaceFrame, role: &str, item: Option<&'static str>, t: f32, point: Point) -> [f64; 3] {
+        let (bone, q) = local_point(held_for(item, role), point).expect("a point");
+        at_bone(f, role, item, t, bone, q)
+    }
+
+    /// [`at`] for point `q` in bone `bone`'s frame.
+    fn at_bone(
+        f: FaceFrame,
+        role: &str,
+        item: Option<&'static str>,
+        t: f32,
+        bone: usize,
+        q: [f32; 3],
+    ) -> [f64; 3] {
+        let held = held_for(item, role);
+        let bones = body_bones(role, held, t);
+        let (feet, yaw) = (f.point([12.5, 70.0, -4.5]), 30.0);
+        let frame = place_frame(feet, yaw, f, [0.0; 3]);
+        let w = frame.apply(bones[bone].apply(q)).map(f64::from);
+        let (p, o) = (f.point(w), f.point(feet));
+        // Into the body's frame: +z ahead along the yaw, right is −x turned.
+        let (s, c) = (yaw.to_radians().sin(), yaw.to_radians().cos());
+        let (dx, dz) = (p[0] - o[0], p[2] - o[2]);
+        let ahead = dx * s + dz * c;
+        let left = dx * c - dz * s;
+        [-left, p[1] - o[1], ahead]
+    }
+
+    fn end(role: &str) -> f32 {
+        let ch = player();
+        TABLES.clip(ch.clip(role).expect("a clip")).duration
+    }
+
+    dwell_world::both_faces!(
+        fn the_armed_kneel_plants_the_sword_and_holds_its_hilt_head_bowed(f: FaceFrame) {
+            let (role, sword) = ("kneel_sword", Some("dwell:sword"));
+            let t = end(role);
+            let grip = at(f, role, sword, t, Point::Grip);
+            let tip = at(f, role, sword, t, Point::ToolTip);
+            // The fist on the hilt before the raised knee, the blade straight down into the ground.
+            assert!(
+                grip[1] > 0.7 && grip[1] < 1.0 && grip[2] > 0.35,
+                "grip {grip:?}"
+            );
+            assert!(tip[1].abs() < 0.06, "the tip at the ground: {tip:?}");
+            assert!(tip[2] > 0.4, "before the knee: {tip:?}");
+            let lean = (tip[0] - grip[0]).hypot(tip[2] - grip[2]) / (grip[1] - tip[1]);
+            assert!(lean < 0.3, "the blade upright: {lean}");
+            // Down on one knee: the left knee (shin_l's pivot) at the ground, the right raised.
+            let knee_l = at(f, role, sword, t, Point::Bone("shin_l"));
+            let knee_r = at(f, role, sword, t, Point::Bone("shin_r"));
+            // The knee joint within the leg's thickness (its capsule ~0.075 m) of the ground.
+            assert!(knee_l[1] < 0.15, "the left knee down: {knee_l:?}");
+            assert!(knee_r[1] > 0.4, "the right knee up: {knee_r:?}");
+            // Head bowed: the head's up axis (neck to crown) turned well forward and down.
+            let neck = at(f, role, sword, t, Point::Bone("head"));
+            assert!(neck[1] < 1.2 && neck[2] > 0.15, "over the knee: {neck:?}");
+            let b = body_bones(role, held_for(sword, role), t);
+            let h = player().bone("head").expect("a head");
+            let (n, c) = (b[h].apply([0.0; 3]), b[h].apply([0.0, 0.36, 0.0]));
+            let (up, ahead) = (c[1] - n[1], c[2] - n[2]);
+            let bow = ahead.atan2(up).to_degrees();
+            assert!(bow > 45.0, "the head bowed {bow:.0}° from upright");
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_unarmed_kneel_rests_the_hand_on_the_raised_knee(f: FaceFrame) {
+            let role = "kneel";
+            let t = end(role);
+            let hand = at(f, role, None, t, Point::Bone("hand_r"));
+            let knee = at(f, role, None, t, Point::Bone("shin_r"));
+            let d = (0..3)
+                .map(|k| (hand[k] - knee[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!(d < 0.15, "the hand {hand:?} on the knee {knee:?}: {d:.3} m");
+            assert!(hand[1] > knee[1], "on top of it");
+        }
+    );
+
+    dwell_world::both_faces!(
+        fn the_stands_rise_from_the_kneel_to_standing(f: FaceFrame) {
+            for (role, item) in [("stand", None), ("stand_sword", Some("dwell:sword"))] {
+                let knee0 = at(f, role, item, 0.0, Point::Bone("shin_l"));
+                let hips1 = at(f, role, item, end(role), Point::Bone("hips"));
+                assert!(knee0[1] < 0.15, "{role} starts kneeling: {knee0:?}");
+                assert!(
+                    (hips1[1] - 0.92).abs() < 0.03,
+                    "{role} ends standing: {hips1:?}"
+                );
+            }
+            // With the sword: drawn up out of the ground back into the hold.
+            let tip = at(
+                f,
+                "stand_sword",
+                Some("dwell:sword"),
+                end("stand_sword"),
+                Point::ToolTip,
+            );
+            assert!(tip[1] > 1.0, "the sword back in hand: {tip:?}");
+        }
+    );
+
+    // WORK_QUEUE item 38: an NPC sitting on the ground (shared/creatures `seat` `on: ground`): the
+    // seat (the hips' pivot, inside the pelvis) and both ankles low, the legs out ahead of it, the
+    // torso upright over it, the left hand down behind, and its sword (in the right hand, over the
+    // raised knee) clear of the ground; breathing, the seat never moves.
+    dwell_world::both_faces!(
+        fn an_npc_sits_on_the_ground_legs_out_ahead(f: FaceFrame) {
+            let (role, sword) = ("sit", Some("dwell:sword"));
+            for t in [0.0, 1.0, 2.0, 3.0] {
+                let hips = at(f, role, sword, t, Point::Bone("hips"));
+                let neck = at(f, role, sword, t, Point::Bone("head"));
+                assert!(
+                    hips[1] > 0.05 && hips[1] < 0.2,
+                    "the seat at the ground: {hips:?}"
+                );
+                assert!(
+                    hips[0].abs() < 0.05 && hips[2].abs() < 0.05,
+                    "over its feet' place: {hips:?}"
+                );
+                assert!(neck[1] > 0.6 && neck[2].abs() < 0.2, "sitting up: {neck:?}");
+                for foot in ["foot_l", "foot_r"] {
+                    let a = at(f, role, sword, t, Point::Bone(foot));
+                    assert!(
+                        a[1] < 0.15 && a[2] > 0.5,
+                        "{foot} out ahead on the ground: {a:?}"
+                    );
+                }
+                let knee = at(f, role, sword, t, Point::Bone("shin_r"));
+                let hand = at(f, role, sword, t, Point::Bone("hand_l"));
+                let knee_l = at(f, role, sword, t, Point::Bone("shin_l"));
+                assert!(
+                    knee[1] > 0.22 && knee[1] > knee_l[1] + 0.08,
+                    "the right knee up: {knee:?} (the left {knee_l:?})"
+                );
+                assert!(
+                    hand[1] < 0.2 && hand[2] < 0.0,
+                    "the left hand down behind: {hand:?}"
+                );
+                for p in [Point::Grip, Point::ToolTip] {
+                    let s = at(f, role, sword, t, p);
+                    assert!(s[1] > 0.15, "the sword clear of the ground: {p:?} {s:?}");
+                }
+            }
+        }
+    );
+
+    // WORK_QUEUE item 38: looking around is a slow scan of the head and chest, at least 60° each
+    // way from ahead, feet still and the hips not turning (the body holds its heading).
+    dwell_world::both_faces!(
+        fn an_npc_looking_around_scans_with_its_head_and_chest(f: FaceFrame) {
+            let ch = player();
+            let (h, hips) = (
+                ch.bone("head").expect("head"),
+                ch.bone("hips").expect("hips"),
+            );
+            let (role, sword) = ("look", Some("dwell:sword"));
+            let (mut lo, mut hi) = (0.0f64, 0.0f64);
+            let feet0 = at(f, role, sword, 0.0, Point::Bone("foot_l"));
+            let mut last = None;
+            for i in 0..=40 {
+                let t = end(role) * i as f32 / 40.0;
+                let (n, a) = (
+                    at_bone(f, role, sword, t, h, [0.0; 3]),
+                    at_bone(f, role, sword, t, h, [0.0, 0.0, 0.3]),
+                );
+                let yaw = (a[0] - n[0]).atan2(a[2] - n[2]).to_degrees();
+                (lo, hi) = (lo.min(yaw), hi.max(yaw));
+                if let Some(l) = last {
+                    // Slow: under 60°/s between samples 0.25 s apart.
+                    let d: f64 = yaw - l;
+                    assert!(d.abs() < 15.0, "a slow scan: {d:.0}° in 0.25 s at {t} s");
+                }
+                last = Some(yaw);
+                let (p, q) = (
+                    at_bone(f, role, sword, t, hips, [0.0; 3]),
+                    at_bone(f, role, sword, t, hips, [0.0, 0.0, 0.3]),
+                );
+                let turn = (q[0] - p[0]).atan2(q[2] - p[2]).to_degrees();
+                assert!(
+                    turn.abs() < 1.0,
+                    "the hips hold the heading: {turn:.1}° at {t} s"
+                );
+                let feet = at(f, role, sword, t, Point::Bone("foot_l"));
+                assert!(
+                    (0..3).all(|k| (feet[k] - feet0[k]).abs() < 1e-3),
+                    "the feet still"
+                );
+            }
+            assert!(
+                lo < -60.0 && hi > 60.0,
+                "scans both ways: {lo:.0}°..{hi:.0}°"
+            );
+        }
+    );
+}
+
+#[cfg(test)]
+mod tool_swing_tests {
+    //! Owner, 2026-11-14: "each tool should be rotated slightly around the Y(?) in your hand so you
+    //! can see the head of it. Also, when it swings it should swing toward your crosshair, so kind
+    //! of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens
+    //! when it 'hits' your crosshair."
+    use super::*;
+    use dwell_protocol::chopping::{BREAK_TOOLS, TOOLS};
+    use dwell_world::FaceFrame;
+
+    /// Every held tool's item and the role its (one, level) swing plays: the axes' and the sword's
+    /// `clips`, the break tools' `clip`.
+    fn swings() -> Vec<(&'static str, &'static str)> {
+        let mut v: Vec<_> = TOOLS
+            .iter()
+            .map(|t| (t.name, t.swing_role(false)))
+            .collect();
+        v.extend(
+            BREAK_TOOLS
+                .iter()
+                .filter(|b| b.contact_s > 0.0)
+                .map(|b| (b.item, b.clip)),
+        );
+        v
+    }
+
+    fn swing_report(item: &'static str, role: &str, f: FaceFrame, samples: usize) -> Report {
+        let mut p = Probe::new(role);
+        p.item = Some(item);
+        p.points = vec![Point::ToolHead];
+        p.samples = samples;
+        p.face = f;
+        p.yaw = 30.0;
+        p.pitch = -15.0;
+        probe(&p).expect("probe")
+    }
+
+    // The head reaches the crosshair at the tool's contact: within 0.12 of the screen's half
+    // height of it, and within 8 cm of the crosshair's ray in the world (eye-relative), on both
+    // faces through the frame.
+    dwell_world::both_faces!(
+        fn every_tools_head_meets_the_crosshair_at_its_contact(f: FaceFrame) {
+            let basis = aim(30.0, -15.0, f, 0.0);
+            let fwd = basis.forward();
+            for (item, role) in swings() {
+                let r = swing_report(item, role, f, 241);
+                let c = r
+                    .contact_t
+                    .unwrap_or_else(|| panic!("{item}: a contact time"));
+                let a = r.at(0, c);
+                assert!(
+                    a.screen[0].hypot(a.screen[1]) < 0.12 && a.screen[2] > 0.3,
+                    "{item} ({role}): at contact ({c:.3} s) the head is on the crosshair: {:?}",
+                    a.screen
+                );
+                let along: f64 = (0..3).map(|k| a.world[k] * fwd[k]).sum();
+                let off: f64 = (0..3)
+                    .map(|k| (a.world[k] - fwd[k] * along).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                assert!(
+                    along > 0.3 && off < 0.08,
+                    "{item} ({role}): the head {off:.3} m off the crosshair's ray, {along:.2} m out"
+                );
+            }
+        }
+    );
+
+    // The contact is the moment the head reaches the crosshair: the head is nearest it then (to a
+    // sampling step), and a break tool's clip keys its strike at its `contactS`, so the hit (landed
+    // at `contactS`, docs/BLOCK_DAMAGE.md §8) and the animation agree.
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn the_contact_is_when_the_head_reaches_the_crosshair() {
+        for (item, role) in swings() {
+            let r = swing_report(item, role, FaceFrame::A, 121);
+            let c = r.contact_t.expect("contact");
+            let step = r.duration / 120.0;
+            let nearest = r
+                .samples
+                .iter()
+                .min_by(|a, b| {
+                    let d = |s: &Sample| s.at[0].screen[0].hypot(s.at[0].screen[1]);
+                    d(a).total_cmp(&d(b))
+                })
+                .unwrap();
+            let best = nearest.at[0].screen[0].hypot(nearest.at[0].screen[1]);
+            let at = r.at(0, c);
+            let then = at.screen[0].hypot(at.screen[1]);
+            assert!(
+                (nearest.t - c).abs() <= 0.05 + step || then - best < 0.05,
+                "{item} ({role}): nearest the crosshair at {:.3} s ({best:.3}), the contact at {c:.3} s ({then:.3})",
+                nearest.t
+            );
+        }
+        for b in BREAK_TOOLS.iter().filter(|b| b.contact_s > 0.0) {
+            let (_, clip) = resolve(b.clip).expect("the clip");
+            assert!(
+                clip.channels
+                    .iter()
+                    .flat_map(|c| c.keys)
+                    .any(|k| (f64::from(k.t) - b.contact_s).abs() < 1e-4),
+                "{}: {} keys its strike at the contact ({} s)",
+                b.item,
+                clip.name,
+                b.contact_s
+            );
+        }
+    }
+
+    // The swing comes in from the right toward the crosshair: through the half before contact the
+    // head starts right of it and travels left (and, for the break tools, forward: deeper).
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn every_swing_comes_in_from_the_right() {
+        for (item, role) in swings() {
+            let r = swing_report(item, role, FaceFrame::A, 121);
+            let c = r.contact_t.expect("contact");
+            let before = r.at(0, (c - 0.1).max(0.0));
+            let at = r.at(0, c);
+            assert!(
+                before.screen[0] > at.screen[0] + 0.25,
+                "{item} ({role}): from the right: {:?} then {:?}",
+                before.screen,
+                at.screen
+            );
+            if role.starts_with("break_") {
+                assert!(
+                    before.screen[2] < at.screen[2],
+                    "{item}: forward into the crosshair: {:?} then {:?}",
+                    before.screen,
+                    at.screen
+                );
+            }
+        }
+    }
+
+    // Each break tool plays its own clip (its head's length differs), and a character without it
+    // plays the plain break: the player's arms have every break tool's clip.
+    #[test]
+    fn every_break_tools_clip_is_a_role_of_the_arms() {
+        let ch = player();
+        for b in BREAK_TOOLS {
+            assert!(
+                ch.arms_clip(b.clip).is_some(),
+                "{}: the arms play {}",
+                b.item,
+                b.clip
+            );
+            assert_eq!(
+                crate::bodies::swing_role(dwell_characters::animator::Swing::Break, Some(b.item)),
+                b.clip
+            );
+        }
+        assert_eq!(
+            crate::bodies::swing_role(dwell_characters::animator::Swing::Break, None),
+            "break"
+        );
+    }
+
+    // The head shows at rest: its centre on screen, clear of the hand (not behind the fist), and
+    // the tool's turn about its handle (props.json `hold.yaw`) shows more of it than none: the axes'
+    // and the stone pickaxe's heads, end-on before, a good deal more.
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn every_tools_head_shows_at_rest() {
+        // The sword's long blade runs off the screen's top at rest by design (a weapon's stances
+        // and slashes stay their own): the tools' heads.
+        let items: Vec<&str> = swings()
+            .into_iter()
+            .map(|(i, _)| i)
+            .filter(|i| dwell_protocol::chopping::tool(i).is_none_or(|t| !t.is_weapon()))
+            .collect();
+        for item in items {
+            let look = dwell_protocol::inventory::item(item).and_then(|d| d.look);
+            let yaw = look
+                .and_then(|l| dwell_models::prop(l.model))
+                .map_or(0.0, |(d, _)| d.hold.yaw);
+            let v = head_view(item, "idle", 0.0, 0.0).expect("a head");
+            let unturned = head_view(item, "idle", 0.0, -yaw).expect("a head");
+            assert!(
+                v.head[0].abs() < 0.9 && v.head[1].abs() < 0.9 && v.head[2] > 0.2,
+                "{item}: the head on screen: {v:?}"
+            );
+            let apart = (v.head[0] - v.grip[0]).hypot(v.head[1] - v.grip[1]);
+            assert!(apart > 0.3, "{item}: the head clear of the hand: {v:?}");
+            assert!(
+                v.size >= unturned.size,
+                "{item}: the turn shows no less head: {} vs {}",
+                v.size,
+                unturned.size
+            );
+            if item.ends_with("_axe") || item == "dwell:stone_pickaxe" {
+                assert!(
+                    v.size > 1.3 * unturned.size,
+                    "{item}: turned {yaw}°, its head shows: {} vs {} unturned",
+                    v.size,
+                    unturned.size
+                );
+            }
+        }
+    }
+}

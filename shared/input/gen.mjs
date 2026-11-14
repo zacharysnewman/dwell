@@ -27,6 +27,7 @@ export const PLAY_ACTIONS = [
   'spyglass',
   'map',
   'pause',
+  'inventory',
 ];
 /** The menu actions the shell knows (client/src/input/gamepadMenu.ts). */
 export const MENU_ACTIONS = ['up', 'down', 'left', 'right', 'confirm', 'back', 'close'];

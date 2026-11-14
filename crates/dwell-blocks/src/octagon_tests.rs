@@ -1,0 +1,454 @@
+use super::*;
+use crate::{AIR, state};
+
+const CELL: [f64; 3] = [1.0, 0.5, 1.0];
+
+fn log(axis: &str) -> StateId {
+    state(&format!("dwell:log[axis={axis}]")).expect("the log is in the registry")
+}
+
+/// A world of `cells` (offsets from the origin) round the cell at the origin, air elsewhere.
+fn world(cells: Vec<([i32; 3], StateId)>) -> impl Fn([i32; 3]) -> StateId {
+    move |o| cells.iter().find(|(c, _)| *c == o).map_or(AIR, |(_, m)| *m)
+}
+
+fn count(faces: &[Face], f: impl Fn(&Part) -> bool) -> usize {
+    faces.iter().filter(|x| f(&x.part)).count()
+}
+
+/// Signed area vector of a polygon (twice its area along its normal).
+fn area(pts: &[[f64; 3]]) -> [f64; 3] {
+    let mut n = [0.0; 3];
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    n
+}
+
+#[test]
+fn the_log_is_an_octagon_by_its_data() {
+    let (c, axis) = section_of(log("y")).expect("logs have a cross-section");
+    assert!(c.chamfer > 0.0 && c.chamfer < 0.5);
+    assert_eq!(axis, 1);
+    assert_eq!(section_of(log("x")).map(|s| s.1), Some(0));
+    assert!(section_of(state("dwell:stone").unwrap()).is_none());
+}
+
+#[test]
+fn a_lone_log_is_an_octagonal_prism_with_outward_faces() {
+    for axis in ["y", "x", "z"] {
+        let m = log(axis);
+        let f = open_faces(m, &world(vec![]), &|_| false, CELL);
+        assert_eq!(count(&f, |p| matches!(p, Part::Cap(_))), 2, "{axis}");
+        assert_eq!(count(&f, |p| matches!(p, Part::Side(_))), 4, "{axis}");
+        assert_eq!(count(&f, |p| matches!(p, Part::Chamfer(..))), 4, "{axis}");
+        for cap in f.iter().filter(|x| matches!(x.part, Part::Cap(_))) {
+            assert_eq!(cap.pts.len(), 8, "{axis}: an octagonal cap");
+        }
+        // Outward: every face's normal points away from the cell's centre.
+        for face in &f {
+            let n = area(&face.pts);
+            let mid = face
+                .pts
+                .iter()
+                .fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
+            let k = face.pts.len() as f64;
+            let out = [mid[0] / k - 0.5, mid[1] / k - 0.5, mid[2] / k - 0.5];
+            assert!(
+                n[0] * out[0] + n[1] * out[1] + n[2] * out[2] > 0.0,
+                "{axis} {:?}",
+                face.part
+            );
+        }
+    }
+}
+
+#[test]
+fn the_chamfer_is_square_in_metres_on_half_metre_cells() {
+    // An x log's cross-section is z (1 m) by y (½ m): the cut is the same metres both ways.
+    let ring = outline(0.3, 0, 0, CELL);
+    let (p, q) = (ring[0].0, ring[1].0); // (u = y, v = z): (0, cv) then (cu, 0)
+    assert!((q[0] * CELL[1] - p[1] * CELL[2]).abs() < 1e-12);
+    assert!((q[0] - 0.3).abs() < 1e-12, "0.3 × ½ m over ½ m cells");
+}
+
+#[test]
+fn two_same_axis_logs_share_a_full_width_side_and_draw_no_face_between() {
+    let m = log("y");
+    let at = world(vec![([1, 0, 0], m)]);
+    let f = open_faces(m, &at, &|_| false, CELL);
+    // No face on +X (the shared side) and its two corners squared: two chamfers left.
+    assert_eq!(count(&f, |p| *p == Part::Side(0)), 0);
+    assert_eq!(count(&f, |p| matches!(p, Part::Chamfer(..))), 2);
+    // The +Z and −Z sides reach the +X edge of the cell: full width on that end.
+    for side in f
+        .iter()
+        .filter(|x| matches!(x.part, Part::Side(4) | Part::Side(5)))
+    {
+        assert!(side.pts.iter().any(|p| p[0] == 1.0), "{:?}", side.pts);
+    }
+    // The neighbour is the mirror image: no face on its −X.
+    let other = world(vec![([-1, 0, 0], m)]);
+    let g = open_faces(m, &other, &|_| false, CELL);
+    assert_eq!(count(&g, |p| *p == Part::Side(1)), 0);
+}
+
+#[test]
+fn logs_of_different_axes_do_not_join() {
+    let at = world(vec![([1, 0, 0], log("z"))]);
+    let f = open_faces(log("y"), &at, &|_| false, CELL);
+    assert_eq!(count(&f, |p| *p == Part::Side(0)), 1);
+    assert_eq!(count(&f, |p| matches!(p, Part::Chamfer(..))), 4);
+}
+
+#[test]
+fn a_trunk_draws_no_caps_between_its_cells_and_none_on_stone() {
+    let m = log("y");
+    let stone = state("dwell:stone").unwrap();
+    let at = world(vec![([0, 1, 0], m), ([0, -1, 0], stone)]);
+    let f = open_faces(m, &at, &|n| n == stone, CELL);
+    assert_eq!(count(&f, |p| matches!(p, Part::Cap(_))), 0);
+}
+
+#[test]
+fn a_cap_shows_where_the_log_beyond_is_narrower() {
+    // This cell is joined on +X; the one above isn't (its corners chamfered): the cap must show.
+    let m = log("y");
+    let at = world(vec![([1, 0, 0], m), ([0, 1, 0], m)]);
+    let f = open_faces(m, &at, &|_| false, CELL);
+    assert_eq!(count(&f, |p| *p == Part::Cap(true)), 1);
+    // And the one above sees a wider log below: its bottom cap is hidden.
+    let above = world(vec![([0, -1, 0], m), ([1, -1, 0], m)]);
+    let g = open_faces(m, &above, &|_| false, CELL);
+    assert_eq!(count(&g, |p| *p == Part::Cap(false)), 0);
+}
+
+#[cfg(feature = "fixture")]
+#[test]
+fn a_cross_section_added_by_data_alone_joins_the_logs() {
+    // The test registry's `test:post` (shared/blocks/fixtures/test.json): its own chamfer, the
+    // logs' join group.
+    let post = crate::fixture::STATES
+        .iter()
+        .find(|s| s.name.starts_with("test:post[axis=y"))
+        .expect("the fixture's post");
+    let c = post.cross_section.expect("a cross-section from data");
+    assert!((c.chamfer - 0.15).abs() < 1e-6);
+    let wood = crate::info(log("y")).cross_section.unwrap();
+    assert_eq!(c.joins, wood.joins);
+    let ring = outline(f64::from(c.chamfer), 1, 0, CELL);
+    assert_eq!(ring.len(), 8);
+    assert!((ring[1].0[0] - 0.15).abs() < 1e-6);
+}
+
+/// The cap's pieces in one plane: its heart and the bark ring's bands. Their areas sum to the
+/// whole cap, each piece outward along the axis.
+fn cap_split(joined: u8, axis: usize, end: bool) -> Vec<Face> {
+    let (c, _) = section_of(log("y")).expect("logs have a cross-section");
+    let pieces = cap_pieces(&c, axis, joined, CELL, end);
+    let whole = faces(&c, axis, joined, CELL)
+        .into_iter()
+        .find(|f| f.part == Part::Cap(end))
+        .expect("a cap");
+    let sum: f64 = pieces.iter().map(|f| area(&f.pts)[axis]).sum();
+    let want = area(&whole.pts)[axis];
+    assert!((sum - want).abs() < 1e-9, "pieces {sum} vs cap {want}");
+    let sign = if end { 1.0 } else { -1.0 };
+    for f in &pieces {
+        assert!(area(&f.pts)[axis] * sign > 0.0, "{:?} faces inward", f.part);
+    }
+    pieces
+}
+
+#[test]
+fn a_lone_logs_bark_ring_follows_the_octagon() {
+    // Owner, 2026-11-09: "the outside bark ring should follow the octagon, it doesn't, it gets
+    // cut off on the corners." Every one of the octagon's eight edges carries a band of the
+    // ring's width, the chamfers too, and the heart is the octagon moved in by that width.
+    let (c, _) = section_of(log("y")).unwrap();
+    assert!(
+        c.ring > 0.0 && c.heart.is_some(),
+        "the log's data names a ring and a heart"
+    );
+    for axis in 0..3 {
+        for end in [true, false] {
+            let p = cap_split(0, axis, end);
+            assert_eq!(count(&p, |x| matches!(x, Part::Ring(_, Some(_)))), 4);
+            assert_eq!(
+                count(&p, |x| matches!(x, Part::Ring(_, None))),
+                4,
+                "chamfers banded"
+            );
+            let heart = p.iter().find(|f| f.part == Part::Cap(end)).unwrap();
+            assert_eq!(heart.pts.len(), 8, "the heart is an octagon");
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let w_m = f64::from(c.ring) * CELL[u].min(CELL[v]);
+            // In metres every heart corner is at least the ring's width in from the cell's edges.
+            for q in &heart.pts {
+                for (a, t) in [(u, q[u]), (v, q[v])] {
+                    let d = t.min(1.0 - t) * CELL[a];
+                    assert!(
+                        d >= w_m - 1e-9,
+                        "axis {axis}: corner {q:?} {d} m from the edge"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn joined_sides_have_no_ring() {
+    // Logs joined on a side: no band along it (the joined wall's top is one surface of end
+    // grain), and the heart reaches the cell's edge there, while the open sides keep theirs.
+    let pu = face_index(2, true); // axis y: u = z, v = x; +u is +z.
+    for end in [true, false] {
+        let p = cap_split(1 << pu, 1, end);
+        assert!(
+            !p.iter().any(|f| f.part == Part::Ring(end, Some(pu))),
+            "a band along the joined side"
+        );
+        assert!(
+            p.iter()
+                .any(|f| matches!(f.part, Part::Ring(_, Some(s)) if s != pu))
+        );
+        let heart = p.iter().find(|f| f.part == Part::Cap(end)).unwrap();
+        assert_eq!(
+            heart
+                .pts
+                .iter()
+                .filter(|q| (q[2] - 1.0).abs() < 1e-9)
+                .count(),
+            2,
+            "the heart runs to the joined edge"
+        );
+    }
+    // Joined all round: no ring at all, the heart is the whole square cap.
+    let all = (1 << face_index(0, true))
+        | (1 << face_index(0, false))
+        | (1 << face_index(2, true))
+        | (1 << face_index(2, false));
+    let p = cap_split(all, 1, true);
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].part, Part::Cap(true));
+}
+
+#[test]
+fn no_ring_returns_the_cap_whole() {
+    let c = CrossSection {
+        chamfer: 0.2,
+        joins: "x",
+        ring: 0.0,
+        heart: None,
+        width: 1.0,
+    };
+    let p = cap_pieces(&c, 1, 0, CELL, true);
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].pts.len(), 8);
+}
+
+#[test]
+fn a_wood_ramp_is_the_log_octagon_cut_by_its_slant() {
+    // Phase 55 T4 (owner, 2026-11-09: "everything log/tree should be octagonal"): the wood ramp
+    // takes the log's cross-section by data (`crossSection: "of"`), and its faces are the prism
+    // clipped to the ramp: every point inside the octagon, the slant a `Cut`, the uncut end whole.
+    let m = state("dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]").unwrap();
+    assert!(is_octagon(m), "the wood ramp has the log's octagon");
+    let fs = state_faces(m, 0, CELL);
+    assert!(fs.iter().any(|f| f.part == Part::Cut), "the slant is a cut");
+    let c = 0.2929 * 0.5 + 1e-6;
+    for f in &fs {
+        for p in &f.pts {
+            let (du, dv) = (p[0].min(1.0 - p[0]), p[2].min(1.0 - p[2]));
+            assert!(
+                du + dv >= c - 2e-6,
+                "{:?} point {p:?} outside the octagon",
+                f.part
+            );
+        }
+    }
+    assert!(
+        cap_whole(m, 0, CELL, false),
+        "its bottom is the whole octagon"
+    );
+    assert!(!cap_whole(m, 0, CELL, true), "its top is cut away");
+    // A log under it: its top is covered by the ramp.s whole bottom.
+    let log = log("y");
+    let up = world(vec![([0, 1, 0], m)]);
+    assert!(
+        !open_faces(log, &up, &|_| false, CELL)
+            .iter()
+            .any(|f| f.part == Part::Cap(true)),
+        "the log's top under the ramp's whole end is hidden"
+    );
+}
+
+/// A standing log's `width` (ADR 0079): the octagon narrows about the cell's centre, its sides on no
+/// cell face, collision (`state_faces`) following it; narrow logs join nothing; lying logs stay full.
+#[test]
+fn a_narrow_log_is_a_centred_smaller_octagon_that_joins_nothing() {
+    // face-a-only: the octagon is symmetric in y (the module doc), so face B meshes the same cells.
+    let full = log("y");
+    let half = state("dwell:log[axis=y,width=2]").expect("a width-2 log");
+    let quarter = state("dwell:log[axis=y,width=1]").expect("a width-1 log");
+    assert_eq!(section_of(full).unwrap().0.width, 1.0);
+    assert_eq!(section_of(half).unwrap().0.width, 0.5);
+    assert_eq!(section_of(quarter).unwrap().0.width, 0.25);
+    let extent = |m: StateId| {
+        let faces = state_faces(m, 0, CELL);
+        let xs: Vec<f64> = faces
+            .iter()
+            .flat_map(|f| f.pts.iter().map(|p| p[0]))
+            .collect();
+        let ys: Vec<f64> = faces
+            .iter()
+            .flat_map(|f| f.pts.iter().map(|p| p[1]))
+            .collect();
+        (
+            xs.iter().copied().fold(f64::MAX, f64::min),
+            xs.iter().copied().fold(f64::MIN, f64::max),
+            ys.iter().copied().fold(f64::MAX, f64::min),
+            ys.iter().copied().fold(f64::MIN, f64::max),
+        )
+    };
+    let (x0, x1, y0, y1) = extent(half);
+    assert!(
+        (x0 - 0.25).abs() < 1e-9 && (x1 - 0.75).abs() < 1e-9,
+        "{x0} {x1}"
+    );
+    assert_eq!((y0, y1), (0.0, 1.0), "the full cell along the axis");
+    let (q0, q1, _, _) = extent(quarter);
+    assert!((q1 - q0 - 0.25).abs() < 1e-9);
+    assert_eq!(extent(full).0, 0.0);
+    assert!(!joins(half, half) && !joins(half, full) && joins(full, full));
+    let side = world(vec![([1, 0, 0], half)]);
+    assert_eq!(joined_mask(half, &side), 0);
+    assert_eq!(joined_mask(full, &world(vec![([1, 0, 0], half)])), 0);
+    // Beside stone a narrow log keeps all its sides (they are inside its cell); a full one hides one.
+    let stone = state("dwell:stone").unwrap();
+    let beside = world(vec![([1, 0, 0], stone)]);
+    let sides = |m| {
+        count(&open_faces(m, &beside, &|n| n == stone, CELL), |p| {
+            matches!(p, Part::Side(_))
+        })
+    };
+    assert_eq!(sides(half), 4);
+    assert_eq!(sides(full), 3);
+    // On a narrow log of its width the cap between them is hidden; on a full one only the full one's
+    // top shows (a ring round the narrow trunk).
+    let caps = |m, below| {
+        let w = world(vec![([0, -1, 0], below), ([0, 1, 0], AIR)]);
+        count(&open_faces(m, &w, &|_| false, CELL), |p| {
+            *p == Part::Cap(false)
+        })
+    };
+    assert_eq!(caps(half, half), 0);
+    assert_eq!(
+        caps(half, full),
+        1,
+        "the narrow log's foot cap is drawn on a wider log"
+    );
+}
+
+/// The side lengths (m) of a whole log's end, axis `axis` (0 x, 1 y, 2 z): its cells' caps in
+/// metres (a lying log's two ½ m halves, a standing log's one cell), their outline's corners with
+/// collinear points (the halves' seam) dropped, in order round it.
+fn end_sides_m(axis: usize) -> Vec<f64> {
+    let m = log(["x", "y", "z"][axis]);
+    let (section, _) = section_of(m).expect("octagonal");
+    // A standing log: one cell; a lying one: its lower and upper ½ m halves.
+    let cells: Vec<i32> = if axis == 1 { vec![0] } else { vec![0, 1] };
+    let mut pts: Vec<[f64; 2]> = Vec::new();
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    for &y in &cells {
+        let others = cells
+            .iter()
+            .filter(|&&o| o != y)
+            .map(|&o| ([0, o - y, 0], m));
+        let joined = joined_mask(m, &world(others.collect()));
+        let cap = faces(&section, axis, joined, CELL)
+            .into_iter()
+            .find(|f| f.part == Part::Cap(true))
+            .expect("a cap");
+        for p in cap.pts {
+            let mut q = [
+                p[0] * CELL[0],
+                (p[1] + f64::from(y)) * CELL[1],
+                p[2] * CELL[2],
+            ];
+            q[axis] = 0.0;
+            pts.push([q[u], q[v]]);
+        }
+    }
+    // The convex hull (gift wrap), collinear and repeated points dropped.
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    pts.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9);
+    let cross = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    };
+    let mut hull: Vec<[f64; 2]> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &[f64; 2]>> = if pass == 0 {
+            Box::new(pts.iter())
+        } else {
+            Box::new(pts.iter().rev())
+        };
+        for &p in iter {
+            while hull.len() >= start + 2
+                && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 1e-9
+            {
+                hull.pop();
+            }
+            hull.push(p);
+        }
+        hull.pop();
+    }
+    (0..hull.len())
+        .map(|i| {
+            let (a, b) = (hull[i], hull[(i + 1) % hull.len()]);
+            ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt()
+        })
+        .collect()
+}
+
+/// BUGS.md #168 (owner, 2026-11-13: "sideways logs (after a tree is felled) octagon shape corners
+/// are shorter than when upright, the sides aren't the same length and they should be the same"):
+/// a log's end is the same regular octagon along every axis: eight equal sides, the standing
+/// log's. A lying log is two ½ m cells; its corners were cut by the chamfer of the ½ m cell, half
+/// as deep (sides 0.71 m and 0.15 m).
+#[test]
+fn a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon() {
+    let upright = end_sides_m(1);
+    assert_eq!(upright.len(), 8, "{upright:?}");
+    let side = upright[0];
+    for axis in 0..3 {
+        let sides = end_sides_m(axis);
+        assert_eq!(sides.len(), 8, "axis {axis}: {sides:?}");
+        for s in &sides {
+            assert!(
+                (s - side).abs() < 1e-3,
+                "axis {axis}: sides {sides:?}, upright {side}"
+            );
+        }
+    }
+}
+
+/// The bark ring is as wide on a lying log as on a standing one (in metres; BUGS.md #168).
+#[test]
+fn a_lying_logs_bark_ring_is_the_standing_logs_width() {
+    let m = log("x");
+    let (c, _) = section_of(m).unwrap();
+    let lower = 1 << face_index(1, true);
+    let ring_m = |axis: usize, joined: u8| {
+        let p = cap_pieces(&c, axis, joined, CELL, true);
+        // The −v (z, axis x; x, axis y) band's depth: its heart's lowest v.
+        let heart = p.iter().find(|f| f.part == Part::Cap(true)).unwrap();
+        let v = (axis + 2) % 3;
+        heart.pts.iter().map(|q| q[v]).fold(f64::MAX, f64::min) * CELL[v]
+    };
+    assert!((ring_m(0, lower) - ring_m(1, 0)).abs() < 1e-9);
+}

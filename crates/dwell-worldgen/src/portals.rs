@@ -68,6 +68,9 @@ pub struct PortalRules {
     /// The look of the glowing motes drawn in the shaft round the midplane, by name
     /// (`shared/look/motes.json`; the client's, not the terrain's).
     pub motes: &'static str,
+    /// The exit push that carries a body swung up from the far face out of the opening
+    /// (BIFACIAL_WORLD.md §12.3; the player controller's, not the terrain's).
+    pub exit: dwell_world::portal_shafts::PortalExit,
 }
 
 mod table {
@@ -124,7 +127,9 @@ impl Portals {
         b: &TerrainGenerator,
         mirrored: bool,
     ) -> Self {
-        let sites = cached_sites(world_seed, rules, mirrored, || {
+        // A test world's ground (its maps' worldgen config, ADR 0074 B7) sites its own portals.
+        let ground = format!("{}|{}", a.map().worldgen_text(), b.map().worldgen_text());
+        let sites = cached_sites((world_seed, rules, mirrored, ground), || {
             search(world_seed, &rules, a, b)
         });
         Self::with_sites(rules, sites)
@@ -312,18 +317,12 @@ pub fn search(
     sites
 }
 
-type SiteKey = (u64, PortalRules, bool);
+type SiteKey = (u64, PortalRules, bool, String);
 
-/// The sites searched so far, by (seed, rules, mirror world): a generator is built often (per
-/// chunk in some tools), the search once per world.
-fn cached_sites(
-    world_seed: u64,
-    rules: PortalRules,
-    mirrored: bool,
-    search: impl FnOnce() -> Vec<Portal>,
-) -> Arc<Vec<Portal>> {
+/// The sites searched so far, by (seed, rules, mirror world, the faces' worldgen configs): a
+/// generator is built often (per chunk in some tools), the search once per world.
+fn cached_sites(key: SiteKey, search: impl FnOnce() -> Vec<Portal>) -> Arc<Vec<Portal>> {
     static CACHE: Mutex<Vec<(SiteKey, Arc<Vec<Portal>>)>> = Mutex::new(Vec::new());
-    let key = (world_seed, rules, mirrored);
     if let Some((_, s)) = CACHE
         .lock()
         .expect("portal sites")

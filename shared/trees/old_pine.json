@@ -1,0 +1,11 @@
+{
+  "$comment": "Old-growth pine (WORK_QUEUE item 32, the old-growth biome's conifer; docs/TREE_GROWTH.md §11): the pine's shape grown taller and narrower — a seed draws its full height from 18 to 26 m (the pine's 7–14 m), a long bare trunk (`crown.base`), a slim cone so the stand packs close, and `growth.wild` weighted to the mature stages (an old stand, few young trees). Its own species, not a tuning of dwell:pine, so the trees a placement stands and the growth records agree; no sapling of its own yet (it is not planted; its leaves drop none). Listed by the `old_growth` placement only. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:old_pine",
+  "label": "Old-growth pine",
+  "blocks": {"log": "dwell:log", "leaf": "dwell:leaves"},
+  "trunk": {"height": {"sapling": 2, "mature": [18, 26]}, "heightStep": 0.5, "width": {"sapling": 0.25, "mature": 1, "step": 0.25}},
+  "branches": {"kind": "whorl", "perWhorl": 4, "reach": 0.5, "emergeAt": 0.4},
+  "crown": {"shape": "cone", "base": 0.4, "top": 2, "radius": 2.6, "taper": 1.1, "tier": {"period": 2.5, "upper": 0.6}, "roughness": 0.25, "scale": [0.3, 1]},
+  "variety": {"crown": [0.85, 1.15], "lightness": [0.7, 1.05], "hue": [-0.03, 0.03]},
+  "growth": {"stages": 8, "daysPerStage": 6, "wild": [0, 0, 1, 1, 1, 2, 3, 10], "variants": 16}
+}

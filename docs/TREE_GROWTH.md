@@ -228,6 +228,150 @@ intermediate stages read as a sapling, a young tree and a mature one. What it to
   `growth` block as sketched (with `thickness.exponent` instead of `tapering`). The per-world growth
   speed is exported beside them as `$world_settings`, not structure data.
 
+## 9. Species and growth stages in the prototype (2026-11-11)
+
+The owner (2026-11-11): trees should start as thin, short saplings of the same shape with a small crown,
+and grow over time; the new climates need a few kinds: oak, pine and palm. The prototype page
+([`prototypes/tree-growth.html`](./prototypes/tree-growth.html); the G0 skeleton page is now
+[`prototypes/tree-growth-skeleton.html`](./prototypes/tree-growth-skeleton.html)) shows them as
+**procedural species data** rather than hand-built models: per species a trunk height and width from
+sapling to mature, branch rules, a crown shape and a number of growth stages. A stage is a small
+integer; every stage is a pure function of (species, seed, stage); height grows in ½ m steps, the
+octagonal trunk's width in ¼ m steps, and the crown is the mature crown scaled. Leaves use the Leaf
+Lab's chosen look (canopy normals, chamfered cells, cards; option 5). Palm fronds are cards owned by a
+crown heart block, the cells they cross listed as frond blocks. Adopted as species in the game by ADR 0079 (§11).
+
+## 10. Leaves as a canopy (Leaf Lab option 5) **[built in part, 0.52.56]**
+
+Owner, 2026-11-11: "#5 looks really good with defaults"; "Cards could only show on near trees";
+"We do need better low rez trees the ones directly beyond high detail look nothing like the main
+trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blocks by name,
+`canopyBlend` 0.75, `chamfer` 0.28 cells), drawn by the chunk mesher (`dwell-mesh` `mesher/leaves.rs`).
+
+- **Built: chamfered exposed cells.** A leaf cell's edges (corners) are cut by planes where both
+  (all three) faces meeting there are exposed (no leaf, and no full opaque cube, beside them), as the
+  Lab's `leafBlocks`. On ½ m cells the cut is in cells: 0.28 m across, 0.14 m up. **The Lab's dark
+  gaps are fixed**: where a neighbour leaf is cut and this one not (or less), the part of their
+  shared face the neighbour's cut uncovers is drawn, by clipping this cell's face by each of the
+  neighbour's planes in turn, lit from the faces the cut looks out of.
+- **Built: flat against logs** (WORK_QUEUE item 48; owner, 2026-11-12: "Flat leaf applied when a full
+  Face touching"). A leaf face shared with a full-shaped block whose data says `leafFlush: true` (the
+  log, every axis and width; the fixture's `test:post`) is **flush**: drawn flat on the log's face,
+  and counted as covered for the cuts, so no edge or corner along it is cut and the cuts of the
+  edges running into it end square against it (`mesher/leaves.rs` `flush_pieces`). The log's
+  octagon stays inside its cell, so the flat face fills the octagon's corner gaps behind it; no card
+  stands off a flush face. **Less the bark** (BUGS.md #167; owner, 2026-11-13: "Tree leaf inside faces
+  touching the tree log shouldn't be shown and they cause z fighting"): the flush face is drawn only
+  where the log draws nothing on that plane: the log's side (or cap) lying there is cut out of it
+  (`flush_holes`, `subtract`), so the leaf fills only the corner gaps beside the chamfers, never
+  coplanar with bark (test `no_leaf_face_lies_on_the_bark_it_touches`, both faces). The far trees'
+  trunks draw no side toward a leaf, so they needed nothing (a guard test in `lod_trees.rs`). Leaf-to-leaf seams need nothing new: a neighbour's exposure counts the
+  flush face as closed alike, so the gap fill clips the shared face by the planes the neighbour
+  really has. The far trees (`lod_trees.rs`) do the same where a leaf meets a `leafFlush` log; the
+  impostors bake no chamfer. Tests: `a_flush_face_is_drawn_flat_and_the_cuts_along_it_end_square`,
+  `leaves_lie_flat_against_a_trunk` and `…_a_log_like_block_added_by_data` (both faces: the inner
+  faces the whole square on the log, no chamfer leaning to the trunk, nothing inside it, the
+  crown's surface closed).
+- **Built: canopy normals.** Each vertex's normal leans 0.75 toward the crown's outward direction.
+  **Deviation:** the Lab fits an ellipsoid to each tree's crown; the mesher has no tree record (the
+  chunk's voxels and a one-cell apron only), so the outward direction is away from the centroid of
+  the leaf cells within 3 m of the point (prefix sums over the padded chunk). Near a chunk border the
+  reach is cut to the same distance on both sides, so the two chunks agree on the border itself;
+  a tree record or a wider leaf apron would let it see the whole crown (round 2).
+- **Built: leaf cards** (`cards`: density 0.55, size 0.95 m ±25 %, sway 0.04 m, faded out from 48
+  to 64 m): per exposed face a hashed number of alpha-cut quads (the leaf block's tile), standing a
+  little off the face and turned toward the crown's outward direction, in the cutout mesh with the
+  plants' `plants` stream (sway and the distance fade, so none draws past 64 m) and no ink. The
+  client meshes none on a CPU adapter (`render::cards_for`, `ChunkFlags::cards`, the mesh job's bit 2).
+  **Deviation:** the Lab painted a leaf-clump tile; the cards use the leaf block's own tile for now.
+- **Built (0.52.57): far trees that match**, at the LOD levels that hold the trees' own cells (1 m and
+  2 m; `dwell-worldgen` `terrain.rs` `lod_trees` point-samples each tree into them). The section mesher
+  (`dwell-mesh` `lod_trees.rs`) draws leaf and log cells whole, as the chunks do, at the coarser cell:
+  leaves chamfered where exposed (the same `chamfer`, a share of the cell) with the gap fill, their
+  normals and face shading leaning out of the crown (the same `Crowns` over the section's 34³
+  grid), logs as octagonal columns (their vertical edges cut where both sides are open); colours are
+  the LOD's flat tile averages. A both-faces test meshes one fixture tree as a chunk and as a
+  section and compares the silhouettes (bounds within 0.05 m, leaning normals, the trunk's diagonal
+  sides). Coarser levels still show the canopy block on a share of columns' tops.
+- **Built (0.52.57): the cards' painted clump**: `shared/textures/materials.json` `leaf_clump` (tile
+  `leafCard`, named by `cards.tile` and baked into the atlas through `gen.mjs` `lookTiles`): stems
+  radiating from the bottom middle, leaves fanned along them, cut out between, lighter on top.
+
+## 11. Species in the game **[built in part, 0.52.58; ADR 0079]**
+
+`shared/trees/{oak,pine,palm}.json` carry the prototype's species data (lengths in metres), validated
+and emitted by `shared/trees/gen.mjs` (`species.gen.rs`; the fixture `fixtures/shrub.json` grows by
+data alone). `dwell_worldgen::species::grow(species, seed, stage)` is the prototype's `growTree` on
+the ½ m grid, a pure function: the trunk height drawn per seed from `trunk.height.mature` in ½ m
+steps, the crown the mature crown scaled by `crown.scale` over the stages and `variety.crown` per
+seed, oak branches (`heavy`) and pine whorls from `emergeAt`, branch logs turned to their step's axis;
+palms lean in whole-cell steps one axis at a time, a knee one squared horizontal log (owner: no 2×2
+flat knees), the fronds leaf cells along each frond's curve. Placements name a species like a
+structure: `growth.variants` seeds at stages drawn by `growth.wild` (mostly mature, some young).
+Oaks stand in `broadleaf_groves`, pines in `conifer_groves` and palms in `palm_coasts` (sand), the
+last two listed by the starter world only; the default world's pines are unchanged.
+
+Seen in the starter world (0.52.58, GPU): the oaks read as the prototype's broad crowns on bare trunks
+at clearly different heights, young ones among them; a branch's tip can poke out of a young crown.
+The palms lean and step as on the prototype's grid, but their leaf-cell fronds read as clumps, not
+blades. Pines stand in the mixed forest; the boreal spot has none (its climate, as before).
+
+**Trunk pads (0.55, WORK_QUEUE item 44):** a generated tree's trunk stands on a levelled pad its own
+width: the placement's `pad` ("trunk" by default for species) fills the ground under the trunk's
+columns (its lowest log cells, from the species and stage) up to its base and makes a ramp there
+full, at chunk generation, so the tree layer composed on that chunk and the far list (`far_trees`,
+the impostors, same anchors) stand on it. Trees grown from saplings and growth records' later stages
+change no ground.
+
+**Thin trunks (0.52.59):** saplings stand on narrow logs (`dwell:log[width]`, ¼ m steps; ADR 0079),
+the trunk thickening by stage to the species' `trunk.width.mature`.
+
+**Growth over time (0.52.60):** built (ADR 0079 S3): a record per tree keyed by its anchor, the growers
+step on the server every few seconds over loaded chunks, a stage every `growth.daysPerStage` world
+days written as the difference between stages where nobody edited; felled trees stop; saved in the
+optional `tree_growth` table. `?growth=N` speeds it for a time-lapse.
+
+**Per-tree leaf tints (ADR 0079 S4):** each species tree's leaves and cards are tinted by its seed's
+`variety` (`lightness`, `hue`, as the prototype draws them), near and at the LOD's tree levels alike;
+a leaf cell's tree is the nearest anchor among the trees whose bounds hold it, the same from either
+chunk at a border. Placed leaves and the default world's hand-built pines keep the plain colour.
+
+Not built: a sapling item to plant a tree (needs a per-tree record, its stage and the cells players edited,
+and the `growers` layer of §5: the stage advanced every `growth.daysPerStage` world days, the cells
+regenerated where nobody edited), frond blades (a `dwell:palm_frond` block), a pine needle block.
+**Saplings (ADR 0079 S4):** each species names a sapling item in its data (`sapling`: the block
+item, the `plantOn` ground, the leaves' `dropChance`). Placed on its ground the sapling becomes the
+species' stage-0 tree and a growth record (seeded by the position), which the growers step grows like
+a generated tree; on other ground the place is refused. Broken leaves of a recorded tree drop its
+sapling at the data's chance (adventure); creative lists the saplings under Plants.
+
+Not built: per-tree leaf tints (`variety.lightness`, `hue`), frond blades (a `dwell:palm_frond`
+block), a pine needle block, a sapling's own model.
+
+**Old-growth species (WORK_QUEUE item 32, 2026-11-12):** `shared/trees/old_pine.json` and `old_oak.json`
+are the pine's and oak's shapes grown old: a seed draws the full height from 18–26 m (pine; the pine's
+7–14 m) and 9–14 m (broadleaf; the oak's 3.5–7 m), a long bare trunk and slimmer crowns so a stand packs
+close, and `growth.wild` weighted to the last stage (`[0, 0, 1, 1, 1, 2, 3, 10]`: an old stand, few
+young trees). Their own species, not a tuning of a placement, so the planter's trees and the growth
+records agree. They have no sapling of their own yet (wild only: not planted, their leaves drop none;
+26 m is kept under the 32 m a broken leaf's tree is looked for, `growth.rs` `LEAF_RISE`). The
+`old_growth` placement (`placements.json`) stands them, 65 : 35, a candidate in every 5 m cell
+everywhere, its `spacing` −2 (a negative spacing, new: two crowns may interleave by that many blocks),
+~220 trees a hectare; only the `preset:old_growth` biome lists it (ADR 0074, the old-growth forest),
+and `test:forest` is that forest everywhere, the tree performance reference (docs/DEV_TOOLS.md).
+
+**Far trees as impostors (proposal, WORK_QUEUE item 31; [`proposals/TREE_IMPOSTORS.md`](proposals/TREE_IMPOSTORS.md)):**
+the bake is built (phase I-1): `dwell_worldgen::impostor::bake(species, seed, stage, config, px)` ray casts the
+cells `grow` builds (logs as their width's octagon, leaf cells whole) from the views of
+`shared/trees/impostors/impostors.json` (8 around × 2 elevations + 1 from above) into an atlas of albedo and
+normal + depth per texel, the leaves' normals leaning out of the crown by `leaves.json` `canopyBlend`.
+Deterministic, no drawing yet; it is to replace the LOD's tree cells (`lod_trees.rs`) once drawn.
+
+**Felling (WORK_QUEUE item 51, 2026-11-12):** a tree's logs take block damage like any block (hits to break
+by the axe, docs/BLOCK_DAMAGE.md §12); breaking a trunk's log fells what it held up (the trunk and crown
+above) as one body (docs/FELLING.md §8). A grown tree's record (`growers`) is unaffected until the change of
+its cells, as for any edit.
+
 ## Sources
 
 - Runions, Lane & Prusinkiewicz 2007, space colonization: https://algorithmicbotany.org/papers/colonization.egwnp2007.html

@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+> **For a typical task, read [`docs/AGENT_QUICKSTART.md`](docs/AGENT_QUICKSTART.md) instead of this whole
+> file:** the build rules, `npm run check:<area>`, each rule below in one line, and when to come back here.
+
 ## Project
 
 Dwell is a server-authoritative, multiplayer-first voxel sandbox with large-scale dynamic
@@ -71,7 +74,21 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+- `docs/THEATER_MODE.md` — theater mode (WORK_QUEUE item 41): camera paths as data (keyframes, moves, easings),
+  presets (`shared/theater/presets.json`), the engine `crates/dwell-theater`, recording, the creative viewpoint.
+- `docs/AGENT_QUICKSTART.md` — the one page an agent reads instead of this file for a typical task.
+- `docs/CLOUD_SESSIONS.md` — running Claude Code cloud sessions for parallel logic-only work: launching,
+  follow-ups, the PR and merge flow, what suits the cloud, limits and timings.
+- `docs/ECOLOGY.md` — the far ecology (WORK_QUEUE item 11): deer herds and wolf packs as data records on a
+  face's island grid, forage per cell, the day step (`crates/dwell-ecology`, `shared/ecology/ecology.json`).
+- `docs/SHRINES.md` — resurrection shrines (WORK_QUEUE item 54): shrine sites per face from the seed (~2 km grid,
+  `shared/worldgen/shrines.json`), the shrine built from its design, respawn at the nearest, spawns at shrines, the map's layer.
+- `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
+  starts, finishes or re-orders an item.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
+- `docs/BLOCK_DAMAGE.md` — design for Phase 58 (ADR 0078): blocks take hits to break by tool (each block's
+  `damage` data: a default and per tool class or item), the server's per-cell damage, saved in an
+  optional world table; per-hit and destroy drops; D2 the looks.
 - `docs/ITEMS.md` — the creative hotbar's items (1 m and ½ m pieces, `shared/items/items.json`) and the
   placement rules as block data (attach, placeOn, onSlopes, moldable).
 - `docs/GAMEPAD.md` — controller support: the bindings and tunables as data (`shared/input/gamepad.json`),
@@ -127,6 +144,27 @@ Record the answers in the feature's design doc or ADR. If the owner prefers a ha
 a prototype, record that as a deviation with the reason. Bug fixes and tuning of an existing system
 don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
 make it extendable first.
+
+## Requirement: record the owner's requests as they arrive
+
+Owner, 2026-11-11: "This is why we need to be documenting these as we go." Every request, answer or
+decision the owner gives goes into `docs/WORK_QUEUE.md` (a bug also into `docs/BUGS.md`) **in the same turn
+it arrives**, in the owner's words, before or alongside starting the work: not only in a session's memory,
+a scratch note or an agent's brief. Commit it with the next change (or on its own). An item nobody recorded
+doesn't exist for the next session.
+
+Owner, 2026-11-13: "Make a rule that when I request something like I just did with red sand you document it so
+we don't lose if." Each request is recorded in `docs/WORK_QUEUE.md` in the owner's words (quoted) plus an
+**"Owner should see:"** line stating the concrete result in game. That line is the acceptance check in every
+agent brief. An item is done only when a screenshot or the owner's look confirms it, not when the code
+merges. When a later request shows an earlier one fell short, the item says so and links them.
+
+## Lighter paperwork for small changes
+
+Owner, 2026-11-11. Small changes — bug fixes, tuning, tests, docs — update only `docs/WORK_QUEUE.md`
+(and `docs/BUGS.md` for a reported bug) and the release note. `docs/ARCHITECTURE.md` and ADRs change
+only when the architecture actually changes; `docs/IMPLEMENTATION_PLAN.md` and its Progress table only
+for phase work. The ARCHITECTURE.md and progress sections below apply in full to those cases.
 
 ## Requirement: keep ARCHITECTURE.md up to date
 
@@ -227,26 +265,35 @@ that touches the public API, a release or the workflows:
 
 - **The app version is Semantic Versioning.** `client/package.json`'s `version` is a **floor**, not a
   counter: the next version is the next patch after the newest published release, or `package.json`'s
-  version if that is higher. Never bump it on its own after a release; the bump rides in the next PR.
-- **Every PR merged to `main` raises `package.json` and ships as a stable tagged release** (owner,
-  2026-10-19): features, bug fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only
-  build: the owner sees a change only once a tag is released. Raise it to the next patch above the
-  newest release, or the next MINOR for a compatibility break (below), in the PR just before it
-  merges, one release per PR. The owner has given standing approval for these bumps. A push that
-  leaves `package.json` at or below the newest release (e.g. a direct push) is a dev build
-  (`v<next>-dev.<run>`).
-- **Every release says what changed:** the PR that raises `package.json` adds the version's entry,
-  one to six short lines, at the top of `shared/releases/changes.json` (a client test and
-  `release.ts` fail without it; `docs/RELEASES.md` §3). Write them for players, not as commit subjects.
+  version if that is higher. Never bump it on its own after a release.
+- **Every PR merged to `main` ships as a stable tagged release** (owner, 2026-10-19): features, bug
+  fixes, CI, test and workflow fixes alike. Nothing merges as a dev-only build: the owner sees a
+  change only once a tag is released. **The version is assigned at merge** (owner-approved speed-up,
+  2026-11-11): a PR does **not** raise `package.json` or edit `shared/releases/changes.json`; it adds
+  a **pending release note**, `shared/releases/pending/<branch-slug>.json` = `{"changes": ["…"]}`,
+  one to six short lines (a client test checks every note). On `main` the Release workflow
+  (`npm run release:assign`, `client/scripts/releaseAssign.ts`) gives each note the next patch,
+  writes `changes.json` and `package.json`, deletes the note, commits that to `main` and releases
+  it, so parallel PRs don't conflict (`docs/RELEASES.md` §3). Write the lines for players, not as
+  commit subjects. A PR that still raises `package.json` by hand with its own `changes.json` entry
+  releases as before. A push with neither (e.g. a direct push) is a dev build (`v<next>-dev.<run>`).
+- **Local builds carry the line, not the patch:** `crates/dwell-sim/build.rs` and `vite.config.ts`
+  read `shared/version/line.json` (MAJOR.MINOR), not `package.json`, so a release recompiles
+  nothing; a local build is `<line>.0-dev.local`. The release workflow passes the exact
+  `DWELL_VERSION`. A test fails when `line.json` disagrees with `package.json`.
 - **A breaking change to the public API — the saved world format, the terrain a seed generates, the
   network protocols, the cross-version browser storage — needs a new compatibility line** (before
-  `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json`; do not leave
-  such a change shipping under the old line, whose players' worlds it would break.
+  `1.0.0`, the next MINOR). Say so in the PR and let the owner raise `package.json` (with
+  `shared/version/line.json` and its `changes.json` entry); a pending note can't (`"breaking": true`
+  fails CI). Do not leave such a change shipping under the old line, whose players' worlds it would
+  break.
 - **Blocks and registry sync (ADR 0038):** the server sends its block registry at join and clients
-  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. Still
-  breaking: removing or renaming a state (or adding/removing a property), changing an existing
-  state's shape or rules, changing the shapes or the adaptive shape rules, and changing worldgen
-  (`docs/RELEASES.md` §3).
+  map ids by name, so **adding** blocks or states, or changing looks, is not breaking. From 0.50
+  (ADR 0063) a state with a property or value a build doesn't know is kept as an **alias** of its
+  known part, so **adding a property** (default meaning "as before") **or a value** is not breaking
+  either; mods namespace properties they add (`mymod:wet`). Still breaking: removing or renaming a
+  property, a value or a state, unknown whole blocks, changing an existing state's shape or rules,
+  changing the shapes, and changing worldgen (`docs/RELEASES.md` §3).
 - **World settings (ADR 0054)** — the clock, the water speed — are the world's, sent at join
   (`WorldSettings`) and saved with it: changing a build's default changes new worlds only. A new
   setting an older build on the line can do without is an **optional** tag (top bit set), not a
@@ -314,13 +361,18 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
-- `e2e/buildDrag.spec.ts`'s held-Place tests (shards 1 and 4) fail under the software renderer: a
-  held Place builds one piece and no more at a few frames a second (BUGS.md #30, open). They pass on a
-  real GPU; not caused by other work.
+- `e2e/buildDrag.spec.ts`'s tower tests (towering and both bridging tests, which tower first; shards 1
+  and 4) fall a piece or two short (34–35 m of 36) under the software renderer (BUGS.md #30, open: the
+  tower part). The rest of the spec passes there since the held Place's pace went by the clock; they
+  pass on a real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
-- The hotbar slot count in `e2e/edit.spec.ts` is the items' count (17, `shared/items/items.json`);
-  update it when the items change.
+- On the software renderer the page draws nothing for 3–5 s just after `terrainReady` (BUGS.md #49):
+  a spec that moves the player, times the screen or clicks the menu right after the join first awaits
+  `untilTicking` (`e2e/ticking.ts`). A new spec of that kind needs it too; a move of 0 m on CI is this.
+- The hotbar has 6 slots in both modes since 0.52.23 (`shared/inventory/inventory.json` `hotbarSlots`);
+  `e2e/edit.spec.ts` puts every item of `shared/items/items.json` on it with `d.pick` (tools place
+  nothing and are skipped), so it follows the items by itself; update its count of 6 if `hotbarSlots` changes.
 - Main's e2e failed from 0.28.x to 0.37.1 (fixed 0.37.2). Part was specs left behind by features:
   1 m hotbar blocks (two cells), leaves falling when no log holds them, flight capped at level
   11, new settings values. The rest were timeouts waiting for the generated terrain. The cliffs,
@@ -328,6 +380,12 @@ Check these before chasing an e2e failure:
   The spawn search took 6.6 s and now takes 1.2 s: it pre-checks patches on the pre-cliff ground.
   If a terrain wait times out again, time `generator_for`/`spawn_point_for` natively against the
   last green commit before widening the timeout.
+
+- `e2e/spawn.spec.ts`'s reopen test and `e2e/settings.spec.ts` (shard 4) fail on CI after a
+  `page.reload()` of a local world (BUGS.md #51, open); they pass on a real GPU.
+- Since 0.50.32 the e2e suite retries a failed test twice on CI (`retries` in `playwright.config.ts`):
+  the software renderer's stall after a join (BUGS.md #49) made tests fail by timing alone. A test
+  that passes on a retry is reported "flaky"; check those against #49 before chasing a bug.
 
 ## Running the browser in a sandbox
 

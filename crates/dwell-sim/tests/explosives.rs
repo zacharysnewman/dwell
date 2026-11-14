@@ -37,13 +37,31 @@ struct Scene {
 }
 
 impl Scene {
+    /// In adventure, where blasts hurt (ADR 0065).
     fn new(f: FaceFrame, players: usize) -> Self {
-        let fx = Fixture::new(ServerConfig {
+        Self::in_mode(f, players, "adventure")
+    }
+    fn in_mode(f: FaceFrame, players: usize, mode: &str) -> Self {
+        Self::in_config(f, players, mode, |_| {})
+    }
+    fn in_config(
+        f: FaceFrame,
+        players: usize,
+        mode: &str,
+        tweak: impl FnOnce(&mut ServerConfig),
+    ) -> Self {
+        let mut config = ServerConfig {
             generator_override: Some(empty_generator()),
             spawn: Some(f.point([0.5, m_of_row(BASE), -10.5])),
+            mode: mode.into(),
             ..flat()
-        });
+        };
+        tweak(&mut config);
+        let fx = Fixture::new(config);
         let mut s = Self { f, fx, base: BASE };
+        // A blast's pieces all spawn on its tick here: these tests read that tick; the spreading
+        // over ticks (`limits.piecesPerTick`) is pinned by its own test, which sets it back.
+        s.fx.server.set_pieces_per_tick(usize::MAX);
         let stone = require("dwell:stone");
         for x in -14..=14 {
             for z in -14..=14 {
@@ -54,6 +72,9 @@ impl Scene {
         }
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            // Adventure uses items up (ADR 0066): a torch to light with, dynamite to place.
+            s.fx.server.give(id as u16, "dwell:torch", 64);
+            s.fx.server.give(id as u16, "dwell:dynamite", 64);
         }
         for _ in 0..5 {
             s.fx.server.step();
@@ -68,6 +89,7 @@ impl Scene {
             fx: Fixture::new(flat()),
             base: FLAT_TOP_Y,
         };
+        s.fx.server.set_pieces_per_tick(usize::MAX);
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
         }
@@ -113,6 +135,7 @@ impl Scene {
                 material: require("dwell:torch"),
                 rows: 1,
                 down: false,
+                point: None,
             }),
         );
     }
@@ -319,6 +342,39 @@ dwell_world::both_faces!(
         assert!(!dead[3]);
         // Killed by it, player 1 is gone before its push would land; the others are pushed.
         assert!(push[2] > push[3] && push[3] > 0.5, "{push:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    fn in_creative_a_blast_hurts_no_one_but_still_pushes(f: FaceFrame) {
+        // ADR 0065: creative has no `damage` ability; the knockback is not damage.
+        let mut s = Scene::in_mode(f, 2, "creative");
+        for id in 1..=2 {
+            s.put(id, 0.5 + f64::from(id) - 1.0, -3.5);
+        }
+        s.run(2);
+        let at = [0, 0, 0];
+        s.set(at, require("dwell:dynamite"));
+        s.light(at);
+        s.run(1);
+        s.put(1, 1.3, 0.5);
+        s.put(2, 2.0, 0.5);
+        let out = s.run(181);
+        let mut pushed = 0;
+        for m in &out {
+            if let Message::PlayerEvent(p) = m {
+                assert!(
+                    !matches!(p.kind, PlayerEventKind::Damage | PlayerEventKind::Death),
+                    "{p:?}"
+                );
+                if p.kind == PlayerEventKind::Knockback {
+                    pushed += 1;
+                }
+            }
+        }
+        assert_eq!(s.get(at), M.air, "it blew");
+        assert!(pushed > 0, "pushed, not hurt");
+        assert_eq!(s.fx.server.health_of(1), players::MAX_HEALTH as i32);
     }
 );
 
@@ -547,7 +603,7 @@ fn surface_settle(e: ExplosiveData) -> (usize, usize, u32, f64) {
     s.fx.server.set_explosives(vec![e]);
     s.put(1, 0.5, -3.5);
     s.run(2);
-    s.set([0, 0, 0], require("dwell:dynamite"));
+    s.set([0, 0, 0], require(e.block));
     s.light([0, 0, 0]);
     s.run(1);
     s.put(1, 0.5, -13.0);
@@ -752,6 +808,7 @@ fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
             material: m,
             rows: 1,
             down: false,
+            point: None,
         })
     };
     {
@@ -926,3 +983,790 @@ fn measure_flush_charge() {
         println!("{name}: {:?}", flush_blast(e));
     }
 }
+
+fn yellow() -> ExplosiveData {
+    *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite_yellow")
+        .expect("yellow dynamite")
+}
+
+/// Blows `e` (the table's only entry) in face `f`'s scene, the rock round it everything within
+/// 7 m but a cliff open from face-local x = 5 on: the blast tick's pieces (each its face-local cell
+/// and speed) and the scene after it.
+fn cliff_blast(f: FaceFrame, e: ExplosiveData) -> (Vec<([i32; 3], f64)>, Scene) {
+    let mut s = Scene::new(f, 1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -12.5);
+    s.run(2);
+    let stone = require("dwell:stone");
+    for o in cells_within(e.radius_m.max(e.loosen_radius_m).max(7.0) + 2.0) {
+        s.set(o, if o[0] >= 5 { M.air } else { stone });
+    }
+    let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+    s.set([0, 0, 0], lit);
+    let at = s.cell([0, 0, 0]);
+    s.fx.server.light_fuse(at, 0, 0.0);
+    let out = s.run(2);
+    let base = s.cell([0, 0, 0]);
+    let pieces = spawns(&out)
+        .into_iter()
+        .map(|p| {
+            // The piece's world cell less the charge's, back through the frame (face-local).
+            let w = [
+                p.origin[0].floor() as i32,
+                (p.origin[1] / CELL_H).floor() as i32,
+                p.origin[2].floor() as i32,
+            ];
+            let local = f.cell(w);
+            let b = f.cell(base);
+            let o = [local[0] - b[0], local[1] - b[1], local[2] - b[2]];
+            let h = s.fx.server.body_handle(p.id).expect("a body");
+            (o, s.fx.server.physics().velocity(h).length())
+        })
+        .collect();
+    (pieces, s)
+}
+
+dwell_world::both_faces!(
+    fn yellow_cracks_cells_open_above_or_below_and_not_those_open_only_to_a_side(f: FaceFrame) {
+        // Owner (2026-11-07): "destroys 4m radius, and cracks anything touching air"; the roof over
+        // the cleared core drops; then (2026-11-09): "anything touching air on top or bottom,
+        // exclude blocks that are only touching 'side' air". A charge in rock beside a cliff open
+        // from x 5: cells beside the cliff face are open only to their side, so they stay; the
+        // roof over the cleared core still drops; cells pushed into rock stay.
+        let e = yellow();
+        assert_eq!(e.shell, dwell_world::explosives::ShellRule::Crack);
+        assert!(e.crack_vertical_only);
+        let (pieces, mut s) = cliff_blast(f, e);
+        let stone = require("dwell:stone");
+        let got: std::collections::HashMap<[i32; 3], f64> = pieces.iter().copied().collect();
+        // The roof over the core cracks loose (crackOverCleared).
+        assert!(
+            got.contains_key(&[0, 9, 0]),
+            "the roof over the core drops: {:?}",
+            got.keys()
+        );
+        // Beside the open cliff, open only to the side: stays (was flung before 0.50.55).
+        assert!(
+            !got.contains_key(&[4, 0, 2]),
+            "a cell open only to its side stays"
+        );
+        assert_eq!(s.get([4, 0, 2]), stone);
+        // Every piece was open above or below before the blast, or sat on the cleared core: none
+        // came from the cliff face's side cells.
+        for o in got.keys() {
+            assert!(o[0] < 4 || o[1] != 0, "{o:?} cracked from side air alone");
+        }
+        // Within 4 m: gone. Cells with no open side above or below: stay.
+        assert_eq!(s.get([0, 7, 2]), M.air, "3.6 m: destroyed");
+        for o in [[0, -9, 0], [0, 0, -5]] {
+            assert!(!got.contains_key(&o), "{o:?} stays");
+            assert_eq!(s.get(o), stone, "{o:?}: stays");
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_charge_touching_water_spares_the_blocks(f: FaceFrame) {
+        // Owner (2026-11-07): "Make dynamite not destroy or dislodge (physics) blocks when it's
+        // touching water." A charge in rock with one water cell beside it: no cell cleared, no
+        // piece; the same charge dry blows its crater (the cliff fixture's pieces).
+        let stone = require("dwell:stone");
+        for e in dwell_world::explosives::EXPLOSIVES {
+            assert!(e.water_spares_blocks, "{}: spares blocks by water", e.name);
+            let mut s = Scene::new(f, 1);
+            s.fx.server.set_explosives(vec![*e]);
+            s.put(1, 0.5, -12.5);
+            s.run(2);
+            for o in cells_within(7.0) {
+                s.set(o, if o[0] >= 5 { M.air } else { stone });
+            }
+            s.set([1, 0, 0], M.water);
+            let lit = dwell_world::explosives::lit_state(e).expect("lit");
+            s.set([0, 0, 0], lit);
+            let at = s.cell([0, 0, 0]);
+            s.fx.server.light_fuse(at, 0, 0.0);
+            let out = s.run(2);
+            assert!(spawns(&out).is_empty(), "{}: no piece by water", e.name);
+            for o in [[2, 0, 0], [-1, 0, 0], [0, 3, 0], [0, -3, 0], [3, 0, 2]] {
+                assert_eq!(s.get(o), stone, "{}: {o:?} stays by water", e.name);
+            }
+        }
+        // Dry, the same charge blows (red's cliff blast flings pieces).
+        let (pieces, _) = cliff_blast(f, dynamite());
+        assert!(!pieces.is_empty(), "dry: it blows");
+    }
+);
+
+dwell_world::both_faces!(
+    fn water_shields_the_rock_behind_it(f: FaceFrame) {
+        // Owner (2026-11-07): "it shouldn't destroy blocks or move them through water, so on the
+        // other side of water blocks". Dynamite in rock with a wall of water 2 m to its +x (not
+        // touching it): the rock behind the water stays; the other side is cleared. Blue (it
+        // destroys everything within 4 m), so without the shield the rock 3 m out behind the water
+        // would be destroyed.
+        let stone = require("dwell:stone");
+        let e = *dwell_world::explosives::EXPLOSIVES
+            .iter()
+            .find(|e| e.name == "dwell:dynamite_blue")
+            .expect("blue dynamite");
+        assert!(e.water_shields);
+        let mut s = Scene::new(f, 1);
+        s.fx.server.set_explosives(vec![e]);
+        s.put(1, 0.5, -12.5);
+        s.run(2);
+        for o in cells_within(7.0) {
+            s.set(o, if o[0] == 2 { M.water } else { stone });
+        }
+        let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+        s.set([0, 0, 0], lit);
+        let at = s.cell([0, 0, 0]);
+        s.fx.server.light_fuse(at, 0, 0.0);
+        s.run(2);
+        for o in [[3, 0, 0], [3, 1, 1], [3, -2, 0]] {
+            assert_eq!(s.get(o), stone, "{o:?} behind the water stays");
+        }
+        // The other side: within the 4 m core, gone.
+        for o in [[-1, 0, 0], [-3, 0, 0], [0, 0, -3]] {
+            assert_ne!(s.get(o), stone, "{o:?} on the dry side is cleared");
+        }
+    }
+);
+
+/// Yellow on flat ground, flush with the surface: (cells destroyed, pieces flung, flung pieces by
+/// whether they were surface cells).
+fn flat_yellow(f: FaceFrame, e: ExplosiveData) -> (usize, Vec<[i32; 3]>) {
+    let mut s = Scene::new(f, 1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -14.5);
+    s.run(2);
+    let stone = require("dwell:stone");
+    let reach = e.radius_m.max(e.loosen_radius_m) + 2.0;
+    for o in cells_within(reach) {
+        s.set(o, if o[1] <= 0 { stone } else { M.air });
+    }
+    let lit = dwell_world::explosives::lit_state(&e).expect("lit");
+    s.set([0, 0, 0], lit);
+    let at = s.cell([0, 0, 0]);
+    s.fx.server.light_fuse(at, 0, 0.0);
+    let out = s.run(2);
+    let base = f.cell(s.cell([0, 0, 0]));
+    let flung: Vec<[i32; 3]> = spawns(&out)
+        .into_iter()
+        .map(|p| {
+            let w = [
+                p.origin[0].floor() as i32,
+                (p.origin[1] / CELL_H).floor() as i32,
+                p.origin[2].floor() as i32,
+            ];
+            let l = f.cell(w);
+            [l[0] - base[0], l[1] - base[1], l[2] - base[2]]
+        })
+        .collect();
+    let gone = cells_within(reach)
+        .into_iter()
+        .filter(|&o| o[1] <= 0 && o != [0, 0, 0] && s.get(o) != stone)
+        .count();
+    (gone - flung.len(), flung)
+}
+
+#[test]
+#[ignore = "a measurement: prints yellow's flat-ground counts"]
+fn measure_yellow_on_flat_ground() {
+    // face-a-only: a printout, not an assertion.
+    let (destroyed, flung) = flat_yellow(FaceFrame::A, yellow());
+    let surface = flung.iter().filter(|o| o[1] == 0).count();
+    let far = flung
+        .iter()
+        .map(|o| ((o[0] * o[0] + o[2] * o[2]) as f64).sqrt())
+        .fold(0.0, f64::max);
+    println!(
+        "destroyed {destroyed}, flung {} ({surface} surface cells, farthest {far:.1} m out)",
+        flung.len()
+    );
+}
+
+dwell_world::both_faces!(
+    fn yellow_cracks_the_surface_out_to_seven_metres(f: FaceFrame) {
+        // Owner (2026-11-07): "increase the radius of the yellow dynamite by 2 meters, for cracking
+        // range only". Flush on flat ground: the surface cracks loose out to 7 m (was 5 m), the
+        // destroyed core stays 4 m, and nothing past 7 m moves.
+        let e = yellow();
+        assert_eq!((e.destroy_radius_m, e.loosen_radius_m), (4.0, 7.0));
+        let (_, flung) = flat_yellow(f, e);
+        let out = |o: &[i32; 3]| {
+            let y = f64::from(o[1]) * CELL_H;
+            (f64::from(o[0] * o[0] + o[2] * o[2]) + y * y).sqrt()
+        };
+        assert!(
+            flung.iter().any(|o| o[1] == 0 && out(o) > 6.0),
+            "a surface cell past 6 m cracks loose"
+        );
+        assert!(flung.iter().all(|o| out(o) <= 7.0), "none past 7 m");
+        assert!(
+            flung.iter().all(|o| out(o) > 3.0),
+            "the core is destroyed, not flung"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn yellow_does_not_free_cells_beside_its_destroyed_core(f: FaceFrame) {
+        // Owner (2026-11-07): the cells below and beside the crater "aren't supposed to go live next
+        // to the pieces that are destroyed": the air check is the world before the blast. Flush on
+        // flat ground only the surface (the cells that touched air) cracks loose; 0.50.9 also flung
+        // 266 cells under the ground (through the cleared core and behind the flying surface).
+        let (destroyed, flung) = flat_yellow(f, yellow());
+        assert_eq!(destroyed, 280, "the 4 m core");
+        let under: Vec<_> = flung.iter().filter(|o| o[1] != 0).collect();
+        assert!(
+            under.is_empty(),
+            "{} cells under the surface flung, e.g. {:?}",
+            under.len(),
+            under.first()
+        );
+        assert_eq!(flung.len(), 100, "the surface ring cracks");
+    }
+);
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_blast_cost -- --ignored --nocapture"]
+fn measure_blast_cost() {
+    // face-a-only: a measurement on the flat world (docs/DEV_TOOLS.md "Blasts and floods").
+    let yellow = *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite_yellow")
+        .expect("yellow");
+    for (name, e, buried) in [
+        ("red flush", dynamite(), false),
+        ("red buried", dynamite(), true),
+        ("yellow flush", yellow, false),
+    ] {
+        let e = ExplosiveData {
+            no_piece_contact_s: std::env::var("DWELL_LEVER_NOCONTACT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(e.no_piece_contact_s),
+            ..e
+        };
+        let mut s = Scene::flat(1);
+        let ids: Vec<u32> = if buried {
+            buried_blast(&mut s, e).iter().map(|p| p.id).collect()
+        } else {
+            s.fx.server.set_explosives(vec![e]);
+            s.put(1, 0.5, -3.5);
+            s.run(2);
+            s.set([0, 0, 0], require(e.block));
+            s.light([0, 0, 0]);
+            s.run(1);
+            s.put(1, 0.5, -13.0);
+            let fuse = s.fx.server.fuses()[0].1 as usize;
+            s.run(fuse - 1);
+            spawns(&s.run(1)).iter().map(|p| p.id).collect()
+        };
+        let n = ids.len();
+        let (mut ticks, mut worst, mut first_s, mut total) = (0u32, 0.0f64, 0.0, 0.0);
+        let (mut physics, mut terrain) = (0.0, 0.0);
+        let mut tick_ms = Vec::new();
+        s.fx.server.tick_phases();
+        while s.fx.server.body_count() > 0 && ticks < 30 * 60 {
+            let t = std::time::Instant::now();
+            s.run(1);
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            let ph = s.fx.server.tick_phases();
+            let get = |k: &str| ph.iter().find(|(n, _)| *n == k).map_or(0.0, |p| p.1);
+            physics += get("physics");
+            terrain += get("terrain");
+            worst = worst.max(ms);
+            total += ms;
+            tick_ms.push(ms);
+            if ticks < 60 {
+                first_s += ms;
+            }
+            ticks += 1;
+        }
+        tick_ms.sort_by(f64::total_cmp);
+        let p95 = tick_ms
+            .get(tick_ms.len() * 95 / 100)
+            .copied()
+            .unwrap_or(0.0);
+        println!(
+            "{name}: {n} pieces, tick mean {:.2} p95 {p95:.2} worst {worst:.1} ms, first second {first_s:.0} ms, physics {physics:.0} ms, terrain {terrain:.0} ms, settled in {:.1} s ({} left)",
+            total / f64::from(ticks.max(1)),
+            f64::from(ticks) / 60.0,
+            s.fx.server.body_count()
+        );
+    }
+}
+
+#[test]
+fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core() {
+    // face-a-only: the flat world's fixture; the destroy rule is a distance test in world space.
+    // Owner (2026-11-09): "Dynamite doesn't destroy nearby physics blocks in its destroy area, so
+    // chained dynamite still results in a ton of physics blocks that are affected by multiple
+    // explosion forces. Make it so physics blocks in the destroy radius are destroyed too." The
+    // owner's case: a 1-wide, 10-tall stack of yellow dynamite going down into the ground.
+    let e = yellow();
+    let mut s = Scene::flat(1);
+    s.fx.server.set_explosives(vec![e]);
+    s.put(1, 0.5, -3.5);
+    s.run(2);
+    let column: Vec<[i32; 3]> = (0..10).map(|k| [0, -2 * k, 0]).collect();
+    for &c in &column {
+        s.set(c, require(e.block));
+    }
+    s.light(column[0]);
+    s.run(1);
+    assert!(!s.fx.server.fuses().is_empty(), "the top charge is lit");
+    s.put(1, 0.5, -30.0);
+    let mut live: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut charges: Vec<[i32; 3]> = column.iter().map(|&c| s.cell(c)).collect();
+    let mut survivors = 0;
+    for _ in 0..(20 * 60) {
+        // Where every live piece is just before this tick (a blast this tick judges them there).
+        let before: Vec<(u32, DVec3)> = live
+            .iter()
+            .filter_map(|&id| {
+                let h = s.fx.server.body_handle(id)?;
+                Some((id, s.fx.server.physics().position(h)))
+            })
+            .collect();
+        let out = s.run(1);
+        for sp in spawns(&out) {
+            live.insert(sp.id);
+        }
+        for m in &out {
+            if let Message::EntityDespawn(id) = m {
+                live.remove(id);
+            }
+        }
+        // The charges that blew this tick: their cells no longer hold the explosive.
+        let blown: Vec<[i32; 3]> = charges
+            .iter()
+            .copied()
+            .filter(|&c| {
+                let m = s.fx.server.world().get_voxel(c[0], c[1], c[2]);
+                dwell_world::explosives::explosive_of(&[e], m).is_none()
+            })
+            .collect();
+        charges.retain(|c| !blown.contains(c));
+        for c in blown {
+            let centre = dwell_sim::felling::cell_centre(c);
+            survivors += before
+                .iter()
+                .filter(|(id, p)| (*p - centre).length() <= e.destroy_radius_m && live.contains(id))
+                .count();
+        }
+        if charges.is_empty() {
+            break;
+        }
+    }
+    assert!(charges.is_empty(), "the whole column blew");
+    assert_eq!(
+        survivors, 0,
+        "no piece inside a later blast's destroy radius survives it"
+    );
+}
+
+/// A chain in face `f`'s scene (none: the flat world, face A's, endless ground): `charges` (face-local) of `e` set in stone 24 rows deep, the first
+/// lit, run until every charge has blown, no piece is queued and none spawned for half a second, or
+/// `max` ticks (with `settle`, until the pieces have settled too): each tick's (ms, pieces spawned, phases), the cells the chain cleared within 12 m and
+/// the pieces spawned.
+/// A tick's phases (`Server::tick_phases`).
+type Phases = [(&'static str, f64); 14];
+
+struct Chain {
+    ticks: Vec<(f64, usize, Phases)>,
+    cleared: usize,
+    pieces: usize,
+    /// Every cell the blasts' `Explosion` modifications set (chunk, index), and how many there were.
+    exploded: std::collections::BTreeSet<([i32; 3], u16)>,
+    booms: usize,
+}
+
+fn solid_round(s: &mut Scene) -> usize {
+    let mut n = 0;
+    for x in -12..=12 {
+        for z in -12..=12 {
+            for r in -24..4 {
+                let m = s.get([x, r, z]);
+                if m != M.air && !info(m).liquid {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+fn chain(
+    f: Option<FaceFrame>,
+    e: ExplosiveData,
+    charges: &[[i32; 3]],
+    max: usize,
+    settle: bool,
+    per_tick: Option<usize>,
+) -> Chain {
+    let mut s = match f {
+        Some(f) => Scene::new(f, 1),
+        None => Scene::flat(1),
+    };
+    s.fx.server.set_explosives(vec![e]);
+    // None: the data's budget.
+    s.fx.server.set_pieces_per_tick(
+        per_tick.unwrap_or(dwell_world::explosives::LIMITS.pieces_per_tick as usize),
+    );
+    s.put(1, 0.5, -3.5);
+    s.run(2);
+    if f.is_some() {
+        // Deeper stone than the scene's six rows, so a chain going down stays in rock.
+        let stone = require("dwell:stone");
+        for x in -14..=14 {
+            for z in -14..=14 {
+                for r in -24..-6 {
+                    s.set([x, r, z], stone);
+                }
+            }
+        }
+    }
+    for &c in charges {
+        s.set(c, require(e.block));
+    }
+    let before = solid_round(&mut s);
+    s.light(charges[0]);
+    s.run(1);
+    s.put(1, 0.5, -13.5);
+    s.fx.server.tick_phases();
+    let mut ticks = Vec::new();
+    let mut ids = std::collections::HashSet::new();
+    let mut quiet = 0;
+    let (mut exploded, mut booms) = (std::collections::BTreeSet::new(), 0);
+    for _ in 0..max {
+        let t = std::time::Instant::now();
+        let out = s.run(1);
+        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        let new = spawns(&out).iter().filter(|p| ids.insert(p.id)).count();
+        for m in &out {
+            if let Message::VoxelModification(v) = m
+                && v.reason == VoxelModificationReason::Explosion
+            {
+                booms += 1;
+                for c in &v.chunks {
+                    for ch in &c.changes {
+                        exploded.insert((c.coord, ch.index));
+                    }
+                }
+            }
+        }
+        ticks.push((ms, new, s.fx.server.tick_phases()));
+        let done = s.fx.server.fuses().is_empty() && s.fx.server.queued_pieces() == 0;
+        quiet = if done && new == 0 { quiet + 1 } else { 0 };
+        if quiet > 30 && (!settle || s.fx.server.body_count() == 0) {
+            break;
+        }
+    }
+    let after = solid_round(&mut s);
+    Chain {
+        ticks,
+        cleared: before - after,
+        pieces: ids.len(),
+        exploded,
+        booms,
+    }
+}
+
+/// The 3 × 9 block of red dynamite on the ground.
+fn red_block() -> Vec<[i32; 3]> {
+    let mut v = vec![[0, 0, 0]];
+    for z in 0..9 {
+        for x in -1..=1 {
+            if [x, z] != [0, 0] {
+                v.push([x, 0, z]);
+            }
+        }
+    }
+    v
+}
+
+/// The 10-tall column of yellow going down into the ground.
+fn yellow_column() -> Vec<[i32; 3]> {
+    (0..10).map(|k| [0, -2 * k, 0]).collect()
+}
+
+#[test]
+#[ignore = "a measurement: cargo test --release -p dwell-sim --test explosives measure_chain_ticks -- --ignored --nocapture"]
+fn measure_chain_ticks() {
+    // face-a-only: a measurement; the parity is in the chained tests.
+    let per_tick = std::env::var("DWELL_PIECES_PER_TICK")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    for (name, e, charges) in [
+        ("red 3x9", dynamite(), red_block()),
+        ("yellow column", yellow(), yellow_column()),
+    ] {
+        let c = chain(None, e, &charges, 30 * 60, true, per_tick);
+        let (wi, w) = c
+            .ticks
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.0.total_cmp(&b.1.0))
+            .expect("ticks");
+        let mut sorted: Vec<f64> = c.ticks.iter().map(|t| t.0).collect();
+        sorted.sort_by(f64::total_cmp);
+        let over = sorted.iter().filter(|&&m| m > 16.7).count();
+        let most = c.ticks.iter().map(|t| t.1).max().unwrap_or(0);
+        // The worst tick that spawned pieces, and the worst of the half second after one.
+        let spawning = c.ticks.iter().filter(|t| t.1 > 0).map(|t| t.0);
+        let worst_spawn = spawning.fold(0.0f64, f64::max);
+        let near = (0..c.ticks.len())
+            .filter(|&k| c.ticks[k.saturating_sub(30)..=k].iter().any(|t| t.1 > 0))
+            .map(|k| c.ticks[k].0)
+            .fold(0.0f64, f64::max);
+        println!(
+            "{name}: worst spawning tick {worst_spawn:.1} ms, worst within 0.5 s of a spawn {near:.1} ms"
+        );
+        let phases: Vec<String> =
+            w.2.iter()
+                .filter(|p| p.1 > 0.5)
+                .map(|p| format!("{} {:.1}", p.0, p.1))
+                .collect();
+        println!(
+            "{name}: {} pieces, {} cells cleared, {} ticks, worst {:.1} ms at tick {wi} ({} spawned; {}), p95 {:.1}, over 16.7 ms {over}, most spawned a tick {most}",
+            c.pieces,
+            c.cleared,
+            c.ticks.len(),
+            w.0,
+            w.1,
+            phases.join(", "),
+            sorted[sorted.len() * 95 / 100],
+        );
+    }
+}
+
+dwell_world::both_faces!(
+    fn a_chains_pieces_spawn_within_the_tick_budget_to_the_same_end(f: FaceFrame) {
+        // A big chain's pieces are spread over the ticks (`limits.piecesPerTick`, docs/EXPLOSIVES.md
+        // §3.12): no tick spawns more than the budget, and the chain clears the same cells, booms
+        // the same blasts (one modification each) and spawns the same pieces as with no budget.
+        let red = dynamite();
+        let budget = dwell_world::explosives::LIMITS.pieces_per_tick as usize;
+        let whole = chain(Some(f), red, &red_block(), 6 * 60, false, Some(usize::MAX));
+        let spread = chain(Some(f), red, &red_block(), 6 * 60, false, Some(budget));
+        let most = |c: &Chain| c.ticks.iter().map(|t| t.1).max().unwrap_or(0);
+        assert!(
+            most(&whole) > budget,
+            "the fixture is over budget: {}",
+            most(&whole)
+        );
+        assert!(
+            most(&spread) <= budget,
+            "a tick spawned {} pieces, over the budget {budget}",
+            most(&spread)
+        );
+        assert_eq!(
+            spread.booms, whole.booms,
+            "the same blasts, each one modification"
+        );
+        assert_eq!(spread.exploded, whole.exploded, "the same cells cleared");
+        // The same pieces, but those a later blast's core destroys while they wait (judged at their
+        // cell, not where a spawned one would have flown in the ticks between): within 2%.
+        let gap = spread.pieces.abs_diff(whole.pieces);
+        assert!(
+            gap * 50 <= whole.pieces,
+            "pieces spawned {} spread, {} whole",
+            spread.pieces,
+            whole.pieces
+        );
+    }
+);
+
+// Attached blocks in a blast (BUGS.md #165; owner, 2026-11-13: "Dynamite blows up (physics) tall
+// grass that's wrong. It should just be destroyed if the block under it is moved or destroyed."):
+// a block with `needsSupport` (tall grass, a torch, a sapling, a ladder; the rule is the data's, no
+// block is named in the code) is never a flung piece, and goes with the block holding it.
+
+/// Sets off dynamite at face-local `at` now (its fuse a few ticks), every message of the blast kept.
+fn blow(s: &mut Scene, at: [i32; 3]) -> Vec<Message> {
+    s.set(at, require("dwell:lit_dynamite"));
+    let cell = s.cell(at);
+    let i = EXPLOSIVES
+        .iter()
+        .position(|e| e.name == "dwell:dynamite")
+        .expect("dynamite");
+    s.fx.server.light_fuse(cell, i, 0.05);
+    s.run(12)
+}
+
+/// Whether `m` is an attached block, read from its data: `needsSupport`, or a part of one.
+fn attached(m: StateId) -> bool {
+    use dwell_blocks::Support;
+    let s = info(m);
+    s.needs_support != Support::None
+        || s.part_of
+            .and_then(dwell_blocks::state)
+            .is_some_and(|p| info(p).needs_support != Support::None)
+}
+
+/// The blast's pieces that carry an attached block (block data `needsSupport`).
+fn attached_pieces(out: &[Message]) -> usize {
+    spawns(out)
+        .iter()
+        .filter(|p| p.cells.iter().any(|c| attached(c.state)))
+        .count()
+}
+
+fn is(s: &mut Scene, at: [i32; 3], block: &str) -> bool {
+    let m = s.get(at);
+    m != M.air && dwell_blocks::block_of(m).name == block
+}
+
+fn loose_count(s: &Scene, item: &str) -> usize {
+    s.fx.server
+        .loose_items()
+        .iter()
+        .filter(|l| l.stack.item == item)
+        .map(|l| usize::from(l.stack.count))
+        .sum()
+}
+
+dwell_world::both_faces!(
+    fn a_blast_over_tall_grass_flings_no_grass_and_removes_it(f: FaceFrame) {
+        let e = dynamite();
+        let mut s = Scene::new(f, 1);
+        s.put(1, 0.5, -13.5);
+        let (dirt, grass) = (require("dwell:dirt"), require("dwell:tall_grass"));
+        for x in -8..=8 {
+            for z in -8..=8 {
+                s.set([x, -1, z], dirt);
+                s.set([x, 0, z], grass);
+            }
+        }
+        let out = blow(&mut s, [0, 0, 0]);
+        let pieces = spawns(&out);
+        assert!(
+            pieces.len() > 50,
+            "the dirt and stone fly: {}",
+            pieces.len()
+        );
+        assert_eq!(attached_pieces(&out), 0, "no grass flies");
+        for x in -8..=8 {
+            for z in -8..=8 {
+                let d = dist([x, 0, z]);
+                let here = is(&mut s, [x, 0, z], "dwell:tall_grass");
+                if d <= e.radius_m {
+                    assert!(!here, "the grass {d:.2} m out is removed");
+                }
+                if here {
+                    assert!(is(&mut s, [x, -1, z], "dwell:dirt"), "no grass floats");
+                }
+            }
+        }
+        // Removed as if broken: adventure drops its fibre (a full-grown plant's is certain).
+        assert!(loose_count(&s, "dwell:grass_fiber") > 20, "the grass drops");
+    }
+);
+
+dwell_world::both_faces!(
+    fn attached_blocks_on_flung_blocks_go_and_are_not_carried(f: FaceFrame) {
+        let e = dynamite();
+        let mut s = Scene::new(f, 1);
+        s.put(1, 0.5, -13.5);
+        // A dirt deck 4.5 m over the charge: its cells fly (within the radius), what stands on
+        // them lies just past it. A torch (two cells) and a sapling as well as tall grass: the
+        // rule is their `needsSupport` data alone.
+        let dirt = require("dwell:dirt");
+        for x in -2..=2 {
+            for z in -2..=2 {
+                s.set([x, 9, z], dirt);
+                s.set([x, 10, z], require("dwell:tall_grass"));
+            }
+        }
+        s.set([-1, 10, -1], require("dwell:torch"));
+        s.set([-1, 11, -1], require("dwell:torch_upper"));
+        s.set([1, 10, -1], require("dwell:oak_sapling"));
+        assert!(dist([1, 10, 0]) > e.radius_m && dist([1, 9, 0]) <= e.radius_m);
+        let out = blow(&mut s, [0, 0, 0]);
+        assert_eq!(attached_pieces(&out), 0, "nothing attached is carried");
+        let mut beyond = 0;
+        for x in -2..=2 {
+            for z in -2..=2 {
+                let flown = s.get([x, 9, z]) == M.air;
+                if flown && dist([x, 10, z]) > e.radius_m {
+                    beyond += 1;
+                }
+                if flown {
+                    assert_eq!(s.get([x, 10, z]), M.air, "{x},{z}: nothing left floating");
+                    assert_eq!(s.get([x, 11, z]), M.air, "{x},{z}: nor the torch's top");
+                }
+            }
+        }
+        assert!(beyond >= 4, "decks past the radius flew: {beyond}");
+        assert!(
+            s.get([-1, 9, -1]) == M.air && s.get([1, 9, -1]) == M.air,
+            "the torch's and sapling's blocks flew"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn tall_grass_on_a_block_broken_by_a_tool_goes_with_it(f: FaceFrame) {
+        let mut s = Scene::in_config(f, 1, "adventure", |c| c.one_hit_breaks = true);
+        s.set([0, -1, 0], require("dwell:dirt"));
+        s.set([0, 0, 0], require("dwell:tall_grass"));
+        s.put(1, 0.5, -1.5);
+        s.run(2);
+        let cell = s.cell([0, -1, 0]);
+        s.fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell,
+                face: f.cell_face(2) as u8,
+                material: M.air,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        s.run(3);
+        assert_eq!(s.get([0, -1, 0]), M.air, "the dirt broke");
+        assert_eq!(s.get([0, 0, 0]), M.air, "the grass went with it");
+        assert!(loose_count(&s, "dwell:grass_fiber") >= 1, "and dropped");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_torch_on_sand_that_falls_goes_and_is_not_left_floating(f: FaceFrame) {
+        // A torch on sand over the stone ground; the stone under the sand broken from the side
+        // (a pit dug beside it): the sand falls as a piece and the torch goes, not left floating.
+        let mut s = Scene::in_config(f, 1, "adventure", |c| c.one_hit_breaks = true);
+        s.set([0, 0, 0], require("dwell:sand"));
+        s.set([0, 1, 0], require("dwell:torch"));
+        s.set([0, 2, 0], require("dwell:torch_upper"));
+        s.set([0, -1, -1], M.air);
+        s.put(1, 0.5, -2.5);
+        s.run(2);
+        let cell = s.cell([0, -1, 0]);
+        s.fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell,
+                face: f.cell_face(5) as u8,
+                material: M.air,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        let out = s.run(3);
+        assert_eq!(s.get([0, -1, 0]), M.air, "the stone broke");
+        assert_eq!(s.get([0, 0, 0]), M.air, "the sand fell");
+        assert!(!spawns(&out).is_empty(), "as a piece");
+        assert_eq!(attached_pieces(&out), 0, "carrying nothing attached");
+        assert_eq!(s.get([0, 1, 0]), M.air, "the torch went");
+        assert_eq!(s.get([0, 2, 0]), M.air, "and its top");
+        assert!(loose_count(&s, "dwell:torch") >= 1, "dropping it");
+    }
+);

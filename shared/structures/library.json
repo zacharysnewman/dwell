@@ -1,0 +1,6 @@
+{
+  "$comment": "The player's structure library (docs/STRUCTURES.md §9): a selection up to tileSize a side is saved as one structure; a larger one as a grid of tileSize tiles, at most maxTiles [x, y, z] of them. tileSize is at most one region edit's side (32).",
+  "tileSize": 32,
+  "maxTiles": [4, 2, 4],
+  "maxNameLength": 48
+}

@@ -18,6 +18,10 @@ use crate::types::{Character, Clip, Layer};
 pub enum Swing {
     Break,
     Place,
+    /// The axe's level and vertical swings (ADR 0067); a character without their clips plays its
+    /// `break`.
+    ChopLevel,
+    ChopVertical,
 }
 
 impl Swing {
@@ -25,8 +29,28 @@ impl Swing {
         match self {
             Swing::Break => "break",
             Swing::Place => "place",
+            Swing::ChopLevel => "chop_level",
+            Swing::ChopVertical => "chop_vertical",
         }
     }
+}
+
+/// Defeat (docs/CHARACTERS.md §11.13; owner, 2026-11-13: "Humans won't die in this game"): a
+/// defeated human kneels where it fell, then stands up at a shrine. The clips are the characters'
+/// roles named in `dwell_protocol::defeat::ROLES` (`kneel`, `stand`, and with a weapon in hand
+/// `kneel_sword`, `stand_sword`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Defeat {
+    /// Down on one knee, head bowed (held while defeated).
+    Kneel,
+    /// Rising from the kneel to idle: plays once from where it is set, then the gait takes over.
+    Stand,
+}
+
+/// Whether `role` is one of defeat's (no hold layer, raised guard, look or foot planting over it).
+pub fn is_defeat_role(role: &str) -> bool {
+    let r = &dwell_protocol::defeat::ROLES;
+    [r.kneel, r.kneel_armed, r.stand, r.stand_armed].contains(&role)
 }
 
 /// What the animator reads each frame: a remote snapshot's controller state (or the local
@@ -52,6 +76,14 @@ pub struct MoveInput {
     /// A jump started since the last frame (a remote's snapshots, `RemoteView::jumped`): the jump
     /// plays even when this frame comes after its rise, or after the whole jump (a slow page).
     pub jumped: bool,
+    /// A raised block's role (a sword's `guard.stances.*.raisedPose`, shared/tools: `guard_level`),
+    /// played in place of the hold while no swing plays (attacking drops the block; WORK_QUEUE
+    /// item 35). A character without the role's clip shows its hold.
+    pub guard: Option<&'static str>,
+    /// Defeated (kneeling) or standing up again ([`Defeat`]); none while playing.
+    pub defeat: Option<Defeat>,
+    /// A weapon is in hand (a sword: `ToolKind::Weapon`): defeat plants it (`kneel_sword`).
+    pub armed: bool,
 }
 
 impl Default for MoveInput {
@@ -67,6 +99,9 @@ impl Default for MoveInput {
             holding: false,
             foot_ground: [0.0; 2],
             jumped: false,
+            guard: None,
+            defeat: None,
+            armed: false,
         }
     }
 }
@@ -162,6 +197,10 @@ pub struct Animator {
     /// The clip faded out of, and how far the fade is (s) of how long.
     from: Option<(Playing, f32, f32)>,
     action: Option<Playing>,
+    /// The swing's clip time set from outside (a melee swing's hit-stop and pull-back,
+    /// `dwell-client` chop.rs), instead of advancing with the frame, and its weight over the
+    /// pose under it (1: the clip's pose; the pull-out fades it to the arms' rest).
+    driven: Option<(f32, f32)>,
 }
 
 impl Animator {
@@ -173,6 +212,7 @@ impl Animator {
             base: None,
             from: None,
             action: None,
+            driven: None,
         }
     }
 
@@ -202,14 +242,41 @@ impl Animator {
         self.action.map(|a| a.role)
     }
 
+    /// Drives the swing playing to clip time `t` (s) each frame from now on, or lets it run with the
+    /// frame again (none).
+    pub fn drive_action(&mut self, t: Option<f32>) {
+        self.driven = t.map(|t| (t, 1.0));
+    }
+
+    /// Drives the swing playing to clip time `t` (s), laid over the pose under it at `weight`
+    /// (0..1): a hit's pull-out holds the contact's pose and fades it out, straight back to rest.
+    pub fn drive_action_weighted(&mut self, t: f32, weight: f32) {
+        self.driven = Some((t, weight.clamp(0.0, 1.0)));
+    }
+
+    /// Ends the swing playing, whatever its clip time (a driven swing that is over: it must not
+    /// play on from where it was left; BUGS.md #93).
+    pub fn stop_action(&mut self) {
+        self.action = None;
+        self.driven = None;
+    }
+
     /// Starts a swing (an edit's break or place) on the action layer.
     pub fn swing(&mut self, s: Swing) {
-        if let Some(clip) = self.clip_of(s.role()) {
-            self.action = Some(Playing {
-                role: s.role(),
-                clip,
-                t: 0.0,
-            });
+        self.swing_as(s, s.role());
+    }
+
+    /// Starts swing `s` playing the character's `role` (a tool's `clips`: the sword's
+    /// `slash_level`, WORK_QUEUE item 35); a character without that role's clip plays the swing's
+    /// own role, then its `break`.
+    pub fn swing_as(&mut self, s: Swing, role: &'static str) {
+        let found = self
+            .clip_of(role)
+            .map(|c| (role, c))
+            .or_else(|| self.clip_of(s.role()).map(|c| (s.role(), c)))
+            .or_else(|| self.clip_of("break").map(|c| ("break", c)));
+        if let Some((role, clip)) = found {
+            self.action = Some(Playing { role, clip, t: 0.0 });
         }
     }
 
@@ -233,6 +300,35 @@ impl Animator {
                 Space::Arms => arms_role(i, "idle"),
             };
         }
+        // Defeat (§11.13): the kneel held, the stand played once (then the gait), the armed clip
+        // with a weapon in hand where the character has it.
+        let finished = |a: &Self| a.base.is_some_and(|b| b.t >= a.clip(b.clip).duration);
+        let r = &dwell_protocol::defeat::ROLES;
+        let pick = |a: &Self, plain: &'static str, armed: &'static str| {
+            if i.armed && a.clip_of(armed).is_some() {
+                armed
+            } else {
+                plain
+            }
+        };
+        match i.defeat {
+            Some(Defeat::Kneel) => role = pick(self, r.kneel, r.kneel_armed),
+            Some(Defeat::Stand) => {
+                let stand = pick(self, r.stand, r.stand_armed);
+                if !(now == stand && finished(self)) {
+                    role = stand;
+                }
+            }
+            // A stand plays out unless the player moves off.
+            None if (now == r.stand || now == r.stand_armed)
+                && !finished(self)
+                && matches!(role, "idle" | "land") =>
+            {
+                role = now;
+            }
+            None => {}
+        }
+        let defeated = is_defeat_role(role);
         let clip = self
             .clip_of(role)
             .or_else(|| self.clip_of("idle"))
@@ -276,22 +372,40 @@ impl Animator {
         }
         if self.space == Space::Body
             && i.holding
+            && !defeated
             && let Some(hold) = self.clip_of("hold")
         {
             layer(&mut pose, &sample(self.clip(hold), base.t), 1.0);
         }
+        // The raised block over the gait (and the hold), on the body and the arms alike.
+        if self.action.is_none()
+            && !defeated
+            && let Some(guard) = i.guard.and_then(|g| self.clip_of(g))
+        {
+            layer(&mut pose, &sample(self.clip(guard), base.t), 1.0);
+        }
+        let driven = self.driven;
         if let Some(a) = &mut self.action {
-            a.t += dt;
+            let weight = match driven {
+                Some((t, w)) => {
+                    a.t = t;
+                    w
+                }
+                None => {
+                    a.t += dt;
+                    1.0
+                }
+            };
             let c = self.tables.clip(a.clip);
             if a.t > c.duration {
                 self.action = None;
             } else {
                 debug_assert_eq!(c.layer, Layer::Action);
                 let a = *a;
-                layer(&mut pose, &sample(c, a.t), 1.0);
+                layer(&mut pose, &sample(c, a.t), weight);
             }
         }
-        if self.space == Space::Body {
+        if self.space == Space::Body && !defeated {
             self.plant_feet(&mut pose, i);
             self.look(&mut pose, i);
         }
@@ -367,6 +481,101 @@ impl Animator {
 mod tests {
     use super::*;
     use crate::{TABLES, player};
+
+    // WORK_QUEUE item 35: a raised block shows its stance's clip on the body and the arms, by the
+    // role's data; a swing drops it; an unknown role shows the hold.
+    #[test]
+    fn a_raised_guard_plays_its_stance_on_the_body_and_the_arms_until_a_swing() {
+        for space in [Space::Body, Space::Arms] {
+            let arm = player().bone("arm_r").unwrap();
+            let pose_of = |guard: Option<&'static str>, swing: bool| {
+                let mut a = Animator::new(&TABLES, player(), space);
+                if swing {
+                    a.swing(Swing::ChopLevel);
+                }
+                let i = MoveInput {
+                    holding: true,
+                    guard,
+                    ..MoveInput::default()
+                };
+                a.update(&i, 0.01).rot[arm]
+            };
+            let held = pose_of(None, false);
+            let level = pose_of(Some("guard_level"), false);
+            let vertical = pose_of(Some("guard_vertical"), false);
+            assert_ne!(held, level, "{space:?}: the level block raises the arm");
+            assert_ne!(level, vertical, "{space:?}: each stance its own");
+            assert_eq!(pose_of(Some("no_such_role"), false), held, "{space:?}");
+            assert_eq!(
+                pose_of(Some("guard_level"), true),
+                pose_of(None, true),
+                "{space:?}: a swing drops the block"
+            );
+        }
+    }
+
+    /// Footsteps a second (two a loop) the body's gait clip plays while the controller moves at
+    /// `speed` in `state`, over 10 s after the cross-fade in.
+    fn steps_per_second(space: Space, state: PlayerState, speed: f32) -> f32 {
+        let mut a = Animator::new(&TABLES, player(), space);
+        let i = input(state, [speed, 0.0, 0.0]);
+        let dt = 1.0 / 240.0;
+        for _ in 0..240 {
+            a.update(&i, dt);
+        }
+        let b = a.base.expect("a gait");
+        let t0 = b.t;
+        for _ in 0..2400 {
+            a.update(&i, dt);
+        }
+        let b = a.base.expect("a gait");
+        2.0 * (b.t - t0) / a.clip(b.clip).duration / 10.0
+    }
+
+    /// BUGS.md #103 (owner, 2026-11-12): "the feet are moving really fast, way faster than normal
+    /// legs step/walk." The walk looped every 1.6 m: at the 5 m/s walk, 6.25 steps a second (the
+    /// sprint 5.3 at 8 m/s). Your own body in first person, other players and your shadow all play
+    /// these clips (the Peasant through the retarget, the rigid body too): the walk now steps ~2 a
+    /// second and the sprint under 3, at speed ÷ the clip's `cycle` (2 footsteps of the sound's
+    /// stride, so feet and footsteps agree), and the rate follows the speed.
+    #[test]
+    fn the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds() {
+        let m = dwell_physics::config::PlayerControllerConfig::default();
+        let (walk, run, crouch) = (m.movement.walk_speed, m.movement.run_speed, m.crouch.speed);
+        let w = steps_per_second(Space::Body, PlayerState::Walking, walk);
+        assert!(
+            (1.8..=2.2).contains(&w),
+            "the walk steps {w}/s at {walk} m/s"
+        );
+        let s = steps_per_second(Space::Body, PlayerState::Running, run);
+        assert!(
+            (2.5..=3.1).contains(&s),
+            "the sprint steps {s}/s at {run} m/s"
+        );
+        assert!(
+            s > w,
+            "the sprint ({s}/s) steps faster than the walk ({w}/s)"
+        );
+        let c = steps_per_second(Space::Body, PlayerState::Crouching, crouch);
+        assert!(
+            (1.2..=1.8).contains(&c),
+            "the crouch-walk steps {c}/s at {crouch} m/s"
+        );
+        // The rate is speed ÷ cycle: half the speed, half the cadence.
+        let half = steps_per_second(Space::Body, PlayerState::Walking, walk / 2.0);
+        assert!(
+            (half / w - 0.5).abs() < 0.02,
+            "{half}/s at half the walk's {w}/s"
+        );
+        for (role, clip_speed, got) in [("walk", walk, w), ("sprint", run, s)] {
+            let clip = TABLES.clip(player().clip(role).expect(role));
+            let want = 2.0 * clip_speed / clip.cycle;
+            assert!(
+                (got - want).abs() < 0.02 * want,
+                "{role}: {got}/s, speed / cycle {want}"
+            );
+        }
+    }
 
     fn input(state: PlayerState, v: [f32; 3]) -> MoveInput {
         MoveInput {
@@ -502,6 +711,27 @@ mod tests {
     }
 
     #[test]
+    fn the_axe_swings_play_their_own_clips_on_the_arms_and_the_body() {
+        // The arms (first person) and the body (third person) each have a level and a vertical
+        // chop clip (ADR 0067; the body's since 2026-11-11, before which others saw a break). Which
+        // way they carry the axe is pinned on the drawn head by dwell-client's clip probe tests
+        // (`clip_probe::chop_swing_tests`), not by joint angles here: an arm-yaw check passed
+        // while the level swing ran left to right on screen.
+        for space in [Space::Arms, Space::Body] {
+            for (s, role) in [
+                (Swing::ChopLevel, "chop_level"),
+                (Swing::ChopVertical, "chop_vertical"),
+            ] {
+                let mut a = Animator::new(&TABLES, player(), space);
+                a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
+                a.swing(s);
+                a.update(&input(PlayerState::Idle, [0.0; 3]), 0.1);
+                assert_eq!(a.action(), Some(role), "{space:?}");
+            }
+        }
+    }
+
+    #[test]
     fn the_head_follows_the_pitch() {
         let mut a = Animator::new(&TABLES, player(), Space::Body);
         let head = player().bone("head").unwrap();
@@ -558,5 +788,47 @@ mod tests {
         a.swing(Swing::Place);
         a.update(&input(PlayerState::Running, [0.0, 0.0, 6.0]), 0.1);
         assert_eq!(a.action(), Some("place"));
+    }
+    // WORK_QUEUE item 55 (CHARACTERS.md §11.13): defeat's roles by data: the kneel held (the
+    // sword's with a weapon in hand), no hold layer over it, the stand played once then idle.
+    #[test]
+    fn defeat_kneels_holds_and_stands_up_once() {
+        let r = &dwell_protocol::defeat::ROLES;
+        let mut a = Animator::new(&TABLES, player(), Space::Body);
+        let kneel = MoveInput {
+            defeat: Some(Defeat::Kneel),
+            holding: true,
+            ..MoveInput::default()
+        };
+        a.update(&kneel, 0.0);
+        assert_eq!(a.role(), r.kneel);
+        for _ in 0..300 {
+            a.update(&kneel, 1.0 / 60.0);
+        }
+        assert_eq!(a.role(), r.kneel, "held while defeated");
+        let armed = MoveInput {
+            armed: true,
+            ..kneel
+        };
+        a.update(&armed, 0.0);
+        assert_eq!(a.role(), r.kneel_armed);
+        // The hold layer (the forearm forward) is not laid over the kneel.
+        let hold = TABLES.clip(player().clip("hold").unwrap());
+        let fore = player().bone("forearm_r").unwrap();
+        let p = a.update(&armed, 1.0);
+        assert_ne!(p.rot[fore], crate::anim::sample(hold, 0.0).rot[fore]);
+        let stand = MoveInput {
+            defeat: Some(Defeat::Stand),
+            ..MoveInput::default()
+        };
+        a.update(&stand, 0.0);
+        assert_eq!(a.role(), r.stand);
+        let len = TABLES.clip(player().clip(r.stand).unwrap()).duration;
+        a.update(&MoveInput::default(), len * 0.5);
+        assert_eq!(a.role(), r.stand, "plays out with no input");
+        a.update(&MoveInput::default(), len);
+        a.update(&MoveInput::default(), 0.01);
+        assert_eq!(a.role(), "idle", "then idle");
+        assert!(is_defeat_role(r.kneel_armed) && !is_defeat_role("idle"));
     }
 }

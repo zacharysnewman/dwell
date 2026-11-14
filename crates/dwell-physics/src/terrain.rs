@@ -70,12 +70,56 @@ pub struct TerrainCollision {
     applied: HashMap<ChunkCoord, Mask>,
     /// The chunks whose `applied` cells differ from their `solid` ones.
     behind: std::collections::BTreeSet<(i32, i32, i32)>,
+    stats: CollisionStats,
 }
 
 /// The full-cube cells a tick puts into (or takes out of) the collider beyond those near players
 /// and pieces ([`TerrainCollision::catch_up`]): a buried chunk's 32 768 cells in four ticks,
 /// ~1 ms a tick natively.
 pub const COLLISION_CELLS_PER_TICK: usize = 8192;
+
+/// The look-ahead (WORK_QUEUE item 16, BUGS.md #72): the chunks a player is heading into are built
+/// before its reach gets there, at most `chunks_per_tick` a tick, so a newly reached chunk's
+/// build (and its cells) never lands on the tick that needs it. The client's prediction takes its
+/// tier's from shared/render/streaming.json (`collisionAhead`); the server the desktop's
+/// ([`CollisionAhead::default`], a test pins them equal).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CollisionAhead {
+    /// How far ahead along the velocity (seconds of travel) chunks are built.
+    pub seconds: f32,
+    /// At most this far ahead (m), however fast.
+    pub max_metres: f32,
+    /// Around the path, this far beyond the reach (m): a walk across a chunk border's corner.
+    pub margin_metres: f32,
+    /// The most chunks the look-ahead builds a tick (0: none, every chunk built when reached).
+    pub chunks_per_tick: usize,
+    /// Slower than this (m/s) a player has nothing built ahead.
+    pub min_speed: f32,
+}
+
+impl Default for CollisionAhead {
+    fn default() -> Self {
+        Self {
+            seconds: 1.0,
+            max_metres: 48.0,
+            margin_metres: 1.0,
+            chunks_per_tick: 2,
+            min_speed: 1.0,
+        }
+    }
+}
+
+/// How the terrain collider kept up so far (tests and the dev telemetry).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CollisionStats {
+    /// Chunks built because a player's reach (or a box) got to them unbuilt: built on the tick
+    /// that needed them. The look-ahead is there to keep this at 0 once a player is loaded.
+    pub reach_loads: u64,
+    /// Chunks the look-ahead built before they were reached.
+    pub ahead_loads: u64,
+    /// Cells put in because a player's reach got to them first (edits near players included).
+    pub reach_cells: u64,
+}
 
 /// The apron a chunk's collision reads: a cell's shape reads its neighbours one cell out, and its
 /// faces are culled against its neighbours' shapes.
@@ -163,8 +207,11 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
             v.iter().any(|&m| collides(m)),
             // Full cubes only: a shaped cell's faces are culled against its neighbours, which a
             // buried chunk doesn't read (a ramp placed in a dug cell deep down panicked here).
-            v.iter()
-                .all(|&m| collides(m) && is_cube(dwell_blocks::shape::shape_of(m))),
+            v.iter().all(|&m| {
+                collides(m)
+                    && is_cube(dwell_blocks::shape::shape_of(m))
+                    && !dwell_blocks::octagon::is_octagon(m)
+            }),
         )
     };
     if !any_solid {
@@ -198,6 +245,30 @@ fn build(world: &mut VoxelWorld, c: ChunkCoord) -> Built {
         } else {
             shape_at(x, y, z)
         };
+        // An octagonal log (ADR 0072): its prism's open faces, squared where it joins its
+        // neighbours (a buried chunk's are cubes: nothing reaches them).
+        if !buried && dwell_blocks::octagon::is_octagon(m) {
+            out.shaped = true;
+            let near = |o: [i32; 3]| {
+                let n = at(x + o[0], y + o[1], z + o[2]);
+                if collides(n) { n } else { dwell_world::M.air }
+            };
+            let covers = |n| collides(n) && is_cube(dwell_blocks::shape::shape_of(n));
+            for f in dwell_blocks::octagon::open_faces(m, &near, &covers, [1.0, CELL_H, 1.0]) {
+                let base = out.vertices.len() as u32;
+                for p in &f.pts {
+                    out.vertices.push(DVec3::new(
+                        f64::from(x) + p[0],
+                        (f64::from(y) + p[1]) * CELL_H,
+                        f64::from(z) + p[2],
+                    ));
+                }
+                for k in 1..f.pts.len() as u32 - 1 {
+                    out.triangles.push([base, base + k, base + k + 1]);
+                }
+            }
+            continue;
+        }
         if is_cube(shape) {
             out.solid
                 .get_or_insert_with(|| Box::new([0u64; CHUNK_VOLUME / 64]))[i / 64] |=
@@ -268,6 +339,7 @@ impl TerrainCollision {
             cells: 0,
             applied: HashMap::default(),
             behind: std::collections::BTreeSet::new(),
+            stats: CollisionStats::default(),
         }
     }
 
@@ -358,20 +430,32 @@ impl TerrainCollision {
     }
 
     /// Puts the collider's cells in line with the chunks' (`behind`): all of those inside the
-    /// `boxes` (world metres: the players' and pieces' reach) now, then up to `budget` more,
-    /// in a fixed order (so the client's prediction builds the same). Returns the cells set.
+    /// `boxes` (world metres: the players' and pieces' reach) now, then up to `budget` more: the
+    /// `first` chunks' (the look-ahead's, nearest first), then the rest in a fixed order. Which
+    /// cells outside the reach are in never moves a player (the reach's all are). Returns the cells
+    /// set.
     pub fn catch_up(
         &mut self,
         physics: &mut Physics,
         boxes: &[(DVec3, DVec3)],
+        first: &[ChunkCoord],
         budget: usize,
     ) -> usize {
         let mut n = 0;
         for &(lo, hi) in boxes {
             n += self.catch_up_box(physics, lo, hi);
         }
-        let behind: Vec<_> = self.behind.iter().copied().collect();
+        self.stats.reach_cells += n as u64;
         let all = (IVector::splat(i64::MIN / 2), IVector::splat(i64::MAX / 2));
+        for &c in first {
+            if n >= budget {
+                return n;
+            }
+            if self.behind.contains(&(c.y, c.z, c.x)) {
+                n += self.apply_cells(physics, c, all.0, all.1, budget - n);
+            }
+        }
+        let behind: Vec<_> = self.behind.iter().copied().collect();
         for (y, z, x) in behind {
             if n >= budget {
                 break;
@@ -535,11 +619,91 @@ impl TerrainCollision {
                     let c = ChunkCoord::new(cx, cy, cz);
                     if !self.chunks.contains_key(&c) {
                         self.load(physics, world, c);
+                        self.stats.reach_loads += 1;
                     }
                 }
             }
         }
-        self.catch_up_box(physics, lo, hi);
+        self.stats.reach_cells += self.catch_up_box(physics, lo, hi) as u64;
+    }
+
+    /// The look-ahead's chunks for a player at `pos` moving at `velocity` (world metres, m/s) with
+    /// reach `reach` (m): the chunks the path `ahead.seconds` long (at most `ahead.max_metres`)
+    /// passes within the reach and margin of, within `keep` chunks of the player's (the collider
+    /// keeps no farther), nearest the player first (then in a fixed order). Loaded or not.
+    pub fn ahead_chunks(
+        ahead: &CollisionAhead,
+        pos: DVec3,
+        velocity: DVec3,
+        reach: f64,
+        keep: i32,
+    ) -> Vec<ChunkCoord> {
+        let travel = (velocity * f64::from(ahead.seconds))
+            .clamp_length_max(f64::from(ahead.max_metres.max(0.0)));
+        let pad = reach + f64::from(ahead.margin_metres.max(0.0));
+        let home = chunk_of_pos(pos.to_array());
+        // Samples along the path no farther apart than the box is wide, so the boxes join.
+        let steps = (travel.length() / pad.max(1.0)).ceil() as usize;
+        let mut out: Vec<(f64, ChunkCoord)> = Vec::new();
+        for k in 0..=steps {
+            let p = pos + travel * (k as f64 / steps.max(1) as f64);
+            let a = chunk_of_pos((p - DVec3::splat(pad)).to_array());
+            let b = chunk_of_pos((p + DVec3::splat(pad)).to_array());
+            for cy in a.y.max(MIN_CHUNK_Y)..=b.y.min(MAX_CHUNK_Y) {
+                for cz in a.z..=b.z {
+                    for cx in a.x..=b.x {
+                        let c = ChunkCoord::new(cx, cy, cz);
+                        if dwell_world::chunk_distance(c, home) > keep {
+                            continue;
+                        }
+                        let m = DVec3::from_array(dwell_world::chunk_centre_m(c));
+                        out.push(((m - pos).length_squared(), c));
+                    }
+                }
+            }
+        }
+        out.sort_by(|a, b| {
+            a.0.total_cmp(&b.0)
+                .then((a.1.y, a.1.z, a.1.x).cmp(&(b.1.y, b.1.z, b.1.x)))
+        });
+        out.dedup_by_key(|e| e.1);
+        out.into_iter().map(|(_, c)| c).collect()
+    }
+
+    /// Builds the first `budget` of `chunks` not yet built whose 27 chunks round them the world
+    /// holds (or can generate): a streamed world's missing chunk would build empty and again on
+    /// arrival, and a chunk's shapes are culled against its neighbours, so one built before a
+    /// neighbour arrived would be rebuilt (unbudgeted, `sync`) when it did; such a chunk waits.
+    /// Returns how many it built.
+    pub fn ensure_ahead(
+        &mut self,
+        physics: &mut Physics,
+        world: &mut VoxelWorld,
+        chunks: &[ChunkCoord],
+        budget: usize,
+    ) -> usize {
+        let mut built = 0;
+        for &c in chunks {
+            if built >= budget {
+                break;
+            }
+            if self.chunks.contains_key(&c)
+                || !around(c).all(|n| {
+                    !(MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&n.y) || world.holds_or_generates(n)
+                })
+            {
+                continue;
+            }
+            self.load(physics, world, c);
+            built += 1;
+        }
+        self.stats.ahead_loads += built as u64;
+        built
+    }
+
+    /// How the collider kept up so far.
+    pub fn stats(&self) -> CollisionStats {
+        self.stats
     }
 
     /// Loads the chunks the `boxes` (world metres) overlap, at most `budget` new ones, nearest their
@@ -727,6 +891,90 @@ mod rebuild_tests {
         terrain.sync(&mut physics, &mut world);
         (world, physics, terrain)
     }
+
+    /// Whether a ray from `o` along `d` (world metres) hits chunk `c`'s collision triangles.
+    fn ray_hits(b: &Built, c: ChunkCoord, o: [f64; 3], d: [f64; 3]) -> bool {
+        let base = DVec3::from_array(chunk_origin_m(c));
+        let (o, d) = (DVec3::from_array(o) - base, DVec3::from_array(d));
+        b.triangles.iter().any(|t| {
+            let [p, q, r] = t.map(|i| b.vertices[i as usize]);
+            // Moller-Trumbore, both sides.
+            let (e1, e2) = (q - p, r - p);
+            let h = d.cross(e2);
+            let a = e1.dot(h);
+            if a.abs() < 1e-12 {
+                return false;
+            }
+            let s = o - p;
+            let u = s.dot(h) / a;
+            let qv = s.cross(e1);
+            let v = d.dot(qv) / a;
+            let t = e2.dot(qv) / a;
+            (0.0..=1.0).contains(&u) && v >= 0.0 && u + v <= 1.0 && t > 0.0
+        })
+    }
+
+    dwell_world::both_faces!(
+        /// A lone log collides as its octagon (ADR 0072): a ray down past its cut corner misses
+        /// it (a player there slides off the chamfer), while beside a joined log the corner at the
+        /// join is squared, solid and flat across.
+        fn a_log_collides_as_its_octagon_squared_where_it_joins(f: FaceFrame) {
+            let log = dwell_blocks::require("dwell:log[axis=y]");
+            let row = 40;
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let [x, y, z] = f.cell([4, row, 4]);
+            world.set_voxel(x, y, z, log);
+            let c = dwell_world::chunk_of(x, y, z);
+            let top = f.y(f64::from(row + 2) * CELL_H);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            // The +X, +Z corner of the cell, 2 cm in from both edges; and the middle of its +X side.
+            let corner = [4.98, top, 4.98];
+            let side = [4.98, top, 4.5];
+            let b = build(&mut world, c);
+            assert!(!ray_hits(&b, c, corner, down), "a lone log's corner is cut");
+            assert!(ray_hits(&b, c, side, down), "its side is solid");
+            world.set_voxel(x + 1, y, z, log);
+            let b = build(&mut world, c);
+            assert!(
+                ray_hits(&b, c, corner, down),
+                "the corner at the join is squared"
+            );
+            // A log of another axis beside it does not join: the corner stays cut.
+            world.set_voxel(x + 1, y, z, dwell_blocks::require("dwell:log[axis=z]"));
+            let b = build(&mut world, c);
+            assert!(!ray_hits(&b, c, corner, down), "different axes do not join");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Phase 55 T4: a stump's wood ramp collides as the log's octagon cut by its slant (ray
+        /// down past its cut corner misses; red before: the square ramp's corner was solid), and
+        /// on the log below it the log's corner is cut too.
+        fn a_wood_ramp_collides_as_the_octagon_cut_by_its_slant(f: FaceFrame) {
+            let log = dwell_blocks::require("dwell:log[axis=y]");
+            let ramp = dwell_blocks::require(
+                "dwell:log_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+            );
+            let row = 40;
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let [x, y, z] = f.cell([4, row, 4]);
+            world.set_voxel(x, y, z, f.state(log));
+            let [x, y, z] = f.cell([4, row + 1, 4]);
+            world.set_voxel(x, y, z, f.state(ramp));
+            let c = dwell_world::chunk_of(x, y, z);
+            let top = f.y(f64::from(row + 3) * CELL_H);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            let b = build(&mut world, c);
+            assert!(
+                !ray_hits(&b, c, [4.98, top, 4.98], down),
+                "the corner is cut"
+            );
+            assert!(
+                ray_hits(&b, c, [4.5, top, 4.5], down),
+                "its middle is solid"
+            );
+        }
+    );
 
     // face-a-only: which chunks are rebuilt has no up; one block of chunks round the origin.
     #[test]

@@ -1,0 +1,10 @@
+{
+  "$comment": "The fixture pattern set (tests only, WORK_QUEUE item 43): added by data alone; the fixture NPC (fixtures/npcs.json) picks from it. One pattern of two colours round four places, its shirt paired with one base only.",
+  "formatVersion": 1,
+  "sets": {
+    "test:duo": {
+      "places": 4,
+      "patterns": [{ "name": "duo", "colours": ["#102030", "#a0b0c0"], "pairs": { "shirt": ["#405060"] } }]
+    }
+  }
+}

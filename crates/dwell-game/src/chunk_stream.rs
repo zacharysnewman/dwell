@@ -14,11 +14,13 @@ use dwell_world::hash::{HashMap, HashSet};
 use dwell_protocol::{CHUNK_SIZE, CHUNK_VOLUME, ChunkChanges, ChunkData, ChunkForm};
 use dwell_world::edit::apply_chunk_changes;
 use dwell_world::{
-    BUILD_VOLUME, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index,
+    BUILD_VOLUME, BuildVolume, Chunk, ChunkCoord, Face, VoxelWorld, face_of_chunk_y, local_index,
 };
 pub use dwell_world::{MAX_CHUNK_Y, MIN_CHUNK_Y};
 
 use crate::chunk_diff::{PADDED_VOLUME, padded_index};
+use crate::stream_budget::ItemCost;
+pub use crate::stream_budget::StreamBudget;
 
 /// A chunk coordinate as on the wire.
 pub type Coord = [i32; 3];
@@ -77,6 +79,14 @@ pub trait ChunkStore {
     fn edit_chunk(&mut self, changes: &ChunkChanges);
     /// The chunk's voxels with a one-voxel apron (the mesher's layout).
     fn padded_chunk(&mut self, coord: Coord) -> Vec<u16>;
+    /// The chunk's own voxels (none: not stored).
+    fn chunk_voxels(&mut self, _coord: Coord) -> Option<Vec<u16>> {
+        None
+    }
+    /// One of the chunk's own voxels (chunk-local `x | y << 5 | z << 10`; none: not stored).
+    fn voxel(&mut self, _coord: Coord, _index: u16) -> Option<u16> {
+        None
+    }
     /// What a mesh job meshes: the chunk with the sky apron (`dwell_world::SKY_APRON`, for the
     /// baked ambient light's rays), or the one-voxel padded block (rays past it count as open).
     fn mesh_block(&mut self, coord: Coord) -> Vec<u16> {
@@ -93,6 +103,15 @@ pub trait ChunkStore {
     /// Lights a chunk now held (stored, or all air): the streamer calls it within its per-frame
     /// budget, after the chunk arrived ([`ChunkStreamer::mesh_dirty`]).
     fn light_chunk(&mut self, _coord: Coord) {}
+    /// Starts a chunk's light to be finished by [`Self::light_resume`] (docs/BUGS.md #72); by
+    /// default lit at once.
+    fn light_begin(&mut self, coord: Coord) {
+        self.light_chunk(coord);
+    }
+    /// Goes on with the light begun, at most `steps` cells; whether it is done.
+    fn light_resume(&mut self, _steps: usize) -> bool {
+        true
+    }
     /// Whether it keeps a flood light (chunks then wait to be lit before they are meshed).
     fn keeps_light(&self) -> bool {
         false
@@ -108,9 +127,21 @@ pub trait ChunkStore {
     }
 }
 
+/// The cells a chunk's light goes on with between looks at the clock (`mesh_dirty`): ~0.1 ms
+/// natively, ~0.5 ms on a phone's CPU.
+pub const LIGHT_SLICE_CELLS: usize = 1024;
+
 /// The client sim's voxel world is the store.
 /// With [`VoxelWorld::enable_light`] (the client) it keeps the flood light of what it holds.
 impl ChunkStore for VoxelWorld {
+    fn voxel(&mut self, coord: Coord, index: u16) -> Option<u16> {
+        self.find(ChunkCoord::from_array(coord))
+            .and_then(|c| c.voxels().get(usize::from(index)).copied())
+    }
+    fn chunk_voxels(&mut self, coord: Coord) -> Option<Vec<u16>> {
+        self.find(ChunkCoord::from_array(coord))
+            .map(|c| c.voxels().to_vec())
+    }
     fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
         if let Some(chunk) = Chunk::from_voxels(voxels, revision) {
             self.put(ChunkCoord::from_array(coord), chunk);
@@ -153,6 +184,12 @@ impl ChunkStore for VoxelWorld {
     }
     fn light_chunk(&mut self, coord: Coord) {
         self.light_load(ChunkCoord::from_array(coord));
+    }
+    fn light_begin(&mut self, coord: Coord) {
+        VoxelWorld::light_begin(self, ChunkCoord::from_array(coord));
+    }
+    fn light_resume(&mut self, steps: usize) -> bool {
+        VoxelWorld::light_resume(self, steps)
     }
     fn keeps_light(&self) -> bool {
         self.light().is_some()
@@ -288,11 +325,15 @@ pub trait ChunkSource {
     fn generate(&mut self, coord: Coord, token: u64);
     /// Drops a queued job; true if it was still queued.
     fn cancel(&mut self, coord: Coord) -> bool;
+    /// Starts generating `coord` as generated, for the ground items' rules (ADR 0071: they read
+    /// the terrain as generated) of a chunk that arrived edited; the shell answers with
+    /// [`ChunkStreamer::on_generated_base`]. Nothing where the client does not generate.
+    fn generate_base(&mut self, _coord: Coord) {}
 }
 
 /// A mesh job: the voxels of `coord` with their apron ([`ChunkStore::mesh_block`]), meshed
 /// mirrored for face B's chunks.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MeshJob {
     pub coord: Coord,
     pub token: u64,
@@ -300,6 +341,16 @@ pub struct MeshJob {
     /// The flood light around it ([`ChunkStore::mesh_light`]; empty: open sky).
     pub light: Vec<u8>,
     pub mirror: bool,
+    /// Its cut wood cells (ADR 0067 §11), chunk-local and world-oriented: meshed carved.
+    pub cuts: Vec<([i32; 3], dwell_protocol::chopping::Cut)>,
+    /// Its damaged cells (docs/BLOCK_DAMAGE.md), chunk-local and world-oriented: drawn struck.
+    pub damage: Vec<([i32; 3], dwell_protocol::damage::DamageView)>,
+    /// Its ground items (docs/adr/0071-ground-items.md): the world seed and its gone cells,
+    /// chunk-local; none: the server keeps no ground items, none are drawn.
+    pub ground: Option<(u64, Vec<[i32; 3]>)>,
+    /// `padded` as generated, where a chunk it reads is edited (the ground items' rules read the
+    /// terrain as generated); empty: as `padded`.
+    pub generated: Vec<u16>,
 }
 
 /// The meshing workers.
@@ -318,6 +369,43 @@ pub trait Mesher {
 pub trait TerrainView<M> {
     /// Shows a chunk's meshes at `origin`, or removes the chunk (`None`).
     fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<M>);
+    /// Redraws only chunk `coord`'s water surface from its new padded voxels and flood light
+    /// (the GPU heightfield's tile, proposals/WATER_GPU_SURFACE.md §3), when only its water
+    /// changed (levels, or cells wetting or drying; a tile made or freed); whether that stands in
+    /// for a re-mesh (false: the chunk is re-meshed).
+    fn set_water_levels(
+        &mut self,
+        _coord: Coord,
+        _padded: &[u16],
+        _light: &[u8],
+        _mirror: bool,
+    ) -> bool {
+        false
+    }
+}
+
+/// Mesh-dirty passes (about frames) a chunk whose water levels changed without a re-mesh waits,
+/// with no further change, before it is re-meshed once: its water's sides and falls, which the
+/// heightfield's tile does not hold, catch up when the water settles.
+pub const WATER_SETTLE_PASSES: u32 = 60;
+
+/// Whether state `m` is a liquid at some fill.
+fn is_liquid(m: u16) -> bool {
+    dwell_blocks::STATES
+        .get(usize::from(m))
+        .is_some_and(|s| s.liquid)
+}
+
+/// Whether a cell going from `old` to `new` changes only the water: each air or a liquid, the same
+/// liquid where both are, and at least one a liquid (the GPU heightfield's tile holds it,
+/// proposals/WATER_GPU_SURFACE.md §3, W1).
+fn water_only(old: u16, new: u16) -> bool {
+    let wet_or_air = |m: u16| m == dwell_blocks::AIR || is_liquid(m);
+    wet_or_air(old)
+        && wet_or_air(new)
+        && (is_liquid(old) || is_liquid(new))
+        && (!(is_liquid(old) && is_liquid(new))
+            || dwell_blocks::liquid_full(old) == dwell_blocks::liquid_full(new))
 }
 
 /// A ChunkData message's parts the streamer reads.
@@ -352,6 +440,38 @@ pub struct StreamStats {
     pub meshing: usize,
     /// Chunks re-requested after a revision gap (§6.3).
     pub resyncs: u32,
+}
+
+/// How the streamer holds one chunk ([`ChunkStreamer::chunk_status`], the streaming report,
+/// docs/DEV_TOOLS.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChunkStatus {
+    /// The server sent it (or its generation was announced and arrived).
+    pub loaded: bool,
+    /// Sent as Air: known empty.
+    pub air: bool,
+    /// Announced as generated and still generating in a worker.
+    pub generating: bool,
+    /// Arrived and lit (or the store keeps no light).
+    pub lit: bool,
+    /// Has a mesh drawn.
+    pub meshed: bool,
+    /// A mesh job in flight.
+    pub meshing: bool,
+    /// Waiting to be (re-)meshed.
+    pub dirty: bool,
+    /// Its place in the dirty set's marking order (0 first), when dirty.
+    pub dirty_position: Option<usize>,
+    /// Loaded and drawable (meshed, or all air).
+    pub drawable: bool,
+    /// The six face neighbours a dirty chunk waits on before it is meshed: still generating or
+    /// not lit yet.
+    pub waits_on: Vec<Coord>,
+    /// Face neighbours inside the build volume neither loaded nor generating: the server has not
+    /// sent them (meshed without them, their borders read as air until they arrive).
+    pub missing: Vec<Coord>,
+    /// Its water surface was redrawn and is re-meshed once it settles.
+    pub settling: bool,
 }
 
 /// The 26 chunks around a chunk.
@@ -495,6 +615,9 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     view: V,
     /// Asks the server to send chunks again (ChunkResync).
     resync: ResyncFn,
+    /// The world's build volume (BIG_MAP.md M2b: its size's, `set_volume`): chunks wholly outside
+    /// it are never streamed and count as loaded.
+    volume: BuildVolume,
     /// Loaded chunks and their revisions (Air chunks: revision 0).
     loaded: HashMap<Coord, u32>,
     /// Loaded chunks the server sent as Air: known empty, never generated or stored.
@@ -515,14 +638,40 @@ pub struct ChunkStreamer<S, G, M: Mesher, V> {
     /// within `mesh_dirty`'s budget, and no chunk is meshed while it or a neighbour waits here.
     unlit: std::collections::VecDeque<Coord>,
     unlit_set: HashSet<Coord>,
+    /// Bumped whenever what is loaded, Air or meshed may have changed ([`Self::drawable_revision`]).
+    drawn_revision: u64,
+    /// Running estimates of a chunk's light and a mesh start (ms), to stop before the deadline.
+    light_cost: ItemCost,
+    mesh_cost: ItemCost,
+    /// The frame's one item that runs past the deadline goes to the mesh starts next (BUGS.md #72):
+    /// set when a light that ran past the deadline left them none, cleared once they start one.
+    mesh_first: bool,
+    /// The chunk whose light is part way (`ChunkStore::light_begin`; BUGS.md #72), still unlit
+    /// for meshing (its own and its neighbours') until its light is done.
+    lighting: Option<Coord>,
     /// Lit and meshed after the near ring, before the rest (`set_second_centre`).
     second: Option<SecondCentre>,
     /// World cells meshed as air while held here (`hide_cells`): a settling piece's blocks while
     /// its glide draws them (docs/FELLING.md §4). The world holds them (collision, targeting).
     hidden: HashSet<[i32; 3]>,
+    /// The server's cuts on wood cells (`set_cut`, ADR 0067 §11), by world cell: meshed carved.
+    cuts: HashMap<[i32; 3], dwell_protocol::chopping::Cut>,
+    /// The server's block damage (`set_damage`, docs/BLOCK_DAMAGE.md), by world cell.
+    damage: HashMap<[i32; 3], dwell_protocol::damage::DamageView>,
+    /// The ground items (ADR 0071): the world seed and the gone cells, once the server keeps them.
+    ground: Option<(u64, dwell_world::ground::GroundGone)>,
+    /// Loaded chunks as generated and not edited since (their voxels are their generation).
+    pristine: HashSet<Coord>,
+    /// Edited loaded chunks' voxels as generated (copied before their first edit, or generated
+    /// again when one arrived edited): the ground items' rules read them (ADR 0071).
+    generated: HashMap<Coord, Vec<u16>>,
     /// Chunks whose mesh job in flight began before a cell in them was hidden or shown: its result
     /// is dropped (the chunk is dirty again).
     stale: HashSet<Coord>,
+    /// Chunks whose water surface was redrawn without a re-mesh → mesh-dirty passes since their
+    /// last level change: re-meshed at [`WATER_SETTLE_PASSES`].
+    settling: HashMap<Coord, u32>,
+    level_redraws: u64,
     /// First worldgen failure (the workers are unusable).
     pub error: Option<String>,
 }
@@ -564,9 +713,22 @@ where
             token: 0,
             unlit: Default::default(),
             unlit_set: HashSet::default(),
+            drawn_revision: 0,
+            volume: BUILD_VOLUME,
+            light_cost: ItemCost::default(),
+            mesh_cost: ItemCost::default(),
+            mesh_first: false,
+            lighting: None,
             second: None,
             hidden: HashSet::default(),
+            cuts: HashMap::default(),
+            damage: HashMap::default(),
+            ground: None,
+            pristine: HashSet::default(),
+            generated: HashMap::default(),
             stale: HashSet::default(),
+            settling: HashMap::default(),
+            level_redraws: 0,
             error: None,
         }
     }
@@ -608,9 +770,22 @@ where
         self.forget(key);
         self.resyncing.remove(&key);
         match m.form {
-            ChunkForm::Air => self.put_air(key),
+            ChunkForm::Air => {
+                self.pristine.remove(&key);
+                self.generated.remove(&key);
+                self.put_air(key);
+            }
             ChunkForm::Explicit => {
                 if let Some(voxels) = &m.voxels {
+                    // Edited: its generation is asked for (kept if known: a resync's).
+                    if self.pristine.remove(&key)
+                        && let Some(v) = self.store.chunk_voxels(key)
+                    {
+                        self.generated.insert(key, v);
+                    }
+                    if !self.generated.contains_key(&key) && self.ground.is_some() {
+                        self.source.generate_base(key);
+                    }
                     self.put(key, m.revision, voxels);
                 }
             }
@@ -631,10 +806,46 @@ where
             return; // replaced meanwhile
         }
         self.generating.remove(&coord);
+        self.generated.remove(&coord);
+        self.pristine.insert(coord);
         self.put(coord, revision, voxels);
         for changes in self.held_edits.remove(&coord).unwrap_or_default() {
             self.apply(coord, &changes);
         }
+    }
+
+    /// A chunk generated for the ground items' rules ([`ChunkSource::generate_base`]): kept while
+    /// it is loaded and edited, and the chunks whose mesh reads it meshed again.
+    pub fn on_generated_base(&mut self, coord: Coord, voxels: &[u16]) {
+        if !self.loaded.contains_key(&coord)
+            || self.pristine.contains(&coord)
+            || self.air.contains(&coord)
+            || self.generated.contains_key(&coord)
+            || voxels.len() != CHUNK_VOLUME
+        {
+            return;
+        }
+        self.generated.insert(coord, voxels.to_vec());
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let n = add(coord, [dx, dy, dz]);
+                    if self.meshed.contains(&n) || self.meshing.contains_key(&n) {
+                        self.dirty.mark(n);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The voxel in world cell `c` as generated where its chunk is edited (its kept generation;
+    /// the ground items' rules, ADR 0071). None: not edited (its voxel now is its generation) or
+    /// not kept.
+    pub fn generated_voxel(&self, c: [i32; 3]) -> Option<u16> {
+        let key = c.map(|v| v.div_euclid(CHUNK_SIZE));
+        let v = self.generated.get(&key)?;
+        let l = c.map(|v| v.rem_euclid(CHUNK_SIZE));
+        v.get(local_index(l[0], l[1], l[2])).copied()
     }
 
     /// A generation job failed: the workers are unusable. As in the TS, this drops the chunk's
@@ -647,12 +858,32 @@ where
         }
     }
 
+    /// Every chunk held or generating, unloaded (MOON_WORLD.md §7.3: the player crossed onto another
+    /// grid, whose chunks the server streams from nothing).
+    pub fn unload_all(&mut self) {
+        let mut all: Vec<Coord> = self
+            .loaded
+            .keys()
+            .chain(self.generating.keys())
+            .copied()
+            .collect();
+        all.sort();
+        all.dedup();
+        self.on_chunk_unload(&all);
+    }
+
     pub fn on_chunk_unload(&mut self, coords: &[Coord]) {
         let (mut stored, mut air) = (Vec::new(), Vec::new());
         for &key in coords {
             self.forget(key);
             self.resyncing.remove(&key);
             self.unlit_set.remove(&key);
+            if self.lighting == Some(key) {
+                self.lighting = None;
+            }
+            self.drawn_revision += 1;
+            self.pristine.remove(&key);
+            self.generated.remove(&key);
             if self.loaded.remove(&key).is_some() {
                 if self.air.remove(&key) {
                     air.push(key);
@@ -688,6 +919,12 @@ where
         }
     }
 
+    /// The world's build volume (`WorldBounds::volume`, from its size; a 1× world's is the
+    /// build's, the default).
+    pub fn set_volume(&mut self, volume: BuildVolume) {
+        self.volume = volume;
+    }
+
     pub fn is_loaded(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
     }
@@ -702,7 +939,7 @@ where
             for z in lo[2]..=hi[2] {
                 for x in lo[0]..=hi[0] {
                     if !self.is_loaded([x, y, z])
-                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                        && self.volume.chunk_may_hold(ChunkCoord::new(x, y, z))
                     {
                         return false;
                     }
@@ -713,6 +950,12 @@ where
     }
 
     /// Loaded and drawable (meshed, or all air): it can stand in for level 0 of the LOD (§6.6).
+    /// A counter that changes whenever [`Self::drawable`] or [`Self::is_loaded`] may answer
+    /// differently for some chunk: the LOD skips its selection while it and the camera hold.
+    pub fn drawable_revision(&self) -> u64 {
+        self.drawn_revision
+    }
+
     pub fn drawable(&self, coord: Coord) -> bool {
         self.loaded.contains_key(&coord)
             && (self.air.contains(&coord) || self.meshed.contains(&coord))
@@ -732,7 +975,7 @@ where
             for z in cz - 1..=cz + 1 {
                 for x in cx - 1..=cx + 1 {
                     if !self.loaded.contains_key(&[x, y, z])
-                        && BUILD_VOLUME.chunk_may_hold(ChunkCoord::new(x, y, z))
+                        && self.volume.chunk_may_hold(ChunkCoord::new(x, y, z))
                     {
                         return false;
                     }
@@ -756,7 +999,7 @@ where
         for o in offsets {
             let k = [c.x + o[0], c.y + o[1], c.z + o[2]];
             if !(MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&k[1])
-                || !BUILD_VOLUME.chunk_may_hold(ChunkCoord::from_array(k))
+                || !self.volume.chunk_may_hold(ChunkCoord::from_array(k))
             {
                 continue;
             }
@@ -768,20 +1011,38 @@ where
         p
     }
 
-    /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, for up
-    /// to `light_ms` of `now()` (at least one), then starts mesh jobs for changed chunks, nearest
-    /// first, while the mesher has room and for up to `mesh_ms` more (at least one): the light
-    /// has a budget of its own, so lighting doesn't starve the meshing (0.22.9 started 2–4 mesh
-    /// jobs a frame at load where 0.22.8 kept 16 running). A chunk waits while a neighbour is
-    /// still being generated or lit, so it is meshed once with its borders known rather than
-    /// again when each neighbour arrives. Returns the number of jobs started.
+    /// Lights chunks that arrived (`ChunkStore::light_chunk`), nearest to `center` first, then
+    /// starts mesh jobs for changed chunks, nearest first, while the mesher has room: both within
+    /// one `budget` of `now()` (`stream_budget.rs`), the light stopping short of the part kept for
+    /// the mesh starts while there are chunks to mesh, so lighting doesn't starve the meshing
+    /// (0.22.9 started 2–4 mesh jobs a frame at load where 0.22.8 kept 16 running). Each stops
+    /// before an item its running cost estimate says would pass the deadline, and runs at least
+    /// one. A chunk waits while a neighbour is still being generated or lit, so it is meshed once
+    /// with its borders known rather than again when each neighbour arrives. Returns the number of
+    /// jobs started.
     pub fn mesh_dirty(
         &mut self,
         center: [f64; 3],
-        light_ms: f64,
-        mesh_ms: f64,
+        budget: StreamBudget,
         mut now: impl FnMut() -> f64,
     ) -> usize {
+        let start = now();
+        let deadline = start + budget.ms;
+        // Water redrawn from its levels alone is re-meshed once it has settled.
+        let mut settled = Vec::new();
+        self.settling.retain(|c, passes| {
+            *passes += 1;
+            let done = *passes >= WATER_SETTLE_PASSES;
+            if done {
+                settled.push(*c);
+            }
+            !done
+        });
+        for c in settled {
+            if self.loaded.contains_key(&c) {
+                self.dirty.mark(c);
+            }
+        }
         let distance_to = |c: &Coord, to: [f64; 3]| -> f64 {
             let m = dwell_world::chunk_centre_m(ChunkCoord::from_array(*c));
             (0..3).map(|i| (m[i] - to[i]).powi(2)).sum()
@@ -801,8 +1062,21 @@ where
             }
         };
         let order_of = |a: &(u8, f64), b: &(u8, f64)| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1));
-        if !self.unlit.is_empty() {
-            let deadline = now() + light_ms;
+        // A frame runs one item past its deadline at most, the light's or a mesh start's, not one
+        // of each (BUGS.md #72: on a phone's CPU a chunk's light and a mesh start past an 8 ms
+        // deadline made `mesh_dirty` 14–17 ms). A frame whose light took it leaves it to the mesh
+        // starts next, so neither starves.
+        let to_mesh = self.dirty.len() > 0 && self.mesher.capacity() > self.meshing.len();
+        let light_forces = !(self.mesh_first && to_mesh);
+        let mut lit_past = false;
+        if !self.unlit.is_empty() || self.lighting.is_some() {
+            let light_deadline = if to_mesh {
+                deadline - budget.mesh_ms
+            } else {
+                deadline
+            };
+            let mut t = start;
+            let mut ran = 0;
             let order: Vec<Coord> = std::mem::take(&mut self.unlit)
                 .into_iter()
                 .filter(|c| self.unlit_set.contains(c))
@@ -811,14 +1085,35 @@ where
             let mut keyed: Vec<((u8, f64), Coord)> =
                 order.into_iter().map(|c| (key(&c), c)).collect();
             keyed.sort_by(|a, b| order_of(&a.0, &b.0));
-            let mut rest = keyed.into_iter().map(|(_, c)| c);
-            for c in rest.by_ref() {
-                self.unlit_set.remove(&c);
-                self.store.light_chunk(c);
-                if now() >= deadline {
-                    break;
+            let rest = keyed.into_iter().map(|(_, c)| c);
+            let mut rest = rest.peekable();
+            // A chunk's light goes on a slice (`LIGHT_SLICE_CELLS`) at a time while the next fits
+            // before the deadline, across frames (BUGS.md #72: one chunk's light was 15–20 ms
+            // of a frame at CPU 6×); the chunk stays unlit for meshing until it is done.
+            while (self.lighting.is_some() || rest.peek().is_some())
+                && self
+                    .light_cost
+                    .fits(ran + usize::from(!light_forces), t, light_deadline)
+            {
+                let c = match self.lighting {
+                    Some(c) => c,
+                    None => {
+                        let c = rest.next().expect("peeked");
+                        self.store.light_begin(c);
+                        self.lighting = Some(c);
+                        c
+                    }
+                };
+                if self.store.light_resume(LIGHT_SLICE_CELLS) {
+                    self.lighting = None;
+                    self.unlit_set.remove(&c);
                 }
+                let t1 = now();
+                self.light_cost.took(t1 - t);
+                t = t1;
+                ran += 1;
             }
+            lit_past = ran > 0 && t > deadline;
             self.unlit = rest.collect();
             self.relit();
         }
@@ -826,7 +1121,7 @@ where
         if self.dirty.len() == 0 || room == 0 {
             return 0;
         }
-        let deadline = now() + mesh_ms;
+        let mut t = now();
         let ready: Vec<Coord> = self
             .dirty
             .in_order()
@@ -840,12 +1135,31 @@ where
                     })
             })
             .collect();
-        // Stable: equal distances keep their order.
-        let mut keyed: Vec<((u8, f64), Coord)> = ready.into_iter().map(|c| (key(&c), c)).collect();
+        // Within each of those, without a second centre, a chunk in the server's view
+        // (VIEW_RADIUS_CHUNKS) not drawn yet goes before the re-meshes of chunks already drawn, which show their last mesh meanwhile
+        // (BUGS #54: on a long trip each chunk arriving re-meshed its drawn neighbours, and the
+        // chunks just come into the view, a level-1 section's partners of the near ring's, waited
+        // seconds behind them). Stable: equal distances keep their order.
+        let view = dwell_protocol::world::VIEW_RADIUS_CHUNKS as i32;
+        let mut keyed: Vec<((u8, f64), Coord)> = ready
+            .into_iter()
+            .map(|c| {
+                let (class, d) = key(&c);
+                let redraw =
+                    second.is_some() || self.meshed.contains(&c) || !in_sphere(c, me, view);
+                ((2 * class + u8::from(redraw), d), c)
+            })
+            .collect();
         keyed.sort_by(|a, b| order_of(&a.0, &b.0));
         let mut count = 0;
+        let mesh_forces = !lit_past;
+        let waiting = !keyed.is_empty();
         for (_, c) in keyed {
-            if count >= room {
+            if count >= room
+                || !self
+                    .mesh_cost
+                    .fits(count + usize::from(!mesh_forces), t, deadline)
+            {
                 break;
             }
             self.dirty.remove(&c);
@@ -853,19 +1167,85 @@ where
             self.meshing.insert(c, self.token);
             let padded = mask_hidden(&self.hidden, c, self.store.mesh_block(c));
             let light = self.store.mesh_light(c);
+            let cuts = self.cuts_in(c);
+            let damage = self.damage_in(c);
+            let ground = self
+                .ground
+                .as_ref()
+                .map(|(seed, gone)| (*seed, gone.in_chunk(c)));
+            let generated = if ground.is_some() {
+                self.generated_block(c, &padded)
+            } else {
+                Vec::new()
+            };
             self.mesher.mesh(MeshJob {
+                ground,
+                generated,
                 coord: c,
                 token: self.token,
                 padded,
                 light,
                 mirror: face_of_chunk_y(c[1]) == Face::B,
+                cuts,
+                damage,
             });
             count += 1;
-            if now() >= deadline {
-                break;
-            }
+            let t1 = now();
+            self.mesh_cost.took(t1 - t);
+            t = t1;
+        }
+        if count > 0 {
+            self.mesh_first = false;
+        } else if waiting && lit_past {
+            self.mesh_first = true;
         }
         count
+    }
+
+    /// `padded` (chunk `c`'s sky volume, `dwell_world::SKY_EXTENT` from `SKY_APRON` below its
+    /// corner) with the edited chunks it reads as generated; empty where none is edited or it is
+    /// not a sky volume.
+    fn generated_block(&self, c: Coord, padded: &[u16]) -> Vec<u16> {
+        use dwell_world::{SKY_APRON, SKY_EXTENT, SKY_VOLUME};
+        if padded.len() != SKY_VOLUME || self.generated.is_empty() {
+            return Vec::new();
+        }
+        let o: [i32; 3] = std::array::from_fn(|k| c[k] * CHUNK_SIZE - SKY_APRON[k]);
+        let lo: [i32; 3] = std::array::from_fn(|k| o[k].div_euclid(CHUNK_SIZE));
+        let hi: [i32; 3] =
+            std::array::from_fn(|k| (o[k] + SKY_EXTENT[k] - 1).div_euclid(CHUNK_SIZE));
+        let mut out: Option<Vec<u16>> = None;
+        for cy in lo[1]..=hi[1] {
+            for cz in lo[2]..=hi[2] {
+                for cx in lo[0]..=hi[0] {
+                    let Some(v) = self.generated.get(&[cx, cy, cz]) else {
+                        continue;
+                    };
+                    let out = out.get_or_insert_with(|| padded.to_vec());
+                    let base = [cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE];
+                    for y in 0..SKY_EXTENT[1] {
+                        let ly = o[1] + y - base[1];
+                        if !(0..CHUNK_SIZE).contains(&ly) {
+                            continue;
+                        }
+                        for z in 0..SKY_EXTENT[2] {
+                            let lz = o[2] + z - base[2];
+                            if !(0..CHUNK_SIZE).contains(&lz) {
+                                continue;
+                            }
+                            for x in 0..SKY_EXTENT[0] {
+                                let lx = o[0] + x - base[0];
+                                if (0..CHUNK_SIZE).contains(&lx) {
+                                    out[(x + SKY_EXTENT[0] * (z + SKY_EXTENT[2] * y)) as usize] =
+                                        v[local_index(lx, ly, lz)];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out.unwrap_or_default()
     }
 
     /// A mesh job finished.
@@ -882,7 +1262,131 @@ where
         }
         self.view
             .set_terrain_chunk(coord, coord.map(|c| c * CHUNK_SIZE), Some(meshes));
+        self.drawn_revision += 1;
         self.meshed.insert(coord);
+    }
+
+    /// Sets world cell `cell`'s cut (none: uncut), as the server sent it (ADR 0067 §11): its
+    /// chunk is meshed again with the cell carved (a job in flight for it is dropped).
+    pub fn set_cut(&mut self, cell: [i32; 3], cut: Option<dwell_protocol::chopping::Cut>) {
+        let changed = match cut.filter(|c| !c.is_empty()) {
+            Some(c) => self.cuts.insert(cell, c) != Some(c),
+            None => self.cuts.remove(&cell).is_some(),
+        };
+        if !changed {
+            return;
+        }
+        let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+            if self.meshing.contains_key(&k) {
+                self.stale.insert(k);
+            }
+        }
+    }
+
+    /// Draws the ground items scattered from `seed` (ADR 0071; the server keeps them): every
+    /// chunk is meshed again with them.
+    pub fn set_ground(&mut self, seed: u64) {
+        if self.ground.as_ref().is_some_and(|(s, _)| *s == seed) {
+            return;
+        }
+        let gone = self.ground.take().map(|(_, g)| g).unwrap_or_default();
+        self.ground = Some((seed, gone));
+        let all: Vec<Coord> = self.loaded.keys().copied().collect();
+        for k in all {
+            self.remesh(k);
+        }
+    }
+
+    /// The ground items' seed and gone cells (none: not drawn).
+    pub fn ground(&self) -> Option<&(u64, dwell_world::ground::GroundGone)> {
+        self.ground.as_ref()
+    }
+
+    /// Ground items gone (the server's `GroundGone`): their chunks are meshed again without them.
+    pub fn ground_gone(&mut self, cells: &[[i32; 3]]) {
+        let Some((_, gone)) = &mut self.ground else {
+            return;
+        };
+        let mut chunks = Vec::new();
+        for &c in cells {
+            if gone.cells.insert(c) {
+                chunks.push(c.map(|v| v.div_euclid(CHUNK_SIZE)));
+            }
+        }
+        chunks.sort_unstable();
+        chunks.dedup();
+        for k in chunks {
+            self.remesh(k);
+        }
+    }
+
+    /// Chunk `k` is meshed again (a job in flight for it is superseded).
+    fn remesh(&mut self, k: Coord) {
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+            if self.meshing.contains_key(&k) {
+                self.stale.insert(k);
+            }
+        }
+    }
+
+    /// The damage drawn on `cell`, if any.
+    pub fn damage_at(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::DamageView> {
+        self.damage.get(&cell)
+    }
+
+    /// Sets world cell `cell`'s damage (none: undamaged), as the server sent it
+    /// (docs/BLOCK_DAMAGE.md): its chunk is meshed again with the marks drawn.
+    pub fn set_damage(
+        &mut self,
+        cell: [i32; 3],
+        damage: Option<dwell_protocol::damage::DamageView>,
+    ) {
+        let changed = match damage {
+            Some(d) => self.damage.insert(cell, d.clone()) != Some(d),
+            None => self.damage.remove(&cell).is_some(),
+        };
+        if !changed {
+            return;
+        }
+        let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
+        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+            self.dirty.mark(k);
+        }
+    }
+
+    /// The damaged cells in chunk `c`, chunk-local (a mesh job's `damage`).
+    fn damage_in(&self, c: Coord) -> Vec<([i32; 3], dwell_protocol::damage::DamageView)> {
+        if self.damage.is_empty() {
+            return Vec::new();
+        }
+        let o = c.map(|v| v * CHUNK_SIZE);
+        let mut out: Vec<_> = self
+            .damage
+            .iter()
+            .filter(|(w, _)| (0..3).all(|k| w[k].div_euclid(CHUNK_SIZE) == c[k]))
+            .map(|(w, d)| ([w[0] - o[0], w[1] - o[1], w[2] - o[2]], d.clone()))
+            .collect();
+        out.sort_by_key(|(l, _)| *l);
+        out
+    }
+
+    /// The cuts in chunk `c`, chunk-local (a mesh job's `cuts`).
+    fn cuts_in(&self, c: Coord) -> Vec<([i32; 3], dwell_protocol::chopping::Cut)> {
+        if self.cuts.is_empty() {
+            return Vec::new();
+        }
+        let o = c.map(|v| v * CHUNK_SIZE);
+        let mut out: Vec<_> = self
+            .cuts
+            .iter()
+            .filter(|(w, _)| (0..3).all(|k| w[k].div_euclid(CHUNK_SIZE) == c[k]))
+            .map(|(w, cut)| ([w[0] - o[0], w[1] - o[1], w[2] - o[2]], *cut))
+            .collect();
+        out.sort_by_key(|(l, _)| *l);
+        out
     }
 
     /// Leaves world `cells` out of the terrain meshes (`hide`), or draws them again: the chunks
@@ -918,6 +1422,52 @@ where
         })
     }
 
+    /// How the streamer holds `coord` (the streaming report).
+    pub fn chunk_status(&self, coord: Coord) -> ChunkStatus {
+        let loaded = self.loaded.contains_key(&coord);
+        let dirty = self.dirty.contains(&coord);
+        let in_volume = |c: Coord| {
+            (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&c[1])
+                && self.volume.chunk_may_hold(ChunkCoord::from_array(c))
+        };
+        let neighbours = NEIGHBOURS.iter().map(|d| add(coord, *d));
+        ChunkStatus {
+            loaded,
+            air: self.air.contains(&coord),
+            generating: self.generating.contains_key(&coord),
+            lit: loaded && !self.unlit_set.contains(&coord),
+            meshed: self.meshed.contains(&coord),
+            meshing: self.meshing.contains_key(&coord),
+            dirty,
+            dirty_position: dirty
+                .then(|| self.dirty.in_order().iter().position(|c| *c == coord))
+                .flatten(),
+            drawable: self.drawable(coord),
+            waits_on: neighbours
+                .clone()
+                .filter(|n| self.generating.contains_key(n) || self.unlit_set.contains(n))
+                .collect(),
+            missing: neighbours
+                .filter(|n| {
+                    in_volume(*n)
+                        && !self.loaded.contains_key(n)
+                        && !self.generating.contains_key(n)
+                })
+                .collect(),
+            settling: self.settling.contains_key(&coord),
+        }
+    }
+
+    /// Chunks waiting to be lit (`mesh_dirty` lights them nearest first).
+    pub fn unlit_len(&self) -> usize {
+        self.unlit_set.len()
+    }
+
+    /// Chunks whose water surface waits to settle before a re-mesh.
+    pub fn settling_len(&self) -> usize {
+        self.settling.len()
+    }
+
     pub fn stats(&self) -> StreamStats {
         StreamStats {
             loaded: self.loaded.len(),
@@ -931,6 +1481,7 @@ where
 
     fn put(&mut self, key: Coord, revision: u32, voxels: &[u16]) {
         self.store.set_chunk(key, revision, voxels);
+        self.drawn_revision += 1;
         self.air.remove(&key);
         self.loaded.insert(key, revision);
         self.dirty.mark(key);
@@ -940,7 +1491,17 @@ where
 
     /// The chunk arrived: lit later, within `mesh_dirty`'s budget.
     fn queue_light(&mut self, key: Coord) {
-        if self.store.keeps_light() && self.unlit_set.insert(key) {
+        if !self.store.keeps_light() {
+            return;
+        }
+        // Its light part way read the voxels it had (the store finishes it before they change):
+        // lit again from the start.
+        if self.lighting == Some(key) {
+            self.lighting = None;
+            self.unlit.push_back(key);
+            return;
+        }
+        if self.unlit_set.insert(key) {
             self.unlit.push_back(key);
         }
     }
@@ -961,6 +1522,7 @@ where
         if replaced {
             self.store.remove_chunk(key);
         }
+        self.drawn_revision += 1;
         self.loaded.insert(key, 0);
         if self.air.insert(key) {
             self.queue_light(key);
@@ -1033,12 +1595,30 @@ where
     /// Writes a loaded chunk's changes (it takes their revision) and marks it and the neighbours
     /// they touch for meshing.
     fn write(&mut self, key: Coord, changes: &ChunkChanges) {
+        self.drawn_revision += 1;
         if self.air.remove(&key) {
             self.store.set_chunk(changes.coord, 0, &[0; CHUNK_VOLUME]);
+            self.generated.insert(key, vec![0; CHUNK_VOLUME]);
+        } else if self.pristine.remove(&key)
+            && let Some(v) = self.store.chunk_voxels(key)
+        {
+            // Its first edit: its voxels till now are its generation (ADR 0071's rules read it).
+            self.generated.insert(key, v);
         }
+        // Only the water changes (each cell air or liquid before and after, one liquid where both
+        // are: a level, or the wet front advancing or drying, no block placed or broken): the
+        // chunk and the neighbours it touches may redraw their surface tiles instead.
+        let levels_only = !changes.changes.is_empty()
+            && changes.changes.iter().all(|v| {
+                self.store
+                    .voxel(key, v.index)
+                    .is_some_and(|old| water_only(old, v.material))
+            });
         self.store.edit_chunk(changes);
         self.loaded.insert(key, changes.revision);
-        self.dirty.mark(changes.coord);
+        if !(levels_only && self.levels_only(key)) {
+            self.dirty.mark(changes.coord);
+        }
         // Neighbours whose mesh block holds a changed voxel, diagonals included: their border
         // faces, and their baked ambient light, whose sky rays read `SKY_APRON` cells past their
         // borders (`ChunkStore::mesh_block`), may change. In the order first touched.
@@ -1068,11 +1648,36 @@ where
         }
         for n in touched {
             let c = add(changes.coord, n);
-            if self.loaded.contains_key(&c) && !self.air.contains(&c) {
+            if self.loaded.contains_key(&c)
+                && !self.air.contains(&c)
+                && !(levels_only && self.levels_only(c))
+            {
                 self.dirty.mark(c);
             }
         }
         self.relit();
+    }
+
+    /// Redraws chunk `c`'s water surface alone (its tile) when the view can and the chunk's
+    /// shown mesh is current; it is re-meshed once its water settles ([`WATER_SETTLE_PASSES`]).
+    fn levels_only(&mut self, c: Coord) -> bool {
+        if !self.meshed.contains(&c) || self.dirty.contains(&c) || self.meshing.contains_key(&c) {
+            return false;
+        }
+        let padded = self.store.padded_chunk(c);
+        let light = self.store.mesh_light(c);
+        let mirror = face_of_chunk_y(c[1]) == Face::B;
+        if !self.view.set_water_levels(c, &padded, &light, mirror) {
+            return false;
+        }
+        self.settling.insert(c, 0);
+        self.level_redraws += 1;
+        true
+    }
+
+    /// Chunks redrawn from their water levels alone, without a re-mesh (telemetry, tests).
+    pub fn level_redraws(&self) -> u64 {
+        self.level_redraws
     }
 
     /// Neighbours' border faces may now be hidden (or exposed) by this chunk, and their adaptive
@@ -1221,6 +1826,8 @@ mod tests {
     struct ManualSource {
         jobs: HashMap<Coord, u64>,
         cancelled: Vec<Coord>,
+        /// Chunks asked for as generated (`generate_base`).
+        bases: Vec<Coord>,
     }
     impl ManualSource {
         fn pending(&self) -> usize {
@@ -1234,6 +1841,9 @@ mod tests {
         fn cancel(&mut self, coord: Coord) -> bool {
             self.cancelled.push(coord);
             self.jobs.remove(&coord).is_some()
+        }
+        fn generate_base(&mut self, coord: Coord) {
+            self.bases.push(coord);
         }
     }
 
@@ -1250,15 +1860,48 @@ mod tests {
         unloads: Vec<(Vec<Coord>, Vec<Coord>)>,
         /// What every padded block holds.
         fill: u16,
+        /// A resumable light (BUGS.md #72): a chunk's light is this many 1 ms slices (0: lit at
+        /// once in `light_chunk`), and the slices left of the one begun.
+        light_slices: usize,
+        slices_left: Option<(Coord, usize)>,
     }
     impl ChunkStore for FakeStore {
+        fn light_begin(&mut self, coord: Coord) {
+            if self.light_slices == 0 {
+                self.light_chunk(coord);
+            } else {
+                self.slices_left = Some((coord, self.light_slices));
+            }
+        }
+        fn light_resume(&mut self, _steps: usize) -> bool {
+            let Some((c, left)) = self.slices_left else {
+                return true;
+            };
+            if let Some(clock) = &self.light_clock {
+                clock.set(clock.get() + 1.0);
+            }
+            if left <= 1 {
+                self.slices_left = None;
+                self.lit.push(c);
+                true
+            } else {
+                self.slices_left = Some((c, left - 1));
+                false
+            }
+        }
         fn keeps_light(&self) -> bool {
             self.light_clock.is_some()
         }
         fn light_chunk(&mut self, coord: Coord) {
             self.lit.push(coord);
             if let Some(c) = &self.light_clock {
-                c.set(c.get() + 10.0);
+                // The whole light at once: a resumable one's slices, or 10 ms.
+                let ms = if self.light_slices == 0 {
+                    10.0
+                } else {
+                    self.light_slices as f64
+                };
+                c.set(c.get() + ms);
             }
         }
         fn unload_chunks(&mut self, stored: &[Coord], air: &[Coord]) {
@@ -1269,6 +1912,9 @@ mod tests {
         }
         fn set_chunk(&mut self, coord: Coord, revision: u32, voxels: &[u16]) {
             self.chunks.insert(coord, (revision, voxels[0]));
+        }
+        fn voxel(&mut self, coord: Coord, _index: u16) -> Option<u16> {
+            self.chunks.get(&coord).map(|c| c.1)
         }
         fn remove_chunk(&mut self, coord: Coord) {
             self.chunks.remove(&coord);
@@ -1311,6 +1957,12 @@ mod tests {
     #[derive(Default)]
     struct FakeView {
         chunks: HashMap<Coord, [i32; 3]>,
+        /// It draws the water from tiles (takes level-only changes).
+        tiles: bool,
+        /// Each tile redrawn without a re-mesh.
+        tiled: Vec<Coord>,
+        /// Each redraw's mirror (face B).
+        mirrors: Vec<bool>,
     }
     impl TerrainView<()> for FakeView {
         fn set_terrain_chunk(&mut self, coord: Coord, origin: [i32; 3], meshes: Option<()>) {
@@ -1318,6 +1970,13 @@ mod tests {
                 Some(()) => self.chunks.insert(coord, origin),
                 None => self.chunks.remove(&coord),
             };
+        }
+        fn set_water_levels(&mut self, coord: Coord, _: &[u16], _: &[u8], mirror: bool) -> bool {
+            if self.tiles {
+                self.tiled.push(coord);
+                self.mirrors.push(mirror);
+            }
+            self.tiles
         }
     }
 
@@ -1398,6 +2057,51 @@ mod tests {
         }
     }
 
+    dwell_world::both_faces!(
+        /// The streaming report's chunk status (docs/DEV_TOOLS.md): a chunk whose neighbour is
+        /// still generating says it waits on that neighbour, and one whose neighbour never came
+        /// names it missing; once the neighbour arrives and it is meshed it is drawable.
+        fn a_chunk_status_names_the_neighbour_it_waits_on(f: dwell_world::FaceFrame) {
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 2;
+            let me = f.chunk(ChunkCoord::new(0, row, 0)).to_array();
+            let east = f.chunk(ChunkCoord::new(1, row, 0)).to_array();
+            let west = f.chunk(ChunkCoord::new(-1, row, 0)).to_array();
+            let rock = dwell_blocks::require("dwell:sandbox_floor");
+            let mut s = ChunkStreamer::new(
+                VoxelWorld::streamed(),
+                ManualSource::default(),
+                FakeMesher::default(),
+                FakeView::default(),
+            );
+            s.on_chunk_data(explicit(me, 1, rock));
+            s.on_chunk_data(generated(east));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let st = s.chunk_status(me);
+            assert!(
+                st.loaded && st.dirty && !st.meshing && !st.drawable,
+                "{st:?}"
+            );
+            assert_eq!(st.dirty_position, Some(0));
+            assert_eq!(st.waits_on, vec![east], "waits on the generating neighbour");
+            assert!(st.missing.contains(&west), "{:?}", st.missing);
+            assert!(
+                !st.missing.contains(&east),
+                "a generating chunk is announced"
+            );
+            assert!(s.chunk_status(east).generating);
+            // The neighbour arrives: the chunk is meshed and drawable.
+            let token = s.source().jobs[&east];
+            s.on_generated(east, token, &vec![rock; CHUNK_VOLUME]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let jobs = std::mem::take(&mut s.mesher_mut().jobs);
+            for job in jobs {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            let st = s.chunk_status(me);
+            assert!(st.waits_on.is_empty() && st.meshed && st.drawable, "{st:?}");
+        }
+    );
+
     fn sorted(mut v: Vec<Coord>) -> Vec<Coord> {
         v.sort();
         v
@@ -1435,7 +2139,7 @@ mod tests {
                 voxels: Some(voxels),
             });
             s.on_chunk_data(air(sky));
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let floor = f.cell([16, row * CHUNK_SIZE + 8, 16]);
             let light_at = |job: &MeshJob, c: [i32; 3]| {
                 let l = [0, 1, 2].map(|a| c[a] - job.coord[a] * CHUNK_SIZE);
@@ -1460,7 +2164,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(s.set_local(&roof), roof.len());
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1475,7 +2179,7 @@ mod tests {
             }
             let gone: Vec<([i32; 3], u16)> = roof.iter().map(|&(c, _)| (c, 0)).collect();
             s.set_local(&gone);
-            s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
             let job = s
                 .mesher()
                 .jobs
@@ -1483,6 +2187,68 @@ mod tests {
                 .find(|j| j.coord == ground)
                 .expect("re-meshed");
             assert_eq!(light_at(job, floor) >> 4, 15);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The ground items' rules read the terrain as generated (owner, 2026-11-09: "keep sticks
+        /// under cleared leaves"): a mesh job carries its sky volume as generated once a chunk in
+        /// it is edited (the voxels before the first edit), and a chunk that arrives edited is
+        /// generated again for it.
+        fn mesh_jobs_carry_the_terrain_as_generated_once_edited(f: dwell_world::FaceFrame) {
+            let row = dwell_world::MIDPLANE_Y.div_euclid(CHUNK_SIZE) + 2;
+            let c = f.chunk(ChunkCoord::new(0, row, 0)).to_array();
+            let leaves = dwell_blocks::require("dwell:leaves");
+            let cell = f.cell([5, row * CHUNK_SIZE + 20, 7]);
+            let l = [0, 1, 2].map(|a| cell[a] - c[a] * CHUNK_SIZE);
+            let mut voxels = vec![0u16; CHUNK_VOLUME];
+            voxels[local_index(l[0], l[1], l[2])] = leaves;
+            let mut s = ChunkStreamer::new(
+                VoxelWorld::streamed(),
+                ManualSource::default(),
+                FakeMesher::default(),
+                FakeView::default(),
+            );
+            s.set_ground(7);
+            s.on_chunk_data(generated(c));
+            let token = s.source_mut().jobs.remove(&c).expect("generating");
+            s.on_generated(c, token, &voxels);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == c)
+                .expect("meshed");
+            assert!(job.generated.is_empty(), "unedited: as it is");
+            for job in std::mem::take(&mut s.mesher_mut().jobs) {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            // The leaves cleared: meshed with them gone, its rules reading them as generated.
+            assert_eq!(s.set_local(&[(cell, 0)]), 1);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            let job = s
+                .mesher()
+                .jobs
+                .iter()
+                .find(|j| j.coord == c)
+                .expect("re-meshed");
+            let [ax, ay, az] = dwell_world::SKY_APRON;
+            let [ex, _, ez] = dwell_world::SKY_EXTENT;
+            let at = (l[0] + ax + ex * (l[2] + az + ez * (l[1] + ay))) as usize;
+            assert_eq!(job.padded[at], 0, "cleared now");
+            assert_eq!(job.generated[at], leaves, "leaves as generated");
+            assert_eq!(s.generated_voxel(cell), Some(leaves));
+            for job in std::mem::take(&mut s.mesher_mut().jobs) {
+                s.on_meshed(job.coord, job.token, ());
+            }
+            // A chunk that arrives edited is generated again for its rules.
+            let d = f.chunk(ChunkCoord::new(1, row, 0)).to_array();
+            s.on_chunk_data(explicit(d, 3, 0));
+            assert_eq!(s.source_mut().bases, vec![d]);
+            s.on_generated_base(d, &voxels);
+            let other = [cell[0] + CHUNK_SIZE, cell[1], cell[2]];
+            assert_eq!(s.generated_voxel(other), Some(leaves));
         }
     );
 
@@ -1518,12 +2284,15 @@ mod tests {
         assert_eq!(s.source().pending(), 0);
         assert_eq!(s.store().chunks.len(), 0);
         assert!(s.ready_around([16.0, dwell_world::m_of_row(16), 16.0]));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            0
+        );
         assert_eq!(s.view().chunks.len(), 0);
         // Unloading an Air chunk removes nothing from the store; a stored chunk replaced by Air is
         // dropped from the store and the view.
         s.on_chunk_data(explicit([5, 0, 0], 1, 2));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[5, 0, 0]));
         s.on_chunk_data(air([5, 0, 0]));
@@ -1553,7 +2322,7 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 10.0, 10.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(20.0, 10.0), no_clock);
         flush(&mut s);
         assert!(s.view().chunks.contains_key(&[0, 0, 0]));
         s.on_chunk_data(generated([3, 0, 0]));
@@ -1581,9 +2350,12 @@ mod tests {
     }
 
     #[test]
-    fn lighting_has_its_own_budget_goes_nearest_first_and_doesnt_starve_the_meshing() {
+    fn lighting_leaves_the_mesh_starts_their_share_goes_nearest_first_and_stops_before_overrunning()
+    {
         // 0.22.9: the light took the mesh budget (in arrival order), and a frame that lit one
-        // chunk started one mesh job: 2–4 jobs ran at load where 16 had.
+        // chunk started one mesh job: 2–4 jobs ran at load where 16 had. Since 0.50.14 the two
+        // share one budget, the light stopping short of the mesh starts' part, and before a chunk
+        // its estimate says would pass its deadline.
         let (mut s, _) = setup();
         let clock = Rc::new(std::cell::Cell::new(0.0));
         s.store_mut().light_clock = Some(clock.clone());
@@ -1593,15 +2365,95 @@ mod tests {
             finish(&mut s, c);
         }
         let t = clock.clone();
-        let started = s.mesh_dirty([16.0, 16.0, 16.0], 15.0, 5.0, move || t.get());
-        // Two lit in 15 ms (10 each, at least one), the nearest; both meshed, in the mesh's own
-        // budget (the others wait to be lit).
+        let started = s.mesh_dirty(
+            [16.0, 16.0, 16.0],
+            StreamBudget::new(25.0, 5.0),
+            move || t.get(),
+        );
+        // Two lit (10 ms each) in the light's 20 ms, the nearest, and the third not begun (it would
+        // end at 30); both meshed in the rest (the others wait to be lit).
         assert_eq!(s.store().lit, vec![[0, 0, 0], [4, 0, 0]]);
+        assert_eq!(clock.get(), 20.0);
         assert_eq!(started, 2);
         let t = clock.clone();
-        s.mesh_dirty([16.0, 16.0, 16.0], 100.0, 5.0, move || t.get());
+        s.mesh_dirty(
+            [16.0, 16.0, 16.0],
+            StreamBudget::new(105.0, 5.0),
+            move || t.get(),
+        );
         assert_eq!(s.store().lit.len(), 4);
         assert_eq!(sorted(s.store().meshed_from.clone()).len(), 4);
+    }
+
+    #[test]
+    fn a_late_frame_runs_one_item_past_its_deadline_and_the_light_and_meshing_take_turns() {
+        // BUGS.md #72: on the phone page (CPU 4×) a chunk's light ran past the deadline and then a
+        // mesh start ran too, each as its kind's first of the frame: `mesh_dirty` 14–17 ms. Now
+        // one item a frame may run past it, the light's or the mesh starts', in turn.
+        let (mut s, _) = setup();
+        let clock = Rc::new(std::cell::Cell::new(0.0));
+        s.store_mut().light_clock = Some(clock.clone());
+        // Three chunks to light (10 ms each) and mesh, none lit yet.
+        for c in [[8, 0, 0], [0, 0, 0], [12, 0, 0]] {
+            s.on_chunk_data(generated(c));
+            finish(&mut s, c);
+        }
+        let meshed = s.store().meshed_from.len();
+        // A 4 ms budget (2 of it the mesh starts'): the light's 10 ms runs past it, alone.
+        let t = clock.clone();
+        let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit, vec![[0, 0, 0]], "one chunk lit, the nearest");
+        assert_eq!(
+            started, 0,
+            "no mesh start after the light ran past the deadline"
+        );
+        // The next late frame is the mesh starts': no light past the deadline, a mesh started.
+        let t = clock.clone();
+        let started = s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit.len(), 1, "the light waits its turn");
+        assert!(started >= 1, "the mesh starts' turn");
+        assert!(s.store().meshed_from.len() > meshed);
+        // Then the light's again.
+        let t = clock.clone();
+        s.mesh_dirty([16.0; 3], StreamBudget::new(4.0, 2.0), move || t.get());
+        assert_eq!(s.store().lit.len(), 2);
+    }
+
+    #[test]
+    fn a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit() {
+        // BUGS.md #72: one chunk's light was 15–20 ms of a frame at CPU 6×, the worst frames
+        // left. Lit a slice at a time, no frame spends more than its light budget (one slice
+        // over it at most), and the chunk isn't meshed on half its light.
+        let (mut s, _) = setup();
+        let clock = Rc::new(std::cell::Cell::new(0.0));
+        s.store_mut().light_clock = Some(clock.clone());
+        s.store_mut().light_slices = 30; // 30 ms of light
+        s.on_chunk_data(generated([0, 0, 0]));
+        finish(&mut s, [0, 0, 0]);
+        let mut frames = 0;
+        while s.store().lit.is_empty() {
+            let before = clock.get();
+            let t = clock.clone();
+            // An 8 ms budget, 3.2 of it the mesh starts': the light stops at 4.8 ms.
+            s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
+            let spent = clock.get() - before;
+            assert!(
+                spent <= 4.8 + 1.0,
+                "frame {frames} spent {spent} ms on light"
+            );
+            if s.store().lit.is_empty() {
+                assert!(s.store().meshed_from.is_empty(), "meshed on half its light");
+            }
+            frames += 1;
+            assert!(frames < 20, "the light never finished");
+        }
+        assert!(frames >= 5, "lit in {frames} frames: not spread");
+        let t = clock.clone();
+        s.mesh_dirty([16.0; 3], StreamBudget::new(8.0, 3.2), move || t.get());
+        assert!(
+            s.store().meshed_from.contains(&[0, 0, 0]),
+            "meshed once lit"
+        );
     }
 
     #[test]
@@ -1638,15 +2490,24 @@ mod tests {
             t += 10.0;
             t
         };
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            1
+        );
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 1);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            1
+        );
         // [4, 0, 0] waits for [5, 0, 0].
         assert_eq!(s.store().meshed_from, vec![[8, 0, 0], [0, 0, 0]]);
-        assert_eq!(s.mesh_dirty(center, 5.0, 5.0, &mut clock), 0);
+        assert_eq!(
+            s.mesh_dirty(center, StreamBudget::new(10.0, 5.0), &mut clock),
+            0
+        );
         finish(&mut s, [5, 0, 0]);
         flush(&mut s);
-        s.mesh_dirty(center, 100.0, 100.0, no_clock);
+        s.mesh_dirty(center, StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from[2..].to_vec()),
             vec![[4, 0, 0], [5, 0, 0]]
@@ -1671,7 +2532,7 @@ mod tests {
                 t += 10.0;
                 t
             };
-            while s.mesh_dirty([16.0, 16.0, 16.0], 5.0, 5.0, &mut clock) > 0 {}
+            while s.mesh_dirty([16.0, 16.0, 16.0], StreamBudget::new(10.0, 5.0), &mut clock) > 0 {}
             s.store().meshed_from.clone()
         };
         let second = SecondCentre {
@@ -1694,11 +2555,11 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(generated([0, 0, 0]));
         finish(&mut s, [0, 0, 0]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         s.on_chunk_data(generated([0, 1, 0]));
         finish(&mut s, [0, 1, 0]);
         flush(&mut s);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 0, 0], [0, 1, 0]]
@@ -1713,12 +2574,12 @@ mod tests {
         let (mut s, _) = setup();
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         let beside_support = 6 | (31 << 5) | (5 << 10);
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[beside_support, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1740,12 +2601,104 @@ mod tests {
         for x in [0, 2, 4] {
             s.on_chunk_data(explicit([x, 0, 0], 0, 0));
         }
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 0);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            2
+        );
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            0
+        );
         flush(&mut s);
         assert_eq!(s.view().chunks.len(), 2);
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
     }
+
+    fn jobs(s: &Streamer) -> Vec<Coord> {
+        s.mesher().jobs.iter().map(|j| j.coord).collect()
+    }
+
+    // face-a-only: the streamer's bookkeeping is face-blind (the view takes the face's mirror).
+    #[test]
+    fn a_water_level_change_redraws_the_tile_and_re_meshes_only_once_settled() {
+        let water = dwell_blocks::require("dwell:water");
+        let low = dwell_blocks::liquid_at_fill(water, 0.5);
+        assert_ne!(low, water, "water has fills");
+        let stone = dwell_blocks::require("dwell:stone");
+        let (mut s, _) = setup();
+        s.view_mut().tiles = true;
+        s.on_chunk_data(explicit([0, 0, 0], 3, water));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+
+        // A level change inside the chunk: its tile is redrawn, no mesh job is queued.
+        s.on_voxel_modification(&[modification([0, 0, 0], 4, &[5 | (5 << 5), low])]);
+        assert_eq!(s.view().tiled, vec![[0, 0, 0]]);
+        assert_eq!(s.level_redraws(), 1);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert!(s.mesher().jobs.is_empty(), "no re-mesh while it moves");
+        // Once it has been still for the settle passes it is re-meshed once (its sides catch up).
+        for _ in 1..WATER_SETTLE_PASSES {
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        }
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+        flush(&mut s);
+
+        // A block change in the water still re-meshes at once.
+        s.on_voxel_modification(&[modification([0, 0, 0], 5, &[5 | (5 << 5), stone])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+        assert_eq!(s.view().tiled.len(), 1);
+        flush(&mut s);
+
+        // A view that draws no tiles (the meshed water's tier) re-meshes on a level change.
+        s.view_mut().tiles = false;
+        s.on_voxel_modification(&[modification([0, 0, 0], 6, &[5 | (5 << 5), low])]);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        assert_eq!(jobs(&s), vec![[0, 0, 0]]);
+    }
+
+    dwell_world::both_faces!(
+        /// W1 (proposals/WATER_GPU_SURFACE.md §3): the wet front advancing (air → water) or
+        /// drying (water → air) in a chunk drawn from tiles rewrites its tile (on its face's
+        /// mirror) and queues no mesh job; a block placed in the water still re-meshes at once.
+        fn the_wet_front_redraws_the_tile_without_a_re_mesh(f: FaceFrame) {
+            let water = dwell_blocks::require("dwell:water");
+            let low = dwell_blocks::liquid_at_fill(water, 0.5);
+            let stone = dwell_blocks::require("dwell:stone");
+            let c = [0, f.row(16).div_euclid(CHUNK_SIZE), 0];
+            let (mut s, _) = setup();
+            s.view_mut().tiles = true;
+            // A dry chunk (no tile yet): its first water makes one.
+            s.on_chunk_data(explicit(c, 3, dwell_blocks::AIR));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            flush(&mut s);
+            let cell = 5 | (5 << 5) | (5 << 10);
+            s.on_voxel_modification(&[modification(c, 4, &[cell, low])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert!(s.mesher().jobs.is_empty(), "air → water: no re-mesh");
+            assert_eq!(s.view().tiled, vec![c]);
+            assert_eq!(s.view().mirrors, vec![f.face == Face::B]);
+            // Drying: water → air in a water chunk, its tile rewritten (freed by the view once
+            // dry), no re-mesh. (The fake store reads every cell as its chunk's fill.)
+            let d = [3, c[1], 0];
+            s.on_chunk_data(explicit(d, 3, water));
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            flush(&mut s);
+            s.on_voxel_modification(&[modification(d, 4, &[cell, dwell_blocks::AIR])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert!(s.mesher().jobs.is_empty(), "water → air: no re-mesh");
+            assert_eq!(s.view().tiled, vec![c, d]);
+            // A change mixing a block with water re-meshes at once.
+            s.on_voxel_modification(&[modification(c, 5, &[cell, water, cell + 1, stone])]);
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+            assert_eq!(jobs(&s), vec![c]);
+            assert_eq!(s.view().tiled.len(), 2);
+        }
+    );
 
     #[test]
     fn applies_voxel_modifications_in_revision_order_and_re_meshes_the_chunk_and_its_neighbours() {
@@ -1753,7 +2706,7 @@ mod tests {
         s.on_chunk_data(explicit([0, 0, 0], 3, 0));
         s.on_chunk_data(explicit([1, 0, 0], 0, 0));
         s.on_chunk_data(explicit([0, 1, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // A voxel on the +X border (x = 31): the chunk and its +X neighbour re-mesh.
@@ -1761,7 +2714,7 @@ mod tests {
         s.on_voxel_modification(&[modification([0, 0, 0], 4, &[border, 2])]);
         assert_eq!(s.store().edits, vec![([0, 0, 0], 4, vec![border, 2])]);
         assert_eq!(s.revision([0, 0, 0]), Some(4));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [1, 0, 0]]
@@ -1789,11 +2742,11 @@ mod tests {
         let (mut s, _) = setup();
         s.store_mut().fill = 7;
         s.on_chunk_data(explicit([0, 0, 0], 0, 0));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         // A job in flight when a cell is hidden: its result (unmasked) is dropped.
         s.on_voxel_modification(&[modification([0, 0, 0], 1, &[0, 2])]);
         flush(&mut s);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(s.mesher_mut().jobs.len(), 1);
         let cell = [3, 4, 5];
         s.hide_cells(&[cell], true);
@@ -1803,7 +2756,7 @@ mod tests {
             !s.cells_drawn(&[cell]),
             "the dropped job's chunk meshes again"
         );
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         let job = s.mesher_mut().jobs.pop().expect("a job");
         assert_eq!(job.padded[padded_index(3, 4, 5)], 0, "hidden: air");
         assert_eq!(job.padded[padded_index(3, 4, 6)], 7, "the rest as stored");
@@ -1812,11 +2765,50 @@ mod tests {
         // Shown again: meshed with it.
         s.hide_cells(&[cell], false);
         assert!(!s.cells_drawn(&[cell]));
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         let job = s.mesher_mut().jobs.pop().expect("a job");
         assert_eq!(job.padded[padded_index(3, 4, 5)], 7);
         s.on_meshed(job.coord, job.token, ());
         assert!(s.cells_drawn(&[cell]));
+    }
+
+    #[test]
+    fn a_cut_change_meshes_its_chunk_again_with_the_cut_and_drops_a_job_in_flight() {
+        // ADR 0067 §11: a cut wood cell is carved into its chunk's mesh, so each cut the server
+        // sends meshes that chunk again (only that one), its job carrying the chunk's cuts.
+        use dwell_protocol::chopping::Cut;
+        let (mut s, _) = setup();
+        s.on_chunk_data(explicit([0, 0, 0], 0, 0));
+        s.on_chunk_data(explicit([1, 0, 0], 0, 0));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        flush(&mut s);
+        let mut cut = Cut::default();
+        cut.notch[0] = 0.1;
+        let cell = [33, 4, 5];
+        s.set_cut(cell, Some(cut));
+        assert!(!s.cells_drawn(&[cell]));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert!(s.mesher_mut().jobs.is_empty(), "only the cell's chunk");
+        assert_eq!(job.coord, [1, 0, 0]);
+        assert_eq!(job.cuts, vec![([1, 4, 5], cut)], "chunk-local");
+        // Deeper while that job is in flight: its result is dropped and the chunk meshed again.
+        cut.notch[0] = 0.2;
+        s.set_cut(cell, Some(cut));
+        s.on_meshed(job.coord, job.token, ());
+        assert!(!s.cells_drawn(&[cell]));
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert_eq!(job.cuts, vec![([1, 4, 5], cut)]);
+        s.on_meshed(job.coord, job.token, ());
+        assert!(s.cells_drawn(&[cell]));
+        // The same cut again changes nothing; gone, the chunk meshes without it.
+        s.set_cut(cell, Some(cut));
+        assert!(s.cells_drawn(&[cell]));
+        s.set_cut(cell, None);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
+        let job = s.mesher_mut().jobs.pop().expect("a job");
+        assert!(job.cuts.is_empty());
     }
 
     #[test]
@@ -1828,14 +2820,14 @@ mod tests {
         for c in [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]] {
             s.on_chunk_data(explicit(c, 0, 0));
         }
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         flush(&mut s);
         s.store_mut().meshed_from.clear();
         // Inside the +X apron (not touching the border), low in the chunk: the +X and −Y
         // neighbours' rays reach it, the others' do not.
         let (x, y) = (CHUNK_SIZE - ax, ay - 1);
         s.on_voxel_modification(&[modification([0, 0, 0], 1, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, -1, 0], [0, 0, 0], [1, 0, 0]]
@@ -1846,7 +2838,7 @@ mod tests {
         s.store_mut().meshed_from.clear();
         let (x, y) = (CHUNK_SIZE - ax - 1, ay);
         s.on_voxel_modification(&[modification([0, 0, 0], 2, &[(x | (y << 5)) as u16, 2])]);
-        s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock);
         assert_eq!(
             sorted(s.store().meshed_from.clone()),
             vec![[0, 0, 0], [0, 1, 0]]
@@ -1868,7 +2860,7 @@ mod tests {
         s.on_chunk_data(air([0, 5, 0]));
         s.on_voxel_modification(&[modification([0, 5, 0], 1, &[0, 2])]);
         assert_eq!(s.store().chunks.get(&[0, 5, 0]), Some(&(1, 0)));
-        s.mesh_dirty([0.0, 160.0, 0.0], 100.0, 100.0, no_clock);
+        s.mesh_dirty([0.0, 160.0, 0.0], StreamBudget::new(200.0, 100.0), no_clock);
         assert!(s.store().meshed_from.contains(&[0, 5, 0]));
     }
 
@@ -1904,7 +2896,7 @@ mod tests {
             // Loaded but not meshed: only the air is drawable.
             let loaded = s.near_progress(at, &ring, all);
             assert!(loaded.ready > 0 && !loaded.complete());
-            while s.mesh_dirty(at, 100.0, 100.0, no_clock) > 0 {
+            while s.mesh_dirty(at, StreamBudget::new(200.0, 100.0), no_clock) > 0 {
                 flush(&mut s);
             }
             let done = s.near_progress(at, &ring, all);
@@ -1959,10 +2951,16 @@ mod tests {
             FakeView::default(),
         );
         s.on_chunk_data(explicit([3, 0, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
         // A chunk row below the midplane (face B).
         s.on_chunk_data(explicit([3, dwell_world::MIDPLANE_CHUNK_Y - 6, 4], 1, 2));
-        assert_eq!(s.mesh_dirty([0.0; 3], 100.0, 100.0, no_clock), 1);
+        assert_eq!(
+            s.mesh_dirty([0.0; 3], StreamBudget::new(200.0, 100.0), no_clock),
+            1
+        );
         assert_eq!(s.mesher().received, vec![false, true]);
     }
 

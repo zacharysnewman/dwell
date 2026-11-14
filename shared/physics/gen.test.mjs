@@ -50,8 +50,11 @@ test('a body kind added by data alone is generated', () => {
   d.kinds.push({ name: 'cart', place: false, break: true, split: false, settles: false, saved: true });
   assert.match(
     bodiesRust(validateBodies(d)),
-    /BodyKind \{ name: "cart", place: false, breaks: true, split: false, settles: false, saved: true, built_on: &\[\] \}/,
+    /BodyKind \{ name: "cart", place: false, breaks: true, split: false, settles: false, saved: true, settles_afloat: false, built_on: &\[\] \}/,
   );
+  // settlesAfloat by data alone (waterlogging, later, would let a soaked body settle afloat)
+  d.kinds[2].settlesAfloat = true;
+  assert.match(bodiesRust(validateBodies(d)), /name: "cart", .*settles_afloat: true/);
 });
 
 test('bad body kinds fail with their path named', () => {
@@ -60,6 +63,7 @@ test('bad body kinds fail with their path named', () => {
     [(d) => delete d.kinds[0].settles, /kinds\[0\]\.settles must be true or false/],
     [(d) => (d.kinds[1].name = 'natural'), /kinds\[1\]\.name natural is listed twice/],
     [(d) => (d.kinds[1].fly = true), /kinds\[1\]: unknown fly/],
+    [(d) => (d.kinds[0].settlesAfloat = 1), /kinds\[0\]\.settlesAfloat must be true or false/],
     [(d) => d.kinds.reverse(), /kinds\[0\] must be natural/],
     [(d) => (d.water.drag = -1), /water\.drag must be a number in \[0, 50\]/],
     [(d) => (d.water.dragCoefficient = 9), /water\.dragCoefficient must be a number in \[0, 5\]/],

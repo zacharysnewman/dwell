@@ -54,8 +54,28 @@ The design questions (CLAUDE.md, "Ask before designing"), answered by the owner'
     - `over`: paint another material first (e.g. `grass_side` is painted over `soil`).
     - `layers`: the layers, painted in order (§3).
   - `tiles`: atlas tile name → the block material that paints it. Every atlas tile is mapped, and
-    nothing else: the registry's `textures` names (`shared/blocks/dwell.json`) and the engine's
-    utility tiles (`ENGINE_TILES` in `gen.mjs`: `plain` and `missing`).
+    nothing else: the registry's `textures` names (`shared/blocks/dwell.json`), the engine's
+    utility tiles (`ENGINE_TILES` in `gen.mjs`: `plain` and `missing`), the woods' cut tiles, the
+    looks' tiles and the crack sets' tiles (below).
+
+**Crack tiles** (WORK_QUEUE item 18, owner 2026-11-12: "Perhaps we also show a 'cracking' texture
+around the block too as you do more damage"; BLOCK_DAMAGE.md §6.3). `shared/textures/cracks.json`
+lists crack tile **sets**, one per material family, each its stages in order (1–8 tiles; `span`: the
+metres a tile covers round the hit, 1.5), validated by `gen.mjs` `validateCracks` (a tile in two sets, a
+bad name or span fails by name); their tiles join the atlas (`crackTiles`, so `tiles` must paint them).
+A crack tile is a **multiply mask**: `chalk` white where uncracked, dark strokes in the cracks, painted
+with `"wrap": false` and centred on the tile's middle (the hit); each stage paints `over` the one before
+(the cracks grow, never move). The sets (prototype content, like the materials):
+
+- `stone` (`crack_stone_1`–`4`, `ink_soft`): three hairline `blade`s from the middle, then longer ones,
+  then branches off them, then branching cracks to the tile's edge;
+- `soil` (`crack_soil_1`–`4`, `soil.shadow`): two short dry fissures, wider ones, then a loose network
+  of `streak`s round the hit as drying mud splits;
+- `wood` (`crack_wood_1`–`4`, `bark.shadow`): a split along the grain (the tile's v, up a side) through
+  the hit, growing to three splits the tile's length. No block uses it yet (logs are chopped by the
+  axe's cuts, which have no `damage.look`).
+
+A block names a set in its `damage.look.cracks` (`shared/tools/gen.mjs`).
 
 **Utility tiles.** Three tiles are not content, and their materials (`plain`, `grid`, `missing`)
 use the palette's `chalk` ramp and `missing_*` swatches, outside the content albedo range:
@@ -130,7 +150,9 @@ Both are checked in. CI regenerates them and fails on any diff (the protocol job
 `node --test shared/textures/gen.test.mjs`. `--png <file>` also writes a preview sheet of every
 material.
 
-**In the client** (`dwell-mesh` `textures.rs`): one texel lookup into the baked tiles serves the
+**In the client** (`dwell-mesh` `textures.rs`): the atlas layout (`TILE_ORDER`) is the set's own list
+(`PAINTERLY_TILES`, materials.json's `tiles` order), so a tile the set paints is always in the atlas
+(BUGS.md #133). One texel lookup into the baked tiles serves the
 atlas (`build_atlas`), cutout detection (`tile_has_alpha`), the tiles' average colours
 (`average_tile_color`, the LOD's flat colours) and the hotbar swatches; a name the set doesn't paint
 takes the `plain` tile. The atlas, its mipmaps and their coverage-preserving alpha (`render/mod.rs`)
@@ -196,6 +218,16 @@ the ground, 9.34 ms 600 m up, 11.79 ms over the sea).
 `paint.mjs`'s code. You pick a material, edit its layers and the palette as JSON or with sliders,
 see the tile, a 3 × 3 repeat and a block lit from above, and copy the material or palette JSON back
 into `shared/textures/`.
+
+**Chisel's Textures tab** (0.52.42, ADR 0074 B6) folds the lab into Chisel (`client/chisel.html`,
+`client/src/chisel/textures.ts`, `texturesTab.ts`): it imports `paint.mjs` itself, so a material it
+has not changed paints the baked atlas's texels exactly (a test compares every tile with
+`painterly.rgba`), and an exported edit run through `gen.mjs` bakes the pixels it previewed. It flags
+palette colours off the art direction (mean value outside about 0.04–0.96, a shadow clearly warmer or
+a light clearly cooler than its base; the utility and sky colours exempt; snow's and the deer cream's
+lights are the build's known deviations; the `ice` ramp of glacier ice, 0.52.45, is inside the range: a pale blue-white base, a deeper blue shadow for its cracks and planes, a light warmed slightly for its painted sheen), downloads `materials.json` and `palette.json`, and tints
+Chisel's 3D section by each edited block's far colour. The prototype page stays for now: it is
+still generated, and also edits character and sky materials.
 
 ## 9. Outstanding and later
 

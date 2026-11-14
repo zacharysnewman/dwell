@@ -68,8 +68,25 @@ async function aim(page: Page, pitch = -45): Promise<Target> {
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+/** The creative items (shared/items/items.json), in its order. */
+const ITEMS = (
+  JSON.parse(readFileSync(new URL('../../shared/items/items.json', import.meta.url), 'utf8')) as {
+    items: { name: string; label: string; tool?: string }[];
+  }
+).items;
+/** The hotbar's tools (shared/items/items.json `tool`): they place nothing. */
+const TOOL_TITLES = new Set(ITEMS.filter((i) => i.tool !== undefined).map((i) => i.label));
 
 const EYE_HEIGHT = 1.62;
+
+/**
+ * How long the page may take to show a look, a key or an edit. The game answers within a frame,
+ * but on the software renderer (SwiftShader, the suite's CI adapter) the page has drawn no frame
+ * for 6 s at a time mid-test (measured locally with the CPU throttled 6×: just after the first
+ * torch is placed; BUGS.md #49 is the same stall after a join), and a look, a hotbar key (taken in
+ * the frame) or a re-target waits for the next frame; the expect default of 5 s failed there on CI.
+ */
+const FRAME_STALL_MS = 20_000;
 const feet = (page: Page) => call<Vec3>(page, 'd.state().feet');
 
 /**
@@ -90,7 +107,9 @@ async function lookAt(page: Page, cell: Vec3, height = 0.5): Promise<void> {
   const yaw = (Math.atan2(d[0] ?? 0, d[2] ?? 0) * 180) / Math.PI;
   const pitch = (Math.atan2(d[1] ?? 0, Math.hypot(d[0] ?? 0, d[2] ?? 0)) * 180) / Math.PI;
   await call(page, `d.look(${String(yaw)}, ${String(pitch)})`);
-  await expect.poll(async () => (await state(page))?.target?.cell.join() ?? '').toBe(cell.join());
+  await expect
+    .poll(async () => (await state(page))?.target?.cell.join() ?? '', { timeout: FRAME_STALL_MS })
+    .toBe(cell.join());
 }
 
 /**
@@ -103,15 +122,26 @@ const EDIT_ARRIVES_MS = 20_000;
 /**
  * Breaks the block placed at `cell`: a break takes one ½ m cell (docs/ITEMS.md §2), so a taller
  * piece (an item of two cells, none on the hotbar today) goes in two breaks, its upper cell first
- * (a look from above meets it first). Each waits until `pages` all show the cell empty.
+ * (a look from above meets it first), each hit until it breaks (block damage). Each waits until
+ * `pages` all show the cell empty.
  */
 async function breakBlock(page: Page, cell: Vec3, pages: Page[] = [page]): Promise<void> {
   const upper: Vec3 = [cell[0], cell[1] + 1, cell[2]];
   const cells = (await voxel(page, upper)) === (await voxel(page, cell)) ? [upper, cell] : [cell];
   for (const c of cells) {
     await lookAt(page, c);
-    // edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of the last edit.
-    await expect.poll(() => call<boolean>(page, `d.edit('break')`)).toBe(true);
+    // Blocks take several hits by the tool held (docs/BLOCK_DAMAGE.md: 11 by hand for soil):
+    // hit until it breaks. edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of
+    // the last edit.
+    await expect
+      .poll(
+        async () => {
+          await call<boolean>(page, `d.edit('break')`);
+          return voxel(page, c);
+        },
+        { timeout: EDIT_ARRIVES_MS, intervals: [150] },
+      )
+      .toBe(0);
     for (const p of pages) {
       await expect.poll(() => voxel(p, c), { timeout: EDIT_ARRIVES_MS }).toBe(0);
     }
@@ -143,50 +173,94 @@ async function clearYaw(page: Page): Promise<number> {
   return best;
 }
 
+test('local mode: the creative inventory view puts an item on the 6-slot hotbar', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto('./?world=flat&fresh=1');
+  await ready(page);
+  // Six slots (shared/inventory/inventory.json hotbarSlots), a new world's picks first.
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(6);
+  await page.keyboard.press('Digit3');
+  await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+    'data-slot',
+    '2',
+    { timeout: FRAME_STALL_MS },
+  );
+  await page.keyboard.press('KeyE');
+  const view = page.locator('#creative-inventory');
+  await expect(view).toBeVisible();
+  // Every creative item is in the catalogue.
+  await expect(view.locator('.inventory-items [data-item]')).toHaveCount(ITEMS.length);
+  await view.locator('[data-item="dwell:sand"]').click();
+  await page.keyboard.press('Escape');
+  await expect(view).toBeHidden();
+  await expect(page.locator('#hotbar .hotbar-slot[data-slot="2"]:visible')).toHaveAttribute(
+    'title',
+    'Sand',
+  );
+});
+
 test('local mode: every palette block can be picked from the hotbar, placed, and broken', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // 24 items (the six tools place nothing), each put on the hotbar, placed and broken: 66-114 s on CI's software renderer when it passed.
+  test.setTimeout(180_000);
   await page.goto('./?world=flat');
   await ready(page);
   // The hotbar is built once the page has taken the join, which can be a frame after the terrain.
-  // One slot per item (shared/items/items.json, docs/ITEMS.md).
-  await expect(page.locator('.hotbar-slot')).toHaveCount(17);
-  const slots = await page.locator('.hotbar-slot').count();
+  // Six slots (shared/inventory/inventory.json); every item reaches one by the inventory view.
+  await expect(page.locator('#hotbar .hotbar-slot:visible')).toHaveCount(6);
   const ground = await aim(page);
   expect(ground.face).toBe(2);
   const cell = add(ground.cell, FACE_DIRS[ground.face] ?? [0, 0, 0]);
   expect(await voxel(page, cell)).toBe(0);
 
-  for (let slot = 0; slot < slots; slot++) {
-    // Number keys pick the first ten slots, a tap on the hotbar the rest.
-    if (slot < 10) await page.keyboard.press(`Digit${String((slot + 1) % 10)}`);
-    else await page.locator(`.hotbar-slot[data-slot="${String(slot)}"]`).click();
-    await expect(page.locator('.hotbar-slot.selected')).toHaveAttribute('data-slot', String(slot));
+  for (const [i, item] of ITEMS.entries()) {
+    // Number keys pick the six slots; the item goes in the selected one (docs/ITEMS.md §6a).
+    const slot = i % 6;
+    await page.keyboard.press(`Digit${String(slot + 1)}`);
+    await expect(page.locator('#hotbar .hotbar-slot.selected:visible')).toHaveAttribute(
+      'data-slot',
+      String(slot),
+      { timeout: FRAME_STALL_MS },
+    );
+    expect(await call<boolean>(page, `d.pick(${JSON.stringify(item.name)})`)).toBe(true);
     // A ladder hangs on a block's side, never on the ground's top (docs/ITEMS.md; the placement
     // rules' tests, dwell-world tests/placement.rs, hang it).
     const title = await page
-      .locator(`.hotbar-slot[data-slot="${String(slot)}"]`)
+      .locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
+    // A tool places nothing: held, Place turns the axe's swing (docs/adr/0067-stone-axe-and-chopping.md).
+    if (title !== null && TOOL_TITLES.has(title)) continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
     // (aimed at the block just broken, so past it now) until the next frame re-targets.
     await call(page, 'd.look(0, -45)');
     await expect
-      .poll(async () => {
-        const t = (await state(page))?.target;
-        return t ? `${t.cell.join()}/${String(t.face)}` : '';
-      })
+      .poll(
+        async () => {
+          const t = (await state(page))?.target;
+          return t ? `${t.cell.join()}/${String(t.face)}` : '';
+        },
+        { timeout: FRAME_STALL_MS },
+      )
       .toBe(`${ground.cell.join()}/${String(ground.face)}`);
     expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
     await expect
-      .poll(() => voxel(page, cell), { message: `slot ${String(slot)} placed`, timeout: 5_000 })
+      .poll(() => voxel(page, cell), {
+        message: `slot ${String(slot)} placed`,
+        timeout: FRAME_STALL_MS,
+      })
       .not.toBe(0);
     const placed = await voxel(page, cell);
     // Breaking targets the new block itself: looked at, as tall grass is aimed at by a box
-    // smaller than its cell.
+    // smaller than its cell. Stone can't be broken by hand (docs/BLOCK_DAMAGE.md): a pickaxe.
+    if (item.name.startsWith('dwell:stone')) {
+      expect(await call<boolean>(page, 'd.pick("dwell:stone_pickaxe")')).toBe(true);
+    }
     await breakBlock(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
     // A steep slope's upper half (a piece of two cells) is broken on its own.
@@ -272,7 +346,7 @@ test('local mode: an edited world is saved in the browser and survives a reload'
   await ready(page);
   const target = await aim(page);
   const cell = add(target.cell, FACE_DIRS[target.face] ?? [0, 0, 0]);
-  await page.locator('.hotbar-slot[title="Sand"]').click(); // not a fixed slot: the palette grows
+  expect(await call<boolean>(page, 'd.pick("dwell:sand")')).toBe(true); // into the selected slot (docs/ITEMS.md §6a)
   const sand = stateId('dwell:sand');
   expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
   await expect.poll(() => voxel(page, cell), { timeout: 5_000 }).toBe(sand);

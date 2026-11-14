@@ -19,6 +19,7 @@
 pub mod cache;
 pub mod channels;
 pub mod codec;
+pub mod relief;
 pub mod shores;
 
 use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};
@@ -27,7 +28,7 @@ use crate::hydrology::{self, End, HydrologyMap, MouthKind, NEIGHBOURS_D8, NONE};
 /// lowest dry ground round it, so the coarse map's bicubic between its cells doesn't dip under it.
 const BANK_MARGIN: f64 = 0.5;
 
-pub use cache::{build_bytes, for_seed, install, set_cache_dir};
+pub use cache::{build_bytes, for_seed, for_seed_sized, install, set_cache_dir};
 pub use channels::{Channels, Hit};
 pub use shores::Shores;
 
@@ -113,16 +114,55 @@ pub struct WorldMap {
     pub lake: Vec<u16>,
     pub lakes: Vec<MapLake>,
     pub rivers: Vec<MapRiver>,
+    /// The world's size it covers (BIG_MAP.md M2): derived from its grid (a grid over the disc of
+    /// `WorldSize::world_radius_m`, `hydrology::grid_for_radius`), so its bytes are as before.
+    pub size: dwell_protocol::world_size::WorldSize,
     /// Derived on load.
     pub channels: Channels,
     pub shores: Shores,
+    /// The tectonics its base field was made with (systemic terrain T5; not stored: a map from
+    /// bytes is the build's), for the rock provinces.
+    pub tectonics: crate::tectonics::Tectonics,
+    /// A test world's worldgen config (ADR 0074 B7, `config::world_config`), stored with the map:
+    /// every generator over the map puts its biomes, geology and vegetation on the ground, and its
+    /// tectonics are the map's. `None` for the build's maps (their bytes as before).
+    pub worldgen: Option<std::sync::Arc<crate::config::Worldgen>>,
 }
 
 impl WorldMap {
     /// The map of face seed `seed` by the default profile (`hydrology.json`), computed now.
     pub fn compute(seed: u64) -> Self {
+        Self::compute_sized(seed, dwell_protocol::world_size::WorldSize::DEFAULT)
+    }
+
+    /// [`WorldMap::compute`] for a world of `size` (BIG_MAP.md M2): the profile `sized` (its cell ×
+    /// the scale) over the size's disc and island.
+    pub fn compute_sized(seed: u64, size: dwell_protocol::world_size::WorldSize) -> Self {
         let p = hydrology::default_profile();
-        Self::from_hydrology(seed, &hydrology::generate_seed(seed, p))
+        Self::from_hydrology(seed, &hydrology::generate_seed_sized(seed, p, size))
+    }
+
+    /// [`WorldMap::compute`] over a base height field of other parameters (a fixture world such
+    /// as the archipelago, `FIXTURE_WORLDS`; Chisel's world knobs).
+    pub fn for_height(seed: u64, h: crate::terrain::HeightField) -> Self {
+        let p = hydrology::default_profile();
+        let mut map = Self::from_hydrology(seed, &hydrology::generate_with_height(seed, p, h));
+        map.tectonics = h.tectonics;
+        map
+    }
+
+    /// [`WorldMap::for_height`] for a Realistic world over a given plate tectonics (R2; tests: a
+    /// fixture layout or rules changed by data).
+    pub fn for_plates(
+        seed: u64,
+        h: crate::terrain::HeightField,
+        plates: &crate::plate_tectonics::PlateTectonics,
+    ) -> Self {
+        let p = hydrology::default_profile();
+        let m = hydrology::generate_with_plates(seed, p, h, plates);
+        let mut map = Self::from_hydrology(seed, &m);
+        map.tectonics = h.tectonics;
+        map
     }
 
     /// The kept map of a hydrology map.
@@ -262,6 +302,11 @@ impl WorldMap {
         )
     }
 
+    /// The world's disc radius (m) this map covers.
+    pub fn world_radius(&self) -> i64 {
+        self.size.world_radius_m()
+    }
+
     /// A map from its stored parts, with what is derived from them.
     #[allow(clippy::too_many_arguments)]
     pub fn assemble(
@@ -280,6 +325,7 @@ impl WorldMap {
             n,
             cell,
             x0,
+            size: size_of_grid(n, cell),
             height,
             flags,
             lake,
@@ -287,10 +333,32 @@ impl WorldMap {
             rivers,
             channels: Channels::default(),
             shores: Shores::default(),
+            tectonics: crate::terrain::HEIGHT.tectonics,
+            worldgen: None,
         };
+        crate::progress::report(crate::progress::MapStep::Shores, 0.0);
         map.channels = Channels::build(&map);
         map.shores = Shores::build(&map);
+        crate::progress::report(crate::progress::MapStep::Shores, 1.0);
         map
+    }
+
+    /// The map carrying worldgen config `text` (ADR 0074 B7): its tectonics the config's.
+    pub fn with_worldgen(mut self, text: &str) -> Result<Self, String> {
+        let Some(edit) = crate::config::world_config(text)? else {
+            return Ok(self);
+        };
+        self.tectonics = edit.height.unwrap_or(crate::terrain::HEIGHT).tectonics;
+        self.worldgen = Some(std::sync::Arc::new(crate::config::Worldgen {
+            text: text.trim().to_owned(),
+            edit,
+        }));
+        Ok(self)
+    }
+
+    /// The worldgen config's text (`""` for the build's map).
+    pub fn worldgen_text(&self) -> &str {
+        self.worldgen.as_ref().map_or("", |w| w.text.as_str())
     }
 
     /// The map's digest: equal digests on two targets mean bit-identical maps (the codec's
@@ -380,4 +448,20 @@ fn cubic_slope(f: f64) -> [f64; 4] {
         0.5 * (-9.0 * f2 + 8.0 * f + 1.0),
         0.5 * (3.0 * f2 - 2.0 * f),
     ]
+}
+
+/// The world size whose disc a grid of `n` cells of `cell` m covers (`hydrology::grid_for_radius`
+/// gives `n` = ⌈2r / cell⌉ + 2): the scale whose radius it rounds to; today's for any other grid
+/// (a fixture's).
+fn size_of_grid(n: usize, cell: f64) -> dwell_protocol::world_size::WorldSize {
+    use dwell_protocol::world_size::WorldSize;
+    let across = (n as f64 - 2.0) * cell;
+    let scale = (across / (2.0 * dwell_protocol::world::WORLD_RADIUS as f64)).round() as u32;
+    WorldSize::scaled(scale)
+        .ok()
+        .filter(|s| {
+            let (g, _) = hydrology::grid_for_radius(cell as i32, s.world_radius_m());
+            g.n == n
+        })
+        .unwrap_or(WorldSize::DEFAULT)
 }

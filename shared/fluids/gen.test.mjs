@@ -43,6 +43,8 @@ test('bad entries fail with their path named', () => {
     [(d) => (d.threadStepBudget = 1000), /threadStepBudget must be at least stepBudget/],
     [(d) => (d.maxOwedS = -1), /maxOwedS must be a number in \[0, 36000\]/],
     [(d) => delete d.maxOwedS, /maxOwedS must be a number/],
+    [(d) => (d.riverCurrentScale = -1), /riverCurrentScale must be a number in \[0, 10\]/],
+    [(d) => delete d.riverCurrentScale, /riverCurrentScale must be a number/],
   ]) {
     const d = data();
     change(d);

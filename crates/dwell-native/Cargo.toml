@@ -1,0 +1,29 @@
+[package]
+name = "dwell-native"
+description = "Dwell's native performance harness (a dev tool, never shipped): the Rust client, renderer and local server in a native window, to compare native with the browser."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file.workspace = true
+
+[dependencies]
+dwell-client = { path = "../dwell-client" }
+dwell-game = { path = "../dwell-game" }
+dwell-lod = { path = "../dwell-lod" }
+dwell-look = { path = "../dwell-look" }
+dwell-physics = { path = "../dwell-physics" }
+dwell-protocol = { path = "../dwell-protocol" }
+dwell-sim = { path = "../dwell-sim" }
+dwell-storage = { path = "../dwell-storage" }
+dwell-world = { path = "../dwell-world" }
+# Metal on a Mac: the harness is for comparing with Chrome on the owner's Mac.
+wgpu = { version = "30.0.1", default-features = false, features = ["metal", "wgsl"] }
+winit = "0.30"
+pollster = "0.4"
+ed25519-dalek = "2"
+serde_json = "1"
+redb = "4.4"
+
+[lints]
+workspace = true

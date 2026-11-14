@@ -98,8 +98,18 @@ export function blockLight(id, def, lights) {
  * shared/characters/characters.json's `items`; else the hand shows the block itself) must name one
  * of `items`. Its glow is its texture's (`emissive` in shared/textures/materials.json).
  */
+/**
+ * The hand item a block of a look shows when it names none (`held`): a cross plant its crossed
+ * sheets, a ladder one flat sheet, as the world draws them (owner, 2026-11-09: not a thin box with
+ * its tile on every side). Any future block of these looks is held the same with no entry of its own.
+ */
+export const HELD_BY_LOOK = { cross: 'cross', ladder: 'card' };
+
 export function blockHeld(id, def, items) {
-  if (def.held === undefined) return null;
+  if (def.held === undefined) {
+    const byLook = HELD_BY_LOOK[def.look];
+    return byLook !== undefined && items.includes(byLook) ? byLook : null;
+  }
   if (typeof def.held !== 'string' || !items.includes(def.held)) {
     throw new Error(
       `shared/blocks: ${id}: held must name an item of shared/characters/characters.json (one of ${items.join(', ')}; got ${JSON.stringify(def.held)})`,

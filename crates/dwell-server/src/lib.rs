@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use dwell_protocol::{PROTOCOL_VERSION, PublicKey};
 use dwell_sim::app_version::{APP_VERSION, world_version_error};
-use dwell_sim::server::{EditPolicy, ServerConfig};
+use dwell_sim::server::{EditPolicy, Server, ServerConfig};
 use dwell_storage::{PermissionEntry, PermissionKind, WorldDb, WorldStore};
 
 /// The deployed master server (ARCHITECTURE.md §10.3); `--master` overrides it.
@@ -17,7 +17,8 @@ pub const USAGE: &str =
                     [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]
                     [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]
                     [--client-url URL] [--master URL] [--visibility public|unlisted|none]
-                    [--tags A,B]
+                    [--tags A,B] [--mode NAME] [--worldgen FILE|test:NAME] [--size NAME]
+                    [--sky PRESET]
   --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps
                   the world in memory only)
   --advertise IP  address players use to reach this server (invite links, WebRTC)
@@ -31,6 +32,16 @@ pub const USAGE: &str =
                   own network; public: also in the lobby list; none: never contacts the
                   master
   --tags A,B      tags players can search the lobby list by (e.g. pve,creative)
+  --mode NAME     the game mode (shared/modes/modes.json: creative, adventure): a new world's,
+                  and an existing world switches to it on start (ADR 0065)
+  --worldgen FILE a worldgen config: a Chisel edit's JSON file, or a fixture world's name
+                  (test:tall_peak); the world's terrain is made from it and sent to guests
+                  (ADR 0074 B7). Not saved: give it on every start of that world
+  --size NAME     a new world's size (constants.json worldSizes: 1x, 2x, 4x, 8x, 10x; default
+                  1x); a saved world keeps its own (docs/proposals/BIG_MAP.md, a desktop test)
+  --sky PRESET    a new world rolls its orbit from its seed in this Sky preset's ranges
+                  (shared/look/orbits.json: default, day_varies, extreme; for a Realistic world,
+                  --worldgen test:realistic); without it, today's sky. A saved world keeps its own
   --heartbeat S   seconds between master heartbeats (default 30; testing)";
 
 pub struct Options {
@@ -55,6 +66,12 @@ pub struct Options {
     pub settings: Vec<(String, String)>,
     /// Grants (kind, hex key).
     pub grants: Vec<(PermissionKind, String)>,
+    /// `--mode`: the game mode by name (ADR 0065), checked against `shared/modes/modes.json` by
+    /// [`open_world`]; a new world is made in it and a saved one switches to it ([`switch_mode`]).
+    pub mode: Option<String>,
+    /// `--worldgen`: a worldgen config file, or a fixture world's name (ADR 0074 B7); empty: the
+    /// build's ground. [`install_worldgen`] installs the world's maps from it.
+    pub worldgen: String,
 }
 
 impl Default for Options {
@@ -78,6 +95,8 @@ impl Default for Options {
             world: "world.dwellworld".into(),
             settings: Vec::new(),
             grants: Vec::new(),
+            mode: None,
+            worldgen: String::new(),
         }
     }
 }
@@ -128,6 +147,16 @@ pub fn parse_options(args: &[String]) -> Result<Options, UsageError> {
             "--seed" => o.server.world_seed = v.parse().map_err(|_| UsageError)?,
             "--generator" => o.server.generator_version = v.parse().map_err(|_| UsageError)?,
             "--client-url" => o.client_url = v.into(),
+            "--mode" => o.mode = Some(v.into()),
+            "--worldgen" => o.worldgen = v.into(),
+            "--sky" => {
+                dwell_look::orbits::ORBITS.preset(v).ok_or(UsageError)?;
+                o.server.sky = Some(v.into());
+            }
+            "--size" => {
+                o.server.world_size =
+                    dwell_protocol::world_size::WorldSize::named(v).map_err(|_| UsageError)?
+            }
             _ => return Err(UsageError),
         }
     }
@@ -171,11 +200,55 @@ pub fn parse_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
+/// `--worldgen` (ADR 0074 B7): the config's text (a fixture world's name as is, else the file's),
+/// with both faces' maps built from it and installed in this process before the server starts, so
+/// its generators make the config's ground and it sends the config to guests. `""`: none given.
+pub fn install_worldgen(o: &Options) -> Result<String, String> {
+    if o.worldgen.is_empty() {
+        return Ok(String::new());
+    }
+    let text = if o.worldgen.starts_with("test:") {
+        o.worldgen.clone()
+    } else {
+        std::fs::read_to_string(&o.worldgen)
+            .map_err(|e| format!("--worldgen {:?}: {e}", o.worldgen))?
+    };
+    let text = text.trim().to_owned();
+    if dwell_worldgen::config::world_config(&text)?.is_none() {
+        return Err(format!(
+            "--worldgen {:?}: the build's own ground",
+            o.worldgen
+        ));
+    }
+    if !dwell_world::has_terrain(o.server.generator_version) {
+        return Err("--worldgen needs a terrain world (--generator 8)".into());
+    }
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = dwell_worldgen::bifacial::face_seed(o.server.world_seed, face);
+        let bytes = dwell_worldgen::config::worldgen_map_bytes(seed, &text)?;
+        dwell_worldgen::worldmap::install(&bytes)?;
+    }
+    Ok(text)
+}
+
 /// Opens the world file and folds its settings and permissions (plus the launch options, which
 /// are saved into it) into the config; the store goes into `o.server.store`. Returns what to
 /// print, or why the world can't be opened (nothing is written to a world this build may not
 /// open).
 pub fn open_world(o: &mut Options) -> Result<Vec<String>, String> {
+    if let Some(name) = &o.mode {
+        let m = dwell_protocol::modes::mode(name).ok_or_else(|| {
+            let names: Vec<&str> = dwell_protocol::modes::MODES
+                .iter()
+                .map(|m| m.name)
+                .collect();
+            format!(
+                "--mode {name:?} is not a game mode (shared/modes/modes.json has: {})",
+                names.join(", ")
+            )
+        })?;
+        o.server.mode = m.name.into();
+    }
     for (key, value) in &o.settings {
         apply_setting(&mut o.server, key, value);
     }
@@ -261,6 +334,19 @@ pub fn open_world(o: &mut Options) -> Result<Vec<String>, String> {
     ));
     c.store = Some(store);
     Ok(lines)
+}
+
+/// `--mode` on a world already made (ADR 0065): switches the running server's mode to it (a new
+/// world was made in it already). Returns the line to log: the mode the world plays in, and the
+/// one it switched from.
+pub fn switch_mode(server: &mut Server, wanted: Option<&str>) -> String {
+    let was = server.world_settings().mode;
+    match wanted {
+        Some(name) if name != was && server.set_mode(name) => {
+            format!("world: game mode {name} (switched from {was} by --mode)")
+        }
+        _ => format!("world: game mode {was}"),
+    }
 }
 
 /// This machine's LAN addresses (IPv4 and non-link-local IPv6, no loopback), reported to the

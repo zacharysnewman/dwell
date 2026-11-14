@@ -8,6 +8,7 @@
 
 pub mod arena;
 pub mod blasts;
+pub mod bloom;
 pub mod camera;
 pub mod characters;
 pub mod display;
@@ -15,18 +16,29 @@ pub mod face_shading;
 pub mod flames;
 pub mod flow;
 pub mod frame;
+pub mod fxaa;
 pub mod geometry;
+pub mod glitter;
+pub mod heightfield;
+pub mod impostors;
 pub mod lights;
 pub mod lod_map;
 pub mod lod_shadows;
+pub mod moon;
 pub mod pacing;
+pub mod pipeline;
 pub mod pixel_art;
 pub mod point_shadows;
 pub mod reflection;
 pub mod seam;
 pub mod shaders;
 pub mod shadows;
+pub mod skinned;
+pub mod staged;
+pub mod streaming;
 pub mod timing;
+pub mod tree_fade;
+pub mod upscale;
 pub mod water;
 pub mod water_tiles;
 pub mod waterfalls;
@@ -35,15 +47,19 @@ use dwell_world::hash::HashMap;
 
 use dwell_game::brush_tool::{BrushOutline, GhostFace, GhostKind};
 use dwell_lod::fade::Fade;
-use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_uniforms};
+use dwell_look::clouds::{CLOUDS, CloudQuality, cloud_disc, cloud_uniforms, rim_cover};
 use dwell_look::daynight::{DAY_SKY_FLOATS, DayState};
-use dwell_look::fog::{FOG, fog_sigma};
+use dwell_look::fog::{self, fog_sigma};
 use dwell_look::lod_shadows::LOD_SHADOWS;
 use dwell_look::motion::{MOTION, vanishing_point};
 use dwell_look::outline::{OUTLINE, OutlineMode, outline_uniforms};
 use dwell_look::pixel_art::{AtlasFilter, PIXEL_ART, PixelArtPreset};
 use dwell_look::reflections::{REFLECTIONS, reflection_uniforms};
 use dwell_look::shadows::{SHADOWS, ShadowQuality, ShadowTier};
+use dwell_look::shafts::{
+    LIGHT_SHAFT_VEC4S, ShaftLight, ShaftQuality, ShaftTier, ShaftView, light_shaft_uniforms,
+    shaft_uniforms,
+};
 use dwell_look::{DEFAULT_EXPOSURE, hex, sanitize_exposure, srgb_to_linear};
 use dwell_mesh::{ChunkMeshes, FlatMesh, MeshArrays, SectionMeshes};
 use dwell_world::fluid::EyeFluid;
@@ -62,9 +78,25 @@ use water_tiles::WaterTiles;
 pub const NEAR_SPLIT: f64 = dwell_protocol::lod::NEAR_SPLIT_M as f64;
 pub const NEAR_PLANE: f64 = 0.05;
 pub const FAR_PLANE: f64 = 5e7;
-/// Face-local height no terrain reaches (m): above it, nothing is nearer than the altitude over it,
-/// so the far pass's near plane moves out with it.
+/// Face-local height the default terrain stays under (m): above the highest of it and of the
+/// terrain drawn (`far_pass_near`), nothing is nearer than the altitude over it, so the far pass's
+/// near plane moves out with it.
 const TERRAIN_TOP_M: f64 = 1024.0;
+
+/// The far pass's near plane for an eye at face-local height `eye_y` (m) over terrain drawn up to
+/// face-local `drawn_top` (m; the highest top of the sections and chunks shown, or −∞): pushed out
+/// with the altitude over the higher of it and `TERRAIN_TOP_M`, never inside the near pass's split.
+/// A test world's 4800 m peak stands far over `TERRAIN_TOP_M`: from over its summit the near plane
+/// clipped the cone (docs/BUGS.md #68).
+///
+/// `nearest_piece_m` is the distance from the eye to the nearest shown piece's bounding sphere
+/// (∞ with none): the plane stays short of it too. The moon's near mesh is a piece (M-5): from home
+/// ~600 km up its orbit, near it, the plane sat at ~480 km by the altitude alone and clipped the
+/// whole mesh, its far disc already off, so nothing drew (BUGS.md #149).
+pub fn far_pass_near(eye_y: f64, drawn_top: f64, nearest_piece_m: f64) -> f64 {
+    let altitude = eye_y - TERRAIN_TOP_M.max(drawn_top);
+    (NEAR_SPLIT * 0.95).max((altitude * 0.8).min(nearest_piece_m * 0.8))
+}
 pub const SAMPLES: u32 = 4;
 
 // A CPU (software) adapter — SwiftShader: CI, machines without a GPU — draws the cheapest tier of
@@ -72,13 +104,56 @@ pub const SAMPLES: u32 = 4;
 // the game and its workers, and a frame of the full look takes whole seconds (CI's e2e suite timed
 // out). The functions below are that policy, one per cost; a GPU keeps the settings.
 
-fn is_cpu(device_type: wgpu::DeviceType) -> bool {
+pub fn is_cpu(device_type: wgpu::DeviceType) -> bool {
     device_type == wgpu::DeviceType::Cpu
 }
 
 /// Multisampling for an adapter: 4× on a GPU; none on a CPU adapter.
-pub fn samples_for(device_type: wgpu::DeviceType) -> u32 {
-    if is_cpu(device_type) { 1 } else { SAMPLES }
+pub fn samples_for(device_type: wgpu::DeviceType, requested: u32) -> u32 {
+    if is_cpu(device_type) || requested == 1 {
+        1
+    } else {
+        SAMPLES
+    }
+}
+
+/// WebGPU's largest `maxAnisotropy`.
+pub const MAX_ANISOTROPY: u16 = 16;
+
+/// The block atlas's anisotropic filtering for the setting's `requested` (shared/render/
+/// antialias.json `anisotropy`): 1 (off) on a CPU adapter (the cheapest tier: a loop of taps per
+/// pixel), else the request in [1, 16].
+pub fn anisotropy_for(device_type: wgpu::DeviceType, requested: u16) -> u16 {
+    if is_cpu(device_type) {
+        1
+    } else {
+        requested.clamp(1, MAX_ANISOTROPY)
+    }
+}
+
+/// Whether the FXAA post pass runs (the Anti-aliasing setting's `fxaa`): never on a CPU adapter.
+pub fn fxaa_for(device_type: wgpu::DeviceType, on: bool) -> bool {
+    on && !is_cpu(device_type)
+}
+
+/// The block atlas's sampler for `anisotropy` (`anisotropy_for`). Off (1) it is the crisp sampler:
+/// nearest up close, filtered between mips far away. Anisotropic filtering needs every filter linear
+/// (WebGPU), so from 2 the magnification is linear too, and the shaders keep texels crisp up close
+/// by sampling level 0 at texel centres (shaders.rs `atlas_crisp`).
+pub fn atlas_sampler_descriptor(anisotropy: u16) -> wgpu::SamplerDescriptor<'static> {
+    let anisotropy = anisotropy.clamp(1, MAX_ANISOTROPY);
+    wgpu::SamplerDescriptor {
+        label: Some("atlas"),
+        mag_filter: if anisotropy > 1 {
+            wgpu::FilterMode::Linear
+        } else {
+            wgpu::FilterMode::Nearest
+        },
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        anisotropy_clamp: anisotropy,
+        ..Default::default()
+    }
 }
 
 /// The clouds a frame draws with the Clouds setting `quality`: none on a CPU adapter (the deck's
@@ -91,14 +166,179 @@ pub fn clouds_for(device_type: wgpu::DeviceType, quality: CloudQuality) -> Cloud
     }
 }
 
-/// The water a frame draws with the Water setting `quality`: Low on a CPU adapter (one layer of
-/// ripples).
+/// The clouds' baked shape noise on the GPU (docs/CLOUDS.md §9.3): the base and detail 3D textures
+/// at the data's sizes (`form.baseSize`, `form.detailSize`; RGBA8), made empty at start and filled
+/// slab by slab from the job workers' bakes (`Job::CloudNoise`), and their repeating trilinear
+/// sampler. The volume draws once every slab of both has arrived.
+pub struct CloudNoise {
+    base: (wgpu::Texture, wgpu::TextureView),
+    detail: (wgpu::Texture, wgpu::TextureView),
+    sampler: wgpu::Sampler,
+    /// The slices of each texture written so far (base, detail).
+    written: [u32; 2],
+    /// The bake was handed to the game (`Renderer::take_cloud_noise_request`).
+    requested: bool,
+}
+
+impl CloudNoise {
+    fn new(device: &wgpu::Device, t: &dwell_look::clouds::CloudTunables) -> Self {
+        let make = |label, size: u32| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: size,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D3,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
+        let repeat = wgpu::AddressMode::Repeat;
+        Self {
+            base: make("cloud base noise", t.form.base_size),
+            detail: make("cloud detail noise", t.form.detail_size),
+            sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("cloud noise"),
+                address_mode_u: repeat,
+                address_mode_v: repeat,
+                address_mode_w: repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            }),
+            written: [0, 0],
+            requested: false,
+        }
+    }
+
+    /// Both textures are whole.
+    fn ready(&self) -> bool {
+        self.written[0] >= self.base.0.size().depth_or_array_layers
+            && self.written[1] >= self.detail.0.size().depth_or_array_layers
+    }
+
+    fn write(&mut self, queue: &wgpu::Queue, detail: bool, z0: u32, texels: &[u8]) {
+        let (tex, k) = if detail {
+            (&self.detail.0, 1)
+        } else {
+            (&self.base.0, 0)
+        };
+        let n = tex.size().width;
+        let slices = (texels.len() / (4 * (n * n) as usize)) as u32;
+        if slices == 0 || z0 + slices > n {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: z0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * n),
+                rows_per_image: Some(n),
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: slices,
+            },
+        );
+        self.written[k] += slices;
+    }
+}
+
+/// The clouds' shape-noise bake as worker jobs (`Job::CloudNoise`): (detail, z0, z1) slabs of at
+/// most `slices` slices each, the base's then the detail's.
+pub fn cloud_noise_slabs(
+    t: &dwell_look::clouds::CloudTunables,
+    slices: u32,
+) -> Vec<(bool, u32, u32)> {
+    let mut out = Vec::new();
+    for (detail, size) in [(false, t.form.base_size), (true, t.form.detail_size)] {
+        let mut z = 0;
+        while z < size {
+            let z1 = (z + slices.max(1)).min(size);
+            out.push((detail, z, z1));
+            z = z1;
+        }
+    }
+    out
+}
+
+/// The volumetric clouds' buffer size for a drawing buffer of `size` at `tier` (its resolution
+/// divisor, rounded up); 1 × 1 without the volume.
+pub fn cloud_buffer_size(
+    size: (u32, u32),
+    tier: Option<dwell_look::clouds::VolumeTier>,
+) -> (u32, u32) {
+    tier.map_or((1, 1), |t| {
+        let d = t.divisor.max(1);
+        (size.0.div_ceil(d).max(1), size.1.div_ceil(d).max(1))
+    })
+}
+
+/// How far (m) the eye may move in one frame and keep the clouds' history: past it (a teleport, a
+/// respawn) the accumulation starts over.
+pub const CLOUD_HISTORY_JUMP_M: f64 = 200.0;
+
+/// The clouds pass's uniform (`CloudPrev`, docs/CLOUDS.md §8.6): the last frame's camera `prev`
+/// (none: this frame's, with no history), the share `blend` of the new frame, the frame index and
+/// how far the eye moved.
+pub fn cloud_prev_block(
+    prev: Option<([[f32; 4]; 4], V3)>,
+    view: [[f32; 4]; 4],
+    eye: V3,
+    blend: f64,
+    frame_index: u32,
+) -> [[f32; 4]; 5] {
+    let (camera, moved, share) = match prev {
+        Some((camera, then)) => {
+            let d = ((eye[0] - then[0]).powi(2)
+                + (eye[1] - then[1]).powi(2)
+                + (eye[2] - then[2]).powi(2))
+            .sqrt();
+            (
+                camera,
+                d,
+                if d > CLOUD_HISTORY_JUMP_M { 1.0 } else { blend },
+            )
+        }
+        None => (view, 0.0, 1.0),
+    };
+    [
+        camera[0],
+        camera[1],
+        camera[2],
+        camera[3],
+        [share as f32, (frame_index % 4096) as f32, moved as f32, 0.0],
+    ]
+}
+
+/// The water a frame draws with the Water setting `quality`: the data's CPU tier on a CPU adapter
+/// (opaque: no scene copy, one layer of ripples; shared/look/watertiers.json `cpu`).
 pub fn water_for(device_type: wgpu::DeviceType, quality: WaterQuality) -> WaterQuality {
     if is_cpu(device_type) {
-        WaterQuality::Low
+        WaterQuality::cpu()
     } else {
         quality
     }
+}
+
+/// Whether the near water's surface is drawn from the GPU heightfield: the tier's switch, unless the
+/// dev override (`?heightfield=0|1`) forces it.
+pub fn heightfield_drawn(tier: bool, forced: Option<bool>) -> bool {
+    forced.unwrap_or(tier)
 }
 
 /// Whether the wind's edge blur draws (four more loads of the finished image per pixel): not on a
@@ -113,6 +353,47 @@ pub fn motion_blur_for(device_type: wgpu::DeviceType) -> bool {
 /// (`composite_fs`). The shader's own test of the intensity (`frame.wind_point.z`) is the same.
 pub fn motion_pass(wind_intensity: f64) -> bool {
     wind_intensity > 1e-3
+}
+
+/// The light shafts a frame draws with the Light shafts setting `quality` (ADR 0064): none on a CPU
+/// adapter (a loop of samples per pixel).
+pub fn shafts_for(device_type: wgpu::DeviceType, quality: ShaftQuality) -> ShaftQuality {
+    if is_cpu(device_type) {
+        ShaftQuality::Off
+    } else {
+        quality
+    }
+}
+
+/// Whether the leaf cards (shared/look/leaves.json `cards`) are meshed: the data's switch for the
+/// tier (`cards.tiers`: a CPU adapter's, the cheapest tier of everything; else a phone page's or a
+/// desktop's; their alpha-cut overdraw is per pixel), unless the dev override (`?cards=0|1`)
+/// forces it.
+pub fn cards_for(device_type: wgpu::DeviceType, phone: bool, forced: Option<bool>) -> bool {
+    let tiers = dwell_look::leaves::LEAVES.cards.tiers;
+    forced.unwrap_or(if is_cpu(device_type) {
+        tiers.cpu
+    } else if phone {
+        tiers.phone
+    } else {
+        tiers.desktop
+    })
+}
+
+/// The Tall grass setting (0–1) as the mesher's percent of cross plants
+/// (`dwell_mesh::ChunkFlags::plants`); anything not a number draws them all.
+pub fn plant_percent_of(tall_grass: f64) -> u8 {
+    if tall_grass.is_finite() {
+        (tall_grass.clamp(0.0, 1.0) * 100.0).round() as u8
+    } else {
+        100
+    }
+}
+
+/// Whether the moon's disc is lit by its baked normals (moon.rs): not on a CPU adapter, which
+/// draws its baked albedo alone, lit as a flat disc.
+pub fn moon_normals_for(device_type: wgpu::DeviceType) -> bool {
+    !is_cpu(device_type)
 }
 
 /// Whether the night sky draws its stars (a hashed grid per pixel): not on a CPU adapter.
@@ -153,13 +434,58 @@ pub fn pixel_art_for(
     preset.filter(|_| !is_cpu(device_type))
 }
 
-/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x 1 when the eye is under a fluid's
-/// drawn surface, y its fluid id, z the surface's world y (zeros when it isn't); w the water
-/// quality.
-fn water_uniform(eye_fluid: Option<EyeFluid>, quality: WaterQuality) -> [f32; 4] {
+/// How the composite splits the view at the waterline (WATER_RENDERING.md §10; `frame.water.x`):
+/// 1 the eye so deep under the surface that no pixel's lens point reaches it (past the look's
+/// `reach_m`, so the switch changes no pixel: the whole view under, the
+/// cheap path, no per-pixel test); within the line's reach, 2 with the eye under the surface and 3
+/// above it, each pixel under it or not by its own ray.
+fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
+    let name = dwell_blocks::FLUIDS
+        .get(usize::from(e.fluid))
+        .map_or("", |f| f.name);
+    let look = dwell_look::underwater::underwater_look(name);
+    let depth = face.y(e.surface_y) - face.y(eye_y);
+    if !e.under {
+        3.0
+    } else if depth > look.reach_m() {
+        1.0
+    } else {
+        2.0
+    }
+}
+
+/// The frame uniform's `lean_*` vec4s (shaders.rs `tree_lean`): the hinge relative to `eye` and
+/// the radius, the tree's up and height, the turn's axis and angle (0: nothing leans).
+pub(crate) fn lean_uniforms(lean: Option<crate::chop::TreeLean>, eye: [f64; 3]) -> [[f32; 4]; 3] {
+    let Some(l) = lean else {
+        return [[0.0; 4]; 3];
+    };
+    let h: [f32; 3] = std::array::from_fn(|k| (l.hinge[k] - eye[k]) as f32);
+    let f = |v: [f64; 3], w: f64| [v[0] as f32, v[1] as f32, v[2] as f32, w as f32];
+    [
+        [h[0], h[1], h[2], l.radius as f32],
+        f(l.up, l.height),
+        f(l.axis, l.angle),
+    ]
+}
+
+/// The frame uniform's `water` vec4 (shaders.rs `Frame`): x [`waterline_state`] (0: the eye
+/// neither under a fluid's drawn surface nor just above it), y its fluid id, z the surface's world
+/// y (zeros when there is none); w the water tier's switches (`WaterQuality::bits`).
+fn water_uniform(
+    eye_fluid: Option<EyeFluid>,
+    eye_y: f64,
+    face: FaceFrame,
+    quality: WaterQuality,
+) -> [f32; 4] {
     match eye_fluid {
-        Some(e) => [1.0, f32::from(e.fluid), e.surface_y as f32, quality.level()],
-        None => [0.0, 0.0, 0.0, quality.level()],
+        Some(e) => [
+            waterline_state(e, eye_y, face),
+            f32::from(e.fluid),
+            e.surface_y as f32,
+            quality.bits(),
+        ],
+        None => [0.0, 0.0, 0.0, quality.bits()],
     }
 }
 /// Draw uniforms live at this stride (WebGPU's minimum uniform offset alignment).
@@ -184,8 +510,6 @@ pub struct PlayerView {
     pub face: FaceFrame,
     /// Degrees; 0 = +Z.
     pub yaw: f64,
-    /// Lying on the ground (cosmetic death pose).
-    pub dead: bool,
     /// The look it wears (a variant of the player character's data; `DEFAULT_LOOK` for everyone
     /// until looks are chosen, CHARACTERS.md §9.4).
     pub look: &'static str,
@@ -260,15 +584,20 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    4 * (3 + 3 + 3 + 2 + 4 + 1 + 2), // Terrain: position, normal, colour, uv, tile, light, flood
-    4 * (3 + 3 + 3),                 // Flat: position, normal, colour
-    4 * (3 + 3 + 3 + 1),             // Line: position, colour, the other end, side (a quad corner)
-    4 * (3 + 3),                     // Ghost: position, colour (triangles)
-    4 * (3 + 3 + 3 + 1 + 2),         // Fluid: position, normal, colour, fluid id, flood
-    4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2), // Cutout: the terrain's, plant (sway, wind speed, fade), bare, light, flood
+    // Terrain: position, normal (snorm8x4), colour, uv, tile, light and flood (unorm8x4), crack
+    // (unorm8x4): 64 bytes (`packed_lit`, WORK_QUEUE item 32; 84 before).
+    4 * (3 + 1 + 3 + 2 + 4 + 1 + 1),
+    4 * (3 + 3 + 3),         // Flat: position, normal, colour
+    4 * (3 + 3 + 3 + 1),     // Line: position, colour, the other end, side (a quad corner)
+    4 * (3 + 3),             // Ghost: position, colour (triangles)
+    4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
+    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv, tile,
+    // plant (sway, wind speed, fade), and light, flood and bare (unorm8x4): 64 bytes (`packed_lit`,
+    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before).
+    4 * (3 + 1 + 1 + 2 + 4 + 4 + 1),
 ];
 
-fn floats(v: &[f32]) -> &[u8] {
+pub(crate) fn floats(v: &[f32]) -> &[u8] {
     bytemuck_cast(v)
 }
 fn u32s(v: &[u32]) -> &[u8] {
@@ -308,14 +637,25 @@ fn merge_ranges(ranges: Vec<std::ops::Range<u32>>) -> Vec<std::ops::Range<u32>> 
 
 /// Streams of `n` floats per vertex, interleaved vertex by vertex (in the pipelines' attribute
 /// order, `vertex_layout`).
+///
+/// One stream at a time into its column of the vertex (BUGS.md #72: vertex by vertex, a small
+/// copy per stream, it was 411 ms of the main thread in an 11 s flight on the phone page).
 fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
     let count = streams.first().map_or(0, |(s, n)| s.len() / n);
     let stride: usize = streams.iter().map(|(_, n)| n).sum();
-    let mut out = Vec::with_capacity(count * stride);
-    for v in 0..count {
-        for (s, n) in streams {
-            out.extend_from_slice(&s[v * n..(v + 1) * n]);
+    let mut out = vec![0.0; count * stride];
+    if stride == 0 {
+        return out;
+    }
+    let mut offset = 0;
+    for &(s, n) in streams {
+        for (dst, src) in out
+            .chunks_exact_mut(stride)
+            .zip(s[..count * n].chunks_exact(n))
+        {
+            dst[offset..offset + n].copy_from_slice(src);
         }
+        offset += n;
     }
     out
 }
@@ -323,13 +663,6 @@ fn interleave(streams: &[(&[f32], usize)]) -> Vec<f32> {
 /// A terrain or cutout mesh's interleaved vertices (`STRIDES`, the pipelines' layouts): position,
 /// normal, colour, uv, tile, (the cutout's plant and bare,) light and flood light.
 fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
-    let mut streams: Vec<(&[f32], usize)> = vec![
-        (&m.positions, 3),
-        (&m.normals, 3),
-        (&m.colors, 3),
-        (&m.uvs, 2),
-        (&m.tiles, 4),
-    ];
     // A mesh without baked light (an older mesher's, a hand-made one) is lit as open.
     let count = m.positions.len() / 3;
     let light: std::borrow::Cow<'_, [f32]> = if m.light.len() == count {
@@ -342,13 +675,98 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     } else {
         std::borrow::Cow::Owned([1.0, 0.0].repeat(count))
     };
+    let (normals, lit) = packed_lit(m, &light, &flood, kind == Kind::Cutout);
+    // The cutout's colour as four bytes (`scaled_rgb`); the terrain's stays three floats (its lava
+    // faces code a stop in it, `terrain_fs`).
+    let colors: Vec<f32>;
+    let (colors, per) = if kind == Kind::Cutout {
+        colors = (0..count)
+            .map(|k| {
+                let c = m.colors.get(3 * k..3 * k + 3).unwrap_or(&[1.0, 1.0, 1.0]);
+                scaled_rgb([c[0], c[1], c[2]])
+            })
+            .collect();
+        (&colors[..], 1)
+    } else {
+        (&m.colors[..], 3)
+    };
+    let mut streams: Vec<(&[f32], usize)> = vec![
+        (&m.positions, 3),
+        (&normals, 1),
+        (colors, per),
+        (&m.uvs, 2),
+        (&m.tiles, 4),
+    ];
     if kind == Kind::Cutout {
         streams.push((&m.plants, 4));
-        streams.push((&m.bare, 1));
     }
-    streams.push((&light, 1));
-    streams.push((&flood, 2));
+    streams.push((&lit, 1));
+    // The terrain's crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes a vertex in one
+    // float's slot, its bits copied as they are (0: no crack, a chunk without cracks has none).
+    let cracks: Vec<f32>;
+    if kind == Kind::Terrain {
+        // A stream shorter than the vertices (none, or a mesher's appended vertices past it)
+        // keeps what it has and is 0 past it, so one short layer never hides every crack.
+        cracks = (0..count)
+            .map(|k| f32::from_bits(m.cracks.get(k).copied().unwrap_or(0)))
+            .collect();
+        streams.push((&cracks, 1));
+    }
     interleave(&streams)
+}
+
+/// A unit vector as four snorm bytes (x, y, z, 0) in one float's slot, its bits as they are (the
+/// cutout pipeline reads it as snorm8x4); a zero vector stays zero.
+fn snorm8x3(n: [f32; 3]) -> f32 {
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    let k = if len > 1e-12 { 1.0 / len } else { 0.0 };
+    let b = |c: f32| u32::from((((c * k).clamp(-1.0, 1.0) * 127.0).round() as i8) as u8);
+    f32::from_bits(b(n[0]) | b(n[1]) << 8 | b(n[2]) << 16)
+}
+
+/// Four 0–1 values as unorm bytes in one float's slot (the pipeline reads it as unorm8x4).
+fn unorm8x4(v: [f32; 4]) -> f32 {
+    let b = |c: f32| u32::from((c.clamp(0.0, 1.0) * 255.0).round() as u8);
+    f32::from_bits(b(v[0]) | b(v[1]) << 8 | b(v[2]) << 16 | b(v[3]) << 24)
+}
+
+/// The most a cutout's colour channel holds (`scaled_rgb`): a tint over 1 brightens a texel.
+const SCALED_RGB_MAX: f32 = 4.0;
+
+/// A colour whose channels may pass 1 (tints) as unorm8x4 in one float's slot (WORK_QUEUE item 32):
+/// rgb over a scale `1 + 3a`, `a` the fourth byte, the smallest step at or over the brightest
+/// channel (1 for any colour within 0–1, so those keep the plain 8-bit rounding), channels capped
+/// at [`SCALED_RGB_MAX`]. The cutout shader reads `rgb * (1 + 3a)`.
+fn scaled_rgb(c: [f32; 3]) -> f32 {
+    let top = c.iter().fold(0.0f32, |m, v| m.max(*v)).min(SCALED_RGB_MAX);
+    let a = (((top - 1.0) / 3.0).max(0.0) * 255.0).ceil().min(255.0);
+    let scale = 1.0 + 3.0 * a / 255.0;
+    unorm8x4([c[0] / scale, c[1] / scale, c[2] / scale, a / 255.0])
+}
+
+/// A terrain or cutout mesh's packed streams (WORK_QUEUE item 32): each vertex's normal as
+/// snorm8x4 and its light, flood light (sky, block) and (`bare`: a cutout's) bare flag as
+/// unorm8x4. The shaders take light clamped to 0–1 and bare as below or over ½, so only the 8-bit
+/// rounding changes (under 1/255).
+fn packed_lit(m: &MeshArrays, light: &[f32], flood: &[f32], bare: bool) -> (Vec<f32>, Vec<f32>) {
+    let count = m.positions.len() / 3;
+    let normals = (0..count)
+        .map(|k| {
+            let n = m.normals.get(3 * k..3 * k + 3).unwrap_or(&[0.0, 1.0, 0.0]);
+            snorm8x3([n[0], n[1], n[2]])
+        })
+        .collect();
+    let lit = (0..count)
+        .map(|k| {
+            let bare = if bare {
+                m.bare.get(k).copied().unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            unorm8x4([light[k], flood[2 * k], flood[2 * k + 1], bare])
+        })
+        .collect();
+    (normals, lit)
 }
 
 /// A fluid mesh's interleaved vertices (`STRIDES`' Fluid): position, normal, colour, fluid id
@@ -387,8 +805,41 @@ impl GpuMesh {
         parts: Vec<std::ops::Range<u32>>,
         bytes: u64,
     ) -> Self {
+        Self::upload_to(arena, kind, vertices, indices, parts, bytes, None)
+    }
+
+    /// [`Self::upload`], or with `staged` its room reserved and its bytes handed over to be
+    /// written later (`staged.rs`): not to be drawn until they are.
+    fn upload_to(
+        arena: &ArenaRef,
+        kind: Kind,
+        vertices: &[f32],
+        indices: &[u32],
+        parts: Vec<std::ops::Range<u32>>,
+        bytes: u64,
+        staged: Option<&mut Vec<staged::Write>>,
+    ) -> Self {
         let mut a = arena.borrow_mut();
-        let region = a.upload(kind as usize, floats(vertices), u32s(indices));
+        let region = match staged {
+            None => a.upload(kind as usize, floats(vertices), u32s(indices)),
+            Some(out) => {
+                let (v, i) = (floats(vertices), u32s(indices));
+                let r = a.reserve(kind as usize, v.len() as u64, i.len() as u64);
+                out.push(staged::Write {
+                    format: r.format,
+                    page: r.page,
+                    offset: r.vertex_offset,
+                    data: v.to_vec(),
+                });
+                out.push(staged::Write {
+                    format: r.format,
+                    page: r.page,
+                    offset: r.index_offset,
+                    data: i.to_vec(),
+                });
+                r
+            }
+        };
         Self {
             base_vertex: a.base_vertex(&region),
             first_index: (region.index_offset / 4) as u32,
@@ -403,30 +854,62 @@ impl GpuMesh {
         Self::textured_as(arena, m, Kind::Terrain)
     }
 
+    /// The index range a chunk's `part` draws: a cutout's plants alone its second range (all of
+    /// it when it has none), else the whole mesh.
+    fn part(&self, part: Part) -> std::ops::Range<u32> {
+        match part {
+            Part::Plants => self.parts.get(1).unwrap_or(&self.parts[0]).clone(),
+            // After the plants: none when the mesh has no split (all of it counts as plants).
+            Part::Leaves => {
+                let all = &self.parts[0];
+                self.parts
+                    .get(1)
+                    .map_or(all.end..all.end, |p| p.end..all.end)
+            }
+            _ => self.parts[0].clone(),
+        }
+    }
+
+    /// The indices `part` draws.
+    fn drawn(&self, part: Part) -> u32 {
+        self.part(part).len() as u32
+    }
+
     /// A chunk's cutout mesh: the terrain format and its `plants` stream.
     fn cutout(arena: &ArenaRef, m: &MeshArrays) -> Option<Self> {
         Self::textured_as(arena, m, Kind::Cutout)
     }
 
     fn textured_as(arena: &ArenaRef, m: &MeshArrays, kind: Kind) -> Option<Self> {
+        Self::textured_staged(arena, m, kind, None)
+    }
+
+    fn textured_staged(
+        arena: &ArenaRef,
+        m: &MeshArrays,
+        kind: Kind,
+        staged: Option<&mut Vec<staged::Write>>,
+    ) -> Option<Self> {
         if m.indices.is_empty() {
             return None;
         }
         let vertices = textured_vertices(m, kind);
-        Some(Self::upload(
+        Some(Self::upload_to(
             arena,
             kind,
             &vertices,
             &m.indices,
             std::iter::once(0..m.indices.len() as u32).collect(),
             m.byte_len() as u64,
+            staged,
         ))
     }
 
     /// A fluid mesh (a chunk's transparent mesh, a section's water): position, normal, colour,
     /// fluid id (`dwell_mesh::NO_FLUID` where the stream is short) and flood light per vertex
     /// (`fluid_vertices`). The water shader draws its ripples procedurally, so the chunks' uvs and
-    /// tiles are left behind.
+    /// tiles are left behind. With `staged`, its bytes are handed over to be written later.
+    #[allow(clippy::too_many_arguments)]
     fn fluid(
         arena: &ArenaRef,
         positions: &[f32],
@@ -435,19 +918,21 @@ impl GpuMesh {
         fluids: &[f32],
         flood: &[f32],
         indices: &[u32],
+        staged: Option<&mut Vec<staged::Write>>,
     ) -> Option<Self> {
         if indices.is_empty() {
             return None;
         }
         let vertices = fluid_vertices(positions, normals, colors, fluids, flood);
         let bytes = 4 * (vertices.len() + indices.len()) as u64;
-        Some(Self::upload(
+        Some(Self::upload_to(
             arena,
             Kind::Fluid,
             &vertices,
             indices,
             std::iter::once(0..indices.len() as u32).collect(),
             bytes,
+            staged,
         ))
     }
 
@@ -553,6 +1038,11 @@ enum Part {
     Opaque,
     Water,
     Cutout,
+    /// The cutout mesh's plants alone, not its trees' leaves (`impostors::CutoutDraw::Plants`).
+    Plants,
+    /// The cutout mesh's trees' leaves alone (the shadow casters past `plantCascades`, which
+    /// plants don't cast into and leaves do: BUGS.md #156).
+    Leaves,
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -579,6 +1069,13 @@ pub struct RasterTerrain {
     pieces: HashMap<u32, PieceMeshes>,
     shown: Vec<(i64, u8, Fade)>,
     stand_ins: Vec<StandIn>,
+    /// Chunks whose meshes are being written a slice a frame (`staged.rs`; BUGS.md #72), drawn
+    /// once whole, their old meshes until then, and the writes waiting.
+    pending: HashMap<ChunkCoord, Chunk>,
+    writes: staged::WriteQueue<ChunkCoord>,
+    /// A frame's upload budget in bytes (`shared/render/streaming.json`; unlimited: written at
+    /// once).
+    stage_budget: u64,
 }
 
 impl RasterTerrain {
@@ -590,29 +1087,84 @@ impl RasterTerrain {
             pieces: HashMap::default(),
             shown: Vec::new(),
             stand_ins: Vec::new(),
+            pending: HashMap::default(),
+            writes: staged::WriteQueue::default(),
+            stage_budget: u64::MAX,
         }
+    }
+
+    /// Writes this frame's share of the staged chunk meshes; the chunks now whole replace their
+    /// old meshes.
+    fn pump_staged(&mut self) {
+        if self.writes.is_empty() {
+            return;
+        }
+        let t0 = crate::telemetry::now_ms();
+        let mut bytes = 0usize;
+        let arena = self.arena.clone();
+        let a = arena.borrow();
+        let done = self
+            .writes
+            .pump(self.stage_budget, |format, page, offset, data| {
+                bytes += data.len();
+                a.write_at(format, page, offset, data);
+            });
+        drop(a);
+        for c in done {
+            if let Some(chunk) = self.pending.remove(&c) {
+                self.chunks.insert(c, chunk);
+            }
+        }
+        crate::telemetry::add("upload.staged", crate::telemetry::now_ms() - t0);
+        crate::telemetry::add("upload.staged_bytes", bytes as f64);
     }
 }
 
 impl TerrainRenderer for RasterTerrain {
     /// Replaces (or, with `None`, removes) a terrain chunk; meshes are chunk-local.
     fn set_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
-        self.chunks.remove(&coord);
-        let Some(m) = meshes else { return };
+        // A mesh still being written is superseded either way.
+        if self.pending.remove(&coord).is_some() {
+            self.writes.cancel(coord);
+        }
+        let Some(m) = meshes else {
+            self.chunks.remove(&coord);
+            return;
+        };
         let t0 = crate::telemetry::now_ms();
         let t = &m.transparent;
-        let cutout = GpuMesh::cutout(&self.arena, &m.cutout);
-        let (opaque, water) = (
-            GpuMesh::textured(&self.arena, &m.opaque),
-            GpuMesh::fluid(
-                &self.arena,
-                &t.positions,
-                &t.normals,
-                &t.colors,
-                &t.fluids,
-                &t.flood,
-                &t.indices,
-            ),
+        // Over the frame's budget, its bytes are written a slice a frame and the old mesh drawn
+        // until they are all there; else at once, as before.
+        let mut writes = Vec::new();
+        let stage = (m.opaque.byte_len() + m.transparent.byte_len() + m.cutout.byte_len()) as u64
+            > self.stage_budget;
+        // Its parts: [0] all, [1] the plants before the trees' leaves (`Part::Plants`).
+        let cutout = GpuMesh::textured_staged(
+            &self.arena,
+            &m.cutout,
+            Kind::Cutout,
+            stage.then_some(&mut writes),
+        )
+        .map(|mut g| {
+            g.parts
+                .push(0..dwell_mesh::tree_leaves_from(&m.cutout) as u32);
+            g
+        });
+        let opaque = GpuMesh::textured_staged(
+            &self.arena,
+            &m.opaque,
+            Kind::Terrain,
+            stage.then_some(&mut writes),
+        );
+        let water = GpuMesh::fluid(
+            &self.arena,
+            &t.positions,
+            &t.normals,
+            &t.colors,
+            &t.fluids,
+            &t.flood,
+            &t.indices,
+            stage.then_some(&mut writes),
         );
         crate::telemetry::add("upload.chunk", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.chunks", 1.0);
@@ -624,18 +1176,21 @@ impl TerrainRenderer for RasterTerrain {
                 .sum::<u64>() as f64,
         );
         if opaque.is_none() && water.is_none() && cutout.is_none() {
+            self.chunks.remove(&coord);
             return;
         }
-        let origin = chunk_origin_m(coord);
-        self.chunks.insert(
-            coord,
-            Chunk {
-                origin,
-                opaque,
-                water,
-                cutout,
-            },
-        );
+        let chunk = Chunk {
+            origin: chunk_origin_m(coord),
+            opaque,
+            water,
+            cutout,
+        };
+        if stage {
+            self.pending.insert(coord, chunk);
+            self.writes.push(coord, writes);
+        } else {
+            self.chunks.insert(coord, chunk);
+        }
     }
 
     /// LOD sections (§6.6): adds, replaces or removes a section's meshes (in cells from `origin`,
@@ -656,6 +1211,7 @@ impl TerrainRenderer for RasterTerrain {
             &w.fluids,
             &[],
             &w.indices,
+            None,
         );
         crate::telemetry::add("upload.section", crate::telemetry::now_ms() - t0);
         crate::telemetry::add("upload.sections", 1.0);
@@ -683,6 +1239,8 @@ impl TerrainRenderer for RasterTerrain {
     }
     fn clear(&mut self) {
         self.chunks.clear();
+        self.pending.clear();
+        self.writes.clear();
         self.sections.clear();
         self.shown.clear();
         self.stand_ins.clear();
@@ -698,7 +1256,7 @@ impl TerrainRenderer for RasterTerrain {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Kind {
     Terrain,
     Flat,
@@ -785,28 +1343,55 @@ fn shadow_fs(d: &DrawItem) -> bool {
 /// to the eye, half-size) and its identity.
 struct Candidate {
     draw: DrawItem,
+    /// Which cascades it casts into (`shadows::casts`).
+    kind: shadows::CasterKind,
     centre: V3,
     half: V3,
     id: u64,
 }
 
-/// A falling piece's part's shadow-caster identity (`Renderer::shadow_candidates`): its id, part
-/// and pose, so it changes whenever the piece moves or turns.
-fn piece_shadow_tag(id: u32, part: usize, origin: V3, quat: [f32; 4]) -> u64 {
-    let mut t = shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32);
-    for (k, v) in origin.iter().enumerate() {
-        t ^= shadows::mix(v.to_bits()).rotate_left(k as u32 * 13 + 1);
-    }
-    for (k, q) in quat.iter().enumerate() {
-        t ^= shadows::mix(u64::from(q.to_bits()) ^ (k as u64) << 40).rotate_left(k as u32 * 7 + 3);
-    }
-    t
+/// A falling piece's part's shadow-caster identity (`Renderer::shadow_candidates`): its id and
+/// part, not its pose. A moving piece is a moving caster, as other players are: a kept far cascade
+/// holding it is drawn again every `refreshFrames` (`shadows::Cache::wants`, `Want::Moving`), not
+/// every frame. With its pose in it (until 0.50.15) every flying piece redrew a far cascade every
+/// frame (docs/DEV_TOOLS.md "Blasts and floods (M1 Air)"). A piece that comes or goes changes it.
+fn piece_shadow_tag(id: u32, part: usize) -> u64 {
+    shadows::mix(u64::from(id) ^ 0x9ec3_0000_0000 ^ (part as u64) << 32)
 }
 
-/// Whether a candidate's kind casts into cascade `i` at all: plants into the nearest
-/// `plantCascades` only (their alpha-tested blades cost the most per texel).
+/// A body's box as a moving shadow caster (half-size, m, about its feet: up or down, either face).
+const BODY_CASTER_HALF: V3 = [1.0, 2.0, 1.0];
+
+/// The shadows' moving casters (`shadows::Cache::wants`'s `moving`), each a box (world centre,
+/// half-size): other players' bodies (`players`, their feet), and falling pieces (`radius` of
+/// each). Loose items (ADR 0066) are not: they only spin and bob in place, for minutes, too small
+/// to show in a far cascade; the nearest, drawn every frame, holds them. Until 0.50.35 any item
+/// lying anywhere redrew every far cascade every `refreshFrames`; a far cascade is drawn again
+/// for the moving casters touching its box only (WORK_QUEUE item 32).
+fn moving_casters(
+    players: impl Iterator<Item = V3>,
+    poses: &[(u32, V3, [f32; 4])],
+    radius: &dyn Fn(u32) -> Option<f64>,
+) -> Vec<(V3, V3)> {
+    use crate::loose_items::ID_BASE;
+    let pieces = poses
+        .iter()
+        .filter(|&&(id, ..)| id & ID_BASE != ID_BASE)
+        .map(|&(id, origin, _)| {
+            let r = radius(id).unwrap_or(1.0);
+            (origin, [r; 3])
+        });
+    players
+        .map(|feet| (feet, BODY_CASTER_HALF))
+        .chain(pieces)
+        .collect()
+}
+
+/// Whether a candidate casts into cascade `i` at all (`shadows::casts`: plants into the nearest
+/// `plantCascades` only, their alpha-tested blades cost the most per texel; a tree's leaves and
+/// everything else into every cascade).
 fn casts_into(c: &Candidate, _cascade: &shadows::Cascade, i: usize, tier: &ShadowTier) -> bool {
-    c.draw.kind != Kind::Cutout || i < tier.plant_cascades as usize
+    shadows::casts(c.kind, i, tier)
 }
 
 /// This frame's dynamic lights and torch shadows (`Renderer::torch_frame`).
@@ -853,6 +1438,8 @@ enum DrawMesh {
     Region(usize),
     /// The brush preview's ghost (true) or lines.
     Brush(bool),
+    /// A chunk's water surface on the shared grid (`heightfield.rs`; its face in the draw's quat).
+    Heightfield,
 }
 
 /// A line's width on screen in CSS pixels (the block outline, the region boxes, the brush preview,
@@ -933,7 +1520,7 @@ struct BrushDraw {
 
 pub struct Renderer {
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub(crate) queue: wgpu::Queue,
     format: wgpu::TextureFormat,
     /// The size the frame draws at: the canvas's, or the pixel-art preview's low-res picture.
     size: (u32, u32),
@@ -950,7 +1537,21 @@ pub struct Renderer {
     pixel_grid: Option<dwell_look::pixel_art::Grid>,
     pixel_shift: [f64; 2],
     pixel_pass: Option<pixel_art::PixelPass>,
+    /// Render scale's upscale pass (render/upscale.rs): the kind, the scene's size while a pass
+    /// upscales it onto the canvas (none at 100 % or with the browser's stretch), RCAS's sharpness
+    /// and the passes (made on first use).
+    upscaler: upscale::Upscaler,
+    upscale_render: Option<(u32, u32)>,
+    upscale_sharpness: f32,
+    upscale_pass: Option<upscale::UpscalePass>,
     groups_atlas: Option<AtlasFilter>,
+    /// The Anisotropic filtering setting (`set_antialias`), and the anisotropy the frame groups'
+    /// atlas sampler was made with.
+    anisotropy: u16,
+    groups_anisotropy: u16,
+    /// The Anti-aliasing setting's FXAA post pass (render/fxaa.rs), made on first use.
+    fxaa: bool,
+    fxaa_pass: Option<fxaa::FxaaPass>,
     /// The ink outline's mode (`?outline=`; docs/ART_DIRECTION.md §7), none by default.
     ink_outline: Option<&'static OutlineMode>,
     /// The spyglass's magnification this frame (1 unzoomed): the outline's fade follows it.
@@ -959,19 +1560,53 @@ pub struct Renderer {
     targets: Option<Targets>,
     samples: u32,
     draw_layout: wgpu::BindGroupLayout,
-    pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
+    pipelines: HashMap<(Kind, bool, bool), pipeline::Lazy>,
     /// The scene targets as the composite and lines read them (`frame::scene_layout`).
     scene_layout: wgpu::BindGroupLayout,
-    composite_pipeline: wgpu::RenderPipeline,
+    /// The light shafts (ADR 0064): the setting, the scene targets as their pass reads them
+    /// (`frame::scene_read_layout`) and the pass's pipeline.
+    shafts: ShaftQuality,
+    scene_read_layout: wgpu::BindGroupLayout,
+    shafts_pipeline: pipeline::Lazy,
+    /// Bloom (WORK_QUEUE item 19): the setting, its levels' group layout and its passes'
+    /// pipelines (`bloom.rs`).
+    bloom: dwell_look::bloom::BloomQuality,
+    bloom_layout: wgpu::BindGroupLayout,
+    bloom_pipelines: bloom::BloomPipelines,
+    /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
+    /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
+    cloud_layout: wgpu::BindGroupLayout,
+    /// The clouds' march group's layout and the baked shape noise (docs/CLOUDS.md §9.3).
+    cloud_march_layout: wgpu::BindGroupLayout,
+    cloud_noise: CloudNoise,
+    /// The resolve (BUGS.md #90): this frame's march with the clamped history.
+    cloud_resolve_pipeline: pipeline::Lazy,
+    /// Whether the eye was near the cloud layer last frame (`near_layer`'s band).
+    cloud_near: std::cell::Cell<bool>,
+    cloud_prev_buffer: wgpu::Buffer,
+    /// The run-time plumes' uniform (docs/CLOUDS.md §8.7), written each frame from `plumes`.
+    cloud_plume_buffer: wgpu::Buffer,
+    /// The run-time plume list (steam over lava, a volcano's ash, a weather system's towers): the
+    /// game and the dev tools add, move and remove plumes here.
+    pub plumes: dwell_look::plumes::PlumeList,
+    clouds_pipeline: pipeline::Lazy,
+    cloud_prev: std::cell::Cell<Option<([[f32; 4]; 4], V3)>>,
+    cloud_frames: std::cell::Cell<u32>,
+    /// The pipelines' warm-up while the loading screen is up (pipeline.rs, bug #71).
+    warmup: pipeline::Warmup,
+    composite_pipeline: pipeline::Lazy,
     /// While the wind is on (`motion_pass`): the composite into the finished image, the motion
     /// pass from it into the canvas, the image's layout, and the image (made when first needed).
-    finished_pipeline: wgpu::RenderPipeline,
-    motion_pipeline: wgpu::RenderPipeline,
+    finished_pipeline: pipeline::Lazy,
+    motion_pipeline: pipeline::Lazy,
     finished_layout: wgpu::BindGroupLayout,
     finished: Option<frame::Finished>,
     /// The water that reads the scene (W3, Medium and High): its pipeline, drawn in each raster
     /// scene pass's water half, and its view of the scene (`frame::under_layout`) with the sampler.
-    water_scene_pipeline: wgpu::RenderPipeline,
+    water_scene_pipeline: pipeline::Lazy,
+    /// The water's GPU heightfield (proposals/WATER_GPU_SURFACE.md §3): the near chunks' surface
+    /// tiles and the water pipelines over the shared grid.
+    heightfield: heightfield::HeightfieldGpu,
     under_layout: wgpu::BindGroupLayout,
     under_sampler: wgpu::Sampler,
     /// The terrain's chunks and LOD sections (seam.rs).
@@ -992,7 +1627,7 @@ pub struct Renderer {
     /// The sun's or moon's shadow maps (shadows.rs; a 1×1 stand-in while the setting is Off), the
     /// casters' pipelines by (kind, with a fragment stage), and the Shadows setting.
     shadow_maps: shadows::ShadowMaps,
-    shadow_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    shadow_pipelines: HashMap<(Kind, bool), pipeline::Lazy>,
     shadow_quality: ShadowQuality,
     /// The last frame's shadow plan (the cascades as drawn: `shadows::stagger`) and a frame count
     /// for the far cascades' turns.
@@ -1008,7 +1643,7 @@ pub struct Renderer {
     lod_map: Option<crate::lod_map::LodMap>,
     lod_map_full: bool,
     lod_schedule: lod_shadows::Schedule,
-    height_pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    height_pipelines: HashMap<(Kind, bool), pipeline::Lazy>,
     lod_shadows_off: bool,
     /// Torch shadows (point_shadows.rs; docs/LIGHTS.md §4): the maps (a 1×1 stand-in while Off),
     /// the setting, which light each slot holds, and this frame's placed lights near the eye
@@ -1021,6 +1656,9 @@ pub struct Renderer {
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
     level_colors: bool,
+    /// `?loddebug=` switches (debug; BUGS #68): bit 0 no skirts, 1 skirts tinted magenta, 2 no
+    /// per-section culling, 3 no stand-ins.
+    lod_debug: u8,
     players: HashMap<u32, PlayerView>,
     /// Your own body, drawn into the shadow maps only (a shadow even in first person).
     own_shadow: Option<PlayerView>,
@@ -1071,6 +1709,8 @@ pub struct Renderer {
     roll: f64,
     /// The fluid the eye is under (`set_eye_fluid`), for the frame uniform.
     eye_fluid: Option<EyeFluid>,
+    /// The tree being chopped leans (`set_tree_lean`; frame.lean_*).
+    tree_lean: Option<crate::chop::TreeLean>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
     /// Whether this is a phone (the shell's `prefersTouch`): its own, cheaper reflection tiers
@@ -1078,6 +1718,24 @@ pub struct Renderer {
     phone: bool,
     /// The water's cost-isolation switches (`water::debug_mask`, `?waterdbg=`; 0 in play).
     water_debug: u32,
+    /// `?heightfield=0|1` (a dev tool, docs/DEV_TOOLS.md): forces the near water's GPU heightfield
+    /// off or on whatever the tier says; `None` follows the tier (`watertiers.json` `heightfield`).
+    heightfield_override: Option<bool>,
+    /// `?cards=0|1`: forces the leaf cards on or off (`cards_for`); `None` the tier's.
+    cards_override: Option<bool>,
+    /// Graphics → Tall grass, percent of cross plants meshed (`plant_percent_of`).
+    plant_percent: u8,
+    /// Graphics → Far trees: far trees drawn (as impostors, else the LOD sections' tree cells).
+    far_trees: bool,
+    /// `?impostors=0|1` (a dev switch): 0 draws the far trees as the LOD sections' tree cells
+    /// (`lod_trees.rs`) as before the impostors; `None` the impostors.
+    impostors_override: Option<bool>,
+    /// The far trees' impostors (render/impostors.rs), made when first drawn, and what they are
+    /// made from: the scene's module and its frame layout.
+    impostors: Option<impostors::Impostors>,
+    impostor_parts: (wgpu::ShaderModule, wgpu::BindGroupLayout),
+    /// Graphics → Distant shadows (`lod_shadows::lod_shadows_for`).
+    distant_shadows: bool,
     /// The water's flow shown (flow.rs `FLOW_RIPPLES`, `FLOW_FOAM`; the Water flow settings).
     flow_switches: u32,
     /// The water's noise and caustic tiles (water_tiles.rs).
@@ -1100,6 +1758,12 @@ pub struct Renderer {
     /// The adapter's kind (`clouds_for`): a CPU adapter draws no clouds.
     adapter: wgpu::DeviceType,
     cloud_coverage: f64,
+    /// The world's radius (m, its size's: `WorldSize::world_radius_m`): the clouds stop at its rim
+    /// (`cloud_disc`, BUGS.md #101) and the atmosphere's limb fades out past it (BUGS.md #102).
+    world_radius_m: f64,
+    /// The view ray's cloud opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`).
+    cloud_extinction: f64,
     cloud_seconds: f64,
     stats: RenderStats,
 }
@@ -1121,10 +1785,12 @@ impl Renderer {
         format: wgpu::TextureFormat,
         samples: u32,
     ) -> Self {
+        crate::telemetry::mark("dwell:create:begin");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("dwell"),
             source: wgpu::ShaderSource::Wgsl(shaders::source(samples).into()),
         });
+        crate::telemetry::mark("dwell:create:module");
         let frame_entries = [
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -1194,11 +1860,14 @@ impl Renderer {
             .chain(point_shadows::layout_entries())
             .chain(lod_map::layout_entries())
             .chain([flow::layout_entry()])
+            .chain([moon::layout_entry()])
+            .chain([tree_fade::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
             entries: &frame_entries,
         });
+        let impostor_parts = (module.clone(), frame_layout.clone());
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("draw"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -1261,22 +1930,28 @@ impl Renderer {
                 .collect();
             (offset, attributes)
         };
-        let terrain_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 2), (4, 4), (5, 1), (6, 2)]);
-        let cutout_attrs = attrs(&[
-            (0, 3),
-            (1, 3),
-            (2, 3),
-            (3, 2),
-            (4, 4),
-            (5, 4),
-            (6, 1),
-            (7, 1),
-            (8, 2),
-        ]);
+        // The normal (snorm8x4) and the light and flood (unorm8x4) four bytes each (`packed_lit`).
+        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        terrain_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        terrain_attrs.1[5].format = wgpu::VertexFormat::Unorm8x4;
+        // The crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes.
+        terrain_attrs.1.push(wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Unorm8x4,
+            offset: terrain_attrs.0,
+            shader_location: 6,
+        });
+        terrain_attrs.0 += 4;
+        // The cutout's normal (snorm8x4) and its light, flood and bare (unorm8x4) are four bytes
+        // each in one float's slot (`packed_cutout`).
+        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        cutout_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        cutout_attrs.1[2].format = wgpu::VertexFormat::Unorm8x4;
+        cutout_attrs.1[6].format = wgpu::VertexFormat::Unorm8x4;
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
         let ghost_attrs = attrs(&[(0, 3), (1, 3)]);
         let fluid_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1), (4, 2)]);
+        crate::telemetry::mark("dwell:create:layouts");
         let mut pipelines = HashMap::default();
         // Opaque terrain, LOD sections and players; lines (depth-tested or over everything); and
         // fluids, the only see-through draws (blended, both sides, no depth writes).
@@ -1300,127 +1975,167 @@ impl Renderer {
                 Kind::Fluid => ("fluid_vs", "water_fs", &fluid_attrs),
                 Kind::Cutout => ("cutout_vs", "cutout_fs", &cutout_attrs),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
-            })];
-            let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
-            // The scene's draws write colour and (opaque only) view depth into the frame;
-            // lines draw into the canvas over the composite, depth-tested in the shader.
-            let scene_targets = [
-                Some(wgpu::ColorTargetState {
-                    format: HDR,
+            let (device, module, layout, overlay_layout, a) = (
+                device.clone(),
+                module.clone(),
+                layout.clone(),
+                overlay_layout.clone(),
+                a.clone(),
+            );
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: a.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &a.1,
+                })];
+                let blend = (water || line).then_some(wgpu::BlendState::ALPHA_BLENDING);
+                // The scene's draws write colour and (opaque only) view depth into the frame;
+                // lines draw into the canvas over the composite, depth-tested in the shader.
+                let scene_targets = [
+                    Some(wgpu::ColorTargetState {
+                        format: HDR,
+                        blend,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: VIEW_DEPTH,
+                        blend: None,
+                        write_mask: if water {
+                            wgpu::ColorWrites::empty()
+                        } else {
+                            wgpu::ColorWrites::ALL
+                        },
+                    }),
+                ];
+                let line_targets = [Some(wgpu::ColorTargetState {
+                    format,
                     blend,
                     write_mask: wgpu::ColorWrites::ALL,
-                }),
-                Some(wgpu::ColorTargetState {
-                    format: VIEW_DEPTH,
-                    blend: None,
-                    write_mask: if water {
-                        wgpu::ColorWrites::empty()
-                    } else {
-                        wgpu::ColorWrites::ALL
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(fs),
+                        layout: Some(if line { &overlay_layout } else { &layout }),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(fs),
+                            compilation_options: Default::default(),
+                            targets: if line { &line_targets } else { &scene_targets },
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            // Lines are quads too (`line_vs` widens them on screen).
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            // Water and cutout faces are seen from both sides; opaque faces are culled
+                            // from behind.
+                            cull_mode: (!water && !cutout && kind != Kind::Line)
+                                .then_some(wgpu::Face::Back),
+                            ..Default::default()
+                        },
+                        depth_stencil: (!line).then(|| wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(!water),
+                            depth_compare: Some(if no_depth {
+                                wgpu::CompareFunction::Always
+                            } else {
+                                DEPTH_COMPARE
+                            }),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: if line { 1 } else { samples },
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
                     },
-                }),
-            ];
-            let line_targets = [Some(wgpu::ColorTargetState {
-                format,
-                blend,
-                write_mask: wgpu::ColorWrites::ALL,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(fs),
-                layout: Some(if line { &overlay_layout } else { &layout }),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: if line { &line_targets } else { &scene_targets },
-                }),
-                primitive: wgpu::PrimitiveState {
-                    // Lines are quads too (`line_vs` widens them on screen).
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    // Water and cutout faces are seen from both sides; opaque faces are culled
-                    // from behind.
-                    cull_mode: (!water && !cutout && kind != Kind::Line)
-                        .then_some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: (!line).then(|| wgpu::DepthStencilState {
-                    format: DEPTH,
-                    depth_write_enabled: Some(!water),
-                    depth_compare: Some(if no_depth {
-                        wgpu::CompareFunction::Always
-                    } else {
-                        DEPTH_COMPARE
-                    }),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: if line { 1 } else { samples },
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
+                )
             });
             pipelines.insert((kind, water, no_depth), pipeline);
         }
         // The water that reads the scene: drawn in a pass's water half, which attaches the colour
         // and the depth buffer only (the view depth is read, not written). Its output is the whole
         // view through the surface (alpha 1, except seen from below).
-        let fluid_buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: fluid_attrs.0,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &fluid_attrs.1,
-        })];
-        let water_scene_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("water_scene_fs"),
-            layout: Some(&water_scene_layout),
-            vertex: wgpu::VertexState {
+        let water_scene_pipeline = {
+            let (device, module, water_scene_layout, fluid_attrs) = (
+                device.clone(),
+                module.clone(),
+                water_scene_layout.clone(),
+                fluid_attrs.clone(),
+            );
+            pipeline::Lazy::new(move || {
+                let fluid_buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: fluid_attrs.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &fluid_attrs.1,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("water_scene_fs"),
+                        layout: Some(&water_scene_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("fluid_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &fluid_buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("water_scene_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: HDR,
+                                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DEPTH,
+                            depth_write_enabled: Some(false),
+                            depth_compare: Some(DEPTH_COMPARE),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
+        crate::telemetry::mark("dwell:create:scene-pipelines");
+        let heightfield = heightfield::HeightfieldGpu::new(
+            &device,
+            &heightfield::PipelineParts {
                 module: &module,
-                entry_point: Some("fluid_vs"),
-                compilation_options: Default::default(),
-                buffers: &fluid_buffers,
+                frame_layout: &frame_layout,
+                draw_layout: &draw_layout,
+                under_layout: &under_layout,
+                hdr: HDR,
+                view_depth: VIEW_DEPTH,
+                depth: DEPTH,
+                depth_compare: DEPTH_COMPARE,
+                samples,
             },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("water_scene_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: HDR,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(DEPTH_COMPARE),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: samples,
-                ..Default::default()
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        );
         // The shadow passes' casters (shadows.rs): the scene's vertex stages from the light, depth
         // only; a fragment stage only for what keeps some texels (`shadow_pipeline_key`).
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1439,7 +2154,8 @@ impl Renderer {
             let (vs, entry, a) = match kind {
                 Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
                 Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
-                _ => ("cutout_vs", "shadow_cutout_fs", &cutout_attrs),
+                // Its own vertex stage: no leaf card dropped for the camera's side of it (BUGS.md #156).
+                _ => ("shadow_cutout_vs", "shadow_cutout_fs", &cutout_attrs),
             };
             // Drawn in full (no fragment stage): the depth-only vertex stage, which reads the
             // position alone.
@@ -1448,39 +2164,47 @@ impl Renderer {
                 (Kind::Flat, false) => ("shadow_flat_vs", vec![a.1[0]]),
                 _ => (vs, a.1.clone()),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &attributes,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(if fs { entry } else { vs }),
-                layout: Some(&shadow_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: fs.then(|| wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                // Opaque casters draw the faces toward the light (the light's view keeps the
-                // scene's handedness, so they are its front faces): half the triangles, and a
-                // face's own back never shades it. Plants cast from both sides.
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: (kind != Kind::Cutout).then_some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+            let stride = a.0;
+            let (device, module, shadow_layout) =
+                (device.clone(), module.clone(), shadow_layout.clone());
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: stride,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(if fs { entry } else { vs }),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: fs.then(|| wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[],
+                        }),
+                        // Opaque casters draw the faces toward the light (the light's view keeps the
+                        // scene's handedness, so they are its front faces): half the triangles, and a
+                        // face's own back never shades it. Plants cast from both sides.
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: (kind != Kind::Cutout).then_some(wgpu::Face::Back),
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(shadows::caster_depth(&SHADOWS)),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             });
             shadow_pipelines.insert((kind, fs), pipeline);
         }
@@ -1496,93 +2220,212 @@ impl Renderer {
                 Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
                 _ => ("flat_vs", "shadow_flat_fs", &flat_attrs),
             };
-            let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: a.0,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &a.1,
-            })];
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("lod shadow heights"),
-                layout: Some(&shadow_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: fs.then(|| wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: lod_shadows::HEIGHT_DEPTH,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                    stencil: Default::default(),
-                    bias: Default::default(),
-                }),
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+            let (device, module, shadow_layout, a) = (
+                device.clone(),
+                module.clone(),
+                shadow_layout.clone(),
+                a.clone(),
+            );
+            let pipeline = pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: a.0,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &a.1,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("lod shadow heights"),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: fs.then(|| wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[],
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: lod_shadows::HEIGHT_DEPTH,
+                            depth_write_enabled: Some(true),
+                            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                            stencil: Default::default(),
+                            bias: Default::default(),
+                        }),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             });
             height_pipelines.insert((kind, fs), pipeline);
         }
-        // The composite: a full-screen triangle into the canvas.
-        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("composite"),
-            layout: Some(&overlay_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("sky_vs"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("composite_fs"),
-                compilation_options: Default::default(),
-                targets: &[Some(format.into())],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        // With the wind on: the composite into the finished image, and the motion pass from it
-        // (group 3) into the canvas, where the lines follow it.
-        let full_screen = |label, layout, entry, target: wgpu::ColorTargetState| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some("sky_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[Some(target)],
-                }),
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+        // Full-screen passes (the composite into the canvas; with the wind on, the composite into
+        // the finished image and the motion pass from it, group 3, into the canvas).
+        let full_screen = |label: &'static str,
+                           layout: &wgpu::PipelineLayout,
+                           entry: &'static str,
+                           target: wgpu::ColorTargetState| {
+            let (device, module, layout) = (device.clone(), module.clone(), layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(label),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[Some(target)],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             })
         };
+        let composite_pipeline =
+            full_screen("composite", &overlay_layout, "composite_fs", format.into());
         let finished_pipeline = full_screen("finished", &overlay_layout, "finished_fs", HDR.into());
+        // The light shafts pass (ADR 0064): the scene's colour and depth (not its own buffer) into
+        // the shafts' buffer.
+        let scene_read_layout = frame::scene_read_layout(&device, samples);
+        let shafts_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("light shafts"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+            ],
+            immediate_size: 0,
+        });
+        let shafts_pipeline = full_screen(
+            "light shafts",
+            &shafts_layout,
+            "shafts_fs",
+            frame::SHAFTS.into(),
+        );
+        // Bloom's passes (WORK_QUEUE item 19): the bright pass over the same scene group.
+        let bloom_layout = frame::bloom_layout(&device);
+        let bloom_pipelines =
+            bloom::BloomPipelines::new(&device, samples, &scene_read_layout, &bloom_layout);
+        // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
+        // its distances, at the tier's reduced size, over the last frame's (group 3).
+        let cloud_layout = frame::cloud_history_layout(&device);
+        let cloud_march_layout = frame::cloud_march_layout(&device);
+        let cloud_noise = CloudNoise::new(&device, &CLOUDS);
+        let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cloud history"),
+            size: frame::CLOUD_PREV_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let cloud_plume_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cloud plumes"),
+            size: frame::cloud_plume_bytes(),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let clouds_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clouds"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+                Some(&cloud_march_layout),
+            ],
+            immediate_size: 0,
+        });
+        let clouds_pipeline = {
+            let (device, module, clouds_layout) =
+                (device.clone(), module.clone(), clouds_layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("clouds"),
+                        layout: Some(&clouds_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("clouds_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(frame::CLOUDS.into()), Some(frame::CLOUD_DIST.into())],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
+        let cloud_resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clouds resolve"),
+            bind_group_layouts: &[
+                Some(&frame_layout),
+                Some(&draw_layout),
+                Some(&scene_read_layout),
+                Some(&cloud_layout),
+            ],
+            immediate_size: 0,
+        });
+        let cloud_resolve_pipeline = {
+            let (device, module, layout) =
+                (device.clone(), module.clone(), cloud_resolve_layout.clone());
+            pipeline::Lazy::new(move || {
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("clouds resolve"),
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("sky_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[],
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some("clouds_resolve_fs"),
+                            compilation_options: Default::default(),
+                            targets: &[Some(frame::CLOUDS.into())],
+                        }),
+                        primitive: Default::default(),
+                        depth_stencil: None,
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         let finished_layout = frame::finished_layout(&device);
         let motion_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("motion"),
@@ -1595,8 +2438,10 @@ impl Renderer {
             immediate_size: 0,
         });
         let motion_pipeline = full_screen("motion", &motion_layout, "motion_fs", format.into());
+        crate::telemetry::mark("dwell:create:passes");
         let timer = GpuTimer::new(&device, &queue);
         let (atlas_view, sampler) = Self::atlas(&device, &queue);
+        crate::telemetry::mark("dwell:create:atlas");
         let (tile_grid_buffer, fluid_buffer) = frame_extras(&device, &queue);
         let frame_buffers = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -1638,6 +2483,8 @@ impl Renderer {
             fluid_buffer,
             light_buffer: lights::buffer(&device),
             flow: flow::FlowGpu::new(&device),
+            moon: moon::MoonGpu::new(&device, &queue),
+            tree_fade: tree_fade::TreeFadeGpu::new(&device),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -1654,6 +2501,7 @@ impl Renderer {
             &color_map,
             None,
         );
+        crate::telemetry::mark("dwell:create:bindings");
         let characters = characters::CharacterRenderer::new(
             &device,
             &queue,
@@ -1663,6 +2511,7 @@ impl Renderer {
         );
         let flames = flames::FlameRenderer::new(&device, &frame_bindings.layout, samples, true);
         let (draw_buffer, draw_group) = Self::draw_buffer(&device, &draw_layout, 1024);
+        crate::telemetry::mark("dwell:create:characters");
         let arena = Arena::new(device.clone(), queue.clone(), &STRIDES);
         let outline_box = ([0.0; 3], [1.0; 3]);
         let outline_mesh = Self::outline_lines(&arena, outline_box);
@@ -1678,7 +2527,15 @@ impl Renderer {
             pixel_grid: None,
             pixel_shift: [0.0; 2],
             pixel_pass: None,
+            upscaler: upscale::Upscaler::Stretch,
+            upscale_render: None,
+            upscale_sharpness: 1.0,
+            upscale_pass: None,
             groups_atlas: None,
+            anisotropy: 1,
+            groups_anisotropy: 1,
+            fxaa: false,
+            fxaa_pass: None,
             ink_outline: None,
             magnification: 1.0,
             targets: None,
@@ -1692,6 +2549,7 @@ impl Renderer {
             finished_layout,
             finished: None,
             water_scene_pipeline,
+            heightfield,
             under_layout,
             under_sampler,
             terrain: RasterTerrain::new(arena.clone()),
@@ -1721,6 +2579,7 @@ impl Renderer {
             draw_group,
             draw_capacity: 1024,
             level_colors: false,
+            lod_debug: 0,
             players: HashMap::default(),
             own_shadow: None,
             own_body: None,
@@ -1750,13 +2609,22 @@ impl Renderer {
             face: FaceFrame::A,
             roll: 0.0,
             eye_fluid: None,
+            tree_lean: None,
             water_quality: WaterQuality::default(),
             phone: false,
             water_debug: 0,
+            heightfield_override: None,
+            cards_override: None,
+            plant_percent: 100,
+            far_trees: true,
+            impostors_override: None,
+            impostors: None,
+            impostor_parts,
+            distant_shadows: true,
             flow_switches: 0,
             water_tiles,
             pacer: pacing::FramePacer::default(),
-            start_ms: crate::telemetry::now_ms(),
+            start_ms: crate::render_clock::now_ms(),
             exposure: DEFAULT_EXPOSURE,
             day: DayState::default(),
             day_seconds: 0.0,
@@ -1764,8 +2632,28 @@ impl Renderer {
             adapted_a: 1.0,
             adapt_ms: None,
             clouds: CloudQuality::High,
+            shafts: ShaftQuality::High,
+            scene_read_layout,
+            shafts_pipeline,
+            bloom: dwell_look::bloom::BloomQuality::High,
+            bloom_layout,
+            bloom_pipelines,
+            cloud_layout,
+            cloud_march_layout,
+            cloud_noise,
+            cloud_resolve_pipeline,
+            cloud_near: std::cell::Cell::new(false),
+            cloud_prev_buffer,
+            cloud_plume_buffer,
+            plumes: dwell_look::plumes::PlumeList::new(&CLOUDS),
+            clouds_pipeline,
+            cloud_prev: std::cell::Cell::new(None),
+            cloud_frames: std::cell::Cell::new(0),
+            warmup: pipeline::Warmup::default(),
             adapter: wgpu::DeviceType::Other,
             cloud_coverage: CLOUDS.shape.coverage,
+            world_radius_m: dwell_protocol::world::WORLD_RADIUS as f64,
+            cloud_extinction: 0.0,
             cloud_seconds: 0.0,
             stats: RenderStats::default(),
         }
@@ -1815,13 +2703,7 @@ impl Renderer {
                 },
             );
         }
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("atlas"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&atlas_sampler_descriptor(1));
         (texture.create_view(&Default::default()), sampler)
     }
 
@@ -1863,9 +2745,14 @@ impl Renderer {
         let grid = self
             .pixel_preset()
             .map(|p| dwell_look::pixel_art::grid(self.canvas, p.height, p.fit));
-        let (size, ratio) = match &grid {
-            Some(g) => (g.low, self.canvas_ratio / f64::from(g.scale)),
-            None => (self.canvas, self.canvas_ratio),
+        let upscaled = self.upscale_size().filter(|_| grid.is_none());
+        let (size, ratio) = match (&grid, upscaled) {
+            (Some(g), _) => (g.low, self.canvas_ratio / f64::from(g.scale)),
+            (None, Some(r)) => (
+                r,
+                self.canvas_ratio * f64::from(r.1) / f64::from(self.canvas.1),
+            ),
+            (None, None) => (self.canvas, self.canvas_ratio),
         };
         if size != self.size || grid != self.pixel_grid {
             self.targets = None;
@@ -1877,6 +2764,25 @@ impl Renderer {
         {
             p.release();
         }
+        if upscaled.is_none()
+            && let Some(p) = &mut self.upscale_pass
+        {
+            p.release();
+        }
+    }
+    /// Render scale's upscale (render/upscale.rs `sizes`): `upscaler` and the scene's `render`
+    /// size, drawn onto the canvas by a pass when the upscaler is one and the size is smaller than
+    /// the canvas's (`resize` first); `sharpness` is RCAS's (`upscale::sharpness`).
+    pub fn set_upscale(&mut self, upscaler: upscale::Upscaler, render: (u32, u32), sharpness: f32) {
+        self.upscaler = upscaler;
+        self.upscale_render = Some((render.0.max(1), render.1.max(1)));
+        self.upscale_sharpness = sharpness;
+        self.apply_size();
+    }
+    /// The scene's size while a pass upscales it (no CPU adapter: its buffer is its own tier).
+    fn upscale_size(&self) -> Option<(u32, u32)> {
+        self.upscale_render
+            .filter(|r| self.upscaler.is_pass() && !is_cpu(self.adapter) && *r != self.canvas)
     }
     /// The canvas's size (`resize`).
     pub fn canvas_size(&self) -> (u32, u32) {
@@ -1915,6 +2821,8 @@ impl Renderer {
     /// Replaces (or, with `None`, removes) a raster terrain chunk; meshes are chunk-local.
     pub fn set_terrain_chunk(&mut self, coord: ChunkCoord, meshes: Option<&ChunkMeshes>) {
         self.terrain.set_chunk(coord, meshes);
+        self.heightfield
+            .set(coord, meshes.and_then(|m| m.water.as_ref()));
     }
     /// A falling piece's meshes (docs/FELLING.md §3), their positions relative to its reference
     /// cell's centre, reaching `radius` m from it; `None` removes it. Drawn where `show_pieces`
@@ -1964,11 +2872,32 @@ impl Renderer {
     pub fn set_lod_level_colors(&mut self, on: bool) {
         self.level_colors = on;
     }
+    /// The `?loddebug=` switches (see `lod_debug`): `noskirts`, `skirts`, `nocull`, `nostandins`,
+    /// and `levels` (each section tinted by its level, `LEVEL_TINTS`; as `?lodcolors=1`).
+    pub fn set_lod_debug(&mut self, query: &str) {
+        let has = |w: &str| query.split(',').any(|q| q == w);
+        if has("levels") {
+            self.level_colors = true;
+        }
+        self.lod_debug = u8::from(has("noskirts"))
+            | u8::from(has("skirts")) << 1
+            | u8::from(has("nocull")) << 2
+            | u8::from(has("nostandins")) << 3;
+    }
     /// The time of day: the sun, moon and stars, each face's sky and lights (`seconds` drives the
     /// stars' twinkle).
     pub fn set_day(&mut self, day: &DayState, seconds: f64) {
         self.day = *day;
         self.day_seconds = seconds;
+    }
+    /// The time of day in the eye's air: thinned toward space with its height above sea level on its
+    /// own face (docs/DAY_NIGHT.md §15; the ground's sky untouched).
+    fn day_in_air(&self) -> DayState {
+        self.day.at_eye(
+            self.face.y(self.eye[1]) - dwell_world::SEA_LEVEL_M,
+            self.eye[0].hypot(self.eye[2]),
+            self.world_radius_m,
+        )
     }
     /// How far the viewer is toward face A (1) from face B (0), eased across the flip band: what
     /// the eye adapts toward (`adapt_eye`).
@@ -2015,14 +2944,153 @@ impl Renderer {
     pub fn adapter(&self) -> wgpu::DeviceType {
         self.adapter
     }
+    /// The moon's far-body maps from a world's bake (MOON_WORLD.md §5): written in place, the
+    /// adapter's tier choosing whether its normals go too (`moon_normals_for`).
+    pub fn set_moon(&mut self, bake: &dwell_worldgen::grids::FarBake) {
+        let words = moon::pack(
+            bake,
+            moon_normals_for(self.adapter),
+            dwell_look::daynight::DAY_NIGHT.moon.relief,
+        );
+        if !self.frame_bindings.moon.write(&self.queue, &words) {
+            debug_assert!(
+                false,
+                "the moon bake ({}²) is bigger than its buffer",
+                bake.size
+            );
+        }
+    }
+    /// The sun world's far-body maps (docs/proposals/SUN_WORLD.md S-3): its face A's albedo shading the sky's
+    /// sun disc, written after the moon's in the same buffer.
+    pub fn set_sun(&mut self, bake: &dwell_worldgen::grids::FarBake) {
+        let words = moon::pack(bake, false, 1.0);
+        if !self.frame_bindings.moon.write_sun(&self.queue, &words) {
+            debug_assert!(
+                false,
+                "the sun bake ({}²) is bigger than its room",
+                bake.size
+            );
+        }
+    }
+    /// The Anti-aliasing setting's FXAA post pass and the Anisotropic filtering setting
+    /// (shared/render/antialias.json), live; the sample count is the renderer's (`with_samples`).
+    pub fn set_antialias(&mut self, fxaa: bool, anisotropy: u16) {
+        self.fxaa = fxaa;
+        self.anisotropy = anisotropy;
+    }
+    /// The atlas's anisotropy this adapter draws (`anisotropy_for`).
+    pub fn anisotropy(&self) -> u16 {
+        anisotropy_for(self.adapter, self.anisotropy)
+    }
+    /// Whether this adapter runs the FXAA pass (`fxaa_for`).
+    pub fn fxaa(&self) -> bool {
+        fxaa_for(self.adapter, self.fxaa)
+    }
+    /// The scene's samples per pixel (1 or 4).
+    pub fn samples(&self) -> u32 {
+        self.samples
+    }
     /// The Clouds setting (Off, Low, High).
     pub fn set_clouds(&mut self, quality: CloudQuality) {
         self.clouds = quality;
+    }
+    /// The volumetric clouds' tier this frame draws (`clouds_for`, then the data's `tiers`); none
+    /// for the 2D deck or no clouds.
+    fn cloud_tier(&self) -> Option<dwell_look::clouds::VolumeTier> {
+        Some(self.clouds_now().volume(&CLOUDS))
+            .filter(|t| t.steps > 0)
+            .map(|t| t.at(self.cloud_near.get()))
+    }
+    /// The Clouds setting this frame draws (`clouds_for`): the 2D deck (Low) while a volume tier's
+    /// shape noise is still baking (docs/CLOUDS.md §9.4); none off home (the day's `clouds_shown`:
+    /// home's deck isn't the moon's sky, MOON_WORLD.md §7.3).
+    fn clouds_now(&self) -> CloudQuality {
+        if !self.day.clouds_shown {
+            return CloudQuality::Off;
+        }
+        let q = clouds_for(self.adapter, self.clouds);
+        if q.volume(&CLOUDS).steps > 0 && !self.cloud_noise.ready() {
+            CloudQuality::Low
+        } else {
+            q
+        }
+    }
+    /// Whether the clouds' shape noise is wanted and not yet asked for: the game then bakes it in
+    /// its job workers ([`Self::cloud_noise_slab`]). Asking marks it asked.
+    pub fn take_cloud_noise_request(&mut self) -> bool {
+        let wanted = clouds_for(self.adapter, self.clouds).volume(&CLOUDS).steps > 0;
+        wanted && !std::mem::replace(&mut self.cloud_noise.requested, true)
+    }
+    /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base; slices
+    /// `z0..`) into its texture; the volume draws once both are whole.
+    pub fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        self.cloud_noise.write(&self.queue, detail, z0, texels);
+    }
+    /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
+    /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
+    /// new frame (1 with no history: the first frame, new buffers, a jump), the frame index and how
+    /// far the eye moved. Remembers this frame's for the next.
+    fn cloud_prev_uniform(&self, view: [[f32; 4]; 4], blend: f64) -> [[f32; 4]; 5] {
+        let eye = self.eye;
+        let prev = self.cloud_prev.replace(Some((view, eye)));
+        let n = self.cloud_frames.get().wrapping_add(1);
+        self.cloud_frames.set(n);
+        let mut block = cloud_prev_block(prev, view, eye, blend, n);
+        // The pass's divisor: the scene span's footprint per texel (cloud_scene_span).
+        block[4][3] = self.cloud_tier().map_or(1, |t| t.divisor) as f32;
+        // The view's opacity override (0: the data's; `?cloudExtinction=`).
+        block[3][2] = self.cloud_extinction as f32;
+        block
+    }
+    /// The Model detail setting (ADR 0070 §10): every skinned model at `level`
+    /// (`dwell_models::DETAIL_LEVELS`).
+    pub fn set_model_detail(&mut self, level: usize) {
+        self.characters
+            .set_model_detail(&self.device, &self.queue, level);
+    }
+    /// Your first-person arms from the rigid parts instead of the player model (`?fparms=rigid`, a
+    /// dev switch; docs/CHARACTERS.md §11.10).
+    pub fn set_rigid_arms(&mut self, rigid: bool) {
+        self.characters.rigid_arms = rigid;
+    }
+    /// The Light shafts setting (Off, Low, High; ADR 0064).
+    pub fn set_shafts(&mut self, quality: ShaftQuality) {
+        self.shafts = quality;
+    }
+    /// The light shafts' tier this frame draws (`shafts_for`).
+    fn shaft_tier(&self) -> Option<ShaftTier> {
+        shafts_for(self.adapter, self.shafts).tier()
+    }
+    /// The Bloom setting (Off, Low, High; WORK_QUEUE item 19).
+    pub fn set_bloom(&mut self, quality: dwell_look::bloom::BloomQuality) {
+        self.bloom = quality;
+    }
+    /// Bloom's tier this frame draws (`bloom::bloom_for`: none on a CPU adapter or a phone).
+    fn bloom_tier(&self) -> Option<dwell_look::bloom::BloomTier> {
+        bloom::bloom_for(self.adapter, self.phone, self.bloom).tier()
+    }
+    /// The eye this frame is drawn from (world m).
+    pub fn eye_position(&self) -> [f64; 3] {
+        self.eye
     }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): the data's by default; a weather system's
     /// to set.
     pub fn set_cloud_coverage(&mut self, coverage: f64) {
         self.cloud_coverage = coverage.clamp(0.0, 1.0);
+    }
+    /// The world's radius (m; its size's, at the join): where the clouds and the limb stop.
+    pub fn set_world_radius(&mut self, radius_m: f64) {
+        self.world_radius_m = radius_m.max(1.0);
+    }
+    /// The view ray's cloud opacity (per m at density 1) over the data's `volume.extinction`, for
+    /// an A/B of how much a cloud hides the ones behind it (`?cloudExtinction=`; 0 or less: the
+    /// data's). The light's path keeps `volume.lightExtinction` whatever this is.
+    pub fn set_cloud_extinction(&mut self, extinction: f64) {
+        self.cloud_extinction = if extinction.is_finite() {
+            extinction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
     }
     /// The clouds' clock (s): world time where there is one, so clients roughly agree.
     pub fn set_cloud_time(&mut self, seconds: f64) {
@@ -2033,6 +3101,11 @@ impl Renderer {
     pub fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         self.eye_fluid = eye_fluid;
     }
+    /// The tree being chopped leans toward its notch (crate::chop `TreeLean`): the terrain's
+    /// vertices above its hinge turn with it (shaders.rs `tree_lean`).
+    pub fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
+        self.tree_lean = lean;
+    }
     /// The water quality setting (the settings menu; WATER_RENDERING.md §4).
     pub fn set_water_quality(&mut self, quality: WaterQuality) {
         self.water_quality = quality;
@@ -2041,6 +3114,7 @@ impl Renderer {
     /// `phone_tiers`, `shared/look/reflections.json` `phone`).
     pub fn set_phone(&mut self, phone: bool) {
         self.phone = phone;
+        self.terrain.stage_budget = streaming::StreamingBudgets::get().upload_bytes(phone);
     }
     /// Whether this adapter draws the LOD colour map (not a CPU adapter: the cheapest tier of
     /// everything there).
@@ -2072,6 +3146,7 @@ impl Renderer {
             && self.lod_map_full == (self.color_map.size > 1)
             && self.point_maps.tier == torch_tier
             && self.groups_atlas == atlas
+            && self.groups_anisotropy == self.anisotropy()
         {
             return;
         }
@@ -2091,6 +3166,13 @@ impl Renderer {
                 .lod_maps(&self.device, lod_tier.as_ref());
             // New heightmaps hold nothing: none is shown until its first fill is whole.
             self.lod_schedule = lod_shadows::Schedule::new(lod_tier.map_or(1, |t| t.levels));
+        }
+        let anisotropy = self.anisotropy();
+        if self.groups_anisotropy != anisotropy {
+            self.frame_bindings.sampler = self
+                .device
+                .create_sampler(&atlas_sampler_descriptor(anisotropy));
+            self.groups_anisotropy = anisotropy;
         }
         self.frame_groups = self.frame_bindings.groups(
             &self.device,
@@ -2130,7 +3212,11 @@ impl Renderer {
             return None;
         }
         LOD_SHADOWS
-            .tier(lod_shadows::lod_shadows_for(self.adapter, self.shadows()))
+            .tier(lod_shadows::lod_shadows_for(
+                self.adapter,
+                self.shadows(),
+                self.distant_shadows,
+            ))
             .copied()
     }
     /// The dev switches in the page's query for the distant shadows: `?lodshadows=off` turns
@@ -2141,9 +3227,58 @@ impl Renderer {
             .split('&')
             .any(|kv| kv == "lodshadows=off");
     }
+
+    /// Builds the next few of the pipelines a frame draws (bug #71, pipeline.rs); whether all are
+    /// built. Called once a frame before drawing; a frame is drawn only once it is done.
+    pub fn warm_pipelines(&mut self) -> bool {
+        self.warmup.step(&self.queue, self.warm_set())
+    }
+
+    /// The pipelines the warm-up builds, in the order a frame needs them: the scene's, the
+    /// composite and the wind's, then the passes the chosen tiers draw (shadows, distant shadows,
+    /// clouds, light shafts). A tier that is off is left out: its pipelines are made if it is
+    /// switched on, on first use.
+    fn warm_set(&self) -> Vec<&pipeline::Lazy> {
+        let mut set: Vec<&pipeline::Lazy> = Vec::new();
+        let mut scene: Vec<_> = self.pipelines.iter().collect();
+        scene.sort_by_key(|(k, _)| **k);
+        set.extend(scene.into_iter().map(|(_, p)| p));
+        set.push(&self.water_scene_pipeline);
+        set.extend([&self.heightfield.blended, &self.heightfield.scene]);
+        set.extend(self.characters.pipelines());
+        set.extend(self.flames.pipelines());
+        set.extend([
+            &self.composite_pipeline,
+            &self.finished_pipeline,
+            &self.motion_pipeline,
+        ]);
+        if self.shadows() != ShadowQuality::Off {
+            let mut casters: Vec<_> = self.shadow_pipelines.iter().collect();
+            casters.sort_by_key(|(k, _)| **k);
+            set.extend(casters.into_iter().map(|(_, p)| p));
+            if !self.lod_shadows_off {
+                let mut heights: Vec<_> = self.height_pipelines.iter().collect();
+                heights.sort_by_key(|(k, _)| **k);
+                set.extend(heights.into_iter().map(|(_, p)| p));
+            }
+        }
+        if self.cloud_tier().is_some() {
+            set.push(&self.clouds_pipeline);
+            set.push(&self.cloud_resolve_pipeline);
+        }
+        if self.shaft_tier().is_some() {
+            set.push(&self.shafts_pipeline);
+        }
+        if self.bloom_tier().is_some() {
+            set.extend(self.bloom_pipelines.all());
+        }
+        set
+    }
+
     /// Whether a frame may be drawn at `now_ms` (pacing.rs): not while `pacing::MAX_IN_FLIGHT`
     /// frames are still on the GPU.
     pub fn ready_to_draw(&mut self, now_ms: f64) -> bool {
+        crate::telemetry::add("pacing.in_flight", f64::from(self.pacer.in_flight()));
         self.pacer.ready(now_ms)
     }
     /// The water's cost-isolation switches (a dev tool: `water::debug_mask`).
@@ -2155,6 +3290,120 @@ impl Renderer {
 
     pub fn set_water_debug(&mut self, mask: u32) {
         self.water_debug = mask;
+    }
+    /// Forces the GPU heightfield on or off (`?heightfield=`), or back to the tier's (`None`).
+    /// Chunks meshed from then on follow it; set it before the world streams in.
+    pub fn set_heightfield_override(&mut self, on: Option<bool>) {
+        self.heightfield_override = on;
+    }
+    /// Forces the leaf cards on or off (`?cards=`), or back to the tier's (`None`). Chunks meshed
+    /// from then on follow it; set it before the world streams in.
+    pub fn set_cards_override(&mut self, on: Option<bool>) {
+        self.cards_override = on;
+    }
+    /// Graphics → Tall grass (0–1, the share of cross plants meshed) and Far trees (the LOD
+    /// sections' trees): chunks and sections meshed from then on follow them.
+    pub fn set_terrain_detail(&mut self, tall_grass: f64, far_trees: bool) {
+        self.plant_percent = plant_percent_of(tall_grass);
+        self.far_trees = far_trees;
+    }
+    /// `?impostors=0|1`: 0 draws the far trees as the LOD sections' tree cells (as before).
+    pub fn set_impostors_override(&mut self, on: Option<bool>) {
+        self.impostors_override = on;
+    }
+    /// The impostors' debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the quads
+    /// solid, 2 the silhouettes solid, 3 the albedo unlit; `shade` (ambient, albedo) overrides
+    /// `leafShade` for tuning when given.
+    pub fn set_impostor_debug(&mut self, mode: u32, shade: Option<[f32; 2]>) {
+        if let Some(i) = &mut self.impostors {
+            i.debug = mode;
+            if let Some(s) = shade {
+                i.leaf_shade = s;
+            }
+        }
+    }
+    /// The far trees' hand-over now (`impostors.json` `far.tiers` by the Far trees setting):
+    /// `None` when the far trees are the LOD sections' (`?impostors=0`).
+    fn far_tier(&self) -> Option<dwell_worldgen::impostor::Far> {
+        if self.impostors_override == Some(false) {
+            return None;
+        }
+        let c = dwell_worldgen::impostor::Config::get();
+        c.far(if self.far_trees { "on" } else { "off" })
+    }
+    /// The hand-over the frame draws with (BUGS.md #106, `impostors::drawn`): the tier's only once
+    /// the impostors are ready about the eye (the atlas baked, the area's instances in); else
+    /// `None`: the near crowns draw to the full-detail distance and the LOD sections keep trees.
+    fn far_drawn(&self) -> Option<dwell_worldgen::impostor::Far> {
+        let i = self.impostors.as_ref()?;
+        impostors::drawn(i.far, i.ready(self.face, self.eye))
+    }
+    /// The frame uniform's `far_trees` (shaders.rs `tree_near_share`, render/tree_fade.rs): the
+    /// eye from the tree map's corner, the leaves' reach, 1 once the impostors draw; zeros (the
+    /// near trees' leaves to the full-detail distance) before.
+    fn far_uniform(&self) -> [f32; 4] {
+        match (self.far_drawn(), &self.impostors) {
+            (Some(f), Some(i)) if f.impostor => i.fades.uniform(&f, self.face, self.eye),
+            _ => [0.0; 4],
+        }
+    }
+    /// This frame's tree states (render/tree_fade.rs) at `now` (s), and the GPU's map when they
+    /// changed. A tree is its real leaves only where its chunk's mesh is held and drawn
+    /// (`chunk_fade`; BUGS.md #172), its impostor until then.
+    fn update_tree_fades(&mut self, now: f64, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) {
+        let Some(far) = self.far_drawn() else {
+            return;
+        };
+        let (face, eye) = (self.face, self.eye);
+        let chunks = &self.terrain.chunks;
+        let drawn = |t: &tree_fade::Tree| {
+            let c = tree_fade::ground_chunk(face, t);
+            chunks.contains_key(&c) && chunk_fade(c).is_some()
+        };
+        if let Some(i) = self.impostors.as_mut()
+            && i.update_fades(now, face, eye, &far, drawn)
+        {
+            self.frame_bindings
+                .tree_fade
+                .write(&self.queue, &i.fades.texels);
+        }
+    }
+    /// What the far trees' impostors hold now (`__dwell.impostors()`).
+    pub fn impostor_status(&self) -> impostors::Status {
+        let ready = self.far_drawn().is_some();
+        self.impostors
+            .as_ref()
+            .map_or_else(impostors::Status::default, |i| i.status(ready))
+    }
+    /// The far trees' impostors when they draw, made on first use (the atlas at this device's
+    /// tier: phone, CPU adapter or desktop texels).
+    fn impostors_mut(&mut self) -> Option<&mut impostors::Impostors> {
+        let far = self.far_tier().filter(|f| f.impostor);
+        if far.is_none() {
+            if let Some(i) = &mut self.impostors {
+                i.far = None;
+            }
+            return None;
+        }
+        if self.impostors.is_none() {
+            let tier = impostors::tier_for(is_cpu(self.adapter), self.phone);
+            self.impostors = Some(impostors::Impostors::new(
+                &self.device,
+                &self.impostor_parts.0,
+                &self.impostor_parts.1,
+                &self.draw_layout,
+                self.samples,
+                tier,
+            ));
+        }
+        let i = self.impostors.as_mut()?;
+        i.far = far;
+        Some(i)
+    }
+    /// Graphics → Distant shadows: the distant terrain's sun shadows (`lod_shadows_for`), at
+    /// the Shadows setting's tier when on.
+    pub fn set_distant_shadows(&mut self, on: bool) {
+        self.distant_shadows = on;
     }
     /// The water this adapter draws: the setting's, Low on a CPU adapter (`water_for`).
     fn water(&self) -> WaterQuality {
@@ -2318,6 +3567,20 @@ impl Renderer {
     pub fn outline(&self) -> Option<&'static str> {
         self.ink_outline.map(|m| m.name)
     }
+    /// A world point in this frame's view (`camera::project`): [x, y] in −1..1 across the view
+    /// (+y up) and its depth along the view (≤ 0 behind).
+    pub fn project(&self, p: V3) -> V3 {
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
+        let aspect = f64::from(self.canvas.0) / f64::from(self.canvas.1.max(1));
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+        camera::project(&basis, self.eye, tan_y, aspect, p)
+    }
+
+    /// The camera's eye (world m) as last placed.
+    pub fn eye(&self) -> V3 {
+        self.eye
+    }
+
     /// The vertical FOV this frame draws with.
     pub fn frame_fov(&self) -> f64 {
         // The pixel-art preview's picture has a margin past the rows it shows (the camera snap's
@@ -2445,6 +3708,14 @@ impl Renderer {
             line_width_px(self.pixel_ratio) as f32,
             0.0,
         ]);
+        // The light shafts (ADR 0064; dwell-look `shaft_uniforms`).
+        let (air, lit) = self.shaft_uniforms(basis, aspect, (fov.to_radians() / 2.0).tan());
+        for v in air.iter().chain(lit.iter()) {
+            put(v);
+        }
+        // The clouds' edge round the disc's axis (BUGS.md #101).
+        let disc = cloud_disc(&CLOUDS, self.eye, self.world_radius_m);
+        put(&disc);
         // The exposure follows the eye's adaptation; the fog is the air's the eye is in (the other
         // face's rides in the day block, for rays that cross the midplane: docs/DAY_NIGHT.md §13).
         let adapted = self.day.viewer(self.adapted_a);
@@ -2452,13 +3723,14 @@ impl Renderer {
             self.eye[1] as f32,
             self.face.sign_f32(),
             (self.exposure * adapted.exposure) as f32,
-            dwell_look::daynight::fog_density(self.day.of(self.face)) as f32,
+            self.day_in_air().fog_density(self.face) as f32,
         ]);
-        // The water's scroll time, seconds since the renderer started.
-        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
+        // The water's scroll time, seconds of render time since the renderer started (the
+        // render clock: frozen while the look is paused, render_clock.rs).
+        let seconds = (crate::render_clock::now_ms() - self.start_ms) / 1000.0;
         put(&[
-            fog_sigma(FOG.distance_m) as f32,
-            FOG.height_m as f32,
+            fog_sigma(fog::active().distance_m) as f32,
+            fog::active().height_m as f32,
             seconds as f32,
             self.plant_wind as f32,
         ]);
@@ -2473,14 +3745,20 @@ impl Renderer {
             self.eye[0].rem_euclid(WIND_PERIOD) as f32,
             self.eye[2].rem_euclid(WIND_PERIOD) as f32,
         ]);
-        let clouds = cloud_uniforms(
+        let mut clouds = cloud_uniforms(
             &CLOUDS,
             self.eye,
             self.face,
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
+        // No cloud to be in past the rim (BUGS.md #101).
+        clouds[2][0] *= rim_cover(disc, [0.0, 0.0]) as f32;
+        // Near or in the layer the tier's near steps (BUGS.md #90).
+        if let Some(t) = self.cloud_tier() {
+            clouds[2][3] = t.steps as f32 + t.light_steps as f32 / 8.0;
+        }
         put(&clouds[0]);
         put(&clouds[1]);
         put(&clouds[2]);
@@ -2490,12 +3768,17 @@ impl Renderer {
             self.eye,
             self.face.other(),
             self.cloud_seconds,
-            clouds_for(self.adapter, self.clouds),
+            self.clouds_now(),
             self.cloud_coverage,
         );
         put(&other[0]);
         put(&other[1]);
-        put(&water_uniform(self.eye_fluid, self.water()));
+        put(&water_uniform(
+            self.eye_fluid,
+            self.eye[1],
+            self.face,
+            self.water(),
+        ));
         for v in self.wind_uniforms(basis, aspect, tan_y) {
             put(&v);
         }
@@ -2507,22 +3790,99 @@ impl Renderer {
         // The water's reflections for its quality, under the Clouds setting (WATER_RENDERING.md §8).
         for v in reflection_uniforms(
             &REFLECTIONS,
-            self.water().level() as usize,
+            self.water().index(),
             self.clouds.octaves(&CLOUDS),
-            self.clouds.self_shadow(),
+            self.clouds.self_shadow(&CLOUDS),
             self.phone,
         ) {
             put(&v);
         }
+        for v in lean_uniforms(self.tree_lean, self.eye) {
+            put(&v);
+        }
+        put(&self.far_uniform());
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
-        let mut day = self
-            .day
-            .pack(self.face, self.adapted_a, self.day_seconds, pixel_angle);
+        let mut day =
+            self.day_in_air()
+                .pack(self.face, self.adapted_a, self.day_seconds, pixel_angle);
         if !stars_for(self.adapter) {
             day[DAY_STARS] = 0.0;
         }
         put(&day);
         u
+    }
+
+    /// The light shafts' part of the frame block (`frame.shafts*`, `frame.torch_shafts`): the
+    /// sun's or the moon's in the air, the sun's under the eye's fluid, and the nearest placed and
+    /// held lights' (torches, lamps), by the tier this frame draws.
+    fn shaft_uniforms(
+        &self,
+        basis: &Basis,
+        aspect: f64,
+        tan_y: f64,
+    ) -> ([[f32; 4]; 4], [[f32; 4]; LIGHT_SHAFT_VEC4S]) {
+        let under = self
+            .eye_fluid
+            .filter(|e| self.face.y(self.eye[1]) < self.face.y(e.surface_y))
+            .and_then(|e| dwell_blocks::FLUIDS.get(usize::from(e.fluid)))
+            .map(|f| dwell_look::shafts::fluid_shafts(f.name));
+        let v = self.day.of(self.face);
+        let lit = |c: [f64; 3]| {
+            let m = c[0].max(c[1]).max(c[2]).max(1e-6);
+            c.map(|x| x / m)
+        };
+        let srgb = |c: u32| {
+            let [r, g, b] = [16, 8, 0].map(|s| f64::from((c >> s) & 0xff) / 255.0);
+            lit([r, g, b])
+        };
+        let eye = self.eye;
+        let lights: Vec<ShaftLight> = self
+            .characters
+            .held_lights()
+            .iter()
+            .map(|h| ShaftLight {
+                pos: std::array::from_fn(|k| eye[k] + f64::from(h.rel[k])),
+                color: srgb(h.source.color),
+                light: h.source.name,
+            })
+            .chain(self.placed_lights.iter().map(|p| ShaftLight {
+                pos: p.pos,
+                color: srgb(p.source.color),
+                light: p.source.name,
+            }))
+            .collect();
+        let view = ShaftView {
+            right: basis.right,
+            up: basis.up,
+            forward: basis.forward(),
+            tan: [tan_y * aspect, tan_y],
+            aspect,
+            face: self.face,
+            sun: self.day.sun,
+            moon: self.day.moon,
+            sun_color: lit(v.sun_disc),
+            moon_color: lit(v.moon_light),
+            under,
+            eye,
+            lights: &lights,
+        };
+        let tier = self.shaft_tier();
+        // Under a fluid only its own shafts (a torch under water is left for later).
+        let lit_u = if under.is_some() {
+            [[0.0; 4]; LIGHT_SHAFT_VEC4S]
+        } else {
+            light_shaft_uniforms(tier, &view)
+        };
+        (shaft_uniforms(tier, &view), lit_u)
+    }
+
+    /// Whether this frame's shafts draw anything (the near pass's uniforms: weight and mode).
+    fn shafts_drawn(&self) -> bool {
+        let basis = aim(self.yaw, self.pitch, self.face, self.roll);
+        let aspect = f64::from(self.size.0) / f64::from(self.size.1.max(1));
+        let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+        let (u, lit) = self.shaft_uniforms(&basis, aspect, tan_y);
+        (u[0][2] > 0.0 && u[0][3] > 0.5) || lit[0][0] > 0.0
     }
 
     /// The wind's part of the frame block (`wind_*` in shaders.rs): the vanishing point of the
@@ -2576,7 +3936,7 @@ impl Renderer {
             DrawMesh::Piece(id, k, part) => {
                 let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
                 let m = match part {
-                    Part::Cutout => cutout.as_ref(),
+                    Part::Cutout | Part::Plants | Part::Leaves => cutout.as_ref(),
                     _ => opaque.as_ref(),
                 }
                 .expect("collected");
@@ -2587,10 +3947,10 @@ impl Renderer {
                 let m = match part {
                     Part::Opaque => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
-                    Part::Cutout => chunk.cutout.as_ref(),
+                    Part::Cutout | Part::Plants | Part::Leaves => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
-                (m, vec![m.parts[0].clone()])
+                (m, vec![m.part(*part)])
             }
             DrawMesh::Section(id, w, mask) => {
                 let s = &self.terrain.sections[id];
@@ -2600,7 +3960,12 @@ impl Renderer {
                     s.opaque.as_ref()
                 }
                 .expect("collected");
-                let mut r = vec![m.parts[0].clone()];
+                // Bit 7: the skirts alone (the `skirts` debug tint's second draw).
+                let mut r = if mask & 0x80 != 0 {
+                    Vec::new()
+                } else {
+                    vec![m.parts[0].clone()]
+                };
                 r.extend(
                     (0..6)
                         .filter(|f| mask & (1 << f) != 0)
@@ -2623,6 +3988,7 @@ impl Renderer {
                 let m = self.debug.as_ref().expect("collected");
                 (m, vec![m.parts[0].clone()])
             }
+            DrawMesh::Heightfield => unreachable!("drawn from the grid, not the arena"),
         }
     }
 
@@ -2643,6 +4009,9 @@ impl Renderer {
             u8::from(view.holds_box(origin, size, passes[0].0, passes[0].1))
                 | u8::from(view.holds_box(origin, size, passes[1].0, passes[1].1)) << 1
         };
+        // Past the far trees' hand-over a chunk's cutout draws its plants alone, past the
+        // plants' fades nothing (`impostors::cutout_draw`).
+        let far = self.far_drawn().filter(|f| f.impostor);
         for (&coord, c) in &self.terrain.chunks {
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
@@ -2673,7 +4042,29 @@ impl Renderer {
                     mesh: DrawMesh::Chunk(coord, Part::Opaque),
                 });
             }
-            if c.cutout.is_some() && self.cutout_shown {
+            // The chunk's nearest point from the eye, for the far trees' hand-over.
+            let cutout_part = if far.is_some() {
+                let d2: f64 = (0..3)
+                    .map(|k| {
+                        let lo = f64::from(r[k]);
+                        let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                        d * d
+                    })
+                    .sum();
+                match impostors::cutout_draw(far, d2.sqrt() as f32) {
+                    impostors::CutoutDraw::All => Some(Part::Cutout),
+                    impostors::CutoutDraw::Plants => Some(Part::Plants),
+                    impostors::CutoutDraw::Nothing => None,
+                }
+            } else {
+                Some(Part::Cutout)
+            };
+            if let Some(part) = cutout_part
+                && c.cutout
+                    .as_ref()
+                    .is_some_and(|m| part == Part::Cutout || m.drawn(part) > 0)
+                && self.cutout_shown
+            {
                 out.push(DrawItem {
                     kind: Kind::Cutout,
                     water: false,
@@ -2687,7 +4078,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, Part::Cutout),
+                    mesh: DrawMesh::Chunk(coord, part),
                 });
             }
             if c.water.is_some() {
@@ -2705,6 +4096,23 @@ impl Renderer {
                     passes,
                     key: 0,
                     mesh: DrawMesh::Chunk(coord, Part::Water),
+                });
+            }
+            if let Some(quat) = self.heightfield.draw_of(coord) {
+                out.push(DrawItem {
+                    kind: Kind::Fluid,
+                    water: true,
+                    no_depth: false,
+                    offset,
+                    clip: None,
+                    fade,
+                    tint: plain,
+                    rotation: fluid_rotation(c.origin),
+                    quat,
+                    page: 0,
+                    passes,
+                    key: 0,
+                    mesh: DrawMesh::Heightfield,
                 });
             }
         }
@@ -2757,7 +4165,7 @@ impl Renderer {
             };
             [t[0], t[1], t[2], alpha]
         };
-        for &(id, mask, fade) in &self.terrain.shown {
+        for &(id, full_mask, fade) in &self.terrain.shown {
             let Some(s) = self.terrain.sections.get(&id) else {
                 continue;
             };
@@ -2766,10 +4174,24 @@ impl Renderer {
             }
             let fade = fade.shader_value();
             let side = s.cell * 32.0;
-            let passes = reaches(s.origin, [side, side * CELL_H, side]);
+            let passes = if self.lod_debug & 4 != 0 {
+                3
+            } else {
+                reaches(s.origin, [side, side * CELL_H, side])
+            };
             if passes == 0 {
                 continue;
             }
+            let mask = if self.lod_debug & 3 != 0 {
+                0
+            } else {
+                full_mask
+            };
+            let skirt_mask = if self.lod_debug & 2 != 0 {
+                full_mask
+            } else {
+                0
+            };
             let r = self.rel(s.origin);
             let offset = [r[0], r[1], r[2], s.cell as f32];
             if s.opaque.is_some() {
@@ -2788,6 +4210,23 @@ impl Renderer {
                     key: 0,
                     mesh: DrawMesh::Section(id, false, mask),
                 });
+                if skirt_mask != 0 {
+                    out.push(DrawItem {
+                        kind: Kind::Flat,
+                        water: false,
+                        no_depth: false,
+                        offset,
+                        clip: None,
+                        fade,
+                        tint: [4.0, 0.0, 4.0, 1.0],
+                        rotation: LOD_ROTATION,
+                        quat: IDENTITY_QUAT,
+                        page: 0,
+                        passes,
+                        key: 0,
+                        mesh: DrawMesh::Section(id, false, skirt_mask | 0x80),
+                    });
+                }
             }
             if s.water.is_some() {
                 out.push(DrawItem {
@@ -2812,7 +4251,7 @@ impl Renderer {
             .terrain
             .stand_ins
             .iter()
-            .filter(|s| !s.fade.is_hidden())
+            .filter(|s| !s.fade.is_hidden() && self.lod_debug & 8 == 0)
             .take(MAX_STAND_INS)
         {
             let passes = 3;
@@ -2941,7 +4380,9 @@ impl Renderer {
             });
         }
         for d in &mut out {
-            d.page = self.mesh_of(&d.mesh).0.region.page;
+            if !matches!(d.mesh, DrawMesh::Heightfield) {
+                d.page = self.mesh_of(&d.mesh).0.region.page;
+            }
             d.key = draw_order(d);
         }
         // One stable sort by a precomputed key (draw_order), then each pass takes its draws in that
@@ -2967,22 +4408,58 @@ impl Renderer {
     /// The frame's targets, made again when the size changes or the water starts or stops
     /// reading the scene.
     fn ensure_targets(&mut self) {
+        // Near or in the cloud layer, a tier marches with its near steps and divisor (BUGS.md #90).
+        let eye_h = self.face.y(self.eye[1]) - dwell_protocol::world::SEA_LEVEL_M;
+        self.cloud_near.set(dwell_look::clouds::near_layer(
+            &CLOUDS.volume,
+            eye_h,
+            self.cloud_near.get(),
+        ));
         // The under-water copy only where the water reads the scene (Medium and High).
         let under = self.water().reads_scene();
-        if self
-            .targets
-            .as_ref()
-            .is_some_and(|t| t.under.is_some() == under)
-        {
+        // The shafts' buffer at the tier's size (1 × 1 with none).
+        let shafts = self
+            .shaft_tier()
+            .map_or((1, 1), |t| dwell_look::shafts::buffer_size(self.size, t));
+        let clouds = cloud_buffer_size(self.size, self.cloud_tier());
+        // Bloom's chain at the tier's size (1 × 1, one level, with none).
+        let bloom = self
+            .bloom_tier()
+            .map_or((1, 1, 1), |t| dwell_look::bloom::chain(self.size, t));
+        if self.targets.as_ref().is_some_and(|t| {
+            t.under.is_some() == under
+                && t.shafts_size() == shafts
+                && t.clouds_size() == clouds
+                && t.bloom.size() == bloom
+        }) {
             return;
         }
         // Dropped first: their textures are destroyed before the new ones are made.
         self.targets = None;
+        // New buffers start without history.
+        self.cloud_prev.set(None);
         self.targets = Some(Targets::new(
             &self.device,
             self.size,
             self.samples,
-            &self.scene_layout,
+            &frame::SceneGroups {
+                layout: &self.scene_layout,
+                read_layout: &self.scene_read_layout,
+                sampler: &self.under_sampler,
+                shafts,
+                clouds,
+                cloud_layout: &self.cloud_layout,
+                cloud_prev: &self.cloud_prev_buffer,
+                cloud_plumes: &self.cloud_plume_buffer,
+                cloud_march_layout: &self.cloud_march_layout,
+                cloud_noise: (
+                    &self.cloud_noise.base.1,
+                    &self.cloud_noise.detail.1,
+                    &self.cloud_noise.sampler,
+                ),
+                bloom,
+                bloom_layout: &self.bloom_layout,
+            },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
     }
@@ -3002,7 +4479,9 @@ impl Renderer {
         // and the upscale shifts the picture by the remainder (dwell-look `snap_eye`).
         let eye = self.eye;
         self.pixel_shift = [0.0; 2];
-        self.adapt_eye(crate::telemetry::now_ms());
+        self.adapt_eye(crate::render_clock::now_ms());
+        let tiles = self.heightfield.upload(&self.queue);
+        crate::telemetry::add("water.tiles", tiles as f64);
         if let (Some(p), Some(g)) = (self.pixel_preset(), self.pixel_grid)
             && p.snap_camera
         {
@@ -3028,6 +4507,8 @@ impl Renderer {
         target: &wgpu::TextureView,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
     ) {
+        // This frame's slice of the chunk meshes being written (staged.rs), before the draw.
+        self.terrain.pump_staged();
         self.ensure_targets();
         // With the pixel-art preview on, the composite and lines draw into its low-res picture and
         // its post pass draws that on the canvas (render/pixel_art.rs).
@@ -3041,7 +4522,34 @@ impl Renderer {
             }
             _ => None,
         };
-        let composite_target = low_view.as_ref().unwrap_or(target);
+        // With render scale's upscale pass, they draw into its low-res picture (render/upscale.rs).
+        let upscale_view = match self.upscale_size() {
+            Some(r) if low_view.is_none() => {
+                let (device, format, out) = (self.device.clone(), self.format, self.canvas);
+                let pass = self
+                    .upscale_pass
+                    .get_or_insert_with(|| upscale::UpscalePass::new(&device, format));
+                Some(pass.low(&device, format, r, out).view.clone())
+            }
+            _ => None,
+        };
+        // With FXAA, they draw into its input picture, which its pass draws onto the upscale's
+        // picture or the canvas (render/fxaa.rs).
+        let fxaa_view = if self.fxaa() && low_view.is_none() {
+            let size = self.upscale_size().unwrap_or(self.canvas);
+            let (device, format) = (self.device.clone(), self.format);
+            let pass = self
+                .fxaa_pass
+                .get_or_insert_with(|| fxaa::FxaaPass::new(&device, format));
+            Some(pass.input(&device, format, size).view.clone())
+        } else {
+            None
+        };
+        let composite_target = low_view
+            .as_ref()
+            .or(fxaa_view.as_ref())
+            .or(upscale_view.as_ref())
+            .unwrap_or(target);
         // GPU pass times of earlier frames the GPU has finished; then whether this one is timed.
         if let Some(timer) = &mut self.timer {
             for (name, ms) in timer.collect() {
@@ -3050,11 +4558,15 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
+        self.update_tree_fades(collect_start / 1000.0, chunk_fade);
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
-        let altitude = self.face.y(self.eye[1]) - TERRAIN_TOP_M;
-        let far_near = (NEAR_SPLIT * 0.95).max(altitude * 0.8);
+        let far_near = far_pass_near(
+            self.face.y(self.eye[1]),
+            self.drawn_top(),
+            self.nearest_piece_m(),
+        );
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_fade);
         let mut near_uniforms = None;
@@ -3075,13 +4587,23 @@ impl Renderer {
             .map(|_| self.shadow_candidates(chunk_fade))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
-            let moving = !self.players.is_empty() || !self.piece_poses.is_empty();
+            let moving = moving_casters(
+                self.players.values().map(|v| v.feet),
+                &self.piece_poses,
+                &|id| self.terrain.pieces.get(&id).map(|p| p.radius),
+            );
+            let eye = self.eye;
+            let touched = |c: &shadows::Cascade| {
+                moving.iter().any(|&(centre, half)| {
+                    c.touches(std::array::from_fn(|k| centre[k] - eye[k]), half)
+                })
+            };
             let wants = self.shadow_cache.wants(
                 &SHADOWS,
                 p,
                 self.eye,
                 self.shadow_frame,
-                moving,
+                &touched,
                 &mut |i, c| caster_signature(&candidates, c, i, &p.tier),
             );
             self.shadow_cache.schedule(p, &wants, self.eye)
@@ -3162,7 +4684,6 @@ impl Renderer {
                 feet: v.feet,
                 yaw: v.yaw,
                 face: v.face,
-                dead: v.dead,
                 look: v.look,
                 pose: v.pose,
                 held: v.held,
@@ -3170,6 +4691,7 @@ impl Renderer {
                 first_person,
                 light: v.light,
                 seed,
+                role: v.role,
             };
         let bodies: Vec<characters::BodyDraw> = self
             .players
@@ -3197,7 +4719,7 @@ impl Renderer {
         // placed ones near the eye, nearest first, flickering by the frame's clock; and the torch
         // shadows' maps (§4, point_shadows.rs): the nearest lights that may cast take a slot, and
         // the maps of those new, moved or whose terrain changed are drawn, a budget a frame.
-        let seconds = (crate::telemetry::now_ms() - self.start_ms) / 1000.0;
+        let seconds = (crate::render_clock::now_ms() - self.start_ms) / 1000.0;
         let torch = self.torch_frame(chunk_fade);
         let (block, drawn) = lights::frame_block(&torch.lights, self.eye, seconds);
         self.queue
@@ -3313,10 +4835,12 @@ impl Renderer {
         ];
         let collect_ms = crate::telemetry::now_ms() - collect_start;
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        // The water's tiles first: the noise once, and this frame's caustics where the water reads
-        // the scene and some is drawn or the eye is under it.
-        let caustics = self.water().reads_scene()
-            && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water));
+        // The water's tiles first: the noise once, and the caustics where the water reads the
+        // scene and some is drawn or the eye is under it, every few frames (`frame_caustics`).
+        let caustics = self.water_tiles.frame_caustics(
+            self.water().draws_caustics()
+                && (self.eye_fluid.is_some() || draws.iter().flatten().any(|d| d.water)),
+        );
         if self.water_tiles.pending(caustics) {
             let query = self
                 .timer
@@ -3328,8 +4852,15 @@ impl Renderer {
                 self.timer.as_ref().and_then(|t| t.writes(query)),
             );
         }
+        // The far trees' impostors: their uniform, layers and instances for this frame.
+        let (device, queue, eye, face) =
+            (self.device.clone(), self.queue.clone(), self.eye, self.face);
+        if let Some(imp) = self.impostors_mut() {
+            imp.prepare(&device, &queue, eye, face);
+        }
         let arena = self.arena.borrow();
         let (mut calls, mut triangles) = (0u32, 0u64);
+        let mut impostor_triangles = 0u64;
         let scene_passes = passes.len();
         let targets = self.targets.as_ref().expect("ensure_targets made them");
         let t0 = crate::telemetry::now_ms();
@@ -3469,6 +5000,12 @@ impl Renderer {
                 {
                     pass.set_bind_group(1, &self.draw_group, &[]);
                 }
+                // The far trees' impostors, with the opaque draws (render/impostors.rs).
+                if let Some(imp) = &self.impostors {
+                    let n = triangles;
+                    imp.draw(&mut pass, &mut calls, &mut triangles);
+                    impostor_triangles += triangles - n;
+                }
                 self.record(
                     &mut pass,
                     &opaque[solid..],
@@ -3543,6 +5080,126 @@ impl Renderer {
             // Your own torch's flame over your arms.
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
+        }
+        // The volumetric clouds (docs/CLOUDS.md §8.6) into their reduced buffer, over the last
+        // frame's, which then keeps a copy for the next.
+        if let Some(tier) = self.cloud_tier() {
+            let aspect = f64::from(self.size.0) / f64::from(self.size.1.max(1));
+            let tan_y = (self.frame_fov().to_radians() / 2.0).tan();
+            let f4 = |v: [f64; 3]| [v[0] as f32, v[1] as f32, v[2] as f32, 0.0];
+            let view = [
+                f4(basis.right),
+                f4(basis.up),
+                f4(basis.forward()),
+                [(tan_y * aspect) as f32, tan_y as f32, 0.0, 0.0],
+            ];
+            let block = self.cloud_prev_uniform(view, tier.history_blend);
+            self.queue
+                .write_buffer(&self.cloud_prev_buffer, 0, floats(block.as_flattened()));
+            let plumes = self.plumes.pack(
+                &CLOUDS,
+                self.eye,
+                self.face,
+                self.cloud_seconds,
+                self.clouds_now(),
+            );
+            self.queue
+                .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::CLOUDS));
+            let clear = wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                store: wgpu::StoreOp::Store,
+            };
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clouds"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &targets.cloud_raw.1,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: clear,
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &targets.cloud_dist.1,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: clear,
+                        }),
+                    ],
+                    timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                pass.set_bind_group(2, &targets.scene_read, &[]);
+                pass.set_bind_group(3, &targets.cloud_march_group, &[]);
+                pass.set_pipeline(&self.clouds_pipeline);
+                pass.draw(0..3, 0..1);
+                calls += 1;
+            }
+            // The resolve (BUGS.md #90): the raw march with the history, clamped to its neighbours.
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("clouds resolve"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &targets.clouds.1,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: clear,
+                    })],
+                    ..Default::default()
+                });
+                pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+                pass.set_bind_group(1, &self.draw_group, &[]);
+                pass.set_bind_group(2, &targets.scene_read, &[]);
+                pass.set_bind_group(3, &targets.cloud_group, &[]);
+                pass.set_pipeline(&self.cloud_resolve_pipeline);
+                pass.draw(0..3, 0..1);
+                calls += 1;
+            }
+            encoder.copy_texture_to_texture(
+                targets.clouds.0.as_image_copy(),
+                targets.cloud_history.0.as_image_copy(),
+                targets.clouds.0.size(),
+            );
+            encoder.copy_texture_to_texture(
+                targets.cloud_dist.0.as_image_copy(),
+                targets.cloud_dist_history.0.as_image_copy(),
+                targets.cloud_dist.0.size(),
+            );
+        }
+        // The light shafts (ADR 0064) into their buffer at the tier's size, from the finished
+        // scene, when the frame draws some (the composite reads them).
+        if self.shaft_tier().is_some() && self.shafts_drawn() {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::SHAFTS));
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("light shafts"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.shafts.1,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                timestamp_writes: self.timer.as_ref().and_then(|t| t.writes(query)),
+                ..Default::default()
+            });
+            pass.set_bind_group(0, &self.frame_groups[scene_passes - 1], &[]);
+            pass.set_bind_group(1, &self.draw_group, &[]);
+            pass.set_bind_group(2, &targets.scene_read, &[]);
+            pass.set_pipeline(&self.shafts_pipeline);
+            pass.draw(0..3, 0..1);
+            calls += 1;
+        }
+        // Bloom (WORK_QUEUE item 19) from the finished scene's self-lit pixels down its chain and
+        // back up, when the tier draws it (the composite adds it).
+        if self.bloom_tier().is_some() {
+            calls += self
+                .bloom_pipelines
+                .encode(&mut encoder, &targets.scene_read, &targets.bloom);
         }
         let cpu = crate::telemetry::now_ms() - t0 + collect_ms;
         // With the wind on, the composite draws the finished image and the motion pass reads it
@@ -3634,17 +5291,49 @@ impl Renderer {
             pass.draw(&self.queue, &mut encoder, target, &u, writes);
             calls += 1;
         }
+        if let (Some(_), Some(pass)) = (&fxaa_view, &self.fxaa_pass) {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::FXAA));
+            let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+            pass.draw(
+                &mut encoder,
+                upscale_view.as_ref().unwrap_or(target),
+                writes,
+            );
+            calls += 1;
+        }
+        if let (Some(_), Some(pass)) = (&upscale_view, &self.upscale_pass) {
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::UPSCALE));
+            let writes = self.timer.as_ref().and_then(|t| t.writes(query));
+            let kind = self.upscaler;
+            pass.draw(
+                &self.queue,
+                &mut encoder,
+                target,
+                kind,
+                self.upscale_sharpness,
+                writes,
+            );
+            calls += 1;
+        }
         if let Some(timer) = &self.timer {
             timer.resolve(&mut encoder);
         }
         self.queue.submit([encoder.finish()]);
-        self.queue.on_submitted_work_done(self.pacer.submitted());
+        // The time from submit to the GPU's answer (`pacing.done`, ms; docs/DEV_TOOLS.md): when it
+        // is a frame or more, the pacer skips draws for a GPU that is not behind.
+        let done = self.pacer.submitted();
+        let at = crate::telemetry::now_ms();
+        self.queue.on_submitted_work_done(move || {
+            done();
+            crate::telemetry::sample("pacing.done", crate::telemetry::now_ms() - at);
+        });
         if let Some(timer) = &mut self.timer {
             timer.submitted();
         }
         crate::telemetry::add("draw.raster", cpu);
         self.stats.calls = calls;
         self.stats.triangles = triangles;
+        crate::telemetry::sample("impostor.ktris", impostor_triangles as f64 / 1000.0);
     }
 
     /// Records `draws` (taking draw-buffer slots from `first_slot`) into a pass; fluids with the
@@ -3664,6 +5353,17 @@ impl Renderer {
         let mut bound_page: Option<(usize, usize)> = None;
         for (k, d) in draws.iter().enumerate() {
             let instance = (first_slot + k as u64) as u32;
+            if matches!(d.mesh, DrawMesh::Heightfield) {
+                let hf = &self.heightfield;
+                pass.set_pipeline(if water_scene { &hf.scene } else { &hf.blended });
+                pass.set_bind_group(heightfield::GROUP, &hf.group, &[]);
+                bound = None;
+                bound_page = None;
+                *triangles += u64::from(heightfield::GRID_VERTICES / 3);
+                pass.draw(0..heightfield::GRID_VERTICES, instance..instance + 1);
+                *calls += 1;
+                continue;
+            }
             let (mesh, ranges) = self.mesh_of(&d.mesh);
             // Each WebGPU call crosses from WASM to JS: set only what changes.
             let key = (d.kind, d.water, d.no_depth);
@@ -3722,6 +5422,7 @@ impl Renderer {
     /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
     /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
     fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
+        use shadows::CasterKind::Solid;
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
             water: false,
@@ -3743,7 +5444,7 @@ impl Renderer {
             (std::array::from_fn(|k| f64::from(r[k]) + half[k]), half)
         };
         let mut out = Vec::new();
-        let mut push = |d: DrawItem, (centre, half): (V3, V3), tag: u64| {
+        let mut push = |d: DrawItem, (centre, half): (V3, V3), tag: u64, kind| {
             let (mesh, _) = self.mesh_of(&d.mesh);
             let id = shadows::mix(tag)
                 ^ shadows::mix(
@@ -3754,6 +5455,7 @@ impl Renderer {
                 ^ u64::from(d.kind == Kind::Cutout);
             out.push(Candidate {
                 draw: d,
+                kind,
                 centre,
                 half,
                 id,
@@ -3772,16 +5474,30 @@ impl Renderer {
                 ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
                 let mesh = DrawMesh::Chunk(coord, Part::Opaque);
-                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag);
+                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag, Solid);
             }
-            if c.cutout.is_some() && self.cutout_shown {
-                let mesh = DrawMesh::Chunk(coord, Part::Cutout);
-                push(item(Kind::Cutout, offset, None, fade, mesh), b, !tag);
+            // The plants and the trees' leaves apart: plants cast into the nearest
+            // `plantCascades`, leaves into every cascade (BUGS.md #156: past those a crown cast
+            // nothing, and its shadow flipped as the camera moved it between cascades).
+            if let Some(m) = c.cutout.as_ref().filter(|_| self.cutout_shown) {
+                for (part, kind, tag) in [
+                    (Part::Plants, shadows::CasterKind::Plants, !tag),
+                    (Part::Leaves, shadows::CasterKind::Leaves, !tag ^ 0x1eaf),
+                ] {
+                    if m.drawn(part) > 0 {
+                        let mesh = DrawMesh::Chunk(coord, part);
+                        push(item(Kind::Cutout, offset, None, fade, mesh), b, tag, kind);
+                    }
+                }
             }
         }
-        // The falling pieces, each with its pose in its identity: a kept map holding one is drawn
-        // again as it moves (docs/FELLING.md §3).
+        // The falling pieces: moving casters (`piece_shadow_tag`), a kept map holding one drawn
+        // again every `refreshFrames` while they move (docs/FELLING.md §3). The grids' coarse
+        // meshes (grid_bodies.rs) cast none: under the chunks, or far off.
         for &(id, origin, quat) in &self.piece_poses {
+            if crate::grid_bodies::is_grid_body(id) {
+                continue;
+            }
             let Some(p) = self.terrain.pieces.get(&id) else {
                 continue;
             };
@@ -3804,7 +5520,7 @@ impl Renderer {
                     DrawMesh::Piece(id, k, Part::Opaque),
                 );
                 d.quat = quat;
-                push(d, b, piece_shadow_tag(id, k, origin, quat));
+                push(d, b, piece_shadow_tag(id, k), Solid);
             }
         }
         for &(id, mask, fade) in &self.terrain.shown {
@@ -3829,6 +5545,7 @@ impl Renderer {
                 item(Kind::Flat, offset, None, fade.shader_value(), mesh),
                 b,
                 tag,
+                Solid,
             );
         }
         for st in self
@@ -3861,6 +5578,7 @@ impl Renderer {
                 item(Kind::Flat, offset, clip, st.fade.shader_value(), mesh),
                 b,
                 tag,
+                Solid,
             );
         }
         out
@@ -3868,7 +5586,7 @@ impl Renderer {
 
     /// The shadow casters of this frame's drawn cascades (`f.draw`): each candidate with the
     /// cascades it reaches (a bit per cascade in `passes`; plants into the nearest
-    /// `plantCascades` only), in the order they are drawn (by pipeline, then page). A draw in an
+    /// `plantCascades` only, `shadows::casts`), in the order they are drawn (by pipeline, then page). A draw in an
     /// LOD swap casts with its fade, so the two levels share the map (`shadow_terrain_fs`).
     fn collect_casters(
         &self,
@@ -3904,6 +5622,58 @@ impl Renderer {
         }
         out.sort_by_key(|d| d.key);
         out
+    }
+
+    /// The highest face-local top (m) of the terrain shown on the viewer's face: the LOD sections'
+    /// and stand-ins' boxes and the chunks' (−∞ with none); `far_pass_near` keeps it in the far pass.
+    /// The distance from the eye to the nearest shown piece's bounding sphere (m; ∞ with none,
+    /// 0 inside one): `far_pass_near` keeps the far pass's near plane short of it.
+    fn nearest_piece_m(&self) -> f64 {
+        self.piece_poses
+            .iter()
+            .filter_map(|&(id, origin, _)| {
+                let r = self.terrain.pieces.get(&id)?.radius;
+                let d = (0..3)
+                    .map(|k| (origin[k] - self.eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                Some((d - r).max(0.0))
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    fn drawn_top(&self) -> f64 {
+        let f = self.face;
+        let top = |lo: V3, hi: V3| {
+            if FaceFrame::at_height((lo[1] + hi[1]) * 0.5) == f {
+                f.y(lo[1]).max(f.y(hi[1]))
+            } else {
+                f64::NEG_INFINITY
+            }
+        };
+        let sections = self.terrain.shown.iter().filter_map(|&(id, _, fade)| {
+            let s = self
+                .terrain
+                .sections
+                .get(&id)
+                .filter(|_| !fade.is_hidden())?;
+            let side = s.cell * 32.0;
+            let hi = [
+                s.origin[0] + side,
+                s.origin[1] + side * CELL_H,
+                s.origin[2] + side,
+            ];
+            Some(top(s.origin, hi))
+        });
+        let stand_ins = self.terrain.stand_ins.iter().map(|s| top(s.lo, s.hi));
+        let chunks = self.terrain.chunks.values().map(|c| {
+            let hi = std::array::from_fn(|k| c.origin[k] + CHUNK_EXTENT_M[k]);
+            top(c.origin, hi)
+        });
+        sections
+            .chain(stand_ins)
+            .chain(chunks)
+            .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// The casters of a distant-shadow heightmap fill at `place` (lod_shadows.rs): the terrain as
@@ -4548,6 +6318,10 @@ struct FrameBindings {
     light_buffer: wgpu::Buffer,
     /// The water's flow around the eye (flow.rs), written when the game's current table changes.
     flow: flow::FlowGpu,
+    /// The moon's baked maps (moon.rs), written once a world's bake is done.
+    moon: moon::MoonGpu,
+    /// The far trees' near/impostor states about the eye (tree_fade.rs), written when they change.
+    tree_fade: tree_fade::TreeFadeGpu,
 }
 
 impl FrameBindings {
@@ -4646,6 +6420,8 @@ impl FrameBindings {
                 .chain(point_maps.group_entries())
                 .chain(color_map.group_entries())
                 .chain([self.flow.group_entry()])
+                .chain([self.moon.group_entry()])
+                .chain([self.tree_fade.group_entry()])
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -4686,14 +6462,20 @@ pub(crate) fn frame_extras(
 const WIND_PERIOD: f64 = 1024.0;
 
 /// Floats in the frame uniform block (`Frame` in shaders.rs): a matrix, the outline's and the
-/// pixel-art preview's vec4s, 22 more (the lines', then after `tan` the clouds' three and the other face's deck's
+/// pixel-art preview's vec4s, 22 more (the lines', the clouds' disc before `eye`, then after `tan` the clouds' three and the other face's deck's
 /// two, then the water's, the wind's six, the wrap and the reflections' two) and the day/night
 /// cycle's block.
 pub(crate) const FRAME_FLOATS: usize = 16
     + dwell_look::outline::OUTLINE_FLOATS
     + dwell_look::pixel_art::LIGHT_FLOATS
-    + 22 * 4
+    + 27 * 4
+    + LEAN_FLOATS
+    + dwell_look::shafts::LIGHT_SHAFT_VEC4S * 4
     + DAY_SKY_FLOATS;
+
+/// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
+/// With the far trees' hand-over after them (`far_trees`, render/impostors.rs).
+pub(crate) const LEAN_FLOATS: usize = 4 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -4787,7 +6569,11 @@ fn preserve_coverage(levels: &mut [(Vec<u8>, usize)]) {
 /// Halves an RGBA8 sRGB image, averaging in linear light.
 fn downsample(src: &[u8], size: usize) -> Vec<u8> {
     let half = (size / 2).max(1);
-    let to_linear = |b: u8| srgb_to_linear(f64::from(b) / 255.0);
+    // Each byte's linear light from a table: the same values as `srgb_to_linear` per texel, without
+    // its `powf` for every channel of every texel (it was most of the graphics start's main-thread
+    // task on the web: ~40 of ~95 ms on an M1, cold).
+    let linear = srgb_linear_table();
+    let to_linear = |b: u8| linear[usize::from(b)];
     let to_srgb = |l: f64| {
         let s = if l <= 0.0031308 {
             l * 12.92
@@ -4815,9 +6601,14 @@ fn downsample(src: &[u8], size: usize) -> Vec<u8> {
     out
 }
 
+/// Each sRGB byte's linear light (`srgb_to_linear(b / 255)`).
+fn srgb_linear_table() -> [f64; 256] {
+    std::array::from_fn(|b| srgb_to_linear(b as f64 / 255.0))
+}
+
 impl TerrainRenderer for Renderer {
     fn set_chunk(&mut self, coord: ChunkCoord, payload: Option<&ChunkMeshes>) {
-        self.terrain.set_chunk(coord, payload);
+        self.set_terrain_chunk(coord, payload);
     }
     fn set_section(
         &mut self,
@@ -4843,6 +6634,93 @@ impl TerrainRenderer for Renderer {
 }
 
 impl crate::game::Scene for Renderer {
+    fn set_plumes(&mut self, prefix: &str, plumes: Vec<(String, dwell_look::plumes::PlumeSpec)>) {
+        self.plumes.remove_prefixed(prefix);
+        for (name, p) in plumes {
+            // A full list keeps the plumes it has (the dev tools' or another source's).
+            let _ = self.plumes.set(&name, p);
+        }
+    }
+    fn draws_cards(&self) -> bool {
+        cards_for(self.adapter, self.phone, self.cards_override)
+    }
+    fn plant_percent(&self) -> u8 {
+        self.plant_percent
+    }
+    fn draws_far_trees(&self) -> bool {
+        // Once the impostors draw the far trees the LOD sections mesh only their ground; until
+        // they are ready (BUGS.md #106) the sections keep their trees.
+        impostors::lod_trees(self.far_trees, self.far_drawn())
+    }
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        self.impostors_mut()
+            .and_then(|i| i.far)
+            .map(|f| impostors::reach(&f))
+    }
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        let i = self.impostors_mut()?;
+        if i.requested {
+            return None;
+        }
+        i.requested = true;
+        Some((
+            dwell_worldgen::impostor::Config::get().layer_count(),
+            i.px(),
+        ))
+    }
+    fn impostor_layer(
+        &mut self,
+        layer: u32,
+        centre_y: f32,
+        radius: f32,
+        albedo: &[u8],
+        normal_depth: &[u8],
+    ) {
+        let queue = self.queue.clone();
+        if let Some(i) = self.impostors.as_mut() {
+            i.upload_layer(&queue, layer, centre_y, radius, albedo, normal_depth);
+        }
+    }
+    fn far_tree_tile_held(&self, key: (u8, i32, i32)) -> bool {
+        self.impostors.as_ref().is_some_and(|i| i.has_tile(&key))
+    }
+    fn far_tree_tile(&mut self, key: (u8, i32, i32), trees: &[dwell_worldgen::impostor::FarTree]) {
+        if let Some(i) = self.impostors.as_mut() {
+            let face = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            i.set_tile(face, key.1, key.2, trees);
+        }
+    }
+    fn retain_far_tree_tiles(&mut self, keep: &dyn Fn(&(u8, i32, i32)) -> bool) {
+        if let Some(i) = self.impostors.as_mut() {
+            i.retain_tiles(keep);
+        }
+    }
+    fn upload_budget_bytes(&self) -> u64 {
+        streaming::StreamingBudgets::get().upload_bytes(self.phone)
+    }
+    fn uploads_waiting(&self) -> bool {
+        !self.terrain.writes.is_empty()
+    }
+    fn collision_cells_per_tick(&self) -> usize {
+        streaming::StreamingBudgets::get().collision_cells(self.phone)
+    }
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        streaming::StreamingBudgets::get().collision_ahead(self.phone)
+    }
+    fn draws_heightfield(&self) -> bool {
+        heightfield_drawn(self.water().tier().heightfield, self.heightfield_override)
+    }
+    fn set_water_tile(
+        &mut self,
+        coord: ChunkCoord,
+        tile: Option<&dwell_mesh::heightfield::WaterTile>,
+    ) {
+        self.heightfield.set(coord, tile);
+    }
     fn set_piece(&mut self, id: u32, meshes: Option<(&[ChunkMeshes], f64)>) {
         Renderer::set_piece(self, id, meshes);
     }
@@ -4851,6 +6729,12 @@ impl crate::game::Scene for Renderer {
     }
     fn set_lod_map(&mut self, map: Option<&crate::lod_map::LodMap>) {
         self.lod_map = map.filter(|_| self.lod_map_supported()).cloned();
+    }
+    fn take_cloud_noise_request(&mut self) -> bool {
+        Renderer::take_cloud_noise_request(self)
+    }
+    fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
+        Renderer::cloud_noise_slab(self, detail, z0, texels);
     }
     fn lod_map_tile(&mut self, ring: usize, rect: crate::lod_map::Rect, rgba: &[u8]) {
         if !self.lod_map_supported() {
@@ -4865,6 +6749,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_player(&mut self, id: u32, view: Option<PlayerView>) {
         Renderer::set_player(self, id, view);
+    }
+    fn set_creatures(&mut self, creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>) {
+        self.characters.creatures = creatures;
     }
     fn set_arms(&mut self, arms: Option<ArmsView>) {
         Renderer::set_arms(self, arms);
@@ -4907,6 +6794,9 @@ impl crate::game::Scene for Renderer {
     fn set_eye_fluid(&mut self, eye_fluid: Option<EyeFluid>) {
         Renderer::set_eye_fluid(self, eye_fluid);
     }
+    fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
+        Renderer::set_tree_lean(self, lean);
+    }
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);
     }
@@ -4946,7 +6836,119 @@ impl crate::game::Scene for Renderer {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn interleave_puts_each_vertex_streams_in_order() {
+        // face-a-only: vertex layout, no up or down.
+        let p = [0.0, 1.0, 2.0, 10.0, 11.0, 12.0];
+        let uv = [3.0, 4.0, 13.0, 14.0];
+        let l = [5.0, 15.0, 99.0]; // a longer stream: its extra is left out
+        assert_eq!(
+            super::interleave(&[(&p, 3), (&uv, 2), (&l, 1)]),
+            vec![
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0
+            ]
+        );
+        assert!(super::interleave(&[]).is_empty());
+        assert!(super::interleave(&[(&[], 3)]).is_empty());
+    }
+
+    #[test]
+    fn the_far_pass_keeps_the_moons_near_mesh_from_home_high_up() {
+        // face-a-only: `far_pass_near` takes face-local heights and a distance, no face.
+        // BUGS.md #149: from home's grid ~600 km up the moon's orbit, 20 km from its near mesh
+        // (a piece, its far disc off inside `farM`), the far pass's near plane sat at
+        // 0.8 × (600 km − 1024 m) ≈ 479 km and clipped the whole mesh: the moon drew nothing.
+        let eye_y = 600_000.0;
+        let nearest = 20_000.0;
+        let near = far_pass_near(eye_y, f64::NEG_INFINITY, nearest);
+        assert!(
+            near < nearest,
+            "near plane {near} m clips the moon {nearest} m off"
+        );
+        assert!(near >= NEAR_SPLIT * 0.95);
+        // Inside a piece's sphere (on the moon, its mesh round the eye): the split's.
+        assert_eq!(
+            far_pass_near(eye_y, f64::NEG_INFINITY, 0.0),
+            NEAR_SPLIT * 0.95
+        );
+        // A piece farther than the altitude changes nothing.
+        let far = far_pass_near(5300.0, 600.0, 1.0e9);
+        assert!((far - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_far_pass_keeps_terrain_drawn_over_the_default_top_from_above_it() {
+        // face-a-only: `far_pass_near` takes face-local heights; `drawn_top` maps them through
+        // the viewer's FaceFrame.
+        // BUGS.md #68: 300 m over the tall peak's ~4400 m rim (sections drawn up to 4608 m) the far
+        // pass's near plane sat at 0.8 × (5300 − 1024) = 3421 m, clipping the cone 0.9–2 km away:
+        // a hole to the sky round the crater. Red before: the drawn terrain was not considered.
+        let near = far_pass_near(5300.0, 4608.0, f64::INFINITY);
+        // Nearer than the summit, or the near pass's own (which draws it).
+        let summit = 5300.0 - 4608.0;
+        assert!(
+            near <= f64::max(summit, NEAR_SPLIT * 0.95),
+            "near plane {near} m clips the summit"
+        );
+        // Over the default terrain (nothing drawn above the default top) it still moves out.
+        assert!(
+            (far_pass_near(5300.0, 600.0, f64::INFINITY) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs()
+                < 1e-9
+        );
+        assert!(
+            (far_pass_near(5300.0, f64::NEG_INFINITY, f64::INFINITY)
+                - 0.8 * (5300.0 - TERRAIN_TOP_M))
+                .abs()
+                < 1e-9
+        );
+        // From 8 km over that summit: out past the split, short of the summit.
+        let high = far_pass_near(12_608.0, 4608.0, f64::INFINITY);
+        assert!(high > NEAR_SPLIT && high < 8000.0, "{high}");
+        // Near the ground, the split's.
+        assert_eq!(
+            far_pass_near(300.0, 290.0, f64::INFINITY),
+            NEAR_SPLIT * 0.95
+        );
+    }
     use super::*;
+
+    #[test]
+    fn the_heightfield_override_wins_over_the_tier() {
+        assert!(!heightfield_drawn(false, None));
+        assert!(heightfield_drawn(true, None));
+        assert!(heightfield_drawn(false, Some(true)));
+        assert!(!heightfield_drawn(true, Some(false)));
+    }
+
+    #[test]
+    fn loose_items_alone_do_not_redraw_the_far_shadow_cascades() {
+        // Owner, 2026-11-08: adventure ran slower than creative. Its loose items (ADR 0066) lie
+        // spinning for minutes, and as falling pieces they made every far cascade a moving one,
+        // drawn again every `refreshFrames` for as long as any lay anywhere in the world.
+        let item = (
+            crate::loose_items::ID_BASE | 7,
+            [0.0; 3],
+            [0.0, 0.0, 0.0, 1.0],
+        );
+        let body = (42, [0.0; 3], [0.0, 0.0, 0.0, 1.0]);
+        let none = |_: u32| None;
+        assert!(moving_casters(std::iter::empty(), &[], &none).is_empty());
+        assert!(
+            moving_casters(std::iter::empty(), &[item], &none).is_empty(),
+            "a loose item is not a moving caster"
+        );
+        assert_eq!(
+            moving_casters(std::iter::empty(), &[item, body], &|_| Some(3.0)),
+            vec![([0.0; 3], [3.0; 3])],
+            "a falling body is, its box its radius"
+        );
+        assert_eq!(
+            moving_casters([[5.0, 1.0, 2.0]].into_iter(), &[item], &none),
+            vec![([5.0, 1.0, 2.0], BODY_CASTER_HALF)],
+            "another player is, a box about the feet"
+        );
+    }
 
     #[test]
     fn outlines_are_a_constant_number_of_pixels_wide_near_and_far() {
@@ -4998,19 +7000,15 @@ mod tests {
     }
 
     #[test]
-    fn a_falling_pieces_shadow_identity_changes_as_it_moves_or_turns() {
-        // docs/FELLING.md §3: a kept shadow map is drawn again when its casters' identities change;
-        // a piece's must change with its pose, or its shadow would stay where it began to fall.
-        let q = IDENTITY_QUAT;
-        let a = piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q);
-        assert_eq!(a, piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], q));
-        assert_ne!(a, piece_shadow_tag(4, 0, [10.0, 199.9, -3.0], q));
-        assert_ne!(
-            a,
-            piece_shadow_tag(4, 0, [10.0, 200.0, -3.0], [0.0, 0.0, 0.1, 0.995])
-        );
-        assert_ne!(a, piece_shadow_tag(4, 1, [10.0, 200.0, -3.0], q));
-        assert_ne!(a, piece_shadow_tag(5, 0, [10.0, 200.0, -3.0], q));
+    fn a_falling_pieces_shadow_identity_is_its_id_and_part_not_its_pose() {
+        // docs/FELLING.md §3, docs/DEV_TOOLS.md "Blasts and floods (M1 Air)": a moving piece is a
+        // moving caster (a kept far cascade refreshed every `refreshFrames`); with its pose in its
+        // identity every flying piece redrew a far cascade every frame. Coming and going still
+        // changes the identities.
+        let a = piece_shadow_tag(4, 0);
+        assert_eq!(a, piece_shadow_tag(4, 0));
+        assert_ne!(a, piece_shadow_tag(4, 1));
+        assert_ne!(a, piece_shadow_tag(5, 0));
     }
 
     /// Every `Kind` indexes `STRIDES` (the arena's formats) with its own format's stride: a kind
@@ -5037,12 +7035,12 @@ mod tests {
     fn every_kind_has_its_own_stride() {
         let ghost = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 3 + 3 + 2 + 4 + 1 + 2)),
+            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 4 + 1 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
-            (Kind::Cutout, 4 * (3 + 3 + 3 + 2 + 4 + 4 + 1 + 1 + 2)),
+            (Kind::Cutout, 4 * (3 + 1 + 1 + 2 + 4 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }
@@ -5071,18 +7069,258 @@ mod tests {
     }
 
     #[test]
+    fn cutout_colours_pack_into_bytes_over_a_scale() {
+        // WORK_QUEUE item 32: a cutout's colour is unorm8x4, rgb over 1 + 3a (tints can pass 1).
+        let unorm = |b: u32| f32::from(b as u8) / 255.0;
+        let decode = |f: f32| {
+            let bits = f.to_bits();
+            let scale = 1.0 + 3.0 * unorm(bits >> 24);
+            [0, 1, 2].map(|a| unorm(bits >> (8 * a)) * scale)
+        };
+        for c in [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.31, 0.62, 0.12],
+            [1.35, 0.9, 0.4],
+            [2.5, 3.9, 0.01],
+            [4.0, 4.0, 4.0],
+        ] {
+            let top = c.iter().fold(0.0f32, |m, v| m.max(*v));
+            let step = top.max(1.0) / 255.0;
+            let got = decode(scaled_rgb(c));
+            for a in 0..3 {
+                assert!(
+                    (got[a] - c[a]).abs() <= 0.5 * step + 1e-5,
+                    "{c:?} channel {a}: {got:?}"
+                );
+            }
+            if top <= 1.0 {
+                assert_eq!(scaled_rgb(c).to_bits() >> 24, 0, "no scale within 0–1");
+            }
+        }
+        // Past the range: capped, not wrapped.
+        let got = decode(scaled_rgb([9.0, 0.5, 0.0]));
+        assert!((got[0] - SCALED_RGB_MAX).abs() < 1e-5 && (got[1] - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn cutout_tiles_and_fades_are_the_same_at_a_triangles_corners() {
+        // both-faces: checks each face's own mesh. `cutout_vs` passes the tile and the plant's fade
+        // to the fragments flat (WORK_QUEUE item 32): every triangle's corners must agree.
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        for (name, at) in [
+            ("dwell:leaves", (3, 3, 3)),
+            ("dwell:leaves", (3, 4, 3)),
+            ("dwell:leaves", (4, 4, 3)),
+            ("dwell:stone[flooded=false]", (6, 1, 6)),
+            ("dwell:tall_grass", (6, 2, 6)),
+        ] {
+            padded[dwell_mesh::padded_index(at.0, at.1, at.2)] = dwell_blocks::require(name);
+        }
+        for mirrored in [false, true] {
+            let m = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .cutout;
+            assert!(!m.indices.is_empty());
+            for t in m.indices.chunks_exact(3) {
+                let first = t[0] as usize;
+                for &k in &t[1..] {
+                    let k = k as usize;
+                    assert_eq!(m.tiles[4 * k..4 * k + 4], m.tiles[4 * first..4 * first + 4]);
+                    assert_eq!(
+                        m.plants[4 * k + 2..4 * k + 4],
+                        m.plants[4 * first + 2..4 * first + 4]
+                    );
+                }
+            }
+        }
+    }
+
+    /// The cutout's packed vertex (WORK_QUEUE item 32, 92 → 64 bytes): the normal's direction
+    /// as snorm bytes, the colour over its scale and the light, flood light and bare flag as unorm
+    /// bytes, each in its float's slot as the pipeline reads them, within one 8-bit step of the
+    /// mesher's values; on both faces' meshes (face B's normals mirrored by the mesher before the
+    /// packing).
+    #[test]
+    fn terrain_and_cutout_vertices_pack_normal_and_light_into_bytes() {
+        // both-faces: compares each face's packed normals with its own mesh's.
+        let leaves = dwell_blocks::require("dwell:leaves");
+        let grass = dwell_blocks::require("dwell:tall_grass");
+        let stone = dwell_blocks::require("dwell:stone[flooded=false]");
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        padded[dwell_mesh::padded_index(3, 3, 3)] = leaves;
+        padded[dwell_mesh::padded_index(3, 4, 3)] = leaves;
+        padded[dwell_mesh::padded_index(6, 1, 6)] = stone;
+        padded[dwell_mesh::padded_index(6, 2, 6)] = grass;
+        for mirrored in [false, true] {
+            let m = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .cutout;
+            let count = m.positions.len() / 3;
+            assert!(count > 0);
+            let stride = (STRIDES[Kind::Cutout as usize] / 4) as usize;
+            let v = textured_vertices(&m, Kind::Cutout);
+            assert_eq!(v.len(), count * stride);
+            let snorm = |b: u32| f32::from(b as u8 as i8) / 127.0;
+            let unorm = |b: u32| f32::from(b as u8) / 255.0;
+            let mut bare = [false; 2];
+            for k in 0..count {
+                let at = &v[k * stride..(k + 1) * stride];
+                assert_eq!(&at[0..3], &m.positions[3 * k..3 * k + 3], "position");
+                let n = &m.normals[3 * k..3 * k + 3];
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                let bits = at[3].to_bits();
+                for (a, c) in n.iter().enumerate() {
+                    let got = snorm(bits >> (8 * a));
+                    assert!((got - c / len).abs() <= 0.5 / 127.0 + 1e-6, "normal {a}");
+                }
+                assert_eq!(bits >> 24, 0, "w");
+                let bits = at[4].to_bits();
+                let scale = 1.0 + 3.0 * unorm(bits >> 24);
+                for (a, c) in m.colors[3 * k..3 * k + 3].iter().enumerate() {
+                    let got = unorm(bits >> (8 * a)) * scale;
+                    assert!((got - c).abs() <= 0.5 / 255.0 * scale + 1e-6, "colour {a}");
+                }
+                assert_eq!(&at[11..15], &m.plants[4 * k..4 * k + 4], "plant");
+                let bits = at[15].to_bits();
+                let want = [
+                    m.light[k].clamp(0.0, 1.0),
+                    m.flood[2 * k],
+                    m.flood[2 * k + 1],
+                ];
+                for (a, w) in want.iter().enumerate() {
+                    assert!(
+                        (unorm(bits >> (8 * a)) - w).abs() <= 0.5 / 255.0 + 1e-6,
+                        "lit {a}"
+                    );
+                }
+                let b = unorm(bits >> 24);
+                assert_eq!(b > 0.5, m.bare[k] > 0.5, "bare");
+                bare[usize::from(b > 0.5)] = true;
+            }
+            assert_eq!(
+                bare,
+                [true, true],
+                "both kinds of cutout (leaves inked, grass bare)"
+            );
+            // The terrain's: the same normal and light bytes, no bare flag, the crack last.
+            let t = dwell_mesh::mesh_chunk(&padded, mirrored)
+                .expect("meshed")
+                .opaque;
+            let stride = (STRIDES[Kind::Terrain as usize] / 4) as usize;
+            let v = textured_vertices(&t, Kind::Terrain);
+            assert_eq!(v.len(), t.positions.len() / 3 * stride);
+            for k in 0..t.positions.len() / 3 {
+                let at = &v[k * stride..(k + 1) * stride];
+                let n = &t.normals[3 * k..3 * k + 3];
+                for (a, c) in n.iter().enumerate() {
+                    let got = snorm(at[3].to_bits() >> (8 * a));
+                    assert!((got - c).abs() <= 0.5 / 127.0 + 1e-6, "terrain normal {a}");
+                }
+                let bits = at[13].to_bits();
+                let want = [
+                    t.light[k].clamp(0.0, 1.0),
+                    t.flood[2 * k],
+                    t.flood[2 * k + 1],
+                    0.0,
+                ];
+                for (a, w) in want.iter().enumerate() {
+                    assert!(
+                        (unorm(bits >> (8 * a)) - w).abs() <= 0.5 / 255.0 + 1e-6,
+                        "terrain lit {a}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A cracked face's overlay (docs/BLOCK_DAMAGE.md §6.3) reaches the terrain buffer bit for
+    /// bit in the vertex's last slot (the pipeline reads it as unorm8x4); a mesh without the stream
+    /// fills it with "none" (0).
+    #[test]
+    fn terrain_vertices_carry_the_crack_bytes() {
+        let stone = dwell_blocks::require("dwell:stone");
+        let mut padded = vec![0u16; dwell_mesh::PADDED_VOLUME];
+        padded[dwell_mesh::padded_index(2, 2, 2)] = stone;
+        let view = dwell_protocol::damage::DamageView {
+            fraction: 255,
+            marks: vec![dwell_protocol::damage::HitMark::at(2, [128, 255, 128])],
+        };
+        let m = dwell_mesh::mesh_chunk_damaged(
+            &padded,
+            &[],
+            false,
+            [0, 0, 0],
+            &[],
+            None,
+            Default::default(),
+            &[([2, 2, 2], view)],
+        )
+        .expect("meshed")
+        .opaque;
+        let stride = (STRIDES[Kind::Terrain as usize] / 4) as usize;
+        let v = textured_vertices(&m, Kind::Terrain);
+        assert_eq!(m.cracks.len(), m.positions.len() / 3);
+        for (k, &c) in m.cracks.iter().enumerate() {
+            assert_ne!(c >> 16 & 0xff, 0, "every face of the cracked cell");
+            assert_eq!(v[k * stride + stride - 1].to_bits(), c);
+        }
+        // A stream short of the vertices (BUGS.md #74) keeps the cracks it has.
+        let mut short = m.clone();
+        short.cracks.truncate(4);
+        let v = textured_vertices(&short, Kind::Terrain);
+        for k in 0..m.cracks.len() {
+            let want = if k < 4 { m.cracks[k] } else { 0 };
+            assert_eq!(v[k * stride + stride - 1].to_bits(), want);
+        }
+        let plain = dwell_mesh::mesh_chunk(&padded, false)
+            .expect("meshed")
+            .opaque;
+        assert!(plain.cracks.is_empty());
+        let v = textured_vertices(&plain, Kind::Terrain);
+        assert!(v.chunks_exact(stride).all(|x| x[stride - 1].to_bits() == 0));
+    }
+
+    #[test]
     fn the_water_uniform_carries_the_eye_fluid_and_the_water_quality() {
-        assert_eq!(water_uniform(None, WaterQuality::Low), [0.0; 4]);
+        let a = FaceFrame::A;
+        let cpu = WaterQuality::cpu();
+        assert_eq!(
+            water_uniform(None, 0.0, a, cpu),
+            [0.0, 0.0, 0.0, cpu.bits()]
+        );
+        let medium = WaterQuality::named("medium").unwrap();
         let e = EyeFluid {
             fluid: 0,
             surface_y: -12.125,
+            under: true,
         };
+        // 2 m under: the whole view under the surface, the cheap path.
         assert_eq!(
-            water_uniform(Some(e), WaterQuality::High),
-            [1.0, 0.0, -12.125, 2.0]
+            water_uniform(Some(e), -14.125, a, medium),
+            [1.0, 0.0, -12.125, medium.bits()]
         );
-        assert_eq!(water_uniform(None, WaterQuality::Medium)[3], 1.0);
+        // w: the tier's switches (bit 0 reads the scene).
+        assert_eq!(water_uniform(None, 0.0, a, medium)[3] as u32 & 1, 1);
     }
+
+    dwell_world::both_faces!(
+        fn the_waterline_splits_the_view_only_near_the_surface(f: FaceFrame) {
+            // Face-local: the surface at 10.875; the eye 2 m under, 5 cm under, 5 cm over it.
+            let surface = f.y(10.875);
+            let e = |under: bool| EyeFluid {
+                fluid: dwell_blocks::fluid("dwell:water").expect("water"),
+                surface_y: surface,
+                under,
+            };
+            let x = |under: bool, eye: f64| {
+                water_uniform(Some(e(under)), f.y(eye), f, WaterQuality::cpu())[0]
+            };
+            assert_eq!(x(true, 8.875), 1.0, "deep: all under");
+            assert_eq!(x(true, 10.825), 2.0, "just under: split per pixel");
+            assert_eq!(x(false, 10.925), 3.0, "just over: split per pixel");
+        }
+    );
 
     #[test]
     fn draw_order_opaque_near_to_far_by_pipeline_then_water_far_to_near_then_lines() {
@@ -5154,17 +7392,129 @@ mod tests {
     }
 
     #[test]
+    fn the_tall_grass_and_far_trees_settings_reach_the_meshers() {
+        // WORK_QUEUE item 30: Graphics → Tall grass and Far trees (red before them: the renderer
+        // had no such switches, every plant and far tree was meshed whatever the settings).
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        // The impostors aren't ready (nothing baked, BUGS.md #106): the sections keep their trees.
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (100, true));
+        r.set_impostors_override(Some(false));
+        assert!(
+            r.draws_far_trees(),
+            "?impostors=0: the sections' tree cells"
+        );
+        r.set_impostors_override(None);
+        r.set_terrain_detail(0.4, false);
+        assert_eq!((r.plant_percent(), r.draws_far_trees()), (40, false));
+        r.set_terrain_detail(f64::NAN, true);
+        assert_eq!(r.plant_percent(), 100);
+        assert_eq!(plant_percent_of(-1.0), 0);
+        assert_eq!(plant_percent_of(3.0), 100);
+    }
+
+    #[test]
+    fn the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready() {
+        // face-a-only: the gate's ready/unready switch, not its face crossing (`impostors::ready`
+        // keys tiles by the eye's face through `FaceFrame::point`).
+        // BUGS.md #106 (red before: with the Far trees tier "on" the frame dropped every leaf past
+        // the hand-over and the LOD sections their trees, though no impostor had been baked or
+        // placed, so every far tree was a bare trunk).
+        use crate::game::Scene;
+        let mut r = noop_renderer();
+        let reach = r.far_tree_reach().expect("the tier draws impostors");
+        assert!(reach > 0.0);
+        let unready = |r: &Renderer| {
+            (
+                r.far_uniform(),
+                impostors::cutout_reach(r.far_drawn()),
+                r.draws_far_trees(),
+            )
+        };
+        assert_eq!(
+            unready(&r),
+            ([0.0; 4], None, true),
+            "no atlas, no instances: the leaves to the full-detail distance, the LOD's trees kept"
+        );
+        assert!(!r.impostor_status().ready);
+        // Every tile about the eye in, with trees, but the atlas not baked: still not ready.
+        let c = dwell_worldgen::impostor::Config::get();
+        let far = r.impostors.as_ref().and_then(|i| i.far).expect("on");
+        let tree = dwell_worldgen::impostor::FarTree {
+            anchor: [0, 100, 0],
+            species: 0,
+            seed: 1,
+            stage: 7,
+            stem: [0, 100, 0],
+            stem_cells: 4,
+        };
+        let local = r.face.point(r.eye);
+        for (i, k) in impostors::tiles_within([local[0], local[2]], impostors::ready_radius(&far)) {
+            r.far_tree_tile((u8::from(r.face.is_b()), i, k), &[tree]);
+        }
+        assert!(unready(&r).2, "instances without the atlas");
+        // The atlas baked (every layer at the atlas's size): now the impostors draw them.
+        let px = r.impostors.as_ref().unwrap().px();
+        let n = c.views.len() as u32;
+        let cols = (n as f32).sqrt().ceil() as u32;
+        let bytes = vec![0u8; (cols * px * n.div_ceil(cols) * px * 4) as usize];
+        for layer in 0..c.layer_count() - 1 {
+            r.impostor_layer(layer, 3.0, 4.0, &bytes, &bytes);
+        }
+        assert!(r.far_drawn().is_none(), "one layer short");
+        // A layer of the wrong size is dropped, and said so.
+        r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes[4..], &bytes[4..]);
+        assert!(r.far_drawn().is_none());
+        assert!(!r.impostor_status().last_error.is_empty());
+        r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes, &bytes);
+        assert_eq!(r.far_drawn(), Some(far));
+        assert_eq!(r.far_uniform()[3], 1.0);
+        assert!(!r.draws_far_trees(), "the impostors draw the far trees");
+        let st = r.impostor_status();
+        assert!(
+            st.ready && st.baked == c.layer_count() && st.instances > 0,
+            "{st:?}"
+        );
+    }
+
+    #[test]
     fn software_adapters_draw_without_multisampling() {
-        assert_eq!(samples_for(wgpu::DeviceType::Cpu), 1);
-        assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu), SAMPLES);
-        assert_eq!(samples_for(wgpu::DeviceType::IntegratedGpu), SAMPLES);
+        assert_eq!(samples_for(wgpu::DeviceType::Cpu, SAMPLES), 1);
+        // The tier table (shared/look/leaves.json `cards.tiers`): a desktop GPU meshes them; a
+        // phone page (owner, 2026-11-11: ~23 fps on an iPhone) and a CPU adapter do not.
+        assert!(!cards_for(wgpu::DeviceType::Cpu, false, None));
+        assert!(!cards_for(wgpu::DeviceType::Cpu, true, None));
+        assert!(cards_for(wgpu::DeviceType::DiscreteGpu, false, None));
+        assert!(cards_for(wgpu::DeviceType::IntegratedGpu, false, None));
+        assert!(!cards_for(wgpu::DeviceType::IntegratedGpu, true, None));
+        // `?cards=` wins over the tier either way.
+        assert!(cards_for(wgpu::DeviceType::IntegratedGpu, true, Some(true)));
+        assert!(!cards_for(
+            wgpu::DeviceType::DiscreteGpu,
+            false,
+            Some(false)
+        ));
+        assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, SAMPLES), SAMPLES);
+        assert_eq!(
+            samples_for(wgpu::DeviceType::IntegratedGpu, SAMPLES),
+            SAMPLES
+        );
     }
 
     #[test]
     fn a_cpu_adapter_draws_no_clouds() {
         // Main's e2e suite (SwiftShader) slowed until two-client and walking tests timed out once
         // the clouds landed (0.11.10): their noise ran per pixel on the CPU.
-        for q in [CloudQuality::Off, CloudQuality::Low, CloudQuality::High] {
+        for q in [ShaftQuality::Off, ShaftQuality::Low, ShaftQuality::High] {
+            assert_eq!(shafts_for(wgpu::DeviceType::Cpu, q), ShaftQuality::Off);
+            assert_eq!(shafts_for(wgpu::DeviceType::DiscreteGpu, q), q);
+        }
+        for q in [
+            CloudQuality::Off,
+            CloudQuality::Low,
+            CloudQuality::Medium,
+            CloudQuality::High,
+        ] {
             assert_eq!(clouds_for(wgpu::DeviceType::Cpu, q), CloudQuality::Off);
             assert_eq!(clouds_for(wgpu::DeviceType::DiscreteGpu, q), q);
             assert_eq!(clouds_for(wgpu::DeviceType::IntegratedGpu, q), q);
@@ -5177,7 +7527,7 @@ mod tests {
         // The clouds' second vec4 (`cloud_cfg`: coverage, octaves, …) follows `clouds`, after tan.
         // (Then the clouds' third, the other deck's two, the water's, the wind's six, the wrap and
         // the reflections' two.)
-        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 4 - 8 - 4 - 4;
+        let cfg = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 6 * 4 - 4 - 8 - 4 - 4;
         assert_eq!(u[cfg + 1], 0.0, "no octaves on a CPU adapter");
         r.set_adapter(wgpu::DeviceType::DiscreteGpu);
         let u = r.frame_uniforms(&aim(0.0, 0.0, FaceFrame::A, 0.0), 1.0, 100.0);
@@ -5189,7 +7539,7 @@ mod tests {
         // CI's SwiftShader: with clouds off the two-client and friend-world tests still timed out
         // on slower runners; every per-pixel cost there is the main thread's time.
         let mut r = noop_renderer();
-        r.set_water_quality(WaterQuality::High);
+        r.set_water_quality(WaterQuality::default());
         r.set_wind(WindView {
             intensity: 1.0,
             flight: 1.0,
@@ -5197,17 +7547,39 @@ mod tests {
             time: 1.0,
         });
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
-        // After the water's vec4 (w: the quality) come the wind's six (the last's x: the blur),
+        // After the water's vec4 (w: the tier's switches) come the wind's six (the last's x: the blur),
         // the wrapped eye, the reflections' two and the day sky.
-        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 6 * 4 - 1;
-        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - 8 - 4 - 4;
+        let water_w = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 6 * 4 - 1;
+        let blur = FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8 - 4 - 4;
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
-        assert_eq!(u[water_w], 2.0, "the setting's water on a GPU");
+        assert_eq!(
+            u[water_w],
+            WaterQuality::default().bits(),
+            "the setting's water on a GPU"
+        );
         assert!(u[blur] > 0.0, "the edge blur on a GPU");
         r.set_adapter(wgpu::DeviceType::Cpu);
         let u = r.frame_uniforms(&basis, 1.0, 100.0);
-        assert_eq!(u[water_w], 0.0, "Low water on a CPU adapter");
+        assert_eq!(
+            u[water_w],
+            WaterQuality::cpu().bits(),
+            "the opaque tier on a CPU adapter"
+        );
+        assert_eq!(u[water_w] as u32 & 1, 0, "no scene copy read there");
         assert_eq!(u[blur], 0.0, "no edge blur on a CPU adapter");
+    }
+
+    #[test]
+    fn a_cpu_adapter_lights_the_moon_by_its_albedo_alone() {
+        assert!(!super::moon_normals_for(wgpu::DeviceType::Cpu));
+        for t in [
+            wgpu::DeviceType::DiscreteGpu,
+            wgpu::DeviceType::IntegratedGpu,
+            wgpu::DeviceType::VirtualGpu,
+            wgpu::DeviceType::Other,
+        ] {
+            assert!(super::moon_normals_for(t), "{t:?}");
+        }
     }
 
     #[test]
@@ -5234,14 +7606,20 @@ mod tests {
             pixel_ratio_for(wgpu::DeviceType::Cpu, 2.0),
             2.0 * CPU_RESOLUTION
         );
-        assert_eq!(
-            water_for(wgpu::DeviceType::Cpu, WaterQuality::High),
-            WaterQuality::Low
+        // The opaque tier is the CPU adapter's only (owner, 2026-11-07): every chosen tier,
+        // Low included, draws it there; a GPU draws what was chosen.
+        for name in ["low", "medium", "high"] {
+            let q = WaterQuality::named(name).unwrap();
+            assert_eq!(water_for(wgpu::DeviceType::Cpu, q), WaterQuality::cpu());
+            assert!(!water_for(wgpu::DeviceType::Cpu, q).reads_scene());
+            assert_eq!(water_for(wgpu::DeviceType::IntegratedGpu, q), q);
+        }
+        // Low draws no scene copy on a GPU either (no pass split), but the caustic tile.
+        let low = water_for(
+            wgpu::DeviceType::IntegratedGpu,
+            WaterQuality::named("low").unwrap(),
         );
-        assert_eq!(
-            water_for(wgpu::DeviceType::IntegratedGpu, WaterQuality::Medium),
-            WaterQuality::Medium
-        );
+        assert!(!low.reads_scene() && low.draws_caustics());
     }
 
     #[test]
@@ -5254,6 +7632,62 @@ mod tests {
         assert_eq!(out.len(), 4);
         assert!((186..=190).contains(&out[0]), "{}", out[0]);
         assert_eq!(out[3], 255);
+    }
+
+    #[test]
+    fn mipmaps_from_the_linear_table_match_the_curve_exactly() {
+        // The table is the start's shortcut, not a new look: every mip of the real atlas comes
+        // out byte for byte as it did with `srgb_to_linear` per channel.
+        let table = srgb_linear_table();
+        for b in 0..=255u8 {
+            assert_eq!(
+                table[usize::from(b)].to_bits(),
+                srgb_to_linear(f64::from(b) / 255.0).to_bits()
+            );
+        }
+        let reference = |src: &[u8], size: usize| -> Vec<u8> {
+            let half = (size / 2).max(1);
+            let to_srgb = |l: f64| {
+                let s = if l <= 0.0031308 {
+                    l * 12.92
+                } else {
+                    1.055 * l.powf(1.0 / 2.4) - 0.055
+                };
+                (s * 255.0).round().clamp(0.0, 255.0) as u8
+            };
+            let mut out = vec![0u8; half * half * 4];
+            for y in 0..half {
+                for x in 0..half {
+                    for c in 0..4 {
+                        let at = |dx: usize, dy: usize| {
+                            src[((2 * y + dy).min(size - 1) * size + (2 * x + dx).min(size - 1))
+                                * 4
+                                + c]
+                        };
+                        let px = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                        out[(y * half + x) * 4 + c] = if c == 3 {
+                            (px.iter().map(|&p| u32::from(p)).sum::<u32>() / 4) as u8
+                        } else {
+                            to_srgb(
+                                px.iter()
+                                    .map(|&p| srgb_to_linear(f64::from(p) / 255.0))
+                                    .sum::<f64>()
+                                    / 4.0,
+                            )
+                        };
+                    }
+                }
+            }
+            out
+        };
+        let mut level = dwell_mesh::build_atlas();
+        let mut size = dwell_mesh::ATLAS_SIZE;
+        while size > 1 {
+            let next = downsample(&level, size);
+            assert!(next == reference(&level, size), "mip {size} differs");
+            level = next;
+            size /= 2;
+        }
     }
 
     #[test]
@@ -5377,6 +7811,121 @@ mod tests {
         // Behind the eye, or too far aside to be in the view at all: neither.
         assert!(!view.holds([0.0, 0.0, -100.0], 32.0, NEAR_PLANE, NEAR_SPLIT));
         assert!(!view.holds([5000.0, 0.0, 500.0], 32.0, NEAR_PLANE, NEAR_SPLIT));
+    }
+
+    #[test]
+    fn the_flames_mask_leaves_the_blast_puffs_out() {
+        // With see-through water the flames' mask draws before the water; the puffs never flag
+        // the view depth, so drawing them there only rasterised hundreds of big quads to discard
+        // (eight charges by a river, docs/DEV_TOOLS.md "Worst-case blasts (M1 Air)").
+        let mut r = noop_renderer();
+        let basis = camera::Basis {
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            back: [0.0, 0.0, 1.0],
+        };
+        let puff = crate::blasts::Puff {
+            at: [0.0, 0.0, -5.0],
+            size: 1.0,
+            alpha: 0.5,
+            kind: crate::blasts::PuffKind::Smoke,
+            explosive: 0,
+            seed: 1,
+        };
+        let device = r.device.clone();
+        let queue = r.queue.clone();
+        r.flames.prepare(
+            &device,
+            &queue,
+            &basis,
+            &[],
+            None,
+            &[],
+            &[],
+            &[],
+            &[puff; 40],
+            [0.0; 3],
+            0.0,
+        );
+        assert_eq!(r.flames.puffs_drawn, 40);
+        assert!(
+            r.flames.has(flames::Group::Scene),
+            "the puffs draw in the colour"
+        );
+        assert!(
+            r.flames.mask_range(flames::Group::Scene).is_empty(),
+            "and not in the mask"
+        );
+    }
+
+    /// Bug #71: a renderer compiles almost no pipeline up front (each one held the page's paints
+    /// while the GPU process compiled it, ~9 s in all on a cold cache); they are made on first use
+    /// or by the warm-up a few a frame, and the warm-up builds what a frame draws.
+    #[test]
+    fn a_renderer_makes_its_pipelines_lazily_and_warms_them_in_batches() {
+        let before = pipeline::created();
+        let mut r = noop_renderer();
+        let up_front = pipeline::created() - before;
+        // The water tiles' two (their noise is drawn once, at the start) are the only ones.
+        assert!(up_front <= 2, "{up_front} pipelines made up front");
+        let mut steps = 0;
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+            steps += 1;
+            let warmed = pipeline::created() - before - up_front;
+            assert!(
+                warmed <= steps * pipeline::Warmup::PER_FRAME,
+                "{warmed} by step {steps}"
+            );
+            assert!(steps < 200, "the warm-up ends");
+        }
+        let warmed = pipeline::created() - before;
+        assert!(steps >= 2, "in batches: {steps} steps for {warmed}");
+        draws_cleanly(r);
+    }
+
+    /// A tier that is off is not warmed: its pipeline is made when it is switched on and drawn.
+    #[test]
+    fn a_tier_switched_off_is_not_warmed_and_is_made_on_first_use() {
+        let mut r = noop_renderer();
+        r.set_shafts(ShaftQuality::Off);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(!r.shafts_pipeline.built(), "light shafts are off");
+        assert!(r.composite_pipeline.built(), "the composite is warmed");
+        r.set_shafts(ShaftQuality::High);
+        let before = pipeline::created();
+        let _ = &*r.shafts_pipeline;
+        assert!(r.shafts_pipeline.built());
+        assert_eq!(pipeline::created() - before, 1, "made once, on first use");
+        draws_cleanly(r);
+    }
+
+    /// Bloom off (WORK_QUEUE item 19: Low, the phone tier, a CPU adapter) builds none of its
+    /// pipelines; switched on, the warm-up takes its three and a frame draws its chain.
+    #[test]
+    fn bloom_off_builds_no_pipeline_and_on_draws_its_chain() {
+        use dwell_look::bloom::BloomQuality;
+        let mut r = noop_renderer();
+        r.set_bloom(BloomQuality::Off);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(
+            r.bloom_pipelines.all().iter().all(|p| !p.built()),
+            "bloom is off"
+        );
+        let warm_off = r.warm_set().len();
+        r.set_bloom(BloomQuality::High);
+        if r.bloom_tier().is_some() {
+            assert_eq!(
+                r.warm_set().len() - warm_off,
+                3,
+                "the warm-up takes its three"
+            );
+        }
+        draws_cleanly(r);
     }
 
     fn noop_renderer() -> Renderer {
@@ -5538,6 +8087,132 @@ mod tests {
     }
 
     #[test]
+    fn frames_draw_cleanly_with_fxaa_and_anisotropy() {
+        // The FXAA input picture and its pass onto the canvas, or onto the upscale's picture; the
+        // atlas sampler made again with anisotropy (every filter linear, or WebGPU refuses it).
+        for (samples, upscaled) in [(4, false), (1, false), (4, true)] {
+            let mut r = noop_renderer_with(samples, wgpu::Features::TIMESTAMP_QUERY);
+            r.resize(64, 64, 1.0);
+            if upscaled {
+                r.set_upscale(
+                    upscale::Upscaler::Sharpen,
+                    (40, 40),
+                    upscale::sharpness(0.25),
+                );
+            }
+            r.set_antialias(true, 16);
+            assert!(r.fxaa());
+            assert_eq!(r.anisotropy(), 16);
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn a_cpu_adapter_draws_no_fxaa_and_no_anisotropy() {
+        let mut r = noop_renderer_with(1, wgpu::Features::empty());
+        r.set_antialias(true, 16);
+        r.set_adapter(wgpu::DeviceType::Cpu);
+        assert!(!r.fxaa());
+        assert_eq!(r.anisotropy(), 1);
+        assert_eq!(samples_for(wgpu::DeviceType::Cpu, 4), 1);
+        assert!(!fxaa_for(wgpu::DeviceType::Cpu, true));
+        assert_eq!(anisotropy_for(wgpu::DeviceType::Cpu, 8), 1);
+    }
+
+    #[test]
+    fn the_atlas_sampler_follows_the_anisotropy() {
+        // Off: today's crisp sampler (nearest up close, filtered between mips).
+        let off = atlas_sampler_descriptor(1);
+        assert_eq!(off.anisotropy_clamp, 1);
+        assert_eq!(off.mag_filter, wgpu::FilterMode::Nearest);
+        assert_eq!(off.min_filter, wgpu::FilterMode::Linear);
+        assert_eq!(off.mipmap_filter, wgpu::MipmapFilterMode::Linear);
+        // On: every filter linear (WebGPU's rule for maxAnisotropy > 1), clamped to 16.
+        for (asked, want) in [(2, 2), (8, 8), (16, 16), (64, 16), (0, 1)] {
+            let d = atlas_sampler_descriptor(asked);
+            assert_eq!(d.anisotropy_clamp, want, "{asked}");
+            if d.anisotropy_clamp > 1 {
+                assert_eq!(d.mag_filter, wgpu::FilterMode::Linear);
+                assert_eq!(d.min_filter, wgpu::FilterMode::Linear);
+                assert_eq!(d.mipmap_filter, wgpu::MipmapFilterMode::Linear);
+            } else {
+                assert_eq!(d.mag_filter, wgpu::FilterMode::Nearest, "1 keeps nearest");
+            }
+        }
+        assert_eq!(
+            anisotropy_for(wgpu::DeviceType::DiscreteGpu, 64),
+            MAX_ANISOTROPY
+        );
+        assert_eq!(anisotropy_for(wgpu::DeviceType::IntegratedGpu, 0), 1);
+    }
+
+    #[test]
+    fn the_antialias_modes_map_to_webgpu_sample_counts() {
+        // shared/render/antialias.json: each mode's samples is one WebGPU allows (1 or 4), and on
+        // a GPU the renderer draws exactly that; the default is today's (4×, no FXAA).
+        let data: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../shared/render/antialias.json"))
+                .expect("antialias.json parses");
+        let modes = data["modes"].as_array().expect("modes");
+        assert!(!modes.is_empty());
+        for m in modes {
+            let samples = m["samples"].as_u64().expect("samples") as u32;
+            assert!(samples == 1 || samples == 4, "{m}: WebGPU allows 1 or 4");
+            assert_eq!(samples_for(wgpu::DeviceType::DiscreteGpu, samples), samples);
+            assert_eq!(samples_for(wgpu::DeviceType::Cpu, samples), 1);
+            let fxaa = m["fxaa"].as_bool().expect("fxaa");
+            assert_eq!(fxaa_for(wgpu::DeviceType::IntegratedGpu, fxaa), fxaa);
+        }
+        let default = data["default"]["mode"].as_str().expect("default mode");
+        let d = modes
+            .iter()
+            .find(|m| m["id"] == default)
+            .expect("default is a mode");
+        assert_eq!(
+            (d["samples"].as_u64(), d["fxaa"].as_bool()),
+            (Some(4), Some(false))
+        );
+        for a in data["anisotropy"].as_array().expect("anisotropy") {
+            let v = a["value"].as_u64().expect("value") as u16;
+            assert_eq!(
+                anisotropy_for(wgpu::DeviceType::DiscreteGpu, v),
+                v,
+                "{a}: in [1, 16]"
+            );
+        }
+    }
+
+    #[test]
+    fn frames_draw_cleanly_with_an_upscale_pass() {
+        // The low-res scene, EASU into the full-size picture and RCAS onto the canvas (or the
+        // bilinear pass), timed, across resizes.
+        for kind in [upscale::Upscaler::Sharpen, upscale::Upscaler::StretchPass] {
+            let mut r = noop_renderer_with(4, wgpu::Features::TIMESTAMP_QUERY);
+            r.resize(64, 64, 1.0);
+            r.set_upscale(kind, (40, 40), upscale::sharpness(0.25));
+            draws_cleanly(r);
+        }
+    }
+
+    #[test]
+    fn an_upscale_pass_draws_the_scene_at_the_render_size() {
+        let mut r = noop_renderer_with(1, wgpu::Features::empty());
+        r.resize(2560, 1600, 2.0);
+        assert_eq!(r.size, (2560, 1600), "off by default");
+        r.set_upscale(upscale::Upscaler::Sharpen, (1280, 800), 1.0);
+        assert_eq!((r.size, r.canvas_size()), ((1280, 800), (2560, 1600)));
+        assert!(
+            (r.pixel_ratio - 1.0).abs() < 1e-12,
+            "half the pixels per CSS pixel"
+        );
+        // The browser's stretch: the canvas itself is smaller, no pass.
+        r.resize(1280, 800, 1.0);
+        r.set_upscale(upscale::Upscaler::Stretch, (1280, 800), 1.0);
+        assert_eq!(r.size, (1280, 800));
+        assert!(r.upscale_size().is_none());
+    }
+
+    #[test]
     fn the_pixel_art_preview_draws_a_low_res_frame_and_is_off_by_default() {
         use dwell_look::pixel_art::{LIGHT_FLOATS, grid};
         let mut r = noop_renderer();
@@ -5648,22 +8323,10 @@ mod tests {
         // Characters: a body holding the brush, one on face B holding a block, a dead one, and
         // your arms (their own pass).
         let grass = dwell_blocks::require("dwell:grass");
-        for (id, feet, face, dead, held) in [
-            (
-                1,
-                [16.0, 1.0, 20.0],
-                FaceFrame::A,
-                false,
-                Held::Brush(grass),
-            ),
-            (
-                2,
-                [18.0, -3.0, 20.0],
-                FaceFrame::B,
-                false,
-                Held::Block(grass),
-            ),
-            (3, [14.0, 1.0, 20.0], FaceFrame::A, true, Held::Empty),
+        for (id, feet, face, held) in [
+            (1, [16.0, 1.0, 20.0], FaceFrame::A, Held::Brush(grass)),
+            (2, [18.0, -3.0, 20.0], FaceFrame::B, Held::Block(grass)),
+            (3, [14.0, 1.0, 20.0], FaceFrame::A, Held::Empty),
         ] {
             r.set_player(
                 id,
@@ -5671,7 +8334,6 @@ mod tests {
                     feet,
                     face,
                     yaw: 30.0,
-                    dead,
                     look: dwell_characters::DEFAULT_LOOK,
                     pose: Default::default(),
                     role: "idle",
@@ -5700,6 +8362,7 @@ mod tests {
             r.set_eye_fluid((frame % 2 == 1).then_some(EyeFluid {
                 fluid: 0,
                 surface_y: 5.0,
+                under: true,
             }));
             r.set_water_quality(water::WaterQuality::from_level(frame as u32));
             for x in 0..=frame {
@@ -5766,7 +8429,7 @@ mod tests {
         assert!((f64::from(u[5]) - f).abs() < 1e-5, "projection's y scale");
         // `tan` is the vec4 before the clouds' three, the other deck's two, the water's, the wind's
         // six, the wrap and the reflections' two (then the day's block).
-        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - 15 * 4 - 3]);
+        let tan_y = f64::from(u[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 15 * 4 - 3]);
         assert!((tan_y - 1.0 / f).abs() < 1e-5, "the sky's rays");
         // The culling's corner stretch widens with the view.
         let aspect = 16.0 / 9.0;
@@ -5776,13 +8439,59 @@ mod tests {
     }
 
     #[test]
+    fn the_volume_clouds_buffer_takes_the_tiers_divisor() {
+        // docs/CLOUDS.md §8.6: the march runs at the tier's reduced size, rounded up.
+        let tier = |divisor| dwell_look::clouds::VolumeTier {
+            steps: 16,
+            light_steps: 1,
+            divisor,
+            history_blend: 0.2,
+            plume_steps: 8,
+            near_steps: 24,
+            near_divisor: 1,
+        };
+        assert_eq!(cloud_buffer_size((1280, 720), Some(tier(2))), (640, 360));
+        assert_eq!(cloud_buffer_size((1281, 721), Some(tier(4))), (321, 181));
+        assert_eq!(cloud_buffer_size((1280, 720), None), (1, 1));
+        // The shipped tiers: High at half size, Medium at a quarter, Low none (the deck).
+        let at = |q: CloudQuality| q.volume(&CLOUDS);
+        assert_eq!(at(CloudQuality::High).divisor, 2);
+        assert_eq!(at(CloudQuality::Medium).divisor, 4);
+        assert_eq!(at(CloudQuality::Low).steps, 0);
+        assert!(at(CloudQuality::Medium).steps < at(CloudQuality::High).steps);
+    }
+
+    #[test]
+    fn the_clouds_history_starts_over_without_a_last_frame_or_after_a_jump() {
+        let view = [[1.0, 0.0, 0.0, 0.0]; 4];
+        let then = [[0.0, 1.0, 0.0, 0.0]; 4];
+        // The first frame: this frame's camera and the new frame only.
+        let first = cloud_prev_block(None, view, [0.0; 3], 0.2, 7);
+        assert_eq!(first[0], view[0]);
+        assert_eq!(first[4], [1.0, 7.0, 0.0, 0.0]);
+        // A small move: the last frame's camera and the tier's blend, with the move.
+        let next = cloud_prev_block(Some((then, [0.0; 3])), view, [3.0, 4.0, 0.0], 0.2, 8);
+        assert_eq!(next[0], then[0]);
+        assert_eq!(next[4], [0.2, 8.0, 5.0, 0.0]);
+        // A jump (a teleport): the history is dropped.
+        let jump = cloud_prev_block(
+            Some((then, [0.0; 3])),
+            view,
+            [CLOUD_HISTORY_JUMP_M + 1.0, 0.0, 0.0],
+            0.2,
+            9,
+        );
+        assert_eq!(jump[4][0], 1.0);
+    }
+
+    #[test]
     fn the_wind_reaches_the_composite_through_the_frame_block() {
         let mut r = noop_renderer();
         r.resize(1600, 900, 2.0);
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let wind = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 36..FRAME_FLOATS - DAY_SKY_FLOATS - 12]
+            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 36
+                ..FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 12]
                 .to_vec()
         };
         assert_eq!(wind(&r)[2], 0.0, "no wind: intensity 0");
@@ -5852,35 +8561,50 @@ mod tests {
         r.resize(1280, 720, 1.0);
         let basis = aim(0.0, 0.0, FaceFrame::A, 0.0);
         let refl = |r: &Renderer| {
-            r.frame_uniforms(&basis, 1.0, 100.0)
-                [FRAME_FLOATS - DAY_SKY_FLOATS - 8..FRAME_FLOATS - DAY_SKY_FLOATS]
+            r.frame_uniforms(&basis, 1.0, 100.0)[FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS - 8
+                ..FRAME_FLOATS - DAY_SKY_FLOATS - LEAN_FLOATS]
                 .to_vec()
         };
-        r.set_water_quality(WaterQuality::Low);
-        let low = refl(&r);
-        assert_eq!((low[0], low[4]), (0.0, 0.0), "Low: the sky alone");
-        r.set_water_quality(WaterQuality::Medium);
+        r.set_water_quality(WaterQuality::cpu());
+        let opaque = refl(&r);
+        assert_eq!(
+            (opaque[0], opaque[4]),
+            (0.0, 0.0),
+            "the CPU's tier: the sky alone"
+        );
+        let low = WaterQuality::named("low").unwrap();
+        r.set_water_quality(low);
+        assert_eq!(
+            refl(&r)[0],
+            0.0,
+            "Low marches no land (the bank band instead)"
+        );
+        let medium = WaterQuality::named("medium").unwrap();
+        r.set_water_quality(medium);
         let m = refl(&r);
-        assert_eq!(m[0], REFLECTIONS.tier(1).ssr_steps as f32);
-        assert!(m[4] > 0.0, "Medium reflects clouds");
-        r.set_water_quality(WaterQuality::High);
-        assert_eq!(refl(&r)[0], REFLECTIONS.tier(2).ssr_steps as f32);
+        assert_eq!(m[0], REFLECTIONS.tier(medium.index()).ssr_steps as f32);
+        assert!(m[0] > 0.0 && m[4] > 0.0, "Medium reflects land and clouds");
         r.set_clouds(CloudQuality::Off);
         assert_eq!(refl(&r)[4], 0.0, "no clouds in the sky, none reflected");
     }
 
     #[test]
     fn the_frame_block_matches_the_shader_struct() {
-        // mat4x4f + the vec4fs + the `DaySky` block in `Frame`.
-        let fields = shaders::source(1)
+        // mat4x4f + the vec4fs (an `array<vec4f, N>` is N of them) + the `DaySky` block in `Frame`.
+        let src = shaders::source(1);
+        let body = src
             .split("struct Frame {")
             .nth(1)
             .unwrap()
             .split("};")
             .next()
-            .unwrap()
-            .matches("vec4f,")
-            .count();
+            .unwrap();
+        let arrays: usize = body
+            .split("array<vec4f, ")
+            .skip(1)
+            .map(|s| s.split('>').next().unwrap().parse::<usize>().unwrap())
+            .sum();
+        let fields = body.matches(": vec4f,").count() + arrays;
         assert_eq!(16 + 4 * fields + DAY_SKY_FLOATS, FRAME_FLOATS);
     }
 }

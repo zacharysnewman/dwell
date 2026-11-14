@@ -239,10 +239,11 @@ pub fn land_share(fresnel: f32, min: f32) -> f32 {
 /// uniform's `reflect` and `reflect_sky`).
 pub fn wgsl() -> String {
     format!(
-        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\nconst SSR_MIN_REFLECTANCE: f32 = {:?};\n",
+        "const SSR_THICKNESS_REL: f32 = {:?};\nconst SSR_RIPPLE: f32 = {:?};\nconst SSR_MIN_REFLECTANCE: f32 = {:?};\n{}",
         dwell_look::reflections::REFLECTIONS.ssr.thickness_rel as f32,
         dwell_look::reflections::REFLECTIONS.ssr.ripple_scale as f32,
-        dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32
+        dwell_look::reflections::REFLECTIONS.ssr.min_reflectance as f32,
+        super::glitter::wgsl()
     )
 }
 
@@ -448,9 +449,11 @@ mod tests {
     #[test]
     fn far_mountains_are_reflected_and_near_banks_still_are() {
         // The owner (2026-10-26): tall mountains farther away didn't show in the water. A range
-        // 12 km off, 1.5 km tall, seen over the water 200 m ahead: Medium and High reflect it.
+        // 12 km off, 1.5 km tall, seen over the water 200 m ahead: every tier that marches (Medium) reflects it.
         let v = view(0.12);
-        for level in [1, 2] {
+        for level in
+            (0..dwell_look::water_tiers::WATER_TIERS.len()).filter(|&l| tier_ssr(l).steps > 0)
+        {
             let ssr = tier_ssr(level);
             let far = lake(v, 12_000.0, 1_500.0);
             let (p, r) = surface(&v, 200.0);

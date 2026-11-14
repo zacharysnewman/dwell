@@ -79,6 +79,12 @@ export class LocalCore {
     upgrade = false,
     waterWorker = false,
     jobsWorker = false,
+    mode?: string,
+    growth?: number,
+    chop2 = false,
+    radiusScale?: number,
+    sky?: string,
+    spawnGrid?: string,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -93,6 +99,12 @@ export class LocalCore {
         upgrade,
         waterWorker,
         jobsWorker,
+        mode,
+        growth,
+        chop2,
+        radiusScale,
+        sky,
+        spawnGrid,
       ),
     );
     core.memory = exports.memory ?? null;
@@ -115,6 +127,29 @@ export class LocalCore {
   datagram(session: number, bytes: Uint8Array): void {
     this.world.datagram(session, bytes);
   }
+  /** The host switches the world's game mode by name (ADR 0065); false for an unknown one. */
+  setMode(name: string): boolean {
+    return this.world.setMode(name);
+  }
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7). */
+  setTheaterGuests(on: boolean): void {
+    this.world.setTheaterGuests(on);
+  }
+  /** Whether guests may use theater mode in this world. */
+  get theaterGuests(): boolean {
+    return this.world.theaterGuests;
+  }
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7); faces A's and
+   * B's new maps. Throws the refusal's message.
+   */
+  retuneWorldgen(worldgen: string, radius: number): Uint8Array[] {
+    return this.world.retuneWorldgen(worldgen, radius) as Uint8Array[];
+  }
+  /** The world's game mode's name. */
+  get mode(): string {
+    return this.world.mode;
+  }
   host(maxPlayers: number, edits: HostPolicy, flight: HostPolicy, hostKey: Uint8Array): void {
     this.world.host(maxPlayers, edits, flight, hostKey);
   }
@@ -126,6 +161,14 @@ export class LocalCore {
   }
   kill(): void {
     this.world.kill();
+  }
+  /** Gives the local player items (the bench's `give` step). */
+  give(item: string, count: number): void {
+    this.world.give(item, count);
+  }
+  /** Carries the local player on a moving raft (the bench's `carry` step). */
+  carry(speed: number, yaw: number, seconds: number, lift: number): boolean {
+    return this.world.carry(speed, yaw, seconds, lift);
   }
   /**
    * The water near a cell (JSON, `Water::report`): a diagnostic for the block dump; undefined
@@ -148,6 +191,10 @@ export class LocalCore {
   ): string {
     return this.world.findOnMap(kind, at[0], at[1], at[2], radius, face, minDepth);
   }
+  /** The lava's dev tools (JSON; local.rs `lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate, depth]. */
+  lavaDev(op: string, args: number[]): string {
+    return this.world.lavaDev(op, new Float64Array(args));
+  }
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {
     return this.world.takeWaterReport();
@@ -158,6 +205,10 @@ export class LocalCore {
   }
   get worldSeed(): bigint {
     return this.world.worldSeed;
+  }
+  /** The world's size's radius scale (a saved world's own; 1 today's), for the server-jobs worker. */
+  get radiusScale(): number {
+    return this.world.radiusScale;
   }
   /** The next job for the server-jobs worker (a chunk to generate, a LOD section). */
   takeJob(): Uint8Array | undefined {
@@ -225,6 +276,10 @@ export class LocalCore {
   /** Advances real time; steps the fixed 60 Hz simulation as far as it reaches. */
   advance(elapsedSeconds: number): number {
     return this.world.advance(elapsedSeconds);
+  }
+  /** Steps exactly `ticks` server ticks (a cinematic take; local.rs `step_ticks`). */
+  stepTicks(ticks: number): number {
+    return this.world.stepTicks(ticks);
   }
 
   /** What the server sends, oldest first (local.rs `encode_outbox`). */

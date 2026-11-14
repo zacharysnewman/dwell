@@ -2,6 +2,7 @@
 // which build each address opens, that worlds open in their own line, and the menu's version
 // badges. Run with `npm run e2e:site` (playwright.site.config.ts).
 import { expect, test, type Page } from '@playwright/test';
+import { openMenuPage } from './menuNav';
 
 const CERT = 'ab'.repeat(32);
 
@@ -41,6 +42,7 @@ test('the launcher is the main menu, for the latest stable build', async ({ page
   await expect(page.locator('#app-version')).toContainText('Dwell 0.2.0 (stable)');
   // A new world is made by the latest build, which then plays it; ?debug=1 is kept.
   await page.goto('./?debug=1');
+  await openMenuPage(page, 'new-world');
   await page.locator('#world-name').fill('Fresh');
   await page.locator('#create-world button[type=submit]').click();
   await expect.poll(() => versionOf(page)).toBe('0.2.0');
@@ -83,6 +85,7 @@ test("the latest menu lists every line's worlds with version badges, and plays t
   ]);
   await openLauncher(page);
   await expect(page.locator('#app-version')).toContainText('Dwell 0.2.0');
+  await openMenuPage(page, 'worlds');
   const item = (name: string) => page.locator('#world-list .world-item', { hasText: name });
   await expect(item('Old line')).toContainText('v0.1.0');
   await expect(item('New line')).toContainText('v0.2.0');
@@ -133,7 +136,8 @@ test('the menu links to the version page, and a chosen older build still returns
   await seedWorlds(page, [world('wold0000001', 'Old line', '0.1.0')]);
   await openLauncher(page);
   await expect(page.locator('#app-version')).toContainText('Dwell 0.2.0');
-  // Versions is a card of its own in the menu (owner, 2026-10-28), not a footer link.
+  // Versions is a page of its own in the menu (owner, 2026-10-28), not a footer link.
+  await openMenuPage(page, 'versions');
   await expect(page.locator('#versions-card')).toContainText('Dwell 0.2.0');
   await expect(page.locator('#about #versions-link')).toHaveCount(0);
   await page.locator('#versions-card #versions-link').click();
@@ -151,8 +155,8 @@ test('the menu links to the version page, and a chosen older build still returns
   // Playing the older build pins the menu to it for this visit: a new world is that build's...
   await row('0.1.0').locator('.version-open').click();
   await expect(page.locator('#app-version')).toContainText('Dwell 0.1.0');
-  // A world is listed, so the New world form starts closed.
-  await page.locator('#new-world').click();
+  // New world is a page of its own, opened from Worlds.
+  await openMenuPage(page, 'new-world');
   await page.locator('#world-name').fill('Pinned');
   await page.locator('#create-world button[type=submit]').click();
   await expect.poll(() => versionOf(page)).toBe('0.1.0');

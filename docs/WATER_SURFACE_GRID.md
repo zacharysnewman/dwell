@@ -4,6 +4,10 @@ Status: design for Phase 53, [ADR 0060](./adr/0060-water-surface-grid.md) (accep
 planned, nothing built in the game yet. Evidence: [`WATER_MODEL_EVALUATION.md`](./proposals/WATER_MODEL_EVALUATION.md)
 §5 (the lab, the native benchmark on the game's terrain).
 
+Lava is not on this grid: it has its own small surface grid with the same near/far scheduling
+(`crates/dwell-lava`, ARCHITECTURE.md §6.8, VOLCANOES.md §6), meeting the water through its water
+flag and steam events.
+
 ## 1. The owner's answers (2026-11-05)
 
 | Question | Answer |
@@ -164,7 +168,10 @@ now, or later allow a few stacked water layers in the columns that have overhang
   water's less the rest's by the column's share, as its account counts it; `kept`) and its free
   columns' whole balance (`drift`). Asleep it owes its drift, and across each edge toward an awake
   chunk only how far the flow there drifts from what it kept; between two sleepers nothing is
-  owed (each keeps its side, so the accounts agree). A steady river runs through sleeping chunks
+  owed (each keeps its side, so the accounts agree). A chunk falling asleep beside a sleeper keeps
+  that sleeper's flow for their shared edge, not its own (0.49.52, BUGS.md #48): two chunks that fell
+  asleep at different moments of a swing would otherwise keep different flows over one edge and make
+  or lose water between them (+1.07 m³ in 900 s of a stirred 3.5 m basin; now within 1 L). A steady river runs through sleeping chunks
   owing nothing. Two rules keep a draining bed from sleeping wet: a film out of the rest (under
   the sleep band deep) that fell at all in its calm window (`FILM_FALL`, 0.1 mm) is not calm, and a
   sleeper owing half the free water it has (and having more than 0.01 m³) wakes to pay it.
@@ -223,7 +230,15 @@ The owner approved these recommendations (2026-11-05):
   Manning's law gives the column's depth on the river's fall (its segment's, or its course's mean over
   `riverFallReachM`, 256 m, up and down stream where steeper; below) with the liquid's roughness (the grid's
   own law), or at its flow over the column's depth (`river_flow / depth`) where that is faster, at most
-  `riverCurrentMaxMs` (1.5 m/s: a steep chute's would be a torrent, and a swimmer at 3 m/s still makes headway); a lake is still.
+  times `riverCurrentScale`, at most `riverCurrentMaxMs` (a steep chute's would be a torrent); a lake is still.
+  **Doubled** (0.50.50; owner, 2026-11-09: "double the river current speeds generally"): the scale is 2
+  and the cap 3 m/s (were 1 and 1.5), so a typical creek's ~1.3 m/s runs ~2.6. At the cap a swimmer,
+  whose headway is the swim layer's 3 m/s, makes no way upstream in the fastest reaches; below it, slowly.
+  Only the current reported changes (swimmers, floating bodies, the flow shown): the grid's movement,
+  the carried flow and the terrain are as they were, and the current is found again as a chunk's water
+  joins the grid (never saved) and sent to clients in `WaterCurrents` (5 cm/s steps, ±6.35 m/s), so no
+  world or client on the line disagrees (`a_rivers_current_runs_twice_its_law`, both faces;
+  `a_swimmer_in_a_river_drifts_at_twice_its_law`).
   **Level and shallow reaches run** (0.49.19, BUGS.md #38; owner, 2026-11-06: "dead rivers ... the
   shallow ones missing currents"): Manning's speed on no fall is none, and about half of seed 0's
   sampled channel columns (109 of 209) lie in level reaches, so those reaches were still; the flow
@@ -319,8 +334,23 @@ for now, make a note about future possibly using shared memory threads"; the wat
 
 - **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
   32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths, 10 and 11 a block holding
-  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded (`byte_of` from
-  the registry's `liquid`, `fill`, `replaceable`, `solid`, shape and properties). A ramp is solid to
+  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded, 12 and 13 a block
+  water passes through (leaves), dry or flooded (`byte_of` from the registry's `liquid`, `fill`,
+  `replaceable`, `solid`, `passable`, shape and properties).
+- **Leaves let water through** (WORK_QUEUE item 45; owner, 2026-11-12: "leaves also should let water
+  flow through freely"): a block players and pieces pass (`passable`, leaves) with a `flooded` state is
+  open to the grid's flow (`cells::PASS_*`, kind open: floors are found below it, water spreads and
+  runs through it as through air), and is kept: `draw` never writes water blocks in its place but sets
+  it flooded while the column's water stands half a fill step into its cell and dry when it goes
+  (`Write::flood`). Bodies' cells (felled crowns) are not in the grid at all, so they never blocked it.
+  **Generation unchanged:** `found` (the scan) takes leaves under a run of water into its column (the
+  floor the solid below them) but the level is still the liquid's top, so generated water is held at
+  the levels it was, at rest (a held column's depth over a leafy bed is deeper, so its reported river
+  current, by depth, can differ a little there; the terrain, the water blocks and the levels don't).
+  Tests: `water_flows_through_a_wall_of_leaves_as_through_air` (both faces: the water beyond a wall of
+  leaves stands as high after 40 s as with none, within 1 mm, the leaves flooded under it and dry over;
+  red: no water past them), `generated_water_among_leaves_is_found_at_its_level_and_rests` (both
+  faces). A ramp is solid to
   the flow; drawing a column floods the ramps in its rows and its neighbours' while the water beside
   or over them stands half a fill step into their cell, and dries them when it goes (BUGS.md #36). The grid's reads (`floor_at`, `found`, the scan, what
   an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the

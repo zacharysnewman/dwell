@@ -7,6 +7,15 @@
 
 export type Vec3 = [number, number, number];
 
+/**
+ * The water tiers' names (shared/look/watertiers.json: every tier, then the removed tiers'
+ * aliases), copied here to stay pure; a test (views.test.ts) fails when they differ from the data.
+ * Any may be drawn by the bench's `water` step (the CPU's opaque tier included).
+ */
+export const WATER_TIER_NAMES: readonly string[] = ['opaque', 'low', 'medium', 'high'];
+/** The ones a stored setting may name (the Settings tiers and the aliases). */
+export const WATER_SETTING_NAMES: readonly string[] = ['low', 'medium', 'high'];
+
 export interface View {
   /** Lowercase letters, digits and dashes; unique. Also the screenshot's file name. */
   name: string;
@@ -29,7 +38,7 @@ export interface View {
     clouds?: 'off' | 'low' | 'high';
     /** The water quality and the flow's switches (ui/waterSettings.ts; a switch left out is on). */
     water?: {
-      quality: 'low' | 'medium' | 'high';
+      quality: string;
       flowRipples?: boolean;
       flowFoam?: boolean;
       flowParticles?: boolean;
@@ -182,8 +191,10 @@ function parseView(index: string, raw: unknown): View {
   if (s.water !== undefined) {
     const flows = ['flowRipples', 'flowFoam', 'flowParticles'] as const;
     const w = fields(`${at}.settings.water`, s.water, ['quality', ...flows]);
-    if (w.quality !== 'low' && w.quality !== 'medium' && w.quality !== 'high') {
-      throw new ViewError(`${at}.settings.water.quality: expected "low", "medium" or "high"`);
+    if (typeof w.quality !== 'string' || !WATER_SETTING_NAMES.includes(w.quality)) {
+      throw new ViewError(
+        `${at}.settings.water.quality: expected ${WATER_SETTING_NAMES.map((n) => `"${n}"`).join(', ')}`,
+      );
     }
     const water: NonNullable<View['settings']['water']> = { quality: w.quality };
     for (const k of flows) {

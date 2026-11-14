@@ -48,3 +48,19 @@ export function checkParts(blocks) {
   }
   return out;
 }
+
+/**
+ * The multi-cell blocks of the registry's namespace files (shared/blocks/*.json, parsed): `{ id →
+ * { extendsUp, partOf } }` for each block naming `extends` or `partOf` (unchecked: gen.mjs checks
+ * them with checkParts). For checks over data placing blocks (structures: a part above its block).
+ */
+export function partsFromNamespaces(namespaces) {
+  const out = new Map();
+  for (const ns of namespaces) {
+    for (const def of ns.blocks ?? []) {
+      if (def.extends === undefined && def.partOf === undefined) continue;
+      out.set(`${ns.namespace}:${def.name}`, { extendsUp: def.extends?.up ?? null, partOf: def.partOf ?? null });
+    }
+  }
+  return out;
+}

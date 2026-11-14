@@ -411,6 +411,7 @@ fn dam_blast() -> (Fixture, dwell_sim::jobs::JobRunner, f64, String) {
             material: dwell_blocks::require("dwell:torch"),
             rows: 1,
             down: false,
+            point: None,
         }),
     );
     f.server.step();

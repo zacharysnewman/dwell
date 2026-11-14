@@ -1,0 +1,51 @@
+{
+  "$comment": "Tall broadleaf (the tropical rainforest's canopy tree, WORK_QUEUE item 15, REALISTIC_WORLD.md §7 q9): a tree species like the oak (docs/TREE_GROWTH.md §11, ADR 0090) but tall and straight, its heavy branches and lumpy crown high on the trunk. No sapling (none is planted: no new block; a species without one stands only where a placement does). Lengths in metres. Prototype content. Run `node shared/trees/gen.mjs` after editing; CI fails on stale output.",
+  "name": "dwell:tall_broadleaf",
+  "label": "Tall broadleaf",
+  "blocks": {
+    "log": "dwell:log",
+    "leaf": "dwell:leaves"
+  },
+  "trunk": {
+    "height": {
+      "sapling": 1,
+      "mature": [10, 16]
+    },
+    "heightStep": 0.5,
+    "width": {
+      "sapling": 0.25,
+      "mature": 1,
+      "step": 0.25
+    }
+  },
+  "branches": {
+    "kind": "heavy",
+    "count": [3, 5],
+    "from": [0.75, 0.95],
+    "reach": [2.6, 3.8],
+    "rise": [0.6, 1.2],
+    "emergeAt": 0.4
+  },
+  "crown": {
+    "shape": "lumpy",
+    "centre": 1.0,
+    "radius": [3.2, 1.8, 3.2],
+    "lumps": {
+      "radius": [1.4, 2.0],
+      "height": [0.9, 1.3]
+    },
+    "roughness": 0.3,
+    "scale": [0.3, 1]
+  },
+  "variety": {
+    "crown": [0.85, 1.2],
+    "lightness": [0.6, 0.95],
+    "hue": [-0.04, 0.03]
+  },
+  "growth": {
+    "stages": 8,
+    "daysPerStage": 3,
+    "wild": [0, 1, 1, 1, 2, 3, 5, 12],
+    "variants": 16
+  }
+}

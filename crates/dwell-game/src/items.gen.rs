@@ -4,25 +4,51 @@ use crate::build_drag::{BuildModeDef, DragKind};
 use crate::items::{ItemDef, ItemDrag, ItemFacing};
 
 /// The creative hotbar's items, in its order (shared/items/items.json).
-pub const ITEMS: [ItemDef; 17] = [
-    ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
-    ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
-    ItemDef { name: "dwell:dirt", label: "Dirt", block: "dwell:dirt", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:grass", label: "Grass", block: "dwell:grass", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:ladder", label: "Ladder", block: "dwell:ladder", rows: 1, drag: ItemDrag::Vertical, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:sand", label: "Sand", block: "dwell:sand", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:log", label: "Log", block: "dwell:log", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:leaves", label: "Leaves", block: "dwell:leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:tall_grass", label: "Tall grass", block: "dwell:tall_grass", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:build_platform", label: "Build platform", block: "dwell:build_platform", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:torch", label: "Torch", block: "dwell:torch", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:dynamite", label: "Dynamite", block: "dwell:dynamite", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:dynamite_blue", label: "Blue dynamite", block: "dwell:dynamite_blue", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:dynamite_green", label: "Green dynamite", block: "dwell:dynamite_green", rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:snowy_grass", label: "Snowy grass", block: "dwell:snowy_grass", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
-    ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+pub const ITEMS: [ItemDef; 30] = [
+    ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
+    ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", tool: None, rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
+    ItemDef { name: "dwell:dirt", label: "Dirt", block: "dwell:dirt", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:grass", label: "Grass", block: "dwell:grass", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:ladder", label: "Ladder", block: "dwell:ladder", tool: None, rows: 1, drag: ItemDrag::Vertical, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:sand", label: "Sand", block: "dwell:sand", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:log", label: "Log", block: "dwell:log", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:stone_axe", label: "Stone axe", block: "", tool: Some("dwell:stone_axe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:metal_axe", label: "Metal axe", block: "", tool: Some("dwell:metal_axe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:stone_pickaxe", label: "Stone pickaxe", block: "", tool: Some("dwell:stone_pickaxe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:metal_pickaxe", label: "Metal pickaxe", block: "", tool: Some("dwell:metal_pickaxe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:wooden_shovel", label: "Wooden shovel", block: "", tool: Some("dwell:wooden_shovel"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:metal_shovel", label: "Metal shovel", block: "", tool: Some("dwell:metal_shovel"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:sword", label: "Sword", block: "", tool: Some("dwell:sword"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:leaves", label: "Leaves", block: "dwell:leaves", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:oak_sapling", label: "Oak sapling", block: "dwell:oak_sapling", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:pine_sapling", label: "Pine sapling", block: "dwell:pine_sapling", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:palm_sapling", label: "Palm sapling", block: "dwell:palm_sapling", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:tall_grass", label: "Tall grass", block: "dwell:tall_grass", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:build_platform", label: "Build platform", block: "dwell:build_platform", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:torch", label: "Torch", block: "dwell:torch", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite", label: "Dynamite", block: "dwell:dynamite", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_blue", label: "Blue dynamite", block: "dwell:dynamite_blue", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_green", label: "Green dynamite", block: "dwell:dynamite_green", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:dynamite_yellow", label: "Yellow dynamite", block: "dwell:dynamite_yellow", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:snowy_grass", label: "Snowy grass", block: "dwell:snowy_grass", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:snow", label: "Snow", block: "dwell:snow", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:glacier_ice", label: "Glacier ice", block: "dwell:glacier_ice", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
+    ItemDef { name: "dwell:snowy_leaves", label: "Snowy leaves", block: "dwell:snowy_leaves", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
 ];
+
+/// A new world's creative hotbar: the items it starts with, one per slot.
+pub const CREATIVE_HOTBAR: [&str; 6] = ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:log", "dwell:stone_axe", "dwell:stone_pickaxe"];
+
+/// The keys that step the hotbar one slot left / right (`KeyboardEvent.code`).
+pub const HOTBAR_PREV_KEY: &str = "ArrowLeft";
+pub const HOTBAR_NEXT_KEY: &str = "ArrowRight";
+
+/// The wheel's travel (px) in one gesture that steps the hotbar one more slot.
+pub const WHEEL_NOTCH_PX: f64 = 120.0;
+
+/// The quiet (ms) after which a wheel event starts a new gesture, stepping at once.
+pub const WHEEL_GAP_MS: f64 = 200.0;
 
 /// The key that cycles the build modes (`KeyboardEvent.code`).
 pub const BUILD_MODE_KEY: &str = "KeyL";
@@ -32,6 +58,9 @@ pub const BUILD_HOLD_MS: f64 = 200.0;
 
 /// How far (m) the player's own body must be clear of a cell before a block goes in it.
 pub const BUILD_CLEARANCE: f64 = 0.15;
+
+/// How often (s) a held stroke builds its next piece at most, by the clock (docs/BUGS.md #30).
+pub const BUILD_REPEAT_S: f64 = 0.05;
 
 /// What holding Place does after the first block, in the order the key cycles them.
 pub const BUILD_MODES: [BuildModeDef; 2] = [

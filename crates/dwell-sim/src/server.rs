@@ -14,6 +14,8 @@ use dwell_physics::controller::{Input, PlayerHandle, Players, events};
 use dwell_physics::net::{dequantize_input, player_flags_of, quantize_pitch, quantize_yaw, to_net};
 use dwell_physics::query::GroundRef;
 use dwell_physics::{DVec3, Physics, Vec3};
+use dwell_protocol::inventory as inv;
+use dwell_protocol::modes::Ability;
 use dwell_protocol::world_settings::{SettingsFields, WorldClock, WorldSettings};
 use dwell_protocol::*;
 use dwell_protocol::{
@@ -23,19 +25,43 @@ use dwell_protocol::{
     players as pc, welcome_flags, world as wc,
 };
 use dwell_storage::{PlayerRecord, SaveBatch, SavedLodSection, WorldMeta, WorldStore};
-use dwell_world::brush::{brush_policy, world_mode};
 use dwell_world::edit::{
     DEFAULT_REACH, EditCapsule, EditCheck, check_block_edit, edit_writes, held_in_place,
     medium_kept, overlaps_player,
 };
-use dwell_world::lod::{INDEX_LEVEL, LodCoord, in_world, lod_of_chunk, parent};
+use dwell_world::lod::{INDEX_LEVEL, LodCoord, lod_of_chunk, parent};
 use dwell_world::region::{RegionCheck, check_region_edit, region_reach};
 use dwell_world::{
-    AirChunkTest, BUILD_VOLUME, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, M,
-    SavedChunks, VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
+    AirChunkTest, CHUNK_SIZE, Chunk, ChunkCoord, ChunkGenerator, FaceFrame, M, SavedChunks,
+    VoxelWorld, chunk_distance, chunk_hash, chunk_of, local_index,
 };
 
 use dwell_protocol::auth::verify_ed25519;
+
+mod buried;
+pub mod chisel;
+mod chopping;
+mod creatures;
+mod ecology;
+pub use ecology::{
+    CATCH_UP_DAYS, ECOLOGY_SEND_EVERY, EcologySnapshot, GroupView, IDLE_DAYS, MAX_STEPS_PER_TICK,
+    next_step, night_on,
+};
+pub use grass::{Grass, GrassEnvelope};
+mod grass;
+mod grids;
+pub use grids::{GridSlot, Grids};
+mod blueprints;
+mod ground;
+mod growth;
+mod items;
+mod lava;
+mod markers;
+mod theater;
+pub use theater::{VIEWPOINT_EVERY_TICKS, VIEWPOINT_MAX_M};
+mod vitals;
+mod weapons;
+pub use weapons::{BiteLog, NpcStrikeLog, StrikeLog, WeaponSwing};
 
 use crate::app_version::APP_VERSION;
 use crate::entropy::Entropy;
@@ -61,6 +87,9 @@ const INPUT_BUFFER: usize = 2; // jitter buffer depth (ticks)
 /// prediction once we report half a second queued (its `BUFFER_HOLD`, 30) and nudges its tick
 /// rate for smaller drift, so only a client that ignores both reaches this.
 const MAX_BUFFERED_INPUTS: usize = 60;
+/// How long a player spawned at home waits for its client to say it can be on the world's spawn
+/// grid (its capabilities) before it stays home (MOON_WORLD.md §8).
+const GRID_SPAWN_GRACE_TICKS: u32 = 10 * SIM_HZ;
 const LATENCY_WINDOW_TICKS: u32 = 60;
 const MAX_SEQ_AHEAD: u32 = 256; // inputs further ahead are rejected
 const INPUT_DATAGRAMS_PER_SECOND: u32 = 2 * SIM_HZ; // §11: SIM_HZ + redundancy
@@ -98,6 +127,13 @@ const EDIT_HOLD_TICKS: u8 = 30;
 /// small burst so edits bunched by the network are not rejected.
 const EDITS_PER_TICK: f64 = 1000.0 / (pc::BLOCK_EDIT_INTERVAL_MS as f64 * SIM_HZ as f64);
 const EDIT_BURST: f64 = 3.0;
+/// Punches (WORK_QUEUE item 17): a damage hit by hand takes a credit, refilled at the hand's
+/// `repeatS` (`breaking.hand`), holding one spare so punches bunched by the network are not refused;
+/// a client punching faster than its data's rate is refused the extra hits.
+const PUNCH_BURST: f64 = 2.0;
+fn punch_credit_per_tick() -> f64 {
+    dwell_protocol::chopping::HAND_REPEAT_S.map_or(f64::INFINITY, |r| 1.0 / (r * f64::from(SIM_HZ)))
+}
 /// Region edits (§6.5): a token bucket of cells, each request costing its box's volume.
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
@@ -115,6 +151,11 @@ const CHUNK_REQUESTS_PER_TICK: f64 = wc::CHUNK_REQUESTS_PER_SECOND as f64 / SIM_
 
 /// A falling piece's bytes in a snapshot: id, posfix × 3, rotation i16 × 4, velocity and spin f16 × 3.
 const PIECE_STATE_BYTES: usize = 4 + 12 + 8 + 6 + 6;
+/// The most pieces a snapshot carries to a session on the page hosting the world (a loopback, no
+/// datagram size to keep under): the encoding's most (its count is a byte). A blast's pieces went a
+/// few dozen a snapshot, each seen every third of a second or so, and stood still between
+/// (BUGS.md #173).
+const LOOPBACK_PIECES: usize = 255;
 
 /// One tick's voxel changes per chunk (the next VoxelModification), in the order chunks and cells
 /// were first touched; a cell changed twice keeps its last state.
@@ -127,19 +168,34 @@ struct TickChanges {
     before: Vec<([i32; 3], u16)>,
     /// Water's own writes: not told to water again.
     water: bool,
+    /// Lava's own writes: not told to the lava fields again (`Lava::touch`).
+    lava: bool,
 }
 
 impl TickChanges {
     /// Sets the cell and records it, with the other cells of a multi-cell block (a torch's upper
     /// part, placed and cleared with it) and what that leaves unsupported (block data
     /// `needsSupport`: tall grass on a broken block goes with it), in the same modification
-    /// (`dwell_world::edit::edit_writes`).
-    fn set_and_unsupport(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+    /// (`dwell_world::edit::edit_writes`). Returns the attached blocks it removed (block data
+    /// `needsSupport`, [`dwell_world::edit::attached`]), each cell with what was there, for their
+    /// drops.
+    fn set_and_unsupport(
+        &mut self,
+        world: &mut VoxelWorld,
+        cell: [i32; 3],
+        material: u16,
+    ) -> Vec<([i32; 3], u16)> {
         // An air plant never stays flooded (block data `medium`).
         let material = medium_kept(material);
+        let mut removed = Vec::new();
         for (at, m) in edit_writes(world, cell, material) {
+            let was = world.get_voxel(at[0], at[1], at[2]);
+            if was != m && dwell_world::edit::attached(was) {
+                removed.push((at, was));
+            }
             self.set(world, at, m);
         }
+        removed
     }
 
     /// Every changed cell (world cells), in the order they were first changed.
@@ -246,6 +302,11 @@ pub struct ServerConfig {
     /// they left the world: a local world opened by a spawn link (`?spawn=portal`, `b`; owner,
     /// 2026-10-27). Off, a saved world keeps its own spawn and players continue where they were.
     pub join_at_spawn: bool,
+    /// The grid face a new world's players spawn and respawn on (docs/proposals/MOON_WORLD.md §8,
+    /// M-8: a spawn key of `dwell_worldgen::grids::spawn_keys`, `moon`, `sun-b`); none: home. A
+    /// saved world keeps its own (unless `join_at_spawn` with one). Only a client that can be on that
+    /// grid (`grid.frames` and the grid's `capability`) goes there; any other starts at `spawn`.
+    pub spawn_grid: Option<String>,
     /// Terrain generation and streaming (§6.3): 0 threads generate on the tick within the budget.
     pub worldgen_threads: usize,
     pub worldgen_budget: Duration,
@@ -290,13 +351,50 @@ pub struct ServerConfig {
     /// A new world's water speed (docs/WATER_FLOW.md §4.1): × game time; `shared/fluids/flow.json`'s
     /// `speed` by default. A saved world keeps its own (its settings, DAY_NIGHT.md §2).
     pub water_speed: f64,
+    /// Trees' growth speed (ADR 0079 S3): × the world's days, 1 by default; more for a time-lapse
+    /// (dev: the page's `?growth=`), tests.
+    pub growth_speed: f64,
     /// Where the water grid runs (ADR 0062, docs/WATER_SURFACE_GRID.md §2d): inline on the tick's
     /// thread (the default: tests, a fallback), on its own native thread (the dedicated server), or
     /// remote (the browser's water worker, its messages carried by the embedder).
     pub water: crate::water::host::Placement,
+    /// A new world's game mode (ADR 0065, `shared/modes/modes.json`; a name not there is the
+    /// default, creative). A saved world keeps its own; one saved before modes is creative.
+    pub mode: String,
+    /// A new world's Sky preset (`shared/look/orbits.json` `presets`, docs/proposals/REALISTIC_WORLD.md
+    /// §8): Some rolls the world's orbit from its seed at creation and saves it with the world
+    /// (`CELESTIAL`, its clock and moon's phase); None (the default and starter worlds), today's sky.
+    /// A name not there is the `default` preset. A saved world keeps its own.
+    pub sky: Option<String>,
+    /// A new world's size (`dwell_protocol::world_size`, BIG_MAP.md M0): saved with it and sent at
+    /// join (`WorldSettings` tag `WORLD_SIZE`). A saved world keeps its own; one saved before sizes
+    /// is the default, today's. The generators don't read it yet (BIG_MAP.md M1–M2): only the
+    /// default size is playable in this build.
+    pub world_size: dwell_protocol::world_size::WorldSize,
+    /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
+    /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
+    pub one_hit_breaks: bool,
+    /// The chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools/tools.json):
+    /// chops land where the look meets the trunk, each removes a share of the section, a tree
+    /// falls past half toward its notch. Off: today's chopping (ADR 0067). The data's `enabled`
+    /// by default; dev `?chop=v2` for a local world.
+    pub chop2: bool,
+    /// A new world's far ecology (docs/ECOLOGY.md §6): on by default; off, the world has none
+    /// (saved so: a world keeps its own). `ecology_speed` × the world's days (tests, dev; a
+    /// per-world tuning hook, saved with it).
+    pub ecology: bool,
+    pub ecology_speed: f64,
+    /// Tests and tools: the faces' islands (A, B) in place of the world maps', for worlds without
+    /// one (the flat world, test generators).
+    pub ecology_islands: Option<Arc<[dwell_ecology::Island; 2]>>,
+    /// A new world's tall grass growth (ADR 0075 T3c, docs/ECOLOGY.md §10): on by default; saved
+    /// with the world, which keeps its own. A world saved before it (no `grass_growth` table) has
+    /// none: its meadows stay as they are.
+    pub grass: bool,
 }
 
-/// A new world's settings: this build's clock (`shared/look/daynight.json`) and `water_speed`.
+/// A new world's settings: this build's clock (`shared/look/daynight.json`), `water_speed` and the
+/// default game mode (creative).
 pub fn default_settings(water_speed: f64) -> WorldSettings {
     let c = dwell_look::daynight::DAY_NIGHT.clock;
     WorldSettings {
@@ -306,6 +404,49 @@ pub fn default_settings(water_speed: f64) -> WorldSettings {
             start_hour: c.start_hour as f32,
         },
         water_speed: water_speed as f32,
+        mode: dwell_protocol::modes::DEFAULT_MODE,
+        size: dwell_protocol::world_size::WorldSize::DEFAULT,
+        moon_phase: None,
+        orbit: None,
+        theater_guests: true,
+    }
+}
+
+/// The size of a saved world from its settings' bytes (BIG_MAP.md M2): today's for a world saved
+/// without settings or from before sizes, or whose settings this build can't read.
+fn saved_world_size(
+    settings: Option<&[u8]>,
+    water_speed: f64,
+) -> dwell_protocol::world_size::WorldSize {
+    use dwell_protocol::world_size::WorldSize;
+    let before = WorldSettings {
+        size: WorldSize::DEFAULT,
+        ..default_settings(water_speed)
+    };
+    settings
+        .and_then(SettingsFields::from_bytes)
+        .and_then(|f| f.settings(before).ok())
+        // A size this build's LOD root can't hold (a newer build's) opens as today's.
+        .map_or(WorldSize::DEFAULT, |s| {
+            WorldSize::playable(Some(s.size.radius_scale))
+        })
+}
+
+/// A new world's settings under `config`: [`default_settings`] with its water speed and mode, and
+/// its orbit rolled from its seed when it has a Sky preset (REALISTIC_WORLD.md §8).
+fn new_world_settings(config: &ServerConfig) -> WorldSettings {
+    let s = WorldSettings {
+        mode: dwell_protocol::modes::mode_or_default(&config.mode).name,
+        size: config.world_size,
+        ..default_settings(config.water_speed)
+    };
+    match &config.sky {
+        Some(name) => {
+            use dwell_look::orbits::{ORBITS, Orbit};
+            let preset = ORBITS.preset(name).unwrap_or(&ORBITS.presets[0]);
+            Orbit::roll(config.world_seed, preset, &ORBITS.limits).into_settings(s)
+        }
+        None => s,
     }
 }
 
@@ -319,6 +460,7 @@ impl Default for ServerConfig {
             generator_version: dwell_world::GENERATOR_TERRAIN,
             spawn: None,
             join_at_spawn: false,
+            spawn_grid: None,
             worldgen_threads: 0,
             worldgen_budget: Duration::from_micros(4000),
             pregen_radius_chunks: 2,
@@ -341,7 +483,17 @@ impl Default for ServerConfig {
             air_test_override: None,
             player_config: PlayerControllerConfig::default(),
             water_speed: crate::water::FLOW.speed,
+            growth_speed: 1.0,
             water: crate::water::host::Placement::Inline,
+            mode: dwell_protocol::modes::DEFAULT_MODE.into(),
+            sky: None,
+            world_size: dwell_protocol::world_size::WorldSize::DEFAULT,
+            one_hit_breaks: false,
+            chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
+            ecology: true,
+            ecology_speed: 1.0,
+            ecology_islands: None,
+            grass: true,
         }
     }
 }
@@ -359,11 +511,19 @@ pub struct StreamStats {
     pub requests_dropped: u32,
     /// Of the above, sent for the respawn preload (§6.3).
     pub preload_sent: u32,
+    /// Of the above, sent for the theater camera's viewpoint (docs/THEATER_MODE.md §7).
+    pub viewpoint_sent: u32,
     /// Chunks the client currently has.
     pub streamed: usize,
 }
 
 include!("respawn_preload.gen.rs");
+
+/// Ticks from a defeat to standing up at the shrine for character `name` (its defeat's kneel and
+/// fade, shared/defeat; docs/CHARACTERS.md §11.13).
+pub fn defeat_ticks(name: &str) -> u32 {
+    (dwell_protocol::defeat::of(name).down_s() * f64::from(SIM_HZ)).round() as u32
+}
 
 /// The chunk the body of a player standing at `feet` is centred in (the view's centre), on either
 /// face: `half_height` up from the feet, face-locally.
@@ -425,6 +585,8 @@ pub struct SessionStats {
     /// Failed validation, over the cell rate, too many queued, or no permission.
     pub region_edits_rejected: u32,
     pub last_region_check: RegionCheck,
+    /// Of `region_edits_applied`, saved structures' placements (`RegionEditOp::Structure`).
+    pub structure_edits_applied: u32,
     /// Cells region edits changed.
     pub region_cells_changed: u64,
     /// Chunks re-sent on the client's request (§6.3).
@@ -445,6 +607,7 @@ impl Default for SessionStats {
             region_edits_applied: 0,
             region_edits_rejected: 0,
             last_region_check: RegionCheck::Ok,
+            structure_edits_applied: 0,
             region_cells_changed: 0,
             resyncs: 0,
         }
@@ -492,9 +655,9 @@ struct Session {
     display_name: String,
     player_id: u16,
     // Player (joined only).
-    handle: Option<PlayerHandle>,   // none while dead
+    handle: Option<PlayerHandle>, // none while defeated (kneeling, CHARACTERS.md §11.13)
     inputs: VecDeque<(u32, Input)>, // ordered by seq
-    primed: bool,                   // jitter buffer: consume only once INPUT_BUFFER are queued
+    primed: bool,                 // jitter buffer: consume only once INPUT_BUFFER are queued
     /// The fewest inputs queued at any tick of this latency window (`MAX_BUFFERED_INPUTS`).
     low_water: usize,
     window_ticks: u32,
@@ -505,7 +668,10 @@ struct Session {
     last_input: Input,
     health: i32,
     respawn_tick: u32,
+    /// Where it was defeated (its feet): it kneels there until it stands up at a shrine.
     death_position: [f64; 3],
+    /// The facing it knelt with (degrees), so the others see it kneel the way it faced.
+    death_yaw: f32,
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
@@ -514,11 +680,15 @@ struct Session {
     /// Ticks still to wait before this session's currents are sent (`CURRENTS_AFTER_JOIN`).
     currents_wait: u32,
     /// Applied at the start of the next step, by edit number: (edit number, edit, ticks held while
-    /// it would go into a player, EDIT_HOLD_TICKS).
-    edits: Vec<(u32, BlockEditRequest, u8)>,
+    /// it would go into a player, EDIT_HOLD_TICKS), and a tool's hit's contact (the tick it lands
+    /// and the tool it was swung with; WORK_QUEUE item 25: a break with a tool waits for its swing's
+    /// `contactS`, and is dropped if the tool is no longer held then).
+    edits: Vec<(u32, BlockEditRequest, u8, Option<Contact>)>,
     /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
     body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
+    /// Damage hits by hand left before the hand's rate refuses one (`PUNCH_BURST`).
+    punch_credit: f64,
     /// Applied after the block edits, in order: (edit number, edit, ticks held while all of it
     /// would go into a player, EDIT_HOLD_TICKS).
     region_edits: Vec<(u32, RegionEdit, u8)>,
@@ -532,8 +702,79 @@ struct Session {
     /// (`swing_flags`), both carried to the others in snapshots (CHARACTERS.md §9.3).
     held: u16,
     swing: u8,
+    /// Which swing `swing` is (`SwingKind`: a break or place, or a chop and its direction), sent
+    /// only to a client that said `SwingHello` (`swing_hello`; WORK_QUEUE item 17).
+    swing_kind: SwingKind,
+    swing_hello: bool,
+    /// Whether its client draws the axe's bites (`BitesHello`; WORK_QUEUE item 26): its `Cuts`
+    /// end with them.
+    pub(super) bites_hello: bool,
     /// Which falling pieces this player's snapshots carry (`felling::PieceBook`).
     piece_book: crate::felling::PieceBook,
+    /// The player's items (ADR 0066), loaded at join and saved with the world; whether its client
+    /// understands inventories (`InventoryAction::Hello`) and is owed an `Inventory`; and whether
+    /// the saved record couldn't be read (a newer build's: it is kept, not overwritten).
+    inventory: dwell_protocol::inventory::Inventory,
+    inventory_hello: bool,
+    /// It said `GroundHello` (ADR 0071): it is sent `GroundGone`.
+    ground_hello: bool,
+    inventory_dirty: bool,
+    inventory_unread: bool,
+    /// The host took flight away (a mode change, ADR 0065) while this player was in the air: its
+    /// next landing hurts nothing (the fall is the host's doing), then it is cleared.
+    flight_grace: bool,
+    /// Whether its client understands cuts (`ChopAction::Hello`, ADR 0067), and the tick its next
+    /// swing may land.
+    chop_hello: bool,
+    chop_ready: u32,
+    /// Swings on their way to their contact (WORK_QUEUE item 25): the tick each lands, and it.
+    pending_chops: Vec<(u32, ChopAction)>,
+    /// Whether its client understands `Vitals` and the `Drown` cause (`VitalsHello`, ADR 0069),
+    /// and the ticks it has been out of air since the last drowning damage.
+    vitals_hello: bool,
+    drown_ticks: u32,
+    /// Its map markers (docs/MAP_MARKERS.md): none until loaded or sent; whether the record was
+    /// read at join, and whether it went to the client (`markers.private`).
+    markers: Option<dwell_protocol::markers::Markers>,
+    markers_loaded: bool,
+    markers_sent: bool,
+    /// Whether the world's blueprints went to its client (`blueprints.world`, BLUEPRINTS.md).
+    blueprints_sent: bool,
+    /// The last damage cause its client understands (`CausesHello`; 0: it never said, so only the
+    /// causes every build knows, and `Drown` with `vitals_hello`).
+    known_cause: u8,
+    /// Its lava burn (docs/proposals/VOLCANOES.md §6): burning left after leaving lava.
+    burn: dwell_lava::Burn,
+    /// The world spawns on another grid (MOON_WORLD.md §8): until this tick, the player (just
+    /// spawned at home) is moved there once its client says it can be (`Server::spawn_on_grids`).
+    grid_spawn_due: Option<u32>,
+    /// It died on another grid: its respawn goes to the world's spawn grid.
+    grid_respawn: bool,
+    /// Whether its client draws creatures (`CreaturesHello`, ADR 0073).
+    creatures_hello: bool,
+    /// Whether its client draws block damage (`DamageHello`, docs/BLOCK_DAMAGE.md).
+    damage_hello: bool,
+    /// Whether its client reads the far ecology (`EcologyHello`, docs/ECOLOGY.md §9).
+    ecology_hello: bool,
+    /// Whether its client draws steam (`SteamHello`, VOLCANOES.md §6.3).
+    steam_hello: bool,
+    /// The capabilities its client said it has (`Capabilities`, ARCHITECTURE.md §8.3); empty for a
+    /// client that never sent the message (an older build).
+    capabilities: dwell_protocol::capabilities::Capabilities,
+    /// Theater mode's camera as a simulation viewpoint (docs/THEATER_MODE.md §7, `server/theater.rs`).
+    viewpoint: theater::Viewpoint,
+    /// While on another grid (MOON_WORLD.md §7.2): its slot and handle there (`handle` is `None`
+    /// then), and that grid's chunks its client has.
+    away: Option<grids::Away>,
+    grid_streamed: HashSet<ChunkCoord>,
+    /// The tool it holds (item name, the hold's plane), from `ChopAction::Held`; having sent one,
+    /// it understands `HeldTools` (ADR 0067).
+    held_tool: Option<(String, bool)>,
+    /// Its weapon's block held raised (`ChopAction::Guard`, the `weapons.clash` capability;
+    /// WORK_QUEUE item 35): it guards while it holds a weapon and isn't mid-swing.
+    guard_raised: bool,
+    /// Its weapon swing under way, for the NPCs that read it (`weapons::WeaponSwing`).
+    weapon_swing: Option<weapons::WeaponSwing>,
 
     stats: SessionStats,
     // Terrain streaming.
@@ -544,6 +785,8 @@ struct Session {
     /// The respawn preload (§6.3): while dead, the respawn point's chunk, whose ring is streamed
     /// after the view; and whether all of it has been sent.
     preload_center: Option<ChunkCoord>,
+    /// Where a dead player stands up (the shrine nearest its death), until the respawn.
+    respawn_at: Option<[f64; 3]>,
     preload_complete: bool,
     chunk_credit: f64, // bytes the client may still receive this tick
     stream_stats: StreamStats,
@@ -561,6 +804,25 @@ struct Session {
 }
 
 impl Session {
+    /// A `grid.frames` client carried off home drops every home chunk it holds (MOON_WORLD.md §7.3:
+    /// it holds the chunks of the grid it is on), so the home view streams again from nothing on
+    /// its release.
+    fn forget_home_stream(&mut self) {
+        self.streamed.clear();
+        self.requested.clear();
+        self.chunk_requests.clear();
+        self.stream_center = None;
+        self.stream_complete = false;
+        self.preload_complete = false;
+    }
+
+    /// One more swing the others see (`swing_flags`): a break or place (`broke`), and which it is
+    /// (`kind`: a chop steps a break, so an older client plays that).
+    fn swung(&mut self, broke: bool, kind: SwingKind) {
+        self.swing = next_swing(self.swing, broke);
+        self.swing_kind = kind;
+    }
+
     fn new(kind: TransportKind, binding: TransportBinding) -> Self {
         Self {
             kind,
@@ -574,6 +836,36 @@ impl Session {
             inputs: VecDeque::new(),
             currents_sent: HashMap::default(),
             currents_wait: CURRENTS_AFTER_JOIN,
+            inventory: Default::default(),
+            inventory_hello: false,
+            ground_hello: false,
+            inventory_dirty: false,
+            inventory_unread: false,
+            flight_grace: false,
+            chop_hello: false,
+            chop_ready: 0,
+            pending_chops: Vec::new(),
+            vitals_hello: false,
+            known_cause: 0,
+            drown_ticks: 0,
+            markers: None,
+            markers_loaded: false,
+            markers_sent: false,
+            blueprints_sent: false,
+            burn: dwell_lava::Burn::default(),
+            grid_spawn_due: None,
+            grid_respawn: false,
+            creatures_hello: false,
+            damage_hello: false,
+            ecology_hello: false,
+            steam_hello: false,
+            capabilities: Default::default(),
+            viewpoint: Default::default(),
+            away: None,
+            grid_streamed: HashSet::default(),
+            held_tool: None,
+            guard_raised: false,
+            weapon_swing: None,
             primed: false,
             low_water: usize::MAX,
             window_ticks: 0,
@@ -583,12 +875,14 @@ impl Session {
             health: pc::MAX_HEALTH as i32,
             respawn_tick: 0,
             death_position: [0.0; 3],
+            death_yaw: 0.0,
             last_knockback_seq: 0,
             rate_window_tick: 0,
             rate_window_count: 0,
             edits: Vec::new(),
             body_edits: Vec::new(),
             edit_credit: 0.0,
+            punch_credit: 0.0,
             region_edits: Vec::new(),
             region_credit: 0.0,
             edit_seq: 0,
@@ -596,6 +890,9 @@ impl Session {
             edit_refused: Vec::new(),
             held: 0,
             swing: 0,
+            swing_kind: SwingKind::Plain,
+            swing_hello: false,
+            bites_hello: false,
             piece_book: crate::felling::PieceBook::default(),
             stats: SessionStats::default(),
             chunk_mode: ChunkMode::AwaitingCheck,
@@ -603,6 +900,7 @@ impl Session {
             stream_center: None,
             stream_complete: false,
             preload_center: None,
+            respawn_at: None,
             preload_complete: false,
             chunk_credit: 0.0,
             stream_stats: StreamStats::default(),
@@ -664,7 +962,9 @@ fn input_in_range(f: &InputFrame) -> bool {
 }
 
 /// A player's swing after one more edit (`swing_flags`): the count steps (wrapping) and the kind
-/// is the edit's, so the others start a break or place swing when they see it change.
+/// is the edit's, so the others start a break or place swing when they see it change. A chop
+/// steps it as a break (what an older client plays) and names itself in the session's
+/// `swing_kind` ([`Session::swung`]).
 fn next_swing(swing: u8, broke: bool) -> u8 {
     let count = (swing.wrapping_add(1)) & swing_flags::COUNT_MASK;
     count
@@ -785,6 +1085,9 @@ pub struct Server {
     /// newer build added kept in `settings_fields`.
     settings: WorldSettings,
     settings_fields: SettingsFields,
+    /// The world's worldgen config (ADR 0074 B7), from its installed maps: `""` for the build's
+    /// ground. Non-empty, the join's settings name its hash (`tag::WORLDGEN`) and a guest asks for it.
+    worldgen_text: String,
     tick: u32,
     next_player_id: u16,
     worldgen: WorldgenPool,
@@ -799,15 +1102,81 @@ pub struct Server {
     /// (local mode, tests) do not serve them.
     own_blocks: Vec<dwell_blocks::StateId>,
     view_offsets: Vec<ChunkCoord>, // chunks in view relative to the center, nearest first
+    /// The other grids' spaces (the moon's; MOON_WORLD.md §7.2).
+    grids: grids::Grids,
     prefetch_offsets: Vec<ChunkCoord>, // generated ahead around each player
-    preload_offsets: Vec<ChunkCoord>, // the respawn preload's ring (§6.3), nearest first
-    explicit_wanted: Vec<ChunkCoord>, // full-mode chunks to generate for streaming
+    preload_offsets: Vec<ChunkCoord>,  // the respawn preload's ring (§6.3), nearest first
+    explicit_wanted: Vec<ChunkCoord>,  // full-mode chunks to generate for streaming
     // Persistence: chunks in the world file (revision saved), modified chunks not saved yet, saves
     // in flight (their chunk revisions), and players who left since the last save.
     saved: Arc<Mutex<HashMap<ChunkCoord, u32>>>,
     dirty: HashSet<ChunkCoord>,
     in_flight: HashMap<u64, Vec<(ChunkCoord, u32)>>,
     departed: Vec<PlayerRecord>,
+    /// Inventories of players who left since the last save (ADR 0066).
+    departed_inventories: Vec<([u8; 32], Vec<u8>)>,
+    /// Vitals records of players who left since the last save (ADR 0069).
+    departed_vitals: Vec<([u8; 32], Vec<u8>)>,
+    /// The markers of players who left since the last save (docs/MAP_MARKERS.md).
+    departed_markers: Vec<([u8; 32], Vec<u8>)>,
+    /// The world's blueprints and their builders (docs/BLUEPRINTS.md).
+    blueprints: blueprints::Blueprints,
+    /// The loose items lying in the world (ADR 0066), and the moved ones not yet sent.
+    loose: crate::loose_items::LooseItems,
+    loose_moved: HashSet<u32>,
+    /// The creatures wandering near players (ADR 0073).
+    creatures: crate::creatures::Creatures,
+    /// The last strikes of players' weapons on creatures (WORK_QUEUE item 35).
+    strike_log: Vec<StrikeLog>,
+    /// The last NPCs' strikes on players (`weapons::NpcStrikeLog`; tests, dev tools).
+    npc_strike_log: Vec<weapons::NpcStrikeLog>,
+    /// The creatures' latest attacks on players ([`Self::bites`]).
+    bite_log: Vec<weapons::BiteLog>,
+    /// The wood cells cut by axes (ADR 0067).
+    cuts: dwell_protocol::chopping::Cuts,
+    cuts_unread: bool,
+    /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
+    damage: dwell_protocol::damage::Damage,
+    /// The saved damage is a newer build's: kept, not written over.
+    damage_unread: bool,
+    /// The lava fields (docs/proposals/VOLCANOES.md §6), saved with the world (`lava` table).
+    lava: crate::lava::Lava,
+    /// The saved lava is a newer build's: kept, not written over.
+    lava_unread: bool,
+    /// Steam from lava meeting water since the last `take_lava_steam` (the clients' puffs, later).
+    lava_steam: Vec<crate::lava::Steam>,
+    /// Steam cells sent since the server started (the dev report's `steamCells`).
+    lava_steam_cells: u64,
+    /// The trees' growth records (ADR 0079 S3), saved with the world.
+    growth: dwell_worldgen::growth::Records,
+    /// The saved records are a newer build's: kept, not written over.
+    growth_unread: bool,
+    /// The far ecology (docs/ECOLOGY.md §6): both faces' herds and packs, saved with the world.
+    ecology: ecology::Ecology,
+    /// Tall grass growth (ADR 0075 T3c): the switch and each chunk's last day, saved with the world.
+    grass: grass::Grass,
+    /// The saved record is a newer build's: kept, not written over.
+    grass_unread: bool,
+    grass_rule: dwell_worldgen::grass::Rule,
+    /// Tests: an envelope in place of the terrain's.
+    grass_envelope: Option<grass::GrassEnvelope>,
+    /// The face terrains grass grows over (shared with the ecology's forage share).
+    grass_terrain: grass::GrassTerrain,
+    /// The world's growers (none: no species trees), built on first use.
+    growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
+    /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
+    growth_scanned: HashSet<ChunkCoord>,
+    /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
+    ground: dwell_world::ground::GroundGone,
+    /// The saved gone set is a newer build's: kept, not written over.
+    ground_unread: bool,
+    /// Edited chunks as generated, for the ground items' rules (ADR 0071; not saved).
+    ground_generated: dwell_world::hash::HashMap<dwell_world::ChunkCoord, Box<dwell_world::Chunk>>,
+    /// The ground densities from the biomes (ADR 0074 B5), built at the first ground item asked
+    /// for (none: they do not vary, the default world), and each chunk's once computed.
+    ground_density: Option<Option<dwell_worldgen::GroundDensityFn>>,
+    ground_density_chunks:
+        dwell_world::hash::HashMap<dwell_world::ChunkCoord, dwell_world::ground::GroundDensity>,
     next_save_tick: u32,
     save_stats: SaveStats,
     // Level of detail: sections, index entries changed since the last LodIndexUpdate, sections to
@@ -818,6 +1187,10 @@ pub struct Server {
     lod_unsaved: HashSet<LodCoord>,
     lod_in_flight: HashMap<u64, Vec<LodCoord>>,
     lod_rebuild: bool,
+    /// The resurrection shrines (docs/SHRINES.md): where a player who died stands up again, the
+    /// shrine nearest the death on its face; `None` for a world without them (a test's generator,
+    /// the flat world).
+    shrine_respawn: Option<dwell_worldgen::ShrineRespawn>,
 }
 
 impl Server {
@@ -830,19 +1203,32 @@ impl Server {
             if meta.spawn.is_some() && !(config.join_at_spawn && config.spawn.is_some()) {
                 config.spawn = meta.spawn;
             }
+            if meta.spawn_grid.is_some() && !(config.join_at_spawn && config.spawn_grid.is_some()) {
+                config.spawn_grid = meta.spawn_grid;
+            }
+            // And its own size (BIG_MAP.md M2): its settings' (`init_storage` reads the rest); a
+            // world from before sizes, or saved without settings, is today's size.
+            config.world_size = saved_world_size(meta.settings.as_deref(), config.water_speed);
         }
         // A world from an older line (or a launch naming a retired version) opens on this build's
         // generator of its kind.
         config.generator_version = dwell_world::current_generator(config.generator_version);
+        // A world retuned in the game (Phase 56 B7): its saved worldgen config installed first.
+        Self::install_saved_worldgen(&config);
         let (generator, air_test, sky) = match &config.generator_override {
             Some(g) => (g.clone(), config.air_test_override.clone(), None),
             None => {
-                let air = dwell_worldgen::AirColumns::for_generator(
+                let air = dwell_worldgen::AirColumns::for_generator_sized(
                     config.generator_version,
                     config.world_seed,
+                    config.world_size,
                 );
                 (
-                    dwell_worldgen::generator_for(config.generator_version, config.world_seed),
+                    dwell_worldgen::generator_for_sized(
+                        config.generator_version,
+                        config.world_seed,
+                        config.world_size,
+                    ),
                     Some(air.test()),
                     Some(crate::sky_columns::SkyColumns::new(
                         air,
@@ -858,9 +1244,37 @@ impl Server {
             .lod_threads
             .unwrap_or(usize::from(config.worldgen_threads > 0));
         let spawn = *config.spawn.get_or_insert_with(|| {
-            dwell_worldgen::spawn_point_for(config.generator_version, config.world_seed)
+            dwell_worldgen::spawn_point_for_sized(
+                config.generator_version,
+                config.world_seed,
+                config.world_size,
+            )
         });
+        let shrine_respawn = config
+            .generator_override
+            .is_none()
+            .then(|| {
+                dwell_worldgen::shrine_respawn_for_sized(
+                    config.generator_version,
+                    config.world_seed,
+                    config.world_size,
+                )
+            })
+            .flatten();
+        // Town sites (docs/BLUEPRINTS.md §6) on the generated world's height field.
+        let town_ground = config
+            .generator_override
+            .is_none()
+            .then(|| {
+                dwell_worldgen::town_ground_for_sized(
+                    config.generator_version,
+                    config.world_seed,
+                    config.world_size,
+                )
+            })
+            .flatten();
         let mut server = Self {
+            shrine_respawn,
             edit_log: std::collections::VecDeque::new(),
             entropy,
             physics,
@@ -904,8 +1318,15 @@ impl Server {
                 },
                 ..WaterLink::default()
             },
-            settings: default_settings(config.water_speed),
-            settings_fields: SettingsFields::default().with(default_settings(config.water_speed)),
+            settings: new_world_settings(&config),
+            settings_fields: SettingsFields::default().with(new_world_settings(&config)),
+            worldgen_text: if dwell_world::has_terrain(config.generator_version)
+                && config.generator_override.is_none()
+            {
+                dwell_worldgen::config::installed_worldgen(config.world_seed)
+            } else {
+                String::new()
+            },
             tick: 0,
             next_player_id: 1,
             worldgen: if config.jobs_remote {
@@ -920,6 +1341,7 @@ impl Server {
             registry: (0, Default::default(), 0),
             own_blocks: Vec::new(),
             view_offsets: Vec::new(),
+            grids: grids::Grids::empty(),
             prefetch_offsets: cube_offsets(PREFETCH_CHUNKS),
             preload_offsets: Vec::new(),
             explicit_wanted: Vec::new(),
@@ -927,19 +1349,68 @@ impl Server {
             dirty: HashSet::default(),
             in_flight: HashMap::default(),
             departed: Vec::new(),
+            departed_inventories: Vec::new(),
+            departed_vitals: Vec::new(),
+            departed_markers: Vec::new(),
+            blueprints: Default::default(),
+            loose: Default::default(),
+            loose_moved: HashSet::default(),
+            creatures: Default::default(),
+            strike_log: Vec::new(),
+            npc_strike_log: Vec::new(),
+            bite_log: Vec::new(),
+            cuts: Default::default(),
+            cuts_unread: false,
+            damage: Default::default(),
+            damage_unread: false,
+            lava: Default::default(),
+            lava_unread: false,
+            lava_steam: Vec::new(),
+            lava_steam_cells: 0,
+            growth: Default::default(),
+            growth_unread: false,
+            ecology: ecology::Ecology::new(
+                config.ecology,
+                config.ecology_speed,
+                config.world_seed,
+                config.generator_version == dwell_world::GENERATOR_TERRAIN
+                    && config.generator_override.is_none(),
+                config.ecology_islands.clone(),
+            ),
+            grass: grass::Grass {
+                enabled: config.grass,
+                days: Default::default(),
+            },
+            grass_unread: false,
+            grass_rule: dwell_worldgen::grass::Rule::build(config.world_seed),
+            grass_envelope: None,
+            grass_terrain: Default::default(),
+            growers: None,
+            growth_scanned: Default::default(),
+            ground: Default::default(),
+            ground_unread: false,
+            ground_generated: Default::default(),
+            ground_density: None,
+            ground_density_chunks: Default::default(),
             next_save_tick: 0,
             save_stats: SaveStats::default(),
             lod: if config.jobs_remote {
-                LodPropagation::new_remote(dwell_worldgen::lod_generator_for(
+                LodPropagation::new_remote(dwell_worldgen::lod_generator_for_sized(
                     config.generator_version,
                     config.world_seed,
+                    config.world_size,
                 ))
             } else {
                 LodPropagation::new(
-                    dwell_worldgen::lod_generator_for(config.generator_version, config.world_seed),
+                    dwell_worldgen::lod_generator_for_sized(
+                        config.generator_version,
+                        config.world_seed,
+                        config.world_size,
+                    ),
                     lod_threads,
                 )
-            },
+            }
+            .with_world(dwell_world::WorldBounds::of(config.world_size)),
             index_updates: BTreeMap::new(),
             next_index_update_tick: 0,
             lod_unsaved: HashSet::default(),
@@ -947,7 +1418,21 @@ impl Server {
             lod_rebuild: false,
             config,
         };
+        // The world's disc and build volume bound its edits (`check_block_edit`,
+        // `check_region_edit`): its size's, not the 1× build's (BUGS.md #109).
+        server.world.bounds = server.bounds();
+        // The portals' shafts for the player controller's exit push (BIFACIAL_WORLD.md §12.3):
+        // from the generator and seed, as the client's prediction sets them (`Game::set_world`).
+        if server.config.generator_override.is_none() {
+            server.world.portals = dwell_worldgen::portal_shafts_for_sized(
+                server.config.generator_version,
+                server.config.world_seed,
+                server.config.world_size,
+            );
+        }
+        server.blueprints.town_ground = town_ground;
         server.init_storage();
+        server.place_world_vents();
 
         // Pre-generate the spawn region, so the first players never wait for terrain. The
         // verification chunk is always generated: clients check their generator against it,
@@ -985,6 +1470,14 @@ impl Server {
             .collect();
         // The respawn preload's ring: the same sphere, of its own radius (at most the view's).
         server.set_respawn_preload(server.config.respawn_preload_radius_chunks);
+        server.share_grass_with_ecology();
+        // The other grids (the moon), their edited chunks from the world file.
+        server.grids = grids::Grids::new(
+            server.config.world_seed,
+            dwell_world::WorldBounds::of(server.config.world_size).radius() as f64,
+            dwell_look::celestial::Celestial::for_world(&server.settings),
+            server.config.store.as_ref().map(|s| s.db().as_ref()),
+        );
         server
     }
 
@@ -999,11 +1492,20 @@ impl Server {
     }
 
     fn remove_session(&mut self, id: SessionId) {
+        // A player on another grid leaves from home, at its world position (its record's).
+        self.bring_home(id);
         let Some(s) = self.sessions.remove(&id) else {
             return;
         };
         if self.config.store.is_some() && s.joined() {
             self.departed.push(self.record_of(&s));
+            if !s.inventory_unread {
+                self.departed_inventories
+                    .push((s.public_key, s.inventory.to_bytes()));
+            }
+            let record = self.vitals_record(&s);
+            self.departed_vitals.push((s.public_key, record));
+            self.departed_markers.extend(Self::markers_record(&s));
         }
         if let Some(h) = s.handle {
             self.players.despawn(&mut self.physics, h);
@@ -1039,6 +1541,12 @@ impl Server {
                 self.send_datagram(id, &pong);
             }
             Some(Message::PlayerInput(m)) => self.handle_input(id, &m),
+            Some(Message::SwingHello) => {
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    s.swing_hello = true;
+                }
+            }
+            Some(Message::BitesHello) => self.bites_hello(id),
             _ => {}
         }
     }
@@ -1190,8 +1698,10 @@ impl Server {
         s.player_id = player_id;
         s.phase = Phase::Joined;
         s.edit_credit = EDIT_BURST;
+        s.punch_credit = PUNCH_BURST;
         s.region_credit = REGION_BURST_CELLS;
         let flight = self.may_fly(&self.sessions[&id]);
+        let flight_policy = self.may_fly_by_policy(&self.sessions[&id]);
         let welcome = Welcome {
             player_id,
             world_seed: self.config.world_seed,
@@ -1200,12 +1710,26 @@ impl Server {
             verification_chunk: self.verification_chunk.to_array(),
             // REGION_EDITS: this server understands RegionEdit (older builds of the line reject an
             // unknown message, so clients send one only when this is set).
-            // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach as far as
-            // the game mode's brush policy says; set only in modes that allow brushes (every world
-            // is creative for now, which does).
+            // BRUSHES (BRUSHES.md): pastes may hold KEEP cells and region edits reach the brush
+            // reach; set only in game modes that allow brushes (ADR 0065).
+            // FLIGHT: this player may fly now (the mode and the flight policy); FLIGHT_POLICY:
+            // the policy alone, for a client to recompute FLIGHT when the host changes the mode
+            // (older clients ignore the bit and keep FLIGHT).
+            // INVENTORY (ADR 0066): this server keeps inventories; a client that understands them
+            // says `InventoryAction::Hello` (older servers reject the message, older clients
+            // ignore the bit).
             flags: welcome_flags::REGION_EDITS
+                | welcome_flags::INVENTORY
+                | welcome_flags::CHOPPING
+                | welcome_flags::CHOP_SWEEP
+                | welcome_flags::VITALS
                 | if flight { welcome_flags::FLIGHT } else { 0 }
-                | if brush_policy(world_mode()).is_some() {
+                | if flight_policy {
+                    welcome_flags::FLIGHT_POLICY
+                } else {
+                    0
+                }
+                | if self.brushes_allowed() {
                     welcome_flags::BRUSHES
                 } else {
                     0
@@ -1224,7 +1748,7 @@ impl Server {
             self.send_reliable(id, &m, Channel::Control);
         }
         // The world's settings (its clock, its water speed), which the client uses over its own.
-        let settings = Message::WorldSettings(self.settings_fields.clone());
+        let settings = Message::WorldSettings(self.join_settings());
         self.send_reliable(id, &settings, Channel::Control);
         self.send_reliable(id, &Message::Welcome(welcome), Channel::Control);
         // The moving bodies already here (falling pieces, built bodies; docs/BUILT_BODIES.md §4):
@@ -1240,13 +1764,18 @@ impl Server {
             .store
             .as_ref()
             .and_then(|st| st.db().load_player(&key));
-        match saved {
+        self.load_inventory(id, &key);
+        self.load_markers(id, &key);
+        match &saved {
             Some(p) if p.health > 0 => {
                 let feet = (!self.config.join_at_spawn).then_some(p.feet);
                 self.spawn_player(id, feet);
                 self.sessions.get_mut(&id).expect("session").health = p.health;
             }
             _ => self.spawn_player(id, None),
+        }
+        if saved.as_ref().is_some_and(|p| p.health > 0) {
+            self.load_vitals(id, &key);
         }
     }
 
@@ -1277,11 +1806,17 @@ impl Server {
                 self.own_blocks.push(p);
             }
         }
-        let count = self.own_blocks.len();
+        // Aliases (ADR 0063: states named with a property or value this build doesn't know,
+        // from the world file or a structure) are served under their full strings.
+        let aliases = dwell_blocks::blocks()
+            .filter(|b| b.origin == dwell_blocks::Origin::Alias)
+            .count();
+        let count = self.own_blocks.len() + aliases;
         if self.registry.0 != count || self.registry.1.is_empty() {
             let own = &self.own_blocks;
             let bytes = dwell_blocks::sync::Payload::served_by(|b| {
                 b.origin == dwell_blocks::Origin::Build
+                    || b.origin == dwell_blocks::Origin::Alias
                     || own.iter().any(|&id| b.states().contains(&usize::from(id)))
             })
             .encode();
@@ -1296,6 +1831,7 @@ impl Server {
     /// else is ignored.
     fn handle_joined(&mut self, id: SessionId, m: Message) {
         let verification_hash = self.verification_hash;
+        let (uses_items, tick) = (self.uses_items(), self.tick);
         let s = self.sessions.get_mut(&id).expect("session");
         match m {
             Message::WorldgenCheck(hash) if s.chunk_mode == ChunkMode::AwaitingCheck => {
@@ -1318,18 +1854,45 @@ impl Server {
                     0
                 };
             }
-            Message::BlockEditRequest(edit) => {
-                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
+            // On another grid: the edit is that grid's (MOON_WORLD.md §7.2), applied at once.
+            Message::BlockEditRequest(edit) if s.away.is_some() => {
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 s.edit_seq += 1;
+                let n = s.edit_seq;
+                if !self.apply_grid_edit(id, &edit) {
+                    self.sessions
+                        .get_mut(&id)
+                        .expect("session")
+                        .edit_refused
+                        .push(n);
+                }
+            }
+            Message::BlockEditRequest(edit) => {
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
+                s.edit_seq += 1;
+                // A tool's hit lands at its swing's contact, never before the client's (the
+                // request left at the click): that long after it arrives (WORK_QUEUE item 25).
+                // A client with `hits.at_contact` sends it at the contact, aimed then (BUGS.md
+                // #111): it lands on arrival, checked from the eye at that tick.
+                let at_contact = s
+                    .capabilities
+                    .has(dwell_protocol::capability_names::HITS_AT_CONTACT);
+                let contact = (edit.action == BlockEditAction::Break && !at_contact)
+                    .then(|| held_break_item(s, uses_items))
+                    .flatten()
+                    .and_then(|t| {
+                        let c = dwell_protocol::chopping::break_contact_s(Some(t));
+                        (c > 0.0).then(|| (tick + contact_ticks(c), t.to_owned()))
+                    });
                 if s.edits.len() < MAX_QUEUED_EDITS {
-                    s.edits.push((s.edit_seq, edit, 0));
+                    s.edits.push((s.edit_seq, edit, 0, contact));
                 } else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
                 }
             }
             Message::BodyEditRequest(edit) => {
-                s.swing = next_swing(s.swing, edit.action == BlockEditAction::Break);
+                s.swung(edit.action == BlockEditAction::Break, SwingKind::Plain);
                 if s.body_edits.len() < MAX_QUEUED_EDITS {
                     s.body_edits.push(edit);
                 } else {
@@ -1337,7 +1900,7 @@ impl Server {
                 }
             }
             Message::RegionEdit(edit) => {
-                s.swing = next_swing(s.swing, false);
+                s.swung(false, SwingKind::Plain);
                 s.edit_seq += 1;
                 if s.region_edits.len() < region_edit::MAX_QUEUED {
                     s.region_edits.push((s.edit_seq, edit, 0));
@@ -1345,6 +1908,27 @@ impl Server {
                     s.stats.region_edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
                 }
+            }
+            Message::InventoryAction(a) => self.inventory_action(id, a),
+            Message::Chop(a) => self.chop_action(id, a),
+            Message::VitalsHello => s.vitals_hello = true,
+            Message::CausesHello(n) => s.known_cause = n,
+            Message::CreaturesHello => self.creatures_hello(id),
+            Message::DamageHello => self.damage_hello(id),
+            Message::EcologyHello => self.ecology_hello(id),
+            Message::SteamHello => s.steam_hello = true,
+            Message::Capabilities(c) => {
+                s.capabilities = c;
+                self.swordplay_hello(id);
+                self.send_markers(id);
+                self.send_blueprints(id);
+            }
+            Message::TheaterViewpoint(at) => self.theater_viewpoint(id, at),
+            Message::Markers(m) => self.set_markers(id, m),
+            Message::Blueprints(m) => self.blueprints_message(id, m),
+            Message::WorldgenRequest => {
+                let m = Message::WorldgenConfig(self.worldgen_text.clone());
+                self.send_reliable(id, &m, Channel::Control);
             }
             Message::ChunkResync(coords) => self.resync(id, &coords),
             Message::ChunkRequest(coords) => self.request_chunks(id, &coords),
@@ -1376,6 +1960,20 @@ impl Server {
         [at[0] + dx, at[1], at[2] + dz]
     }
 
+    /// Where a player who died at `death` stands up: the shrine nearest the death on its face
+    /// (docs/SHRINES.md; owner, 2026-11-12: "You respawn at the nearest shrine when you die"), in
+    /// every game mode, half a metre over its floor (the players' spread round it may stand on a
+    /// higher step of the dais); else the world's spawn.
+    fn respawn_after_death(&self, player_id: u16, death: [f64; 3]) -> [f64; 3] {
+        let Some(at) = self.shrine_respawn.as_ref().and_then(|f| f(death)) else {
+            return self.respawn_feet(player_id);
+        };
+        let f = dwell_world::FaceFrame::at_height(death[1]);
+        let [x, y, z] = f.point(at);
+        let [dx, dz] = spawn_spread(player_id);
+        f.point([x + dx, y + dwell_world::CELL_H, z + dz])
+    }
+
     fn spawn_player(&mut self, id: SessionId, feet: Option<[f64; 3]>) {
         let spawn =
             DVec3::from(feet.unwrap_or_else(|| self.respawn_feet(self.sessions[&id].player_id)));
@@ -1389,6 +1987,11 @@ impl Server {
         s.inputs.clear();
         s.primed = false;
         s.last_input = Input::default();
+        // At the world's spawn (or up again after a death on another grid): on its spawn grid, if
+        // the world has one, once the client says it can be there (a few seconds' grace).
+        let to_grid = feet.is_none() || std::mem::take(&mut s.grid_respawn);
+        s.grid_spawn_due = (to_grid && self.config.spawn_grid.is_some())
+            .then_some(self.tick + GRID_SPAWN_GRACE_TICKS);
     }
 
     /// Server-originated velocity change for a player (knockback), applied before this tick's
@@ -1412,15 +2015,20 @@ impl Server {
     }
 
     fn damage(&mut self, id: SessionId, amount: i32, cause: DamageCause) {
+        // Every cause (falls, blasts, falling pieces) goes through here: a mode without the
+        // `damage` ability (creative) hurts no one (ADR 0065).
+        if !self.settings.allows(Ability::Damage) {
+            return;
+        }
         let s = self.sessions.get_mut(&id).expect("session");
-        if s.handle.is_none() || amount <= 0 {
+        if (s.handle.is_none() && s.away.is_none()) || amount <= 0 {
             return;
         }
         s.health = (s.health - amount).max(0);
         let mut e = self.event(PlayerEventKind::Damage, &self.sessions[&id]);
         e.amount = amount.min(255) as u8;
         e.cause = cause;
-        self.broadcast_world(&Message::PlayerEvent(e));
+        self.broadcast_event(e);
         if self.sessions[&id].health == 0 {
             self.kill(id, cause);
         }
@@ -1431,31 +2039,60 @@ impl Server {
         self.players.feet(&self.physics, h)
     }
 
+    /// Defeat, not death (docs/CHARACTERS.md §11.13; owner, 2026-11-13: "Humans won't die in this
+    /// game (general design rule)"): at 0 health the player kneels where it fell, facing as it
+    /// faced, for its defeat's `kneel_s` and `fade_s` (shared/defeat), then stands up at the
+    /// shrine nearest where it fell (the respawn below). Its body leaves the physics while it
+    /// kneels (snapshots carry it as `DEAD` at `death_position`, which clients draw kneeling);
+    /// it keeps everything it carries (owner, 2026-11-13: "Keep everything"): nothing drops.
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
-        let Some(h) = self.sessions[&id].handle else {
-            return;
+        // On another grid (the sun's lava, SUN_WORLD.md §6): out of its space, the inventory kept
+        // (as on every grid), up again at the world's spawn.
+        let (death, yaw, away) = match (self.sessions[&id].handle, self.sessions[&id].away) {
+            (Some(h), _) => {
+                let p = self.players.position(&self.physics, h);
+                let death = [p.x, self.feet_y(h), p.z];
+                let yaw = self.players.controller(h).input.look_yaw;
+                self.players.despawn(&mut self.physics, h);
+                (death, yaw, false)
+            }
+            (None, Some(a)) => {
+                let sp = &self.grids.slots[a.slot].space;
+                let yaw = sp.players.controller(a.handle).input.look_yaw;
+                match self.remove_away(id) {
+                    Some(d) => (d, yaw, true),
+                    None => return,
+                }
+            }
+            _ => return,
         };
-        let p = self.players.position(&self.physics, h);
-        let death = [p.x, self.feet_y(h), p.z];
-        self.players.despawn(&mut self.physics, h);
-        let respawn_tick = self.tick + (pc::RESPAWN_SECONDS as u32) * SIM_HZ;
-        let respawn = self.respawn_feet(self.sessions[&id].player_id);
+        let respawn_tick = self.tick + defeat_ticks(dwell_protocol::defeat::PLAYER);
+        let pid = self.sessions[&id].player_id;
+        let respawn = if away {
+            self.respawn_feet(pid)
+        } else {
+            self.respawn_after_death(pid, death)
+        };
         let half = f64::from(self.config.player_config.half_height(false));
         let preload = self
             .config
             .respawn_preload_radius_chunks
             .map(|_| body_centre_chunk(respawn, half));
         let s = self.sessions.get_mut(&id).expect("session");
+        s.grid_respawn = away;
         s.death_position = death;
+        s.death_yaw = yaw;
         s.handle = None;
         s.health = 0;
         s.inputs.clear();
         s.respawn_tick = respawn_tick;
+        s.burn = dwell_lava::Burn::default(); // the dead don't burn on into their respawn
         s.preload_center = preload;
         s.preload_complete = false;
+        s.respawn_at = Some(respawn);
         let mut e = self.event(PlayerEventKind::Death, &self.sessions[&id]);
         e.cause = cause;
-        self.broadcast_world(&Message::PlayerEvent(e));
+        self.broadcast_event(e);
     }
 
     /// Server-side effects of the controller tick: impact damage (a hit on the ground, a floor or a
@@ -1465,10 +2102,29 @@ impl Server {
             return;
         };
         let c = self.players.controller(h);
-        if c.events & events::IMPACTED != 0 {
-            let amount = self.config.player_config.impact_damage(c.impact_speed);
+        let (impacted, grounded) = (c.events & events::IMPACTED != 0, c.ground.grounded);
+        let (speed, flying) = (c.impact_speed, c.fly.flying);
+        let s = self.sessions.get_mut(&id).expect("session");
+        let graced = s.flight_grace;
+        if s.flight_grace && !flying && (impacted || grounded) {
+            s.flight_grace = false; // landed: the host's fall is over
+        }
+        if impacted && !graced {
+            let amount = self.config.player_config.impact_damage(speed);
             self.damage(id, amount, DamageCause::Fall);
         }
+        self.drown(id);
+        self.burn(id);
+    }
+
+    /// After the other grids' step: an away player burns in its grid's lava (SUN_WORLD.md §6, the
+    /// same `burn` rules as home's).
+    fn after_away_tick(&mut self, id: SessionId) {
+        let Some(a) = self.sessions[&id].away else {
+            return;
+        };
+        let in_lava = self.away_hot_fluid(a);
+        self.burn_by(id, in_lava);
     }
 
     /// Advances the simulation by one 1/SIM_HZ step.
@@ -1490,6 +2146,8 @@ impl Server {
         self.phase_ms[0] += watch.lap_ms();
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
+        // Swings whose head reaches what they hit this tick (WORK_QUEUE item 25).
+        self.land_swings();
         self.apply_edits();
         self.apply_body_edits();
         // Fuses burn; the ones out blow (docs/EXPLOSIVES.md §3): their knockbacks go with this
@@ -1507,13 +2165,17 @@ impl Server {
         for fuse in self.fuses.tick() {
             self.blast(fuse);
         }
+        self.spawn_queued();
         self.phase_ms[1] += watch.lap_ms();
+
+        // Travel between the grids (MOON_WORLD.md §7.2): captures, releases, far flight.
+        self.travel_players();
 
         // 2. One input per player per tick, in sequence order (§9.3). Starved: repeat the last one.
         for s in self.sessions.values_mut() {
-            let Some(h) = s.handle.filter(|_| s.joined()) else {
+            if !s.joined() || (s.handle.is_none() && s.away.is_none()) {
                 continue;
-            };
+            }
             // Input latency: when the queue stayed above MAX_BUFFERED_INPUTS a whole window, the
             // excess the window never drained is skipped.
             s.low_water = s.low_water.min(s.inputs.len());
@@ -1550,8 +2212,19 @@ impl Server {
                     s.stats.ticks_starved += 1;
                 }
             }
-            self.players.set_input(h, s.last_input);
+            match (s.handle, s.away) {
+                (Some(h), _) => self.players.set_input(h, s.last_input),
+                (None, Some(a)) => self.grids.slots[a.slot]
+                    .space
+                    .players
+                    .set_input(a.handle, s.last_input),
+                _ => {}
+            }
         }
+
+        // A player inside solid ground (a spawn link's y, a teleport) stands on the ground above
+        // it (BUGS.md #82), before it can fall through.
+        self.lift_buried_players();
 
         // 3. Controller pipeline (PLAYER_CONTROLLER.md §4), then its server-side consequences. The
         // falling pieces' terrain collision loads with the players' (docs/FELLING.md §3).
@@ -1561,6 +2234,9 @@ impl Server {
         self.players
             .tick_terrain(&mut self.world, &mut self.physics);
         self.phase_ms[2] += watch.lap_ms();
+        // The mode's stamina and oxygen (ADR 0069), as it is this tick.
+        let rules = self.vitals_rules();
+        self.players.set_vitals(rules);
         self.players
             .tick_controllers(&mut self.world, &mut self.physics);
         self.phase_ms[3] += watch.lap_ms();
@@ -1599,39 +2275,74 @@ impl Server {
         self.felling.float(&mut self.world, &mut self.physics);
         self.phase_ms[5] += watch.lap_ms();
         self.physics.step(1.0 / f64::from(SIM_HZ));
+        // The other grids' spaces, their players and physics.
+        self.grids.step(1.0 / f64::from(SIM_HZ));
+        for &id in &ids {
+            if self.sessions.get(&id).is_some_and(Session::joined) {
+                self.after_away_tick(id);
+            }
+        }
         self.phase_ms[6] += watch.lap_ms();
         self.rejoin_apart();
         self.tick += 1;
         self.settle_pieces();
         self.phase_ms[7] += watch.lap_ms();
         self.flow_water();
+        // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
+        self.flow_lava();
+        self.flow_grid_lava();
+        self.send_lava_steam();
+        // Trees grow by the world's days (ADR 0079 S3).
+        self.grow_trees();
+        // Tall grass grows and spreads by them (ADR 0075 T3c).
+        self.grow_grass();
+        // The far ecology steps by them too (docs/ECOLOGY.md §6).
+        self.step_ecology();
+        self.send_ecology();
+
+        // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
+        self.step_items();
+        // Creatures spawn near players, wander and despawn far away (ADR 0073).
+        self.step_creatures();
+        self.step_npc_fights();
+        self.step_creature_attacks();
+        // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
+        self.step_blueprints();
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
             let Some(s) = self.sessions.get(&id) else {
                 continue;
             };
-            if !s.joined() || s.handle.is_some() || self.tick < s.respawn_tick {
+            if !s.joined() || s.handle.is_some() || s.away.is_some() || self.tick < s.respawn_tick {
                 continue;
             }
-            self.spawn_player(id, None);
+            let s = self.sessions.get_mut(&id).expect("session");
+            let at = s.respawn_at.take();
+            // A defeat keeps everything it carried (owner, 2026-11-13: "Keep everything"; §11.13).
+            self.spawn_player(id, at);
             self.sessions.get_mut(&id).expect("session").preload_center = None;
             let h = self.sessions[&id].handle.expect("spawned");
             let p = self.players.position(&self.physics, h);
             let mut e = self.event(PlayerEventKind::Respawn, &self.sessions[&id]);
-            e.position = [p.x, p.y - f64::from(self.players.half_height(h)), p.z];
+            // The feet: under the body's centre on face A, over it on face B (before 0.58 the
+            // centre less half its height on both, 1.8 m off on face B).
+            e.position = [p.x, self.feet_y(h), p.z];
             self.broadcast_world(&Message::PlayerEvent(e));
         }
         self.phase_ms[8] += watch.lap_ms();
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
+            self.send_vitals();
         }
         if self.tick.is_multiple_of(CURRENTS_EVERY) {
             self.send_currents();
         }
         self.phase_ms[9] += watch.lap_ms();
 
-        // 6. Terrain streaming, then what to generate next and what to forget.
+        // 6. Terrain streaming, then what to generate next and what to forget. The theater cameras'
+        // viewpoints held back by their rate are taken first (THEATER_MODE.md §7).
+        self.take_viewpoints();
         self.explicit_wanted.clear();
         if let Some(sky) = &mut self.sky {
             sky.begin();
@@ -1639,6 +2350,7 @@ impl Server {
         for &id in &ids {
             if self.sessions.contains_key(&id) {
                 self.stream_chunks(id);
+                self.stream_grid_chunks(id);
             }
         }
         self.phase_ms[10] += watch.lap_ms();
@@ -1713,7 +2425,8 @@ impl Server {
     }
 
     fn view_center(&self, s: &Session) -> Option<ChunkCoord> {
-        if !s.joined() {
+        // On another grid the home view waits (that grid streams instead; `stream_grid_chunks`).
+        if !s.joined() || s.away.is_some() {
             return None;
         }
         Some(match s.handle {
@@ -1730,11 +2443,13 @@ impl Server {
     }
 
     fn update_worldgen(&mut self) {
-        let centers: Vec<ChunkCoord> = self
+        // The bodies' views, then the theater cameras' (THEATER_MODE.md §7).
+        let mut centers: Vec<ChunkCoord> = self
             .sessions
             .values()
             .filter_map(|s| self.view_center(s))
             .collect();
+        centers.extend(self.viewpoint_centers());
         // Around players first (collision needs them), then chunks full-mode clients wait for.
         // Saved chunks are read from the world file instead (a few per tick).
         let mut wanted = Vec::new();
@@ -1742,7 +2457,11 @@ impl Server {
         for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
                 let c = add(center, self.prefetch_offsets[k]);
-                if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
+                if !dwell_world::WorldBounds::of(self.config.world_size)
+                    .volume()
+                    .chunk_may_hold(c)
+                    || self.world.find(c).is_some()
+                {
                     continue;
                 }
                 if self.is_saved(c) {
@@ -1765,7 +2484,9 @@ impl Server {
             for k in 0..self.preload_offsets.len() {
                 for &center in &preloads {
                     let c = add(center, self.preload_offsets[k]);
-                    if BUILD_VOLUME.chunk_may_hold(c)
+                    if dwell_world::WorldBounds::of(self.config.world_size)
+                        .volume()
+                        .chunk_may_hold(c)
                         && self.world.find(c).is_none()
                         && !self.is_saved(c)
                         && self.air_known(c) == Some(false)
@@ -1780,7 +2501,11 @@ impl Server {
         // it flows on until it sleeps.
         let water = self.water_link.wanted.clone();
         for &c in &water {
-            if !BUILD_VOLUME.chunk_may_hold(c) || self.world.find(c).is_some() {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || self.world.find(c).is_some()
+            {
                 continue;
             }
             if self.is_saved(c) {
@@ -1829,6 +2554,13 @@ impl Server {
     /// LOD asks for to show the level-1 sections the ring straddles as chunks.
     fn requestable(&self, s: &Session, c: ChunkCoord, center: ChunkCoord) -> bool {
         within_radius(c, center, self.config.render_radius_chunks)
+            || self.viewpoint_of(s).is_some_and(|p| {
+                within_radius(
+                    c,
+                    chunk_at(p[0], p[1], p[2]),
+                    self.config.render_radius_chunks,
+                )
+            })
             || s.preload_center
                 .zip(self.config.respawn_preload_radius_chunks)
                 .is_some_and(|(p, r)| within_radius(c, p, r + 2))
@@ -1856,7 +2588,9 @@ impl Server {
             }
             let ok = s.chunk_mode != ChunkMode::AwaitingCheck
                 && in_range
-                && BUILD_VOLUME.chunk_may_hold(c)
+                && dwell_world::WorldBounds::of(self.config.world_size)
+                    .volume()
+                    .chunk_may_hold(c)
                 && s.chunk_request_credit >= 1.0
                 && s.chunk_requests.len() < MAX_QUEUED_CHUNK_REQUESTS;
             if !ok {
@@ -1871,6 +2605,9 @@ impl Server {
 
     fn stream_chunks(&mut self, id: SessionId) {
         let center = self.view_center(&self.sessions[&id]);
+        let viewpoint = self
+            .viewpoint_of(&self.sessions[&id])
+            .map(|p| chunk_at(p[0], p[1], p[2]));
         let (view, render) = (
             self.config.view_radius_chunks,
             self.config.render_radius_chunks,
@@ -1888,7 +2625,11 @@ impl Server {
             .preload_center
             .zip(self.config.respawn_preload_radius_chunks);
 
-        if s.stream_center != Some(center) {
+        if s.stream_center != Some(center) || s.viewpoint.stream_center != viewpoint {
+            if s.viewpoint.stream_center != viewpoint {
+                s.viewpoint.stream_center = viewpoint;
+                s.viewpoint.stream_complete = false;
+            }
             s.stream_center = Some(center);
             s.stream_complete = false;
             // Chunks beyond the view plus a margin (hysteresis) leave the client; requested ones
@@ -1909,6 +2650,17 @@ impl Server {
                             r
                         },
                     ) && !preload.is_some_and(|(p, pr)| within_radius(*c, p, pr))
+                        && !viewpoint.is_some_and(|v| {
+                            within_radius(
+                                *c,
+                                v,
+                                if s.requested.contains(c) {
+                                    r.max(rr)
+                                } else {
+                                    r
+                                },
+                            )
+                        })
                 })
                 .collect();
             unload.sort_by_key(|c| (c.x, c.y, c.z));
@@ -1920,6 +2672,7 @@ impl Server {
             for part in unload.chunks(0xFFFF) {
                 let m = Message::ChunkUnload(ChunkUnload {
                     coords: part.iter().map(|c| c.to_array()).collect(),
+                    grid: 0,
                 });
                 self.send_reliable(id, &m, Channel::World);
             }
@@ -1934,6 +2687,15 @@ impl Server {
         {
             // Then the respawn point's ring (§6.3): the view first (collision needs it).
             self.stream_preload(id, p, &mut sent);
+        }
+        let s = &self.sessions[&id];
+        if s.stream_complete
+            && (s.preload_complete || s.preload_center.is_none())
+            && let Some(v) = viewpoint
+            && !s.viewpoint.stream_complete
+        {
+            // Then the theater camera's view (THEATER_MODE.md §7), from the same budget.
+            self.stream_viewpoint(id, v, &mut sent);
         }
         let s = &self.sessions[&id];
         if s.stream_complete && (s.preload_complete || s.preload_center.is_none()) {
@@ -1959,7 +2721,11 @@ impl Server {
             let c = add(center, self.view_offsets[i]);
             let s = &self.sessions[&id];
             // Chunks wholly outside the build volume are air everywhere: never sent (ADR 0025).
-            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || s.streamed.contains(&c)
+            {
                 continue;
             }
             complete = false;
@@ -2001,7 +2767,11 @@ impl Server {
         for i in 0..self.preload_offsets.len() {
             let c = add(center, self.preload_offsets[i]);
             let s = &self.sessions[&id];
-            if !BUILD_VOLUME.chunk_may_hold(c) || s.streamed.contains(&c) {
+            if !dwell_world::WorldBounds::of(self.config.world_size)
+                .volume()
+                .chunk_may_hold(c)
+                || s.streamed.contains(&c)
+            {
                 continue;
             }
             complete = false;
@@ -2108,6 +2878,7 @@ impl Server {
             coord: c.to_array(),
             revision: 0,
             voxels: Vec::new(),
+            grid: 0,
         };
         if !modified && self.is_air(c) {
             m.form = ChunkForm::Air; // nothing to generate or store, in either mode
@@ -2187,8 +2958,28 @@ impl Server {
     fn may_edit(&self, s: &Session) -> bool {
         self.allowed(self.config.edits, s)
     }
+    /// Flight: the world's mode allows it (ADR 0065) and the flight policy lets this player.
     fn may_fly(&self, s: &Session) -> bool {
+        self.settings.allows(Ability::Flight) && self.may_fly_by_policy(s)
+    }
+    fn may_fly_by_policy(&self, s: &Session) -> bool {
         self.allowed(self.config.flight, s)
+    }
+    /// The capabilities this server has (ARCHITECTURE.md §8.3), announced in the join's settings.
+    pub fn capabilities(&self) -> dwell_protocol::capabilities::Capabilities {
+        dwell_protocol::capabilities::Capabilities::this_build()
+    }
+
+    /// The capabilities a session's client said it has (empty: it never sent `Capabilities`).
+    pub fn client_capabilities(
+        &self,
+        id: SessionId,
+    ) -> Option<&dwell_protocol::capabilities::Capabilities> {
+        self.sessions.get(&id).map(|s| &s.capabilities)
+    }
+
+    fn brushes_allowed(&self) -> bool {
+        self.settings.allows(Ability::Brushes)
     }
     fn allowed(&self, policy: EditPolicy, s: &Session) -> bool {
         match policy {
@@ -2238,7 +3029,24 @@ impl Server {
         // Bodies placed blocks start (cell, block, kind).
         // Blocks gone into bodies this tick: (body, its new cell; none: a new body), the block.
         let mut bodies_built: Vec<BodyBuilt> = Vec::new();
-        let reach = region_reach(world_mode());
+        let brushes = self.brushes_allowed();
+        // Saved structures are placed only where the mode has the ability (STRUCTURES.md §9).
+        let structures = self.settings.allows(Ability::Structures);
+        let reach = region_reach(brushes);
+        // Without unlimited blocks (ADR 0066): placing takes an item, breaking drops the block's.
+        let uses_items = self.uses_items();
+        let mut broken: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Hits short of breaking (cell, state, hits to break, this hit's number), for their drops;
+        // and the cells a last hit broke, with their hits (the destroy drops what is left).
+        let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
+        let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
+        // Cells a hit damaged this tick, for the clients that draw damage.
+        let mut damaged: Vec<[i32; 3]> = Vec::new();
+        // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
+        let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // Saplings planted this tick (ADR 0079 S4): each becomes its species' stage-0 tree.
+        let mut planted: Vec<dwell_worldgen::growth::Record> = Vec::new();
+        let day = self.world_days();
         let ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for id in ids {
             let s = &self.sessions[&id];
@@ -2249,8 +3057,20 @@ impl Server {
             let eye = handle.map(|h| self.eye_of(h));
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
+            s.punch_credit = (s.punch_credit + punch_credit_per_tick()).min(PUNCH_BURST);
             let mut held = Vec::new();
-            for (seq, edit, ticks) in std::mem::take(&mut s.edits) {
+            for (seq, edit, ticks, contact) in std::mem::take(&mut s.edits) {
+                // A tool's hit waits for its contact; switched away from by then, it is dropped.
+                if let Some((at, tool)) = &contact {
+                    if self.tick < *at {
+                        held.push((seq, edit, ticks, contact));
+                        continue;
+                    }
+                    if held_break_item(s, uses_items) != Some(tool.as_str()) {
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                }
                 let Some(eye) = eye.filter(|_| may_edit && s.edit_credit >= 1.0) else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -2261,7 +3081,7 @@ impl Server {
                 s.stats.last_edit_check = outcome.check;
                 // Into a body: it waits for the body's queued inputs to move it (EDIT_HOLD_TICKS).
                 if outcome.check == EditCheck::IntoPlayer && ticks < EDIT_HOLD_TICKS {
-                    held.push((seq, edit, ticks + 1));
+                    held.push((seq, edit, ticks + 1, None));
                     continue;
                 }
                 if outcome.check != EditCheck::Ok {
@@ -2269,8 +3089,128 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 }
-                s.edit_credit -= 1.0;
-                s.stats.edits_applied += 1;
+                // A species' sapling takes only on its `plantOn` ground (shared/trees; ADR 0079 S4).
+                let plant = match edit.action {
+                    BlockEditAction::Place => sapling_planted(&self.world, &outcome, day),
+                    _ => Ok(None),
+                };
+                let Ok(plant) = plant else {
+                    s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
+                    continue;
+                };
+                // The item asked for must be held; it is used up when it is what goes in (a torch
+                // held against dynamite lights it and stays in the hand).
+                if uses_items && edit.action == BlockEditAction::Place {
+                    let item = items::cost_of(edit.material);
+                    let placed = items::cost_of(outcome.material) == item;
+                    if s.inventory.count_of(&item) == 0 {
+                        s.stats.edits_rejected += 1;
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                    if placed {
+                        s.inventory.take_one(&item);
+                        s.inventory_dirty = true;
+                    }
+                }
+                // A block that needs a tool kind to break (its `breakWith`: a log, an axe; ADR
+                // 0067) is refused to a hand without one where blocks are not unlimited.
+                if uses_items && edit.action == BlockEditAction::Break {
+                    let [x, y, z] = outcome.cell;
+                    let block = dwell_blocks::block_of(self.world.get_voxel(x, y, z)).name;
+                    let held = s
+                        .inventory
+                        .slots
+                        .get(usize::from(s.inventory.held))
+                        .and_then(|h| h.as_ref())
+                        .map(|st| st.item.as_str());
+                    if !dwell_protocol::chopping::may_break_holding(block, held) {
+                        s.stats.edits_rejected += 1;
+                        s.edit_refused.push(seq);
+                        continue;
+                    }
+                }
+                // Blocks take hits to break by the tool held (docs/BLOCK_DAMAGE.md, ADR 0078; the
+                // same in every mode): a hit short of the count is recorded and the block stays
+                // (the client's predicted break gives way, as to a refusal); none: it can't be
+                // broken so (stone by hand). A mode with `instantBreaks` (creative; owner
+                // 2026-11-11) breaks every block in one hit with anything but a tool held.
+                if edit.action == BlockEditAction::Break {
+                    let state = self.world.get_voxel_if_loaded(outcome.cell);
+                    let block = dwell_blocks::block_of(state).name;
+                    let held = held_break_item(s, uses_items);
+                    let chunk = dwell_protocol::damage::hit_chunk(block, held);
+                    let need = if self.config.one_hit_breaks {
+                        Some(1)
+                    } else {
+                        dwell_protocol::damage::hits_to_break_for(
+                            block,
+                            held,
+                            self.settings.allows(Ability::InstantBreaks),
+                        )
+                    };
+                    // A punch short of breaking comes no faster than the hand's `repeatS` (held
+                    // Break repeats it; WORK_QUEUE item 17): a faster one is refused.
+                    if need.is_some_and(|n| n > 1) && dwell_protocol::chopping::is_punch(held) {
+                        if s.punch_credit < 1.0 - 1e-9 {
+                            s.stats.edits_rejected += 1;
+                            s.edit_refused.push(seq);
+                            continue;
+                        }
+                        s.punch_credit -= 1.0;
+                    }
+                    // A hit that counts wears the held tool (owner, 2026-11-11), where items are
+                    // used (or creative too, `creativeWear`).
+                    if need.is_some() {
+                        match wear_tool(&mut s.inventory, uses_items) {
+                            inv::Wear::None => {}
+                            inv::Wear::Worn(_) | inv::Wear::Broke => s.inventory_dirty = true,
+                        }
+                    }
+                    match need {
+                        None => {
+                            s.stats.edits_rejected += 1;
+                            s.edit_refused.push(seq);
+                            continue;
+                        }
+                        Some(n) if n > 1 => {
+                            // The piece it takes off: the tool's tier `chunk` (metal ×2; owner,
+                            // 2026-11-12: "break double sized bigger chunks off").
+                            let mark = dwell_protocol::damage::HitMark {
+                                chunk,
+                                ..dwell_protocol::damage::HitMark::at(
+                                    edit.face,
+                                    edit.point.unwrap_or([128; 3]),
+                                )
+                            };
+                            let k = u32::from(self.damage.hit(
+                                outcome.cell,
+                                state,
+                                n.min(u32::from(u16::MAX)) as u16,
+                                mark,
+                            ));
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                            if k < n {
+                                if uses_items {
+                                    hits.push((outcome.cell, state, n, k));
+                                }
+                                damaged.push(outcome.cell);
+                                s.edit_refused.push(seq);
+                                continue;
+                            }
+                            destroyed_after.insert(outcome.cell, n);
+                        }
+                        Some(_) => {
+                            s.edit_credit -= 1.0;
+                            s.stats.edits_applied += 1;
+                        }
+                    }
+                } else {
+                    s.edit_credit -= 1.0;
+                    s.stats.edits_applied += 1;
+                }
                 // On a build platform's top, or touching a held body, a block goes into that body,
                 // not the grid (docs/BUILT_BODIES.md §3); the client's predicted block gives way to
                 // it when the edit is acknowledged.
@@ -2292,8 +3232,16 @@ impl Server {
                     }
                     continue;
                 }
+                planted.extend(plant);
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
+                    if edit.action == BlockEditAction::Break {
+                        let was = self.world.get_voxel(at[0], at[1], at[2]);
+                        under_ground.push((at, was));
+                        if uses_items {
+                            broken.push((at, was));
+                        }
+                    }
                     changes.set(&mut self.world, at, m);
                 }
             }
@@ -2310,8 +3258,63 @@ impl Server {
                     continue;
                 };
                 s.region_credit -= cost;
-                let outcome = check_region_edit(&mut self.world, &edit, eye, &capsules, reach);
+                // A brush stroke's KEEP cells only in a mode with brushes (ADR 0065).
+                let outcome = if edit.op == dwell_protocol::RegionEditOp::Structure && !structures {
+                    // A structure placement as such, outside a mode with `structures`.
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotInMode)
+                } else if !brushes
+                    && matches!(
+                        edit.op,
+                        dwell_protocol::RegionEditOp::Paste
+                            | dwell_protocol::RegionEditOp::Structure
+                    )
+                    && edit.cells.contains(&dwell_world::region::KEEP)
+                {
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                } else {
+                    check_region_edit(&mut self.world, &edit, eye, &capsules, reach)
+                };
                 s.stats.last_region_check = outcome.check;
+                // Without unlimited blocks, a region places only what the player holds (ADR 0066).
+                let held_item = s
+                    .inventory
+                    .slots
+                    .get(usize::from(s.inventory.held))
+                    .and_then(|h| h.as_ref())
+                    .map(|st| st.item.clone());
+                // Nor does a region clear a block that needs a tool the hand lacks (`breakWith`).
+                let outcome = if uses_items
+                    && outcome.check == RegionCheck::Ok
+                    && outcome.changes.iter().any(|&(c, m)| {
+                        (m == M.air || info(m).liquid)
+                            && !dwell_protocol::chopping::may_break_holding(
+                                dwell_blocks::block_of(self.world.get_voxel(c[0], c[1], c[2])).name,
+                                held_item.as_deref(),
+                            )
+                    }) {
+                    dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                } else {
+                    outcome
+                };
+                let outcome = if uses_items && outcome.check == RegionCheck::Ok {
+                    let need = items::region_costs(&outcome.changes);
+                    if need
+                        .iter()
+                        .all(|(item, n)| s.inventory.count_of(item) >= *n)
+                    {
+                        for (item, n) in &need {
+                            for _ in 0..*n {
+                                s.inventory.take_one(item);
+                            }
+                        }
+                        s.inventory_dirty |= !need.is_empty();
+                        outcome
+                    } else {
+                        dwell_world::region::RegionOutcome::fail(RegionCheck::NotPlaceable)
+                    }
+                } else {
+                    outcome
+                };
                 if outcome.check != RegionCheck::Ok {
                     s.stats.region_edits_rejected += 1;
                     s.edit_refused.push(seq);
@@ -2326,9 +3329,14 @@ impl Server {
                     continue;
                 }
                 s.stats.region_edits_applied += 1;
+                s.stats.structure_edits_applied +=
+                    u32::from(edit.op == dwell_protocol::RegionEditOp::Structure);
                 s.stats.region_cells_changed += outcome.changes.len() as u64;
                 let cells: Vec<[i32; 3]> = outcome.changes.iter().map(|(c, _)| *c).collect();
                 for (cell, m) in outcome.changes {
+                    if uses_items && (m == M.air || info(m).liquid) {
+                        broken.push((cell, self.world.get_voxel(cell[0], cell[1], cell[2])));
+                    }
                     // As a block edit's: into a held body, or a new one on a build platform.
                     let d = (m != M.air && !info(m).liquid)
                         .then(|| self.felling.divert(&mut self.world, &self.physics, cell, m))
@@ -2356,8 +3364,30 @@ impl Server {
             }
             s.region_edits = held;
         }
+        // A planted sapling stands as its species' stage-0 tree, in what is still air (or the
+        // sapling itself), and its record grows it from today (the growers step).
+        for r in planted {
+            for (c, m) in dwell_worldgen::growth::cells_at(&r, 0) {
+                if c == r.anchor || self.world.get_voxel(c[0], c[1], c[2]) == M.air {
+                    changes.set(&mut self.world, c, m);
+                }
+            }
+            self.growth.trees.insert(r.anchor, r);
+        }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        self.send_damage(&damaged, Vec::new());
+        for (cell, was, n, k) in hits {
+            self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);
+        }
+        for (cell, was) in broken {
+            match destroyed_after.get(&cell) {
+                Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
+                None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
+            }
+            self.drop_sapling(cell, dwell_world::centre_of_cell(cell));
+        }
+        self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
         for &c in &edited {
             let m = self.world.get_voxel_if_loaded(c);
@@ -2398,13 +3428,27 @@ impl Server {
 
     /// Sends a tick's voxel changes (`reason`) to every client streaming their chunks, one revision
     /// per chunk, and marks the chunks dirty for saving and the LOD.
-    fn broadcast_changes(&mut self, changes: TickChanges, reason: VoxelModificationReason) {
+    fn broadcast_changes(&mut self, mut changes: TickChanges, reason: VoxelModificationReason) {
+        // A multi-cell block is whole or gone (BUGS.md #171, dwell_world::parts): whatever took or
+        // replaced one of its cells this tick (a break, a blast, a fill, a falling piece, water),
+        // its other cells go too, in the same modification.
+        let lone = dwell_world::parts::lone_parts(&self.world, &changes.cells());
+        for (c, m) in lone {
+            changes.set(&mut self.world, c, m);
+        }
         let TickChanges {
             chunks: mut changed,
             before,
             water,
+            lava,
             ..
         } = changes;
+        // The lava fields read an edited column's bed and water again (a dug channel, poured water).
+        if !lava && !self.lava.is_empty() {
+            for &(cell, _) in &before {
+                self.lava.touch(cell);
+            }
+        }
         if !water {
             for &(cell, from) in &before {
                 if self.edit_log.len() == EDIT_LOG_LEN {
@@ -2423,6 +3467,16 @@ impl Server {
                 let byte = crate::water::cells::byte_of(self.world.get_voxel_if_loaded(cell));
                 self.water_link.pending.push(WaterIn::Edit { cell, byte });
             }
+        }
+        // A changed cell's cut goes with its wood (ADR 0067), and its damage with its block.
+        self.cuts_dropped(&before);
+        if !self.damage.cells.is_empty() {
+            let gone: Vec<[i32; 3]> = before
+                .iter()
+                .filter(|(c, _)| self.damage.cells.remove(c).is_some())
+                .map(|(c, _)| *c)
+                .collect();
+            self.send_damage(&[], gone);
         }
         if changed.is_empty() {
             return;
@@ -2479,19 +3533,34 @@ impl Server {
     /// cells are cleared in one `Collapse` modification, then each piece's `EntitySpawn` goes to
     /// every joined client. `settles` counts how often these cells settled unanchored before.
     fn fell(&mut self, changed: &[[i32; 3]], settles: u8, away_from: Option<DVec3>) {
+        self.fell_tipped(changed, settles, away_from.map(|p| (p, 1.0)));
+    }
+
+    /// [`Self::fell`] with the share of the topple spin a carrying piece tips away with.
+    pub(crate) fn fell_tipped(
+        &mut self,
+        changed: &[[i32; 3]],
+        settles: u8,
+        away_from: Option<(DVec3, f64)>,
+    ) {
         if changed.is_empty() {
             return;
         }
         let mut collapse = TickChanges::default();
+        // A cell that goes into a piece takes the attached blocks on it (block data
+        // `needsSupport`: tall grass, a torch, a sapling, a ladder): removed, not left floating
+        // (owner, 2026-11-13, BUGS.md #165).
+        let mut removed = Vec::new();
         let new = self.felling.detach(
             &mut self.world,
             &mut self.physics,
             changed,
             settles,
             away_from,
-            &mut |world, cell, m| collapse.set(world, cell, m),
+            &mut |world, cell, m| removed.extend(collapse.set_and_unsupport(world, cell, m)),
         );
         self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
+        self.drop_attached(&removed);
         for i in new {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
@@ -2509,8 +3578,8 @@ impl Server {
     /// what the blast left without support falls.
     fn blast(&mut self, fuse: crate::blasts::Fuse) {
         use dwell_world::explosives::{
-            blast_damage, cells_within, destroys, fling_speed, launching, open_dir, piece_dir,
-            push_dir, radial_dir, share,
+            ShellRule, blast_damage, cells_within, cracking, destroys, fling_speed, launching,
+            open_dir, piece_dir, push_dir, radial_dir, share,
         };
         let Some(e) = self.fuses.table.get(fuse.explosive).copied() else {
             return;
@@ -2524,13 +3593,61 @@ impl Server {
         let centre = crate::felling::cell_centre(at);
         let centre_a = centre.to_array();
         // The way out (docs/EXPLOSIVES.md §3): sensed from the cells round it before it clears any.
+        // An attached block (tall grass) is open: the blast removes it.
         let solid_at = |world: &mut VoxelWorld, o: [i32; 3]| {
             let m = world.get_voxel(at[0] + o[0], at[1] + o[1], at[2] + o[2]);
-            m != M.air && !info(m).liquid
+            m != M.air && !info(m).liquid && !dwell_world::edit::attached(m)
         };
         let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
+        let crack = e.shell == ShellRule::Crack;
+        // The water round the charge as it stood before the blast (offsets), for `water_shields`.
+        let water_before: std::collections::HashSet<[i32; 3]> = if e.water_shields {
+            cells_within(e.loosen_radius_m.max(e.radius_m))
+                .into_iter()
+                .filter(|&o| {
+                    let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+                    let m = self.world.get_voxel(c[0], c[1], c[2]);
+                    m != M.air && (info(m).liquid || info(m).flooded)
+                })
+                .collect()
+        } else {
+            Default::default()
+        };
+        // A charge touching water spares the blocks (owner, 2026-11-07: "not destroy or dislodge
+        // (physics) blocks when it's touching water"): its six neighbours, read before any clears.
+        let wet = e.water_spares_blocks
+            && [
+                [0, 0, 0],
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, -1, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+            ]
+            .iter()
+            .any(|o: &[i32; 3]| {
+                let c = [at[0] + o[0], at[1] + o[1], at[2] + o[2]];
+                let m = self.world.get_voxel(c[0], c[1], c[2]);
+                m != M.air && (info(m).liquid || info(m).flooded)
+            });
+        // A cracking shell is judged by what touched open space before the blast: the open cells
+        // round it, read before any clears (docs/EXPLOSIVES.md §3.6).
+        let open_before: std::collections::HashSet<[i32; 3]> = if crack {
+            cells_within(e.radius_m + 1.0)
+                .into_iter()
+                .filter(|&o| !solid_at(&mut self.world, o))
+                .map(|o| [at[0] + o[0], at[1] + o[1], at[2] + o[2]])
+                .collect()
+        } else {
+            Default::default()
+        };
+        // The cells the core destroys (a cracking shell's roof over them drops).
+        let mut destroyed = std::collections::HashSet::new();
         let mut changes = TickChanges::default();
-        changes.set(&mut self.world, at, M.air);
+        // The attached blocks the blast removed (cell, what was there), for their drops.
+        let mut removed = Vec::new();
+        removed.extend(changes.set_and_unsupport(&mut self.world, at, M.air));
         // The shell's breakable cells (cell, state, centre, distance, offset), judged below.
         let mut shell = Vec::new();
         // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
@@ -2563,7 +3680,21 @@ impl Server {
                 self.fuses.light(c, i, delay);
                 continue;
             }
-            if s.indestructible {
+            if s.indestructible || wet {
+                continue;
+            }
+            // Water between the charge and this cell shields it (`behind_water`).
+            if e.water_shields
+                && dwell_world::explosives::behind_water(o, |w| water_before.contains(&w))
+            {
+                continue;
+            }
+            // An attached block (block data `needsSupport`: tall grass, a torch, a sapling, a
+            // ladder) is never a flung piece: removed, as when broken (owner, 2026-11-13: "It
+            // should just be destroyed if the block under it is moved or destroyed").
+            if dwell_world::edit::attached(m) {
+                let left = if s.flooded { M.water } else { M.air };
+                removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
                 continue;
             }
             if destroys(&e, d) {
@@ -2572,10 +3703,28 @@ impl Server {
                 } else {
                     M.air
                 };
-                changes.set(&mut self.world, c, left);
+                removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
+                destroyed.insert(c);
             } else {
                 shell.push((c, m, p, d, o));
             }
+        }
+        // A cracking shell's exposed cells (they touched open space before the blast, or sit on
+        // the cleared core) fly whatever lies in their way, with the blast's push.
+        let mut exposed = vec![false; shell.len()];
+        if crack {
+            let f = FaceFrame::at_row(at[1]);
+            let (here, below) = (f.cell([0, 0, 0]), f.cell([0, -1, 0]));
+            let down: [i32; 3] = std::array::from_fn(|k| below[k] - here[k]);
+            let cells: Vec<[i32; 3]> = shell.iter().map(|s| s.0).collect();
+            exposed = cracking(
+                &cells,
+                down,
+                e.crack_over_cleared,
+                e.crack_vertical_only,
+                |c| open_before.contains(&c),
+                |c| destroyed.contains(&c),
+            );
         }
         // Each shell cell's push: its line from the blast turned toward the way out. Those whose
         // push meets rock (the core cleared, the cells that fly not rock) stay as terrain.
@@ -2595,7 +3744,15 @@ impl Server {
             .zip(&dirs)
             .map(|(&(_, _, _, d, o), &dir)| (o, dir, d > e.radius_m))
             .collect();
-        let flies = launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o));
+        // A cracking shell frees only its exposed cells, judged on the world before the blast
+        // (owner, 2026-11-07: cells beside the destroyed core "aren't supposed to go live"; "the air
+        // check is supposed to happen before"): nothing flies out through the cleared core or behind
+        // other flying cells. Any other shell is wall-checked (`launching`).
+        let flies: Vec<bool> = if crack {
+            exposed.clone()
+        } else {
+            launching(&judged, e.open_path_m, |o| solid_at(&mut self.world, o))
+        };
         let mut flung = Vec::new();
         for ((&(c, m, p, d, _), &dir), fly) in shell.iter().zip(&dirs).zip(flies) {
             if !fly || flung.len() >= self.fuses.max_pieces {
@@ -2606,11 +3763,13 @@ impl Server {
             } else {
                 M.air
             };
-            changes.set(&mut self.world, c, left);
+            // What stood on it goes, not carried with the piece nor left floating.
+            removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
             flung.push((c, m, p, d, dir));
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
+        self.drop_attached(&removed);
         // The water round it kicked outward (docs/EXPLOSIVES.md §3.5), after the cells it cleared,
         // in the same batch: the grid's own law carries the wave to the banks and back.
         if e.wave_impulse > 0.0 && e.wave_reach_m > 0.0 {
@@ -2623,34 +3782,28 @@ impl Server {
                     free: e.wave_free_m,
                 }));
         }
-        for &(c, m, _, d, dir) in &flung {
-            let dir = DVec3::from(dir);
-            let i = self.felling.spawn_body(
-                &mut self.physics,
-                None,
-                0,
-                0,
-                vec![([0, 0, 0], m)],
-                crate::felling::cell_centre(c),
-                dwell_physics::DQuat::IDENTITY,
-                dir * fling_speed(&e, m, d),
-                DVec3::ZERO,
-            );
-            if e.no_piece_contact_s > 0.0 {
-                // Its pieces fly out packed: kept apart from one another for the window, they
-                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
-                let body = self.felling.pieces[i].body;
-                self.physics.set_apart(body, true);
-                self.fuses
-                    .apart
-                    .push((body, crate::blasts::ticks_of(e.no_piece_contact_s)));
+        // Pieces already moving within the destroy radius are destroyed, as blocks there are
+        // (owner, 2026-11-09: chained dynamite left "a ton of physics blocks that are affected by
+        // multiple explosion forces"); a piece is judged by its body's centre, a queued one by its
+        // cell's.
+        let doomed: Vec<u32> = self
+            .felling
+            .pieces
+            .iter()
+            .filter(|p| (self.physics.position(p.body) - centre).length() <= e.destroy_radius_m)
+            .map(|p| p.id)
+            .collect();
+        for id in doomed {
+            if self.felling.destroy_piece(&mut self.physics, id) {
+                self.broadcast_world(&Message::EntityDespawn(id));
             }
-            let spawn = self.spawn_message(i);
-            self.broadcast_world(&spawn);
         }
-        // Bodies already moving are pushed by the same falloff (their mass resists).
-        let new_from = self.felling.pieces.len() - flung.len();
-        for k in 0..new_from {
+        self.fuses.queued.retain(|q| {
+            (crate::felling::cell_centre(q.cell) - centre).length() > e.destroy_radius_m
+        });
+        // Bodies already moving are pushed by the same falloff (their mass resists), and the
+        // earlier blasts' pieces still waiting to spawn take the push in their velocity.
+        for k in 0..self.felling.pieces.len() {
             let body = self.felling.pieces[k].body;
             let p = self.physics.position(body);
             let sh = share((p - centre).length(), e.reach_m, e.falloff);
@@ -2661,6 +3814,32 @@ impl Server {
             let dv = (e.impulse * sh / self.physics.mass(body).max(1.0)).min(e.max_speed_ms);
             let v = self.physics.velocity(body);
             self.physics.set_velocity(body, v + dir * dv);
+        }
+        for q in &mut self.fuses.queued {
+            let p = crate::felling::cell_centre(q.cell);
+            let sh = share((p - centre).length(), e.reach_m, e.falloff);
+            if sh <= 0.0 {
+                continue;
+            }
+            let dir = DVec3::from(push_dir(centre_a, p.to_array(), e.lift));
+            let mass = (f64::from(info(q.state).density_kg_m3) * dwell_world::CELL_H).max(1.0);
+            q.velocity += dir * (e.impulse * sh / mass).min(e.max_speed_ms);
+        }
+        // This blast's pieces wait their turn (`limits.piecesPerTick`, docs/EXPLOSIVES.md §3.12):
+        // their cells are already cleared; the nearest spawn first, this tick's share in this
+        // tick's physics step (`spawn_queued`, after the blasts).
+        let apart_ticks = if e.no_piece_contact_s > 0.0 {
+            crate::blasts::ticks_of(e.no_piece_contact_s)
+        } else {
+            0
+        };
+        for &(c, m, _, d, dir) in &flung {
+            self.fuses.queued.push_back(crate::blasts::Queued {
+                cell: c,
+                state: m,
+                velocity: DVec3::from(dir) * fling_speed(&e, m, d),
+                apart_ticks,
+            });
         }
         // Players: knocked back and hurt by their distance from it (to the nearest point of the
         // body's capsule).
@@ -2694,6 +3873,45 @@ impl Server {
         }
         // What the blast left without support falls (a trunk cut through, sand undermined).
         self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// Spawns the blasts' waiting pieces, at most `limits.piecesPerTick` a tick (docs/EXPLOSIVES.md
+    /// §3.12), each at its cleared cell with its velocity.
+    fn spawn_queued(&mut self) {
+        let n = self.fuses.pieces_per_tick.min(self.fuses.queued.len());
+        let ready: Vec<crate::blasts::Queued> = self.fuses.queued.drain(..n).collect();
+        for q in ready {
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                0,
+                0,
+                vec![([0, 0, 0], q.state)],
+                crate::felling::cell_centre(q.cell),
+                dwell_physics::DQuat::IDENTITY,
+                q.velocity,
+                DVec3::ZERO,
+            );
+            if q.apart_ticks > 0 {
+                // Its pieces fly out packed: kept apart from one another for the window, they
+                // touch only the terrain, players and other bodies (docs/EXPLOSIVES.md §3).
+                let body = self.felling.pieces[i].body;
+                self.physics.set_apart(body, true);
+                self.fuses.apart.push((body, q.apart_ticks));
+            }
+            let spawn = self.spawn_message(i);
+            self.broadcast_world(&spawn);
+        }
+    }
+
+    /// Sets the most blast pieces spawned a tick (tests and measurements; `limits.piecesPerTick`).
+    pub fn set_pieces_per_tick(&mut self, n: usize) {
+        self.fuses.pieces_per_tick = n.max(1);
+    }
+
+    /// The blasts' pieces waiting to spawn (tests).
+    pub fn queued_pieces(&self) -> usize {
+        self.fuses.queued.len()
     }
 
     /// Counts down the blasts' pieces kept apart (`noPieceContactS`): past its window each lets
@@ -2864,6 +4082,12 @@ impl Server {
                             (w - (c + DVec3::new(0.0, y, 0.0))).length() < radius + 0.45
                         })
                     };
+                    let cost = self.uses_items().then(|| items::cost_of(e.material));
+                    if let Some(cost) = &cost
+                        && self.sessions[&id].inventory.count_of(cost) == 0
+                    {
+                        continue;
+                    }
                     let Some(new) = self.felling.place_cell(
                         &mut self.physics,
                         e.body,
@@ -2876,6 +4100,10 @@ impl Server {
                     };
                     if let Some(s) = self.sessions.get_mut(&id) {
                         s.edit_credit -= 1.0;
+                        if let Some(cost) = &cost {
+                            s.inventory.take_one(cost);
+                            s.inventory_dirty = true;
+                        }
                     }
                     self.broadcast_world(&Message::BodyEdit(BodyEdit {
                         body: e.body,
@@ -2897,9 +4125,17 @@ impl Server {
                 if (at - eye).length() > reach {
                     continue;
                 }
+                let was = p
+                    .cells
+                    .iter()
+                    .find(|&&(o, _)| o == cell)
+                    .map_or(0, |&(_, m)| m);
                 let Some(out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
                     continue;
                 };
+                if self.uses_items() {
+                    self.drop_block(was, at.to_array());
+                }
                 if let Some(s) = self.sessions.get_mut(&id) {
                     s.edit_credit -= 1.0;
                 }
@@ -2999,12 +4235,14 @@ impl Server {
         }
         let game = 86_400.0 / self.settings.clock.day_length_s();
         let dt = f64::from(every) / f64::from(SIM_HZ) * game * f64::from(self.settings.water_speed);
-        let players: Vec<[f64; 3]> = self
+        let bodies: Vec<[f64; 3]> = self
             .sessions
             .values()
             .filter_map(|s| s.handle)
             .map(|h| self.players.position(&self.physics, h).to_array())
             .collect();
+        // Near the bodies and the theater cameras' viewpoints (THEATER_MODE.md §7).
+        let players = self.presence_points(&bodies);
         // The world's chunks as the water's copy should have them, then the run.
         let changes = self.water_link.mirror.sync(&self.world);
         let link = &mut self.water_link;
@@ -3078,9 +4316,74 @@ impl Server {
         w.apply_to(self.world.get_voxel_if_loaded(c))
     }
 
-    /// The world's settings (its clock, its water speed).
+    /// The world's settings (its clock, its water speed, its game mode).
+    /// The world's settings as sent to players: the saved fields, with the worldgen config's hash
+    /// for a world made from one (ADR 0074 B7; a default world's are the saved fields unchanged).
+    fn join_settings(&self) -> SettingsFields {
+        let hash = (!self.worldgen_text.is_empty())
+            .then(|| dwell_worldgen::config::worldgen_hash(&self.worldgen_text));
+        self.settings_fields
+            .with_worldgen(hash)
+            .with_capabilities(Some(&self.capabilities()))
+    }
+
+    /// The world's worldgen config text (ADR 0074 B7): `""` for the build's ground.
+    pub fn worldgen_text(&self) -> &str {
+        &self.worldgen_text
+    }
+
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2).
+    pub fn bounds(&self) -> dwell_world::WorldBounds {
+        dwell_world::WorldBounds::of(self.config.world_size)
+    }
+
     pub fn world_settings(&self) -> WorldSettings {
         self.settings
+    }
+
+    /// The host changes the world's game mode (ADR 0065; a name not in `shared/modes/modes.json`
+    /// is refused: false). It applies at once to every player in the world: the server's checks
+    /// (damage, flight, brush strokes) read it, the joined clients get the world's settings again
+    /// (older ones ignore them after join), and the world saves it with its next save.
+    pub fn set_mode(&mut self, name: &str) -> bool {
+        let Some(m) = dwell_protocol::modes::mode(name) else {
+            return false;
+        };
+        if m.name == self.settings.mode {
+            return true;
+        }
+        self.settings.mode = m.name;
+        self.settings_fields = self.settings_fields.with(self.settings);
+        // Flight taken away: nobody flies on (their queued inputs too), and whoever was in the air
+        // lands unhurt (`flight_grace`). The inventory is the player's either way (ADR 0066): a
+        // creative spell neither uses nor drops it, so switching back finds it as it was.
+        if !m.allows(Ability::Flight) {
+            for s in self.sessions.values_mut() {
+                s.last_input.fly = false;
+                for (_, input) in &mut s.inputs {
+                    input.fly = false;
+                }
+                if let Some(h) = s.handle {
+                    let c = self.players.controller(h);
+                    s.flight_grace |= c.fly.flying || !c.ground.grounded;
+                }
+            }
+        }
+        // Whether the mode uses items is in each `Inventory` (ADR 0066).
+        for s in self.sessions.values_mut() {
+            s.inventory_dirty = true;
+        }
+        let bytes = encode(&Message::WorldSettings(self.join_settings()));
+        for (&id, s) in &self.sessions {
+            if s.joined() {
+                self.outbox.push(Outgoing {
+                    session: id,
+                    kind: OutKind::Reliable(Channel::Control),
+                    bytes: bytes.clone(),
+                });
+            }
+        }
+        true
     }
 
     /// The last block changes not the water's own, oldest first, as JSON (a diagnostic for the
@@ -3299,12 +4602,13 @@ impl Server {
                 player_id: s.player_id,
                 position: s.death_position,
                 velocity: [0.0; 3],
-                yaw: 0,
+                yaw: quantize_yaw(s.death_yaw),
                 pitch: 0,
                 state: PlayerState::Idle,
                 flags: player_flags::DEAD,
                 held: s.held,
                 swing: s.swing,
+                swing_kind: s.swing_kind as u8,
             };
             if let Some(h) = s.handle {
                 let c = self.players.controller(h);
@@ -3316,6 +4620,7 @@ impl Server {
                 r.state = PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle);
                 r.flags = player_flags_of(c, false);
             }
+            self.away_remote(s, &mut r);
             views.push(r);
         }
         let mut out = Vec::new();
@@ -3337,12 +4642,23 @@ impl Server {
                 l.state = PlayerState::from_u8(c.state as u8).unwrap_or(PlayerState::Idle);
                 l.controller = to_net(c, |g| self.player_id_of_body(g));
             }
+            // The player's grid (`grid.frames` only; MOON_WORLD.md §7.2).
+            let mut grid = s
+                .capabilities
+                .has(dwell_protocol::capability_names::GRID_FRAMES)
+                .then(GridView::default);
+            if let Some((away, view)) = self.away_local(s) {
+                l = away;
+                grid = view;
+            }
             let mut snap = PhysicsSnapshot {
                 server_tick: self.tick,
                 ack_input_seq: s.last_processed_seq,
                 local: l,
                 remotes: Vec::new(),
                 pieces: Vec::new(),
+                swing_kinds: s.swing_hello,
+                grid,
             };
             // Remote players, nearest first, as many as fit in one datagram.
             let distance = |r: &RemotePlayerState| {
@@ -3370,7 +4686,11 @@ impl Server {
             // The falling pieces in what room is left: chosen by the player's ledger below
             // (docs/FELLING.md §3.1).
             let used = encode(&Message::PhysicsSnapshot(snap.clone())).len();
-            let room = MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES;
+            let room = if s.kind == TransportKind::Loopback {
+                LOOPBACK_PIECES
+            } else {
+                MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES
+            };
             out.push((id, snap, room, l.position));
         }
         for (id, mut snap, room, at) in out {
@@ -3381,15 +4701,19 @@ impl Server {
         }
     }
 
+    /// The players' bodies (or where they died), then the theater cameras' viewpoints
+    /// (THEATER_MODE.md §7): the LOD's propagation goes nearest them first.
     fn player_positions(&self) -> Vec<[f64; 3]> {
-        self.sessions
+        let bodies: Vec<[f64; 3]> = self
+            .sessions
             .values()
             .filter(|s| s.joined())
             .map(|s| match s.handle {
                 Some(h) => self.players.position(&self.physics, h).to_array(),
                 None => s.death_position,
             })
-            .collect()
+            .collect();
+        self.presence_points(&bodies)
     }
 
     /// Runs LOD propagation until nothing is dirty (tests, tools).
@@ -3530,7 +4854,7 @@ impl Server {
                 revision: 0,
                 cells: Vec::new(),
             };
-            if !in_world(c) {
+            if !dwell_world::lod::in_world_of(c, &self.bounds()) {
                 // Nothing there: the client's generator says so too.
             } else if let Some(section) = self.lod.find(c) {
                 m.revision = section.revision;
@@ -3608,7 +4932,16 @@ impl Server {
             self.tick = m.world_tick;
             // A world saved with settings keeps them (a world from before them takes this build's).
             if let Some(f) = m.settings.as_deref().and_then(SettingsFields::from_bytes) {
-                match f.settings(self.settings) {
+                // A world from before modes is creative, and one from before sizes today's size.
+                let before = WorldSettings {
+                    mode: dwell_protocol::modes::DEFAULT_MODE,
+                    size: dwell_protocol::world_size::WorldSize::DEFAULT,
+                    moon_phase: None,
+                    orbit: None,
+                    theater_guests: true,
+                    ..self.settings
+                };
+                match f.settings(before) {
                     Ok(s) => {
                         self.settings = s;
                         self.settings_fields = f;
@@ -3651,6 +4984,59 @@ impl Server {
             self.flush_water();
         }
         *self.saved.lock().expect("saved index") = saved;
+        self.blueprints.restore(db.blueprints());
+        if let Some(saved) = db
+            .loose_items()
+            .and_then(|b| crate::loose_items::LooseItems::from_bytes(&b))
+        {
+            self.loose.restore(saved);
+        }
+        // A record this build can't read (a newer one's) is kept: not written over.
+        if let Some(b) = db.cuts() {
+            match dwell_protocol::chopping::Cuts::from_bytes(&b) {
+                Some(c) => self.cuts = c,
+                None => self.cuts_unread = true,
+            }
+        }
+        if let Some(b) = db.damage() {
+            match dwell_protocol::damage::Damage::from_bytes(&b) {
+                Some(d) => self.damage = d,
+                None => self.damage_unread = true,
+            }
+        }
+        if let Some(b) = db.lava() {
+            match crate::lava::Lava::from_bytes(&b, &dwell_lava::DATA) {
+                Some(l) => self.lava = l,
+                None => self.lava_unread = true,
+            }
+        }
+        if let Some(b) = db.tree_growth() {
+            match dwell_worldgen::growth::Records::from_bytes(&b) {
+                Some(g) => self.growth = g,
+                None => self.growth_unread = true,
+            }
+        }
+        if let Some(b) = db.ecology() {
+            self.ecology.restore(b);
+        }
+        // Grass growth: the world's own; a world saved before it has none, a new one the config's.
+        match db.grass() {
+            Some(b) => match grass::Grass::from_bytes(&b) {
+                Some(g) => self.grass = g,
+                None => {
+                    self.grass_unread = true;
+                    self.grass.enabled = false;
+                }
+            },
+            None => self.grass.enabled = meta.is_none() && self.config.grass,
+        }
+        self.share_grass_with_ecology();
+        if let Some(b) = db.ground_gone() {
+            match dwell_world::ground::GroundGone::from_bytes(&b) {
+                Some(g) => self.ground = g,
+                None => self.ground_unread = true,
+            }
+        }
         let bodies = db.bodies();
         self.world.set_saved(Box::new(StoreChunks {
             db,
@@ -3728,6 +5114,7 @@ impl Server {
                 app_version_created: APP_VERSION.into(),
                 app_version_last: APP_VERSION.into(),
                 settings: Some(self.settings_fields.to_bytes()),
+                spawn_grid: self.config.spawn_grid.clone(),
             }),
             ..SaveBatch::default()
         };
@@ -3745,7 +5132,47 @@ impl Server {
             });
             revisions.push((c, chunk.revision()));
         }
+        batch.grid_chunks = self.grid_chunks_to_save();
         batch.players = std::mem::take(&mut self.departed);
+        batch.inventories = std::mem::take(&mut self.departed_inventories);
+        for s in self
+            .sessions
+            .values()
+            .filter(|s| s.joined() && !s.inventory_unread)
+        {
+            batch
+                .inventories
+                .push((s.public_key, s.inventory.to_bytes()));
+        }
+        batch.vitals = std::mem::take(&mut self.departed_vitals);
+        for s in self.sessions.values().filter(|s| s.joined()) {
+            batch.vitals.push((s.public_key, self.vitals_record(s)));
+        }
+        batch.markers = std::mem::take(&mut self.departed_markers);
+        for s in self.sessions.values().filter(|s| s.joined()) {
+            batch.markers.extend(Self::markers_record(s));
+        }
+        batch.loose_items = Some(self.loose.to_bytes());
+        batch.blueprints = self.blueprints.record_to_save();
+        if !self.cuts_unread {
+            batch.cuts = Some(self.cuts.to_bytes());
+        }
+        if !self.lava_unread && !self.lava.is_empty() {
+            batch.lava = Some(self.lava.to_bytes());
+        }
+        if !self.growth_unread {
+            batch.tree_growth = Some(self.growth.to_bytes());
+        }
+        if !self.ground_unread {
+            batch.ground_gone = Some(self.ground.to_bytes());
+        }
+        batch.ecology = self.ecology.record_to_save();
+        if !self.grass_unread {
+            batch.grass = Some(self.grass.to_bytes());
+        }
+        if !self.damage_unread {
+            batch.damage = Some(self.damage.to_bytes());
+        }
         // The world's moving bodies, all of them each save (docs/BUILT_BODIES.md §7).
         batch.bodies = Some(self.felling.saved(&self.physics));
         // The free water (WATER_SURFACE_GRID.md §2b): the newest record the water sent (none
@@ -3813,6 +5240,7 @@ impl Server {
             } else {
                 self.save_stats.failed += 1;
                 self.save_stats.last_error = result.error;
+                self.ecology.save_failed();
                 self.dirty.extend(revisions.into_iter().map(|(c, _)| c)); // try again
             }
         }
@@ -3939,8 +5367,14 @@ impl Server {
             .map(|s| s.player_id)
     }
 
-    /// Kills a joined, living player (as a lethal fall would; tools and tests): they respawn after
-    /// `RESPAWN_SECONDS`.
+    /// Where player `player_id` would stand up after dying with its feet at `death` (world m): the
+    /// shrine nearest the death on its face, else the spawn (docs/SHRINES.md; tools and tests).
+    pub fn respawn_point_after(&self, player_id: u16, death: [f64; 3]) -> [f64; 3] {
+        self.respawn_after_death(player_id, death)
+    }
+
+    /// Defeats a joined, standing player (as a lethal fall would; tools and tests): they kneel, then
+    /// stand up at the nearest shrine after their defeat's kneel and fade (shared/defeat).
     pub fn kill_player(&mut self, player_id: u16) {
         if let Some(id) = self.session_of_player(player_id) {
             self.kill(id, DamageCause::Fall);
@@ -4111,6 +5545,140 @@ impl Server {
 pub fn spawn_spread(player_id: u16) -> [f64; 2] {
     let slot = (i32::from(player_id) - 1).rem_euclid(8);
     [f64::from(slot % 4) - 1.5, f64::from(slot / 4) * 1.5 - 0.75]
+}
+
+impl Server {
+    /// A client draws block damage (`DamageHello`): every damaged cell now, then each change.
+    fn damage_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        s.damage_hello = true;
+        let chunks = s
+            .capabilities
+            .has(dwell_protocol::capability_names::DAMAGE_CHUNKS);
+        let all: Vec<_> = self
+            .damage
+            .sorted()
+            .into_iter()
+            .map(|(c, d)| (c, d.view()))
+            .collect();
+        for part in all.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: part.to_vec(),
+                gone: Vec::new(),
+                chunks,
+            });
+            self.send_reliable(id, &m, Channel::World);
+        }
+    }
+
+    /// Tells the clients that draw damage of `cells`' damage now and of the cells `gone`.
+    fn send_damage(&mut self, cells: &[[i32; 3]], gone: Vec<[i32; 3]>) {
+        let cells: Vec<_> = cells
+            .iter()
+            .filter_map(|c| self.damage.cells.get(c).map(|d| (*c, d.view())))
+            .collect();
+        if cells.is_empty() && gone.is_empty() {
+            return;
+        }
+        // Each with whether it takes the marks' chunks (`damage.chunks`).
+        let to: Vec<(SessionId, bool)> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.damage_hello)
+            .map(|(&id, s)| {
+                let chunks = s
+                    .capabilities
+                    .has(dwell_protocol::capability_names::DAMAGE_CHUNKS);
+                (id, chunks)
+            })
+            .collect();
+        for part in cells.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE.max(1)) {
+            for chunks in [false, true] {
+                let m = Message::Damage(dwell_protocol::DamageMessage {
+                    cells: part.to_vec(),
+                    gone: Vec::new(),
+                    chunks,
+                });
+                for &(id, c) in &to {
+                    if c == chunks {
+                        self.send_reliable(id, &m, Channel::World);
+                    }
+                }
+            }
+        }
+        let to: Vec<SessionId> = to.into_iter().map(|(id, _)| id).collect();
+        for part in gone.chunks(dwell_protocol::MAX_DAMAGE_PER_MESSAGE) {
+            let m = Message::Damage(dwell_protocol::DamageMessage {
+                cells: Vec::new(),
+                gone: part.to_vec(),
+                chunks: false,
+            });
+            for &id in &to {
+                self.send_reliable(id, &m, Channel::World);
+            }
+        }
+    }
+
+    /// A cell's damage (tests, the bench).
+    pub fn damage_of(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::CellDamage> {
+        self.damage.cells.get(&cell)
+    }
+}
+
+/// A tool hit's contact: the tick it lands and the tool it was swung with (WORK_QUEUE item 25).
+type Contact = (u32, String);
+
+/// Ticks from now to a contact `s` seconds away, rounded up: never before it.
+pub(crate) fn contact_ticks(s: f64) -> u32 {
+    (s * f64::from(dwell_protocol::SIM_HZ) - 1e-9)
+        .ceil()
+        .max(0.0) as u32
+}
+
+/// The item a session's break is made with (docs/BLOCK_DAMAGE.md): the held inventory slot's
+/// where blocks are not unlimited, else the tool its hotbar holds (`ChopAction::Held`); none: an
+/// empty hand.
+/// One hit that counts with the held tool (owner, 2026-11-11: tools wear by `durability`): worn
+/// where items are used, and where blocks are unlimited only if the data says (`creativeWear`).
+pub(crate) fn wear_tool(inventory: &mut inv::Inventory, uses_items: bool) -> inv::Wear {
+    if !uses_items && !dwell_protocol::chopping::CREATIVE_WEAR {
+        return inv::Wear::None;
+    }
+    inventory.wear_held(dwell_protocol::chopping::durability)
+}
+
+fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
+    if uses_items {
+        s.inventory
+            .slots
+            .get(usize::from(s.inventory.held))
+            .and_then(|h| h.as_ref())
+            .map(|st| st.item.as_str())
+    } else {
+        s.held_tool
+            .as_ref()
+            .map(|(t, _)| t.as_str())
+            .filter(|t| !t.is_empty())
+    }
+}
+
+/// A place edit's sapling (ADR 0079 S4): `Ok(None)` when it places no species' sapling, `Ok(record)`
+/// for one on its species' `plantOn` ground (face-local below the cell), `Err` on other ground.
+fn sapling_planted(
+    world: &VoxelWorld,
+    outcome: &dwell_world::edit::EditOutcome,
+    day: f64,
+) -> Result<Option<dwell_worldgen::growth::Record>, dwell_worldgen::growth::Refused> {
+    let item = dwell_blocks::block_of(outcome.material).name;
+    if dwell_worldgen::species::of_sapling(item).is_none() {
+        return Ok(None);
+    }
+    let f = FaceFrame::at_row(outcome.cell[1]);
+    let [x, y, z] = f.cell(outcome.cell);
+    let ground = dwell_blocks::block_of(world.get_voxel_if_loaded(f.cell([x, y - 1, z]))).name;
+    dwell_worldgen::growth::plant(item, outcome.cell, ground, day).map(Some)
 }
 
 #[cfg(test)]

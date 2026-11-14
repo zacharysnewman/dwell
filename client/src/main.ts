@@ -1,10 +1,25 @@
+import { mapProgress } from './ui/mapProgress';
 import { buildInfo, channelOf, formatBuildInfo, recordedVersion } from './buildInfo';
+import { worldChoice } from './ui/worldChoices';
+import { skyOptions } from './ui/sky';
+import { isGameMode } from './ui/modes';
 import { blockDump, formatBlockDump, type BlockDump, type BlockTarget } from './debug/blockDump';
+import { theaterOp, type TheaterOp } from './debug/theater';
+import {
+  deviceOf,
+  formatStreamingReport,
+  gpuName,
+  streamingReport,
+  type ReportSettings,
+  type StreamingReport,
+} from './debug/streamingReport';
 import {
   Client,
   hotbarSwatch,
+  itemSwatch,
   loadWasm,
   pingServer,
+  setHaze,
   setWorldFileVersion,
   swatchSize,
   type WasmBytes,
@@ -23,6 +38,9 @@ import {
   type TransportPreference,
 } from './net/connect';
 import { enableHosting } from './hostWorld';
+import { ChiselPanel } from './ui/chiselPanel';
+import { DEFAULT_MODE } from './ui/modes.gen';
+import { RETUNE_RADIUS_CHUNKS } from './chisel/inGame';
 import { formatCode } from './net/joinCode';
 import { configuredMasterUrl, MasterClient } from './net/master';
 import { parseInvite } from './net/invite';
@@ -32,9 +50,18 @@ import { regenerateWorld } from './local/regenerate';
 import type { SessionReport } from './net/sessionState';
 import { rememberTrust, showRegistryPrompt, trustedHash } from './ui/registryPrompt';
 import { showUpgradePrompt } from './ui/upgradePrompt';
-import { sameLine } from './version/semver';
-import { isSpawn, parseLocalWorld, spawnOptions, type LocalWorld } from './local/world';
-import { cleanName, creatableType, parseSeed, WorldIndex } from './local/worldIndex';
+import { compatibilityLine, sameLine } from './version/semver';
+import {
+  feetOf,
+  GENERATORS,
+  isSpawn,
+  parseLocalWorld,
+  sizeOptions,
+  sizeScale,
+  spawnOptions,
+  type LocalWorld,
+} from './local/world';
+import { cleanName, creatableType, parseSeed, testWorldId, WorldIndex } from './local/worldIndex';
 import { worldAccess } from './local/worldAccess';
 import {
   copyWorldFile,
@@ -45,13 +72,18 @@ import {
 import { launchOf, launcherHref, pastedInvite, withRoute, type Launch } from './ui/launch';
 import { rememberServer } from './ui/recentServers';
 import { prefersTouch, TouchControls } from './ui/touchControls';
-import { Hotbar } from './ui/hotbar';
+import { Hotbar, type HotbarSlot, type InventoryHud } from './ui/hotbar';
+import { Backpack, backpackKey } from './ui/backpack';
+import { Panels, type Panel } from './ui/panels';
+import { CreativeInventory, loadPicks, savePicks, structureEntries } from './ui/creativeInventory';
 import type { BrushPanelState } from './ui/brushPanel';
 import { prefersReducedMotion } from './ui/motionSettings';
 import type { SpyglassHud } from './ui/spyglass';
-import { Hud } from './ui/hud';
+import { Hud, type VitalsHud } from './ui/hud';
 import { MAP_SIZE, MapOverlay } from './ui/mapOverlay';
-import { SettingsMenu } from './ui/settingsMenu';
+import { SettingsMenu, loadSettings } from './ui/settingsMenu';
+import { antialiasFromQuery, antialiasMode } from './ui/antialiasSettings';
+import { BlueprintPanel, blueprintCellsOf } from './ui/blueprints';
 import { StructuresPanel } from './ui/structuresPanel';
 import { opfsStructureDir, StructureStore } from './local/structureStore';
 import { clipboardOf, type Vec3 as Cell } from './local/structures';
@@ -63,17 +95,25 @@ import {
   type ShadowQuality,
 } from './ui/shadowSettings';
 import { displayScale } from './ui/displayScale';
+import type { CloudQuality } from './ui/viewSettings';
+import { UPSCALE, renderScaleFromQuery } from './ui/renderScaleSettings';
+import { presetFromQuery, presetOf } from './ui/graphicsPresets';
 import { FlightSpeedControl } from './ui/flightSpeedControl';
 import { loadFlySpeedLevel, saveFlySpeedLevel } from './predict/flightSpeed';
 import { formatStatus } from './ui/statusOverlay';
 import { formatPerf, TickRate } from './ui/perfLine';
 import { applyHud } from './ui/hudSettings';
+import { LayoutRunner } from './ui/hudLayout';
+import { HUD_LAYOUT } from './ui/layout.gen';
+import { MapUi, indexedDbExplored, indexedDbTiles } from './ui/minimap';
 import { hasWasmSimd } from './engine/simd';
 import { NEEDS_SIMD, startupMessage } from './ui/startupError';
 import { FpsMeter } from './ui/fps';
+import { readDevice } from './ui/loadingEstimate';
 import { type LoadingHud, LoadingScreen, loadingScreenEnabled } from './ui/loadingScreen';
 import type { LoadingStageId } from './ui/loading.gen';
-import type { StageRun } from './ui/loadingStages';
+import { LAUNCH_AT_KEY, pageStartMs, type StageRun } from './ui/loadingStages';
+import { runStartStages } from './ui/startStages';
 import { START_HINT, TOUCH_START_HINT } from './ui/controls';
 import { formatMemory, jsHeapBytes, type MemoryReport } from './ui/memory';
 import type { LoopbackTransport } from './net/loopback';
@@ -87,10 +127,24 @@ import {
   type GotoOptions,
   type GotoResult,
 } from './debug/find';
+import {
+  flyHome,
+  flyToMoon,
+  teleportToMoon,
+  tripStartOf,
+  type HomeTrip,
+  type MoonLanding,
+  type MoonReport,
+  type MoonTrip,
+  type TripHost,
+  type TripOptions,
+} from './debug/moonTrip';
 import type { ServerStats } from './local/messages';
 import { audio } from './audio/engine';
+import type { TapOptions } from './audio/mixer';
 import { decodeSounds, EventPlayer } from './audio/events';
-import { installPageSounds } from './audio/page';
+import { AmbiencePlayer, decodeSurroundings } from './audio/ambience';
+import { installPageSounds, setMusicDaylight } from './audio/page';
 import { SOUND_DATA } from './audio/sounds.gen';
 import { GamepadInput } from './input/gamepad';
 import { PLAY_ACTIONS } from './input/gamepad.gen';
@@ -100,6 +154,22 @@ import {
   type GamepadSettings,
 } from './input/gamepadSettings';
 import { ControllerPanel } from './ui/controllerPanel';
+import { workerCount } from './workerCount';
+import { startThumbnailCapture, WorldThumbs } from './local/worldThumbs';
+import { pauseFromQuery, togglePause } from './debug/pause';
+import { THEATER } from './theater/config';
+import { TheaterMode } from './theater/mode';
+import type { PathJson } from './theater/keyframes';
+import { PathStore } from './theater/store';
+import {
+  runCinematic,
+  type CinematicHost,
+  type CinematicReport,
+  type CinematicTakeOptions,
+  type ViewState,
+} from './theater/cinematic';
+import { startCinematicAudio } from './theater/cinematicAudio';
+import gamepadData from '../../shared/input/gamepad.json';
 
 type Vec3 = [number, number, number];
 
@@ -136,6 +206,23 @@ export interface GameDebugState {
   /** The frame's vertical FOV (degrees) and the spyglass's magnification (1: unzoomed). */
   fov: number;
   spyglass: number;
+}
+
+/** `__dwell.ecology()`: the far ecology's herds and packs (docs/ECOLOGY.md §9). */
+interface EcologyReadout {
+  day: number;
+  groups: { id: number; face: 'a' | 'b'; species: string; x: number; z: number; size: number }[];
+}
+
+/** `__dwell.herds()`: a far herd or pack the finder lists (WORK_QUEUE item 46). */
+interface HerdFound {
+  id: number;
+  species: string;
+  x: number;
+  z: number;
+  size: number;
+  distance: number;
+  bearing: number;
 }
 
 interface RenderStats {
@@ -175,6 +262,11 @@ interface DwellDebug {
   buildMode(): string;
   /** Selects a hotbar slot, as a number key does. */
   select(slot: number): void;
+  /**
+   * Creative: puts the item named `item` (shared/items/items.json) in the selected hotbar slot, as
+   * a click in the inventory view does; false if it is not a creative item.
+   */
+  pick(item: string): boolean;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
   /** Material at a voxel in the client's world. */
@@ -199,10 +291,41 @@ interface DwellDebug {
    * playing a clip of its own and holding block `held` (0: none); 0 removes them.
    */
   puppets(count: number, feet: Vec3, face?: number, held?: number): boolean;
+  /**
+   * Holds the axe's level (or `vertical`) swing at clip time `t` s on your arms and every
+   * stand-in, which stand still facing +Z (the bench's `clip-strip`); a negative `t` releases it.
+   */
+  holdSwing(vertical: boolean, t: number): boolean;
   /** Shows or hides your first-person arms (the setting, for this page only). */
   showArms(on: boolean): void;
-  /** Back to the player's eyes. */
+  /** Back to the player's eyes (stops a theater path too). */
   releaseCamera(): void;
+  /**
+   * Theater mode's camera engine (docs/THEATER_MODE.md, src/debug/theater.ts): `play {path}`,
+   * `stop`, `pause {paused}`, `state`, `presets`, `preset {name, params, subject}` (→ a path),
+   * `hud {shown}`. Throws with the engine's message on a bad path or preset.
+   */
+  theater(op: TheaterOp, args?: Record<string, unknown>): unknown;
+  /**
+   * Theater mode in game (src/theater/mode.ts): `state` → `{active, keys, duration}`, `enter`,
+   * `exit`, `keys {path}` (loads a path into the keyframe editor), `record {path?, aspect?,
+   * height?, fps?, download?, audio?}` → a promise of `{bytes (base64), mime, width, height}`; with no
+   * path, `endTake` ends it. `audio: true` adds the game's sound (effects and ambience, no music).
+   */
+  theaterMode(op: string, args?: Record<string, unknown>): unknown;
+  /**
+   * A cinematic take (THEATER_MODE.md §6.1, the record skill's `render: "cinematic"`): the path
+   * rendered offline, frame-exact — the game stepped 1 / fps a frame, each frame settled, PNG frames
+   * and the stepped sound (`audio.wav`) handed to `window.__dwellRecSink` (the driver's). Resolves
+   * with the take's report (render time, settle waits, capped frames, the sound's alignment).
+   */
+  cinematic(opts: CinematicTakeOptions): Promise<CinematicReport>;
+  /**
+   * The game's mix as a MediaStream for a recording (the record skill's driver, theater mode's takes):
+   * effects and ambience by default, the music and UI buses only if asked (`{ music: true }`), on a
+   * parallel tap (the speakers unchanged). `close()` disconnects it; null without Web Audio.
+   */
+  audioTap(o?: TapOptions): { stream: MediaStream; buses: string[]; close(): void } | null;
   /**
    * The placed camera (`placeCamera`, `goto`), or null while the view is the player's eyes
    * (`view()` is the player's look, not a placed camera's).
@@ -220,8 +343,40 @@ interface DwellDebug {
    * `toward` a point. Rejects with what it looked for when nothing is found.
    */
   goto(query: string, options?: GotoOptions): Promise<GotoResult>;
-  /** Moves the local player's feet there (a local world, on its face); false otherwise. */
-  teleport(feet: Vec3): boolean;
+  /**
+   * Moves the local player's feet there (a local world, on its face, inside the disc's rim):
+   * resolves true once the local server has, rejects with why it can't (BUGS.md #148: a point
+   * past the rim failed silently).
+   */
+  teleport(feet: Vec3): Promise<boolean>;
+  /**
+   * The moon from the player (docs/DEV_TOOLS.md "The moon"): its world position at the clock's
+   * time, the direction and distance to it, the player's grid (`home`, `moon`), the gravity there
+   * and on the moon, the look toward it, the height over its ground when on it. Null before
+   * playing, from a server without `grid.frames`, or in a world with no moon.
+   */
+  moon(): MoonReport | null;
+  /**
+   * The bench's moon trip (debug/moonTrip.ts; a local world): `moon` moves the player just
+   * outside the capture sphere, flies it in, down and lands it, measuring the fall; `home` flies
+   * out past the release, back to where the last trip to the moon started, and waits for home's
+   * chunks. Rejects with what failed.
+   */
+  flyTo(to: 'moon' | 'home', options?: TripOptions): Promise<MoonTrip | HomeTrip>;
+  /**
+   * Teleports onto the moon's ground (debug/moonTrip.ts `teleportToMoon`; a local world), no
+   * flight, and waits until standing there with its chunk held: the quick check that the moon's
+   * ground draws (bench `moonLand`). `flyTo('home')` comes back.
+   */
+  moonLand(options?: Pick<TripOptions, 'face' | 'maxS'>): Promise<MoonLanding>;
+  /**
+   * Teleports onto the sun's dry crust (SUN_WORLD.md; local.rs `grid_land`: 1.5 m over its stand
+   * point, away from lava), no flight, and waits until standing there with its chunk held (bench
+   * `sunLand`, scenario `sun-draw`). `flyTo('home')` comes back.
+   */
+  sunLand(options?: Pick<TripOptions, 'face' | 'maxS' | 'river'>): Promise<MoonLanding>;
+  /** The sun from the player (`__dwell.moon()`'s fields for the sun grid), or null. */
+  sun(): MoonReport | null;
   /** Plants' wind scale (0 still, 1 the data's) and whether cutout meshes draw (cost A/B). */
   plants(wind: number, shown: boolean): void;
   /** The last frame's draw calls and triangles. */
@@ -231,12 +386,53 @@ interface DwellDebug {
   /** The block dump around the target (debug/blockDump.ts), or null before playing. */
   blockDump(): BlockDump | null;
   /**
+   * The streaming report (F8; debug/streamingReport.ts, docs/DEV_TOOLS.md): the near ring's
+   * chunks and what each waits on, the job pool, the streamer and the LOD; copied too.
+   */
+  streamingReport(): Promise<StreamingReport>;
+  /**
    * The local server's figures over the last second (its ticks' time; the water's thread: run
    * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
    */
   serverStats(): ServerStats | null;
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
+  /**
+   * The local server's lava (docs/DEV_TOOLS.md, VOLCANOES.md §6.3): with no op its fields as JSON
+   * (face, centre, molten columns, vents); `rate` [k] every vent's rate × k (fill a lake fast);
+   * `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point. Null outside a local world.
+   */
+  lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
+  /**
+   * Dev: `n` villagers (≤ 16) in a ring `radius` m (default 3) round the local player's feet, each
+   * its own palette variant from `variant` (default 0) (CHARACTERS.md §11.11). JSON of their ids;
+   * null outside a local world.
+   */
+  spawnNpcs(n: number, radius?: number, variant?: number): Promise<string | null>;
+  /** A deer herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` put `offset` m along +x from the
+   * local player, brought in by the near ecology (a local world; docs/DEV_TOOLS.md). */
+  spawnHerd(kind: 'deer' | 'wolf', size?: number, offset?: number): Promise<string | null>;
+  /** The near animals see no player while `on` (filming their idles up close; a local world). */
+  animalsIgnorePlayers(on: boolean): Promise<string | null>;
+  /** Every NPC turns on the local player as if struck (a duel without the first blow; local). */
+  npcsFight(): Promise<string | null>;
+  /** Every near animal drawn in pose `pose` (`stand`, `graze`, `lookUp`, `earFlick`, `sit`, `lie`;
+   * null: as it idles), to judge a pose by eye (a local world). */
+  animalPose(pose: string | null): Promise<string | null>;
+  /**
+   * The run-time cloud plumes (docs/CLOUDS.md §8.7; JSON back): `list`; `add` [name, x, y, z,
+   * radius?, height?, density?, riseMps?] a steam plume based at a world point; `near` [name, dx,
+   * dz] one under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`.
+   */
+  /**
+   * The volumetric clouds' view opacity (per m at density 1; `?cloudExtinction=`) over the data's
+   * `volume.extinction`, live, for an A/B (0.006 / 0.03 / 0.05); 0 or none: the data's.
+   */
+  cloudExtinction(extinction?: number): void;
+  plume(
+    op?: 'list' | 'add' | 'near' | 'move' | 'remove' | 'clear',
+    args?: [string?, ...number[]],
+  ): string;
   /**
    * The water quality (as the settings menu sets it, not stored) and/or its cost-isolation
    * switches (`?waterdbg=` names, comma-separated; "" for none); null leaves either as it is.
@@ -245,6 +441,37 @@ interface DwellDebug {
   setWater(quality: WaterQuality | null, debug: string | null, phone?: boolean): void;
   /** The Shadows setting (as the settings menu sets it, not stored; docs/DAY_NIGHT.md §10). */
   setShadows(quality: ShadowQuality): void;
+  /**
+   * Other settings mid-run, for the bench's `view` step (not stored; docs/DEV_TOOLS.md): the
+   * clouds, the speed effects, the full-detail distance and the LOD's pixel error, the blasts'
+   * smoke, the water's flecks, flow ripples, flow foam and waterfalls. Each one given replaces the menu's value; the rest stay.
+   */
+  setView(view: {
+    clouds?: CloudQuality;
+    speedEffects?: boolean;
+    distanceM?: number;
+    pixelError?: number;
+    /** The distant view's memory budget (MB; a cinematic take bounds it). */
+    memoryMb?: number;
+    smoke?: boolean;
+    flowParticles?: boolean;
+    flowRipples?: boolean;
+    flowFoam?: boolean;
+    waterfalls?: boolean;
+    /** Light shafts and bloom tiers (`off`, `low`, `high`). */
+    shafts?: 'off' | 'low' | 'high';
+    bloom?: 'off' | 'low' | 'high';
+    /** Leaf cards on (the tier's) or off (`Client.setCards`). */
+    cards?: boolean;
+    /** The tall grass and flowers drawn or not. */
+    grass?: boolean;
+    /** The render scale (shared/render/upscale.json's scales), with the current upscaler. */
+    renderScale?: number;
+    /** Torch shadows `off`, `low`, `high`. */
+    torchShadows?: 'off' | 'low' | 'high';
+    /** The targeted block's outline drawn (default on); off for clean recordings (BUGS.md #113). */
+    targetOutline?: boolean;
+  }): void;
   /** The ink outline's mode (`shared/look/outline.json`, as `?outline=` names it), or `off`. */
   outline(): string;
   /** Sets the ink outline's mode by name (`off` or an unknown name: off); true when one is on. */
@@ -255,8 +482,21 @@ interface DwellDebug {
   setPixelArt(name: string): boolean;
   /** The LOD colour map preview on or off (`?lodmap=on` starts it on; off on a CPU adapter); true when on. */
   setLodMap(on: boolean): boolean;
+  /**
+   * The big map's tiles (ADR 0068): the open map's zoom level (null: shut), tiles kept, built this
+   * session, in flight and still to build in the background.
+   */
+  mapTiles(): {
+    level: number | null;
+    tiles: number;
+    built: number;
+    inFlight: number;
+    backgroundLeft: number;
+  } | null;
   /** Draws the distant terrain (LOD) or not, live (a debug switch); true in a world. */
   setLod(on: boolean): boolean;
+  /** Fixed points (x, y, z triples) the streaming probe reports (`probe.target`, `probe.control`). */
+  setProbe(points: number[]): boolean;
   /** How long the camera rolls upright after crossing the midplane (s; `?crossingroll=`). */
   crossingRoll(): number;
   /** Sets the crossing roll's duration (s, 0..5; 0 snaps upright at once); false for a value it refuses. */
@@ -283,12 +523,49 @@ interface DwellDebug {
   }[];
   /** The blasts whose effects are still going (docs/EXPLOSIVES.md): each one's place and age (s). */
   blasts(): { x: number; y: number; z: number; age: number }[];
+  /** The creatures drawn (docs/adr/0073-creatures.md): each one's feet, heading (deg), speed (m/s) and whether it is an NPC. */
+  creatures(): { x: number; y: number; z: number; yaw: number; speed: number; npc: boolean }[];
+  /**
+   * The far ecology the server last told of (docs/ECOLOGY.md §9): its day and the far herds and
+   * packs (face, species, face-local x/z, head); null before the first, or from a server without one.
+   */
+  ecology(): EcologyReadout | null;
+  /**
+   * The far trees' impostors (BUGS.md #106): whether they draw (`ready`: every atlas layer baked
+   * and the tiles about the eye in), the layers baked, tiles and instances held, instances drawn
+   * last frame and the last upload error. Not ready: the near crowns and the LOD's trees draw.
+   */
+  impostors(): ImpostorStatus;
+  /**
+   * The impostors' debug view (BUGS.md #106): 0 off, 1 the quads solid, 2 the silhouettes solid,
+   * 3 the albedo unlit; `ambient` and `albedo` override impostors.json `leafShade` for tuning.
+   */
+  impostorDebug(mode: number, ambient?: number, albedo?: number): void;
+  /**
+   * The finder (WORK_QUEUE item 46): the far herds and packs on the player's face from the last
+   * `ecology`, of `kind` (any when omitted), nearest first, with their distance (m) and the yaw
+   * facing them (`bearing`, degrees); face-local metres.
+   */
+  herds(kind?: 'deer' | 'wolf'): HerdFound[];
+  /**
+   * Dev (a local world): stands the local player `back` m (default 40) short of the nearest far
+   * herd (`'deer'`) or pack (`'wolf'`; either when omitted) on its face, on the ground, so the
+   * group comes near. JSON `{ id, species, size, distance, at }`, `"null"` when there is none.
+   */
+  goToHerd(kind?: 'deer' | 'wolf', back?: number): Promise<string | null>;
   /** The kept player controller ticks, oldest first. */
   ticks(): TickSample[];
   /** The latest sounds played (ids, newest last; docs/AUDIO.md). */
   sounds(): string[];
   /** Kills the local player (a local world only; false otherwise): the bench's `die` step. */
   die(): boolean;
+  /** Gives the local player `count` of `item` (a local world only): the bench's `give` step. */
+  give(item: string, count: number): boolean;
+  /**
+   * Carries the local player on a raft moved at `speed` m/s toward `yaw` (degrees, 0 = +Z) for
+   * `seconds`, `lift` m above its feet (a local world only; false otherwise): the bench's `carry`.
+   */
+  carry(speed: number, yaw: number, seconds: number, lift?: number): boolean;
   /** Forgets the telemetry so far: measure from here. */
   telemetryReset(): void;
   /**
@@ -298,6 +575,12 @@ interface DwellDebug {
   setTime(t: number | null, moon?: number | null): void;
   /** The water's cost-isolation switches (`?waterdbg=` names, comma-separated; "" for none). */
   waterDebug(names: string): void;
+  /**
+   * Pauses (true) or resumes (false) the look: every drawn animation stands still at one instant
+   * while the game runs on (`?pause=1`, F7, Settings → Debug; debug/pause.ts). Returns the state;
+   * no argument only reads it.
+   */
+  pause(on?: boolean): boolean;
 }
 
 /** A distribution's summary (telemetry.rs `Stats`). */
@@ -318,6 +601,20 @@ export interface Telemetry {
   samples: Record<string, TelemetryStats>;
   counters: Record<string, number>;
   frameCount: number;
+}
+
+/** The far trees' impostors now (render/impostors.rs `Status`, BUGS.md #106). */
+export interface ImpostorStatus {
+  made: boolean;
+  tierOn: boolean;
+  ready: boolean;
+  baked: number;
+  layers: number;
+  requested: boolean;
+  tiles: number;
+  instances: number;
+  drawn: number;
+  lastError: string;
 }
 
 /** One controller tick (telemetry.rs `TickSample`). */
@@ -350,9 +647,13 @@ interface DwellTools {
 declare global {
   interface Window {
     __dwell?: DwellDebug;
+    /** The record skill's driver: receives a cinematic take's files (base64). */
+    __dwellRecSink?: (file: string, base64: string) => Promise<void>;
     __dwellTools?: DwellTools;
     /** The loading screen's stages so far (§6.3; docs/DEV_TOOLS.md): when each began and ended. */
     __dwellStages?: () => StageRun[];
+    /** The loading bar's estimate: its fill, the "About N s" label, and whether it holds (§6.3). */
+    __dwellLoadingBar?: () => { fill: number; label: string; holding: boolean };
   }
 }
 
@@ -386,27 +687,66 @@ interface App {
   loading: LoadingScreen;
   map: MapOverlay;
   hotbar: Hotbar | null;
+  /** The backpack screen (ADR 0066), in a world that uses items. */
+  backpack: Backpack | null;
+  /** The creative inventory view (docs/ITEMS.md §6a), in a world that doesn't use items. */
+  creative: CreativeInventory | null;
   settings: SettingsMenu | null;
   flightSpeed: FlightSpeedControl;
   /** Frames per second, shown in the status line. */
   fps: FpsMeter;
   /** The local world's loopback (its server's memory), while playing one. */
   loopback: LoopbackTransport | null;
+  /** Reads the player's view into the local world's picture (set while a local world plays). */
+  captureThumb: ((timeoutMs?: number) => Promise<void>) | null;
   /** The world being played (its seed and generator), once joined: for the block dump. */
   world: { seed: bigint; generatorVersion: number } | null;
   playing: boolean;
+  /** The minimap and the explored map (ADR 0068), once joined. */
+  minimap: MapUi | null;
+  /** The minimap's height shading (Settings, On screen). */
+  mapShading: boolean;
+  /** Theater mode (docs/THEATER_MODE.md): the free camera, paths and recording. */
+  theater: TheaterMode | null;
+  /** Which panel is open (the inventory, the game menu, the big map) and the pointer lock with it. */
+  panels: Panels;
 }
 
-/** Workers per pool: generation and meshing each get this many (fewer on phones). */
-function defaultWorkerCount(mobile: boolean): number {
-  const cores = navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(mobile ? 2 : 4, cores - 2));
-}
-
-function lockPointer(canvas: HTMLCanvasElement): void {
-  if ('requestPointerLock' in canvas) {
-    Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
-  }
+/**
+ * The minimap and the explored map (ADR 0068): M or a tap on the minimap opens the big map, M or
+ * Esc closes it; the explored cells are kept per world (`world`) in this browser.
+ */
+function startMinimap(app: App, world: string): void {
+  if (app.minimap) return;
+  const ui = new MapUi(
+    document,
+    app.client,
+    world,
+    indexedDbExplored(),
+    indexedDbTiles(),
+    recordedVersion(),
+  );
+  app.minimap = ui;
+  // While the big map is open the game holds still, as under the game menu (the keys and the
+  // controller drive the map).
+  ui.onOpenChange = (open) => {
+    app.panels.shown('map', open);
+    app.client.setMenuOpen(open || (app.settings?.isOpen ?? false));
+    audio().action(open ? 'map_open' : 'map_close');
+  };
+  ui.onZoom = () => {
+    audio().action('map_zoom');
+  };
+  window.addEventListener('keydown', (e) => {
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    if (typing || e.repeat) return;
+    if (e.code === 'KeyM') ui.toggleBig();
+    // Esc closes the big map through the panels (ui/panels.ts), which own it.
+    else if (e.code !== 'Escape') ui.key(e.code);
+  });
+  window.addEventListener('pagehide', () => {
+    ui.save(performance.now() + 1e9, true);
+  });
 }
 
 function displayName(): string {
@@ -421,6 +761,11 @@ function toggleDebug(app: App): void {
   audio().action(app.hud.debugVisible ? 'overlay_on' : 'overlay_off');
 }
 
+/** The F7 debug pause (debug/pause.ts): the look stands still, with its sound. */
+function togglePauseLook(app: App): void {
+  audio().action(togglePause(app.client) ? 'overlay_on' : 'overlay_off');
+}
+
 /** The F4 map on or off, with its sound. */
 function toggleMap(app: App): void {
   app.map.toggle();
@@ -433,13 +778,20 @@ function zoomMap(app: App, delta: number): void {
 }
 
 /** The game's sound events since the last frame, and the listener at the camera (docs/AUDIO.md). */
-function playSounds(app: App, player: EventPlayer): void {
-  player.playAll(decodeSounds(app.client.takeSounds()));
+function playSounds(app: App, player: EventPlayer, beds: AmbiencePlayer): void {
+  // The listener first: this frame's own sounds are placed round this frame's ear (§5a).
   const l = app.client.listener();
   if (l.length === 9) {
     const v = (i: number): [number, number, number] => [l[i] ?? 0, l[i + 1] ?? 0, l[i + 2] ?? 0];
     audio().setListener(v(0), v(3), v(6));
   }
+  player.playAll(decodeSounds(app.client.takeSounds()));
+  const around = decodeSurroundings(app.client.ambience());
+  beds.update(around);
+  // The music draws day or night tracks by the listener's daylight (AUDIO.md §6a).
+  if (around) setMusicDaylight(around.day);
+  // The eye under water muffles the world's buses (AUDIO.md §3a).
+  audio().setUnderwater(app.client.underwater());
 }
 
 /** Keyboard and mouse: the DOM's events, forwarded to the client's input (dwell-game input.rs). */
@@ -450,46 +802,106 @@ function forwardInput(app: App): void {
     const t = e.target;
     if (t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.type !== 'range'))
       return;
+    // Theater mode's key (shared/theater/theater.json) toggles it; while it is on, the keys fly
+    // its camera and the body hears none of them.
+    const th = app.theater;
+    if (th && e.code === THEATER.key && !e.repeat && app.playing && !app.settings?.isOpen) {
+      e.preventDefault();
+      th.toggle();
+      if (th.active) client.blur();
+      return;
+    }
+    if (th?.key(e.code, true, e.shiftKey)) {
+      e.preventDefault();
+      return;
+    }
     if (client.keyDown(e.code, e.repeat, e.ctrlKey, e.metaKey, e.timeStamp)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
+    if (app.theater?.key(e.code, false, e.shiftKey)) return;
     client.keyUp(e.code);
   });
   window.addEventListener('blur', () => {
     client.blur();
   });
   // Not every browser has pointer lock (iOS Safari doesn't); touch looks by dragging instead.
+  // A click on the game locks the pointer (again, after a request the browser refused).
   canvas.addEventListener('click', () => {
-    if (document.pointerLockElement !== canvas) lockPointer(canvas);
+    app.panels.click();
   });
   document.addEventListener('pointerlockchange', () => {
     client.setPointerLocked(document.pointerLockElement === canvas);
+    // A lock lost while playing (Esc, alt-tab) opens the game menu; one a panel freed doesn't.
+    app.panels.lockChanged(performance.now());
   });
+  // In theater mode the panel keeps the mouse free: a drag on the view turns the camera.
+  let theaterDrag = false;
   canvas.addEventListener('mousedown', (e) => {
+    if (app.theater?.active) {
+      theaterDrag = true;
+      return;
+    }
     client.mouseDown(e.button, performance.now(), e.altKey);
   });
   // Letting go of Place stops building on (docs/ITEMS.md §5); on the document, so a release off
   // the canvas counts too.
   document.addEventListener('mouseup', (e) => {
+    theaterDrag = false;
     client.mouseUp(e.button);
   });
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
   });
   document.addEventListener('mousemove', (e) => {
+    if (app.theater?.active) {
+      if (document.pointerLockElement === canvas || theaterDrag)
+        app.theater.mouse(e.movementX, e.movementY);
+      return;
+    }
     client.mouseMove(e.movementX, e.movementY);
   });
+  // Theater mode on a touch screen: the left half moves the camera, the right half looks.
+  const touches = (e: TouchEvent, f: (t: Touch) => void): void => {
+    if (!app.theater?.active) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) f(t);
+  };
+  canvas.addEventListener(
+    'touchstart',
+    (e) => {
+      touches(e, (t) => app.theater?.touchStart(t.identifier, t.clientX, t.clientY, innerWidth));
+    },
+    { passive: false },
+  );
+  canvas.addEventListener(
+    'touchmove',
+    (e) => {
+      touches(e, (t) => app.theater?.touchMoveTo(t.identifier, t.clientX, t.clientY));
+    },
+    { passive: false },
+  );
+  for (const ev of ['touchend', 'touchcancel'] as const)
+    canvas.addEventListener(ev, (e) => {
+      touches(e, (t) => app.theater?.touchEnd(t.identifier));
+    });
   window.addEventListener(
     'wheel',
     (e) => {
-      client.wheel(e.deltaY, e.altKey);
+      // Line or page deltas (Firefox's mouse wheel) as pixels, for the notch accumulator.
+      const px = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+      if (app.theater?.active) {
+        app.theater.wheel(e.deltaY * px);
+        return;
+      }
+      client.wheel(e.deltaX * px, e.deltaY * px, e.altKey, e.timeStamp);
     },
     { passive: true },
   );
   // Flight speed (§6.7): the − and = keys while flying (not while typing in a text field).
   window.addEventListener('keydown', (e) => {
     const typing = e.target instanceof HTMLInputElement && e.target.type !== 'range';
-    if (!client.flying() || typing) return;
+    // On the open big map − and = zoom it instead (MapUi.key).
+    if (!client.flying() || typing || app.minimap?.bigOpen) return;
     if (e.code === 'Minus' || e.code === 'NumpadSubtract')
       client.flySpeed(client.flySpeedLevel() - 1);
     if (e.code === 'Equal' || e.code === 'NumpadAdd') client.flySpeed(client.flySpeedLevel() + 1);
@@ -505,12 +917,15 @@ function handleEvents(app: App): void {
     if (e.t === 'toggle') {
       if (e.value === 'F3') toggleDebug(app);
       if (e.value === 'F6') copyBlockDump(app);
+      if (e.value === 'F8') copyStreamingReport(app);
+      if (e.value === 'F7') togglePauseLook(app);
       if (e.value === 'F4') toggleMap(app);
       if (e.value === 'Minus') zoomMap(app, 1);
       if (e.value === 'Equal') zoomMap(app, -1);
     } else if (e.t === 'slot') {
       const slot = e.value as number;
       app.hotbar?.setSelected(slot);
+      app.creative?.set([...app.client.creativeHotbar()], slot);
       // A change of slot sounds; the first selection, when the game starts, does not.
       if (shownSlot !== null && shownSlot !== slot) audio().action('hotbar');
       shownSlot = slot;
@@ -536,23 +951,39 @@ function showHud(app: App, now: number): void {
     message?: string;
     status?: string;
     health?: number;
+    vitals?: VitalsHud | null;
     debug?: string | null;
     damaged?: boolean;
+    /** The burning edge's opacity now (0: none) and colour (shared/fluids/lava.json `burnEdge`). */
+    burn?: number;
+    burnColor?: string;
+    /** Defeat's fade (0 clear, 1 black; docs/CHARACTERS.md §11.13). */
+    fade?: number;
     region?: string;
+    /** The held axe's swing hint (ADR 0067), else null. */
+    chop?: string | null;
+    swing?: 'level' | 'vertical' | null;
     brush?: BrushPanelState | null;
     spyglass?: SpyglassHud | null;
     loading?: LoadingHud | null;
     loadingOpens?: number;
+    inventory?: InventoryHud | null;
   };
   app.loading.frame(h, now);
   if (h.message === undefined) return;
   app.hud.setSpyglass(h.spyglass ?? null);
   if (h.damaged) app.hud.flashDamage(now);
+  app.hud.setBurn(h.burn ?? 0, h.burnColor ?? '#ff5a1e');
+  app.hud.setFade(h.fade ?? 0);
   app.hud.setHealth(h.health ?? 0, now);
+  app.hud.setVitals(h.vitals ?? null);
   app.hud.setMessage(h.message);
   app.hud.setStatus(h.status ?? '');
-  app.hotbar?.setRegion(h.region ?? '');
+  app.hotbar?.setRegion(h.chop || h.region || '');
+  app.hud.setSwing(h.swing ?? null);
   app.hotbar?.setBrush(h.brush ?? null);
+  app.hotbar?.setInventory(h.inventory ?? null, itemPicture);
+  app.backpack?.set(h.inventory ?? null);
   if (h.debug) app.hud.setDebug(h.debug);
 }
 
@@ -563,17 +994,34 @@ function makeJobWorker(): Worker {
 
 let maps: MapDeps | null = null;
 
+/**
+ * The local world's worldgen config, when it is a test world (docs/DEV_TOOLS.md "Play a test
+ * world": a `?worldgen=` link or Chisel's Play in game, kept in its record): its maps are built
+ * from it. Empty: the build's terrain.
+ */
+let worldgenConfig = '';
+
 /** How this page gets a terrain world's maps (ADR 0049; `world/worldMaps.ts`). */
 function mapDeps(): MapDeps {
   maps ??= {
-    keys: (seed) => worldMapKeys(seed),
+    keys: (seed, worldgen, radiusScale) =>
+      worldMapKeys(seed, worldgen || undefined, radiusScale === 1 ? undefined : radiusScale),
     build: workerBuilder(makeJobWorker),
     store: typeof indexedDB === 'undefined' ? null : new IndexedDbMapStore(),
-    onProgress: (ready, needed) => {
+    onProgress: (ready, needed, faces) => {
       const stages = bootLoading?.stages;
       const now = performance.now();
-      stages?.progress('worldMap', ready, needed, now);
+      // Inside each face's build too (BUGS.md #91): its step, and the bar moving with it.
+      const p = mapProgress(faces);
+      stages?.progress('worldMap', Math.max(ready, p.done), needed, now, p.detail);
       if (ready >= needed) stages?.end('worldMap', now);
+    },
+    onFailed: (message) => {
+      const stages = bootLoading?.stages;
+      const now = performance.now();
+      console.warn(`Dwell: a world map could not be shaped (${message})`);
+      stages?.progress('worldMap', 0, null, now, `failed (${message})`);
+      stages?.end('worldMap', now);
     },
   };
   return maps;
@@ -596,33 +1044,47 @@ async function start(): Promise<App | null> {
   }
   let client: Client;
   try {
-    // The stages the loading screen lists (§6.3): the module's download, then the graphics.
-    const stages = loading.stages;
-    stages.begin('game', performance.now());
-    await loadTools((done, total) => {
-      stages.progress('game', done, total, performance.now());
+    // The stages the loading screen lists (§6.3): the module's download, then the graphics, each
+    // painted before its work (the graphics hold the thread: ui/startStages.ts).
+    client = await runStartStages(loading.stages, {
+      now: () => performance.now(),
+      painted: () => loading.painted(),
+      settled: (c) => c.gpuSettled(),
+      load: (onBytes) => loadTools(onBytes),
+      create: () => {
+        // ?haze=<preset> draws a fog preset (shared/look/fog.json; a dev tool, DEV_TOOLS.md),
+        // set before the renderer bakes the fog into its shaders.
+        const haze = new URLSearchParams(location.search).get('haze');
+        if (haze) setHaze(haze);
+        return Client.create(canvas, {
+          displayName: displayName(),
+          clientVersion: recordedVersion(),
+          makeWorker: makeJobWorker,
+          // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread;
+          // under the worldgen config the world's server sent (ADR 0074 B7: a guest of a test world).
+          // At the world's size (BIG_MAP.md M2b: the join's `WorldSettings`, 1 today's).
+          prepareWorld: (seed: bigint, version: number, worldgen?: string, radiusScale?: number) =>
+            worldMaps(seed, version, mapDeps(), worldgen ?? worldgenConfig, radiusScale ?? 1) ??
+            Promise.resolve(null),
+          // Per pool (generation, meshing); ?workers=N overrides it (docs/DEV_TOOLS.md).
+          workers: workerCount(location.search, navigator.hardwareConcurrency, mobile),
+          // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
+          lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
+          lodColors: params.get('lodcolors') === '1',
+          // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
+          fullChunks: params.get('chunks') === 'full',
+          netsim: params.get('netsim') ?? undefined,
+          search: location.search,
+          // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
+          loadingScreen: loadingScreenEnabled(location.search, storage()),
+          // The scene's samples per pixel (Settings → Anti-aliasing; fixed when the renderer is made,
+          // so a change applies on the next load; ?aa= overrides it).
+          samples: antialiasMode(
+            antialiasFromQuery(location.search, loadSettings(mobile).antialias).mode,
+          ).samples,
+        });
+      },
     });
-    stages.end('game', performance.now());
-    stages.begin('graphics', performance.now());
-    client = await Client.create(canvas, {
-      displayName: displayName(),
-      clientVersion: recordedVersion(),
-      makeWorker: makeJobWorker,
-      // A terrain world's maps (ADR 0049): cached, or built in workers, never on this thread.
-      prepareWorld: (seed: bigint, version: number) =>
-        worldMaps(seed, version, mapDeps()) ?? Promise.resolve(null),
-      workers: defaultWorkerCount(mobile),
-      // ?lod=0 or ?lod=off: no distant terrain at all (a debug switch; __dwell.setLod hides it live).
-      lod: params.get('lod') !== '0' && params.get('lod') !== 'off',
-      lodColors: params.get('lodcolors') === '1',
-      // ?chunks=full asks the server to send every chunk explicitly (full-chunk mode).
-      fullChunks: params.get('chunks') === 'full',
-      netsim: params.get('netsim') ?? undefined,
-      search: location.search,
-      // The loading screen on joining; ?loading=off or the dwell.loading store "off" skip it.
-      loadingScreen: loadingScreenEnabled(location.search, storage()),
-    });
-    stages.end('graphics', performance.now());
   } catch (err) {
     loading.abort();
     showFatal(startupMessage(err, 'gpu' in navigator));
@@ -630,7 +1092,15 @@ async function start(): Promise<App | null> {
     return null;
   }
 
+  // The canvas's size in device px while a theater take records, else null.
+  let canvasOverride: { width: number; height: number } | null = null;
   const resize = (): void => {
+    // A theater take renders at its own size (theater/record.ts `recordSize`).
+    const take = canvasOverride;
+    if (take) {
+      client.resize(take.width, take.height, 1);
+      return;
+    }
     client.resize(
       canvas.clientWidth,
       canvas.clientHeight,
@@ -639,6 +1109,15 @@ async function start(): Promise<App | null> {
   };
   new ResizeObserver(resize).observe(canvas);
   resize();
+  // A cinematic take (theater/cinematic.ts): the held clock the frame loop draws at, and the
+  // frames it waits for (each resolved right after the draw, its capture run in the same task).
+  const cine: {
+    clockMs: number | null;
+    waiters: {
+      capture: ((c: HTMLCanvasElement) => void) | null;
+      resolve: (drawn: boolean) => void;
+    }[];
+  } = { clockMs: null, waiters: [] };
   loading.setCpuAdapter(client.cpuAdapter());
 
   const app: App = {
@@ -649,14 +1128,24 @@ async function start(): Promise<App | null> {
     loading,
     map: new MapOverlay(document.body),
     hotbar: null,
+    backpack: null,
+    creative: null,
     settings: null,
     flightSpeed: new FlightSpeedControl(document.body, (level) => {
       client.flySpeed(level);
     }),
     fps: new FpsMeter(),
     loopback: null,
+    captureThumb: null,
+    minimap: null,
+    mapShading: true,
     world: null,
     playing: false,
+    theater: null,
+    panels: new Panels(document, canvas, {
+      show: (panel, open) => showPanel(app, panel, open),
+      escape: (panel) => panel === 'theater' && (app.theater?.escape() ?? false),
+    }),
   };
   // On-screen controls on touch devices (shown on the first touch too, e.g. a tablet with a mouse).
   const touch = new TouchControls(document.body, client);
@@ -673,7 +1162,8 @@ async function start(): Promise<App | null> {
   );
   forwardInput(app);
   // Sound (docs/AUDIO.md): started by the first gesture; menus sound by delegation.
-  const sfx = installPageSounds();
+  const sfx = installPageSounds('game');
+  const beds = new AmbiencePlayer(SOUND_DATA.ambience, sfx.bedOutput);
   const sounds = new EventPlayer(
     SOUND_DATA,
     (sound, o) => {
@@ -683,6 +1173,7 @@ async function start(): Promise<App | null> {
         at: o.at,
         gain: o.gain,
         ...(o.pan !== undefined ? { pan: o.pan } : {}),
+        ...(o.reverb !== undefined ? { reverb: o.reverb } : {}),
       });
     },
     {
@@ -692,19 +1183,25 @@ async function start(): Promise<App | null> {
           intensity: o.intensity,
           at: o.at,
           gain: o.gain,
+          ...(o.reverb !== undefined ? { reverb: o.reverb } : {}),
         }),
       update: (voice, intensity, at) => sfx.updateLoop(voice, intensity, at),
       stop: (voice) => {
         sfx.stopLoop(voice);
       },
     },
+    undefined,
+    () => sfx.listenerPose(),
   );
   // The game menu (top left, or Esc): settings applied as the sliders move.
-  const settings = new SettingsMenu(document.body, mobile, (s) => {
+  const settings = new SettingsMenu(document.body, mobile, (stored) => {
+    // ?preset=<id> draws the visit at a graphics preset (the bench; ui/graphicsPresets.ts).
+    const s = presetFromQuery(location.search, stored, mobile);
     sfx.setVolumes(s.audio);
     client.setExposure(s.exposure);
     // What the screen shows (Settings, On screen; shared/ui/hud.json).
     applyHud(document, s.hud, mobile);
+    app.mapShading = s.hud.mapShading;
     client.setWaterQuality(waterQualityLevel(s.water.quality));
     // A phone draws the water's cheaper reflection tiers (shared/look/reflections.json `phone`).
     client.setPhone(mobile);
@@ -718,7 +1215,36 @@ async function start(): Promise<App | null> {
     // ?waterdbg=caustics,foam,… turns pieces of the water's shading off (a dev tool, DEV_TOOLS.md).
     const waterDebug = new URLSearchParams(location.search).get('waterdbg');
     if (waterDebug) client.setWaterDebug(waterDebug);
+    // ?cloudExtinction=0.03 sets the volumetric clouds' view opacity over the data's, for an A/B of
+    // how much a cloud hides the ones behind it (a dev tool, DEV_TOOLS.md; docs/CLOUDS.md §9.8).
+    const cloudExtinction = Number(new URLSearchParams(location.search).get('cloudExtinction'));
+    if (cloudExtinction > 0) client.setCloudExtinction(cloudExtinction);
+    // ?heightfield=1|0 forces the near water's GPU heightfield on or off (a dev tool, DEV_TOOLS.md).
+    const heightfield = new URLSearchParams(location.search).get('heightfield');
+    if (heightfield === '1' || heightfield === '0') client.setHeightfield(Number(heightfield));
+    // The Leaf cards setting (off: none; on: the tier's), then ?cards=1|0 forcing them on or off
+    // over it (a dev tool, DEV_TOOLS.md).
+    const cards = new URLSearchParams(location.search).get('cards');
+    client.setCards(cards === '1' || cards === '0' ? Number(cards) : s.leafCards ? -1 : 0);
     client.setClouds(s.clouds);
+    // FXAA and the atlas's anisotropic filtering apply live (?aa= and ?aniso= override them).
+    const aa = antialiasFromQuery(location.search, s.antialias);
+    client.setAntialias(antialiasMode(aa.mode).fxaa, aa.anisotropy);
+    // The skinned models' detail level (ADR 0070 §10); ?modeldetail=<level id> overrides it.
+    client.setModelDetail(new URLSearchParams(location.search).get('modeldetail') ?? s.modelDetail);
+    // Your first-person arms from the player model; ?fparms=rigid draws the old rigid arms (a dev
+    // switch for comparison, docs/CHARACTERS.md §11.10).
+    client.setRigidArms(new URLSearchParams(location.search).get('fparms') === 'rigid');
+    // ?chop=v2: the chopping prototype's crosshair aim (docs/WORK_QUEUE.md item 7; the local
+    // server's half rides the world's start, net/connect.ts).
+    client.setChopAim(/[?&]chop=v2(&|$)/.test(location.search));
+    // The light shafts (ADR 0064); ?shafts=off|low|high overrides them (the bench).
+    client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
+    // Bloom (WORK_QUEUE item 19); ?bloom=off|low|high overrides it (the bench).
+    client.setBloom(new URLSearchParams(location.search).get('bloom') ?? s.bloom);
+    // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
+    const rs = renderScaleFromQuery(location.search, s.renderScale);
+    client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);
     // ?shadows=off|low|high overrides the stored setting (the bench's configurations).
     client.setShadows(shadowLevel(shadowsFromQuery(location.search) ?? s.shadows.quality));
     // ?torchshadows=off|low|high likewise (docs/LIGHTS.md §4).
@@ -726,31 +1252,62 @@ async function start(): Promise<App | null> {
     client.setMotion(s.motion.speedEffects, s.motion.fovBoost);
     client.setReducedMotion(prefersReducedMotion());
     client.setPlants(s.motion.plantSway ? 1 : 0, true);
+    client.setCameraSway(s.motion.cameraSway);
     client.setFov(s.fovDeg);
     client.setShowArms(s.showArms);
     client.setDetail(s.detail.distanceM, s.detail.pixelError, s.detail.memoryMb);
+    // The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts).
+    // ?tallgrass=0..1 overrides the Tall grass share (a dev tool for the bench, DEV_TOOLS.md).
+    const tallGrassQ = Number(new URLSearchParams(location.search).get('tallgrass') ?? NaN);
+    const tallGrass = Number.isFinite(tallGrassQ)
+      ? Math.min(1, Math.max(0, tallGrassQ))
+      : s.features.tallGrass;
+    client.setTerrainDetail(tallGrass, s.features.farTrees);
+    // ?impostors=0 draws the far trees as the LOD sections' tree cells, as before the impostors.
+    const impostorsQ = new URLSearchParams(location.search).get('impostors');
+    client.setImpostors(impostorsQ === '0' ? 0 : impostorsQ === '1' ? 1 : -1);
+    client.setDistantShadows(s.features.distantShadows);
+    client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
+    reportSettings = {
+      renderScale: rs.scale,
+      upscaler: rs.upscaler,
+      fullDetailM: s.detail.distanceM,
+      distantPixelError: s.detail.pixelError,
+      distantMemoryMb: s.detail.memoryMb,
+      preset: presetOf(s, mobile)?.id ?? 'custom',
+    };
   });
   app.settings = settings;
   // While the menu is open the touch controls step aside: they would take its taps.
   settings.onOpenChange = (open) => {
+    // The menu's own controls (Back, the backdrop, ☰, Resume) open and close it: the panels follow.
+    app.panels.shown('menu', open);
     touch.visible = touchWanted && !open;
     sfx.action(open ? 'menu_open' : 'menu_close');
-    // The speed effects hold still while the menu is open.
-    client.setMenuOpen(open);
+    // The speed effects hold still while the menu is open (or the big map).
+    client.setMenuOpen(open || (app.minimap?.bigOpen ?? false));
   };
   // The controller (docs/GAMEPAD.md): polled every frame; Menu opens the game menu, and in it the
   // D-pad moves, A presses, B and Menu close it. Settings → Controller rebinds it.
   const pad = new GamepadInput({
     client,
-    menuOpen: () => settings.isOpen,
+    menuOpen: () => settings.isOpen || inventoryOpen(app),
     openMenu: () => {
-      settings.setOpen(true);
+      app.panels.open('menu');
     },
     closeMenu: () => {
-      settings.setOpen(false);
+      app.panels.close();
     },
     back: () => {
-      settings.setOpen(false);
+      app.panels.close();
+    },
+    inventory: () => {
+      app.panels.toggle('inventory');
+    },
+    map: {
+      open: () => app.minimap?.bigOpen ?? false,
+      toggle: () => app.minimap?.toggleBig(),
+      pad: (values, axes, now) => app.minimap?.padFrame(values, axes, now),
     },
   });
   const applyPad = (s: GamepadSettings): void => {
@@ -802,6 +1359,19 @@ async function start(): Promise<App | null> {
         copyBlockDump(app);
       },
     },
+    {
+      key: 'F8',
+      run: () => {
+        copyStreamingReport(app);
+      },
+    },
+    {
+      key: 'F7',
+      run: () => {
+        togglePauseLook(app);
+      },
+      on: () => client.lookPaused(),
+    },
   ]);
   // The Structures page (STRUCTURES.md §4): the browser's structures store, saved from and
   // loaded into this world through the region tools.
@@ -823,7 +1393,39 @@ async function start(): Promise<App | null> {
     close: () => {
       settings.setOpen(false);
     },
+    // Blueprints (docs/BLUEPRINTS.md): a structure placed as ghost blocks at the crosshair.
+    blueprints: {
+      synced: () => client.blueprintsSynced(),
+      catalog: () =>
+        client.blueprintCatalog().map((line) => {
+          const [name = '', ...size] = line.split(' ');
+          return { name, size: size.join(' × ') };
+        }),
+      placeCatalog: (name, turn) =>
+        client.placeBlueprint(name, turn) ? '' : 'Aim where it should stand first.',
+      place: (s, turn) => {
+        try {
+          const { palette, cells } = blueprintCellsOf(s);
+          return client.placeBlueprintCells(
+            s.name,
+            new Uint8Array(s.size),
+            new Uint8Array(s.anchor),
+            palette,
+            cells,
+            turn,
+          )
+            ? ''
+            : 'Aim where it should stand first.';
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      },
+      removeAimed: () => client.removeAimedBlueprint(),
+    },
   });
+  // The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4).
+  const blueprintPanel = new BlueprintPanel();
+  document.body.append(blueprintPanel.element);
   settings.addStructuresPanel(structures.element, () => {
     void structures.refresh();
   });
@@ -835,18 +1437,87 @@ async function start(): Promise<App | null> {
   };
   // No F3 on a phone: ?debug=1 opens the debug overlay.
   if (params.get('debug') === '1') toggleDebug(app);
+  // ?pause=1 starts with the look paused (debug/pause.ts; the panoramas pause from script).
+  if (pauseFromQuery(location.search)) client.setLookPaused(true);
   app.hud.onCopyBlocks = () => {
     copyBlockDump(app);
   };
+  app.hud.onCopyStreaming = () => {
+    copyStreamingReport(app);
+  };
   client.flySpeed(loadFlySpeedLevel());
   app.flightSpeed.show(client.flySpeedLevel());
+  const cinematicHost = (): CinematicHost => ({
+    holdClock: (on) => {
+      const ms = client.holdClock(on);
+      cine.clockMs = on ? ms : null;
+      return ms;
+    },
+    stepClockTo: (ms) => {
+      client.stepClockTo(ms);
+      cine.clockMs = ms;
+    },
+    world: app.loopback && {
+      hold: (on) => {
+        app.loopback?.holdClock(on);
+      },
+      step: (ticks) => app.loopback?.step(ticks) ?? Promise.resolve(null),
+    },
+    theaterExact: (on) => {
+      client.theaterExact(on);
+    },
+    theaterAdvance: (dt) => {
+      client.theaterAdvance(dt);
+    },
+    theaterPlay: (json) => {
+      client.theaterPlay(json);
+    },
+    theaterStop: () => {
+      client.theaterStop();
+    },
+    theaterState: () =>
+      client.theaterState() as { time: number; duration: number; finished: boolean } | null,
+    state: () => client.debugState() as ViewState | null,
+    setView: (v) => window.__dwell?.setView(v),
+    setShadows: (q) => window.__dwell?.setShadows(q as ShadowQuality),
+    canvas,
+    canvasSize: (size) => {
+      canvasOverride = size && { width: size[0], height: size[1] };
+      resize();
+    },
+    nextFrame: (capture) =>
+      new Promise((resolve) => {
+        cine.waiters.push({ capture, resolve });
+      }),
+    sink: async (file, bytes) => {
+      const f = window.__dwellRecSink;
+      if (!f)
+        throw new Error('cinematic: no recorder (window.__dwellRecSink; the record skill driver)');
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      await f(file, btoa(bin));
+    },
+    audio: (leadS) => startCinematicAudio(audio(), leadS),
+    wallMs: () => performance.now(),
+  });
   window.__dwell = {
     state: () => client.debugState() as GameDebugState | null,
     press: (code, down) => {
       client.press(code, down);
+      // The map's key is the shell's (ADR 0068), as a real key press is.
+      if (down && code === 'KeyM') app.minimap?.toggleBig();
+      // The backpack's key is the shell's too (ADR 0066 §10).
+      else if (down && code === 'KeyE' && app.backpack?.usable)
+        setInventoryOpen(app, !inventoryOpen(app));
+      else if (down) app.minimap?.key(code);
     },
     look: (yaw, pitch) => {
       client.setLook(yaw, pitch);
+      // A placed camera (`placeCamera`, `goto`) draws the view, not the player's look: turn it
+      // too, where it stands, or a `look` after a `goto` turns nothing on screen.
+      const placed = client.camera() as Camera | null;
+      if (placed) client.placeCamera(...placed.position, yaw, pitch);
     },
     view: () => {
       const [yaw = 0, pitch = 0] = client.look();
@@ -859,7 +1530,12 @@ async function start(): Promise<App | null> {
     brush: (command) => client.brush(command, performance.now()),
     select: (slot) => {
       client.select(slot);
+      // The creative view follows at once (its `slot` event comes a frame later): a `pick` right
+      // after a `select` (the bench's steps) fills the slot just selected, not the one before
+      // (the `axe` scenario's trunk was put in slot 1 and filled with the pickaxe: nothing).
+      app.creative?.set([...client.creativeHotbar()], slot);
     },
+    pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
       client.placement() as { cell: [number, number, number]; material: number } | null,
     voxel: (x, y, z) => client.voxel(x, y, z),
@@ -872,16 +1548,43 @@ async function start(): Promise<App | null> {
     spyglass: (on, step) => client.spyglass(on, step ?? 0),
     placeCamera: ([x, y, z], yaw, pitch) => client.placeCamera(x, y, z, yaw, pitch),
     puppets: (count, [x, y, z], face, held) => client.puppets(count, x, y, z, face ?? 1, held ?? 0),
+    holdSwing: (vertical, t) => client.holdSwing(vertical, t),
     showArms: (on) => {
       client.setShowArms(on);
     },
     releaseCamera: () => {
       client.releaseCamera();
     },
+    theater: (op, args) => theaterOp(client, document, op, args),
+    theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
+    cinematic: (opts) => runCinematic(cinematicHost(), opts),
+    audioTap: (o) => audio().tapStream(o ?? {}),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
     goto: (query, options) => gotoPlace(findHost(app), query, options),
-    teleport: (feet) => teleport(app, feet),
+    teleport: (feet) => teleportAnswered(app, feet),
+    moon: () => moonOf(app),
+    // The way home is kept before each trip starts, so one that fails still leaves it (BUGS.md
+    // #147); a spot off home ground (in space) is never one.
+    flyTo: async (to, options) => {
+      const host = tripHost(app);
+      if (to === 'moon') {
+        tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+        return flyToMoon(host, options);
+      }
+      const start = tripStart ?? tripStartOf(moonOf(app));
+      if (!start) throw new Error('flyTo home: no start (fly to the moon first)');
+      return flyHome(host, start, options);
+    },
+    moonLand: async (options) => {
+      tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+      return teleportToMoon(tripHost(app), options);
+    },
+    sunLand: async (options) => {
+      tripStart = tripStartOf(moonOf(app)) ?? tripStart;
+      return teleportToMoon(tripHost(app, 'sun'), options, 'sun');
+    },
+    sun: () => gridOf(app, 'dwell:sun'),
     plants: (wind, shown) => {
       client.setPlants(wind, shown);
     },
@@ -894,16 +1597,75 @@ async function start(): Promise<App | null> {
     setShadows: (quality) => {
       client.setShadows(shadowLevel(quality));
     },
+    setView: (v) => {
+      const s = app.settings?.current;
+      if (!s) return;
+      if (v.clouds !== undefined) client.setClouds(v.clouds);
+      if (v.targetOutline !== undefined) client.setTargetOutline(v.targetOutline);
+      if (v.speedEffects !== undefined) client.setMotion(v.speedEffects, s.motion.fovBoost);
+      if (v.distanceM !== undefined || v.pixelError !== undefined || v.memoryMb !== undefined) {
+        client.setDetail(
+          v.distanceM ?? s.detail.distanceM,
+          v.pixelError ?? s.detail.pixelError,
+          v.memoryMb ?? s.detail.memoryMb,
+        );
+      }
+      if (v.smoke !== undefined) {
+        client.setExplosions(s.explosions.flash, v.smoke, s.explosions.shake);
+      }
+      if (
+        v.flowParticles !== undefined ||
+        v.flowRipples !== undefined ||
+        v.flowFoam !== undefined ||
+        v.waterfalls !== undefined
+      ) {
+        client.setWaterFlow(
+          v.flowRipples ?? s.water.flowRipples,
+          v.flowFoam ?? s.water.flowFoam,
+          v.flowParticles ?? s.water.flowParticles,
+          v.waterfalls ?? s.water.waterfalls,
+        );
+      }
+      if (v.shafts !== undefined) client.setShafts(v.shafts);
+      if (v.bloom !== undefined) client.setBloom(v.bloom);
+      if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
+      if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
+      if (v.torchShadows !== undefined) {
+        client.setTorchShadows(shadowLevel(v.torchShadows));
+      }
+      if (v.renderScale !== undefined) {
+        const rs = renderScaleFromQuery(location.search, s.renderScale);
+        client.setRenderScale(v.renderScale, rs.upscaler, UPSCALE.sharpenStops);
+      }
+    },
     outline: () => client.outline(),
     setOutline: (name) => client.setOutline(name),
     pixelArt: () => client.pixelArt(),
     setPixelArt: (name) => client.setPixelArt(name),
     setLodMap: (on) => client.setLodMap(on),
+    mapTiles: () => {
+      const m = app.minimap;
+      if (!m) return null;
+      const r = m.reveal;
+      return {
+        level: m.level,
+        tiles: r.tiles.size,
+        built: r.built,
+        inFlight: r.inFlight,
+        backgroundLeft: r.backgroundLeft,
+      };
+    },
     setLod: (on) => client.setLod(on),
+    setProbe: (points) => client.setProbe(new Float64Array(points)),
     crossingRoll: () => client.crossingRoll(),
     setCrossingRoll: (seconds) => client.setCrossingRoll(seconds),
     memory: () => memoryReport(app),
     blockDump: () => blockDumpOf(app),
+    streamingReport: async () => {
+      const r = await streamingReportOf(app);
+      copyText(app, Promise.resolve(formatStreamingReport(r)), 'Streaming report copied');
+      return r;
+    },
     telemetry: () => client.telemetry() as Telemetry,
     telemetryFrames: () => client.telemetryFrames() as { names: string[]; frames: number[][] },
     waterFlowAt: (x: number, y: number, z: number) => Array.from(client.waterFlowAt(x, y, z)),
@@ -934,6 +1696,33 @@ async function start(): Promise<App | null> {
       }
       return out;
     },
+    creatures: () => {
+      const v = Array.from(client.creatures());
+      const at = (k: number) => v[k] ?? 0;
+      const out = [];
+      for (let i = 0; i + 6 <= v.length; i += 6) {
+        out.push({
+          x: at(i),
+          y: at(i + 1),
+          z: at(i + 2),
+          yaw: at(i + 3),
+          speed: at(i + 4),
+          npc: at(i + 5) === 1,
+        });
+      }
+      return out;
+    },
+    ecology: () => client.ecology() as EcologyReadout | null,
+    impostors: () => client.impostorStatus() as ImpostorStatus,
+    impostorDebug: (mode, ambient, albedo) => {
+      client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1);
+    },
+    herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
+    goToHerd: (kind, back) =>
+      app.loopback?.lavaDev('goToHerd', [
+        kind === undefined ? -1 : kind === 'wolf' ? 1 : 0,
+        back ?? 40,
+      ]) ?? Promise.resolve(null),
     ticks: () => client.telemetryTicks() as TickSample[],
     telemetryReset: () => {
       client.telemetryReset();
@@ -942,8 +1731,36 @@ async function start(): Promise<App | null> {
     serverStats: () => app.loopback?.serverStats ?? null,
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
+    lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    animalPose: (pose) =>
+      app.loopback?.lavaDev('animalPose', [
+        pose === null ? -1 : ['stand', 'graze', 'lookUp', 'earFlick', 'sit', 'lie'].indexOf(pose),
+      ]) ?? Promise.resolve(null),
+    npcsFight: () => app.loopback?.lavaDev('npcsFight', []) ?? Promise.resolve(null),
+    animalsIgnorePlayers: (on) =>
+      app.loopback?.lavaDev('animalsIgnorePlayers', [on ? 1 : 0]) ?? Promise.resolve(null),
+    spawnHerd: (kind, size, offset) =>
+      app.loopback?.lavaDev('spawnHerd', [kind === 'wolf' ? 1 : 0, size ?? 5, offset ?? 12]) ??
+      Promise.resolve(null),
+    spawnNpcs: (n, radius, variant) =>
+      app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
+    cloudExtinction: (extinction) => {
+      client.setCloudExtinction(extinction ?? 0);
+    },
+    plume: (op, args) => {
+      const [name, ...nums] = args ?? [];
+      return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));
+    },
     die: () => {
       app.loopback?.postToWorker({ t: 'kill' });
+      return app.loopback !== null;
+    },
+    give: (item, count) => {
+      app.loopback?.postToWorker({ t: 'give', item, count });
+      return app.loopback !== null;
+    },
+    carry: (speed, yaw, seconds, lift) => {
+      app.loopback?.postToWorker({ t: 'carry', speed, yaw, seconds, lift: lift ?? 1 });
       return app.loopback !== null;
     },
     waterDebug: (names) => {
@@ -953,15 +1770,86 @@ async function start(): Promise<App | null> {
       client.setTimeOfDay(t ?? undefined);
       if (moon !== undefined) client.setMoonPhase(moon ?? undefined);
     },
+    pause: (on) => {
+      if (on !== undefined) client.setLookPaused(on);
+      return client.lookPaused();
+    },
   };
 
-  const frame = (now: number): void => {
-    pad.poll(now);
+  // The HUD's layout (shared/ui/layout.json): placed again when the screen or a part's size changes.
+  const layout = new LayoutRunner(document, HUD_LAYOUT, mobile, LAYOUT_EVERY_MS);
+  // Theater mode (docs/THEATER_MODE.md §2): its toolbar, its key, the controller's button and the
+  // touch button; the host may turn it off for guests (world settings, T-2 outstanding).
+  const theater = new TheaterMode({
+    doc: document,
+    canvas,
+    client,
+    store: new PathStore(localStorage),
+    arms: (shown) => {
+      client.setShowArms(shown && loadSettings(mobile).showArms);
+    },
+    touch: (shown) => {
+      touch.visible = shown && touchWanted;
+    },
+    touchDevice: () => touchWanted,
+    canvasSize: (size) => {
+      canvasOverride = size;
+      resize();
+    },
+    where: () => (app.world ? { seed: app.world.seed.toString() } : {}),
+    audioTap: () => audio().tapStream({ music: false, ui: false }),
+    panels: {
+      open: () => {
+        app.panels.open('theater');
+      },
+      close: () => {
+        app.panels.close('theater');
+      },
+    },
+  });
+  app.theater = theater;
+  window.addEventListener('resize', () => {
+    theater.relayout(innerWidth, innerHeight);
+  });
+  settings.addTheaterPage(
+    THEATER.key,
+    () => {
+      theater.enter();
+    },
+    () => theater.allowed,
+  );
+  const theaterButton =
+    gamepadData.buttons.find((b) => b.name === THEATER.gamepadToggle)?.index ?? -1;
+  let theaterButtonWas = false;
+  const frame = (rafNow: number): void => {
+    // A cinematic take draws at its held clock, not the animation frame's time.
+    const now = cine.clockMs ?? rafNow;
+    const gp = [...navigator.getGamepads()].find((g) => g !== null) ?? null;
+    const down = gp?.buttons[theaterButton]?.pressed ?? false;
+    if (down && !theaterButtonWas && app.playing && !settings.isOpen) theater.toggle();
+    theaterButtonWas = down;
+    // The host may turn theater mode off for guests (THEATER_MODE.md §7); the host always may.
+    theater.setAllowed(app.loopback !== null || client.theaterGuests());
+    theater.frame(now, theater.active ? gp : null);
+    theater.showOpenButton(touchWanted && app.playing);
+    if (!theater.active) pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
-    app.fps.frame(now, client.frame(now));
+    const drawn = client.frame(now);
+    for (const w of cine.waiters.splice(0)) {
+      if (drawn) w.capture?.(canvas);
+      w.resolve(drawn);
+    }
+    app.fps.frame(now, drawn);
+    theater.afterFrame(drawn);
     handleEvents(app);
-    playSounds(app, sounds);
+    playSounds(app, sounds, beds);
     showHud(app, now);
+    blueprintPanel.update(app.playing && !settings.isOpen ? client.blueprintPanel() : '');
+    if (app.minimap) {
+      app.minimap.shading = app.mapShading;
+      app.minimap.frame(now);
+    }
+    layout.frame(now);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -970,8 +1858,68 @@ async function start(): Promise<App | null> {
 
 /** Moves the local player's feet (a local world; the dev tools' `goto`). */
 function teleport(app: App, feet: Vec3): boolean {
-  app.loopback?.postToWorker({ t: 'teleport', at: feet });
+  // BUGS.md #84: a point that is not three finite numbers is an error here, not a silent no-op.
+  const at = feetOf(feet);
+  if (at === null)
+    throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
+  app.loopback?.postToWorker({ t: 'teleport', at });
   return app.loopback !== null;
+}
+
+/** `__dwell.teleport`: `teleport`'s move, answered by the local server (local.rs `teleport_checked`). */
+async function teleportAnswered(app: App, feet: Vec3): Promise<boolean> {
+  const at = feetOf(feet);
+  if (at === null)
+    throw new Error(`teleport: feet must be [x, y, z] (metres), not ${JSON.stringify(feet)}`);
+  const r = await (app.loopback?.lavaDev('teleport', [...at]) ?? Promise.resolve(null));
+  if (r === null) throw new Error('teleport: not a local world');
+  const j = JSON.parse(r) as { error?: string };
+  if (j.error) throw new Error(`teleport: ${j.error}`);
+  return true;
+}
+
+/** Where the last `flyTo('moon')` started (world feet): `flyTo('home')` goes back there. */
+let tripStart: Vec3 | null = null;
+
+function moonOf(app: App): MoonReport | null {
+  const j = app.client.moon();
+  return j === undefined ? null : (JSON.parse(j) as MoonReport);
+}
+
+/** A grid's report by name (`dwell:sun`), as `moonOf`'s. */
+function gridOf(app: App, name: string): MoonReport | null {
+  const j = app.client.gridReport(name);
+  return j === undefined ? null : (JSON.parse(j) as MoonReport);
+}
+
+/** The page's side of the bench's moon trip (debug/moonTrip.ts), or the sun's (`sunLand`). */
+function tripHost(app: App, grid: 'moon' | 'sun' = 'moon'): TripHost {
+  const { client } = app;
+  return {
+    moon: () => (grid === 'sun' ? gridOf(app, 'dwell:sun') : moonOf(app)),
+    approach: (margin, face) =>
+      app.loopback?.lavaDev(grid === 'sun' ? 'sunApproach' : 'moonApproach', [margin, face]) ??
+      Promise.resolve(null),
+    land: (face, river) =>
+      app.loopback?.lavaDev(grid === 'sun' ? 'sunLand' : 'moonLand', river ? [face, 1] : [face]) ??
+      Promise.resolve(null),
+    placeHome: (feet) => app.loopback?.lavaDev('placeHome', [...feet]) ?? Promise.resolve(null),
+    press: (code, down) => {
+      client.press(code, down);
+    },
+    fly: (on) => {
+      client.fly(on);
+    },
+    flySpeed: (level) => {
+      client.flySpeed(level);
+      app.flightSpeed.show(client.flySpeedLevel());
+    },
+    look: (yaw, pitch) => {
+      client.setLook(yaw, pitch);
+    },
+    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+    now: () => performance.now(),
+  };
 }
 
 /** The page's side of the dev tools' place search (debug/find.ts). */
@@ -1024,6 +1972,66 @@ function wasmMemoryBytes(): number {
   return wasmMemory?.buffer.byteLength ?? 0;
 }
 
+const itemPictures = new Map<string, HotbarSlot>();
+
+/** An inventory item's picture (ADR 0066), drawn once per item. */
+function itemPicture(item: string): HotbarSlot {
+  let p = itemPictures.get(item);
+  if (!p) {
+    p = { name: item, swatch: itemSwatch(item), size: swatchSize() };
+    itemPictures.set(item, p);
+  }
+  return p;
+}
+
+/** Whether the inventory view is open: the backpack (a world that uses items) or the creative one. */
+function inventoryOpen(app: App): boolean {
+  return (app.backpack?.open ?? false) || (app.creative?.open ?? false);
+}
+
+/**
+ * Opens or closes the inventory view through the panels (ui/panels.ts), which free the mouse on
+ * opening and lock it again on closing.
+ */
+function setInventoryOpen(app: App, open: boolean): void {
+  if (open) app.panels.open('inventory');
+  else app.panels.close('inventory');
+}
+
+/** Shows or hides a panel's view; only the panels (ui/panels.ts) call this. False: no view yet. */
+function showPanel(app: App, panel: Exclude<Panel, 'none'>, open: boolean): boolean {
+  if (panel === 'inventory') {
+    if (!app.backpack && !app.creative) return false;
+    showInventory(app, open);
+  } else if (panel === 'menu') {
+    if (!app.settings) return false;
+    app.settings.setOpen(open);
+  } else if (panel === 'theater') {
+    if (!app.theater) return false;
+    return app.theater.setShown(open);
+  } else {
+    if (!app.minimap) return false;
+    app.minimap.setBig(open);
+    if (open && !app.minimap.bigOpen) return false;
+  }
+  return true;
+}
+
+/**
+ * Shows or hides the inventory view: the backpack in a world that uses items, else the creative
+ * catalogue. While it is open the game holds still and the controller moves its focus.
+ */
+function showInventory(app: App, open: boolean): void {
+  const usesItems = app.backpack?.usable ?? false;
+  if (app.backpack) app.backpack.open = open && usesItems;
+  if (app.creative) app.creative.open = open && !usesItems;
+  // The touch controls step aside but for the bag button, which closes it again.
+  document.body.classList.toggle('inventory-open', open);
+  app.client.setMenuOpen(
+    open || (app.settings?.isOpen ?? false) || (app.minimap?.bigOpen ?? false),
+  );
+}
+
 /** Once joined: the hotbar, the block dump's world, and the debug tools. */
 function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): void {
   app.playing = true;
@@ -1033,7 +2041,80 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   app.hotbar = new Hotbar(document.body, slots, (slot) => {
     app.client.select(slot);
   });
+  // The creative hotbar's picks (docs/ITEMS.md §6a), saved per world in this browser.
+  const items = app.client.paletteItems();
+  const library = new StructureStore(opfsStructureDir());
+  const worldKey = `${String(joined.generatorVersion)}:${String(joined.worldSeed)}`;
+  const store = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
+  const saved = store ? loadPicks(store, worldKey, items) : null;
+  saved?.forEach((index, slot) => app.client.setCreativeSlot(slot, index));
+  app.hotbar.setPicks([...app.client.creativeHotbar()]);
+  app.creative = new CreativeInventory(
+    document.body,
+    items,
+    (i) => slots[i] ?? { name: '', swatch: new Uint8Array(), size: 0 },
+    (slot, index) => {
+      app.client.setCreativeSlot(slot, index);
+      const picks = [...app.client.creativeHotbar()];
+      app.hotbar?.setPicks(picks);
+      if (store) savePicks(store, worldKey, picks, items);
+      audio().action('hotbar');
+      return picks;
+    },
+    (slot) => {
+      app.client.select(slot);
+    },
+    // The Structures tab (STRUCTURES.md §9): the player's library, placed with a ghost to aim.
+    {
+      allowed: () => app.client.structuresAllowed(),
+      list: async () => structureEntries(await library.list()),
+      place: async (file) => {
+        const entry = await library.get(file);
+        if (entry?.status !== 'ok') return `${file} can't be placed by this version.`;
+        const s = entry.structure;
+        const { cells, keep } = clipboardOf(s);
+        const err = app.client.loadStructure(s.size[0], s.size[1], s.size[2], cells, keep, s.name);
+        if (!err) setInventoryOpen(app, false);
+        return err;
+      },
+    },
+  );
+  app.touch?.setOnBag(() => {
+    setInventoryOpen(app, !inventoryOpen(app));
+  });
   app.client.select(0);
+  // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
+  app.backpack = new Backpack(
+    document.body,
+    itemPicture,
+    (from, to, count) => {
+      app.client.moveItems(from, to, count);
+    },
+    (recipe) => {
+      app.client.combine(recipe);
+    },
+  );
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!app.playing || (app.settings?.isOpen ?? false)) return;
+      // Typing in the inventory's search: only Escape is the view's.
+      if (e.target instanceof HTMLInputElement && e.code !== 'Escape') return;
+      // E is the inventory only: a ground item is knocked loose by the break action (ADR 0071).
+      const open = backpackKey(e.code, e.repeat, inventoryOpen(app), true);
+      if (open === null) return;
+      setInventoryOpen(app, open);
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
   // The build mode as the game has it: a `buildMode` event may have come before the hotbar.
   app.hotbar.setBuildMode(app.client.buildMode());
   app.touch?.setBuildMode(app.client.buildMode());
@@ -1105,6 +2186,9 @@ function blockDumpOf(app: App, water?: unknown): BlockDump | null {
 }
 
 /** How far around the player (cells) the block dump reports the local server's water. */
+/** How often the HUD's layout looks for parts made since its last run (ms). */
+const LAYOUT_EVERY_MS = 250;
+
 const WATER_REPORT_RADIUS = 48;
 
 /**
@@ -1132,6 +2216,122 @@ async function waterReportOf(app: App): Promise<unknown> {
   }
 }
 
+/** The settings last applied, for the streaming report. */
+let reportSettings: ReportSettings | null = null;
+
+/** `__dwell.theaterMode` (src/theater/mode.ts; docs/DEV_TOOLS.md "Theater"). */
+function theaterModeOp(app: App, op: string, args: Record<string, unknown>): unknown {
+  const t = app.theater;
+  if (!t) throw new Error('theater mode: no game yet');
+  switch (op) {
+    case 'state':
+      return { active: t.active, keys: t.editor.keys.length, duration: t.editor.duration };
+    case 'enter':
+      t.enter();
+      return t.active;
+    case 'exit':
+      t.exit();
+      return t.active;
+    case 'keys':
+      t.editor.load(args.path as PathJson);
+      t.refresh();
+      return t.editor.keys.length;
+    case 'record':
+      return t
+        .record((args.path as PathJson | undefined) ?? null, {
+          aspect: args.aspect as string | undefined,
+          height: args.height as number | undefined,
+          fps: args.fps as number | undefined,
+          download: args.download as boolean | undefined,
+          audio: args.audio as boolean | undefined,
+          exact: args.exact as boolean | undefined,
+        })
+        .then(async (r) => {
+          if (!r) return null;
+          const buf = new Uint8Array(await r.blob.arrayBuffer());
+          let bin = '';
+          for (let i = 0; i < buf.length; i += 0x8000)
+            bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+          return { bytes: btoa(bin), mime: r.mime, width: r.width, height: r.height };
+        });
+    case 'endTake':
+      return t.endTake();
+    default:
+      throw new Error(`theaterMode: unknown op ${op} (state, enter, exit, keys, record, endTake)`);
+  }
+}
+
+/** The streaming report (debug/streamingReport.ts): the game's part and the shell's. */
+async function streamingReportOf(app: App): Promise<StreamingReport> {
+  const gpu = await gpuName();
+  let game: Record<string, unknown> | null;
+  try {
+    game = JSON.parse(app.client.streamingReport()) as Record<string, unknown> | null;
+  } catch {
+    game = null;
+  }
+  const q = new URLSearchParams(location.search);
+  return streamingReport({
+    build: {
+      version: buildInfo.version,
+      sha: buildInfo.sha,
+      channel: channelOf(buildInfo.version),
+    },
+    game,
+    device: deviceOf(gpu, app.client.cpuAdapter()),
+    settings: reportSettings,
+    world: {
+      local: app.loopback !== null,
+      seed: app.world ? app.world.seed.toString() : null,
+      generatorVersion: app.world?.generatorVersion ?? null,
+      type: q.get('world'),
+      mode: q.get('mode'),
+      compatibilityLine: compatibilityLine(buildInfo.version),
+    },
+    ...(app.client.flying() ? { flySpeedLevel: app.client.flySpeedLevel() } : {}),
+  });
+}
+
+/** Copies the streaming report (F8, or the Debug page's button), or shows it to copy by hand. */
+function copyStreamingReport(app: App): void {
+  if (!app.client.debugState()) {
+    app.hud.flash('No world to report yet');
+    audio().ui('error');
+    return;
+  }
+  copyText(
+    app,
+    streamingReportOf(app).then((r) => formatStreamingReport(r)),
+    'Streaming report copied',
+  );
+}
+
+/**
+ * Copies `text` to the clipboard (given as a promise within the tap that asked: Safari's rule),
+ * or shows it in the HUD's text box to copy by hand where that is refused.
+ */
+function copyText(app: App, text: Promise<string>, done: string): void {
+  const shown = () => {
+    void text.then((t) => {
+      app.hud.showDump(t);
+    });
+  };
+  const copied = () => {
+    app.hud.flash(done);
+    audio().action('copy');
+  };
+  try {
+    if (typeof ClipboardItem !== 'undefined') {
+      const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
+      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(copied, shown);
+    } else {
+      void text.then((t) => navigator.clipboard.writeText(t)).then(copied, shown);
+    }
+  } catch {
+    shown(); // no clipboard (an insecure context)
+  }
+}
+
 /** Copies the block dump to the clipboard, or shows it to copy by hand where that is refused. */
 function copyBlockDump(app: App): void {
   if (!blockDumpOf(app)) {
@@ -1145,25 +2345,7 @@ function copyBlockDump(app: App): void {
     const dump = blockDumpOf(app, water);
     return dump ? formatBlockDump(dump) : '';
   });
-  const shown = () => {
-    void text.then((t) => {
-      app.hud.showDump(t);
-    });
-  };
-  const copied = () => {
-    app.hud.flash('Block info copied');
-    audio().action('copy');
-  };
-  try {
-    if (typeof ClipboardItem !== 'undefined') {
-      const blob = text.then((t) => new Blob([t], { type: 'text/plain' }));
-      navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(copied, shown);
-    } else {
-      void text.then((t) => navigator.clipboard.writeText(t)).then(copied, shown);
-    }
-  } catch {
-    shown(); // no clipboard (an insecure context)
-  }
+  copyText(app, text, 'Block info copied');
 }
 
 /** Local storage, or null where it is blocked. */
@@ -1187,13 +2369,21 @@ async function makeWorld(
   launch: Extract<Launch, { kind: 'new' | 'regenerate' }>,
 ): Promise<string | { message: string }> {
   if (launch.kind === 'new') {
-    const type = creatableType(launch.type);
+    // An offered world file (the form's World) is terrain on that file's ground.
+    const worldgen = worldChoice(launch.worldgen);
+    const type = worldgen ? 'terrain' : creatableType(launch.type);
     const world = index.create(
       {
         name: cleanName(launch.name, 'New world'),
         type,
+        ...(worldgen ? { worldgen } : {}),
         seed: parseSeed(launch.seed),
         ...(launch.spawn !== '' && isSpawn(launch.spawn) ? { spawn: launch.spawn } : {}),
+        ...(isGameMode(launch.mode) ? { mode: launch.mode } : {}),
+        // New world → More options' World size (BIG_MAP.md M2b): a bigger terrain world.
+        ...(type === 'terrain' ? sizeOptions(sizeScale(launch.size)) : {}),
+        // New world → More options' Sky (REALISTIC_WORLD.md §8): a world that rolls an orbit.
+        ...skyOptions(worldgen, launch.sky),
       },
       Date.now(),
     );
@@ -1243,40 +2433,31 @@ function openMainMenu(app: App | null, message?: string): void {
 }
 
 /**
- * The game menu (the ☰ panel, Phase 5a): opens when the pointer is released (Esc) or on Esc,
- * Resume locks the pointer again, and Quit to main menu saves a local world before leaving.
+ * The game menu (the ☰ panel, Phase 5a): opens when the browser releases the pointer (Esc, alt-tab)
+ * or on Esc, closing it (Resume, Back, Esc) locks the pointer again (ui/panels.ts), and Quit to main
+ * menu saves a local world before leaving.
  */
 function enableGameMenu(app: App, save: (() => Promise<boolean>) | null): void {
+  // Esc closes the open panel (the inventory, the menu, the big map), or opens the menu.
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && app.panels.escape(performance.now())) e.preventDefault();
+  });
   const settings = app.settings;
   if (!settings) return;
   settings.addGameActions(
+    // Closing the menu already asked for the lock, from Resume's click.
+    () => undefined,
     () => {
-      lockPointer(app.canvas);
-    },
-    () => {
+      // The world's picture is the player's view as they quit (worldThumbs.ts captureNow).
+      const pictured = app.captureThumb ? app.captureThumb() : Promise.resolve();
       const saved = save ? save() : Promise.resolve(true);
       // Leave even if the save hangs; the world also saved every few seconds.
       const timeout = new Promise((resolve) => setTimeout(resolve, 5000));
-      void Promise.race([saved, timeout]).then(() => {
+      void Promise.all([pictured, Promise.race([saved, timeout])]).then(() => {
         go({});
       });
     },
   );
-  let locked = false;
-  let releasedAt = -Infinity;
-  document.addEventListener('pointerlockchange', () => {
-    const now = document.pointerLockElement === app.canvas;
-    if (locked && !now) {
-      settings.setOpen(true);
-      releasedAt = performance.now();
-    }
-    locked = now;
-  });
-  window.addEventListener('keydown', (e) => {
-    // The Esc that released the pointer (if a browser delivers it at all) doesn't close the menu.
-    if (e.code !== 'Escape' || locked || performance.now() - releasedAt < 300) return;
-    settings.setOpen(!settings.isOpen);
-  });
 }
 
 async function connect(app: App): Promise<void> {
@@ -1297,6 +2478,8 @@ async function connect(app: App): Promise<void> {
   }
   let localWorld: LocalWorld | null = null;
   let worldName = 'Local world';
+  /** The local world's id in the index, for its thumbnail (local/worldThumbs.ts). */
+  let thumbId: string | null = null;
   if (launch.kind === 'play') {
     const world = index.get(launch.id);
     if (!world) {
@@ -1346,12 +2529,33 @@ async function connect(app: App): Promise<void> {
       file: playing.id,
       ...(isSpawn(playing.spawn) ? spawnOptions(playing.spawn) : {}),
       ...(!access.ok && access.upgrade ? { upgrade: true } : {}),
+      ...(playing.mode && isGameMode(playing.mode) ? { mode: playing.mode } : {}),
+      // A bigger world (BIG_MAP.md M2b): created at its size, its maps built at it.
+      ...sizeOptions(playing.radiusScale),
+      // A Realistic world's Sky (REALISTIC_WORLD.md §8): its orbit rolled when its file is created.
+      ...(playing.sky ? { sky: playing.sky } : {}),
     };
     worldName = playing.name;
+    thumbId = playing.id;
+    // A test world (Chisel's Play in game): its maps from its recorded worldgen config.
+    worldgenConfig = playing.worldgen ?? '';
     index.touch(playing.id, Date.now());
   } else if (launch.kind === 'link') {
     app.loading.stages.begin('worldFile', performance.now());
     localWorld = parseLocalWorld(location.search);
+    // Dev link `?worldgen=test:tall_peak` (docs/DEV_TOOLS.md "Play a test world"): a terrain world
+    // of the fixture's ground, its own file and record (which keeps the config).
+    const worldgen = params.get('worldgen') ?? '';
+    if (worldgen) {
+      localWorld = {
+        ...localWorld,
+        generatorVersion: GENERATORS.terrain,
+        file: testWorldId(worldgen, localWorld.worldSeed),
+        // A Realistic world's Sky (`&sky=extreme`, REALISTIC_WORLD.md §8): rolled when created.
+        ...skyOptions(worldgen, params.get('sky')),
+      };
+      worldgenConfig = worldgen;
+    }
     // A link to a world file that is already there opens a world saved before versioned releases
     // (ignored); a new one is this build's.
     const name =
@@ -1366,7 +2570,9 @@ async function connect(app: App): Promise<void> {
       index.remove(name);
     }
     const existed = (await listWorldFiles()).includes(name);
-    const world = index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
+    const world = worldgen
+      ? index.adoptTest(worldgen, localWorld.worldSeed, Date.now())
+      : index.adopt(name, Date.now(), existed ? undefined : recordedVersion());
     const access = world ? worldAccess(world, buildInfo.version) : null;
     if (access && !access.ok) {
       openMainMenu(app, access.message);
@@ -1374,6 +2580,7 @@ async function connect(app: App): Promise<void> {
     }
     if (world) {
       worldName = world.name;
+      thumbId = world.id;
       index.touch(world.id, Date.now());
     }
   }
@@ -1396,7 +2603,8 @@ async function connect(app: App): Promise<void> {
     clientVersion: recordedVersion(),
     transport: preference,
     ...(localWorld ? { localWorld } : {}),
-    worldMaps: (seed, version) => worldMaps(seed, version, mapDeps()),
+    worldMaps: (seed, version, radiusScale) =>
+      worldMaps(seed, version, mapDeps(), worldgenConfig, radiusScale ?? 1),
     // The local world's worker's stages (the world file, its server, the spawn), on this clock.
     onStage: (id, phase, atMs) => {
       // By id from the worker: an unknown one is ignored (the tracker checks it against the data).
@@ -1425,6 +2633,11 @@ async function connect(app: App): Promise<void> {
     } else {
       local = await connectLocal(client, key, options);
       app.loopback = local.loopback;
+      // The world card's picture: the world's view now and then, and when the page is left.
+      if (thumbId) {
+        const thumbs = startThumbnailCapture(app.canvas, new WorldThumbs(storage()), thumbId);
+        app.captureThumb = thumbs.captureNow;
+      }
       // The respawn preload (§6.3) off for the bench's comparison: the server's part.
       if (/[?&]respawnPreload=off(&|$)/.test(location.search)) {
         local.loopback.postToWorker({ t: 'respawnPreload', on: false });
@@ -1436,7 +2649,35 @@ async function connect(app: App): Promise<void> {
     enableGameMenu(app, local?.save ?? null);
     app.settings?.setSubtitle(localWorld ? `${target} · this device` : target);
     // A local world can be opened to friends (Host…, Phase 5c).
-    if (local && app.settings) enableHosting(app.settings, local, prefersTouch(), worldName);
+    if (local && app.settings) {
+      const id = thumbId;
+      enableHosting(app.settings, local, prefersTouch(), worldName, (mode) => {
+        if (id) index.setMode(id, mode);
+      });
+    }
+    // A local world's biome sliders (Chisel in the game, Phase 56 B7): the host's alone.
+    if (local && app.settings && localWorld) {
+      const id = thumbId;
+      const loopback = local.loopback;
+      const panel = new ChiselPanel({
+        worldgen: worldgenConfig,
+        mode: () => loopback.mode || DEFAULT_MODE,
+        retune: async (text) => {
+          const r = await loopback.retuneWorldgen(text, RETUNE_RADIUS_CHUNKS);
+          if (r.error) return r.error;
+          // This page's generators and its job workers over the new maps, and the world's record
+          // carries the config, so the world reopens on it (its file has it too).
+          client.installWorldMaps(r.maps);
+          worldgenConfig = text;
+          const meta = id ? index.get(id) : null;
+          if (meta) index.put({ ...meta, worldgen: text });
+          return null;
+        },
+      });
+      app.settings.addChiselPanel(panel.element, () => {
+        panel.draw();
+      });
+    }
     let started = false;
     let asking = false;
     const perf = element('perf-status', HTMLDivElement);
@@ -1454,9 +2695,13 @@ async function connect(app: App): Promise<void> {
       // time, the server's ticks (and a local server's time per tick).
       if (s.phase === 'joined') {
         tickRate.sample(performance.now(), stats.serverTick);
-        const [cpuMs = null, gpuMs = null] = client.perf();
+        const [cpuMs = null, gpuMs = null, pacedShare = null, noSurfaceShare = null] =
+          client.perf();
         perf.textContent = formatPerf({
           fps: app.fps.fps,
+          animationFps: app.fps.animationFps,
+          pacedShare,
+          noSurfaceShare,
           cpuMs,
           gpuMs,
           serverTicks: app.loopback?.serverTicks ?? tickRate.rate,
@@ -1482,6 +2727,7 @@ async function connect(app: App): Promise<void> {
         if (joinedInvite) rememberServer(storage(), joinedInvite, Date.now());
         onJoined?.();
         play(app, s);
+        startMinimap(app, localWorld ? `local:${localWorld.file ?? target}` : serverKey);
       }
     };
     // The session's state is polled: twice a second is quick enough for the join and the line.
@@ -1538,10 +2784,32 @@ if (launchOf(location.search).kind === 'menu') {
     prefersReducedMotion(),
   );
   // The page itself, from opening it to this script running (the HTML and the script's download).
-  bootLoading.stages.begin('page', 0);
+  // The bar's opening guess (§6.3): the device as the browser reads it, and the route (joining a
+  // server runs no local world).
+  bootLoading.device = readDevice(
+    navigator,
+    prefersTouch(),
+    workerCount(location.search, navigator.hardwareConcurrency, prefersTouch()),
+  );
+  const route = launchOf(location.search).kind;
+  bootLoading.remote = route === 'code' || route === 'join';
+  // From the launcher's opening when it sent this page here (its stamp, read once).
+  let launchAt: string | null = null;
+  try {
+    launchAt = sessionStorage.getItem(LAUNCH_AT_KEY);
+    sessionStorage.removeItem(LAUNCH_AT_KEY);
+  } catch {
+    // no session storage: from this page's opening
+  }
+  bootLoading.stages.begin(
+    'page',
+    pageStartMs(launchAt, performance.timeOrigin, performance.timeOrigin + performance.now()),
+  );
   bootLoading.stages.end('page', performance.now());
   const bootStages = bootLoading.stages;
   window.__dwellStages = () => bootStages.timeline();
+  const bootScreen = bootLoading;
+  window.__dwellLoadingBar = () => bootScreen.barState;
   void routeMadeWorld().then(async (ok) => {
     if (!ok) return;
     const app = await start();

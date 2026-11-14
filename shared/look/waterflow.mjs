@@ -59,6 +59,17 @@ const PARTS = {
     lumps: [0, 8, { whole: true }],
     minPixels: [0, 64],
   },
+  shore: {
+    bands: [0, 4, { whole: true }],
+    periodS: [0.5, 60],
+    lineM: [0, 0.5],
+    featherM: [0, 1],
+    widthM: [0.01, 1],
+    bandSoftness: [0, 1],
+    strength: [0, 1],
+    wobble: [0, 1],
+    cornerRadiusM: [0, 0.5],
+  },
 };
 const COLORS = { foam: ['color'], particles: ['color'] };
 
@@ -115,7 +126,7 @@ const hex = (c) => `0x${c.replace('#', '').toLowerCase()}`;
 /** The Rust source for validated data. */
 export function waterFlowRust(data) {
   const rows = liquidNames(data).map((n) => {
-    const { ripples: r, foam: f, particles: p } = data.liquids[n];
+    const { ripples: r, foam: f, particles: p, shore: s } = data.liquids[n];
     return [
       '    LiquidFlowLook {',
       `        fluid: ${JSON.stringify(n)},`,
@@ -142,6 +153,15 @@ export function waterFlowRust(data) {
       `        particle_ragged: ${rf(p.ragged)},`,
       `        particle_lumps: ${p.lumps},`,
       `        particle_min_pixels: ${rf(p.minPixels)},`,
+      `        shore_bands: ${s.bands},`,
+      `        shore_period_s: ${rf(s.periodS)},`,
+      `        shore_line_m: ${rf(s.lineM)},`,
+      `        shore_feather_m: ${rf(s.featherM)},`,
+      `        shore_width_m: ${rf(s.widthM)},`,
+      `        shore_band_softness: ${rf(s.bandSoftness)},`,
+      `        shore_strength: ${rf(s.strength)},`,
+      `        shore_wobble: ${rf(s.wobble)},`,
+      `        shore_corner_radius_m: ${rf(s.cornerRadiusM)},`,
       '    },',
     ].join('\n');
   });

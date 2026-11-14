@@ -109,8 +109,8 @@
         { "id": "pelvis", "on": "hips", "kind": "round_box", "size": [0.38, 0.14, 0.24], "at": [0, -0.05, 0], "round": 0.3, "material": "trousers" },
         { "id": "belt", "on": "hips", "kind": "box", "size": [0.47, 0.06, 0.29], "at": [0, 0.06, 0], "material": "belt" },
         { "id": "buckle", "on": "hips", "kind": "round_box", "size": [0.08, 0.07, 0.03], "at": [0, 0.06, 0.15], "round": 0.3, "material": "buckle" },
-        { "id": "upper_arm_l", "on": "arm_l", "kind": "capsule", "size": [0.15, 0.3, 0.15], "at": [0, -0.12, 0], "material": "tunic", "mirror": true },
-        { "id": "sleeve_hem_l", "on": "arm_l", "kind": "cylinder", "size": [0.16, 0.04, 0.16], "at": [0, -0.24, 0], "material": "tunic", "mirror": true },
+        { "id": "upper_arm_l", "on": "arm_l", "kind": "capsule", "size": [0.15, 0.3, 0.15], "at": [0, -0.12, 0], "material": "tunic", "view": "body", "mirror": true },
+        { "id": "sleeve_hem_l", "on": "arm_l", "kind": "cylinder", "size": [0.16, 0.04, 0.16], "at": [0, -0.24, 0], "material": "tunic", "view": "body", "mirror": true },
         { "id": "forearm_l", "on": "forearm_l", "kind": "capsule", "size": [0.12, 0.27, 0.12], "at": [0, -0.12, 0], "material": "skin", "mirror": true },
         { "id": "hand_l", "on": "hand_l", "kind": "round_box", "size": [0.11, 0.13, 0.1], "at": [0, -0.07, 0], "round": 0.35, "material": "skin", "mirror": true },
         { "id": "thumb_l", "on": "hand_l", "kind": "round_box", "size": [0.045, 0.07, 0.05], "at": [-0.035, -0.04, 0.05], "rot": [-20, 0, 0], "round": 0.4, "material": "skin", "mirror": true },
@@ -153,7 +153,17 @@
         "fly": "biped_fly",
         "hold": "biped_hold",
         "break": "biped_break",
-        "place": "biped_place"
+        "place": "biped_place",
+        "chop_level": "biped_chop_level",
+        "chop_vertical": "biped_chop_vertical",
+        "slash_level": "biped_slash_level",
+        "slash_overhead": "biped_slash_overhead",
+        "guard_level": "biped_guard_level",
+        "guard_vertical": "biped_guard_vertical",
+        "kneel": "biped_kneel",
+        "kneel_sword": "biped_kneel_sword",
+        "stand": "biped_stand",
+        "stand_sword": "biped_stand_sword", "sit": "biped_sit", "look": "biped_look"
       },
       "firstPerson": {
         "bones": ["arm_r", "forearm_r", "hand_r"],
@@ -178,7 +188,17 @@
           "fall": "fp_fall",
           "land": "fp_land",
           "break": "fp_break",
-          "place": "fp_place"
+          "break_stone_pickaxe": "fp_break_stone_pickaxe",
+          "break_metal_pickaxe": "fp_break_metal_pickaxe",
+          "break_wooden_shovel": "fp_break_wooden_shovel",
+          "break_metal_shovel": "fp_break_metal_shovel",
+          "place": "fp_place",
+          "chop_level": "fp_chop_level",
+          "chop_vertical": "fp_chop_vertical",
+          "slash_level": "fp_slash_level",
+          "slash_overhead": "fp_slash_overhead",
+          "guard_level": "fp_guard_level",
+          "guard_vertical": "fp_guard_vertical"
         }
       }
     },
@@ -460,11 +480,50 @@
         { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.1, 0.2], "at": [0.1, 0.03, 0], "rot": [0, 0, -90], "sideV": [0.5, 1], "material": "$block" }
       ]
     },
+    "carried": {
+      "label": "One piece of a load carried on the back (docs/BLUEPRINTS.md §9, WORK_QUEUE item 57): a 0.2 m cube of its block's own tile, drawn once per carried piece and stacked by the client at the NPC's chest joint (blueprints.json carryLook), not held in a hand",
+      "on": "back",
+      "parts": [
+        { "id": "carried_block", "on": "back", "kind": "box", "size": [0.2, 0.2, 0.2], "at": [0, 0, 0], "material": "$block" }
+      ]
+    },
     "card": {
-      "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder or a plant held as an item, not a block with its texture on it): a block whose registry entry says held: card",
+      "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder held as an item, not a block with its texture on it): a block whose registry entry says held: card. One sheet seen from both sides, no edges (owner, 2026-11-09: it was a thin box with its texture on every side)",
       "on": "grip_r",
       "parts": [
-        { "id": "held_card", "on": "grip_r", "kind": "box", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" }
+        { "id": "held_card", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" }
+      ]
+    },
+    "cross": {
+      "label": "A plant held as the world draws it (a block whose registry entry says held: cross, a cross plant): two sheets of its tile crossed along the grip, seen from both sides, no edges",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_cross_a", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [90, 0, 0], "material": "$block" },
+        { "id": "held_cross_b", "on": "grip_r", "kind": "plane", "size": [0.24, 0.24, 0.006], "at": [0, 0.02, 0.17], "rot": [0, 90, 0], "material": "$block" }
+      ]
+    },
+    "rod": {
+      "label": "An item whose look is a rod (shared/inventory `look`: a stick), held along the grip: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_rod", "on": "grip_r", "kind": "box", "size": [0.05, 0.42, 0.05], "at": [0, 0.02, 0.12], "rot": [90, 0, 0], "material": "$block" }
+      ]
+    },
+    "lump": {
+      "label": "An item whose look is a lump (shared/inventory `look`: a rock), in the fist: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_lump", "on": "grip_r", "kind": "round_box", "size": [0.13, 0.1, 0.15], "at": [0, 0.02, 0.06], "round": 0.4, "material": "$block" }
+      ]
+    },
+    "cluster": {
+      "label": "An item whose look is a cluster (shared/inventory `look`: grass seed), a few seeds in the cupped fist: its look's tile and tint, the hand's own size",
+      "on": "grip_r",
+      "parts": [
+        { "id": "held_seed_a", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [-0.025, 0.035, 0.05], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_b", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.025, 0.035, 0.06], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_c", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.0, 0.035, 0.1], "round": 0.5, "material": "$block" },
+        { "id": "held_seed_d", "on": "grip_r", "kind": "round_box", "size": [0.04, 0.03, 0.045], "at": [0.0, 0.06, 0.07], "round": 0.5, "material": "$block" }
       ]
     },
     "torch": {
@@ -475,6 +534,46 @@
         { "id": "torch_stick", "on": "grip_r", "kind": "box", "size": [0.05, 0.38, 0.05], "at": [0, 0.02, 0.07], "rot": [90, 0, 0], "material": "bark.light" },
         { "id": "torch_wrap", "on": "grip_r", "kind": "box", "size": [0.058, 0.07, 0.058], "at": [0, 0.02, 0.235], "rot": [90, 0, 0], "material": "bark.shadow" }
       ]
+    },
+    "tool": {
+      "label": "A tool drawn as its model held at rest (dwell-client `MODEL_HOLD`; props.json `hand`): no parts of its own, the prop's handle lies along the closed fist's grip axis and this pose of the hand leans it in toward the crosshair, low and right, at full size (owner, 2026-11-11: \"properly align them to the hand\")",
+      "on": "grip_r",
+      "pose": { "hand_r": [10, 0, -30], "forearm_r": [0, 10, 0] },
+      "parts": []
+    },
+    "stone_axe": {
+      "label": "The stone axe held for a level swing (docs/adr/0067-stone-axe-and-chopping.md; shared/tools names it as the axe's `held`): a stick handle held toward its foot, a knapped flint head lashed across its tip with a leather wrap, its edge (`axe_blade`) away from the eye and turned toward the swing's way, across to the left (owner, 2026-11-08: it was held backwards, the blade at the player)",
+      "on": "grip_r",
+      "pose": { "hand_r": [0, 0, -55], "forearm_r": [0, -10, 0] },
+      "parts": [
+        { "id": "axe_handle", "on": "grip_r", "kind": "box", "size": [0.045, 0.5, 0.045], "at": [0, 0.02, 0.13], "rot": [90, 0, 0], "material": "heartwood" },
+        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint.shadow" },
+        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint" },
+        { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
+      ]
+    },
+    "stone_axe_vertical": {
+      "label": "The stone axe held for a vertical swing (shared/tools `heldVertical`): the same axe raised, its edge ahead and down, ready to come down",
+      "on": "grip_r",
+      "pose": { "forearm_r": [-14, 0, 0], "hand_r": [-12, 0, 0] },
+      "parts": [
+        { "id": "axe_handle", "on": "grip_r", "kind": "box", "size": [0.045, 0.5, 0.045], "at": [0, 0.02, 0.13], "rot": [90, 0, 0], "material": "heartwood" },
+        { "id": "axe_head", "on": "grip_r", "kind": "round_box", "size": [0.06, 0.1, 0.1], "at": [0, -0.035, 0.33], "round": 0.3, "material": "flint.shadow" },
+        { "id": "axe_blade", "on": "grip_r", "kind": "round_box", "size": [0.028, 0.08, 0.14], "at": [0, -0.115, 0.33], "round": 0.2, "material": "flint" },
+        { "id": "axe_lashing", "on": "grip_r", "kind": "box", "size": [0.062, 0.06, 0.07], "at": [0, 0.02, 0.33], "material": "leather" }
+      ]
+    },
+    "sword": {
+      "label": "The sword held for a level slash (shared/tools names it as the sword's `held`; WORK_QUEUE item 35): drawn as its model (props.json `katanas_swords`), the blade laid along the fist's grip axis, its edge turned toward the slash's way, across to the left",
+      "on": "grip_r",
+      "pose": { "hand_r": [0, 0, -50], "forearm_r": [0, -10, 0] },
+      "parts": []
+    },
+    "sword_vertical": {
+      "label": "The sword held for a vertical slash (shared/tools `heldVertical`): the same sword raised, its edge ahead and down, ready to come down",
+      "on": "grip_r",
+      "pose": { "forearm_r": [-14, 0, 0], "hand_r": [-12, 0, 0] },
+      "parts": []
     },
     "brush": {
       "label": "The brush tool",
@@ -501,12 +600,13 @@
       ]
     },
     "biped_walk": {
+      "$comment": "5 m a loop, two footsteps of the sound data’s walk stride (shared/sounds gaits.walk 2.5 m): ~2 steps a second at the 5 m/s walk (BUGS.md #103: 1.6 m stepped 6.25 a second).",
       "rig": "biped",
       "layer": "base",
       "duration": 1,
       "loop": true,
       "ease": "spline",
-      "cycle": 1.6,
+      "cycle": 5,
       "keys": [
         { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 6, 0], "chest": [4, -6, 0], "thigh_l": [-28, 0, 0], "shin_l": [6, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [20, 0, 0], "shin_r": [25, 0, 0], "foot_r": [15, 0, 0], "arm_l": [22, 0, 6], "arm_r": [-22, 0, -6], "forearm_l": [-12, 0, 0], "forearm_r": [-25, 0, 0] } },
         { "t": 0.25, "root": [0, 0.03, 0], "bones": { "hips": [0, 0, 0], "chest": [4, 0, 0], "thigh_l": [-2, 0, 0], "shin_l": [4, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-30, 0, 0], "shin_r": [60, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-15, 0, 0], "forearm_r": [-15, 0, 0] } },
@@ -536,6 +636,78 @@
         { "t": 0.5, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0] } }
       ]
     },
+    "biped_chop_level": {
+      "$comment": "The axe's level swing seen by others (third person; the arms' fp_chop_level timed the same): drawn back over 0.3 s to the player's right shoulder with the chest turned away, swept across in front at chest height through the cut at 0.355 s, followed through to the left with the chest turned, and back to the hold. Checked with the clip probe (docs/DEV_TOOLS.md).",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -1, 0], "arm_r": [23, -30, 28], "forearm_r": [-101, 0, 0], "hand_r": [4, -3, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, 5, 0], "arm_r": [57, -88, 30], "forearm_r": [-125, 0, 0], "hand_r": [80, -60, -40] } },
+        { "t": 0.355, "bones": { "chest": [0, 3, 0], "arm_r": [-19, -1, 30], "forearm_r": [-82, 0, 0], "hand_r": [70, 15, 40] } },
+        { "t": 0.42, "bones": { "chest": [0, 30, 0], "arm_r": [-32, 24, 30], "forearm_r": [-54, 0, 0], "hand_r": [49, 10, 40] } },
+        { "t": 0.52, "bones": { "chest": [0, 34, 0], "arm_r": [-34, 39, 30], "forearm_r": [-43, 0, 0], "hand_r": [46, 15, 30] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [-7, 26, 7], "forearm_r": [-75, 0, 0], "hand_r": [10, -4, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_chop_vertical": {
+      "$comment": "The axe's vertical swing seen by others: raised over the head over 0.3 s, brought straight down in front through the cut at 0.355 s, followed through low, and back to the hold.",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -6, 0], "arm_r": [-75, 3, 2], "forearm_r": [-70, 0, 0], "hand_r": [40, 0, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, -12, 0], "arm_r": [-134, 7, 4], "forearm_r": [-65, 0, 0], "hand_r": [80, -1, -1] } },
+        { "t": 0.355, "bones": { "chest": [0, -19, 0], "arm_r": [-88, 12, 30], "forearm_r": [-6, 0, 0], "hand_r": [80, 1, 9] } },
+        { "t": 0.42, "bones": { "chest": [0, 6, 0], "arm_r": [-30, -11, 20], "forearm_r": [0, 0, 0], "hand_r": [77, -9, -15] } },
+        { "t": 0.52, "bones": { "chest": [0, 9, 0], "arm_r": [-12, -15, 20], "forearm_r": [0, 0, 0], "hand_r": [78, -6, -8] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [1, -9, 7], "forearm_r": [-49, 0, 0], "hand_r": [-2, 1, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_slash_level": {
+      "$comment": "The sword's level slash seen by others (third person; timed as fp_slash_level): drawn back to the right with the chest turned away, swept flat across in front at chest height through the cut at 0.355 s, followed through to the left, and back to the hold.",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -1, 0], "arm_r": [23, -30, 28], "forearm_r": [-101, 0, 0], "hand_r": [4, -3, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, -19, 0], "arm_r": [-38, -66, 20], "forearm_r": [-127, 0, 0], "hand_r": [79, -15, -10] } },
+        { "t": 0.355, "bones": { "chest": [0, 16, 0], "arm_r": [-87, 41, 6], "forearm_r": [0, 0, 0], "hand_r": [79, 0, 1] } },
+        { "t": 0.42, "bones": { "chest": [0, 37, 0], "arm_r": [-89, 15, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 5, 8] } },
+        { "t": 0.52, "bones": { "chest": [0, 34, 0], "arm_r": [-34, 39, 30], "forearm_r": [-43, 0, 0], "hand_r": [46, 15, 30] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [-7, 26, 7], "forearm_r": [-75, 0, 0], "hand_r": [10, -4, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_slash_overhead": {
+      "$comment": "The sword's overhead cut seen by others (timed as fp_slash_overhead): raised high over the head over 0.3 s, cut straight down in front through the strike at 0.355 s, followed through low, and back to the hold.",
+      "rig": "biped",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.12, "bones": { "chest": [0, -6, 0], "arm_r": [-75, 3, 2], "forearm_r": [-70, 0, 0], "hand_r": [40, 0, 0] } },
+        { "t": 0.3, "bones": { "chest": [0, -5, 0], "arm_r": [-177, 7, 4], "forearm_r": [0, 0, 0], "hand_r": [53, -1, 5] } },
+        { "t": 0.355, "bones": { "chest": [0, 26, 0], "arm_r": [-88, -31, -12], "forearm_r": [0, 0, 0], "hand_r": [80, 6, 40] } },
+        { "t": 0.42, "bones": { "chest": [0, 37, 0], "arm_r": [-54, -89, -20], "forearm_r": [0, 0, 0], "hand_r": [80, 12, 40] } },
+        { "t": 0.52, "bones": { "chest": [0, 9, 0], "arm_r": [-12, -15, 20], "forearm_r": [0, 0, 0], "hand_r": [78, -6, -8] } },
+        { "t": 0.64, "bones": { "chest": [0, 1, 0], "arm_r": [1, -9, 7], "forearm_r": [-49, 0, 0], "hand_r": [-2, 1, 0] } },
+        { "t": 0.78, "bones": { "chest": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
     "biped_place": {
       "rig": "biped",
       "layer": "action",
@@ -549,13 +721,13 @@
       ]
     },
     "biped_sprint": {
-      "$comment": "Running: the chest forward, arms pumping, high knees. One foot is always near the ground (storybook, not a flight phase).",
+      "$comment": "Running: the chest forward, arms pumping, high knees. One foot is always near the ground (storybook, not a flight phase). 5.6 m a loop, two of the sound data’s run strides (2.8 m): ~2.9 steps a second at the 8 m/s run (BUGS.md #103).",
       "rig": "biped",
       "layer": "base",
       "duration": 0.66,
       "loop": true,
       "ease": "spline",
-      "cycle": 3,
+      "cycle": 5.6,
       "blend": 0.25,
       "keys": [
         { "t": 0, "root": [0, -0.056, 0], "bones": { "hips": [6, 0, 0], "chest": [12, -8, 0], "head": [-10, 6, 0], "arm_l": [40, 0, 8], "forearm_l": [-70, 0, 0], "arm_r": [-55, 0, -8], "forearm_r": [-95, 0, 0], "thigh_l": [-36, 0, 0], "shin_l": [23, 0, 0], "foot_l": [7, 0, 0], "thigh_r": [7, 0, 0], "shin_r": [46, 0, 0], "foot_r": [-4, 0, 0] } },
@@ -577,12 +749,13 @@
       ]
     },
     "biped_crouch_walk": {
+      "$comment": "2.2 m a loop, two of the sound data’s crouch strides (1.1 m): ~1.5 steps a second at the 1.6 m/s crouch (BUGS.md #103).",
       "rig": "biped",
       "layer": "base",
       "duration": 1,
       "loop": true,
       "ease": "spline",
-      "cycle": 0.9,
+      "cycle": 2.2,
       "blend": 0.15,
       "keys": [
         { "t": 0, "root": [0, -0.433, -0.08], "bones": { "hips": [28, 0, 0], "chest": [28, 5, 0], "head": [-26, 0, 0], "arm_l": [-16, 0, 10], "forearm_l": [-50, 0, 0], "arm_r": [-40, 0, -10], "forearm_r": [-50, 0, 0], "thigh_l": [-118, 0, 6], "shin_l": [115, 0, 0], "foot_l": [-25, 0, 0], "thigh_r": [-81, 0, -6], "shin_r": [142, 0, 0], "foot_r": [-45, 0, 0] } },
@@ -633,6 +806,8 @@
         { "t": 0.45, "root": [0, 0.12, 0], "bones": { "hips": [2, 0, 0], "chest": [-4, 0, 0], "head": [6, 0, 0], "arm_l": [-32, 0, 56], "forearm_l": [-30, 0, 0], "arm_r": [-44, 0, -68], "forearm_r": [-30, 0, 0], "thigh_l": [-38, 0, 6], "shin_l": [65, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-4, 0, -6], "shin_r": [20, 0, 0], "foot_r": [20, 0, 0] } }
       ]
     },
+    "biped_guard_level": {"$comment": "The sword's block raised in the level stance, seen by others (WORK_QUEUE item 35; shared/tools `guard.stances.level.raisedPose` names the role `guard_level`): the fist before the chest and the arm turned so the blade lies level across the body, its tip out past the left shoulder (fitted with `clip_probe --fit`: grip 0.06, 1.30, 0.44 and tip -0.72, 1.38, 0.53 m from the feet); over the gait in place of the hold.", "rig": "biped", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "bones": {"chest": [0, -1, 0], "arm_r": [-19, 90, -54], "forearm_r": [-58, 0, 0], "hand_r": [66, 1, -10]}}]},
+    "biped_guard_vertical": {"$comment": "The sword's block raised in the vertical stance, seen by others (role `guard_vertical`): the right fist up before the chest, the blade upright ahead of the face (fitted with `clip_probe --fit 0/0.12,1.2,0.42/0.1,1.97,0.48 --body`, BUGS.md #87: before, a first guess leaned it 66° back over the shoulder); over the gait in place of the hold.", "rig": "biped", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "bones": {"chest": [0, -1, 0], "arm_r": [-39, 28, 11], "forearm_r": [-66, 0, 0], "hand_r": [18, 4, 0]}}]},
     "biped_land": {
       "$comment": "From the air to standing: the squash on touching down.",
       "rig": "biped",
@@ -645,6 +820,86 @@
         { "t": 0, "root": [0, -0.05, 0], "bones": { "hips": [2, 0, 0], "chest": [-4, 0, 0], "head": [6, 0, 0], "arm_l": [-38, 0, 62], "forearm_l": [-30, 0, 0], "arm_r": [-38, 0, -62], "forearm_r": [-30, 0, 0], "thigh_l": [-26, 0, 0], "shin_l": [40, 0, 0], "foot_l": [-16, 0, 0], "thigh_r": [-21, 0, 0], "shin_r": [41, 0, 0], "foot_r": [-23, 0, 0] } },
         { "t": 0.12, "root": [0, -0.297, -0.04], "bones": { "hips": [16, 0, 0], "chest": [20, 0, 0], "head": [-18, 0, 0], "arm_l": [-30, 0, 30], "forearm_l": [-30, 0, 0], "arm_r": [-30, 0, -30], "forearm_r": [-30, 0, 0], "thigh_l": [-78, 0, 0], "shin_l": [101, 0, 0], "foot_l": [-39, 0, 0], "thigh_r": [-71, 0, 0], "shin_r": [107, 0, 0], "foot_r": [-45, 0, 0] } },
         { "t": 0.4, "root": [0, -0.002, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "thigh_l": [-7, 0, 0], "shin_l": [11, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-6, 0, 0], "shin_r": [11, 0, 0], "foot_r": [-6, 0, 0] } }
+      ]
+    },
+    "biped_sit": {"$comment": "An NPC sitting on the ground where it stands (role `sit`; WORK_QUEUE item 38: shared/creatures `seat` `on: ground`): the seat, the heels and the left hand behind it on the ground, the left leg out, the right knee up with the right forearm resting over it, breathing; the ground test (gen.test.mjs) keeps the lowest point at the ground.", "rig": "biped", "layer": "base", "duration": 4, "loop": true, "ease": "spline", "blend": 0.4, "keys": [{"t": 0, "root": [0, -0.79, 0], "bones": {"hips": [-4, 0, 0], "chest": [10, 0, 0], "head": [-6, 0, 0], "thigh_l": [-97, 0, 8], "shin_l": [22, 0, 0], "foot_l": [-10, 0, 0], "thigh_r": [-114, 0, -6], "shin_r": [56, 0, 0], "foot_r": [-20, 0, 0], "arm_l": [24, 0, 16], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-50, 0, -4], "forearm_r": [-30, 0, 0], "hand_r": [0, 0, 0]}}, {"t": 2, "root": [0, -0.79, 0], "bones": {"hips": [-4, 0, 0], "chest": [13, 0, 0], "head": [-3, 3, 0], "thigh_l": [-97, 0, 8], "shin_l": [22, 0, 0], "foot_l": [-10, 0, 0], "thigh_r": [-114, 0, -6], "shin_r": [56, 0, 0], "foot_r": [-20, 0, 0], "arm_l": [24, 0, 16], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-50, 0, -4], "forearm_r": [-30, 0, 0], "hand_r": [0, 0, 0]}}]},
+    "biped_look": {"$comment": "An NPC looking around (role `look`; WORK_QUEUE item 38): standing still, a slow scan of the head and chest, left, a pause, back through the middle to the right, a pause, back (10 s); the body holds its heading (the server no longer sweeps it).", "rig": "biped", "layer": "base", "duration": 10, "loop": true, "ease": "spline", "blend": 0.4, "keys": [{"t": 0, "root": [0, 0, 0], "bones": {"chest": [2, 0, 0], "head": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}, {"t": 2, "root": [0, 0, 0], "bones": {"chest": [2, 18, 0], "head": [-4, 50, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}, {"t": 3.4, "root": [0, 0, 0], "bones": {"chest": [2, 20, 0], "head": [2, 55, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}, {"t": 5, "root": [0, 0, 0], "bones": {"chest": [2, 0, 0], "head": [0, 0, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}, {"t": 7, "root": [0, 0, 0], "bones": {"chest": [2, -18, 0], "head": [-6, -50, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}, {"t": 8.4, "root": [0, 0, 0], "bones": {"chest": [2, -20, 0], "head": [0, -55, 0], "arm_l": [0, 0, 6], "arm_r": [0, 0, -6], "forearm_l": [-10, 0, 0], "forearm_r": [-10, 0, 0]}}]},
+    "biped_kneel": {
+      "$comment": "Defeat (docs/CHARACTERS.md §11.13; owner, 2026-11-13: \"Humans won't die in this game\"): dropping onto the left knee, the right knee raised, head bowed, the right hand resting on the raised knee (no weapon in hand); held while defeated.",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.3,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.2,
+      "keys": [
+        { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 0, 0], "chest": [6, 0, 0], "head": [8, 0, 0], "thigh_l": [-4, 0, 0], "shin_l": [8, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-4, 0, 0], "shin_r": [8, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.11, "root": [0, 0.017, 0.007], "bones": { "hips": [3, 0, 0], "chest": [9, 0, 0], "head": [11, 0, 0], "thigh_l": [-11, 0, 1], "shin_l": [26, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-19, 0, -1], "shin_r": [22, 0, 0], "foot_r": [-3, 0, 0], "arm_r": [-5, 1, -3], "forearm_r": [-20, 0, 0], "hand_r": [5, 0, 0], "arm_l": [-3, 0, 4], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.24, "root": [0, 0, 0.016], "bones": { "hips": [6, 0, 0], "chest": [13, 0, 0], "head": [14, 0, 0], "thigh_l": [-19, 0, 2], "shin_l": [49, 0, 0], "foot_l": [6, 0, 0], "thigh_r": [-39, 0, -2], "shin_r": [40, 0, 0], "foot_r": [-2, 0, 0], "arm_r": [-11, 2, 1], "forearm_r": [-33, 0, 0], "hand_r": [12, 0, 0], "arm_l": [-7, 0, 2], "forearm_l": [-9, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.35, "root": [0, -0.061, 0.023], "bones": { "hips": [9, 0, 0], "chest": [16, 0, 0], "head": [16, 0, 0], "thigh_l": [-25, 0, 3], "shin_l": [68, 0, 0], "foot_l": [10, 0, 0], "thigh_r": [-55, 0, -3], "shin_r": [55, 0, 0], "foot_r": [-1, 0, 0], "arm_r": [-16, 3, 4], "forearm_r": [-43, 0, 0], "hand_r": [17, 0, 0], "arm_l": [-10, 0, 0], "forearm_l": [-8, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.54, "root": [0, -0.268, 0.04], "bones": { "hips": [16, 0, 0], "chest": [24, 0, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.55, "root": [0, -0.3, 0.04], "bones": { "hips": [16, 0, 0], "chest": [24, 0, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.57, "root": [0, -0.269, 0.04], "bones": { "hips": [16, 0, 0], "chest": [24, 0, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.3, "root": [0, -0.36, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 0, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } }
+      ]
+    },
+    "biped_kneel_sword": {
+      "$comment": "Defeat with a sword in hand (owner, 2026-11-13: \"Head down, hand on sword hilt, sword in the ground\"): biped_kneel's legs, body and head, the right fist on the hilt of the sword planted point-down in the ground before the raised knee (the arm fitted with `clip_probe --body --fit`).",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.3,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.2,
+      "keys": [
+        { "t": 0, "root": [0, -0.02, 0], "bones": { "hips": [0, 0, 0], "chest": [6, 0, 0], "head": [8, 0, 0], "thigh_l": [-4, 0, 0], "shin_l": [8, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-4, 0, 0], "shin_r": [8, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } },
+        { "t": 0.11, "root": [0, 0.017, 0.007], "bones": { "hips": [3, 0, 0], "chest": [10, 6, 0], "head": [11, 0, 0], "thigh_l": [-11, 0, 1], "shin_l": [26, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-19, 0, -1], "shin_r": [22, 0, 0], "foot_r": [-3, 0, 0], "arm_r": [-28, 2, 2], "forearm_r": [-78, 0, 0], "hand_r": [-13, -7, -4], "arm_l": [-3, 0, 4], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.24, "root": [0, 0, 0.016], "bones": { "hips": [6, 0, 0], "chest": [16, 14, 0], "head": [14, 0, 0], "thigh_l": [-19, 0, 2], "shin_l": [49, 0, 0], "foot_l": [6, 0, 0], "thigh_r": [-39, 0, -2], "shin_r": [40, 0, 0], "foot_r": [-2, 0, 0], "arm_r": [-39, 4, 10], "forearm_r": [-95, 0, 0], "hand_r": [-30, -17, -10], "arm_l": [-7, 0, 2], "forearm_l": [-9, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.35, "root": [0, -0.061, 0.023], "bones": { "hips": [9, 0, 0], "chest": [20, 20, 0], "head": [16, 0, 0], "thigh_l": [-25, 0, 3], "shin_l": [68, 0, 0], "foot_l": [10, 0, 0], "thigh_r": [-55, 0, -3], "shin_r": [55, 0, 0], "foot_r": [-1, 0, 0], "arm_r": [-47, 6, 16], "forearm_r": [-108, 0, 0], "hand_r": [-43, -25, -14], "arm_l": [-10, 0, 0], "forearm_l": [-8, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.54, "root": [0, -0.268, 0.04], "bones": { "hips": [16, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.55, "root": [0, -0.3, 0.04], "bones": { "hips": [16, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.57, "root": [0, -0.269, 0.04], "bones": { "hips": [16, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-40, 0, 4], "shin_l": [110, 0, 0], "foot_l": [20, 0, 0], "thigh_r": [-90, 0, -6], "shin_r": [88, 0, 0], "foot_r": [2, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 1.3, "root": [0, -0.36, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } }
+      ]
+    },
+    "biped_stand": {
+      "$comment": "Rising from biped_kneel to idle, pushing up off the raised knee: played once at the shrine where the defeated stand up (docs/SHRINES.md §5).",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.4,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.1,
+      "keys": [
+        { "t": 0, "root": [0, -0.36, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 0, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.18, "root": [0, -0.246, 0.017], "bones": { "hips": [14, 0, 0], "chest": [28, 0, 0], "head": [20, 0, 0], "thigh_l": [-20, 0, 4], "shin_l": [86, 0, 0], "foot_l": [27, 0, 0], "thigh_r": [-93, 0, -6], "shin_r": [86, 0, 0], "foot_r": [-1, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0] } },
+        { "t": 0.47, "root": [0, -0.1, 0.053], "bones": { "hips": [21, 0, 0], "chest": [23, 0, 0], "head": [15, 0, 0], "thigh_l": [-41, 0, 4], "shin_l": [77, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-78, 0, -6], "shin_r": [79, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0] } },
+        { "t": 0.58, "root": [0, -0.089, 0.06], "bones": { "hips": [22, 0, 0], "chest": [22, 0, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0] } },
+        { "t": 0.6, "root": [0, -0.24, 0.06], "bones": { "hips": [22, 0, 0], "chest": [22, 0, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.61, "root": [0, -0.088, 0.06], "bones": { "hips": [22, 0, 0], "chest": [22, 0, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-28, 5, 11], "forearm_r": [-66, 0, 0], "hand_r": [30, 0, 0] } },
+        { "t": 0.79, "root": [0, -0.051, 0.051], "bones": { "hips": [19, 0, 0], "chest": [19, 0, 0], "head": [12, 0, 0], "thigh_l": [-39, 0, 3], "shin_l": [64, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-64, 0, -5], "shin_r": [67, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [-15, 0, -2], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-24, 4, 9], "forearm_r": [-58, 0, 0], "hand_r": [26, 0, 0] } },
+        { "t": 1.08, "root": [0, 0.008, 0.027], "bones": { "hips": [10, 0, 0], "chest": [10, 0, 0], "head": [6, 0, 0], "thigh_l": [-21, 0, 2], "shin_l": [34, 0, 0], "foot_l": [-2, 0, 0], "thigh_r": [-34, 0, -3], "shin_r": [36, 0, 0], "foot_r": [-2, 0, 0], "arm_l": [-8, 0, 2], "forearm_l": [-8, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-13, 2, 2], "forearm_r": [-36, 0, 0], "hand_r": [14, 0, 0] } },
+        { "t": 1.4, "root": [0, 0, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "thigh_l": [0, 0, 0], "shin_l": [0, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [0, 0, 0], "shin_r": [0, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [0, 0, -6], "forearm_r": [-10, 0, 0], "hand_r": [0, 0, 0] } }
+      ]
+    },
+    "biped_stand_sword": {
+      "$comment": "Rising from biped_kneel_sword: the sword drawn up out of the ground back into the hand's hold (ending on biped_hold's arm, so the hold takes over without a jump); played once at the shrine.",
+      "rig": "biped",
+      "layer": "base",
+      "duration": 1.4,
+      "loop": false,
+      "ease": "smooth",
+      "blend": 0.1,
+      "keys": [
+        { "t": 0, "root": [0, -0.36, 0], "bones": { "hips": [10, 0, 0], "chest": [30, 35, 0], "head": [22, 0, 0], "thigh_l": [-10, 0, 4], "shin_l": [90, 0, 0], "foot_l": [40, 0, 0], "thigh_r": [-100, 0, -6], "shin_r": [90, 0, 0], "foot_r": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.18, "root": [0, -0.246, 0.017], "bones": { "hips": [14, 0, 0], "chest": [30, 35, 0], "head": [20, 0, 0], "thigh_l": [-20, 0, 4], "shin_l": [86, 0, 0], "foot_l": [27, 0, 0], "thigh_r": [-93, 0, -6], "shin_r": [86, 0, 0], "foot_r": [-1, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24] } },
+        { "t": 0.47, "root": [0, -0.1, 0.053], "bones": { "hips": [21, 0, 0], "chest": [30, 35, 0], "head": [15, 0, 0], "thigh_l": [-41, 0, 4], "shin_l": [77, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [-78, 0, -6], "shin_r": [79, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24] } },
+        { "t": 0.58, "root": [0, -0.089, 0.06], "bones": { "hips": [22, 0, 0], "chest": [30, 35, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24] } },
+        { "t": 0.6, "root": [0, -0.24, 0.06], "bones": { "hips": [22, 0, 0], "chest": [30, 35, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0] } },
+        { "t": 0.61, "root": [0, -0.088, 0.06], "bones": { "hips": [22, 0, 0], "chest": [30, 35, 0], "head": [14, 0, 0], "thigh_l": [-45, 0, 4], "shin_l": [75, 0, 0], "foot_l": [-5, 0, 0], "thigh_r": [-75, 0, -6], "shin_r": [78, 0, 0], "foot_r": [-5, 0, 0], "arm_l": [-18, 0, -3], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-66, 9, 30], "forearm_r": [-138, 0, 0], "hand_r": [-74, -42, -24] } },
+        { "t": 0.79, "root": [0, -0.051, 0.051], "bones": { "hips": [19, 0, 0], "chest": [26, 30, 0], "head": [12, 0, 0], "thigh_l": [-39, 0, 3], "shin_l": [64, 0, 0], "foot_l": [-4, 0, 0], "thigh_r": [-64, 0, -5], "shin_r": [67, 0, 0], "foot_r": [-4, 0, 0], "arm_l": [-15, 0, -2], "forearm_l": [-7, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-59, 8, 25], "forearm_r": [-128, 0, 0], "hand_r": [-63, -36, -21] } },
+        { "t": 1.08, "root": [0, 0.008, 0.027], "bones": { "hips": [10, 0, 0], "chest": [14, 16, 0], "head": [6, 0, 0], "thigh_l": [-21, 0, 2], "shin_l": [34, 0, 0], "foot_l": [-2, 0, 0], "thigh_r": [-34, 0, -3], "shin_r": [36, 0, 0], "foot_r": [-2, 0, 0], "arm_l": [-8, 0, 2], "forearm_l": [-8, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-41, 4, 12], "forearm_r": [-99, 0, 0], "hand_r": [-34, -19, -11] } },
+        { "t": 1.4, "root": [0, 0, 0], "bones": { "hips": [0, 0, 0], "chest": [0, 0, 0], "head": [0, 0, 0], "thigh_l": [0, 0, 0], "shin_l": [0, 0, 0], "foot_l": [0, 0, 0], "thigh_r": [0, 0, 0], "shin_r": [0, 0, 0], "foot_r": [0, 0, 0], "arm_l": [0, 0, 6], "forearm_l": [-10, 0, 0], "hand_l": [0, 0, 0], "arm_r": [-20, 0, -4], "forearm_r": [-65, 0, 0], "hand_r": [0, 0, 0] } }
       ]
     },
     "biped_climb": {
@@ -735,6 +990,144 @@
         { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
+    "fp_break_stone_pickaxe": {
+      "$comment": "The stone pickaxe's break swing (shared/tools `breaking.tools[].clip`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_stone_pickaxe --item dwell:stone_pickaxe --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [-0.015, 0.07, -0.052], "bones": { "arm_r": [-48, 21, 30], "forearm_r": [-108, 0, 0], "hand_r": [51, -11, -1] } },
+        { "t": 0.26, "root": [0.001, 0.026, -0.031], "bones": { "arm_r": [-102, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [45, -4, -3] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_break_metal_pickaxe": {
+      "$comment": "The metal pickaxe's break swing (shared/tools `breaking.tools[].clip`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_metal_pickaxe --item dwell:metal_pickaxe --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [-0.014, 0.085, -0.027], "bones": { "arm_r": [-33, 29, 30], "forearm_r": [-117, 0, 0], "hand_r": [47, -10, -1] } },
+        { "t": 0.26, "root": [-0.012, 0.026, -0.055], "bones": { "arm_r": [-98, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [43, -6, -8] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_break_wooden_shovel": {
+      "$comment": "The wooden shovel's break swing (shared/tools `breaking.tools[].clip`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_wooden_shovel --item dwell:wooden_shovel --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [-0.016, 0.087, -0.018], "bones": { "arm_r": [-28, 31, 30], "forearm_r": [-119, 0, 0], "hand_r": [46, -8, 0] } },
+        { "t": 0.26, "root": [-0.016, 0.028, -0.063], "bones": { "arm_r": [-97, 6, 30], "forearm_r": [0, 0, 0], "hand_r": [43, -6, -9] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_break_metal_shovel": {
+      "$comment": "The metal shovel's break swing (shared/tools `breaking.tools[].clip`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_metal_shovel --item dwell:metal_shovel --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.5,
+      "loop": false,
+      "ease": "smooth",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.14, "root": [-0.014, 0.079, -0.054], "bones": { "arm_r": [-45, 21, 30], "forearm_r": [-107, 0, 0], "hand_r": [55, -12, -2] } },
+        { "t": 0.26, "root": [0.002, 0.029, -0.034], "bones": { "arm_r": [-100, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [51, -7, -6] } },
+        { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_chop_level": {
+      "$comment": "The axe's level swing (ADR 0067), timed to a miss (shared/tools `swing`: windupS 0.3, the arc's activeS 0.12, recoverMissS 0.36): the hands draw back to the right shoulder over 0.3 s (the head out past the screen's right), then the arms sweep across in front, right to left, the head through the crosshair at contact (0.355 s), the hands ending left of centre, a short follow-through and back (owner, 2026-11-11: it swung the wrong way, then 'the hands barely travel'; keys fitted to grip and head places with `clip_probe --fit`, docs/DEV_TOOLS.md, pinned by dwell-client clip_probe tests). A hit holds the impact's pose for the hit-stop and plays it back to the rest (dwell-client chop.rs `SwingRun::clip_time`).",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [-0.024, 0.057, -0.058], "bones": { "arm_r": [-42, -7, 12], "forearm_r": [-103, 0, 0], "hand_r": [52, -9, -8] } },
+        { "t": 0.3, "root": [-0.206, 0.085, -0.037], "bones": { "arm_r": [-61, 56, 30], "forearm_r": [-150, 0, 0], "hand_r": [20, -39, -4] } },
+        { "t": 0.355, "root": [0.072, 0.2, 0.2], "bones": { "arm_r": [-30, 90, 30], "forearm_r": [-138, 0, 0], "hand_r": [56, -43, 40] } },
+        { "t": 0.42, "root": [0.25, 0.2, 0.2], "bones": { "arm_r": [38, 73, 30], "forearm_r": [-109, 0, 0], "hand_r": [74, 32, 40] } },
+        { "t": 0.52, "root": [0.25, 0.2, 0.1], "bones": { "arm_r": [0, 65, 30], "forearm_r": [-95, 0, 0], "hand_r": [74, 26, 40] } },
+        { "t": 0.64, "root": [-0.021, 0.049, -0.042], "bones": { "arm_r": [-66, 40, 29], "forearm_r": [-65, 0, 0], "hand_r": [41, -6, -9] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_chop_vertical": {
+      "$comment": "The axe's vertical swing (ADR 0067), timed to a miss as the level one: the hands raised over the right shoulder, above the eye, over 0.3 s (the head high off the top of the screen), then the arms bring it down in front through the crosshair at contact to the hands at the waist, a short follow-through low, and back (keys fitted with `clip_probe --fit`, 2026-11-11).",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [0.056, -0.044, -0.179], "bones": { "arm_r": [-100, 24, -17], "forearm_r": [-38, 0, 0], "hand_r": [80, -1, -1] } },
+        { "t": 0.3, "root": [0.123, 0.031, -0.108], "bones": { "arm_r": [-156, 50, -7], "forearm_r": [0, 0, 0], "hand_r": [80, 10, 40] } },
+        { "t": 0.355, "root": [0.079, 0.031, -0.162], "bones": { "arm_r": [-99, 2, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -11, 2] } },
+        { "t": 0.42, "root": [0.109, 0.2, -0.052], "bones": { "arm_r": [-21, 7, 30], "forearm_r": [0, 0, 0], "hand_r": [67, -14, -7] } },
+        { "t": 0.52, "root": [0.108, 0.2, 0.034], "bones": { "arm_r": [0, 9, 30], "forearm_r": [0, 0, 0], "hand_r": [58, -12, -11] } },
+        { "t": 0.64, "root": [-0.005, 0.044, -0.014], "bones": { "arm_r": [-14, 25, 7], "forearm_r": [-64, 0, 0], "hand_r": [27, 1, 0] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_slash_level": {
+      "$comment": "The sword's level slash (WORK_QUEUE item 35; shared/tools `dwell:sword` `clips.level`), timed to the sword's miss (`swing`: windupS 0.3, activeS 0.12, recoverMissS 0.36): the blade drawn back flat past the right shoulder over 0.3 s, then swept right to left across the view with the arm reaching out, the blade through the crosshair at contact (0.355 s), followed through to the left and back. Fitted with `clip_probe --fit` (docs/DEV_TOOLS.md), pinned by the clip_probe sword tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [-0.039, -0.107, -0.153], "bones": { "arm_r": [-115, -38, 30], "forearm_r": [0, 0, 0], "hand_r": [19, -26, -35] } },
+        { "t": 0.3, "root": [-0.04, -0.165, -0.138], "bones": { "arm_r": [-123, -62, 30], "forearm_r": [0, 0, 0], "hand_r": [10, -15, -40] } },
+        { "t": 0.33, "root": [-0.044, -0.072, -0.152], "bones": { "arm_r": [-103, -54, 30], "forearm_r": [0, 0, 0], "hand_r": [47, -30, -25] } },
+        { "t": 0.355, "root": [0.019, 0.06, -0.101], "bones": { "arm_r": [-93, -23, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -3, 20] } },
+        { "t": 0.39, "root": [0.197, 0.06, -0.096], "bones": { "arm_r": [-105, 4, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 29, 40] } },
+        { "t": 0.42, "root": [0.25, 0.056, -0.109], "bones": { "arm_r": [-105, 3, 30], "forearm_r": [0, 0, 0], "hand_r": [80, 49, 40] } },
+        { "t": 0.52, "root": [0.25, 0.005, -0.116], "bones": { "arm_r": [-110, 58, 30], "forearm_r": [-68, 0, 0], "hand_r": [80, 28, 30] } },
+        { "t": 0.64, "root": [-0.021, 0.049, -0.042], "bones": { "arm_r": [-66, 40, 29], "forearm_r": [-65, 0, 0], "hand_r": [41, -6, -9] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
+    "fp_slash_overhead": {
+      "$comment": "The sword's overhead cut (WORK_QUEUE item 35; `dwell:sword` `clips.vertical`), timed as the level slash: the hilt raised over the head with the blade back over it over 0.3 s, then cut straight down in front through the crosshair at contact (0.355 s) to the hands low before the waist, and back. Fitted with `clip_probe --fit`, pinned by the clip_probe sword tests.",
+      "rig": "biped",
+      "space": "arms",
+      "layer": "action",
+      "duration": 0.78,
+      "loop": false,
+      "ease": "spline",
+      "keys": [
+        { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
+        { "t": 0.12, "root": [-0.06, -0.083, -0.128], "bones": { "arm_r": [-119, -28, 30], "forearm_r": [0, 0, 0], "hand_r": [67, -4, 16] } },
+        { "t": 0.3, "root": [0.028, 0.128, -0.079], "bones": { "arm_r": [-128, -27, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -1, 38] } },
+        { "t": 0.355, "root": [0.054, 0.161, -0.103], "bones": { "arm_r": [-74, -17, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -4, 40] } },
+        { "t": 0.42, "root": [0.041, 0.2, -0.145], "bones": { "arm_r": [-30, -13, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -6, 40] } },
+        { "t": 0.52, "root": [0.017, 0.2, -0.182], "bones": { "arm_r": [-18, -11, 30], "forearm_r": [0, 0, 0], "hand_r": [80, -5, 40] } },
+        { "t": 0.64, "root": [-0.005, 0.044, -0.014], "bones": { "arm_r": [-14, 25, 7], "forearm_r": [-64, 0, 0], "hand_r": [27, 1, 0] } },
+        { "t": 0.78, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
+      ]
+    },
     "fp_place": {
       "rig": "biped",
       "space": "arms",
@@ -809,6 +1202,8 @@
         { "t": 0.45, "root": [-0.004, 0.032, 0], "bones": { "arm_r": [-82, 26, -8], "forearm_r": [-34, 0, 0], "hand_r": [2, 0, 0] } }
       ]
     },
+    "fp_guard_level": {"$comment": "First person: the sword's block raised in the level stance (role `guard_level`): the arm turned so the blade lies level across the view below the crosshair, the grip low right and the tip off the left edge (fitted with `clip_probe --fit`: grip 0.22, -0.12, 0.52 and tip -0.54, -0.08, 0.74 m from the eye); over the arms' gait. Root is the arm's anchor offset in view space.", "rig": "biped", "space": "arms", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "root": [0.094, -0.037, -0.038], "bones": {"arm_r": [-123, 90, 2], "forearm_r": [-43, 0, 0], "hand_r": [64, 14, -9]}}]},
+    "fp_guard_vertical": {"$comment": "First person: the sword's block raised in the vertical stance (role `guard_vertical`): the fist in toward the middle, the blade upright before the view, right of the crosshair; over the arms' gait.", "rig": "biped", "space": "arms", "layer": "hold", "duration": 1, "loop": true, "ease": "step", "keys": [{"t": 0, "root": [0.1, 0.07, 0.04], "bones": {"arm_r": [-78, 28, 0], "forearm_r": [-34, 0, 0], "hand_r": [-6, 0, 0]}}]},
     "fp_land": {
       "$comment": "Touching down: a dip, then back to the idle hold.",
       "rig": "biped",

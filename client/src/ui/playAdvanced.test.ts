@@ -90,7 +90,17 @@ describe('Play advanced', () => {
     expect(withRoute('?local=1&time=0.5&timespeed=60', {})).toBe('');
   });
 
-  it('offers its spawns to the New world form too', () => {
-    expect(spawnChoices().map((o) => o.value)).toEqual(['', 'b', 'portal', 'portal-b']);
+  it('offers its spawns to the New world form too, the other grids from grids.json', () => {
+    expect(spawnChoices().map((o) => o.value)).toEqual([
+      '',
+      'b',
+      'portal',
+      'portal-b',
+      'moon',
+      'moon-b',
+      'sun',
+      'sun-b',
+    ]);
+    expect(spawnChoices().find((o) => o.value === 'sun-b')?.label).toBe('Sun (face B)');
   });
 });
