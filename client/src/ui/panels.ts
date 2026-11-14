@@ -22,6 +22,11 @@ export interface PanelViews {
    * stops a take or a playing path first); absent or false, Esc closes it.
    */
   escape?(panel: Exclude<Panel, 'none'>): boolean;
+  /**
+   * Whether playing takes the pointer lock (absent: yes). Not while the touch controls are on
+   * screen: a lock there sent the fingers to the canvas, not the controls (BUGS.md #174).
+   */
+  lockable?(): boolean;
 }
 
 /** The parts of `document` the owner reads. */
@@ -100,6 +105,7 @@ export class Panels {
   /** Requests the lock while playing; a refusal is retried by the next `click`. */
   lock(): void {
     if (this.current !== 'none' || this.doc.pointerLockElement === this.target) return;
+    if (this.views.lockable?.() === false) return;
     const request = this.target.requestPointerLock;
     if (typeof request !== 'function') return;
     try {
