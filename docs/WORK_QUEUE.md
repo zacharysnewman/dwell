@@ -2549,6 +2549,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    unpark it but put it last in priority." Unparked; **last in this queue's priority order** (item 16's
    fps-moving statuses list it as left). **Owner should see:** smoother chunk loading when flying fast (no
    light-recompute stalls on the main thread), measured on the M1 Air at High.
+60. **Town building blocks and prototyping (owner, 2026-11-14):** "If I wanted to prototype new buildings myself, for
+   NPCs to construct. What's the best workflow for me to do this and share them back with you?" / "Yes let's make it
+   smoother, and I think we'll need some new man made blocks. What are some likely candidates we'll need for
+   residential and other town buildings?" / "Floor, roof, wall, door, window. These seem the basics right?" / "Yeah
+   that's fine attaching in the chat. Yes opening doors." Not started; a cloud session will build it. Builds on item 56
+   (blueprints and builder NPCs) and the structures store (docs/STRUCTURES.md).
+   Decisions: the blocks are **planks** (floor), **plaster**, **stone brick** and **beam** (wall and frame),
+   **thatch** with its ramps (roof), a **glass pane** (window), and a **door** that opens and closes (players and
+   villagers use it); painterly palette textures and ½ m pieces (owner: "Yes, both"); a **"Test in town"** button
+   that places a saved structure as a blueprint at the nearest town for its builders; keepers come to Claude as
+   exported JSON attached in the chat.
+   **Owner should see:** the new blocks (planks, plaster, stone brick, beam, thatch and its ramps, glass pane, door)
+   in the creative hotbar's items, in painterly palette textures, each in 1 m and ½ m pieces.
+   **Owner should see:** a door that opens and closes on use, for the player and for villagers walking through it.
+   **Owner should see:** in the structure sandbox, a building saved and then "Test in town" places it as a blueprint at
+   the nearest town, and the builders construct it there.
+   **Owner should see:** a saved building exported as JSON, attached in the chat, comes back in a later build as one of
+   the towns' buildings.
 
 ## Done
 
