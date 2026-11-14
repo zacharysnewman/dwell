@@ -111,7 +111,12 @@ export class AudioEngine {
   tapInto(dest: AudioNode, o: TapOptions = {}): { buses: string[]; close(): void } | null {
     if (!this.mixer) return null;
     const tap = this.mixer.tap(dest, tapBuses(o));
-    return { buses: [...tap.buses], close: () => { tap.close(); } };
+    return {
+      buses: [...tap.buses],
+      close: () => {
+        tap.close();
+      },
+    };
   }
 
   /** Creates or resumes the context; must run in a user gesture the first time. */

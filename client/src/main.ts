@@ -1712,7 +1712,9 @@ async function start(): Promise<App | null> {
     },
     ecology: () => client.ecology() as EcologyReadout | null,
     impostors: () => client.impostorStatus() as ImpostorStatus,
-    impostorDebug: (mode, ambient, albedo) => { client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1); },
+    impostorDebug: (mode, ambient, albedo) => {
+      client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1);
+    },
     herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
     goToHerd: (kind, back) =>
       app.loopback?.lavaDev('goToHerd', [
@@ -1740,7 +1742,9 @@ async function start(): Promise<App | null> {
       Promise.resolve(null),
     spawnNpcs: (n, radius, variant) =>
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
-    cloudExtinction: (extinction) => { client.setCloudExtinction(extinction ?? 0); },
+    cloudExtinction: (extinction) => {
+      client.setCloudExtinction(extinction ?? 0);
+    },
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
       return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));

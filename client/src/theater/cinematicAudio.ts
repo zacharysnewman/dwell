@@ -39,38 +39,41 @@ export interface CinematicAudio {
   close(): void;
 }
 
-/** A block of recorded samples: its context time (s) and its channels. */
+/** A block of recorded samples, in the order the recorder received it. */
 export interface Chunk {
-  at: number;
   channels: Float32Array[];
 }
 
 /**
- * The recorded blocks laid on one timeline of `n` samples starting at context time `originS`,
- * shifted back `offset` samples (the recorder's latency); gaps stay silent, overlaps take the later.
+ * The recorded blocks joined in order: the context's rendered stream, sample for sample. (Placing
+ * each block by its reported time instead put the frame marks up to 16 ms off and lost some: the
+ * times jump when the context is suspended and resumed.) `n` samples from `start`, silence past the end.
  */
-export function placeChunks(
+export function joinChunks(
   chunks: readonly Chunk[],
-  originS: number,
-  sr: number,
-  n: number,
-  offset: number,
   channels: number,
+  start: number,
+  n: number,
 ): Float32Array[] {
   const out = Array.from({ length: channels }, () => new Float32Array(n));
+  let at = -start;
   for (const c of chunks) {
-    const start = Math.round((c.at - originS) * sr) - offset;
-    for (let ch = 0; ch < channels; ch++) {
-      const src = c.channels[ch];
-      const dst = out[ch];
-      if (!src || !dst) continue;
-      for (let j = 0; j < src.length; j++) {
-        const k = start + j;
-        if (k >= 0 && k < n) dst[k] = src[j] ?? 0;
+    const len = c.channels[0]?.length ?? 0;
+    if (at + len > 0 && at < n)
+      for (let ch = 0; ch < channels; ch++) {
+        const src = c.channels[ch];
+        const dst = out[ch];
+        if (!src || !dst) continue;
+        for (let j = Math.max(0, -at); j < len && at + j < n; j++) dst[at + j] = src[j] ?? 0;
       }
-    }
+    at += len;
   }
   return out;
+}
+
+/** The recorded length in samples. */
+export function chunkSamples(chunks: readonly Chunk[]): number {
+  return chunks.reduce((a, c) => a + (c.channels[0]?.length ?? 0), 0);
 }
 
 /** The first sample index where `ch` rises over `threshold` at or after `from` (−1: none). */
@@ -168,7 +171,6 @@ export async function startCinematicAudio(
   rec.onaudioprocess = (e) => {
     const b = e.inputBuffer;
     chunks.push({
-      at: e.playbackTime,
       channels: [0, 1, 2].map((c) => b.getChannelData(c).slice()),
     });
   };
@@ -223,10 +225,10 @@ export async function startCinematicAudio(
       while (performance.now() < flushUntil) await yieldTask();
       await ctx.suspend();
       const n = Math.round(seconds * sr);
-      const raw = placeChunks(chunks, origin, sr, n + sr, 0, 3);
-      // The recorder's latency: where frame 0's impulse landed (it was scheduled at the origin).
-      const offset = Math.max(0, firstAbove(raw[2] ?? new Float32Array(0), 0));
-      const track = placeChunks(chunks, origin, sr, n, offset, 3);
+      // The stream from frame 0's mark (scheduled at the origin): the recorder's latency drops out.
+      const whole = joinChunks(chunks, 3, 0, chunkSamples(chunks));
+      const start = Math.max(0, firstAbove(whole[2] ?? new Float32Array(0), 0));
+      const track = joinChunks(chunks, 3, start, n);
       const errs = impulseErrors(
         track[2] ?? new Float32Array(0),
         times.map((t) => Math.round(t * sr)).filter((e) => e < n),

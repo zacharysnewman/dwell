@@ -14,7 +14,7 @@ import {
   type CinematicHost,
   type ViewState,
 } from './cinematic';
-import { firstAbove, impulseErrors, placeChunks, wavBytes } from './cinematicAudio';
+import { chunkSamples, firstAbove, impulseErrors, joinChunks, wavBytes } from './cinematicAudio';
 
 const loaded: ViewState = { lod: { waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
 const loading: ViewState = { lod: { waitingInView: 300 }, terrain: { dirty: 0, meshing: 0 } };
@@ -216,14 +216,14 @@ describe('the take', () => {
 });
 
 describe("the take's sound", () => {
-  it('lays recorded blocks on one timeline, shifted back by the latency', () => {
-    const sr = 1000;
-    const block = (at: number, v: number): { at: number; channels: Float32Array[] } => ({
-      at,
+  it('joins the recorded blocks in order, from a start sample, padded with silence', () => {
+    const block = (v: number): { channels: Float32Array[] } => ({
       channels: [new Float32Array(4).fill(v)],
     });
-    const [ch] = placeChunks([block(10.0, 1), block(10.004, 2)], 10, sr, 10, 2, 1);
-    expect(Array.from(ch ?? [])).toEqual([1, 1, 2, 2, 2, 2, 0, 0, 0, 0]);
+    const chunks = [block(1), block(2), block(3)];
+    expect(chunkSamples(chunks)).toBe(12);
+    const [ch] = joinChunks(chunks, 1, 3, 12);
+    expect(Array.from(ch ?? [])).toEqual([1, 2, 2, 2, 2, 3, 3, 3, 3, 0, 0, 0]);
   });
   it('an event at game time t is found at t (±1 ms) over a long take, and a late one is measured', () => {
     const sr = 48_000;
