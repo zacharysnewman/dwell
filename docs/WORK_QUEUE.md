@@ -2784,6 +2784,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-13 (with the 0.59 terrain batch): **"Notched ramps seems fine. I've saved the water video, looks good.
    Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
    `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
+   **Bigger shrines (owner, 2026-11-13):** **"Double the shrine radius, make it 3 times as tall."** Owner should see:
+   a shrine about 16 m across and roughly three storeys tall, the stepped pillars clearly separate under a high arch,
+   visible from a distance. Built on branch `claude/shrine-bigger-1r1x68`, as data (`shrines.json` `design`): `radius`
+   8 (16 × 16 m); the dais keeps its ½ m steps but gets more of them, `steps` [6, 5, 4, 3] (a 2 m rim the pillars stand
+   on, then four 1 m treads up to a 6 m top: 3 m high at the centre), not wider treads; 5 pillars (still the count whose
+   joined half is a quarter circle) 2 m square on the 7 m arc (about 3.3 m of air between neighbours), `lowest` 7.5 and
+   `rise` 1.5 (7.5 / 9 / 10.5 / 9 / 7.5 m); the lintel 1 m thick and as deep as the pillars (gen.mjs: the lintel is now
+   `width` deep, not one column), 8 m or more of air under it; torches over a 2 m radius (12 of them) on the dais's
+   top; `stand` moved from [0, 2] to [0, 5] (the front tread, out of the torch disc). Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
+   2.4 m, under the 3 m dais) derive from the structure; the portal clearance (250 m), `clear` (3 m) and `spawnWithin`
+   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Siting the 4× larger
+   footprint took 4–6 ms a cell (over `stream_cost`'s bar); it now samples the footprint sparsely first and stops at the
+   first column out of range: 0.5–0.7 ms a cell, the same sites. Changes the terrain
+   seeds generate: ships with the Realistic batch's 0.64 line (branch `claude/realistic-geography-batch-a-k0fcrg`).
 
 55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for
    my human characters. Head down, hand on sword hilt, sword in the ground. And a stand too."** / **"This is their

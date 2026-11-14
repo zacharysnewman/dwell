@@ -30,9 +30,9 @@ the map is per player (their explored cells); the filter is per browser.
 | `inland`, `height`, `maxSlopeDeg` | 80 m, [2, 900] m, 8° | The footprint: ≥ 80 m from the coast, dry (no river, lake or stream), its ground 2–900 m above sea level, its rise across it at most the width × tan 8° |
 | `portalClear`, `clear` | 250 m, 3 m | Clear of the portals' axes; no tree within 3 m of the footprint |
 | `flatBelowDeg` | 2° | Flatter ground takes the seed's quarter turn, steeper the downhill one |
-| `structure`, `design` | `dwell:shrine` | The structure, built from `design` by `gen.mjs` (§3): 5 pillars 1 m wide with gaps, the tallest 3 lintelled |
+| `structure`, `design` | `dwell:shrine` | The structure, built from `design` by `gen.mjs` (§3): 16 × 16 m, 5 pillars 2 m wide and 7.5–10.5 m tall with gaps, the tallest 3 lintelled |
 | `lodCellM` | 16 | The LOD draws it at levels whose cells are at most 16 m |
-| `stand` | [0, 2] | Where a player stands up: the column 2 m from the anchor on the open side (turned with it), on its floor |
+| `stand` | [0, 5] | Where a player stands up: the column 5 m from the anchor on the open side (turned with it), on its floor (the front tread, out of the torches; 2 m on the 8 m shrine) |
 | `searchCells`, `spawnWithin` | 3, 1500 m | A death searches the cells within 3 of its own; the spawn's shrine lies within 1500 m of the spawn search's point, else one is built at the point |
 | `worlds` | `test:archipelago` | Overrides per world setting name (not `design`) |
 | `map` | explored, `shrine`, `#7fd6ff`, 18 px, 28 px, 8 ms | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size; `clusterPx` (icons nearer on screen merge into one with a count, at every zoom), `siteMsPerDraw` (new cells sited a draw) |
@@ -43,20 +43,22 @@ and emits `crates/dwell-worldgen/src/shrines.gen.rs`; `gen.test.mjs` covers it.
 ## 3. The shrine (`design`)
 
 `gen.mjs` `shrineStructure` builds `shared/structures/shrine.json` (½ m rows): a round platform of
-`block` (the columns whose centres lie within `radius` 4 m of its centre: 8 × 8 m), `base` 1 m filled
-from its bottom row, then a ½ m step for each of `steps` [3, 2] m (the terraced dais). `pillars.count`
-5 pillars on the back half's arc (`arcRadius` 3.5 m, 180°–360°, evenly spaced: 45° apart), each a
-`pillars.width` 1 m square (the columns nearest its point on the arc; the −x half placed, the +x half
-its mirror; the middle one, on the axis, stands on its +x side, ½ m off it), `lowest` 2.5 m at the
-arc's ends and `rise` 0.5 m taller each one toward its middle (2.5, 3, 3.5, 3, 2.5 m). The pillars
+`block` (the columns whose centres lie within `radius` 8 m of its centre: 16 × 16 m; owner, 2026-11-13:
+"Double the shrine radius, make it 3 times as tall."), `base` 1 m filled from its bottom row, then a ½ m
+step for each of `steps` [6, 5, 4, 3] m (the terraced dais: a 2 m rim, four 1 m treads, a 6 m top 3 m
+up). `pillars.count` 5 pillars on the back half's arc (`arcRadius` 7 m, 180°–360°, evenly spaced: 45°
+apart, about 3.3 m of air between neighbours), each a `pillars.width` 2 m square (the columns nearest its
+point on the arc; the −x half placed, the +x half its mirror; an odd width's middle pillar, on the axis,
+would stand on its +x side, ½ m off it; 2 m centres on it), `lowest` 7.5 m at the arc's ends and `rise`
+1.5 m taller each one toward its middle (7.5, 9, 10.5, 9, 7.5 m: the 0.59 shrine's 2.5–3.5 m, × 3). The pillars
 **stand apart** (owner, 2026-11-13: "Yes, shrine pillars have gaps."): no two pillars' columns touch,
 side or corner, so a full cell of air lies between neighbours at every height; `gen.mjs` fails a count
 or width that leaves none (9 pillars on the 3.5 m arc do: the shrine had 9 in 0.58, reading as one
 stepped wall). The middle half of them (3, the tallest, spanning 90°: a quarter circle) are joined at
-their tops by a `lintel.thickness` ½ m lintel along the arc over the gaps between them only, each gap
+their tops by a `lintel.thickness` 1 m lintel, `width` deep, along the arc over the gaps between them only, each gap
 column's top interpolated by angle between the two joined tops either side of it (rounded to a row),
-so it reads as an arch from top to top with air under it; the lower pillars stand free. The light
-(`light.block` torches) stands on the dais's top on the columns within 1 m of the centre. The count
+so it reads as an arch from top to top with 8 m or more of air under it; the lower pillars stand free.
+The light (`light.block` torches) stands on the dais's top on the columns within 2 m of the centre (12). The count
 must be 1 more than a multiple of 4 so the joined half spans exactly a quarter circle (7 cannot).
 
 It stands like a portal's monument: anchored on the site, its bottom row on the lowest ground under
@@ -127,13 +129,16 @@ waypoints alike (a hidden marker is not picked either); the choices are remember
 
 Shrines change the terrain every seed generates and move the spawn: a new compatibility line, 0.58
 (RELEASES.md "Who raises the line"). The pillars with gaps change the shrine's shape, and with it the terrain again:
-the 0.59 line (carried with the terrain change it ships with). Changing any rule but `map`, `stand` and `searchCells` changes the
+the 0.59 line (carried with the terrain change it ships with). The 16 m shrine (2026-11-13) ships on the
+Realistic batch's 0.64 line. Changing any rule but `map`, `stand` and `searchCells` changes the
 terrain again.
 
 ## 8. Cost
 
 Measured natively (`cargo run --release -p dwell-worldgen --example shrine_cost`, seed 0): siting a cell
-takes 1.0–1.8 ms (the island's 169 cells ~170–300 ms a face, each once per process, on demand); the
+takes 0.5–0.7 ms (the island's 169 cells ~90–120 ms a face, each once per process, on demand; a point's
+footprint is checked on a sparse sample of its columns first and stops at the first out of the slope's
+range, since checking all of the 16 m footprint's took 4–6 ms a cell and broke `stream_cost`'s bar); the
 spawn search the spawn's shrine needs is ~0.6 s on face A (the Realistic world's 2–60 ms; its shrine 5–10 ms once
 its cache key stopped formatting the biome grids, BUGS.md #132), run once per world per process and only by
 the spawn, the respawn or a chunk with no grid shrine within ~1.5 km. Seed 3's face A has no grid shrine
