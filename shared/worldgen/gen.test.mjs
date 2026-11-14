@@ -1196,40 +1196,44 @@ import { shrineStructure, shrinesRust, validateShrines } from './gen.mjs';
 const loadShrines = () =>
   JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'shrines.json'), 'utf8'));
 
-test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of stepping pillars with gaps, the tallest half joined over a quarter circle', () => {
+test('the shrine design builds the owner\'s shrine: 16 × 16 m, a half circle of stepping pillars with gaps, the tallest half joined over a quarter circle', () => {
   // Owner, 2026-11-12: "a 8x8m terraced and filled stone circle with stepping pillars forming a
   // half circle. Only the tallest pillars (half of them) are connected at the top. Forming a
-  // quarter circle."
+  // quarter circle." Owner, 2026-11-13: "Double the shrine radius, make it 3 times as tall."
   const d = loadShrines();
   const { structure: s, pillars, lintel } = shrineStructure(d.structure, d.design, registryBlocks());
-  assert.equal(s.size[0], 8);
-  assert.equal(s.size[2], 8);
+  const N = 16;
+  const C = N / 2;
+  assert.equal(s.size[0], N);
+  assert.equal(s.size[2], N);
   // Filled from the bottom row: every column of the circle has stone from row 0 up (no hollow).
   const at = (x, y, z) => s.layers[y][z][x];
   let floor = 0;
-  for (let z = 0; z < 8; z++)
-    for (let x = 0; x < 8; x++) {
+  for (let z = 0; z < N; z++)
+    for (let x = 0; x < N; x++) {
       if (at(x, 0, z) === '.') continue;
       floor++;
       for (let y = 0; y < d.design.base / 0.5; y++) assert.notEqual(at(x, y, z), '.', `${x},${y},${z}`);
     }
-  assert.ok(floor >= 48, `${floor} floor columns`);
+  assert.ok(floor >= 190, `${floor} floor columns`);
   // Terraced: the centre stands higher than the rim by a row a step.
   const top = (x, z) => {
     let t = 0;
     while (t < s.size[1] && at(x, t, z) === 's') t++;
     return t;
   };
-  assert.equal(top(4, 4) - top(4, 7), d.design.steps.length);
+  assert.equal(top(C, C) - top(C, N - 1), d.design.steps.length);
   // The pillars: a half circle (180° to 360°, the −z half), all on one side of the axis.
   const ids = [...new Set(pillars.map((p) => p.i))];
   assert.equal(ids.length, d.design.pillars.count);
   const degs = ids.map((i) => pillars.find((p) => p.i === i).deg);
   assert.equal(Math.min(...degs), 180);
   assert.equal(Math.max(...degs), 360);
-  for (const p of pillars) assert.ok(p.z <= 4, `${p.x},${p.z} on the back half`);
+  for (const p of pillars) assert.ok(p.z <= C, `${p.x},${p.z} on the back half`);
   // Heights step up toward the arc's middle and back down: symmetric, strictly rising to it.
   const h = ids.map((i) => pillars.find((p) => p.i === i).height);
+  // Three times the 0.59 shrine's 2.5 / 3 / 3.5 / 3 / 2.5 m, in ½ m rows.
+  assert.deepEqual(h.map((r) => r * 0.5), [7.5, 9, 10.5, 9, 7.5]);
   const mid = (h.length - 1) / 2;
   for (let i = 0; i < mid; i++) {
     assert.ok(h[i + 1] > h[i], `rising ${h}`);
@@ -1284,14 +1288,16 @@ test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of s
       const from = y;
       while (y < upTo && at(x, y, z) === '.') y++;
       for (let r = y; r < upTo; r++) assert.equal(at(x, r, z), 'l', `${x},${r},${z}: air, then only the lintel`);
-      assert.ok(y - from >= 2, `air between pillars ${ids[k]} and ${ids[k + 1]} at ${key} (${y - from} rows)`);
+      // At least 6 m of air (12 rows) under the lintel, and 1 m between the lower pillars.
+      const least = a[0].joined && b[0].joined ? 12 : 2;
+      assert.ok(y - from >= least, `air between pillars ${ids[k]} and ${ids[k + 1]} at ${key} (${y - from} rows)`);
     }
   }
   // The lintel sits on the tallest half only: no lintel cell beside a lower pillar, and it joins the
   // tallest pillars' tops into one arch (connected through lintel and pillar cells above the floor).
   for (let y = 0; y < s.size[1]; y++)
-    for (let z = 0; z < 8; z++)
-      for (let x = 0; x < 8; x++) {
+    for (let z = 0; z < N; z++)
+      for (let x = 0; x < N; x++) {
         if (at(x, y, z) !== 'l') continue;
         for (const p of pillars.filter((q) => !q.joined))
           assert.ok(Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) >= 2, `lintel ${x},${y},${z} by lower pillar ${p.i}`);
@@ -1305,7 +1311,7 @@ test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of s
       for (let dz = -1; dz <= 1; dz++)
         for (let dx = -1; dx <= 1; dx++) {
           const [nx, ny, nz] = [x + dx, y + dy, z + dz];
-          if (nx < 0 || nz < 0 || nx >= 8 || nz >= 8 || ny < 0 || ny >= s.size[1]) continue;
+          if (nx < 0 || nz < 0 || nx >= N || nz >= N || ny < 0 || ny >= s.size[1]) continue;
           const c = at(nx, ny, nz);
           if (!(c === 'l' || (c === 'p' && ny >= pillarOf(nx, nz).top - 1))) continue;
           const key = `${nx},${ny},${nz}`;
@@ -1317,8 +1323,10 @@ test('the shrine design builds the owner\'s shrine: 8 × 8 m, a half circle of s
   }
   for (const p of pillars)
     assert.equal(seen.has(`${p.x},${p.top - 1},${p.z}`), p.joined, `pillar ${p.i}'s top ${p.joined ? 'joined' : 'apart'}`);
-  // The light stands at the centre of the dais.
-  assert.equal(at(4, top(4, 4), 4), 't');
+  // The light stands at the centre of the dais, a disc of torches that reads at this size.
+  assert.equal(at(C, top(C, C), C), 't');
+  const torches = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 't').length;
+  assert.ok(torches >= 9, `${torches} torches`);
 });
 
 test('the shrine rules validate, each world\'s overrides too, and the generated table is current', () => {
@@ -1340,7 +1348,7 @@ test('the shrine rules validate, each world\'s overrides too, and the generated 
   bad({ structure: 'dwell:nothing' }, /structure "dwell:nothing" is not in/);
   bad({ stand: [0, 9] }, /stand \[0,9\] lies outside/);
   // Under the lintel: not open over the floor.
-  bad({ stand: [-2, -3] }, /stand \[-2,-3\] must stand on a floor/);
+  bad({ stand: [-4, -7] }, /stand \[-4,-7\] must stand on a floor/);
   bad({ map: { ...d.map, reveal: 'sometimes' } }, /map.reveal must be one of/);
   // The big map's thinning: merged icons must not overlap, and the zoom and budget must be sane.
   bad({ map: { ...d.map, clusterPx: d.map.iconPx - 1 } }, /map.clusterPx must be a whole number from map.iconPx/);
@@ -1351,7 +1359,7 @@ test('the shrine rules validate, each world\'s overrides too, and the generated 
     () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 8 } }, registryBlocks()),
     /pillars.count must be 1 more than a multiple of 4/,
   );
-  // Too many pillars for the arc leave no air between them (9 on the 8 m shrine's 3.5 m arc).
+  // Too many pillars for the arc leave no air between them (9 of 2 m on the 16 m shrine's 7 m arc).
   assert.throws(
     () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 9 } }, registryBlocks()),
     /leave no air between pillars/,
