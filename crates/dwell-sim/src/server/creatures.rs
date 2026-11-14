@@ -7,10 +7,10 @@
 use super::{Server, SessionId};
 use dwell_protocol::CreaturePoseNet;
 use dwell_protocol::capability_names::{
-    CREATURES_NPCS, CREATURES_POSES, HUMANS_DEFEAT, NPCS_SWINGS,
+    CREATURES_NPCS, CREATURES_POSES, HUMANS_DEFEAT, NPCS_CARRY, NPCS_SWINGS,
 };
 use dwell_protocol::{
-    Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
+    CarryNet, Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
 };
 use dwell_world::chunk_of;
 
@@ -29,6 +29,7 @@ impl Server {
         let poses = npcs && s.capabilities.has(CREATURES_POSES);
         let swings = npcs && s.capabilities.has(NPCS_SWINGS);
         let defeat = swings && s.capabilities.has(HUMANS_DEFEAT);
+        let carry = poses && s.capabilities.has(NPCS_CARRY);
         let table = self.creatures.table;
         let all: Vec<CreatureNet> = self.creatures.list.iter().map(|c| c.net(&table)).collect();
         for part in all.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -37,8 +38,10 @@ impl Server {
                 gone: Vec::new(),
                 npcs: None,
                 poses: None,
+                carries: None,
             };
-            let m = Message::Creatures(self.with_parts(m, npcs, poses, swings, defeat));
+            let m = self.with_parts(m, npcs, poses, swings, defeat);
+            let m = Message::Creatures(self.with_carries(m, carry));
             self.send_reliable(id, &m, Channel::World);
         }
     }
@@ -86,6 +89,35 @@ impl Server {
                 self.creature_poses()
                     .into_iter()
                     .filter(|p| ids.contains(&p.id))
+                    .collect(),
+            );
+        }
+        m
+    }
+
+    /// `m` with its NPCs' carried loads (B5), for a client with `npcs.carry` (`carry`); as it is
+    /// for one without.
+    fn with_carries(&self, mut m: CreaturesMessage, carry: bool) -> CreaturesMessage {
+        if carry {
+            let loads = self.builder_loads();
+            m.carries = Some(
+                m.creatures
+                    .iter()
+                    .filter_map(|c| {
+                        let items = loads.get(&c.id)?;
+                        Some(CarryNet {
+                            id: c.id,
+                            items: items
+                                .iter()
+                                .map(|&(s, n)| {
+                                    (
+                                        dwell_blocks::info(s).name.to_string(),
+                                        n.min(u32::from(u8::MAX)) as u8,
+                                    )
+                                })
+                                .collect(),
+                        })
+                    })
                     .collect(),
             );
         }
@@ -194,19 +226,21 @@ impl Server {
         if moving.is_empty() && gone.is_empty() {
             return;
         }
-        let hello: Vec<(SessionId, bool, bool, bool, bool)> = self
+        // Each client's parts by its capabilities: the NPCs', the poses, the swings, defeat, the
+        // carried loads (each implying the ones before it).
+        type Parts = (bool, bool, bool, bool, bool);
+        let hello: Vec<(SessionId, Parts)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.joined() && s.creatures_hello)
             .map(|(&id, s)| {
                 let npcs = s.capabilities.has(CREATURES_NPCS);
-                (
-                    id,
-                    npcs,
-                    npcs && s.capabilities.has(CREATURES_POSES),
-                    npcs && s.capabilities.has(NPCS_SWINGS),
-                    npcs && s.capabilities.has(HUMANS_DEFEAT),
-                )
+                let poses = npcs && s.capabilities.has(CREATURES_POSES);
+                // As before: the swings with the poses, defeat with the swings.
+                let swings = poses && s.capabilities.has(NPCS_SWINGS);
+                let defeat = swings && s.capabilities.has(HUMANS_DEFEAT);
+                let carry = poses && s.capabilities.has(NPCS_CARRY);
+                (id, (npcs, poses, swings, defeat, carry))
             })
             .collect();
         let mut msgs = Vec::new();
@@ -216,6 +250,7 @@ impl Server {
                 gone: Vec::new(),
                 npcs: None,
                 poses: None,
+                carries: None,
             });
         }
         for part in gone.chunks(MAX_CREATURES_PER_MESSAGE) {
@@ -224,24 +259,19 @@ impl Server {
                 gone: part.to_vec(),
                 npcs: None,
                 poses: None,
+                carries: None,
             });
         }
         for m in msgs {
-            // Built once each way: with both parts, the NPCs' only, and as older clients read it.
-            // Built once each way: with the NPCs' swings too, and each as older clients read it.
-            let defeated = Message::Creatures(self.with_parts(m.clone(), true, true, true, true));
-            let swinging = Message::Creatures(self.with_parts(m.clone(), true, true, true, false));
-            let all = Message::Creatures(self.with_parts(m.clone(), true, true, false, false));
-            let with = Message::Creatures(self.with_npcs(m.clone(), true, false, false));
-            let without = Message::Creatures(m);
-            for &(id, npcs, poses, swings, defeat) in &hello {
-                let msg = match (npcs, poses, swings) {
-                    (_, true, true) if defeat => &defeated,
-                    (_, true, true) => &swinging,
-                    (_, true, false) => &all,
-                    (true, false, _) => &with,
-                    _ => &without,
-                };
+            // Built once for each set of parts a client here reads.
+            let mut built: Vec<(Parts, Message)> = Vec::new();
+            for &(id, parts) in &hello {
+                let (npcs, poses, swings, defeat, carry) = parts;
+                if !built.iter().any(|(p, _)| *p == parts) {
+                    let with = self.with_parts(m.clone(), npcs, poses, swings, defeat);
+                    built.push((parts, Message::Creatures(self.with_carries(with, carry))));
+                }
+                let msg = &built.iter().find(|(p, _)| *p == parts).expect("built").1;
                 self.send_reliable(id, msg, Channel::World);
             }
         }

@@ -486,3 +486,320 @@ fn a_town_site_with_no_ground_yet_waits_and_a_world_without_a_height_field_has_n
 fn flat_seed() -> u64 {
     config(FaceFrame::A, None).world_seed
 }
+
+// --- B5: the storehouse and the builders' trips (docs/BLUEPRINTS.md §9) ---
+
+/// Fast builders (a piece every 0.05 s), as the hut test's.
+fn fast() -> dwell_world::blueprint::Rules {
+    dwell_world::blueprint::Rules {
+        builder: dwell_world::blueprint::BuilderRules {
+            pace_s: 0.05,
+            ..SHIPPED.builder
+        },
+        ..SHIPPED
+    }
+}
+
+/// Fills every cell of the world's blueprint `b` with its block (a built storehouse).
+fn build_all(fx: &mut Fixture, b: &Blueprint) {
+    for c in Ghost::of(b).cells {
+        fx.server
+            .world()
+            .set_voxel(c.world[0], c.world[1], c.world[2], c.state);
+    }
+}
+
+/// A built storehouse at face-local (16, BASE, 8) (its box x 14..18, z 7..10) and the hut's
+/// blueprint at (8, BASE, 8) (x 6..10, z 6..10); the hut's id and the storehouse's box.
+fn storehouse_and_hut(fx: &mut Fixture, f: FaceFrame) -> (u32, Blueprint) {
+    let sid = fx
+        .server
+        .place_blueprint(blueprint(f, "dwell:bp_storehouse", [16, BASE, 8], 0))
+        .expect("the storehouse placed");
+    fx.server.add_storehouse(sid).expect("a storehouse");
+    let store = fx.server.blueprint_list()[0].clone();
+    build_all(fx, &store);
+    // The hut waits for the storehouse: no builder until it is built (checked twice a second).
+    let id = fx
+        .server
+        .place_blueprint(blueprint(f, "dwell:bp_hut", [8, BASE, 8], 0))
+        .expect("placed");
+    step(fx, 31);
+    assert_eq!(fx.server.storehouses().len(), 1);
+    assert!(fx.server.storehouses()[0].3, "built: open");
+    assert_eq!(
+        fx.server.blueprint_list().len(),
+        1,
+        "the storehouse's blueprint went"
+    );
+    (id, fx.server.blueprint_list()[0].clone())
+}
+
+/// The flat distance from a creature's face-local feet to the storehouse's box (x 14..19, z 7..11).
+fn to_store(f: FaceFrame, at: [f64; 3]) -> f64 {
+    let p = f.point(at);
+    let dx = (14.0 - p[0]).max(p[0] - 19.0).max(0.0);
+    let dz = (7.0 - p[2]).max(p[2] - 11.0).max(0.0);
+    dx.hypot(dz)
+}
+
+both_faces!(
+    fn a_builder_fetches_from_the_storehouse_carrying_at_most_ten_and_finishes_it(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f, None));
+        ground(&mut fx, f);
+        fx.join(1, &Client::new(1));
+        fx.send(1, Message::CreaturesHello);
+        fx.send(1, caps());
+        stand(&mut fx, f, 1, 8.5, 18.5);
+        fx.server.set_blueprint_rules(fast());
+        let (id, hut) = storehouse_and_hut(&mut fx, f);
+        let total = Ghost::of(&hut).cells.len();
+        let cap = SHIPPED.builder_job().carry_max;
+        let mut builder = None;
+        let (mut last_done, mut last_count) = (0, 0u32);
+        let (mut loads, mut most) = (0, 0u32);
+        let mut away = false;
+        let mut done_at = None;
+        for t in 0..60 * 400 {
+            step(&mut fx, 1);
+            if fx.server.blueprint_list().is_empty() {
+                done_at = Some(t);
+                break;
+            }
+            let Some(&b) = builder.as_ref().or(fx.server.builders_of(id).first()) else {
+                continue;
+            };
+            if builder.is_none() {
+                // Watched from here (it may have begun while the storehouse opened).
+                builder = Some(b);
+                last_done = progress(&mut fx, &hut).0;
+                last_count = fx.server.builder_load(b).unwrap().iter().map(|l| l.1).sum();
+                continue;
+            }
+            let load = fx.server.builder_load(b).expect("its load");
+            let count: u32 = load.iter().map(|l| l.1).sum();
+            let at = fx
+                .server
+                .creatures()
+                .iter()
+                .find(|c| c.id == b)
+                .expect("the builder")
+                .position;
+            let (done, _) = progress(&mut fx, &hut);
+            assert!(count <= cap, "at most {cap} carried: {count}");
+            most = most.max(count);
+            if count > last_count {
+                // Loaded only at the storehouse.
+                assert!(
+                    to_store(f, at) <= 3.0,
+                    "t {t}: loaded {:.1} m from the storehouse at {:?}",
+                    to_store(f, at),
+                    f.point(at)
+                );
+                assert_eq!(
+                    done, last_done,
+                    "no piece placed on a loading tick: t {t} count {last_count} -> {count}"
+                );
+                if away {
+                    loads += 1;
+                }
+                away = false;
+            }
+            if done > last_done {
+                // Every piece placed came out of the load, one for one.
+                assert_eq!(
+                    last_count - count,
+                    (done - last_done) as u32,
+                    "places only what it carried"
+                );
+                away = true;
+            }
+            (last_done, last_count) = (done, count);
+        }
+        assert!(done_at.is_some(), "the hut was finished");
+        assert_eq!(most, cap, "full loads of {cap}");
+        assert!(
+            loads + 1 >= total.div_ceil(cap as usize),
+            "{loads} trips back for {total} cells"
+        );
+    }
+);
+
+both_faces!(
+    fn the_carried_stack_sent_matches_the_builder_s_load(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f, None));
+        ground(&mut fx, f);
+        fx.join(1, &Client::new(1));
+        fx.send(1, Message::CreaturesHello);
+        fx.send(1, caps());
+        stand(&mut fx, f, 1, 8.5, 18.5);
+        fx.server.set_blueprint_rules(fast());
+        let (id, _) = storehouse_and_hut(&mut fx, f);
+        // Until it carries something.
+        let mut b = None;
+        for _ in 0..60 * 60 {
+            step(&mut fx, 1);
+            if let Some(&c) = fx.server.builders_of(id).first()
+                && fx.server.builder_load(c).is_some_and(|l| !l.is_empty())
+            {
+                b = Some(c);
+                break;
+            }
+        }
+        let b = b.expect("a builder with a load");
+        // Each send carries its load as it was when sent: the creatures go out before the
+        // builders work in a tick, so the load at the end of the tick before.
+        let names = |l: &[(dwell_blocks::StateId, u32)]| -> Vec<(String, u8)> {
+            l.iter()
+                .map(|&(s, n)| (dwell_blocks::info(s).name.to_string(), n as u8))
+                .collect()
+        };
+        fx.take_all();
+        let mut before = names(&fx.server.builder_load(b).unwrap());
+        let mut checked = 0;
+        for _ in 0..60 {
+            step(&mut fx, 1);
+            let sent: Vec<CarryNet> = fx
+                .take_all()
+                .remove(&1)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|m| match m {
+                    Message::Creatures(c) => c.carries,
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            let now = names(&fx.server.builder_load(b).unwrap());
+            for c in sent {
+                assert_eq!(c.id, b, "only the builder carries");
+                assert!(c.items == before || c.items == now, "the stack is the load");
+                checked += 1;
+            }
+            before = now;
+        }
+        assert!(checked >= 5, "its load sent ({checked})");
+    }
+);
+
+both_faces!(
+    fn a_new_town_builds_its_storehouse_first(f: FaceFrame) {
+        let rules = dwell_world::blueprint::Rules {
+            towns: dwell_world::blueprint::TownRules {
+                spacing_m: 256,
+                ..SHIPPED.towns
+            },
+            ..fast()
+        };
+        let flat: dwell_worldgen::TownGround = std::sync::Arc::new(|_, _, _| Some(m_of_row(BASE)));
+        let g = |_: i32, _: i32| Some(m_of_row(BASE));
+        let site = rules.towns.sites_near(flat_seed(), f, 0.0, 0.0, 600.0, &g)[0];
+        let mut fx = Fixture::new(config(f, None));
+        fx.server.set_blueprint_rules(rules);
+        fx.server.set_town_ground(Some(flat));
+        ground_at(
+            &mut fx,
+            f,
+            site.x - 24..site.x + 24,
+            site.z - 24..site.z + 24,
+        );
+        fx.join(1, &Client::new(1));
+        stand(
+            &mut fx,
+            f,
+            1,
+            f64::from(site.x) + 20.5,
+            f64::from(site.z) + 20.5,
+        );
+        step(&mut fx, 2 * 60 + 2);
+        let list = fx.server.blueprint_list();
+        assert_eq!(list[0].name, "dwell:bp_storehouse", "placed first");
+        let store = list[0].clone();
+        let stores = fx.server.storehouses();
+        assert_eq!(stores.len(), 1);
+        assert!(!stores[0].3, "not built yet");
+        let mut opened = None;
+        for t in 0..60 * 120 {
+            step(&mut fx, 1);
+            let open = fx.server.storehouses()[0].3;
+            if !open {
+                // Only the storehouse is being built: no other blueprint has a builder or a block.
+                for b in &fx.server.blueprint_list()[1..] {
+                    assert!(fx.server.builders_of(b.id).is_empty(), "{} waits", b.name);
+                    assert_eq!(progress(&mut fx, b).0, 0, "{} untouched", b.name);
+                }
+            } else {
+                opened = Some(t);
+                break;
+            }
+        }
+        assert!(opened.is_some(), "the storehouse was built");
+        assert_eq!(progress(&mut fx, &store).1, 0);
+        // Then the others get builders.
+        step(&mut fx, 60);
+        let others = fx.server.blueprint_list();
+        assert!(
+            others
+                .iter()
+                .any(|b| !fx.server.builders_of(b.id).is_empty()),
+            "builders on the town's next blueprints"
+        );
+    }
+);
+
+both_faces!(
+    fn a_save_keeps_the_storehouse_and_a_builder_s_load(f: FaceFrame) {
+        let db = WorldDb::in_memory().expect("db");
+        let (id, load) = {
+            let mut fx = Fixture::new(config(f, Some(&db)));
+            ground(&mut fx, f);
+            fx.join(1, &Client::new(1));
+            stand(&mut fx, f, 1, 8.5, 18.5);
+            fx.server.set_blueprint_rules(fast());
+            let (id, _) = storehouse_and_hut(&mut fx, f);
+            let mut load = None;
+            for _ in 0..60 * 60 {
+                step(&mut fx, 1);
+                if let Some(&c) = fx.server.builders_of(id).first()
+                    && let Some(l) = fx.server.builder_load(c).filter(|l| !l.is_empty())
+                {
+                    load = Some(l);
+                    break;
+                }
+            }
+            fx.server.save_now();
+            fx.server.flush_store();
+            (id, load.expect("a load"))
+        };
+        let mut fx = Fixture::new(config(f, Some(&db)));
+        ground(&mut fx, f);
+        fx.server.set_blueprint_rules(fast());
+        let stores = fx.server.storehouses();
+        assert_eq!(stores.len(), 1, "the storehouse kept");
+        assert!(stores[0].3, "built");
+        let hut = fx.server.blueprint_list()[0].clone();
+        let (before, _) = progress(&mut fx, &hut);
+        fx.join(1, &Client::new(1));
+        stand(&mut fx, f, 1, 8.5, 18.5);
+        let mut b = None;
+        for _ in 0..10 {
+            step(&mut fx, 1);
+            b = b.or(fx.server.builders_of(id).first().copied());
+            if b.is_some() {
+                break;
+            }
+        }
+        let b = b.expect("its builder back");
+        let now = fx.server.builder_load(b).expect("a builder");
+        let (after, _) = progress(&mut fx, &hut);
+        // Carrying what it carried (less any piece it put in on coming back).
+        assert_eq!(now.len(), load.len(), "{now:?} against {load:?}");
+        assert_eq!(now[0].0, load[0].0);
+        let count = |l: &[(dwell_blocks::StateId, u32)]| l.iter().map(|i| i.1).sum::<u32>();
+        assert_eq!(
+            count(&now) + (after - before) as u32,
+            count(&load),
+            "carrying what it carried"
+        );
+    }
+);

@@ -374,6 +374,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             let rest = c.advance(0.0)[0].clone();
             assert_eq!(rest.tint[3], 0.0, "no flash before a hit");
@@ -424,6 +425,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             c.apply(CreaturesMessage {
                 creatures: vec![CreatureNet {
@@ -434,6 +436,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             let v = c.advance(0.016);
             assert_eq!(v.len(), 1, "a model this build lacks is skipped");
@@ -443,6 +446,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             assert_eq!(c.advance(0.016)[0].role, "idle");
             assert_eq!(c.advance(0.016)[0].pose, None, "no poses' part: standing");
@@ -471,6 +475,7 @@ mod tests {
                 gone: vec![4],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             assert!(c.advance(0.016).is_empty());
         }
@@ -502,6 +507,7 @@ mod tests {
                 gone: vec![],
                 npcs,
                 poses: None,
+                carries: None,
             };
             c.apply(msg(0.0, None));
             let v = c.advance(0.016);
