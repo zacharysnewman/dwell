@@ -197,6 +197,9 @@ pub struct NpcDef {
     /// Its waist ring's and hat band's pattern (shared/creatures/patterns.json, WORK_QUEUE item 43);
     /// None: the rings as modelled.
     pub pattern: Option<PatternDef>,
+    /// It opens the closed doors it walks through and closes them behind it (data `opensDoors`;
+    /// docs/BLOCK_REGISTRY.md, Doors): its walk takes a closed door's cell as open.
+    pub opens_doors: bool,
 }
 
 /// An NPC's ring pattern (shared/creatures/patterns.json, WORK_QUEUE item 43): the model's part
@@ -662,6 +665,20 @@ fn open(m: StateId) -> bool {
     try_info(m).is_some_and(|i| !i.solid && !i.liquid)
 }
 
+/// A closed door's cell as an NPC that opens doors sees it: the door open (block data `toggle`,
+/// whose other state lets a body through); anything else as it is.
+pub fn through_door(m: StateId) -> StateId {
+    match dwell_world::edit::toggled(m) {
+        Some(o) if solid(m) && !solid(o) => o,
+        _ => m,
+    }
+}
+
+/// Whether `m` is a closed door: a block with a `toggle` whose other state lets a body through.
+pub fn closed_door(m: StateId) -> bool {
+    through_door(m) != m
+}
+
 fn ground(m: StateId) -> bool {
     try_info(m).is_some_and(|i| i.solid && !i.liquid && i.shape == VoxelShape::Full)
 }
@@ -834,6 +851,8 @@ pub struct Creatures {
     pub removed: Vec<u32>,
     /// Kinds the spawn rules leave out (the near ecology's: its herds and packs make them).
     pub reserved: Vec<usize>,
+    /// The doors NPCs opened (a world cell of each), closed again once none is near.
+    pub opened_doors: Vec<[i32; 3]>,
 }
 
 impl Default for Creatures {
@@ -850,6 +869,7 @@ impl Creatures {
             next_id: 0,
             rolled: HashSet::new(),
             removed: Vec::new(),
+            opened_doors: Vec::new(),
             reserved: Vec::new(),
         }
     }
@@ -1080,6 +1100,63 @@ impl Creatures {
     }
 
     /// One tick with no players near (no NPC looks at or steps aside from anyone).
+    /// The closed doors the NPCs that open doors are in or about to walk into (world cells, one
+    /// per door cell found): those within its body's radius and `ahead_m` along its heading, in
+    /// the rows its body fills. The server opens them (docs/BLOCK_REGISTRY.md, Doors).
+    pub fn doors_to_open(&self, get: Get, ahead_m: f64) -> Vec<[i32; 3]> {
+        let mut out = Vec::new();
+        for c in &self.list {
+            let def = self.table.creatures[c.kind];
+            if !def.npc.is_some_and(|n| n.opens_doors) || c.defeat.is_some() {
+                continue;
+            }
+            let f = FaceFrame::at_height(c.position[1]);
+            let local = f.point(c.position);
+            let row = cell_of_pos(local)[1];
+            // Its heading: yaw = atan2(dx, dz) in degrees.
+            let (s, k) = c.yaw.to_radians().sin_cos();
+            let reach = def.body_radius_m + ahead_m;
+            for p in [[local[0], local[2]], [local[0] + s * reach, local[2] + k * reach]] {
+                for dx in [-1.0, 0.0, 1.0] {
+                    for dz in [-1.0, 0.0, 1.0] {
+                        let q = [p[0] + dx * def.body_radius_m, p[1] + dz * def.body_radius_m];
+                        let col = [q[0].floor() as i32, q[1].floor() as i32];
+                        for y in row..row + def.rows {
+                            let w = f.cell([col[0], y, col[1]]);
+                            if get(w).is_some_and(closed_door) && !out.contains(&w) {
+                                out.push(w);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether a body of a creature that opens doors stands within `m` metres (horizontally, on its
+    /// rows) of world cell `cell`'s centre: a door it opened stays open while one does.
+    pub fn door_user_near(&self, cell: [i32; 3], m: f64) -> bool {
+        self.list.iter().any(|c| {
+            let def = self.table.creatures[c.kind];
+            if !def.npc.is_some_and(|n| n.opens_doors) {
+                return false;
+            }
+            let f = FaceFrame::at_height(c.position[1]);
+            let local = f.point(c.position);
+            let corner = dwell_world::pos_of_cell(cell);
+            let lc = f.point([
+                corner[0] + 0.5,
+                corner[1] + 0.5 * dwell_world::CELL_H,
+                corner[2] + 0.5,
+            ]);
+            // Its feet up to its head, a little over: the door's cells beside it.
+            let tall = f64::from(def.rows) * dwell_world::CELL_H;
+            (local[1] - 1.0..local[1] + tall + 1.0).contains(&lc[1])
+                && (local[0] - lc[0]).hypot(local[2] - lc[2]) < m
+        })
+    }
+
     pub fn step(&mut self, get: Get) {
         self.step_near(get, &[]);
     }
@@ -1309,8 +1386,17 @@ impl Creatures {
                     .map(|c| (c.id, c.position)),
             )
             .collect();
+        let outer = get;
+        let through_doors = |p: [i32; 3]| outer(p).map(through_door);
         for c in &mut self.list {
             let def = table.creatures[c.kind];
+            // One that opens doors walks through a closed door as through an open one (the server
+            // opens it as it comes: `doors_to_open`).
+            let get: Get = if def.npc.is_some_and(|n| n.opens_doors) {
+                &through_doors
+            } else {
+                outer
+            };
             let f = FaceFrame::at_height(c.position[1]);
             let local = f.point(c.position);
             if let Some(g) = &mut c.guard {

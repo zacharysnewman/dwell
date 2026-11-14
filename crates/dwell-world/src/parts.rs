@@ -29,25 +29,61 @@ fn block_name(m: StateId) -> &'static str {
     }
 }
 
-/// Whether `m` is one cell of a multi-cell block (block data `extends` or `partOf`).
+/// Whether `m` is one cell of a multi-cell block (block data `extends`, `partOf` or `column`).
 pub fn multi_cell(m: StateId) -> bool {
-    dwell_blocks::try_info(m).is_some_and(|s| s.extends_up.is_some() || s.part_of.is_some())
+    dwell_blocks::try_info(m)
+        .is_some_and(|s| s.extends_up.is_some() || s.part_of.is_some() || s.column.is_some())
 }
 
-/// The other cells a multi-cell block's state at `cell` needs, each with the block's name there:
-/// above its face's ground for `extends.up`, below for `partOf`.
-pub fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], &'static str)> {
+/// `cell` moved `k` rows toward its face's sky (negative: toward its ground).
+pub fn up_by(cell: [i32; 3], k: i32) -> [i32; 3] {
+    let mut c = cell;
+    for _ in 0..k.unsigned_abs() {
+        c = if k > 0 { edit::above(c) } else { edit::below(c) };
+    }
+    c
+}
+
+/// The other cells a multi-cell block's state at `cell` needs, each with the state it puts there:
+/// above its face's ground for `extends.up`, below for `partOf`; a column's other cells above and
+/// below it, each its own value of the column's property (the rest of the state the same).
+pub fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], StateId)> {
     let Some(s) = dwell_blocks::try_info(m) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if let Some(up) = s.extends_up {
+    if let Some(up) = s.extends_up.and_then(dwell_blocks::state) {
         out.push((edit::above(cell), up));
     }
-    if let Some(of) = s.part_of {
+    if let Some(of) = s.part_of.and_then(dwell_blocks::state) {
         out.push((edit::below(cell), of));
     }
+    if let Some(c) = s.column {
+        for j in 0..c.count {
+            if j == c.index {
+                continue;
+            }
+            if let Some(want) = dwell_blocks::with_property_index(m, c.property, usize::from(j)) {
+                out.push((up_by(cell, i32::from(j) - i32::from(c.index)), want));
+            }
+        }
+    }
     out
+}
+
+/// Whether `there` holds what a partner wants: a column's cell its exact state (the same door,
+/// its own part), any other part its block.
+pub fn holds(there: StateId, want: StateId) -> bool {
+    if dwell_blocks::try_info(want).is_some_and(|s| s.column.is_some()) {
+        return there == want;
+    }
+    block_name(there) == block_name(want)
+}
+
+/// The state of every cell of the multi-cell block `m` belongs to, with `property` set to `value`
+/// (a door opened): `m`'s own new state, or `m` when it has no such value.
+pub fn with_all(m: StateId, property: &str, value: &str) -> StateId {
+    dwell_blocks::with_property(m, property, value).unwrap_or(m)
 }
 
 /// Whether `m` at `cell` is whole: every other cell it needs holds its block. `get` reads a cell,
@@ -55,7 +91,24 @@ pub fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], &'static str)> {
 pub fn whole(cell: [i32; 3], m: StateId, get: impl Fn([i32; 3]) -> Option<StateId>) -> bool {
     partners(cell, m)
         .into_iter()
-        .all(|(p, name)| get(p).is_none_or(|there| block_name(there) == name))
+        .all(|(p, want)| get(p).is_none_or(|there| holds(there, want)))
+}
+
+/// `c` and the cells beside it above and below that a multi-cell block there could reach: the one
+/// above and the one below, and on through every further cell `multi` holds (a door's four cells).
+fn near(c: [i32; 3], mut multi: impl FnMut([i32; 3]) -> bool) -> Vec<[i32; 3]> {
+    let mut out = vec![c];
+    for dir in [1, -1] {
+        let mut p = c;
+        for _ in 0..8 {
+            p = up_by(p, dir);
+            out.push(p);
+            if !multi(p) {
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// What a lone cell leaves: water where it was flooded, else air.
@@ -70,7 +123,7 @@ pub fn lone_parts(world: &VoxelWorld, changed: &[[i32; 3]]) -> Vec<([i32; 3], St
     let get = |p: [i32; 3]| world.voxel_if_held(p);
     let mut out: Vec<([i32; 3], StateId)> = Vec::new();
     for &c in changed {
-        for p in [c, edit::above(c), edit::below(c)] {
+        for p in near(c, |p| get(p).is_some_and(multi_cell)) {
             let Some(m) = get(p) else { continue };
             if multi_cell(m) && !whole(p, m, get) && !out.iter().any(|(o, _)| *o == p) {
                 out.push((p, left_by(m)));
@@ -118,6 +171,30 @@ pub fn repair_chunk(
     lone.len()
 }
 
+/// [`partners`] in face-local cells (+y up), for placements before they go through a face.
+fn partners_local(p: [i32; 3], m: StateId) -> Vec<([i32; 3], StateId)> {
+    let Some(s) = dwell_blocks::try_info(m) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(up) = s.extends_up.and_then(dwell_blocks::state) {
+        out.push(([p[0], p[1] + 1, p[2]], up));
+    }
+    if let Some(of) = s.part_of.and_then(dwell_blocks::state) {
+        out.push(([p[0], p[1] - 1, p[2]], of));
+    }
+    if let Some(c) = s.column {
+        for j in 0..c.count {
+            if j != c.index
+                && let Some(want) = dwell_blocks::with_property_index(m, c.property, usize::from(j))
+            {
+                out.push(([p[0], p[1] + i32::from(j) - i32::from(c.index), p[2]], want));
+            }
+        }
+    }
+    out
+}
+
 impl Placed {
     /// [`Placed::cells`] with every multi-cell block kept whole: its cells are written only when the
     /// placement holds all of them and `free` says each may be written (over air or a replaceable
@@ -128,24 +205,14 @@ impl Placed {
             if !multi_cell(m) {
                 return true;
             }
-            // The block's lowest cell: down through `partOf` (one part a block: parts.mjs).
-            let s = info(m);
-            let base = if s.part_of.is_some() {
-                [p[0], p[1] - 1, p[2]]
-            } else {
-                p
-            };
-            let Some(lower) = self.at(base) else {
-                return false;
-            };
-            let li = info(lower);
-            let Some(up) = li.extends_up else {
-                return false;
-            };
-            let top = [base[0], base[1] + 1, base[2]];
-            let upper_ok = self.at(top).is_some_and(|u| block_name(u) == up);
-            let lower_ok = s.part_of.is_none_or(|of| block_name(lower) == of);
-            upper_ok && lower_ok && free(base) && free(top)
+            // Every other cell in the placement holding its part (face-local: +y up), and all of
+            // them free.
+            let others: Vec<([i32; 3], StateId)> = partners_local(p, m);
+            !others.is_empty()
+                && free(p)
+                && others
+                    .iter()
+                    .all(|&(q, want)| self.at(q).is_some_and(|u| holds(u, want)) && free(q))
         };
         self.cells().filter(|&(p, m)| kept(p, m)).collect()
     }
@@ -178,7 +245,7 @@ pub fn keep_whole(
                 multi_cell(m)
                     && partners(c, m)
                         .into_iter()
-                        .any(|(p, name)| block_name(view(p)) != name)
+                        .any(|(p, want)| !holds(view(p), want))
             })
             .collect();
         if lone.is_empty() {
@@ -193,7 +260,7 @@ pub fn keep_whole(
     let mut view = |p: [i32; 3]| after.get(&p).copied().unwrap_or_else(|| get(p));
     let mut extra: Vec<([i32; 3], StateId)> = Vec::new();
     for &(c, _) in changes.iter() {
-        for p in [edit::above(c), edit::below(c)] {
+        for p in near(c, |p| multi_cell(view(p))).into_iter().skip(1) {
             if after.contains_key(&p) || extra.iter().any(|(o, _)| *o == p) {
                 continue;
             }
@@ -201,7 +268,7 @@ pub fn keep_whole(
             if multi_cell(m)
                 && partners(p, m)
                     .into_iter()
-                    .any(|(q, name)| block_name(view(q)) != name)
+                    .any(|(q, want)| !holds(view(q), want))
             {
                 extra.push((p, left_by(m)));
             }
