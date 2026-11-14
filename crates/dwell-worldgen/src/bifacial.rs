@@ -181,6 +181,86 @@ impl BifacialTerrain {
             .unwrap_or_default()
     }
 
+    /// The ground a town site needs at a face-local column (docs/BLUEPRINTS.md §6; the
+    /// `TownGround` the server sites with): its height (face-local m) where it is dry land (no sea,
+    /// lake, river or stream, inside the world) within `towns.heightM` above sea level, clear of the
+    /// shrines and the portals, else None.
+    pub fn town_ground(&self, face: Face, x: i32, z: i32) -> Option<f64> {
+        let [lo, hi] = dwell_world::blueprint::SHIPPED.towns.height_m;
+        let sea = dwell_world::SEA_LEVEL_M;
+        let g = self.local(face);
+        let c = g.column_at(x, z);
+        let h = f64::from(c.height);
+        let dry = !c.outside
+            && c.water == crate::terrain::Water::None
+            && !c.stream
+            && h >= sea + lo
+            && h <= sea + hi;
+        // Clear of the resurrection shrines (their clear ground, and a margin) and the portals.
+        (dry && !g
+            .shrines()
+            .is_some_and(|sh| sh.crowds(g, x, z, crate::TOWN_SHRINE_MARGIN_M)))
+        .then_some(h)
+    }
+
+    /// The town sites on `face` in the town grid cells within `cells` of face-local column
+    /// (x, z)'s (the map's; the server's own siting, `TownRules::site_in`, on this ground).
+    pub fn towns_round(
+        &self,
+        world_seed: u64,
+        face: Face,
+        x: i32,
+        z: i32,
+        cells: i32,
+    ) -> Vec<dwell_world::blueprint::TownSite> {
+        let [ci, ck] = dwell_world::blueprint::SHIPPED.towns.cell_of(x, z);
+        let mut out = Vec::new();
+        for k in ck - cells..=ck + cells {
+            for i in ci - cells..=ci + cells {
+                out.extend(self.town_in(world_seed, face, [i, k]));
+            }
+        }
+        out
+    }
+
+    /// The town site in town grid cell `cell` on `face`, if any (`TownRules::site_in` on
+    /// [`Self::town_ground`]).
+    pub fn town_in(
+        &self,
+        world_seed: u64,
+        face: Face,
+        cell: [i32; 2],
+    ) -> Option<dwell_world::blueprint::TownSite> {
+        let ground = |x: i32, z: i32| self.town_ground(face, x, z);
+        dwell_world::blueprint::SHIPPED.towns.site_in(
+            world_seed,
+            dwell_world::FaceFrame { face },
+            cell,
+            &ground,
+        )
+    }
+
+    /// The town site on `face` nearest face-local (x, z), within `radius` m.
+    pub fn nearest_town(
+        &self,
+        world_seed: u64,
+        face: Face,
+        x: f64,
+        z: f64,
+        radius: f64,
+    ) -> Option<dwell_world::blueprint::TownSite> {
+        let f = dwell_world::FaceFrame { face };
+        let ground = |x: i32, z: i32| self.town_ground(face, x, z);
+        let d = |t: &dwell_world::blueprint::TownSite| {
+            (f64::from(t.x) + 0.5 - x).hypot(f64::from(t.z) + 0.5 - z)
+        };
+        dwell_world::blueprint::SHIPPED
+            .towns
+            .sites_near(world_seed, f, x, z, radius, &ground)
+            .into_iter()
+            .min_by(|a, b| d(a).total_cmp(&d(b)))
+    }
+
     /// The portals between the faces: their sites and how they are built.
     pub fn portals(&self) -> &Portals {
         self.a.portals().expect("both faces have the portals")

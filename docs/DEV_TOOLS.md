@@ -323,6 +323,10 @@ another generator) opens that seed's world file. Add:
   (no version lock, no prompt; every load of the link starts over).
 - `at=x,y,z` — the player starts at that world point (feet, metres), the world's spawn moved there,
   however the world was left (`LocalCore::create_spawning`'s `at`).
+- `spawn=town` (`town-b` on face B) — the player starts 24 m south of the town site nearest the face's spawn
+  (docs/BLUEPRINTS.md §6b), in its own world file (`…-town`), so the town founds at once and its builders come:
+  `?local=1&seed=0&fresh=1&spawn=town` to watch builders put up the hamlet. A world without towns (flat, sandbox)
+  starts at its usual spawn.
 - `time=0.45` (the time of day), `debug=1`, `lod=off` and the other page parameters as usual.
 - `haze=<preset>` draws a distance-haze preset from `shared/look/fog.json` `presets` (`thicker`,
   `aerial`, `aerial-sun`, and the height fog alone: `fog-11k`, `fog-8k`, `fog-6k`) instead of the fog every client draws, to compare them (DAY_NIGHT.md §4,

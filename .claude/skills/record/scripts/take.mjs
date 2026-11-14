@@ -98,6 +98,32 @@ async function ensureDriver(m, url, raw, log) {
   throw new Error(`the driver didn't come up (log: ${log})`);
 }
 
+/**
+ * The view is settled (the bench's placed-shot rule, client/scripts/bench.ts): the LOD has nothing
+ * to generate, mesh or ask for and nothing waiting in view, and the full-detail chunks are meshed.
+ * `st` is `__dwell.state()`. Owner, 2026-11-14 (WORK_QUEUE item 40): the trailer showed "half of it
+ * isn't loaded in", so every shot waits for this before it records.
+ */
+export function viewIdle(st) {
+  const lod = st?.lod;
+  const t = st?.terrain;
+  return !!lod && lod.generating === 0 && lod.meshing === 0 && lod.asking === 0 && lod.waitingInView === 0
+    && (!t || t.dirty + t.meshing === 0);
+}
+
+/**
+ * The page script that waits until the view has been idle (`viewIdle`) for `quietMs`, at most
+ * `maxS` seconds; it returns "settled <s>" or "NOT settled <s>" (the take goes on either way).
+ */
+export function settleScript(quietMs = 1000, maxS = 60) {
+  return `(async () => { const idle = ${viewIdle.toString()}; const t0 = Date.now(); let quiet = null;
+    while (Date.now() - t0 < ${maxS * 1000}) { const now = Date.now();
+      quiet = idle(d.state()) ? (quiet ?? now) : null;
+      if (quiet !== null && now - quiet >= ${quietMs}) return 'settled ' + ((now - t0) / 1000).toFixed(1);
+      await new Promise((r) => setTimeout(r, 100)); }
+    return 'NOT settled ' + ((Date.now() - t0) / 1000).toFixed(1); })()`;
+}
+
 async function waitReady(url) {
   const t0 = Date.now();
   while (Date.now() - t0 < 180_000) {
@@ -135,7 +161,8 @@ async function recordShot(m, shot, o, state) {
     const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
     const hold = { formatVersion: 1, keyframes: [{ ...path.keyframes[0], t: 0 }, { t: 1000 }], segments: [{ move: 'cut' }] };
     await post('/eval', `(async () => { d.theater('hud', { shown: false });
-      d.theater('play', { path: ${JSON.stringify(hold)} }); await new Promise(r => setTimeout(r, ${(s.warmS ?? 10) * 1000})); return 1; })()`);
+      d.theater('play', { path: ${JSON.stringify(hold)} }); await new Promise(r => setTimeout(r, ${(s.warmS ?? 2) * 1000})); return 1; })()`);
+    if (s.settleS !== 0) console.log('  view', await post('/eval', settleScript(1000, s.settleS ?? 60)));
     started = await post(`/rec/start?name=${shot.id}${sound}`); console.log(started);
     log = await post('/eval', `(async () => { d.theater('play', { path: ${JSON.stringify(path)} });
       while (!d.theater('state', {}).finished) await new Promise(r => setTimeout(r, 100)); await new Promise(r => setTimeout(r, 300)); return 'played'; })()`);
@@ -143,6 +170,7 @@ async function recordShot(m, shot, o, state) {
     const src = scriptSource(resolve(SKILL, shot.script));
     const a = shot.args ?? {};
     console.log('setup', await post('/eval', `(globalThis.__args=${JSON.stringify({ ...a, phase: 'setup' })}, ${src})`));
+    if (s.settleS !== 0) console.log('  view', await post('/eval', settleScript(1000, s.settleS ?? 60)));
     started = await post(`/rec/start?name=${shot.id}${sound}`); console.log(started);
     log = await post('/eval', `(globalThis.__args=${JSON.stringify(a)}, ${src})`);
   }

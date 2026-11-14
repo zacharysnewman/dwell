@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
 import { alignFilter, audioAlignment, audioStartExpr, encodeArgs, partAudio } from './audio.mjs';
-import { encodeClip, fetchRetrying } from './take.mjs';
+import { encodeClip, fetchRetrying, settleScript, viewIdle } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
 const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -380,4 +380,29 @@ test('end to end: a square clip cut to 9:16 and 16:9, faded in from black, with 
     assert.ok(Math.abs(centre(1.5) - 128) < 30, `grey before the title (${centre(1.5)})`);
     assert.ok(centre(2.6) > 200, `the white title over the centre near the end (${centre(2.6)})`);
   }
+});
+
+test('a shot waits until the chunks and the LOD settle (WORK_QUEUE item 40: half the trailer unloaded)', async () => {
+  const idle = { lod: { generating: 0, meshing: 0, asking: 0, waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
+  assert.equal(viewIdle(idle), true);
+  for (const [k, part] of [['generating', 'lod'], ['asking', 'lod'], ['waitingInView', 'lod'], ['dirty', 'terrain'], ['meshing', 'terrain']]) {
+    const busy = copy(idle); busy[part][k] = 3;
+    assert.equal(viewIdle(busy), false, `${part}.${k} busy`);
+  }
+  assert.equal(viewIdle(null), false, 'no state yet');
+  // The page script, run against a fake page: busy for a while, then idle; it returns once idle for quietMs.
+  let calls = 0;
+  globalThis.d = { state: () => (++calls < 4 ? { ...idle, lod: { ...idle.lod, meshing: 1 } } : idle) };
+  try {
+    const r = await eval(settleScript(250, 5));
+    assert.match(r, /^settled /);
+    assert.ok(calls >= 6, `polled until quiet (${calls})`);
+    globalThis.d = { state: () => ({ ...idle, lod: { ...idle.lod, generating: 1 } }) };
+    assert.match(await eval(settleScript(100, 0.3)), /^NOT settled /);
+  } finally {
+    delete globalThis.d;
+  }
+  // The manifest's knob: a number, 0 skips it.
+  const m = bifacial(); m.shots[0].setup = { ...(m.shots[0].setup ?? {}), settleS: 30 }; validate(m);
+  m.shots[0].setup.settleS = 'long'; fails(m, /setup.settleS/);
 });

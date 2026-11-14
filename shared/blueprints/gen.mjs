@@ -68,7 +68,8 @@ export function validateBlueprints(d, structures, creatures, file = 'shared/blue
   });
   const t = d.towns;
   if (typeof t !== 'object' || t === null || Array.isArray(t)) fail('towns must be an object');
-  for (const k of Object.keys(t)) if (![...Object.keys(TOWN_FIELDS), 'heightM', 'plans'].includes(k)) fail(`towns: unknown field "${k}"`);
+  for (const k of Object.keys(t)) if (![...Object.keys(TOWN_FIELDS), 'heightM', 'plans', 'map'].includes(k)) fail(`towns: unknown field "${k}"`);
+  validateTownMap(t.map, fail);
   for (const [k, [lo, hi, int]] of Object.entries(TOWN_FIELDS)) {
     const v = t[k];
     if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi || (int && !Number.isInteger(v))) {
@@ -99,6 +100,20 @@ export function validateBlueprints(d, structures, creatures, file = 'shared/blue
     });
   });
   return d;
+}
+
+/** The towns' map rules (`towns.map`; the shell's `mapTowns.ts`): the shrines' map rules' shape. */
+function validateTownMap(m, fail) {
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) fail('towns.map must be an object');
+  const known = ['reveal', 'icon', 'color', 'buildingColor', 'iconPx', 'clusterPx', 'siteMsPerDraw'];
+  for (const k of Object.keys(m)) if (!known.includes(k)) fail(`towns.map: unknown field "${k}"`);
+  if (!['explored', 'all'].includes(m.reveal)) fail('towns.map.reveal must be explored or all');
+  const icons = JSON.parse(readFileSync(join(root, 'shared/ui/markers.json'), 'utf8')).icons;
+  if (!icons.some((i) => i.id === m.icon)) fail(`towns.map.icon ${JSON.stringify(m.icon)} is not an icon of shared/ui/markers.json`);
+  for (const k of ['color', 'buildingColor']) if (!/^#[0-9a-fA-F]{6}$/.test(m[k] ?? '')) fail(`towns.map.${k} must be #rrggbb`);
+  if (!(Number.isInteger(m.iconPx) && m.iconPx >= 3 && m.iconPx <= 32)) fail('towns.map.iconPx must be a whole number in [3, 32]');
+  if (!(Number.isInteger(m.clusterPx) && m.clusterPx >= m.iconPx && m.clusterPx <= 256)) fail('towns.map.clusterPx must be a whole number from iconPx to 256');
+  if (!(typeof m.siteMsPerDraw === 'number' && m.siteMsPerDraw >= 1 && m.siteMsPerDraw <= 100)) fail('towns.map.siteMsPerDraw must be a number in [1, 100]');
 }
 
 const num = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);

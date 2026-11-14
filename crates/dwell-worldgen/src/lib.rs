@@ -239,7 +239,7 @@ pub fn shrine_respawn_for_sized(
 }
 
 /// How far a town's footprint keeps from a shrine's clear ground (m).
-const TOWN_SHRINE_MARGIN_M: i32 = 8;
+pub(crate) const TOWN_SHRINE_MARGIN_M: i32 = 8;
 
 /// The ground a town site needs (docs/BLUEPRINTS.md §6): at a face's face-local column, the ground's
 /// height (face-local m) where it is dry land (no sea, lake, river or stream, inside the world) within
@@ -252,23 +252,37 @@ pub fn town_ground_for_sized(version: u32, world_seed: u64, size: WorldSize) -> 
     let terrain = Arc::new(BifacialTerrain::for_generator_sized(
         version, world_seed, size,
     )?);
-    let [lo, hi] = dwell_world::blueprint::SHIPPED.towns.height_m;
-    let sea = dwell_world::SEA_LEVEL_M;
-    Some(Arc::new(move |face, x, z| {
-        let g = terrain.local(face);
-        let c = g.column_at(x, z);
-        let h = f64::from(c.height);
-        let dry = !c.outside
-            && c.water == terrain::Water::None
-            && !c.stream
-            && h >= sea + lo
-            && h <= sea + hi;
-        // Clear of the resurrection shrines (their clear ground, and a margin) and the portals.
-        (dry && !g
-            .shrines()
-            .is_some_and(|sh| sh.crowds(g, x, z, TOWN_SHRINE_MARGIN_M)))
-        .then_some(h)
-    }))
+    Some(Arc::new(move |face, x, z| terrain.town_ground(face, x, z)))
+}
+
+/// How far from the face's spawn the dev link `?spawn=town` looks for a town site (m).
+pub const TOWN_SPAWN_SEARCH_M: f64 = 6000.0;
+
+/// Where the dev link `?spawn=town` (`town-b`) stands the player (docs/DEV_TOOLS.md): feet (world m)
+/// on the ground `back_m` south of the centre of the town site nearest the face's spawn (within
+/// [`TOWN_SPAWN_SEARCH_M`]), so it founds and its builders come. `None` without a height field or
+/// a site.
+pub fn town_spawn_for_sized(
+    version: u32,
+    world_seed: u64,
+    size: WorldSize,
+    face: dwell_world::Face,
+    back_m: f64,
+) -> Option<[f64; 3]> {
+    let terrain = BifacialTerrain::for_generator_sized(version, world_seed, size)?;
+    let f = dwell_world::FaceFrame { face };
+    let spawn = f.point(match face {
+        dwell_world::Face::A => terrain.spawn_point(),
+        dwell_world::Face::B => terrain.spawn_point_b(),
+    });
+    let t = terrain.nearest_town(world_seed, face, spawn[0], spawn[2], TOWN_SPAWN_SEARCH_M)?;
+    let x = f64::from(t.x) + 0.5;
+    let z = f64::from(t.z) + 0.5 - back_m;
+    let g = terrain.local(face);
+    let ground = f64::from(g.column_at(x.floor() as i32, z.floor() as i32).height)
+        .max(f64::from(g.column_at(t.x, t.z).height));
+    // A few metres over the ground: the player lands on it (a y inside it would fall through).
+    Some(f.point([x, ground + 3.0, z]))
 }
 
 /// Feet position players spawn at: near the origin, on open level ground.

@@ -58,6 +58,30 @@ pub fn seen_portals(world: &VoxelWorld, axes: &[[f64; 2]], pos: [f64; 3]) -> Vec
     out
 }
 
+/// The map's town sites with their state (docs/BLUEPRINTS.md §6), flat [x, z, state]*: each
+/// site's centre (face-local m, the column's middle) and 1 while a blueprint of the world's (`boxes`,
+/// each [min x, min z, max x, max z] world cells on the site's face; x and z are the same on both
+/// faces) lies within `reach` m of it across the ground (it was founded and is being built), else 0
+/// (not founded yet, or built: a finished blueprint disappears).
+pub fn town_states(
+    sites: &[dwell_world::blueprint::TownSite],
+    boxes: &[[i32; 4]],
+    reach: i32,
+) -> Vec<f64> {
+    let mut out = Vec::with_capacity(sites.len() * 3);
+    for t in sites {
+        let building = boxes.iter().any(|&[x0, z0, x1, z1]| {
+            t.x >= x0 - reach && t.x <= x1 + reach && t.z >= z0 - reach && t.z <= z1 + reach
+        });
+        out.extend([
+            f64::from(t.x) + 0.5,
+            f64::from(t.z) + 0.5,
+            f64::from(u8::from(building)),
+        ]);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +163,29 @@ mod tests {
             let eye = m_of_row(GROUND) + 1.6;
             assert_eq!(ground(&w, f, 3.4, -1.2, eye), Some(m_of_row(GROUND)));
             assert_eq!(ground(&w, f, 40.0, 0.0, eye), None);
+        }
+    );
+
+    both_faces!(
+        fn a_town_site_reads_building_while_a_blueprint_lies_in_its_footprint(f: FaceFrame) {
+            let site = |x, z| dwell_world::blueprint::TownSite {
+                face: f,
+                cell: [0, 0],
+                x,
+                z,
+                plan: 0,
+            };
+            let sites = [site(100, 200), site(-500, 40)];
+            // A hut's box 9 m west of the first site's centre; none near the second.
+            let boxes = [[88, 196, 94, 202]];
+            assert_eq!(
+                town_states(&sites, &boxes, 32),
+                vec![100.5, 200.5, 1.0, -499.5, 40.5, 0.0]
+            );
+            assert_eq!(
+                town_states(&sites, &[], 32),
+                vec![100.5, 200.5, 0.0, -499.5, 40.5, 0.0]
+            );
         }
     );
 }

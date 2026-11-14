@@ -317,6 +317,15 @@ fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
     o.into()
 }
 
+/// The map's town sites by (seed, face B, grid cell x, z).
+type TownCells =
+    std::collections::HashMap<(u64, bool, i32, i32), Option<dwell_world::blueprint::TownSite>>;
+
+thread_local! {
+    /// The map's town sites, each grid cell sited once (`mapTowns`).
+    static TOWN_CELLS: std::cell::RefCell<TownCells> = std::cell::RefCell::default();
+}
+
 #[wasm_bindgen]
 pub struct Client {
     inner: Rc<RefCell<Inner>>,
@@ -3194,6 +3203,55 @@ impl Client {
             out.extend([f64::from(sh.x) + 0.5, f64::from(sh.z) + 0.5]);
         }
         out
+    }
+    /// The town sites on face `face` (0 A, 1 B) in the town grid cells within `cells` of
+    /// face-local column (x, z)'s (docs/BLUEPRINTS.md §6, sited from the seed as the server sites
+    /// them), each [x, z (its centre, face-local m), state (0 a site, 1 building: a blueprint of the
+    /// world's within its footprint)]; the maps show the explored ones. Empty for a world without them.
+    #[wasm_bindgen(js_name = mapTowns)]
+    pub fn map_towns(&self, face: u8, x: f64, z: f64, cells: i32) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = s.game.as_ref() else {
+            return Vec::new();
+        };
+        let Some(t) = g.far_terrain.clone() else {
+            return Vec::new();
+        };
+        let face = if face == 1 {
+            dwell_world::Face::B
+        } else {
+            dwell_world::Face::A
+        };
+        // Each grid cell sited once per world (up to 40 columns of the height field each): the
+        // minimap asks every frame.
+        let seed = g.world_seed();
+        let rules = &dwell_world::blueprint::SHIPPED.towns;
+        let [ci, ck] = rules.cell_of(x.floor() as i32, z.floor() as i32);
+        let n = cells.clamp(0, 4);
+        let mut sites = Vec::new();
+        TOWN_CELLS.with_borrow_mut(|cache| {
+            if cache.len() > 4096 {
+                cache.clear();
+            }
+            for k in ck - n..=ck + n {
+                for i in ci - n..=ci + n {
+                    let key = (seed, face == dwell_world::Face::B, i, k);
+                    let site = *cache
+                        .entry(key)
+                        .or_insert_with(|| t.town_in(seed, face, [i, k]));
+                    sites.extend(site);
+                }
+            }
+        });
+        let boxes: Vec<[i32; 4]> = g
+            .blueprints
+            .ghosts
+            .iter()
+            .filter(|b| b.face.face == face)
+            .map(|b| [b.min[0], b.min[2], b.max[0], b.max[2]])
+            .collect();
+        let reach = dwell_world::blueprint::SHIPPED.towns.footprint_m;
+        crate::map_markers::town_states(&sites, &boxes, reach)
     }
     /// Map markers (docs/MAP_MARKERS.md): the player's place for them, [face (0 A, 1 B), x, y, z
     /// (face-local m, the feet), dead (1/0), then while dead the death's face, x, y, z].

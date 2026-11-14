@@ -147,7 +147,7 @@ describe('the shrines on the big map', () => {
       { kind: 'spawn', label: 'Spawn' },
       { kind: 'death', label: 'Last death' },
     ]);
-    expect(layers.map((l) => l.key)).toEqual(['shrine', 'spawn', 'death', OWN_MARKERS]);
+    expect(layers.map((l) => l.key)).toEqual(['shrine', 'town', 'spawn', 'death', OWN_MARKERS]);
     expect(markerLayer({ auto: '' })).toBe(OWN_MARKERS);
     expect(markerLayer({ auto: 'death' })).toBe('death');
     const kept = new Map<string, string>([[FILTERS_KEY, '{"future":false}']]);
