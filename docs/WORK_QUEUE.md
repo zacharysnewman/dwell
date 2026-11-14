@@ -3144,6 +3144,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    their back, building, and walking back for more.
    **Owner should see (the storehouse):** in a new town (`?local=1&seed=0&fresh=1&spawn=town`), the storehouse goes up
    first, then the builders start on the huts, well, watchtower and wall, fetching from it.
+   **B5 first slice built 2026-11-14** (cloud, branch `claude/storehouse`, **the 0.67 line**: the storehouse in the
+   hamlet's plan widens its clear ground, so a seed's trees near towns change): the storehouse blueprint
+   (`dwell:bp_storehouse`, role `storehouse`, the plan's first) built first while the town's other blueprints wait;
+   its stock `unlimited` (data; a counted stock is in the API and the save); jobs as data (`jobs`: the `build` kind,
+   `carryMax` 10, mixed loads; `haul`/`fell`/`plant` named as later phases); one transfer API
+   (`dwell_world::stock`); the builders' trips (take the next cells' blocks, place only what they carry, back when
+   empty or blocked, on to the town's next blueprint when one completes); the storehouses and loads saved (the
+   blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
+   seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
 
 ## Future (needs owner answers)
 
