@@ -650,8 +650,8 @@ test("a part map is checked: its names, every vertex a part, as many as the full
   assert.throws(() => validateParts({ ...ok, parts: ["skin", "skin"] }, "p"), /part skin twice/);
   assert.throws(() => validateParts({ ...ok, parts: ["Skin"] }, "p"), /not a lower_snake_case/);
   assert.throws(
-    () => validateParts({ ...ok, parts: ["a", "b", "c", "d", "e", "f", "g"] }, "p"),
-    /7 parts, at most 6/,
+    () => validateParts({ ...ok, parts: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] }, "p"),
+    /10 parts, at most 9/,
   );
   assert.throws(() => validateParts({ ...ok, seed: [{ part: "cape", y: [0, 1] }] }, "p"), /no part cape/);
   assert.throws(() => validateParts({ ...ok, seed: [{ part: "skin" }] }, "p"), /no test/);

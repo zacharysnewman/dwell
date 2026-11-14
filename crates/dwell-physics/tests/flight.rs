@@ -197,3 +197,37 @@ fn diving_at_the_bands_top_speed_stops_on_the_ground() {
     assert!(w.feet(e).abs() < 0.05, "{}", w.feet(e));
     assert!(w.c(e).fly.flying);
 }
+
+#[test]
+fn forward_flies_where_the_camera_looks() {
+    // BUGS.md #155 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? … It didn't
+    // seem to get any closer"): forward was level along the yaw, so aiming at the moon in the sky
+    // and holding forward flew under it. Now forward follows the pitch, at the same speed; Space
+    // and crouch still rise and sink.
+    let f = PlayerControllerConfig::default().fly;
+    let mut w = PlayerTestWorld::new();
+    let e = w.spawn(Vec3::new(0.0, 200.0, 0.0));
+    w.set_input(|_, _| Input {
+        look_pitch: 30.0,
+        ..fly(0.0, 1.0, false, false, false)
+    });
+    w.step(ticks(0.5));
+    let (y0, z0) = (w.feet(e), w.pos(e).z);
+    w.step(ticks(1.0));
+    let (rise, ahead) = (w.feet(e) - y0, w.pos(e).z - z0);
+    assert!(approx(rise, f.speed * 0.5, 0.1), "rose {rise} m in 1 s");
+    assert!(
+        approx(ahead, f.speed * 0.866, 0.1),
+        "ahead {ahead} m in 1 s"
+    );
+    // Looking down, forward sinks.
+    w.set_input(|_, _| Input {
+        look_pitch: -30.0,
+        ..fly(0.0, 1.0, false, false, false)
+    });
+    w.step(ticks(0.5));
+    let y1 = w.feet(e);
+    w.step(ticks(1.0));
+    let sank = y1 - w.feet(e);
+    assert!(approx(sank, f.speed * 0.5, 0.1), "sank {sank} m in 1 s");
+}
