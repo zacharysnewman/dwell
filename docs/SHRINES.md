@@ -136,7 +136,9 @@ terrain again.
 ## 8. Cost
 
 Measured natively (`cargo run --release -p dwell-worldgen --example shrine_cost`, seed 0): siting a cell
-takes 1.0–1.8 ms (the island's 169 cells ~170–300 ms a face, each once per process, on demand); the
+takes 0.5–0.7 ms (the island's 169 cells ~90–120 ms a face, each once per process, on demand; a point's
+footprint is checked on a sparse sample of its columns first and stops at the first out of the slope's
+range, since checking all of the 16 m footprint's took 4–6 ms a cell and broke `stream_cost`'s bar); the
 spawn search the spawn's shrine needs is ~0.6 s on face A (the Realistic world's 2–60 ms; its shrine 5–10 ms once
 its cache key stopped formatting the biome grids, BUGS.md #132), run once per world per process and only by
 the spawn, the respawn or a chunk with no grid shrine within ~1.5 km. Seed 3's face A has no grid shrine

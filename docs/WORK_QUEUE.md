@@ -2693,7 +2693,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `width` deep, not one column), 8 m or more of air under it; torches over a 2 m radius (12 of them) on the dais's
    top; `stand` moved from [0, 2] to [0, 5] (the front tread, out of the torch disc). Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
    2.4 m, under the 3 m dais) derive from the structure; the portal clearance (250 m), `clear` (3 m) and `spawnWithin`
-   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Changes the terrain
+   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Siting the 4× larger
+   footprint took 4–6 ms a cell (over `stream_cost`'s bar); it now samples the footprint sparsely first and stops at the
+   first column out of range: 0.5–0.7 ms a cell, the same sites. Changes the terrain
    seeds generate: ships with the Realistic batch's 0.64 line (branch `claude/realistic-geography-batch-a-k0fcrg`).
 
 55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for
