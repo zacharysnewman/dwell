@@ -40,14 +40,14 @@ test("the build's data validates with the owner's rules", () => {
 
 test('an item and a block with a custom drop added by data alone are emitted', () => {
   const [inv, blocks] = fresh();
-  inv.items.push({ name: 'dwell:crystal', label: 'Crystal', color: '#aaccff', size: 0.1, stack: 16 });
+  inv.items.push({ name: 'dwell:crystal', label: 'Crystal', color: '#aaccff', size: 0.1, stack: 16, look: { shape: 'shard', size: [0.1, 0.08, 0.08], texture: 'dwell:stone', color: '#aaccff' } });
   blocks.push({
     namespace: 'test',
     blocks: [{ name: 'ore', shape: 'full', drops: [{ item: 'dwell:crystal', count: [1, 3], chance: 0.25 }] }],
   });
   const d = validateInventory(inv, blocks);
   const rs = inventoryRust(d);
-  assert.match(rs, /ItemDef \{ name: "dwell:crystal", label: "Crystal", color: \[170, 204, 255\], size: 0.1, stack: 16, value: 0, look: None \}/);
+  assert.match(rs, /ItemDef \{ name: "dwell:crystal", label: "Crystal", color: \[170, 204, 255\], size: 0.1, stack: 16, value: 0, look: Some\(ItemLook \{ shape: LookShape::Shard, /);
   assert.match(
     rs,
     /BlockDrops \{ block: "test:ore", cost: "test:ore", drops: &\[DropRule \{ chance: 0.25, when: &\[\], choices: &\[DropChoice \{ item: "dwell:crystal", min: 1, max: 3, weight: 1.0 \}\] \}\] \}/,
@@ -132,10 +132,10 @@ test('bad entries fail naming the entry and the problem', () => {
   }
 });
 
-test('new players start with the data\'s items: an axe (owner, 2026-11-08)', () => {
+test('new players start with the data\'s items: a wooden shovel (owner, 2026-11-14: "start with a wooden shovel instead of an axe since dirt drops rocks")', () => {
   const d = validateInventory(...fresh());
-  assert.deepEqual(d.startingItems, [{ item: 'dwell:stone_axe', count: 1 }]);
-  assert.match(inventoryRust(d), /STARTING_ITEMS: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 1\)\]/);
+  assert.deepEqual(d.startingItems, [{ item: 'dwell:wooden_shovel', count: 1 }]);
+  assert.match(inventoryRust(d), /STARTING_ITEMS: &\[\(&str, u16\)\] = &\[\("dwell:wooden_shovel", 1\)\]/);
   const [inv, blocks] = fresh();
   inv.startingItems = [{ item: 'dwell:nothing', count: 1 }];
   assert.throws(() => validateInventory(inv, blocks), /startingItems\[0\]: item must name a block or an item/);
@@ -175,4 +175,17 @@ test("the slab recipes name their ½ m piece by a label of their own, not the bl
 test('the wood chunk has a shaped look (a lump of log), not a plain dot', () => {
   const rs = inventoryRust(validateInventory(...fresh()));
   assert.match(rs, /name: "dwell:wood".*look: Some\(ItemLook \{ shape: LookShape::Lump, size: \[[^\]]+\], texture: "dwell:log"/);
+});
+
+test('every item that is not a block has its own look, and grass fibre is strands (owner, 2026-11-14: "Plant fiber looks like a block for the drop.")', () => {
+  // Without a look a loose item is drawn as a small stone block in its colour (BUGS.md #178):
+  // every non-block item now names one, and a missing one fails the generator.
+  const d = validateInventory(...fresh());
+  const missing = d.items.filter((it) => !it.look).map((it) => it.name);
+  assert.deepEqual(missing, []);
+  const fibre = d.items.find((it) => it.name === 'dwell:grass_fiber');
+  assert.equal(fibre.look.shape, 'strands');
+  const [inv, blocks] = fresh();
+  delete inv.items.find((it) => it.name === 'dwell:grass_fiber').look;
+  assert.throws(() => validateInventory(inv, blocks), /items\.dwell:grass_fiber: needs a `look`/);
 });

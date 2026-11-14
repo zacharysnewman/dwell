@@ -6,6 +6,45 @@ pins it.
 
 ## Open
 
+### 178. Grass fibre (and the gems) drawn as a block when dropped
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "Plant fiber looks like a block for the drop." A loose grass fibre was a
+`cluster` look (the seeds' heap of tiny lumps) under a green-tinted sand tile, which reads as a little block; the
+gems had no `look` at all, so a loose gem fell back to the stand-in stone block tinted its colour.
+
+**Owner should see:** dropped grass fibre lying as a little fan of green-straw blades, a gem as a small crystal;
+no loose item drawn as a cube.
+
+**Fixed:** a `strands` look shape (five thin blades splayed flat from a tied end, `dwell-mesh` `ground_mesh`) for
+the fibre; the gems a `shard` each; the generator fails an item without a `look` (`shared/inventory/gen.mjs`), so
+nothing can fall back to the block again. Tests: `shared/inventory/gen.test.mjs` "every item that is not a block
+has its own look" (red: the gems had none, the fibre a cluster) and `ground_mesh`
+`the_grass_fibre_draws_strands_not_a_block` (red: a cluster).
+
+### 177. What rested on a destroyed block vanished or floated
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "When you destroy a block with grass, rock, sticks on it, those should drop
+too." and "Essentially a general rule of blocks or items sitting on a block should be dropped when that block is
+destroyed." A plain break already dropped the blocks standing on it and knocked the ground items loose, but the
+other ways a block goes did not: a region's clearing removed the tall grass, torches and saplings on what it
+cleared without their drops, and a region, a blast, a fall into a piece and a felling never knocked the ground
+rocks and sticks on the cells they took (gone, or drawn floating where a client had them). A block registered at
+run time (a mod's) was never counted as attached at all (`dwell_world::edit::attached` read only the build's
+table), nor named for `placeOn`.
+
+**Owner should see:** digging, blasting or clearing the block under tall grass, a torch, a sapling or a ground rock
+or stick drops their items onto the ground (adventure); nothing floats or vanishes; a stack of them drops cell by
+cell.
+
+**Fixed:** one rule, in the one place every change of the world goes through (`Server::broadcast_changes`): the
+attached blocks the tick's writes removed with what held them (block data `needsSupport`, `placeOn`; recorded by
+`TickChanges::set_and_unsupport`) drop their drops, and a ground item over a cell that is no longer solid is
+knocked loose; the separate calls in the break, blast, collapse and chopping paths are gone. `attached` and
+`supported_on` read a run-time block's own data. Blocks that stand on their own keep the support and falling
+rules. Tests (`dwell-sim` `tests/items.rs`, both faces): `a_regions_clearing_drops_what_stood_on_it` and
+`a_blast_under_a_ground_rock_knocks_it_loose` (red: no fibre, no rock), `a_data_only_block_and_a_column_of_it_drop_when_their_ground_goes`
+(the fixture `test:moss`, three stacked: red by region, none dropped), `the_blocks_standing_on_a_broken_block_drop_with_it`.
+
 ### 174. On a phone nothing in the inventory answers after opening the bag
 
 Owner, 2026-11-14: "A bug too for mobile, I can't seem to access inventory, after opening bag, nothing is

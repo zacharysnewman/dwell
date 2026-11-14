@@ -117,10 +117,12 @@ test('breaking: the right tool class per material and a speed per tier reach the
   // Owner, 2026-11-12: metal tools "break double sized bigger chunks off and reach 50% broken
   // faster": twice the stone tier's speed (the bigger chunks follow from the fewer hits: the bite rule).
   const of = (i) => d.breaking.tools.find((t) => t.item === i);
-  for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:wooden_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
+  for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:stone_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
     assert.equal(of(metal).speed, 2 * of(stone).speed, metal);
     assert.equal(of(metal).chunk, undefined, metal);
   }
+  // Owner, 2026-11-14: the stone shovel digs faster than the wooden one (the `wood` tier).
+  assert.ok(speed('dwell:stone_shovel') > speed('dwell:wooden_shovel') && speed('dwell:wooden_shovel') > 1);
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
   assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\), clip: "break_metal_shovel" \}/);
@@ -144,7 +146,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   };
   bad((b) => b.tools.push({ item: 'test:nope', class: 'axe', tier: 'stone' }), /no item "test:nope"/);
   bad((b) => (b.tools[0].class = 'hammer'), /unknown class "hammer" \(pickaxe, shovel, axe\)/);
-  bad((b) => (b.tools[0].tier = 'gold'), /unknown tier "gold" \(stone, metal\)/);
+  bad((b) => (b.tools[0].tier = 'gold'), /unknown tier "gold" \(wood, stone, metal\)/);
   bad((b) => b.classes.axe.push('dwell:stone'), /dwell:stone is in both pickaxe and axe/);
   bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
   bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
@@ -331,13 +333,14 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, chips: { count: 5, shards: 9 } }, /test:clay\.damage\.chips\.shards must be a whole number in \[0, 8\]/);
 });
 
-test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits, the metal ones 64, creative does not wear, a fixture tool by data alone', () => {
+test('durability: the stone axe, stone pickaxe, wooden shovel and stone shovel survive 32 hits, the metal ones 64, creative does not wear, a fixture tool by data alone', () => {
   const [tools, items, blocks] = fresh();
   const d = validateTools(tools, items, blocks);
   assert.deepEqual(d.durability.items, [
     { item: 'dwell:stone_axe', hits: 32 },
     { item: 'dwell:stone_pickaxe', hits: 32 },
     { item: 'dwell:wooden_shovel', hits: 32 },
+    { item: 'dwell:stone_shovel', hits: 32 },
     // Owner, 2026-11-12: metal tools "have double durability".
     { item: 'dwell:metal_axe', hits: 64 },
     { item: 'dwell:metal_pickaxe', hits: 64 },
@@ -346,7 +349,7 @@ test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits
     { item: 'dwell:sword', hits: 120 },
   ]);
   assert.equal(d.durability.creativeWear, false);
-  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\), \("dwell:sword", 120\)\];/);
+  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:stone_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\), \("dwell:sword", 120\)\];/);
   assert.match(toolsRust(d), /pub const CREATIVE_WEAR: bool = false;/);
   assert.match(toolsTs(d), /'dwell:stone_axe': 32,/);
   tools.durability.items['dwell:metal_pickaxe'] = 200;

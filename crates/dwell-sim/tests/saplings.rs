@@ -50,6 +50,7 @@ fn scene(f: FaceFrame, cfg: ServerConfig, entropy: Box<dyn Entropy>) -> Fixture 
             .set_voxel(x, y, z, f.state(require(block)));
     }
     fx.join(1, &Client::new(1));
+    start_with_axe(&mut fx.server, 1);
     fx.send(1, Message::InventoryAction(InventoryAction::Hello));
     feet_at(&mut fx, f, 0.5, m_of_row(BASE), 0.5);
     step(&mut fx, 5);

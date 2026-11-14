@@ -127,7 +127,9 @@ pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static
         // A shard is held as a lump is: in the fist, its own tile and tint.
         dwell_protocol::inventory::LookShape::Lump
         | dwell_protocol::inventory::LookShape::Shard => Some("lump"),
-        dwell_protocol::inventory::LookShape::Cluster => Some("cluster"),
+        // Strands of fibre are held as a cluster is: a pinch in the fist.
+        dwell_protocol::inventory::LookShape::Cluster
+        | dwell_protocol::inventory::LookShape::Strands => Some("cluster"),
         dwell_protocol::inventory::LookShape::Model => None,
     }
 }

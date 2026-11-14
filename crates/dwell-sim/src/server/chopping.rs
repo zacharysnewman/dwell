@@ -807,7 +807,6 @@ impl Server {
         if uses_items {
             self.drop_destroyed(m, centre, n);
         }
-        self.knock_ground(&[(cell, m)]);
         let wood = chop::chopped_wood(block).expect("a wood");
         let standing = grain == 1 && wood.block == block;
         if standing {

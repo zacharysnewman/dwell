@@ -51,6 +51,10 @@ pub enum LookShape {
     /// An angular flake (an uneven pyramid on a five-sided base, its tip off-centre): a rock shard
     /// knocked off by a pickaxe's hit (BLOCK_DAMAGE.md §6.2), the piece the carved facet left.
     Shard,
+    /// Thin blades splayed flat from one end (five long, narrow strips in the look's footprint,
+    /// fanned a little and stacked a hair apart): a bundle of grass fibre (owner, 2026-11-14:
+    /// "Plant fiber looks like a block for the drop.", BUGS.md #178).
+    Strands,
     /// A prop's own mesh (`look: { model }`, a prop of shared/models/props.json; ADR 0070 §8):
     /// its triangles and palette colours, untextured.
     Model,
@@ -717,7 +721,8 @@ mod tests {
         assert_eq!(hits("dwell:stone_axe"), Some(32));
         // Owner, 2026-11-12: metal tools "have double durability".
         assert_eq!(hits("dwell:metal_axe"), Some(64), "double the stone axe's");
-        let mut inv = Inventory::starting();
+        let mut inv = Inventory::default();
+        inv.add("dwell:stone_axe", 1);
         assert_eq!(inv.slots[0].as_ref().unwrap().item, "dwell:stone_axe");
         for n in 1..32 {
             assert_eq!(inv.wear_held(hits), Wear::Worn(32 - n));
@@ -737,7 +742,11 @@ mod tests {
         // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; 2026-11-12: metal
         // tools "have double durability".
         let hits = |item: &str| crate::chopping::durability(item);
-        for item in ["dwell:stone_pickaxe", "dwell:wooden_shovel"] {
+        for item in [
+            "dwell:stone_pickaxe",
+            "dwell:wooden_shovel",
+            "dwell:stone_shovel",
+        ] {
             assert_eq!(hits(item), Some(32), "{item}");
             let mut inv = Inventory::starting();
             inv.slots[0] = None;
@@ -945,8 +954,9 @@ mod tests {
     }
 
     #[test]
-    fn taller_tall_grass_drops_more_fiber_and_seeds() {
-        // docs/ECOLOGY.md §10: each stage's rules by its `when`; a sprout drops little.
+    fn tall_grass_drops_a_fibre_always_and_a_seed_at_half_at_every_stage() {
+        // docs/ECOLOGY.md §10 (owner, 2026-11-14: "grass fiber should be a guaranteed drop, seeds
+        // will be 50%"; one fibre a ½ m cell, no randomness); the gem only from a full tuft.
         let all = drops_of("dwell:tall_grass").unwrap().drops;
         let mean = |stage: &'static str, item: &str| {
             let rules = rules_for(all, |p| (p == "stage").then_some(stage));
@@ -962,11 +972,17 @@ mod tests {
             }
             f64::from(got) / f64::from(n)
         };
-        for item in ["dwell:grass_fiber", "dwell:grass_seed"] {
-            let by: Vec<f64> = ["0", "1", "2", "3"].map(|s| mean(s, item)).to_vec();
-            assert!(by.windows(2).all(|w| w[0] < w[1]), "{item} rises: {by:?}");
+        for stage in ["0", "1", "2", "3"] {
+            assert_eq!(
+                mean(stage, "dwell:grass_fiber"),
+                1.0,
+                "stage {stage}: exactly one"
+            );
+            assert!(
+                (mean(stage, "dwell:grass_seed") - 0.5).abs() < 0.02,
+                "stage {stage}"
+            );
         }
-        assert!(mean("0", "dwell:grass_seed") == 0.0, "a sprout has no seed");
         assert!(mean("0", "dwell:gem") == 0.0, "nor a gem");
         // A rule without `when` holds for every state; one with it, only for its values.
         let fixture = DropRule {
@@ -1131,13 +1147,15 @@ mod tests {
         assert_eq!(Message::decode(&bad), None);
     }
     #[test]
-    fn a_new_player_starts_with_the_datas_items_an_axe() {
-        // Owner (2026-11-08): "Adventure starts with an axe."
+    fn a_new_player_starts_with_the_datas_items_a_wooden_shovel() {
+        // Owner (2026-11-14): "Perhaps you could start with a wooden shovel instead of an axe since
+        // dirt drops rocks." (It was an axe from 2026-11-08.)
         let inv = Inventory::starting();
-        assert_eq!(inv.count_of("dwell:stone_axe"), 1);
+        assert_eq!(inv.count_of("dwell:wooden_shovel"), 1);
+        assert_eq!(inv.count_of("dwell:stone_axe"), 0);
         assert_eq!(
             inv.slots[0].as_ref().map(|s| s.item.as_str()),
-            Some("dwell:stone_axe")
+            Some("dwell:wooden_shovel")
         );
         assert_eq!(inv.money, 0);
     }

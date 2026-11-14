@@ -59,6 +59,7 @@ fn scene_with(f: FaceFrame, config: ServerConfig, trunk: bool, hello: bool) -> F
         fx.server.world().set_voxel(x, y, z, log(f, "z"));
     }
     let welcome = fx.join(1, &Client::new(1));
+    start_with_axe(&mut fx.server, 1);
     assert_ne!(welcome.flags & welcome_flags::CHOPPING, 0, "announced");
     if hello {
         fx.send(1, Message::Chop(ChopAction::Hello));

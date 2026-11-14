@@ -104,6 +104,12 @@
       "tool": "dwell:wooden_shovel"
     },
     {
+      "name": "dwell:stone_shovel",
+      "category": "tools",
+      "label": "Stone shovel",
+      "tool": "dwell:stone_shovel"
+    },
+    {
       "name": "dwell:metal_shovel",
       "category": "tools",
       "label": "Metal shovel",

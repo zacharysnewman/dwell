@@ -329,6 +329,31 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[
             }
             out
         }
+        GroundShape::Strands => {
+            // Five blades, each a thin strip the footprint long and a fifth of it wide, fanned
+            // from the bundle's tied end (−x) by up to ±14° and stacked a hair apart so none
+            // shares a face with another.
+            const FAN: [f64; 5] = [-0.24, -0.1, 0.02, 0.13, 0.25];
+            let blade = [sx, sy / FAN.len() as f64, sz * 0.2];
+            let mut out = Vec::new();
+            for (i, a) in FAN.into_iter().enumerate() {
+                let (s, c) = a.sin_cos();
+                let lift = i as f64 * blade[1];
+                let off = (i as f64 - 2.0) * sz * 0.12;
+                for face in polygons(GroundShape::Rod, blade, base || i > 0) {
+                    out.push(
+                        face.into_iter()
+                            // About the tied end: its middle at x = −sx/2.
+                            .map(|[x, y, z]| {
+                                let x = x + sx / 2.0;
+                                [x * c - z * s - sx / 2.0, y + lift, x * s + z * c + off]
+                            })
+                            .collect(),
+                    );
+                }
+            }
+            out
+        }
         GroundShape::Rod => {
             let (x, z) = (sx / 2.0, sz / 2.0);
             let c = |i: usize| -> [f64; 3] {
@@ -808,6 +833,33 @@ mod tests {
             assert!(f64::from(hi[k] - lo[k]) <= l.size[k] + 1e-6, "axis {k}");
         }
         // The picture is the heap: drawn, with gaps (not a filled square's outline).
+        let px = look_swatch(&l);
+        let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
+        let t = crate::textures::TILE;
+        assert!(opaque > t * 2 && opaque < t * t * 3 / 4, "{opaque}");
+    }
+
+    #[test]
+    fn the_grass_fibre_draws_strands_not_a_block() {
+        // both-faces: item-local geometry; the loose item and the ground mirror it with its face.
+        // Owner, 2026-11-14: "Plant fiber looks like a block for the drop." (BUGS.md #178.)
+        let l = look("dwell:grass_fiber");
+        assert_eq!(l.shape, GroundShape::Strands);
+        let m = look_mesh(&l);
+        // Five blades, each a closed strip (6 quads, 12 triangles).
+        assert_eq!(m.indices.len() / 3, 5 * 12);
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in m.positions.chunks_exact(3) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        // Flat on the ground and long: no taller than its size, its length its size's.
+        assert!(lo[1].abs() < 1e-6 && f64::from(hi[1]) <= l.size[1] + 1e-6);
+        assert!((f64::from(hi[0] - lo[0]) - l.size[0]).abs() < 0.02);
+        assert!(hi[1] - lo[1] < (hi[0] - lo[0]) / 4.0, "flat, not a cube");
+        // The picture is the blades: drawn, with gaps between them (not a filled square).
         let px = look_swatch(&l);
         let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();
         let t = crate::textures::TILE;

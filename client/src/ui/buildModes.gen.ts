@@ -39,6 +39,7 @@ export const CREATIVE = {
     { name: 'dwell:stone_pickaxe', label: 'Stone pickaxe', category: 'tools' },
     { name: 'dwell:metal_pickaxe', label: 'Metal pickaxe', category: 'tools' },
     { name: 'dwell:wooden_shovel', label: 'Wooden shovel', category: 'tools' },
+    { name: 'dwell:stone_shovel', label: 'Stone shovel', category: 'tools' },
     { name: 'dwell:metal_shovel', label: 'Metal shovel', category: 'tools' },
     { name: 'dwell:sword', label: 'Sword', category: 'weapons' },
     { name: 'dwell:leaves', label: 'Leaves', category: 'plants' },

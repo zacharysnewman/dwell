@@ -335,7 +335,8 @@ pub fn outline_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3
 pub fn supported_on(m: StateId, under: StateId) -> bool {
     let s = info(m);
     if !s.place_on.is_empty() {
-        let name = if usize::from(under) < dwell_blocks::STATES.len() {
+        // A block registered at run time (a mod's) is named too: what stands on it by name does.
+        let name = if dwell_blocks::try_info(under).is_some() {
             block_of(under).name
         } else {
             ""
@@ -353,10 +354,11 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
 /// a piece (docs/EXPLOSIVES.md §3; owner, 2026-11-13).
 /// A multi-cell block's other cells (`partOf`: a torch's upper cell) are attached as their block is.
 pub fn attached(m: StateId) -> bool {
-    if usize::from(m) >= dwell_blocks::STATES.len() {
+    // A block registered at run time (a mod's, the server's registry) is past the build's table:
+    // it is attached by its own data too (WORK_QUEUE item 58).
+    let Some(s) = dwell_blocks::try_info(m) else {
         return false;
-    }
-    let s = info(m);
+    };
     s.needs_support != Support::None
         || s.part_of
             .and_then(dwell_blocks::state)

@@ -50,6 +50,7 @@ export const DURABILITY: Readonly<Record<string, number>> = {
   'dwell:stone_axe': 32,
   'dwell:stone_pickaxe': 32,
   'dwell:wooden_shovel': 32,
+  'dwell:stone_shovel': 32,
   'dwell:metal_axe': 64,
   'dwell:metal_pickaxe': 64,
   'dwell:metal_shovel': 64,

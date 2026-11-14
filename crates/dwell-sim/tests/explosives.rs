@@ -72,6 +72,7 @@ impl Scene {
         }
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            start_with_axe(&mut s.fx.server, id as u16);
             // Adventure uses items up (ADR 0066): a torch to light with, dynamite to place.
             s.fx.server.give(id as u16, "dwell:torch", 64);
             s.fx.server.give(id as u16, "dwell:dynamite", 64);
@@ -92,6 +93,7 @@ impl Scene {
         s.fx.server.set_pieces_per_tick(usize::MAX);
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            start_with_axe(&mut s.fx.server, id as u16);
         }
         for _ in 0..5 {
             s.fx.server.step();
@@ -818,6 +820,7 @@ fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
             ..flat()
         });
         f.join(1, &Client::new(1));
+        start_with_axe(&mut f.server, 1);
         f.server.step();
         f.send(1, place([-1, g - 1, 2], require("dwell:dynamite")));
         f.server.step();
