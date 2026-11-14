@@ -122,7 +122,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// red sandstone elsewhere, as the sandstone does.
 ///
 /// Re-pinned 2026-11-13 for the rest of the realistic batch (the 0.65 line; WORK_QUEUE item 15):
-/// notched ramps only at rock walls' edges (rocks.json `shaping.notched` `mesaEdges`), the mesas'
+/// straight-edge ramps only (rocks.json `shaping.notched` `none`, 0.66), the mesas'
 /// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
 /// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
 /// Face B again for every ramp backed (BUGS.md #163) and the bigger shrines (the same line).
