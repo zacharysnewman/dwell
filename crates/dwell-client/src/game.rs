@@ -1789,6 +1789,18 @@ impl<S: Scene> Game<S> {
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }
+    /// The LOD system drawing the view's distance (`__dwell.state().lod`): the grid's while the
+    /// view is on another grid (`grid_drawn`), home's otherwise; none on a grid with no LOD.
+    fn state_lod(&self) -> Option<&LodSystem> {
+        if self.grid_drawn != 0 {
+            self.grid_lod
+                .as_ref()
+                .filter(|g| g.grid() == self.grid_drawn)
+                .map(|g| &g.lod)
+        } else {
+            self.lod.as_ref()
+        }
+    }
     /// The grid LOD's system, while the view is on a grid with one (BUGS.md #159).
     pub fn grid_lod(&self) -> Option<&LodSystem> {
         self.grid_lod.as_ref().map(|g| &g.lod)
@@ -2632,7 +2644,7 @@ impl<S: Scene> Game<S> {
             terrain_ready: self.terrain_ready(),
             target: self.interaction.target(),
             body_target: self.body_target.map(|b| (b.body, b.cell, b.face)),
-            lod: self.lod.as_ref().map(LodSystem::debug_stats),
+            lod: self.state_lod().map(LodSystem::debug_stats),
             flying: c.state == PlayerState::Flying,
             loading_enabled: self.loading.enabled(),
             loading: self.loading.screen(),

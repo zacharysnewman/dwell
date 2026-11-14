@@ -2154,6 +2154,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    basalt with its form visible, brighter toward home; the lava as bright as before.
 ## Done
 
+- **Treetops missing below the camera 25-40 m over a forest (BUGS.md #162; brief 2026-11-13: "first confirm with a
+  real flight"; "a tree straight below at 25-80 m is always drawn"; also "add to `__dwell.state()` the current grid's
+  LOD stats (not home's) when on another grid"):** the LOD walk stopped at a coarse section the terrain calls empty
+  but the trees reach into; it now walks through to the streamed chunks around the camera. `__dwell.state().lod` is
+  the grid's LOD's on another grid. The crowns' missing floor shadow was mostly the same missing crowns.
+
 - **Placing against a ramp's downhill side, and a held Place by the clock (BUGS.md #23, #30; brief 2026-11-13:
   "aim at the sloped face and the placed block goes into the cell the face points into (by the face's real
   normal)"; "make it time-based … a rate from data, accumulated per tick, not one per rendered frame"):** a slope's

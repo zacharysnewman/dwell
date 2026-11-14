@@ -580,6 +580,26 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
+
+*Found 2026-11-13 in a GPU screenshot pass on 05925aea (test:forest seed 0, High).* 25 m over the dense stand only
+flat-topped trunks were drawn under the camera; at 40 m a hole of bare trunk stubs sat below with crowns at the
+frame's edges; at 80 m the canopy was whole. Confirmed in a real flight (flying up from the forest floor looking
+down). Not the impostor hand-over (#927, already the eye's 3D distance): the LOD walk. A coarse LOD section's kind
+comes from the terrain alone, so the level-2 section over the forest floor (only the trees' upper parts in it) was
+"empty", and the walk stopped there: the streamed chunks inside it (loaded, meshed, drawable) were never shown, and the
+trees there were near, so no impostor drew either. The trunks were cut at that section's floor (y 320 there). Now an
+empty section on the way to the chunks around the camera (`find_covered`) is walked through to them, as a buried one
+already was (`dwell-lod` `visit`). `system::tests::draws_the_streamed_chunks_inside_a_section_the_coarse_levels_call_empty`
+(red on the unfixed walk: the chunks 64-80 m up not shown). The streaming report (F8) now names where the walk stopped
+above a chunk (`lod.stoppedAt`), which found this.
+
+The same pass saw the crowns cast almost no shadow on the forest floor: the missing crowns were most of that (with
+them drawn, the canopy's shadow lies on the floor in the after shot); a check from the ground is still worth a look.
+
+Owner should see: flying up over a forest and looking down, the canopy stays whole at every height (no hole of trunk
+stubs below), and the canopy's shadow on the floor.
+
 ### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
