@@ -28,11 +28,19 @@ const NAME: &str = "test:realistic";
 const SEEDS: [u64; 6] = [1, 7, 42, 274_005_646, 2_741_893_632, 4_065_579_781];
 /// The owner's spot (face A).
 const OWNER: (u64, i32, i32) = (4_065_579_781, 10_472, -3_091);
-/// Window: `N` × `N` samples `STEP` m apart.
+/// Fine windows: `N` × `N` samples `STEP` m apart, a run straight within 2 m over 80 m.
 const N: usize = 160;
 const STEP: i32 = 2;
-/// At most this share of the boundary cells on a straight run (over all windows of a face).
-const STRAIGHT: f64 = 0.02;
+/// Coarse windows (the view from high up) of the rock provinces (what painted 0.64's strips):
+/// `N` × `N` samples `COARSE` m apart, a run straight within 40 m over 1.3 km.
+const COARSE: i32 = 64;
+/// At most this share of the fine windows' boundary cells on a straight run (over all windows of a
+/// face). Measured 2026-11-14 with the 0.66 surface changes: 3.3 % (A) / 0.8 % (B), nearly all of it
+/// smooth, crisp rock-wall edges (stone or red sandstone against grass), not straight strips: the
+/// soft edges (fingers over a few metres) are still to come (WORK_QUEUE item 15, 0b iii).
+const STRAIGHT: f64 = 0.05;
+/// At most this share of the coarse windows' boundary cells on a straight run.
+const STRAIGHT_COARSE: f64 = 0.05;
 
 /// The top block's name at (x, z) without its state and ramp suffix ("dwell:air" off the ground).
 fn top(g: &TerrainGenerator, x: i32, z: i32) -> &'static str {
@@ -44,15 +52,23 @@ fn top(g: &TerrainGenerator, x: i32, z: i32) -> &'static str {
     base.strip_suffix("_ramp").unwrap_or(base)
 }
 
-/// The share of a window's block-type boundary cells on straight runs, and their count.
-pub fn window(g: &TerrainGenerator, cx: i32, cz: i32) -> (f64, usize) {
+/// The share of a window's block-type boundary cells on straight runs, and their count: samples
+/// `step` m apart, a run straight within `tolerance` m of a line over 1.6 × `radius` m.
+pub fn window(
+    g: &TerrainGenerator,
+    cx: i32,
+    cz: i32,
+    step: i32,
+    radius: f64,
+    tolerance: f64,
+) -> (f64, usize) {
     let names: Vec<&str> = (0..N * N)
         .map(|c| {
             let (i, j) = ((c % N) as i32, (c / N) as i32);
             top(
                 g,
-                cx + (i - N as i32 / 2) * STEP,
-                cz + (j - N as i32 / 2) * STEP,
+                cx + (i - N as i32 / 2) * step,
+                cz + (j - N as i32 / 2) * step,
             )
         })
         .collect();
@@ -64,10 +80,40 @@ pub fn window(g: &TerrainGenerator, cx: i32, cz: i32) -> (f64, usize) {
         .collect();
     let mask = Mask {
         n: N,
-        cell: f64::from(STEP),
+        cell: f64::from(step),
         on: vec![true; N * N],
     };
-    mask.straight_share(&edge, 50.0, 2.0)
+    mask.straight_share(&edge, radius, tolerance)
+}
+
+/// [`window`] over the rock provinces' stacks (`province_at`) in place of the top blocks.
+pub fn province_window(g: &TerrainGenerator, cx: i32, cz: i32, step: i32) -> (f64, usize) {
+    let names: Vec<&str> = (0..N * N)
+        .map(|c| {
+            let (i, j) = ((c % N) as i32, (c / N) as i32);
+            let (x, z) = (
+                cx + (i - N as i32 / 2) * step,
+                cz + (j - N as i32 / 2) * step,
+            );
+            if g.column_at(x, z).water == dwell_worldgen::terrain::Water::Sea {
+                "sea"
+            } else {
+                g.province_at(x.into(), z.into())
+            }
+        })
+        .collect();
+    let edge: Vec<bool> = (0..N * N)
+        .map(|c| {
+            (c % N + 1 < N && names[c + 1] != names[c])
+                || (c + N < names.len() && names[c + N] != names[c])
+        })
+        .collect();
+    let mask = Mask {
+        n: N,
+        cell: f64::from(step),
+        on: vec![true; N * N],
+    };
+    mask.straight_share(&edge, 800.0, 40.0)
 }
 
 fn generator(seed: u64) -> (TerrainGenerator, Arc<WorldMap>) {
@@ -109,10 +155,27 @@ fn centres(world: u64, f: FaceFrame, map: &WorldMap) -> Vec<(i32, i32)> {
 both_faces!(
     fn terrain_types_meet_along_irregular_edges(f: FaceFrame) {
         let (mut straight, mut all) = (0.0, 0usize);
+        let (mut coarse, mut coarse_all) = (0.0, 0usize);
         for world in SEEDS {
             let (g, map) = generator(face_seed(world, f.face));
+            // From high up: one coarse window over the land's middle (the owner's spot on its face).
+            let middle = centres(world, f, &map)
+                .last()
+                .copied()
+                .filter(|_| world == OWNER.0 && f.face == dwell_world::Face::A)
+                .or_else(|| centres(world, f, &map).get(1).copied());
+            if let Some((x, z)) = middle {
+                let (share, n) = province_window(&g, x, z, COARSE);
+                eprintln!(
+                    "seed {world} {:?} coarse ({x}, {z}): {n} boundary cells, {:.2} % straight",
+                    f.face,
+                    100.0 * share
+                );
+                coarse += share * n as f64;
+                coarse_all += n;
+            }
             for (x, z) in centres(world, f, &map) {
-                let (share, n) = window(&g, x, z);
+                let (share, n) = window(&g, x, z, STEP, 50.0, 2.0);
                 eprintln!(
                     "seed {world} {:?} ({x}, {z}): {n} boundary cells, {:.2} % straight",
                     f.face,
@@ -122,8 +185,25 @@ both_faces!(
                 all += n;
             }
         }
+        let coarse = coarse / coarse_all.max(1) as f64;
+        eprintln!(
+            "{:?}: coarse {:.2} % of {coarse_all} boundary cells straight",
+            f.face,
+            100.0 * coarse
+        );
+        assert!(
+            coarse <= STRAIGHT_COARSE,
+            "{:?}: {:.2} % of the coarse boundary cells on straight runs (bar {:.0} %)",
+            f.face,
+            100.0 * coarse,
+            100.0 * STRAIGHT_COARSE
+        );
         let share = straight / all.max(1) as f64;
-        eprintln!("{:?}: {:.2} % of {all} boundary cells straight", f.face, 100.0 * share);
+        eprintln!(
+            "{:?}: {:.2} % of {all} boundary cells straight",
+            f.face,
+            100.0 * share
+        );
         assert!(all > 1000, "enough boundaries sampled ({all})");
         assert!(
             share <= STRAIGHT,

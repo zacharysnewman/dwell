@@ -461,18 +461,41 @@ impl BiomeField {
         }
         let p = &self.params;
         let hash = f64::from(hash2(self.dither_seed, x as i32, z as i32)) / f64::from(u32::MAX);
+        // The noise's sample point warped (`ditherWarp`; 0 in the default world: unchanged).
+        let (wx, wz) = if p.dither_warp > 0.0 {
+            let w = |k: u32| {
+                (p.dither_warp
+                    * 2.0
+                    * f64::from(fbm2(
+                        self.dither_seed ^ k,
+                        x,
+                        z,
+                        p.dither_wavelength * 4,
+                        2,
+                        None,
+                    ))) as i64
+            };
+            (x + w(0x3A11_0661), z + w(0x3A11_0662))
+        } else {
+            (x, z)
+        };
+        let speckle = if p.dither_speckle == 1.0 {
+            0.5 * p.dither * (hash - 0.5)
+        } else {
+            0.5 * p.dither * p.dither_speckle * (hash - 0.5)
+        };
         let u = (0.5
             + p.dither
                 * 2.0
                 * f64::from(fbm2(
                     self.dither_seed ^ 0x5bd1_e995,
-                    x,
-                    z,
+                    wx,
+                    wz,
                     p.dither_wavelength,
                     2,
                     None,
                 ))
-            + 0.5 * p.dither * (hash - 0.5))
+            + speckle)
             .clamp(0.0, 1.0 - 1e-9);
         // The pick reads the weights to the power `sharpen` (1: as they are, the same arithmetic).
         let ws = &mix.weights[..usize::from(mix.len)];

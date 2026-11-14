@@ -504,6 +504,12 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         wet_reach: n("wetReach")?,
         dither_wavelength: n("ditherWavelength")? as i32,
         dither: n("dither")?,
+        // Absent (an edit stored before 0.66): the speckle as before, no warp.
+        dither_speckle: v
+            .get("ditherSpeckle")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0),
+        dither_warp: v.get("ditherWarp").and_then(Value::as_f64).unwrap_or(0.0),
         wind_direction: n("windDirection")?,
         wind_reach: n("windReach")?,
         base_rain: n("baseRain")?,
@@ -561,6 +567,46 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             }
         }
         rocks.push(rock);
+    }
+    // A world's replaced blocks (rocks.json `surfaces.replace`; WORK_QUEUE item 15, 0.66): each
+    // rule's block, wherever a rock shows it, becomes its `with`, except on the rocks it names.
+    if let Some(rules) = v
+        .get("surfaces")
+        .and_then(|s| s.get("replace"))
+        .and_then(Value::as_array)
+    {
+        for rule in rules {
+            let at = |e: String| format!("surfaces.replace: {e}");
+            let (block, with) = (
+                text(rule, "block").map_err(at)?,
+                text(rule, "with").map_err(at)?,
+            );
+            if dwell_blocks::state(with).is_none() {
+                return Err(at(format!("{with} is not in the registry")));
+            }
+            let except: Vec<&str> = rule
+                .get("except")
+                .and_then(Value::as_array)
+                .map(|l| l.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            for r in rocks.iter_mut().filter(|r| !except.contains(&r.name)) {
+                let swap = |b: &'static str| if b == block { with } else { b };
+                r.face = swap(r.face);
+                r.cap = swap(r.cap);
+                r.scree = swap(r.scree);
+                if r.cap_by.iter().any(|c| c.cap == block) {
+                    let by: Vec<_> = r
+                        .cap_by
+                        .iter()
+                        .map(|c| crate::geology::CapRule {
+                            cap: swap(c.cap),
+                            ..*c
+                        })
+                        .collect();
+                    r.cap_by = Box::leak(by.into_boxed_slice());
+                }
+            }
+        }
     }
     let mut stacks = Vec::new();
     for st in list("stacks")? {

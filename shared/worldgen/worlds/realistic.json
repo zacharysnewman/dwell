@@ -6,12 +6,20 @@
     "description": "Tectonic plates, mountain ranges, rain shadows and climates from the seed."
   },
   "cliffs": 0,
+  "biomeMap": {
+    "ditherSpeckle": 0,
+    "ditherWavelength": 48,
+    "ditherWarp": 60
+  },
   "geology": {
     "shaping": {
       "strength": 1
     },
     "erosion": {
       "strength": 1
+    },
+    "surfaces": {
+      "replace": [{ "block": "dwell:sand", "with": "dwell:dirt", "except": ["dwell:dune_sand"] }]
     }
   },
   "overrides": {

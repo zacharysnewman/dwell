@@ -154,6 +154,8 @@ export const TERRAIN = {
     wetReach: [{ above: 0 }, 100_000],
     ditherWavelength: [4, 65_536, true],
     dither: [0, 1],
+    ditherSpeckle: [0, 1],
+    ditherWarp: [0, 1000],
     windDirection: [0, 360],
     windReach: [{ above: 0 }, 1_000_000],
     baseRain: [0, 1],
@@ -866,6 +868,7 @@ export function validateRocks(data, blocks) {
         "tectonic",
         "plateProvinces",
         "arid",
+        "surfaces",
       ].includes(k),
   );
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
@@ -924,6 +927,21 @@ export function validateRocks(data, blocks) {
     }
     if (typeof r.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(r.color))
       rf('color must be "#rrggbb"');
+  }
+  if (data.surfaces !== undefined) {
+    const sf = data.surfaces;
+    if (typeof sf !== "object" || sf === null || Array.isArray(sf)) fail("surfaces must be an object");
+    const ex = Object.keys(sf).filter((k) => !["$comment", "replace"].includes(k));
+    if (ex.length) fail(`surfaces: unknown ${ex.join(", ")}`);
+    if (!Array.isArray(sf.replace)) fail("surfaces.replace must be a list");
+    for (const [i, r] of sf.replace.entries()) {
+      const rf = (m) => fail(`surfaces.replace[${i}]: ${m}`);
+      const rex = Object.keys(r).filter((k) => !["$comment", "block", "with", "except"].includes(k));
+      if (rex.length) rf(`unknown ${rex.join(", ")}`);
+      if (typeof r.block !== "string" || typeof r.with !== "string") rf("block and with must be block names");
+      if (!Array.isArray(r.except ?? [])) rf("except must be a list of rocks");
+      for (const k of r.except ?? []) if (!rocks.has(k)) rf(`except: ${k} is not a rock`);
+    }
   }
   if (data.arid !== undefined) {
     const a = data.arid;

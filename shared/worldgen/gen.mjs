@@ -1079,6 +1079,8 @@ export function terrainRust({
   rs.push(`    wet_reach: ${rf(bm.wetReach)},`);
   rs.push(`    dither_wavelength: ${bm.ditherWavelength},`);
   rs.push(`    dither: ${rf(bm.dither)},`);
+  rs.push(`    dither_speckle: ${rf(bm.ditherSpeckle ?? 1)},`);
+  rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);

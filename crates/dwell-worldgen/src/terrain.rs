@@ -234,6 +234,13 @@ pub struct BiomeMap {
     pub wet_reach: f64,
     pub dither_wavelength: i32,
     pub dither: f64,
+    /// The share of the border dither that is a per-column hash (1: the default world's ragged
+    /// speckle; 0: none, the noise alone, so biomes meet in clumps and fingers; WORK_QUEUE item 15,
+    /// 0.66: "speckled terrain looks gross").
+    pub dither_speckle: f64,
+    /// The border noise's sample point warped by about ± this (m) at 4 × its wavelength (0: none),
+    /// so a border wanders in organic fingers rather than following the weights' contours.
+    pub dither_warp: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
