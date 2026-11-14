@@ -1262,10 +1262,12 @@ fn stirred_body(f: FaceFrame) {
     // Deep still water's slosh, which Manning's friction barely damps, keeps a stirred basin
     // awake: a 40 m basin 3.5 m deep, a block column dropped in at one end, sloshed ±30 cm, then
     // ±1-2 cm for all of 30 water minutes, awake (BUGS.md #41b; red: awake 300 of 300 s after
-    // ten minutes). The slosh's drag (`sloshDampS`, a face's swing off its running mean, the
-    // slower the more) leaves the big slosh running for many crossings and takes the small one:
-    // it slept at ~430 s when written. A drag on slow water itself (tried before) slowed a cut
-    // lake's last levelling (`tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`).
+    // ten minutes). The slosh's drag (`sloshDampS`: a face whose flow reversed within
+    // `sloshWindowS` is pulled toward still, the slower the more) leaves the big slosh running
+    // for many crossings and takes the small one. A drag on all slow water (tried before), or on
+    // a face's swing off its running mean (this fix's first draft), slowed a cut lake's last
+    // levelling (`tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`): a flow
+    // one way never reverses, so it is not dragged.
     let mut s = Scene::new(f);
     s.fill([0, -5, 0], [39, -1, 7], M.water);
     s.basin(0, 39, 0, 7, 2);
@@ -1468,7 +1470,7 @@ fn peaks(v: &[f64], over: f64) -> Vec<(usize, f64)> {
 
 dwell_world::both_faces!(
     fn a_kick_makes_a_wave_that_reaches_the_far_bank_and_comes_back(f: FaceFrame) {
-        // T2: 3000 water s (about 40 real s at the 72x day); it slept at 2082 when written, at 496
+        // T2: 3000 water s (about 40 real s at the 72x day); it slept at 2082 when written, at 475
         // with the slosh's drag (BUGS.md #41b)
         let ((far, near, before, after, _), asleep) = kicked_pond_for(f, 3.0, 40, 3000.0);
         let rest = 1.5;

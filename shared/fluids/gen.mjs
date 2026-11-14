@@ -38,7 +38,7 @@ export const FLOW_RANGES = {
   riverFallReachM: [0, 4096, false],
   riverCurrentBandM: [0.001, 10, false],
   sloshDampS: [0, 36000, false],
-  sloshMeanS: [0.1, 36000, false],
+  sloshWindowS: [0, 36000, false],
   sloshSpeedMs: [0.0001, 10, false],
 };
 
