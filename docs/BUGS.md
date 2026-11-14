@@ -514,7 +514,7 @@ with #338 reverted, and main with #340 reverted (both of those include #339). Cu
 currents' datagrams to a quarter didn't help, and there is no water near the native server's spawn
 (seed 0, (2128, 7544)). Next: re-run main at #340 and bisect #338's pieces on a branch from #336.
 
-### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
+### 30. A held Place builds too little at a few frames a second (the pace fixed after 0.63.6; towers still short)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
 SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
@@ -539,13 +539,47 @@ towering, both bridging tests (a tower first) and the held ladder still fall a p
 35.5 m of 36; the ladder's first piece missing). Main's shard 1 failed six of these before. Next:
 the tick trace on CI (it builds a metre a jump locally at 3 fps).
 
-### 23. A block can't be placed against the downhill side of a ramp
+**Fixed after 0.63.6** (brief, 2026-11-13: "the held Place's repeat is frame-bound: make it time-based … a rate
+from data, accumulated per tick, not one per rendered frame, so a slow page still builds at the data rate"). The
+rest was the pace: a stroke built at most one piece a frame, and a line waited for the server's answer to each piece
+before the next, read once a frame, so a page built a piece a frame (natively: 5 a second at 5 fps, 60 at 60 fps).
+Now a piece every `buildModes.repeatS` (0.05 s, `shared/items/items.json`) by the clock, counted at each predicted
+tick (`BuildDrag::aim_at`); only a tower still waits for each answer (its crouch-jump regression); another line
+builds on unanswered, goes back to a piece the server refused and steps over the ones it built after it; a frame
+sends at most the server's region queue (`region_edit::MAX_QUEUED`, 4: a frame's fills reach it in one tick), which
+under ~5 fps sets the rate instead (3 fps: ~12 a second). `game_local.rs`
+`a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second` (red before: 3 pieces at 233 ms at
+60 fps with 1 due; 7 of 12 after 1.2 s at 5 fps), `build_drag.rs`
+`a_held_stroke_builds_a_piece_every_repeat_s_by_the_clock`, `a_line_builds_on_unanswered_and_goes_back_to_a_refused_piece`.
+At 60 fps a held line now builds 20 a second, not 60.
+
+**The spec under the software renderer (cloud session, SwiftShader, after the fix):** the line up, Flat, walking
+back in Line mode, the crouch-jump tower, the edge click and the held ladder pass; towering and both bridging tests
+(each a tower first) still fall short, 34–35 m of 36, **the same on main's build** (34.5–35 m): the tower part, still
+open (a tower still waits for each answer and builds a jump at a time; untouched here). The held ladder failed 2 of
+3 on this branch and 1 of 3 on main: a race in the test, fixed in the spec — after the step back the crosshair still
+met the pillar's −Z face, but higher up, until a frame took the new look, and the test waited for the face only, so
+the first ladder went there (it now waits for the cell).
+
+
+## Fixed
+
+### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-## Fixed
+**Fixed after 0.63.6.** A ramp's slope was always aimed at through its top (its normal is mostly up; a 45° one's
+tie goes up too), so a place went on top of the ramp, never past its low edge, and a side face would have been
+refused by the server's line of sight (a ramp has no polygon facing its low side). Now the hit also gives the side a
+slope faces out through at the point met (`dwell_world::edit::slope_side`, along its normal in cell space: a ½ m
+ramp's lower half faces out its low side, its upper half its top), the client places through it
+(`BlockTarget::place_face`; a 1 m piece stands up from there) and breaks through the top as before, and the server
+takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs`
+`a_place_aimed_at_a_ramps_lower_half_goes_off_its_downhill_side` and `block_interaction.rs`
+`a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
+face +Y, placed on top).
 
 ### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
 

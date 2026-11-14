@@ -18,7 +18,9 @@ use dwell_protocol::{BlockEditRequest, RegionEdit, RegionEditOp, SIM_HZ, region_
 use dwell_world::region::{box_distance_sq, box_in_world_of};
 use dwell_world::{CELL, pos_of_cell};
 
-pub use crate::items::{BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, ItemDrag};
+pub use crate::items::{
+    BUILD_CLEARANCE, BUILD_HOLD_MS, BUILD_MODE_KEY, BUILD_MODES, BUILD_REPEAT_S, ItemDrag,
+};
 
 /// How a build mode builds on (the engine's vocabulary; data names it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,11 +70,16 @@ pub trait DragWorld {
     fn bounds(&self) -> dwell_world::WorldBounds {
         dwell_world::WorldBounds::DEFAULT
     }
-    /// The server has answered every fill of the stroke sent so far: a line builds its next
+    /// The server has answered every fill of the stroke sent so far: a tower builds its next
     /// piece only then, so it never runs on past one the server refused (owner, 2026-10-28: a
     /// crouch-jump tower built over a refused block, above the player's head).
     fn settled(&mut self) -> bool {
         true
+    }
+    /// `cell` holds `material` already (flooded or not, [`fill_placed`]'s rule): a piece the line
+    /// built before it went back to one the server refused, stepped over.
+    fn placed(&mut self, _cell: [i32; 3], _material: StateId) -> bool {
+        false
     }
 }
 
@@ -291,6 +298,9 @@ struct Stroke {
     last: (i32, i32),
     /// Started by bridging help: it builds on only looking below the horizon.
     bridge: bool,
+    /// Line: the pieces it has filled (their lowest cells), which it steps over going on again
+    /// from one the server refused.
+    built: HashSet<[i32; 3]>,
 }
 
 impl Stroke {
@@ -361,6 +371,10 @@ pub struct BuildDrag {
     pending: VecDeque<(RegionEdit, u8)>,
     credit: f64,
     credit_ms: f64,
+    /// The stroke's pace ([`aim_at`](Self::aim_at)): pieces it may build now (at most one), and
+    /// when that was last counted (ms).
+    pace: f64,
+    pace_ms: f64,
 }
 
 impl Default for BuildDrag {
@@ -372,6 +386,8 @@ impl Default for BuildDrag {
             pending: VecDeque::new(),
             credit: PER_TICK,
             credit_ms: f64::NAN,
+            pace: 1.0,
+            pace_ms: f64::NAN,
         }
     }
 }
@@ -455,6 +471,9 @@ impl BuildDrag {
             ItemDrag::Vertical => (DragKind::Vertical, [0; 3]),
         };
         let base = [first[0], lowest, first[2]];
+        // Its first piece after the first block goes as soon as it is armed and aimed.
+        self.pace = 1.0;
+        self.pace_ms = f64::NAN;
         self.stroke = Some(Stroke {
             kind,
             holder,
@@ -471,6 +490,7 @@ impl BuildDrag {
             filled: HashSet::from([(base[0], base[2])]),
             last: (base[0], base[2]),
             bridge: false,
+            built: HashSet::new(),
         });
     }
 
@@ -515,8 +535,37 @@ impl BuildDrag {
         self.waiting.take()
     }
 
+    /// [`aim`](Self::aim) at `now_ms`, paced by the clock (docs/BUGS.md #30): a piece at most every
+    /// [`BUILD_REPEAT_S`] (`buildModes.repeatS`), counted from the time between calls, so a page
+    /// at a few frames a second, calling this at each tick it predicts, builds at the same rate as
+    /// one at 60. No credit is saved up past one piece: a stroke held still builds no burst after.
+    pub fn aim_at(
+        &mut self,
+        eye: [f64; 3],
+        dir: [f64; 3],
+        reach: f64,
+        world: &mut impl DragWorld,
+        now_ms: f64,
+    ) {
+        if self.pace_ms.is_finite() {
+            let gained = (now_ms - self.pace_ms).max(0.0) / (BUILD_REPEAT_S * 1000.0);
+            self.pace = (self.pace + gained).min(1.0);
+        }
+        self.pace_ms = now_ms;
+        // Not ahead of what the server's region queue takes: pieces waiting to go out are not yet
+        // in the world the next ones are checked against.
+        if self.pace < 1.0 - 1e-6 || self.pending.len() >= region_edit::MAX_QUEUED {
+            return;
+        }
+        let before = self.pending.len();
+        self.aim(eye, dir, reach, world);
+        if self.pending.len() > before {
+            self.pace = (self.pace - 1.0).max(0.0);
+        }
+    }
+
     /// The aim moved: from `eye` (m) along unit `dir`, building no farther than `reach` (m) from
-    /// the eye. The new pieces wait for [`pump`](Self::pump).
+    /// the eye: one piece a call at most. The new pieces wait for [`pump`](Self::pump).
     pub fn aim(&mut self, eye: [f64; 3], dir: [f64; 3], reach: f64, world: &mut impl DragWorld) {
         let Some(s) = self.stroke.as_mut() else {
             return;
@@ -597,6 +646,14 @@ impl BuildDrag {
 
     /// [`pump`](Self::pump), with the times each was refused already.
     pub fn pump_tries(&mut self, now_ms: f64) -> Vec<(RegionEdit, u8)> {
+        self.pump_capped(now_ms, usize::MAX)
+    }
+
+    /// [`pump_tries`](Self::pump_tries), `max` at most: what is left of a frame's share of the
+    /// server's region queue. A frame's messages leave together and reach the server in one of
+    /// its ticks, whose queue takes `region_edit::MAX_QUEUED` and refuses the rest, so a page at a
+    /// few frames a second sends no more than that a frame (docs/BUGS.md #30).
+    pub fn pump_capped(&mut self, now_ms: f64, max: usize) -> Vec<(RegionEdit, u8)> {
         if self.credit_ms.is_finite() {
             let ticks = (now_ms - self.credit_ms).max(0.0) * f64::from(SIM_HZ) / 1000.0;
             self.credit = (self.credit + ticks * PER_TICK).min(PER_TICK);
@@ -604,6 +661,7 @@ impl BuildDrag {
         self.credit_ms = now_ms;
         let mut out = Vec::new();
         while self.credit >= 1.0
+            && out.len() < max
             && let Some(e) = self.pending.pop_front()
         {
             self.credit -= 1.0;
@@ -623,9 +681,6 @@ fn line(
     reach: f64,
     world: &mut impl DragWorld,
 ) -> Vec<RegionEdit> {
-    if !world.settled() {
-        return Vec::new();
-    }
     let u = s.dir.map(f64::from);
     let a = s.centre();
     let w: [f64; 3] = std::array::from_fn(|i| a[i] - eye[i]);
@@ -640,6 +695,11 @@ fn line(
     let over = (eye[0] - corner[0]).clamp(0.0, CELL[0]) == eye[0] - corner[0]
         && (eye[2] - corner[2]).clamp(0.0, CELL[2]) == eye[2] - corner[2];
     if axis == 1 && over && dot(u, w) < 0.0 {
+        // Each piece once the server has answered for the last (a tower builds a jump at a time:
+        // waiting costs it nothing), so it never runs on over one refused under the feet.
+        if !world.settled() {
+            return Vec::new();
+        }
         // Under the feet only, never past them (owner, 2026-10-28: a crouch-jump tower built
         // above the player's head, where the body was clear too): the next piece's top at most
         // TOWER_FEET under the eye.
@@ -718,8 +778,10 @@ fn vertical(
     line(s, eye, dir, reach, world)
 }
 
-/// The line's next piece, if the next is at most `want` and fits: one a frame (owner,
-/// 2026-10-28: a fast sweep fills in step by step, not in a burst).
+/// The line's next piece, if the next is at most `want` and fits: one a call (owner,
+/// 2026-10-28: a fast sweep fills in step by step, not in a burst; paced by the clock,
+/// [`BuildDrag::aim_at`]). Pieces already built (sent before the line went back to one the server
+/// refused) are stepped over.
 fn build_on(
     s: &mut Stroke,
     want: i32,
@@ -728,16 +790,26 @@ fn build_on(
     reach: f64,
     world: &mut impl DragWorld,
 ) -> Vec<RegionEdit> {
-    if s.next > want {
-        return Vec::new();
+    loop {
+        if s.next > want {
+            return Vec::new();
+        }
+        let k = s.next * cells;
+        let min: [i32; 3] = std::array::from_fn(|i| s.base[i] + k * s.dir[i]);
+        let built = s.built.contains(&min)
+            && (0..s.rows)
+                .all(|r| world.placed([min[0], min[1] + r, min[2]], s.materials[r as usize]));
+        if built {
+            s.next += 1;
+            continue;
+        }
+        if !s.fits(min, eye, reach, world) {
+            return Vec::new();
+        }
+        s.next += 1;
+        s.built.insert(min);
+        return s.fill(min);
     }
-    let k = s.next * cells;
-    let min: [i32; 3] = std::array::from_fn(|i| s.base[i] + k * s.dir[i]);
-    if !s.fits(min, eye, reach, world) {
-        return Vec::new();
-    }
-    s.next += 1;
-    s.fill(min)
 }
 
 /// A level's next piece: on the 4-connected walk from the last column walked to the one the aim
@@ -799,6 +871,8 @@ mod tests {
         HashSet<[i32; 3]>,
         HashSet<[i32; 3]>,
         bool,
+        /// Cells holding the stroke's block (built by it).
+        HashSet<[i32; 3]>,
     );
 
     impl DragWorld for Fake {
@@ -813,6 +887,9 @@ mod tests {
         }
         fn occupied(&mut self, cell: [i32; 3]) -> bool {
             self.0.contains(&cell)
+        }
+        fn placed(&mut self, cell: [i32; 3], _material: StateId) -> bool {
+            self.4.contains(&cell)
         }
     }
 
@@ -1145,25 +1222,69 @@ mod tests {
     dwell_world::both_faces!(
         /// Regression (owner, 2026-10-28): crouch-jumping a tower while holding Place built over a
         /// block the server refused (the body still in it as the server saw it), then above the
-        /// player's head. A line now waits for the server's answer before its next piece, and goes
-        /// back to a refused one. Red before: the second assertion built row 5 over the gap.
-        fn a_line_waits_for_the_server_and_goes_back_to_a_refused_piece(f: FaceFrame) {
+        /// player's head. A tower waits for the server's answer before its next piece, and goes
+        /// back to a refused one. Red before (0.38.x): the second assertion built over the gap.
+        fn a_tower_waits_for_the_server_and_goes_back_to_a_refused_piece(f: FaceFrame) {
             let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
             let mut w = Fake::default();
-            let eye = [3.0, 1.6, 0.5];
-            let up = towards(f, eye, [0.5, 3.2, 0.5]);
-            d.aim(f.point(eye), up, 5.0, &mut w);
+            // Over the column, clear of the next piece (rows 3–4, up to 2.5 m): a jump's top.
+            let eye = f.point([0.5, 2.6 + 1.62, 0.5]);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            d.aim(eye, down, 5.0, &mut w);
             let first = sent(&mut d);
             assert_eq!(cells(f, &first), vec![[0, 3, 0], [0, 4, 0]]);
-            // Not answered yet: nothing more.
+            // Not answered yet: nothing more, however high the jump.
             w.3 = true;
-            d.aim_frames(f.point(eye), up, 5.0, &mut w);
+            let higher = f.point([0.5, 3.6 + 1.62, 0.5]);
+            d.aim_frames(higher, down, 5.0, &mut w);
             assert!(sent(&mut d).is_empty(), "waits for the server");
-            // Refused: the line builds that piece again, not the next.
+            // Refused: the tower builds that piece again, not the next.
             w.3 = false;
-            assert!(d.refused(&first[0]), "the line takes it back");
-            d.aim(f.point(eye), up, 5.0, &mut w);
+            assert!(d.refused(&first[0]), "the tower takes it back");
+            d.aim(higher, down, 5.0, &mut w);
             assert_eq!(cells(f, &sent(&mut d)), vec![[0, 3, 0], [0, 4, 0]]);
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// docs/BUGS.md 30: a line that isn't a tower builds on without waiting for the server's
+        /// answers (a page at a few frames a second hears one a frame; red before: nothing until
+        /// answered), and goes back to a piece the server refused, building it again and then
+        /// stepping over the ones built after it.
+        fn a_line_builds_on_unanswered_and_goes_back_to_a_refused_piece(f: FaceFrame) {
+            let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+            // Nothing answered.
+            let mut w = Fake {
+                3: true,
+                ..Default::default()
+            };
+            let eye = [3.0, 1.6, 0.5];
+            let up = towards(f, eye, [0.5, 4.2, 0.5]);
+            d.aim_frames(f.point(eye), up, 8.0, &mut w);
+            let built = sent(&mut d);
+            assert_eq!(
+                cells(f, &built),
+                (3..=8).map(|r| [0, r, 0]).collect::<Vec<_>>(),
+                "on up to the aim, unanswered"
+            );
+            for e in &built {
+                for r in 0..i32::from(e.size[1]) {
+                    w.4.insert([e.min[0], e.min[1] + r, e.min[2]]);
+                }
+            }
+            // The first refused (its cells left air), the others placed: that one again, then on
+            // past the built ones to the aim.
+            for r in 0..2 {
+                w.4.remove(&[built[0].min[0], built[0].min[1] + r, built[0].min[2]]);
+            }
+            assert!(d.refused(&built[0]), "the line takes it back");
+            let higher = towards(f, eye, [0.5, 5.2, 0.5]);
+            d.aim_frames(f.point(eye), higher, 8.0, &mut w);
+            assert_eq!(
+                cells(f, &sent(&mut d)),
+                vec![[0, 3, 0], [0, 4, 0], [0, 9, 0], [0, 10, 0]],
+                "the refused piece, then the next past the built ones"
+            );
         }
     );
 
@@ -1359,6 +1480,42 @@ mod tests {
             assert_eq!(at(&mut d, 2.5), vec![[0, 2, 3], [0, 3, 3]]);
         }
     );
+
+    #[test]
+    fn a_held_stroke_builds_a_piece_every_repeat_s_by_the_clock() {
+        // face-a-only: pacing has no up.
+        // docs/BUGS.md 30: called at each tick (60 a second), whatever the frames, a stroke
+        // builds a piece every `buildModes.repeatS`, and saves up no burst while it can't build.
+        let f = FaceFrame::A;
+        let pieces = |d: &mut BuildDrag, w: &mut Fake, from_ms: f64, ms: f64| {
+            let eye = [3.0, 1.6, 0.5];
+            let up = towards(f, eye, [0.5, 30.0, 0.5]);
+            let tick = 1000.0 / 60.0;
+            let mut n = 0;
+            let mut t = from_ms;
+            while t < from_ms + ms - 1e-6 {
+                d.aim_at(eye, up, 64.0, w, t);
+                n += d.pump_tries(t).len();
+                t += tick;
+            }
+            n
+        };
+        let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+        let mut w = Fake::default();
+        let per_s = (1.0 / BUILD_REPEAT_S).round() as usize;
+        assert!(per_s < 60, "under a tick's rate: {per_s} a second");
+        assert_eq!(pieces(&mut d, &mut w, 0.0, 1000.0), per_s, "a second's");
+        // Blocked for a second (a block in the way), then free: on at the rate, no burst.
+        let mut d = started(f, DragKind::Line, [0, 1, 0], [0, 1, 0]);
+        let mut blocked = Fake::default();
+        blocked.0.insert([0, 3, 0]);
+        assert_eq!(pieces(&mut d, &mut blocked, 0.0, 1000.0), 0);
+        assert_eq!(
+            pieces(&mut d, &mut w, 1000.0, 100.0),
+            2,
+            "one now, the next a repeatS on"
+        );
+    }
 
     #[test]
     fn fills_go_out_at_half_the_servers_region_queue_a_tick() {

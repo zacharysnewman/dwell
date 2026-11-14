@@ -196,7 +196,7 @@ prediction alike.
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
 | `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
-| `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`) |
+| `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
 The engine is `dwell_world::edit::check_block_edit`; the registry sync carries the new fields
@@ -260,12 +260,16 @@ controller button and a touch button switch the modes; mouse, controller and tou
   fill (the side of the block underfoot is a face the eye can't see); plain blocks only.
 - **A click is one block** (owner, 2026-10-28): a stroke builds on only once Place has been held
   `buildModes.holdMs` (200 ms, data; `BuildDrag::armed`); a touch hold has waited its 350 ms
-  already. Then **one piece a frame**, and a line across only **up to where the view ray crosses
-  its middle** (the spot looked at; level with the eye, the nearest point of the line), so a
-  shallow aim doesn't build several at once.
+  already. Then **a piece every `buildModes.repeatS`** (0.05 s, data; BUGS.md #30), by the clock at
+  each predicted tick (`BuildDrag::aim_at`), so a page at a few frames a second builds at the same
+  rate (it was one a frame), no burst saved up while it can't build; and a line across only **up to
+  where the view ray crosses its middle** (the spot looked at; level with the eye, the nearest point
+  of the line), so a shallow aim doesn't build several at once.
 - **Answered pieces** (owner, 2026-10-28: a crouch-jump tower built over a skipped block, then
-  above the head): a line builds its next piece only once the server has answered for the last
-  (`DragWorld::settled`), and goes back to a piece it refused or skipped (`BuildDrag::refused`; a
+  above the head): a tower builds its next piece only once the server has answered for the last
+  (`DragWorld::settled`); any other line builds on unanswered (answers arrive once a frame: BUGS.md
+  #30), stepping over the pieces it built itself (`DragWorld::placed`) when it goes on again. A line
+  goes back to a piece it refused or skipped (`BuildDrag::refused`; a
   region fill skips a cell its view of the body is in without refusing, so the client checks the
   cells after the answer, `BuildDrag::answered`). A piece counts as built when its cells hold the
   block flooded or not (`build_drag::fill_placed`): a block put into water is written in its
@@ -294,7 +298,9 @@ controller button and a touch button switch the modes; mouse, controller and tou
   change). A `BlockEditRequest` is refused against a face the eye can't see (line of sight), which a
   floor reaching away or a line past the eye needs; region edits are checked for reach and the world
   only. They go out at a quarter of the server's region queue a tick (`MAX_QUEUED` 4 → 1 a tick:
-  edits bunch, and a local world's worker refused a Flat sweep's at 2), predicted at once; one the
+  edits bunch, and a local world's worker refused a Flat sweep's at 2), and at most `MAX_QUEUED` a
+  frame (`BuildDrag::pump_capped`: a frame's messages reach the server in one tick, so under ~5 fps
+  this sets the rate), predicted at once; one the
   server refuses goes again while its cells are free, up to `RETRIES` (3) times. Only plain blocks drag (`build_drag::drags`): a region fill runs no place rules, so a
   ladder (facing, support), a torch (other cells) or tall grass (`placeOn`) is placed a click at a time.
 - **Tests**: `build_drag.rs` (both faces: a line up and across, a level's swept cells around a block,

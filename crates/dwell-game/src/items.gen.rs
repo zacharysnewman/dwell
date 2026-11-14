@@ -59,6 +59,9 @@ pub const BUILD_HOLD_MS: f64 = 200.0;
 /// How far (m) the player's own body must be clear of a cell before a block goes in it.
 pub const BUILD_CLEARANCE: f64 = 0.15;
 
+/// How often (s) a held stroke builds its next piece at most, by the clock (docs/BUGS.md #30).
+pub const BUILD_REPEAT_S: f64 = 0.05;
+
 /// What holding Place does after the first block, in the order the key cycles them.
 pub const BUILD_MODES: [BuildModeDef; 2] = [
     BuildModeDef { name: "dwell:line", label: "Line", kind: DragKind::Line },
