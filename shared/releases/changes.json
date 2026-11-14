@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.18",
+      "changes": [
+        "Villagers now sit down on level ground, legs out and the sword across a raised knee, instead of standing.",
+        "Villagers look around by turning their head and shoulders in a slow scan, instead of spinning in place.",
+        "A villager's raised vertical block now holds the sword upright in front of its face, and clashes spark on the drawn blade."
+      ]
+    },
+    {
       "version": "0.63.17",
       "changes": [
         "Flying low over a forest, the treetops straight below no longer vanish (only trunk stubs were drawn 25-40 m up)."
