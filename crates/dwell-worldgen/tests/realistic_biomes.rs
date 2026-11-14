@@ -107,10 +107,11 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
     for p in PRESET_BIOMES {
         let b = e.biomes.iter().find(|b| b.name == p.name);
         // The sand desert's own dune stack is the Realistic world's (worlds/realistic.json, 0.65:
-        // the starter's sand desert keeps the preset's).
+        // the starter's sand desert keeps the preset's), and its sparse plants (0.66: open dunes).
         let mut want = *p;
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
+            want.trees = &[("boulders", 0.25), ("sagebrush", 0.012)];
         }
         assert_eq!(b, Some(&want), "{}: listed, unchanged", p.name);
     }

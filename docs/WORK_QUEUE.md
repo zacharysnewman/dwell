@@ -557,6 +557,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the patch's median noon base 0.44 → 0.77 of the sunlit white, cumulus top ≥ 1.0 / base 0.57, cumulonimbus
    base 0.23. Not done: distance-adaptive steps with HZD's cheap/full switch. Next (local): the in-game look at
    noon, low sun, from above and through the layer, `?cloudExtinction=` 0.01–0.03, and `gpu.clouds`.
+   **Queued for after the Realistic refinements (owner, 2026-11-14):** **"Queue up for after all this, the clouds look
+   too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
+   height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
+   coverage, height and type across the world and change over time with the weather, with no repeating pattern.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -939,6 +943,25 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that tops the ground with snow or snowy grass) takes snowy leaves (`snowy_leaves`, a data mapping from leaf to
    snowy variant) with a small noisy band round the line. **Owner should see:** forests, scrub and rocks fading
    raggedly into neighbouring terrain instead of stopping at a line; snow-dusted leaves on trees up at the snow line.
+   **Built on `claude/realistic-066` (the 0.66 line; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
+   look); `tests/realistic_bands.rs` pins it: the rock provinces' boundary cells on straight 1.3 km runs from high up,
+   0.64.2 28.3 % (A) / 15.5 % (B) and 41.9 % at the owner's spot (seed 4065579781), 0.65+ 0.07 % / 0.12 %. (0b, part)
+   no speckle at biome borders (Realistic `biomeMap` `ditherSpeckle` 0, warped 48 m noise): lone cells 0.47 % / 0.91 %
+   → 0.02 % / 0.05 %, the worst window 4.3 % → 0.97 %, the smallest mean patch 846 → 1659 m²; tan sand only on shores,
+   beds, the sand desert and its dunes (`rocks.json` `surfaces.replace`, the Realistic world's: shale's talus shows
+   dirt): stray tan sand 13 % / 12 % of land → 0 (`tests/realistic_tan_sand.rs`); mesa country without tan (the
+   `dwell:mesa_country` blend: red dirt and red sand, its dither at 12 m): 1687 / 3448 sampled columns → 0. Not yet:
+   the soft edges' fingers over a few metres (crisp rock-wall edges remain: 3.3 % / 0.8 % of fine boundary cells on
+   80 m runs that are smooth curves, not strips) and the axis-run measure. (1) `shaping.notched` `none`: at the walls'
+   edges 0.65 ramped 47–54 % of columns, now 23–30 % (the straight-edge rule), off them 7–15 % unchanged
+   (`tests/realistic_ramps.rs`); the per-material notched option not built (open). (3) the sand desert open: 474 / 615
+   plants and rocks per ha → 55 / 67 (its `trees`, and `biomeMap` `treesSharpen` 4 so the mesa's sagebrush doesn't
+   spill across the border). (4, part) sagebrush on the mesa tops: as dense as the floors (0.065 / m²) → 0.008 (the
+   placements' `tops`, sagebrush 0.12); thin fins, the lake's grey band and mesa presence not yet (mesa presence
+   waits on the realism audit's climate scale). (5, part) dormant islands: a mostly green cone (cover ≥ `coverFull`)
+   shows bare rock only near its shore and its vent (`volcanism.bareShore`, `bareVent`); the straight red strip not
+   yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
+   and talus, (0d) placement bleed and snowy leaves, (6).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

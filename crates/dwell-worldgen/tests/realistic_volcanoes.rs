@@ -14,6 +14,8 @@
 //!   [`TREE_GAIN`] × the young ones';
 //! - no circular boundary: the outermost bare rock along 48 rays round an active volcano varies,
 //!   its radii's coefficient of variation at least [`EDGE_CV`].
+//! - no black blotches across an old dormant cone's green lowland (0.66, the map check, 2026-11-14):
+//!   its bare rock keeps to the shore and the vent (`volcanism.bareShore`, `bareVent`).
 
 use std::sync::Arc;
 
@@ -73,6 +75,9 @@ struct Tally {
     trees: Vec<(f64, f64)>,
     active_trees: f64,
     edge_cv: Vec<f64>,
+    /// Old dormant cones' lowland (dry, over 20 m above the sea, beyond 0.3 of the radius):
+    /// (bare lava columns, columns).
+    blotches: (usize, usize),
 }
 
 both_faces!(
@@ -144,6 +149,15 @@ both_faces!(
                         }
                         land += 1;
                         bare += usize::from(lava(name));
+                        let above = g.column_at(x, z).height - dwell_world::SEA_LEVEL_M as f32;
+                        if !s.active
+                            && s.age >= 0.6
+                            && above > 20.0
+                            && dx.hypot(dz) > 0.3 * v.radius
+                        {
+                            t.blotches.0 += usize::from(lava(name));
+                            t.blotches.1 += 1;
+                        }
                         trees += g.placement_density_at(x.into(), z.into()).unwrap_or(0.0);
                     }
                 }
@@ -182,7 +196,21 @@ both_faces!(
             t.active_trees,
             t.edge_cv
         );
-        eprintln!("{:?}: {report}", f.face);
+        eprintln!(
+            "{:?}: {report}; old cones' lowland bare {} of {}",
+            f.face, t.blotches.0, t.blotches.1
+        );
+        // No black blotches across an old cone's green lowland (0.66, the map check: bare rock
+        // only near the shore and the vent). 0.65: 6.4 % (B) / 8.8 % (A) of it bare lava; 0.66:
+        // 0.7 % / 1.8 % (the rest not yet traced: a satellite cone's own state, an andesite wall).
+        assert!(t.blotches.1 >= 30, "{report}: old lowland sampled");
+        assert!(
+            (t.blotches.0 as f64) <= 0.025 * t.blotches.1 as f64,
+            "{:?}: {} of {} old lowland columns bare lava",
+            f.face,
+            t.blotches.0,
+            t.blotches.1
+        );
         assert!(t.apron[0].1 >= 40 && share(t.apron[0]) >= APRON, "{report}");
         assert!(
             t.apron[1].1 >= 40 && share(t.apron[1]) <= NO_APRON,

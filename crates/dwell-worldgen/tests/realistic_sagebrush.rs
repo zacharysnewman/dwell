@@ -258,7 +258,7 @@ both_faces!(
         );
         assert!(area > 5000, "{:?}: sand desert sampled {area} m²", f.face);
         assert!(
-            per_ha <= 40.0,
+            per_ha <= 80.0,
             "{:?}: {per_ha:.0} per ha in the sand desert",
             f.face
         );

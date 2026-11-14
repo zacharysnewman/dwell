@@ -2817,10 +2817,21 @@ impl TerrainGenerator {
         let cover = if s.active {
             0.0
         } else {
-            smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64
+            let c = smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64;
+            // A mostly green cone's bare rock only near its shore and its vent (`bareShore`,
+            // `bareVent`, from `coverFull`): no black blotches across its lowland.
+            if c >= vo.cover_full && h >= vo.bare_shore && g.reach >= vo.bare_vent {
+                1.0
+            } else {
+                c
+            }
         };
         // Toward the ground's edge everything is the ground's around (no ring).
         let c = 1.0 - g.weight * (1.0 - cover);
+        if c >= 1.0 {
+            // Fully covered (the patch noise reaches 1 itself: no bare rock left at full cover).
+            return (g.weight > 0.0).then_some((None, Band::Ground));
+        }
         let n = patch(0);
         let dirt = (vo.dirt * 2.0 * (1.0 - c)).min(c);
         if n < c - dirt {
