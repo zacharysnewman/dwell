@@ -43,7 +43,7 @@ fn main() {
             let mut rgb = vec![0u8; n * n * 3];
             for c in 0..n * n {
                 let (x, z) = m.centre(c);
-                let y = m.height[c] as f64 - dwell_world::SEA_LEVEL_M as f64;
+                let y = f64::from(m.height[c]) - dwell_world::SEA_LEVEL_M;
                 let (r, g, b) = if m.height[c] <= 0.0 || m.is_sea(c) {
                     let d = (-y / 400.0).clamp(0.0, 1.0);
                     (

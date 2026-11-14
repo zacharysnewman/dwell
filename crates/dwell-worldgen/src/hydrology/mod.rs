@@ -546,7 +546,7 @@ fn tectonic_map(
                 // At sea the ridges stay under water (plates.json `uplift.seaRidges`).
                 let coast = f64::from(base.coast_at(x as i64, z as i64));
                 let ridge = pt.boundary(x, z);
-                let kept = pt.at_sea(ridge, f64::from(hs[i]), coast);
+                let kept = pt.at_sea(ridge, hs[i], coast);
                 let share = if ridge > 0.0 { kept / ridge } else { 1.0 };
                 extra[i] += pt.height(x, z) - ridge + kept + swell;
                 rising[i] += share * ridge + swell.max(0.0);

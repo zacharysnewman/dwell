@@ -108,7 +108,7 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
         let b = e.biomes.iter().find(|b| b.name == p.name);
         // The sand desert's own dune stack is the Realistic world's (worlds/realistic.json, 0.65:
         // the starter's sand desert keeps the preset's).
-        let mut want = p.clone();
+        let mut want = *p;
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
         }
