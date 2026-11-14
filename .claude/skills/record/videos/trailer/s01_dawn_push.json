@@ -1,0 +1,38 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s01: dawn aerial push over the shore",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    22650,
+    300,
+    -6500
+   ],
+   "look": [
+    90,
+    -9
+   ],
+   "fov": 53,
+   "timeOfDay": 0.268
+  },
+  {
+   "t": 7.5,
+   "position": [
+    23250,
+    270,
+    -6500
+   ],
+   "look": [
+    90,
+    -7
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inOutSine"
+  }
+ ]
+}

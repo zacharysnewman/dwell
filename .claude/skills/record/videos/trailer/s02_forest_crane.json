@@ -1,0 +1,39 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s02: crane down into the broadleaf forest",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    22300.5,
+    180,
+    30
+   ],
+   "look": [
+    0,
+    -32
+   ],
+   "fov": 38,
+   "timeOfDay": 0.3
+  },
+  {
+   "t": 6.5,
+   "position": [
+    22300.5,
+    108,
+    80
+   ],
+   "look": [
+    0,
+    -6
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "crane",
+   "upEasing": "inOutSine",
+   "easing": "inOutSine"
+  }
+ ]
+}

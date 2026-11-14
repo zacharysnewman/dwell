@@ -1,0 +1,38 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s11: lava lake at dusk",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    30006.5,
+    250,
+    -8006.5
+   ],
+   "look": [
+    -55,
+    -48
+   ],
+   "fov": 50,
+   "timeOfDay": 0.79
+  },
+  {
+   "t": 5,
+   "position": [
+    30006.5,
+    250,
+    -8006.5
+   ],
+   "look": [
+    -30,
+    -44
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "pan",
+   "easing": "inOutSine"
+  }
+ ]
+}

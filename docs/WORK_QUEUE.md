@@ -2071,6 +2071,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    swing. Shot (5) is a camera 14 m out and 13.5 m up on the landing diagonal (`"up": "a"`): the player rises
    head-down, arcs out and stands on face B's ground overhead beside the hole; (6) the drone rise starts from that
    camera. Paths in `.claude/skills/record/paths/bifacial-v4/`.
+   **The trailer** (owner, 2026-11-13: **"Make a 60s or less cinematic trailer for our game. Use these patterns
+   (document the patterns)"** — the owner's camera spec, https://claude.ai/artifact/LgmAqzqGrNoyx9fn9QWHTU; **"Let's do
+   vertical and widescreen. Title and game sound, no music."**; **"You go ahead and record it with your shot draft.
+   I'll edit the draft later if Im not satisfied with the video."**). Decisions: two cuts of one shot list, 9:16
+   1080×1920 and 16:9 1920×1080, 30 fps, ≤ 60 s each; a title card "DWELL" over the last shot (the trailer only:
+   showcases stay text-free) in the game's own wordmark; the game's effects and ambience, no music; the orchestrator's
+   22-shot draft (setup → disruption → escalation → held shot → peak montage → title), recorded without pre-approval.
+   **Built (2026-11-13):** the patterns documented in `.claude/skills/record/CAMERA_PATTERNS.md` (the spec distilled,
+   mapped to the theater and record tools, with the gaps), linked from the record skill; the tools the trailer needs —
+   a manifest's `aspects` (record square, crop each aspect; a part's `crop` moves a window), `splice.fadeIn` (from
+   black) and `title` (`scripts/title.mjs` renders the wordmark, the splice fades it in) — tested in `take.test.mjs`;
+   the manifest `.claude/skills/record/videos/trailer/` (the draft's shots with their patterns and substitutions in
+   each shot's note). Re-take one shot: `take.mjs trailer --only s08`.
+   **Owner should see:** the two cuts (trailer-9x16.mp4, trailer-16x9.mp4) and the shot-by-shot notes; edit the draft
+   (or a shot's note in the manifest) where a shot misses, and it re-records alone.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
