@@ -264,7 +264,7 @@ pub const GEOLOGY: Geology = Geology {
         warp_wavelength: 200.0,
     },
     blends: &[
-        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand"], shares: &[0.72, 0.28], wavelength: 220.0, slope: 0.8, dither: 0.03, dither_wavelength: 12.0 },
+        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand"], shares: &[0.72, 0.28], wavelength: 220.0, slope: 0.4, dither: 0.03, dither_wavelength: 12.0 },
     ],
     mesa_relief: MesaRelief {
         top_amplitude: 3.5,

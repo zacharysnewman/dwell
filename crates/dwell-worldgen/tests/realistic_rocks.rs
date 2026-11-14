@@ -265,6 +265,11 @@ dwell_world::both_faces!(
                     if rock.name != "dwell:sandstone" || part != Part::Tread {
                         continue;
                     }
+                    // Mesa country's blend decides its own tones (rocks.json `blends`); since
+                    // 0.69's warped borders it reaches a little past the arid line.
+                    if g.blend_tone_at(x, z).is_some() {
+                        continue;
+                    }
                     let Some(y) = g.ground_y(x, z) else { continue };
                     let flat = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                         .iter()
@@ -306,9 +311,10 @@ dwell_world::both_faces!(
             f.face
         );
         // Forests (wet) mostly cover the provinces' treads with their own ground since 0.69
-        // (`shaping.coverRain`): 9 bare sandstone floors a face are left to sample.
+        // (`shaping.coverRain`): 9 bare sandstone floors a face are left to sample; and the arid
+        // ones are mostly mesa country's blend, skipped above (35 on face A).
         assert!(
-            arid >= 50 && humid >= 50 && forests >= 5,
+            arid >= 30 && humid >= 50 && forests >= 5,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }

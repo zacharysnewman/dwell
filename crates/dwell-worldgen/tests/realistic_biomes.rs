@@ -166,7 +166,7 @@ dwell_world::both_faces!(
                 .map(|r| r.max + r.blend)
                 .fold(0.0, f64::max);
             for &(x, z, h) in &land(&m, 2) {
-                let g = field.geography(x, z, h);
+                let g = field.mix_geography(x, z, h);
                 let chosen = usize::from(field.mix(&e.biomes, x, z, h).chosen);
                 let rain = g.rain.unwrap();
                 if dry.contains(&chosen) {
@@ -215,7 +215,7 @@ dwell_world::both_faces!(
                         let elev = f64::from(m.height[cell]).max(0.0);
                         let (x, z) = (x as i64, z as i64);
                         let chosen = usize::from(field.mix(&e.biomes, x, z, elev).chosen);
-                        let r = field.geography(x, z, elev).rain.unwrap();
+                        let r = field.mix_geography(x, z, elev).rain.unwrap();
                         if r >= c.band().rain_mm {
                             wet += 1;
                             dried += u32::from(dry.contains(&chosen));
@@ -278,7 +278,8 @@ dwell_world::both_faces!(
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 2) {
-                let g = field.geography(x, z, h);
+                // The climate where the weights are read (the border's warp, 0.69).
+                let g = field.mix_geography(x, z, h);
                 let mix = field.mix(&e.biomes, x, z, h);
                 if usize::from(mix.chosen) == tundra {
                     assert!(g.celsius < t.max + t.blend, "tundra at {} °C", g.celsius);
@@ -361,7 +362,7 @@ dwell_world::both_faces!(
         let field = BiomeField::with_params(&m, face_seed(1, f.face), e.map);
         let (mut wet, mut dry) = (0, 0);
         for &(x, z, h) in &land(&m, 2) {
-            let r = field.geography(x, z, h).rain.unwrap();
+            let r = field.mix_geography(x, z, h).rain.unwrap();
             let w = field.mix(&list, x, z, h).weight(1);
             if r >= 1300.0 {
                 assert!(w > 0.99, "{r} mm: {w}");
@@ -409,7 +410,7 @@ dwell_world::both_faces!(
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 3) {
-                let g = field.geography(x, z, h);
+                let g = field.mix_geography(x, z, h);
                 let rain = g.rain.unwrap();
                 let before = field.mix(&without, x, z, h).chosen;
                 let after = usize::from(field.mix(&e.biomes, x, z, h).chosen);
