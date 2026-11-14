@@ -2560,9 +2560,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    villagers use it); painterly palette textures and ½ m pieces (owner: "Yes, both"); a **"Test in town"** button
    that places a saved structure as a blueprint at the nearest town for its builders; keepers come to Claude as
    exported JSON attached in the chat.
-   **Owner should see:** the new blocks (planks, plaster, stone brick, beam, thatch and its ramps, glass pane, door)
-   in the creative hotbar's items, in painterly palette textures, each in 1 m and ½ m pieces.
-   **Owner should see:** a door that opens and closes on use, for the player and for villagers walking through it.
+   **Scope narrowed (owner, 2026-11-14):** "Let's just do 3 blocks. Plank floors, stone brick walls, thatch roof. And
+   doors also." and "2m doors." So the blocks are **planks** (floor), **stone brick** (wall) and **thatch** with its
+   ramps (roof), and a **2 m door** that opens and closes (2 m tall, one cell wide, two halves); **no plaster, beam
+   or glass pane** (dropped from the list above).
+   **Owner should see:** the new blocks (planks, stone brick, thatch and its ramps, the door) in the creative
+   hotbar's items, in painterly palette textures, the blocks each in 1 m and ½ m pieces.
+   **Owner should see:** a 2 m door (one cell wide, two halves, placed and broken whole) that opens and closes on use,
+   for the player and for villagers walking through it.
    **Owner should see:** in the structure sandbox, a building saved and then "Test in town" places it as a blueprint at
    the nearest town, and the builders construct it there.
    **Owner should see:** a saved building exported as JSON, attached in the chat, comes back in a later build as one of
