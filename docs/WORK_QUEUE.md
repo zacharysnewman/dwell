@@ -25,7 +25,7 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
-- **Tree mesh bugs (owner, 2026-11-13; BUGS.md #166, #167):** "Tree leaf inside faces touching the tree log
+- **Tree mesh bugs (owner, 2026-11-13; BUGS.md #167, #168):** "Tree leaf inside faces touching the tree log
   shouldn't be shown and they cause z fighting. Also sideways logs (after a tree is felled) octagon shape corners are
   shorter than when upright, the sides aren't the same length and they should be the same." Brief: cull the leaf face
   where it touches the log, filling only the octagon's corner gaps (nothing coplanar); a lying log's cross-section
@@ -741,6 +741,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
+   **Ship the finished terrain fixes now (owner, 2026-11-13, on the seam fix sitting unshipped inside PR #897):**
+   **"Why are you waiting to ship the fix?"** Orchestrator's brief: split the already-verified fixes out of the held
+   Realistic batch (PR #897, `claude/realistic-geography-batch-a-k0fcrg`, held for new map artifacts) and ship them as
+   the 0.64 line; the batch takes 0.65. Taken onto `claude/terrain-fixes-064-5sim68` off main: BUGS.md #164 (the
+   straight seams: plate boundary points as true crossings, `plates.rs` `crossing`; the biomes read rain blurred over
+   4 km, `rain.blurM`), #163 (ramps backing onto open air, `ramps::top_backed_by`, in every world and grid), and the
+   bigger shrines (PR #930, merged in). Not taken: plate pairs, the rim, variety, mesas, deserts. Owner should see: no
+   straight km-long seams between terrain types; no ramp backs standing in open air (no sawtooth spikes in bowls);
+   bigger shrines; all in the next release.
+   **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
+   back to C."**
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -2067,6 +2078,26 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    swing. Shot (5) is a camera 14 m out and 13.5 m up on the landing diagonal (`"up": "a"`): the player rises
    head-down, arcs out and stands on face B's ground overhead beside the hole; (6) the drone rise starts from that
    camera. Paths in `.claude/skills/record/paths/bifacial-v4/`.
+   **The trailer** (owner, 2026-11-13: **"Make a 60s or less cinematic trailer for our game. Use these patterns
+   (document the patterns)"** — the owner's camera spec, https://claude.ai/artifact/LgmAqzqGrNoyx9fn9QWHTU; **"Let's do
+   vertical and widescreen. Title and game sound, no music."**; **"You go ahead and record it with your shot draft.
+   I'll edit the draft later if Im not satisfied with the video."**). Decisions: two cuts of one shot list, 9:16
+   1080×1920 and 16:9 1920×1080, 30 fps, ≤ 60 s each; a title card "DWELL" over the last shot (the trailer only:
+   showcases stay text-free) in the game's own wordmark; the game's effects and ambience, no music; the orchestrator's
+   22-shot draft (setup → disruption → escalation → held shot → peak montage → title), recorded without pre-approval.
+   **Built (2026-11-13):** the patterns documented in `.claude/skills/record/CAMERA_PATTERNS.md` (the spec distilled,
+   mapped to the theater and record tools, with the gaps), linked from the record skill; the tools the trailer needs —
+   a manifest's `aspects` (record square, crop each aspect; a part's `crop` moves a window), `splice.fadeIn` (from
+   black) and `title` (`scripts/title.mjs` renders the wordmark, the splice fades it in) — tested in `take.test.mjs`;
+   the manifest `.claude/skills/record/videos/trailer/` (the draft's shots with their patterns and substitutions in
+   each shot's note). Re-take one shot: `take.mjs trailer --only s08`.
+   **v1 recorded (2026-11-13):** ~53 s each cut, 19 parts; the setup, the dynamite place-light-blast, the rise through
+   the clouds to space and the title read well; substitutions (in each shot's note): the hero walk ends high on a
+   slope (no shrine arch), the forest shots moved to the starter's broadleaf slopes (the forest test world drew from
+   the wrong face in the driver), no molten lava (a fresh world's lake is empty: the volcano cone instead), no wolves
+   in frame, the chop, sword, felled log and dynamite chain cut, the montage 5 cuts not 7.
+   **Owner should see:** the two cuts (trailer-9x16.mp4, trailer-16x9.mp4) and the shot-by-shot notes; edit the draft
+   (or a shot's note in the manifest) where a shot misses, and it re-records alone.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
@@ -2819,6 +2850,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner, 2026-11-13 (with the 0.59 terrain batch): **"Notched ramps seems fine. I've saved the water video, looks good.
    Good to move on to the next."** The shrine gaps branch (`claude/shrine-gaps`) is merged into the 0.59 batch (branch
    `claude/terrain-059-batch-v81i64`), so its shrine change ships on the new line.
+   **Bigger shrines (owner, 2026-11-13):** **"Double the shrine radius, make it 3 times as tall."** Owner should see:
+   a shrine about 16 m across and roughly three storeys tall, the stepped pillars clearly separate under a high arch,
+   visible from a distance. Built on branch `claude/shrine-bigger-1r1x68`, as data (`shrines.json` `design`): `radius`
+   8 (16 × 16 m); the dais keeps its ½ m steps but gets more of them, `steps` [6, 5, 4, 3] (a 2 m rim the pillars stand
+   on, then four 1 m treads up to a 6 m top: 3 m high at the centre), not wider treads; 5 pillars (still the count whose
+   joined half is a quarter circle) 2 m square on the 7 m arc (about 3.3 m of air between neighbours), `lowest` 7.5 and
+   `rise` 1.5 (7.5 / 9 / 10.5 / 9 / 7.5 m); the lintel 1 m thick and as deep as the pillars (gen.mjs: the lintel is now
+   `width` deep, not one column), 8 m or more of air under it; torches over a 2 m radius (12 of them) on the dais's
+   top; `stand` moved from [0, 2] to [0, 5] (the front tread, out of the torch disc). Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
+   2.4 m, under the 3 m dais) derive from the structure; the portal clearance (250 m), `clear` (3 m) and `spawnWithin`
+   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Siting the 4× larger
+   footprint took 4–6 ms a cell (over `stream_cost`'s bar); it now samples the footprint sparsely first and stops at the
+   first column out of range: 0.5–0.7 ms a cell, the same sites. Changes the terrain
+   seeds generate: ships with the Realistic batch's 0.64 line (branch `claude/realistic-geography-batch-a-k0fcrg`).
 
 55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for
    my human characters. Head down, hand on sword hilt, sword in the ground. And a stand too."** / **"This is their

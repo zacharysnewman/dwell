@@ -8,7 +8,7 @@
     { "name": "dwell:limestone", "hardness": 0.55, "jointing": "bedded", "bed": 8, "solubility": 0.8, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#d8d2b8" },
     { "name": "dwell:andesite", "hardness": 0.8, "jointing": "vertical", "bed": 16, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:stone", "color": "#5a5652" },
     { "name": "dwell:shield_basalt", "hardness": 0.85, "jointing": "vertical", "bed": 12, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:basalt", "color": "#2c2c32" },
-    { "name": "dwell:siltstone", "hardness": 0.2, "jointing": "bedded", "bed": 6, "solubility": 0, "face": "dwell:red_sand", "cap": "dwell:red_sand", "scree": "dwell:red_sand", "color": "#b0603e" },
+    { "name": "dwell:siltstone", "hardness": 0.2, "jointing": "bedded", "bed": 6, "solubility": 0, "face": "dwell:red_sand", "cap": "dwell:red_sandstone", "capBy": [{ "arid": "dwell:red_sand" }], "scree": "dwell:red_sand", "color": "#b0603e" },
     { "name": "dwell:schist", "hardness": 0.75, "jointing": "bedded", "bed": 10, "solubility": 0, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#7f8a86" }
   ],
   "stacks": [

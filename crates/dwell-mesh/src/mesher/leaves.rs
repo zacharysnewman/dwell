@@ -226,7 +226,7 @@ pub(crate) fn flush_pieces(
 pub(crate) type Holes = [Vec<Vec<V>>; 6];
 
 /// [`flush_pieces`], with each flush face drawn only where the block beside it leaves it uncovered:
-/// less `holes[i]`, the block's own faces lying on it (BUGS.md #166: the leaf's face and the log's
+/// less `holes[i]`, the block's own faces lying on it (BUGS.md #167: the leaf's face and the log's
 /// side were coplanar and z-fought). What is left fills the gaps at the octagon's corners, flat
 /// against its chamfers; nothing the leaf draws there is coplanar with the log.
 pub(crate) fn flush_pieces_round(

@@ -1229,12 +1229,13 @@ impl CrateredTerrain {
         let Some(t) = top(x, z) else {
             return &[];
         };
-        let around: crate::ramps::Around = std::array::from_fn(|r| {
+        let around: crate::ramps::Around5 = std::array::from_fn(|r| {
             std::array::from_fn(|c| {
-                top(x + c as i64 - 1, z + r as i64 - 1).map_or(i32::MIN / 2, |t| (t + 1) as i32)
+                top(x + c as i64 - 2, z + r as i64 - 2).map_or(i32::MIN / 2, |t| (t + 1) as i32)
             })
         });
-        let (facing, steep) = match self.rules.ramps.top(&around, rows_for_m(1.0)) {
+        // Every ramp backed by its neighbour (BUGS.md #153).
+        let (facing, steep) = match self.rules.ramps.top_backed(&around, rows_for_m(1.0)) {
             Top::Flat => return &[],
             Top::Gentle(f) => (f, false),
             Top::Steep(f) => (f, true),
@@ -1305,12 +1306,21 @@ impl CrateredTerrain {
         let f = FaceFrame::at_chunk_y(coord.y);
         let local = f.chunk(coord);
         let (x0, z0) = (i64::from(local.x * S), i64::from(local.z * S));
-        // The tops of the chunk's columns and a ring round them, for the ramp rule's neighbours.
-        let w = (S + 2) as usize;
+        // The tops of the chunk's columns and two rings round them, for the ramp rule's
+        // neighbours and theirs (every ramp backed, BUGS.md #157).
+        const RING: i64 = 2;
+        let w = (i64::from(S) + 2 * RING) as usize;
         let tops: Vec<Option<i64>> = (0..w * w)
-            .map(|k| self.top_row(f.face, x0 - 1 + (k % w) as i64, z0 - 1 + (k / w) as i64))
+            .map(|k| {
+                self.top_row(
+                    f.face,
+                    x0 - RING + (k % w) as i64,
+                    z0 - RING + (k / w) as i64,
+                )
+            })
             .collect();
-        let top_at = |x: i64, z: i64| tops[((z - z0 + 1) as usize) * w + (x - x0 + 1) as usize];
+        let top_at =
+            |x: i64, z: i64| tops[((z - z0 + RING) as usize) * w + (x - x0 + RING) as usize];
         let cells = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {

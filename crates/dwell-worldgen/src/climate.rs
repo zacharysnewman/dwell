@@ -56,6 +56,11 @@ pub struct RainRules {
     pub base_rain: f64,
     pub uplift_rain: f64,
     pub lee_dry: f64,
+    /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #158: the
+    /// march's rain is near all or nothing cell to cell, and read bilinearly the biomes' edges ran
+    /// along the grid's rows and columns, km-long straight edges; 0: as marched). The rivers'
+    /// discharge reads the march as it is.
+    pub blur_m: f64,
 }
 
 /// How the biomes read the rain (`climate.json` `biomes`, R4).
@@ -334,6 +339,12 @@ pub struct RainGrid {
 }
 
 impl RainGrid {
+    /// The grid low-passed over about `width` m (`rain.blurM`, the biomes' rain).
+    pub fn blurred(mut self, width: f64) -> Self {
+        self.rain = crate::biomemap::smooth_ground(self.n, self.cell, &self.rain, width);
+        self
+    }
+
     /// The rain at face-local (x, z), bilinear between the cells' centres.
     pub fn at(&self, x: f64, z: f64) -> f64 {
         let last = (self.n - 1) as f64;

@@ -418,8 +418,11 @@ dwell_world::both_faces!(
                 f.face
             );
         }
+        // Cut to under a third (a quarter before the biomes read the rain blurred over 4 km,
+        // `rain.blurM`, BUGS.md #164, 0.64: the blur evens out the march's extremes, so a few more
+        // cells sit between the presets' climates; face A 5281 -> 1477).
         assert!(
-            4 * is < was,
+            3 * is < was,
             "{:?}: the default's land {was} -> {is}",
             f.face
         );

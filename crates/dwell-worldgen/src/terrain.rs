@@ -2857,6 +2857,18 @@ impl TerrainGenerator {
         !col.outside && y <= top_voxel(col.height)
     }
 
+    /// How many ramp pieces top column (x, z) (0: a flat top), by the generation rule over its
+    /// neighbours (`generate`'s, from the columns alone).
+    pub fn ramp_pieces_at(&self, x: i32, z: i32) -> usize {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return 0;
+        }
+        let top = top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1);
+        self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, &col, top)
+            .len()
+    }
+
     /// The top solid voxel of a column inside the disc.
     pub fn ground_y(&self, x: i32, z: i32) -> Option<i32> {
         let col = self.column_at(x, z);
@@ -4118,6 +4130,62 @@ impl TerrainGenerator {
         self.pieces_with(column, x0 + lx, z0 + lz, &col, top)
     }
 
+    /// The stored ramp topping column (x, z) by the generation rule (HALF_HEIGHT_GRID.md §4),
+    /// every ramp backed (BUGS.md #153), its neighbours' columns from `column`.
+    fn shape_with(
+        &self,
+        column: &impl Fn(i32, i32) -> Column,
+        x: i32,
+        z: i32,
+        col: &Column,
+    ) -> Top {
+        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #153), the column
+        // behind each ramp's high side with its own neighbours.
+        let cols: [[Column; 5]; 5] = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                if (r, c) == (2, 2) {
+                    *col
+                } else {
+                    column(x + c as i32 - 2, z + r as i32 - 2)
+                }
+            })
+        });
+        let around5: ramps_rule::Around5 = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                let col = &cols[r][c];
+                // Beyond the rim, nothing: lower than any ground.
+                if col.outside {
+                    i32::MIN / 2
+                } else {
+                    top_voxel(col.height) + 1
+                }
+            })
+        });
+        // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
+        // contours too, so its slopes ramp rather than stair (owner, 2026-11-13). Every column in
+        // the window follows the same rule here; the rule takes the column's offset so a rule
+        // decided per column (the batch's `mesaEdges`) can slot in.
+        let geo = &self.biomes.geology.geology;
+        let rule = |(_dx, _dz): (i32, i32)| {
+            if geo.notched && geo.strength > 0.0 {
+                ramps_rule::RampRule::Notched
+            } else {
+                ramps_rule::RampRule::Strict
+            }
+        };
+        ramps_rule::top_backed_by(&around5, rows_for_m(1.0), rule)
+    }
+
+    /// The stored ramp the generation rule tops column (x, z) with (Flat: a full block; a lip's or
+    /// a column without ramp pieces may still be drawn flat), from the columns alone.
+    pub fn ramp_top_at(&self, x: i32, z: i32) -> Top {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return Top::Flat;
+        }
+        self.shape_with(&|nx, nz| self.column_at(nx, nz), x, z, &col)
+    }
+
     /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
     fn pieces_with(
         &self,
@@ -4130,26 +4198,7 @@ impl TerrainGenerator {
         if self.ramps.by.is_empty() || col.lip {
             return &[];
         }
-        let height = |nx: i32, nz: i32| {
-            let col = column(nx, nz);
-            // Beyond the rim, nothing: lower than any ground.
-            if col.outside {
-                i32::MIN / 2
-            } else {
-                top_voxel(col.height) + 1
-            }
-        };
-        let around: ramps_rule::Around = std::array::from_fn(|r| {
-            std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
-        });
-        // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
-        // contours too, so its slopes ramp rather than stair (owner, 2026-11-13).
-        let geo = &self.biomes.geology.geology;
-        let shape = if geo.notched && geo.strength > 0.0 {
-            ramps_rule::top_of_notched(&around, rows_for_m(1.0))
-        } else {
-            ramps_rule::top_of(&around, rows_for_m(1.0))
-        };
+        let shape = self.shape_with(&column, x, z, col);
         // Dry pieces: `generate` floods each one under the water (`under_water`).
         let cells = self
             .ramps

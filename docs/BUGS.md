@@ -580,7 +580,7 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
-### 166. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.63.21)
+### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 
 Owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't be shown and they cause z fighting."
 Cause: since WORK_QUEUE item 48 (0.55) a leaf face against a `leafFlush` log is drawn whole and flat on the cell
@@ -594,7 +594,7 @@ coplanar and overlapping; red, a leaf square over the bark), `a_leaf_beside_a_lo
 **Owner should see:** no flickering or z-fighting where leaves meet trunks and branches; the octagon's corner gaps
 still closed by leaf.
 
-### 167. A felled (lying) log's octagon is squashed: short corners, uneven sides (fixed after 0.63.21)
+### 168. A felled (lying) log's octagon is squashed: short corners, uneven sides (fixed after 0.64.1)
 
 Owner, 2026-11-13: "Also sideways logs (after a tree is felled) octagon shape corners are shorter than when upright,
 the sides aren't the same length and they should be the same." Cause: the corner cut (`crossSection.chamfer`, and
@@ -605,6 +605,51 @@ whole 1 m log (a lone ½ m cell keeps its own). Collision uses the same outline,
 octagon. Tests (red → green): `a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon` (each axis: 8
 equal sides, the standing log's), `a_lying_logs_bark_ring_is_the_standing_logs_width`. **Owner should see:** a felled
 log's end shows the same even octagon as a standing trunk.
+
+### 166. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
+
+Found 2026-11-14 by the 0.64 terrain fixes (the realistic batch's BUGS.md #162, its commit b9c0379): with the biomes
+reading the blurred rain, seed 1 face A showed red sand on 2 red rock mesa floors where the climate is not arid
+(e.g. (−17500, 10750)), against #134's rule. Cause: the erosion snaps a floor down to the stack's soft layer
+(`Cut::Floor`), the red desert beds' siltstone, whose `cap` was `dwell:red_sand` with no `capBy`, so its treads were
+red sand in any climate; latent on main, the blur moved the mesa's edge over such floors. Fix (data, `rocks.json`): the
+siltstone's cap is red sandstone with `capBy` arid red sand, as the sandstone's. Test:
+`tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (red with the seam fixes, green after).
+
+### 164. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+
+Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
+this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
+and glacier blue-white ground with lakes on the left, dense green forest and grass on the right: a data or render seam,
+not a natural biome edge. **Owner should see:** no straight lines across the land between terrain types. Snow, forest,
+desert and grass meet along natural, wandering edges. Causes: (1) the plate boundaries' points sat on the 500 m scan's grid lines (the cells' midpoint), so a
+near-vertical or near-horizontal boundary became a polyline exactly along one grid line, up to 30 km, and every landform
+and province edge along it was axis-aligned; (2) the climate's marched rain is near all or nothing cell to cell, and read
+bilinearly on its 500 m grid the biomes' edges ran along the grid's rows and columns. Fix: each boundary point is the
+crossing found by halving between the two cells' centres (`plates.rs` `crossing`); `climate.json` `rain.blurM` (4000 m)
+low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_the_plates_not_the_scans_grid` (30 000 m
+axis-aligned before, under 1500 m after), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
+biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
+
+### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
+
+Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas
+there's these spiky edges where slopes are up against the side of other slopes. I don't mind slopes with edges exposed but
+I do mind slopes that back up against open air." Seen on 0.61.7, seed 274005646, around (−11859, 263, −1617), stone: in
+the dump, stone_ramp cells (facing east/north, shapes ramp/steep_lower/steep_upper) sit on diagonal contours, their high
+(back) side facing air, so each shows a tall vertical back face in open air, a sawtooth along bowl corners and diagonal
+slopes. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no sawtooth
+spikes. Ramps meet higher ground at their backs; only their triangular sides may show. Cause: the notched rule (0.59–0.61 wherever the rock shaped the ground) let a ramp back onto
+a column that was itself a ramp descending toward it or along it, so the ramp's high side stood over lower ground. Fix:
+`ramps::top_backed_by` (`RampRule::top_backed`): a ramp keeps its facing only where the column behind its high side stands
+at least its top along their shared edge (that column as its own rule shapes it, `ramps::edge_height`), else the column
+is a full block; a column ends as its unchecked top or flat, and flat stands at least as high on every edge, so the check
+holds whatever the neighbour becomes; steep pairs alike; the triangular sides may show. Terrain (each column's own strict
+or notched rule) and the grid worlds use it, in every world. Deviation: another facing is not tried (it could expose a neighbour's back);
+the column is a full block. Tests: `ramps::tests::a_bowls_corners_back_no_ramp_onto_open_air` (the notched rule: 52 of 600
+bowl ramps exposed unchecked, 0 backed), `straight_slopes_keep_their_ramps`, `tests/ramp_backs.rs` (seeds 1, 7, 42,
+274005646, both faces, the default and the Realistic world: 134 and 194 exposed ramps on seed 274005646's Realistic faces
+unchecked, 0 after). The default world's goldens are unchanged (its strict rule never backed a ramp onto air).
 
 ### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
 

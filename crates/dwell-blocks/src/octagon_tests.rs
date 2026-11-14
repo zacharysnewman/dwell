@@ -415,7 +415,7 @@ fn end_sides_m(axis: usize) -> Vec<f64> {
         .collect()
 }
 
-/// BUGS.md #167 (owner, 2026-11-13: "sideways logs (after a tree is felled) octagon shape corners
+/// BUGS.md #168 (owner, 2026-11-13: "sideways logs (after a tree is felled) octagon shape corners
 /// are shorter than when upright, the sides aren't the same length and they should be the same"):
 /// a log's end is the same regular octagon along every axis: eight equal sides, the standing
 /// log's. A lying log is two ½ m cells; its corners were cut by the chamfer of the ½ m cell, half
@@ -437,7 +437,7 @@ fn a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon() {
     }
 }
 
-/// The bark ring is as wide on a lying log as on a standing one (in metres; BUGS.md #167).
+/// The bark ring is as wide on a lying log as on a standing one (in metres; BUGS.md #168).
 #[test]
 fn a_lying_logs_bark_ring_is_the_standing_logs_width() {
     let m = log("x");

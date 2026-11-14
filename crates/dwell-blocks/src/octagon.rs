@@ -165,7 +165,7 @@ pub fn outline_width(
 /// The log's width across its axis in metres, which `chamfer` and `ring` are fractions of: the
 /// cell's shorter side across, but for half of a lying log (axis x or z, joined above or below to
 /// its other ½ m half) the whole 1 m log, so a felled log's octagon is the standing trunk's
-/// (BUGS.md #167: it was cut by a fraction of the ½ m cell, half as deep).
+/// (BUGS.md #168: it was cut by a fraction of the ½ m cell, half as deep).
 pub fn across_m(axis: usize, joined: u8, size_m: [f64; 3]) -> f64 {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
     let (short, long) = if size_m[u] <= size_m[v] {

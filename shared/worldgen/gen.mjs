@@ -2014,15 +2014,12 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
     const [x, z] = point(deg);
     return [Math.round(clean(x - w / 2)), Math.round(clean(z - w / 2))];
   };
-  // An arc column of the lintel: the column holding the arc's point.
-  const arc = (deg) => {
-    const [x, z] = point(deg);
-    return [Math.floor(x - 1e-6), Math.floor(z)];
-  };
+  // The lintel's columns at an arc point: the w × w square there, as deep as the pillars it joins.
   const arcAt = (deg) => {
-    if (deg <= 270) return arc(deg);
-    const [x, z] = arc(540 - deg);
-    return [n - 1 - x, z];
+    const [x0, z0] = mirror(deg, square);
+    const cols = [];
+    for (let dz = 0; dz < w; dz++) for (let dx = 0; dx < w; dx++) cols.push([x0 + dx, z0 + dz]);
+    return cols;
   };
   const pillars = [];
   for (let i = 0; i < p.count; i++) {
@@ -2058,18 +2055,20 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
     for (let x = 0; x < n; x++) for (let y = 0; y < floor(x, z); y++) set(x, y, z, "s");
   for (const q of pillars) for (let y = floor(q.x, q.z); y < q.top; y++) set(q.x, y, q.z, "p");
   // The lintel: along the arc from the first joined pillar to the last (the tallest half: a quarter
-  // circle), over the gaps only. Each arc column's top is the joined tops either side of it,
-  // interpolated by angle and rounded to a row, so it bridges from top to top as an arch.
+  // circle), as deep as the pillars (`width`), over the gaps only. Each arc column's top is the
+  // joined tops either side of it, interpolated by angle and rounded to a row, so it bridges from
+  // top to top as an arch.
   const tops = [...new Map(pillars.filter((q) => q.joined).map((q) => [q.i, q])).values()];
   const lintel = new Map();
   for (let k = 0; k + 1 < tops.length; k++) {
     const [a, b] = [tops[k], tops[k + 1]];
     for (let deg = a.deg; deg <= b.deg + 1e-9; deg += 0.25) {
-      const [x, z] = arcAt(deg);
-      if (pillarAt(x, z)) continue;
       const top = Math.round(a.top + ((b.top - a.top) * (deg - a.deg)) / (b.deg - a.deg));
-      const key = `${x},${z}`;
-      lintel.set(key, Math.max(lintel.get(key) ?? 0, top));
+      for (const [x, z] of arcAt(deg)) {
+        if (pillarAt(x, z)) continue;
+        const key = `${x},${z}`;
+        lintel.set(key, Math.max(lintel.get(key) ?? 0, top));
+      }
     }
   }
   for (const [key, top] of lintel) {
@@ -2888,6 +2887,7 @@ const CLIMATE_RAIN = [
   "baseRain",
   "upliftRain",
   "leeDry",
+  "blurM",
 ];
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -2965,6 +2965,7 @@ export function validateClimate(data) {
   num("rain.baseRain", data.rain.baseRain, 0, 1);
   num("rain.upliftRain", data.rain.upliftRain, 0, 100);
   num("rain.leeDry", data.rain.leeDry, 0, 100);
+  num("rain.blurM", data.rain.blurM, 0, 50_000);
   num("maxGridBytes", data.maxGridBytes, 1024, 64 * 1024 * 1024, true);
   if (data.rain.maxCells ** 2 * 4 > data.maxGridBytes)
     fail(`rain.maxCells ${data.rain.maxCells} a side needs more than maxGridBytes (${data.maxGridBytes})`);
@@ -3015,6 +3016,7 @@ export function climateRust(data) {
     `        base_rain: ${rf(r.baseRain)},`,
     `        uplift_rain: ${rf(r.upliftRain)},`,
     `        lee_dry: ${rf(r.leeDry)},`,
+    `        blur_m: ${rf(r.blurM)},`,
     "    },",
     `    max_grid_bytes: ${data.maxGridBytes},`,
     `    discharge: [${rf(data.discharge.min)}, ${rf(data.discharge.max)}],`,

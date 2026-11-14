@@ -261,7 +261,7 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// BUGS.md #166 at a distance: the far tree's trunk draws no side toward a leaf, so its
+        /// BUGS.md #167 at a distance: the far tree's trunk draws no side toward a leaf, so its
         /// leaves, flat against it, lie on none of its bark: no two of the section's faces are
         /// coplanar and overlap (held before the near fix too; a guard).
         fn a_far_trees_leaves_lie_on_none_of_its_bark(f: FaceFrame) {

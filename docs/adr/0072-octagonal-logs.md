@@ -45,7 +45,7 @@ the join rule (same group, same axis), the geometry.
    both lone or both in the middle of a stack), so a log lying a row higher or lower beside it stays
    its own octagon, not its upper half squared against the other's lower one. The rule reads one
    cell up and down beside the cell too (offsets on up to three axes, inside the mesher's apron).
-   **One octagon on every axis** (BUGS.md #167): `chamfer` and `ring` are fractions of the log's
+   **One octagon on every axis** (BUGS.md #168): `chamfer` and `ring` are fractions of the log's
    width across in metres (`octagon::across_m`): the cell's shorter side, but for a lying half
    joined above or below the whole 1 m log, so a felled log's end is the standing trunk's regular
    octagon (it was cut by a fraction of the ½ m cell, half as deep: sides 0.71 and 0.21 m, not

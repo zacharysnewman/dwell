@@ -3238,7 +3238,7 @@ fn assert_flush_round_the_trunk(m: &ChunkMeshes, bark_drawn: bool) {
             })
             .map(|(_, n)| len(*n) / 2.0)
             .sum();
-        // BUGS.md #166: the leaf draws its face only where the log's side doesn't lie: the two
+        // BUGS.md #167: the leaf draws its face only where the log's side doesn't lie: the two
         // corner strips the octagon's chamfers leave, so leaf and bark are never coplanar.
         let bark: f64 = log_tris
             .iter()
@@ -3412,7 +3412,7 @@ dwell_world::both_faces!(
     }
 );
 
-/// BUGS.md #166's fixture: a standing trunk (8, 4..=9, 8) with leaves round it and on its top,
+/// BUGS.md #167's fixture: a standing trunk (8, 4..=9, 8) with leaves round it and on its top,
 /// and a log lying along x through them (its two ½ m halves at y 10 and 11), with leaves on
 /// either side of it, above and below.
 fn trunk_and_branch_in_leaves() -> Vec<(i32, i32, i32, u16)> {
@@ -3441,7 +3441,7 @@ fn trunk_and_branch_in_leaves() -> Vec<(i32, i32, i32, u16)> {
 }
 
 dwell_world::both_faces!(
-    /// BUGS.md #166 (owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't
+    /// BUGS.md #167 (owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't
     /// be shown and they cause z fighting"): round a trunk and a lying branch in a crown, no leaf
     /// face lies on the bark it touches: no two faces of the chunk (bark, end grain, leaves) are
     /// coplanar and overlap. Red before the fix: each leaf beside the log drew its whole square
@@ -3462,7 +3462,7 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// BUGS.md #166: a leaf cell beside a standing log draws nothing on the bark it shares with
+    /// BUGS.md #167: a leaf cell beside a standing log draws nothing on the bark it shares with
     /// it: of the leaf's face toward the trunk, only the two corner strips the octagon's chamfers
     /// leave are drawn (a chamfer's cut wide each), and none of it on the log's side.
     fn a_leaf_beside_a_log_draws_only_the_octagons_corner_gaps(f: FaceFrame) {

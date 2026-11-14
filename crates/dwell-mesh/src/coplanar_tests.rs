@@ -1,4 +1,4 @@
-//! A check for z-fighting (BUGS.md #166): two triangles of a mesh that lie in one plane and
+//! A check for z-fighting (BUGS.md #167): two triangles of a mesh that lie in one plane and
 //! overlap with area. Test-only.
 
 type V = [f64; 3];

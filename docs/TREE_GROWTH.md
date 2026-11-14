@@ -260,7 +260,7 @@ trees." Leaves stay blocks; the look is data (`shared/look/leaves.json`: the blo
   and counted as covered for the cuts, so no edge or corner along it is cut and the cuts of the
   edges running into it end square against it (`mesher/leaves.rs` `flush_pieces`). The log's
   octagon stays inside its cell, so the flat face fills the octagon's corner gaps behind it; no card
-  stands off a flush face. **Less the bark** (BUGS.md #166; owner, 2026-11-13: "Tree leaf inside faces
+  stands off a flush face. **Less the bark** (BUGS.md #167; owner, 2026-11-13: "Tree leaf inside faces
   touching the tree log shouldn't be shown and they cause z fighting"): the flush face is drawn only
   where the log draws nothing on that plane: the log's side (or cap) lying there is cut out of it
   (`flush_holes`, `subtract`), so the leaf fills only the corner gaps beside the chamfers, never
