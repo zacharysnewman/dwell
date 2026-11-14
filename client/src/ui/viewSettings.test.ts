@@ -11,6 +11,7 @@ import {
   sanitizeShafts,
   SHAFT_QUALITIES,
   sanitizeFovSetting,
+  sanitizeLeafCards,
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
@@ -59,8 +60,16 @@ describe('field of view', () => {
       fovDeg: 90,
       future: [1],
       showArms: true,
+      leafCards: true,
     });
-    expect(viewRecord('garbage', 80, false)).toEqual({ fovDeg: 80, showArms: false });
+    expect(viewRecord('garbage', 80, false, false)).toEqual({
+      fovDeg: 80,
+      showArms: false,
+      leafCards: false,
+    });
+    // A record from before the Leaf cards setting reads as on; one stored off stays off.
+    expect(sanitizeLeafCards({ fovDeg: 90, showArms: true })).toBe(true);
+    expect(sanitizeLeafCards({ leafCards: false })).toBe(false);
   });
 
   it('shows your arms unless the record turned them off', () => {

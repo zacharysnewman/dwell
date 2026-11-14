@@ -1,0 +1,12 @@
+{ "formatVersion": 1, "name": "bifacial s5: drone rise from the player on face B back to the outline",
+  "keyframes": [
+    { "t": 0, "position": [1791.5, -49, 20702.5], "target": "player", "fov": 55, "timeOfDay": 0.30 },
+    { "t": 4, "position": [1830, -160, 20750], "target": "player", "fov": 55 },
+    { "t": 15, "position": [24000, -16000, 165000], "target": [0, 0, 0], "fov": 50 },
+    { "t": 17, "position": [24500, -16300, 168000], "target": [0, 0, 0], "fov": 50 }
+  ],
+  "segments": [
+    { "move": "crane", "upEasing": "inOutSine" },
+    { "move": "ease", "easing": "inOutCubic" },
+    { "move": "linear" }
+  ] }

@@ -202,18 +202,101 @@ pub(crate) struct Piece {
 
 /// The polygons of a leaf cell exposed on `ex`, with `leafy[i]` whether the neighbour on face `i`
 /// is a leaf and `nb_ex[i]` that neighbour's exposure, cut back by `s` (see the module docs).
+#[cfg(test)]
 pub(crate) fn pieces(ex: [bool; 6], leafy: [bool; 6], nb_ex: [[bool; 6]; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, leafy, nb_ex, s, false)
+    pieces_of(ex, [false; 6], &Holes::default(), leafy, nb_ex, s, false)
+}
+
+/// [`pieces`], with `flush[i]` the faces lying flat against a block beside them (block data
+/// `leafFlush`, a log; WORK_QUEUE item 48): drawn whole, as `ex`'s are, but cut on no edge or
+/// corner, so the cuts of the edges along them end square against them. A flush face is not in
+/// `ex` (nor in a neighbour's `nb_ex`).
+pub(crate) fn flush_pieces(
+    ex: [bool; 6],
+    flush: [bool; 6],
+    leafy: [bool; 6],
+    nb_ex: [[bool; 6]; 6],
+    s: f64,
+) -> Vec<Piece> {
+    pieces_of(ex, flush, &Holes::default(), leafy, nb_ex, s, false)
+}
+
+/// Per face, the polygons (cell-centred, on that face's plane) of the block beside a flush face that
+/// lie on it: a log's side or cap where it touches the leaf.
+pub(crate) type Holes = [Vec<Vec<V>>; 6];
+
+/// [`flush_pieces`], with each flush face drawn only where the block beside it leaves it uncovered:
+/// less `holes[i]`, the block's own faces lying on it (BUGS.md #167: the leaf's face and the log's
+/// side were coplanar and z-fought). What is left fills the gaps at the octagon's corners, flat
+/// against its chamfers; nothing the leaf draws there is coplanar with the log.
+pub(crate) fn flush_pieces_round(
+    ex: [bool; 6],
+    flush: [bool; 6],
+    holes: &Holes,
+    leafy: [bool; 6],
+    nb_ex: [[bool; 6]; 6],
+    s: f64,
+) -> Vec<Piece> {
+    pieces_of(ex, flush, holes, leafy, nb_ex, s, false)
+}
+
+/// Convex `poly` less the convex `hole` lying on its plane: the disjoint convex pieces outside each
+/// of the hole's edges in turn (each inside the edges before it).
+pub(crate) fn subtract(poly: Vec<V>, hole: &[V]) -> Vec<Vec<V>> {
+    if hole.len() < 3 || poly.len() < 3 {
+        return vec![poly];
+    }
+    let c: V = std::array::from_fn(|i| hole.iter().map(|p| p[i]).sum::<f64>() / hole.len() as f64);
+    let nrm = {
+        let mut s = [0.0; 3];
+        for k in 0..hole.len() {
+            let (a, b) = (hole[k], hole[(k + 1) % hole.len()]);
+            s = std::array::from_fn(|i| s[i] + cross(a, b)[i]);
+        }
+        s
+    };
+    let mut out = Vec::new();
+    let mut rest = poly;
+    for k in 0..hole.len() {
+        if rest.is_empty() {
+            break;
+        }
+        let (a, b) = (hole[k], hole[(k + 1) % hole.len()]);
+        let e: V = std::array::from_fn(|i| b[i] - a[i]);
+        let Some(mut n) = normalise(cross(e, nrm)) else {
+            continue;
+        };
+        if dot(n, c) > dot(n, a) {
+            n = n.map(|x| -x);
+        }
+        let d = dot(n, a);
+        let outside = clip(&rest, n.map(|x| -x), -d);
+        if area(&outside) > EPS {
+            out.push(outside);
+        }
+        rest = clip(&rest, n, d);
+    }
+    out
 }
 
 /// The polygons of an octagonal column (a log cell at LOD) exposed on `ex`: its vertical edges cut
 /// by `s` where both sides are open, its open faces drawn.
 pub(crate) fn column_pieces(ex: [bool; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, [false; 6], [[false; 6]; 6], s, true)
+    pieces_of(
+        ex,
+        [false; 6],
+        &Holes::default(),
+        [false; 6],
+        [[false; 6]; 6],
+        s,
+        true,
+    )
 }
 
 fn pieces_of(
     ex: [bool; 6],
+    flush: [bool; 6],
+    holes: &Holes,
     leafy: [bool; 6],
     nb_ex: [[bool; 6]; 6],
     s: f64,
@@ -226,13 +309,21 @@ fn pieces_of(
         for p in &mine {
             face = clip(&face, p.n, p.d);
         }
-        if ex[i] {
-            if area(&face) > EPS {
-                out.push(Piece {
-                    pts: face,
-                    normal: unit(i),
-                    sides: vec![i],
-                });
+        if ex[i] || flush[i] {
+            let mut parts = vec![face];
+            if flush[i] {
+                for hole in &holes[i] {
+                    parts = parts.into_iter().flat_map(|p| subtract(p, hole)).collect();
+                }
+            }
+            for pts in parts {
+                if area(&pts) > EPS {
+                    out.push(Piece {
+                        pts,
+                        normal: unit(i),
+                        sides: vec![i],
+                    });
+                }
             }
             continue;
         }
@@ -409,19 +500,30 @@ pub(super) fn leaf_voxel(
     };
     let inside = |c: [i32; 3]| c.iter().all(|&v| (-1..=N).contains(&v));
     let leafy_at = |c: [i32; 3]| inside(c) && cells.kind(c[0], c[1], c[2]).style.leafy;
-    let exposed_at = |c: [i32; 3]| -> [bool; 6] {
+    // What lies on each face of `c`: 0 open (cut there), 1 closed (a leaf, a covering cube, or
+    // unknown), 2 flush (a `leafFlush` block that doesn't cover it, a log: drawn, not cut).
+    let side_at = |c: [i32; 3]| -> [u8; 6] {
         std::array::from_fn(|i| {
             let o = nb(i, c);
             if !inside(o) {
                 // Past the padding: unknown, taken as leaf so no cut is guessed.
-                return false;
+                return 1;
             }
             let kn = cells.kind(o[0], o[1], o[2]);
             let covers = kn.occludes && kn.shape == super::Shape::Full && !kn.style.octagon;
-            !kn.style.leafy && !covers
+            if kn.style.leafy || covers {
+                1
+            } else if kn.style.leaf_flush && kn.shape == super::Shape::Full {
+                2
+            } else {
+                0
+            }
         })
     };
-    let ex = exposed_at(cell);
+    let exposed_at = |c: [i32; 3]| side_at(c).map(|k| k == 0);
+    let here = side_at(cell);
+    let ex = here.map(|k| k == 0);
+    let flush = here.map(|k| k == 2);
     let leafy: [bool; 6] = std::array::from_fn(|i| leafy_at(nb(i, cell)));
     let nb_ex: [[bool; 6]; 6] = std::array::from_fn(|i| {
         if leafy[i] {
@@ -430,11 +532,22 @@ pub(super) fn leaf_voxel(
             [false; 6]
         }
     });
-    let list = pieces(ex, leafy, nb_ex, LEAVES.chamfer);
+    let holes: Holes = std::array::from_fn(|i| {
+        if flush[i] {
+            flush_holes(cells, nb(i, cell), i)
+        } else {
+            Vec::new()
+        }
+    });
+    let list = flush_pieces_round(ex, flush, &holes, leafy, nb_ex, LEAVES.chamfer);
     // The tree owning the cell tints it (ADR 0079); a placed leaf keeps its colour.
     let tint = cells.tint(cell);
+    let first = b.vertex_count() as usize;
     for piece in list {
         emit(b, cells, crowns, k, (cell, ex), &piece, tint);
+    }
+    if k.style.render == dwell_blocks::RenderMode::Cutout {
+        mark_tree_leaves(b, first);
     }
     if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {
         let world: [i64; 3] =
@@ -444,9 +557,145 @@ pub(super) fn leaf_voxel(
                 f64::from(cell[a]) + 0.5 + if a == 1 { p[a] / CELL_H } else { p[a] }
             }))
         };
-        let list = cards(ex, world, &LEAVES.cards, at);
+        // A card reaching into a block beside it that is neither leaves nor empty (a trunk's bark)
+        // would cut through or lie along that block's faces and z-fight with them: none there.
+        let half = [0.5, 0.5 * CELL_H, 0.5];
+        let blocked = |p: V| {
+            let o: [i32; 3] =
+                std::array::from_fn(|a| (p[a] / (2.0 * half[a]) + 0.5).floor() as i32);
+            let c: [i32; 3] = std::array::from_fn(|a| cell[a] + o[a]);
+            if o == [0; 3] || !inside(c) {
+                return false;
+            }
+            let kn = cells.kind(c[0], c[1], c[2]);
+            kn.shape != super::Shape::Empty && !kn.style.leafy
+        };
+        let open = card_faces(ex, LEAVES.cards.interior_cells, |d, step| {
+            let mut c = cell;
+            c[FACES[d].0] += FACES[d].1 * step;
+            // Past the padding: unknown, taken as open (the cards kept).
+            inside(c).then(|| cells.kind(c[0], c[1], c[2]).style.leafy)
+        });
+        let list = cards(open, world, &LEAVES.cards, at, blocked);
         emit_cards(b, cells, k, cell, &list, tint);
     }
+}
+
+/// The faces of the flush block at chunk-local `log` that lie on the face `i` of the leaf beside it
+/// (the leaf's side toward it), in the leaf cell's centred coordinates: an octagonal log's side or
+/// cap there as it is drawn (its joins read round it), or the whole square for a block of no
+/// cross-section. Cells past the padding read as the log itself (taken as joined, so the hole is
+/// the larger one: a sliver of gap rather than a coplanar overlap).
+fn flush_holes(cells: &Cells<'_>, log: [i32; 3], i: usize) -> Vec<Vec<V>> {
+    use dwell_blocks::octagon::{joined_mask, section_of, state_faces};
+    let m = cells.state(log[0], log[1], log[2]);
+    if section_of(m).is_none() {
+        return vec![square(i)];
+    }
+    let at = |o: [i32; 3]| {
+        let c: [i32; 3] = std::array::from_fn(|a| log[a] + o[a]);
+        if c.iter().all(|&v| (-1..=N).contains(&v)) {
+            cells.state(c[0], c[1], c[2])
+        } else {
+            m
+        }
+    };
+    let joined = joined_mask(m, &at);
+    let (a, s) = FACES[i];
+    // The log's face toward the leaf, in its cell's [0, 1]³: on its −a side if the leaf's face is +a.
+    let plane = if s > 0 { 0.0 } else { 1.0 };
+    state_faces(m, joined, [1.0, CELL_H, 1.0])
+        .into_iter()
+        .filter(|f| f.pts.iter().all(|q| (q[a] - plane).abs() < 1e-9))
+        .map(|f| {
+            f.pts
+                .iter()
+                .map(|q| {
+                    std::array::from_fn(|k| q[k] - 0.5 + if k == a { f64::from(s) } else { 0.0 })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Marks the leaf faces from vertex `first` on as a tree's ([`crate::TREE_LEAF_FADE`] in their
+/// `plants` fade): the shader hands them over to the far trees' impostors by the frame's far
+/// trees distances (WORK_QUEUE item 31), dropping them whole past the hand-over.
+fn mark_tree_leaves(b: &mut Builder, first: usize) {
+    let end = b.vertex_count() as usize;
+    if end == first {
+        return;
+    }
+    b.m.plants.resize(first * 4, 0.0);
+    b.m.bare.resize(first, 0.0);
+    for _ in first..end {
+        b.m.plants
+            .extend([0.0, 0.0, crate::TREE_LEAF_FADE, crate::TREE_LEAF_FADE]);
+        b.m.bare.push(0.0);
+    }
+}
+
+/// The exposed faces `ex` that get cards: those whose way out is open. A face is dropped when a
+/// leaf cell lies `2..=reach` cells straight out of it (`leafy_at(face, step)`: Some(leafy) for
+/// the cell `step` cells out, None where unknown, taken as open): it looks into a cavity inside
+/// the crown, where its cards would be drawn and hidden (BUGS.md #78).
+pub(crate) fn card_faces(
+    ex: [bool; 6],
+    reach: u32,
+    leafy_at: impl Fn(usize, i32) -> Option<bool>,
+) -> [bool; 6] {
+    std::array::from_fn(|d| {
+        ex[d]
+            && !(2..=reach as i32)
+                .map_while(|step| leafy_at(d, step))
+                .any(|leafy| leafy)
+    })
+}
+
+/// The steps across each octahedral axis of a card's packed normal ([`card_speed`]): even, so 0 and
+/// every `1 - |x|` of a grid value are on the grid, the octahedral fold maps the grid onto itself,
+/// and face B's mirror (a y flip re-packed, `flip_arrays_y`) is face A's exactly. The WGSL
+/// `card_normal` (dwell-client `render/shaders.rs`) reads with the same grid.
+pub(crate) const CARD_GRID: f64 = 2048.0;
+
+/// A card's `plants.y` (the wind's speed for a plant, >= 0): the card's plane normal `n` (metres,
+/// unit), octahedral-packed on a [`CARD_GRID`]-step grid per axis (`u * (CARD_GRID + 1) + v`, under
+/// 2^23: exact in an f32), stored as -(1 + packed), which marks the vertex a card's (its wind speed
+/// 1). The cutout shaders' `plant_speed` and `card_normal` read it back (BUGS.md #78: a card on
+/// the crown's far side, facing away, is dropped in the vertex shader).
+pub(crate) fn card_speed(n: V) -> f32 {
+    let l1 = n[0].abs() + n[1].abs() + n[2].abs();
+    let (mut u, mut v) = (n[0] / l1, n[2] / l1);
+    if n[1] < 0.0 {
+        let (pu, pv) = (u, v);
+        u = (1.0 - pv.abs()) * if pu >= 0.0 { 1.0 } else { -1.0 };
+        v = (1.0 - pu.abs()) * if pv >= 0.0 { 1.0 } else { -1.0 };
+    }
+    let q = |x: f64| ((x.clamp(-1.0, 1.0) * 0.5 + 0.5) * CARD_GRID).round();
+    let (mut qu, mut qv) = (q(u), q(v));
+    // The square's outer edges fold onto themselves (u and -u on the |v| = 1 edge are one normal,
+    // the four corners straight down): one of each pair, so a flip and back is the same bits.
+    if qv == 0.0 || qv == CARD_GRID {
+        qu = qu.max(CARD_GRID - qu);
+    }
+    if qu == 0.0 || qu == CARD_GRID {
+        qv = qv.max(CARD_GRID - qv);
+    }
+    -(1.0 + (qu * (CARD_GRID + 1.0) + qv)) as f32
+}
+
+/// `card_speed`'s normal back (the WGSL `card_normal`'s twin; face B's mirror re-packs with it).
+pub(crate) fn card_normal_of(speed: f32) -> V {
+    let q = f64::from(-speed - 1.0);
+    let uq = (q / (CARD_GRID + 1.0)).floor();
+    let vq = q - uq * (CARD_GRID + 1.0);
+    let (u, v) = (uq / CARD_GRID * 2.0 - 1.0, vq / CARD_GRID * 2.0 - 1.0);
+    let mut n = [u, 1.0 - u.abs() - v.abs(), v];
+    if n[1] < 0.0 {
+        n[0] = (1.0 - v.abs()) * if u >= 0.0 { 1.0 } else { -1.0 };
+        n[2] = (1.0 - u.abs()) * if v >= 0.0 { 1.0 } else { -1.0 };
+    }
+    normalise(n).unwrap_or([0.0, 1.0, 0.0])
 }
 
 /// A leaf card: its corners (metres from the cell's centre, counter-clockwise seen from its
@@ -476,12 +725,15 @@ fn cross(a: V, b: V) -> V {
 /// `leafCards`): per exposed face a number from `look.density` (tops 2.6×, sides 2.2× by their
 /// area, bottoms 1.2×), each `look.size_m` ±25 % across, standing a little off the face and facing
 /// out of the crown (`outward`, metres from the cell's centre → the crown's direction), jittered by
-/// a hash of the cell and face, so a cell's cards are the same whichever chunk meshes it.
+/// a hash of the cell and face, so a cell's cards are the same whichever chunk meshes it. A card
+/// with a corner where `blocked` (metres from the cell's centre: inside a block it must not cross)
+/// is dropped.
 pub(crate) fn cards(
     ex: [bool; 6],
     world: [i64; 3],
     look: &dwell_look::leaves::LeafCards,
     outward: impl Fn(V) -> Option<V>,
+    blocked: impl Fn(V) -> bool,
 ) -> Vec<Card> {
     let half = [0.5, 0.5 * CELL_H, 0.5];
     let mut out = Vec::new();
@@ -538,6 +790,9 @@ pub(crate) fn cards(
             let h = size / 2.0;
             let pts: [V; 4] = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
                 .map(|(a, b)| std::array::from_fn(|i| c[i] + ux[i] * a * h + uy[i] * b * h));
+            if pts.iter().any(|&p| blocked(p)) {
+                continue;
+            }
             let blend = LEAVES.canopy_blend.max(0.6);
             let normals = pts.map(|p| canopy_normal(cn, outward(p), blend));
             out.push(Card {
@@ -581,6 +836,10 @@ fn emit_cards(
     for card in list {
         let d = card.face;
         let (a, s) = FACES[d];
+        // The card's plane normal, for the vertex shader's far-side cull (`card_speed`).
+        let p = &card.pts;
+        let edge = |i: usize| -> V { std::array::from_fn(|c| p[i][c] - p[0][c]) };
+        let card_normal = normalise(cross(edge(1), edge(3))).unwrap_or(unit(d));
         let mut fq = [0.5; 3];
         fq[a] = if s > 0 { 1.0 } else { 0.0 };
         let light = vertex_light(AO_OPEN, cells.sky_rays(cell, fq, unit(d), 60 + d as i64));
@@ -620,7 +879,7 @@ fn emit_cards(
             };
             b.m.plants.extend([
                 sway as f32,
-                1.0,
+                card_speed(card_normal),
                 look.fade_start_m as f32,
                 look.fade_end_m as f32,
             ]);

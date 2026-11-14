@@ -1,4 +1,4 @@
-// The music (docs/AUDIO.md §6a): the track the data picks (shared/music/*.json), streamed by an
+// The music (docs/AUDIO.md §6a): one track (playlist.ts picks which, shared/music/*.json), streamed by an
 // <audio> element (never decoded whole) and, once the page's AudioContext runs, routed into the
 // mixer's music bus. Browsers block sound until a user gesture: the player tries to start at once,
 // and if `play()` is refused it waits for the first pointer, key or touch gesture and starts then,
@@ -6,7 +6,7 @@
 // while the tab is hidden and fades back in on return, is silent (paused) at volume 0, and picks up
 // where the previous page left it (the main menu → the game). Plain TS: the main menu has it too.
 import type { Volumes } from './mixer';
-import type { MusicData, MusicWhen, TrackDef } from './musicTypes';
+import type { TrackDef } from './musicTypes';
 
 /** The dev store that turns the music off ("off"; the e2e suite and the bench set it). */
 export const MUSIC_KEY = 'dwell.music';
@@ -38,18 +38,6 @@ export function musicEnabled(search: string, store: Pick<Storage, 'getItem'> | n
   } catch {
     return stored !== 'off';
   }
-}
-
-/**
- * The track to play: the first whose `when` is among the conditions holding now. Only "always" is
- * understood so far; a later condition (a biome, the night, a menu) joins `holding` where it is
- * known.
- */
-export function chooseTrack(
-  data: MusicData,
-  holding: readonly MusicWhen[] = ['always'],
-): TrackDef | null {
-  return data.tracks.find((t) => holding.includes(t.when)) ?? null;
 }
 
 /** What the player uses of an HTMLAudioElement. */
@@ -132,6 +120,11 @@ export class MusicPlayer {
 
   get time(): number {
     return this.el?.currentTime ?? 0;
+  }
+
+  /** The track's length (s), NaN until its metadata loads. */
+  get duration(): number {
+    return this.el?.duration ?? NaN;
   }
 
   /** The output level now, 0–1 (before the master volume when routed). */

@@ -32,8 +32,7 @@ use dwell_world::ramps::{self, RampFacing};
 use dwell_world::tree_tint::{Tint, TreeTint, tint_at};
 use dwell_world::{
     BUILD_VOLUME, CELL_H, CHUNK_SIZE, CORE_LAYERS, Chunk, ChunkCoord, DiscOverlap, M, MIDPLANE_Y,
-    Overlap, SEA_LEVEL, SEA_LEVEL_M, chunk_disc_overlap, inside_world_disc, local_index, m_of_row,
-    rows_for_m,
+    Overlap, SEA_LEVEL, SEA_LEVEL_M, local_index, m_of_row, rows_for_m,
 };
 use std::sync::Arc;
 
@@ -213,10 +212,17 @@ impl WhereRange {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Where {
     pub weight: f64,
+    /// The biome map's 0..1-ish temperature (the starter's and Chisel's tuning).
     pub temperature: WhereRange,
     pub wetness: WhereRange,
     pub elevation: WhereRange,
     pub coast: WhereRange,
+    /// °C (R4, the presets' climate envelope): the climate's in a world with one
+    /// (`tectonics.climate`), else the 0..1 temperature in °C by `vegetation.json` `climate`.
+    pub celsius: WhereRange,
+    /// Annual rain, mm (R4, Whittaker-style): read only in a world with a climate; fits
+    /// everywhere in a world without one.
+    pub rain: WhereRange,
 }
 
 /// The biome map's geography (`terrain.json` `biomeMap`; `biomemap.rs`).
@@ -228,6 +234,15 @@ pub struct BiomeMap {
     pub wet_reach: f64,
     pub dither_wavelength: i32,
     pub dither: f64,
+    /// The share of the border dither that is a per-column hash (1: the default world's ragged
+    /// speckle; 0: none, the noise alone, so biomes meet in clumps and fingers; WORK_QUEUE item 15,
+    /// 0.68: "speckled terrain looks gross").
+    pub dither_speckle: f64,
+    /// The border noise's sample point warped by about ± this (m) at 4 × its wavelength (0: none),
+    /// so a border wanders in organic fingers rather than following the weights' contours.
+    pub dither_warp: f64,
+    /// The biomes' tree densities blend by their weights to this power (1: as they are).
+    pub trees_sharpen: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
@@ -507,6 +522,9 @@ pub struct Column {
     pub lip: bool,
     /// In a chute's stream (ADR 0059): running water over its top, no still water.
     pub stream: bool,
+    /// The rock's wall shows at its top (an erosion mesa's scarp, a hard bed's wall): its edge
+    /// takes notched ramps where rocks.json `shaping.notched` is `mesaEdges`.
+    pub wall: bool,
 }
 
 /// A column's bank shaping (a biome's `banks`, or the biomes' blend at a column).
@@ -667,9 +685,24 @@ pub struct BiomeSet {
     pub geology: crate::geology::Resolved,
     /// Each biome's own stack (its `rockStack`), by index into the geology's stacks.
     biome_stack: Vec<Option<usize>>,
-    /// The rocks' palettes from here: rock r's scree palette at `rock_first + 2r` (ground and
-    /// under its scree, rock its face), its cap palette at `+ 1` (ground and under its cap).
+    /// The rocks' palettes from here (the first rock's).
     rock_first: u16,
+    /// Rock r's scree palette (ground and under its scree, rock its face); its cap palette at
+    /// `+ 1` (ground and under its cap). The rocks of the noise's stacks (weight above 0) from
+    /// `rock_first` in order; a rock only in stacks of weight 0 (R5's plate provinces) after
+    /// every other palette, so adding one leaves the others' palettes where they were.
+    rock_palette: Vec<u16>,
+    /// Per rock, the palette of its first `capBy` tread (the rest follow in order; BUGS.md #134).
+    cap_by_palette: Vec<u16>,
+    /// Per blend (rocks.json `blends`) and palette: the first of that palette's blended variants
+    /// (one per tone, in order), `u16::MAX` where neither its ground nor its under is blended.
+    blend_first: Vec<Vec<u16>>,
+    /// Per stack, the blend whose `stacks` name it.
+    stack_blend: Vec<Option<usize>>,
+    /// The palette each blended variant was made from (variants from `blend_start` on), so a
+    /// variant reads as its band's biome.
+    blend_start: u16,
+    blend_origin: Vec<u16>,
     /// The drainage seen from above (T4), built only where a biome erodes.
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
@@ -701,9 +734,59 @@ struct SnowLine {
 }
 
 impl BiomeSet {
+    /// The set's configuration as text: everything but its whole-map grids (the biome field and
+    /// the drainage), which are derived from the map and this (`TerrainGenerator::spawn_key`;
+    /// BUGS.md #132: formatting the grids too took ~134 ms a face on the Realistic world).
+    pub fn config_text(&self) -> String {
+        format!(
+            "{:?}",
+            (
+                &self.list,
+                &self.palettes,
+                &self.first,
+                self.field.is_some(),
+                &self.params,
+                &self.geology,
+                &self.biome_stack,
+                (
+                    self.rock_first,
+                    &self.rock_palette,
+                    &self.cap_by_palette,
+                    (&self.blend_first, &self.stack_blend, self.blend_start)
+                ),
+                self.drainage.is_some(),
+                &self.soft_tops,
+                (&self.snow, &self.biome_snow),
+                (
+                    &self.soil_first,
+                    self.soil_types,
+                    self.soil_list,
+                    &self.soil_has_blocks
+                ),
+            )
+        )
+    }
+
+    /// The bytes each of its whole-map grids holds (BUGS.md #70; `tests/starter_memory.rs`).
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        let mut out = Vec::new();
+        if let Some(f) = &self.field {
+            out.extend(f.grid_bytes());
+        }
+        if let Some(d) = &self.drainage {
+            out.extend(d.grid_bytes());
+        }
+        out
+    }
+
     /// The biome whose band palette `p` is, its soil palettes too (None for the rocks' and the
     /// snow's palettes).
     pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
+        let p = if p >= self.blend_start {
+            *self.blend_origin.get(usize::from(p - self.blend_start))?
+        } else {
+            p
+        };
         if p < self.rock_first {
             return Some(self.first.partition_point(|&f| f <= p) - 1);
         }
@@ -762,7 +845,7 @@ impl BiomeSet {
             palettes.extend(b.bands.iter().map(Bands::of));
         }
         let rock_first = palettes.len() as u16;
-        for r in geology.rocks {
+        let push_rock = |palettes: &mut Vec<Bands>, r: &crate::geology::Rock| {
             let (face, cap, scree) = (
                 dwell_blocks::require(r.face),
                 dwell_blocks::require(r.cap),
@@ -780,6 +863,26 @@ impl BiomeSet {
                 rock: face,
                 shore: scree,
             });
+            palettes.len() as u16 - 2
+        };
+        // A rock in no stack of weight above 0 (only in weight-0 stacks, R5, or in none, named by
+        // a rule such as plates.json `volcanism`) takes its palettes last (below), so it moves no
+        // other palette.
+        let late: Vec<bool> = geology
+            .rocks
+            .iter()
+            .map(|r| {
+                !geology
+                    .stacks
+                    .iter()
+                    .any(|s| s.weight > 0.0 && s.layers.iter().any(|l| l.rock == r.name))
+            })
+            .collect();
+        let mut rock_palette = vec![0u16; geology.rocks.len()];
+        for (i, r) in geology.rocks.iter().enumerate() {
+            if !late[i] {
+                rock_palette[i] = push_rock(&mut palettes, r);
+            }
         }
         let biome_stack = list
             .iter()
@@ -872,16 +975,87 @@ impl BiomeSet {
                 Some(f)
             })
             .collect();
+        // The rocks only in stacks of weight 0 (R5), last.
+        for (i, r) in geology.rocks.iter().enumerate() {
+            if late[i] {
+                rock_palette[i] = push_rock(&mut palettes, r);
+            }
+        }
+        // The rocks' treads by the climate (`capBy`, BUGS.md #134), after all those.
+        let cap_by_palette = geology
+            .rocks
+            .iter()
+            .map(|r| {
+                let first = palettes.len() as u16;
+                for c in r.cap_by {
+                    let cap = dwell_blocks::require(c.cap);
+                    palettes.push(Bands {
+                        ground: cap,
+                        under: cap,
+                        rock: dwell_blocks::require(r.face),
+                        shore: dwell_blocks::require(r.scree),
+                    });
+                }
+                first
+            })
+            .collect();
+        // The blends' variants of every palette they reach (0.64), after all those.
+        let blend_start = palettes.len() as u16;
+        let mut blend_origin = Vec::new();
+        let blend_first = geology
+            .blends
+            .iter()
+            .map(|b| {
+                let tones: Vec<StateId> =
+                    b.blocks.iter().map(|n| dwell_blocks::require(n)).collect();
+                let n = palettes.len();
+                (0..n)
+                    .map(|p| {
+                        let base = palettes[p];
+                        let (g, u) = (tones.contains(&base.ground), tones.contains(&base.under));
+                        if !(g || u) {
+                            return u16::MAX;
+                        }
+                        let f = palettes.len() as u16;
+                        for &t in &tones {
+                            blend_origin.push(p as u16);
+                            palettes.push(Bands {
+                                ground: if g { t } else { base.ground },
+                                under: if u { t } else { base.under },
+                                ..base
+                            });
+                        }
+                        f
+                    })
+                    .collect()
+            })
+            .collect();
+        let stack_blend = geology
+            .stacks
+            .iter()
+            .map(|s| {
+                geology
+                    .blends
+                    .iter()
+                    .position(|b| b.stacks.contains(&s.name))
+            })
+            .collect();
         Self {
             list: list.to_vec(),
             palettes,
             first,
+            blend_first,
+            stack_blend,
+            blend_start,
+            blend_origin,
             field,
             params,
             geology: crate::geology::Resolved::new(geology, world_seed)
                 .with_tectonics(map.tectonics),
             biome_stack,
             rock_first,
+            rock_palette,
+            cap_by_palette,
             drainage: (geology.erosion.strength > 0.0
                 && list.iter().any(|b| b.erosion > 0.0 || b.gullies > 0.0))
             .then(|| crate::geology::DrainageField::of(map, geology.erosion.threshold)),
@@ -1058,6 +1232,11 @@ pub struct TerrainGenerator {
     /// The portals between the faces (`portals.rs`), shared by both faces' generators; none for a
     /// face's generator on its own.
     portals: Option<Arc<Portals>>,
+    /// This face's resurrection shrines (`shrines.rs`); none for a face's generator on its own.
+    shrines: Option<Arc<crate::shrines::Shrines>>,
+    /// This face's town sites (`towns.rs`), kept clear of trees; none but on the server's world
+    /// (`BifacialTerrain::sized`), whose towns are founded.
+    towns: Option<Arc<crate::towns::Towns>>,
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
@@ -1182,9 +1361,15 @@ impl TerrainGenerator {
         Self::with_map(world_seed, worldmap::for_seed(world_seed))
     }
 
+    /// [`TerrainGenerator::new`] in a world of `size` (BIG_MAP.md M2): its map is the size's
+    /// (`worldmap::for_seed_sized`), and so are its disc, build volume and base field.
+    pub fn sized(world_seed: u64, size: dwell_protocol::world_size::WorldSize) -> Self {
+        Self::with_map(world_seed, worldmap::for_seed_sized(world_seed, size))
+    }
+
     /// The face generator over a given map (tests: a fixture map).
     pub fn with_map(world_seed: u64, map: Arc<WorldMap>) -> Self {
-        let base = BaseField::new(world_seed);
+        let base = BaseField::sized(world_seed, map.size);
         let (offset_x, offset_z) = base.offset();
         // The map's biomes (a test world's map carries its worldgen config, ADR 0074 B7: Chisel's
         // edit, whole), shared by every generator of this map in the process (`shared_biomes`).
@@ -1215,6 +1400,8 @@ impl TerrainGenerator {
             vegetation: crate::vegetation::VEGETATION,
             biomes,
             portals: None,
+            shrines: None,
+            towns: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
             volume: None,
@@ -1236,6 +1423,11 @@ impl TerrainGenerator {
     /// This face's world map.
     pub fn map(&self) -> &Arc<WorldMap> {
         &self.map
+    }
+
+    /// The world's disc and build volume: its map's size's (BIG_MAP.md M2).
+    pub fn world(&self) -> dwell_world::WorldBounds {
+        dwell_world::WorldBounds::of(self.map.size)
     }
 
     /// The generator with `biome` alone in place of the build's biomes (everywhere).
@@ -1347,7 +1539,7 @@ impl TerrainGenerator {
             .geology
             .rock(st.layers[0].rock)
             .map_or(0.5, |r| geo.geology.rocks[r].hardness);
-        let (dist, line, acc) = field.at(x as f64, z as f64);
+        let (dist, line, acc) = field.at(&self.map, x as f64, z as f64);
         let period = geo.profiles[stack].period().max(1.0);
         let top = self.biomes.soft_tops[stack];
         let snapped = ((line - top) / period).floor() * period + top;
@@ -1401,7 +1593,12 @@ impl TerrainGenerator {
         };
         let geo = &self.biomes.geology;
         let e = &geo.geology.erosion;
-        let (mut g, cut) = crate::geology::eroded(e, h, floor, margin);
+        // Relief on the mesas (rocks.json `mesaRelief`): the standing ground undulates, tilts and
+        // carries knobs, the floor slopes to its drainage line with mounds, fans and washes; the
+        // wall and the talus between them follow both, so the edge stays a wall.
+        let (top, low) = self.mesa_relief(x, z, margin);
+        let (h_top, floor) = (h + top, (floor + low).min(h + top));
+        let (mut g, cut) = crate::geology::eroded(e, h_top, floor, margin);
         let gullies: f64 = mix
             .iter()
             .map(|(i, w)| w * self.biomes.list[i].gullies)
@@ -1445,15 +1642,185 @@ impl TerrainGenerator {
         (out, rock)
     }
 
+    /// `palette` with its ground and under blocks taken by the blend of the column's stack (its
+    /// biome's `rockStack`, else the province's), at the tone the blend picks there (`slope` m per
+    /// m, at most 1, adds to it); `palette` unchanged where no blend holds.
+    fn blended(&self, mix: &crate::biomemap::Mix, x: i64, z: i64, palette: u16, slope: f64) -> u16 {
+        let set = &self.biomes;
+        if set.blend_first.is_empty() {
+            return palette;
+        }
+        let stack = match set.biome_stack[usize::from(mix.chosen)] {
+            Some(k) => k,
+            None => set.geology.province(x, z).0,
+        };
+        let Some(b) = set.stack_blend[stack] else {
+            return palette;
+        };
+        let Some(&first) = set.blend_first[b].get(usize::from(palette)) else {
+            return palette;
+        };
+        if first == u16::MAX {
+            return palette;
+        }
+        let blend = &set.geology.geology.blends[b];
+        first + blend.tone(self.world_seed as u32, x, z, slope.min(1.0)) as u16
+    }
+
+    /// The tone index (into its blend's blocks) the column at face-local (x, z) shows, if its
+    /// ground is blended (rocks.json `blends`): for tests and the map's views.
+    pub fn blend_tone_at(&self, x: i32, z: i32) -> Option<(usize, &'static str)> {
+        let col = self.column_at(x, z);
+        let set = &self.biomes;
+        for (b, firsts) in set.blend_first.iter().enumerate() {
+            for (p, &f) in firsts.iter().enumerate() {
+                let n = set.geology.geology.blends[b].blocks.len() as u16;
+                if f != u16::MAX && (f..f + n).contains(&col.palette) {
+                    let _ = p;
+                    let k = usize::from(col.palette - f);
+                    return Some((k, set.geology.geology.blends[b].blocks[k]));
+                }
+            }
+        }
+        None
+    }
+
+    /// The mesa relief at face-local (x, z) whose cut-back margin is `margin` (rocks.json
+    /// `mesaRelief`): (m added to the standing ground, m added to the floor).
+    fn mesa_relief(&self, x: i64, z: i64, margin: f64) -> (f64, f64) {
+        use crate::noise::{fbm2, mix32, seed_word};
+        let r = &self.biomes.geology.geology.mesa_relief;
+        let w = self.world_seed;
+        let noise = |stream: u32, wavelength: f64, octaves: u32| {
+            f64::from(fbm2(
+                seed_word(w, 0x6E01_0100 + stream),
+                x,
+                z,
+                wavelength.max(1.0) as i32,
+                octaves,
+                None,
+            ))
+        };
+        let mut top = 0.0;
+        if r.top_amplitude > 0.0 {
+            top += r.top_amplitude * 2.0 * noise(0, r.top_wavelength, 3);
+        }
+        if r.dip > 0.0 {
+            // A tilt of about `dip` m per m: a long noise whose slope is near the dip.
+            top += r.dip * r.dip_wavelength / std::f64::consts::PI
+                * 2.0
+                * noise(1, r.dip_wavelength, 1);
+        }
+        if r.knob_height > 0.0 && r.knob_chance > 0.0 {
+            let cell = r.knob_spacing.max(1.0);
+            let (cx, cz) = ((x as f64 / cell).floor(), (z as f64 / cell).floor());
+            let mut best = 0.0f64;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let (i, k) = (cx as i64 + dx, cz as i64 + dz);
+                    let hsh = mix32(seed_word(w, 0x6E01_0110) ^ mix32(i as u32 ^ mix32(k as u32)));
+                    let u = |s: u32| f64::from(mix32(hsh ^ s)) / 4_294_967_296.0;
+                    if u(1) >= r.knob_chance {
+                        continue;
+                    }
+                    let (px, pz) = ((i as f64 + u(2)) * cell, (k as f64 + u(3)) * cell);
+                    let d = (x as f64 - px).hypot(z as f64 - pz) / r.knob_radius.max(1.0);
+                    if d < 1.0 {
+                        // A butte: steep sides, a flat-ish top.
+                        let t = (1.0 - d) / 0.35;
+                        best = best.max(r.knob_height * (0.5 + 0.5 * u(4)) * t.min(1.0).powf(0.7));
+                    }
+                }
+            }
+            top += best;
+        }
+        // The floor: rising from its drainage line, low mounds, talus fans, washes.
+        let mut low = 0.0;
+        if let Some(field) = self.biomes.drainage.as_ref() {
+            let (dist, _, _) = field.at(&self.map, x as f64, z as f64);
+            low += (r.floor_slope * dist).min(r.floor_rise);
+        }
+        if r.mound_height > 0.0 {
+            low += r.mound_height * (2.0 * noise(2, r.mound_wavelength, 2)).max(0.0);
+        }
+        if r.fan_height > 0.0 && r.fan_width > 0.0 {
+            let e = &self.biomes.geology.geology.erosion;
+            let beyond = -margin - e.talus_width;
+            let t = (1.0 - beyond / r.fan_width).clamp(0.0, 1.0);
+            let lobes =
+                0.5 + 0.5 * (2.0 * noise(3, (r.fan_width * 0.8).max(16.0), 1)).clamp(-1.0, 1.0);
+            low += r.fan_height * t * t * lobes;
+        }
+        if r.wash_depth > 0.0 {
+            let v = noise(4, r.wash_wavelength, 2).abs();
+            low -= r.wash_depth * (1.0 - smooth01(v / 0.06));
+        }
+        (top, low)
+    }
+
+    /// The palette rock `r`'s tread shows at face-local (x, z) over `base` m: its first `capBy`
+    /// entry whose climate holds there (BUGS.md #134), else its `cap`'s. A world with one biome has
+    /// no geography: the `cap`.
+    fn tread_palette(&self, r: usize, x: i64, z: i64, base: f64) -> u16 {
+        let set = &self.biomes;
+        let cap = set.rock_palette[r] + 1;
+        let rules = set.geology.geology.rocks[r].cap_by;
+        if rules.is_empty() {
+            return cap;
+        }
+        let Some(geo) = set.geography(x, z, base) else {
+            return cap;
+        };
+        let arid = &set.geology.geology.arid;
+        rules
+            .iter()
+            .position(|c| c.climate.holds(arid, geo.celsius, geo.wetness, geo.rain))
+            .map_or(cap, |k| set.cap_by_palette[r] + k as u16)
+    }
+
+    /// Whether ground at face-local (x, z) is arid by the geology's `arid` (rocks.json; BUGS.md
+    /// #134): None in a world with one biome (no geography).
+    pub fn arid_at(&self, x: i64, z: i64) -> Option<bool> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        let geo = self.biomes.geography(x, z, base)?;
+        Some(
+            self.biomes
+                .geology
+                .geology
+                .arid
+                .holds(geo.celsius, geo.wetness, geo.rain),
+        )
+    }
+
     /// Whether column `col`'s top shows a rock's blocks (the stack's wall, tread or talus: the
     /// rock shaping's or the erosion's), not its biome band's.
     pub fn is_rock_palette(&self, col: &Column) -> bool {
         self.biomes.biome_of_palette(col.palette).is_none()
     }
 
+    /// The soil type `rock` weathers to at face-local (x, z) over `base` m: by the climate there
+    /// where the rock's soils name one (R5), else the rock's own.
+    fn soil_type_of(&self, rock: &str, x: i64, z: i64, base: f64) -> u8 {
+        let v = &self.vegetation;
+        if v.climate_dependent(rock)
+            && let Some(geo) = self.biomes.geography(x, z, base)
+        {
+            return v
+                .rock_soil(rock, v.celsius(geo.temperature), geo.wetness)
+                .soil_type;
+        }
+        v.rock_soil(rock, f64::NAN, f64::NAN).soil_type
+    }
+
     /// This generator's geology (`rocks.json`).
     pub fn geology(&self) -> &crate::geology::Geology {
         &self.biomes.geology.geology
+    }
+
+    /// The face's plate tectonics, in a world whose tectonics come from plates (R5; the big map's
+    /// layers, `map_layers.rs`).
+    pub fn plate_tectonics(&self) -> Option<&crate::plate_tectonics::PlateTectonics> {
+        self.biomes.geology.plate_tectonics().map(|t| &**t)
     }
 
     /// The rock province's stack at face-local (x, z): the noise's, or the tectonics' (T5: a
@@ -1713,6 +2080,68 @@ impl TerrainGenerator {
         self
     }
 
+    /// The generator with this face's resurrection shrines built on it (`BifacialTerrain` gives
+    /// each face its own, sited clear of the portals).
+    pub fn with_shrines(mut self, shrines: Arc<crate::shrines::Shrines>) -> Self {
+        self.shrines = Some(shrines);
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// The generator with this face's town sites kept clear of trees (BUGS.md #169).
+    pub fn with_towns(mut self, towns: Arc<crate::towns::Towns>) -> Self {
+        self.towns = Some(towns);
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// This face's town sites, if this generator keeps them clear.
+    pub fn towns(&self) -> Option<&Arc<crate::towns::Towns>> {
+        self.towns.as_ref()
+    }
+
+    /// This face's shrines, if this generator has them.
+    pub fn shrines(&self) -> Option<&Arc<crate::shrines::Shrines>> {
+        self.shrines.as_ref()
+    }
+
+    /// A shrine's structure on this face: its anchor on the site, its bottom row on the lowest
+    /// ground under its bottom layer (as a portal's monument stands).
+    pub fn shrine(&self, shrines: &crate::shrines::Shrines, s: crate::shrines::Shrine) -> Placed {
+        let base = shrines
+            .feet(s)
+            .map(|(x, z)| top_voxel(self.column_at(x, z).height))
+            .min()
+            .unwrap_or(0);
+        shrines.placed_at(s, base + 1)
+    }
+
+    /// Where a player stands up at shrine `s` (face-local feet, m): its `stand` column's centre,
+    /// on the floor built there.
+    pub fn shrine_stand(
+        &self,
+        shrines: &crate::shrines::Shrines,
+        s: crate::shrines::Shrine,
+    ) -> [f64; 3] {
+        let placed = self.shrine(shrines, s);
+        let (x, z) = shrines.stand_column(s);
+        let floor = placed
+            .cells()
+            .filter(|(p, _)| p[0] == x && p[2] == z)
+            .map(|(p, _)| p[1])
+            .max()
+            .unwrap_or(placed.min[1] - 1);
+        // The floor stands on the ground; where the ground under the stand column is higher than
+        // the structure's base, a player stands on that ground.
+        let ground = top_voxel(self.column_at(x, z).height);
+        let top = floor.max(ground);
+        [
+            f64::from(x) + 0.5,
+            dwell_world::m_of_row(top + 1),
+            f64::from(z) + 0.5,
+        ]
+    }
+
     /// The portals, if this generator has them.
     pub fn portals(&self) -> Option<&Arc<Portals>> {
         self.portals.as_ref()
@@ -1952,7 +2381,7 @@ impl TerrainGenerator {
     /// The river whose channel holds full-detail column (x, z), and its surface row (none off a
     /// channel, or at the sea's level).
     fn river_row_at(&self, x: i64, z: i64) -> Option<(u32, i32)> {
-        if !inside_world_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
+        if !self.world().inside_disc(x, z) || !self.map.channels.near(x as f64, z as f64, 0.0) {
             return None;
         }
         let (wx, wz) = self.warp(
@@ -1971,7 +2400,7 @@ impl TerrainGenerator {
     /// below it water); none where no river channel or lake is. A light lookup for the waterline
     /// (docs/WATER_FLOW.md §17).
     fn water_row_at(&self, x: i64, z: i64) -> Option<i32> {
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return None;
         }
         let map = &*self.map;
@@ -2049,7 +2478,7 @@ impl TerrainGenerator {
     /// channel's columns take the valley floor at its banks' height (no bed cut, no lips, no water
     /// drawn), for the water surface grid's prototype (Phase 53 G0, ADR 0060).
     fn base_column_with(&self, x: i64, z: i64, cell: i64, beds: bool) -> Column {
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return Column {
                 outside: true,
                 ..Column::default()
@@ -2279,15 +2708,16 @@ impl TerrainGenerator {
         }
         // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
         // tread its cap, a massive rock's steep faces its face.
+        let wall = matches!(rock, Some((_, crate::geology::Part::Wall))) && band != Band::Shore;
         if let Some((r, part)) = rock
             && band != Band::Shore
         {
             use crate::geology::Part;
-            let scree = self.biomes.rock_first + 2 * r as u16;
+            let scree = self.biomes.rock_palette[r];
             match part {
                 Part::Wall => (palette, band) = (scree, Band::Rock),
                 Part::Talus => (palette, band) = (scree, Band::Ground),
-                Part::Tread => (palette, band) = (scree + 1, Band::Ground),
+                Part::Tread => (palette, band) = (self.tread_palette(r, x, z, base), Band::Ground),
                 Part::Plain if band == Band::Rock => palette = scree,
                 Part::Plain => {}
             }
@@ -2301,13 +2731,28 @@ impl TerrainGenerator {
             // T3b: the soil type's blocks (sand under the grass on sandstone, say) on the band's
             // own ground, by the rock at the surface.
             let rock = self.surface_rock(&mix, x, z, base);
-            let soil = self.vegetation.rock_soil(rock.name).soil_type;
+            let soil = self.soil_type_of(rock.name, x, z, base);
             if let Some(p) = self
                 .biomes
                 .soil_palette(usize::from(mix.chosen), level_band, soil)
             {
                 palette = p;
             }
+        }
+        // The ground's ordered blend by stack (rocks.json `blends`, 0.64): mesa country's red
+        // dirt, red sand and tan in order, no hard bands.
+        if snow != Some(None) {
+            palette = self.blended(&mix, x, z, palette, gx.hypot(gz));
+        }
+        // Active and dormant volcanoes (plates.json `uplift.volcanism`, 0.64): bare lava rock
+        // and an apron in the shallows on an active one, soil and plants by a dormant one's age.
+        if snow.is_none()
+            && band != Band::Rock
+            && let Some((p, b)) = self.volcanic_surface(x, z, h, slope, wet)
+        {
+            // `None` from the cover: the biome's own ground (over the cone's rock).
+            let own = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
+            (palette, band) = (p.unwrap_or(own), b);
         }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
@@ -2330,7 +2775,106 @@ impl TerrainGenerator {
             base: height,
             lip: on_lip,
             stream,
+            wall,
         }
+    }
+
+    /// What a volcano's state shows at face-local (x, z) (plates.json `uplift.volcanism`): its
+    /// ground `h` m from sea level (below 0 under water), `slope` rise per run: on a volcano's
+    /// ground the cover by its age (bare lava rock, dirt patches or the biome's own), under the
+    /// shallows by an active one its apron of lava rock and obsidian (a palette and band; no
+    /// palette: the biome's own ground, soil and plants covering the rock); `None` where it
+    /// changes nothing (and in a world without plates).
+    fn volcanic_surface(
+        &self,
+        x: i64,
+        z: i64,
+        h: f64,
+        slope: f64,
+        wet: bool,
+    ) -> Option<(Option<u16>, Band)> {
+        let t = self.plate_tectonics()?;
+        let vo = &t.uplift.volcanism;
+        let (fx, fz) = (x as f64, z as f64);
+        let patch = |k: u32| {
+            let n = fbm2(
+                crate::noise::mix32(self.snow_seed ^ 0x7A1A_0E00 ^ k),
+                x + self.offset_x,
+                z + self.offset_z,
+                vo.patch_wavelength as i32,
+                3,
+                None,
+            );
+            (0.5 + 1.6 * f64::from(n)).clamp(0.0, 1.0)
+        };
+        if wet {
+            let depth = -h;
+            if !(0.0..=vo.apron_depth).contains(&depth) {
+                return None;
+            }
+            let g = t.volcano_ground(fx, fz, vo.apron[1] * (1.0 + vo.apron_noise))?;
+            let s = t.states[g.volcano];
+            if !s.active {
+                return None;
+            }
+            // How far out from the shore: the depth over the ground's slope.
+            let offshore = depth / slope.max(0.02);
+            let reach = s.apron * (1.0 + vo.apron_noise * (2.0 * patch(1) - 1.0));
+            if offshore > reach {
+                return None;
+            }
+            let glass = patch(2) > 1.0 - vo.glass_share;
+            return self
+                .surface_palette(if glass { vo.glass } else { vo.bare })
+                .map(|(p, b)| (Some(p), b));
+        }
+        let g = t.volcano_ground(fx, fz, 0.0)?;
+        let s = t.states[g.volcano];
+        let cover = if s.active {
+            0.0
+        } else {
+            let c = smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64;
+            // A mostly green cone's bare rock only near its shore and its vent (`bareShore`,
+            // `bareVent`, from `coverFull`): no black blotches across its lowland.
+            if c >= vo.cover_full && h >= vo.bare_shore && g.reach >= vo.bare_vent {
+                1.0
+            } else {
+                c
+            }
+        };
+        // Toward the ground's edge everything is the ground's around (no ring).
+        let c = 1.0 - g.weight * (1.0 - cover);
+        if c >= 1.0 {
+            // Fully covered (the patch noise reaches 1 itself: no bare rock left at full cover).
+            return (g.weight > 0.0).then_some((None, Band::Ground));
+        }
+        let n = patch(0);
+        let dirt = (vo.dirt * 2.0 * (1.0 - c)).min(c);
+        if n < c - dirt {
+            (g.weight > 0.0).then_some((None, Band::Ground))
+        } else {
+            self.surface_palette(if n < c { vo.soil } else { vo.bare })
+                .map(|(p, b)| (Some(p), b))
+        }
+    }
+
+    /// A named rock's part as a palette and band (`volcanism`'s surfaces): its scree and cap
+    /// on the ground, its face as rock.
+    fn surface_palette(&self, s: crate::plate_tectonics::Surface) -> Option<(u16, Band)> {
+        use crate::plate_tectonics::RockPart;
+        let r = self
+            .biomes
+            .geology
+            .geology
+            .rocks
+            .iter()
+            .position(|r| r.name == s.rock)?;
+        let p = self.biomes.rock_palette[r];
+        Some(match s.part {
+            RockPart::Scree => (p, Band::Ground),
+            RockPart::Cap => (p + 1, Band::Ground),
+            RockPart::Face => (p, Band::Rock),
+        })
     }
 
     /// The flow (m³/s) through face-local column (x, z) by the world map (docs/WATER_FLOW.md §2.1):
@@ -2604,7 +3148,7 @@ impl TerrainGenerator {
     /// G0: rivers without beds, ADR 0060); the chunk path doesn't use it.
     pub fn ground_without_water(&self, x: i32, z: i32) -> Option<f32> {
         let (x, z) = (i64::from(x), i64::from(z));
-        if !inside_world_disc(x, z) {
+        if !self.world().inside_disc(x, z) {
             return None;
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
@@ -2629,12 +3173,27 @@ impl TerrainGenerator {
 
     pub fn solid_at(&self, x: i32, y: i32, z: i32) -> bool {
         if !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
-            || !BUILD_VOLUME.contains_voxel(i64::from(x), i64::from(y), i64::from(z))
+            || !self
+                .world()
+                .volume()
+                .contains_voxel(i64::from(x), i64::from(y), i64::from(z))
         {
             return false;
         }
         let col = self.column_at(x, z);
         !col.outside && y <= top_voxel(col.height)
+    }
+
+    /// How many ramp pieces top column (x, z) (0: a flat top), by the generation rule over its
+    /// neighbours (`generate`'s, from the columns alone).
+    pub fn ramp_pieces_at(&self, x: i32, z: i32) -> usize {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return 0;
+        }
+        let top = top_voxel(col.height).clamp(FACE_MIN_Y, FACE_MAX_Y - 1);
+        self.pieces_with(|nx, nz| self.column_at(nx, nz), x, z, &col, top)
+            .len()
     }
 
     /// The top solid voxel of a column inside the disc.
@@ -2763,13 +3322,34 @@ impl TerrainGenerator {
         portals.monument_at(portal, base + 1)
     }
 
-    /// The monuments reaching columns [x0, x1] × [z0, z1], placed.
+    /// The monuments reaching columns [x0, x1] × [z0, z1], placed: the portals' and the shrines'.
     fn monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let mut out = self.portal_monuments_near(lo, hi);
+        out.extend(self.shrines_placed_near(lo, hi));
+        out
+    }
+
+    /// The portals' monuments reaching columns [x0, x1] × [z0, z1], placed.
+    fn portal_monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
         let Some((portals, near)) = self.portals_near(lo, hi) else {
             return Vec::new();
         };
         near.into_iter()
             .filter_map(|p| self.monument(portals, p))
+            .filter(|m| {
+                m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
+            })
+            .collect()
+    }
+
+    /// The shrines' structures reaching columns [x0, x1] × [z0, z1], placed.
+    fn shrines_placed_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let Some(sh) = self.shrines.as_deref() else {
+            return Vec::new();
+        };
+        sh.near(self, lo, hi)
+            .into_iter()
+            .map(|s| self.shrine(sh, s))
             .filter(|m| {
                 m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
             })
@@ -2882,7 +3462,12 @@ impl TerrainGenerator {
         };
         let v = &self.vegetation;
         let (rock, _) = self.rock_at_surface(x, z);
-        let (soil_depth, soil_type) = v.soil(rock.name, slope_deg, geo.wetness);
+        let (soil_depth, soil_type) = v.soil(
+            rock.name,
+            slope_deg,
+            geo.wetness,
+            v.celsius(geo.temperature),
+        );
         Some(crate::vegetation::Climate {
             temperature_c: v.celsius(geo.temperature),
             moisture: geo.wetness,
@@ -2930,8 +3515,24 @@ impl TerrainGenerator {
     }
 
     /// Planter `i`'s density at (x, z) from the biomes' `trees` by their weights (ADR 0074 B5; 1
-    /// where it does not vary).
+    /// where it does not vary), and by the volcanoes' states.
     pub fn tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
+        // The volcanoes' (plates.json `uplift.volcanism`): none on an active cone, more with a
+        // dormant one's age.
+        let volcanic = self
+            .plate_tectonics()
+            .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
+        // A rule sparse on the erosion's standing tops (`tops`, 0.68: sagebrush on the floors).
+        let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
+        let on_top = tops < 1.0
+            && self
+                .erosion_at(x, z)
+                .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
+        let tops = if on_top { tops } else { 1.0 };
+        tops * volcanic * self.biome_tree_density_at(i, x, z)
+    }
+
+    fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
         let (per, varies) = &*self.tree_density;
         if !varies {
             return 1.0;
@@ -2941,11 +3542,18 @@ impl TerrainGenerator {
             return d[0];
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
-        self.biomes
-            .mix(x, z, base)
-            .iter()
-            .map(|(b, w)| d[b] * w as f32)
-            .sum()
+        let mix = self.biomes.mix(x, z, base);
+        let k = self.biomes.params.trees_sharpen;
+        if k == 1.0 {
+            return mix.iter().map(|(b, w)| d[b] * w as f32).sum();
+        }
+        // The weights to the power `treesSharpen` (0.68, Realistic: a neighbour's dense shrubs
+        // don't spill far across a wide border; WORK_QUEUE item 15).
+        let (sum, total) = mix.iter().fold((0.0f64, 0.0f64), |(s, t), (b, w)| {
+            let w = w.powf(k);
+            (s + f64::from(d[b]) * w, t + w)
+        });
+        (sum / total.max(1e-12)) as f32
     }
 
     /// Whether the biomes' `ground` varies the ground items (ADR 0074 B5; else they ask nothing of
@@ -3110,7 +3718,26 @@ impl TerrainGenerator {
     /// ask for computed at most once per column of the rectangle and its margin, and only the
     /// columns asked (a species' wide crown makes the margin large and its candidates sparse;
     /// ADR 0079).
-    pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
+    /// The name of the placement rule a placed tree's `planter` is (`placements.json`).
+    pub fn planter_name(&self, planter: u8) -> Option<&'static str> {
+        self.planters
+            .get(usize::from(planter))
+            .map(|p| p.rule().name)
+    }
+
+    pub fn trees_in(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Tree> {
+        self.trees_in_keeping(lo, hi, true)
+    }
+
+    /// [`Self::trees_in`], with the planned towns kept clear only when `towns` is set. The spawn
+    /// search asks without them: the towns' ground keeps off the spawn's own shrine, which that
+    /// search is resolving, and a patch clear of every tree is clear of the towns' trees too.
+    fn trees_in_keeping(
+        &self,
+        (x0, z0): (i32, i32),
+        (x1, z1): (i32, i32),
+        towns: bool,
+    ) -> Vec<Tree> {
         if self.planters.is_empty() {
             return Vec::new();
         }
@@ -3138,7 +3765,7 @@ impl TerrainGenerator {
                 self.ground_of(&self.column_at(x, z))
             }
         };
-        self.trees_over((x0, z0), (x1, z1), &ground)
+        self.trees_over((x0, z0), (x1, z1), &ground, towns)
     }
 
     /// The species trees reaching columns [x0, x1] × [z0, z1] (face-local) with their leaf tints
@@ -3167,6 +3794,39 @@ impl TerrainGenerator {
                 })
             })
             .collect()
+    }
+
+    /// The species trees anchored in columns [x0, x1] × [z0, z1] (face-local), each listed once
+    /// (by its anchor, so neighbouring sections never share a tree), sorted: the far tree list an
+    /// impostor section draws (docs/proposals/TREE_IMPOSTORS.md I-2). Placements that are not
+    /// species trees (hand-built structures) have no impostor and are left out.
+    pub fn far_trees(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<crate::impostor::FarTree> {
+        if !self.planters.iter().any(|p| p.active() && p.grows()) {
+            return Vec::new();
+        }
+        let mut out: Vec<_> = self
+            .trees_in(lo, hi)
+            .into_iter()
+            .filter(|t| {
+                (lo.0..=hi.0).contains(&t.anchor[0]) && (lo.1..=hi.1).contains(&t.anchor[2])
+            })
+            .filter_map(|t| {
+                let p = &self.planters[t.planter as usize];
+                let (species, seed, stage) = p.grown(&t)?;
+                let (stem, stem_cells) = p.stem(&t);
+                Some(crate::impostor::FarTree {
+                    anchor: t.anchor,
+                    species,
+                    seed,
+                    stage,
+                    stem,
+                    stem_cells,
+                })
+            })
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
     }
 
     /// The leaf tints of an LOD section's tree cells (ADR 0079), at the levels whose cells hold
@@ -3225,7 +3885,7 @@ impl TerrainGenerator {
             return Vec::new();
         }
         let ground = |x: i32, z: i32| self.ground_of(&self.column_at(x, z));
-        self.trees_over(lo, hi, &ground)
+        self.trees_over(lo, hi, &ground, true)
     }
 
     /// The structures placed reaching [x0, x1] × [z0, z1], `ground` answering any column.
@@ -3234,6 +3894,7 @@ impl TerrainGenerator {
         (x0, z0): (i32, i32),
         (x1, z1): (i32, i32),
         ground: &dyn Fn(i32, i32) -> Option<Ground>,
+        towns: bool,
     ) -> Vec<Tree> {
         // The climate's factor on each candidate (systemic terrain T3): none unless a biome opts in,
         // so the default world asks nothing of it.
@@ -3290,17 +3951,35 @@ impl TerrainGenerator {
                 !p.box_reaches_clear((fp[0], fp[1]), (fp[2], fp[3]))
             });
         }
+        // Nor over a shrine or its clear ground.
+        if let Some(sh) = self.shrines.as_deref() {
+            trees.retain(|t| {
+                let fp = self.planters[t.planter as usize].footprint(t);
+                !sh.box_reaches_clear(self, (fp[0], fp[1]), (fp[2], fp[3]))
+            });
+        }
+        // Nor over a planned town's layout or its clear ground (BUGS.md #169).
+        if let Some(tw) = self.towns.as_deref().filter(|_| towns) {
+            trees.retain(|t| {
+                let fp = self.planters[t.planter as usize].footprint(t);
+                !tw.box_reaches_clear(self, (fp[0], fp[1]), (fp[2], fp[3]))
+            });
+        }
         trees
     }
 
     /// `is_air_chunk` given `sky_floor_at(coord.x, coord.z)`.
-    pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
+    pub fn is_air_chunk_with(
+        world: &dwell_world::WorldBounds,
+        coord: ChunkCoord,
+        sky_floor: f32,
+    ) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
         if y0 + CHUNK_SIZE <= FACE_MIN_Y || y0 >= FACE_MAX_Y {
             return true;
         }
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
-            || !BUILD_VOLUME.chunk_may_hold(coord)
+        if world.chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !world.volume().chunk_may_hold(coord)
         {
             return true;
         }
@@ -3311,12 +3990,12 @@ impl TerrainGenerator {
     pub fn is_air_chunk(&self, coord: ChunkCoord) -> bool {
         let y0 = coord.y * CHUNK_SIZE;
         if !(SEA_LEVEL..FACE_MAX_Y).contains(&y0)
-            || chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
-            || !BUILD_VOLUME.chunk_may_hold(coord)
+            || self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+            || !self.world().volume().chunk_may_hold(coord)
         {
-            return Self::is_air_chunk_with(coord, 0.0);
+            return Self::is_air_chunk_with(&self.world(), coord, 0.0);
         }
-        Self::is_air_chunk_with(coord, self.sky_floor_at(coord.x, coord.z))
+        Self::is_air_chunk_with(&self.world(), coord, self.sky_floor_at(coord.x, coord.z))
     }
 
     pub fn generate(&self, coord: ChunkCoord, chunk: &mut Chunk) {
@@ -3326,8 +4005,8 @@ impl TerrainGenerator {
             return;
         }
         // Beyond the rim of the world's disc or outside the build volume: nothing.
-        let volume = BUILD_VOLUME.chunk_overlap(coord);
-        if chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
+        let volume = self.world().volume().chunk_overlap(coord);
+        if self.world().chunk_disc_overlap(coord.x, coord.z) == DiscOverlap::Outside
             || volume == Overlap::Outside
         {
             return;
@@ -3338,6 +4017,14 @@ impl TerrainGenerator {
             return;
         }
         let near = self.portals_near((x0, z0), (x0 + S - 1, z0 + S - 1));
+        // The placed structures reaching this chunk, and the pads under their trunks (WORK_QUEUE
+        // item 44): each such column's ground levelled up to the row under its trunk's base.
+        let trees = self.chunk_trees(coord, &cols);
+        let pads = if trees.is_empty() {
+            Vec::new()
+        } else {
+            placements::pads_over(&self.planters, &trees, (x0, z0), (x0 + S - 1, z0 + S - 1))
+        };
         let voxels = chunk.voxels_mut();
         for z in 0..S {
             for x in 0..S {
@@ -3345,7 +4032,8 @@ impl TerrainGenerator {
                 if col.outside {
                     continue;
                 }
-                let top = top_voxel(col.height);
+                let pad = pads.get((z * S + x) as usize).copied().flatten();
+                let top = top_voxel(col.height).max(pad.map_or(i32::MIN, |b| b - 1));
                 let water = col.water_row();
                 let flood = col.flood_row();
                 let (part, portal) = near
@@ -3354,7 +4042,7 @@ impl TerrainGenerator {
                 let in_volume = |y: i32| {
                     (FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                         && (volume != Overlap::Partial
-                            || BUILD_VOLUME.contains_voxel(
+                            || self.world().volume().contains_voxel(
                                 i64::from(x0 + x),
                                 i64::from(y),
                                 i64::from(z0 + z),
@@ -3388,7 +4076,8 @@ impl TerrainGenerator {
                 };
                 // The stored ramp pieces over the top (HALF_HEIGHT_GRID.md §4), from the bottom;
                 // a portal's rim stands on flat ground.
-                let pieces = if rim.is_some() {
+                // A trunk's pad is flat: full cells to its top, no ramp under the trunk.
+                let pieces = if rim.is_some() || pad.is_some() {
                     &[]
                 } else {
                     self.top_pieces(&cols, x0, z0, x, z, top)
@@ -3473,7 +4162,7 @@ impl TerrainGenerator {
             self.carve_volume(v, coord, &cols, volume, chunk);
         }
         self.carve_arches(coord, &cols, volume, chunk);
-        self.stamp_trees(coord, &cols, volume, chunk);
+        self.stamp_trees(coord, &trees, volume, chunk);
         self.stamp_monuments(coord, volume, chunk);
     }
 
@@ -3561,7 +4250,7 @@ impl TerrainGenerator {
                         || y >= top
                         || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                         || (overlap == Overlap::Partial
-                            && !BUILD_VOLUME.contains_voxel(wx, i64::from(y), wz))
+                            && !self.world().volume().contains_voxel(wx, i64::from(y), wz))
                     {
                         continue;
                     }
@@ -3688,7 +4377,7 @@ impl TerrainGenerator {
                         if !s.carves(cx, cz, height, mid)
                             || !(FACE_MIN_Y..FACE_MAX_Y).contains(&y)
                             || (overlap == Overlap::Partial
-                                && !BUILD_VOLUME.contains_voxel(
+                                && !self.world().volume().contains_voxel(
                                     i64::from(wx),
                                     i64::from(y),
                                     i64::from(wz),
@@ -3703,6 +4392,34 @@ impl TerrainGenerator {
         }
     }
 
+    /// Whether a structure's cell `p` (face-local) may be stamped, for keeping a multi-cell block
+    /// whole (BUGS.md #171, `Placed::cells_whole`): in the face and the build volume, over the
+    /// column's ground and water (`column_at`, so a chunk and the one beside it agree on a pair
+    /// split between them), and, in this chunk, over air or a replaceable block as stamped so far.
+    fn stamp_free(&self, coord: ChunkCoord, chunk: &Chunk, volume: Overlap, p: [i32; 3]) -> bool {
+        const S: i32 = CHUNK_SIZE;
+        if !(FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
+            || (volume == Overlap::Partial
+                && !self.world().volume().contains_voxel(
+                    i64::from(p[0]),
+                    i64::from(p[1]),
+                    i64::from(p[2]),
+                ))
+        {
+            return false;
+        }
+        let col = self.column_at(p[0], p[2]);
+        if col.outside || p[1] <= top_voxel(col.height) || p[1] < col.water_row() {
+            return false;
+        }
+        let (lx, ly, lz) = (p[0] - coord.x * S, p[1] - coord.y * S, p[2] - coord.z * S);
+        if (0..S).contains(&lx) && (0..S).contains(&ly) && (0..S).contains(&lz) {
+            let v = chunk.voxels()[local_index(lx, ly, lz)];
+            return v == M.air || dwell_blocks::info(v).replaceable;
+        }
+        true
+    }
+
     /// Stands the portals' monuments reaching this chunk in it, over air and replaceable cells
     /// only (the ground they stand on stays; a higher ground under a pillar holds it).
     fn stamp_monuments(&self, coord: ChunkCoord, volume: Overlap, chunk: &mut Chunk) {
@@ -3712,16 +4429,18 @@ impl TerrainGenerator {
         if monuments.is_empty() {
             return;
         }
-        let voxels = chunk.voxels_mut();
         for m in monuments.iter().filter(|m| !m.misses(coord)) {
-            for (p, state) in m.cells() {
+            // A multi-cell block (a shrine's torch) is stamped whole or not at all (BUGS.md #171).
+            let cells = m.cells_whole(|p| self.stamp_free(coord, chunk, volume, p));
+            let voxels = chunk.voxels_mut();
+            for (p, state) in cells {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
                 let inside = (0..S).contains(&lx)
                     && (0..S).contains(&ly)
                     && (0..S).contains(&lz)
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
                     && (volume != Overlap::Partial
-                        || BUILD_VOLUME.contains_voxel(
+                        || self.world().volume().contains_voxel(
                             i64::from(p[0]),
                             i64::from(p[1]),
                             i64::from(p[2]),
@@ -3737,13 +4456,12 @@ impl TerrainGenerator {
         }
     }
 
-    /// Stands the placed structures reaching this chunk in it, over air and replaceable cells
-    /// only (decorations; never the ground or water). Only chunks holding a row between the lowest
-    /// ground and the highest crown look.
-    fn stamp_trees(&self, coord: ChunkCoord, cols: &[Column], volume: Overlap, chunk: &mut Chunk) {
+    /// The placed structures reaching this chunk: none unless it holds a row between the lowest
+    /// ground and the highest crown (their trunks' pads lie in those rows too).
+    fn chunk_trees(&self, coord: ChunkCoord, cols: &[Column]) -> Vec<Tree> {
         const S: i32 = CHUNK_SIZE;
         if self.planters.is_empty() {
-            return;
+            return Vec::new();
         }
         let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
         let (mut lo, mut hi) = (i32::MAX, i32::MIN);
@@ -3754,16 +4472,25 @@ impl TerrainGenerator {
         }
         let reach = self.rise as i32;
         if lo == i32::MAX || y0 + S <= lo - reach || y0 > hi + reach {
-            return;
+            return Vec::new();
         }
-        let trees = self.trees_in((x0, z0), (x0 + S - 1, z0 + S - 1));
-        let voxels = chunk.voxels_mut();
-        for t in &trees {
+        self.trees_in((x0, z0), (x0 + S - 1, z0 + S - 1))
+    }
+
+    /// Stands the placed structures reaching this chunk (`chunk_trees`) in it, over air and
+    /// replaceable cells only (decorations; never the ground or water).
+    fn stamp_trees(&self, coord: ChunkCoord, trees: &[Tree], volume: Overlap, chunk: &mut Chunk) {
+        const S: i32 = CHUNK_SIZE;
+        let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
+        for t in trees {
             let placed = self.planters[t.planter as usize].place(t);
             if placed.misses(coord) {
                 continue;
             }
-            for (p, state) in placed.cells() {
+            // A multi-cell block is stamped whole or not at all (BUGS.md #171).
+            let cells = placed.cells_whole(|p| self.stamp_free(coord, chunk, volume, p));
+            let voxels = chunk.voxels_mut();
+            for (p, state) in cells {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
                 let inside = (0..S).contains(&lx)
                     && (0..S).contains(&ly)
@@ -3771,7 +4498,7 @@ impl TerrainGenerator {
                     && (FACE_MIN_Y..FACE_MAX_Y).contains(&p[1]);
                 if !inside
                     || (volume == Overlap::Partial
-                        && !BUILD_VOLUME.contains_voxel(
+                        && !self.world().volume().contains_voxel(
                             i64::from(p[0]),
                             i64::from(p[1]),
                             i64::from(p[2]),
@@ -3812,6 +4539,69 @@ impl TerrainGenerator {
         self.pieces_with(column, x0 + lx, z0 + lz, &col, top)
     }
 
+    /// The stored ramp topping column (x, z) by the generation rule (HALF_HEIGHT_GRID.md §4),
+    /// every ramp backed (BUGS.md #163), its neighbours' columns from `column`.
+    fn shape_with(
+        &self,
+        column: &impl Fn(i32, i32) -> Column,
+        x: i32,
+        z: i32,
+        col: &Column,
+    ) -> Top {
+        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #163), the column
+        // behind each ramp's high side with its own neighbours.
+        let cols: [[Column; 5]; 5] = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                if (r, c) == (2, 2) {
+                    *col
+                } else {
+                    column(x + c as i32 - 2, z + r as i32 - 2)
+                }
+            })
+        });
+        let around5: ramps_rule::Around5 = std::array::from_fn(|r| {
+            std::array::from_fn(|c| {
+                let col = &cols[r][c];
+                // Beyond the rim, nothing: lower than any ground.
+                if col.outside {
+                    i32::MIN / 2
+                } else {
+                    top_voxel(col.height) + 1
+                }
+            })
+        });
+        // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
+        // contours too (owner, 2026-11-13): everywhere (`all`, 0.59–0.61), or only at a rock
+        // wall's edge (`mesaEdges`: the column or a neighbour shows a wall; owner, 2026-11-13: "I'd
+        // like the old rule to apply except for mesa edges").
+        // The rule of the column at (dx, dz) (within ±1): its own 3 × 3 decides `mesaEdges`.
+        let geo = &self.biomes.geology.geology;
+        let rule = |(dx, dz): (i32, i32)| {
+            let notched = match geo.notched {
+                crate::geology::Notched::None => false,
+                crate::geology::Notched::All => true,
+                crate::geology::Notched::MesaEdges => (dz + 1..=dz + 3)
+                    .any(|r| (dx + 1..=dx + 3).any(|c| cols[r as usize][c as usize].wall)),
+            };
+            if notched && geo.strength > 0.0 {
+                ramps_rule::RampRule::Notched
+            } else {
+                ramps_rule::RampRule::Strict
+            }
+        };
+        ramps_rule::top_backed_by(&around5, rows_for_m(1.0), rule)
+    }
+
+    /// The stored ramp the generation rule tops column (x, z) with (Flat: a full block; a lip's or
+    /// a column without ramp pieces may still be drawn flat), from the columns alone.
+    pub fn ramp_top_at(&self, x: i32, z: i32) -> Top {
+        let col = self.column_at(x, z);
+        if col.outside {
+            return Top::Flat;
+        }
+        self.shape_with(&|nx, nz| self.column_at(nx, nz), x, z, &col)
+    }
+
     /// [`Self::top_pieces`] for column (x, z), its neighbours' columns from `column`.
     fn pieces_with(
         &self,
@@ -3824,19 +4614,7 @@ impl TerrainGenerator {
         if self.ramps.by.is_empty() || col.lip {
             return &[];
         }
-        let height = |nx: i32, nz: i32| {
-            let col = column(nx, nz);
-            // Beyond the rim, nothing: lower than any ground.
-            if col.outside {
-                i32::MIN / 2
-            } else {
-                top_voxel(col.height) + 1
-            }
-        };
-        let around: ramps_rule::Around = std::array::from_fn(|r| {
-            std::array::from_fn(|c| height(x + c as i32 - 1, z + r as i32 - 1))
-        });
-        let shape = ramps_rule::top_of(&around, rows_for_m(1.0));
+        let shape = self.shape_with(&column, x, z, col);
         // Dry pieces: `generate` floods each one under the water (`under_water`).
         let cells = self
             .ramps
@@ -3861,10 +4639,13 @@ impl TerrainGenerator {
         top: i32,
     ) -> Option<StateId> {
         const S: i32 = CHUNK_SIZE;
-        // Plants grow on flat tops only (HALF_HEIGHT_GRID.md §5).
-        if !self.top_pieces(cols, x0, z0, lx, lz, top).is_empty() {
-            return None;
-        }
+        // Plants grow on flat tops, and a rule with `onRamps` over a ½ m ramp (one piece) too, its
+        // foot drawn down to the ramp's surface; never over a 1 m ramp (HALF_HEIGHT_GRID.md §5).
+        let ramp = match self.top_pieces(cols, x0, z0, lx, lz, top).len() {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
         let (x, z) = (x0 + lx, z0 + lz);
         let here = &cols[(lz * S + lx) as usize];
         let ground = fill(self.palette(here), here.band, top, 0);
@@ -3888,7 +4669,11 @@ impl TerrainGenerator {
             .then(|| self.biomes.biome_of_palette(here.palette))
             .flatten()
             .map(|b| &self.biomes.list[b]);
-        let listed = biome.map(|b| b.decorations);
+        // A world of one biome takes that biome's list (its rules only: a rule another biome lists,
+        // e.g. the old-growth undergrowth, stays out of the default world).
+        let listed = biome
+            .or_else(|| self.biomes.list.first())
+            .map(|b| b.decorations);
         // T3b: a biome's `undergrowth` scales each rule a vegetation kind governs by the climate
         // (heights from this chunk's columns where they lie in it).
         let height = |hx: i64, hz: i64| {
@@ -3903,12 +4688,26 @@ impl TerrainGenerator {
         self.decorations
             .iter()
             .enumerate()
-            .filter(|(i, _)| listed.is_none_or(|d| d.contains(&DECORATIONS[*i].name)))
+            // A column with no biome (a rock province's palette, or a world of one biome) takes the
+            // decorations some biome of the world lists: one no biome lists stands nowhere (as a
+            // placement no biome lists, `refresh_trees`), so adding one changes no other world.
+            .filter(|(i, _)| {
+                let name = &DECORATIONS[*i].name;
+                match listed {
+                    Some(d) => d.contains(name),
+                    None => self
+                        .biomes
+                        .list
+                        .iter()
+                        .any(|b| b.decorations.contains(name)),
+                }
+            })
+            .filter(|(_, p)| !ramp || p.on_ramps())
             // The rules' heights are metres above sea level.
-            .find(|(i, p)| {
+            .find_map(|(i, p)| {
                 let factor = || match biome {
                     Some(b) => {
-                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[*i].name);
+                        let kind = self.vegetation.kind_for_decoration(DECORATIONS[i].name);
                         self.undergrowth_factor(b, kind, || {
                             self.climate_with(x.into(), z.into(), &height)
                         }) as f32
@@ -3923,8 +4722,16 @@ impl TerrainGenerator {
                     |nx, nz| neighbour_top(nx, nz) - SEA_LEVEL,
                     factor,
                 )
+                // Tall grass stands at its climate's top stage (docs/ECOLOGY.md §10).
+                .then(|| {
+                    let name = DECORATIONS[i].name;
+                    if name == crate::grass::GRASS.decoration {
+                        crate::grass::generated_tuft(name, p.state(), f64::from(factor()))
+                    } else {
+                        p.state()
+                    }
+                })
             })
-            .map(|(_, p)| p.state())
     }
 
     // --- level of detail (§6.6) -------------------------------------------------------------------
@@ -3938,6 +4745,23 @@ impl TerrainGenerator {
             return self.lod_valley(col, x, z, cell, margin);
         }
         col
+    }
+
+    /// The block column (x, z)'s top shows from afar, at a coarse cell of `cell` m (as
+    /// [`TerrainGenerator::column_lod`] samples it): its palette's top for its band (no ramps,
+    /// decorations or snow pieces), air outside the disc. The home far bake's colour (`home_far`).
+    pub fn far_surface(&self, x: i64, z: i64, cell: i64) -> StateId {
+        let col = self.column_lod(x, z, cell);
+        if col.outside {
+            return M.air;
+        }
+        fill_soil(
+            self.palette(col),
+            col.band,
+            top_voxel(col.height),
+            0,
+            under_rows(),
+        )
     }
 
     /// Turns the LOD colour map's river valleys on, their ground `margin` m under the river's
@@ -4074,7 +4898,7 @@ impl TerrainGenerator {
         cells: &mut LodCells,
         surface: Option<&mut LodSurfaces>,
     ) -> LodKind {
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             cells.clear();
             cells.resize(lod::VOLUME, M.air);
             if let Some(s) = surface {
@@ -4260,14 +5084,23 @@ impl TerrainGenerator {
     /// are at most `monument_lod_cell` m.
     fn lod_monuments_near(&self, o: lod::LodOrigin, level: i32) -> Vec<Placed> {
         let cell = lod::cell_size(level);
-        match &self.portals {
-            Some(p) if p.monument.is_some() && cell <= p.rules.monument_lod_cell => {}
-            _ => return Vec::new(),
+        let portals = matches!(&self.portals,
+            Some(p) if p.monument.is_some() && cell <= p.rules.monument_lod_cell);
+        let shrines = matches!(&self.shrines, Some(s) if cell <= s.rules.lod_cell);
+        if !portals && !shrines {
+            return Vec::new();
         }
         let n = i64::from(lod::SECTION_CELLS);
         let lo = ((o.x - cell) as i32, (o.z - cell) as i32);
         let hi = ((o.x + (n + 1) * cell) as i32, (o.z + (n + 1) * cell) as i32);
-        self.monuments_near(lo, hi)
+        let mut out = Vec::new();
+        if portals {
+            out.extend(self.portal_monuments_near(lo, hi));
+        }
+        if shrines {
+            out.extend(self.shrines_placed_near(lo, hi));
+        }
+        out
     }
 
     /// Lifts a section's open bound over the monuments it draws, so a section holding only a
@@ -4325,6 +5158,36 @@ impl TerrainGenerator {
             let (x1, z1) = (centre(o.x, n), centre(o.z, n));
             for t in self.trees_in((x0, z0), (x1, z1)) {
                 let p = &self.planters[t.planter as usize];
+                // The trunk's pad (WORK_QUEUE item 44): a cell column whose centre is a trunk
+                // column fills its air cells under the base down to its ground with the ground's
+                // top block, so a far tree has no hole under it.
+                let (pad, base) = p.pad(&t);
+                for (wx, wz) in pad {
+                    let (dx, dz) = (i64::from(wx) - o.x, i64::from(wz) - o.z);
+                    if dx.rem_euclid(cell) != half || dz.rem_euclid(cell) != half {
+                        continue;
+                    }
+                    let (xi, zi) = (dx.div_euclid(cell) as i32, dz.div_euclid(cell) as i32);
+                    if !(-1..=n).contains(&xi) || !(-1..=n).contains(&zi) {
+                        continue;
+                    }
+                    let col = cols[lod::column_index(xi, zi)];
+                    if col.outside {
+                        continue;
+                    }
+                    let state = self.top_state(&col);
+                    for yi in (-1..=n).rev() {
+                        let a = o.y + i64::from(yi) * cell;
+                        if a >= i64::from(base) {
+                            continue;
+                        }
+                        let m = &mut cells[lod::cell_index(xi, yi, zi)];
+                        if *m != M.air {
+                            break;
+                        }
+                        *m = state;
+                    }
+                }
                 let placed = p.place(&t);
                 let fp = p.footprint(&t);
                 for zi in -1..=n {
@@ -4426,6 +5289,32 @@ impl TerrainGenerator {
     /// When none of those holds one (a wide island, WORLD_SCALE.md §3.2), a bounded search
     /// (`spawn_wider`); never a mountain top.
     pub fn spawn_point(&self) -> [f64; 3] {
+        // With shrines, every spawn is at one (owner, 2026-11-12: "target the nearest shrine to that
+        // point for initial spawn, so all spawns are at shrines"): the search's point's nearest.
+        if let Some(sh) = self.shrines.as_deref() {
+            return self.shrine_stand(sh, sh.spawn_shrine(self));
+        }
+        self.spawn_search_point()
+    }
+
+    /// What identifies this generator's spawn search beyond the seed (the spawn shrine's cache):
+    /// its worldgen config, its world's bounds and its biomes.
+    pub fn spawn_key(&self) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.biomes.config_text().hash(&mut h);
+        format!(
+            "{}|{}|{:?}|{:016x}",
+            self.world_seed,
+            self.map().worldgen_text(),
+            self.world(),
+            h.finish()
+        )
+    }
+
+    /// The spawn search's point: feet on open level ground near the origin (before the shrines
+    /// move the spawn to the nearest one).
+    pub fn spawn_search_point(&self) -> [f64; 3] {
         let candidates = self.spawn_cells(true);
         for &(x, z) in candidates.iter().take(48) {
             if let Some(p) = self.spawn_near(x, z, 12, 0) {
@@ -4643,7 +5532,7 @@ impl TerrainGenerator {
             .portals
             .as_ref()
             .is_some_and(|p| p.box_reaches_clear(lo, hi))
-            || !self.trees_in(lo, hi).is_empty()
+            || !self.trees_in_keeping(lo, hi, false).is_empty()
         {
             return None;
         }

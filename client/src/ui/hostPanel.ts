@@ -28,6 +28,9 @@ export interface HostPanelDeps {
   mode: string;
   /** Switches the running world's mode; resolves with the mode it is in after (refused: the old). */
   setMode: (name: string) => Promise<string>;
+  /** Whether guests may use theater mode (THEATER_MODE.md §7; the host always may). */
+  theaterGuests: boolean;
+  setTheaterGuests: (on: boolean) => void;
 }
 
 /** The Mode choice's options, from the modes data (shared/modes/modes.json): experimental marked. */
@@ -119,10 +122,12 @@ export class HostPanel {
   private guests = 0;
   private readonly status = document.createElement('p');
   private mode: string;
+  private theaterGuests: boolean;
 
   constructor(private readonly deps: HostPanelDeps) {
     this.element.id = 'host-panel';
     this.mode = deps.mode;
+    this.theaterGuests = deps.theaterGuests;
     this.max = maxGuestsFor(deps.mobile);
     this.showForm();
   }
@@ -172,6 +177,23 @@ export class HostPanel {
       );
     });
     return labelled('Mode', el);
+  }
+
+  /** The Theater row: whether guests may use theater mode (the host always may), switched live. */
+  private theaterRow(): HTMLLabelElement {
+    const el = document.createElement('input');
+    el.type = 'checkbox';
+    el.id = 'host-theater-guests';
+    el.checked = this.theaterGuests;
+    el.setAttribute('aria-label', 'Guests may use theater mode');
+    el.addEventListener('change', () => {
+      this.theaterGuests = el.checked;
+      this.deps.setTheaterGuests(el.checked);
+      this.status.textContent = el.checked
+        ? 'Guests may use theater mode.'
+        : 'Theater mode is off for guests (you can still use it).';
+    });
+    return labelled('Theater for guests', el);
   }
 
   private showForm(message = ''): void {
@@ -227,6 +249,7 @@ export class HostPanel {
       labelled('Who can build', edits),
       labelled('Who can fly', flight),
       labelled('Who can see it', visibility),
+      this.theaterRow(),
       this.status,
       start,
     );
@@ -280,6 +303,7 @@ export class HostPanel {
       qr,
       guests,
       this.modeRow(),
+      this.theaterRow(),
       this.status,
       stop,
     );

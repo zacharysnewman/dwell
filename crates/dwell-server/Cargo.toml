@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 dwell-net = { path = "../dwell-net" }
 dwell-protocol = { path = "../dwell-protocol" }
+dwell-look = { path = "../dwell-look" }
 dwell-sim = { path = "../dwell-sim" }
 dwell-storage = { path = "../dwell-storage" }
 dwell-world = { path = "../dwell-world" }

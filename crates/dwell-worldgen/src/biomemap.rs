@@ -12,6 +12,7 @@
 //! A world with one biome never builds a map (`BiomeSet::single`): its weight is 1 everywhere and
 //! its columns are exactly the one biome's (the goldens).
 
+use crate::grid::{SparseGrid, most_common};
 use crate::noise::{fbm2, hash2, seed_word};
 use crate::terrain::{BIOME_MAP, Biome, BiomeMap, WhereRange};
 use crate::worldmap::{NO_LAKE, WorldMap};
@@ -31,6 +32,10 @@ pub struct Geography {
     pub elevation: f64,
     /// Metres to the sea (map cells' distance; 0 at sea).
     pub coast: f64,
+    /// °C: the climate's where the world has one, else `temperature` by `vegetation.json`'s scale.
+    pub celsius: f64,
+    /// Annual rain (mm), only where the world has a climate.
+    pub rain: Option<f64>,
 }
 
 /// A column's biome weights: up to `MAX_BLEND` (biome index, weight), summing to 1, and the
@@ -94,6 +99,8 @@ pub fn raw_weight(b: &Biome, g: &Geography) -> f64 {
         * fit(&p.wetness, g.wetness)
         * fit(&p.elevation, g.elevation)
         * fit(&p.coast, g.coast)
+        * fit(&p.celsius, g.celsius)
+        * g.rain.map_or(1.0, |r| fit(&p.rain, r))
 }
 
 /// Every biome's weight at `g` (ADR 0074 B3): a biome other than the default (`biomes[0]`) takes
@@ -120,16 +127,33 @@ pub struct BiomeField {
     n: usize,
     cell: f64,
     x0: f64,
-    /// Per map cell: metres to the nearest sea cell.
-    coast: Vec<f32>,
+    /// Per map cell: metres to the nearest sea cell (0 over the sea: stored by its exceptions,
+    /// `grid::SparseGrid`, BUGS.md #70).
+    coast: SparseGrid<f32>,
     /// Per map cell: metres to the nearest river or lake cell.
     fresh: Vec<f32>,
     climate_seed: u32,
     dither_seed: u32,
     /// The climate gradient's direction (a unit vector from the seed).
     dir: (f64, f64),
-    /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]).
-    rain: Vec<f32>,
+    /// The world's disc radius (m; its map's size's): the climate's gradient spans it.
+    radius: f64,
+    /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]; the sea's flat rate over the
+    /// sea, stored by its exceptions).
+    rain: SparseGrid<f32>,
+    /// The world's climate and its rain marched over the eroded map (coarse), if it has one (R4).
+    climate: Option<(crate::climate::Climate, crate::climate::RainGrid)>,
+}
+
+/// The 0..1 temperature's °C (`vegetation.json` `climate`), and back.
+fn celsius_of(t: f64) -> f64 {
+    let v = crate::vegetation::VEGETATION;
+    v.zero_c + v.per_unit_c * t
+}
+
+fn unit_of(c: f64) -> f64 {
+    let v = crate::vegetation::VEGETATION;
+    (c - v.zero_c) / v.per_unit_c
 }
 
 /// The rain shadow on a map's grid ([`rainfall`]): per cell, the rain that falls (0..1) and the
@@ -275,8 +299,32 @@ impl BiomeField {
     /// [`BiomeField::new`] with the biome map's geography `params` in place of the build's
     /// (`terrain.json` `biomeMap`; Chisel's edits).
     pub fn with_params(map: &WorldMap, world_seed: u64, params: BiomeMap) -> Self {
+        let climate = map
+            .tectonics
+            .from_climate()
+            .then(|| crate::climate::Climate::for_seed(map.seed));
+        Self::with_climate(map, world_seed, params, climate)
+    }
+
+    /// [`BiomeField::with_params`] with `climate` in place of the world's (none: the biome map's
+    /// 0..1 geography), its rain marched over `map`'s eroded ground.
+    pub fn with_climate(
+        map: &WorldMap,
+        world_seed: u64,
+        params: BiomeMap,
+        climate: Option<crate::climate::Climate>,
+    ) -> Self {
         let (n, cell, x0) = (map.n, map.cell, map.x0);
+        let climate = climate.map(|c| {
+            let h: Vec<f64> = map.height.iter().map(|&v| f64::from(v)).collect();
+            let sea: Vec<bool> = (0..n * n).map(|i| map.is_sea(i)).collect();
+            let g = crate::climate::CoarseGround::of(&c.rules, n, cell, x0, &h, &sea);
+            // The biomes read the march low-passed (`rain.blurM`, BUGS.md #164).
+            let rain = c.rain(&g).blurred(c.rules.rain.blur_m);
+            (c, rain)
+        });
         let coast = chamfer(n, cell, |c| map.is_sea(c));
+        let coast = SparseGrid::from_dense(&coast, most_common(&coast));
         let mut wet = vec![false; n * n];
         for (c, &l) in map.lake.iter().enumerate() {
             wet[c] = l != NO_LAKE;
@@ -287,8 +335,11 @@ impl BiomeField {
             }
         }
         let fresh = chamfer(n, cell, |c| wet[c]);
+        drop(wet);
         let sea: Vec<bool> = (0..n * n).map(|c| map.is_sea(c)).collect();
         let rain = rainfall(n, cell, &map.height, &sea, &params).rain;
+        drop(sea);
+        let rain = SparseGrid::from_dense(&rain, most_common(&rain));
         let a = f64::from(seed_word(world_seed, 0xB10E_0001)) / f64::from(u32::MAX)
             * std::f64::consts::TAU;
         Self {
@@ -301,18 +352,38 @@ impl BiomeField {
             climate_seed: seed_word(world_seed, 0xB10E_0002),
             dither_seed: seed_word(world_seed, 0xB10E_0003),
             dir: (a.cos(), a.sin()),
+            radius: map.world_radius() as f64,
             rain,
+            climate,
         }
     }
 
-    /// A grid's value at (x, z), bilinear between the cells' centres.
-    fn sample(&self, grid: &[f32], x: f64, z: f64) -> f64 {
+    /// The world's climate, if it has one (R4).
+    pub fn climate(&self) -> Option<&crate::climate::Climate> {
+        self.climate.as_ref().map(|c| &c.0)
+    }
+
+    /// The bytes each of its grids holds.
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        let mut v = vec![
+            ("biome field coast", self.coast.bytes()),
+            ("biome field fresh water", crate::vec_bytes(&self.fresh)),
+            ("biome field rain", self.rain.bytes()),
+        ];
+        if let Some((_, r)) = &self.climate {
+            v.push(("biome field climate rain", r.bytes()));
+        }
+        v
+    }
+
+    /// A grid's value at (x, z) (cell c's `grid(c)`), bilinear between the cells' centres.
+    fn sample(&self, grid: impl Fn(usize) -> f32, x: f64, z: f64) -> f64 {
         let u = ((x - self.x0) / self.cell).clamp(0.0, (self.n - 1) as f64);
         let v = ((z - self.x0) / self.cell).clamp(0.0, (self.n - 1) as f64);
         let (i, j) = (u.floor() as usize, v.floor() as usize);
         let (i1, j1) = ((i + 1).min(self.n - 1), (j + 1).min(self.n - 1));
         let (fu, fv) = (u - i as f64, v - j as f64);
-        let g = |i: usize, j: usize| f64::from(grid[j * self.n + i]);
+        let g = |i: usize, j: usize| f64::from(grid(j * self.n + i));
         let a = g(i, j) + (g(i1, j) - g(i, j)) * fu;
         let b = g(i, j1) + (g(i1, j1) - g(i, j1)) * fu;
         a + (b - a) * fv
@@ -320,14 +391,32 @@ impl BiomeField {
 
     /// The rain shadow's rainfall at face-local (x, z), 0..1 ([`rainfall`]).
     pub fn rainfall(&self, x: f64, z: f64) -> f64 {
-        self.sample(&self.rain, x, z)
+        self.sample(|c| self.rain.get(c), x, z)
     }
 
     /// The geography at face-local (x, z), whose world height field is `elevation` m.
     pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
         let p = &self.params;
         let (xf, zf) = (x as f64, z as f64);
-        let r = f64::from(dwell_world::WORLD_RADIUS);
+        let fresh = self.sample(|c| self.fresh[c], xf, zf);
+        let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
+        let rivers = 1.0 - t * t * (3.0 - 2.0 * t);
+        let coast = self.sample(|c| self.coast.get(c), xf, zf);
+        if let Some((c, grid)) = &self.climate {
+            let celsius = c.temperature_c(xf, zf, elevation);
+            let rain = c.rain_mm(grid, xf, zf);
+            let b = c.rules.biomes;
+            let wet = (rain / b.wet_mm).clamp(0.0, 1.0);
+            return Geography {
+                temperature: unit_of(celsius),
+                wetness: rivers + (wet - rivers) * b.moisture_share,
+                elevation,
+                coast,
+                celsius,
+                rain: Some(rain),
+            };
+        }
+        let r = self.radius;
         let along = ((xf * self.dir.0 + zf * self.dir.1) / r).clamp(-1.0, 1.0);
         let climate = 0.5
             + 0.5 * along
@@ -335,9 +424,7 @@ impl BiomeField {
                 * p.climate_noise
                 * f64::from(fbm2(self.climate_seed, x, z, p.climate_wavelength, 2, None));
         let temperature = climate - p.lapse_rate * elevation.max(0.0) / 1000.0;
-        let fresh = self.sample(&self.fresh, xf, zf);
-        let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
-        let mut wetness = 1.0 - t * t * (3.0 - 2.0 * t);
+        let mut wetness = rivers;
         if p.rain_share > 0.0 {
             wetness += (self.rainfall(xf, zf) - wetness) * p.rain_share;
         }
@@ -345,7 +432,9 @@ impl BiomeField {
             temperature,
             wetness,
             elevation,
-            coast: self.sample(&self.coast, xf, zf),
+            coast,
+            celsius: celsius_of(temperature),
+            rain: None,
         }
     }
 
@@ -372,18 +461,41 @@ impl BiomeField {
         }
         let p = &self.params;
         let hash = f64::from(hash2(self.dither_seed, x as i32, z as i32)) / f64::from(u32::MAX);
+        // The noise's sample point warped (`ditherWarp`; 0 in the default world: unchanged).
+        let (wx, wz) = if p.dither_warp > 0.0 {
+            let w = |k: u32| {
+                (p.dither_warp
+                    * 2.0
+                    * f64::from(fbm2(
+                        self.dither_seed ^ k,
+                        x,
+                        z,
+                        p.dither_wavelength * 4,
+                        2,
+                        None,
+                    ))) as i64
+            };
+            (x + w(0x3A11_0661), z + w(0x3A11_0662))
+        } else {
+            (x, z)
+        };
+        let speckle = if p.dither_speckle == 1.0 {
+            0.5 * p.dither * (hash - 0.5)
+        } else {
+            0.5 * p.dither * p.dither_speckle * (hash - 0.5)
+        };
         let u = (0.5
             + p.dither
                 * 2.0
                 * f64::from(fbm2(
                     self.dither_seed ^ 0x5bd1_e995,
-                    x,
-                    z,
+                    wx,
+                    wz,
                     p.dither_wavelength,
                     2,
                     None,
                 ))
-            + 0.5 * p.dither * (hash - 0.5))
+            + speckle)
             .clamp(0.0, 1.0 - 1e-9);
         // The pick reads the weights to the power `sharpen` (1: as they are, the same arithmetic).
         let ws = &mix.weights[..usize::from(mix.len)];

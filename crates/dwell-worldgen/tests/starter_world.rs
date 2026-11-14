@@ -53,6 +53,7 @@ const LISTED: &[&str] = &[
     "preset:badlands",
     "preset:alpine_tundra",
     "preset:wetland",
+    "preset:old_growth",
 ];
 const MIN: f64 = 0.02;
 
@@ -699,14 +700,16 @@ fn mesa_arch_counts() {
 dwell_world::both_faces!(
     /// The mesa's beds show at every height (0.52.66): its high columns' tops are its own stack's
     /// rock (red sandstone or shale by the bed), not the band's stone over the cut-back's remnants
-    /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sandstone tops some of them.
+    /// (before, about 64 % over 300 m: 60 % at 600 m, 20 % at 700 m), and red sand tops some of them
+    /// (the sandstone's arid treads, its `capBy`, since 0.60: BUGS.md #134; its walls are red
+    /// sandstone).
     fn the_mesas_beds_show_at_every_height(f: FaceFrame) {
         let (g, names) = generator(f, 0);
         let mesa = names
             .iter()
             .position(|n| *n == "preset:red_rock_mesa")
             .unwrap();
-        let red = dwell_blocks::state("dwell:red_sandstone").expect("red sandstone");
+        let red = dwell_blocks::state("dwell:red_sand").expect("red sand");
         let r = WORLD_RADIUS * 3 / 4;
         let (mut high, mut rock, mut reds) = (0u32, 0u32, 0u32);
         for z in (-r..=r).step_by(100) {
@@ -729,7 +732,7 @@ dwell_world::both_faces!(
             share >= 0.85,
             "{rock} of {high} high mesa tops show the beds"
         );
-        assert!(reds > 0, "no red sandstone top in {high}");
+        assert!(reds > 0, "no red sand top in {high}");
     }
 );
 
@@ -748,4 +751,270 @@ fn the_mesas_fins_make_arches() {
         arches >= 5 && arches > overhangs,
         "{arches} arches, {overhangs} overhangs"
     );
+}
+
+/// Spots for the starter's features (the visual pass, 2026-11-11), printed as `at=` eyes with a yaw
+/// (0 = +Z, 90 = +X) toward the feature: the first arches on the mesa (looking through each along
+/// its axis), the tall cone's summit, and snow-line and sandy-soil edges per biome (a column of the
+/// biome whose top is snow, or sand, with a column 60 m off whose top is not).
+#[test]
+#[ignore = "prints the feature spots"]
+fn feature_spots() {
+    // face-a-only: the links are face A's.
+    let (g, names) = generator(FaceFrame::A, 0);
+    let ground = |x: f64, z: f64| f64::from(g.column_at(x as i32, z as i32).height);
+    let (cx, cz, r) = (14_500, 400, 6_000);
+    for s in g
+        .arches_near((cx - r, cz - r), (cx + r, cz + r))
+        .iter()
+        .filter(|s| s.through)
+        .take(4)
+    {
+        let d = s.half_fin + 30.0;
+        let (ex, ez) = (s.centre[0] - s.axis[0] * d, s.centre[1] - s.axis[1] * d);
+        let yaw = s.axis[0].atan2(s.axis[1]).to_degrees();
+        println!(
+            "arch (span {:.0} m, rise {:.0} m, floor {:.0}) at={ex:.1},{:.1},{ez:.1} yaw {yaw:.0} (ground there {:.0})",
+            s.half_span * 2.0,
+            s.rise,
+            s.floor,
+            s.floor + s.rise * 0.5,
+            ground(ex, ez)
+        );
+    }
+    let h = world_config(NAME).unwrap().unwrap().height.unwrap();
+    let v = h.tectonics.volcanoes()[0];
+    let mut top = (f64::MIN, 0.0, 0.0);
+    for dz in (-3000..=3000).step_by(50) {
+        for dx in (-3000..=3000).step_by(50) {
+            let (x, z) = (v.x + f64::from(dx), v.z + f64::from(dz));
+            let y = ground(x, z);
+            if y > top.0 {
+                top = (y, x, z);
+            }
+        }
+    }
+    println!(
+        "cone summit {:.0} m at {:.0},{:.0} (cone centre {:.0},{:.0})",
+        top.0, top.1, top.2, v.x, v.z
+    );
+    for (label, k) in [("summit", 0), ("1 km east", 1000), ("2 km east", 2000)] {
+        let (x, z) = (top.1 + f64::from(k), top.2);
+        let c = g.column_at(x as i32, z as i32);
+        println!(
+            "cone {label}: {:.0} m {} at={x:.0},{:.0},{z:.0}",
+            c.height,
+            dwell_blocks::block_of(g.top_state(&c)).name,
+            f64::from(c.height) + 2.0
+        );
+    }
+    let rr = i64::from(WORLD_RADIUS) * 3 / 4;
+    for (biome, want) in [
+        ("preset:alpine_tundra", "dwell:snow"),
+        ("preset:alpine_tundra", "dwell:glacier_ice"),
+        ("preset:boreal", "dwell:snow"),
+        ("preset:steppe", "dwell:snow"),
+        ("preset:steppe", "dwell:sand"),
+        ("preset:temperate_meadow", "dwell:sand"),
+    ] {
+        let i = names.iter().position(|n| *n == biome).unwrap();
+        let mut found = None;
+        'outer: for z in (-rr..=rr).step_by(100) {
+            for x in (-rr..=rr).step_by(100) {
+                if g.biome_mix(x, z).chosen as usize != i {
+                    continue;
+                }
+                let c = g.column_at(x as i32, z as i32);
+                // Inland (60 m from any water), so a sand top is the soil's, not a beach.
+                if c.water != dwell_worldgen::terrain::Water::None
+                    || c.shore < 60.0
+                    || g.biome_geography(x, z).is_none_or(|g| g.coast < 300.0)
+                    || dwell_blocks::block_of(g.top_state(&c)).name != want
+                {
+                    continue;
+                }
+                let o = g.column_at(x as i32 + 60, z as i32);
+                if dwell_blocks::block_of(g.top_state(&o)).name != want
+                    && g.biome_mix(x + 60, z).chosen as usize == i
+                {
+                    found = Some((x, z, c.height));
+                    break 'outer;
+                }
+            }
+        }
+        match found {
+            Some((x, z, y)) => println!(
+                "{biome} {want} edge at={x}.5,{:.0},{z}.5 (other side +60 m x)",
+                f64::from(y) + 2.0
+            ),
+            None => println!("{biome} {want}: no edge found"),
+        }
+    }
+}
+
+/// Tall grass round the tour's grassy spots (the visual pass, 2026-11-11): the share of the 128 m
+/// square's grass columns with tall grass over them, as generated (T3b undergrowth).
+#[test]
+#[ignore = "prints the tall grass counts"]
+fn tall_grass_counts() {
+    // face-a-only: the tour's spots are face A's.
+    let (g, _) = generator(FaceFrame::A, 0);
+    let game = {
+        let e = world_config(NAME).unwrap().unwrap();
+        let map = WorldMap::for_height(face_seed(0, Face::A), e.height.unwrap())
+            .with_worldgen(NAME)
+            .unwrap();
+        TerrainGenerator::with_map(face_seed(0, Face::A), Arc::new(map))
+    };
+    let grass = dwell_blocks::require("dwell:grass");
+    for (label, x, z) in [
+        ("meadow", 10100, 16300),
+        ("steppe", -4100, 8300),
+        ("broadleaf", 22300, 100),
+        ("mixed", -18100, -6500),
+    ] {
+        let (mut on, mut tufts, mut game_tufts) = (0, 0, 0);
+        for cz in -4..4 {
+            for cx in -4..4 {
+                let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+                let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+                let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+                for cy in row - 2..=row + 2 {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
+                    on += c.voxels().iter().filter(|&&m| m == grass).count();
+                    let mut c = Chunk::default();
+                    game.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    game_tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
+                }
+            }
+        }
+        println!(
+            "{label}: {tufts} tall grass cells over {on} grass cells; game's generator {game_tufts}"
+        );
+        let mut shares = Vec::new();
+        for (dx, dz) in [(0, 0), (40, 0), (0, 40), (-40, -40), (60, -20)] {
+            shares.push(g.grass_envelope("meadow_grass", x + dx, z + dz).unwrap().1);
+        }
+        println!(
+            "  climate {:?}; shares {shares:.2?}",
+            g.climate_at(x.into(), z.into())
+        );
+    }
+}
+
+/// The share of the open grass tops (flat grass and ½ m grass ramps, the cell over them air or
+/// tall grass) with tall grass over them, in the `r` × `r` chunks round face-local (x, z), as
+/// generated: (tufts, tops).
+fn tuft_share(g: &TerrainGenerator, x: i32, z: i32, r: i32) -> (usize, usize) {
+    use dwell_blocks::StateId;
+    let air = dwell_blocks::require("dwell:air");
+    let grass = dwell_blocks::require("dwell:grass");
+    let top = |m: StateId| {
+        m == grass
+            || (dwell_blocks::block_of(m).name == "dwell:grass_ramp"
+                && dwell_blocks::state_property(m, "shape") == Some("ramp"))
+    };
+    let (mut tufts, mut tops) = (0, 0);
+    for cz in -r / 2..r - r / 2 {
+        for cx in -r / 2..r - r / 2 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            // The chunk stack round the ground, read by face-local row.
+            let stack: Vec<Chunk> = (row - 2..=row + 2)
+                .map(|cy| {
+                    let mut c = Chunk::default();
+                    g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                    c
+                })
+                .collect();
+            let y0 = (row - 2) * CHUNK_SIZE;
+            let at = |lx: i32, y: i32, lz: i32| {
+                let i = (y - y0).div_euclid(CHUNK_SIZE) as usize;
+                stack[i].get(lx, (y - y0).rem_euclid(CHUNK_SIZE), lz)
+            };
+            for lz in 0..CHUNK_SIZE {
+                for lx in 0..CHUNK_SIZE {
+                    let Some(y) = g.ground_y(wx * CHUNK_SIZE + lx, wz * CHUNK_SIZE + lz) else {
+                        continue;
+                    };
+                    if y < y0 || y + 1 >= y0 + 5 * CHUNK_SIZE {
+                        continue;
+                    }
+                    let (m, over) = (at(lx, y, lz), at(lx, y + 1, lz));
+                    if top(m) && (over == air || is_tall(over)) {
+                        tops += 1;
+                        tufts += usize::from(is_tall(over));
+                    }
+                }
+            }
+        }
+    }
+    (tufts, tops)
+}
+
+/// WORK_QUEUE item 21 (owner, 2026-11-11: "Yes make the meadow grass fix"): the tour's meadow
+/// spot has tall grass over about a third of its grass tops, ramps included (wider, denser patches,
+/// decorations.json), and the steppe stays sparse. Red before: 16 % of the meadow's flat grass and
+/// none of its ramps (~11 % of all its grass tops).
+#[test]
+fn the_meadow_is_a_third_tall_grass_and_the_steppe_stays_sparse() {
+    // face-a-only: the tour's spots are face A's (the ramps' both-face check is tests/terrain.rs).
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (tufts, tops) = tuft_share(&g, 10100, 16300, 4);
+    let meadow = tufts as f64 / tops as f64;
+    assert!(tops > 5000, "{tops} grass tops round the meadow spot");
+    assert!(
+        (0.28..=0.42).contains(&meadow),
+        "the meadow's tall grass: {tufts} of {tops} grass tops ({meadow:.3})"
+    );
+    let (tufts, tops) = tuft_share(&g, -4100, 8300, 4);
+    let steppe = tufts as f64 / tops as f64;
+    println!("meadow {meadow:.3}, steppe {steppe:.3} ({tufts} of {tops})");
+    assert!(
+        steppe > 0.0 && steppe < 0.5 * meadow,
+        "the steppe's tall grass: {tufts} of {tops} ({steppe:.3}) against the meadow's {meadow:.3}"
+    );
+}
+
+/// The steppe keeps sparse tall grass (the visual pass, 2026-11-11): its dry lee (wetness ~0.01) is
+/// under the meadow grass's moisture envelope, so at `undergrowth` 1 its climate share was 0 and the
+/// tour's steppe spot had none of 50,545 grass cells. Its `undergrowth` < 1 keeps a floor of
+/// 1 − undergrowth: thinner than the meadow, never bare.
+#[test]
+fn the_steppe_keeps_sparse_tall_grass() {
+    // face-a-only: the tour's steppe spot is face A's.
+    let (g, _) = generator(FaceFrame::A, 0);
+    let (x, z) = (-4100, 8300);
+    let share = g.grass_envelope("meadow_grass", x, z).unwrap().1;
+    assert!(
+        share > 0.1 && share < 0.5,
+        "the steppe's climate share of tall grass: {share}"
+    );
+    let meadow = g
+        .grass_envelope("meadow_grass", 10100 + 40, 16300)
+        .unwrap()
+        .1;
+    assert!(share < meadow, "thinner than the meadow ({meadow})");
+    let mut tufts = 0;
+    for cz in -2..2 {
+        for cx in -2..2 {
+            let (wx, wz) = (x / CHUNK_SIZE + cx, z / CHUNK_SIZE + cz);
+            let h = f64::from(g.column_at(wx * CHUNK_SIZE, wz * CHUNK_SIZE).height);
+            let row = rows_for_m(h).div_euclid(CHUNK_SIZE);
+            for cy in row - 1..=row + 1 {
+                let mut c = Chunk::default();
+                g.generate(ChunkCoord::new(wx, cy, wz), &mut c);
+                tufts += c.voxels().iter().filter(|&&m| is_tall(m)).count();
+            }
+        }
+    }
+    assert!(tufts > 0, "tall grass round the steppe spot");
+}
+
+/// Whether `m` is tall grass at any growth stage (docs/ECOLOGY.md §10).
+fn is_tall(m: dwell_blocks::StateId) -> bool {
+    m != dwell_blocks::AIR && dwell_blocks::block_of(m).name == "dwell:tall_grass"
 }

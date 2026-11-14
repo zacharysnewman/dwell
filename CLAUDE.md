@@ -74,11 +74,15 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/WATER_SURFACE_GRID.md` — design for Phase 53 (ADR 0060): water as a simulated surface grid in its own
   layer (sleeping chunks, pools, a held sea), generated water filled by it at world creation; replaces
   Phase 52's basins and pool graph when built.
+- `docs/THEATER_MODE.md` — theater mode (WORK_QUEUE item 41): camera paths as data (keyframes, moves, easings),
+  presets (`shared/theater/presets.json`), the engine `crates/dwell-theater`, recording, the creative viewpoint.
 - `docs/AGENT_QUICKSTART.md` — the one page an agent reads instead of this file for a typical task.
 - `docs/CLOUD_SESSIONS.md` — running Claude Code cloud sessions for parallel logic-only work: launching,
   follow-ups, the PR and merge flow, what suits the cloud, limits and timings.
 - `docs/ECOLOGY.md` — the far ecology (WORK_QUEUE item 11): deer herds and wolf packs as data records on a
   face's island grid, forage per cell, the day step (`crates/dwell-ecology`, `shared/ecology/ecology.json`).
+- `docs/SHRINES.md` — resurrection shrines (WORK_QUEUE item 54): shrine sites per face from the seed (~2 km grid,
+  `shared/worldgen/shrines.json`), the shrine built from its design, respawn at the nearest, spawns at shrines, the map's layer.
 - `docs/WORK_QUEUE.md` — the owner's ordered work queue with the decisions behind each item; update it in the change that
   starts, finishes or re-orders an item.
 - `docs/BUGS.md` — the open bugs the owner reported, with repros and suspects; fixed ones move to its Fixed list.
@@ -140,6 +144,20 @@ Record the answers in the feature's design doc or ADR. If the owner prefers a ha
 a prototype, record that as a deviation with the reason. Bug fixes and tuning of an existing system
 don't need this step; a fix in hardcoded code that the baseline rework will replace doesn't need to
 make it extendable first.
+
+## Requirement: record the owner's requests as they arrive
+
+Owner, 2026-11-11: "This is why we need to be documenting these as we go." Every request, answer or
+decision the owner gives goes into `docs/WORK_QUEUE.md` (a bug also into `docs/BUGS.md`) **in the same turn
+it arrives**, in the owner's words, before or alongside starting the work: not only in a session's memory,
+a scratch note or an agent's brief. Commit it with the next change (or on its own). An item nobody recorded
+doesn't exist for the next session.
+
+Owner, 2026-11-13: "Make a rule that when I request something like I just did with red sand you document it so
+we don't lose if." Each request is recorded in `docs/WORK_QUEUE.md` in the owner's words (quoted) plus an
+**"Owner should see:"** line stating the concrete result in game. That line is the acceptance check in every
+agent brief. An item is done only when a screenshot or the owner's look confirms it, not when the code
+merges. When a later request shows an earlier one fell short, the item says so and links them.
 
 ## Lighter paperwork for small changes
 
@@ -343,9 +361,10 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
-- `e2e/buildDrag.spec.ts`'s held-Place tests (shards 1 and 4) fail under the software renderer: a
-  held Place builds one piece and no more at a few frames a second (BUGS.md #30, open). They pass on a
-  real GPU; not caused by other work.
+- `e2e/buildDrag.spec.ts`'s tower tests (towering and both bridging tests, which tower first; shards 1
+  and 4) fall a piece or two short (34–35 m of 36) under the software renderer (BUGS.md #30, open: the
+  tower part). The rest of the spec passes there since the held Place's pace went by the clock; they
+  pass on a real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
 - On the software renderer the page draws nothing for 3–5 s just after `terrainReady` (BUGS.md #49):

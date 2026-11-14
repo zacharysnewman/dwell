@@ -50,6 +50,8 @@ export class Hud {
   /** The burning edge (lava, VOLCANOES.md §6.3): a red-orange vignette while burning. */
   private readonly burnEdge: HTMLDivElement;
   private burnColor = '';
+  /** Defeat's fade to black and back (docs/CHARACTERS.md §11.13). */
+  private readonly fade: HTMLDivElement;
   /** The held tool's swing line (`setSwing`). */
   private readonly swingLine: HTMLDivElement;
 
@@ -153,9 +155,12 @@ export class Hud {
     this.spyglass.hidden = true;
     this.burnEdge = document.createElement('div');
     this.burnEdge.id = 'burn-edge';
+    this.fade = document.createElement('div');
+    this.fade.id = 'defeat-fade';
     this.root.append(
       this.spyglass,
       this.burnEdge,
+      this.fade,
       crosshair,
       this.vitals,
       this.health,
@@ -202,6 +207,12 @@ export class Hud {
 
   flashDamage(nowMs: number): void {
     this.damageUntil = nowMs + 400;
+  }
+
+  /** Defeat's fade: 0 clear, 1 black (docs/CHARACTERS.md §11.13). */
+  setFade(black: number): void {
+    const o = String(Math.round(Math.max(0, Math.min(1, black)) * 100) / 100);
+    if (this.fade.style.opacity !== o) this.fade.style.opacity = o;
   }
 
   /** The burning edge at `opacity` (0: none) in `color` (shared/fluids/lava.json `burnEdge`). */

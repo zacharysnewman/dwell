@@ -347,9 +347,11 @@ fn grazing_regrows_toward_each_cells_most() {
     }
     // 20 days at 0.05 a day of the gap: 1 − e^−1 of the most.
     let want = 1.0 - (-1.0f64).exp();
+    // Forage is f32 (docs/ECOLOGY.md §6): within its rounding of the closed form.
     for (c, &g) in eco.grazing.iter().enumerate() {
+        let max = f64::from(isl.grazing_max[c]);
         assert!(
-            (g - isl.grazing_max[c] * want).abs() < 1e-9,
+            (f64::from(g) - max * want).abs() < 1e-6 * max.max(1.0),
             "cell {c}: {g}"
         );
     }
@@ -360,9 +362,9 @@ fn grazing_regrows_toward_each_cells_most() {
 fn grazing_is_depleted_where_a_herd_eats() {
     let isl = island(&DATA);
     let mut eco = by_hand(&isl, vec![group(0, deer(), -1500.0, 0.0, 12.0, 0.6)]);
-    let before: f64 = eco.grazing.iter().sum();
+    let before: f64 = eco.grazing.iter().map(|&g| f64::from(g)).sum();
     step(&isl, &DATA, &mut eco, 1.0);
-    let after: f64 = eco.grazing.iter().sum();
+    let after: f64 = eco.grazing.iter().map(|&g| f64::from(g)).sum();
     assert!(after < before - 5.0, "{before} → {after}");
 }
 
@@ -385,7 +387,8 @@ fn a_hundred_days_at_once_roughly_match_a_hundred_single_days() {
                 DATA.species[s].name
             );
         }
-        let (gb, gm): (f64, f64) = (big.grazing.iter().sum(), small.grazing.iter().sum());
+        let sum = |e: &Ecosystem| e.grazing.iter().map(|&g| f64::from(g)).sum::<f64>();
+        let (gb, gm) = (sum(&big), sum(&small));
         assert!((gb - gm).abs() <= 0.15 * gm.max(gb), "grazing {gb} vs {gm}");
     }
 }
@@ -546,7 +549,10 @@ dwell_world::both_faces!(
         let map =
             dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(11, f.face));
         let isl = Island::from_world_map(&map, &DATA);
-        assert!(isl.walkable.iter().any(|&w| w) && isl.walkable.iter().any(|&w| !w));
+        assert!(
+            isl.cells() > 0 && isl.cells() < isl.n * isl.n,
+            "land and water"
+        );
         assert!(isl.grazing_max.iter().any(|&g| g > 0.0));
         let mut eco = Ecosystem::new(&isl, &DATA, 11);
         for _ in 0..20 {
@@ -565,7 +571,7 @@ fn an_ecosystem_round_trips_through_its_bytes() {
     let isl = island(&DATA);
     let mut eco = Ecosystem::new(&isl, &DATA, 5);
     step(&isl, &DATA, &mut eco, 120.0);
-    let bytes = eco.to_bytes(&DATA);
+    let bytes = eco.to_bytes(&isl, &DATA);
     let back = Ecosystem::from_bytes(&bytes, &isl, &DATA).expect("reads its own bytes");
     assert_eq!(back, eco);
     assert_eq!(back.digest(), eco.digest());
@@ -586,7 +592,7 @@ fn saved_species_are_mapped_by_name_and_unknown_ones_dropped() {
     let isl = island(&DATA);
     let mut eco = Ecosystem::new(&isl, &DATA, 5);
     step(&isl, &DATA, &mut eco, 20.0);
-    let bytes = eco.to_bytes(&DATA);
+    let bytes = eco.to_bytes(&isl, &DATA);
     const ONLY_DEER: Data = Data {
         species: &[
             dwell_ecology::SpeciesDef {
@@ -628,16 +634,17 @@ fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
     let env = |x: i32, _z: i32| (0.5f32, ((f64::from(x) + 1800.0) / 3600.0).clamp(0.0, 1.0));
     isl.scale_grazing(|x, z| far_share(&env, x, z));
     let rule = Rule::build(1);
-    for c in 0..isl.n * isl.n {
+    for c in 0..isl.cells() {
         if unscaled.grazing_max[c] == 0.0 {
             continue;
         }
         let (x, z) = isl.centre(c);
         let share = env(x.floor() as i32, z.floor() as i32).1;
-        let far = isl.grazing_max[c] / unscaled.grazing_max[c];
+        let far = f64::from(isl.grazing_max[c]) / f64::from(unscaled.grazing_max[c]);
         let near = rule.cap(share) / rule.data.max_density;
+        // The most forage is f32 (docs/ECOLOGY.md §6): within its rounding.
         assert!(
-            (far - near).abs() < 1e-9,
+            (far - near).abs() < 1e-6,
             "cell {c}: far {far}, near {near}"
         );
     }
@@ -657,4 +664,368 @@ fn the_far_forage_regrows_toward_the_same_climate_cap_as_the_near_grass() {
             );
         }
     }
+}
+
+/// Version 1's bytes (before the land-only island): the whole `n` × `n` grid's forage as f64,
+/// water cells 0, then the species and groups as version 2 writes them.
+fn version_1_bytes(eco: &Ecosystem, isl: &Island, data: &Data) -> Vec<u8> {
+    let mut grid = vec![0.0f64; isl.n * isl.n];
+    for (c, k) in isl.grid_indices().enumerate() {
+        grid[k] = f64::from(eco.grazing[c]);
+    }
+    let mut b = vec![1u8];
+    b.extend(eco.seed.to_le_bytes());
+    b.extend(eco.day.to_bits().to_le_bytes());
+    b.extend(eco.next_id.to_le_bytes());
+    b.extend((grid.len() as u32).to_le_bytes());
+    for g in grid {
+        b.extend(g.to_bits().to_le_bytes());
+    }
+    b.extend((data.species.len() as u16).to_le_bytes());
+    for s in data.species {
+        b.extend((s.name.len() as u16).to_le_bytes());
+        b.extend(s.name.as_bytes());
+    }
+    b.extend((eco.groups.len() as u32).to_le_bytes());
+    for g in &eco.groups {
+        b.extend(g.id.to_le_bytes());
+        b.extend((g.species as u16).to_le_bytes());
+        for v in [g.x, g.z, g.size, g.hunger, g.energy] {
+            b.extend(v.to_bits().to_le_bytes());
+        }
+        b.push(match g.activity {
+            Activity::Resting => 0,
+            Activity::Grazing => 1,
+            Activity::Moving => 2,
+            Activity::Fleeing => 3,
+            Activity::Hunting => 4,
+            Activity::Roaming => 5,
+            Activity::Dispersing => 6,
+        });
+    }
+    b
+}
+
+#[test]
+fn an_older_version_1_record_still_loads_its_land_cells_forage() {
+    let isl = island(&DATA);
+    let mut eco = Ecosystem::new(&isl, &DATA, 5);
+    step(&isl, &DATA, &mut eco, 120.0);
+    assert!(
+        eco.grazing
+            .iter()
+            .zip(&isl.grazing_max)
+            .any(|(g, m)| g != m),
+        "some forage was grazed"
+    );
+    let v1 = version_1_bytes(&eco, &isl, &DATA);
+    let back = Ecosystem::from_bytes(&v1, &isl, &DATA).expect("reads a version 1 record");
+    assert_eq!(back, eco, "the land's forage and the groups as they were");
+    // And written back as version 2, smaller.
+    let v2 = back.to_bytes(&isl, &DATA);
+    assert_eq!(v2[0], 2);
+    assert!(v2.len() < v1.len(), "{} vs {}", v2.len(), v1.len());
+}
+
+#[test]
+fn the_land_only_island_matches_its_whole_grid() {
+    // Every grid cell: land exactly where the sampler said, each land cell's index found back from
+    // its centre, in row-major order.
+    let isl = island(&DATA);
+    let land = |x: f64, z: f64| x.hypot(z) <= 1800.0;
+    let mut next = 0;
+    for j in 0..isl.n {
+        for i in 0..isl.n {
+            let (x, z) = isl.grid_centre(i, j);
+            let c = isl.index(i, j);
+            assert_eq!(c.is_some(), land(x, z), "cell ({i}, {j})");
+            assert_eq!(isl.cell_at(x + 40.0, z - 40.0), c);
+            if let Some(c) = c {
+                assert_eq!(c, next, "row-major");
+                assert_eq!(isl.centre(c), (x, z));
+                assert_eq!(isl.grid_of(c), (i, j));
+                next += 1;
+            }
+        }
+    }
+    assert_eq!(next, isl.cells());
+    assert!(isl.cells() < isl.n * isl.n, "the sea is not stored");
+    assert_eq!(isl.cell_at(-1.0e6, 0.0), None);
+    assert_eq!(isl.index(isl.n, 0), None);
+}
+
+#[test]
+fn a_records_forage_runs_round_trip_whatever_their_pattern() {
+    let isl = island(&DATA);
+    let mut eco = by_hand(&isl, vec![group(0, deer(), 0.0, 0.0, 5.0, 0.2)]);
+    // Every third cell grazed, a long bare stretch, the rest full.
+    for c in 0..eco.grazing.len() {
+        if c % 3 == 0 || (40..90).contains(&c) {
+            eco.grazing[c] *= 0.25;
+        }
+    }
+    let bytes = eco.to_bytes(&isl, &DATA);
+    assert_eq!(
+        Ecosystem::from_bytes(&bytes, &isl, &DATA),
+        Some(eco.clone())
+    );
+    // A cut-short forage section is not read.
+    let fresh = by_hand(&isl, vec![]).to_bytes(&isl, &DATA);
+    for cut in [25, 26, 27, fresh.len() - 1] {
+        assert_eq!(Ecosystem::from_bytes(&fresh[..cut], &isl, &DATA), None);
+    }
+}
+
+dwell_world::both_faces!(
+    fn a_seed_1_worlds_ecology_is_small_in_memory_and_saved(f: dwell_world::FaceFrame) {
+        // Measured on a seed-1 world (docs/ECOLOGY.md §6, "Cost"): each face's island and
+        // ecosystem; both faces together under 3 MB (12.5 MB before the land-only island).
+        let map =
+            dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(1, f.face));
+        let isl = Island::from_world_map(&map, &DATA);
+        let mut eco = Ecosystem::new(&isl, &DATA, 1);
+        let fresh = eco.to_bytes(&isl, &DATA).len();
+        step(&isl, &DATA, &mut eco, 200.0);
+        let bytes = isl.heap_bytes() + eco.heap_bytes();
+        println!(
+            "face {:?}: {} of {} cells land, {bytes} bytes; a fresh record {fresh} bytes",
+            f.face,
+            isl.cells(),
+            isl.n * isl.n
+        );
+        assert!(
+            2 * bytes <= 3 << 20,
+            "both faces' ecology under 3 MB: {bytes} bytes a face"
+        );
+        assert!(fresh <= 100 << 10, "a fresh face's record: {fresh} bytes");
+        // Grazed bare, its herds gone, and regrown: every cell back at its most exactly, so the
+        // record is as small as a fresh one's.
+        eco.groups.clear();
+        eco.grazing.iter_mut().for_each(|g| *g = 0.0);
+        step(&isl, &DATA, &mut eco, 2000.0);
+        assert_eq!(eco.grazing, isl.grazing_max, "regrown to the most exactly");
+        let regrown = eco.to_bytes(&isl, &DATA).len();
+        assert!(
+            regrown <= 100 << 10,
+            "a regrown face's record: {regrown} bytes"
+        );
+        let back = Ecosystem::from_bytes(&eco.to_bytes(&isl, &DATA), &isl, &DATA);
+        assert_eq!(back, Some(eco));
+    }
+);
+
+/// A long flat island, 12 km east to west and 2.4 km north to south (WORK_QUEUE item 39: prey far
+/// past a pack's sense).
+fn long_island(data: &Data) -> Island {
+    let n = (12000.0 / data.island.cell_m) as usize;
+    let x0 = -(n as f64 - 1.0) * data.island.cell_m / 2.0;
+    Island::from_ground(data, n, x0, |_, z| {
+        if z.abs() > 1200.0 {
+            Ground::Water
+        } else {
+            Ground::Land {
+                height_m: 20.0,
+                slope_deg: 2.0,
+            }
+        }
+    })
+}
+
+#[test]
+fn a_hungry_pack_roams_toward_the_nearest_herd_and_the_hunt_starts() {
+    // WORK_QUEUE item 39 (owner, 2026-11-12: "hungry packs travel toward the nearest herd"): a
+    // pack 10 km from the only herd, far past its 3 km sense, closes on it day by day (not a random
+    // heading), and once in sense it hunts.
+    let isl = long_island(&DATA);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, deer(), 5000.0, 0.0, 8.0, 0.1),
+            group(1, wolf(), -5000.0, 0.0, 4.0, 0.35),
+        ],
+    );
+    let gap = |e: &Ecosystem| {
+        let (h, p) = (&e.groups[0], &e.groups[1]);
+        (h.x - p.x).hypot(h.z - p.z)
+    };
+    let mut last = gap(&eco);
+    let mut hunted = false;
+    for day in 0..12 {
+        step(&isl, &DATA, &mut eco, 0.5);
+        let pack = eco.groups.iter().find(|g| g.species == wolf()).unwrap();
+        let now = gap(&eco);
+        if day == 0 {
+            // Hungry, not yet starving (under `disperse.aboveHunger`): roaming, by `roam`.
+            assert_eq!(pack.activity, Activity::Roaming, "roams to it");
+        }
+        if last > DATA.species[wolf()].sense_radius_m {
+            assert!(now < last - 500.0, "half-day {day}: closer: {last} → {now}");
+        }
+        hunted |= pack.activity == Activity::Hunting;
+        last = now;
+    }
+    assert!(hunted, "the hunt started: {last} m apart");
+}
+
+#[test]
+fn a_fed_pack_and_one_without_roam_dont_head_for_the_herd() {
+    // Fed (under `roam.towardPreyAboveHunger`) it rests; the fixture's fox roams by data alone.
+    let isl = long_island(&DATA);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, deer(), 5000.0, 0.0, 8.0, 0.1),
+            group(1, wolf(), -5000.0, 0.0, 4.0, 0.0),
+        ],
+    );
+    step(&isl, &DATA, &mut eco, 0.2);
+    assert_eq!(eco.groups[1].activity, Activity::Resting);
+    let data = fixture::DATA;
+    let (hare, fox) = (
+        data.find("test:hare").unwrap(),
+        data.find("test:fox").unwrap(),
+    );
+    assert!(data.species[fox].roam.is_some() && data.species[hare].roam.is_none());
+    let isl = long_island(&data);
+    let mut eco = by_hand(
+        &isl,
+        vec![
+            group(0, hare, 4000.0, 0.0, 6.0, 0.1),
+            group(1, fox, -4000.0, 0.0, 2.0, 0.6),
+        ],
+    );
+    let before = eco.groups[1].x;
+    step(&isl, &data, &mut eco, 0.5);
+    assert_eq!(eco.groups[1].activity, Activity::Roaming);
+    assert!(eco.groups[1].x > before + 300.0, "toward the hares");
+}
+
+dwell_world::both_faces!(
+    /// WORK_QUEUE item 46 (owner: "Even more animals. What's a reasonable amount for a real world
+    /// this size?"): a seed-1 face starts at the data's densities (deer a km² of grazing land, wolves
+    /// a km² of land), stays balanced over two simulated years (no collapse, no explosion), and its
+    /// step and record stay small.
+    fn a_seed_1_face_at_real_densities_stays_balanced_and_cheap(f: dwell_world::FaceFrame) {
+        let map =
+            dwell_worldgen::worldmap::for_seed(dwell_worldgen::bifacial::face_seed(1, f.face));
+        let isl = Island::from_world_map(&map, &DATA);
+        let cell_km2 = isl.cell * isl.cell / 1e6;
+        let pasture = isl.grazing_max.iter().filter(|&&g| g > 0.0).count() as f64 * cell_km2;
+        let land = isl.cells() as f64 * cell_km2;
+        let mut eco = Ecosystem::new(&isl, &DATA, 1);
+        let (d, w) = (&DATA.species[deer()], &DATA.species[wolf()]);
+        assert_eq!(eco.group_count(deer()), d.start_groups_on(pasture));
+        assert_eq!(eco.group_count(wolf()), w.start_groups_on(land));
+        let start = (eco.population(deer()), eco.population(wolf()));
+        println!(
+            "face {:?}: {land:.0} km² land, {pasture:.0} km² grazing; start {} herds ({:.0} deer), {} packs ({:.0} wolves); capacity {:.0} deer, {:.0} wolves",
+            f.face,
+            eco.group_count(deer()),
+            start.0,
+            eco.group_count(wolf()),
+            start.1,
+            isl.carrying_capacity(&DATA, deer()),
+            isl.carrying_capacity(&DATA, wolf()),
+        );
+        let mut worst = 0.0f64;
+        for day in 0..730 {
+            let t = std::time::Instant::now();
+            step(&isl, &DATA, &mut eco, 1.0);
+            worst = worst.max(t.elapsed().as_secs_f64() * 1e3);
+            if day % 73 == 72 {
+                println!(
+                    "  day {}: {} herds {:.0} deer, {} packs {:.0} wolves",
+                    day + 1,
+                    eco.group_count(deer()),
+                    eco.population(deer()),
+                    eco.group_count(wolf()),
+                    eco.population(wolf())
+                );
+            }
+            assert!(
+                eco.population(deer()) > 0.5 * start.0,
+                "deer collapsed on day {day}"
+            );
+            assert!(eco.population(wolf()) > 0.0, "wolves died out on day {day}");
+            assert_groups_in_bounds(&eco, &DATA);
+        }
+        let t = std::time::Instant::now();
+        step(&isl, &DATA, &mut eco, 5.0);
+        let big = t.elapsed().as_secs_f64() * 1e3;
+        let bytes = eco.to_bytes(&isl, &DATA).len();
+        println!("  worst day step {worst:.2} ms, a 5-day step {big:.2} ms, record {bytes} bytes");
+        // No explosion: a herd's cap times the most herds bounds the deer; the wolves stay at real
+        // densities (WORK_QUEUE item 46: ~1 per 60 km², 4–8 packs).
+        assert!(eco.population(deer()) <= d.group.cap * d.group.max_groups as f64);
+        assert!(eco.group_count(wolf()) <= w.group.max_groups);
+        assert!(
+            bytes <= 200 << 10,
+            "the record after two years: {bytes} bytes"
+        );
+    }
+);
+
+#[test]
+fn a_start_is_the_ranges_area_times_its_density() {
+    // both-faces: no face (a sampled island). WORK_QUEUE item 46: the start counts are a density
+    // over the species' range (a grazer's grazing land, a hunter's land), not fixed counts.
+    let big = |n: usize, data: &Data| {
+        let x0 = -(n as f64 - 1.0) * data.island.cell_m / 2.0;
+        Island::from_ground(data, n, x0, |x, _| {
+            if x > 0.0 {
+                // A crag-free half and a half no ground fits (land without forage).
+                Ground::Land {
+                    height_m: 20.0,
+                    slope_deg: 2.0,
+                }
+            } else {
+                Ground::Land {
+                    height_m: 1.0e6,
+                    slope_deg: 2.0,
+                }
+            }
+        })
+    };
+    let isl = big(100, &DATA);
+    let km2 = |cells: usize| cells as f64 * isl.cell * isl.cell / 1e6;
+    let pasture = km2(isl.grazing_max.iter().filter(|&&g| g > 0.0).count());
+    let land = km2(isl.cells());
+    assert!(pasture < land, "half the land grazes");
+    let eco = Ecosystem::new(&isl, &DATA, 5);
+    let (d, w) = (&DATA.species[deer()], &DATA.species[wolf()]);
+    let want = |sp: &dwell_ecology::SpeciesDef, km2: f64| {
+        ((km2 * sp.start_per_km2 / sp.start_size).round() as usize)
+            .clamp(sp.start_min_groups, sp.group.max_groups)
+    };
+    assert_eq!(eco.group_count(deer()), want(d, pasture));
+    assert_eq!(eco.group_count(wolf()), want(w, land));
+    for g in eco.groups.iter().filter(|g| g.species == deer()) {
+        let c = isl.cell_at(g.x, g.z).expect("on the land");
+        assert!(isl.grazing_max[c] > 0.0, "a herd starts on grazing land");
+    }
+    // A fixture density by data alone: twice the deer, twice the herds; and a fixed count.
+    static SPECIES: std::sync::LazyLock<Vec<dwell_ecology::SpeciesDef>> =
+        std::sync::LazyLock::new(|| {
+            let mut s = DATA.species.to_vec();
+            s[0].start_per_km2 *= 2.0;
+            s[0].group.max_groups = 100_000;
+            s[1].start_per_km2 = 0.0;
+            s[1].start_groups = 3;
+            s
+        });
+    let data = Data {
+        species: &SPECIES,
+        ..DATA
+    };
+    let eco = Ecosystem::new(&isl, &data, 5);
+    assert_eq!(
+        eco.group_count(deer()),
+        (pasture * 2.0 * d.start_per_km2 / d.start_size).round() as usize
+    );
+    assert_eq!(eco.group_count(wolf()), 3, "a fixed count");
+    // A small island still has the fewest the data asks for.
+    let tiny = big(4, &DATA);
+    let eco = Ecosystem::new(&tiny, &DATA, 5);
+    assert_eq!(eco.group_count(deer()), d.start_min_groups);
+    assert_eq!(eco.group_count(wolf()), w.start_min_groups);
 }

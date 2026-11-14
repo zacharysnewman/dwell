@@ -7,12 +7,14 @@
 // and regenerating a world too, so the world is the build's own. A build served at the launcher's
 // path (a local or preview build) shows it itself (ui/menuPage.ts).
 import { WORLD_CHOICES } from './worldChoices';
+import { ORBIT_WORLDS, SKY_PRESETS, skyOptions } from './sky';
 import { DEFAULT_MODE, GAME_MODES } from './modes.gen';
 import { modeLabel } from './modes';
 import { changesFor } from '../version/changes';
 import { changesView } from './changesView';
 import {
   cleanName,
+  parseSeed,
   typeLabel,
   WORLD_TYPES,
   type WorldIndex,
@@ -22,7 +24,10 @@ import type { ListedServer, Lobby, LobbyQuery, Nearby } from '../net/master';
 import { looksLikeAddress, pastedCode, pastedInvite } from './launch';
 import type { RecentServer } from './recentServers';
 import { ServerBrowser } from './serverBrowser';
-import { playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { moreOptionsFields, playAdvancedPanel, spawnChoices } from './playAdvanced';
+import { WORLD_SIZES } from '../local/world';
+import { prefersTouch } from './touchControls';
+import { World } from '../protocol/constants.gen';
 import { audio } from '../audio/engine';
 import { DEFAULT_MENU_BACKGROUND, MenuPanorama } from './menuBackground';
 import {
@@ -130,6 +135,41 @@ export function worldCardData(
   };
 }
 
+/**
+ * The menu's own button classes (owner, 2026-11-11: "The buttons should be aligned to match the
+ * design of the others instead of looking like web links"): every action on the main menu, a
+ * `<button>` or a link to another page, carries one of these, each with its hover, pressed and focus
+ * states in style.css; none is a bare underlined link (mainMenu.test.ts pins both).
+ */
+export const MENU_BUTTON_CLASSES = [
+  'mm-action',
+  'mm-back',
+  'mm-head-button',
+  'mm-disclosure',
+  'block-button',
+  'quiet-button',
+  'menu-button-small',
+  'world-more',
+] as const;
+
+/** A menu button that goes to another page (an `<a>`, so it opens as a link), styled as a button. */
+function linkButton(
+  label: string,
+  href: string,
+  className: string,
+  newTab = false,
+): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.className = className;
+  a.href = href;
+  a.textContent = label;
+  if (newTab) {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  }
+  return a;
+}
+
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -173,6 +213,27 @@ export interface NewWorldValues {
   spawn: string;
   /** An offered world file's name (worldChoices.ts), or '' for the build's terrain. */
   worldgen?: string;
+  /** A bigger world's size by name (`2x`, BIG_MAP.md M2b), or '' / `1x` for today's. */
+  size?: string;
+  /** A Realistic world's Sky preset (REALISTIC_WORLD.md §8, orbits.json), or '' for the default. */
+  sky?: string;
+}
+
+/**
+ * The New world form's World size choices (docs/proposals/BIG_MAP.md M2b; `worldSizes` in
+ * shared/protocol/constants.json): every named size with its disc's width, today's first. None on a
+ * touch page (owner, 2026-11-11: desktop first; a phone can't hold a bigger world's maps yet).
+ */
+export function worldSizeChoices(touch: boolean): { value: string; label: string }[] {
+  if (touch) return [];
+  return WORLD_SIZES.map((s) => {
+    const km = (2 * World.worldRadius * s.radiusScale) / 1000;
+    const across = `${km.toLocaleString('en-US')} km across`;
+    return {
+      value: s.name,
+      label: s.radiusScale === 1 ? `Normal (${across})` : `${s.name} (${across})`,
+    };
+  });
 }
 
 /** The route the New world form opens: the build that opens it creates the world. */
@@ -185,6 +246,30 @@ export function newWorldRoute(v: NewWorldValues): Record<string, string> {
     ...(v.spawn ? { spawn: v.spawn } : {}),
     ...(v.mode && v.mode !== DEFAULT_MODE ? { mode: v.mode } : {}),
     ...(v.worldgen ? { worldgen: v.worldgen } : {}),
+    // A bigger terrain world only (the flat and sandbox worlds are 1×); today's adds nothing.
+    ...(v.size &&
+    v.type === 'terrain' &&
+    WORLD_SIZES.some((s) => s.name === v.size && s.radiusScale !== 1)
+      ? { size: v.size }
+      : {}),
+    // A world that rolls an orbit (Realistic) only: the others keep today's sky.
+    ...skyOptions(v.worldgen, v.sky),
+  };
+}
+
+/**
+ * More options' Play (a one-off visit, `?local=1`): the New world form's Type or World, Seed and
+ * Spawn as Play advanced's parameters, so each is asked once (BUGS.md). A text seed is the number
+ * the form's world would get; an offered world file (Realistic) goes as `worldgen` with its Sky.
+ */
+export function moreOptionsRoute(v: NewWorldValues): Record<string, string> {
+  const worldgen = v.worldgen ?? '';
+  return {
+    seed: String(parseSeed(v.seed)),
+    ...(worldgen === '' && v.type !== 'terrain' ? { world: v.type } : {}),
+    ...(v.spawn ? { spawn: v.spawn } : {}),
+    ...(worldgen ? { worldgen } : {}),
+    ...skyOptions(worldgen, v.sky),
   };
 }
 
@@ -224,6 +309,18 @@ export class MainMenu {
   private readonly shell = document.createElement('div');
   /** The Worlds page's own New world, hidden while the empty state offers its big one. */
   private newWorldHead!: HTMLButtonElement;
+  /** The New world form's values as the player left them (its submit and More options' Play). */
+  private formValues: () => NewWorldValues = () => ({
+    name: '',
+    seed: '',
+    type: 'terrain',
+    mode: '',
+    spawn: '',
+  });
+  /** New world → More options' World size (BIG_MAP.md M2b); none on a touch page. */
+  private sizeField: HTMLLabelElement | null = null;
+  /** New world → More options' Sky (REALISTIC_WORLD.md §8): shown for a world that rolls an orbit. */
+  private skyField: HTMLLabelElement | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -387,7 +484,7 @@ export class MainMenu {
     const links = document.createElement('div');
     links.className = 'mm-links';
     if (this.deps.openSettings) {
-      const settings = button('Settings', 'mm-link', () => {
+      const settings = button('Settings', 'mm-action mm-action-secondary', () => {
         this.show('settings');
       });
       settings.id = 'menu-settings';
@@ -395,7 +492,7 @@ export class MainMenu {
       settings.setAttribute('aria-controls', 'settings-menu');
       links.append(settings);
     }
-    const versions = button('Versions', 'mm-link', () => {
+    const versions = button('Versions', 'mm-action mm-action-secondary', () => {
       this.show('versions');
     });
     versions.id = 'home-versions';
@@ -445,11 +542,21 @@ export class MainMenu {
     summary.id = 'play-advanced-toggle';
     summary.textContent = 'More options';
     // Play advanced: a one-off world by link with overrides (ui/playAdvanced.ts).
-    const advanced = playAdvancedPanel((route) => {
-      this.deps.go(route);
-    });
+    // Its fields less the form's (Type, World, Seed, Spawn), which its Play takes from the form.
+    const advanced = playAdvancedPanel(
+      (route) => {
+        this.deps.go(route);
+      },
+      moreOptionsFields(),
+      () => moreOptionsRoute(this.formValues()),
+    );
     advanced.hidden = false;
-    more.append(summary, advanced);
+    more.append(
+      summary,
+      ...(this.sizeField ? [this.sizeField] : []),
+      ...(this.skyField ? [this.skyField] : []),
+      advanced,
+    );
     return this.page(
       'menu-page-new-world',
       pageHead('New world', () => {
@@ -496,11 +603,9 @@ export class MainMenu {
    * (RELEASES.md §5).
    */
   private versionsPage(): HTMLElement {
-    const all = document.createElement('a');
+    // The head's other button, beside Back and alike: not a link-styled pill.
+    const all = linkButton('All versions', this.deps.versionsHref, 'mm-head-button');
     all.id = 'versions-link';
-    all.className = 'quiet-button';
-    all.href = this.deps.versionsHref;
-    all.textContent = 'All versions';
     const card = this.page(
       'versions-card',
       pageHead(
@@ -535,12 +640,16 @@ export class MainMenu {
     const line = document.createElement('p');
     line.className = 'menu-hint';
     const { version, channel } = this.deps;
-    line.append(
-      `Dwell ${version} (${channel}) · `,
-      button('About', 'menu-link', () => {
-        details.hidden = !details.hidden;
-      }),
-    );
+    // A disclosure (owner, 2026-11-12: expandable sections must show they expand and collapse): a
+    // chevron that turns, aria-expanded and aria-controls, like the <details> summaries.
+    const about = button('About', 'mm-disclosure', () => {
+      details.hidden = !details.hidden;
+      about.setAttribute('aria-expanded', String(!details.hidden));
+    });
+    about.id = 'about-toggle';
+    about.setAttribute('aria-expanded', 'false');
+    about.setAttribute('aria-controls', 'about-details');
+    line.append(`Dwell ${version} (${channel}) · `, about);
     line.id = 'app-version';
     const details = document.createElement('div');
     details.id = 'about-details';
@@ -548,11 +657,13 @@ export class MainMenu {
     const text = document.createElement('p');
     text.className = 'menu-hint';
     text.textContent = `${this.deps.detail} Dwell is not open source: all rights reserved, and the source is public for reference only. `;
-    const notices = document.createElement('a');
-    notices.href = this.deps.noticesHref;
-    notices.target = '_blank';
-    notices.rel = 'noopener';
-    notices.textContent = 'Third-party notices';
+    const notices = linkButton(
+      'Third-party notices',
+      this.deps.noticesHref,
+      'menu-button-small',
+      true,
+    );
+    notices.id = 'about-notices';
     details.append(text, notices);
     section.append(line, details);
     return section;
@@ -624,10 +735,30 @@ export class MainMenu {
       if (c.description) option.title = c.description;
       world.append(option);
     }
+    // The Sky (REALISTIC_WORLD.md §8, desktop and phone): the orbit's preset, for a world that rolls
+    // one (its climate reads the sky); hidden for the others, which keep today's sky.
+    const sky = document.createElement('select');
+    sky.id = 'world-sky';
+    for (const p of SKY_PRESETS) {
+      const option = document.createElement('option');
+      option.value = p.name;
+      option.textContent = p.label;
+      option.title = p.description;
+      sky.append(option);
+    }
+    this.skyField = field('Sky', sky);
+    this.skyField.id = 'world-sky-field';
+    this.skyField.title =
+      "The world's orbit, rolled from its seed: its latitude, its day and its moon.";
+    const showSky = (): void => {
+      if (this.skyField) this.skyField.hidden = !ORBIT_WORLDS.includes(world.value);
+    };
+    showSky();
     // A world file is terrain: the Type follows it.
     world.addEventListener('change', () => {
       if (world.value) type.value = 'terrain';
       type.disabled = world.value !== '';
+      showSky();
     });
     const submit = document.createElement('button');
     submit.type = 'submit';
@@ -646,19 +777,42 @@ export class MainMenu {
       hint,
       submit,
     );
+    // The world's size (BIG_MAP.md M2b), under More options on a desktop page only; a terrain
+    // world's alone (the Type follows a bigger size).
+    const sizes = worldSizeChoices(prefersTouch());
+    const size = document.createElement('select');
+    size.id = 'world-size';
+    for (const c of sizes) {
+      const option = document.createElement('option');
+      option.value = c.value;
+      option.textContent = c.label;
+      size.append(option);
+    }
+    size.addEventListener('change', () => {
+      if (size.selectedIndex > 0) type.value = 'terrain';
+    });
+    type.addEventListener('change', () => {
+      if (type.value !== 'terrain') size.selectedIndex = 0;
+    });
+    if (sizes.length) {
+      this.sizeField = field('World size', size);
+      this.sizeField.id = 'world-size-field';
+      this.sizeField.title = 'A bigger world takes longer to create. Desktop only for now.';
+    }
+    this.formValues = () => ({
+      name: name.value,
+      seed: seed.value,
+      type: type.value,
+      mode: mode.value,
+      spawn: spawn.value,
+      worldgen: world.value,
+      ...(sizes.length ? { size: size.value } : {}),
+      sky: sky.value,
+    });
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       // The build that opens it creates it (its generator, its version).
-      this.deps.go(
-        newWorldRoute({
-          name: name.value,
-          seed: seed.value,
-          type: type.value,
-          mode: mode.value,
-          spawn: spawn.value,
-          worldgen: world.value,
-        }),
-      );
+      this.deps.go(newWorldRoute(this.formValues()));
     });
   }
 

@@ -120,19 +120,19 @@ fn the_crown_agrees_with_itself_across_a_chunk_border() {
 fn cards_stand_off_exposed_faces_by_the_data_and_none_inside() {
     let look = LEAVES.cards;
     let up = |_: V| Some([0.0, 1.0, 0.0]);
-    assert!(cards([false; 6], [3, 4, 5], &look, up).is_empty());
+    assert!(cards([false; 6], [3, 4, 5], &look, up, |_| false).is_empty());
     // Over many lone cells the mean count per cell is the data's: tops 2.6×, sides 2.2× by their
     // area (½), bottoms 1.2×.
     let n = 2000;
     let total: usize = (0..n)
-        .map(|i| cards([true; 6], [i, 7, -i], &look, up).len())
+        .map(|i| cards([true; 6], [i, 7, -i], &look, up, |_| false).len())
         .sum();
     let want = look.density * (2.6 + 1.2 + 4.0 * 2.2 * CELL_H);
     let mean = total as f64 / n as f64;
     assert!((mean - want).abs() < 0.1 * want, "{mean} vs {want}");
     // The same cell: the same cards, whichever chunk meshes it.
-    let a = cards([true; 6], [11, 2, 3], &look, up);
-    let b = cards([true; 6], [11, 2, 3], &look, up);
+    let a = cards([true; 6], [11, 2, 3], &look, up, |_| false);
+    let b = cards([true; 6], [11, 2, 3], &look, up, |_| false);
     assert_eq!(format!("{a:?}"), format!("{b:?}"));
     for c in &a {
         let w = (0..3)
@@ -141,4 +141,51 @@ fn cards_stand_off_exposed_faces_by_the_data_and_none_inside() {
             .sqrt();
         assert!(w >= look.size_m * 0.74 && w <= look.size_m * 1.26, "{w}");
     }
+}
+
+/// WORK_QUEUE item 48 (owner, 2026-11-12: "the inside leave edges make a flat side against the
+/// logs"): a lone leaf with a log on −x draws its −x face flat and whole but for the four edges
+/// along x, whose cuts end square against it; no cut leans toward −x; its other faces are cut as
+/// before.
+#[test]
+fn a_flush_face_is_drawn_flat_and_the_cuts_along_it_end_square() {
+    let mut ex = [true; 6];
+    ex[1] = false;
+    let mut flush = [false; 6];
+    flush[1] = true;
+    let ps = flush_pieces(ex, flush, [false; 6], [[false; 6]; 6], S);
+    let inner: Vec<&Piece> = ps.iter().filter(|p| p.normal == [-1.0, 0.0, 0.0]).collect();
+    assert_eq!(inner.len(), 1, "{ps:?}");
+    // The square less the four edges' (±y, ±z) triangular ends.
+    assert!(
+        (area(&inner[0].pts) - (1.0 - 2.0 * S * S)).abs() < 1e-9,
+        "{inner:?}"
+    );
+    assert!(inner[0].pts.iter().all(|q| (q[0] + 0.5).abs() < 1e-9));
+    for p in &ps {
+        assert!(p.normal[0] > -1e-9 || p.normal == [-1.0, 0.0, 0.0], "{p:?}");
+        assert!(!p.sides.contains(&1) || p.sides == vec![1], "{p:?}");
+    }
+    // The ±y/±z edges' cuts reach the flush face: each has an edge lying on x = −0.5.
+    let ends = ps
+        .iter()
+        .filter(|p| p.sides.len() == 2)
+        .filter(|p| p.pts.iter().filter(|q| (q[0] + 0.5).abs() < 1e-9).count() == 2)
+        .count();
+    assert_eq!(ends, 4, "{ps:?}");
+    // The other faces: +x keeps its 1 − 2s square, 5 edges and 4 corners cut there less.
+    let out = ps.iter().find(|p| p.normal == [1.0, 0.0, 0.0]).expect("+x");
+    assert!((area(&out.pts) - (1.0 - 2.0 * S).powi(2)).abs() < 1e-9);
+    // 6 faces, 12 − 4 edge cuts, 8 − 4 corner cuts.
+    assert_eq!(ps.len(), 6 + 8 + 4);
+}
+
+/// Without a flush face, `flush_pieces` is `pieces`.
+#[test]
+fn flush_pieces_without_a_flush_face_are_the_plain_ones() {
+    let mut ex = [true; 6];
+    ex[3] = false;
+    let a = pieces(ex, [false; 6], [[false; 6]; 6], S);
+    let b = flush_pieces(ex, [false; 6], [false; 6], [[false; 6]; 6], S);
+    assert_eq!(format!("{a:?}"), format!("{b:?}"));
 }

@@ -30,6 +30,7 @@ const RENDER_LOOKS = [
   'shadows',
   'lodshadows',
   'fog',
+  'atmosphere',
   'lodblend',
   'lodcolour',
   'leaves',
@@ -46,9 +47,10 @@ const RENDER_LOOKS = [
   'shafts',
   'waterfalls',
   'daynight',
+  'bloom',
 ];
 /** The `shared/look` scripts that also emit HUD or settings code (client/src/ui). */
-const UI_LOOKS = ['loading', 'spyglass', 'watertiers'];
+const UI_LOOKS = ['loading', 'spyglass', 'watertiers', 'orbits'];
 
 export const AREAS: Record<string, Area> = {
   protocol: {
@@ -59,14 +61,17 @@ export const AREAS: Record<string, Area> = {
       'shared/modes/gen.mjs',
       'shared/tools/gen.mjs',
       'shared/vitals/gen.mjs',
+      'shared/defeat/gen.mjs',
       'shared/protocol/make_vectors.py',
       'shared/master/make_vectors.mjs',
     ],
     nodeTests: [
+      'shared/protocol/capabilities.test.mjs',
       'shared/inventory/gen.test.mjs',
       'shared/modes/gen.test.mjs',
       'shared/tools/gen.test.mjs',
       'shared/vitals/gen.test.mjs',
+      'shared/defeat/gen.test.mjs',
     ],
     crates: ['dwell-protocol', 'dwell-net'],
     vitest: ['src/net/', 'src/ui/modes.test.ts'],
@@ -101,6 +106,7 @@ export const AREAS: Record<string, Area> = {
       'src/ui/creativeInventory.test.ts',
       'src/ui/hotbar.test.ts',
       'src/ui/brush',
+      'src/ui/blueprints.test.ts',
     ],
   },
   worldgen: {
@@ -139,6 +145,8 @@ export const AREAS: Record<string, Area> = {
       ...lookTests(RENDER_LOOKS),
       'shared/textures/gen.test.mjs',
       'shared/models/gen.test.mjs',
+      'shared/models/painter.test.mjs',
+      'shared/models/decor.test.mjs',
       'shared/characters/gen.test.mjs',
     ],
     crates: ['dwell-look', 'dwell-models', 'dwell-characters', 'dwell-client', 'dwell-native'],
@@ -171,6 +179,7 @@ export const AREAS: Record<string, Area> = {
     generators: [
       'shared/physics/gen.mjs',
       'shared/creatures/gen.mjs',
+      'shared/blueprints/gen.mjs',
       'shared/explosives/gen.mjs',
       'shared/fluids/gen.mjs',
       'shared/fluids/falls.mjs',
@@ -180,6 +189,7 @@ export const AREAS: Record<string, Area> = {
     nodeTests: [
       'shared/physics/gen.test.mjs',
       'shared/creatures/gen.test.mjs',
+      'shared/blueprints/gen.test.mjs',
       'shared/explosives/gen.test.mjs',
       'shared/fluids/gen.test.mjs',
       'shared/fluids/falls.test.mjs',
@@ -224,8 +234,8 @@ export const AREAS: Record<string, Area> = {
       'shared/items/gen.test.mjs',
       ...lookTests(UI_LOOKS),
     ],
-    crates: ['dwell-game'],
-    vitest: ['src/ui/', 'src/input/', 'src/debug/', 'src/identity/'],
+    crates: ['dwell-game', 'dwell-theater'],
+    vitest: ['src/ui/', 'src/input/', 'src/debug/', 'src/identity/', 'src/theater/'],
   },
   audio: {
     notes: 'sounds and music (data, validation, the synth and mixer)',

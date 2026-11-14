@@ -20,11 +20,17 @@ use dwell_protocol::{Message, RegionEdit, RegionEditOp, region_edit};
 use dwell_world::FaceFrame;
 use dwell_world::VoxelWorld;
 use dwell_world::edit::unbreakable;
-use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world, read_box};
+use dwell_world::region::{KEEP, PasteTransform, box_distance_sq, box_in_world_of, read_box};
 
 /// Undo steps kept (each holds its boxes' states twice; a brush stroke's boxes are trimmed to
 /// the cells it changes).
 pub const UNDO_DEPTH: usize = 64;
+
+/// The most cells a structure loaded from the library may have (a memory guard, 8 MB of states):
+/// the library's own limit is data (`shared/structures/library.json`: `tileSize` × `maxTiles`,
+/// enforced where it is saved and read, `client/src/local/structureLibrary.ts`); a test checks
+/// that limit fits under this one.
+pub const MAX_CLIPBOARD_CELLS: usize = 1 << 22;
 
 /// What a key asks of the tools (bindings: [`tool_for_key`], the controls table in
 /// `client/src/ui/controls.ts`).
@@ -129,6 +135,9 @@ struct Clipboard {
     /// Cells that keep what is in the world where they land (a structure's `null` cells); empty
     /// for a copy, which sets every cell.
     keep: Vec<bool>,
+    /// A saved structure from the library (`load_clipboard`), not a copy: its paste is a structure
+    /// placement (`RegionEditOp::Structure` to a server that takes it).
+    structure: bool,
 }
 
 /// One edit of an undo step: the box and its states before `edit` (what undo pastes back; `KEEP`
@@ -150,6 +159,17 @@ pub struct RegionTools {
     /// How far from the eye an edit's nearest cell may be (m): `region_edit::REACH`, or the world
     /// type's brush reach (`dwell_world::region::region_reach`, without its slack).
     pub reach: f32,
+    /// The world's mode places saved structures (`modes::Ability::Structures`, creative only for
+    /// now): [`load_clipboard`](Self::load_clipboard) refuses without it.
+    pub structures: bool,
+    /// The server takes structure placements as such (the `structures.place` capability,
+    /// ARCHITECTURE.md §8.3): a library structure pastes as `RegionEditOp::Structure`, which the
+    /// server refuses outside a mode with `structures`. Without it (an older server), plain
+    /// `Paste`s, validated as any paste (STRUCTURES.md §9).
+    pub structure_ops: bool,
+    /// The world's disc and build volume (its size, `Game::set_world`): a box outside them is not
+    /// sent (BUGS.md #109).
+    pub bounds: dwell_world::WorldBounds,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
@@ -211,6 +231,9 @@ impl RegionTools {
             enabled: false,
             keep: false,
             reach: region_edit::REACH,
+            structures: false,
+            structure_ops: false,
+            bounds: dwell_world::WorldBounds::DEFAULT,
             a: None,
             b: None,
             clipboard: None,
@@ -388,6 +411,7 @@ impl RegionTools {
                     size,
                     cells: FaceFrame::of_box(min, size).box_cells(size, &cells),
                     keep: Vec::new(),
+                    structure: false,
                 });
                 self.note = format!("Copied {}", size_text(size));
                 None
@@ -421,6 +445,11 @@ impl RegionTools {
                     return None;
                 };
                 let (size, local) = p.apply(c.size, &c.cells);
+                if fits(size).is_none() {
+                    // A library structure over one edit's side: one undo step of tiles.
+                    self.paste_tiles(p, &c, min, size, local, ctx, world);
+                    return None;
+                }
                 let size = self.fit(size)?;
                 // The clipboard is face-local: into the world through the paste's face frame.
                 let f = FaceFrame::of_box(min, dims(size));
@@ -439,7 +468,7 @@ impl RegionTools {
                     }
                 }
                 let edit = RegionEdit {
-                    op: RegionEditOp::Paste,
+                    op: self.paste_op(&c),
                     min,
                     size,
                     material: 0,
@@ -453,9 +482,23 @@ impl RegionTools {
         }
     }
 
+    /// The op a paste of `c` goes as: a library structure's is a structure placement where the
+    /// server takes one (`structure_ops`), anything else a plain `Paste`.
+    fn paste_op(&self, c: &Clipboard) -> RegionEditOp {
+        if c.structure && self.structure_ops {
+            RegionEditOp::Structure
+        } else {
+            RegionEditOp::Paste
+        }
+    }
+
     /// Puts a structure (STRUCTURES.md §4) on the clipboard and turns paste mode on, as a copy
     /// and Ctrl+V would: `cells` in layer order, `keep` (empty, or one per cell) where it keeps
     /// what is there. Like a copy, it pastes with its bottom centre on the aimed-at cell.
+    ///
+    /// A structure may be larger than one edit (the library's tiles, STRUCTURES.md §9): its paste
+    /// goes as one undo step of edits of at most `region_edit::MAX_SIDE` a side, sent as the rate
+    /// allows. Only where the world's mode places structures (`structures`).
     pub fn load_clipboard(
         &mut self,
         size: [i32; 3],
@@ -463,16 +506,131 @@ impl RegionTools {
         keep: Vec<bool>,
         label: &str,
     ) -> Result<(), String> {
-        let volume = fits(size)
-            .map(|s| s.iter().map(|&n| usize::from(n)).product::<usize>())
-            .ok_or_else(|| format!("Too big: at most {} a side", region_edit::MAX_SIDE))?;
+        if !self.structures {
+            return Err("Saved structures are placed in creative worlds only".into());
+        }
+        if size.iter().any(|&s| s < 1) {
+            return Err("The cells don't fill the box".into());
+        }
+        let volume = size.iter().map(|&n| n as usize).product::<usize>();
+        if volume > MAX_CLIPBOARD_CELLS {
+            return Err(format!("Too big: at most {MAX_CLIPBOARD_CELLS} blocks"));
+        }
         if cells.len() != volume || !(keep.is_empty() || keep.len() == volume) {
             return Err("The cells don't fill the box".into());
         }
-        self.clipboard = Some(Clipboard { size, cells, keep });
+        self.clipboard = Some(Clipboard {
+            size,
+            cells,
+            keep,
+            structure: true,
+        });
         self.paste = Some(PasteTransform::default());
         self.note = format!("{label}: aim and right click to paste");
         Ok(())
+    }
+
+    /// Pastes a clipboard larger than one edit (turned to `size`, its face-local states `local`) at
+    /// `min`: tiles of at most `MAX_SIDE` a side from the box's lowest corner, each a `Paste` the
+    /// server validates as any other (the world's rules: its mode, reach, the build volume), queued
+    /// as one undo step. False (with a note) if a tile can't go: nothing is sent then.
+    #[allow(clippy::too_many_arguments)]
+    fn paste_tiles(
+        &mut self,
+        p: PasteTransform,
+        c: &Clipboard,
+        min: [i32; 3],
+        size: [i32; 3],
+        local: Vec<StateId>,
+        ctx: &ToolContext,
+        world: &mut impl BoxSource,
+    ) -> bool {
+        if self.busy() {
+            return false;
+        }
+        if !self.enabled {
+            self.note = "This server doesn't take region edits (an older build)".into();
+            return false;
+        }
+        let Some(eye) = ctx.eye else {
+            return false;
+        };
+        if !box_in_world_of(&self.bounds, min, size) {
+            self.note = "Outside the build volume".into();
+            return false;
+        }
+        // Into the world through the paste's face frame, as a single edit's paste is.
+        let f = FaceFrame::of_box(min, size);
+        let cells = f.box_cells(size, &local);
+        let kept = if c.keep.iter().any(|&k| k) {
+            f.box_flags(size, &transform_mask(p, c.size, &c.keep))
+        } else {
+            Vec::new()
+        };
+        let side = region_edit::MAX_SIDE as i32;
+        let mut edits = Vec::new();
+        let mut step = Vec::new();
+        for ty in (0..size[1]).step_by(side as usize) {
+            for tz in (0..size[2]).step_by(side as usize) {
+                for tx in (0..size[0]).step_by(side as usize) {
+                    let at = [tx, ty, tz];
+                    let tsize: [i32; 3] = std::array::from_fn(|i| side.min(size[i] - at[i]));
+                    let tmin: [i32; 3] = std::array::from_fn(|i| min[i] + at[i]);
+                    let Some(before) = world.read_box(tmin, tsize) else {
+                        self.note = "Not loaded yet".into();
+                        return false;
+                    };
+                    let mut tile = Vec::with_capacity(before.len());
+                    let mut all_kept = true;
+                    for y in 0..tsize[1] {
+                        for z in 0..tsize[2] {
+                            for x in 0..tsize[0] {
+                                let i = ((at[0] + x)
+                                    + size[0] * ((at[2] + z) + size[2] * (at[1] + y)))
+                                    as usize;
+                                let j = tile.len();
+                                if kept.get(i).copied().unwrap_or(false) {
+                                    // Kept cells take what the world holds there now.
+                                    tile.push(before[j]);
+                                } else {
+                                    all_kept = false;
+                                    tile.push(cells[i]);
+                                }
+                            }
+                        }
+                    }
+                    if all_kept {
+                        continue;
+                    }
+                    let edit = RegionEdit {
+                        op: self.paste_op(c),
+                        min: tmin,
+                        size: tsize.map(|s| s as u8),
+                        material: 0,
+                        from: 0,
+                        cells: tile,
+                    };
+                    if !self.in_reach(&edit, eye) {
+                        return false;
+                    }
+                    step.push(Diff {
+                        min: edit.min,
+                        size: edit.size,
+                        before: self.masked(before, None),
+                        edit: edit.clone(),
+                    });
+                    edits.push(edit);
+                }
+            }
+        }
+        if edits.is_empty() {
+            self.note = "Nothing to change".into();
+            return false;
+        }
+        self.redo.clear();
+        self.push_undo(step);
+        self.enqueue(edits);
+        true
     }
 
     fn fit(&mut self, size: [i32; 3]) -> Option<[u8; 3]> {
@@ -529,7 +687,7 @@ impl RegionTools {
             return None;
         }
         // The server refuses a box not wholly inside the build volume (ADR 0025).
-        if !box_in_world(edit.min, dims(edit.size)) {
+        if !box_in_world_of(&self.bounds, edit.min, dims(edit.size)) {
             self.note = "Outside the build volume".into();
             return None;
         }
@@ -812,6 +970,7 @@ mod tests {
         RegionTools {
             enabled: true,
             keep: true,
+            structures: true,
             ..RegionTools::new()
         }
     }
@@ -863,7 +1022,7 @@ mod tests {
         step(&mut t, &mut w, ToolAction::Paste, &ctx(Some([5, 0, 5]), 0));
         assert_eq!((w.get_voxel(5, 1, 4), w.get_voxel(5, 1, 5)), (stone, sand));
         assert!(
-            t.load_clipboard([33, 1, 1], vec![stone; 33], vec![], "big")
+            t.load_clipboard([1 << 11, 1 << 11, 2], vec![], vec![], "huge")
                 .is_err()
         );
         assert!(
@@ -874,6 +1033,61 @@ mod tests {
             t.load_clipboard([2, 1, 1], vec![stone; 2], vec![true], "mask")
                 .is_err()
         );
+    }
+
+    /// ARCHITECTURE.md §8.3, STRUCTURES.md §9: a library structure's paste is a structure
+    /// placement (`Structure`) to a server that announced `structures.place`, a plain `Paste` to
+    /// an older one; a copy's paste is always a `Paste`. Tiles of a larger structure likewise.
+    #[test]
+    fn a_library_structure_pastes_as_a_structure_placement_only_where_the_server_takes_one() {
+        // face-a-only: the op is chosen before anything face-dependent (the both-faces tile test
+        // covers the placement itself).
+        let stone = require("dwell:stone");
+        let op_of = |m: Option<Message>| match m {
+            Some(Message::RegionEdit(e)) => Some(e.op),
+            _ => None,
+        };
+        for (structure_ops, want) in [
+            (true, RegionEditOp::Structure),
+            (false, RegionEditOp::Paste),
+        ] {
+            let mut w = world();
+            let mut t = RegionTools {
+                structure_ops,
+                ..tools()
+            };
+            t.load_clipboard([1, 1, 1], vec![stone], vec![], "one")
+                .unwrap();
+            let m = t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w);
+            assert_eq!(op_of(m), Some(want), "structure_ops {structure_ops}");
+            // Wider than one edit: every tile goes as the same op.
+            let mut t = RegionTools {
+                structure_ops,
+                ..tools()
+            };
+            t.load_clipboard([40, 1, 1], vec![stone; 40], vec![], "wide")
+                .unwrap();
+            assert!(
+                t.act(ToolAction::Paste, &ctx(Some([2, 0, 2]), 0), &mut w)
+                    .is_none()
+            );
+            let sent: Vec<_> = t.pump(1e9).into_iter().map(|m| op_of(Some(m))).collect();
+            assert!(sent.len() >= 2, "tiles: {}", sent.len());
+            assert!(sent.iter().all(|o| *o == Some(want)), "{sent:?}");
+        }
+        // A copy (Ctrl+C) pastes as a plain Paste whatever the server takes.
+        let mut w = world();
+        w.set_voxel(0, 1, 0, stone);
+        let mut t = RegionTools {
+            structure_ops: true,
+            ..tools()
+        };
+        t.act(ToolAction::CornerA, &ctx(Some([0, 1, 0]), 0), &mut w);
+        t.act(ToolAction::CornerB, &ctx(Some([0, 1, 0]), 0), &mut w);
+        t.act(ToolAction::Copy, &ctx(None, 0), &mut w);
+        t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
+        let m = t.act(ToolAction::Paste, &ctx(Some([3, 0, 3]), 0), &mut w);
+        assert_eq!(op_of(m), Some(RegionEditOp::Paste));
     }
 
     #[test]
@@ -1153,4 +1367,144 @@ mod tests {
             assert_eq!(copy_paste_local(f, a), expected, "{:?} → A", f.face);
         }
     );
+
+    /// Pastes a 40 × 3 × 2 library structure (wider than one edit) on face `f`, aimed at local
+    /// (0, 0, 0), turned `turns` quarter turns; the states of the face-local box it lands in.
+    fn library_paste_local(f: dwell_world::FaceFrame, turns: u8) -> Vec<StateId> {
+        let (stone, sand, dirt) = (
+            require("dwell:stone"),
+            require("dwell:sand"),
+            require("dwell:dirt"),
+        );
+        let size = [40, 3, 2];
+        let mut cells = vec![stone; 240];
+        let mut keep = vec![false; 240];
+        let i = |x: i32, y: i32, z: i32| (x + 40 * (z + 2 * y)) as usize;
+        cells[i(37, 2, 1)] = sand;
+        keep[i(0, 0, 0)] = true;
+        let mut w = world();
+        // Under every cell the paste could keep: dirt, which a kept cell leaves.
+        for z in -21..22 {
+            for x in -21..22 {
+                let [wx, wy, wz] = f.cell([x, 1, z]);
+                w.set_voxel(wx, wy, wz, f.state(dirt));
+            }
+        }
+        let mut t = tools();
+        t.load_clipboard(size, cells, keep, "wall").expect("loads");
+        for _ in 0..turns {
+            t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
+        }
+        let at = ToolContext {
+            target: Some(f.cell([0, 0, 0])),
+            target_state: 0,
+            placement: Some(f.cell([0, 1, 0])),
+            material: 0,
+            eye: Some([0.5, 1.6, 0.5]),
+            now_ms: 0.0,
+        };
+        // Over one edit's side: nothing at once; its tiles queue as one undo step.
+        assert_eq!(t.act(ToolAction::Paste, &at, &mut w), None, "{}", t.note());
+        let sent = t.pump(1.0e9);
+        assert_eq!(sent.len(), 2, "two tiles across");
+        for m in sent {
+            if let Message::RegionEdit(r) = &m {
+                assert!(
+                    r.size
+                        .iter()
+                        .all(|&s| usize::from(s) <= region_edit::MAX_SIDE)
+                );
+            }
+            apply(&mut w, Some(m));
+        }
+        assert_eq!(t.undo_depth(), (1, 0));
+        let mut out = Vec::new();
+        for y in 1..4 {
+            for z in -21..22 {
+                for x in -21..22 {
+                    let [wx, wy, wz] = f.cell([x, y, z]);
+                    out.push(f.state(w.get_voxel(wx, wy, wz)));
+                }
+            }
+        }
+        out
+    }
+
+    dwell_world::both_faces!(
+        /// A library structure larger than one edit (STRUCTURES.md §9) pastes as tiles of at most
+        /// `MAX_SIDE`, upright on either face and turned with R: its blocks land, its kept cells
+        /// keep what was there.
+        fn a_library_structure_pastes_as_tiles_turned_on_either_face(f: dwell_world::FaceFrame) {
+            let (stone, sand, dirt) = (
+                require("dwell:stone"),
+                require("dwell:sand"),
+                require("dwell:dirt"),
+            );
+            let at = |out: &[StateId], [x, y, z]: [i32; 3]| {
+                out[((x + 21) + 43 * ((z + 21) + 43 * (y - 1))) as usize]
+            };
+            // Unturned: the box stands on (0, 1, 0) with its bottom centre there: x −20..19, z −1..0.
+            let out = library_paste_local(f, 0);
+            assert_eq!(at(&out, [-20, 1, -1]), dirt, "kept cell");
+            assert_eq!(at(&out, [-19, 1, -1]), stone);
+            assert_eq!(at(&out, [17, 3, 0]), sand);
+            assert_eq!(at(&out, [19, 2, 0]), stone, "the second tile");
+            assert_eq!(at(&out, [20, 2, 0]), M.air, "outside the box");
+            assert_eq!(
+                out,
+                library_paste_local(dwell_world::FaceFrame::A, 0),
+                "face parity"
+            );
+            // One quarter turn: 2 × 3 × 40 at x −1..0, z −20..19; (37, 2, 1) → (0, 2, 37).
+            let out = library_paste_local(f, 1);
+            assert_eq!(at(&out, [-1, 3, 17]), sand);
+            assert_eq!(at(&out, [0, 1, -20]), dirt, "kept cell turned");
+            assert_eq!(at(&out, [17, 3, 0]), M.air);
+            assert_eq!(
+                out,
+                library_paste_local(dwell_world::FaceFrame::A, 1),
+                "face parity"
+            );
+        }
+    );
+
+    #[test]
+    fn a_structure_loads_only_where_the_mode_places_structures() {
+        let stone = require("dwell:stone");
+        let mut t = RegionTools {
+            structures: false,
+            ..tools()
+        };
+        let e = t
+            .load_clipboard([1, 1, 1], vec![stone], vec![], "post")
+            .expect_err("adventure");
+        assert!(e.contains("creative"), "{e}");
+        assert!(!t.pasting());
+    }
+
+    #[test]
+    fn the_librarys_data_limit_fits_the_clipboard() {
+        // shared/structures/library.json: `tileSize` and `maxTiles` (the save and load limit).
+        let text = include_str!("../../../shared/structures/library.json");
+        let num = |key: &str| -> Vec<usize> {
+            let at = text.find(&format!("\"{key}\"")).expect(key) + key.len() + 3;
+            let rest = &text[at..];
+            let end = rest.find(['\n', ',']).map_or(rest.len(), |e| {
+                if rest.trim_start().starts_with('[') {
+                    rest.find(']').expect("]") + 1
+                } else {
+                    e
+                }
+            });
+            rest[..end]
+                .trim_matches(|c: char| c == '[' || c == ']' || c.is_whitespace())
+                .split(',')
+                .map(|n| n.trim().parse().expect("a number"))
+                .collect()
+        };
+        let tile = num("tileSize")[0];
+        assert!(tile <= region_edit::MAX_SIDE, "a tile is one edit");
+        let most: usize = num("maxTiles").iter().map(|&n| n * tile).product();
+        assert!(most <= MAX_CLIPBOARD_CELLS, "{most} cells");
+    }
 }

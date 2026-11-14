@@ -53,6 +53,7 @@ fn world_saved_by(path: &str, version: &str) {
         app_version_created: version.into(),
         app_version_last: version.into(),
         settings: None,
+        spawn_grid: None,
     };
     db.save(&SaveBatch {
         meta: Some(meta),
@@ -311,6 +312,27 @@ fn the_mode_option_makes_a_new_world_in_it_and_switches_a_saved_one() {
     save_and_close(server);
     let (server, _) = start_in(&world, &[]);
     assert_eq!(server.world_settings().mode, "creative");
+}
+
+#[test]
+fn the_size_option_makes_a_new_world_at_it_and_a_saved_one_keeps_its_own() {
+    // BIG_MAP.md M2a: `--size 2x` makes a 2× world; reopened with no option (or another size) it is
+    // still 2×, its bounds the 2× disc's.
+    use dwell_protocol::world_size::WorldSize;
+    let two = WorldSize::named("2x").unwrap();
+    let s = Scratch::new("size");
+    let world = s.file("s.dwellworld");
+    let (server, _) = start_in(&world, &["--size", "2x"]);
+    assert_eq!(server.world_settings().size, two);
+    assert_eq!(server.bounds().radius(), 100_000);
+    save_and_close(server);
+    let (server, _) = start_in(&world, &["--size", "4x"]);
+    assert_eq!(server.world_settings().size, two, "the world's own");
+    assert_eq!(server.bounds().radius(), 100_000);
+    assert!(
+        parse_options(&args(&["--size", "3x"])).is_err(),
+        "not a named size"
+    );
 }
 
 #[test]

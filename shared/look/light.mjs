@@ -57,8 +57,13 @@ export function validateLight(data) {
     fail(`block.color must be "#rrggbb", got ${JSON.stringify(data.block.color)}`);
   }
   checkNumber('block.strength', data.block.strength, 0, 8);
-  checkKeys('characters', data.characters, ['easeS']);
+  checkKeys('characters', data.characters, ['easeS', 'bounce']);
   checkNumber('characters.easeS', data.characters.easeS, 0, 5);
+  checkKeys('characters.bounce', data.characters.bounce, ['color', 'strength']);
+  if (typeof data.characters.bounce.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(data.characters.bounce.color)) {
+    fail(`characters.bounce.color must be "#rrggbb", got ${JSON.stringify(data.characters.bounce.color)}`);
+  }
+  checkNumber('characters.bounce.strength', data.characters.bounce.strength, 0, 2);
   return data;
 }
 
@@ -68,6 +73,7 @@ const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 25
 /** The Rust source for validated data. */
 export function lightRust(data) {
   const c = rgb(data.block.color).map((v) => rf(Math.round(v * 1e6) / 1e6));
+  const b = rgb(data.characters.bounce.color).map((v) => rf(Math.round(v * 1e6) / 1e6));
   return [
     `// ${header}`,
     '',
@@ -84,6 +90,8 @@ export function lightRust(data) {
     `    block_color: [${c.join(', ')}],`,
     `    block_strength: ${rf(data.block.strength)},`,
     `    character_ease_s: ${rf(data.characters.easeS)},`,
+    `    character_bounce_color: [${b.join(', ')}],`,
+    `    character_bounce_strength: ${rf(data.characters.bounce.strength)},`,
     '};',
     '',
   ].join('\n');

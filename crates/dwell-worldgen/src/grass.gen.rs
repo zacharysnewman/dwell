@@ -4,6 +4,7 @@
 pub const GRASS: GrassData = GrassData {
     block: "dwell:tall_grass",
     on: &["dwell:grass"],
+    on_ramps: true,
     decoration: "meadow_grass",
     max_density: 0.8,
     spread_per_day: 0.15,
@@ -11,4 +12,11 @@ pub const GRASS: GrassData = GrassData {
     reach: 1,
     open_above: 2,
     catch_up_days: 20,
+    stage_property: "stage",
+    stages: &[
+        GrassStage { value: "0", days: 3.0, share: 0.0 },
+        GrassStage { value: "1", days: 3.0, share: 0.2 },
+        GrassStage { value: "2", days: 4.0, share: 0.4 },
+        GrassStage { value: "3", days: 0.0, share: 0.6 },
+    ],
 };

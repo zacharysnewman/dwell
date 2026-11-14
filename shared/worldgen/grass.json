@@ -1,14 +1,22 @@
 {
-  "$comment": "Tall grass growing and spreading over time (ADR 0075 T3c, docs/ECOLOGY.md §10). Near players, once a world day (and on a chunk's load for the days it missed, at most catchUpDays), an empty cell over an `on` block takes `block` when it is fertile and tall grass stands within `reach` columns (spreadPerDay) or it held generated grass that was eaten or cut (regrowPerDay, the roots). A column is fertile when the decoration's own per-cell roll is under maxDensity × the climate's share (the T3b undergrowth factor of the vegetation kind governing `decoration`, 0 in a biome that doesn't list it, 1 without a climate), so generated tufts are always fertile and a cell's tall grass never passes maxDensity × share: lush meadows fill, dry ground stays sparse. The cell and openAbove cells over it must be air, the ground and the cell as generated (a player's block wins). Far away the ecology's forage per island cell regrows toward its ground's most × the same share. Prototype tuning. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Tall grass growing and spreading over time (ADR 0075 T3c, docs/ECOLOGY.md §10). Near players, once a world day (and on a chunk's load for the days it missed, at most catchUpDays), an empty cell over an `on` block (with `onRamps`, also over a ½ m ramp of it, as decorations.json's `onRamps` puts generated tufts: HALF_HEIGHT_GRID.md §5; never over a 1 m ramp's pieces) takes `block` when it is fertile and tall grass stands within `reach` columns (spreadPerDay) or it held generated grass that was eaten or cut (regrowPerDay, the roots). A column is fertile when the decoration's own per-cell roll is under maxDensity × the climate's share (the T3b undergrowth factor of the vegetation kind governing `decoration`, 0 in a biome that doesn't list it, 1 without a climate), so generated tufts are always fertile and a cell's tall grass never passes maxDensity × share: lush meadows fill, dry ground stays sparse. The cell and openAbove cells over it must be air, the ground and the cell as generated (a player's block wins). Far away the ecology's forage per island cell regrows toward its ground's most × the same share. Prototype tuning. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "block": "dwell:tall_grass",
   "on": [
     "dwell:grass"
   ],
+  "onRamps": true,
   "decoration": "meadow_grass",
   "maxDensity": 0.8,
   "spreadPerDay": 0.15,
   "regrowPerDay": 0.25,
   "reach": 1,
   "openAbove": 2,
-  "catchUpDays": 20
+  "catchUpDays": 20,
+  "stages": {
+    "$comment": "Growing in height (owner 2026-11-12: \"I thought it would get taller over time?\"): `block`'s `property` steps through `order`, a sprout to full height, each value's height from the block's `cross.heights`. A tuft leaves stage i with chance 1/days[i] a day (days: one fewer than order; their sum is the mean days from sprout to full, ≥ 7). `share[i]` is the least climate share (the cap's share) a column needs for its tufts to reach stage i: dry or cold ground stays short, a lush meadow grows full. Grown and regrown tufts start as a sprout (order[0]); eaten tufts go back to it; generation places each tuft at its column's top stage. The last value must be the property's default (full: tall grass placed, or saved before stages).",
+    "property": "stage",
+    "order": ["0", "1", "2", "3"],
+    "days": [3, 3, 4],
+    "share": [0, 0.2, 0.4, 0.6]
+  }
 }

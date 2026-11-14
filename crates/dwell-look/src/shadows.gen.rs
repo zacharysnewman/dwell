@@ -13,11 +13,13 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
         slack: 0.1,
         light_turn_deg: 0.25,
         light_step_deg: 0.05,
+        blend_band: 0.15,
     },
     bias: BiasTunables {
         normal_offset_texels: 1.5,
         depth_bias_m: 0.04,
         slope_scale: 1.5,
+        leaf_normal_offset_m: 0.35,
     },
     sun: LightTunables {
         fade_start_deg: 0.0,

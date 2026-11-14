@@ -150,7 +150,7 @@ impl Server {
 
     /// A damage or death event to every joined client, its cause as the client understands it:
     /// the causes every build knows (`Fall`, `Crush`, `Explosion`) as they are; `Drown` to a client
-    /// that said `VitalsHello`; any later one (`Burn`) to a client whose `CausesHello` names it. A
+    /// that said `VitalsHello`; any later one (`Burn`, `Weapon`) to a client whose `CausesHello` names it. A
     /// client that can't read a cause gets `Fall` (an older client refuses a cause it doesn't know).
     pub(super) fn broadcast_event(&mut self, e: PlayerEvent) {
         if (e.cause as u8) < DamageCause::Drown as u8 {

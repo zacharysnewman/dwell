@@ -39,10 +39,25 @@ pub enum Ability {
     /// one hit, whatever the block's `damage` says; a tool held keeps its hits
     /// (`dwell_protocol::damage::hits_to_break_for`; owner, 2026-11-11). Server and client.
     InstantBreaks,
+    /// Placing a saved structure from the player's library (STRUCTURES.md §9); creative only for
+    /// now (owner, 2026-11-11). Client: the creative inventory's Structures tab and the tiled paste.
+    /// The server takes the placement as ordinary `Paste` region edits under the mode's own rules
+    /// (a mode without `unlimitedBlocks` pays items for every cell, ADR 0066).
+    Structures,
+    /// Theater mode's camera is a simulation viewpoint (docs/THEATER_MODE.md §7, T-4; owner,
+    /// 2026-11-12: "perhaps only available in creative mode … can't be used for cheating in
+    /// adventure"): the server streams chunks around it and runs creatures, NPCs, the near ecology
+    /// and the water there as near a body. Without it the server ignores a client's
+    /// `TheaterViewpoint` and the camera sees only what is loaded near the player.
+    TheaterViewpoint,
+    /// Players place and remove blueprints (WORK_QUEUE item 56, docs/BLUEPRINTS.md): a structure
+    /// placed as ghost blocks everyone in the world sees and builds. Without it the server refuses
+    /// a client's `Blueprints` `Place` and `Remove` (builders still build the world's own).
+    Blueprints,
 }
 
 impl Ability {
-    pub const ALL: [Ability; 9] = [
+    pub const ALL: [Ability; 12] = [
         Ability::Damage,
         Ability::Flight,
         Ability::Brushes,
@@ -52,6 +67,9 @@ impl Ability {
         Ability::Stamina,
         Ability::Oxygen,
         Ability::InstantBreaks,
+        Ability::Structures,
+        Ability::TheaterViewpoint,
+        Ability::Blueprints,
     ];
     /// The data's name (`shared/modes/gen.mjs` `ABILITIES`).
     pub const fn name(self) -> &'static str {
@@ -65,6 +83,9 @@ impl Ability {
             Ability::Stamina => "stamina",
             Ability::Oxygen => "oxygen",
             Ability::InstantBreaks => "instantBreaks",
+            Ability::Structures => "structures",
+            Ability::TheaterViewpoint => "theaterViewpoint",
+            Ability::Blueprints => "blueprints",
         }
     }
     pub const fn bit(self) -> u32 {
@@ -130,6 +151,8 @@ mod tests {
         // The big map is revealed in creative, explored in adventure (owner, 2026-11-08).
         assert!(c.allows(Ability::MapRevealed) && !a.allows(Ability::MapRevealed));
         assert!(c.allows(Ability::Map) && a.allows(Ability::Map));
+        // Saved structures are placed in creative only, for now (owner, 2026-11-11).
+        assert!(c.allows(Ability::Structures) && !a.allows(Ability::Structures));
     }
 
     #[test]

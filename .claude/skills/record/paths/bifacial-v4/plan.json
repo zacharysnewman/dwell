@@ -1,0 +1,10 @@
+{ "out": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/dwell-bifacial-v4.mp4",
+  "size": [1080, 1920], "fps": 30,
+  "clips": [
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/s1", "from": 0, "to": 10.2 },
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/s2", "from": 0, "to": 11.3 },
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/portal4", "from": 0.5, "to": 4.28 },
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/portal4", "from": 4.28, "to": 5.08, "speed": 0.35, "cut": true },
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/portal4", "from": 5.13, "to": 12.1, "cut": true, "vf": "eq=gamma=1.5" },
+    { "src": "/private/tmp/claude-501/-Users-zacknewman-Projects-dwell/dc7bd3b5-fc5f-4b35-a6f4-014a26f2aadb/scratchpad/showcase-bifacial-v4/raw/s5", "from": 0, "to": 22.2, "vf": "eq=gamma=1.2" }
+  ] }

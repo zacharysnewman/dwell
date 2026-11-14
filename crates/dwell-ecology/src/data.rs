@@ -73,11 +73,25 @@ pub struct Disperse {
     pub leave_per_day: f64,
 }
 
+/// A hunter that senses no prey (WORK_QUEUE item 39, owner 2026-11-12: "hungry packs travel toward
+/// the nearest herd"): above `toward_prey_above_hunger` it heads for the island's nearest prey group,
+/// at any distance, instead of a random heading.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Roam {
+    pub toward_prey_above_hunger: f64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SpeciesDef {
     pub name: &'static str,
     pub group: GroupRules,
+    /// The start's groups: a fixed count (`start_per_km2` 0), or from the range's area.
     pub start_groups: usize,
+    /// Head a km² of the species' range at the start (a grazer's range the island's grazing land,
+    /// a hunter's its land; WORK_QUEUE item 46: real densities, not a fixed count); 0: `start_groups`.
+    pub start_per_km2: f64,
+    /// The fewest start groups from a density (a small island still has some).
+    pub start_min_groups: usize,
     pub start_size: f64,
     pub breed_per_day: f64,
     pub breed_below_hunger: f64,
@@ -89,8 +103,23 @@ pub struct SpeciesDef {
     pub diet: Diet,
     pub flee: Option<Flee>,
     pub disperse: Option<Disperse>,
+    /// A hungry hunter's roaming (WORK_QUEUE item 39); None: a random heading.
+    pub roam: Option<Roam>,
     /// Its individuals near players (docs/ECOLOGY.md §8); None: it stays a record.
     pub near: Option<NearDef>,
+}
+
+impl SpeciesDef {
+    /// The groups a new ecology starts with on a range of `km2` (km²): `start_groups`, or the
+    /// density's head over `start_size` (rounded), at least `start_min_groups`, at most the
+    /// group's `max_groups`.
+    pub fn start_groups_on(&self, km2: f64) -> usize {
+        if self.start_per_km2 <= 0.0 {
+            return self.start_groups.min(self.group.max_groups);
+        }
+        let n = (km2.max(0.0) * self.start_per_km2 / self.start_size).round() as usize;
+        n.max(self.start_min_groups).min(self.group.max_groups)
+    }
 }
 
 /// Where groups become individuals and fold back (docs/ECOLOGY.md §8).
@@ -129,6 +158,141 @@ pub struct NearDef {
     pub company_m: f64,
     /// The farthest it wanders a walk.
     pub wander_m: f64,
+    /// How it reacts when hurt (a weapon's hit; WORK_QUEUE item 35); None: it doesn't.
+    pub hurt: Option<NearHurt>,
+    /// How it reacts to a player it notices (WORK_QUEUE item 39); None: it doesn't.
+    pub players: Option<NearPlayers>,
+    /// What it does standing about (WORK_QUEUE item 39), picked by weight; empty: it just stands.
+    pub idles: &'static [NearIdle],
+    /// The chance a decision with nothing to do starts a walk rather than an idle (0 to 1).
+    pub walk_chance: f64,
+}
+
+/// What an individual does when it notices a player (a fixed vocabulary; the data picks one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerReact {
+    /// The whole group runs `run_m` from the player at `pace`, calming `calm_s` after the last
+    /// notice (the deer).
+    Flee,
+    /// It walks off to keep the notice distance (the wolves).
+    Avoid,
+}
+
+/// Noticing players (`near.players`): the distance it notices one at by the player's stance, the
+/// reaction, and boldness when hungry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearPlayers {
+    pub react: PlayerReact,
+    /// A player walking (or standing, between `still_below_mps` and `sprint_above_mps`).
+    pub notice_m: f64,
+    /// A player crouching (sneaking).
+    pub crouch_m: f64,
+    /// A player standing still (slower than `still_below_mps`, horizontal).
+    pub still_m: f64,
+    /// A player running (faster than `sprint_above_mps`).
+    pub sprint_m: f64,
+    pub still_below_mps: f64,
+    pub sprint_above_mps: f64,
+    /// How far a flight runs each decision (m) and its pace (× its walk).
+    pub run_m: f64,
+    pub pace: f64,
+    /// Seconds after the last notice until a fleeing group calms.
+    pub calm_s: f64,
+    /// Hungrier than this, it notices players only within `bold_m` (a hungry pack's boldness).
+    pub bold_above_hunger: f64,
+    pub bold_m: f64,
+}
+
+impl NearPlayers {
+    /// The distance it notices a player at, by the player's stance and its own hunger.
+    pub fn notice_at(&self, crouching: bool, speed: f64, hunger: f64) -> f64 {
+        let mut r = if speed > self.sprint_above_mps {
+            self.sprint_m
+        } else if speed < self.still_below_mps {
+            self.still_m
+        } else {
+            self.notice_m
+        };
+        if crouching {
+            r = r.min(self.crouch_m);
+        }
+        if hunger > self.bold_above_hunger {
+            r = r.min(self.bold_m);
+        }
+        r
+    }
+}
+
+/// The idle poses (a fixed vocabulary the clients draw; the data picks among them).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IdlePose {
+    Stand,
+    /// Head down to the grass.
+    Graze,
+    /// Head up, looking about.
+    LookUp,
+    EarFlick,
+    Sit,
+    Lie,
+}
+
+impl IdlePose {
+    /// Its name in the data (`"graze"`, `"lookUp"`, …).
+    pub const NAMES: [&'static str; 6] = ["stand", "graze", "lookUp", "earFlick", "sit", "lie"];
+    pub const ALL: [IdlePose; 6] = [
+        IdlePose::Stand,
+        IdlePose::Graze,
+        IdlePose::LookUp,
+        IdlePose::EarFlick,
+        IdlePose::Sit,
+        IdlePose::Lie,
+    ];
+    pub fn name(self) -> &'static str {
+        Self::NAMES[self as usize]
+    }
+}
+
+/// One idle: its pose, weight among the species' idles and seconds ([min, max]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearIdle {
+    pub pose: IdlePose,
+    pub weight: f64,
+    pub seconds: [f64; 2],
+}
+
+/// The idle `u` (in [0, 1)) picks among `idles` by weight; None when there are none.
+pub fn pick_idle(idles: &[NearIdle], u: f64) -> Option<NearIdle> {
+    let total: f64 = idles.iter().map(|i| i.weight).sum();
+    if total <= 0.0 {
+        return None;
+    }
+    let mut at = u.clamp(0.0, 1.0) * total;
+    for i in idles {
+        if at < i.weight {
+            return Some(*i);
+        }
+        at -= i.weight;
+    }
+    idles.last().copied()
+}
+
+/// A hurt individual's reaction (`near.hurt`): flee from the striker or fight (turn on it), for
+/// `seconds` at `pace` × its walk; a fighter under `flee_below_health` of its health flees.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NearHurt {
+    pub react: HurtReact,
+    pub seconds: f64,
+    pub pace: f64,
+    pub flee_below_health: f64,
+    /// How far a flight runs from the striker each decision (m).
+    pub run_m: f64,
+}
+
+/// The reactions a hurt individual may have (a fixed vocabulary; the data picks one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HurtReact {
+    Flee,
+    Fight,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -140,6 +304,8 @@ pub struct NearSleep {
     pub wake_above_energy: f64,
     pub wake_above_hunger: f64,
     pub min_s: f64,
+    /// Its pose asleep.
+    pub pose: IdlePose,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -153,6 +319,8 @@ pub struct NearGraze {
     /// The real block it eats (the only world change, near players only).
     pub block: Option<&'static str>,
     pub block_chance_per_s: f64,
+    /// Its pose eating.
+    pub pose: IdlePose,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -165,6 +333,9 @@ pub struct NearHunt {
     /// A kill feeds packmates within this by `feeds_pack` of their hunger.
     pub feeds_pack_m: f64,
     pub feeds_pack: f64,
+    /// Past `sense_m` and within this, it walks toward the nearest prey (an individual, or a herd's
+    /// record) to bring a hunt in range (WORK_QUEUE item 39); 0: it doesn't.
+    pub track_m: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -186,6 +357,10 @@ pub struct NearMate {
     pub cost: f64,
     /// Energy a failed try costs.
     pub tired: f64,
+    /// Seconds each parent (and the young) waits after a young before mating again (BUGS.md #79).
+    pub rest_s: f64,
+    /// A group has at most one young every this many seconds, from when it came near.
+    pub group_every_s: f64,
 }
 
 /// One ecology: the build's ([`crate::DATA`]) or a test's fixture.

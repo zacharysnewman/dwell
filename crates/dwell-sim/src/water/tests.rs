@@ -1510,3 +1510,89 @@ dwell_world::both_faces!(
         assert!((after - before).abs() < 1e-6);
     }
 );
+
+/// A lake 8 × 8 (1.5 m deep) cut open into a dry trough beside it (x 9..=20, as wide), with
+/// `wall` across the trough at x 12 (rows 0..=4): after `secs`, the level at (16, 3), and the
+/// scene.
+fn lake_into_a_trough(f: FaceFrame, wall: StateId, secs: usize) -> (Option<f64>, Scene) {
+    let mut s = Scene::new(f);
+    s.basin(0, 7, 0, 7, 3);
+    let stone = require("dwell:stone");
+    for r in 0..=4 {
+        for x in 8..=21 {
+            s.set(x, r, -1, stone);
+            s.set(x, r, 8, stone);
+        }
+        for z in -1..=8 {
+            s.set(21, r, z, stone);
+        }
+        for z in 0..=7 {
+            s.set(12, r, z, wall);
+        }
+    }
+    s.run(2);
+    let cut: Vec<(i32, i32, i32)> = (0..=7)
+        .flat_map(|z| (0..=4).map(move |r| (8, r, z)))
+        .collect();
+    s.edit(&cut, M.air);
+    s.run(secs);
+    (s.level(16, 3), s)
+}
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-12: "leaves also should let water flow through freely". A wall of leaves
+    /// across a trough a lake drains into: the water beyond it stands as high, as soon, as with no
+    /// wall (the leaves open to the grid's flow), and the leaves stay, flooded under the water.
+    /// Red before: leaves were solid to the flow, and no water got past them.
+    fn water_flows_through_a_wall_of_leaves_as_through_air(f: FaceFrame) {
+        let leaves = require("dwell:leaves");
+        let (open, _) = lake_into_a_trough(f, M.air, 40);
+        let (through, s) = lake_into_a_trough(f, f.state(leaves), 40);
+        let open = open.expect("water beyond the open trough's middle");
+        let through = through.expect("water beyond the leaves");
+        assert!(open > 0.05, "the trough filled: {open:.3}");
+        assert!(
+            (through - open).abs() < 1e-3,
+            "as through air: {through:.4} vs {open:.4}"
+        );
+        let wet = info(s.get(12, 0, 3));
+        assert!(
+            wet.name.starts_with("dwell:leaves") && wet.flooded,
+            "the leaves stay, flooded: {}",
+            wet.name
+        );
+        assert!(
+            info(s.get(12, 4, 3)).name.starts_with("dwell:leaves")
+                && !info(s.get(12, 4, 3)).flooded,
+            "dry over the water"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Leaves letting water through change only the flow, not the water as generated: a lake
+    /// with flooded leaves on its bed and a crown standing in it at the shore (rows 0..=4) is
+    /// found at the same level, held, at rest (nothing written, nothing stepped).
+    fn generated_water_among_leaves_is_found_at_its_level_and_rests(f: FaceFrame) {
+        let mut s = Scene::new(f);
+        s.basin(0, 7, 0, 7, 3);
+        let leaves = f.state(require("dwell:leaves"));
+        let wet = dwell_blocks::with_property(leaves, "flooded", "true").expect("floodable");
+        for x in 2..=4 {
+            s.set(x, 0, 3, wet);
+        }
+        for r in 0..=4 {
+            for z in 0..=1 {
+                s.set(0, r, z, if r < 3 { wet } else { leaves });
+            }
+        }
+        let writes = s.run(30);
+        assert_eq!(writes, 0, "at rest: nothing written");
+        assert_eq!(s.water.awake_chunks(), 0, "nothing stepped");
+        for (x, z) in [(3, 3), (5, 5)] {
+            assert!(s.water.held_at(f, x, z), "({x}, {z}) held as found");
+            let lv = s.level(x, z).expect("water");
+            assert!((lv - 1.5).abs() < 1e-3, "({x}, {z}) at its level: {lv}");
+        }
+    }
+);

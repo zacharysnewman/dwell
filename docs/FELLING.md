@@ -104,6 +104,12 @@ the screen. Now:
 - **Pieces at rest** are sent once and then not again until they move.
 - **The client goes on** from a piece's newest pose at its velocity and spin, for up to 250 ms
   (`pieces.rs` `EXTRAPOLATE_MS`), so a piece updated every few snapshots moves smoothly.
+- **The page hosting the world** (a loopback session, no datagram to keep under) gets up to 255 pieces a
+  snapshot (`LOOPBACK_PIECES`, the encoding's most; BUGS.md #173): a blast's pieces each seen every third
+  of a second stood still past their extrapolation between snapshots.
+- **The client's clock for the pieces** is the least snapshot delay within the last second
+  (`pieces.rs` `WINDOW_MS`), so it follows a server that dropped time (a local world's busy worker)
+  within a second; it drifted 1 ms a second before, and the pieces were drawn past their newest poses.
 - Tests: `every_falling_piece_reaches_the_snapshots_however_many_fall` (98 sand pieces; red: 68 never
   sent), the ledger's unit tests, `past_its_newest_snapshot_a_piece_goes_on_…`.
 - Next (with Phase 51's protocol change): more room per snapshot for pieces (extra datagrams within a
@@ -122,10 +128,20 @@ When a piece has moved less than `SLEEP_LINEAR_THRESHOLD` / `SLEEP_ANGULAR_THRES
    tipped onto its side is ½ m wide and 1 m tall: alone it lands as the lower cell of its column,
    and two side by side fill the column (owner, 2026-10-29: it had filled both rows, "effectively
    doubling itself", or tipped the other way neither; `a_half_cell_tipped_onto_its_side_…`).
-2. A rider whose cell is taken (by terrain, a player or another piece's cell) is destroyed (the
-   owner). A carrier whose cell is taken tries one cell up, then sideways; else it is destroyed.
-   Cells overlapping a player count as taken, so nobody is buried.
-3. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
+2. A piece at rest tilted (more than `TILTED_RAD`, 0.05 rad, from its snapped rotation: a trunk
+   lying up a hill) follows its pose: snapped flat about its reference cell, one end hung in the air
+   and the other lay inside the hill, whose cells were dropped (BUGS.md #73: "most of the tree
+   disappears into the ground"). Each column (x, z) of it moves up or down by the rows the real
+   pose has it higher or lower there (`follow_pose`: the mean of its cells', so a lying log's two
+   rows stay together), so it steps along the hill as it lay, the log's axis along the trunk.
+3. A carrier whose cell is taken lifts the whole piece one or two rows if that frees all of them
+   (a log on a bump); else (and always when tilted) each column rises on its own to the first rows
+   free for its carriers (up to 32), and a tilted column with room a row under it drops onto what
+   is there (its rows were rounded): no wood is lost. A rider whose cell is still taken (by
+   terrain, a player or another piece's cell) is destroyed (the owner); falling sand slides beside
+   a player. Cells overlapping a player count as taken, so nobody is buried. Pinned by
+   `felling.rs` `a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces).
+4. The cells are written in one reliable change (reason `Rebake`) with `EntityDespawn`; the placed
    carriers then pass through integrity again (owner, 2026-11-02: a piece falls once; with
    `maxSettles` 1 what settled stays where it lands, anchored or not, a log on leaves included).
 
@@ -208,6 +224,10 @@ with Phase 20's remaining exit criteria: large structures across ticks, crush); 
 Tier 2 debris (Phase 21).
 
 ## 8. Felled by an axe (ADR 0067)
+
+**Since WORK_QUEUE item 51 (2026-11-12):** a log takes block damage (docs/BLOCK_DAMAGE.md §12) and the axe's
+last hit breaks it; a standing trunk above falls as one body, tipped toward the side struck (the uncut side
+the hinge), with no fell wedges. What follows describes the older cut model, still read from old saves.
 
 A standing trunk cut past its wood's `fellFraction` (docs/adr/0067-stone-axe-and-chopping.md) loses
 its cut cell, and the integrity pass takes what that cell held as one piece as §3 describes, tipped

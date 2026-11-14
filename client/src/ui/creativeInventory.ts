@@ -48,6 +48,44 @@ export function catalogue(
     .filter((g) => g.items.length > 0);
 }
 
+/** A saved structure as the Structures tab lists it (the player's library, STRUCTURES.md §9). */
+export interface StructureEntry {
+  file: string;
+  label: string;
+  /** "5 × 4 × 5". */
+  size: string;
+}
+
+/**
+ * The Structures tab's entries: the store's readable structures (files a newer build wrote are
+ * left out: they are kept, not placed), in the store's order, whose name holds `query` (any case).
+ */
+export function structureEntries(
+  stored: readonly (
+    | { file: string; status: 'ok'; structure: { name: string; size: readonly number[] } }
+    | { file: string; status: 'unreadable' }
+  )[],
+  query = '',
+): StructureEntry[] {
+  const q = query.trim().toLowerCase();
+  return stored
+    .flatMap((e) =>
+      e.status === 'ok'
+        ? [{ file: e.file, label: e.structure.name, size: e.structure.size.join(' × ') }]
+        : [],
+    )
+    .filter((e) => q === '' || e.label.toLowerCase().includes(q));
+}
+
+/** Where the Structures tab gets the library and places from it. */
+export interface StructureSource {
+  /** The world's mode places structures (creative only for now). */
+  allowed(): boolean;
+  list(): Promise<StructureEntry[]>;
+  /** Loads it into paste mode (ghost, R rotate, right click places): an error, or '' when done. */
+  place(file: string): Promise<string>;
+}
+
 /** The browser's store of creative picks: world key → item names, one per hotbar slot. */
 export const PICKS_KEY = 'dwell.creativeHotbar';
 
@@ -149,6 +187,8 @@ export class CreativeInventory {
     private readonly assign: (slot: number, index: number) => readonly number[],
     /** Selects hotbar slot `slot` (a click on a slot of the view). */
     private readonly select: (slot: number) => void,
+    /** The player's saved structures (the Structures tab); none without one. */
+    private readonly structures?: StructureSource,
   ) {
     this.root = document.createElement('div');
     this.root.id = 'creative-inventory';
@@ -199,10 +239,31 @@ export class CreativeInventory {
   }
 
   set open(v: boolean) {
+    const was = !this.root.hidden;
     this.root.hidden = !v;
     if (!v) {
       this.search.blur();
+    } else if (!was) {
+      void this.loadStructures();
     }
+  }
+
+  /** The library's entries, read each time the view opens (a save in the menu shows at once). */
+  private entries: StructureEntry[] = [];
+  private note = '';
+
+  private async loadStructures(): Promise<void> {
+    if (!this.structures?.allowed()) {
+      this.entries = [];
+    } else {
+      try {
+        this.entries = await this.structures.list();
+      } catch {
+        // No OPFS (a private window): no tab.
+        this.entries = [];
+      }
+    }
+    this.drawCatalogue();
   }
 
   /** The hotbar's picks (`Client.creativeHotbar()`) and selected slot. */
@@ -264,6 +325,52 @@ export class CreativeInventory {
       section.append(h, grid);
       this.groups.append(section);
     }
+    this.drawStructures();
+  }
+
+  /** The Structures tab: the player's saved structures; a click places one (a ghost to aim). */
+  private drawStructures(): void {
+    const list = structureEntries(
+      this.entries.map((e) => ({
+        file: e.file,
+        status: 'ok' as const,
+        structure: { name: e.label, size: e.size.split(' × ').map(Number) },
+      })),
+      this.search.value,
+    );
+    if (list.length === 0 || !this.structures) return;
+    const source = this.structures;
+    const section = document.createElement('section');
+    section.className = 'inventory-group';
+    section.dataset.category = 'structures';
+    const h = document.createElement('div');
+    h.className = 'inventory-group-label';
+    h.textContent = 'Structures';
+    const grid = document.createElement('div');
+    grid.className = 'inventory-structures';
+    for (const e of list) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'st-button inventory-structure';
+      b.dataset.structure = e.file;
+      b.textContent = `${e.label.slice(e.label.indexOf(':') + 1)} (${e.size})`;
+      b.title = `${e.label}: place it (R turns it, right click places)`;
+      b.addEventListener('click', () => {
+        void source.place(e.file).then((err) => {
+          this.note = err;
+          if (err) this.drawCatalogue();
+        });
+      });
+      grid.append(b);
+    }
+    section.append(h, grid);
+    if (this.note) {
+      const n = document.createElement('div');
+      n.className = 'inventory-note';
+      n.textContent = this.note;
+      section.append(n);
+    }
+    this.groups.append(section);
   }
 
   /** Drops `source` on slot `target`: fills it, or swaps two slots' picks. */

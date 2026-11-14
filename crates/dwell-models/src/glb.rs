@@ -47,7 +47,7 @@ pub struct Clip {
 pub struct Geometry {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// sRGB, 0..1.
+    /// Linear 0..1 (glTF `COLOR_0`).
     pub colors: Vec<[f32; 3]>,
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
@@ -83,7 +83,7 @@ pub struct Model {
     /// Level 0's mesh (the full one).
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
-    /// sRGB, 0..1.
+    /// Linear 0..1 (glTF `COLOR_0`).
     pub colors: Vec<[f32; 3]>,
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,

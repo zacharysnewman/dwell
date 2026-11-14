@@ -202,14 +202,12 @@ kbd.phrase {
   color: var(--danger);
 }
 
-.menu-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+/* A quiet button that is a link to another page: the button's box, never an underlined link. */
+a.quiet-button,
+a.menu-button-small {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* ---------- Main menu (ui/mainMenu.ts) ---------- */
@@ -571,27 +569,22 @@ kbd.phrase {
 }
 
 .mm-links {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 14px;
 }
 
-/* Settings and Versions: small links with the warm brown underline. */
-.mm-link {
-  min-height: 44px;
-  padding: 0 2px;
-  border: 0;
-  background: none;
+/* Settings and Versions (owner, 2026-11-11: "The buttons should be aligned to match the design of the
+   others instead of looking like web links"): the big actions' block buttons, smaller and in paper with
+   the same earth edge, side by side under them. */
+.mm-action-secondary {
+  min-height: 48px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, var(--paper-solid), #e4ecf4);
   color: var(--ink);
-  font: 700 16px var(--font-body);
-  text-decoration: underline 2px var(--earth);
-  text-underline-offset: 5px;
-  cursor: pointer;
+  font: 800 17px/1.2 var(--font-display);
+  text-align: center;
 }
-
-.mm-link[aria-current='page'] {
-  text-decoration-thickness: 4px;
-}
-
 /* The pages: each slides in over the same backdrop. */
 .mm-pages {
   flex: 1 1 auto;
@@ -636,7 +629,11 @@ kbd.phrase {
   outline: none;
 }
 
-.mm-back {
+/* A page head's buttons: Back, and an action beside it (Versions' All versions), alike. */
+.mm-back,
+.mm-head-button {
+  display: inline-flex;
+  align-items: center;
   min-height: 44px;
   padding: 0 14px 0 10px;
   border: 1px solid var(--line);
@@ -645,6 +642,23 @@ kbd.phrase {
   color: var(--ink);
   font: 700 16px var(--font-body);
   cursor: pointer;
+}
+
+.mm-head-button {
+  padding: 0 14px;
+  text-decoration: none;
+}
+
+.mm-back:hover,
+.mm-head-button:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.mm-back:active,
+.mm-head-button:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
 }
 
 .mm-back::before {
@@ -717,13 +731,88 @@ kbd.phrase {
   border-top: 1px solid var(--line);
 }
 
-.mm-more summary {
+/* Expandable sections (owner, 2026-11-12: "expandable sections that don't have good UI best practices
+   to indicate they can expand and collapse"): every <details> summary and disclosure button shows a
+   chevron that points right when closed and down when open, a hover and pressed background, and a
+   focus ring; the native marker is hidden so all of them look alike. */
+.mm-more summary,
+.version-earlier summary {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
   color: var(--ink);
   font: 700 16px var(--font-body);
+  list-style: none;
   cursor: pointer;
+  user-select: none;
+}
+
+.mm-more summary::-webkit-details-marker,
+.version-earlier summary::-webkit-details-marker {
+  display: none;
+}
+
+.mm-more summary::before,
+.version-earlier summary::before,
+.mm-disclosure::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.mm-more[open] > summary::before,
+.version-earlier[open] > summary::before,
+.mm-disclosure[aria-expanded='true']::after {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.mm-more summary:hover,
+.version-earlier summary:hover,
+.mm-disclosure:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+.mm-more summary:active,
+.version-earlier summary:active,
+.mm-disclosure:active {
+  background: rgb(31 43 56 / 12%);
+}
+
+.mm-more summary:focus-visible,
+.version-earlier summary:focus-visible,
+.mm-disclosure:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* About: an inline disclosure button, the chevron after its name. */
+.mm-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: 700 13px var(--font-body);
+  cursor: pointer;
+}
+
+.mm-disclosure::after {
+  width: 6px;
+  height: 6px;
+  border-width: 2px;
 }
 
 #menu-message:empty {
@@ -781,18 +870,6 @@ kbd.phrase {
   line-height: 1.5;
 }
 
-.mm-versions #versions-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 75%);
-  color: var(--ink);
-  font: 700 16px var(--font-body);
-  text-decoration: none;
-}
-
 /* The version line at the foot of the home. */
 #about {
   margin-top: 4px;
@@ -811,9 +888,8 @@ kbd.phrase {
   margin-top: 8px;
 }
 
-#about a,
-#about .menu-link {
-  color: var(--ink);
+#about .menu-button-small {
+  min-height: 36px;
 }
 
 /* A phone: the home sits at the foot, the panorama above it; a page takes the screen. */
@@ -852,7 +928,7 @@ kbd.phrase {
 
   .mm-page-head .block-button,
   .mm-page-head .quiet-button,
-  .mm-versions #versions-link {
+  .mm-head-button {
     padding: 0 12px;
   }
 }
@@ -885,7 +961,8 @@ body:has(#main-menu) .game-menu {
 }
 
 .version-earlier summary {
-  cursor: pointer;
+  font-size: 13px;
+  min-height: 40px;
 }
 
 .version-earlier-name {
@@ -1211,6 +1288,15 @@ body:has(#main-menu) .game-menu {
   color: var(--ink);
   font: 800 20px/1 var(--font-body);
   cursor: pointer;
+}
+
+.world-more:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.world-more:active {
+  transform: translateY(1px);
 }
 
 .world-more[aria-expanded='true'] {
@@ -2224,6 +2310,15 @@ body.menu-open #main-menu .mm-shell {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  opacity: 0;
+}
+
+/* Defeat's fade to black and back (docs/CHARACTERS.md §11.13), under the centre message. */
+#defeat-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #000;
   opacity: 0;
 }
 
@@ -3531,6 +3626,24 @@ body.loading-wait #brush-panel {
   gap: 4px;
 }
 
+/* The Structures tab (docs/STRUCTURES.md §9): the player's saved structures, a button each. */
+.inventory-structures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 380px;
+}
+
+.inventory-structure {
+  min-height: 44px;
+}
+
+.inventory-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffd2c4;
+}
+
 .inventory-hotbar {
   padding-top: 8px;
   border-top: 1px solid var(--glass-line);
@@ -3594,6 +3707,23 @@ body.inventory-open #touch-controls {
 }
 #minimap.map-off {
   display: none;
+}
+/* Off home (the moon): the maps are home's terrain, so the disc gives way to a note. */
+#minimap .map-away-label {
+  display: none;
+}
+#minimap.map-away canvas {
+  display: none;
+}
+#minimap.map-away .map-away-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 13px;
+  color: rgb(255 255 255 / 85%);
 }
 #minimap canvas {
   width: 100%;
@@ -3685,6 +3815,10 @@ body.inventory-open #touch-controls {
   gap: 6px;
   touch-action: manipulation;
 }
+/* A hidden map button (the picker's Delete for a marker not yet placed; BUGS.md #122). */
+#world-map .map-button[hidden] {
+  display: none;
+}
 #world-map .map-button:hover:not(:disabled) {
   background: rgb(60 52 40 / 95%);
 }
@@ -3706,6 +3840,25 @@ body.inventory-open #touch-controls {
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
+}
+#world-map .map-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgb(30 26 20 / 85%);
+  color: #f4ecd8;
+  font-size: 13px;
+}
+#world-map .map-filters[hidden] {
+  display: none;
+}
+#world-map .map-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 }
 #world-map .map-scale {
   position: absolute;
@@ -3754,4 +3907,840 @@ body.inventory-open #touch-controls {
 .inventory-view .hotbar-slot.drop-target {
   outline: 2px solid rgba(255, 255, 255, 0.9);
   outline-offset: -2px;
+}
+
+/* Theater mode's HUD switch (src/theater/hud.ts `setHud`): every child of body but the canvas and the
+   toolbar hidden; in a take, the toolbar too. */
+body.theater-clean > *:not(#view):not(#theater-bar):not(#theater-touch):not(script):not(style) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.theater-take > #theater-bar {
+  display: none !important;
+}
+
+body.theater-take > #theater-touch {
+  display: none !important;
+}
+
+/* Theater mode's flying controls on a phone (src/theater/touch.ts): the stick at the bottom left, Up
+   and Down beside it; just above the bottom sheet's top edge, open or collapsed (mode.ts `showTouch`
+   sets `bottom` from the sheet's rect; BUGS.md #160), beside the side sheet in landscape. */
+.theater-touch {
+  position: fixed;
+  left: var(--safe-left);
+  bottom: calc(var(--safe-bottom) + 8px);
+  z-index: var(--z-widgets);
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  touch-action: none;
+  user-select: none;
+}
+
+.theater-touch[hidden] {
+  display: none;
+}
+
+.theater-touch.tb-sheet-bottom[data-sheet='collapsed'] {
+  bottom: calc(var(--safe-bottom) + 84px);
+}
+
+.tt-stick {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 30%);
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 55%);
+  touch-action: none;
+}
+
+.tt-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgb(246 250 255 / 85%);
+  box-shadow: 0 2px 8px rgb(10 20 35 / 30%);
+  pointer-events: none;
+}
+
+.tt-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.tt-btn {
+  width: 64px;
+  height: 56px;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(246 250 255 / 80%);
+  color: var(--ink);
+  font: 700 15px var(--font-body);
+  touch-action: none;
+}
+
+.tt-btn:active {
+  background: #fff;
+}
+
+/* Theater mode's panel (src/theater/mode.ts, docs/THEATER_MODE.md §2; owner, 2026-11-13: "Improve the UI
+   on the theater mode ... a proper X button or responsive layout"): the menu's glass, buttons, chips
+   and disclosure. Its layout by the viewport (src/theater/layout.ts `layoutFor`): docked beside the
+   view on a desktop, a bottom sheet in portrait, a side sheet in landscape. While a path plays or a
+   take records only its header shows (the state, Pause, Stop and the X). */
+.theater-bar {
+  position: fixed;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  background: var(--gm-glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    inset 0 0 0 1px var(--mm-glass-line),
+    0 12px 32px rgb(10 20 35 / 30%);
+  color: var(--ink);
+  font: 500 14px/1.3 var(--font-body);
+  accent-color: var(--mm-mode-creative);
+}
+
+.theater-bar *,
+.theater-bar *::before,
+.theater-bar *::after {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Desktop: a compact column docked at the left, under the safe area, the view left free. */
+.theater-bar.tb-docked {
+  top: var(--safe-top);
+  left: var(--safe-left);
+  width: 340px;
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+  border-radius: 16px;
+}
+
+/* A phone in portrait: a bottom sheet, the full width, large targets. */
+.theater-bar.tb-sheet-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: 58%;
+  padding-bottom: var(--safe-bottom);
+  border-radius: 18px 18px 0 0;
+}
+
+/* A phone in landscape: a side sheet at the right, the full height. */
+.theater-bar.tb-sheet-side {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 48%);
+  padding-right: var(--safe-right);
+  border-radius: 18px 0 0 18px;
+}
+
+.theater-bar[hidden],
+.theater-open[hidden],
+.theater-bar [hidden] {
+  display: none !important;
+}
+
+.tb-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.tb-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  margin: 0 4px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 18px/1.2 var(--font-display);
+}
+
+.tb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+/* Busy (a path playing, a take recording): the header alone. */
+.theater-bar[data-busy='playing'] .tb-body,
+.theater-bar[data-busy='recording'] .tb-body {
+  display: none;
+}
+
+.theater-bar[data-busy='playing'],
+.theater-bar[data-busy='recording'] {
+  max-height: none;
+  bottom: auto;
+}
+
+.theater-bar[data-busy='playing'] .tb-collapse,
+.theater-bar[data-busy='recording'] .tb-collapse {
+  display: none;
+}
+
+.theater-bar.tb-docked[data-busy='playing'],
+.theater-bar.tb-docked[data-busy='recording'] {
+  width: auto;
+  max-width: calc(100% - var(--safe-left) - var(--safe-right));
+}
+
+.theater-bar.tb-sheet-bottom[data-busy='playing'],
+.theater-bar.tb-sheet-bottom[data-busy='recording'] {
+  top: auto;
+  bottom: 0;
+}
+
+/* The header's icon buttons: the X (close) and the sheet's collapse chevron. */
+.tb-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tb-close::before,
+.tb-close::after {
+  content: '';
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.tb-close::after {
+  transform: rotate(-45deg);
+}
+
+.tb-collapse::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-collapse[aria-expanded='false']::before {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* The collapse chevron only on the sheets (a desktop's docked panel is small already). */
+.tb-docked .tb-collapse {
+  display: none;
+}
+
+.tb-btn,
+.tb-tab,
+.tb-chip,
+.tb-keyrow,
+.tb-select,
+.tb-num,
+.tb-name {
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 75%);
+  color: inherit;
+  font: 600 14px var(--font-body);
+}
+
+.tb-btn,
+.tb-tab,
+.tb-chip,
+.tb-keyrow,
+.tb-icon {
+  cursor: pointer;
+}
+
+.tb-btn:hover,
+.tb-tab:hover,
+.tb-chip:hover,
+.tb-keyrow:hover,
+.tb-icon:hover {
+  border-color: rgb(31 43 56 / 30%);
+  background: #fff;
+}
+
+.tb-btn:active,
+.tb-chip:active,
+.tb-keyrow:active,
+.tb-icon:active {
+  transform: translateY(1px);
+  background: rgb(31 43 56 / 7%);
+}
+
+.tb-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The menu's focus ring on every control (item 23). */
+.theater-bar :is(button, select, input, summary):focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* The tools: a segmented row of tabs. */
+.tb-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: rgb(31 43 56 / 8%);
+}
+
+.tb-tab {
+  border-color: transparent;
+  background: transparent;
+  font-weight: 700;
+}
+
+.tb-tab[aria-selected='true'] {
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(31 43 56 / 18%);
+}
+
+.tb-primary {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  border-color: var(--mm-action);
+  color: #fff;
+}
+
+.tb-primary:hover {
+  background: linear-gradient(180deg, var(--mm-action-top), var(--mm-action));
+  filter: brightness(1.08);
+}
+
+.tb-record {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.tb-record:hover {
+  background: var(--danger);
+  filter: brightness(1.08);
+}
+
+.tb-section {
+  margin: 0 0 12px;
+}
+
+.tb-section-title {
+  margin: 0 0 6px;
+  color: var(--mm-ink-soft);
+  font: 700 12px var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tb-field {
+  display: grid;
+  flex: 1 1 120px;
+  gap: 2px;
+}
+
+.tb-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.tb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tb-chip {
+  border-radius: 999px;
+}
+
+.tb-chip[aria-checked='true'] {
+  background: var(--mm-mode-creative);
+  border-color: var(--mm-mode-creative);
+  color: #fff;
+}
+
+.tb-select,
+.tb-name {
+  width: 100%;
+}
+
+.tb-num {
+  width: 100%;
+}
+
+.tb-sliders {
+  display: grid;
+  gap: 4px;
+}
+
+.tb-slider {
+  display: grid;
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.tb-range {
+  width: 100%;
+  min-height: 32px;
+}
+
+.tb-label,
+.tb-value,
+.tb-hint,
+.tb-status {
+  color: var(--mm-ink-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.tb-hint,
+.tb-status {
+  margin: 4px 0 0;
+}
+
+/* The key list: one row per key, the selected one marked. */
+.tb-keys {
+  display: grid;
+  gap: 4px;
+  max-height: 168px;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow: hidden auto;
+  list-style: none;
+}
+
+.tb-keyrow {
+  width: 100%;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-keyrow[aria-pressed='true'] {
+  border-color: var(--mm-mode-creative);
+  box-shadow: inset 4px 0 0 var(--mm-mode-creative);
+}
+
+.tb-keys-empty {
+  padding: 8px 0;
+  color: var(--mm-ink-soft);
+  font-size: 13px;
+}
+
+/* Advanced: the menu's disclosure (item 23), the chevron right when closed and down when open. */
+.tb-more {
+  margin: 4px 0 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tb-more summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  font: 700 15px var(--font-body);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tb-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.tb-more summary::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease-out;
+}
+
+.tb-more[open] > summary::before {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.tb-more summary:hover {
+  background: rgb(31 43 56 / 7%);
+}
+
+/* The state: a red dot and the take's timer while recording; Playing or Paused. */
+.tb-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(31 43 56 / 10%);
+  font: 700 13px var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.tb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mm-mode-creative);
+}
+
+/* Recording (BUGS.md #159): a saturated red dot ringed in white on a light pill, so it reads on the
+   glass; a gentle pulse that never falls under 60 % (it never blinks out). */
+.tb-rec {
+  background: rgb(255 255 255 / 85%);
+  box-shadow: inset 0 0 0 1px rgb(214 32 24 / 45%);
+  color: #a3160f;
+}
+
+.tb-rec .tb-dot {
+  background: #e0201a;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 6px 1px rgb(224 32 26 / 70%);
+  animation: tb-rec-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes tb-rec-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-rec .tb-dot {
+    animation: none;
+  }
+}
+
+/* The sheets: larger targets for a finger. */
+.tb-sheet-bottom :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name),
+.tb-sheet-side :is(.tb-btn, .tb-tab, .tb-chip, .tb-keyrow, .tb-select, .tb-num, .tb-name) {
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.tb-sheet-bottom .tb-icon,
+.tb-sheet-side .tb-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.tb-timeline {
+  position: relative;
+  height: 28px;
+  margin: 8px 6px 4px;
+  border-radius: 8px;
+  background: rgb(29 39 51 / 10%);
+}
+
+.tb-seg {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  border-left: 1px solid rgb(29 39 51 / 25%);
+  padding-left: 14px;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--mm-ink-soft);
+}
+
+.tb-key {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  transform: rotate(45deg);
+  background: var(--mm-mode-creative);
+  touch-action: none;
+  cursor: grab;
+}
+
+.tb-key-on {
+  background: var(--danger);
+}
+
+.tb-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--danger);
+}
+
+/* The touch screen's way into theater mode, under the HUD's top-right buttons. */
+.theater-open {
+  position: fixed;
+  top: calc(var(--safe-top) + 52px);
+  right: var(--safe-right);
+  z-index: var(--z-widgets);
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--glass);
+  color: #fff;
+  font: inherit;
+}
+
+@media (max-width: 600px) {
+  .tb-btn,
+  .tb-tab,
+  .tb-select {
+    min-height: 40px;
+  }
+}
+
+/* Map markers (docs/MAP_MARKERS.md): the big map's picker and the world waypoints. */
+/* The big map's markers list (docs/MAP_MARKERS.md): a side panel, hidden while the picker is open. */
+#world-map .map-markers {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  bottom: 48px;
+  width: min(280px, calc(100% - 80px));
+  padding: 8px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 10px;
+  background: rgb(30 26 20 / 92%);
+  color: #f4ecd8;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+#world-map .map-markers[hidden],
+#world-map .marker-picker:not([hidden]) ~ .map-markers {
+  display: none;
+}
+#world-map .map-markers h3 {
+  margin: 0 2px;
+  font-size: 15px;
+}
+#world-map .map-markers-rows {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+#world-map .map-markers-empty {
+  margin: 4px 2px;
+  opacity: 0.8;
+}
+#world-map .map-marker-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+#world-map .map-marker-go {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#world-map .map-marker-go:hover,
+#world-map .map-marker-go:focus-visible {
+  background: rgb(255 255 255 / 12%);
+}
+#world-map .map-marker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#world-map .map-marker-distance {
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+#world-map .map-marker-row .map-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  font-size: 13px;
+}
+#world-map .marker-picker {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: min(300px, calc(100% - 20px));
+  padding: 10px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 10px;
+  background: rgb(30 26 20 / 94%);
+  color: #f4ecd8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font:
+    14px/1.3 system-ui,
+    sans-serif;
+}
+#world-map .marker-picker[hidden] {
+  display: none;
+}
+#world-map .marker-picker h3 {
+  margin: 0;
+  font-size: 15px;
+}
+#world-map .marker-icons,
+#world-map .marker-colours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+#world-map .marker-icons .map-button {
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+#world-map .marker-colours .map-button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+#world-map .marker-picker .map-button.on {
+  outline: 2.5px solid #f4ecd8;
+  outline-offset: 1px;
+}
+#world-map .marker-label {
+  padding: 6px 8px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 35%);
+  color: inherit;
+  font: inherit;
+}
+#world-map .marker-actions {
+  display: flex;
+  gap: 6px;
+}
+#world-map .marker-actions .map-button {
+  font-size: 14px;
+}
+#map-waypoints {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+#map-waypoints .waypoint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  translate: -50% -50%;
+  color: #f4ecd8;
+  font:
+    600 12px/1.2 system-ui,
+    sans-serif;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+  white-space: nowrap;
+}
+#map-waypoints .waypoint.edge .waypoint-label {
+  display: none;
+}
+#map-waypoints .waypoint-distance {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* The aimed blueprint's have/need panel (docs/BLUEPRINTS.md §4): compact, right of the crosshair. */
+.blueprint-panel {
+  position: fixed;
+  left: calc(50% + 28px);
+  top: calc(50% - 12px);
+  z-index: 6;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(20, 22, 28, 0.62);
+  color: #f2efe6;
+  font:
+    12px/1.35 system-ui,
+    sans-serif;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.blueprint-panel[hidden] {
+  display: none;
+}
+.blueprint-panel-head {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.blueprint-panel-row.short {
+  color: #ff8a78;
 }

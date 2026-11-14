@@ -6,8 +6,8 @@
 
 use dwell_blocks::{Facing, STATES, StateId, info};
 use dwell_protocol::{BlockEditAction, BlockEditRequest, Message, players};
-use dwell_world::edit::{FACE_DIRS, placeable, raycast_block};
-use dwell_world::{FaceFrame, VoxelWorld, inside_build_volume};
+use dwell_world::edit::{FACE_DIRS, placeable, raycast_block_in};
+use dwell_world::{FaceFrame, VoxelWorld, WorldBounds};
 
 pub use crate::input::EditAction;
 
@@ -21,6 +21,25 @@ pub struct BlockTarget {
     /// piece placed against a side goes down from the placed cell when it is under ½, so the piece
     /// is centred on the aim (docs/ITEMS.md).
     pub aim_up: f32,
+    /// Aimed at a slope where it faces out through a side (its lower half, out past its low
+    /// edge): the face a place goes through (`dwell_world::edit::slope_side`, docs/BUGS.md #23).
+    pub slope_side: Option<u8>,
+}
+
+impl BlockTarget {
+    /// The face a place goes against: a slope's side where the aim is on its lower half, else
+    /// the face aimed at.
+    pub fn place_face(&self) -> u8 {
+        self.slope_side.unwrap_or(self.face)
+    }
+
+    /// A `rows`-tall piece placed against [`place_face`](Self::place_face) goes down from the
+    /// placed cell: against a side with the aim in the cell's lower half, so it is centred on the
+    /// aim. Out past a slope's low edge it goes up, standing on what the slope does.
+    pub fn place_down(&self, rows: u8) -> bool {
+        let f = self.place_face();
+        rows > 1 && f != 2 && f != 3 && self.slope_side.is_none() && self.aim_up < 0.5
+    }
 }
 
 /// What the interaction needs from the client sim: the block along a view ray (unit `dir`).
@@ -47,7 +66,15 @@ pub fn target_hit(
     dir: [f32; 3],
     max_distance: f32,
 ) -> Option<(BlockTarget, f32)> {
-    raycast_block(world, origin, dir, max_distance).map(|h| {
+    // The home grid's frame (MOON_WORLD.md §2, M-3): the identity, so the walk is the world's.
+    raycast_block_in(
+        world,
+        &dwell_world::GridFrame::HOME,
+        origin,
+        dir,
+        max_distance,
+    )
+    .map(|h| {
         let y = origin[1] + f64::from(dir[1]) * f64::from(h.distance);
         let rows = y / dwell_world::CELL_H - f64::from(h.cell[1]);
         let up = if FaceFrame::at_row(h.cell[1]).is_b() {
@@ -60,6 +87,7 @@ pub fn target_hit(
                 cell: h.cell,
                 face: h.face,
                 aim_up: up.clamp(0.0, 1.0) as f32,
+                slope_side: h.slope_side,
             },
             h.distance,
         )
@@ -233,6 +261,9 @@ pub struct BlockInteraction {
     /// The face the look was on at the last update.
     face: FaceFrame,
     last_edit_ms: f64,
+    /// The world's disc and build volume ([`set_world`](Self::set_world)): a Place outside them
+    /// is not sent (BUGS.md #109: not the 1× build's, in a bigger world).
+    bounds: WorldBounds,
 }
 
 impl Default for BlockInteraction {
@@ -253,7 +284,18 @@ impl BlockInteraction {
             yaw: 0.0,
             face: FaceFrame::A,
             last_edit_ms: f64::NEG_INFINITY,
+            bounds: WorldBounds::DEFAULT,
         }
+    }
+
+    /// The world's disc and build volume, from its size (`Game::set_world`).
+    pub fn set_world(&mut self, bounds: WorldBounds) {
+        self.bounds = bounds;
+    }
+
+    /// The world's disc and build volume a Place is checked against ([`set_world`](Self::set_world)).
+    pub fn bounds(&self) -> WorldBounds {
+        self.bounds
     }
 
     pub fn palette(&self) -> &[PaletteSlot] {
@@ -296,7 +338,7 @@ impl BlockInteraction {
         let t = self.current?;
         let slot = self.palette.get(self.selected)?;
         let dir = FACE_DIRS
-            .get(usize::from(t.face))
+            .get(usize::from(t.place_face()))
             .copied()
             .unwrap_or([0; 3]);
         // As the server places (dwell_world::edit::check_block_edit): into a replaceable target.
@@ -312,7 +354,7 @@ impl BlockInteraction {
                 Some(s) if s.look == LOOK_LADDER && (t.face == 2 || t.face == 3) => {
                     ladder_face(s.facing).unwrap_or(t.face)
                 }
-                _ => t.face,
+                _ => t.place_face(),
             };
             return Some((cell, ladder_for(face, self.yaw)));
         }
@@ -399,10 +441,8 @@ impl BlockInteraction {
             EditAction::Break => (BlockEditAction::Break, 0),
             EditAction::Place => {
                 let placement = self.placement();
-                // The server refuses a block outside the build volume (ADR 0025): not sent.
-                if placement.is_some_and(|(c, _)| {
-                    !inside_build_volume(i64::from(c[0]), i64::from(c[1]), i64::from(c[2]))
-                }) {
+                // The server refuses a block outside the world's build volume (ADR 0025): not sent.
+                if placement.is_some_and(|(c, _)| !self.bounds.contains_cell(c)) {
                     return None;
                 }
                 (BlockEditAction::Place, placement.map_or(0, |(_, m)| m))
@@ -418,16 +458,33 @@ impl BlockInteraction {
                 .get(self.selected)
                 .map_or(1, |s| if s.upper.is_empty() { s.rows } else { 1 }),
         };
+        let place = action == BlockEditAction::Place;
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
             cell: t.cell,
-            face: t.face,
+            face: if place { t.place_face() } else { t.face },
             material,
             rows,
             // Against a side, centred on the aim: down when it is in the cell's lower half.
-            down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+            down: place && t.place_down(rows),
             point: None,
         }))
+    }
+
+    /// The break of what is targeted now, outside the click's rate: a tool's hit aimed at its
+    /// swing's contact (the click that started the swing took the rate; BUGS.md #111). None when
+    /// nothing is targeted (a miss).
+    pub fn break_request(&self) -> Option<BlockEditRequest> {
+        let t = self.current?;
+        Some(BlockEditRequest {
+            action: BlockEditAction::Break,
+            cell: t.cell,
+            face: t.face,
+            material: 0,
+            rows: 1,
+            down: false,
+            point: None,
+        })
     }
 }
 
@@ -504,6 +561,7 @@ mod tests {
                 cell: [3, 0, 4],
                 face: 5,
                 aim_up: 0.5,
+                slope_side: None,
             })
         }
     }
@@ -647,6 +705,40 @@ mod tests {
         i.select(at as i64);
     }
 
+    dwell_world::both_faces!(
+        /// docs/BUGS.md #23: aimed at a ramp's slope low down from its downhill side, the place
+        /// goes off its low edge (the slope's side face), a 1 m piece standing up from there;
+        /// a break still takes the ramp through its top. Red before: the place went on top.
+        fn a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side(f: FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            for x in -2..=4 {
+                for z in -2..=6 {
+                    let [cx, cy, cz] = f.cell([x, -1, z]);
+                    world.set_voxel(cx, cy, cz, f.state(require("dwell:stone")));
+                }
+            }
+            let ramp = "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape=ramp]";
+            let [cx, cy, cz] = f.cell([1, 0, 2]);
+            world.set_voxel(cx, cy, cz, f.state(require(ramp)));
+            let mut i = BlockInteraction::new();
+            select_item(&mut i, "dwell:stone");
+            // From z 0 at eye height, at the slope's lower half (z 2.2, 0.1 m up).
+            let (eye, at): ([f64; 3], [f64; 3]) = ([1.5, 1.62, 0.0], [1.5, 0.1, 2.2]);
+            let pitch = (at[1] - eye[1]).atan2(at[2] - eye[2]).to_degrees();
+            let t = i
+                .update(&mut world, Some(f.point(eye)), 0.0, pitch, f)
+                .unwrap();
+            assert_eq!(t.cell, f.cell([1, 0, 2]));
+            let side = f.cell_face(5) as u8;
+            assert_eq!(t.place_face(), side);
+            assert_eq!(i.placement().unwrap().0, f.cell([1, 0, 1]));
+            let m = i.act(EditAction::Place, 0.0).unwrap();
+            assert_eq!((request(&m).face, request(&m).down), (side, false));
+            let m = i.act(EditAction::Break, 1000.0).unwrap();
+            assert_eq!(request(&m).face, f.cell_face(2) as u8, "a break: its top");
+        }
+    );
+
     #[test]
     fn a_slope_is_placed_uphill_along_the_look() {
         // face-a-only: the compass by yaw (both faces: the steep slope's test below).
@@ -744,6 +836,54 @@ mod tests {
         assert_eq!(request(&m).cell, [0, top - 1, 0]);
     }
 
+    dwell_world::both_faces!(
+        /// BUGS.md #109: in a 4× or 10× world a player 60 km and ~200 km from the centre (past
+        /// the 1× build's 50 km disc) places and breaks a block; in a 1× world a Place past its
+        /// rim is still not sent.
+        fn places_and_breaks_past_50_km_in_a_big_world(f: FaceFrame) {
+            use dwell_protocol::world_size::WorldSize;
+            let row = 40;
+            let one = WorldBounds::DEFAULT;
+            for (size, x) in [
+                ("4x", 60_000),
+                ("4x", 199_500),
+                ("10x", 60_000),
+                ("10x", 200_000),
+                ("1x", 60_000),
+            ] {
+                let bounds = WorldBounds::of(WorldSize::named(size).unwrap());
+                let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+                world.bounds = bounds;
+                let [cx, cy, cz] = f.cell([x, row, 2]);
+                world.set_voxel(cx, cy, cz, f.state(require("dwell:stone")));
+                let mut i = BlockInteraction::new();
+                i.set_world(bounds);
+                select_item(&mut i, "dwell:stone");
+                // Looking +Z at the block's −Z face (5): the place goes in (x, row, 1).
+                let eye = f.point([f64::from(x) + 0.5, dwell_world::m_of_row(row) + 0.25, 0.5]);
+                i.update(&mut world, Some(eye), 0.0, 0.0, f);
+                assert_eq!(
+                    i.placement().map(|(c, _)| c),
+                    Some(f.cell([x, row, 1])),
+                    "{size} at {x} m"
+                );
+                let placed = i.act(EditAction::Place, 0.0);
+                if bounds == one {
+                    assert_eq!(placed, None, "a 1× world's Place past its rim is sent");
+                } else {
+                    let placed = placed.unwrap_or_else(|| panic!("{size}: no Place sent at {x} m"));
+                    assert_eq!(request(&placed).cell, f.cell([x, row, 2]));
+                }
+                let broken = i.act(EditAction::Break, 1_000.0).expect("a Break");
+                assert_eq!(
+                    request(&broken).cell,
+                    f.cell([x, row, 2]),
+                    "{size} at {x} m"
+                );
+            }
+        }
+    );
+
     // Beyond the TS suite: the voxel world is a target source through the shared ray cast.
     #[test]
     fn the_voxel_world_targets_through_the_shared_ray_cast() {
@@ -760,6 +900,7 @@ mod tests {
                 cell: [3, 0, 4],
                 face: 5,
                 aim_up: 0.5,
+                slope_side: None,
             })
         );
     }

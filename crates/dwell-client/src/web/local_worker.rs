@@ -150,7 +150,12 @@ impl LocalWorld {
     /// `jobIn`); without, on the tick within its budgets. `mode`: a new world's game mode (ADR
     /// 0065; the New world form's choice, by name); a saved world keeps its own. `growth` (dev,
     /// `?growth=N`): trees grow N times as fast (ADR 0079). `chop2` (dev, `?chop=v2`): the
-    /// chopping prototype (docs/WORK_QUEUE.md item 7).
+    /// chopping prototype (docs/WORK_QUEUE.md item 7). `radius_scale`: a new world's size (BIG_MAP.md
+    /// M2b; the New world form's World size, `?size=2x`), a saved world keeps its own. `sky`: a new
+    /// world's Sky preset (REALISTIC_WORLD.md §8: its orbit rolled from its seed); a saved world
+    /// keeps its own orbit. `spawn_grid`: a new world's spawn on another grid (MOON_WORLD.md §8: a
+    /// grids.json spawn key, `moon`, `sun-b`; `?spawn=` and the New world form's Spawn); a saved
+    /// world keeps its own unless opened by a spawn link.
     // Positional, as JS passes them (wasm-bindgen constructor), like `LocalCore::create_spawning`.
     #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(constructor)]
@@ -168,6 +173,9 @@ impl LocalWorld {
         mode: Option<String>,
         growth: Option<f64>,
         chop2: Option<bool>,
+        radius_scale: Option<u32>,
+        sky: Option<String>,
+        spawn_grid: Option<String>,
     ) -> Result<LocalWorld, JsError> {
         // The tick's phases timed by this worker's clock (`tickPhases`, docs/DEV_TOOLS.md).
         dwell_sim::clock::set_clock(worker_now);
@@ -205,6 +213,21 @@ impl LocalWorld {
                 if chop2 == Some(true) {
                     c.chop2 = true;
                 }
+                // A new world's size (the server reads a saved world's own from its file).
+                c.world_size = dwell_protocol::world_size::WorldSize::playable(radius_scale);
+                // A new world's Sky (the server reads a saved world's orbit from its file).
+                c.sky = sky;
+                // `?spawn=town` (`town-b`, dev; docs/DEV_TOOLS.md): the player stands by the town
+                // site nearest the face's spawn, so it founds and its builders come.
+                if let Some(f) = spawn_grid
+                    .as_deref()
+                    .and_then(crate::local::town_spawn_face)
+                {
+                    crate::local::spawn_by_town(c, f);
+                }
+                // A new world's spawn grid (the server reads a saved world's own from its file).
+                c.spawn_grid =
+                    spawn_grid.filter(|k| dwell_worldgen::grids::grid_spawn(k).is_some());
             },
         ) {
             Ok(core) => Ok(Self { core }),
@@ -247,6 +270,30 @@ impl LocalWorld {
     #[wasm_bindgen(js_name = setMode)]
     pub fn set_mode(&mut self, name: &str) -> bool {
         self.core.set_mode(name)
+    }
+    /// The host turns theater mode on or off for guests (THEATER_MODE.md §7).
+    #[wasm_bindgen(js_name = setTheaterGuests)]
+    pub fn set_theater_guests(&mut self, on: bool) {
+        self.core.set_theater_guests(on);
+    }
+    /// Whether guests may use theater mode in this world.
+    #[wasm_bindgen(getter, js_name = theaterGuests)]
+    pub fn theater_guests(&self) -> bool {
+        self.core.theater_guests()
+    }
+    /// The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): the chunks
+    /// within `radius` chunks of the player generated again, edits kept, the config saved with the
+    /// world. Returns faces A's and B's new map bytes; throws the refusal's message.
+    #[wasm_bindgen(js_name = retuneWorldgen)]
+    pub fn retune_worldgen(&mut self, config: &str, radius: i32) -> Result<js_sys::Array, JsValue> {
+        let maps = self
+            .core
+            .retune_worldgen(config, radius)
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok(maps
+            .iter()
+            .map(|m| JsValue::from(js_sys::Uint8Array::from(&m[..])))
+            .collect())
     }
     /// The world's game mode's name.
     #[wasm_bindgen(getter)]
@@ -343,6 +390,11 @@ impl LocalWorld {
     pub fn world_seed(&mut self) -> u64 {
         self.core.server().config().world_seed
     }
+    /// The world's size's radius scale (a saved world's own), for the server-jobs worker.
+    #[wasm_bindgen(getter, js_name = radiusScale)]
+    pub fn radius_scale(&self) -> u32 {
+        self.core.world_size().radius_scale
+    }
     /// The next job for the server-jobs worker, if any.
     #[wasm_bindgen(js_name = takeJob)]
     pub fn take_job(&mut self) -> Option<Vec<u8>> {
@@ -394,6 +446,12 @@ impl LocalWorld {
     }
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         self.core.advance(elapsed_seconds)
+    }
+    /// Steps exactly `ticks` server ticks (a cinematic take: the game moves by the frame clock,
+    /// not the wall clock; `LocalCore::step_ticks`).
+    #[wasm_bindgen(js_name = stepTicks)]
+    pub fn step_ticks(&mut self, ticks: u32) -> u32 {
+        self.core.step_ticks(ticks)
     }
     /// Each tick phase's time (ms) summed since the last call, in `TICK_PHASES` order
     /// (`tickPhaseNames`).

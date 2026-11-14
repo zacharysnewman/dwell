@@ -84,7 +84,7 @@ function menuMaster(ping: MenuPageOptions['ping']): MainMenuDeps['master'] {
 /** Shows the main menu over the page. */
 export function showMenu(options: MenuPageOptions): MainMenu {
   // Its buttons sound (docs/AUDIO.md §6), in plain TS: the launcher has no WASM.
-  installPageSounds();
+  installPageSounds('menu');
   // A controller moves through it too (docs/GAMEPAD.md); B is Esc.
   const pad = startMenuGamepad(document, () => {
     document.dispatchEvent(

@@ -44,9 +44,49 @@ export function lookTiles(leaves = readJson(join(root, 'shared', 'look', 'leaves
   return typeof t === 'string' ? [t] : [];
 }
 
-/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles, the looks' and the engine's. */
-export function atlasTiles(blocks, tools = toolTiles(), looks = lookTiles()) {
-  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools, ...looks])];
+/** The most stages a crack set holds (BLOCK_DAMAGE.md §6.3). */
+export const MAX_CRACK_STAGES = 8;
+
+/**
+ * Checks the crack tile sets (shared/textures/cracks.json, BLOCK_DAMAGE.md §6.3): `span` (m, the
+ * width a crack tile covers round the hit, 0.5–4) and `sets`, each a family's crack tiles in stage
+ * order (1–8, no tile in two sets). Throws naming the bad entry.
+ */
+export function validateCracks(cracks) {
+  const fail = (m) => {
+    throw new Error(`cracks.json: ${m}`);
+  };
+  if (typeof cracks !== 'object' || cracks === null || Array.isArray(cracks)) fail('must be an object');
+  for (const k of Object.keys(cracks)) if (!['$comment', 'span', 'sets'].includes(k)) fail(`unknown entry ${k}`);
+  if (!(typeof cracks.span === 'number' && cracks.span >= 0.5 && cracks.span <= 4)) fail(`span must be a number of metres in [0.5, 4], got ${JSON.stringify(cracks.span)}`);
+  const sets = cracks.sets;
+  if (typeof sets !== 'object' || sets === null || Array.isArray(sets) || Object.keys(sets).length === 0) fail('sets must be a non-empty object');
+  const seen = new Map();
+  for (const [name, tiles] of Object.entries(sets)) {
+    if (!/^[a-z][a-z0-9_]*$/.test(name)) fail(`set name ${JSON.stringify(name)} must be lower_snake_case`);
+    if (!Array.isArray(tiles) || tiles.length === 0 || tiles.length > MAX_CRACK_STAGES) fail(`sets.${name} must list 1–${MAX_CRACK_STAGES} tiles, one a stage`);
+    for (const t of tiles) {
+      if (typeof t !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(t)) fail(`sets.${name}: a tile name must be camelCase, got ${JSON.stringify(t)}`);
+      if (seen.has(t)) fail(`sets.${name}: tile "${t}" is already in set ${seen.get(t)}`);
+      seen.set(t, name);
+    }
+  }
+  return cracks;
+}
+
+/** The crack tile sets (shared/textures/cracks.json), validated. */
+export function loadCracks() {
+  return validateCracks(readJson(join(here, 'cracks.json')));
+}
+
+/** The tiles the crack sets draw with, every set's stages. */
+export function crackTiles(cracks = loadCracks()) {
+  return Object.values(validateCracks(cracks).sets).flat();
+}
+
+/** Every atlas tile the texture set must paint: the registry's tiles, the woods' cut tiles, the looks', the cracks' and the engine's. */
+export function atlasTiles(blocks, tools = toolTiles(), looks = lookTiles(), cracks = crackTiles()) {
+  return [...new Set([...ENGINE_TILES, ...registryTiles(blocks), ...tools, ...looks, ...cracks])];
 }
 
 /** Validates and paints: every atlas tile (`tiles`), in `materials.tiles` order, as { names, texels }. */

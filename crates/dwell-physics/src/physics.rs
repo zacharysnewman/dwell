@@ -215,7 +215,7 @@ impl Physics {
             }
         }
         self.w.integration_parameters.dt = dt;
-        self.w.step();
+        self.w.step_with_events(&PinchGrip, &());
     }
 
     /// A box body on the Tier 1 layer: platforms, ramps and walls for tests, clusters later.
@@ -687,6 +687,50 @@ impl Default for Physics {
 
 /// `user_data` of Tier 1 bodies; a player body's is its handle + 1 (below this).
 pub(crate) const TIER1_BODY: u128 = u128::MAX;
+
+/// A piece's contact pressing a player down grips them (BUGS.md #52, PLAYER_CONTROLLER.md §6.6):
+/// a contact whose push-out normal toward the player points down more than this (face-local y,
+/// a surface within 60° of facing straight down) takes the piece's friction, `PIECE_FRICTION`.
+pub const PINCH_MIN_DOWN: f64 = 0.5;
+
+/// The contact hook of every step ([`Physics::step`]; the player's collider asks for it,
+/// `ActiveHooks::MODIFY_SOLVER_CONTACTS`). The player's capsule is frictionless (the controller
+/// owns its walking), which a body coming down on them turned into a launch: a falling trunk's
+/// slanted underside squeezing the capsule against the ground can only push it out sideways, at
+/// the trunk's descent over the slant's slope (a 14° underside at 5 m/s: 20 m/s, and faster as it
+/// flattens — 57 m/s, 155 m: the watermelon seed). Real bodies grip what they press down on, so a
+/// piece's contact from above takes the piece's own friction (wood's 0.8 holds a wedge flatter
+/// than 39°): the player is pinned and carried along at the trunk's own speed there, not shot
+/// out. Contacts from the side (a body swung into a player, a piece pushed) and the ground
+/// stay frictionless: a hit throws the player as hard as the solver says.
+struct PinchGrip;
+
+impl PhysicsHooks for PinchGrip {
+    fn modify_solver_contacts(&self, ctx: &mut ContactModificationContext) {
+        let user = |h: Option<RigidBodyHandle>| {
+            h.and_then(|h| ctx.bodies.get(h))
+                .map_or((0, 0.0), |b| (b.user_data, b.translation().y))
+        };
+        let ((u1, y1), (u2, y2)) = (user(ctx.rigid_body1), user(ctx.rigid_body2));
+        let player = |u: u128| u != 0 && u != TIER1_BODY;
+        // The push-out normal toward the player (the manifold's points from collider 1 to 2).
+        let (sign, y) = if player(u2) && u1 == TIER1_BODY {
+            (1.0, y2)
+        } else if player(u1) && u2 == TIER1_BODY {
+            (-1.0, y1)
+        } else {
+            return;
+        };
+        let Some(m) = ctx.rigid_mut() else {
+            return;
+        };
+        let n = *m.normal * sign;
+        let down = -FaceFrame::at_height(y).vector(n.to_array())[1];
+        if down > PINCH_MIN_DOWN {
+            *m.friction = PIECE_FRICTION;
+        }
+    }
+}
 
 /// A piece cell's friction coefficient (rapier averages the two colliders' coefficients).
 pub const PIECE_FRICTION: f64 = 0.8;

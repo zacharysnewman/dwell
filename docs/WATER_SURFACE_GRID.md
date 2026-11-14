@@ -334,8 +334,23 @@ for now, make a note about future possibly using shared memory threads"; the wat
 
 - **The copy** (`water/cells.rs`): `Cells`, a `ChunkCells` per loaded chunk (`Uniform(byte)` or a
   32 KiB `Mixed` array); bytes 0 solid, 1 open, 2–9 liquid in eighths, 10 and 11 a block holding
-  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded (`byte_of` from
-  the registry's `liquid`, `fill`, `replaceable`, `solid`, shape and properties). A ramp is solid to
+  water in its open part (a ramp: shaped, with a `flooded` property), dry or flooded, 12 and 13 a block
+  water passes through (leaves), dry or flooded (`byte_of` from the registry's `liquid`, `fill`,
+  `replaceable`, `solid`, `passable`, shape and properties).
+- **Leaves let water through** (WORK_QUEUE item 45; owner, 2026-11-12: "leaves also should let water
+  flow through freely"): a block players and pieces pass (`passable`, leaves) with a `flooded` state is
+  open to the grid's flow (`cells::PASS_*`, kind open: floors are found below it, water spreads and
+  runs through it as through air), and is kept: `draw` never writes water blocks in its place but sets
+  it flooded while the column's water stands half a fill step into its cell and dry when it goes
+  (`Write::flood`). Bodies' cells (felled crowns) are not in the grid at all, so they never blocked it.
+  **Generation unchanged:** `found` (the scan) takes leaves under a run of water into its column (the
+  floor the solid below them) but the level is still the liquid's top, so generated water is held at
+  the levels it was, at rest (a held column's depth over a leafy bed is deeper, so its reported river
+  current, by depth, can differ a little there; the terrain, the water blocks and the levels don't).
+  Tests: `water_flows_through_a_wall_of_leaves_as_through_air` (both faces: the water beyond a wall of
+  leaves stands as high after 40 s as with none, within 1 mm, the leaves flooded under it and dry over;
+  red: no water past them), `generated_water_among_leaves_is_found_at_its_level_and_rests` (both
+  faces). A ramp is solid to
   the flow; drawing a column floods the ramps in its rows and its neighbours' while the water beside
   or over them stands half a fill step into their cell, and dries them when it goes (BUGS.md #36). The grid's reads (`floor_at`, `found`, the scan, what
   an edit trapped, `draw`) all go through it; `draw` writes its own copy as it writes water. On the

@@ -18,12 +18,14 @@
 // that record (none for a key holding the bare value). A test checks it covers every setting.
 import type { PresetFieldName } from './graphicsPresets';
 import { HUD_ELEMENTS } from './hud.gen';
+import { FEATURES_KEY } from './featureSettings';
 
 export const DETAIL_KEY = 'dwell.detail';
 export const EXPOSURE_KEY = 'dwell.exposure';
 /** Its own key (the stores are append-only: an older build ignores it, a newer one reads it). */
 export const CLOUDS_KEY = 'dwell.clouds';
 export const SHAFTS_KEY = 'dwell.shafts';
+export const BLOOM_KEY = 'dwell.bloom';
 /** A record, append-only: unknown fields are kept on rewrite (ui/waterSettings.ts). */
 export const WATER_KEY = 'dwell.water';
 /** A record, append-only: unknown fields are kept on rewrite (ui/shadowSettings.ts). */
@@ -83,6 +85,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     ...rec('audio', keys.audio, ['master', 'effects', 'ui', 'music', 'ambience']),
     one(['clouds'], CLOUDS_KEY, [], 'clouds'),
     one(['shafts'], SHAFTS_KEY, [], 'shafts'),
+    one(['bloom'], BLOOM_KEY, [], 'bloom'),
     ...rec(
       'water',
       WATER_KEY,
@@ -90,10 +93,17 @@ export function settingFields(keys: StoreKeys): SettingField[] {
       ['water'],
     ),
     ...rec('shadows', SHADOWS_KEY, ['quality', 'torch'], ['shadows', 'torchShadows']),
-    ...rec('motion', keys.motion, ['speedEffects', 'fovBoost', 'plantSway']),
+    ...rec('motion', keys.motion, ['speedEffects', 'fovBoost', 'plantSway', 'cameraSway']),
     ...rec('explosions', keys.explosions, ['flash', 'smoke', 'shake']),
     one(['fovDeg'], keys.view, ['fovDeg']),
     one(['showArms'], keys.view, ['showArms']),
+    one(['leafCards'], keys.view, ['leafCards'], 'leafCards'),
+    ...rec(
+      'features',
+      FEATURES_KEY,
+      ['tallGrass', 'farTrees', 'distantShadows', 'hitShards', 'particles', 'farHerds'],
+      ['tallGrass', 'farTrees', 'distantShadows', 'hitShards', 'particles', 'farHerds'],
+    ),
     ...HUD_ELEMENTS.map((e) => one(['hud', 'shown', e.id], HUD_KEY, ['shown', e.id])),
     one(['hud', 'mapShading'], HUD_KEY, ['mapShading']),
     ...rec('renderScale', keys.renderScale, ['scale', 'upscaler'], ['renderScale', 'upscaler']),

@@ -329,7 +329,9 @@ dwell_world::both_faces!(
         let mut lit = VoxelWorld::streamed();
         lit.enable_light();
         let terrain = dwell_worldgen::BifacialTerrain::new(seed);
-        let sp = terrain.local(f.face).spawn_point();
+        // The spawn search's point, open level ground: the spawn itself is at a shrine since 0.58
+        // (docs/SHRINES.md), whose levelled ground under a tree's crown holds no open terraces.
+        let sp = terrain.local(f.face).spawn_search_point();
         let local = ChunkCoord::new(
             (sp[0] as i32).div_euclid(N),
             ((sp[1] / CELL_H) as i32).div_euclid(N),
@@ -350,6 +352,20 @@ dwell_world::both_faces!(
                 }
             }
         }
+        // The shrines standing in the window are built, not open terrain: their pillars and lintel
+        // shade the dais under them (seed 7's face B builds the spawn's shrine at this very point,
+        // and the 16 m shrine reaches the meshed chunk), so their footprints are left out.
+        let t = terrain.local(f.face);
+        let sh = t.shrines().expect("shrines");
+        let (x0, z0) = ((local.x - 1) * N, (local.z - 1) * N);
+        let shrines = sh.near(t, (x0, z0), (x0 + 3 * N - 1, z0 + 3 * N - 1));
+        let reach = sh.reach() + 1;
+        let built = |x: f32, z: f32| {
+            shrines.iter().any(|s| {
+                (x - s.x as f32 - 0.5).abs() <= reach as f32
+                    && (z - s.z as f32 - 0.5).abs() <= reach as f32
+            })
+        };
         let (mut checked, mut dark) = (0, 0);
         for dy in -1..=1 {
             let c = at(0, dy, 0);
@@ -359,7 +375,7 @@ dwell_world::both_faces!(
                 .expect("block");
             // Leaves' normals lean out of their crown (shared/look/leaves.json): a side's
             // vertex under the leaf above leans up, under the canopy's own shade. Not open ground.
-            let leaf_tiles: Vec<f32> = ["leaves", "snowyLeavesTop", "snowyLeavesSide"]
+            let leaf_tiles: Vec<f32> = ["leaves", "snowyLeavesTop", "snowyLeavesSide", "brush"]
                 .iter()
                 .map(|t| crate::textures::tile_rect(t).u0 as f32)
                 .collect();
@@ -368,7 +384,11 @@ dwell_world::both_faces!(
                     let up = f64::from(mesh.normals[i * 3 + 1]) * f.sign_f64();
                     let leaf =
                         std::ptr::eq(mesh, &m.cutout) && leaf_tiles.contains(&mesh.tiles[i * 4]);
-                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf {
+                    let (wx, wz) = (
+                        (c.x * N) as f32 + mesh.positions[i * 3],
+                        (c.z * N) as f32 + mesh.positions[i * 3 + 2],
+                    );
+                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf && !built(wx, wz) {
                         checked += 1;
                         dark += usize::from(mesh.flood[i * 2] < 0.9);
                     }

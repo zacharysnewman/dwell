@@ -1,0 +1,447 @@
+// node --test .claude/skills/record/scripts/take.test.mjs — the record skill's manifests and re-record plans, no browser.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
+import { alignFilter, audioAlignment, audioStartExpr, cinematicEncodeArgs, encodeArgs, partAudio } from './audio.mjs';
+import { encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
+
+const bifacial = () => loadVideo('bifacial');
+const copy = (v) => JSON.parse(JSON.stringify(v));
+const fails = (m, re) => assert.throws(() => validate(m), re);
+
+test('every committed video manifest validates', () => {
+  for (const name of ['bifacial', 'water', 'trailer']) assert.equal(loadVideo(name).name, name);
+  assert.ok(existsSync(join(VIDEOS, 'bifacial', 'video.json')));
+});
+
+test('unknown keys fail, at every level', () => {
+  const m = bifacial();
+  fails({ ...copy(m), music: true }, /video: unknown key "music"/);
+  let b = copy(m); b.world.seed = 7; fails(b, /video.world: unknown key "seed"/);
+  b = copy(m); b.shots[0].speed = 2; fails(b, /shots\[0\] \(s1\): unknown key "speed"/);
+  b = copy(m); b.shots[0].setup.time = 0.3; fails(b, /setup: unknown key "time"/);
+  b = copy(m); b.shots[2].splice[1].slow = 0.35; fails(b, /splice\[1\]: unknown key "slow"/);
+});
+
+test('missing or wrong files fail', () => {
+  let b = copy(bifacial()); b.shots[0].path = 'videos/bifacial/nope.json'; fails(b, /no file videos\/bifacial\/nope.json/);
+  b = copy(bifacial()); b.shots[2].script = 'videos/bifacial/gone.js'; fails(b, /no file videos\/bifacial\/gone.js/);
+  b = copy(bifacial()); b.shots[0].path = 'videos/bifacial/video.json'; fails(b, /is not a theater path/);
+  b = copy(bifacial()); b.shots[0].script = 'videos/bifacial/portal_take.js'; fails(b, /script: not used by a "path" shot/);
+  b = copy(bifacial()); b.shots[0].kind = 'orbit'; fails(b, /kind: expected one of path, take/);
+});
+
+test('bad times, ids and settings fail with a message', () => {
+  let b = copy(bifacial()); b.shots[0].splice[0].to = 0; fails(b, /"to" \(0\) must be after "from"/);
+  b = copy(bifacial()); b.shots[1].id = 's1'; fails(b, /"s1" is used twice/);
+  b = copy(bifacial()); b.shots[3].splice[0].label = 's5'; fails(b, /"s5" is used twice/);
+  b = copy(bifacial()); b.shots[0].setup.timeOfDay = 1.5; fails(b, /timeOfDay: expected 0–1/);
+  b = copy(bifacial()); b.shots[0].splice[0].cut = true; fails(b, /nothing to cut from/);
+  b = copy(bifacial()); b.capture.size = [1080]; fails(b, /capture.size: expected \[width, height\]/);
+  b = copy(bifacial()); b.formatVersion = 2; fails(b, /formatVersion: expected 1/);
+});
+
+test('a new video by data alone: a fixture manifest validates and plans', () => {
+  const m = validate({ formatVersion: 1, name: 'fixture', world: { url: '/dwell/?fresh=1&seed=1' }, capture: { size: [608, 1080], fps: 30 },
+    shots: [{ id: 'a', kind: 'path', path: 'videos/bifacial/s1_outline_push.json', splice: [{ to: 3 }] },
+      { id: 'b', kind: 'take', script: 'videos/bifacial/portal_take.js', args: { up: 'auto' }, splice: [{ from: 1, to: 2, speed: 4 }] }] });
+  assert.deepEqual(splicePlan(m, '/c').clips, [{ src: '/c/fixture/a.mp4', from: 0, to: 3, audio: 'keep' },
+    { src: '/c/fixture/b.mp4', from: 1, to: 2, speed: 4, audio: 'mute' }]);
+});
+
+test('--only takes a shot id or a part label; s5 is the portal take (the landing)', () => {
+  const m = bifacial();
+  assert.deepEqual(resolveOnly(m, ['s5']), ['portal']);
+  assert.deepEqual(resolveOnly(m, ['s3', 's5', 's6']), ['portal', 's6']);
+  assert.deepEqual(resolveOnly(m, ['s1']), ['s1']);
+  assert.throws(() => resolveOnly(m, ['s9']), /--only s9: no shot or part/);
+});
+
+test('shot 5 camera and up are manifest args the take script reads', () => {
+  const portal = bifacial().shots.find((s) => s.id === 'portal');
+  assert.deepEqual(portal.args.camB, [1796.3, -50.5, 20707.3]); // v5 (v4: [1789.5, -58, 20700.5])
+  assert.equal(portal.args.up, 'auto'); // v5: upright on face B (v4 held face A's: "a")
+  const s6 = JSON.parse(readFileSync(join(SKILL, bifacial().shots.find((s) => s.id === 's6').path), 'utf8'));
+  assert.deepEqual(s6.keyframes[0].position, portal.args.camB); // the drone rise starts from shot 5's camera
+  const src = readFileSync(join(SKILL, portal.script), 'utf8');
+  assert.match(src, /up: A\.up \?\? 'a'/);
+  assert.match(src, /A\.camB/);
+});
+
+test('selectShots: named shots record, cached ones are reused, missing or stale ones record', () => {
+  const m = bifacial();
+  const fp = (s) => fingerprint(m, s);
+  const portal = m.shots.find((s) => s.id === 'portal');
+  const metas = { s1: { fingerprint: fp(m.shots[0]) }, s2: { fingerprint: 'old' }, portal: { fingerprint: fp(portal) } };
+  const plan = selectShots(m, { only: ['s5'], cached: (id) => metas[id] ?? null, fingerprintOf: fp });
+  assert.deepEqual(plan.map((p) => [p.id, p.action, p.why]), [
+    ['s1', 'reuse', 'cached'], ['s2', 'record', 'recipe changed since the cached clip'], ['portal', 'record', 'named'], ['s6', 'record', 'no cached clip']]);
+  const all = Object.fromEntries(m.shots.map((s) => [s.id, { fingerprint: fp(s) }]));
+  assert.deepEqual(selectShots(m, { cached: (id) => all[id], fingerprintOf: fp }).map((p) => p.action), ['reuse', 'reuse', 'reuse', 'reuse']);
+  assert.throws(() => selectShots(m, { spliceOnly: true, cached: (id) => metas[id] ?? null, fingerprintOf: fp }), /no cached clip for s6/);
+  const stale = selectShots(m, { spliceOnly: true, cached: (id) => ({ ...all, s2: { fingerprint: 'old' } })[id], fingerprintOf: fp });
+  assert.deepEqual(stale.map((p) => p.action), ['reuse', 'reuse', 'reuse', 'reuse']);
+});
+
+test('the fingerprint changes with the footage recipe, not with the splice cut', () => {
+  const m = bifacial();
+  const s = m.shots.find((x) => x.id === 'portal');
+  const before = fingerprint(m, s);
+  assert.equal(fingerprint(m, { ...s, splice: [{ from: 0, to: 1 }] }), before);
+  assert.notEqual(fingerprint(m, { ...s, args: { ...s.args, up: 'b' } }), before);
+  assert.notEqual(fingerprint(m, { ...s, setup: { reload: false } }), before);
+  assert.notEqual(fingerprint({ ...m, world: { url: '/dwell/?seed=8' } }, s), before);
+});
+
+test('the generated splice plan is the hand-written v4 plan, from the cached clips', () => {
+  const v4 = JSON.parse(readFileSync(join(SKILL, 'paths/bifacial-v4/plan.json'), 'utf8'));
+  const take = { s1: 's1', s2: 's2', portal4: 'portal', s5: 's6' }; // v4's frame folders → the manifest's shots
+  const plan = splicePlan(bifacial(), '/cache');
+  assert.equal(plan.out, '/cache/bifacial/bifacial.mp4');
+  assert.deepEqual(plan.size, v4.size);
+  assert.equal(plan.fps, v4.fps);
+  assert.deepEqual(plan.clips.map(({ audio: _, ...c }) => c), v4.clips.map((c) => ({ ...c, src: `/cache/bifacial/${take[basename(c.src)]}.mp4` })));
+});
+
+test('take.mjs --dry-run reuses a cached clip whose recipe matches and records the rest', () => {
+  const cache = mkdtempSync(join(tmpdir(), 'take-test-'));
+  const m = bifacial();
+  mkdirSync(join(cache, 'bifacial'), { recursive: true });
+  for (const s of m.shots.filter((x) => x.id !== 's2')) {
+    writeFileSync(clipPath(cache, m, s.id), '');
+    writeFileSync(metaPath(cache, m, s.id), JSON.stringify({ fingerprint: fingerprint(m, s) }));
+  }
+  const r = spawnSync(process.execPath, [join(SKILL, 'scripts/take.mjs'), 'bifacial', '--only', 's6', '--dry-run', '--cache', cache], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reuse  s1 {2}\(cached\)\nrecord s2 {2}\(no cached clip\)\nreuse  portal {2}\(cached\)\nrecord s6 {2}\(named\)/);
+  assert.equal(JSON.parse(r.stdout.slice(r.stdout.indexOf('{'))).clips.length, 6);
+  const bad = spawnSync(process.execPath, [join(SKILL, 'scripts/take.mjs'), 'bifacial', '--splice-only', '--cache', cache], { encoding: 'utf8' });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--splice-only: no cached clip for s2/);
+});
+
+const ffmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
+test('encodeClip turns a driver frame folder into an mp4 at the measured rate', { skip: !ffmpeg && 'no ffmpeg' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'take-frames-'));
+  const n = 30;
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `testsrc=size=64x112:rate=60`, '-frames:v', String(n), join(dir, 'f%05d.jpg')]).status, 0);
+  writeFileSync(join(dir, 'times.json'), JSON.stringify(Array.from({ length: n }, (_, i) => 100 + i / 60)));
+  const out = join(dir, 'clip.mp4');
+  const enc = encodeClip(dir, out);
+  assert.equal(enc.frames, n);
+  assert.ok(Math.abs(enc.rate - 60) < 0.01);
+  const dur = +spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', out], { encoding: 'utf8' }).stdout;
+  assert.ok(Math.abs(dur - n / 60) < 0.05, `duration ${dur}`);
+});
+
+test('a post on a socket the driver closed while idle is retried once; other errors are not', async () => {
+  const sock = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_SOCKET' } });
+  let n = 0;
+  const flaky = async () => { if (n++ === 0) throw sock; return 'ok'; };
+  assert.equal(await fetchRetrying('u', {}, flaky), 'ok');
+  assert.equal(n, 2);
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  n = 0;
+  await assert.rejects(fetchRetrying('u', {}, async () => { n++; throw refused; }), /fetch failed/);
+  assert.equal(n, 1);
+});
+
+// The showcase sound (WORK_QUEUE item 40: effects and ambience on, never music).
+
+test('the manifest\'s audio: on by default, per shot override, per part mode; bad values fail', () => {
+  const m = bifacial();
+  assert.equal(m.audio, undefined);
+  for (const s of m.shots) assert.equal(shotAudio(m, s), true);
+  assert.equal(shotAudio({ ...m, audio: false }, m.shots[0]), false);
+  assert.equal(shotAudio({ ...m, audio: false }, { ...m.shots[0], audio: true }), true);
+  let b = copy(m); b.audio = 'music'; fails(b, /video.audio: expected true or false/);
+  b = copy(m); b.shots[0].audio = 1; fails(b, /shots\[0\] \(s1\).audio: expected true or false/);
+  b = copy(m); b.shots[2].splice[1].audio = 'loud'; fails(b, /splice\[1\].audio: expected one of auto, keep, stretch, mute/);
+  b = copy(m); b.audio = false; b.shots[1].audio = true; b.shots[2].splice[0].audio = 'mute'; assert.ok(validate(b));
+});
+
+test('a part\'s sound: kept at speed 1, stretched for slow motion and gentle speed-ups, muted on a time-lapse', () => {
+  assert.equal(partAudio(undefined, 1), 'keep');
+  assert.equal(partAudio('auto', 0.35), 'stretch');
+  assert.equal(partAudio('auto', 2), 'stretch');
+  assert.equal(partAudio('auto', 4), 'mute');
+  assert.equal(partAudio('auto', 0.1), 'mute');
+  assert.equal(partAudio('stretch', 8), 'stretch');
+  assert.equal(partAudio('keep', 1.5), 'stretch'); // kept sound must still follow the picture
+  assert.equal(partAudio('mute', 1), 'mute');
+  const plan = splicePlan(bifacial(), '/c');
+  assert.equal(plan.audio, true);
+  assert.deepEqual(plan.clips.map((c) => c.audio), ['keep', 'keep', 'keep', 'stretch', 'keep', 'keep']); // s4 slowed 0.35
+  const off = copy(bifacial()); off.shots[1].audio = false;
+  assert.equal(splicePlan(validate(off), '/c').clips[1].audio, 'mute');
+  const none = copy(bifacial()); none.audio = false;
+  const silent = splicePlan(validate(none), '/c');
+  assert.equal(silent.audio, false);
+  assert.ok(silent.clips.every((c) => c.audio === undefined));
+});
+
+test('the sound changes a shot\'s recipe: turning it off re-records', () => {
+  const m = bifacial();
+  assert.notEqual(fingerprint(m, { ...m.shots[0], audio: false }), fingerprint(m, m.shots[0]));
+  assert.equal(fingerprint(m, { ...m.shots[0], audio: true }), fingerprint(m, m.shots[0]));
+});
+
+test('the driver taps the mix without music or UI', () => {
+  const e = audioStartExpr();
+  assert.match(e, /__dwell\?\.audioTap\?\.\(\{"music":false,"ui":false\}\)/);
+  assert.match(e, /MediaRecorder/);
+  assert.match(e, /performance\.timeOrigin/); // epoch seconds, the screencast frames' clock
+});
+
+test('the audio is aligned to the first frame and cut to the clip, 48 kHz AAC', () => {
+  const times = [100, 100.5, 101]; // 3 frames
+  assert.deepEqual(audioAlignment(times, { startS: 100.25 }, 2), { offsetS: 0.25, durationS: 1.5 });
+  assert.equal(alignFilter({ offsetS: 0.25, durationS: 1.5 }),
+    '[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=delays=250:all=1,apad,atrim=0:1.500[a]');
+  assert.equal(alignFilter({ offsetS: -0.125, durationS: 2 }),
+    '[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=start=0.125,asetpts=PTS-STARTPTS,apad,atrim=0:2.000[a]');
+  const withSound = encodeArgs({ frames: 'f%05d.jpg', rate: 60, out: 'o.mp4', audio: { file: 's.webm', offsetS: 0, durationS: 1 } });
+  assert.deepEqual(withSound.slice(withSound.indexOf('-i', 6), withSound.indexOf('-i', 6) + 2), ['-i', 's.webm']);
+  assert.ok(withSound.includes('[a]') && withSound.includes('aac') && withSound.includes('48000'));
+  assert.ok(!withSound.join(' ').includes('adelay')); // a zero offset needs no delay
+  const silent = encodeArgs({ frames: 'f%05d.jpg', rate: 60, out: 'o.mp4' });
+  assert.ok(silent.includes('-an') && !silent.includes('aac'));
+});
+
+const dry = (plan) => {
+  const dir = mkdtempSync(join(tmpdir(), 'splice-plan-'));
+  const file = join(dir, 'plan.json');
+  writeFileSync(file, JSON.stringify(plan));
+  const r = spawnSync('python3', [join(SKILL, 'scripts/splice.py'), file, '--dry-run'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+};
+const python = spawnSync('python3', ['--version']).status === 0;
+
+test('the splice\'s audio graph: cuts concatenate the sound, speed stretches or mutes it, joins cross-fade it', { skip: !python && 'no python3' }, () => {
+  const plan = { out: '/w/v.mp4', size: [108, 192], fps: 30, fade: 0.8, audio: true, clips: [
+    { src: '/c/a.mp4', from: 0, to: 4, audio: 'keep' },
+    { src: '/c/b.mp4', from: 0, to: 2, speed: 0.35, cut: true, audio: 'stretch' },
+    { src: '/c/b.mp4', from: 2, to: 6, cut: true, audio: 'keep' },
+    { src: '/c/c.mp4', from: 0, to: 8, speed: 4, audio: 'mute' },
+  ] };
+  const { commands, seconds } = dry(plan);
+  const graph = (c) => c[c.indexOf('-filter_complex') + 1];
+  const [keep, slow, , lapse, cut, final] = commands;
+  assert.match(graph(keep), /\[0:a\]aresample=48000,[^;]*,apad,atrim=0:4\.000\[a\]$/);
+  assert.ok(!graph(keep).includes('atempo'));
+  assert.match(graph(slow), /atempo=0\.5,atempo=0\.7,apad,atrim=0:5\.714\[a\]/); // 0.35 = 0.5 × 0.7, pitch kept
+  assert.match(graph(slow), /\[0:v\]setpts=PTS\/0\.35,/);
+  assert.ok(lapse.includes('anullsrc=r=48000:cl=stereo')); // the 4× time-lapse is silent
+  assert.match(graph(lapse), /\[1:a\]aresample=48000,[^;]*,atrim=0:2\.000\[a\]/);
+  for (const c of [keep, slow, lapse]) assert.ok(c.includes('aac') && c.includes('-map'));
+  assert.match(graph(cut), /^\[0:v\]\[0:a\]\[1:v\]\[1:a\]\[2:v\]\[2:a\]concat=n=3:v=1:a=1\[v\]\[a\]$/);
+  // the groups (a 4 + 5.714 + 4 s cut group, then the 2 s time-lapse) cross-fade picture and sound together
+  assert.match(graph(final), /xfade=transition=fade:duration=0\.8:offset=12\.914/);
+  assert.match(graph(final), /\[0:a\]\[1:a\]acrossfade=d=0\.8:c1=tri:c2=tri\[ax1\]/);
+  assert.match(graph(final), /\[ax1\]afade=t=out:st=13\.914:d=1,atrim=0:14\.914\[aout\]$/);
+  assert.ok(final.includes('[aout]') && final.includes('aac'));
+  assert.equal(seconds, 14.914);
+});
+
+test('the splice lifts the whole sound by the plan\'s gainDb, limited', { skip: !python && 'no python3' }, () => {
+  const plan = { out: '/w/v.mp4', size: [108, 192], fps: 30, audio: true, gainDb: 18, clips: [
+    { src: '/c/a.mp4', from: 0, to: 4, audio: 'keep' }, { src: '/c/b.mp4', from: 0, to: 3, audio: 'keep' }] };
+  const final = dry(plan).commands.at(-1);
+  assert.match(final[final.indexOf('-filter_complex') + 1], /\[ax1\]volume=18dB,alimiter=limit=0\.9,afade=t=out/);
+  delete plan.gainDb;
+  const plain = dry(plan).commands.at(-1);
+  assert.ok(!plain.join(' ').includes('volume='));
+});
+
+test('a plan without audio splices silent, as before', { skip: !python && 'no python3' }, () => {
+  const { commands } = dry({ out: '/w/v.mp4', size: [108, 192], fps: 30, clips: [
+    { src: '/c/a.mp4', from: 0, to: 4 }, { src: '/c/b.mp4', from: 0, to: 2, cut: true }, { src: '/c/c.mp4', from: 0, to: 3 }] });
+  for (const c of commands) assert.ok(!c.join(' ').match(/acrossfade|anullsrc|aac|\[0:a\]/), c.join(' '));
+  assert.ok(commands[0].includes('-an'));
+  assert.ok(commands.at(-1).includes('-an'));
+});
+
+test('end to end: a frame folder and its sound → a clip with aligned audio → a spliced video whose sound lasts as long as its picture',
+  { skip: (!ffmpeg || !python) && 'no ffmpeg or python3' }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'take-audio-'));
+    const frames = join(dir, 'shot');
+    mkdirSync(frames);
+    const n = 60;
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x112:rate=30', '-frames:v', String(n), join(frames, 'f%05d.jpg')]).status, 0);
+    writeFileSync(join(frames, 'times.json'), JSON.stringify(Array.from({ length: n }, (_, i) => 1000 + i / 30)));
+    // the sound began 0.3 s after the first frame, 44.1 kHz mono (resampled to 48 kHz stereo)
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=3', '-c:a', 'libopus', frames + '.webm']).status, 0);
+    writeFileSync(frames + '.audio.json', JSON.stringify({ startS: 1000.3, stopS: 1003.3 }));
+    const clip = join(dir, 'shot.mp4');
+    const enc = encodeClip(frames, clip);
+    assert.equal(enc.audio, 0.3);
+    const probe = (f, sel) => spawnSync('ffprobe', ['-v', 'error', '-select_streams', sel, '-show_entries', 'stream=duration,sample_rate,channels', '-of', 'json', f], { encoding: 'utf8' });
+    const a = JSON.parse(probe(clip, 'a').stdout).streams[0];
+    assert.equal(a.sample_rate, '48000');
+    assert.equal(a.channels, 2);
+    assert.ok(Math.abs(+a.duration - 2) < 0.05, `audio ${a.duration}`);
+    const plan = join(dir, 'plan.json');
+    writeFileSync(plan, JSON.stringify({ out: join(dir, 'v.mp4'), size: [64, 112], fps: 30, fade: 0.4, audio: true, clips: [
+      { src: clip, from: 0, to: 1, audio: 'keep' }, { src: clip, from: 1, to: 1.5, speed: 0.5, cut: true, audio: 'stretch' },
+      { src: clip, from: 0, to: 2, speed: 4, audio: 'mute' }, { src: clip, from: 0.5, to: 2, audio: 'keep' }] }));
+    const r = spawnSync('python3', [join(SKILL, 'scripts/splice.py'), plan], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const v = +JSON.parse(probe(join(dir, 'v.mp4'), 'v').stdout).streams[0].duration;
+    const s = +JSON.parse(probe(join(dir, 'v.mp4'), 'a').stdout).streams[0].duration;
+    assert.ok(Math.abs(v - 3.2) < 0.1, `video ${v}`); // (1 + 1 cut) + 0.5 + 1.5 − 2 × 0.4
+    assert.ok(Math.abs(s - v) < 0.08, `audio ${s} vs video ${v}`);
+  });
+
+// The trailer's tools (owner, 2026-11-13: "Let's do vertical and widescreen. Title and game sound, no music."):
+// one square capture cut to several aspects with per-part crop positions, a fade from black, a title card.
+const aspectFixture = () => ({ formatVersion: 1, name: 'fixture', world: { url: '/dwell/?fresh=1&seed=1' },
+  capture: { size: [1920, 1920], fps: 30 }, aspects: { '9x16': [1080, 1920], '16x9': [1920, 1080] },
+  title: { text: 'DWELL', fromEndS: 5, fadeS: 1.5, width: { '9x16': 0.8, '16x9': 0.45 } }, splice: { fadeIn: 1.2 },
+  shots: [{ id: 'a', kind: 'path', path: 'videos/bifacial/s1_outline_push.json', splice: [{ to: 3, crop: { '9x16': [0.3, 0.5] } }] },
+    { id: 'b', kind: 'path', path: 'videos/bifacial/s2_crane_a_to_b.json', splice: [{ to: 2, cut: true, crop: { '16x9': [0.5, 0.2] } }] }] });
+
+test('aspects: one shot list, a plan per aspect with its size, its crops, its title width and the fade in', () => {
+  const m = validate(aspectFixture());
+  const v = splicePlan(m, '/c', '9x16'), w = splicePlan(m, '/c', '16x9');
+  assert.equal(v.out, '/c/fixture/fixture-9x16.mp4');
+  assert.deepEqual(v.size, [1080, 1920]);
+  assert.deepEqual(w.size, [1920, 1080]);
+  assert.deepEqual(v.clips.map((c) => c.crop ?? null), [[0.3, 0.5], null]);
+  assert.deepEqual(w.clips.map((c) => c.crop ?? null), [null, [0.5, 0.2]]);
+  assert.equal(v.fadeIn, 1.2);
+  assert.deepEqual(v.titleCard, { image: '/c/fixture/title-9x16.png', fromEndS: 5, fadeS: 1.5, widthPx: 864 });
+  assert.equal(w.titleCard.widthPx, 864); // 0.45 × 1920
+  assert.throws(() => splicePlan(m, '/c', '4x3'), /no aspect "4x3"/);
+  // without aspects: one framing at the capture size, no crop, as before
+  const plain = aspectFixture(); delete plain.aspects; delete plain.title;
+  plain.shots = plain.shots.map((s) => ({ ...s, splice: s.splice.map(({ crop: _, ...p }) => p) }));
+  assert.equal(splicePlan(validate(plain), '/c').out, '/c/fixture/fixture.mp4');
+});
+
+test('aspects, crops and titles: bad entries fail with a message', () => {
+  let b = aspectFixture(); b.shots[0].splice[0].crop = { '4x3': [0.5, 0.5] }; fails(b, /crop: no aspect "4x3"/);
+  b = aspectFixture(); b.shots[0].splice[0].crop = { '9x16': [1.5, 0.5] }; fails(b, /crop.9x16: expected \[x, y\], each 0–1/);
+  b = aspectFixture(); b.aspects['9x16'] = [1080]; fails(b, /aspects.9x16: expected \[width, height\]/);
+  b = aspectFixture(); b.title.text = ''; fails(b, /title.text/);
+  b = aspectFixture(); b.title.width = { '4x3': 0.5 }; fails(b, /title.width: no aspect "4x3"/);
+  b = aspectFixture(); b.title.font = 'Georgia'; fails(b, /video.title: unknown key "font"/);
+  b = aspectFixture(); b.splice.fadeIn = -1; fails(b, /splice.fadeIn/);
+});
+
+test('the splice crops each part where its aspect says, fades in from black and fades the title in over the end', { skip: !python && 'no python3' }, () => {
+  const plan = { out: '/w/v.mp4', size: [108, 192], fps: 30, fade: 0.8, audio: true, fadeIn: 1.2,
+    titleCard: { image: '/w/title.png', fromEndS: 5, fadeS: 1.5, widthPx: 86 }, clips: [
+      { src: '/c/a.mp4', from: 0, to: 4, crop: [0.3, 0.5], audio: 'keep' },
+      { src: '/c/b.mp4', from: 0, to: 6, cut: true, audio: 'keep' }, { src: '/c/c.mp4', from: 0, to: 8, audio: 'keep' }] };
+  const { commands, seconds } = dry(plan);
+  const graph = (c) => c[c.indexOf('-filter_complex') + 1];
+  assert.match(graph(commands[0]), /crop=108:192:x=\(iw-108\)\*0\.3:y=\(ih-192\)\*0\.5,fps=30/);
+  assert.match(graph(commands[1]), /crop=108:192,fps=30/); // no crop given: the centre
+  const final = commands.at(-1), g = graph(final);
+  assert.equal(seconds, 17.2); // (4 + 6 cut) + 8 − 0.8
+  assert.deepEqual(final.slice(final.indexOf('-loop'), final.indexOf('-loop') + 4), ['-loop', '1', '-i', '/w/title.png']);
+  assert.match(g, /\[2:v\]scale=86:-1,format=rgba,fade=t=in:st=12\.200:d=1\.5:alpha=1\[title\]/);
+  assert.match(g, /\[x1\]\[title\]overlay=\(W-w\)\/2:\(H-h\)\/2:shortest=1:enable='gte\(t,12\.200\)'\[titled\]/);
+  assert.match(g, /\[titled\]fade=t=in:st=0:d=1\.2,fade=t=out:st=16\.200:d=1\[out\]/);
+  assert.match(g, /afade=t=in:st=0:d=1\.2,afade=t=out/);
+});
+
+test('the title card page inlines the client\'s wordmark style and escapes the text', async () => {
+  const { titleHtml } = await import('./title.mjs');
+  const html = titleHtml('<D&WELL>');
+  assert.ok(html.includes('.wordmark {'), 'the client stylesheet with its .wordmark rule');
+  assert.ok(html.includes('&lt;D&amp;WELL&gt;') && !html.includes('<D&WELL>'));
+});
+
+test('end to end: a square clip cut to 9:16 and 16:9, faded in from black, with the title over the end', { skip: (!ffmpeg || !python) && 'no ffmpeg or python3' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'splice-aspect-'));
+  const clip = join(dir, 'sq.mp4'), title = join(dir, 'title.png');
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=0x808080:s=192x192:r=30:d=4', '-f', 'lavfi', '-i', 'sine=d=4',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clip]).status, 0);
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:s=40x20,format=rgba', '-frames:v', '1', title]).status, 0);
+  for (const [w, h] of [[108, 192], [192, 108]]) {
+    const out = join(dir, `v${w}.mp4`), plan = join(dir, `p${w}.json`);
+    writeFileSync(plan, JSON.stringify({ out, size: [w, h], fps: 30, audio: true, fadeIn: 1, titleCard: { image: title, fromEndS: 2, fadeS: 0.2, widthPx: 40 },
+      clips: [{ src: clip, from: 0, to: 4, crop: w < h ? [0.2, 0.5] : [0.5, 0.8], audio: 'keep' }] }));
+    const r = spawnSync('python3', [join(SKILL, 'scripts/splice.py'), plan], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const s = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'json', out], { encoding: 'utf8' }).stdout).streams[0];
+    assert.deepEqual([s.width, s.height], [w, h]);
+    const centre = (t) => {
+      const q = spawnSync('ffmpeg', ['-v', 'info', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=8:8:${w / 2 - 4}:${h / 2 - 4},signalstats,metadata=print:key=lavfi.signalstats.YAVG`, '-f', 'null', '-'], { encoding: 'utf8' });
+      return +(/YAVG=([\d.]+)/.exec(q.stderr)?.[1] ?? NaN);
+    };
+    assert.ok(centre(0) < 40, `the first frame is black (${centre(0)})`);
+    assert.ok(Math.abs(centre(1.5) - 128) < 30, `grey before the title (${centre(1.5)})`);
+    assert.ok(centre(2.6) > 200, `the white title over the centre near the end (${centre(2.6)})`);
+  }
+});
+
+test('a shot waits until the chunks and the LOD settle (WORK_QUEUE item 40: half the trailer unloaded)', async () => {
+  const idle = { lod: { generating: 0, meshing: 0, asking: 0, waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
+  assert.equal(viewIdle(idle), true);
+  for (const [k, part] of [['generating', 'lod'], ['asking', 'lod'], ['waitingInView', 'lod'], ['dirty', 'terrain'], ['meshing', 'terrain']]) {
+    const busy = copy(idle); busy[part][k] = 3;
+    assert.equal(viewIdle(busy), false, `${part}.${k} busy`);
+  }
+  assert.equal(viewIdle(null), false, 'no state yet');
+  // The page script, run against a fake page: busy for a while, then idle; it returns once idle for quietMs.
+  let calls = 0;
+  globalThis.d = { state: () => (++calls < 4 ? { ...idle, lod: { ...idle.lod, meshing: 1 } } : idle) };
+  try {
+    const r = await eval(settleScript(250, 5));
+    assert.match(r, /^settled /);
+    assert.ok(calls >= 6, `polled until quiet (${calls})`);
+    globalThis.d = { state: () => ({ ...idle, lod: { ...idle.lod, generating: 1 } }) };
+    assert.match(await eval(settleScript(100, 0.3)), /^NOT settled /);
+    // Builders editing nearby: the LOD keeps asking and meshing, but nothing waits in view: loaded.
+    let n = 0;
+    const churn = { ...idle, lod: { ...idle.lod, asking: 1, meshing: 2 } };
+    assert.equal(viewIdle(churn), false);
+    assert.equal(viewLoaded(churn), true);
+    globalThis.d = { state: () => (++n % 3 ? churn : idle) };
+    assert.match(await eval(settleScript(1000, 5, 200)), /^loaded /);
+    assert.equal(viewLoaded({ ...idle, lod: { ...idle.lod, waitingInView: 2 } }), false);
+  } finally {
+    delete globalThis.d;
+  }
+  // The manifest's knob: a number, 0 skips it.
+  const m = bifacial(); m.shots[0].setup = { ...(m.shots[0].setup ?? {}), settleS: 30 }; validate(m);
+  m.shots[0].setup.settleS = 'long'; fails(m, /setup.settleS/);
+});
+
+test('render: "cinematic" is a path-shot option with settings overrides, and it is part of the fingerprint', () => {
+  const m = loadVideo('cinematic');
+  const cine = m.shots.find((s) => s.render === 'cinematic');
+  const rt = m.shots.find((s) => s.id === cine.id.replace('_cine', '_rt'));
+  assert.ok(cine && rt && !rt.render);
+  // the same path, rendered two ways: two recipes
+  assert.notEqual(fingerprint(m, cine), fingerprint(m, { ...cine, render: undefined }));
+  const over = copy(m);
+  over.shots.find((s) => s.id === cine.id).cinematic = { supersample: 1 };
+  assert.notEqual(fingerprint(over, over.shots.find((s) => s.id === cine.id)), fingerprint(m, cine));
+  validate(over);
+  const bad = copy(m);
+  bad.shots[0].render = 'offline';
+  fails(bad, /render: expected one of realtime, cinematic/);
+  const take = copy(bifacial());
+  take.shots.find((s) => s.kind === 'take').render = 'cinematic';
+  fails(take, /"cinematic" renders a path shot only/);
+  const loose = copy(m);
+  loose.shots.find((s) => s.id === rt.id).cinematic = { fps: 60 };
+  fails(loose, /on a "cinematic" shot only/);
+});
+
+test('a cinematic folder encodes at its exact rate with its stepped sound muxed as is (no alignment)', () => {
+  const a = cinematicEncodeArgs({ frames: '/x/a_cine', fps: 30, out: '/x/a.mp4', wav: '/x/a_cine/audio.wav' });
+  assert.deepEqual(a.slice(0, 8), ['-v', 'error', '-y', '-framerate', '30', '-i', '/x/a_cine/f%05d.png', '-i']);
+  assert.ok(a.includes('apad') && a.includes('-shortest'), 'the sound is padded and cut to the frames');
+  assert.ok(!a.join(' ').includes('adelay') && !a.join(' ').includes('atrim'), 'no alignment: the take stepped it');
+  const silent = cinematicEncodeArgs({ frames: '/x/a', fps: 24, out: '/x/a.mp4' });
+  assert.ok(silent.includes('-an') && silent.includes('24'));
+});

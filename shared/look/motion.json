@@ -1,5 +1,5 @@
 {
-  "$comment": "Motion effects' tunables (docs/MOTION_EFFECTS.md, Phase 29): the speed FOV, the wind streaks, and the camera's roll upright across the midplane (crossingRollS, seconds: BIFACIAL_WORLD.md §6). Speeds are relative to the controller's walk and run speeds (dwell-physics config) except the m/s fields. Run `node shared/look/gen.mjs` after editing; CI fails if crates/dwell-look/src/motion.gen.rs is stale.",
+  "$comment": "Motion effects' tunables (docs/MOTION_EFFECTS.md, Phase 29): the speed FOV, the wind streaks, and the camera's roll upright across the midplane (crossingRollS, seconds: BIFACIAL_WORLD.md §6), and its ease upright when the player's frame changes to another grid's (gridCrossingRollS, seconds: the view keeps where it points and its up turns to the new grid's face up; MOON_WORLD.md §7.3). Speeds are relative to the controller's walk and run speeds (dwell-physics config) except the m/s fields. Run `node shared/look/gen.mjs` after editing; CI fails if crates/dwell-look/src/motion.gen.rs is stale.",
   "fov": {
     "$comment": "The vertical FOV widens by a percentage of the base (the player's Field of view setting): eased 0 → sprintBoostPct from walk to run speed, then up to flightBoostPct at fullMps on a log scale (75° → 82.5° and 90°). Critically damped spring rates (1/s): widen fast, settle slower.",
     "sprintBoostPct": 10,
@@ -41,5 +41,6 @@
     "flying": 1
   },
   "teleportM": 24,
-  "crossingRollS": 0.8
+  "crossingRollS": 0.8,
+  "gridCrossingRollS": 0.6
 }

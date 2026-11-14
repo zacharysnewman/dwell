@@ -17,7 +17,8 @@ pub const USAGE: &str =
                     [--name NAME] [--motd TEXT] [--max-players N] [--edits POLICY]
                     [--flight POLICY] [--seed N] [--generator N] [--op KEY] [--ban KEY]
                     [--client-url URL] [--master URL] [--visibility public|unlisted|none]
-                    [--tags A,B] [--mode NAME] [--worldgen FILE|test:NAME]
+                    [--tags A,B] [--mode NAME] [--worldgen FILE|test:NAME] [--size NAME]
+                    [--sky PRESET]
   --world FILE    the world file (default world.dwellworld; created if missing; \"\" keeps
                   the world in memory only)
   --advertise IP  address players use to reach this server (invite links, WebRTC)
@@ -36,6 +37,11 @@ pub const USAGE: &str =
   --worldgen FILE a worldgen config: a Chisel edit's JSON file, or a fixture world's name
                   (test:tall_peak); the world's terrain is made from it and sent to guests
                   (ADR 0074 B7). Not saved: give it on every start of that world
+  --size NAME     a new world's size (constants.json worldSizes: 1x, 2x, 4x, 8x, 10x; default
+                  1x); a saved world keeps its own (docs/proposals/BIG_MAP.md, a desktop test)
+  --sky PRESET    a new world rolls its orbit from its seed in this Sky preset's ranges
+                  (shared/look/orbits.json: default, day_varies, extreme; for a Realistic world,
+                  --worldgen test:realistic); without it, today's sky. A saved world keeps its own
   --heartbeat S   seconds between master heartbeats (default 30; testing)";
 
 pub struct Options {
@@ -143,6 +149,14 @@ pub fn parse_options(args: &[String]) -> Result<Options, UsageError> {
             "--client-url" => o.client_url = v.into(),
             "--mode" => o.mode = Some(v.into()),
             "--worldgen" => o.worldgen = v.into(),
+            "--sky" => {
+                dwell_look::orbits::ORBITS.preset(v).ok_or(UsageError)?;
+                o.server.sky = Some(v.into());
+            }
+            "--size" => {
+                o.server.world_size =
+                    dwell_protocol::world_size::WorldSize::named(v).map_err(|_| UsageError)?
+            }
             _ => return Err(UsageError),
         }
     }

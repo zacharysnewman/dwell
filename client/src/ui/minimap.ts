@@ -3,8 +3,9 @@
 // metre, drawn again only on a move or a turn) and reports the explored cells it covers
 // (`takeExplored`); this shell shows the disc with the player's and the others' dots, keeps the
 // explored cells per world in this browser (IndexedDB, append-only), and draws them on the big map
-// (M, or a tap on the minimap): five fixed zoom levels from the minimap's area to the whole world disc
-// (owner, 2026-11-09), pannable, unexplored ground fogged, the player's place and heading on it.
+// (M, or a tap on the minimap): zoom stops about `bigMap.zoomRatio` apart (BUGS.md #120) from the
+// minimap's area to the whole world disc (owner, 2026-11-09), each drawn with one of the fixed
+// levels, pannable, unexplored ground fogged, the player's place and heading on it.
 // Each level's ground is its own tiles of its own cell size, generated from the terrain generator
 // in the job workers once per world and build, in the background, and kept in this browser
 // (`RevealCache`, IndexedDB `dwell-map-tiles`); explored cells (the loaded terrain's, edits too)
@@ -12,11 +13,63 @@
 // (creative) nothing is fogged. Its looks, levels and sizes are data (shared/ui/map.json →
 // map.gen.ts).
 
+import {
+  MAP_LAYERS,
+  type MapLayerDef,
+  layerPixels,
+  layerSpan,
+  nextLayer,
+  parseLayerGrid,
+} from './mapLayers';
 import { GAMEPAD } from '../input/gamepad.gen';
 import { MAP } from './map.gen';
 import { compatibilityLine } from '../version/semver';
-import { World } from '../protocol/constants.gen';
+import { CHUNK_SIZE, World } from '../protocol/constants.gen';
 import { ExploredChanges, type ExploredStore } from './exploredStore';
+import {
+  MapFilters,
+  SHRINE_MAP,
+  browserStorage,
+  ShrineSites,
+  shrineIcons,
+  clusterShrines,
+  filterLayers,
+  markerLayer,
+  parseShrines,
+  shrineCellsIn,
+  visibleShrines,
+} from './mapShrines';
+import {
+  TOWN_LAYER,
+  TOWN_MAP,
+  TOWN_SPACING,
+  type MapTown,
+  parseTowns,
+  townColor,
+} from './mapTowns';
+import {
+  MarkerList,
+  type MapMarker,
+  decodeMarkers,
+  drawIcon,
+  encodeMarkers,
+  formatMarkerDistance,
+  iconSvg,
+  markersInRange,
+  markerGroundY,
+  regroundMarkers,
+  markerRows,
+  directionWord,
+  pickMarker,
+  seenPortalSpots,
+  type PendingPin,
+  bigMapPins,
+  waypointAlpha,
+  waypointOnScreen,
+  waypointShown,
+} from './markers';
+import { AUTO_MARKERS, MARKER_WORLD } from './markers.gen';
+import { MarkerPicker } from './markerPicker';
 
 /** An explored cell's key: its face (0 A, 1 B) and its index along face-local x and z. */
 export function cellKey(face: number, i: number, k: number): string {
@@ -119,8 +172,44 @@ export interface BigView {
   pxPerM: number;
 }
 
-/** The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). */
-export const LEVELS: readonly { cellM: number; spanM: number; reach: Reach }[] = MAP.bigMap.levels;
+/** A zoom level: its cell side and span (m), and where its tiles are built. */
+export interface Level {
+  cellM: number;
+  spanM: number;
+  reach: Reach;
+}
+
+/**
+ * The zoom levels, closest first (shared/ui/map.json): each its cell side and span (m). A bigger
+ * world's (BIG_MAP.md M2b) are its size's (`setMapWorldSize`), its coarse cells and spans wider.
+ */
+export let LEVELS: readonly Level[] = MAP.bigMap.levels;
+
+/** The world's size (BIG_MAP.md M2b): its radius scale, 1 today's. */
+let worldScale = 1;
+
+/**
+ * The map follows the world's size (BIG_MAP.md M2b): its disc's and island's radii × `radiusScale`
+ * and its levels' cells and spans `levels` ([cellM, spanM, …], the client's `bigMapLevels`,
+ * `MapTunables::big_map_levels_sized`); each level's reach stays the data's. Today's size, or
+ * levels that don't match the data's count, restore map.json's.
+ */
+export function setMapWorldSize(radiusScale: number, levels: ArrayLike<number>): void {
+  const data = MAP.bigMap.levels;
+  const ok =
+    Number.isInteger(radiusScale) &&
+    radiusScale > 1 &&
+    levels.length === 2 * data.length &&
+    Array.from(levels).every((v) => Number.isFinite(v) && v > 0);
+  worldScale = ok ? radiusScale : 1;
+  LEVELS = ok
+    ? data.map((l, i) => ({
+        ...l,
+        cellM: levels[2 * i] ?? l.cellM,
+        spanM: levels[2 * i + 1] ?? l.spanM,
+      }))
+    : data;
+}
 
 /**
  * Where the background builds a level's tiles (`bigMap.levels[].reach`; owner, 2026-11-10): round
@@ -144,11 +233,53 @@ export function levelPxPerM(level: number, w: number, h: number): number {
 }
 
 /**
+ * The big map's zoom stops (BUGS.md #120: the buttons once jumped a level's span a step, 128 m →
+ * 3.6 km → 100 km): spans across the short side (m), closest first. Each level's span is a stop,
+ * and between two levels' spans the stops are spaced geometrically, about `bigMap.zoomRatio` apart.
+ */
+export function zoomStops(
+  levels: readonly Level[] = LEVELS,
+  ratio: number = MAP.bigMap.zoomRatio,
+): number[] {
+  const out: number[] = [];
+  levels.forEach((l, i) => {
+    const next = levels[i + 1];
+    out.push(l.spanM);
+    if (!next) return;
+    const n = Math.max(1, Math.round(Math.log(next.spanM / l.spanM) / Math.log(ratio)));
+    for (let k = 1; k < n; k++) out.push(l.spanM * (next.spanM / l.spanM) ** (k / n));
+  });
+  return out;
+}
+
+/**
+ * The level a view of `spanM` across its short side is drawn with: the closest whose own span
+ * holds it (so a level is never drawn wider than its span, and its tiles' count stays its own).
+ */
+export function levelForSpan(spanM: number, levels: readonly Level[] = LEVELS): number {
+  const i = levels.findIndex((l) => l.spanM >= spanM * (1 - 1e-9));
+  return i < 0 ? levels.length - 1 : i;
+}
+
+/** The zoom stop of level `level`'s own span. */
+export function stopOfLevel(level: number): number {
+  const span = LEVELS[clampLevel(level)]?.spanM ?? 1;
+  const stops = zoomStops();
+  const i = stops.findIndex((s) => Math.abs(s - span) <= span * 1e-9);
+  return i < 0 ? 0 : i;
+}
+
+/**
  * The world disc's radius (m; shared/protocol/constants.json's worldRadius, the widest level's
  * half span): the map's tiles are built anywhere on it, the sea's included, and nowhere off it.
  */
 export function worldRadiusM(): number {
-  return World.worldRadius;
+  return World.worldRadius * worldScale;
+}
+
+/** The island's radius (m; constants.json's islandRadius × the world's size, BIG_MAP.md M2b). */
+export function islandRadiusM(): number {
+  return World.islandRadius * worldScale;
 }
 
 /**
@@ -477,7 +608,7 @@ export class RevealCache {
     const { cellM, reach } = LEVELS[l] ?? { cellM: 1, reach: 'disc' };
     if (reach !== 'island') return this.onWorld(cellM, i, k);
     const span = this.span(cellM);
-    const r = World.islandRadius;
+    const r = islandRadiusM();
     const nx = Math.max(i * span, Math.min(0, (i + 1) * span));
     const nz = Math.max(k * span, Math.min(0, (k + 1) * span));
     return nx * nx + nz * nz <= r * r;
@@ -500,7 +631,7 @@ export class RevealCache {
         for (let i = i0; i <= i1; i++) if (this.onWorld(cellM, i, k)) out.push([cellM, face, i, k]);
       }
     } else {
-      const n = Math.ceil((reach === 'island' ? World.islandRadius : worldRadiusM()) / span);
+      const n = Math.ceil((reach === 'island' ? islandRadiusM() : worldRadiusM()) / span);
       for (let k = -n; k < n; k++) {
         for (let i = -n; i < n; i++) if (this.inReach(l, i, k)) out.push([cellM, face, i, k]);
       }
@@ -901,14 +1032,63 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
   mapPose(): Float64Array;
   takeExplored(): Int32Array;
   mapAllowed(): boolean;
+  /** Off home: the label shown instead of the maps (home's terrain only); "" at home. */
+  mapAway?(): string;
   /** The `mapRevealed` ability (creative): the big map shows everything. */
   mapRevealed(): boolean;
   cpuAdapter(): boolean;
+  /** The joined world's size's radius scale (BIG_MAP.md M2b; 1 today's). */
+  worldRadiusScale?(): number;
+  /** The big map's levels for the world's size, [cellM, spanM, …] (BIG_MAP.md M2b). */
+  bigMapLevels?(): ArrayLike<number>;
   /**
    * The big map's cells tinted by height (`dwell_game::minimap::shade_grid`, the minimap's look
    * when its toggle is on): a `w` × `h` screen-order grid inside a one-cell border; RGBA out.
    */
   shadeMap(colours: Uint32Array, codes: Int32Array, w: number, h: number): Uint8Array;
+  /**
+   * The debug layers (REALISTIC_WORLD.md R6, `mapLayers.ts`): asks for field `field` (an index
+   * into `mapLayerFields`) sampled n × n from face-local (x0, z0), `step` m apart.
+   */
+  requestMapLayer?(
+    field: number,
+    x0: number,
+    z0: number,
+    step: number,
+    n: number,
+    face: number,
+  ): void;
+  /** A requested layer once: its field index and face, then its `LayerGrid::encode` bytes. */
+  takeMapLayer?(): Uint8Array | undefined;
+  /** The generator's layer fields by index (`map_layers.rs` `MapField`). */
+  mapLayerFields?(): string[];
+  /**
+   * The resurrection shrines on face `face` in the grid cells within `cells` of face-local (x, z)'s
+   * (docs/SHRINES.md): [x, z]* face-local m.
+   */
+  mapShrines?(face: number, x: number, z: number, cells: number): Float64Array;
+  /**
+   * The town sites on face `face` in the town grid cells within `cells` of face-local (x, z)'s
+   * (docs/BLUEPRINTS.md §6): [x, z, state (1 being built)]* face-local m.
+   */
+  mapTowns?(face: number, x: number, z: number, cells: number): Float64Array;
+  /**
+   * Map markers (docs/MAP_MARKERS.md): the player's feet, face-local [face, x, y, z, dead, then
+   * while dead the death's face, x, y, z].
+   */
+  markerPose?(): ArrayLike<number>;
+  /** The player's saved markers record the server sent, once. */
+  takeMarkers?(): Uint8Array | undefined;
+  /** The loaded ground's face-local height at (x, z) on `face`; undefined where none is loaded. */
+  markerGround?(face: number, x: number, z: number): number | undefined;
+  /** The portals the player sees now: [face, x, y, z]* face-local (y NaN: not loaded). */
+  seenPortals?(): ArrayLike<number>;
+  /** Whether the server keeps the player's markers (`markers.private`). */
+  markersSynced?(): boolean;
+  /** The player's markers record now, to the server. */
+  setMarkers?(record: Uint8Array): boolean;
+  /** A face-local point in the view: [x, y (−1..1, +y up), depth (≤ 0 behind), distance (m)]. */
+  markerScreen?(face: number, x: number, y: number, z: number): ArrayLike<number>;
 }
 
 /** A nice scale bar: the longest 1, 2 or 5 × 10ⁿ metres no wider than `maxPx` at `pxPerM`. */
@@ -1015,6 +1195,13 @@ export class PadMap {
 export class BigMapState {
   view: BigView | null = null;
   readonly pad = new PadMap();
+  /** The view's zoom stop (`zoomStops`, 0 the closest). */
+  private stop = 0;
+  /**
+   * Centred on the player (opened, or "Center on me", and not dragged since): every zoom keeps the
+   * player in the middle (BUGS.md #121), the wheel's cursor and the whole disc's centring aside.
+   */
+  centred = false;
 
   constructor(
     private readonly pose: () => ArrayLike<number>,
@@ -1025,50 +1212,83 @@ export class BigMapState {
     return this.view !== null;
   }
 
+  /** Stop `stop`'s zoom on the map's size (pixels a metre) and the level it is drawn with. */
+  private zoomOf(stop: number): { pxPerM: number; level: number } {
+    const stops = zoomStops();
+    const span = stops[Math.max(0, Math.min(stops.length - 1, stop))] ?? 1;
+    const [w, h] = this.size();
+    return { pxPerM: Math.max(1, Math.min(w, h)) / span, level: levelForSpan(span) };
+  }
+
   /** Opens it centred on the player at the start level. */
   openAt(): void {
     const [face = 0, x = 0, z = 0] = Array.from(this.pose());
-    const level = clampLevel(MAP.bigMap.startLevel);
-    this.view = { face, cx: x, cz: z, level, pxPerM: levelPxPerM(level, ...this.size()) };
+    this.stop = stopOfLevel(MAP.bigMap.startLevel);
+    this.view = { face, cx: x, cz: z, ...this.zoomOf(this.stop) };
+    this.centred = true;
     this.pad.reset();
   }
 
   close(): void {
     this.view = null;
+    this.centred = false;
   }
 
   /**
-   * `steps` zoom levels in (+) or out (−) about pixels (sx, sy) from the centre, clamped to the
-   * levels; whether the level changed.
+   * `steps` zoom stops in (+) or out (−) about pixels (sx, sy) from the centre (about the player
+   * while centred on them), clamped to the stops; whether the zoom changed.
    */
   zoomStep(steps: number, sx = 0, sy = 0): boolean {
     if (!this.view || steps === 0) return false;
-    const level = clampLevel(this.view.level - Math.sign(steps) * Math.min(Math.abs(steps), 4));
-    if (level === this.view.level) return false;
-    this.view = { ...zoomAt(this.view, levelPxPerM(level, ...this.size()), sx, sy), level };
-    // The widest level shows the whole world disc, fitted to the short side: centred on it, not
-    // on the player.
-    if (level === LEVELS.length - 1) this.view = { ...this.view, cx: 0, cz: 0 };
+    const last = zoomStops().length - 1;
+    const stop = Math.max(
+      0,
+      Math.min(last, this.stop - Math.sign(steps) * Math.min(Math.abs(steps), 4)),
+    );
+    if (stop === this.stop) return false;
+    this.stop = stop;
+    const z = this.zoomOf(stop);
+    if (this.centred) {
+      const [face = 0, x = 0, zz = 0] = Array.from(this.pose());
+      this.view = { ...this.view, face, cx: x, cz: zz, ...z };
+    } else this.view = { ...zoomAt(this.view, z.pxPerM, sx, sy), level: z.level };
+    // The widest stop shows the whole world disc, fitted to the short side: centred on it, not
+    // on the player (zoomed back in while centred, on the player again).
+    if (stop === last) this.view = { ...this.view, cx: 0, cz: 0 };
     return true;
   }
 
   /** Whether zooming in (+1) or out (−1) can go further. */
   canZoom(dir: number): boolean {
     if (!this.view) return false;
-    return dir > 0 ? this.view.level > 0 : this.view.level < LEVELS.length - 1;
+    return dir > 0 ? this.stop > 0 : this.stop < zoomStops().length - 1;
   }
 
-  /** The level's zoom again for the map's size (on a resize). */
+  /** The stop's zoom again for the map's size (on a resize). */
   fit(): void {
-    if (this.view)
-      this.view = { ...this.view, pxPerM: levelPxPerM(this.view.level, ...this.size()) };
+    if (this.view) this.view = { ...this.view, ...this.zoomOf(this.stop) };
   }
 
-  /** Back to the player's place and face, the zoom kept. */
+  /** Panned by a drag of (dx, dy) pixels: no longer centred on the player. */
+  drag(dx: number, dy: number): void {
+    if (!this.view) return;
+    this.view = pan(this.view, dx, dy);
+    this.centred = false;
+  }
+
+  /** Centred on face-local (x, z) of `face`, the zoom kept (the markers list's row). */
+  centerOn(face: number, x: number, z: number): void {
+    if (!this.view) return;
+    this.view = { ...this.view, face, cx: x, cz: z };
+    this.centred = false;
+  }
+
+  /** Back to the player's place and face, the zoom kept, and kept on them through zooms. */
   center(): void {
     if (!this.view) return;
     const [face = 0, x = 0, z = 0] = Array.from(this.pose());
     this.view = { ...this.view, face, cx: x, cz: z };
+    this.centred = true;
   }
 
   /** The scale bar for the view. */
@@ -1091,7 +1311,7 @@ export class BigMapState {
     }
     if (this.zoomStep(s.zoom)) moved = true;
     if (s.panX !== 0 || s.panY !== 0) {
-      this.view = pan(this.view, -s.panX, -s.panY);
+      this.drag(-s.panX, -s.panY);
       moved = true;
     }
     return { closed: false, moved };
@@ -1170,6 +1390,8 @@ export function tilesShowing(
 export class MapUi {
   readonly root: HTMLDivElement;
   private readonly disc: HTMLCanvasElement;
+  /** Off home: the note shown instead of the disc (`mapAway`). */
+  private readonly awayLabel: HTMLElement;
   private readonly image: HTMLCanvasElement;
   private readonly big: HTMLDivElement;
   private readonly panel: HTMLDivElement;
@@ -1203,9 +1425,45 @@ export class MapUi {
   private readonly exploredTiles = new Set<string>();
   private lastBigDraw = 0;
   private bigStale = false;
+  /** The big map's shrine cells: explored ones, sited ones (BUGS.md, the whole view's shrines). */
+  private readonly shrineSites = new ShrineSites();
+  /** The same for the town sites (their own grid, mapTowns.ts). */
+  private readonly townSites = new ShrineSites(TOWN_SPACING);
+  /** The spot the picker is open to place a marker at (the pending pin), if it is. */
+  private pending: { face: number; x: number; z: number } | null = null;
+  /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
+  private layer = -1;
+  private readonly layerButton: HTMLButtonElement;
+  /** The map's filters (the shrines, each marker kind, the player's own; docs/SHRINES.md), their
+   * button and the list it opens. */
+  private readonly filters: MapFilters;
+  private readonly filterButton: HTMLButtonElement;
+  private readonly filterPanel: HTMLDivElement;
+  /** Each face's layer images by `face:name` (null: the world has no such field), and those asked. */
+  private readonly layerImages = new Map<string, HTMLCanvasElement | null>();
+  private readonly layerAsked = new Set<string>();
   /** The disc's last draw (ms), for the bench's cost readout. */
   costMs = 0;
   shading: boolean = MAP.heightShading.default;
+  /** The player's map markers (docs/MAP_MARKERS.md), their picker and their world waypoints. */
+  readonly markers = new MarkerList();
+  private readonly picker: MarkerPicker;
+  private readonly waypoints: HTMLDivElement;
+  private readonly waypointEls = new Map<number, HTMLDivElement>();
+  /** The server's record arrived (or the server keeps none), so the auto markers may be noted. */
+  private markersReady = false;
+  private markersWaitFrom = -1;
+  private wasDead = false;
+  /** When the seen portals were last read (ms). */
+  private portalsAt = -Infinity;
+  /** Markers placed this session over unloaded ground, put back on it when it loads (#153). */
+  private readonly provisional = new Set<number>();
+  /** Whether the last `placeY` read the loaded ground (else the height is provisional). */
+  private placedSettled = true;
+  /** The big map's markers list (docs/MAP_MARKERS.md), its button and its rows. */
+  private readonly listButton: HTMLButtonElement;
+  private readonly listPanel: HTMLDivElement;
+  private readonly listRows: HTMLDivElement;
   /** The big map opened or closed (the shell holds the game's input while it is open). */
   onOpenChange: ((open: boolean) => void) | null = null;
   /** A zoom button or key zoomed the big map (its sound). */
@@ -1220,6 +1478,8 @@ export class MapUi {
     version = '',
   ) {
     this.cpu = client.cpuAdapter();
+    // The world's size (BIG_MAP.md M2b): its disc and its levels, before any tile is asked for.
+    setMapWorldSize(client.worldRadiusScale?.() ?? 1, client.bigMapLevels?.() ?? []);
     this.reveal = new RevealCache(
       MAP.revealed.tileCells,
       MAP.revealed.jobsInFlight,
@@ -1249,6 +1509,9 @@ export class MapUi {
     this.disc = doc.createElement('canvas');
     this.disc.width = this.disc.height = px;
     this.root.append(this.disc);
+    this.awayLabel = doc.createElement('div');
+    this.awayLabel.className = 'map-away-label';
+    this.root.append(this.awayLabel);
     this.image = doc.createElement('canvas');
     this.image.width = this.image.height = px;
     // The big map: a framed panel over the game (the world showing round it), a title bar with
@@ -1266,7 +1529,8 @@ export class MapUi {
     title.textContent = 'Map';
     const hint = doc.createElement('span');
     hint.className = 'map-hint';
-    hint.textContent = 'Drag to move · scroll, pinch or + − to zoom a level · M or Esc to close';
+    hint.textContent =
+      'Drag to move · scroll, pinch or + − to zoom · click to mark, drag a marker to move it · M or Esc to close';
     const close = this.button('map-close', '✕', 'Close map (M or Esc)');
     bar.append(title, hint, close);
     const body = doc.createElement('div');
@@ -1279,7 +1543,48 @@ export class MapUi {
     const centre = this.button('map-center', '◎', 'Center on me');
     centre.append(doc.createElement('span'));
     (centre.lastChild as HTMLSpanElement).textContent = 'Center on me';
-    controls.append(this.zoomIn, this.zoomOut, centre);
+    this.layerButton = this.button('map-layer', '▦', `Map layer (${MAP_LAYERS.key.slice(3)})`);
+    this.layerButton.append(doc.createElement('span'));
+    this.layerButton.hidden = !client.requestMapLayer;
+    this.filters = new MapFilters(browserStorage());
+    this.filterButton = this.button('map-filters', '', 'Map filters');
+    this.filterButton.append(iconSvg(doc, SHRINE_MAP.icon, '#f4ecd8', 18));
+    this.filterButton.setAttribute('aria-expanded', 'false');
+    this.listButton = this.button('map-list', '', 'Markers list');
+    this.listButton.append(iconSvg(doc, 'flag', '#f4ecd8', 18));
+    this.listButton.setAttribute('aria-expanded', 'false');
+    this.listPanel = doc.createElement('div');
+    this.listPanel.className = 'map-markers';
+    this.listPanel.hidden = true;
+    const listTitle = doc.createElement('h3');
+    listTitle.textContent = 'Markers';
+    this.listRows = doc.createElement('div');
+    this.listRows.className = 'map-markers-rows';
+    this.listPanel.append(listTitle, this.listRows);
+    this.filterPanel = doc.createElement('div');
+    this.filterPanel.className = 'map-filters';
+    this.filterPanel.hidden = true;
+    for (const layer of filterLayers(AUTO_MARKERS)) {
+      const row = doc.createElement('label');
+      const box = doc.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.layer = layer.key;
+      box.checked = this.filters.shows(layer.key);
+      box.addEventListener('change', () => {
+        this.setFilter(layer.key, box.checked);
+      });
+      row.append(box, doc.createTextNode(layer.label));
+      this.filterPanel.append(row);
+    }
+    controls.append(
+      this.zoomIn,
+      this.zoomOut,
+      centre,
+      this.layerButton,
+      this.listButton,
+      this.filterButton,
+      this.filterPanel,
+    );
     this.scaleEl = doc.createElement('div');
     this.scaleEl.className = 'map-scale';
     this.scaleLabel = doc.createElement('span');
@@ -1287,7 +1592,29 @@ export class MapUi {
     this.progress = doc.createElement('div');
     this.progress.className = 'map-progress';
     this.progress.hidden = true;
-    body.append(this.bigCanvas, controls, this.scaleEl, this.progress);
+    this.picker = new MarkerPicker(doc);
+    this.picker.onChange = () => {
+      if (this.pending) this.bigStale = true;
+    };
+    body.append(
+      this.bigCanvas,
+      controls,
+      this.scaleEl,
+      this.progress,
+      this.picker.root,
+      this.listPanel,
+    );
+    // The waypoints over the world: a layer under the HUD (hud.json "waypoints").
+    this.waypoints = doc.createElement('div');
+    this.waypoints.id = 'map-waypoints';
+    this.waypoints.setAttribute('aria-hidden', 'true');
+    doc.body.append(this.waypoints);
+    this.markers.onChange = (list) => {
+      this.client.setMarkers?.(encodeMarkers(list));
+      this.drawDisc();
+      if (this.bigOpen) this.drawBig();
+      this.drawList();
+    };
     this.panel.append(bar, body);
     this.big.append(this.panel);
     doc.body.append(this.root, this.big);
@@ -1304,6 +1631,16 @@ export class MapUi {
       this.state.center();
       this.drawBig();
     });
+    this.filterButton.addEventListener('click', () => {
+      this.toggleFilters();
+    });
+    this.listButton.addEventListener('click', () => {
+      this.toggleList();
+    });
+    this.layerButton.addEventListener('click', () => {
+      this.stepLayer();
+    });
+    this.showLayerLabel();
     // A click on the game round the panel closes it too.
     this.big.addEventListener('pointerdown', (e) => {
       if (e.target === this.big) this.setBig(false);
@@ -1355,7 +1692,7 @@ export class MapUi {
     return b;
   }
 
-  /** Steps zoom levels about pixels (sx, sy) from the map's centre, with the zoom's sound. */
+  /** Steps zoom stops about pixels (sx, sy) from the map's centre, with the zoom's sound. */
   private zoomBy(steps: number, sx = 0, sy = 0): void {
     if (this.state.zoomStep(steps, sx, sy)) {
       this.onZoom?.();
@@ -1386,7 +1723,9 @@ export class MapUi {
       this.state.openAt();
       if (this.doc.pointerLockElement) this.doc.exitPointerLock();
       this.drawBig();
+      this.drawList();
     } else {
+      this.picker.close();
       this.state.close();
     }
     this.onOpenChange?.(open);
@@ -1400,17 +1739,258 @@ export class MapUi {
     else if (code === 'KeyC') {
       this.state.center();
       this.drawBig();
-    } else return false;
+    } else if (code === MAP_LAYERS.key && this.client.requestMapLayer) this.stepLayer();
+    else return false;
     return true;
+  }
+
+  /** The debug layer shown (its data name), or null. */
+  get layerName(): string | null {
+    return MAP_LAYERS.layers[this.layer]?.name ?? null;
+  }
+
+  /** Steps to the next debug layer (after the last, none). */
+  /** Opens or closes the markers list (the big map's side panel). */
+  toggleList(): void {
+    this.listPanel.hidden = !this.listPanel.hidden;
+    this.listButton.setAttribute('aria-expanded', String(!this.listPanel.hidden));
+    this.drawList();
+  }
+
+  /**
+   * The markers list's rows (`markerRows`: those the filters show, nearest first, each its icon,
+   * label, distance and the way to it on the map); a row centres the map on its marker, its
+   * buttons edit or delete it.
+   */
+  private drawList(): void {
+    if (this.listPanel.hidden || !this.bigOpen) return;
+    const doc = this.doc;
+    const pose = Array.from(this.client.markerPose?.() ?? []);
+    const [face = 0, x = 0, y = 0, z = 0] = pose;
+    const me = pose.length >= 4 ? { face, x, y, z } : null;
+    const rows = markerRows(this.shownMarkers(), me);
+    this.listRows.replaceChildren();
+    if (rows.length === 0) {
+      const empty = doc.createElement('p');
+      empty.className = 'map-markers-empty';
+      empty.textContent = 'No markers. Click the map to place one.';
+      this.listRows.append(empty);
+      return;
+    }
+    for (const { marker: m, distanceM, angle } of rows) {
+      const row = doc.createElement('div');
+      row.className = 'map-marker-row';
+      row.dataset.id = String(m.id);
+      const go = doc.createElement('button');
+      go.type = 'button';
+      go.className = 'map-marker-go';
+      go.title = 'Show on the map';
+      const label = doc.createElement('span');
+      label.className = 'map-marker-label';
+      label.textContent = m.label;
+      const dist = doc.createElement('span');
+      dist.className = 'map-marker-distance';
+      dist.textContent = distanceM === null ? 'other side' : formatMarkerDistance(distanceM);
+      go.append(iconSvg(doc, m.icon, m.rgb, 20), label, dist);
+      if (angle !== null) {
+        const arrow = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        arrow.setAttribute('viewBox', '0 0 24 24');
+        arrow.setAttribute('width', '16');
+        arrow.setAttribute('height', '16');
+        arrow.setAttribute('class', 'map-marker-way');
+        arrow.setAttribute('role', 'img');
+        arrow.setAttribute('aria-label', directionWord(angle));
+        const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 3 L19 19 L12 15 L5 19 Z');
+        path.setAttribute('fill', '#f4ecd8');
+        path.setAttribute('transform', `rotate(${((angle * 180) / Math.PI).toFixed(1)} 12 12)`);
+        arrow.append(path);
+        go.append(arrow);
+      }
+      go.addEventListener('click', () => {
+        this.state.centerOn(m.face, m.x, m.z);
+        this.drawBig();
+      });
+      const edit = this.button('map-marker-edit', '✎', `Edit ${m.label}`);
+      edit.addEventListener('click', () => {
+        this.editMarker(m);
+      });
+      const del = this.button('map-marker-delete', '✕', `Delete ${m.label}`);
+      del.addEventListener('click', () => {
+        this.markers.remove(m.id);
+      });
+      row.append(go, edit, del);
+      this.listRows.append(row);
+    }
+  }
+
+  /** Opens the picker to edit or delete marker `m`. */
+  private editMarker(m: MapMarker): void {
+    this.picker.openFor(m, (r) => {
+      if (r.kind === 'save') this.markers.edit(m.id, r.look);
+      else if (r.kind === 'delete') this.markers.remove(m.id);
+    });
+  }
+
+  /** Opens or closes the filters' list. */
+  toggleFilters(): void {
+    this.filterPanel.hidden = !this.filterPanel.hidden;
+    this.filterButton.setAttribute('aria-expanded', String(!this.filterPanel.hidden));
+  }
+
+  /** Shows or hides a layer of the maps (`filterLayers`: the shrines, a marker kind, the player's
+   * own), remembered in this browser. */
+  setFilter(key: string, on: boolean): void {
+    this.filters.set(key, on);
+    const box = this.filterPanel.querySelector<HTMLInputElement>(`input[data-layer="${key}"]`);
+    if (box) box.checked = on;
+    this.bigStale = true;
+    this.drawList();
+  }
+
+  /** The markers the filters show. */
+  private shownMarkers(): MapMarker[] {
+    return this.markers.all.filter((m) => this.filters.shows(markerLayer(m)));
+  }
+
+  /**
+   * The shrines the big map shows in view `v` (the filter, the reveal rule), at every zoom, over the
+   * whole view: the cells with explored ground (every one when revealed) sited within a budget a
+   * draw, the rest the next draws (BUGS.md: once a square patch round the view's centre).
+   */
+  shownShrines(v: BigView, w: number, h: number): { x: number; z: number }[] {
+    if (!this.client.mapShrines || !this.filters.shows('shrine')) return [];
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const [bx, bz] = toWorld(v, w / 2, h / 2);
+    const margin = SHRINE_MAP.iconPx / v.pxPerM;
+    const bounds = {
+      x0: Math.min(ax, bx) - margin,
+      z0: Math.min(az, bz) - margin,
+      x1: Math.max(ax, bx) + margin,
+      z1: Math.max(az, bz) + margin,
+    };
+    const revealed = this.client.mapRevealed() || SHRINE_MAP.reveal === 'all';
+    const cells = shrineCellsIn(bounds, worldRadiusM()).filter(
+      ([i, k]) => revealed || this.shrineSites.hasExplored(v.face, i, k),
+    );
+    const sites = this.client.mapShrines.bind(this.client);
+    const t0 = performance.now();
+    const { shrines, pending } = this.shrineSites.gather(
+      v.face,
+      cells,
+      (x, z) => sites(v.face, x, z, 0),
+      () => performance.now() - t0 > SHRINE_MAP.siteMsPerDraw,
+    );
+    if (pending > 0) this.bigStale = true;
+    const cell = MAP.explored.cellM;
+    const explored = (x: number, z: number) =>
+      this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
+    return visibleShrines(shrines, true, explored, this.client.mapRevealed());
+  }
+
+  /**
+   * The town sites the big map shows in view `v` (the "Towns" filter, `towns.map`'s reveal rule),
+   * as the shrines (`shownShrines`): the town grid's cells with explored ground, sited within a
+   * budget a draw.
+   */
+  shownTowns(v: BigView, w: number, h: number): MapTown[] {
+    if (!this.client.mapTowns || !this.filters.shows(TOWN_LAYER)) return [];
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const [bx, bz] = toWorld(v, w / 2, h / 2);
+    const margin = TOWN_MAP.iconPx / v.pxPerM;
+    const bounds = {
+      x0: Math.min(ax, bx) - margin,
+      z0: Math.min(az, bz) - margin,
+      x1: Math.max(ax, bx) + margin,
+      z1: Math.max(az, bz) + margin,
+    };
+    const revealed = this.client.mapRevealed() || TOWN_MAP.reveal === 'all';
+    const cells = shrineCellsIn(bounds, worldRadiusM(), TOWN_SPACING).filter(
+      ([i, k]) => revealed || this.townSites.hasExplored(v.face, i, k),
+    );
+    const sites = this.client.mapTowns.bind(this.client);
+    const t0 = performance.now();
+    const { shrines: towns, pending } = this.townSites.gather(
+      v.face,
+      cells,
+      (x, z) => sites(v.face, x, z, 0),
+      () => performance.now() - t0 > TOWN_MAP.siteMsPerDraw,
+      parseTowns,
+    );
+    if (pending > 0) this.bigStale = true;
+    const cell = MAP.explored.cellM;
+    const explored = (x: number, z: number) =>
+      this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
+    return visibleShrines(towns, true, explored, this.client.mapRevealed(), TOWN_MAP);
+  }
+
+  stepLayer(): void {
+    this.layer = nextLayer(this.layer);
+    this.showLayerLabel();
+    this.drawBig();
+  }
+
+  private showLayerLabel(): void {
+    const def = MAP_LAYERS.layers[this.layer];
+    const v = this.state.view;
+    const none = def && v && this.layerImages.get(`${String(v.face)}:${def.name}`) === null;
+    const label = def ? `${def.label}${none ? ': not in this world' : ''}` : 'Layers';
+    (this.layerButton.lastChild as HTMLSpanElement).textContent = label;
+    this.layerButton.classList.toggle('on', !!def);
+  }
+
+  /** The layer's image for the face, asked for once (null: none yet, or the world has none). */
+  private layerImage(def: MapLayerDef, face: number): HTMLCanvasElement | null {
+    const key = `${String(face)}:${def.name}`;
+    const had = this.layerImages.get(key);
+    if (had !== undefined) return had;
+    const fields = this.client.mapLayerFields?.() ?? [];
+    const field = fields.indexOf(def.field);
+    if (!this.layerAsked.has(key) && field >= 0) {
+      this.layerAsked.add(key);
+      const n = MAP_LAYERS.samples;
+      const { x0, step } = layerSpan(worldRadiusM(), n);
+      this.client.requestMapLayer?.(field, x0, x0, step, n, face);
+    }
+    return null;
+  }
+
+  /** A debug layer arrived: the images of every layer of its field on its face. */
+  private takeLayer(): void {
+    const b = this.client.takeMapLayer?.();
+    if (!b || b.length < 2) return;
+    const fields = this.client.mapLayerFields?.() ?? [];
+    const field = fields[b[0] ?? 0];
+    const face = b[1] ?? 0;
+    const grid = parseLayerGrid(b.subarray(2));
+    const radiusM = worldRadiusM();
+    const disc = grid ? { ...layerSpan(radiusM, grid.n), radiusM } : undefined;
+    for (const def of MAP_LAYERS.layers) {
+      if (def.field !== field) continue;
+      const key = `${String(face)}:${def.name}`;
+      if (!grid) {
+        this.layerImages.set(key, null);
+        continue;
+      }
+      const img = this.doc.createElement('canvas');
+      img.width = img.height = grid.n;
+      img
+        .getContext('2d')
+        ?.putImageData(new ImageData(layerPixels(def, grid, disc), grid.n, grid.n), 0, 0);
+      this.layerImages.set(key, img);
+    }
+    this.showLayerLabel();
+    if (this.bigOpen) this.bigStale = true;
   }
 
   /** The controller while the big map is open (docs/GAMEPAD.md). */
   padFrame(values: ArrayLike<number>, axes: ArrayLike<number>, now: number): void {
     if (!this.bigOpen) return;
-    const level = this.state.view?.level;
+    const zoom = this.state.view?.pxPerM;
     const r = this.state.padFrame(values, axes, now);
-    if (this.state.view && this.state.view.level !== level) this.onZoom?.();
+    if (this.state.view && this.state.view.pxPerM !== zoom) this.onZoom?.();
     if (r.closed) {
+      this.picker.close();
       this.big.hidden = true;
       this.onOpenChange?.(false);
     } else if (r.moved) this.drawBig();
@@ -1419,6 +1999,12 @@ export class MapUi {
   /** An explored cell came or changed: at every level its tiles have explored cells and are stale. */
   private noteCell(key: string): void {
     this.levels.note(key);
+    {
+      const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
+      const e = MAP.explored.cellM;
+      this.shrineSites.noteExplored(face, (i + 0.5) * e, (k + 0.5) * e);
+      this.townSites.noteExplored(face, (i + 0.5) * e, (k + 0.5) * e);
+    }
     const n = this.reveal.tileCells;
     for (const { cellM } of LEVELS) {
       const tiles = this.levels.tilesOf(cellM, key, n);
@@ -1443,13 +2029,19 @@ export class MapUi {
   /** Each frame: the disc when the client drew it again, the dots, the explored cells. */
   frame(now: number): void {
     const allowed = this.client.mapAllowed();
+    // Off home (the moon) the maps, home's terrain, are hidden: a label shows instead.
+    const away = allowed ? (this.client.mapAway?.() ?? '') : '';
     this.root.classList.toggle('map-off', !allowed);
+    this.root.classList.toggle('map-away', away !== '');
+    this.awayLabel.textContent = away;
     this.doc.body.classList.toggle('minimap-on', allowed);
-    if (!allowed) {
+    if (!allowed || away !== '') {
       this.setBig(false);
       return;
     }
     this.fillReveal();
+    this.takeLayer();
+    this.markersFrame(now);
     if (this.bigStale && this.bigOpen && now - this.lastBigDraw >= MAP.revealed.redrawMs) {
       this.drawBig();
     }
@@ -1563,7 +2155,263 @@ export class MapUi {
     for (let n = 0; n + 1 < d.length; n += 2) {
       dot(half + (d[n] ?? 0) * perM, half - (d[n + 1] ?? 0) * perM, MAP.minimap.otherColor);
     }
+    // The markers on the disc (heading up, as the dots), their icons over the ground.
+    const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
+    const iconPx = Math.max(8, Math.round(px * 0.09));
+    for (const { marker: m, right, up } of markersInRange(
+      this.shownMarkers(),
+      { face, x, z, yaw },
+      MAP.minimap.radiusM,
+    )) {
+      drawIcon(ctx, m.icon, m.rgb, half + right * perM, half - up * perM, iconPx);
+    }
+    // The shrines on the disc (it is explored ground, so each one there shows), under the dot.
+    if (this.client.mapShrines && this.filters.shows('shrine')) {
+      const near = parseShrines(this.client.mapShrines(face, x, z, 1)).map((sh) => ({
+        id: 0,
+        icon: SHRINE_MAP.icon,
+        rgb: SHRINE_MAP.color,
+        label: '',
+        face,
+        x: sh.x,
+        y: 0,
+        z: sh.z,
+        auto: 'shrine',
+      }));
+      for (const { right, up } of markersInRange(near, { face, x, z, yaw }, MAP.minimap.radiusM)) {
+        drawIcon(
+          ctx,
+          SHRINE_MAP.icon,
+          SHRINE_MAP.color,
+          half + right * perM,
+          half - up * perM,
+          iconPx,
+        );
+      }
+    }
+    // The town sites on the disc (docs/BLUEPRINTS.md §6), as the shrines.
+    if (this.client.mapTowns && this.filters.shows(TOWN_LAYER)) {
+      const towns = parseTowns(this.client.mapTowns(face, x, z, 1));
+      const near = towns.map((t) => ({
+        id: 0,
+        icon: TOWN_MAP.icon,
+        rgb: townColor(t),
+        label: '',
+        face,
+        x: t.x,
+        y: 0,
+        z: t.z,
+        auto: TOWN_LAYER,
+      }));
+      for (const { marker, right, up } of markersInRange(
+        near,
+        { face, x, z, yaw },
+        MAP.minimap.radiusM,
+      )) {
+        drawIcon(ctx, TOWN_MAP.icon, marker.rgb, half + right * perM, half - up * perM, iconPx);
+      }
+    }
     dot(half, half, MAP.minimap.playerColor);
+  }
+
+  /**
+   * The markers each frame: the server's record once (the auto markers wait for it, or for a server
+   * that keeps none), spawn the first time the player is placed, the last death when they die, and
+   * the world waypoints.
+   */
+  private markersFrame(now: number): void {
+    const got = this.client.takeMarkers?.();
+    if (got) {
+      const list = decodeMarkers(got);
+      // The server's record replaces what this session had; markers placed before it arrived
+      // are kept.
+      if (list) {
+        const before = this.markers.all.filter((m) => m.auto === '');
+        this.markers.load(list);
+        for (const m of before) this.markers.place(m, m);
+      }
+      this.markersReady = true;
+      this.drawDisc();
+    }
+    const pose = Array.from(this.client.markerPose?.() ?? []);
+    if (pose.length < 5) return;
+    if (!this.markersReady) {
+      if (this.client.markersSynced?.()) return;
+      // A server without `markers.private`: wait a moment for the session's capabilities.
+      if (this.markersWaitFrom < 0) this.markersWaitFrom = now;
+      if (now - this.markersWaitFrom < 2000) return;
+      this.markersReady = true;
+    }
+    const [face = 0, x = 0, y = 0, z = 0, dead = 0] = pose;
+    if (!this.markers.hasAuto('spawn') && dead === 0)
+      this.markers.noteAuto('spawn', { face, x, y, z });
+    if (dead !== 0 && !this.wasDead) {
+      const [, , , , , df = 0, dx = 0, dy = 0, dz = 0] = pose;
+      this.markers.noteAuto('death', { face: df, x: dx, y: dy, z: dz });
+    }
+    this.wasDead = dead !== 0;
+    // The portals seen (the `portal` auto kind, BIFACIAL_WORLD.md §12), a few times a second.
+    if (this.client.seenPortals && now - this.portalsAt >= 500) {
+      this.portalsAt = now;
+      for (const at of seenPortalSpots(this.client.seenPortals(), (f, px, pz) =>
+        this.mapGroundY(f, px, pz),
+      ))
+        this.markers.noteAuto('portal', at, at.settled);
+      // Markers placed over unloaded ground (or saved at a wrong height) put back on it once its
+      // column loads (BUGS.md #153).
+      const ground = this.client.markerGround?.bind(this.client);
+      if (ground) {
+        // Only those within the render radius, where a column can be loaded.
+        const reach = World.renderRadiusChunks * CHUNK_SIZE;
+        const near = this.markers.all.filter((m) => Math.hypot(m.x - x, m.z - z) <= reach);
+        for (const [id, gy] of regroundMarkers(near, face, this.provisional, (mx, mz) =>
+          ground(face, mx, mz),
+        )) {
+          this.provisional.delete(id);
+          const m = this.markers.get(id);
+          if (m && Math.abs(m.y - gy) >= 0.01) this.markers.move(id, { ...m, y: gy });
+        }
+      }
+    }
+    this.drawWaypoints(face, x, z);
+  }
+
+  /** The waypoints over the markers' spots on the player's face (none while the big map is open). */
+  private drawWaypoints(face: number, px: number, pz: number): void {
+    const screen = this.client.markerScreen?.bind(this.client);
+    const shown = new Set<number>();
+    const w = this.doc.defaultView?.innerWidth ?? 1000;
+    const h = this.doc.defaultView?.innerHeight ?? 1000;
+    if (screen && !this.bigOpen) {
+      for (const m of this.shownMarkers()) {
+        if (m.face !== face) continue;
+        // The marker's spot, a little over the ground it was placed on.
+        const [nx = 0, ny = 0, depth = 0, dist = 0] = Array.from(
+          screen(m.face, m.x, m.y + 1.5, m.z),
+        );
+        if (dist > MARKER_WORLD.showM) continue;
+        // One at or under the camera (standing on it) shows none, not one pinned to an edge.
+        if (!waypointShown(dist, Math.hypot(m.x - px, m.z - pz))) continue;
+        shown.add(m.id);
+        const el = this.waypoint(m);
+        const at = waypointOnScreen(nx, ny, depth, w, h);
+        el.style.transform = `translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+        el.style.opacity = waypointAlpha(dist).toFixed(2);
+        el.classList.toggle('edge', !at.onScreen);
+        const d = el.lastChild as HTMLSpanElement;
+        d.textContent = formatMarkerDistance(dist);
+      }
+    }
+    for (const [id, el] of this.waypointEls) {
+      if (!shown.has(id)) {
+        el.remove();
+        this.waypointEls.delete(id);
+      }
+    }
+  }
+
+  /** A marker's waypoint element (made again when its look changed). */
+  private waypoint(m: MapMarker): HTMLDivElement {
+    const key = `${m.icon}|${m.rgb}|${m.label}`;
+    const had = this.waypointEls.get(m.id);
+    if (had?.dataset.key === key) return had;
+    had?.remove();
+    const el = this.doc.createElement('div');
+    el.className = 'waypoint';
+    el.dataset.key = key;
+    const label = this.doc.createElement('span');
+    label.className = 'waypoint-label';
+    label.textContent = m.label;
+    const dist = this.doc.createElement('span');
+    dist.className = 'waypoint-distance';
+    el.append(iconSvg(this.doc, m.icon, m.rgb, MARKER_WORLD.sizePx), label, dist);
+    this.waypoints.append(el);
+    this.waypointEls.set(m.id, el);
+    return el;
+  }
+
+  /** A marker's spot on the open big map (pixels from its top left), or null off its face. */
+  private markerPx(m: MapMarker): [number, number] | null {
+    const v = this.state.view;
+    if (!v || m.face !== v.face) return null;
+    const c = this.bigCanvas;
+    const [sx, sy] = toScreen(v, m.x, m.z);
+    return [(c.width || 800) / 2 + sx, (c.height || 600) / 2 + sy];
+  }
+
+  /**
+   * The ground's face-local height for a marker placed on the map at (x, z) on `face`
+   * (`markerGroundY`): the loaded column's top, else the map's height for its cell (the finest
+   * level's, else the explored cell's), else the player's when on that face (else 0).
+   */
+  private placeY(face: number, x: number, z: number): number {
+    const [pf = 0, , py = 0] = Array.from(this.client.markerPose?.() ?? []);
+    const loaded = this.client.markerGround?.(face, x, z);
+    this.placedSettled = typeof loaded === 'number' && Number.isFinite(loaded);
+    return markerGroundY(loaded, this.mapCode(face, x, z), pf === face ? py : 0);
+  }
+
+  /** The map's height for (x, z) on `face` alone (an auto marker's guess), null where unknown. */
+  private mapGroundY(face: number, x: number, z: number): number | null {
+    return markerGroundY(undefined, this.mapCode(face, x, z), null);
+  }
+
+  /** The map's height code for (x, z) on `face`: the finest level's, else the explored cell's. */
+  private mapCode(face: number, x: number, z: number): number {
+    const revealed = this.client.mapRevealed();
+    let code = NO_HEIGHT;
+    for (const cellM of [levelCellM(0), MAP.explored.cellM]) {
+      const c = this.levels.at(
+        this.reveal,
+        revealed,
+        cellM,
+        face,
+        Math.floor(x / cellM),
+        Math.floor(z / cellM),
+      );
+      if (c && c[1] !== NO_HEIGHT) {
+        code = c[1];
+        break;
+      }
+    }
+    return code;
+  }
+
+  /** A marker placed or moved at `placeY`'s height: provisional while its column wasn't loaded. */
+  private notePlaced(id: number | null | undefined): void {
+    if (id === null || id === undefined) return;
+    if (this.placedSettled) this.provisional.delete(id);
+    else this.provisional.add(id);
+  }
+
+  /** The pending pin: the spot the picker is open to place a marker at, in the draft's look. */
+  private pendingPin(): PendingPin | null {
+    if (!this.pending || !this.picker.open) return null;
+    const { icon, rgb } = this.picker.look;
+    return { ...this.pending, icon, rgb };
+  }
+
+  /** A click on the open map: edit the marker under it, else place one there. */
+  private mapClick(px: number, py: number): void {
+    const v = this.state.view;
+    if (!v) return;
+    const hit = pickMarker(this.shownMarkers(), (m) => this.markerPx(m), px, py);
+    if (hit) {
+      this.editMarker(hit);
+      return;
+    }
+    if (this.markers.full) return;
+    const c = this.bigCanvas;
+    const [x, z] = toWorld(v, px - (c.width || 800) / 2, py - (c.height || 600) / 2);
+    const face = v.face;
+    this.pending = { face, x, z };
+    this.picker.openFor(undefined, (r) => {
+      this.pending = null;
+      this.bigStale = true;
+      if (r.kind === 'save')
+        this.notePlaced(this.markers.place(r.look, { face, x, y: this.placeY(face, x, z), z }));
+    });
+    this.drawBig();
   }
 
   /** Tile (ti, tk) of a level's tinted image (null: nothing in it to draw), made again when stale. */
@@ -1630,7 +2478,102 @@ export class MapUi {
       const [y0, y1] = [Math.round(h / 2 + Math.min(ay, by)), Math.round(h / 2 + Math.max(ay, by))];
       ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
     }
+    // The debug layer over the ground (REALISTIC_WORLD.md R6): its grid over the face's disc,
+    // mirrored as the face's view is (`toScreen`).
+    const def = MAP_LAYERS.layers[this.layer];
+    const layerImg = def ? this.layerImage(def, v.face) : null;
+    if (layerImg) {
+      const { x0, step } = layerSpan(worldRadiusM(), layerImg.width);
+      const x1 = x0 + step * layerImg.width;
+      const [ax, ay] = toScreen(v, x0, x0);
+      const [bx, by] = toScreen(v, x1, x1);
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(w / 2 + ax, h / 2 + ay);
+      ctx.scale(bx > ax ? 1 : -1, by > ay ? 1 : -1);
+      ctx.drawImage(layerImg, 0, 0, Math.abs(bx - ax), Math.abs(by - ay));
+      ctx.restore();
+    }
+    // The shrines (docs/SHRINES.md): their vector icon, glowing, under the markers; icons nearer
+    // than `clusterPx` merged into one with a count (BUGS.md: no overlapping block zoomed out).
+    const shrinePx = this.shownShrines(v, w, h).map((sh) => {
+      const [sx, sy] = toScreen(v, sh.x, sh.z);
+      return { x: w / 2 + sx, y: h / 2 + sy };
+    });
+    for (const c of shrineIcons(v.pxPerM, shrinePx)) {
+      ctx.save();
+      ctx.shadowColor = SHRINE_MAP.color;
+      ctx.shadowBlur = SHRINE_MAP.iconPx / 2;
+      drawIcon(ctx, SHRINE_MAP.icon, SHRINE_MAP.color, c.x, c.y, SHRINE_MAP.iconPx);
+      ctx.restore();
+      if (c.count > 1) {
+        ctx.save();
+        ctx.font = `bold ${String(Math.round(SHRINE_MAP.iconPx * 0.6))}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = MAP.bigMap.fogColor;
+        const tx = c.x + SHRINE_MAP.iconPx * 0.35;
+        const ty = c.y + SHRINE_MAP.iconPx * 0.2;
+        ctx.strokeText(String(c.count), tx, ty);
+        ctx.fillStyle = SHRINE_MAP.color;
+        ctx.fillText(String(c.count), tx, ty);
+        ctx.restore();
+      }
+    }
+    // The town sites (docs/BLUEPRINTS.md §6): the town icon, a town being built in its own colour,
+    // each kind merged into clusters with counts as the shrines.
+    const towns = this.shownTowns(v, w, h);
+    for (const building of [false, true]) {
+      const color = townColor({ building });
+      const px = towns
+        .filter((t) => t.building === building)
+        .map((t) => {
+          const [sx, sy] = toScreen(v, t.x, t.z);
+          return { x: w / 2 + sx, y: h / 2 + sy };
+        });
+      for (const c of clusterShrines(px, TOWN_MAP.clusterPx)) {
+        ctx.save();
+        ctx.shadowColor = color;
+        ctx.shadowBlur = TOWN_MAP.iconPx / 2;
+        drawIcon(ctx, TOWN_MAP.icon, color, c.x, c.y, TOWN_MAP.iconPx);
+        ctx.restore();
+        if (c.count > 1) {
+          ctx.save();
+          ctx.font = `bold ${String(Math.round(TOWN_MAP.iconPx * 0.6))}px sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = MAP.bigMap.fogColor;
+          const tx = c.x + TOWN_MAP.iconPx * 0.35;
+          const ty = c.y + TOWN_MAP.iconPx * 0.2;
+          ctx.strokeText(String(c.count), tx, ty);
+          ctx.fillStyle = color;
+          ctx.fillText(String(c.count), tx, ty);
+          ctx.restore();
+        }
+      }
+    }
     this.updateControls();
+    // The markers on this face (those the filters show), and the pending one the picker is open
+    // to place, ringed, at the clicked spot until it is saved or cancelled (BUGS.md).
+    for (const pin of bigMapPins(this.shownMarkers(), v.face, this.pendingPin())) {
+      const [sx, sy] = toScreen(v, pin.x, pin.z);
+      const [px, py] = [w / 2 + sx, h / 2 + sy];
+      if (pin.pending) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(px, py, 15, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fill();
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+        ctx.restore();
+      }
+      drawIcon(ctx, pin.icon, pin.rgb, px, py, 22);
+    }
     const [face = 0, x = 0, z = 0, yaw = 0] = this.client.mapPose();
     if (face !== v.face) return;
     const [px, py] = toScreen(v, x, z);
@@ -1679,8 +2622,26 @@ export class MapUi {
       const steps = this.wheel.add(-px);
       this.zoomBy(steps, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
     });
+    // A press on a marker drags it; a press that doesn't move is a click (place or edit).
+    let press: { id: number; x: number; y: number; moved: boolean; marker: number | null } | null =
+      null;
+    const px = (e: PointerEvent): [number, number] => {
+      const r = c.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
     c.addEventListener('pointerdown', (e) => {
       const [x, y] = local(e);
+      const [ax, ay] = px(e);
+      press =
+        down.size === 0
+          ? {
+              id: e.pointerId,
+              x: ax,
+              y: ay,
+              moved: false,
+              marker: pickMarker(this.shownMarkers(), (m) => this.markerPx(m), ax, ay)?.id ?? null,
+            }
+          : null;
       down.set(e.pointerId, { x, y });
       c.setPointerCapture(e.pointerId);
       c.classList.add('dragging');
@@ -1691,18 +2652,35 @@ export class MapUi {
       const v = this.state.view;
       if (!was || !v) return;
       const [x, y] = local(e);
+      if (press?.id === e.pointerId) {
+        const [ax, ay] = px(e);
+        if (Math.hypot(ax - press.x, ay - press.y) > 4) press.moved = true;
+        if (press.moved && press.marker !== null) {
+          // Dragging a marker moves it (drawn as it goes, saved once on release).
+          const m = this.markers.get(press.marker);
+          const r = c.getBoundingClientRect();
+          if (m) {
+            const [wx, wz] = toWorld(v, ax - r.width / 2, ay - r.height / 2);
+            Object.assign(m, { x: wx, z: wz });
+          }
+          down.set(e.pointerId, { x, y });
+          this.drawBig();
+          return;
+        }
+      }
       if (down.size >= 2) {
         const other = [...down.entries()].find(([id]) => id !== e.pointerId)?.[1];
         if (other) {
           const before = Math.hypot(was.x - other.x, was.y - other.y);
           const after = Math.hypot(x - other.x, y - other.y);
           const [mx, my] = [(x + other.x) / 2, (y + other.y) / 2];
-          this.state.view = pan(v, (x - was.x) / 2, (y - was.y) / 2);
-          // A pinch steps a level each `pinchStep` of spread or squeeze.
+          // Centred on the player, a pinch zooms about them (BUGS.md #121); else its midpoint pans.
+          if (!this.state.centred) this.state.view = pan(v, (x - was.x) / 2, (y - was.y) / 2);
+          // A pinch steps a zoom stop each `pinchStep` of spread or squeeze.
           if (before > 4) this.zoomBy(this.pinch.add(Math.log(after / before)), mx, my);
         }
-      } else {
-        this.state.view = pan(v, x - was.x, y - was.y);
+      } else if (x !== was.x || y !== was.y) {
+        this.state.drag(x - was.x, y - was.y);
       }
       down.set(e.pointerId, { x, y });
       this.drawBig();
@@ -1711,7 +2689,20 @@ export class MapUi {
       down.delete(e.pointerId);
       if (down.size === 0) c.classList.remove('dragging');
     };
-    c.addEventListener('pointerup', up);
-    c.addEventListener('pointercancel', up);
+    c.addEventListener('pointerup', (e) => {
+      const p = press;
+      press = null;
+      up(e);
+      if (p?.id !== e.pointerId) return;
+      const m = p.marker === null ? undefined : this.markers.get(p.marker);
+      if (p.moved && m) {
+        this.markers.move(m.id, { ...m, y: this.placeY(m.face, m.x, m.z) });
+        this.notePlaced(m.id);
+      } else if (!p.moved) this.mapClick(p.x, p.y);
+    });
+    c.addEventListener('pointercancel', (e) => {
+      press = null;
+      up(e);
+    });
   }
 }

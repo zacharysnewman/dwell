@@ -15,7 +15,8 @@
 //!   with their own projection (the data's FOV, a 2 cm near plane), so they never clip into
 //!   terrain and keep their size under the speed FOV.
 //! - **Your own body** (§5.1): in first person, the full body from the neck down in the scene
-//!   passes (`BodyDraw::first_person`), its own mesh (`dwell_characters::own`: no head, neck or
+//!   passes (`BodyDraw::first_person`). Since 0.54 the player model's (render/skinned.rs,
+//!   `SkinnedOwn`, §11.12); with `?fparms=rigid` (`rigid_arms`) the rigid one: its own mesh (`dwell_characters::own`: no head, neck or
 //!   arms), moved back from the eye each frame (`own_frame`) so nothing comes near the camera, and
 //!   its fragments within `own_discard_m` of the eye discarded as a safety net. Its shadow is the
 //!   whole body's, cast separately (`cast_only`).
@@ -83,6 +84,21 @@ pub enum Held {
     },
 }
 
+impl Held {
+    /// Whether this is a weapon in hand (a tool of kind `Weapon`, shared/tools, by the characters
+    /// item its hand shows): defeat plants it (CHARACTERS.md §11.13, `kneel_sword`).
+    pub fn is_weapon(self) -> bool {
+        let hold = match self {
+            Held::Tool(h) | Held::Model { hold: h, .. } => h,
+            _ => return false,
+        };
+        dwell_protocol::chopping::TOOLS.iter().any(|t| {
+            t.kind == dwell_protocol::chopping::ToolKind::Weapon
+                && (t.held == Some(hold) || t.held_vertical == Some(hold))
+        })
+    }
+}
+
 /// The hold a model look's tool is held in when no tool names one (a pickaxe, a shovel): the axe's
 /// level hold, a one-handed tool held toward its foot.
 pub const MODEL_HOLD: &str = "tool";
@@ -108,7 +124,9 @@ pub fn held_item(item: &'static str, hold: Option<&'static str>) -> Held {
 pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static str> {
     match shape {
         dwell_protocol::inventory::LookShape::Rod => Some("rod"),
-        dwell_protocol::inventory::LookShape::Lump => Some("lump"),
+        // A shard is held as a lump is: in the fist, its own tile and tint.
+        dwell_protocol::inventory::LookShape::Lump
+        | dwell_protocol::inventory::LookShape::Shard => Some("lump"),
         dwell_protocol::inventory::LookShape::Cluster => Some("cluster"),
         dwell_protocol::inventory::LookShape::Model => None,
     }
@@ -215,8 +233,6 @@ pub struct BodyDraw {
     pub yaw: f64,
     /// The face it stands on: upside down on face B.
     pub face: FaceFrame,
-    /// Lies on its back (the death pose).
-    pub dead: bool,
     /// The look's name (unknown names draw the default look).
     pub look: &'static str,
     pub pose: Pose,
@@ -294,10 +310,10 @@ pub struct CharacterStats {
 pub struct CharacterRenderer {
     character: &'static Character,
     look: &'static str,
-    pipeline: wgpu::RenderPipeline,
-    outline_pipeline: wgpu::RenderPipeline,
+    pipeline: crate::render::pipeline::Lazy,
+    outline_pipeline: crate::render::pipeline::Lazy,
     /// The bodies into the shadow maps (depth only, from the light).
-    shadow_pipeline: wgpu::RenderPipeline,
+    shadow_pipeline: crate::render::pipeline::Lazy,
     layout: wgpu::BindGroupLayout,
     materials: wgpu::Buffer,
     tiles: wgpu::TextureView,
@@ -322,6 +338,9 @@ pub struct CharacterRenderer {
     /// This frame's creatures and their light (ADR 0073), set by the game.
     pub creatures: Vec<(crate::creatures::CreatureView, [f32; 2])>,
     pub stats: CharacterStats,
+    /// Your first-person arms and your own body drawn from the rigid parts, not the player model
+    /// (`?fparms=rigid`, a dev switch for comparison; docs/CHARACTERS.md §11.10, §11.12).
+    pub rigid_arms: bool,
 }
 
 /// The characters' WGSL, after the shared lighting (`shaders::lighting_source`).
@@ -418,7 +437,7 @@ fn key_light(frag_y: f32, l: TerrainLight) -> Key {
     let d = frame.day;
     var k: Key;
     k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
-    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l);
+    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l) + body_bounce(frag_y, l);
     return k;
 }
 
@@ -660,15 +679,14 @@ fn rows(a: &Affine) -> [f32; 12] {
 /// A body's frame in eye-relative world space: turned to its yaw, upside down on face B (a half
 /// turn about its forward axis, so it stays a proper rotation), lying on its back when dead.
 pub fn body_frame(d: &BodyDraw, eye: V3) -> Affine {
-    place_frame(d.feet, d.yaw, d.face, d.dead, eye)
+    place_frame(d.feet, d.yaw, d.face, eye)
 }
 
 /// A held item on a skinned body (CHARACTERS.md §11.5): what is needed to pose it once the skinned
 /// hand's frame is known.
 struct HeldOnSkin {
     held: Held,
-    /// The rigid rig's bones (model space) without and with the item's turns.
-    rest: [Affine; MAX_BONES],
+    /// The rigid rig's bones (model space) with the item's turns.
     posed: [Affine; MAX_BONES],
     /// The body's frame (relative to the eye).
     frame: Affine,
@@ -680,47 +698,165 @@ struct HeldOnSkin {
     cast_only: bool,
 }
 
-/// A rigid frame's inverse.
-fn inverse(a: &Affine) -> Affine {
-    let m = a.m;
-    let r: [[f32; 3]; 3] = std::array::from_fn(|c| std::array::from_fn(|k| m[k][c]));
-    let inv = Affine { m: r, t: [0.0; 3] };
-    let t = inv.rotate(a.t);
-    Affine {
-        m: r,
-        t: t.map(|v| -v),
-    }
-}
-
 /// The rigid rig's bones (relative to the eye) for an item held in a skinned hand: the body's own
-/// rigid pose, with the hand bone (`hand_bone`, whose frame the items are authored in) moved onto
-/// the skinned hand (`hand`, [`super::skinned::hand_frame`]) and turned by the item's own turns
-/// of that bone (an axe's tilt, data `pose`).
+/// rigid pose, with the hand bone (`hand_bone`, whose frame the items are authored in) on the
+/// skinned hand (`hand`, [`super::skinned::hand_frame`]), which the retarget already turned by the
+/// item's own turns (an axe's tilt, data `pose`).
 fn on_skinned_hand(h: &HeldOnSkin, hand_bone: Option<usize>, hand: &Affine) -> [Affine; MAX_BONES] {
     let mut bones = h.posed.map(|b| h.frame.then(&b));
     if let Some(b) = hand_bone.filter(|&b| b < MAX_BONES) {
-        let turn = inverse(&h.rest[b]).then(&h.posed[b]);
-        bones[b] = hand.then(&turn);
+        // The skinned body is posed from the pose with the item's turns on, so its hand already
+        // carries them: none on top (they were applied twice before 0.54, the axe 50° off).
+        bones[b] = *hand;
     }
     bones
 }
 
+/// A creature's skinned draw and what its hand shows (docs/CHARACTERS.md §11.11): an NPC in its
+/// colours (its kind's ramps for its variant by part, [`dwell_models::part_remap`]), its fist closed
+/// round its held item (its kind's `held`, in the item's tool's level hold); an animal as modelled,
+/// holding nothing.
+pub fn creature_draw(
+    character: &Character,
+    c: &crate::creatures::CreatureView,
+    light: [f32; 2],
+    now_s: f64,
+) -> (super::skinned::SkinnedDraw, Held) {
+    let npc = c.npc.as_ref();
+    let held = crate::bodies::with_tool(Held::Empty, npc.and_then(|n| n.held).map(|h| (h, false)));
+    // An NPC is posed as a player is (§11.9): the rig's clip for its role, its held item's hold
+    // on top, so the sword sits in the hand as in a player's; each NPC at its own phase.
+    let rig_pose = npc.map(|_| {
+        let item = item_shown(character, held).and_then(|n| character.item(n));
+        // A defeated NPC's kneel and stand play once from their start (§11.13).
+        let t = if dwell_characters::animator::is_defeat_role(c.role) {
+            c.pose_s
+        } else {
+            now_s + f64::from(c.id % 97) * 0.37
+        };
+        match npc.and_then(|n| n.guard).and_then(|g| character.clip(g)) {
+            // A raised block over its pose (WORK_QUEUE item 35), as a player's is, the item's
+            // turns on top.
+            Some(g) => {
+                let mut pose = npc_rig_pose(character, c.role, t, None);
+                let raised = dwell_characters::anim::sample(TABLES.clip(g), 0.0);
+                dwell_characters::anim::layer(&mut pose, &raised, 1.0);
+                with_item(&pose, item)
+            }
+            None => npc_rig_pose(character, c.role, t, item),
+        }
+    });
+    let draw = super::skinned::SkinnedDraw {
+        model: c.model,
+        seed: c.id,
+        feet: c.feet,
+        yaw: c.yaw,
+        face: c.face,
+        role: c.role,
+        light,
+        cast_only: false,
+        rig_pose,
+        grip: item_shown(character, held),
+        remap: npc.map_or(super::skinned::NO_REMAP, |n| {
+            let parts = dwell_models::find(dwell_models::MODELS, c.model).and_then(|m| m.parts);
+            super::skinned::remap_floats(&dwell_models::part_remap(parts.as_ref(), &n.colours))
+        }),
+        idle_pose: c.pose,
+        tint: c.tint,
+    };
+    (draw, held)
+}
+
+/// A carried load's pieces on an NPC's back (B5, docs/BLUEPRINTS.md §9): for each piece (its
+/// block, a client state, in load order) the bones that put the characters item `look.item` (a
+/// cube on its socket's bone) at its place in the stack ([`dwell_world::blueprint::CarryLook::stack`]):
+/// from the model's carry joint `joint` (relative to the eye), turned with the body (`body`, its
+/// place frame: on face B upside down), scaled to the piece's side. Empty: nothing carried, or
+/// the character has no such item.
+pub fn carry_bones(
+    character: &Character,
+    look: &dwell_world::blueprint::CarryLook,
+    carry: &[u16],
+    joint: [f32; 3],
+    body: &Affine,
+) -> Vec<([Affine; MAX_BONES], u16)> {
+    let Some(item) = character.item(look.item) else {
+        return Vec::new();
+    };
+    let (bone, at) = item.socket;
+    if carry.is_empty() || bone >= MAX_BONES {
+        return Vec::new();
+    }
+    // The item's cube is authored this big (characters.json `carried`).
+    let side = item.parts.first().map_or(0.2, |p| p.size[0]).max(1e-3);
+    let names: Vec<&str> = carry
+        .iter()
+        .map(|&b| dwell_blocks::block_of(b).name)
+        .collect();
+    let turn = Affine {
+        m: body.m,
+        t: [0.0; 3],
+    };
+    let base = Affine::translation(joint).then(&turn);
+    look.stack(&names)
+        .into_iter()
+        .zip(carry)
+        .map(|((c, piece), &b)| {
+            let k = piece as f32 / side;
+            let scale = Affine {
+                m: [[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]],
+                t: [0.0; 3],
+            };
+            let frame = base
+                .then(&Affine::translation(c.map(|v| v as f32)))
+                .then(&scale)
+                .then(&Affine::translation(at.map(|v| -v)));
+            let mut bones = [Affine::default(); MAX_BONES];
+            bones[bone] = frame;
+            (bones, b)
+        })
+        .collect()
+}
+
+/// An NPC's rig pose at `t_s` seconds: the characters rig's clip for `role` (its `idle` for a
+/// role the rig has no clip for: an NPC's `look` and `sit`), looped (a one-shot held at its end),
+/// with `item`'s turns on.
+pub fn npc_rig_pose(
+    character: &Character,
+    role: &str,
+    t_s: f64,
+    item: Option<&'static dwell_characters::Item>,
+) -> Pose {
+    let pose = character
+        .clip(role)
+        .or_else(|| character.clip("idle"))
+        .map(|i| {
+            let clip = TABLES.clip(i);
+            // A one-shot (a defeated NPC's kneel) holds its end; a loop wraps.
+            let t = if !clip.looping {
+                t_s
+            } else if clip.duration > 0.0 {
+                t_s.rem_euclid(f64::from(clip.duration))
+            } else {
+                0.0
+            };
+            dwell_characters::anim::sample(clip, t as f32)
+        })
+        .unwrap_or_default();
+    with_item(&pose, item)
+}
+
 /// [`body_frame`] from its parts (the skinned bodies' too, render/skinned.rs).
-pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, dead: bool, eye: V3) -> Affine {
+pub fn place_frame(feet: V3, yaw: f64, face: FaceFrame, eye: V3) -> Affine {
     let (s, c) = (yaw.to_radians().sin() as f32, yaw.to_radians().cos() as f32);
     // The face's up (FaceFrame): on face B the body's up and left both turn over.
     let up = face.up();
     let f = up[1] as f32;
-    let place = Affine {
+    // Upright always: humans never die, a defeated one kneels by its clip (CHARACTERS.md §11.13);
+    // before 0.61 a dead body was laid on its back here.
+    Affine {
         m: [[f * c, 0.0, -f * s], [0.0, f, 0.0], [s, 0.0, c]],
         t: std::array::from_fn(|k| (feet[k] - eye[k]) as f32),
-    };
-    if dead {
-        place
-            .then(&Affine::translation([0.0, 0.18, 0.0]))
-            .then(&Affine::euler([-90.0, 0.0, 0.0]))
-    } else {
-        place
     }
 }
 
@@ -729,8 +865,8 @@ pub fn own_discard_m(body: &FirstPersonBody) -> f32 {
     super::NEAR_PLANE as f32 + body.near
 }
 
-/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` moved back along its
-/// own −z by `own::shift`, from the eye's place and pitch in the body's frame (the eye is the origin
+/// Your own body's frame in first person (CHARACTERS.md §5.1): its `body_frame` leaned back from its
+/// soles and kept clear of the eye by `own::place`, from the eye's place and pitch in the body's frame (the eye is the origin
 /// of eye-relative space). `bones`: the pose's bone transforms in the body's frame; `forward`: the
 /// camera's look. In the body's frame, so the same on both faces.
 pub fn own_frame(
@@ -742,15 +878,20 @@ pub fn own_frame(
     bones: &[Affine; MAX_BONES],
 ) -> Affine {
     let frame = body_frame(d, eye);
+    let (eye_local, pitch) = eye_in(&frame, forward);
+    frame.then(&own::place(body, mesh, bones, eye_local, pitch, d.role).0)
+}
+
+/// The eye (the origin of eye-relative space) in a body's `frame`, and the pitch (degrees, up
+/// positive) of the look `forward` there: what your own body is kept clear of (`own::shift`).
+pub fn eye_in(frame: &Affine, forward: V3) -> ([f32; 3], f32) {
     // The frame is a rotation and a translation: its inverse is the transpose.
     let back = |v: [f32; 3]| -> [f32; 3] {
         std::array::from_fn(|k| (0..3).map(|j| frame.m[k][j] * v[j]).sum())
     };
     let eye_local = back(frame.t.map(|t| -t));
     let look = back(forward.map(|c| c as f32));
-    let pitch = look[1].clamp(-1.0, 1.0).asin().to_degrees();
-    let s = own::shift(body, mesh, bones, eye_local, pitch);
-    frame.then(&Affine::translation([0.0, 0.0, -s]))
+    (eye_local, look[1].clamp(-1.0, 1.0).asin().to_degrees())
 }
 
 /// The arms' frame: view space (+x left, +y up, +z ahead) to eye-relative world space.
@@ -793,6 +934,17 @@ pub fn block_uniforms(block: u16) -> [[f32; 4]; 4] {
 }
 
 impl CharacterRenderer {
+    /// Its pipelines and its skinned models', for the renderer's warm-up (pipeline.rs).
+    pub(crate) fn pipelines(&self) -> Vec<&crate::render::pipeline::Lazy> {
+        let mut v = vec![
+            &self.pipeline,
+            &self.outline_pipeline,
+            &self.shadow_pipeline,
+        ];
+        v.extend(self.skinned.pipelines());
+        v
+    }
+
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -873,11 +1025,6 @@ impl CharacterRenderer {
                 shader_location: 3,
             },
         ];
-        let buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: mesh::VERTEX_BYTES as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &attributes,
-        })];
         let targets = [
             Some(wgpu::ColorTargetState {
                 format: HDR,
@@ -890,35 +1037,51 @@ impl CharacterRenderer {
                 write_mask: wgpu::ColorWrites::ALL,
             }),
         ];
-        let make = |vs: &str, fs: &str, cull: wgpu::Face| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(fs),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &module,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: &buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &module,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: &targets,
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(cull),
-                    ..Default::default()
-                },
-                depth_stencil: Some(depth_state()),
-                multisample: wgpu::MultisampleState {
-                    count: samples,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
+        let make = |vs: &'static str, fs: &'static str, cull: wgpu::Face| {
+            let (device, module, pipeline_layout, targets) = (
+                device.clone(),
+                module.clone(),
+                pipeline_layout.clone(),
+                targets.clone(),
+            );
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: mesh::VERTEX_BYTES as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(fs),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some(vs),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &module,
+                            entry_point: Some(fs),
+                            compilation_options: Default::default(),
+                            targets: &targets,
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: Some(cull),
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(depth_state()),
+                        multisample: wgpu::MultisampleState {
+                            count: samples,
+                            ..Default::default()
+                        },
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
             })
         };
         let pipeline = make("character_vs", "character_fs", wgpu::Face::Back);
@@ -927,27 +1090,43 @@ impl CharacterRenderer {
             bind_group_layouts: &[Some(shadow_frame_layout), Some(&layout)],
             immediate_size: 0,
         });
-        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("character shadows"),
-            layout: Some(&shadow_layout),
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("character_vs"),
-                compilation_options: Default::default(),
-                buffers: &buffers,
-            },
-            fragment: None,
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(super::shadows::caster_depth(&dwell_look::shadows::SHADOWS)),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let shadow_pipeline = {
+            let (device, module, shadow_layout) =
+                (device.clone(), module.clone(), shadow_layout.clone());
+            crate::render::pipeline::Lazy::new(move || {
+                let buffers = [Some(wgpu::VertexBufferLayout {
+                    array_stride: mesh::VERTEX_BYTES as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })];
+                crate::render::pipeline::create(
+                    &device,
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some("character shadows"),
+                        layout: Some(&shadow_layout),
+                        vertex: wgpu::VertexState {
+                            module: &module,
+                            entry_point: Some("character_vs"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        fragment: None,
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(super::shadows::caster_depth(
+                            &dwell_look::shadows::SHADOWS,
+                        )),
+                        multisample: Default::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )
+            })
+        };
         let outline_pipeline = make(
             "character_outline_vs",
             "character_outline_fs",
@@ -1003,6 +1182,7 @@ impl CharacterRenderer {
             others_lights: 0,
             arms_light: None,
             stats: CharacterStats::default(),
+            rigid_arms: false,
         }
     }
 
@@ -1106,6 +1286,7 @@ impl CharacterRenderer {
         };
         let mut keys = Vec::new();
         let mut skinned = Vec::new();
+        let mut skinned_own = None;
         let mut held_items = Vec::new();
         for d in bodies {
             let dist = (0..3)
@@ -1143,6 +1324,34 @@ impl CharacterRenderer {
             // The held item's turns on top of the clips (a block carried on an upturned palm).
             let held_item = item_name(d.held).and_then(|n| self.character.item(n));
             let posed = bone_transforms(self.character, &with_item(&d.pose, held_item));
+            // Your own body from the player model (§11.12): the skinned body less its head and
+            // arms, posed as your shadow is, kept clear of the eye as the rigid one was; it holds
+            // nothing (the arms view does). `?fparms=rigid` keeps the rigid body.
+            if let Some(b) = own.filter(|_| !self.rigid_arms && self.skinned.has_own_body()) {
+                let bones = posed.map(|p| body_frame(d, eye).then(&p));
+                own_light = own_light.or_else(|| light_at(d.held, &bones, d.seed));
+                skinned_own = Some(super::skinned::SkinnedOwn {
+                    draw: super::skinned::SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: u32::MAX - 1,
+                        feet: d.feet,
+                        yaw: d.yaw,
+                        face: d.face,
+                        role: d.role,
+                        light: d.light,
+                        cast_only: false,
+                        rig_pose: Some(with_item(&d.pose, held_item)),
+                        grip: None,
+                        remap: super::skinned::NO_REMAP,
+                        idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
+                    },
+                    forward: basis.forward(),
+                    body: b,
+                    passes: mask,
+                });
+                continue;
+            }
             let frame = match own {
                 Some(b) => {
                     let character = self.character;
@@ -1164,16 +1373,18 @@ impl CharacterRenderer {
                     feet: d.feet,
                     yaw: d.yaw,
                     face: d.face,
-                    dead: d.dead,
                     role: d.role,
                     light: d.light,
                     cast_only: d.cast_only,
                     // The same pose the rigid body and the arms play, its held item's turns on.
                     rig_pose: Some(with_item(&d.pose, held_item)),
+                    grip: item_name(d.held),
+                    remap: super::skinned::NO_REMAP,
+                    idle_pose: None,
+                    tint: crate::render::skinned::NO_TINT,
                 });
                 held_items.push(HeldOnSkin {
                     held: d.held,
-                    rest: bone_transforms(self.character, &d.pose),
                     posed,
                     frame,
                     seed: d.seed,
@@ -1223,36 +1434,81 @@ impl CharacterRenderer {
             });
         }
         // The creatures (ADR 0073): skinned bodies of their own models, after the players (whose
-        // held items take the first hands).
+        // held items take the first hands). An NPC is drawn in its colours, its held item on its
+        // hand after (docs/CHARACTERS.md §11.11).
+        let mut held_at: Vec<usize> = (0..held_items.len()).collect();
+        let now_s = crate::render_clock::now_ms() / 1000.0;
+        let mut carried = Vec::new();
         for (c, light) in &self.creatures {
-            skinned.push(super::skinned::SkinnedDraw {
-                model: c.model,
-                seed: c.id,
-                feet: c.feet,
-                yaw: c.yaw,
-                face: c.face,
-                dead: false,
-                role: c.role,
-                light: *light,
-                cast_only: false,
-                rig_pose: None,
-            });
+            let (draw, held) = creature_draw(self.character, c, *light, now_s);
+            if !c.carry.is_empty() {
+                carried.push((skinned.len(), c, *light));
+            }
+            if held != Held::Empty {
+                let dist = (0..3)
+                    .map(|k| (c.feet[k] - eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                let mut mask = 0u8;
+                for (i, (near, far)) in passes.iter().enumerate() {
+                    if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                        mask |= 1 << i;
+                    }
+                }
+                let held_item = item_name(held).and_then(|n| self.character.item(n));
+                let pose = draw
+                    .rig_pose
+                    .unwrap_or_else(|| with_item(&Pose::default(), held_item));
+                held_at.push(skinned.len());
+                held_items.push(HeldOnSkin {
+                    held,
+                    posed: bone_transforms(self.character, &pose),
+                    frame: place_frame(c.feet, c.yaw, c.face, eye),
+                    seed: c.id,
+                    light: *light,
+                    far: dist > OUTLINE_M,
+                    passes: mask,
+                    casts: dist - 3.0 <= cast_m,
+                    cast_only: false,
+                });
+            }
+            skinned.push(draw);
         }
-        let hands = self.skinned.prepare(
+        // Your arms from the player model (§11.10): the first-person clips' pose retargeted onto its
+        // arm, the held item on its hand after.
+        let arms_frame_now = arms.map(|_| arms_frame(basis));
+        let skinned_arms = match (arms, arms_frame_now) {
+            (Some(a), Some(frame)) if !self.rigid_arms => {
+                let held_item =
+                    item_shown(self.character, a.held).and_then(|n| self.character.item(n));
+                Some(super::skinned::SkinnedArms {
+                    frame,
+                    pose: with_item(&a.pose, held_item),
+                    grip: item_shown(self.character, a.held),
+                    light: a.light,
+                })
+            }
+            _ => None,
+        };
+        let (hands, arms_hand) = self.skinned.prepare(
             device,
             queue,
             eye,
             passes,
             cast_m,
             &skinned,
+            skinned_own.as_ref(),
+            skinned_arms.as_ref(),
             crate::render_clock::now_ms() / 1000.0,
         );
         let hand_bone = self
             .skinned
             .hand()
             .and_then(|h| self.character.bone(h.bone));
-        for (h, hand) in held_items.iter().zip(hands) {
-            let Some(hand) = hand else { continue };
+        for (h, &at) in held_items.iter().zip(&held_at) {
+            let Some(hand) = hands.get(at).copied().flatten() else {
+                continue;
+            };
             let bones = on_skinned_hand(h, hand_bone, &hand);
             if h.cast_only {
                 own_light = own_light.or_else(|| light_at(h.held, &bones, h.seed));
@@ -1282,11 +1538,74 @@ impl CharacterRenderer {
                 cast_only: h.cast_only,
             });
         }
-        if let Some(a) = arms {
-            let frame = arms_frame(basis);
+        // The NPCs' carried loads (B5): a cube of each piece's block, stacked on the back from
+        // the skinned body's carry joint, turned with the body.
+        let look = dwell_world::blueprint::SHIPPED.carry_look;
+        for (at, c, light) in carried {
+            let Some(joint) = self.skinned.carry_points().get(at).copied().flatten() else {
+                continue;
+            };
+            let dist = (0..3)
+                .map(|k| (c.feet[k] - eye[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let mut mask = 0u8;
+            for (i, (near, far)) in passes.iter().enumerate() {
+                if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                    mask |= 1 << i;
+                }
+            }
+            let casts = dist - 3.0 <= cast_m;
+            if mask == 0 && !casts {
+                continue;
+            }
+            let far = dist > OUTLINE_M;
+            let body = place_frame(c.feet, c.yaw, c.face, eye);
+            for (bones, block) in carry_bones(self.character, &look, &c.carry, joint, &body) {
+                let key = MeshKey {
+                    name: look.item,
+                    item: true,
+                    view: View::Body,
+                    far,
+                    own: false,
+                    model: None,
+                };
+                let instance = push(&bones, Held::Block(block), !far, false, 0.0, light);
+                keys.push(key);
+                self.draws.push(Draw {
+                    instance,
+                    body: None,
+                    item: Some(key),
+                    outline: outline_for(far),
+                    passes: mask,
+                    casts,
+                    cast_only: false,
+                });
+            }
+        }
+        if let (Some(a), Some(frame)) = (arms, arms_frame_now) {
             let held_item = item_shown(self.character, a.held).and_then(|n| self.character.item(n));
-            let bones = arm_transforms(self.character, &with_item(&a.pose, held_item))
-                .map(|b| frame.then(&b));
+            let posed = arm_transforms(self.character, &with_item(&a.pose, held_item));
+            let skinned_arms = self.skinned.has_arms();
+            // From the player model: the held item on its hand (as on another player's body).
+            let bones = match arms_hand.filter(|_| skinned_arms) {
+                Some(hand) => on_skinned_hand(
+                    &HeldOnSkin {
+                        held: a.held,
+                        posed,
+                        frame,
+                        seed: 0,
+                        light: a.light,
+                        far: false,
+                        passes: 0,
+                        casts: false,
+                        cast_only: false,
+                    },
+                    hand_bone,
+                    &hand,
+                ),
+                None => posed.map(|b| frame.then(&b)),
+            };
             let instance = push(&bones, a.held, true, true, 0.0, a.light);
             if let Some(l) = light_at(a.held, &bones, 0) {
                 own_light = Some(l);
@@ -1308,11 +1627,14 @@ impl CharacterRenderer {
                 own: false,
                 model: a.held.model(),
             });
-            keys.push(body);
+            if !skinned_arms {
+                keys.push(body);
+            }
             keys.extend(item);
             self.arms = Some(Draw {
                 instance,
-                body: Some(body),
+                // The rigid arms' parts only when the player model draws none.
+                body: (!skinned_arms).then_some(body),
                 item,
                 outline: outline_for(false),
                 passes: 0,
@@ -1446,6 +1768,7 @@ impl CharacterRenderer {
 
     /// Draws the arms (group 0 bound to the arms' frame, over a cleared depth buffer).
     pub fn draw_arms(&self, pass: &mut wgpu::RenderPass<'_>, calls: &mut u32, tris: &mut u64) {
+        self.skinned.draw_arms(pass, calls, tris);
         if let Some(d) = &self.arms {
             self.record(pass, d, calls, tris);
         }
@@ -1596,12 +1919,11 @@ mod tests {
             let ch = dwell_characters::player();
             let b = ch.bone("hand_r").unwrap();
             let pose = Pose::default();
-            let frame = place_frame(face.point([1.0, 2.0, 3.0]), 45.0, face, false, [0.0; 3]);
+            let frame = place_frame(face.point([1.0, 2.0, 3.0]), 45.0, face, [0.0; 3]);
             let hand = Affine::translation([5.0, 6.0, 7.0]).then(&Affine::euler([10.0, 20.0, 30.0]));
             let axe = ch.item("stone_axe").expect("the axe is data");
             let held = |h: Held, item: Option<&dwell_characters::Item>| HeldOnSkin {
                 held: h,
-                rest: bone_transforms(ch, &pose),
                 posed: bone_transforms(ch, &with_item(&pose, item)),
                 frame,
                 seed: 3,
@@ -1619,14 +1941,12 @@ mod tests {
                     assert!((bones[b].m[k][r] - hand.m[k][r]).abs() < 1e-5);
                 }
             }
-            // The axe's tilt of the hand on top of the skinned hand.
+            // The axe: the skinned hand already carries its tilt (the body is retargeted from
+            // the pose with it on), so exactly the skinned hand again.
             let h = held(Held::Tool("stone_axe"), Some(axe));
             let bones = on_skinned_hand(&h, Some(b), &hand);
-            let turn = inverse(&h.rest[b]).then(&h.posed[b]);
-            let want = hand.then(&turn);
-            assert!((0..3).all(|k| (bones[b].t[k] - want.t[k]).abs() < 1e-5));
-            assert!((0..3).all(|k| (bones[b].m[k][0] - want.m[k][0]).abs() < 1e-5));
-            assert!(turn.m[0][0] < 0.99, "the axe turns the hand: {turn:?}");
+            assert!((0..3).all(|k| (bones[b].t[k] - hand.t[k]).abs() < 1e-5));
+            assert!((0..3).all(|k| (bones[b].m[k][0] - hand.m[k][0]).abs() < 1e-5));
             // Another bone keeps the body's frame.
             let head = ch.bone("head").unwrap();
             let body = frame.then(&h.posed[head]);
@@ -1681,6 +2001,139 @@ mod tests {
             depth_state().depth_compare,
             Some(wgpu::CompareFunction::GreaterEqual)
         );
+    }
+
+    dwell_world::both_faces! {
+        fn another_players_item_is_turned_once_on_the_skinned_hand(face: FaceFrame) {
+            // The skinned body is retargeted from the pose with the item's turns on (the axe's
+            // tilt of the hand and forearm), so its hand already carries them: the item drawn on it
+            // is turned as on the rigid body, not twice (the Peasant's hand.R and the rig's hand
+            // bone agree within 10°, the_retargeted_hand_follows_the_rigs_hand_in_the_world).
+            use crate::render::skinned::{SkinnedDraw, body_matrix, hand_frame, model_pose};
+            let ch = dwell_characters::player();
+            let (data, model) = dwell_models::player();
+            let b = ch.bone("hand_r").unwrap();
+            let feet = face.point([3.0, 6.0, 1.0]);
+            for (name, held) in [
+                ("stone_axe", Held::Tool("stone_axe")),
+                ("tool", Held::Tool("stone_pickaxe")),
+            ] {
+                let item = ch.item(name).expect("an item");
+                for clip in ["biped_idle", "biped_walk"] {
+                    let c = (0..)
+                        .map(|i| dwell_characters::TABLES.clip(i))
+                        .find(|c| c.name == clip)
+                        .unwrap();
+                    let pose = dwell_characters::anim::sample(c, c.duration * 0.3);
+                    let posed = with_item(&pose, Some(item));
+                    let d = SkinnedDraw {
+                        model: dwell_models::PLAYER,
+                        seed: 1,
+                        feet,
+                        yaw: 30.0,
+                        face,
+                        role: "idle",
+                        light: [1.0, 0.0],
+                        cast_only: false,
+                        rig_pose: Some(posed),
+                        grip: Some(name),
+                        remap: crate::render::skinned::NO_REMAP,
+                        idle_pose: None,
+                        tint: crate::render::skinned::NO_TINT,
+                    };
+                    let place = body_matrix(&d, data, [0.0; 3]);
+                    let p = dwell_models::anim::Player::new(data, model, "idle");
+                    let g = dwell_models::anim::globals(
+                        model,
+                        &model_pose(data, model, &p, d.rig_pose.as_ref(), d.grip),
+                    );
+                    let hand = hand_frame(data, model, &g, &place).unwrap();
+                    let frame = place_frame(feet, 30.0, face, [0.0; 3]);
+                    let h = HeldOnSkin {
+                        held,
+                        posed: bone_transforms(ch, &posed),
+                        frame,
+                        seed: 1,
+                        light: [1.0, 0.0],
+                        far: false,
+                        passes: 1,
+                        casts: true,
+                        cast_only: false,
+                    };
+                    let drawn = on_skinned_hand(&h, Some(b), &hand)[b];
+                    let rigid = frame.then(&h.posed[b]);
+                    let turn = (0..3)
+                        .map(|c| {
+                            let dot: f32 = (0..3).map(|r| drawn.m[c][r] * rigid.m[c][r]).sum();
+                            dot.clamp(-1.0, 1.0).acos().to_degrees()
+                        })
+                        .fold(0.0, f32::max);
+                    assert!(turn < 12.0, "{name} in {clip}: the item is {turn:.1}° off the rig's hand");
+                }
+            }
+        }
+    }
+
+    dwell_world::both_faces! {
+        fn an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist(face: FaceFrame) {
+            // WORK_QUEUE items 35 and 38: a villager's colours are its kind's ramps for its
+            // variant seed (the same seed, the same remap rows), its held sword is the `sword`
+            // prop in the sword's level hold, the fist closed on it, on the Peasant's hand.R.
+            use crate::creatures::{CreatureView, NpcLook};
+            use crate::render::skinned::{NO_REMAP, body_matrix, hand_frame, model_pose};
+            let ch = dwell_characters::player();
+            let npc = |variant: u32| NpcLook::of(&dwell_protocol::NpcNet {
+                id: 7,
+                kind: "dwell:villager".into(),
+                pose: 0,
+                variant,
+            });
+            let view = |npc: Option<NpcLook>| CreatureView {
+                id: 7,
+                model: "peasant",
+                feet: face.point([3.0, 6.0, 1.0]),
+                yaw: 30.0,
+                face,
+                role: "idle",
+                npc,
+                pose: None,
+                pose_s: 0.0,
+                tint: [0.0; 4],
+                carry: Vec::new(),
+            };
+            let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0);
+            assert_eq!(held, Held::Model { hold: "sword", model: "sword" });
+            assert_eq!(a.grip, Some("sword"));
+            assert_eq!(ch.item("sword").map(|i| i.name), Some("sword"));
+            // Deterministic: the same variant draws the same rows, every time.
+            assert_eq!(creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0).0.remap, a.remap);
+            assert_ne!(a.remap, NO_REMAP, "variant 99 changes a colour");
+            // The rows are the kind's colours for that variant: each pair the ramps' bases.
+            let parts = dwell_models::find(dwell_models::MODELS, "peasant").unwrap().parts;
+            let pairs = dwell_models::part_remap(parts.as_ref(), &npc(99).colours);
+            assert_eq!(a.remap, crate::render::skinned::remap_floats(&pairs));
+            // Some other variant draws differently (the seed picks per part).
+            assert!((0..32).any(|v| creature_draw(ch, &view(Some(npc(v))), [1.0, 0.0], 0.0).0.remap != a.remap));
+            // An animal (or an NPC from an older server): as modelled, empty-handed.
+            let (plain, none) = creature_draw(ch, &view(None), [1.0, 0.0], 0.0);
+            assert_eq!((plain.remap, none, plain.grip), (NO_REMAP, Held::Empty, None));
+            // The sword sits on the Peasant's hand: its hand frame is at the body's side, at
+            // hand height, where the held item is drawn.
+            let (data, model) = dwell_models::model("peasant").unwrap();
+            let place = body_matrix(&a, data, [0.0; 3]);
+            let p = dwell_models::anim::Player::new(data, model, "idle");
+            assert!(a.rig_pose.is_some(), "an NPC is posed from the rig's clips");
+            assert!(plain.rig_pose.is_none(), "an animal plays its own clips");
+            let g = dwell_models::anim::globals(
+                model,
+                &model_pose(data, model, &p, a.rig_pose.as_ref(), a.grip),
+            );
+            let hand = hand_frame(data, model, &g, &place).expect("the villager's hand");
+            let rel: [f64; 3] = std::array::from_fn(|k| f64::from(hand.t[k]) - a.feet[k]);
+            let up = face.y(rel[1]) - face.y(0.0);
+            assert!((0.5..1.3).contains(&up.abs()), "the hand is {up:.2} m up the body");
+            assert!(rel[0].hypot(rel[2]) < 0.6, "the hand is by the body: {rel:?}");
+        }
     }
 
     fn torch() -> Held {
@@ -1915,11 +2368,14 @@ mod tests {
                     ));
                 }
             }
-            for (hold, clip) in [
-                (None, "fp_break"),
-                (Some("stone_axe"), "fp_chop_level"),
-                (Some("stone_axe_vertical"), "fp_chop_vertical"),
-            ] {
+            // Its own break swing (owner, 2026-11-14: the head onto the crosshair at contact) and
+            // the axe's one swing.
+            let own =
+                crate::bodies::swing_role(dwell_characters::animator::Swing::Break, Some(t.item));
+            let own = dwell_characters::player()
+                .arms_clip(own)
+                .map_or("fp_break", |i| TABLES.clip(i).name);
+            for (hold, clip) in [(None, own), (Some("stone_axe"), "fp_chop_level")] {
                 let c = TABLES.clips.iter().find(|c| c.name == clip).expect(clip);
                 let near = (0..=40)
                     .map(|i| {
@@ -2011,7 +2467,6 @@ mod tests {
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
                 face,
-                dead: false,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
                 held: torch(),
@@ -2042,7 +2497,6 @@ mod tests {
                 feet: face.point([10.0, 5.0, 0.0]),
                 yaw: 90.0,
                 face,
-                dead: false,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Pose::REST,
                 held: Held::Empty,
@@ -2204,7 +2658,8 @@ mod tests {
             }
         }
 
-        /// The poses swept: each base role's clip at six phases, and the swings on the idle and walk
+        /// The poses swept: each base role's clip (but the defeat's, drawn only in third person)
+        /// at six phases, and the swings on the idle and walk
         /// (named `role phase` and `role+swing phase`), and whether the eye is the crouch's.
         fn poses() -> Vec<(String, bool, Pose)> {
             let ch = dwell_characters::player();
@@ -2213,6 +2668,11 @@ mod tests {
             for &(role, c) in ch.clips {
                 let clip = TABLES.clip(c);
                 if clip.layer != dwell_characters::Layer::Base {
+                    continue;
+                }
+                // The defeat's kneel and stand (§11.13, 0.60.7) are never your own body in first
+                // person: defeated, the view is third person over the body (`set_own_body(None)`).
+                if dwell_characters::animator::is_defeat_role(role) {
                     continue;
                 }
                 for k in 0..6 {
@@ -2233,120 +2693,350 @@ mod tests {
             out
         }
 
+        /// A body as drawn in one view: its vertices relative to the eye, its triangles, and
+        /// each vertex's part of the leg (`FOOT`, `SHIN`, else 0).
+        struct Drawn {
+            name: String,
+            world: Vec<[f32; 3]>,
+            indices: Vec<u32>,
+            leg: Vec<u8>,
+        }
+        const FOOT: u8 = 1;
+        const SHIN: u8 = 2;
+
+        /// The sweep (CHARACTERS.md §5.1): every pose of [`poses`], the eye at its height, a step
+        /// low on the ground and, crouched, still at the standing eye, every pitch from −90° to
+        /// 90° in 15° steps; `draw` gives the body as drawn for a view. No triangle within the
+        /// near bar of the eye, the body over at most `fill` of a 16:9 screen at the base FOV
+        /// and 1.25× it, the feet in view looking down (−75° and below) and the legs while
+        /// sliding (`slide_pitch` and below).
+        fn sweep(
+            face: FaceFrame,
+            slide_pitch: f64,
+            draw: &dyn Fn(&BodyDraw, V3, &crate::render::camera::Basis) -> Vec<Drawn>,
+        ) {
+            let ch = dwell_characters::player();
+            let body = ch
+                .first_person
+                .and_then(|f| f.body)
+                .expect("the player draws its body");
+            let cfg = dwell_physics::config::PlayerControllerConfig::default();
+            let lag = f64::from(cfg.max_step_lift());
+            let bar = own_discard_m(&body);
+            let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
+            let mut worst_near = f32::MAX;
+            let mut worst_fill: (f32, String) = (0.0, String::new());
+            let mut over: Vec<String> = Vec::new();
+            let poses = poses();
+            for (name, crouched, pose) in &poses {
+                let eye_h = f64::from(if *crouched {
+                    cfg.body.crouch_eye_height
+                } else {
+                    cfg.body.eye_height
+                });
+                // The eye lags a step below its height on the ground (the step smoothing),
+                // and crouched it eases down from the standing eye (the crouch smoothing).
+                let role = name.split([' ', '+']).next().unwrap_or("");
+                let grounded = matches!(
+                    role,
+                    "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land"
+                );
+                let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
+                let drops: &[f64] = match (grounded, *crouched) {
+                    (true, true) => &[0.0, lag, rise],
+                    (true, false) => &[0.0, lag],
+                    _ => &[0.0],
+                };
+                for &drop in drops {
+                    for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
+                        let yaw = 30.0;
+                        let feet = face.point([5.5, 10.0, 3.5]);
+                        let eye = face.point([5.5, 10.0 + eye_h - drop, 3.5]);
+                        let basis = crate::render::camera::aim(yaw, pitch, face, 0.0);
+                        let d = BodyDraw {
+                            feet,
+                            yaw,
+                            face,
+                            look: dwell_characters::DEFAULT_LOOK,
+                            pose: *pose,
+                            held: Held::Empty,
+                            cast_only: false,
+                            first_person: true,
+                            light: [1.0, 0.0],
+                            seed: 0,
+                            // The pose's role: a swimming body stands on nothing (`own::stands`).
+                            role: ch
+                                .clips
+                                .iter()
+                                .map(|&(r, _)| r)
+                                .find(|&r| r == role)
+                                .unwrap_or("idle"),
+                        };
+                        let r = |v: V3| v.map(|c| c as f32);
+                        let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
+                        for m in draw(&d, eye, &basis) {
+                            let at =
+                                format!("{name}, {}, pitch {pitch}, eye {drop:.2} m lower", m.name);
+                            let mut cells = [false; COLS * ROWS];
+                            for t in m.indices.chunks(3) {
+                                let [a, b, c] = [t[0], t[1], t[2]].map(|i| m.world[i as usize]);
+                                let dist = distance(a, b, c);
+                                worst_near = worst_near.min(dist);
+                                assert!(
+                                    dist >= bar,
+                                    "{at}: a triangle {dist:.3} m from the eye (the bar {bar:.3} m)"
+                                );
+                                let view =
+                                    [a, b, c].map(|v| [dot(v, right), dot(v, up), dot(v, fwd)]);
+                                for fov in [base_fov, base_fov * 1.25] {
+                                    let f = 1.0 / (fov.to_radians() as f32 / 2.0).tan();
+                                    raster(view, crate::render::NEAR_PLANE as f32, f, &mut cells);
+                                }
+                            }
+                            let fill =
+                                cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
+                            // The feet are in view looking down standing or walking, and the
+                            // legs sliding (the owner's ask: "particularly when sliding").
+                            let wants = drop == 0.0
+                                && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
+                                    || (role == "slide" && pitch <= slide_pitch));
+                            if wants {
+                                let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
+                                let used: std::collections::HashSet<u32> =
+                                    m.indices.iter().copied().collect();
+                                let seen = used.iter().any(|&i| {
+                                    let (v, leg) = (m.world[i as usize], m.leg[i as usize]);
+                                    let (x, y, z) = (dot(v, right), dot(v, up), dot(v, fwd));
+                                    (leg == FOOT || (role == "slide" && leg == SHIN))
+                                        && z > 0.1
+                                        && (x / z * f / ASPECT).abs() < 1.0
+                                        && (y / z * f).abs() < 1.0
+                                });
+                                assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
+                            }
+                            if fill > worst_fill.0 {
+                                worst_fill = (fill, at.clone());
+                            }
+                            if fill > body.fill {
+                                over.push(format!("{at}: {:.0}%", fill * 100.0));
+                            }
+                        }
+                    }
+                }
+            }
+            println!(
+                "{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}",
+                poses.len(),
+                worst_fill.0 * 100.0,
+                worst_fill.1
+            );
+            assert!(
+                over.is_empty(),
+                "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
+                body.fill * 100.0,
+                over.len(),
+                over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
+            );
+        }
+
         dwell_world::both_faces! {
+            /// The rigid body (`?fparms=rigid`).
             fn your_body_never_comes_near_the_camera_or_fills_the_view(face: FaceFrame) {
                 let ch = dwell_characters::player();
                 let body = ch.first_person.and_then(|f| f.body).expect("the player draws its body");
-                let cfg = dwell_physics::config::PlayerControllerConfig::default();
-                let lag = f64::from(cfg.max_step_lift());
-                let bar = own_discard_m(&body);
                 let meshes: Vec<(&str, Mesh)> = ch
                     .looks
                     .iter()
                     .map(|l| (l.name, own::build(l.parts, &body)))
                     .collect();
-                let base_fov = crate::render::camera::vertical_fov(f64::from(ASPECT));
-                let mut worst_near = f32::MAX;
-                let mut worst_fill: (f32, String) = (0.0, String::new());
-                let mut over: Vec<String> = Vec::new();
-                let poses = poses();
-                for (name, crouched, pose) in &poses {
-                    let eye_h = f64::from(if *crouched {
-                        cfg.body.crouch_eye_height
-                    } else {
-                        cfg.body.eye_height
-                    });
-                    let posed = bone_transforms(ch, pose);
-                    // The eye lags a step below its height on the ground (the step smoothing),
-                    // and crouched it eases down from the standing eye (the crouch smoothing).
-                    let role = name.split([' ', '+']).next().unwrap_or("");
-                    let grounded = matches!(role, "idle" | "walk" | "sprint" | "crouch" | "crouch_walk" | "slide" | "land");
-                    let rise = f64::from(cfg.body.crouch_eye_height - cfg.body.eye_height);
-                    let drops: &[f64] = match (grounded, *crouched) {
-                        (true, true) => &[0.0, lag, rise],
-                        (true, false) => &[0.0, lag],
-                        _ => &[0.0],
+                sweep(face, -15.0, &|d, eye, basis| {
+                    let posed = bone_transforms(ch, &d.pose);
+                    meshes
+                        .iter()
+                        .map(|(look, m)| {
+                            let frame = own_frame(d, eye, basis.forward(), &body, m, &posed);
+                            let bones = posed.map(|b| frame.then(&b));
+                            let leg = |b: u8| {
+                                let n = ch.bones[usize::from(b)].name;
+                                if n.starts_with("foot") { FOOT } else if n.starts_with("shin") { SHIN } else { 0 }
+                            };
+                            Drawn {
+                                name: (*look).to_string(),
+                                world: m.positions.iter().zip(&m.bones).map(|(p, &b)| bones[usize::from(b)].apply(*p)).collect(),
+                                indices: m.indices.clone(),
+                                leg: m.bones.iter().map(|&b| leg(b)).collect(),
+                            }
+                        })
+                        .collect()
+                });
+            }
+        }
+
+        dwell_world::both_faces! {
+            /// Your own body from the player model (§11.12), at every model detail level.
+            fn your_skinned_body_never_comes_near_the_camera_or_fills_the_view(face: FaceFrame) {
+                let ch = dwell_characters::player();
+                let body = ch.first_person.and_then(|f| f.body).expect("the player draws its body");
+                let (data, model) = dwell_models::player();
+                let joint = |bone: &str| data.retarget.unwrap().bones.iter().find(|b| b.bone == bone).unwrap().joint;
+                let (feet_j, shins_j) = ([joint("foot_l"), joint("foot_r")], [joint("shin_l"), joint("shin_r")]);
+                // Per detail level: its index, triangles, vertices and each vertex's part of the leg.
+                type Level = (usize, Vec<u32>, Vec<u32>, Vec<u8>);
+                let levels: Vec<Level> = (0..model.level_count())
+                    .map(|level| {
+                        let (tris, verts) = crate::render::skinned::own_body_mesh(data, model, level).unwrap();
+                        let m = model.level(level);
+                        let share = |v: usize, js: &[usize]| -> f32 {
+                            (0..4).filter(|&k| js.contains(&usize::from(m.joints[v][k]))).map(|k| m.weights[v][k]).sum()
+                        };
+                        let leg = (0..m.positions.len())
+                            .map(|v| if share(v, &feet_j) >= 0.5 { FOOT } else if share(v, &shins_j) >= 0.5 { SHIN } else { 0 })
+                            .collect();
+                        (level, tris, verts, leg)
+                    })
+                    .collect();
+                // The Peasant's legs are shorter than the rig's: sliding, its feet reach less far
+                // ahead, and come into view from 30° down (the rigid legs' from 15°).
+                sweep(face, -30.0, &|d, eye, basis| {
+                    let own = crate::render::skinned::SkinnedOwn {
+                        draw: own_skinned_draw(d),
+                        forward: basis.forward(),
+                        body,
+                        passes: 1,
                     };
-                    for &drop in drops {
-                        for pitch in (-6..=6).map(|k| f64::from(k) * 15.0) {
-                            let yaw = 30.0;
+                    levels
+                        .iter()
+                        .map(|(level, tris, verts, leg)| {
+                            let (joints, _) = crate::render::skinned::own_joints(data, model, *level, verts, &own, eye).unwrap();
+                            let pts = dwell_models::first_person::skin_points(model, *level, &joints, verts);
+                            let mut world = vec![[0.0f32; 3]; model.level(*level).positions.len()];
+                            for (&v, p) in verts.iter().zip(pts) {
+                                world[v as usize] = p;
+                            }
+                            Drawn { name: format!("Peasant level {level}"), world, indices: tris.clone(), leg: leg.clone() }
+                        })
+                        .collect()
+                });
+            }
+        }
+
+        /// The skinned own body's draw for a rigid one (as `prepare` builds it).
+        fn own_skinned_draw(d: &BodyDraw) -> crate::render::skinned::SkinnedDraw {
+            crate::render::skinned::SkinnedDraw {
+                model: dwell_models::PLAYER,
+                seed: u32::MAX - 1,
+                feet: d.feet,
+                yaw: d.yaw,
+                face: d.face,
+                role: d.role,
+                light: d.light,
+                cast_only: false,
+                rig_pose: Some(d.pose),
+                grip: None,
+                remap: crate::render::skinned::NO_REMAP,
+                idle_pose: None,
+                tint: crate::render::skinned::NO_TINT,
+            }
+        }
+
+        dwell_world::both_faces! {
+            /// Your skinned body's feet are on the ground under the eye, the rig's eye height
+            /// below it, walking, crouched and sliding, as the rigid body's are: looking level and
+            /// down.
+            fn your_skinned_bodys_feet_are_the_rigs_height_below_the_eye(face: FaceFrame) {
+                let ch = dwell_characters::player();
+                let body = ch.first_person.and_then(|f| f.body).unwrap();
+                let cfg = dwell_physics::config::PlayerControllerConfig::default();
+                let (data, model) = dwell_models::player();
+                let level = dwell_models::DETAIL_DEFAULT;
+                let (_, verts) = crate::render::skinned::own_body_mesh(data, model, level).unwrap();
+                let rigid = own::build(ch.look(dwell_characters::DEFAULT_LOOK).unwrap().parts, &body);
+                let up = face.up().map(|c| c as f32);
+                for (role, crouched) in [("idle", false), ("walk", false), ("crouch", true), ("crouch_walk", true), ("slide", true)] {
+                    let clip = TABLES.clip(ch.clip(role).unwrap());
+                    let eye_h = if crouched { cfg.body.crouch_eye_height } else { cfg.body.eye_height };
+                    for k in 0..4 {
+                        let pose = sample(clip, clip.duration * k as f32 / 4.0);
+                        for pitch in [0.0, -45.0, -90.0] {
                             let feet = face.point([5.5, 10.0, 3.5]);
-                            let eye = face.point([5.5, 10.0 + eye_h - drop, 3.5]);
-                            let basis = crate::render::camera::aim(yaw, pitch, face, 0.0);
+                            let eye = face.point([5.5, 10.0 + f64::from(eye_h), 3.5]);
+                            let basis = crate::render::camera::aim(30.0, pitch, face, 0.0);
                             let d = BodyDraw {
                                 feet,
-                                yaw,
+                                yaw: 30.0,
                                 face,
-                                dead: false,
                                 look: dwell_characters::DEFAULT_LOOK,
-                                pose: *pose,
+                                pose,
                                 held: Held::Empty,
                                 cast_only: false,
                                 first_person: true,
                                 light: [1.0, 0.0],
                                 seed: 0,
-                                role: "idle",
+                                role,
                             };
-                            let r = |v: V3| v.map(|c| c as f32);
-                            let (right, up, fwd) = (r(basis.right), r(basis.up), r(basis.forward()));
-                            for (look, m) in &meshes {
-                                let frame = own_frame(&d, eye, basis.forward(), &body, m, &posed);
-                                let bones = posed.map(|b| frame.then(&b));
-                                let world: Vec<[f32; 3]> = m
-                                    .positions
-                                    .iter()
-                                    .zip(&m.bones)
-                                    .map(|(p, &b)| bones[usize::from(b)].apply(*p))
-                                    .collect();
-                                let at = format!("{name}, {look}, pitch {pitch}, eye {drop:.2} m lower");
-                                let mut cells = [false; COLS * ROWS];
-                                for t in m.indices.chunks(3) {
-                                    let [a, b, c] = [t[0], t[1], t[2]].map(|i| world[i as usize]);
-                                    let dist = distance(a, b, c);
-                                    worst_near = worst_near.min(dist);
-                                    assert!(dist >= bar, "{at}: a triangle {dist:.3} m from the eye (the bar {bar:.3} m)");
-                                    let view = [a, b, c].map(|v| [dot(v, right), dot(v, up), dot(v, fwd)]);
-                                    for fov in [base_fov, base_fov * 1.25] {
-                                        let f = 1.0 / (fov.to_radians() as f32 / 2.0).tan();
-                                        raster(view, crate::render::NEAR_PLANE as f32, f, &mut cells);
-                                    }
-                                }
-                                let fill = cells.iter().filter(|c| **c).count() as f32 / cells.len() as f32;
-                                // The feet are in view looking down standing or walking, and the
-                                // legs sliding (the owner's ask: "particularly when sliding").
-                                let wants = drop == 0.0
-                                    && ((matches!(role, "idle" | "walk") && pitch <= -75.0)
-                                        || (role == "slide" && pitch <= -15.0));
-                                if wants {
-                                    let f = 1.0 / (base_fov.to_radians() as f32 / 2.0).tan();
-                                    let seen = world.iter().zip(&m.bones).any(|(v, &b)| {
-                                        let bone = ch.bones[usize::from(b)].name;
-                                        let (x, y, z) = (dot(*v, right), dot(*v, up), dot(*v, fwd));
-                                        (bone.starts_with("foot") || (role == "slide" && bone.starts_with("shin")))
-                                            && z > 0.1
-                                            && (x / z * f / ASPECT).abs() < 1.0
-                                            && (y / z * f).abs() < 1.0
-                                    });
-                                    assert!(seen, "{at}: the feet (sliding, the legs) are out of view");
-                                }
-                                if fill > worst_fill.0 {
-                                    worst_fill = (fill, at.clone());
-                                }
-                                if fill > body.fill {
-                                    over.push(format!("{at}: {:.0}%", fill * 100.0));
-                                }
-                            }
+                            let own = crate::render::skinned::SkinnedOwn { draw: own_skinned_draw(&d), forward: basis.forward(), body, passes: 1 };
+                            let (joints, s) = crate::render::skinned::own_joints(data, model, level, &verts, &own, eye).unwrap();
+                            let low = dwell_models::first_person::skin_points(model, level, &joints, &verts)
+                                .iter()
+                                .map(|p| dot(*p, up))
+                                .fold(f32::MAX, f32::min);
+                            // The rigid body's lowest vertex in the same view.
+                            let posed = bone_transforms(ch, &pose);
+                            let frame = own_frame(&d, eye, basis.forward(), &body, &rigid, &posed);
+                            let rigid_low = rigid
+                                .positions
+                                .iter()
+                                .zip(&rigid.bones)
+                                .map(|(p, &b)| dot(frame.then(&posed[usize::from(b)]).apply(*p), up))
+                                .fold(f32::MAX, f32::min);
+                            let at = format!("{role} {k}/4, pitch {pitch}: lowest {low:.3}, rigid {rigid_low:.3}, eye {eye_h}, back {s:.2}");
+                            assert!((low + eye_h).abs() < 0.08, "{at}: the feet are not on the ground under the eye");
+                            assert!((low - rigid_low).abs() < 0.08, "{at}: not where the rigid body's feet were");
                         }
                     }
                 }
-                println!("{} poses: nearest triangle {worst_near:.3} m (bar {bar:.3}); most fill {:.1}% at {}", poses.len(), worst_fill.0 * 100.0, worst_fill.1);
-                assert!(
-                    over.is_empty(),
-                    "the body covers more than {:.0}% of the screen in {} views, e.g.\n{}",
-                    body.fill * 100.0,
-                    over.len(),
-                    over.iter().take(40).cloned().collect::<Vec<_>>().join("\n")
-                );
+            }
+        }
+    }
+
+    // B5 (docs/BLUEPRINTS.md §9): a carried load is a cube per piece on the NPC's back, as many as
+    // it carries, rising from the carry joint with the count, behind it and turned with the body,
+    // each its block's own look; on both faces (face B's body upside down, its stack too).
+    dwell_world::both_faces! {
+        fn a_carried_stack_is_a_cube_per_piece_behind_the_back(f: FaceFrame) {
+            let ch = dwell_characters::player();
+            let look = dwell_world::blueprint::SHIPPED.carry_look;
+            let stone = dwell_blocks::require("dwell:stone");
+            let joint = [0.0f32, 0.0, 0.0];
+            let feet = f.point([0.0, 12.0, 0.0]);
+            let body = place_frame(feet, 0.0, f, feet);
+            assert!(carry_bones(ch, &look, &[], joint, &body).is_empty(), "nothing carried");
+            let one = carry_bones(ch, &look, &[stone], joint, &body);
+            let ten = carry_bones(ch, &look, &[stone; 10], joint, &body);
+            assert_eq!((one.len(), ten.len()), (1, 10), "a cube per piece");
+            assert!(ten.iter().all(|p| p.1 == stone), "its block's look");
+            let item = ch.item(look.item).expect("the carried item");
+            let (bone, at) = item.socket;
+            // Where each cube's centre lands (the item's part sits at its socket's point).
+            let centre = |b: &[Affine; MAX_BONES]| b[bone].apply(at);
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let ahead = f.vector([0.0, 0.0, 1.0]);
+            let along = |p: [f32; 3], v: [f64; 3]| -> f64 {
+                (0..3).map(|k| f64::from(p[k]) * v[k]).sum()
+            };
+            let top = |s: &[([Affine; MAX_BONES], u16)]| {
+                s.iter().map(|p| along(centre(&p.0), up)).fold(f64::MIN, f64::max)
+            };
+            assert!(top(&ten) > top(&one) + 0.5, "ten stand higher than one");
+            assert!(
+                ten.iter().all(|p| along(centre(&p.0), ahead) < 0.0),
+                "behind the back"
+            );
+            // The face-local stack matches the data's (through the face's frame).
+            let want = look.stack(&["dwell:stone"; 10]);
+            for (p, w) in ten.iter().zip(&want) {
+                let c = centre(&p.0);
+                assert!((along(c, up) - w.0[1]).abs() < 1e-4, "{c:?} vs {:?}", w.0);
             }
         }
     }

@@ -12,8 +12,8 @@ use dwell_blocks::{
 use dwell_protocol::{BlockEditAction, BlockEditRequest, ChunkChanges, MAX_PIECE_ROWS, players};
 
 use crate::{
-    CELL, CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, cell_dir, cell_space, inside_build_volume,
-    inside_world_disc, m_of_row, metres, normal_to_m, pos_of_cell, up_of_y,
+    CELL, CELL_H, ChunkCoord, FaceFrame, M, VoxelWorld, cell_dir, cell_space, m_of_row, metres,
+    normal_to_m, pos_of_cell, up_of_y,
 };
 
 /// Face index → outward direction: 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -219,19 +219,8 @@ fn block_name(m: StateId) -> &'static str {
     }
 }
 
-/// The other cells of the multi-cell block a state at `cell` belongs to (block data `extends`,
-/// `partOf`; BLOCK_REGISTRY.md, Multi-cell blocks): each with the block expected there.
-fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], &'static str)> {
-    let s = info(m);
-    let mut out = Vec::new();
-    if let Some(up) = s.extends_up {
-        out.push((above(cell), up));
-    }
-    if let Some(of) = s.part_of {
-        out.push((below(cell), of));
-    }
-    out
-}
+// The other cells of a multi-cell block (block data `extends`, `partOf`): crate::parts.
+use crate::parts::partners;
 
 /// Every write an edit setting `cell` to `material` makes, in order (the server sends them in one
 /// `VoxelModification`; the client predicts the same): the cell; a multi-cell block's other cells
@@ -301,7 +290,11 @@ pub fn edit_writes_all(
         // The block standing on it, if this leaves it unsupported.
         let up = above(c);
         if below(up) == c
-            && inside_build_volume(i64::from(up[0]), i64::from(up[1]), i64::from(up[2]))
+            && world.bounds.volume().contains_voxel(
+                i64::from(up[0]),
+                i64::from(up[1]),
+                i64::from(up[2]),
+            )
         {
             let there = current(world, &out, up);
             if there != M.air
@@ -354,6 +347,22 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
     s.needs_support != Support::Below || info(under).solid
 }
 
+/// Whether `m` is an attached block: one that stands on or hangs from another (block data
+/// `needsSupport`: tall grass, a torch, a sapling, a ladder) and holds nothing up. A blast removes
+/// it rather than flinging it, and it goes whenever the block holding it is destroyed or moves into
+/// a piece (docs/EXPLOSIVES.md §3; owner, 2026-11-13).
+/// A multi-cell block's other cells (`partOf`: a torch's upper cell) are attached as their block is.
+pub fn attached(m: StateId) -> bool {
+    if usize::from(m) >= dwell_blocks::STATES.len() {
+        return false;
+    }
+    let s = info(m);
+    s.needs_support != Support::None
+        || s.part_of
+            .and_then(dwell_blocks::state)
+            .is_some_and(|p| info(p).needs_support != Support::None)
+}
+
 /// Whether placing `material` onto `there` replaces it: `there` a slope (a stored ramp) of the
 /// placed block's own moldable group (block data `moldable`: dirt, grass and snowy grass are dirt;
 /// sand), molded into the block (docs/ITEMS.md §3).
@@ -392,7 +401,11 @@ pub fn unsupported_after(
         let up = FaceFrame::at_row(at[1]).sign();
         let next = [at[0], at[1] + up, at[2]];
         if below(next) != at
-            || !inside_build_volume(i64::from(next[0]), i64::from(next[1]), i64::from(next[2]))
+            || !world.bounds.volume().contains_voxel(
+                i64::from(next[0]),
+                i64::from(next[1]),
+                i64::from(next[2]),
+            )
         {
             break;
         }
@@ -413,6 +426,53 @@ pub struct BlockHit {
     /// The face the ray entered through.
     pub face: u8,
     pub distance: f32,
+    /// Met on a slope (a ramp's sloped face) where it faces out through a side: the side face a
+    /// place against it goes through ([`slope_side`], docs/BUGS.md #23); `face` stays the slope's
+    /// own (its top), for a break.
+    pub slope_side: Option<u8>,
+}
+
+/// A place against a slope at the point met (docs/BUGS.md #23): the cell a sloped face (a ramp's)
+/// faces out into from there, along its normal — the side face it leaves its cell through when
+/// that comes before the top (or bottom), None when it is the top (the place goes on top, as
+/// against any top) or the face is not sloped. In cell space (y in rows, `local` the point in
+/// the cell, 0..1 each way; `normal` outward, any length), so a ½ m ramp's lower half faces out
+/// through its low side and its upper half through its top; ties go to the top.
+pub fn slope_side(normal: [f32; 3], local: [f32; 3]) -> Option<u8> {
+    const ZERO: f32 = 1e-4;
+    if normal.iter().filter(|v| v.abs() > ZERO).count() < 2 {
+        return None;
+    }
+    let mut best: Option<(f32, usize)> = None;
+    // The vertical first, so a tie stays on top.
+    for k in [1, 0, 2] {
+        let n = normal[k];
+        if n.abs() <= ZERO {
+            continue;
+        }
+        let d = if n > 0.0 {
+            (1.0 - local[k]) / n
+        } else {
+            local[k] / -n
+        };
+        if best.is_none_or(|(b, _)| d < b - 1e-6) {
+            best = Some((d, k));
+        }
+    }
+    match best? {
+        (_, 1) => None,
+        (_, k) => Some((2 * k + usize::from(normal[k] < 0.0)) as u8),
+    }
+}
+
+/// A sloped face with outward cell-space `normal` faces out through `face` too ([`slope_side`]'s
+/// sides: a place against a ramp's slope through its low side).
+fn slope_faces(normal: [f32; 3], face: u8) -> bool {
+    let Some(dir) = FACE_DIRS.get(usize::from(face)) else {
+        return false;
+    };
+    let along: f32 = (0..3).map(|k| normal[k] * dir[k] as f32).sum();
+    normal.iter().filter(|v| v.abs() > 1e-4).count() >= 2 && along > 1e-4
 }
 
 /// The nearest targetable cell along the ray (unit `dir`, metres) within `max_distance` (m), as its
@@ -426,6 +486,25 @@ pub fn raycast_block(
     max_distance: f32,
 ) -> Option<BlockHit> {
     raycast_block_past(world, origin, dir, max_distance, |_, _| false)
+}
+
+/// [`raycast_block`] in a grid's frame (MOON_WORLD.md §2, M-3): the world ray turned into the
+/// grid's space and walked over `world`, that grid's cells; the hit's cell and face are the grid's,
+/// its distance the world's (a rigid frame keeps lengths). The home grid's frame is the identity, so
+/// on it this is [`raycast_block`] exactly (`tests/grid_frame.rs`).
+pub fn raycast_block_in(
+    world: &mut VoxelWorld,
+    grid: &crate::GridFrame,
+    origin: [f64; 3],
+    dir: [f32; 3],
+    max_distance: f32,
+) -> Option<BlockHit> {
+    raycast_block(
+        world,
+        grid.to_grid(origin),
+        grid.vector_to_grid_f32(dir),
+        max_distance,
+    )
 }
 
 /// [`raycast_block`] passing through the targetable cells `see_through(cell, state)` names.
@@ -499,10 +578,14 @@ pub fn raycast_block_past(
                 && t <= max_distance
             {
                 let n = normal_to_m(normal.map(f64::from)).map(|v| v as f32);
+                // Where it was met, in its cell (cell space): a slope's side for a place.
+                let local: [f32; 3] =
+                    std::array::from_fn(|k| o[k] + dir[k] * t - (cell[k] - base[k]) as f32);
                 return Some(BlockHit {
                     cell,
                     face: face_of_normal(n),
                     distance: t,
+                    slope_side: slope_side(normal, local),
                 });
             }
         }
@@ -662,7 +745,11 @@ pub fn check_block_edit(
         for v in &mut normal {
             *v /= length_n;
         }
-        if face_of_normal(normal_to_m(normal.map(f64::from)).map(|v| v as f32)) != request.face {
+        // A place against a slope may go through the side it faces out of (docs/BUGS.md #23).
+        let faces = face_of_normal(normal_to_m(normal.map(f64::from)).map(|v| v as f32))
+            == request.face
+            || (request.action == BlockEditAction::Place && slope_faces(normal, request.face));
+        if !faces {
             continue;
         }
         let side: f64 = (0..3)
@@ -774,10 +861,9 @@ pub fn check_block_edit(
     });
     let mut material = request.material;
     for (i, p) in std::iter::once(cell).chain(also).enumerate() {
-        // The build volume bounds building (ADR 0025); the disc, the terrain's columns.
-        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
-            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
-        {
+        // The world's build volume bounds building (ADR 0025); its disc, the terrain's columns
+        // (`VoxelWorld::bounds`, the world's size: BUGS.md #109).
+        if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
         }
         let existing = world.get_voxel(p[0], p[1], p[2]);
@@ -830,9 +916,7 @@ pub fn check_block_edit(
         let Some(part) = dwell_blocks::state(name) else {
             return EditOutcome::fail(EditCheck::NotPlaceable);
         };
-        if !inside_build_volume(i64::from(p[0]), i64::from(p[1]), i64::from(p[2]))
-            || !inside_world_disc(i64::from(p[0]), i64::from(p[2]))
-        {
+        if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
         }
         let there = world.get_voxel(p[0], p[1], p[2]);

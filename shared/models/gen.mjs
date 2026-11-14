@@ -7,7 +7,14 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { applyCoat, validateCoat } from "./coat.mjs";
+import {
+  applyCoat,
+  applyRepaint,
+  validateCoat,
+  validateRepaint,
+} from "./coat.mjs";
+import { addPieces, applyDecor, decorBase, decorParts, validateDecor } from "./decor.mjs";
+import { allLevelParts, readMesh, validateParts } from "./parts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -32,6 +39,12 @@ export const ROLES = [
 ];
 
 /** Every palette stop a remap may snap to: `[{ name, hex }]`, ramps first, `exclude`d ramps left out. */
+/**
+ * The idle poses a model may give as data (`poses`): the ecology's and NPCs' idle poses that are
+ * not the plain idle clip (dwell_ecology::IdlePose's names, less `stand`; the NPCs' `look`, `sit`).
+ */
+export const POSE_NAMES = ["graze", "lookUp", "earFlick", "sit", "lie", "look"];
+
 export function paletteStops(palette, exclude = []) {
   const out = [];
   for (const [ramp, stops] of Object.entries(palette.ramps)) {
@@ -223,6 +236,47 @@ export function validate(
         fail(`${at}: remap ${src}: ${e.message}`);
       }
     }
+    // Its part map (shared/models/parts.mjs, BUGS.md #96): a part a vertex of the full mesh, each
+    // detail level's from it.
+    let parts;
+    let partsFile;
+    if (m.parts !== undefined) {
+      if (typeof m.parts !== "string") fail(`${at}: parts is a part map file`);
+      const pp = join(dir, m.parts);
+      if (!existsSync(pp)) fail(`${at}: missing part map ${m.parts}`);
+      const bytes = read(path);
+      let file;
+      let vertices;
+      try {
+        file = JSON.parse(read(pp).toString("utf8"));
+        partsFile = file;
+        const first = s.meshNames.includes("detail_0") ? "detail_0" : s.meshNames[0];
+        vertices = validateParts(file, m.parts, readMesh(bytes, first).count);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      parts = {
+        names: file.parts,
+        levels: allLevelParts(bytes, Uint8Array.from(vertices, Number)),
+      };
+    }
+    if (m.repaint !== undefined) {
+      if (!parts) fail(`${at}: a repaint needs a part map (parts)`);
+      try {
+        validateRepaint(m.repaint, palette, "repaint", parts.names);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      if (
+        !Buffer.from(applyRepaint(bytes, m.repaint, palette, parts)).equals(
+          Buffer.from(bytes),
+        )
+      )
+        fail(
+          `${at}: ${m.glb} is not repainted: run node shared/models/import.mjs --coat ${name}`,
+        );
+    }
     if (m.coat !== undefined) {
       try {
         validateCoat(m.coat, palette);
@@ -238,6 +292,27 @@ export function validate(
         fail(
           `${at}: ${m.glb} is not painted by its coat: run node shared/models/import.mjs --coat ${name}`,
         );
+    }
+    // Its decor (shared/models/decor.mjs): pieces added and bands and marks painted, as the
+    // importer's --coat leaves them (running it again changes nothing).
+    if (m.decor !== undefined) {
+      try {
+        validateDecor(m.decor, palette, "decor", parts?.names, m.repaint, s.jointNames);
+      } catch (e) {
+        fail(`${at}: ${e.message}`);
+      }
+      const bytes = read(path);
+      const again = applyDecor(
+        addPieces(bytes, m.decor, palette),
+        m.decor,
+        palette,
+        partsFile && decorBase(bytes, partsFile),
+      );
+      if (!Buffer.from(again).equals(Buffer.from(bytes)))
+        fail(`${at}: ${m.glb} is not decorated: run node shared/models/import.mjs --coat ${name}`);
+      // A band's `parts`: its facets in those parts (an NPC's pattern recolours them, not the shirt's).
+      if (parts && partsFile)
+        parts = { ...parts, levels: decorParts(bytes, m.decor, parts.names, parts.levels, decorBase(bytes, partsFile)) };
     }
     const roles = Object.entries(m.roles ?? {});
     if (!roles.length) fail(`${at}: no roles`);
@@ -282,7 +357,128 @@ export function validate(
       m.retarget === undefined
         ? undefined
         : validateRetarget(m.retarget, s.jointNames, rigs, `${at}: retarget`);
-    out[name] = { ...m, clips: s.clips, joints: s.joints, hand, retarget };
+    let firstPerson;
+    if (m.firstPerson !== undefined) {
+      const f = m.firstPerson;
+      if (!Array.isArray(f.joints) || f.joints.length === 0)
+        fail(`${at}: firstPerson: joints names the arm's skin joints`);
+      const joints = f.joints.map((j) => {
+        const k = s.jointNames.indexOf(j);
+        if (k < 0) fail(`${at}: firstPerson: no joint ${j} in ${m.glb}'s skin`);
+        return k;
+      });
+      if (new Set(joints).size !== joints.length)
+        fail(`${at}: firstPerson: a joint is listed twice`);
+      if (!(f.weight > 0 && f.weight <= 1))
+        fail(`${at}: firstPerson: weight is in (0, 1]`);
+      if (!retarget) fail(`${at}: firstPerson needs a retarget map`);
+      const turn = f.turn ?? [0, 0, 0];
+      if (!(
+        Array.isArray(turn) &&
+        turn.length === 3 &&
+        turn.every(Number.isFinite)
+      ))
+        fail(`${at}: firstPerson: turn is [x, y, z]`);
+      // Your own body in first person (docs/CHARACTERS.md §5.1, §11.12): the body mesh less the
+      // triangles touching `hide` (the head, the other arm) or the arm above.
+      let body;
+      if (f.body !== undefined) {
+        const b = f.body;
+        if (!Array.isArray(b.hide))
+          fail(`${at}: firstPerson: body: hide names the skin joints left out`);
+        const hide = b.hide.map((j) => {
+          const k = s.jointNames.indexOf(j);
+          if (k < 0) fail(`${at}: firstPerson: body: no joint ${j} in ${m.glb}'s skin`);
+          return k;
+        });
+        if (new Set([...hide, ...joints]).size !== hide.length + joints.length)
+          fail(`${at}: firstPerson: body: a joint is listed twice (the arm's are hidden already)`);
+        if (!(b.weight > 0 && b.weight <= 1))
+          fail(`${at}: firstPerson: body: weight is in (0, 1]`);
+        body = { hide, weight: b.weight };
+      }
+      firstPerson = { joints, weight: f.weight, turn, body };
+    }
+    let grips = { poses: [], items: [] };
+    if (m.grips !== undefined) {
+      const g = m.grips;
+      const names = Object.keys(g.poses ?? {});
+      for (const pose of names) {
+        const turns = Object.entries(g.poses[pose]).map(([j, r]) => {
+          const k = s.jointNames.indexOf(j);
+          if (k < 0)
+            fail(`${at}: grips: ${pose}: no joint ${j} in ${m.glb}'s skin`);
+          if (!(Array.isArray(r) && r.length === 3 && r.every(Number.isFinite)))
+            fail(`${at}: grips: ${pose}: ${j} is [x, y, z]`);
+          return { joint: k, rot: r };
+        });
+        grips.poses.push({ name: pose, turns });
+      }
+      for (const [item, pose] of Object.entries(g.items ?? {}))
+        if (!names.includes(pose))
+          fail(`${at}: grips: item ${item} names no pose ${pose}`);
+        else grips.items.push([item, pose]);
+    }
+    // Idle poses as data (WORK_QUEUE item 39): a creature's pose (`graze`, `lie`, ...) as turns of
+    // its joints on top of its idle clip, blended in and out over `blendS`.
+    const poses = [];
+    if (m.poses !== undefined) {
+      if (
+        typeof m.poses !== "object" ||
+        m.poses === null ||
+        Array.isArray(m.poses)
+      )
+        fail(`${at}: poses is { name: { joint: [x, y, z] } }`);
+      for (const [pose, joints] of Object.entries(m.poses)) {
+        if (pose === "$comment") continue;
+        if (!POSE_NAMES.includes(pose))
+          fail(
+            `${at}: poses: ${pose} is not a pose (${POSE_NAMES.join(", ")})`,
+          );
+        if (
+          typeof joints !== "object" ||
+          joints === null ||
+          Array.isArray(joints)
+        )
+          fail(`${at}: poses: ${pose} is { joint: [x, y, z] }`);
+        // `$drop`: metres the whole body is lowered while posed (a sitting or lying animal: turns
+        // alone can't bring its hips or belly down to the ground).
+        const drop = joints.$drop ?? 0;
+        if (!(Number.isFinite(drop) && drop >= 0 && drop <= 2))
+          fail(`${at}: poses: ${pose}: $drop ${drop} is outside [0, 2] metres`);
+        const turns = Object.entries(joints)
+          .filter(([j]) => j !== "$drop")
+          .map(([j, r]) => {
+            const k = s.jointNames.indexOf(j);
+            if (k < 0)
+              fail(`${at}: poses: ${pose}: no joint ${j} in ${m.glb}'s skin`);
+            if (!(
+              Array.isArray(r) &&
+              r.length === 3 &&
+              r.every(Number.isFinite)
+            ))
+              fail(`${at}: poses: ${pose}: ${j} is [x, y, z]`);
+            return { joint: k, rot: r };
+          });
+        if (!turns.length) fail(`${at}: poses: ${pose} turns no joint`);
+        poses.push({ name: pose, turns, drop });
+      }
+    }
+    const blend = m.poseBlendS ?? 0.5;
+    if (!(Number.isFinite(blend) && blend > 0 && blend <= 5))
+      fail(`${at}: poseBlendS ${blend} is outside (0, 5] seconds`);
+    out[name] = {
+      ...m,
+      grips,
+      poses,
+      poseBlendS: blend,
+      clips: s.clips,
+      joints: s.joints,
+      hand,
+      retarget,
+      firstPerson,
+      partMap: parts,
+    };
   }
   return out;
 }
@@ -410,6 +606,12 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       fail(`${at}: grip is [x, y, z] metres`);
     const handle =
       p.handle === undefined ? null : measureHandle(read(path), p.handle, at);
+    // A grip with a handle sits on it: the fist holds the bare handle, not the head or blade.
+    if (handle && p.grip !== undefined) {
+      const [lo, hi] = [Math.min(...p.handle), Math.max(...p.handle)];
+      if (!(p.grip[1] >= lo && p.grip[1] <= hi))
+        fail(`${at}: grip ${p.grip[1]} m is outside its handle ${lo}..${hi} m`);
+    }
     const hold = validateHold(p.hold, at);
     if (
       p.objects !== undefined &&
@@ -541,12 +743,15 @@ export function validateHand(h) {
 }
 
 /** The pose a prop is held in when it names none: as modelled, at its grip. */
-export const DEFAULT_HOLD = { scale: 1, roll: 0 };
+export const DEFAULT_HOLD = { scale: 1, roll: 0, yaw: 0 };
 
 /**
  * A prop's hold (`hold`, optional): `scale` (0.1..2, about the grip) and `roll` degrees (within
- * ±180) about its handle, from its +x side facing the hand's `edge`; missing fields take
- * DEFAULT_HOLD's. The handle lies along the hand's grip axis: a lean comes from the hand's pose.
+ * ±180) about its handle, from its +x side facing the hand's `edge`; `yaw` degrees (within ±45)
+ * more about the handle, the hand's upright axis at rest, turning the head's flank toward the eye
+ * so it shows (owner, 2026-11-14: "each tool should be rotated slightly around the Y(?) in your hand
+ * so you can see the head of it"; the edge's aim is `roll`'s, the show is `yaw`'s); missing fields
+ * take DEFAULT_HOLD's. The handle lies along the hand's grip axis: a lean comes from the hand's pose.
  */
 export function validateHold(h, at) {
   const fail = (msg) => {
@@ -554,17 +759,20 @@ export function validateHold(h, at) {
   };
   if (h === undefined) return { ...DEFAULT_HOLD };
   if (h === null || typeof h !== "object" || Array.isArray(h))
-    fail(`${at}: hold is { scale, roll }`);
+    fail(`${at}: hold is { scale, roll, yaw }`);
   for (const k of Object.keys(h))
-    if (!["scale", "roll"].includes(k))
-      fail(`${at}: hold has unknown field ${k} (scale, roll)`);
+    if (!["scale", "roll", "yaw"].includes(k))
+      fail(`${at}: hold has unknown field ${k} (scale, roll, yaw)`);
   const scale = h.scale ?? DEFAULT_HOLD.scale;
   if (!(Number.isFinite(scale) && scale >= 0.1 && scale <= 2))
     fail(`${at}: hold.scale ${scale} is outside 0.1..2`);
   const roll = h.roll ?? DEFAULT_HOLD.roll;
   if (!(Number.isFinite(roll) && Math.abs(roll) <= 180))
     fail(`${at}: hold.roll ${roll} is outside ±180 degrees`);
-  return { scale, roll };
+  const yaw = h.yaw ?? DEFAULT_HOLD.yaw;
+  if (!(Number.isFinite(yaw) && Math.abs(yaw) <= 45))
+    fail(`${at}: hold.yaw ${yaw} is outside ±45 degrees`);
+  return { scale, roll, yaw };
 }
 
 /** The props an item's look names (shared/inventory `look.model`): the ones built into the game. */
@@ -587,7 +795,7 @@ export function rustProps(props, glbRoot, built, hand) {
   ];
   for (const [name, p] of Object.entries(props))
     lines.push(
-      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, axis: ${v3(p.axis)}, hold: PropHold { scale: ${f32(p.hold.scale)}, roll: ${f32(p.hold.roll)} } },`,
+      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, axis: ${v3(p.axis)}, hold: PropHold { scale: ${f32(p.hold.scale)}, roll: ${f32(p.hold.roll)}, yaw: ${f32(p.hold.yaw)} } },`,
     );
   lines.push("];", "");
   return lines.join("\n");
@@ -595,11 +803,18 @@ export function rustProps(props, glbRoot, built, hand) {
 
 const f32 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
+/** A model's part map as Rust: its part names and, a string a detail level, each vertex's part. */
+function partsRust(p) {
+  if (!p) return "None";
+  const levels = p.levels.map((l) => JSON.stringify(Array.from(l).join("")));
+  return `Some(Parts { names: &[${p.names.map((n) => JSON.stringify(n)).join(", ")}], levels: &[${levels.join(", ")}] })`;
+}
+
 /** The Rust table (`glbRoot`: the GLB paths' directory, relative to the crate's src). */
 export function rust(data, models, glbRoot) {
   const lines = [
     "// Generated by shared/models/gen.mjs from shared/models/models.json. Do not edit.",
-    "use crate::{DetailLevel, Hand, ModelData, Retarget, RetargetBone, RoleClip};",
+    "use crate::{DetailLevel, FirstPerson, FirstPersonBody, Grip, Hand, ModelData, Parts, Retarget, RetargetBone, RoleClip};",
     "",
     `pub const PLAYER: &str = ${JSON.stringify(data.player ?? "")};`,
   ];
@@ -648,8 +863,24 @@ export function rust(data, models, glbRoot) {
           )
           .join(", ")}] })`
       : "None";
+    const grips = `&[${m.grips.poses
+      .map(
+        (g) =>
+          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}], drop: ${f32(g.drop ?? 0)} }`,
+      )
+      .join(", ")}]`;
+    const poses = `&[${m.poses
+      .map(
+        (g) =>
+          `Grip { name: ${JSON.stringify(g.name)}, turns: &[${g.turns.map((t) => `(${t.joint}, ${v3(t.rot)})`).join(", ")}], drop: ${f32(g.drop ?? 0)} }`,
+      )
+      .join(", ")}]`;
+    const gripItems = `&[${m.grips.items.map(([i, g]) => `(${JSON.stringify(i)}, ${JSON.stringify(g)})`).join(", ")}]`;
+    const firstPerson = m.firstPerson
+      ? `Some(FirstPerson { joints: &[${m.firstPerson.joints.join(", ")}], weight: ${f32(m.firstPerson.weight)}, turn: ${v3(m.firstPerson.turn)}, body: ${m.firstPerson.body ? `Some(FirstPersonBody { hide: &[${m.firstPerson.body.hide.join(", ")}], weight: ${f32(m.firstPerson.body.weight)} })` : "None"} })`
+      : "None";
     lines.push(
-      `    ModelData { name: ${JSON.stringify(name)}, glb: ${JSON.stringify(m.glb)}, joints: ${m.joints}, scale: ${f32(m.scale)}, yaw: ${f32(m.yaw ?? 0)}, fallback: ${JSON.stringify(m.fallback)}, roles: &[${roles}], hand: ${hand}, retarget: ${retarget} },`,
+      `    ModelData { name: ${JSON.stringify(name)}, glb: ${JSON.stringify(m.glb)}, joints: ${m.joints}, scale: ${f32(m.scale)}, yaw: ${f32(m.yaw ?? 0)}, fallback: ${JSON.stringify(m.fallback)}, roles: &[${roles}], hand: ${hand}, retarget: ${retarget}, first_person: ${firstPerson}, grips: ${grips}, grip_items: ${gripItems}, poses: ${poses}, pose_blend_s: ${f32(m.poseBlendS)}, parts: ${partsRust(m.partMap)} },`,
     );
   }
   lines.push("];", "");
@@ -667,6 +898,8 @@ export function generate() {
   ]) {
     const data = readJson(join(src, "models.json"));
     const models = validate(data, palette, src);
+    if (src === here)
+      checkCreatureParts(readJson(join(root, "shared/creatures/creatures.json")), models);
     const propsData = readJson(join(src, "props.json"));
     const props = validateProps(propsData, src);
     // The game builds in the props an item's look names; the fixture, all of its own.
@@ -683,12 +916,51 @@ export function generate() {
     outputs.push([
       join(CRATE, out),
       rust(data, models, glbRoot).replace(
-        "use crate::{DetailLevel, Hand, ModelData, Retarget, RetargetBone, RoleClip};",
-        "use crate::{DetailLevel, Hand, HandGrip, ModelData, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
-      ) + rustProps(props, glbRoot, built, validateHand(propsData.hand)),
+        "use crate::{DetailLevel, FirstPerson, FirstPersonBody, Grip, Hand, ModelData, Parts, Retarget, RetargetBone, RoleClip};",
+        "use crate::{DetailLevel, FirstPerson, FirstPersonBody, Grip, Hand, HandGrip, ModelData, Parts, PropData, PropHold, Retarget, RetargetBone, RoleClip};",
+      ) +
+        rustProps(props, glbRoot, built, validateHand(propsData.hand)) +
+        rustRampBases(palette),
     ]);
   }
   return outputs;
+}
+
+/**
+ * Every NPC's colour parts (creatures.json `colours[].part`) are parts of its model's part map
+ * (BUGS.md #96: the recolour is by part). Throws naming the creature and part.
+ */
+export function checkCreatureParts(creatures, models) {
+  for (const c of creatures.creatures ?? []) {
+    const app = c.npc?.appearance;
+    const slots = [...(c.npc?.colours ?? []), ...(app ? [app.skin, app.hair] : [])];
+    for (const slot of slots) {
+      const names = models[c.model]?.partMap?.names;
+      if (!names)
+        throw new Error(
+          `creatures.json: ${c.name}: colours need a part map on model ${c.model} (models.json \`parts\`)`,
+        );
+      if (!names.includes(slot.part))
+        throw new Error(
+          `creatures.json: ${c.name}: colour part ${slot.part} is not a part of model ${c.model} (${names.join(", ")})`,
+        );
+    }
+  }
+}
+
+/**
+ * Every palette ramp's base colour by name (sRGB 0xRRGGBB): a model's faces carry ramp bases
+ * (§11.2), so a body's colour remap (an NPC's `colours`, docs/CHARACTERS.md §11.11) swaps one
+ * ramp's base for another's by name.
+ */
+export function rustRampBases(palette) {
+  const entries = Object.entries(palette.ramps)
+    .filter(([, stops]) => typeof stops.base === "string")
+    .map(
+      ([ramp, stops]) =>
+        `(${JSON.stringify(ramp)}, 0x${stops.base.slice(1).toLowerCase()})`,
+    );
+  return `pub static RAMP_BASES: &[(&str, u32)] = &[${entries.join(", ")}];\n`;
 }
 
 if (

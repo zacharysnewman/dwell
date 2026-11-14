@@ -386,6 +386,11 @@ scanning the sources keeps both out: `dwell-world` `tests/both_faces.rs`, run by
    when the check arrived are listed with their reasons in the check (`KNOWN`); the list only
    shrinks. `dwell-physics/tests` is exempt: CI runs that whole suite again on face B.
 
+3. **a point is turned into a grid's space by hand** (MOON_WORLD.md §2, M-3): `inverse * (p − origin)`
+   (a body's or a grid's rotation applied by hand) outside `dwell-world` `grid.rs`; such code goes
+   through `dwell_world::GridFrame` (in the physics, `frame::grid_of_pose`), or is marked
+   `// grid-boundary: <reason>` on it or next to it.
+
 The check is a heuristic, not a proof: a test that builds only face-A fixtures without naming any
 face is invisible to it. That is why face-dependent systems also get a parity test over the mirror
 world (§11), and why new face-dependent code is written face-local through `FaceFrame`, which the
@@ -430,11 +435,11 @@ it is all mirrored, as everything is.
 
 **Getting through.** Gravity points toward the midplane on both sides and nothing brakes a body in
 the flip band (§10), so a player who falls into a shaft swings across the midplane and rises out of
-the other opening nearly as high as they fell from (or back again), and the landing can hurt. The
-ladder is the way through: step off the rim over the ladder (it takes hold), look down and hold
+the other opening, where the shaft's exit push carries it out sideways onto the ground beside the
+hole (§12.3; before it, the player fell back in and swung between the faces forever). The
+ladder is the other way through: step off the rim over the ladder (it takes hold), look down and hold
 forward; across the midplane the look continues (§6) and forward climbs up the far side to face B's
-rim. Alternatives the owner may prefer: a water column in the shaft (swimming slows the fall), or
-drag in the flip band inside a shaft.
+rim.
 
 **Integration.** The sky test leaves room for the rims; the LOD cuts the shafts at levels whose
 cells are no wider than the radius (levels 0–1) and draws the ground over them coarser; the
@@ -477,6 +482,61 @@ named by the portal rules.
   `dwell:proto_rock`, and none); `gen.test.mjs` checks the data's validation.
 - **Compatibility:** it changes the terrain every seed generates (generator 23): a new
   compatibility line (0.28.0).
+
+### 12.3 Out of the far opening: the exit push **[built, 2026-11-12]**
+
+Owner (2026-11-12), on the portal shot: "it looked like the player flew out of the hole instead of
+physics carrying it out", and, asked how a jump into a portal should end: **land beside the hole**.
+Before, a player who dropped in fell ~2.2 s to the midplane at ~40 m/s, passed the motes, rose
+several metres out of the far opening, fell straight back in and swung between the faces for ever
+(the band's boost even adds a little each pass).
+
+- **Physics, not flight or a teleport:** a steady crosswind across the shaft's mouth. In a shaft's
+  footprint (its axis within `radius`), a body that is airborne (not climbing, flying or swimming),
+  rising, with its feet within `exit.depth` m **over** the opening (the rim's top) and having passed
+  the opening at `exit.minRise` m/s or more (`rise² + 2g·(feet − top)`, no state kept) is pushed
+  along its facing (the face-local heading) at `exit.push` m/s². Over the opening, not in the shaft
+  (BUGS.md #107): a player who walked in falls with the walk's momentum into the shaft's wall and
+  rises against it, and a push under the opening along its facing went into that wall and it fell
+  straight back; over the rim no wall is in the way. A faster rise crosses the depth sooner (less
+  push) and flies longer, so where it lands doesn't depend on how fast it rose: about
+  `2 · push · depth / g` m out (30 × 2 × 2 / 20 = 6 m from the axis, 2–4 m past the rim, inside the
+  clear ground). The push is momentum (the horizontal layer's `external`, kept in
+  the air), so the arc is the body's own. The player picks where it lands by facing; between the
+  monument's pillars (the diagonals) the ground is clear.
+- **Never pushed:** a jump (a few m/s at the rim's top, under `minRise`: it would need its apex
+  `minRise² / 2g` ≈ 2.5 m over the opening; the data must keep `minRise` ≥ 8 m/s), a
+  ladder climb (the climb layer), a fall (it isn't rising), flight.
+- **Data:** `midplane.json` `portals.exit` {`push` 30, `depth` 2, `minRise` 10}, validated by
+  `shared/worldgen/gen.mjs` (ranges, unknown keys, `minRise`) into `PortalRules::exit`. It is
+  physics, not terrain: changing it changes no seed's terrain and needs no new line.
+- **Engine:** `dwell_world::portal_shafts` (`PortalShafts`: each shaft's axis, radius and opening
+  height on both faces, face-local; `exit_push`), on `VoxelWorld::portals`, filled by
+  `dwell_worldgen::portal_shafts_for_sized` (the seed's sites, the rules' radius, each face's ladder
+  top) on the server (`Server::new`, unless a test overrides the generator) and in the client's
+  prediction (`Game::set_world`); the controller's `step_portal` (PLAYER_CONTROLLER.md §4, after
+  `step_fall`) reads it. Both sides compute it from the generator and seed, so nothing is on the wire
+  and the prediction doesn't replay.
+- **Limits:** a far opening higher than the swing reaches (its shaft much longer than the near one)
+  isn't reached and the body falls back; so does a rise taller than the monument's arches (~23 m
+  over the opening; a near shaft 20 m+ longer than the far), which the arch stops. The band speeds
+  every pass, so a later swing comes out of one of the openings: on seed 0, 12 of 16 drops (8
+  portals, from either face) land beside the far opening on the first swing, the rest within 3
+  crossings and 18 s.
+- **Tests:** `dwell-physics` `tests/portal_exit.rs`
+  (`a_player_dropped_into_a_portal_lands_on_the_far_face_beside_the_hole`, both faces; red with the
+  pass removed, as on main; `without_the_exit_push_a_dropped_player_swings_between_the_faces`;
+  `every_portal_lets_a_dropped_player_out_beside_an_opening`), `tests/portal_crossing.rs` (the
+  ladder climbs, the push live), `tests/predictor.rs`
+  (`the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it`: no replays, and replays
+  for a client without the shafts), `portal_shafts.rs`'s unit test, `gen.test.mjs`.
+
+### 12.4 Shrines keep clear of the portals **[built, 0.58]**
+
+Each face's resurrection shrines ([SHRINES.md](SHRINES.md)) are sited like the portals, from the seed and
+the face's height field, in any chunk order, but per face (face B's from its own seed): a shrine stands at
+least `portalClear` (250 m) from every portal's axis, so a portal's monument and a shrine never meet. A
+death respawns at the nearest shrine on the face it happened on.
 
 ### 12.1 The motes at the crossing **[built, Phase 48 M]**
 

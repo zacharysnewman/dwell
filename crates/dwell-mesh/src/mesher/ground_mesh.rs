@@ -110,6 +110,11 @@ pub(super) fn append(
             push_polygon(m, &pts, color, &tile, lit, CELL_H);
         }
     }
+    // The crack overlay's stream, once the cells gave it, covers the items too (0: none; BUGS.md
+    // #74: a stream short of the vertices was dropped whole by the client).
+    if !m.cracks.is_empty() {
+        m.cracks.resize(m.positions.len() / 3, 0);
+    }
 }
 
 /// An item's look (`shared/inventory` `look`) as a mesh in metres, item-local (its base's middle at
@@ -271,7 +276,7 @@ pub fn look_swatch(look: &dwell_protocol::inventory::ItemLook) -> Vec<u8> {
 }
 
 /// A polygon's unit normal from Newell's sum.
-fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
+pub(super) fn newell(pts: &[[f64; 3]]) -> [f64; 3] {
     let mut n = [0.0f64; 3];
     for i in 0..pts.len() {
         let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
@@ -345,6 +350,27 @@ fn polygons(shape: GroundShape, [sx, sy, sz]: [f64; 3], base: bool) -> Vec<Vec<[
             }
             out
         }
+        GroundShape::Shard => {
+            // An elongated low-poly shard (WORK_QUEUE item 18: "elongated low poly shards"): an
+            // uneven triangular waist and two off-axis tips along x, eight flat faces, about 3:1.
+            // Every face is drawn (a loose shard tumbles; on the ground its two lower ones hide).
+            let _ = base;
+            let waist = [
+                [0.08 * sx, 0.0, -sz / 2.0],
+                [-0.06 * sx, 0.0, sz / 2.0],
+                [0.12 * sx, sy, 0.08 * sz],
+            ];
+            let head = [sx / 2.0, 0.35 * sy, -0.12 * sz];
+            let tail = [-sx / 2.0, 0.2 * sy, 0.14 * sz];
+            let mut out = Vec::new();
+            for i in 0..3 {
+                let j = (i + 1) % 3;
+                // The waist's ring runs −z, +z, top: counter-clockwise seen from −x.
+                out.push(vec![waist[j], waist[i], head]);
+                out.push(vec![waist[i], waist[j], tail]);
+            }
+            out
+        }
         GroundShape::Lump => {
             // Three rings of a squat hexagon: a lump wider at its middle, rounded at the top.
             let ring = |y: f64, r: f64| -> Vec<[f64; 3]> {
@@ -380,7 +406,20 @@ pub(super) fn push_polygon(
     row_m: f64,
 ) {
     // Its normal in metres (the points are).
-    let n = newell(pts);
+    push_polygon_shaded(m, pts, newell(pts), color, tile, lit, row_m);
+}
+
+/// `push_polygon` with a given shading normal (unit, metres) instead of the points' own: a shape
+/// drawn flat but lit as another (block damage's scoops and shards, docs/BLOCK_DAMAGE.md §6).
+pub(super) fn push_polygon_shaded(
+    m: &mut MeshArrays,
+    pts: &[[f64; 3]],
+    n: [f64; 3],
+    color: [f64; 3],
+    tile: &crate::textures::TileRect,
+    lit: [f32; 2],
+    row_m: f64,
+) {
     let tint = dwell_look::normal_tint(n[0], n[1], n[2]);
     let base = (m.positions.len() / 3) as u32;
     for p in pts {
@@ -501,13 +540,85 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// A chunk with ground items and a cracked cell keeps the crack overlay's stream as long
+        /// as its opaque vertices (BUGS.md #74): the items are appended after the cells are meshed,
+        /// and a stream short of them made the client draw no crack anywhere in the chunk.
+        fn a_chunk_with_ground_items_keeps_its_cracks_for_every_vertex(f: FaceFrame) {
+            let chunk = f.cell([0, FLAT_TOP_Y + 1, 0]).map(|v| v.div_euclid(N));
+            let origin = chunk.map(|v| v * N);
+            // Face-local rows inside the chunk: grass at `g`, a stone block on it.
+            let g = f.row(origin[1]).min(f.row(origin[1] + N - 1)) + 3;
+            let mut cells = dwell_world::hash::HashMap::default();
+            let [ax, _, az] = SKY_APRON;
+            for x in -ax..N + ax {
+                for z in -az..N + az {
+                    cells.insert(f.cell([origin[0] + x, g, origin[2] + z]), f.state(M.grass));
+                    cells.insert(
+                        f.cell([origin[0] + x, g - 1, origin[2] + z]),
+                        f.state(M.dirt),
+                    );
+                }
+            }
+            let stone_at = f.cell([origin[0] + 8, g + 1, origin[2] + 8]);
+            cells.insert(stone_at, f.state(M.stone));
+            let at = |c: [i32; 3]| cells.get(&c).copied().unwrap_or(M.air);
+            let [ex, ey, ez] = SKY_EXTENT;
+            let [_, ay, _] = SKY_APRON;
+            let mut padded = vec![0u16; SKY_VOLUME];
+            for y in 0..ey {
+                for z in 0..ez {
+                    for x in 0..ex {
+                        let c = [origin[0] + x - ax, origin[1] + y - ay, origin[2] + z - az];
+                        padded[(x + ex * (z + ez * y)) as usize] = at(c);
+                    }
+                }
+            }
+            let job = GroundJob {
+                seed: 5,
+                ..GroundJob::default()
+            };
+            assert!(
+                !scatter(&padded, origin, &job).is_empty(),
+                "items on the field"
+            );
+            let local = std::array::from_fn(|k| stone_at[k] - origin[k]);
+            let view = dwell_protocol::damage::DamageView {
+                fraction: 200,
+                marks: vec![dwell_protocol::damage::HitMark::at(4, [128, 128, 255])],
+            };
+            let m = crate::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                origin,
+                &[],
+                Some(&job),
+                Default::default(),
+                &[(local, view)],
+                &[],
+            )
+            .expect("meshed")
+            .opaque;
+            assert!(
+                m.cracks.iter().any(|&c| c >> 16 & 0xff != 0),
+                "a cracked face"
+            );
+            assert_eq!(m.cracks.len(), m.positions.len() / 3, "every vertex");
+        }
+    );
+
     #[test]
     fn every_face_of_both_shapes_faces_outward() {
         // both-faces: item-local geometry, mirrored with the chunk's mesh.
-        for shape in [GroundShape::Rod, GroundShape::Lump] {
+        for shape in [GroundShape::Rod, GroundShape::Lump, GroundShape::Shard] {
             // (The cluster is lumps; a lump's faces are checked here.)
             let size = [0.4, 0.1, 0.2];
             let faces = polygons(shape, size, true);
+            // The shape's middle: its vertices' mean (a shard's tips are off its base's middle).
+            let pts: Vec<[f64; 3]> = faces.iter().flatten().copied().collect();
+            let mid: [f64; 3] =
+                std::array::from_fn(|k| pts.iter().map(|p| p[k]).sum::<f64>() / pts.len() as f64);
             let mut m = MeshArrays::default();
             for f in &faces {
                 push_polygon(
@@ -525,7 +636,11 @@ mod tests {
                 let c: [f64; 3] =
                     std::array::from_fn(|k| f.iter().map(|p| p[k]).sum::<f64>() / f.len() as f64);
                 let n = &m.normals[at * 3..at * 3 + 3];
-                let out = [c[0], c[1] - size[1] * 0.4, c[2]];
+                let out = if shape == GroundShape::Shard {
+                    [c[0] - mid[0], c[1] - mid[1], c[2] - mid[2]]
+                } else {
+                    [c[0], c[1] - size[1] * 0.4, c[2]]
+                };
                 let dot: f64 = (0..3).map(|k| f64::from(n[k]) * out[k]).sum();
                 assert!(dot > 0.0, "{shape:?} face {f:?} normal {n:?}");
                 at += f.len();
@@ -627,6 +742,49 @@ mod tests {
             let tile = crate::textures::tile_rect(look_tile(&l));
             assert!((f64::from(m.tiles[0]) - tile.u0).abs() < 1e-6, "{item}");
         }
+    }
+
+    /// Stone's per-hit piece is an elongated low-poly shard (WORK_QUEUE item 18, owner: "The stone
+    /// hits should be elongated low poly shards"): about 3:1 long to wide, 6–10 flat triangles,
+    /// closed all round (it tumbles), its base on the ground.
+    #[test]
+    fn the_rock_shard_is_an_elongated_low_poly_shard() {
+        // both-faces: item-local geometry; the loose item mirrors it with its face.
+        let l = look("dwell:rock_shard");
+        assert_eq!(l.shape, GroundShape::Shard);
+        let m = look_mesh(&l);
+        let triangles = m.indices.len() / 3;
+        assert!((6..=10).contains(&triangles), "{triangles} triangles");
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for p in m.positions.chunks_exact(3) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let (len, wide, tall) = (hi[0] - lo[0], hi[2] - lo[2], hi[1] - lo[1]);
+        assert!(
+            len >= 2.5 * wide && len >= 2.5 * tall,
+            "elongated: {len} × {wide} × {tall}"
+        );
+        assert!(lo[1].abs() < 1e-6, "its base on the ground");
+        // Closed: every edge in exactly two triangles.
+        let q = |i: u32| {
+            let p = &m.positions[i as usize * 3..i as usize * 3 + 3];
+            p.iter()
+                .map(|x| (x * 1e5).round() as i64)
+                .collect::<Vec<_>>()
+        };
+        let mut edges = std::collections::HashMap::new();
+        for t in m.indices.chunks_exact(3) {
+            for k in 0..3 {
+                let (a, b) = (q(t[k]), q(t[(k + 1) % 3]));
+                *edges
+                    .entry(if a < b { (a, b) } else { (b, a) })
+                    .or_insert(0) += 1;
+            }
+        }
+        assert!(edges.values().all(|&n| n == 2), "closed all round");
     }
 
     #[test]

@@ -137,9 +137,19 @@ fn a_default_worlds_join_is_unchanged() {
     assert_eq!(j.session.worldgen_config(), "");
     let f = settings_of(&j.got);
     assert_eq!(f.worldgen_hash(), None);
-    // The bytes are the saved fields' as before: clock, water speed, mode, nothing more.
+    // The saved fields' as before (clock, water speed, mode), and the server's capabilities: an
+    // optional field a build before them skips (ARCHITECTURE.md §8.3), never saved.
     assert_eq!(
         f.0.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+        vec![tag::CLOCK, tag::WATER_SPEED, tag::MODE, tag::CAPABILITIES]
+    );
+    assert_eq!(tag::CAPABILITIES & tag::OPTIONAL, tag::OPTIONAL);
+    assert_eq!(
+        f.with_capabilities(None)
+            .0
+            .iter()
+            .map(|(t, _)| *t)
+            .collect::<Vec<_>>(),
         vec![tag::CLOCK, tag::WATER_SPEED, tag::MODE]
     );
     assert!(!j.sent.contains(&Message::WorldgenRequest));

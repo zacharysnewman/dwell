@@ -75,6 +75,14 @@ pub async fn probe_scene() -> Result<Vec<u8>, JsError> {
 
 /// The hotbar picture of palette slot `slot` (TILE × TILE RGBA8): a ½ m piece of a full block
 /// shows as the world draws a ½ m cell, its tile's top half (`dwell_mesh::half_swatch`).
+/// Draws the fog preset `name` (shared/look/fog.json `presets`; `?haze=<name>`, a dev tool to
+/// compare them) instead of the fog every client draws. Called before the client is created (the
+/// shaders bake the fog in); returns whether `name` is a preset.
+#[wasm_bindgen(js_name = setHaze)]
+pub fn set_haze(name: &str) -> bool {
+    dwell_look::fog::select(name)
+}
+
 #[wasm_bindgen(js_name = hotbarSwatch)]
 pub fn hotbar_swatch(slot: usize) -> Vec<u8> {
     let palette = dwell_game::block_interaction::palette();
@@ -286,38 +294,71 @@ pub fn set_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>, 
 /// and each face's seed, so a map kept by another build is never read.
 #[wasm_bindgen(js_name = worldMapKeys)]
 /// A test world's worldgen config (`worldgen`, `chisel::worldgen_height`) keys its maps apart.
-pub fn world_map_keys(world_seed: u64, worldgen: Option<String>) -> Vec<String> {
-    let config = worldgen.unwrap_or_default();
-    [dwell_world::Face::A, dwell_world::Face::B]
-        .into_iter()
-        .map(|f| {
-            crate::chisel::worldgen_map_key(
-                dwell_worldgen::bifacial::face_seed(world_seed, f),
-                &config,
-            )
-        })
-        .collect()
+/// A bigger world's (`radius_scale`, BIG_MAP.md M2b: its `WorldSettings` size) keys its maps apart
+/// too; none or 1 is today's key.
+pub fn world_map_keys(
+    world_seed: u64,
+    worldgen: Option<String>,
+    radius_scale: Option<u32>,
+) -> Vec<String> {
+    crate::local::world_map_keys(
+        world_seed,
+        &worldgen.unwrap_or_default(),
+        dwell_protocol::world_size::WorldSize::playable(radius_scale),
+    )
 }
 
 /// Computes face `face`'s (0: A, 1: B) world map of a terrain world and returns its bytes (a
 /// builder worker's job: ~1.3 s).
 #[wasm_bindgen(js_name = buildWorldMap)]
 /// A test world's (`worldgen`) is built over its height field; throws when the config is bad.
+/// A bigger world's map (`radius_scale`, BIG_MAP.md M2b) is built over its own disc.
+/// `progress(step, fraction)` hears the build's steps as it runs (BUGS.md #91: the index of
+/// `dwell_worldgen::progress::MapStep::ALL`, `loading.json` `mapSteps`, and the fraction of it
+/// done), at most once per step per hundredth.
 pub fn build_world_map(
     world_seed: u64,
     face: u8,
     worldgen: Option<String>,
+    radius_scale: Option<u32>,
+    progress: Option<js_sys::Function>,
 ) -> Result<Vec<u8>, JsError> {
     let face = if face == 1 {
         dwell_world::Face::B
     } else {
         dwell_world::Face::A
     };
-    crate::chisel::worldgen_map_bytes(
-        dwell_worldgen::bifacial::face_seed(world_seed, face),
-        &worldgen.unwrap_or_default(),
-    )
-    .map_err(|e| JsError::new(&e))
+    let build = || {
+        dwell_worldgen::config::worldgen_map_bytes_sized(
+            dwell_worldgen::bifacial::face_seed(world_seed, face),
+            &worldgen.unwrap_or_default(),
+            dwell_protocol::world_size::WorldSize::playable(radius_scale),
+        )
+    };
+    let bytes = match progress {
+        None => build(),
+        Some(f) => {
+            let mut last: Option<(usize, f64)> = None;
+            dwell_worldgen::progress::with_sink(
+                move |step, fraction| {
+                    let k = step.index();
+                    if last
+                        .is_some_and(|(lk, lf)| lk == k && fraction < 1.0 && fraction - lf < 0.01)
+                    {
+                        return;
+                    }
+                    last = Some((k, fraction));
+                    let _ = f.call2(
+                        &JsValue::NULL,
+                        &JsValue::from(k as u32),
+                        &JsValue::from(fraction),
+                    );
+                },
+                build,
+            )
+        }
+    };
+    bytes.map_err(|e| JsError::new(&e))
 }
 
 /// Installs a world map's bytes in this instance, so its generators use it rather than computing

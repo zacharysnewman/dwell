@@ -167,3 +167,46 @@ fn installing_a_test_worlds_map_replaces_the_seeds_own_in_an_instance() {
     cache::install(&codec::encode(&own)).unwrap();
     assert_eq!(TerrainGenerator::new(seed).map().worldgen_text(), "");
 }
+
+/// BUGS.md #134: a world edit's geology reads a rock's `capBy` and the geology's `arid` (the build's
+/// when absent), and names a bad entry.
+#[test]
+fn a_geology_edit_reads_cap_by_and_arid() {
+    use dwell_worldgen::config::geology_from_json;
+    use dwell_worldgen::geology::{CapClimate, GEOLOGY};
+    let mut v: serde_json::Value =
+        serde_json::from_str(include_str!("../../../shared/worldgen/rocks.json")).unwrap();
+    let g = geology_from_json(&v).unwrap();
+    let ss = g
+        .rocks
+        .iter()
+        .find(|r| r.name == "dwell:sandstone")
+        .unwrap();
+    assert_eq!(ss.cap, "dwell:red_sandstone");
+    assert_eq!(ss.cap_by.len(), 1);
+    assert_eq!(ss.cap_by[0].climate, CapClimate::Arid);
+    assert_eq!(ss.cap_by[0].cap, "dwell:red_sand");
+    assert_eq!(g.arid, GEOLOGY.arid);
+    assert!(g.arid.holds(20.0, 0.1, Some(200.0)));
+    assert!(!g.arid.holds(20.0, 0.6, Some(200.0)), "wet");
+    assert!(!g.arid.holds(20.0, 0.1, Some(1200.0)), "rainy");
+    assert!(!g.arid.holds(-5.0, 0.1, Some(100.0)), "cold");
+    assert!(g.arid.holds(20.0, 0.1, None), "no climate: by the wetness");
+    // An edit stored before 0.60 has no `arid`: the build's.
+    v.as_object_mut().unwrap().remove("arid");
+    assert_eq!(geology_from_json(&v).unwrap().arid, GEOLOGY.arid);
+    fn rock(v: &mut serde_json::Value) -> &mut serde_json::Value {
+        v["rocks"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r["name"] == "dwell:sandstone")
+            .unwrap()
+    }
+    rock(&mut v)["capBy"] = serde_json::json!([{ "humid": "dwell:sand" }]);
+    let e = geology_from_json(&v).unwrap_err();
+    assert!(e.contains("unknown climate humid"), "{e}");
+    rock(&mut v)["capBy"] = serde_json::json!([{ "arid": "dwell:nothing" }]);
+    let e = geology_from_json(&v).unwrap_err();
+    assert!(e.contains("dwell:nothing is not in the registry"), "{e}");
+}

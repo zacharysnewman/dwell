@@ -90,6 +90,24 @@ describe('sound samples: data', () => {
         },
         'is not one of samples, procedural',
       ],
+      [
+        (f) => {
+          (f.sounds.hurt as Record<string, unknown>).samples = {
+            files: ['hurt-1.m4a', 'hurt-2.m4a'],
+            from: ['GRUNT_Male_B_Hurt_Short_01'],
+          };
+        },
+        "must name the pack's file for each of files",
+      ],
+      [
+        (f) => {
+          (f.sounds.hurt as Record<string, unknown>).samples = {
+            files: ['hurt-1.m4a'],
+            from: ['grunt male'],
+          };
+        },
+        'is not a pack file name',
+      ],
     ];
     for (const [edit, message] of cases) {
       const fs = files();
@@ -182,6 +200,21 @@ describe('sound samples: a material by data alone', () => {
     expect(soundsFor(event(data, 'step', stone.first), data)[0]?.sound).toBe('dwell:stone_step');
     const files = sound('dwell:grass_step').samples?.files ?? [];
     expect(files.every((f) => f.startsWith('grass-step-'))).toBe(true);
+  });
+
+  // Owner, 2026-11-12: the "no" sound for clicking when nothing is there was "way to loud and
+  // jarring". The old one (UI_Error_Tone_01, peak -0.5 dBFS, played at gain 0.4) peaked near
+  // -8.5 dBFS; the new soft knock (peak -6.1 dBFS) plays at most ~12 dB below that.
+  it('keeps the deny sound soft: a quiet knock, ~12 dB under the old error tone', () => {
+    const deny = sound('dwell:deny');
+    expect(usesSamples(deny)).toBe(true);
+    expect(deny.samples?.files).toHaveLength(1);
+    expect(deny.samples?.files[0]).toMatch(/^deny-knock-1-[0-9a-f]{8}\.m4a$/);
+    const filePeakDb = -6.1; // the file's measured peak (ffmpeg volumedetect)
+    const oldPeakDb = -0.5 + 20 * Math.log10(0.4);
+    const peakDb = filePeakDb + 20 * Math.log10(sampleGain(deny, {}));
+    expect(peakDb).toBeLessThanOrEqual(oldPeakDb - 11);
+    expect(peakDb).toBeGreaterThan(oldPeakDb - 18); // still heard
   });
 
   it('scales a sample by its gain, the play and the intensity range', () => {

@@ -60,9 +60,19 @@ const TURN = {
   west: (x, z) => [z, 1 - x],
 };
 // The state's selection box: the block's, turned to the state's facing.
+// A cross with per-state heights (`cross.heights`) scales the box's top with the state's height.
+function crossHeightOf(d, values) {
+  const c = d.cross ?? {};
+  const full = c.height ?? 1;
+  if (!c.heights) return full;
+  return c.heights.heights[values[c.heights.property]] ?? full;
+}
 function selectionOf(d, values) {
-  const b = d.selectionBox;
-  if (!b || !d.facingProperty) return b;
+  const raw = d.selectionBox;
+  if (!raw) return raw;
+  const scale = d.cross?.heights ? crossHeightOf(d, values) / (d.cross.height ?? 1) : 1;
+  const b = scale === 1 ? raw : [raw[0], raw[1], raw[2], raw[3], +(raw[1] + (raw[4] - raw[1]) * scale).toFixed(4), raw[5]];
+  if (!d.facingProperty) return b;
   const turn = TURN[values[d.facingProperty]];
   const [ax, az] = turn(b[0], b[2]);
   const [bx, bz] = turn(b[3], b[5]);
@@ -78,6 +88,9 @@ const RENDER_MODES = ['opaque', 'cutout', 'translucent'];
 const SUPPORTS = ['below', 'behind'];
 // What a block counts as for holding things up (docs/FELLING.md §2); absent: ground.
 const SUPPORT_ROLES = ['ground', 'carrier', 'rider', 'falls'];
+// What a falling block becomes where it settles (owner, 2026-11-13): `self` (the default) the state it
+// fell as; `full` its family's full block (a fallen sand ramp lands as sand, never a lone ramp).
+const SETTLES_AS = ['self', 'full'];
 const AXES = ['x', 'y', 'z'];
 // The natural, moldable material groups (`moldable`; docs/ITEMS.md): building with one of a group
 // onto a slope of the same group replaces the slope.
@@ -118,6 +131,9 @@ const familyBlock = (base, kind, extra = {}) => {
     palette: 'all',
     // A slope is of its block's moldable material (dirt's ramp is dirt).
     ...(base.moldable === undefined ? {} : { moldable: base.moldable }),
+    // A falling block's family falls too, and settles as its base block's `settlesAs` says
+    // (owner, 2026-11-13: a sand ramp that falls lands as flat sand, never a lone ramp).
+    ...(base.support === 'falls' ? { support: 'falls', settlesAs: base.settlesAs ?? 'self', familyOf: base.name } : {}),
   };
   if (kind === 'ramp') {
     // Stored cardinal ramps (docs/HALF_HEIGHT_GRID.md §3): placed by generation only, so not in
@@ -226,7 +242,7 @@ function validateRender(id, def, look, isAir) {
   }
   if (def.cross !== undefined) {
     if (look !== 'cross') fail(`${id}: cross options need look cross`);
-    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter', 'sitOnSupport']);
+    onlyKeys(id, 'cross', def.cross, ['height', 'quads', 'jitter', 'sitOnSupport', 'heights']);
     const { height = 1, quads = 2, jitter, sitOnSupport = true } = def.cross;
     if (typeof sitOnSupport !== 'boolean') fail(`${id}: cross.sitOnSupport must be true or false`);
     if (!(isNum(height) && height > 0 && height <= 1)) fail(`${id}: cross.height must be in (0, 1]`);
@@ -275,7 +291,12 @@ function validateRender(id, def, look, isAir) {
   if (def.support !== undefined && !SUPPORT_ROLES.includes(def.support)) {
     fail(`${id}: support must be one of ${SUPPORT_ROLES.join(', ')}`);
   }
+  if (def.settlesAs !== undefined) {
+    if (!SETTLES_AS.includes(def.settlesAs)) fail(`${id}: settlesAs must be one of ${SETTLES_AS.join(', ')}`);
+    if (def.support !== 'falls') fail(`${id}: settlesAs needs support falls (only a falling block settles)`);
+  }
   if (def.passable !== undefined && typeof def.passable !== 'boolean') fail(`${id}: passable must be true or false`);
+  if (def.leafFlush !== undefined && typeof def.leafFlush !== 'boolean') fail(`${id}: leafFlush must be true or false`);
   if (def.nearFade !== undefined && !(isNum(def.nearFade) && def.nearFade > 0 && def.nearFade <= 4)) {
     fail(`${id}: nearFade must be in (0, 4] metres (how close to the eye its faces dissolve)`);
   }
@@ -372,6 +393,23 @@ for (const ns of namespaces) {
       const ramp = def.slopeFamily === 'ramp';
       if (!ramp && (def.shape !== 'full' || (def.look ?? 'cube') !== 'cube')) fail(`${id}: crossSection needs shape full and look cube (or a ramp family)`);
       if (!ramp && !def.axisProperty) fail(`${id}: crossSection needs an axisProperty (the octagon lies across its axis)`);
+    }
+    // Heights (docs/ECOLOGY.md §10, a plant's growth stages): a property whose values give the
+    // cross's height (a fraction of the cell, in (0, 1]); its default (first) value must be the
+    // block's `cross.height`, so a state placed or generated without the property draws as before.
+    // The state's selection box is scaled with it (`selectionOf`).
+    if (def.cross?.heights !== undefined) {
+      const { property, heights, $comment: _note, ...more } = def.cross.heights ?? {};
+      if (Object.keys(more).length) fail(`${id}: cross.heights: unknown ${Object.keys(more).join(', ')}`);
+      const p = props.find((q) => q.name === property);
+      if (!p) fail(`${id}: cross.heights.property must name a property of the block`);
+      if (typeof heights !== 'object' || heights === null) fail(`${id}: cross.heights.heights must map each value to a height`);
+      for (const v of p.values) {
+        const h = heights[v];
+        if (typeof h !== 'number' || !(h > 0 && h <= 1)) fail(`${id}: cross.heights.heights.${v} must be a number in (0, 1]`);
+      }
+      if (Object.keys(heights).some((v) => !p.values.includes(v))) fail(`${id}: cross.heights.heights names a value the property lacks`);
+      if (heights[p.values[0]] !== (def.cross.height ?? 1)) fail(`${id}: cross.heights: the default value ${p.values[0]} must be cross.height (as before)`);
     }
     // A liquid's fill (docs/WATER_FLOW.md §15): how full its cell is, in parts of the largest value,
     // the first (full) its default, so a liquid placed or generated fills its cell.
@@ -719,6 +757,15 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push(...blockRows);
   rs.push('];');
   rs.push('');
+  // A falling block's settled block (`settlesAs` "full": a shape family member settles as its base).
+  const settles = blocks
+    .filter((b) => b.def.settlesAs === 'full' && b.def.familyOf)
+    .map((b) => `    (${rstr(b.id)}, ${rstr(`${b.id.split(':')[0]}:${b.def.familyOf}`)}),`);
+  rs.push('/// Falling blocks that settle as another block (`settlesAs`): (block, the block it settles as).');
+  rs.push(`pub static SETTLES_AS: [(&str, &str); ${settles.length}] = [`);
+  rs.push(...settles);
+  rs.push('];');
+  rs.push('');
   const faces = [];
   const shapes = [];
   for (const t of shapeTable) {
@@ -743,12 +790,12 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push('];');
   rs.push('');
   const RS_SHAPES = { empty: 'Empty', full: 'Full', shaped: 'Shaped' };
-  const crossRs = (d) => {
+  const crossRs = (d, values) => {
     if (d.look !== 'cross') return 'None';
     const c = d.cross ?? {};
     const j = c.jitter ?? {};
     const [lo, hi] = j.height ?? [1, 1];
-    return `Some(Cross { height: ${rf(c.height ?? 1)}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true} })`;
+    return `Some(Cross { height: ${rf(crossHeightOf(d, values))}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true} })`;
   };
   rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
   for (const st of states) {
@@ -777,7 +824,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `side_under: &[${st.block.sideUnder.map((r) => `SideUnder { above: ${rstr(r.above)}, side: ${rstr(r.side)} }`).join(', ')}]`,
       `grid: ${d.grid ? `Some(Grid { every: ${d.grid.every}, strength: ${rf(d.grid.strength)} })` : 'None'}`,
       `render: RenderMode::${pascal(renderOf(d))}`,
-      `cross: ${crossRs(d)}`,
+      `cross: ${crossRs(d, st.values)}`,
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
       `outline: ${outlineOf(d)}`,
@@ -798,6 +845,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `passable: ${!!d.passable}`,
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,
       `near_fade: ${rf(d.nearFade ?? 0)}`,
+      `leaf_flush: ${!!d.leafFlush}`,
       `fill: ${rf(st.fill)}`,
       `cross_section: ${d.crossSection ? `Some(CrossSection { chamfer: ${rf(d.crossSection.chamfer)}, joins: ${rstr(d.crossSection.joins)}, ring: ${rf(d.crossSection.ring ?? 0)}, heart: ${d.crossSection.heart ? `Some(${rstr(d.crossSection.heart)})` : 'None'}, width: ${rf(d.crossSection.widths ? d.crossSection.widths.metres[st.values[d.crossSection.widths.property]] : 1)} })` : 'None'}`,
     ];

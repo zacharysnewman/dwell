@@ -51,15 +51,26 @@ fn lush() -> dwell_sim::server::GrassEnvelope {
 
 /// The tall grass on the floor of the chunk holding face-local column (4, 4).
 fn tufts(fx: &mut Fixture, f: FaceFrame) -> usize {
-    let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
     let mut n = 0;
     for x in 0..CHUNK_SIZE {
         for z in 0..CHUNK_SIZE {
             let [x, y, z] = f.cell([x, FLAT_TOP_Y, z]);
-            n += usize::from(fx.server.world().get_voxel(x, y, z) == tall);
+            n += usize::from(is_tuft(fx.server.world().get_voxel(x, y, z)));
         }
     }
     n
+}
+
+/// Whether `s` is tall grass at any growth stage.
+fn is_tuft(s: dwell_blocks::StateId) -> bool {
+    s != M.air && dwell_blocks::block_of(s).name == "dwell:tall_grass"
+}
+
+/// The growth stage of the tuft at face-local `p` (None: no tuft).
+fn stage_at(fx: &mut Fixture, f: FaceFrame, p: [i32; 3]) -> Option<usize> {
+    let [x, y, z] = f.cell(p);
+    let s = fx.server.world().get_voxel(x, y, z);
+    dwell_worldgen::grass::Rule::build(0).stage_of(f.state(s))
 }
 
 /// A server on face `f` with one tuft at (4, 4) and a placed stone beside it, `ticks` ticks on.
@@ -161,3 +172,39 @@ fn the_saved_form_round_trips_and_another_version_is_unread() {
     newer[0] = 2;
     assert_eq!(Grass::from_bytes(&newer), None);
 }
+
+dwell_world::both_faces!(
+    fn the_server_grows_sprouts_taller_and_an_eaten_tuft_goes_back_to_a_sprout(f: FaceFrame) {
+        // docs/ECOLOGY.md §10: stages advance with the days the server grows.
+        let rule = dwell_worldgen::grass::Rule::build(0);
+        let full = rule.stage_of(rule.block()).unwrap();
+        let mut fx = scene(f, config(f), 0);
+        let row: Vec<[i32; 3]> = (8..24).map(|x| [x, FLAT_TOP_Y, 12]).collect();
+        for &p in &row {
+            let [x, y, z] = f.cell(p);
+            fx.server.world().set_voxel(x, y, z, f.state(rule.sprout()));
+        }
+        for _ in 0..20 {
+            fx.server.step();
+        }
+        grow_all(&mut fx);
+        let stages: Vec<usize> = row
+            .iter()
+            .map(|&p| stage_at(&mut fx, f, p).unwrap())
+            .collect();
+        assert!(stages.iter().all(|&s| s > 0), "all grew: {stages:?}");
+        assert!(
+            stages.iter().filter(|&&s| s == full).count() >= row.len() / 2,
+            "most reached full height in 20 days: {stages:?}"
+        );
+        // Eaten (a grazer's bite): a sprout over grass, in a world that grows grass.
+        let p = row[0];
+        assert_eq!(fx.server.eaten_to(f.cell(p)), f.state(rule.sprout()));
+        fx.server.set_grass_enabled(false);
+        assert_eq!(
+            fx.server.eaten_to(f.cell(p)),
+            M.air,
+            "no growth: gone, as before"
+        );
+    }
+);

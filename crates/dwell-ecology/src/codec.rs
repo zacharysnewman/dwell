@@ -3,15 +3,22 @@
 //! species it doesn't know are dropped, the rest mapped to its own indices. A forage grid of
 //! another size (the data's `cellM` changed) starts full.
 //!
-//! Layout (little-endian): `u8` version (1), `u64` seed, `f64` day, `u32` next id, `u32` cells,
-//! that many `f64` forage, `u16` names, each `u16` length + UTF-8, `u32` groups, each `u32` id,
-//! `u16` name index, `f64` x, z, size, hunger, energy, `u8` activity.
+//! Layout (little-endian): `u8` version (2), `u64` seed, `f64` day, `u32` next id, `u32` cells
+//! (the island's land cells), the forage as runs until every cell is covered — a LEB128 count of
+//! cells at their most (not written), a LEB128 count of cells that aren't, then theirs as `f32` —
+//! `u16` names, each `u16` length + UTF-8, `u32` groups, each `u32` id, `u16` name index, `f64` x,
+//! z, size, hunger, energy, `u8` activity. A fresh or regrown island's forage is a few bytes.
+//!
+//! Version 1 (before the land-only island) is still read: its forage was the whole grid's,
+//! `n` × `n` `f64`, row-major; the land cells' values are kept (as f32), the water's dropped.
 
 use crate::data::Data;
 use crate::island::Island;
 use crate::sim::{Activity, Ecosystem, Group};
 
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
+/// The whole-grid f64 forage record (still read).
+const VERSION_GRID: u8 = 1;
 
 const ACTIVITIES: [Activity; 7] = [
     Activity::Resting,
@@ -67,19 +74,64 @@ impl Reader<'_> {
     fn f64(&mut self) -> Option<f64> {
         Some(f64::from_bits(self.u64()?))
     }
+    fn f32(&mut self) -> Option<f32> {
+        Some(f32::from_bits(self.u32()?))
+    }
+    /// LEB128, at most a `u32`'s worth.
+    fn var(&mut self) -> Option<usize> {
+        let mut v: u64 = 0;
+        for k in 0..5 {
+            let b = self.u8()?;
+            v |= u64::from(b & 0x7f) << (7 * k);
+            if b & 0x80 == 0 {
+                return u32::try_from(v).ok().map(|v| v as usize);
+            }
+        }
+        None
+    }
+}
+
+fn put_var(b: &mut Vec<u8>, mut v: usize) {
+    loop {
+        let byte = (v & 0x7f) as u8;
+        v >>= 7;
+        if v == 0 {
+            b.push(byte);
+            return;
+        }
+        b.push(byte | 0x80);
+    }
+}
+
+/// The forage as runs: cells at their most (`max`) skipped, the rest written as f32.
+fn put_forage(b: &mut Vec<u8>, grazing: &[f32], max: &[f32]) {
+    let full = |c: usize| {
+        max.get(c)
+            .is_some_and(|m| m.to_bits() == grazing[c].to_bits())
+    };
+    let mut c = 0;
+    while c < grazing.len() {
+        let skip = (c..grazing.len()).take_while(|&k| full(k)).count();
+        c += skip;
+        let lit = (c..grazing.len()).take_while(|&k| !full(k)).count();
+        put_var(b, skip);
+        put_var(b, lit);
+        for g in &grazing[c..c + lit] {
+            b.extend(g.to_bits().to_le_bytes());
+        }
+        c += lit;
+    }
 }
 
 impl Ecosystem {
-    /// The ecosystem's bytes, its species named from `data`.
-    pub fn to_bytes(&self, data: &Data) -> Vec<u8> {
+    /// The ecosystem's bytes on `island`, its species named from `data`.
+    pub fn to_bytes(&self, island: &Island, data: &Data) -> Vec<u8> {
         let mut b = vec![VERSION];
         b.extend(self.seed.to_le_bytes());
         b.extend(self.day.to_bits().to_le_bytes());
         b.extend(self.next_id.to_le_bytes());
         b.extend((self.grazing.len() as u32).to_le_bytes());
-        for g in &self.grazing {
-            b.extend(g.to_bits().to_le_bytes());
-        }
+        put_forage(&mut b, &self.grazing, &island.grazing_max);
         b.extend((data.species.len() as u16).to_le_bytes());
         for s in data.species {
             b.extend((s.name.len() as u16).to_le_bytes());
@@ -101,20 +153,47 @@ impl Ecosystem {
     /// can't be read (another version, cut short).
     pub fn from_bytes(bytes: &[u8], island: &Island, data: &Data) -> Option<Self> {
         let mut r = Reader(bytes);
-        if r.u8()? != VERSION {
+        let version = r.u8()?;
+        if version != VERSION && version != VERSION_GRID {
             return None;
         }
         let seed = r.u64()?;
         let day = r.f64()?;
         let next_id = r.u32()?;
         let cells = r.u32()? as usize;
-        let mut grazing = Vec::with_capacity(cells.min(1 << 20));
-        for _ in 0..cells {
-            grazing.push(r.f64()?);
-        }
-        if grazing.len() != island.grazing_max.len() {
-            grazing = island.grazing_max.clone();
-        }
+        let grazing = if version == VERSION_GRID {
+            let mut grid = Vec::with_capacity(cells.min(1 << 20));
+            for _ in 0..cells {
+                grid.push(r.f64()?);
+            }
+            if grid.len() == island.n * island.n {
+                island.grid_indices().map(|k| grid[k] as f32).collect()
+            } else {
+                island.grazing_max.clone()
+            }
+        } else {
+            let mut grazing = Vec::with_capacity(cells.min(1 << 22));
+            while grazing.len() < cells {
+                let skip = r.var()?;
+                let lit = r.var()?;
+                if skip + lit == 0 || grazing.len() + skip + lit > cells {
+                    return None;
+                }
+                let at = grazing.len();
+                // A cell at its most: the island's (another island's size starts full below).
+                grazing.extend(
+                    (at..at + skip).map(|c| island.grazing_max.get(c).copied().unwrap_or(0.0)),
+                );
+                for _ in 0..lit {
+                    grazing.push(r.f32()?);
+                }
+            }
+            if grazing.len() == island.cells() {
+                grazing
+            } else {
+                island.grazing_max.clone()
+            }
+        };
         let names = r.u16()?;
         let mut map = Vec::with_capacity(names as usize);
         for _ in 0..names {
@@ -145,7 +224,11 @@ impl Ecosystem {
         r.0.is_empty().then_some(Self {
             seed,
             day,
-            grazing,
+            grazing: {
+                let mut g = grazing;
+                g.shrink_to_fit();
+                g
+            },
             groups,
             next_id,
             near: Vec::new(),

@@ -405,6 +405,17 @@ pub fn mesh_section_tinted(
     options: &MeshSectionOptions<'_>,
     tints: &[(u32, Tint)],
 ) -> Result<SectionMeshes, LengthError> {
+    mesh_section_trees(cells, options, tints, true)
+}
+
+/// [`mesh_section_tinted`], with its tree cells (leaves and logs, `lod_trees`) drawn or not:
+/// Graphics → Far trees (WORK_QUEUE item 30). Without them the section draws its ground alone.
+pub fn mesh_section_trees(
+    cells: &[u16],
+    options: &MeshSectionOptions<'_>,
+    tints: &[(u32, Tint)],
+    trees: bool,
+) -> Result<SectionMeshes, LengthError> {
     let map: HashMap<u32, Tint> = tints.iter().copied().collect();
     let mirror = options.mirror;
     // Meshed face-local: a mirrored section's row y is the listed row N − 1 − y.
@@ -415,7 +426,7 @@ pub fn mesh_section_tinted(
             .unwrap_or(Tint::NONE)
     };
     let m = if options.mirror {
-        let m = mesh_section_above(&mirror_rows(cells), options, &tint)?;
+        let m = mesh_section_above(&mirror_rows(cells), options, &tint, trees)?;
         let [s0, s1, s2, s3, s4, s5] = m.skirts;
         let skirts = [s0, s1, s3, s2, s4, s5].map(flip_mesh_y);
         SectionMeshes {
@@ -424,7 +435,7 @@ pub fn mesh_section_tinted(
             skirts,
         }
     } else {
-        mesh_section_above(cells, options, &tint)?
+        mesh_section_above(cells, options, &tint, trees)?
     };
     Ok(SectionMeshes {
         opaque: mesh_to_metres(m.opaque),
@@ -443,6 +454,7 @@ fn mesh_section_above(
     cells: &[u16],
     options: &MeshSectionOptions<'_>,
     tint: &dyn Fn(i32, i32, i32) -> Tint,
+    trees: bool,
 ) -> Result<SectionMeshes, LengthError> {
     if cells.len() != LOD_VOLUME {
         return Err(LengthError {
@@ -450,6 +462,28 @@ fn mesh_section_above(
             got: cells.len(),
         });
     }
+    // The ground is meshed as if the section's trees weren't there (BUGS.md #95): a tree cell
+    // neither hides the ground's top under it nor holds the column's surface, so the ground is
+    // closed under every trunk and crown, whether the tree pass draws them (`lod_trees`, over the
+    // ground) or leaves them out (Far trees off, the impostors standing on it). Every tree cell
+    // was skipped by the ground pass already; the near chunks are meshed apart and unchanged.
+    let tree_cells = cells;
+    let ground: Vec<u16>;
+    let cells = if cells.iter().any(|&m| crate::lod_trees::tree_kind(m) != 0) {
+        ground = cells
+            .iter()
+            .map(|&m| {
+                if crate::lod_trees::tree_kind(m) != 0 {
+                    0
+                } else {
+                    m
+                }
+            })
+            .collect();
+        &ground[..]
+    } else {
+        cells
+    };
     let water_drop = options.water_drop;
     let mut opaque = Builder::default();
     let mut water_mesh = Builder::default();
@@ -484,10 +518,6 @@ fn mesh_section_above(
                     let wc = col(c[0], c[2]);
                     // A column's surface cell: its top and sides are drawn at the surface (below).
                     let sy = i32::from(special.y[wc]);
-                    // Leaves and logs are drawn whole as the chunks draw them (`lod_trees`).
-                    if sy != c[1] && crate::lod_trees::tree_kind(m) != 0 {
-                        continue;
-                    }
                     if face != 3 && sy == c[1] {
                         continue;
                     }
@@ -622,13 +652,16 @@ fn mesh_section_above(
             }
         }
     }
-    crate::lod_trees::tree_cells(
-        cells,
-        |x, y, z| i32::from(special.y[col(x, z)]) == y,
-        lod_color,
-        &mut opaque.m,
-        tint,
-    );
+    if trees {
+        // Leaves and logs are drawn whole as the chunks draw them, over the closed ground.
+        crate::lod_trees::tree_cells(
+            tree_cells,
+            |x, y, z| i32::from(special.y[col(x, z)]) == y,
+            lod_color,
+            &mut opaque.m,
+            tint,
+        );
+    }
     emit_surfaces(
         cells,
         &special,

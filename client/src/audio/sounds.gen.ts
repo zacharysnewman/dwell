@@ -5,11 +5,11 @@ export const SOUND_DATA: SoundData = {
   "fallback": "dwell:stone",
   "gaits": {
     "walk": {
-      "stride": 2,
+      "stride": 2.5,
       "gain": 0.55
     },
     "run": {
-      "stride": 2.7,
+      "stride": 2.8,
       "gain": 0.85
     },
     "crouch": {
@@ -21,18 +21,40 @@ export const SOUND_DATA: SoundData = {
       "gain": 0.6
     },
     "swim": {
-      "stride": 2.4,
-      "gain": 0.7
+      "stride": 3,
+      "gain": 0.45
+    }
+  },
+  "self": {
+    "feet": {
+      "right": 0,
+      "up": -1.5,
+      "ahead": 0.6,
+      "stepM": 0.15,
+      "reverb": 0.08
+    },
+    "body": {
+      "right": 0,
+      "up": -0.7,
+      "ahead": 0.4,
+      "reverb": 0.05
+    },
+    "hand": {
+      "right": 0.3,
+      "up": -0.35,
+      "ahead": 0.5
     }
   },
   "events": [
     {
       "name": "step",
-      "set": "step"
+      "set": "step",
+      "self": "feet"
     },
     {
       "name": "climb",
-      "set": "step"
+      "set": "step",
+      "self": "body"
     },
     {
       "name": "land",
@@ -40,24 +62,29 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         3.5,
         16
-      ]
+      ],
+      "self": "feet"
     },
     {
       "name": "jump",
       "set": "step",
-      "sound": "dwell:jump"
+      "sound": "dwell:jump",
+      "self": "feet"
     },
     {
       "name": "break",
-      "set": "break"
+      "set": "break",
+      "self": "hand"
     },
     {
       "name": "place",
-      "set": "place"
+      "set": "place",
+      "self": "hand"
     },
     {
       "name": "hit",
-      "set": "hit"
+      "set": "hit",
+      "self": "hand"
     },
     {
       "name": "enter",
@@ -65,7 +92,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         1.5,
         12
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "exit",
@@ -73,23 +101,28 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         1,
         6
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "swim",
-      "set": "swim"
+      "set": "swim",
+      "self": "body"
     },
     {
       "name": "crouch_on",
-      "sound": "dwell:crouch_on"
+      "sound": "dwell:crouch_on",
+      "self": "body"
     },
     {
       "name": "crouch_off",
-      "sound": "dwell:crouch_off"
+      "sound": "dwell:crouch_off",
+      "self": "body"
     },
     {
       "name": "sprint",
-      "sound": "dwell:sprint"
+      "sound": "dwell:sprint",
+      "self": "body"
     },
     {
       "name": "slide",
@@ -98,7 +131,8 @@ export const SOUND_DATA: SoundData = {
         0.5,
         14
       ],
-      "loop": "start"
+      "loop": "start",
+      "self": "feet"
     },
     {
       "name": "slide_speed",
@@ -115,7 +149,8 @@ export const SOUND_DATA: SoundData = {
         0.5,
         14
       ],
-      "loop": "stop"
+      "loop": "stop",
+      "self": "feet"
     },
     {
       "name": "rise",
@@ -123,7 +158,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         30
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "dive",
@@ -131,7 +167,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         30
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "deny",
@@ -139,7 +176,8 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "tool",
-      "sound": "dwell:ui_click"
+      "sound": "dwell:ui_click",
+      "self": "hand"
     },
     {
       "name": "impact",
@@ -148,7 +186,8 @@ export const SOUND_DATA: SoundData = {
       "speed": [
         2,
         25
-      ]
+      ],
+      "self": "body"
     },
     {
       "name": "fell",
@@ -213,27 +252,33 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "chop_bark",
-      "sound": "dwell:chop_bark"
+      "sound": "dwell:chop_bark",
+      "self": "hand"
     },
     {
       "name": "chop_wood",
-      "sound": "dwell:chop_wood"
+      "sound": "dwell:chop_wood",
+      "self": "hand"
     },
     {
       "name": "chop_creak",
-      "sound": "dwell:chop_creak"
+      "sound": "dwell:chop_creak",
+      "self": "hand"
     },
     {
       "name": "axe_clank",
-      "sound": "dwell:axe_clank"
+      "sound": "dwell:axe_clank",
+      "self": "hand"
     },
     {
       "name": "axe_swish",
-      "sound": "dwell:axe_swish"
+      "sound": "dwell:axe_swish",
+      "self": "hand"
     },
     {
       "name": "axe_rustle",
-      "sound": "dwell:axe_rustle"
+      "sound": "dwell:axe_rustle",
+      "self": "hand"
     },
     {
       "name": "exhausted",
@@ -274,11 +319,13 @@ export const SOUND_DATA: SoundData = {
         0.4,
         6
       ],
-      "fallback": false
+      "fallback": false,
+      "self": "feet"
     },
     {
       "name": "stick_snap",
-      "sound": "dwell:stick_snap"
+      "sound": "dwell:stick_snap",
+      "self": "feet"
     },
     {
       "name": "steam_hiss",
@@ -286,7 +333,14 @@ export const SOUND_DATA: SoundData = {
     },
     {
       "name": "sizzle",
-      "sound": "dwell:sizzle"
+      "sound": "dwell:sizzle",
+      "self": "body"
+    },
+    {
+      "name": "swim_under",
+      "set": "swim_under",
+      "fallback": false,
+      "self": "body"
     }
   ],
   "sets": {
@@ -387,6 +441,7 @@ export const SOUND_DATA: SoundData = {
       "enter": "dwell:water_enter",
       "exit": "dwell:water_exit",
       "swim": "dwell:water_swim",
+      "swim_under": "dwell:water_swim_under",
       "impact": "dwell:water_enter"
     }
   },
@@ -645,10 +700,9 @@ export const SOUND_DATA: SoundData = {
         "gain": 0.3,
         "when": [
           {
-            "input": "altitude",
-            "from": 0,
-            "full": 60,
-            "floor": 0.2
+            "input": "height",
+            "from": 12,
+            "full": 60
           },
           {
             "input": "open",
@@ -761,8 +815,32 @@ export const SOUND_DATA: SoundData = {
             "full": 1.5
           }
         ]
+      },
+      "dwell:underwater": {
+        "files": [
+          "sea-loop-1-e54ebb50.m4a"
+        ],
+        "gain": 0.2,
+        "when": [
+          {
+            "input": "underwater",
+            "from": 0,
+            "full": 1
+          }
+        ]
       }
     }
+  },
+  "underwater": {
+    "buses": [
+      "effects",
+      "ambience"
+    ],
+    "lowpassHz": 800,
+    "q": 0.7,
+    "gain": 0.6,
+    "easeS": 0.25,
+    "openHz": 20000
   },
   "creatures": {
     "radiusM": 32,
@@ -788,6 +866,10 @@ export const SOUND_DATA: SoundData = {
         "startle": "dwell:deer_snort"
       }
     }
+  },
+  "brush": {
+    "everyM": 2.5,
+    "minS": 0.3
   },
   "sounds": {
     "dwell:stone_step": {
@@ -1883,9 +1965,10 @@ export const SOUND_DATA: SoundData = {
           "grass-step-5-14c021c5.m4a",
           "grass-step-6-9e0addf8.m4a"
         ],
-        "gain": 0.5,
+        "gain": 0.4,
         "pitch": 1
       },
+      "voices": 2,
       "gain": 1.902,
       "reverb": 0.055,
       "variation": {
@@ -3123,10 +3206,12 @@ export const SOUND_DATA: SoundData = {
           "water-swim-3-de4830e5.m4a",
           "water-swim-4-7c526fff.m4a"
         ],
-        "gain": 0.6,
-        "pitch": 1
+        "gain": 0.32,
+        "pitch": 1.5,
+        "shift": -2,
+        "lowpassHz": 2500
       },
-      "gain": 1.16,
+      "gain": 0.7,
       "reverb": 0.099,
       "variation": {
         "pitch": 2,
@@ -3167,29 +3252,62 @@ export const SOUND_DATA: SoundData = {
             "attack": 0.05,
             "decay": 0.25
           }
+        }
+      ]
+    },
+    "dwell:water_swim_under": {
+      "samples": {
+        "files": [
+          "water-swim-1-334e94c3.m4a",
+          "water-swim-2-f40c6768.m4a",
+          "water-swim-3-de4830e5.m4a",
+          "water-swim-4-7c526fff.m4a"
+        ],
+        "gain": 0.4,
+        "pitch": 1.5,
+        "shift": -12,
+        "lowpassHz": 600
+      },
+      "gain": 0.6,
+      "reverb": 0.15,
+      "variation": {
+        "pitch": 2,
+        "gain": 1.5,
+        "cutoff": 0.2,
+        "time": 0.15
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 300
+            }
+          ],
+          "env": {
+            "attack": 0.12,
+            "hold": 0.1,
+            "decay": 0.45
+          }
         },
         {
-          "source": "osc",
-          "wave": "sine",
-          "freq": 420,
-          "to": 1000,
-          "gain": 0.1,
-          "at": 0.08,
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.2,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 180,
+              "q": 1,
+              "to": 360
+            }
+          ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.04
-          },
-          "grains": {
-            "count": [
-              3,
-              6
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 7
+            "attack": 0.1,
+            "decay": 0.4
           }
         }
       ]
@@ -3646,7 +3764,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3722,7 +3840,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3792,7 +3910,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3865,7 +3983,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3935,7 +4053,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4021,7 +4139,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4079,7 +4197,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4137,7 +4255,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4313,12 +4431,12 @@ export const SOUND_DATA: SoundData = {
     "dwell:deny": {
       "samples": {
         "files": [
-          "deny-1-afb663fa.m4a"
+          "deny-knock-1-c2a8677d.m4a"
         ],
-        "gain": 0.4,
-        "pitch": 0
+        "gain": 0.2,
+        "pitch": 1
       },
-      "gain": 0.879,
+      "gain": 0.3,
       "reverb": 0.028,
       "variation": "none",
       "layers": [
@@ -5753,72 +5871,51 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:leaf_brush": {
-      "gain": 0.35,
-      "reverb": 0.04,
+      "$comment": "A soft swish layered on a footstep through tall grass or leaves (BUGS.md #103): pink noise only, a slow attack, no grains (the old white-noise grains crackled at five rustles a second); one voice, never restarted.",
+      "gain": 0.16,
+      "reverb": 0.03,
+      "voices": 1,
+      "minGapS": 0.25,
       "variation": {
         "pitch": 2,
         "gain": 1.5,
-        "cutoff": 0.2,
-        "time": 0.2
+        "cutoff": 0.15,
+        "time": 0.15
       },
       "intensity": {
         "gain": [
-          0.3,
+          0.4,
           1
         ],
         "cutoff": [
-          0.7,
+          0.8,
           1
         ],
         "time": [
-          1.2,
-          0.8
+          1.1,
+          0.9
         ]
       },
       "layers": [
         {
           "source": "noise",
           "color": "pink",
-          "gain": 0.45,
+          "gain": 0.4,
           "filters": [
             {
               "type": "bandpass",
-              "freq": 2400,
-              "q": 0.7
-            }
-          ],
-          "env": {
-            "attack": 0.03,
-            "hold": 0.08,
-            "decay": 0.25
-          }
-        },
-        {
-          "source": "noise",
-          "color": "white",
-          "gain": 0.15,
-          "filters": [
-            {
-              "type": "highpass",
-              "freq": 3500,
+              "freq": 1800,
               "q": 0.6
+            },
+            {
+              "type": "lowpass",
+              "freq": 4500
             }
           ],
           "env": {
-            "attack": 0.002,
-            "decay": 0.03
-          },
-          "grains": {
-            "count": [
-              5,
-              9
-            ],
-            "spread": 0.3,
-            "gain": [
-              0.3,
-              1
-            ],
-            "pitch": 4
+            "attack": 0.05,
+            "hold": 0.05,
+            "decay": 0.22
           }
         }
       ]
@@ -6102,15 +6199,18 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
       "samples": {
         "files": [
-          "breath-heavy-1-de91518c.m4a",
-          "breath-heavy-2-b55d091c.m4a"
+          "breath-heavy-1-13f5fdde.m4a"
         ],
-        "gain": 0.35,
+        "from": [
+          "VOICE_MALE_Sigh_1"
+        ],
+        "gain": 0.375,
         "pitch": 0.5
       },
-      "gain": 0.4,
+      "gain": 0.3,
       "reverb": 0.05,
       "variation": {
         "pitch": 1,
@@ -6161,6 +6261,9 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "gasp-1-7f7bc6f6.m4a"
         ],
+        "from": [
+          "GRUNT_Male_Hurt_With_Cough"
+        ],
         "gain": 0.45,
         "pitch": 0.5
       },
@@ -6197,6 +6300,9 @@ export const SOUND_DATA: SoundData = {
       "samples": {
         "files": [
           "strain-1-1122e92f.m4a"
+        ],
+        "from": [
+          "GRUNT_Male_Subtle_Hurt"
         ],
         "gain": 0.4,
         "pitch": 0.5
@@ -6314,6 +6420,10 @@ export const SOUND_DATA: SoundData = {
           "wolf-howl-1-b5f4a467.m4a",
           "wolf-howl-2-54005519.m4a"
         ],
+        "from": [
+          "ANIMAL_Wolf_Howl_01",
+          "ANIMAL_Wolf_Howl_02"
+        ],
         "gain": 0.4,
         "pitch": 1,
         "reverb": 0.1
@@ -6346,6 +6456,10 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "wolf-growl-1-9a226a35.m4a",
           "wolf-growl-2-eedbfbc3.m4a"
+        ],
+        "from": [
+          "ANIMAL_Dog_Growl_01_RR01",
+          "ANIMAL_Dog_Growl_01_RR02"
         ],
         "gain": 0.45,
         "pitch": 1
@@ -6383,6 +6497,10 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "deer-snort-1-d7ae1675.m4a",
           "deer-snort-2-3094de0e.m4a"
+        ],
+        "from": [
+          "ANIMAL_Horse_Snort_01_Dry",
+          "ANIMAL_Horse_Snort_02_Dry"
         ],
         "gain": 0.45,
         "pitch": 1
@@ -6422,6 +6540,12 @@ export const SOUND_DATA: SoundData = {
           "hurt-2-3f3e9f4e.m4a",
           "hurt-3-6a61ad9d.m4a",
           "hurt-4-592b9a06.m4a"
+        ],
+        "from": [
+          "GRUNT_Male_B_Hurt_Short_01",
+          "GRUNT_Male_B_Hurt_Short_02",
+          "GRUNT_Male_B_Hurt_Short_03",
+          "GRUNT_Male_B_Hurt_Short_04"
         ],
         "gain": 0.5,
         "pitch": 0.5
@@ -6501,6 +6625,9 @@ export const SOUND_DATA: SoundData = {
       "samples": {
         "files": [
           "death-1-239f74ee.m4a"
+        ],
+        "from": [
+          "GROAN_Male_Hurt_Long"
         ],
         "gain": 0.5,
         "pitch": 0.5
@@ -7715,8 +7842,8 @@ export const SOUND_DATA: SoundData = {
       "source": "jump-3.m4a"
     },
     {
-      "file": "deny-1-afb663fa.m4a",
-      "source": "deny-1.m4a"
+      "file": "deny-knock-1-c2a8677d.m4a",
+      "source": "deny-knock-1.m4a"
     },
     {
       "file": "chop-bark-1-88f2d509.m4a",
@@ -7847,12 +7974,8 @@ export const SOUND_DATA: SoundData = {
       "source": "body-thud-3.m4a"
     },
     {
-      "file": "breath-heavy-1-de91518c.m4a",
+      "file": "breath-heavy-1-13f5fdde.m4a",
       "source": "breath-heavy-1.m4a"
-    },
-    {
-      "file": "breath-heavy-2-b55d091c.m4a",
-      "source": "breath-heavy-2.m4a"
     },
     {
       "file": "gasp-1-7f7bc6f6.m4a",
@@ -7919,7 +8042,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1529337,
+  "sampleBytes": 1505733,
   "gaitOrder": [
     "walk",
     "run",

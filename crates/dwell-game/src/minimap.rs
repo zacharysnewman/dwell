@@ -50,6 +50,8 @@ pub struct MapTunables {
     /// The zoom levels, closest first: (cell side m, span across the panel m).
     pub big_map_levels: &'static [(f64, f64)],
     pub big_map_start_level: f64,
+    /// The zoom's step between the levels' spans (the shell's zoom stops, BUGS.md #120).
+    pub big_map_zoom_ratio: f64,
     pub big_map_wheel_step_px: f64,
     pub big_map_pinch_step: f64,
     pub big_map_fog_color: u32,
@@ -75,6 +77,34 @@ pub struct MapTunables {
     pub revealed_live_max_cell_m: f64,
     pub revealed_live_tiles_per_frame: f64,
     pub revealed_live_refresh_ms: f64,
+}
+
+impl MapTunables {
+    /// The big map's zoom levels for a world of `size` (BIG_MAP.md M0): the closest level (the
+    /// minimap's area, streamed round the player) as the data has it; every coarser one's cell
+    /// grown by the size's next power of two (`WorldSize::map_cell_m`, so no level builds more
+    /// tiles than today) and the spans spaced geometrically up to the bigger disc's diameter, as
+    /// `shared/ui/gen.mjs` spaces them. At today's size, `big_map_levels` exactly.
+    pub fn big_map_levels_sized(
+        &self,
+        size: dwell_protocol::world_size::WorldSize,
+    ) -> Vec<(f64, f64)> {
+        let n = self.big_map_levels.len();
+        let near = 2.0 * self.minimap_radius_m;
+        let far = 2.0 * size.world_radius_m() as f64;
+        self.big_map_levels
+            .iter()
+            .enumerate()
+            .map(|(i, &(cell, span))| {
+                if size.is_default() {
+                    return (cell, span);
+                }
+                let cell = f64::from(size.map_cell_m(cell as u32, i > 0));
+                let t = i as f64 / (n - 1) as f64;
+                (cell, (near * (far / near).powf(t)).round())
+            })
+            .collect()
+    }
 }
 
 #[rustfmt::skip]
@@ -351,6 +381,33 @@ fn column_top(
         row -= 1;
     }
     None
+}
+
+/// The face-local height (m) of the top of loaded column (`cx`, `cz`) on face `f`, read down from
+/// `top_m` to `bottom_m` (ground at `top_m` followed up to its surface): the top of its highest
+/// block (a liquid's surface), as the maps read it, strictly (a top under a chunk not held is
+/// unknown). None: nothing loaded there. A marker placed on the big map stands on it
+/// (docs/MAP_MARKERS.md).
+pub fn ground_at(
+    world: &VoxelWorld,
+    f: FaceFrame,
+    cx: i32,
+    cz: i32,
+    top_m: f64,
+    bottom_m: f64,
+) -> Option<f64> {
+    let top = column_top(
+        world,
+        f,
+        cx,
+        cz,
+        row_of_m(top_m),
+        row_of_m(bottom_m),
+        1,
+        &|m| (m != M.air).then_some(0),
+        true,
+    )?;
+    Some(f64::from(top.height))
 }
 
 /// A liquid top at `row` of column (`cx`, `cz`): its colour `c` shaded by the water under it as

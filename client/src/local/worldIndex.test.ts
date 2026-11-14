@@ -107,6 +107,22 @@ describe('world index', () => {
     expect(stored?.future).toBe(42);
   });
 
+  it('keeps a bigger terrain world’s size, and none for today’s (BIG_MAP.md M2b)', () => {
+    const store = memoryStore();
+    const index = new WorldIndex(store);
+    const big = index.create({ name: 'B', type: 'terrain', seed: 1, radiusScale: 2 }, 1);
+    const plain = index.create({ name: 'A', type: 'terrain', seed: 1, radiusScale: 1 }, 2);
+    const flat = index.create({ name: 'F', type: 'flat', seed: 1, radiusScale: 2 }, 3);
+    const odd = index.create({ name: 'O', type: 'terrain', seed: 1, radiusScale: 3 }, 4);
+    const again = new WorldIndex(store);
+    expect(again.get(big.id)?.radiusScale).toBe(2);
+    // Today's size, a flat world and a size the data doesn't name record nothing (as before).
+    for (const w of [plain, flat, odd])
+      expect('radiusScale' in (again.get(w.id) ?? {})).toBe(false);
+    // A copy is the same size.
+    expect(again.copy(big, 5).radiusScale).toBe(2);
+  });
+
   it('keeps a new world’s chosen spawn, and none for the usual one', () => {
     const store = memoryStore();
     const index = new WorldIndex(store);

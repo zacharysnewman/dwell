@@ -105,6 +105,9 @@ pub struct Session {
     /// The world's settings as the server sent them (before Welcome), and as read.
     world_fields: Option<world_settings::SettingsFields>,
     world: Option<world_settings::WorldSettings>,
+    /// The server's capabilities (its settings' `CAPABILITIES` field, ARCHITECTURE.md §8.3); None
+    /// from a server that announced none (an older build), which is never sent `Capabilities`.
+    server_capabilities: Option<dwell_protocol::capabilities::Capabilities>,
     /// The server simulates stamina and oxygen (Welcome's `VITALS`, ADR 0069).
     vitals_server: bool,
     /// The Welcome waiting on the player's answer (Confirming).
@@ -155,6 +158,7 @@ impl Session {
             mapping: None,
             world_fields: None,
             world: None,
+            server_capabilities: None,
             vitals_server: false,
             pending: None,
             worldgen_wait: None,
@@ -183,6 +187,12 @@ impl Session {
         &self.worldgen
     }
 
+    /// The world's size (BIG_MAP.md M2b: its settings' `WORLD_SIZE`), once its settings have
+    /// arrived; today's before, from a server without sizes, or past this build's LOD root.
+    pub fn world_size(&self) -> dwell_protocol::world_size::WorldSize {
+        dwell_protocol::world_size::WorldSize::playable(self.world.map(|w| w.size.radius_scale))
+    }
+
     /// The world's settings (its clock, its water speed), once Welcome has arrived.
     pub fn world_settings(&self) -> Option<world_settings::WorldSettings> {
         self.world
@@ -209,6 +219,43 @@ impl Session {
             Some(w) => w.allows(Ability::InstantBreaks),
             None => dwell_protocol::modes::default_mode().allows(Ability::InstantBreaks),
         }
+    }
+
+    /// Whether the world's mode places saved structures from the player's library
+    /// (`structures`; STRUCTURES.md §9). A server that names no mode plays the default one.
+    pub fn structures(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::Structures),
+            None => dwell_protocol::modes::default_mode().allows(Ability::Structures),
+        }
+    }
+
+    /// Whether the world's mode makes theater mode's camera a simulation viewpoint
+    /// (`theaterViewpoint`, creative; THEATER_MODE.md §7). Used only with the `theater.viewpoint`
+    /// capability.
+    pub fn theater_viewpoint(&self) -> bool {
+        use dwell_protocol::modes::Ability;
+        match self.world {
+            Some(w) => w.allows(Ability::TheaterViewpoint),
+            None => dwell_protocol::modes::default_mode().allows(Ability::TheaterViewpoint),
+        }
+    }
+
+    /// Whether the world lets guests use theater mode (`WorldSettings` `theater_guests`,
+    /// THEATER_MODE.md §7): true before the settings arrive and on a server that never sets it.
+    pub fn theater_guests(&self) -> bool {
+        self.world.is_none_or(|w| w.theater_guests)
+    }
+
+    /// Whether a capability (ARCHITECTURE.md §8.3) is on for this session: the server announced it
+    /// and this build has it. False before the settings arrive and on an older server.
+    pub fn capability(&self, name: &str) -> bool {
+        dwell_protocol::capability_names::ALL.contains(&name)
+            && self
+                .server_capabilities
+                .as_ref()
+                .is_some_and(|c| c.has(name))
     }
 
     /// The player chose Continue in the join prompt.
@@ -244,6 +291,13 @@ impl Session {
             region_edits: w.flags & welcome_flags::REGION_EDITS != 0,
             brushes: w.flags & welcome_flags::BRUSHES != 0,
         });
+        // A server that announced capabilities (ARCHITECTURE.md §8.3) hears this client's; an
+        // older one, which would end the session on the unknown message, never does.
+        if self.server_capabilities.is_some() {
+            self.send(&Message::Capabilities(
+                dwell_protocol::capabilities::Capabilities::this_client(),
+            ));
+        }
         // A server that keeps inventories (ADR 0066) sends them once told this client understands.
         if w.flags & welcome_flags::INVENTORY != 0 {
             self.send(&Message::InventoryAction(InventoryAction::Hello));
@@ -273,7 +327,13 @@ impl Session {
         let Some(old) = self.world else {
             return;
         };
-        let Ok(new) = f.settings(old) else {
+        // A setting written only when it differs from its default (theater for guests, off)
+        // reads as the default when the field is gone.
+        let defaults = world_settings::WorldSettings {
+            theater_guests: true,
+            ..old
+        };
+        let Ok(new) = f.settings(defaults) else {
             return; // the server's checks still apply; keep predicting with the old ones
         };
         self.world = Some(new);
@@ -327,6 +387,7 @@ impl Session {
             return;
         };
         let worldgen_hash = fields.worldgen_hash();
+        self.server_capabilities = fields.capabilities();
         match fields.settings(dwell_sim::server::default_settings(
             dwell_sim::water::FLOW.speed,
         )) {
@@ -529,7 +590,7 @@ impl Session {
                         e.material = id(e.material)?;
                         e.from = id(e.from)?;
                     }
-                    RegionEditOp::Paste => {
+                    RegionEditOp::Paste | RegionEditOp::Structure => {
                         // Brushes' KEEP cells name no state.
                         for c in e
                             .cells
@@ -671,6 +732,8 @@ impl Session {
                     | Message::Damage(_)
                     | Message::HeldTools(_)
                     | Message::Steam(_)
+                    | Message::Ecology(_)
+                    | Message::Swordplay(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))
@@ -694,6 +757,15 @@ impl Session {
                 self.world_fields = Some(f);
             }
             Message::WorldSettings(f) if self.joined() => self.on_settings_changed(f),
+            // A player's own map markers (docs/MAP_MARKERS.md): to the game, sent after `Welcome`.
+            Message::Markers(m) if self.joined() => {
+                self.game.push_back((Message::Markers(m), bytes.to_vec()));
+            }
+            // The world's blueprints (docs/BLUEPRINTS.md): to the game.
+            Message::Blueprints(m) if self.joined() => {
+                self.game
+                    .push_back((Message::Blueprints(m), bytes.to_vec()));
+            }
             Message::Inventory(i) if self.joined() => {
                 self.game.push_back((Message::Inventory(i), bytes.to_vec()));
             }
@@ -808,6 +880,10 @@ mod tests {
             },
             water_speed: 2.0,
             mode: "creative",
+            size: dwell_protocol::world_size::WorldSize::DEFAULT,
+            moon_phase: None,
+            orbit: None,
+            theater_guests: true,
         }
     }
 
@@ -932,6 +1008,7 @@ mod tests {
             Channel::World,
             &Message::ChunkUnload(ChunkUnload {
                 coords: vec![[1, 2, 3]],
+                grid: 0,
             })
             .encode(),
             1000.0,
@@ -941,6 +1018,7 @@ mod tests {
             coord: [4, 5, 6],
             revision: 0,
             voxels: Vec::new(),
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let got: Vec<MessageType> = std::iter::from_fn(|| s.next_game())
@@ -1065,6 +1143,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 1,
             voxels,
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(chunk).encode(), 1000.0);
         let modification = Message::VoxelModification(VoxelModification {
@@ -1113,6 +1192,7 @@ mod tests {
             coord: [0, 0, 0],
             revision: 3,
             voxels: vec![p.id_end() as u16; CHUNK_VOLUME],
+            grid: 0,
         };
         s.on_reliable(Channel::World, &Message::ChunkData(bad).encode(), 1000.0);
         assert!(matches!(s.state(), SessionState::Closed { .. }));
@@ -1330,6 +1410,55 @@ mod tests {
         }
     }
 
+    /// ARCHITECTURE.md §8.3 "Capabilities": the client answers with its own only a server whose
+    /// settings announced some (an older server ends the session on the unknown message), and a
+    /// capability is on only when the server named it.
+    #[test]
+    fn capabilities_are_answered_only_to_a_server_that_announced_them() {
+        use dwell_protocol::capabilities::Capabilities;
+        use dwell_protocol::capability_names::STRUCTURES_PLACE;
+        let announced = |caps: Option<Capabilities>| {
+            let (_, mut s) = setup();
+            send_registry(&mut s, &build_registry(), 1 << 16);
+            let f = world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(caps.as_ref());
+            send_settings(&mut s, &f);
+            let _ = s.take_out();
+            assert!(!s.capability(STRUCTURES_PLACE), "nothing before Welcome");
+            s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+            assert!(s.joined(), "{:?}", s.state());
+            let answer = sent(&s.take_out()).into_iter().find_map(|m| match m {
+                Message::Capabilities(c) => Some(c),
+                _ => None,
+            });
+            (s.capability(STRUCTURES_PLACE), answer)
+        };
+        // An older server: no field, no answer, nothing on.
+        assert_eq!(announced(None), (false, None));
+        // This build's server: the answer is this build's, and the capability is on.
+        assert_eq!(
+            announced(Some(Capabilities::this_build())),
+            (true, Some(Capabilities::this_client()))
+        );
+        // A server that names others (a newer build's, a mod's) but not this one: answered, off.
+        assert_eq!(
+            announced(Some(Capabilities::of(["mymod:wet"]))),
+            (false, Some(Capabilities::this_client()))
+        );
+        // A name this build doesn't have is never on, whatever the server says.
+        let (_, mut s) = setup();
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default()
+                .with(settings())
+                .with_capabilities(Some(&Capabilities::of(["mymod:wet"]))),
+        );
+        s.on_reliable(Channel::Control, &welcome(0).encode(), 1000.0);
+        assert!(!s.capability("mymod:wet"));
+    }
+
     #[test]
     fn hello_goes_only_to_a_server_that_keeps_inventories() {
         let Message::Welcome(w) = welcome(0) else {
@@ -1385,6 +1514,14 @@ mod tests {
             1000.0,
         );
         assert!(matches!(s.next_game(), Some((Message::Steam(_), _))));
+        // The far ecology (docs/ECOLOGY.md §9) reaches the game: before, the session dropped it,
+        // so `__dwell.ecology()` stayed null and no far herd was drawn on any server.
+        s.on_reliable(
+            Channel::World,
+            &Message::Ecology(dwell_protocol::EcologyMessage::default()).encode(),
+            1000.0,
+        );
+        assert!(matches!(s.next_game(), Some((Message::Ecology(_), _))));
     }
 
     #[test]
@@ -1442,6 +1579,30 @@ mod tests {
                 "creative again, as the policy allows"
             );
         }
+    }
+
+    #[test]
+    fn theater_for_guests_follows_the_worlds_settings_after_join() {
+        // THEATER_MODE.md §7: on until the host turns it off, then off, then on again.
+        let Message::Welcome(w) = welcome(0) else {
+            unreachable!()
+        };
+        let (_, mut s) = setup();
+        assert!(s.theater_guests(), "on before any settings");
+        send_registry(&mut s, &build_registry(), 1 << 16);
+        s.on_reliable(Channel::Control, &Message::Welcome(w).encode(), 1000.0);
+        assert!(s.theater_guests());
+        let off = world_settings::WorldSettings {
+            theater_guests: false,
+            ..settings()
+        };
+        send_settings(&mut s, &world_settings::SettingsFields::default().with(off));
+        assert!(!s.theater_guests(), "the host turned it off");
+        send_settings(
+            &mut s,
+            &world_settings::SettingsFields::default().with(settings()),
+        );
+        assert!(s.theater_guests(), "and on again");
     }
 
     #[test]

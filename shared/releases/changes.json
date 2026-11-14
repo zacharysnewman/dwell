@@ -2,6 +2,2402 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.68.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds: their ground redrawn from the seed",
+        "Realistic ground is in big patches with no speckle, and tan sand only on beaches, beds, dunes and sand deserts",
+        "Mesa country is red dirt, red sand and red rock, with no tan stripes; sagebrush grows mostly on the floors",
+        "Sand deserts are open dunes with sparse plants",
+        "Ramps follow the original straight-edge rule everywhere, mesa edges included"
+      ]
+    },
+    {
+      "version": "0.67.2",
+      "changes": [
+        "Torches are always whole: a flame never floats without its stick, and a stick never stands without its flame.",
+        "Breaking, blasting, filling or flooding either half of a torch now removes the other half too.",
+        "Worlds saved with a lone torch half lose it when they load."
+      ]
+    },
+    {
+      "version": "0.67.1",
+      "changes": [
+        "The axe has one swing, like the pickaxe and shovel: right click no longer switches it to a vertical chop",
+        "Every tool is held turned a little so you can see its head",
+        "Pickaxe and shovel swings come in from the right and the head strikes right at the crosshair, the moment the block takes the hit"
+      ]
+    },
+    {
+      "version": "0.67.0",
+      "changes": [
+        "A new compatibility line: every town now starts with a storehouse, built first",
+        "Builders fetch their blocks from the town's storehouse, up to ten at a time, carry them to the building site as a stack on their back, build, and walk back for more",
+        "When a building is finished, its builder moves on to the town's next one"
+      ]
+    },
+    {
+      "version": "0.66.1",
+      "changes": [
+        "Falls hurt from 5 m and are deadly at 15 m"
+      ]
+    },
+    {
+      "version": "0.66.0",
+      "changes": [
+        "A new compatibility line: towns are planned on clear ground, so no trees, bushes or boulders grow where a hamlet's huts, well, watchtower, wall and the paths between them go up"
+      ]
+    },
+    {
+      "version": "0.65.4",
+      "changes": [
+        "Villagers' eyes sit where they should"
+      ]
+    },
+    {
+      "version": "0.65.3",
+      "changes": [
+        "Showcase recordings wait for the world around the camera to finish loading before each shot, even while builders are at work."
+      ]
+    },
+    {
+      "version": "0.65.2",
+      "changes": [
+        "Town sites show on the big map and the minimap: a town icon where each town stands, brighter while its builders are at work, with a Towns filter to hide them."
+      ]
+    },
+    {
+      "version": "0.65.1",
+      "changes": [
+        "Behind the scenes: the model painter can pick faces"
+      ]
+    },
+    {
+      "version": "0.65.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds, their terrain redrawn from the seed: curving plates and coastlines with gulfs and headlands, rifts as chains of lakes, no sliver plates or thin land strips, ranges with peaks and saddles",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa edges",
+        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
+        "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
+        "Volcanic islands come in varied sizes and shapes, with islets and gaps along their chains, and volcanoes blend into their ranges without a cliff at the foot",
+        "Active volcanoes are bare dark rock ringed by lava rock and obsidian spilling into the shallows; dormant ones turn green with grass, dirt patches and trees as they age"
+      ]
+    },
+    {
+      "version": "0.64.2",
+      "changes": [
+        "Leaves no longer flicker where they touch tree trunks and branches",
+        "A felled log's end is the same even octagon as a standing trunk"
+      ]
+    },
+    {
+      "version": "0.64.1",
+      "changes": [
+        "Behind the scenes: the recording tools cut one take to both portrait and widescreen, with a fade-in and the game's title, for the first trailer"
+      ]
+    },
+    {
+      "version": "0.64.0",
+      "changes": [
+        "A new compatibility line: worlds generate a little differently from 0.63, so 0.63 worlds stay on 0.63",
+        "No more dead-straight, km-long seams between terrain types in Realistic worlds: snow, forest, desert and grass meet along natural, wandering edges",
+        "Slopes no longer show tall ramp backs standing in open air, so bowls and diagonal slopes have no sawtooth spikes",
+        "Resurrection shrines are bigger: 16 m across, with pillars up to 10.5 m tall under a high arch",
+        "The shrine's dais has more steps and a wider ring of torches, so its glow reads from a distance"
+      ]
+    },
+    {
+      "version": "0.63.21",
+      "changes": [
+        "Sliding and the out-of-stamina breath are a little quieter"
+      ]
+    },
+    {
+      "version": "0.63.20",
+      "changes": [
+        "Behind the scenes: new performance checks of the forest seen from above, the groundwork for smoother flying over forests."
+      ]
+    },
+    {
+      "version": "0.63.19",
+      "changes": [
+        "Dynamite no longer flings tall grass, torches, saplings or ladders as flying pieces: they're simply destroyed, dropping what they would when broken.",
+        "Grass and torches standing on a block that's blown away or falls now go with it instead of floating in the air."
+      ]
+    },
+    {
+      "version": "0.63.18",
+      "changes": [
+        "Villagers now sit down on level ground, legs out and the sword across a raised knee, instead of standing.",
+        "Villagers look around by turning their head and shoulders in a slow scan, instead of spinning in place.",
+        "A villager's raised vertical block now holds the sword upright in front of its face, and clashes spark on the drawn blade."
+      ]
+    },
+    {
+      "version": "0.63.17",
+      "changes": [
+        "Flying low over a forest, the treetops straight below no longer vanish (only trunk stubs were drawn 25-40 m up)."
+      ]
+    },
+    {
+      "version": "0.63.16",
+      "changes": [
+        "Running out of stamina plays a single human sigh"
+      ]
+    },
+    {
+      "version": "0.63.15",
+      "changes": [
+        "Running out of stamina plays a person's heavy breath, recorded, instead of a growl or plain noise."
+      ]
+    },
+    {
+      "version": "0.63.14",
+      "changes": [
+        "On the moon and the sun, distant terrain now steps down in detail gradually out to the horizon, like at home, instead of jumping from full detail to a blurry mesh",
+        "Far terrain on the moon and the sun now has the same colours as the ground near you"
+      ]
+    },
+    {
+      "version": "0.63.13",
+      "changes": [
+        "Theater mode's recording dot is a clear red that no longer blinks out.",
+        "On a phone in portrait, theater's fly stick and Up/Down stay above the open panel, so you can fly the camera while editing.",
+        "On the sun, the rock beside the lava is lit warm by the lava and by home and the moon instead of reading black."
+      ]
+    },
+    {
+      "version": "0.63.12",
+      "changes": [
+        "Running out of stamina now sounds like a person catching their breath, not a growling bear."
+      ]
+    },
+    {
+      "version": "0.63.11",
+      "changes": [
+        "Aiming low on a ramp's slope now places a block against its downhill side, instead of on top of the ramp.",
+        "Holding Place builds at a steady rate even when the frame rate drops: a slow device builds as fast as a smooth one."
+      ]
+    },
+    {
+      "version": "0.63.10",
+      "changes": [
+        "Trees no longer look dotted or half dissolved while you stand still: far trees draw one clean view, and leaf clumps switch on and off with a short fade instead of dissolving with distance.",
+        "Villagers and your own body keep warm skin on the side away from the sun, instead of turning grey-blue."
+      ]
+    },
+    {
+      "version": "0.63.9",
+      "changes": [
+        "Trees' shadows no longer flip between two looks as you move: a crown no longer shades its own top up close",
+        "Trees cast their leaves' shadows at every distance shadows are drawn, not only up close",
+        "No visible step where the shadows' detail changes with distance"
+      ]
+    },
+    {
+      "version": "0.63.8",
+      "changes": [
+        "Villagers wear festive patterns again: a bright band round the hat and the waist, each villager its own",
+        "Villagers' clothes are picked to go with their pattern",
+        "The tops of villagers' hats are one clean colour"
+      ]
+    },
+    {
+      "version": "0.63.7",
+      "changes": [
+        "Creative flight goes where you look: aim at the moon, hold forward, and you get there in under a minute",
+        "Looking up or down while flying forward now climbs or dives; Space and crouch still rise and sink"
+      ]
+    },
+    {
+      "version": "0.63.6",
+      "changes": [
+        "Far trees no longer show as doubled, half-faded copies: each tree is either its full-detail self or its distant stand-in, swapping with a short fade as you cross the hand-over distance",
+        "Distant trees stay lined up with the real ones as you fly up and down (more viewing angles baked)"
+      ]
+    },
+    {
+      "version": "0.63.5",
+      "changes": [
+        "A portal's map marker now sits on the portal's rim, even when you first see it while flying high; old floating ones drop back onto the rim when you come near.",
+        "A marker placed on the map over ground that wasn't loaded yet now settles onto the ground once it loads."
+      ]
+    },
+    {
+      "version": "0.63.4",
+      "changes": [
+        "Villagers now have natural skin tones, from light to deep, with hair colours that suit them.",
+        "A villager's face, neck, arms and hands are always the same skin colour."
+      ]
+    },
+    {
+      "version": "0.63.3",
+      "changes": [
+        "Being defeated no longer drops your things: you stand up at the shrine with your hotbar and inventory exactly as before"
+      ]
+    },
+    {
+      "version": "0.63.2",
+      "changes": [
+        "The moon draws as you fly near it from home, no longer cut away",
+        "Dev tools: teleporting onto the moon or the sun lands from a fresh spawn, and the trip home works after a failed one",
+        "Dev tools: the lava report lists the sun's rivers, and sunLand can land beside a flowing river",
+        "Dev tools: a teleport past the world's rim or onto the other face says why it can't",
+        "Dev tools: the bench's flyTo step takes marginM"
+      ]
+    },
+    {
+      "version": "0.63.1",
+      "changes": [
+        "Theater mode's panel is redone: a proper close button, Esc to close, a docked panel on desktop and a bottom or side sheet on phones, grouped sections with an Advanced fold, a recording timer and a pause button, and controller navigation.",
+        "Theater mode can follow a creature or NPC: pick it from a list or under the crosshair, and the camera orbits, tracks or watches it smoothly as it moves.",
+        "Frame-exact recording: a camera path can be recorded frame by frame, so the video plays smoothly even on a slow machine.",
+        "Phones get theater flying controls: a stick and Up and Down buttons, and a drag to look.",
+        "Hosts can turn theater mode off for guests (Host… → Theater for guests); the host can always use it."
+      ]
+    },
+    {
+      "version": "0.63.0",
+      "changes": [
+        "On the moon and the sun, the ground is drawn out to the horizon, not only near you",
+        "Home hangs in the moon's sky, lit in its phase by the sun",
+        "Moon slopes are ramps, not stairs of half blocks",
+        "The moon no longer glows in its own sky; on the sun its own disc is gone",
+        "The sun is lit by home's and the moon's reflected light, and glows warm from its lava",
+        "New compatibility line: the moon's terrain changed, so worlds from 0.61 open in 0.61 builds"
+      ]
+    },
+    {
+      "version": "0.61.7",
+      "changes": [
+        "A bluer day sky: deep blue overhead fading to a lighter blue at the horizon, and far hills fade into that blue."
+      ]
+    },
+    {
+      "version": "0.61.6",
+      "changes": [
+        "Smoother frame rate while running or flying into new ground, most on phones: the ground ahead is made solid a little at a time before you reach it"
+      ]
+    },
+    {
+      "version": "0.61.5",
+      "changes": [
+        "In first person your own feet stand where you do, on the ground and on their shadow, on flat ground and ramps (they were drawn behind you and seemed to float)."
+      ]
+    },
+    {
+      "version": "0.61.4",
+      "changes": [
+        "Far trees: a tree you fell no longer stays standing as a distant impostor."
+      ]
+    },
+    {
+      "version": "0.61.3",
+      "changes": [
+        "The big map has a markers list: each marker's distance and direction, nearest first; click one to show it, edit or delete it",
+        "Portals you come near are marked on your map",
+        "A marker placed on the big map now stands on the ground there"
+      ]
+    },
+    {
+      "version": "0.61.2",
+      "changes": [
+        "The sword has its own swings: a level slash and an overhead cut, timed so the blade lands as it hits",
+        "Other players and villagers swing their swords with the new slashes",
+        "Wolves bite back: strike one and it turns on you, and enough bites leave you kneeling in defeat",
+        "A creature struck by a sword flinches and flashes red"
+      ]
+    },
+    {
+      "version": "0.61.1",
+      "changes": [
+        "Behind the scenes: test fixes"
+      ]
+    },
+    {
+      "version": "0.61.0",
+      "changes": [
+        "Towns: hamlets of blueprints are sited across both faces of every world, and builders come to build them when you are near",
+        "A hamlet: a well, two huts, a watchtower and a wall, laid out from data, kept clear of the shrines and portals",
+        "New compatibility line: generated worlds now hold towns, so worlds from 0.60 open in 0.60 builds"
+      ]
+    },
+    {
+      "version": "0.60.18",
+      "changes": [
+        "Lava no longer hardens while it flows: a river fed by its vent stays molten its whole length.",
+        "Lava that stops moving darkens and hardens into basalt where it lies, keeping its volume as new rock.",
+        "Lava at a vent, and within a few metres of one, stays molten; water still turns any lava to obsidian at once."
+      ]
+    },
+    {
+      "version": "0.60.17",
+      "changes": [
+        "Hold Break with an empty hand (or holding a block or any non-tool item) to keep punching: dig dirt by hand without clicking every hit",
+        "Punches land at a steady rate, the same whether clicked or held, and the controller's trigger holds them too"
+      ]
+    },
+    {
+      "version": "0.60.16",
+      "changes": [
+        "Shore foam now rounds outer corners and curves into inner ones instead of squaring off at blocky edges."
+      ]
+    },
+    {
+      "version": "0.60.15",
+      "changes": [
+        "Your character and the villagers stand a little taller: their eyes now sit at your camera's height, so the body no longer looks small beside you."
+      ]
+    },
+    {
+      "version": "0.60.14",
+      "changes": [
+        "On the moon the sky is space: black, the stars out by day, the sun white; the sky is now space with home's day as a layer of its air, fading as you climb.",
+        "Approaching the moon you see its real cratered surface up close instead of a flat disc, and it stays under the ground as you land.",
+        "Crossing onto or off the moon, the view eases upright instead of turning at once.",
+        "On the moon the map is hidden with a note (home's map shows home only).",
+        "Creative flight speeds up in space only, so the moon is about half a minute away, and slows as you near the ground to land."
+      ]
+    },
+    {
+      "version": "0.60.13",
+      "changes": [
+        "New world → Spawn now offers the moon and the sun, each face: start (and respawn) standing on that world.",
+        "The sun's lava burns: its rivers and oceans hurt and burn as lava does at home, and dying there brings you back to your spawn.",
+        "The sun's lava rivers flow: near you, each river runs on from its head, glowing and crusting like home's lava."
+      ]
+    },
+    {
+      "version": "0.60.12",
+      "changes": [
+        "Behind the scenes: test fixes."
+      ]
+    },
+    {
+      "version": "0.60.11",
+      "changes": [
+        "The villagers have eyes again",
+        "A band of alternating colours runs round the hat's crown, and the ring round the waist alternates its two colours evenly"
+      ]
+    },
+    {
+      "version": "0.60.10",
+      "changes": [
+        "Opening the inventory no longer opens the game menu on top of it, and frees the mouse",
+        "Closing the inventory, the game menu or the big map locks the mouse again straight away"
+      ]
+    },
+    {
+      "version": "0.60.9",
+      "changes": [
+        "The shore foam is soft again: its edge fades gently into the water while staying even and unbroken along the shore"
+      ]
+    },
+    {
+      "version": "0.60.8",
+      "changes": [
+        "Blueprints: place a structure as ghost blocks from the Structures page; anyone in the world can build it",
+        "Hold Place while aiming into a blueprint to fill its ghost cells with the right blocks, one at a time",
+        "Ghost blocks you don't have show red, and a small panel lists each block you have and need",
+        "Builders, villagers without swords, come and build blueprints near you",
+        "Four simple test blueprints: a hut, a wall, a well and a watchtower"
+      ]
+    },
+    {
+      "version": "0.60.7",
+      "changes": [
+        "Humans no longer die: at 0 health you kneel where you fell, head bowed, your sword planted before you (or your hand on your knee), while the camera pulls out to show it.",
+        "After a few seconds the view fades and you stand up at the nearest resurrection shrine.",
+        "Villagers are defeated the same way: they kneel, then stand up again at the nearest shrine.",
+        "What you carried is left where you knelt, not dropped the moment you fall."
+      ]
+    },
+    {
+      "version": "0.60.6",
+      "changes": [
+        "Behind the scenes: a tool to paint patterns and marks on character models, ready for outfit bands and eyes"
+      ]
+    },
+    {
+      "version": "0.60.5",
+      "changes": [
+        "The sun is now a world of its own: a volcano world of lava oceans, lava rivers in its rifts and crater lakes in its cones, crusted in basalt and obsidian, different in every world.",
+        "The sun's disc in the sky is drawn from that world's surface: bright lava and darker crusts, with the same size, glow and sunlight as before.",
+        "Fliers on this version can be captured by the sun and fly away from it as at the moon; older versions fly past it (its sky, spawns and flowing lava come later)."
+      ]
+    },
+    {
+      "version": "0.60.4",
+      "changes": [
+        "Forests draw a little faster: leaves and plants send less data to the graphics card per corner."
+      ]
+    },
+    {
+      "version": "0.60.3",
+      "changes": [
+        "Chisel in the game: a local creative world's menu has a Chisel page to tune its biomes' sliders",
+        "The terrain around you is generated again as you tune, keeping what you built; Undo and Reset",
+        "The tuned biomes are saved with the world (host only: not while guests are in it)"
+      ]
+    },
+    {
+      "version": "0.60.2",
+      "changes": [
+        "Main menu: All versions and Third-party notices are buttons like the rest of the menu, not web links.",
+        "Main menu: Back, All versions and a world's ⋯ button light up on hover and press like the other buttons."
+      ]
+    },
+    {
+      "version": "0.60.1",
+      "changes": [
+        "Arriving on the moon right at its ground no longer leaves the ground under you missing.",
+        "Behind the scenes: a quick test teleport onto the moon to check what it draws."
+      ]
+    },
+    {
+      "version": "0.60.0",
+      "changes": [
+        "Red sand draws with its own texture instead of the magenta and black checker",
+        "Red desert floors are red sand: the flat red rock in dry, warm places (red rock basins, badlands, mesa floors and tops), under red sandstone walls; in forests and meadows the red rock stays red sandstone",
+        "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.59 open in 0.59 builds"
+      ]
+    },
+    {
+      "version": "0.59.3",
+      "changes": [
+        "A Realistic world finds its spawn shrine faster: the spawn search no longer spends time re-reading the whole biome map."
+      ]
+    },
+    {
+      "version": "0.59.2",
+      "changes": [
+        "Behind the scenes: the open-ground lighting test checks open ground again, not the shrine at the spawn"
+      ]
+    },
+    {
+      "version": "0.59.1",
+      "changes": [
+        "Smoother frames in forests and everywhere: the world's blocks and leaves take less memory on the graphics card (about 2 ms a frame faster at a forest's edge on High)"
+      ]
+    },
+    {
+      "version": "0.59.0",
+      "changes": [
+        "Red desert: the red rock mesa's floors and talus are a new red-brown sand.",
+        "Every terrain block has ramps now, basalt, obsidian and the moon's dust included.",
+        "Realistic's layered rock slopes are smooth ramps broken by ledges, not fields of little stairs, and mesa tops keep a little of the ground's roll.",
+        "Sand ramps fall like sand and land as flat sand.",
+        "Resurrection shrines' pillars now stand apart with gaps between them, and the tallest three are joined by an arched lintel.",
+        "New compatibility line: the Realistic and starter worlds' terrain changed, so worlds from 0.58 open in 0.58 builds."
+      ]
+    },
+    {
+      "version": "0.58.11",
+      "changes": [
+        "Smoother frames with other players online: a player far away no longer makes the sun shadows redraw every few frames",
+        "Behind the scenes: a camera placed at your own eyes no longer draws your whole body around it, which hid the view in every forest benchmark"
+      ]
+    },
+    {
+      "version": "0.58.10",
+      "changes": [
+        "Forests draw fewer hidden leaves: past the far trees' hand-over, the ground no longer sends the GPU tree leaves that were already faded out."
+      ]
+    },
+    {
+      "version": "0.58.9",
+      "changes": [
+        "The moon trip test tool waits for the server to release you before flying you home, and never saves a spot in space as home.",
+        "Crossing to or from the moon no longer counts as a huge position correction in the debug stats."
+      ]
+    },
+    {
+      "version": "0.58.8",
+      "changes": [
+        "Four more calm themes, one of them for nights only"
+      ]
+    },
+    {
+      "version": "0.58.7",
+      "changes": [
+        "The New world form now says what Creative's breaks do: without a tool any block breaks in one hit, and a held tool keeps its hits",
+        "Behind the scenes: a test that ramps at a cliff edge can be aimed at from every angle, on both faces"
+      ]
+    },
+    {
+      "version": "0.58.6",
+      "changes": [
+        "On the moon its ground is drawn: you no longer see only sky and stars after landing.",
+        "Trips to the moon no longer keep home's distant terrain in memory while you're away.",
+        "No more jumps in your position when the moon captures or releases you on a slow frame.",
+        "Home's clouds no longer hang in the moon's sky."
+      ]
+    },
+    {
+      "version": "0.58.5",
+      "changes": [
+        "The big map zooms in smaller steps (about 2× each), with the buttons, keys, wheel, pinch and controller",
+        "After \"Center on me\" the big map keeps you in the middle as you zoom",
+        "Zoomed out to the whole world, the big map shows shrines as clusters with counts",
+        "A new map marker's picker no longer shows Delete"
+      ]
+    },
+    {
+      "version": "0.58.4",
+      "changes": [
+        "Behind the scenes: a test tool for the moon"
+      ]
+    },
+    {
+      "version": "0.58.3",
+      "changes": [
+        "The big map shows shrines across the whole view, merged into counts when zoomed out instead of a glowing block",
+        "A marker's waypoint no longer sticks to the top of the screen while you stand on it",
+        "The map shows a pin where your new marker will go while you pick its look",
+        "New world → More options no longer repeats World type, Seed and Spawn; it uses the choices above, Realistic included"
+      ]
+    },
+    {
+      "version": "0.58.2",
+      "changes": [
+        "Behind the scenes: a dev switch hides the targeted block's outline for clean showcase recordings",
+        "Behind the scenes: the water showcase video re-planned with a river follow, a waterline crane and sound"
+      ]
+    },
+    {
+      "version": "0.58.1",
+      "changes": [
+        "The music is now four calm themes chosen for day and night"
+      ]
+    },
+    {
+      "version": "0.58.0",
+      "changes": [
+        "Resurrection shrines: when you die you stand up again at the shrine nearest where you fell, on the side of the world you fell on",
+        "Shrines stand about every 2 km: a terraced stone circle with stepping pillars, the tallest joined at the top, and a light at its centre",
+        "Each shrine faces out from its hillside, and every new world's spawn is at a shrine",
+        "The map shows the shrines in ground you have explored; its new filters hide or show the shrines and each kind of marker",
+        "New compatibility line: worlds from 0.57 open in 0.57 builds"
+        ]
+      },
+      {
+      "version": "0.57.4",
+      "changes": [
+        "Map markers: click the big map (M) to place one, with an icon, a colour and a short label; drag to move, click to edit or delete",
+        "Your markers show on the minimap and as waypoints in the world with their distance",
+        "Spawn and your last death are marked for you",
+        "Markers are yours alone, saved with the world"
+      ]
+    },
+    {
+      "version": "0.57.3",
+      "changes": [
+        "Behind the scenes: a test fix"
+      ]
+    },
+    {
+      "version": "0.57.2",
+      "changes": [
+        "Music now comes and goes at random times, with minutes of quiet between tracks",
+        "In a world the first track waits a little after you join; the main menu still plays at once",
+        "Music tracks can be marked for day or night, picked by the sun"
+      ]
+    },
+    {
+      "version": "0.57.1",
+      "changes": [
+        "Fly to the moon and land: its ground streams in around you, under its own sun and at a sixth of the gravity",
+        "Flying back home streams the home world in again"
+      ]
+    },
+    {
+      "version": "0.57.0",
+      "changes": [
+        "Realistic worlds step only where the rock does: bedded sandstone and shale in walls and ledges, basalt in columns, granite rising smooth",
+        "The terraced cliffs that covered every Realistic hillside are gone; mesas and scarps stay in the dry red-rock and badland country",
+        "A new compatibility line: Realistic worlds' terrain changed, so worlds from 0.56 open in their own version (other worlds are unchanged)"
+      ]
+    },
+    {
+      "version": "0.56.4",
+      "changes": [
+        "Behind the scenes: a test fix"
+      ]
+    },
+    {
+      "version": "0.56.3",
+      "changes": [
+        "New music: 20 light, casual tracks replace the old theme, played in a shuffle that never repeats a track back to back, with a quiet gap between tracks.",
+        "The music files are smaller and levelled to the same loudness."
+      ]
+    },
+    {
+      "version": "0.56.2",
+      "changes": [
+        "Behind the scenes: showcase recordings include the game's sound effects and ambience"
+      ]
+    },
+    {
+      "version": "0.56.1",
+      "changes": [
+        "The water showcase video's camera paths and takes are saved for one-command re-recording."
+      ]
+    },
+    {
+      "version": "0.56.0",
+      "changes": [
+        "Bigger worlds (2× to 10×) keep their mountains: 1×-height ranges across the whole island, more peaks the bigger the world",
+        "Rivers in big worlds are sized by their flow instead of a kilometre wide, and the speckle of tiny lakes is gone",
+        "A new compatibility line: big worlds' terrain changed, so worlds from 0.55 open in their own version (1× worlds are unchanged)"
+      ]
+    },
+    {
+      "version": "0.55.21",
+      "changes": [
+        "The big map's debug layers (L) now cover only the world's disc, not the square around it."
+      ]
+    },
+    {
+      "version": "0.55.20",
+      "changes": [
+        "Behind the scenes: the client can now predict flying into the moon and back home as the server does"
+      ]
+    },
+    {
+      "version": "0.55.19",
+      "changes": [
+        "Hitting a slope with a tool now shows the bite and cracks, like a full block"
+      ]
+    },
+    {
+      "version": "0.55.18",
+      "changes": [
+        "Underwater looks brighter and clearer: turquoise water you can see farther through, a glowing sun and window overhead, a lighter rippled surface from below, longer light rays and a more colourful seabed."
+      ]
+    },
+    {
+      "version": "0.55.17",
+      "changes": [
+        "New world: a Realistic world — tectonic plates, mountain ranges, rain shadows and climates from the seed"
+      ]
+    },
+    {
+      "version": "0.55.16",
+      "changes": [
+        "The axe works like the pickaxe and shovel: a log takes hits to break (10 with the stone axe, 5 with the metal one), each hit biting into the wood where it struck.",
+        "Breaking a trunk's log fells the tree above it, toward the side you chopped; a lying log breaks the same way and drops its wood.",
+        "Trees half-chopped in older worlds keep their cuts, and the next hit carries the progress on."
+      ]
+    },
+    {
+      "version": "0.55.15",
+      "changes": [
+        "Showcase video tooling: the bifacial video's landing shot is upright on face B and closer, and re-recording no longer fails after a long encode."
+      ]
+    },
+    {
+      "version": "0.55.14",
+      "changes": [
+        "A tool hit lands on whatever you're aiming at when the swing connects"
+      ]
+    },
+    {
+      "version": "0.55.13",
+      "changes": [
+        "Behind the scenes: one-command showcase re-records"
+      ]
+    },
+    {
+      "version": "0.55.12",
+      "changes": [
+        "Your own footsteps sound from the ground just ahead of you, not inside your head",
+        "Your tool sounds at your right hand; swimming, climbing and splashes sound around your body"
+      ]
+    },
+    {
+      "version": "0.55.11",
+      "changes": [
+        "Behind the scenes: the bifacial showcase video now shows the player landing beside the far hole"
+      ]
+    },
+    {
+      "version": "0.55.10",
+      "changes": [
+        "In big worlds you can now place blocks more than 50 km from the centre, not only break them"
+      ]
+    },
+    {
+      "version": "0.55.9",
+      "changes": [
+        "Behind the scenes: CI skips docs-only changes so releases ship faster"
+      ]
+    },
+    {
+      "version": "0.55.8",
+      "changes": [
+        "A player who walks into a portal now comes out beside the far hole, not back down it"
+      ]
+    },
+    {
+      "version": "0.55.7",
+      "changes": [
+        "Leaves sit flush against tree trunks instead of leaving gaps"
+      ]
+    },
+    {
+      "version": "0.55.6",
+      "changes": [
+        "Far trees have their leafy crowns back: no more bare trunks and branches poking through past about 50 m",
+        "Far tree crowns are shaded to match the nearby trees instead of fading into the grass"
+      ]
+    },
+    {
+      "version": "0.55.5",
+      "changes": [
+        "Distant trees keep their leaves again"
+      ]
+    },
+    {
+      "version": "0.55.4",
+      "changes": [
+        "Walking through tall grass is quieter: one soft rustle with each footstep instead of a fast, crackly stream",
+        "Your legs (and other players’) step at a natural pace: about two steps a second walking",
+        "Footsteps are a little slower to match the legs"
+      ]
+    },
+    {
+      "version": "0.55.3",
+      "changes": [
+        "Worlds bigger than 2× now draw their terrain all the way out, instead of stopping at a stepped edge 50 km from the centre.",
+        "In 8× and 10× worlds the ground round the spawn now shows up, instead of leaving you standing on invisible terrain."
+      ]
+    },
+    {
+      "version": "0.55.2",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.55.1",
+      "changes": [
+        "New worlds have far more animals, at real-world densities: hundreds of deer herds and a handful of wolf packs on each face.",
+        "Herds are visible from much farther away (about 2.5 km) and stay visible as small shapes from high up.",
+        "Developer tools can list the nearest herds and jump to one."
+      ]
+    },
+    {
+      "version": "0.55.0",
+      "changes": [
+        "Trees on slopes stand on a level patch of ground the width of their trunk instead of hanging over the edge",
+        "Tall grass now grows taller over time: new tufts start as sprouts and reach full height in about a week and a half of game days",
+        "Dry or cold ground grows shorter grass; lush meadows grow it full; grass deer eat goes back to a sprout",
+        "Taller grass drops more fiber and seeds",
+        "A new compatibility line: the terrain changed, so worlds from 0.54 open in their own version"
+      ]
+    },
+    {
+      "version": "0.54.216",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.215",
+      "changes": [
+        "Under water the world sounds muffled: a low-pass on every world sound, eased in and out as you cross the surface, with a soft underwater hum",
+        "Swimming with your head under plays soft, deep strokes; at the surface the strokes are calmer, quieter and slower, not a splash"
+      ]
+    },
+    {
+      "version": "0.54.214",
+      "changes": [
+        "Behind the scenes: showcase recording notes and a portal bug report"
+      ]
+    },
+    {
+      "version": "0.54.213",
+      "changes": [
+        "Clouds stay over the world: seen from far out past the rim, no cloud layer floats in the empty space",
+        "No more bright band under the world in the sky seen from far beyond the rim"
+      ]
+    },
+    {
+      "version": "0.54.212",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.211",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.210",
+      "changes": [
+        "The wind sound now plays only when you are flying or high above the ground, not while walking"
+      ]
+    },
+    {
+      "version": "0.54.209",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.208",
+      "changes": [
+        "Felled trees float downstream instead of jamming rivers; water flows through leaves"
+      ]
+    },
+    {
+      "version": "0.54.207",
+      "changes": [
+        "Clicking Break or Place at nothing now makes a soft, quiet knock instead of the loud error tone"
+      ]
+    },
+    {
+      "version": "0.54.206",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.205",
+      "changes": [
+        "Jumping into a portal now carries you up and out onto the other side, landing beside the hole"
+      ]
+    },
+    {
+      "version": "0.54.204",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.203",
+      "changes": [
+        "Behind the scenes: a test type fix that unblocks releases"
+      ]
+    },
+    {
+      "version": "0.54.202",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.201",
+      "changes": [
+        "Rivers stepping downhill draw as one smooth sloped surface: no more bright wedges or thin lines at the steps"
+      ]
+    },
+    {
+      "version": "0.54.200",
+      "changes": [
+        "Volumetric clouds are rounded cumulus again: flat bases and domed tops, not tall triangles",
+        "Fair-weather clouds read bright white on top and light grey underneath; only storm clouds are dark",
+        "Softer cloud edges, while a cloud still mostly hides the ones behind it"
+      ]
+    },
+    {
+      "version": "0.54.199",
+      "changes": [
+        "Theater mode: a camera path can keep one face's up across the world's middle"
+      ]
+    },
+    {
+      "version": "0.54.198",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.197",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.196",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.195",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.194",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.193",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.192",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.191",
+      "changes": [
+        "Behind the scenes: the showcase recording tools can now slow down, grade and hard-cut parts of a take."
+      ]
+    },
+    {
+      "version": "0.54.190",
+      "changes": [
+        "Behind the scenes: tool links"
+      ]
+    },
+    {
+      "version": "0.54.189",
+      "changes": [
+        "Behind the scenes: a model part painter tool"
+      ]
+    },
+    {
+      "version": "0.54.188",
+      "changes": [
+        "The axe's notch now grows with every swing: each chop carves its fair share, so half the log is cut away by the time the tree falls.",
+        "The notch keeps its V shape as it grows, deepening and widening until it opens into the gash the tree falls from."
+      ]
+    },
+    {
+      "version": "0.54.187",
+      "changes": [
+        "Behind the scenes: cloud research notes"
+      ]
+    },
+    {
+      "version": "0.54.186",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.185",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.184",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.183",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.182",
+      "changes": [
+        "Theater mode and placed cameras now show your own character when they look at you."
+      ]
+    },
+    {
+      "version": "0.54.181",
+      "changes": [
+        "Far ground no longer has holes under distant trees: no more sky showing through the forest from high up"
+      ]
+    },
+    {
+      "version": "0.54.180",
+      "changes": [
+        "Villagers' faces are their skin colour again, not jet black",
+        "A villager's hair, skin and hat each take their own colour: no more yellow fringes or clothes-coloured heads",
+        "Characters and animals draw in their true palette colours (they were drawn too dark)",
+        "Behind the scenes: models have part maps (which part each vertex is), with a tool that renders them"
+      ]
+    },
+    {
+      "version": "0.54.179",
+      "changes": [
+        "Trees and ground in front of the clouds no longer show a dithered pattern of the clouds behind them",
+        "Light shafts are smooth instead of a fine crosshatch"
+      ]
+    },
+    {
+      "version": "0.54.178",
+      "changes": [
+        "Behind the scenes: a both-faces fix for leaf cards"
+      ]
+    },
+    {
+      "version": "0.54.177",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.176",
+      "changes": [
+        "Low clouds (the 2D deck) have their old lighting back: sun-facing edges lit, undersides shaded"
+      ]
+    },
+    {
+      "version": "0.54.175",
+      "changes": [
+        "Far trees are now drawn as impostors baked from the real trees, so forests reach the horizon with their crowns, lit by the sun and fog like the near trees.",
+        "Near trees hand over to the far ones from 48 m with a dithered fade, and leaves past it no longer cost their geometry: the forest's edge draws faster at High.",
+        "Dev: ?impostors=0 draws the old far trees for comparison."
+      ]
+    },
+    {
+      "version": "0.54.174",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.173",
+      "changes": [
+        "Each tool hit carves a real bite out of a block: half the block over the hits it takes to break",
+        "The shards, clods and wood chips a hit throws off add up to that bite; metal tools take bigger bites"
+      ]
+    },
+    {
+      "version": "0.54.172",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.171",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.170",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.169",
+      "changes": [
+        "Looking down or sliding, your own legs, boots and tunic are now the same character model others see and your shadow casts",
+        "Behind the scenes: ?fparms=rigid shows the old first-person arms and body together for comparison"
+      ]
+    },
+    {
+      "version": "0.54.168",
+      "changes": [
+        "Behind the scenes: test fixes"
+      ]
+    },
+    {
+      "version": "0.54.167",
+      "changes": [
+        "Volumetric clouds glow warm at sunrise and sunset like the old flat clouds: warm tops, peach-pink bases, far clouds fading into the horizon",
+        "Volumetric clouds hide the clouds behind them instead of showing them through, while sunlight still shines through their edges"
+      ]
+    },
+    {
+      "version": "0.54.166",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.165",
+      "changes": [
+        "Jumping into a tree's leaves no longer rubber-bands you: you fall through them smoothly"
+      ]
+    },
+    {
+      "version": "0.54.164",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.163",
+      "changes": [
+        "Behind the scenes: the forest frame-rate bench now checks the GPU frame budget, and the far-tree impostors know which trees to draw (not drawn yet)"
+      ]
+    },
+    {
+      "version": "0.54.162",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.161",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.160",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.159",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.158",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.157",
+      "changes": [
+        "Hold the use button to keep swinging an axe, sword, pickaxe or shovel: each swing hits whatever you aim at then, until you let go.",
+        "An axe or sword swing that hits something no longer plays its animation twice: it pulls straight back to rest."
+      ]
+    },
+    {
+      "version": "0.54.156",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.155",
+      "changes": [
+        "Behind the scenes: the native perf harness builds again"
+      ]
+    },
+    {
+      "version": "0.54.154",
+      "changes": [
+        "Bigger worlds (up to 10×) now shape their world map in seconds instead of minutes, and no longer run out of memory starting up.",
+        "The loading screen shows each step of the world map as it's shaped, like \"rivers (5/6), face 1 of 2\", with the bar moving through it.",
+        "If a world's server stops (for example, out of memory), the game now says so instead of only \"Could not connect\"."
+      ]
+    },
+    {
+      "version": "0.54.153",
+      "changes": [
+        "Volumetric clouds take real cloud shapes: flat bases, billowing rounded tops, wispy undersides, leaning in the wind.",
+        "Cloud types by weather: thin stratus sheets, stratocumulus, cumulus and the odd towering cumulonimbus with an anvil.",
+        "Clouds no longer look dithered or pixelated when you fly up to them: smoother sampling, steadier frames and more detail near the cloud layer."
+      ]
+    },
+    {
+      "version": "0.54.152",
+      "changes": [
+        "Forests run much faster: tall grass past its fade-out distance is no longer drawn at all",
+        "Behind the scenes: the far-tree impostors' hand-over distances and view picking (not drawn yet)"
+      ]
+    },
+    {
+      "version": "0.54.151",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.150",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.149",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.148",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.147",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.146",
+      "changes": [
+        "Behind the scenes: a look at the Realistic world and the old-growth forest, with what to improve next"
+      ]
+    },
+    {
+      "version": "0.54.145",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.144",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.143",
+      "changes": [
+        "Realistic test world: rocks now follow the plates, with volcanic rock on the arc volcanoes and hotspot islands, granite and schist in the collision ranges, a limestone shelf by the trenches, and sandstone in the rifts and quiet basins",
+        "Realistic test world: soils weather from that rock by climate, so the same volcanic rock is thin and stony in the cold, sandy where it is dry, and deep and loamy where it is warm and wet"
+      ]
+    },
+    {
+      "version": "0.54.142",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.141",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.140",
+      "changes": [
+        "Volumetric clouds no longer flicker against mountains that rise into them",
+        "Clouds behind a mountain no longer show through it; the cloud in front still does",
+        "Behind the scenes: a stale bench scenario test now accepts the Medium clouds tier"
+      ]
+    },
+    {
+      "version": "0.54.139",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.138",
+      "changes": [
+        "Villagers' sword strikes now hurt you and knock you back, unless your raised sword blocks across their blade",
+        "Creative players are never hurt by villagers"
+      ]
+    },
+    {
+      "version": "0.54.137",
+      "changes": [
+        "Settings → Graphics is grouped into Display, Lighting, Sky & weather, Water, Terrain & trees, Effects and Distance.",
+        "New graphics settings: Tall grass, Far trees, Distant shadows, Hit shards, Particles and Far herds, so every visual feature can be turned down.",
+        "Every preset keeps today's look; lower these yourself for more frame rate."
+      ]
+    },
+    {
+      "version": "0.54.136",
+      "changes": [
+        "Behind the scenes: a flying benchmark at High, measuring what costs frames over forests"
+      ]
+    },
+    {
+      "version": "0.54.135",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.134",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.133",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.132",
+      "changes": [
+        "Volumetric clouds are shaded: darker bases, sunlit tops and a silver lining toward the sun, so their shapes read",
+        "Medium clouds now shadow themselves toward the sun, as High does"
+      ]
+    },
+    {
+      "version": "0.54.131",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.130",
+      "changes": [
+        "Distant hills and mountains now fade into a thicker, more realistic haze, while peaks stay crisp above it"
+      ]
+    },
+    {
+      "version": "0.54.129",
+      "changes": [
+        "Theater mode: press F9 (or Settings → Theater, the right stick press, or the Theater button on a touch screen) to fly a free camera while your character stays put; the HUD hides.",
+        "Camera moves from presets (orbit, dolly, track, rise, pan) around you, a creature or a point, with sliders, and keyframed paths on a timeline you can play, save, export and import.",
+        "Record the view to a video file in 9:16 or 16:9 at 720p to 1920p and 24, 30 or 60 fps, without the HUD."
+      ]
+    },
+    {
+      "version": "0.54.128",
+      "changes": [
+        "Creative: a theater camera path far from your character now loads the world where the camera is, with its animals and people",
+        "Adventure: the theater camera still sees only what is loaded near your character"
+      ]
+    },
+    {
+      "version": "0.54.127",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.126",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.125",
+      "changes": [
+        "A sword clash's sparks now fly where the blades meet, no longer in the air beside them."
+      ]
+    },
+    {
+      "version": "0.54.124",
+      "changes": [
+        "Three thicker distance-haze settings to compare (?haze=fog-11k, fog-8k, fog-6k); the default haze is unchanged."
+      ]
+    },
+    {
+      "version": "0.54.123",
+      "changes": [
+        "Behind the scenes: the camera engine for the coming theater mode — camera paths with orbits, dollies, tracking shots, drone rises and pans, eased moves, time-lapses of the light",
+        "Behind the scenes: camera presets as data, for showcase recordings"
+      ]
+    },
+    {
+      "version": "0.54.122",
+      "changes": [
+        "Wolves sit and lie down properly: rump and belly on the ground.",
+        "Villagers' hats have their own colours (straw, browns, greys), no longer the same as their hair."
+      ]
+    },
+    {
+      "version": "0.54.121",
+      "changes": [
+        "The sword's level block now lies across the view.",
+        "Villagers swinging their swords are drawn mid-swing.",
+        "Deer graze with their heads down and look up with their heads raised (they had it the wrong way round)."
+      ]
+    },
+    {
+      "version": "0.54.120",
+      "changes": [
+        "The sword shows its own hint (stance and block), not the axe's.",
+        "Raising a sword's block shows it: your arms and body lift the blade in its stance, and you see other players' and villagers' raised blocks.",
+        "Dev: spawnHerd puts a deer herd or a wolf pack by you in a local world."
+      ]
+    },
+    {
+      "version": "0.54.119",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.118",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.117",
+      "changes": [
+        "Behind the scenes: a fix for the two-faces code check"
+      ]
+    },
+    {
+      "version": "0.54.116",
+      "changes": [
+        "Villagers now walk and stand like other players, their sword held the way you hold it.",
+        "Deer lower their heads to graze, look up and flick their ears; wolves sit and lie down."
+      ]
+    },
+    {
+      "version": "0.54.115",
+      "changes": [
+        "The sword is now one sword from the tools pack, gripped by its handle in a closed fist.",
+        "Villagers are drawn in their own colours: shirts, trousers, skin and hair vary from one to the next.",
+        "Villagers carry their sword in their hand."
+      ]
+    },
+    {
+      "version": "0.54.114",
+      "changes": [
+        "Deer notice you and run off as a herd: sneak (crouch) or stand still to get closer, sprint and they spot you from farther away",
+        "Wolves keep their distance from you unless their pack is hungry",
+        "Hungry wolf packs travel toward the nearest deer herd, so you can come across a hunt",
+        "Deer and wolves pick idle behaviours by species (grazing, looking up, ear flicks, sitting, lying down); the poses aren't drawn yet"
+      ]
+    },
+    {
+      "version": "0.54.113",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.112",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.111",
+      "changes": [
+        "Herds near you no longer grow by several animals in seconds: deer and wolves have young at a natural pace.",
+        "Deer and wolves keep a little space between them instead of standing inside each other.",
+        "Animals no longer walk partly into cliff walls.",
+        "A spawn link or teleport to a point inside the ground now puts you on the ground above instead of dropping you through the world."
+      ]
+    },
+    {
+      "version": "0.54.110",
+      "changes": [
+        "Behind the scenes: recording notes"
+      ]
+    },
+    {
+      "version": "0.54.109",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.108",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.107",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.106",
+      "changes": [
+        "Behind the scenes: work queue and recording skill notes"
+      ]
+    },
+    {
+      "version": "0.54.105",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.104",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.103",
+      "changes": [
+        "Behind the scenes: work queue and recording skill notes"
+      ]
+    },
+    {
+      "version": "0.54.102",
+      "changes": [
+        "Hold Place with a sword to raise your block in its stance; a quick tap still turns the stance",
+        "Blades clash: a blocked strike rings out, throws sparks and knocks your swing back",
+        "Villagers with swords fight back: they block your wind-up and swing back while you recover (they can't hurt you)",
+        "Villagers are now full height, so a level slash no longer passes over them"
+      ]
+    },
+    {
+      "version": "0.54.101",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.100",
+      "changes": [
+        "Behind the scenes: recording skill update"
+      ]
+    },
+    {
+      "version": "0.54.99",
+      "changes": [
+        "Behind the scenes: a recording skill for showcase videos"
+      ]
+    },
+    {
+      "version": "0.54.98",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.97",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.96",
+      "changes": [
+        "Behind the scenes: bug notes"
+      ]
+    },
+    {
+      "version": "0.54.95",
+      "changes": [
+        "A sword, in the creative inventory's new Weapons group: swing it level or overhead, as the axe.",
+        "Deer and wolves can be hurt and killed with it: each hit lands as the blade reaches them, knocks them back, and wears the sword.",
+        "Hurt deer run off; hurt wolves turn on you, and flee when badly wounded. A killed animal leaves raw meat.",
+        "Villagers can be struck too, and turn to face whoever hit them. A sword never hurts another player."
+      ]
+    },
+    {
+      "version": "0.54.94",
+      "changes": [
+        "Your hand, and other players' hands, now close into a fist round a tool's handle; blocks and torches still rest on the open palm.",
+        "Your first-person arm shows more of the forearm.",
+        "Fixed tools in other players' hands (and your shadow's) being tilted twice, the axe about 50 degrees off."
+      ]
+    },
+    {
+      "version": "0.54.93",
+      "changes": [
+        "Villagers wander the meadows near you: they look around, sit, turn to look at you and step aside when bumped"
+      ]
+    },
+    {
+      "version": "0.54.92",
+      "changes": [
+        "Metal tools are twice as good: they break blocks in about half the hits, knock off chunks twice the size and last twice as long"
+      ]
+    },
+    {
+      "version": "0.54.91",
+      "changes": [
+        "Your first-person arm is now the Peasant's own arm, the same sleeve and hand other players see, playing every swing, chop and walk bob.",
+        "Held items sit in the Peasant's hand in first person, as they do for others."
+      ]
+    },
+    {
+      "version": "0.54.90",
+      "changes": [
+        "The Realistic test world has two new biomes: a cold desert of dry dirt, sand, sparse grass and rocks in its cold, nearly rainless interiors, and a tropical rainforest of tall broadleaf trees and palms in its hot, very wet lowlands.",
+        "A new tall broadleaf tree stands in the rainforest's dense canopy."
+      ]
+    },
+    {
+      "version": "0.54.89",
+      "changes": [
+        "Behind the scenes: Chisel opens the starter world again (its lava vents are a world setting it knows)"
+      ]
+    },
+    {
+      "version": "0.54.88",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.87",
+      "changes": [
+        "New biome: old-growth forest, a cool and very wet temperate rainforest of tall old pines and broadleaf standing close over thick tall grass.",
+        "The Realistic world grows it where the climate fits, and the Starter world on its cool, wet lowland by the rivers and lakes.",
+        "A forest test world (?worldgen=test:forest) and a bench scenario that measure the game's frame rate among dense trees."
+      ]
+    },
+    {
+      "version": "0.54.86",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.85",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.84",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.83",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.82",
+      "changes": [
+        "Forests draw faster: leaf cards hidden inside a tree's crown, on its far side or past their distance are no longer drawn, and they now fade out from 24 to 40 m (was 48 to 64 m)",
+        "The High preset draws full detail to 192 m (was 256 m) to stay smooth in forests on an M1 MacBook Air; Ultra still draws farther",
+        "Settings → Graphics has a Trees group; the Leaf cards switch moved there from View"
+      ]
+    },
+    {
+      "version": "0.54.81",
+      "changes": [
+        "Behind the scenes: the Tree Growth prototype compares palm fronds as leaf blocks and as painted frond cards side by side"
+      ]
+    },
+    {
+      "version": "0.54.80",
+      "changes": [
+        "Behind the scenes: work queue answers"
+      ]
+    },
+    {
+      "version": "0.54.79",
+      "changes": [
+        "Behind the scenes: far trees can be baked into pictures from several angles, around and from above, from the real tree models: a first step to far forests that match the near trees and draw cheaply. Nothing changes on screen yet"
+      ]
+    },
+    {
+      "version": "0.54.78",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.77",
+      "changes": [
+        "Behind the scenes: work queue order"
+      ]
+    },
+    {
+      "version": "0.54.76",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.75",
+      "changes": [
+        "Realistic test worlds roll their own orbit from the seed: their own latitude, sunrise direction, noon height, day and moon",
+        "A Sky choice for Realistic worlds (Default, Day varies, Extreme), for now by link: ?worldgen=test:realistic&sky=extreme",
+        "Every other world keeps today's sky exactly"
+      ]
+    },
+    {
+      "version": "0.54.74",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.73",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.72",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.71",
+      "changes": [
+        "Behind the scenes: the distance haze can now take a bluer air colour, a warm-toward-the-sun tint and a greying of far land, ready for a look we'll pick soon; nothing changes on screen yet"
+      ]
+    },
+    {
+      "version": "0.54.70",
+      "changes": [
+        "The moon's month is now 8¼ days, so the full moon rises at a different hour each month and both sides of the world get full-moon nights",
+        "The moon's seas (maria) are a darker moon dust, and they look darker from afar too"
+      ]
+    },
+    {
+      "version": "0.54.69",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.68",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.67",
+      "changes": [
+        "Behind the scenes: design notes"
+      ]
+    },
+    {
+      "version": "0.54.66",
+      "changes": [
+        "Behind the scenes: design answers"
+      ]
+    },
+    {
+      "version": "0.54.65",
+      "changes": [
+        "Bigger worlds: the F4 height map's widest zoom now shows the whole world, not only its middle."
+      ]
+    },
+    {
+      "version": "0.54.64",
+      "changes": [
+        "Chopping one spot now widens the axe's bites across the trunk into a real notch, instead of a tall narrow slot down the log.",
+        "The notch reaches round the trunk's corners, thin trunks included.",
+        "Wood cracks now show around the bites as you chop.",
+        "A swing after the tree falls bites the stump instead of wiping out the gash; chop the stump down to clear it, and it drops wood."
+      ]
+    },
+    {
+      "version": "0.54.63",
+      "changes": [
+        "Climbing high now thins the sky to black space: stars by day, a thin bright glow along the world's rim below you, and a sharper, whiter sun",
+        "The fog fades away as you leave the air, and clouds never reach past the top of the atmosphere"
+      ]
+    },
+    {
+      "version": "0.54.62",
+      "changes": [
+        "Design: seed-rolled orbits to set each world's climate band, sky and later seasons, no change in game yet"
+      ]
+    },
+    {
+      "version": "0.54.61",
+      "changes": [
+        "The full moon is lit evenly to its edge again, so it looks as big as the old moon; its phases still darken past the terminator."
+      ]
+    },
+    {
+      "version": "0.54.60",
+      "changes": [
+        "Flying to the moon: the server now carries you onto the moon when you get close, with its own lower gravity, and back home when you fly away",
+        "Blocks you break or place on the moon are saved with the world",
+        "Behind the scenes: the moon's ground is streamed to newer clients (the game's own view of the moon follows in a later update)"
+      ]
+    },
+    {
+      "version": "0.54.59",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.58",
+      "changes": [
+        "Behind the scenes: design answers"
+      ]
+    },
+    {
+      "version": "0.54.57",
+      "changes": [
+        "Behind the scenes: moon design answers"
+      ]
+    },
+    {
+      "version": "0.54.56",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.55",
+      "changes": [
+        "Swinging an axe no longer shows a stray blue blob of sleeve at the bottom of the screen."
+      ]
+    },
+    {
+      "version": "0.54.54",
+      "changes": [
+        "Behind the scenes: the groundwork for flying to the moon — far-flight speed, the moon's lower gravity, and being carried along by the moon once you reach it"
+      ]
+    },
+    {
+      "version": "0.54.53",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.52",
+      "changes": [
+        "Behind the scenes: the home world can now be baked into a far-away map of its land, sea and mountains, ready to be seen from the moon"
+      ]
+    },
+    {
+      "version": "0.54.51",
+      "changes": [
+        "The crescent moon now shows a clear lit arc, with craters catching the light along its edge.",
+        "Moon phases are shaded like a ball, so quarters and gibbous moons read the way you expect."
+      ]
+    },
+    {
+      "version": "0.54.50",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.49",
+      "changes": [
+        "Behind the scenes: one frame for grids that move and turn, ready for the moon"
+      ]
+    },
+    {
+      "version": "0.54.48",
+      "changes": [
+        "The moon in the sky is now your world's own moon: its craters and darker seas come from its real terrain.",
+        "The moon moves on its own orbit and shows real phases: full when opposite the sun, dark around new moon.",
+        "Moonless nights are darker than before, but never black."
+      ]
+    },
+    {
+      "version": "0.54.47",
+      "changes": [
+        "Saved structures can't be placed outside creative worlds, even by a modified client: the server now refuses them",
+        "Behind the scenes: servers and clients tell each other which optional features they have, so new features no longer need protocol flag bits"
+      ]
+    },
+    {
+      "version": "0.54.46",
+      "changes": [
+        "Each axe chop now bites a V the size of the axe head where it strikes, instead of a slice across the whole log.",
+        "Chopping the same spot widens the bites until they join into the notch; the tree still falls in about 11 chops.",
+        "Wood cracks spread along the grain around the bites as you chop."
+      ]
+    },
+    {
+      "version": "0.54.45",
+      "changes": [
+        "Stone shatters instead of denting: each pickaxe hit chips flat, light flakes of fresh rock out of the face",
+        "Each pickaxe hit on stone flings a few small tumbling stone fragments",
+        "Rock shards are now long, thin, angular pieces"
+      ]
+    },
+    {
+      "version": "0.54.44",
+      "changes": [
+        "Behind the scenes: the moon now has a real orbit, phases and moonlight worked out from where it is (not drawn in the sky yet)"
+      ]
+    },
+    {
+      "version": "0.54.43",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.42",
+      "changes": [
+        "Behind the scenes: moon design answers"
+      ]
+    },
+    {
+      "version": "0.54.41",
+      "changes": [
+        "Behind the scenes: a fix for the structures data check"
+      ]
+    },
+    {
+      "version": "0.54.40",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.39",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.38",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.37",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.36",
+      "changes": [
+        "Behind the scenes: the moon's own terrain (gray moon dust, craters, maria and ridges on both of its faces), not in the sky yet"
+      ]
+    },
+    {
+      "version": "0.54.35",
+      "changes": [
+        "A faint plume of steam now rises over active volcano lava lakes, on Medium and High clouds.",
+        "Cloud plumes can be added and moved while the game runs, ready for volcano smoke and weather.",
+        "The volumetric clouds do less work for empty sky and clear weather."
+      ]
+    },
+    {
+      "version": "0.54.34",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.33",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.32",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.31",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.30",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.29",
+      "changes": [
+        "New world → More options has a World size on desktop: make a world 2×, 4×, 8× or 10× as wide as today's (an early test of bigger maps; a bigger world takes longer to create).",
+        "A bigger world keeps its size when you reopen it, and its map and distant terrain reach its whole disc."
+      ]
+    },
+    {
+      "version": "0.54.28",
+      "changes": [
+        "Your saved structures are now a library you can place in any creative world: open the inventory (E) and pick one from the new Structures tab.",
+        "A structure follows your crosshair as a ghost box: R turns it 90°, M mirrors it, right click places it. Placed blocks are ordinary blocks you can edit.",
+        "Selections larger than 32 blocks across can now be saved: they are kept as a grid of 32-block tiles, up to 128 × 64 × 128."
+      ]
+    },
+    {
+      "version": "0.54.27",
+      "changes": [
+        "The Realistic test world now has biomes chosen by its climate: deserts and savanna in warm dry lands, forests on rainy windward slopes, tundra and snowfields above the tree line and in the far north.",
+        "The preset biomes now say where they belong in degrees and rainfall, so the same presets fit every climate band."
+      ]
+    },
+    {
+      "version": "0.54.26",
+      "changes": [
+        "Damaged stone, dirt and other blocks now show their cracks in game",
+        "Chopping at one spot on a trunk now notches it: a stone axe fells a tree in about a dozen swings"
+      ]
+    },
+    {
+      "version": "0.54.25",
+      "changes": [
+        "Pickaxe, shovel and axe hits now land when the swing reaches the block, not on the click: the gash, cracks, chips, drops and hit sound all wait for the strike.",
+        "Switching away from a tool mid-swing cancels the hit.",
+        "Tools only wear when a swing lands a hit: a bounce off stone counts, a miss or a swing through only leaves doesn't."
+      ]
+    },
+    {
+      "version": "0.54.24",
+      "changes": [
+        "Behind the scenes: notes from an in-game look at block cracks, felling, the chop's camera sway and the meadow grass"
+      ]
+    },
+    {
+      "version": "0.54.23",
+      "changes": [
+        "Dedicated servers can make a bigger world for testing: --size 2x (up to 10x); the world keeps its size when reopened",
+        "Behind the scenes: a big world's terrain, edges and distant view follow its own size"
+      ]
+    },
+    {
+      "version": "0.54.22",
+      "changes": [
+        "Realistic test world: each seed now picks a climate band (subtropical, temperate or subarctic) with its prevailing wind",
+        "Realistic test world: rain falls on the windward side of the seed's mountains and their lee is dry, so rivers run bigger on the wet side",
+        "Realistic test world terrain changes with this release (it is still a test world)"
+      ]
+    },
+    {
+      "version": "0.54.21",
+      "changes": [
+        "Fewer hitches on phones while running and flying: the collision for new terrain is built in smaller pieces each step"
+      ]
+    },
+    {
+      "version": "0.54.20",
+      "changes": [
+        "A felled tree landing on you no longer flings you across the map: it pins or shoves you as a real log would"
+      ]
+    },
+    {
+      "version": "0.54.19",
+      "changes": [
+        "Other players' axe swings now show their actual chop, level or overhead, instead of a generic break swing."
+      ]
+    },
+    {
+      "version": "0.54.18",
+      "changes": [
+        "Test world: the Realistic world's seed now raises mountain ranges, trenches, rift valleys, volcano arcs and island chains from its own tectonic plates, and the plates decide where land and sea are (?worldgen=test:realistic)"
+      ]
+    },
+    {
+      "version": "0.54.17",
+      "changes": [
+        "Smoother frame rate on phones while exploring: lighting newly loaded terrain is spread over several frames instead of stalling one"
+      ]
+    },
+    {
+      "version": "0.54.16",
+      "changes": [
+        "Tall grass on gentle grass slopes now grows back after it is eaten or cut, and meadow grass spreads onto those slopes too."
+      ]
+    },
+    {
+      "version": "0.54.15",
+      "changes": [
+        "A felled tree leaves an open V-shaped gash on the side you chopped, like a real felling notch",
+        "A tree that comes to rest lying up a hill settles along the slope instead of most of it vanishing into the ground"
+      ]
+    },
+    {
+      "version": "0.54.14",
+      "changes": [
+        "Behind the scenes: notes on running cloud sessions"
+      ]
+    },
+    {
+      "version": "0.54.13",
+      "changes": [
+        "Fewer hitches on phones while moving: a big piece of new terrain is now sent to the GPU over a few frames instead of all at once",
+        "Less work on the main thread when terrain at the edge of the view loads"
+      ]
+    },
+    {
+      "version": "0.54.12",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.11",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.10",
+      "changes": [
+        "Behind the scenes: work queue and bug notes"
+      ]
+    },
+    {
+      "version": "0.54.9",
+      "changes": [
+        "Smoother frame rate while walking, sprinting and flying on phones: new terrain is handed to the GPU a little at a time instead of in bursts",
+        "Terrain loading no longer runs two long steps in one late frame"
+      ]
+    },
+    {
+      "version": "0.54.8",
+      "changes": [
+        "Damaged blocks now crack as you hit them: hairline cracks spread from where you struck and grow into branching cracks as the block nears breaking, over every side of the block",
+        "Stone cracks sharp and angular, soil and sand split into dry fissures"
+      ]
+    },
+    {
+      "version": "0.54.7",
+      "changes": [
+        "The view now leans and kicks a little with each swing of the axe: back and right into the wind-up, left through a level chop, a dip at the bottom of a vertical one, a harder kick on a hit",
+        "Settings → Motion → Camera sway turns it off (your aim never sways)"
+      ]
+    },
+    {
+      "version": "0.54.6",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.5",
+      "changes": [
+        "Behind the scenes: a test fix for the axe timings"
+      ]
+    },
+    {
+      "version": "0.54.4",
+      "changes": [
+        "Pickaxe hits now chip a bigger, darker hollow out of stone, so the damage reads from standing height.",
+        "The terrain shader is smaller: the old flat dent effect, replaced by real carved geometry, is gone."
+      ]
+    },
+    {
+      "version": "0.54.3",
+      "changes": [
+        "The main menu's expandable sections (More options, Earlier versions, About) show a chevron that turns as they open and close"
+      ]
+    },
+    {
+      "version": "0.54.2",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.1",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.54.0",
+      "changes": [
+        "Meadows grow much more tall grass, in wider patches, and on gentle slopes too: no more bare stripes",
+        "Tall grass is the green of the grass it grows on, a little darker at the roots, instead of pale",
+        "A new compatibility line: the terrain changed, so worlds from 0.53 open in their own version"
+      ]
+    },
+    {
+      "version": "0.53.6",
+      "changes": [
+        "Digging and mining now carve real dents into blocks: round bowls in soil, angular facets in stone, seen from every side",
+        "Rock shards knocked off by a pickaxe are angular flakes instead of round lumps"
+      ]
+    },
+    {
+      "version": "0.53.5",
+      "changes": [
+        "Lava, torches and flames glow with bloom (Settings: Bloom; High and Ultra full, Medium lighter, off on Low and phones)",
+        "The starter world now uses as little memory on phones as the default world"
+      ]
+    },
+    {
+      "version": "0.53.4",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.53.3",
+      "changes": [
+        "Behind the scenes: a fix for the two-faces code check"
+      ]
+    },
+    {
+      "version": "0.53.2",
+      "changes": [
+        "The axe swings with the arms now: the hands draw back to the shoulder (or over the head) before the strike and sweep across or down with the head, instead of a flick of the wrist",
+        "The axe wind-up is longer (0.3 s) and the strike quicker"
+      ]
+    },
+    {
+      "version": "0.53.1",
+      "changes": [
+        "Behind the scenes: work queue notes"
+      ]
+    },
+    {
+      "version": "0.53.0",
+      "changes": [
+        "A new compatibility line: the far view's map of the world now reaches a world ten times as wide (for the coming bigger worlds), so 0.52 and 0.53 players can't join each other",
+        "Saved worlds rebuild their far view once when first opened"
+      ]
+    },
+    {
+      "version": "0.52.117",
+      "changes": [
+        "Behind the scenes: work queue notes on digging, mining and chopping marks"
+      ]
+    },
+    {
+      "version": "0.52.116",
+      "changes": [
+        "Digging now carves a real-looking hollow into dirt, sand and snow: a rounded scoop with a crumbly rim, shaded walls and a damp floor, merging into one hole as you keep digging."
+      ]
+    },
+    {
+      "version": "0.52.115",
+      "changes": [
+        "The Low graphics preset turns the leaf cards off, for a faster frame",
+        "Settings → Graphics has a Leaf cards switch"
+      ]
+    },
+    {
+      "version": "0.52.114",
+      "changes": [
+        "Phones no longer draw the leaf cards on trees, for a faster frame",
+        "Leaf cards no longer flicker against tree trunks"
+      ]
+    },
+    {
+      "version": "0.52.113",
+      "changes": [
+        "Behind the scenes: work queue notes on the axe swing"
+      ]
+    },
+    {
+      "version": "0.52.112",
+      "changes": [
+        "The axe swings the right way: a level chop sweeps right to left and a vertical chop comes down top to bottom, both through the crosshair.",
+        "Developer tools: a clip probe that charts an animation's paths over time from several views, and a bench step that shoots a swing frame by frame."
+      ]
+    },
+    {
+      "version": "0.52.111",
+      "changes": [
+        "Behind the scenes: a world can now record its size (today's, or 2×, 4×, 8× or 10× wider) for the coming big-map test; every world plays exactly as before"
+      ]
+    },
+    {
+      "version": "0.52.110",
+      "changes": [
+        "The main menu's Settings and Versions are now buttons in the menu's own style, side by side under Worlds and Play with others"
+      ]
+    },
+    {
+      "version": "0.52.109",
+      "changes": [
+        "Behind the scenes: a starter-world terrain check updated for the steppe's sparser grass"
+      ]
+    },
+    {
+      "version": "0.52.108",
+      "changes": [
+        "Behind the scenes: the first step of a Realistic world: each seed draws its own tectonic plates, their boundaries and hotspots (not used by any world yet; the terrain is unchanged)"
+      ]
+    },
+    {
+      "version": "0.52.107",
+      "changes": [
+        "Lava glows bright orange-red instead of dark red",
+        "Lava darkens as it cools: deeper red with more crust, then nearly black just before it turns to rock"
+      ]
+    },
+    {
+      "version": "0.52.106",
+      "changes": [
+        "Design: a study of a ten times larger world (no change in game yet)"
+      ]
+    },
+    {
+      "version": "0.52.105",
+      "changes": [
+        "Design: a seed-driven realistic world (no change in game yet)"
+      ]
+    },
+    {
+      "version": "0.52.104",
+      "changes": [
+        "The first start of a new version no longer freezes the loading screen for seconds while the graphics are prepared: its timer keeps counting"
+      ]
+    },
+    {
+      "version": "0.52.103",
+      "changes": [
+        "The Starter world uses less memory while it loads, so phones are less likely to reload the page",
+        "The terrain is unchanged"
+      ]
+    },
+    {
+      "version": "0.52.102",
+      "changes": [
+        "The loading screen names the shader compile on a first start of a new version (\"Preparing the shaders\"), rather than standing on \"Starting the graphics\""
+      ]
+    },
+    {
+      "version": "0.52.101",
+      "changes": [
+        "Starter world: the dry steppe now has sparse tall grass instead of none"
+      ]
+    },
+    {
+      "version": "0.52.100",
+      "changes": [
+        "Worlds use about 11 MB less memory for their deer and wolves, which helps phones and tablets",
+        "Behind the scenes: a world's saved herds take a few kilobytes instead of megabytes; older saves still load"
+      ]
+    },
+    {
+      "version": "0.52.99",
+      "changes": [
+        "Lava rivers keep to their channels: a flow breaks out through its frozen front, not through the levees at its sides",
+        "Whether a lava river reaches the sea now depends on its vent, the slope and the cooling: a weak flow on gentle ground crusts and stops short"
+      ]
+    },
+    {
+      "version": "0.52.98",
+      "changes": [
+        "Behind the scenes: saved camera spots for checking the starter world's arches, peaks, snow lines, grass and lava by eye"
+      ]
+    },
+    {
+      "version": "0.52.97",
+      "changes": [
+        "Shovel scoops look like shallow bowls and pickaxe marks like chipped facets",
+        "Distant deer herds and wolf packs show as small shapes across the land"
+      ]
+    },
+    {
+      "version": "0.52.96",
+      "changes": [
+        "Lava rivers: a river vent's lava now runs as far as its flow takes it, kilometres if need be, instead of stopping at the edge of a fixed patch",
+        "Lava that reaches the sea quenches to obsidian on the sea floor and builds new land above the water",
+        "Running lava stays molten under its crust and cools once it stops",
+        "A lava pond held back by its own crust breaks out through it and runs on",
+        "The starter world's youngest island has a lava river vent on its flank, on one face"
+      ]
+    },
+    {
+      "version": "0.52.95",
+      "changes": [
+        "Far-off deer herds and wolf packs show in the distance again, in your own worlds, worlds you host for friends and on dedicated servers: the game had been throwing away the herd updates the world sent",
+        "Behind the scenes: a world saves its herds only when they have changed, so autosaves write megabytes less"
+      ]
+    },
+    {
+      "version": "0.52.94",
+      "changes": [
+        "Flying high over a tall mountain no longer cuts a hole in it",
+        "Dev: ?loddebug=levels tints the distant terrain by its detail level"
+      ]
+    },
+    {
       "version": "0.52.93",
       "changes": [
         "Lava up close: dark crust plates drifting over glowing seams",

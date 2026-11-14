@@ -1128,3 +1128,158 @@ fn a_column_whose_top_no_longer_holds_the_surface_is_drawn_at_its_cells() {
         "the ground at its surface, the tower at its cells' top"
     );
 }
+
+/// BUGS.md #95: the far ground under far trees is closed. A forest section's ground is meshed as
+/// if its trees weren't there: every column's top is covered by a ground face at the ground's
+/// height, with the trees drawn (`lod_trees`) or left out (Far trees off, the impostors), and with
+/// them left out the section is exactly the treeless ground's mesh (no hole, no extra T-junction
+/// seam from a merge broken around a trunk, the borders the neighbour sections meet unchanged).
+mod far_ground_under_trees {
+    use super::*;
+
+    const GROUND_TOP: i32 = 4;
+
+    /// Grass ground with its top cell at row 4 (the apron included), as face-local rows.
+    fn ground() -> Vec<u16> {
+        let mut cells = new_cells();
+        for z in -1..=N {
+            for x in -1..=N {
+                for y in -1..=GROUND_TOP {
+                    put(&mut cells, x, y, z, grass());
+                }
+            }
+        }
+        cells
+    }
+
+    /// The ground's surface data: valid, dry, at `h` cells (None: no data, drawn at cell tops).
+    fn surface(h: Option<f32>) -> Option<Vec<f32>> {
+        h.map(|h| {
+            let mut s = new_surface();
+            for z in -1..=N {
+                for x in -1..=N {
+                    let c = surface_at(x, z);
+                    s[c] = h;
+                    s[c + 1] = f32::from(grass());
+                    s[c + 2] = 1.0;
+                }
+            }
+            s
+        })
+    }
+
+    /// The ground with trees on it: crowned trees (one on the section's edge, one on its corner)
+    /// and crownless trunks (the far trees of the owner's shot), as face-local rows.
+    fn forest() -> Vec<u16> {
+        let (log, leaf) = (require("dwell:log"), require("dwell:leaves"));
+        let mut cells = ground();
+        let crowned = [(8, 8), (20, 12), (0, 16), (31, 31)];
+        let bare = [(4, 25), (26, 3), (15, 0)];
+        for &(tx, tz) in crowned.iter().chain(&bare) {
+            for y in GROUND_TOP + 1..GROUND_TOP + 7 {
+                put(&mut cells, tx, y, tz, log);
+            }
+        }
+        for &(tx, tz) in &crowned {
+            for y in GROUND_TOP + 5..GROUND_TOP + 10 {
+                for z in tz - 2..=tz + 2 {
+                    for x in tx - 2..=tx + 2 {
+                        if cell(&cells, x, y, z) == 0 {
+                            put(&mut cells, x, y, z, leaf);
+                        }
+                    }
+                }
+            }
+        }
+        // A leaf resting on the ground beside a trunk, as a low crown's does.
+        put(&mut cells, 9, GROUND_TOP + 1, 9, leaf);
+        cells
+    }
+
+    /// Face `f`'s section of face-local `cells`, meshed with its trees or not, in cells with y
+    /// read face-local (face B's mesh turned back).
+    fn meshed(
+        f: dwell_world::FaceFrame,
+        cells: &[u16],
+        s: &Option<Vec<f32>>,
+        trees: bool,
+    ) -> FlatMesh {
+        let rows = if f.is_b() {
+            mirror_rows(cells)
+        } else {
+            cells.to_vec()
+        };
+        let options = MeshSectionOptions {
+            surface: s.as_deref(),
+            mirror: f.is_b(),
+            ..Default::default()
+        };
+        let mut m =
+            in_cells(mesh_section_trees(&rows, &options, &[], trees).expect("cells")).opaque;
+        if f.is_b() {
+            for p in m.positions.iter_mut().skip(1).step_by(3) {
+                *p = N as f32 - *p;
+            }
+            for n in m.normals.iter_mut().skip(1).step_by(3) {
+                *n = -*n;
+            }
+        }
+        m
+    }
+
+    /// The columns whose centre no upward face at height `h` covers.
+    fn uncovered(m: &FlatMesh, h: f64) -> Vec<(i32, i32)> {
+        let p = |i: u32| {
+            let i = i as usize * 3;
+            [m.positions[i], m.positions[i + 1], m.positions[i + 2]].map(f64::from)
+        };
+        let tops: Vec<[[f64; 3]; 3]> = m
+            .indices
+            .chunks_exact(3)
+            .filter(|t| m.normals[t[0] as usize * 3 + 1] > 0.99)
+            .map(|t| [p(t[0]), p(t[1]), p(t[2])])
+            .filter(|t| t.iter().all(|v| (v[1] - h).abs() < 1e-4))
+            .collect();
+        let inside = |t: &[[f64; 3]; 3], x: f64, z: f64| {
+            let side =
+                |a: [f64; 3], b: [f64; 3]| (b[0] - a[0]) * (z - a[2]) - (b[2] - a[2]) * (x - a[0]);
+            let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
+            s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
+        };
+        let mut out = Vec::new();
+        for z in 0..N {
+            for x in 0..N {
+                let (cx, cz) = (f64::from(x) + 0.5, f64::from(z) + 0.5);
+                if !tops.iter().any(|t| inside(t, cx, cz)) {
+                    out.push((x, z));
+                }
+            }
+        }
+        out
+    }
+
+    dwell_world::both_faces!(
+        /// Red before: each trunk's column had no top face (with the surface data, the column's
+        /// topmost solid cell was the tree's, so its ground found no surface; without, the log
+        /// above hid the ground's top), a hole through to the other face's sky.
+        fn every_columns_ground_top_is_covered(f: dwell_world::FaceFrame) {
+            let forest = forest();
+            for h in [None, Some(4.5)] {
+                let s = surface(h);
+                let top = h.map_or(f64::from(GROUND_TOP + 1), f64::from);
+                for trees in [false, true] {
+                    let holes = uncovered(&meshed(f, &forest, &s, trees), top);
+                    assert!(
+                        holes.is_empty(),
+                        "surface {h:?}, trees {trees}: holes at {holes:?}"
+                    );
+                }
+                assert_eq!(
+                    meshed(f, &forest, &s, false),
+                    meshed(f, &ground(), &s, false),
+                    "surface {h:?}: the far ground without its trees is the treeless ground's mesh"
+                );
+            }
+        }
+    );
+}

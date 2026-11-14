@@ -93,7 +93,7 @@ export type Step =
   | { do: 'shadows'; quality: 'off' | 'low' | 'high' }
   | {
       do: 'view';
-      clouds?: 'off' | 'low' | 'high';
+      clouds?: 'off' | 'low' | 'medium' | 'high';
       speedEffects?: boolean;
       distanceM?: number;
       pixelError?: number;
@@ -102,6 +102,12 @@ export type Step =
       flowRipples?: boolean;
       flowFoam?: boolean;
       waterfalls?: boolean;
+      shafts?: 'off' | 'low' | 'high';
+      bloom?: 'off' | 'low' | 'high';
+      torchShadows?: 'off' | 'low' | 'high';
+      cards?: boolean;
+      grass?: boolean;
+      renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
   | { do: 'edit'; action: 'break' | 'place' }
@@ -130,6 +136,11 @@ export type Step =
    * own, holding the hotbar's first block when `held`; 0 removes them.
    */
   | { do: 'puppets'; count: number; at?: Vec3; face?: number; held?: boolean }
+  /**
+   * Villagers (`__dwell.spawnNpcs`, docs/CHARACTERS.md §11.11): `count` NPCs within `radius` m
+   * (3) of the player, a local world only.
+   */
+  | { do: 'npcs'; count: number; radius?: number }
   /** Your first-person arms shown or hidden (the Show your arms setting, for this page only). */
   | { do: 'arms'; on: boolean }
   /** Waits (at most `maxS`) until the LOD has nothing to generate, mesh or ask for, for 1 s. */
@@ -156,6 +167,49 @@ export type Step =
    */
   | { do: 'lava'; op: 'report' | 'rate' | 'vent' | 'ventNear'; args: number[] }
   /**
+   * The finder (WORK_QUEUE item 46): logs the far herds and packs nearest first (`__dwell.herds`)
+   * and stands the player `back` m (default 40) short of the nearest of `kind` (`deer`, `wolf`;
+   * either when omitted) on the ground (`goToHerd`, a local world); fails when there is none.
+   */
+  | { do: 'herd'; kind?: 'deer' | 'wolf'; back?: number }
+  /**
+   * The moon trip (`__dwell.flyTo`, docs/DEV_TOOLS.md "The moon"; a local world): `moon` puts the
+   * player just outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev
+   * move, flies it in, down to `landM` m (40) over the ground, measures the fall with flight off
+   * (failing when it is not the moon's gravity) and lands; `home` flies up past the release
+   * sphere, back to where the trip started, and waits for home's chunk under the feet. Each leg
+   * at most `maxS` (120). Saved in the report's `trips`.
+   */
+  | {
+      do: 'flyTo';
+      to: 'moon' | 'home';
+      face?: 'a' | 'b';
+      marginM?: number;
+      landM?: number;
+      maxS?: number;
+    }
+  /**
+   * A player's flight to the moon (BUGS.md #155): flight on at the top level, Forward (W) held as
+   * a key, and every ½ s the look turned onto the moon in the sky (`__dwell.moon().look`, as a
+   * player's mouse keeps it there), until captured or `maxS` (120); logs the distance, height,
+   * speed and snaps, a screenshot `<name>-NN.png` every `shotEveryS` (10). Saved in `trips`.
+   */
+  | { do: 'flyAtMoon'; name: string; maxS?: number; run?: boolean; shotEveryS?: number }
+  /**
+   * Teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world),
+   * no flight, waits until standing there with its chunk held (at most `maxS`, 60) and `waitS`
+   * (3) more, then prints the frame's draw calls, triangles and mesh bytes; saved in the report's
+   * `trips` (owner, 2026-11-13: "teleport to the moon to see if ground draws"). Scenario
+   * `moon-draw`.
+   */
+  | { do: 'moonLand'; face?: 'a' | 'b'; maxS?: number; waitS?: number }
+  /**
+   * `moonLand` onto the sun's dry crust instead (`__dwell.sunLand`, SUN_WORLD.md): the same wait,
+   * draw counts and report. Scenario `sun-draw`. `river`: beside a river head instead, where its
+   * lava field runs (BUGS.md #146).
+   */
+  | { do: 'sunLand'; face?: 'a' | 'b'; river?: boolean; maxS?: number; waitS?: number }
+  /**
    * Stands the player on a raft `lift` m (default 1) above its feet and moves the raft at `speed`
    * m/s toward `yaw` (degrees, 0 = +Z, 90 = +X) for `s` seconds at a held height, then waits out
    * the ride (a local world only): "carried by a moving body" bugs (`__dwell.carry`).
@@ -168,8 +222,14 @@ export type Step =
   | { do: 'carry'; speed: number; yaw: number; s: number; lift?: number }
   /** Forgets the telemetry so far: the next `record` measures from here. */
   | { do: 'mark' }
-  /** Saves the telemetry, the controller ticks and the game's state under `name`. */
-  | { do: 'record'; name: string }
+  /**
+   * Saves the telemetry, the controller ticks and the game's state under `name`. With a `budget`
+   * (`{"<series>.<stat>": max}`, e.g. `{"frame.cpu.p95": 14}`), a value over its maximum fails the
+   * scenario (`overBudget`; BUGS.md #72's phone budget while moving). With `reportOnly` true the
+   * values over it are printed (`OVER BUDGET (report only)`) and the scenario goes on: a target not
+   * yet met (`forest-perf`'s 16.7 ms frame, WORK_QUEUE items 30 and 32).
+   */
+  | { do: 'record'; name: string; budget?: Record<string, number>; reportOnly?: true }
   /**
    * Saves a screenshot `<name>.png`. With a placement (`at` [x, y, z], the eye, or `above`
    * [x, z, height], the eye `height` m over the ground there along `face`'s up; `yaw`, `pitch`),
@@ -188,6 +248,21 @@ export type Step =
    * phase (0 new, 0.5 full), on this client only (docs/DAY_NIGHT.md).
    */
   | { do: 'time'; t: number; moon?: number }
+  /**
+   * Plays a theater mode camera path (docs/THEATER_MODE.md; `__dwell.theater`): `path` (a camera
+   * path's JSON) or `preset` (a name in shared/theater/presets.json) with `params` over its
+   * defaults around `subject` ("player", [x, y, z], {creature: id}); waits for its end unless
+   * `wait` is false. The HUD is hidden while it plays unless `hud` is true.
+   */
+  | {
+      do: 'theater';
+      path?: Record<string, unknown>;
+      preset?: string;
+      params?: Record<string, number>;
+      subject?: unknown;
+      wait: boolean;
+      hud: boolean;
+    }
   /**
    * Turns pieces of the water's shading off (`names`, the `?waterdbg=` switches, comma-separated;
    * "" turns them all back on), so a cost can be told apart within one page and one load.
@@ -219,6 +294,22 @@ export type Step =
        */
       drift?: { position: Vec3; yaw: number; pitch: number };
       maxHueFlips?: number;
+    }
+  /**
+   * One axe swing frame by frame (docs/DEV_TOOLS.md "Clip strip"): the level (or `vertical`)
+   * chop held at `frames` clip times across it (`__dwell.holdSwing`), each shot from the `views`
+   * (`fp`: your eyes; `tp-behind`, `tp-side`: a stand-in holding the same tool, seen from behind
+   * and to its right, and from its right side), `<name>-<view>-00.png`…, and one contact sheet
+   * `<name>-sheet.png` (a row per view). Hold the axe first (`give`, `pick`).
+   */
+  | {
+      do: 'clip-strip';
+      name: string;
+      vertical: boolean;
+      frames: number;
+      views: ClipStripView[];
+      /** The stand-in's feet from yours (m); it stands 4 m ahead of `at` + 10 m along x. */
+      at: Vec3;
     }
   /** Runs `steps` `times` times (e.g. a burst of edits); no `mark`, `record`, `shot` or traces inside. */
   | { do: 'repeat'; times: number; steps: Step[] };
@@ -372,6 +463,12 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'flowRipples',
     'flowFoam',
     'waterfalls',
+    'shafts',
+    'bloom',
+    'cards',
+    'grass',
+    'renderScale',
+    'torchShadows',
   ],
   edit: ['action'],
   select: ['slot'],
@@ -379,22 +476,30 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   brush: ['command'],
   region: ['op', 'from', 'to', 'up'],
   puppets: ['count', 'at', 'face', 'held'],
+  npcs: ['count', 'radius'],
   arms: ['on'],
   settle: ['maxS'],
   until: ['what', 'maxS'],
   die: ['maxS'],
   give: ['item', 'count'],
   lava: ['op', 'args'],
+  herd: ['kind', 'back'],
+  flyTo: ['to', 'face', 'marginM', 'landM', 'maxS'],
+  flyAtMoon: ['name', 'maxS', 'run', 'shotEveryS'],
+  moonLand: ['face', 'maxS', 'waitS'],
+  sunLand: ['face', 'river', 'maxS', 'waitS'],
   mark: [],
-  record: ['name'],
+  record: ['name', 'budget', 'reportOnly'],
   shot: ['name', ...PLACEMENT_FIELDS, 'quietFrames', 'maxS'],
   spot: ['spot', 'name'],
   traceStart: [],
   traceStop: ['name'],
   time: ['t', 'moon'],
+  theater: ['path', 'preset', 'params', 'subject', 'wait', 'hud'],
   waterDebug: ['names'],
   timelapse: ['name', 'frames', 'from', 'to', 'waitS'],
   burst: ['name', 'frames', 'clock', 'maxFlicker', 'drift', 'maxHueFlips'],
+  'clip-strip': ['name', 'vertical', 'frames', 'views', 'at'],
   repeat: ['times', 'steps'],
 };
 
@@ -409,6 +514,7 @@ const NOT_REPEATED: readonly Step['do'][] = [
   'traceStop',
   'timelapse',
   'burst',
+  'clip-strip',
 ];
 
 export function parseStep(where: string, v: unknown): Step {
@@ -476,9 +582,17 @@ export function parseStep(where: string, v: unknown): Step {
     }
     case 'view': {
       const c = o.clouds;
-      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'high') {
-        throw new ViewError(`${at('clouds')}: expected "off", "low" or "high"`);
+      if (c !== undefined && c !== 'off' && c !== 'low' && c !== 'medium' && c !== 'high') {
+        throw new ViewError(`${at('clouds')}: expected "off", "low", "medium" or "high"`);
       }
+      const tier = (k: string): 'off' | 'low' | 'high' | undefined => {
+        const v = o[k];
+        if (v === undefined) return undefined;
+        if (v !== 'off' && v !== 'low' && v !== 'high') {
+          throw new ViewError(`${at(k)}: expected "off", "low" or "high"`);
+        }
+        return v;
+      };
       const opt = <T>(k: string, v: T | undefined): Record<string, T> =>
         v === undefined ? {} : { [k]: v };
       return {
@@ -509,6 +623,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt(
           'waterfalls',
           o.waterfalls === undefined ? undefined : bool(at('waterfalls'), o.waterfalls),
+        ),
+        ...opt('shafts', tier('shafts')),
+        ...opt('bloom', tier('bloom')),
+        ...opt('torchShadows', tier('torchShadows')),
+        ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
+        ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
+        ...opt(
+          'renderScale',
+          o.renderScale === undefined ? undefined : num(at('renderScale'), o.renderScale, 0.25, 1),
         ),
       };
     }
@@ -578,6 +701,15 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.held === undefined ? {} : { held: bool(at('held'), o.held) }),
       };
     }
+    case 'npcs': {
+      const count = num(at('count'), o.count, 1, 64);
+      if (!Number.isInteger(count)) throw new ViewError(`${at('count')}: expected a whole number`);
+      return {
+        do: d,
+        count,
+        ...(o.radius === undefined ? {} : { radius: num(at('radius'), o.radius, 0, 64) }),
+      };
+    }
     case 'probe': {
       if (!Array.isArray(o.at) || o.at.length > 2) {
         throw new ViewError(`${at('at')}: expected a list of at most 2 points`);
@@ -601,6 +733,63 @@ export function parseStep(where: string, v: unknown): Step {
         throw new ViewError(`${at('args')}: expected a list of numbers`);
       }
       return { do: d, op: o.op, args: args as number[] };
+    }
+    case 'herd': {
+      if (o.kind !== undefined && o.kind !== 'deer' && o.kind !== 'wolf') {
+        throw new ViewError(`${at('kind')}: expected "deer" or "wolf"`);
+      }
+      return {
+        do: d,
+        ...(o.kind === undefined ? {} : { kind: o.kind }),
+        ...(o.back === undefined ? {} : { back: num(at('back'), o.back, 0, 2000) }),
+      };
+    }
+    case 'flyAtMoon':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+        ...(o.run === undefined ? {} : { run: bool(at('run'), o.run) }),
+        ...(o.shotEveryS === undefined
+          ? {}
+          : { shotEveryS: num(at('shotEveryS'), o.shotEveryS, 1, 600) }),
+      };
+    case 'flyTo': {
+      if (o.to !== 'moon' && o.to !== 'home') {
+        throw new ViewError(`${at('to')}: expected "moon" or "home"`);
+      }
+      if (o.face !== undefined && (o.to !== 'moon' || (o.face !== 'a' && o.face !== 'b'))) {
+        throw new ViewError(`${at('face')}: expected "a" or "b" (a trip to the moon)`);
+      }
+      if (o.marginM !== undefined && o.to !== 'moon') {
+        throw new ViewError(`${at('marginM')}: only a trip to the moon starts outside its capture`);
+      }
+      return {
+        do: d,
+        to: o.to,
+        ...(o.face === undefined ? {} : { face: o.face }),
+        // `__dwell.flyTo`'s `marginM` (moonTrip.ts `TripOptions`): how far outside the capture
+        // sphere the dev move starts the flight (BUGS.md #150: the step rejected it).
+        ...(o.marginM === undefined ? {} : { marginM: num(at('marginM'), o.marginM, 0, 100_000) }),
+        ...(o.landM === undefined ? {} : { landM: num(at('landM'), o.landM, 5, 500) }),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+      };
+    }
+    case 'moonLand':
+    case 'sunLand': {
+      if (o.face !== undefined && o.face !== 'a' && o.face !== 'b') {
+        throw new ViewError(`${at('face')}: expected "a" or "b"`);
+      }
+      if (o.river !== undefined && (d !== 'sunLand' || typeof o.river !== 'boolean')) {
+        throw new ViewError(`${at('river')}: expected true or false (sunLand only)`);
+      }
+      return {
+        do: d,
+        ...(o.face === undefined ? {} : { face: o.face }),
+        ...(o.river === undefined ? {} : { river: o.river }),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+        ...(o.waitS === undefined ? {} : { waitS: num(at('waitS'), o.waitS, 0, 60) }),
+      };
     }
     case 'give': {
       if (typeof o.item !== 'string' || !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(o.item)) {
@@ -629,7 +818,32 @@ export function parseStep(where: string, v: unknown): Step {
       const spot = str(at('spot'), o.spot);
       return { do: d, spot, name: name(at('name'), o.name ?? spot.replace(':', '-')) };
     }
-    case 'record':
+    case 'record': {
+      const n = name(at('name'), o.name);
+      if (o.reportOnly !== undefined && o.reportOnly !== true) {
+        throw new ViewError(`${at('reportOnly')}: expected true (or leave it out)`);
+      }
+      if (o.reportOnly === true && o.budget === undefined) {
+        throw new ViewError(`${at('reportOnly')}: a record reports only against a budget`);
+      }
+      if (o.budget === undefined) return { do: d, name: n };
+      if (typeof o.budget !== 'object' || o.budget === null || Array.isArray(o.budget)) {
+        throw new ViewError(`${at('budget')}: expected {"<series>.<stat>": max}`);
+      }
+      const budget: Record<string, number> = {};
+      for (const [k, v] of Object.entries(o.budget as Record<string, unknown>)) {
+        const stat = k.slice(k.lastIndexOf('.') + 1);
+        if (!k.includes('.') || !BUDGET_STATS.includes(stat as BudgetStat)) {
+          throw new ViewError(
+            `${at('budget')}.${k}: expected "<series>.<stat>" with a stat of ${BUDGET_STATS.join(', ')}`,
+          );
+        }
+        budget[k] = num(`${at('budget')}.${k}`, v, 0, 1e9);
+      }
+      return o.reportOnly
+        ? { do: d, name: n, budget, reportOnly: true }
+        : { do: d, name: n, budget };
+    }
     case 'traceStop':
       return { do: d, name: name(at('name'), o.name) };
     case 'repeat': {
@@ -659,6 +873,30 @@ export function parseStep(where: string, v: unknown): Step {
         ? { do: d, t }
         : { do: d, t, moon: num(at('moon'), o.moon, 0, 1) };
     }
+    case 'theater': {
+      const isObj = (x: unknown): x is Record<string, unknown> =>
+        typeof x === 'object' && x !== null && !Array.isArray(x);
+      if ((o.path === undefined) === (o.preset === undefined)) {
+        throw new ViewError(`${where}: a theater step needs a path or a preset (one of them)`);
+      }
+      if (o.path !== undefined && !isObj(o.path)) {
+        throw new ViewError(`${at('path')}: expected a camera path object`);
+      }
+      const params: Record<string, number> = {};
+      if (o.params !== undefined) {
+        if (!isObj(o.params)) throw new ViewError(`${at('params')}: expected {name: number}`);
+        for (const [k, v] of Object.entries(o.params))
+          params[k] = num(at(`params.${k}`), v, -1e6, 1e6);
+      }
+      return {
+        do: d,
+        ...(o.path === undefined ? {} : { path: o.path }),
+        ...(o.preset === undefined ? {} : { preset: str(at('preset'), o.preset), params }),
+        ...(o.subject === undefined ? {} : { subject: o.subject }),
+        wait: o.wait === undefined ? true : bool(at('wait'), o.wait),
+        hud: o.hud === undefined ? false : bool(at('hud'), o.hud),
+      };
+    }
     case 'waterDebug': {
       if (typeof o.names !== 'string' || !/^[a-z0-9,]*$/.test(o.names)) {
         throw new ViewError(`${at('names')}: expected switch names joined by commas`);
@@ -674,6 +912,27 @@ export function parseStep(where: string, v: unknown): Step {
         to: num(at('to'), o.to, 0, 1, 1),
         waitS: num(at('waitS'), o.waitS, 0, 60, 0.3),
       };
+    case 'clip-strip': {
+      const views = o.views ?? CLIP_STRIP_VIEWS;
+      if (
+        !Array.isArray(views) ||
+        views.length === 0 ||
+        !views.every((v) => CLIP_STRIP_VIEWS.includes(v as ClipStripView))
+      ) {
+        throw new ViewError(`${at('views')}: expected a list of ${CLIP_STRIP_VIEWS.join(', ')}`);
+      }
+      const frames = num(at('frames'), o.frames, 2, 24, 8);
+      if (!Number.isInteger(frames))
+        throw new ViewError(`${at('frames')}: expected a whole number`);
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        vertical: o.vertical === undefined ? false : bool(at('vertical'), o.vertical),
+        frames,
+        views: views as ClipStripView[],
+        at: o.at === undefined ? [0, 0, 0] : vec3(at('at'), o.at),
+      };
+    }
     case 'burst':
       return {
         do: d,
@@ -854,6 +1113,32 @@ function parseScenario(where: string, v: unknown): Scenario {
 }
 
 /** The scenarios of a scenarios file (`{ "scenarios": [...] }`), checked; throws ViewError. */
+/** The statistics a `record` budget can bound. */
+export const BUDGET_STATS = ['mean', 'p50', 'p95', 'p99', 'max'] as const;
+type BudgetStat = (typeof BUDGET_STATS)[number];
+
+/**
+ * A record's budget broken: one line per series and statistic over its maximum (a series the
+ * record lacks is reported too, so a renamed series can't pass silently).
+ */
+export function overBudget(
+  frames: Partial<Record<string, Partial<Record<BudgetStat, number>>>>,
+  budget: Record<string, number>,
+  samples: Partial<Record<string, Partial<Record<BudgetStat, number>>>> = {},
+): string[] {
+  const out: string[] = [];
+  for (const [k, max] of Object.entries(budget)) {
+    const i = k.lastIndexOf('.');
+    const series = k.slice(0, i);
+    const stat = k.slice(i + 1) as BudgetStat;
+    // The GPU timings (`gpu.*`) are samples, not per-frame series.
+    const v = (frames[series] ?? samples[series])?.[stat];
+    if (v === undefined) out.push(`${k}: not recorded`);
+    else if (v > max) out.push(`${k} ${v.toFixed(2)} over ${String(max)}`);
+  }
+  return out;
+}
+
 export function parseScenarios(json: unknown): Scenario[] {
   const file = obj('scenarios file', json, ['$comment', 'scenarios']);
   if (!Array.isArray(file.scenarios))
@@ -867,10 +1152,92 @@ export function parseScenarios(json: unknown): Scenario[] {
   return list;
 }
 
+/** A clip strip's views: your eyes, and a stand-in seen from behind-right and from its right. */
+export type ClipStripView = 'fp' | 'tp-behind' | 'tp-side';
+export const CLIP_STRIP_VIEWS: readonly ClipStripView[] = ['fp', 'tp-behind', 'tp-side'];
+
+/** The clip times (s) a strip shows: `frames` of them from 0 to `duration`, both ends included. */
+export function clipStripTimes(duration: number, frames: number): number[] {
+  return Array.from({ length: frames }, (_, i) => (duration * i) / (frames - 1));
+}
+
+/**
+ * The first-person clip a swing plays and its length (s), read from the characters data
+ * (shared/characters/characters.json: the player's `firstPerson.clips` role → clip).
+ */
+export function swingClip(
+  characters: unknown,
+  vertical: boolean,
+): { clip: string; duration: number } {
+  const c = characters as {
+    characters: Partial<
+      Record<string, { firstPerson?: { clips?: Partial<Record<string, string>> } }>
+    >;
+    clips: Partial<Record<string, { duration: number }>>;
+  };
+  const role = vertical ? 'chop_vertical' : 'chop_level';
+  const clip = c.characters.player?.firstPerson?.clips?.[role];
+  const duration = clip === undefined ? undefined : c.clips[clip]?.duration;
+  if (clip === undefined || duration === undefined) {
+    throw new Error(`clip-strip: the player has no first-person ${role} clip`);
+  }
+  return { clip, duration };
+}
+
+/**
+ * Where a third-person view of a stand-in (feet `feet`, facing +Z, standing still while a swing
+ * is held) is shot from: behind it and to its right (its right is −X at a heading of 0), or from
+ * its right side, looking at its chest; `up` is the face's (1 face A, −1 face B: mirrored).
+ */
+export function clipStripCamera(
+  view: Exclude<ClipStripView, 'fp'>,
+  feet: Vec3,
+  up: number,
+): { position: Vec3; yaw: number; pitch: number } {
+  // Face-local offsets (right is −x), the look's yaw from them (0 = +Z, 90 = +X).
+  const [dx, dy, dz] = view === 'tp-behind' ? [-1.6, 1.9, -2.6] : [-3.2, 1.4, 0.3];
+  const chest = 1.2;
+  const yaw = (Math.atan2(-dx, -dz) * 180) / Math.PI;
+  const pitch = (Math.atan2(chest - dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+  return {
+    position: [feet[0] + dx * up, feet[1] + dy * up, feet[2] + dz],
+    yaw: up > 0 ? yaw : -yaw,
+    pitch,
+  };
+}
+
+/** The contact sheet's page: a row per view, a column per clip time, each frame labelled. */
+export function clipStripSheet(
+  title: string,
+  rows: { view: string; frames: { t: number; src: string }[] }[],
+): string {
+  const esc = (v: string): string =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cells = rows
+    .map(
+      (r) =>
+        `<tr><th>${esc(r.view)}</th>${r.frames
+          .map((f) => `<td><img src="${esc(f.src)}"><div>${f.t.toFixed(3)} s</div></td>`)
+          .join('')}</tr>`,
+    )
+    .join('');
+  return `<!doctype html><meta charset="utf-8"><style>body{margin:8px;font:12px sans-serif;background:#fff}td,th{padding:2px;vertical-align:top}img{width:240px;display:block}</style><h3>${esc(title)}</h3><table>${cells}</table>`;
+}
+
 /** The times of day a timelapse shows, `frames` of them from `from` toward `to` (not reaching it). */
 export function timelapseTimes(s: { from: number; to: number; frames: number }): number[] {
   const span = s.to > s.from ? s.to - s.from : s.to + 1 - s.from;
   return Array.from({ length: s.frames }, (_, i) => (s.from + (span * i) / s.frames) % 1);
+}
+
+/**
+ * The game page for a served `base`: a server's root (`http://localhost:4173`) → its `/dwell/`; a
+ * base already naming a build's path (`…/dwell/`, a released build's `…/dwell/v/0.51.24/`) → that
+ * path. The launcher's builds 404'd as `…/dwell/v/0.51.24/dwell/` (`--base`).
+ */
+export function buildPage(base: string): string {
+  const b = base.replace(/\/+$/, '');
+  return /\/dwell(\/|$)/.test(new URL(b).pathname) ? `${b}/` : `${b}/dwell/`;
 }
 
 /**

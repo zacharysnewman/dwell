@@ -9,7 +9,7 @@ use dwell_characters::animator::{Animator, MoveInput, Space, Swing};
 use dwell_characters::{Character, TABLES};
 use dwell_game::eye::{Step, StepRamp, StepSample, StepSmoother};
 use dwell_game::remotes::RemoteView;
-use dwell_protocol::{controller_flags, held_item, player_flags, swing_flags};
+use dwell_protocol::{SwingKind, controller_flags, held_item, player_flags, swing_flags};
 use dwell_world::hash::HashMap;
 use dwell_world::{CELL_H, FaceFrame, VoxelWorld, m_of_row, row_of_m};
 
@@ -28,6 +28,9 @@ pub fn remote_input(v: &RemoteView, holding: bool) -> MoveInput {
         holding,
         foot_ground: [0.0; 2],
         jumped: v.jumped,
+        guard: None,
+        defeat: None,
+        armed: false,
     }
 }
 
@@ -64,6 +67,9 @@ pub fn local_input(
         holding: true,
         foot_ground: [0.0; 2],
         jumped: false,
+        guard: None,
+        defeat: None,
+        armed: false,
     }
 }
 
@@ -110,11 +116,18 @@ pub fn held_to_wire(held: Held, to_server: impl Fn(u16) -> Option<u16>) -> u16 {
     }
 }
 
-/// The swing a changed swing byte starts (none for the first one seen: that edit was before).
-pub fn swing_of(last: Option<u8>, now: u8) -> Option<Swing> {
+/// The swing a changed swing byte starts (none for the first one seen: that edit was before):
+/// the chop `kind` names (`SwingKind`, from a server that sends the kinds), else the break or
+/// place the byte says (a kind this build doesn't know, or none, is that too).
+pub fn swing_of(last: Option<u8>, now: u8, kind: u8) -> Option<Swing> {
     let changed = last.is_some_and(|l| l != now);
     if !changed || now & swing_flags::COUNT_MASK == last.unwrap_or(0) & swing_flags::COUNT_MASK {
         return None;
+    }
+    match SwingKind::from_u8(kind) {
+        Some(SwingKind::ChopLevel) => return Some(Swing::ChopLevel),
+        Some(SwingKind::ChopVertical) => return Some(Swing::ChopVertical),
+        Some(SwingKind::Plain) | None => {}
     }
     if now & swing_flags::BREAK != 0 {
         Some(Swing::Break)
@@ -153,6 +166,33 @@ struct RemoteBody {
     /// Each foot's (left, right) position in the character's frame (x left, z ahead) in the last
     /// pose drawn: where its ground is read.
     feet_xz: [[f32; 2]; 2],
+    /// Defeated in its last snapshot (it kneels: CHARACTERS.md §11.13), and the seconds left of its
+    /// stand once it stood up at a shrine.
+    was_defeated: bool,
+    standing_s: f64,
+}
+
+/// Defeat's input for a body (§11.13): kneeling while `defeated`, else standing up for the
+/// `standing_s` left after it stood up at a shrine (`STAND_S` from the moment it was placed
+/// there), else none. Counts `standing_s` down by `dt`.
+pub fn defeat_input(
+    defeated: bool,
+    was_defeated: &mut bool,
+    standing_s: &mut f64,
+    dt: f64,
+) -> Option<dwell_characters::animator::Defeat> {
+    use dwell_characters::animator::Defeat;
+    if *was_defeated && !defeated {
+        *standing_s = dwell_protocol::defeat::STAND_S;
+    }
+    *was_defeated = defeated;
+    if defeated {
+        *standing_s = 0.0;
+        return Some(Defeat::Kneel);
+    }
+    let standing = *standing_s > 0.0;
+    *standing_s = (*standing_s - dt).max(0.0);
+    standing.then_some(Defeat::Stand)
 }
 
 /// The ground under a point, face-local (BIFACIAL_WORLD.md §11): `(frame, point)` → the height of
@@ -170,6 +210,47 @@ pub struct Bodies {
     /// read within this of the drawn feet.
     ramp: StepRamp,
     max_lift: f64,
+    /// A swing held at a clip time on your arms and every remote body (the bench's `clip-strip`:
+    /// `__dwell.holdSwing`), or none.
+    held_swing: Option<(Swing, f32)>,
+    /// Each remote player's raised-block role this frame (the server's guards; WORK_QUEUE item 35).
+    pub guards: HashMap<u16, &'static str>,
+    /// Each remote player's tool in hand (`HeldTools`), by player id: its swings play the tool's
+    /// clip roles (`clips`: the sword's slashes, WORK_QUEUE item 35).
+    pub tools: HashMap<u16, &'static str>,
+    /// The tool in your hand (its swings' clip roles on your arms, as [`Self::tools`]).
+    pub own_tool: Option<&'static str>,
+}
+
+/// The role swing `s` plays with `tool` (an item's name) in hand: a chop plays the tool's `clips`
+/// role for its kind (the sword's `slash_level`), a break with a break tool its `clip` (the
+/// pickaxe's `break_stone_pickaxe`: each tool's head fitted onto the crosshair at its contact;
+/// owner, 2026-11-14), anything else its own role. A character without the role plays `s`'s.
+pub fn swing_role(s: Swing, tool: Option<&str>) -> &'static str {
+    let t = tool.and_then(dwell_protocol::chopping::tool);
+    match (s, t) {
+        (Swing::ChopLevel, Some(t)) => t.swing_role(false),
+        (Swing::ChopVertical, Some(t)) => t.swing_role(true),
+        (Swing::Break, None) => tool
+            .and_then(|n| {
+                dwell_protocol::chopping::BREAK_TOOLS
+                    .iter()
+                    .find(|b| b.item == n)
+            })
+            .map_or(s.role(), |b| b.clip),
+        _ => s.role(),
+    }
+}
+
+/// Plays swing `s` on `a` held at clip time `t` (starting it if another action or none plays).
+pub fn hold_swing_on(a: &mut Animator, held: Option<(Swing, f32)>, tool: Option<&str>) {
+    if let Some((s, t)) = held {
+        let role = swing_role(s, tool);
+        if a.action().is_none_or(|r| r != role && r != s.role()) {
+            a.swing_as(s, role);
+        }
+        a.drive_action(Some(t));
+    }
 }
 
 impl Default for Bodies {
@@ -183,6 +264,10 @@ impl Default for Bodies {
             own: Animator::new(&TABLES, character, Space::Body),
             ramp: config.step_view.into(),
             max_lift: f64::from(config.max_step_lift()),
+            held_swing: None,
+            guards: HashMap::default(),
+            tools: HashMap::default(),
+            own_tool: None,
         }
     }
 }
@@ -246,10 +331,14 @@ impl Bodies {
                 steps: StepSmoother::new(),
                 stepped: None,
                 feet_xz: [[0.0; 2]; 2],
+                was_defeated: false,
+                standing_s: 0.0,
             });
-        if let Some(s) = swing_of(body.swing, v.swing) {
-            body.animator.swing(s);
+        let tool = self.tools.get(&v.player_id).copied();
+        if let Some(s) = swing_of(body.swing, v.swing, v.swing_kind) {
+            body.animator.swing_as(s, swing_role(s, tool));
         }
+        hold_swing_on(&mut body.animator, self.held_swing, tool);
         body.swing = Some(v.swing);
         let f = v.face();
         let local = f.point(v.feet);
@@ -267,6 +356,14 @@ impl Bodies {
         );
         let drawn = local[1] + body.steps.offset();
         let mut input = remote_input(v, held != Held::Empty);
+        input.defeat = defeat_input(
+            v.is_dead(),
+            &mut body.was_defeated,
+            &mut body.standing_s,
+            dt,
+        );
+        input.armed = held.is_weapon();
+        input.guard = self.guards.get(&v.player_id).copied();
         if grounded {
             // Each foot's place in the world: the body's frame (render/characters.rs
             // `body_frame`: on face B its left turns over).
@@ -301,7 +398,6 @@ impl Bodies {
             feet: f.point([local[0], drawn, local[2]]),
             face: f,
             yaw: f64::from(v.yaw),
-            dead: v.is_dead(),
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: body.animator.role(),
@@ -316,19 +412,33 @@ impl Bodies {
         self.remotes.retain(|id, _| keep(*id));
     }
 
-    /// Your body lying where you died.
-    pub fn own_dead(&mut self, feet: [f64; 3], yaw: f64, face: FaceFrame, dt: f64) -> PlayerView {
-        let pose = self.own.update(&MoveInput::default(), dt as f32);
+    /// Your body kneeling where you were defeated, or standing up at the shrine (`defeat`), holding
+    /// `held` (a sword is planted: CHARACTERS.md §11.13), seen from the defeat camera.
+    pub fn own_defeated(
+        &mut self,
+        feet: [f64; 3],
+        yaw: f64,
+        face: FaceFrame,
+        defeat: dwell_characters::animator::Defeat,
+        held: Held,
+        dt: f64,
+    ) -> PlayerView {
+        let input = MoveInput {
+            holding: held != Held::Empty,
+            defeat: Some(defeat),
+            armed: held.is_weapon(),
+            ..MoveInput::default()
+        };
+        let pose = self.own.update(&input, dt as f32);
         PlayerView {
             feet,
             face,
             yaw,
-            dead: true,
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: self.own.role(),
             action: None,
-            held: Held::Empty,
+            held,
             light: [1.0, 0.0],
         }
     }
@@ -349,7 +459,6 @@ impl Bodies {
             feet,
             face,
             yaw,
-            dead: false,
             look: dwell_characters::DEFAULT_LOOK,
             pose,
             role: self.own.role(),
@@ -361,6 +470,7 @@ impl Bodies {
 
     /// Your arms this frame.
     pub fn arms(&mut self, input: &MoveInput, held: Held, dt: f64) -> ArmsView {
+        hold_swing_on(&mut self.arms, self.held_swing, self.own_tool);
         ArmsView {
             pose: self.arms.update(input, dt as f32),
             held,
@@ -368,15 +478,32 @@ impl Bodies {
         }
     }
 
-    /// Your arms swing (an edit sent).
-    pub fn swing_arms(&mut self, s: Swing) {
-        self.arms.swing(s);
+    /// Holds swing `s` at clip time `t` (s) on your arms and every remote body until released
+    /// (none): the bench's `clip-strip` frames (docs/DEV_TOOLS.md).
+    pub fn hold_swing(&mut self, held: Option<(Swing, f32)>) {
+        if held.is_none() && self.held_swing.is_some() {
+            self.arms.drive_action(None);
+            for b in self.remotes.values_mut() {
+                b.animator.drive_action(None);
+            }
+        }
+        self.held_swing = held;
     }
 
-    /// Your arms' swing held at clip time `t` (a melee swing's hit-stop and pull-back), or left to
-    /// play (none).
-    pub fn drive_arms(&mut self, t: Option<f64>) {
-        self.arms.drive_action(t.map(|t| t as f32));
+    /// Whether a swing is held ([`Bodies::hold_swing`]).
+    pub fn swing_held(&self) -> bool {
+        self.held_swing.is_some()
+    }
+
+    /// Your arms swing (an edit sent).
+    pub fn swing_arms(&mut self, s: Swing) {
+        self.arms.swing_as(s, swing_role(s, self.own_tool));
+    }
+
+    /// Your arms' swing driven by a melee swing under way (its hit-stop and pull-back,
+    /// crate::chop::SwingRun::arms), or let go.
+    pub fn drive_arms(&mut self, d: crate::chop::ArmsDrive) {
+        d.apply(&mut self.arms);
     }
 
     /// Every remote body's roles, by player id (tests: `__dwell.state().bodies`).
@@ -404,6 +531,41 @@ impl Bodies {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_held_swing_poses_the_arms_at_its_clip_time_until_released() {
+        // face-a-only: the arms' pose, no world.
+        let mut b = Bodies::default();
+        let input = MoveInput::default();
+        b.hold_swing(Some((Swing::ChopLevel, 0.18)));
+        let ch = dwell_characters::player();
+        let clip = TABLES.clip(ch.arms_clip("chop_level").unwrap());
+        let want = dwell_characters::anim::sample(clip, 0.18);
+        let arm = ch.bone("arm_r").unwrap();
+        for _ in 0..3 {
+            let v = b.arms(&input, Held::Empty, 0.1);
+            assert_eq!(
+                v.pose.rot[arm], want.rot[arm],
+                "held at 0.18 s frame after frame"
+            );
+        }
+        b.hold_swing(Some((Swing::ChopVertical, 0.05)));
+        let v = b.arms(&input, Held::Empty, 0.1);
+        let vertical = TABLES.clip(ch.arms_clip("chop_vertical").unwrap());
+        assert_eq!(
+            v.pose.rot[arm],
+            dwell_characters::anim::sample(vertical, 0.05).rot[arm]
+        );
+        b.hold_swing(None);
+        for _ in 0..10 {
+            b.arms(&input, Held::Empty, 0.1);
+        }
+        assert_eq!(
+            b.arms.action(),
+            None,
+            "released, the swing plays out and ends"
+        );
+    }
     use super::*;
     use dwell_characters::animator::body_role;
     use dwell_protocol::PlayerState;
@@ -420,6 +582,7 @@ mod tests {
             flags: player_flags::GROUNDED | dwell_physics::net::face_bit(f, player_flags::FACE_B),
             held: 0,
             swing: 0,
+            swing_kind: 0,
             jumped: false,
         }
     }
@@ -501,11 +664,20 @@ mod tests {
                 model: "stone_axes"
             }
         );
+        // One mode (owner, 2026-11-14): an older peer's vertical axe is held as the level one;
+        // the sword keeps its vertical stance's hold.
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", true))),
             Held::Model {
-                hold: "stone_axe_vertical",
+                hold: "stone_axe",
                 model: "stone_axes"
+            }
+        );
+        assert_eq!(
+            with_tool(Held::Empty, Some(("dwell:sword", true))),
+            Held::Model {
+                hold: "sword_vertical",
+                model: "sword"
             }
         );
         assert_eq!(with_tool(Held::Block(4), None), Held::Block(4));
@@ -559,6 +731,7 @@ mod tests {
                         | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    swing_kind: 0,
                     jumped: false,
                 };
                 let view = bodies.remote(&v, Held::Empty, dt, &mut ground);
@@ -592,6 +765,7 @@ mod tests {
                 flags: player_flags::GROUNDED,
                 held: 0,
                 swing: 0,
+                swing_kind: 0,
                 jumped: false,
             };
             b.remote(&v, Held::Empty, 1.0 / 60.0, &mut ground);
@@ -644,6 +818,7 @@ mod tests {
                     flags: flags | dwell_physics::net::face_bit(f, player_flags::FACE_B),
                     held: 0,
                     swing: 0,
+                    swing_kind: 0,
                 }
             };
             let tick_ms = 1000.0 / f64::from(SIM_HZ);
@@ -678,18 +853,89 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// WORK_QUEUE item 17: another player's chop plays the body's chop clip by its direction
+        /// (`biped_chop_level`, `biped_chop_vertical`) on the frame its swing count steps, from a
+        /// snapshot carrying the kind (`SwingHello`); without the kind (an older server) the same
+        /// step is a `break`. Red before: every stepped break swing played `break`.
+        fn a_remote_chop_plays_the_body_chop_clip_of_its_direction(f: FaceFrame) {
+            let ch = dwell_characters::player();
+            let mut ground = |_: FaceFrame, _: [f64; 3]| Some(40.0);
+            let mut b = Bodies::default();
+            let mut v = grounded_remote(f, PlayerState::Idle, [0.0; 3]);
+            v.swing = swing_flags::BREAK | 7;
+            b.remote(&v, Held::Empty, 0.05, &mut ground);
+            assert_eq!(
+                b.roles()[0].action,
+                None,
+                "the first swing byte seen started before"
+            );
+            for (kind, role, clip) in [
+                (SwingKind::ChopLevel, "chop_level", "biped_chop_level"),
+                (
+                    SwingKind::ChopVertical,
+                    "chop_vertical",
+                    "biped_chop_vertical",
+                ),
+                (SwingKind::Plain, "break", "biped_break"),
+            ] {
+                v.swing = swing_flags::BREAK | ((v.swing + 1) & swing_flags::COUNT_MASK);
+                v.swing_kind = kind as u8;
+                b.remote(&v, Held::Empty, 0.0, &mut ground);
+                assert_eq!(b.roles()[0].action, Some(role), "{kind:?}");
+                let i = ch.clip(role).expect("the body has the clip");
+                assert_eq!(TABLES.clip(i).name, clip);
+            }
+            // A kind this build doesn't know is the break the byte says.
+            let next = swing_flags::BREAK | ((v.swing + 1) & swing_flags::COUNT_MASK);
+            assert_eq!(swing_of(Some(v.swing), next, 200), Some(Swing::Break));
+        }
+    );
+
     #[test]
     fn a_changed_swing_count_starts_a_swing_and_the_first_seen_does_not() {
         let place = swing_flags::PLACE | 3;
-        assert_eq!(swing_of(None, place), None);
-        assert_eq!(swing_of(Some(place), place), None);
+        assert_eq!(swing_of(None, place, 0), None);
+        assert_eq!(swing_of(Some(place), place, 0), None);
         assert_eq!(
-            swing_of(Some(place), swing_flags::BREAK | 4),
+            swing_of(Some(place), swing_flags::BREAK | 4, 0),
             Some(Swing::Break)
         );
         assert_eq!(
-            swing_of(Some(place), swing_flags::PLACE | 4),
+            swing_of(Some(place), swing_flags::PLACE | 4, 0),
             Some(Swing::Place)
         );
+    }
+}
+
+#[cfg(test)]
+mod defeat_input_tests {
+    use super::*;
+    use dwell_characters::animator::Defeat;
+
+    // WORK_QUEUE item 55: a remote player whose snapshots say `DEAD` (defeated) kneels — never the
+    // old lying body — and once it stands up at the shrine it plays the stand for `STAND_S`.
+    #[test]
+    fn a_defeated_remote_kneels_then_stands_for_the_stand() {
+        let (mut was, mut left) = (false, 0.0);
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 0.1),
+            Some(Defeat::Kneel)
+        );
+        assert_eq!(
+            defeat_input(true, &mut was, &mut left, 2.0),
+            Some(Defeat::Kneel)
+        );
+        let stand = dwell_protocol::defeat::STAND_S;
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, 0.1),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(
+            defeat_input(false, &mut was, &mut left, stand),
+            Some(Defeat::Stand)
+        );
+        assert_eq!(defeat_input(false, &mut was, &mut left, 0.1), None);
     }
 }

@@ -43,3 +43,11 @@ it). Its value is too long for a field (`MAX_FIELD_BYTES`, 1 KB), so the tag car
 a client that knows it asks for the text (`WorldgenRequest` → `WorldgenConfig`); an older build never
 sends the request, so it never sees the new message. A default world sends no new tag: its join is
 byte-identical.
+
+## Amendment (BIG_MAP.md M0, 2026-11-11): the world's size, optional
+
+`WORLD_SIZE` (0x83, `u16` radius scale; the named sizes are `constants.json` `worldSizes`): the owner
+chose the radius as a world setting so a big world sits beside today's on the same line. Optional, and
+written only for a size above 1×, so a default world's fields and join are byte-identical; a world
+without it is 1×. An older build skips it and would draw today's disc, but no build before M1 can
+hold a bigger LOD root, so a big world is a dev world until then.

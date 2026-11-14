@@ -1,9 +1,13 @@
 name: CI
 
 on:
+  # Docs-only changes (owner, 2026-11-12: CI runs starved the Release queue) skip CI; a change that
+  # touches anything else, a pending release note included, still runs it in full.
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -31,6 +35,8 @@ jobs:
           node --test shared/modes/gen.test.mjs
           node shared/vitals/gen.mjs
           node --test shared/vitals/gen.test.mjs
+          node shared/defeat/gen.mjs
+          node --test shared/defeat/gen.test.mjs
           node shared/inventory/gen.mjs
           node --test shared/inventory/gen.test.mjs
           node shared/tools/gen.mjs
@@ -42,9 +48,12 @@ jobs:
           node --test shared/ground/gen.test.mjs
           node shared/creatures/gen.mjs
           node --test shared/creatures/gen.test.mjs
+          node shared/blueprints/gen.mjs
+          node --test shared/blueprints/gen.test.mjs
           node shared/ecology/gen.mjs
           node --test shared/ecology/gen.test.mjs
           node --test shared/input/gen.test.mjs
+          node --test .claude/skills/record/scripts/take.test.mjs
           node --test shared/look/gen.test.mjs
           node shared/look/clouds.mjs
           node --test shared/look/clouds.test.mjs
@@ -58,10 +67,14 @@ jobs:
           node --test shared/look/lodshadows.test.mjs
           node shared/look/spyglass.mjs
           node --test shared/look/spyglass.test.mjs
+          node shared/look/orbits.mjs
+          node --test shared/look/orbits.test.mjs
           node shared/look/loading.mjs
           node --test shared/look/loading.test.mjs
           node shared/look/fog.mjs
           node --test shared/look/fog.test.mjs
+          node shared/look/atmosphere.mjs
+          node --test shared/look/atmosphere.test.mjs
           node shared/physics/gen.mjs
           node --test shared/physics/gen.test.mjs
           node shared/explosives/gen.mjs
@@ -100,6 +113,8 @@ jobs:
           node --test shared/look/underwater.test.mjs
           node shared/look/shafts.mjs
           node --test shared/look/shafts.test.mjs
+          node shared/look/bloom.mjs
+          node --test shared/look/bloom.test.mjs
           node shared/look/waterfalls.mjs
           node --test shared/look/waterfalls.test.mjs
           node shared/look/daynight.mjs
@@ -110,6 +125,8 @@ jobs:
           node --test shared/characters/gen.test.mjs
           node shared/models/gen.mjs
           node --test shared/models/gen.test.mjs
+          node --test shared/models/painter.test.mjs
+          node --test shared/models/decor.test.mjs
           node shared/sounds/gen.mjs
           node shared/music/gen.mjs
           node shared/worldgen/gen.mjs

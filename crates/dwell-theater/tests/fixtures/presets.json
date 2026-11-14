@@ -1,0 +1,17 @@
+{
+  "$comment": "A fixture preset added by data alone (crates/dwell-theater/tests/engine.rs): a wide, slow half ring that no code names.",
+  "formatVersion": 1,
+  "presets": [
+    {
+      "name": "slow_half_ring",
+      "move": "orbit",
+      "easing": "inOutSine",
+      "params": {
+        "seconds": { "default": 40, "min": 10, "max": 100 },
+        "radiusM": { "default": 30, "min": 5, "max": 60 },
+        "heightM": { "default": 9, "min": 0, "max": 20 },
+        "degrees": { "default": -180, "min": -360, "max": 360 }
+      }
+    }
+  ]
+}

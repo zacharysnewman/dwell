@@ -1,0 +1,38 @@
+{
+ "formatVersion": 1,
+ "name": "cinematic d: mesa country from 1250 m at golden hour (distance, haze)",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    15800,
+    1250,
+    -200
+   ],
+   "look": [
+    -5,
+    -15
+   ],
+   "fov": 50,
+   "timeOfDay": 0.765
+  },
+  {
+   "t": 10,
+   "position": [
+    15800,
+    1250,
+    -200
+   ],
+   "look": [
+    30,
+    -13
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "pan",
+   "easing": "inOutSine"
+  }
+ ]
+}

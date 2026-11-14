@@ -71,6 +71,10 @@ Local machine only (cloud sessions have no GPU, [CLOUD_SESSIONS.md](CLOUD_SESSIO
 - **Versions and compatibility:** don't break saved worlds, seeds' terrain, protocols or browser
   stores without a new MINOR the owner raises; adding blocks or properties is fine (CLAUDE.md
   "versions and releases", `docs/RELEASES.md` §3).
+- **Owner's requests:** record each in `docs/WORK_QUEUE.md` the same turn, quoted, with an **"Owner should
+  see:"** line (the result in game; the brief's acceptance check); done only when a screenshot or the owner
+  confirms it; a later request that shows an earlier one fell short says so and links it (CLAUDE.md "record
+  the owner's requests").
 - **Release note:** every PR ships as a release with a player-facing note. Follow the brief: cloud
   and brief-driven PRs put it in the PR body under "Release note" and leave `package.json` and
   `shared/releases/changes.json` to the maintainer ([CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)).

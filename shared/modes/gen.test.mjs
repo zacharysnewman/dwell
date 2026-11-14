@@ -8,15 +8,30 @@ test("the build's data validates: creative is the default, adventure is experime
   assert.equal(d.defaultMode, 'creative');
   const creative = d.modes.find((m) => m.name === 'creative');
   const adventure = d.modes.find((m) => m.name === 'adventure');
-  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed', 'instantBreaks']);
+  assert.deepEqual(creative.abilities, ['flight', 'brushes', 'unlimitedBlocks', 'map', 'mapRevealed', 'instantBreaks', 'structures', 'theaterViewpoint', 'blueprints']);
   // The big map shows everything in creative; adventure explores it (owner, 2026-11-08).
   assert.ok(!adventure.abilities.includes('mapRevealed'));
   assert.ok(!adventure.abilities.includes('instantBreaks'));
+  // Saved structures are placed in creative only, for now (owner, 2026-11-11).
+  assert.ok(!adventure.abilities.includes('structures'));
+  // Theater mode's camera is a simulation viewpoint in creative only (owner, 2026-11-12: "can't be
+  // used for cheating in adventure"; docs/THEATER_MODE.md §7).
+  assert.ok(!adventure.abilities.includes('theaterViewpoint'));
   assert.match(modesRust(d), /Ability::Map\.bit\(\) \| Ability::MapRevealed\.bit\(\)/);
-  assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen']);
+  // Blueprints are placed in both (owner, 2026-11-13, WORK_QUEUE item 56: "In adventure you can place
+  // "blueprints"").
+  assert.deepEqual(adventure.abilities, ['damage', 'map', 'stamina', 'oxygen', 'blueprints']);
   assert.equal(adventure.experimental, true);
   assert.match(modesRust(d), /pub const DEFAULT_MODE: &str = "creative";/);
   assert.match(modesTs(d), /export const GAME_MODES/);
+});
+
+test("creative's description says what its breaks do: tools keep their hits (BUGS.md #127)", () => {
+  // BLOCK_DAMAGE.md §7: without a tool any block breaks in one hit; a held tool keeps its hits. The
+  // New world form shows this text, and "any block ... in one hit" read as tools too.
+  const creative = validateModes(loadModes()).modes.find((m) => m.name === 'creative');
+  assert.match(creative.description, /without a tool any block breaks in one hit/);
+  assert.match(creative.description, /held tools? keeps? (its|their) hits/);
 });
 
 test('a mode added by data alone is emitted with its abilities', () => {

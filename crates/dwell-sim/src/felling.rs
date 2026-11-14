@@ -5,6 +5,7 @@
 
 use dwell_blocks::{Axis, StateId, info, state_property, with_property};
 use dwell_physics::Collide;
+use dwell_physics::frame::{GridMaps, grid_of_pose};
 use dwell_physics::predictor::WaterDrag;
 use dwell_physics::{BodyHandle, DQuat, DVec3, Physics, PieceCell};
 use dwell_world::support::{SupportRules, detached_pieces};
@@ -25,6 +26,7 @@ pub struct FellingData {
     pub settle_every_ticks: u32,
     pub max_seconds: f64,
     pub max_settles: u8,
+    pub beach_seconds: f64,
     pub hit_speed: f64,
     pub hit_damage_per_speed: f64,
     pub hold_speed: f64,
@@ -54,6 +56,11 @@ pub struct BodyKind {
     pub split: bool,
     /// At rest it becomes blocks again.
     pub settles: bool,
+    /// It may settle while afloat (a cell in a liquid, the body lighter than it). False: it keeps
+    /// drifting with the current until it has rested out of the water `beach_ticks` (owner,
+    /// 2026-11-12: floating trees "should never settle, it causes them to block up rivers").
+    /// Waterlogging (later) would sink a soaked body instead (docs/WORK_QUEUE.md Future).
+    pub settles_afloat: bool,
     /// Saved with the world.
     pub saved: bool,
     /// Blocks a body of this kind is built on (the build platform): they stay in the world's grid;
@@ -293,6 +300,9 @@ pub struct FellingRules {
     pub max_ticks: u32,
     /// A piece that settles unanchored this many times stays where it is.
     pub max_settles: u8,
+    /// A piece that was afloat (of a kind that doesn't settle afloat) settles only after this
+    /// many ticks out of the water (beached), its still and age counted from then.
+    pub beach_ticks: u32,
     /// The most cells one piece may have (a larger one stands).
     pub max_piece_cells: usize,
     /// The spin (rad/s) a piece cut by a player starts with, tipping it away from them: a trunk
@@ -336,6 +346,7 @@ impl From<FellingData> for FellingRules {
             settle_every_ticks: d.settle_every_ticks,
             max_ticks: ticks(d.max_seconds),
             max_settles: d.max_settles,
+            beach_ticks: ticks(d.beach_seconds),
             max_piece_cells: d.max_piece_cells,
             topple_spin: d.topple_spin,
             topple_tip_speed: d.topple_tip_speed,
@@ -381,6 +392,12 @@ pub struct Falling {
     anchored: bool,
     /// How far its cells reach from its body's origin (m).
     reach: f64,
+    /// Afloat this tick (`float`): a cell of it in a liquid and the body lighter than it
+    /// (docs/BUILT_BODIES.md §6): a kind that doesn't settle afloat (`settles_afloat`) keeps
+    /// drifting with the current instead of settling (owner, 2026-11-12).
+    afloat: bool,
+    /// Ticks since it was last afloat (`beach_ticks` before it may settle on dry ground).
+    dry: u32,
 }
 
 /// A player's body for [`Felling::hits`]: an upright capsule (centre, radius, the half length of
@@ -549,6 +566,18 @@ pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) ->
     (under / 5.0, density)
 }
 
+/// A body's mean density (kg/m³) by its cells' blocks: lighter than a liquid, it floats.
+fn body_density(cells: &[([i32; 3], StateId)]) -> f64 {
+    if cells.is_empty() {
+        return 0.0;
+    }
+    cells
+        .iter()
+        .map(|&(_, m)| f64::from(info(m).density_kg_m3))
+        .sum::<f64>()
+        / cells.len() as f64
+}
+
 /// A cell's centre in its piece's frame (m) from its offset in the piece's grid.
 pub fn cell_offset_m(o: [i32; 3]) -> DVec3 {
     offset_m(o)
@@ -647,6 +676,8 @@ impl Felling {
                 held: false,
                 pushed: 0,
                 anchored: false,
+                afloat: false,
+                dry: u32::MAX,
                 reach,
             });
             out.push(self.pieces.len() - 1);
@@ -745,6 +776,8 @@ impl Felling {
                 held: false,
                 pushed: 0,
                 anchored: false,
+                afloat: false,
+                dry: u32::MAX,
                 reach,
             };
             self.next_id += 1;
@@ -957,6 +990,8 @@ impl Felling {
             pushed: 0,
             reach,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
         });
         self.pieces.len() - 1
     }
@@ -1035,12 +1070,14 @@ impl Felling {
         for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
+            let mut liquid = 0.0f64;
             for &(o, _) in &p.cells {
                 let centre = position + rotation * offset_m(o);
                 let (fraction, density) = cell_in_liquid(world, centre, rotation);
                 if fraction <= 0.0 {
                     continue;
                 }
+                liquid = liquid.max(density);
                 let up = DVec3::Y * FaceFrame::at_height(centre.y).sign_f64();
                 physics.apply_impulse_at(
                     p.body,
@@ -1048,6 +1085,14 @@ impl Felling {
                     centre,
                 );
                 under += fraction;
+            }
+            // Afloat: in a liquid and lighter than it on the whole (a log, a crown; a sand piece
+            // sinks and settles on the bed as before).
+            p.afloat = under > 0.0 && body_density(&p.cells) < liquid;
+            if p.afloat {
+                p.dry = 0;
+            } else {
+                p.dry = p.dry.saturating_add(1);
             }
             if under > 0.0 {
                 let share = under / p.cells.len() as f64;
@@ -1123,10 +1168,10 @@ impl Felling {
                 continue;
             }
             let origin = physics.position(p.body);
-            let rotation = physics.rotation(p.body);
+            // The piece's grid frame (MOON_WORLD.md §2, M-3): its cells' space at its pose.
+            let grid = grid_of_pose(origin, physics.rotation(p.body));
             let v = physics.velocity(p.body);
             let w = physics.angular_velocity(p.body);
-            let inverse = rotation.inverse();
             for b in players {
                 if p.hurt.contains(&b.key) {
                     continue;
@@ -1136,11 +1181,11 @@ impl Felling {
                     let centre = offset_m(o);
                     let half = DVec3::new(0.5, 0.5 * CELL_H, 0.5);
                     // The capsule's axis point nearest the cell, and the cell's point nearest it.
-                    let world_centre = origin + rotation * centre;
+                    let world_centre = grid.to_world_v(centre);
                     let t = (world_centre.y - b.center.y).clamp(-b.half_cylinder, b.half_cylinder);
                     let axis = b.center + DVec3::Y * t;
-                    let local = inverse * (axis - origin) - centre;
-                    let near = origin + rotation * (centre + local.clamp(-half, half));
+                    let local = grid.to_grid_v(axis) - centre;
+                    let near = grid.to_world_v(centre + local.clamp(-half, half));
                     let gap = (axis - near).length() - b.radius;
                     let at = near - origin;
                     // The piece's speed toward the player, less the player's away from it (a
@@ -1197,12 +1242,24 @@ impl Felling {
                 p.rest = Some((at, turn));
                 p.still = 0;
             }
+            // Afloat (or not long out of the water), a kind that doesn't settle afloat drifts on: its
+            // still and age count from when it beached (owner, 2026-11-12: floating trees "should
+            // never settle, it causes them to block up rivers randomly instead of floating
+            // downstream"). Rapier never sleeps a piece (`can_sleep(false)`), so the current
+            // always moves it.
+            let kind = body_kind(p.kind);
+            let beached = p.dry >= r.beach_ticks;
+            if !kind.settles_afloat && !beached {
+                p.still = 0;
+                p.age = 0;
+                p.rest = None;
+            }
             // Anything past the world's rows is lost; the rest settles at rest or out of time
             // (leaves falling on their own too: they land, owner 2026-10-28).
             let y = physics.position(p.body).y;
             let lost = !in_world_rows(y);
             // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
-            let settles = body_kind(p.kind).settles;
+            let settles = kind.settles && (kind.settles_afloat || beached);
             if lost || (settling && settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
                 due.push(i);
             }
@@ -1214,8 +1271,10 @@ impl Felling {
     /// Settles piece `i` (docs/FELLING.md §4): its body is removed and its cells resampled onto the
     /// grid at its rotation snapped to the nearest of the 24 axis-aligned ones, each grid cell
     /// whose centre lies in a cell of the piece taking that cell's block (a log's axis turned with
-    /// it). A rider whose cell is taken is destroyed; if a carrier's is, the whole piece tries one
-    /// and two rows higher, else that carrier is lost. `taken` says whether a cell can't be filled
+    /// it), at rest tilted each column moved to its real pose (`follow_pose`; BUGS.md #73). If a
+    /// carrier's cell is taken the whole piece tries one and two rows higher, else (and tilted)
+    /// each column rises to the first rows free for its carriers: no wood is lost. A rider whose
+    /// cell is still taken is destroyed. `taken` says whether a cell can't be filled
     /// (terrain, or a player for a block that blocks a body), asked for each block. A riders-only
     /// piece (leaves falling on their own) lands as leaves too.
     pub fn settle(
@@ -1227,7 +1286,8 @@ impl Felling {
     ) -> Settled {
         let p = self.pieces.remove(i);
         let origin = physics.position(p.body);
-        let rotation = snap(physics.rotation(p.body));
+        let real = physics.rotation(p.body);
+        let rotation = snap(real);
         physics.remove_body(p.body);
         let mut out = Settled {
             id: p.id,
@@ -1239,21 +1299,68 @@ impl Felling {
         if lost {
             return out;
         }
-        let placed = resample(&p.cells, origin, rotation).1;
+        let (aligned, placed) = resample(&p.cells, origin, rotation);
+        let placed = follow_pose(placed, aligned, rotation, real);
         let carrier = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Carrier;
         let falls = |m: StateId| info(m).support_role == dwell_blocks::SupportRole::Falls;
-        let mut lift = 0;
-        for up in 0..=2 {
-            let blocked = placed
+        let blocked_by = |world: &mut VoxelWorld, cells: &[([i32; 3], StateId)], up: i32| {
+            cells
                 .iter()
-                .any(|&(c, m)| carrier(m) && taken(world, [c[0], c[1] + up, c[2]], m));
-            if !blocked {
-                lift = up;
-                break;
+                .any(|&(c, m)| carrier(m) && taken(world, raised(c, up), m))
+        };
+        // At rest tilted (a trunk lying up a hill) its columns were moved to its pose
+        // (`follow_pose`), each to within a row of it: each column settles on its own.
+        let tilted = rotation.angle_between(real) > TILTED_RAD;
+        // Else the whole piece a row or two higher if that frees its carriers (a log on a bump).
+        let lift = if tilted {
+            None
+        } else {
+            (0..=2).find(|&up| !blocked_by(world, &placed, up))
+        };
+        // Else each column of it (x, z) rises on its own to the first rows free for its carriers
+        // (BUGS.md #73: a trunk lying up a hill, its cells inside the ground were dropped, so most
+        // of the tree vanished): no wood is lost, the column sitting on the ground there. Tilted,
+        // a column with room a row under it drops onto what is there (its rows were rounded).
+        let mut columns: Vec<([i32; 2], i32)> = Vec::new();
+        if lift.is_none() {
+            let mut keys: Vec<[i32; 2]> = placed.iter().map(|&(c, _)| [c[0], c[2]]).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            for key in keys {
+                let column: Vec<([i32; 3], StateId)> = placed
+                    .iter()
+                    .copied()
+                    .filter(|&(c, m)| [c[0], c[2]] == key && carrier(m))
+                    .collect();
+                if column.is_empty() {
+                    continue;
+                }
+                let mut up = (0..=COLUMN_RISE)
+                    .find(|&up| !blocked_by(world, &column, up))
+                    .unwrap_or(0);
+                if tilted && up == 0 && !blocked_by(world, &column, -1) {
+                    up = -1;
+                }
+                columns.push((key, up));
             }
         }
+        let up_of = |c: [i32; 3]| {
+            lift.unwrap_or_else(|| {
+                columns
+                    .iter()
+                    .find(|(k, _)| *k == [c[0], c[2]])
+                    .map_or(0, |&(_, up)| up)
+            })
+        };
         for (c, m) in placed {
-            let at = [c[0], c[1] + lift, c[2]];
+            // A falling block settles as its `settlesAs` says: a sand ramp lands as flat sand
+            // (owner, 2026-11-13), never a lone ramp.
+            let m = if falls(m) {
+                dwell_blocks::settled_state(m)
+            } else {
+                m
+            };
+            let at = raised(c, up_of(c));
             if !taken(world, at, m) {
                 out.cells.push((at, m));
                 continue;
@@ -1274,6 +1381,54 @@ impl Felling {
     }
 }
 
+/// A piece at rest turned more than this (rad) from its snapped rotation lay tilted: its columns
+/// settle on their own (BUGS.md #73).
+const TILTED_RAD: f64 = 0.05;
+
+/// The most rows (face-local) a settling column rises to free its carriers (BUGS.md #73).
+const COLUMN_RISE: i32 = 32;
+
+/// Cell `c` `up` rows higher, face-local.
+fn raised(c: [i32; 3], up: i32) -> [i32; 3] {
+    let f = FaceFrame::at_row(c[1]);
+    let l = f.cell(c);
+    f.cell([l[0], l[1] + up, l[2]])
+}
+
+/// The cells `placed` (resampled at the snapped `rotation` about `aligned`) each column (x, z)
+/// moved up or down by the rows the piece's real pose (`real`) has it higher or lower there than
+/// the snapped one: a trunk at rest tilted up a slope snaps to lying flat about its reference cell,
+/// which left one end in the air and the other inside the hill (BUGS.md #73); moved, its columns
+/// step along the hill as the body lay. One shift a column (the mean of its cells'), so a lying
+/// log's two rows stay together.
+fn follow_pose(
+    placed: Vec<([i32; 3], StateId)>,
+    aligned: DVec3,
+    rotation: DQuat,
+    real: DQuat,
+) -> Vec<([i32; 3], StateId)> {
+    let snapped = grid_of_pose(aligned, rotation);
+    let rise = |c: [i32; 3]| {
+        let l = snapped.to_grid_v(cell_centre(c));
+        (real * l - rotation * l).y
+    };
+    let mut sums: std::collections::HashMap<[i32; 2], (f64, u32)> = Default::default();
+    for &(c, _) in &placed {
+        let e = sums.entry([c[0], c[2]]).or_default();
+        e.0 += rise(c);
+        e.1 += 1;
+    }
+    placed
+        .into_iter()
+        .map(|(c, m)| {
+            let (sum, n) = sums[&[c[0], c[2]]];
+            // World rows: a shift in metres is the same rows on either face.
+            let rows = (sum / f64::from(n) / CELL_H).round() as i32;
+            ([c[0], c[1] + rows, c[2]], m)
+        })
+        .collect()
+}
+
 /// The grid cells a piece of `cells` covers at `origin` turned by `rotation`, each with its block,
 /// and the origin it was moved to: the piece is first moved (under half a cell) so its edges lie on grid lines, then each grid cell
 /// takes the piece cell its centre lies in (half-open, so a centre on a shared edge belongs to one
@@ -1284,7 +1439,6 @@ pub fn resample(
     rotation: DQuat,
 ) -> (DVec3, Vec<([i32; 3], StateId)>) {
     let index: std::collections::HashMap<[i32; 3], StateId> = cells.iter().copied().collect();
-    let inverse = rotation.inverse();
     let bounds = |origin: DVec3| {
         let (mut lo, mut hi) = (DVec3::splat(f64::INFINITY), DVec3::splat(f64::NEG_INFINITY));
         for &(o, _) in cells {
@@ -1309,6 +1463,8 @@ pub fn resample(
             lo.z.round() - lo.z,
         );
     let (lo, hi) = bounds(origin);
+    // The piece's grid frame at its moved origin (MOON_WORLD.md §2, M-3).
+    let body = grid_of_pose(origin, rotation);
     let rows = |m: f64| (m / CELL_H).floor() as i32;
     // Each grid cell's candidates: the piece cells whose box holds its centre, both of them where
     // it lies on their shared face (a ½ m cell tipped onto its side half fills two rows of one
@@ -1317,7 +1473,7 @@ pub fn resample(
     for z in lo.z.floor() as i32..=hi.z.floor() as i32 {
         for y in rows(lo.y)..=rows(hi.y) {
             for x in lo.x.floor() as i32..=hi.x.floor() as i32 {
-                let l = inverse * (cell_centre([x, y, z]) - origin);
+                let l = body.to_grid_v(cell_centre([x, y, z]));
                 let along = [l.x + 0.5, l.y / CELL_H + 0.5, l.z + 0.5];
                 let options = along.map(|v| {
                     let o = (v + 1e-9).floor() as i32;
@@ -1555,6 +1711,8 @@ mod tests {
             held: false,
             pushed: 0,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
             reach: 1.0,
         }
     }
@@ -1696,6 +1854,159 @@ mod tests {
         }
     );
 
+    dwell_world::both_faces!(
+        /// BUGS.md #73 (owner, 2026-11-12: "big chunks of a tree disappear if it settled diagonal
+        /// long ways up a hill, it settles flat and most of the tree disappears into the ground"):
+        /// a trunk at rest lying up a slope (8 m, tilted ~27° along +x on a 1:2 hillside) snaps to
+        /// lying flat, and settled at its middle's height its uphill half was inside the hill,
+        /// whose cells were dropped. No wood is lost: every log settles, along x, following the
+        /// slope (its uphill end higher than its downhill end), none inside the ground, each
+        /// column resting on the ground.
+        fn a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill(f: dwell_world::FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+            let mut felling = Felling::default();
+            let stone = dwell_blocks::require("dwell:stone");
+            // The hill: ground up to 20 m + ½ x (face-local), a cell solid when its top is under
+            // the slope at its low edge.
+            for x in -4..16 {
+                for z in -2..5 {
+                    for r in 30..=39 + x {
+                        let [wx, wy, wz] = f.cell([x, r, z]);
+                        world.set_voxel(wx, wy, wz, stone);
+                    }
+                }
+            }
+            // 16 rows of trunk (8 m), standing in its grid, laid along +x and tilted up the slope.
+            let a = 0.5f64.atan();
+            let cells: Vec<([i32; 3], StateId)> = (0..16)
+                .map(|y| ([0, if f.is_b() { -y } else { y }, 0], f.state(log())))
+                .collect();
+            let turn = DQuat::from_rotation_z(a - std::f64::consts::FRAC_PI_2);
+            let rotation = if f.is_b() {
+                DQuat::from_xyzw(-turn.x, turn.y, -turn.z, turn.w)
+            } else {
+                turn
+            };
+            // Its foot's axis point ½ m (the trunk's half thickness) over the slope at x = 1.
+            let (x0, normal) = (1.0, DVec3::new(-a.sin(), a.cos(), 0.0));
+            let foot = DVec3::new(x0, 20.0 + 0.5 * x0, 1.5) + normal * 0.51;
+            // The reference cell's centre: a quarter metre (half a row) up the trunk from its foot.
+            let along = DVec3::new(a.cos(), a.sin(), 0.0);
+            let origin = DVec3::from_array(f.point((foot + along * 0.25).to_array()));
+            let i = felling.spawn_body(
+                &mut physics,
+                None,
+                0,
+                0,
+                cells,
+                origin,
+                rotation,
+                DVec3::ZERO,
+                DVec3::ZERO,
+            );
+            let taken = |w: &mut VoxelWorld, c: [i32; 3], _: StateId| {
+                w.get_voxel(c[0], c[1], c[2]) != M.air
+            };
+            let settled = felling.settle(&mut world, &mut physics, i, &taken);
+            let logs: Vec<[i32; 3]> = settled.cells.iter().map(|&(c, _)| f.cell(c)).collect();
+            assert_eq!(logs.len(), 16, "no wood lost: {logs:?}");
+            assert!(
+                settled.cells.iter().all(|&(_, m)| info(m).axis == Axis::X),
+                "lying along the trunk (x)"
+            );
+            let mut unique = logs.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), 16, "one log a cell: {logs:?}");
+            for &(c, _) in &settled.cells {
+                assert_eq!(
+                    world.get_voxel(c[0], c[1], c[2]),
+                    M.air,
+                    "inside the hill: {c:?}"
+                );
+            }
+            let row_at = |x: i32| logs.iter().filter(|c| c[0] == x).map(|c| c[1]).min();
+            let xs: Vec<i32> = logs.iter().map(|c| c[0]).collect();
+            let (lo, hi) = (*xs.iter().min().unwrap(), *xs.iter().max().unwrap());
+            assert!(
+                row_at(hi).unwrap() >= row_at(lo).unwrap() + (hi - lo) - 2,
+                "following the slope (a row a 1 m up it): {logs:?}"
+            );
+            // Each column rests on the hill: its lowest log on the ground (stone or a log below).
+            for x in lo..=hi {
+                let Some(r) = row_at(x) else { continue };
+                let below = f.cell([x, r - 1, 1]);
+                assert_ne!(
+                    world.get_voxel(below[0], below[1], below[2]),
+                    M.air,
+                    "column x {x} floats: {logs:?}"
+                );
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-13: "gravity blocks like sand settling ... shouldn't settle ramps away
+        /// from other blocks they should transform into flat blocks". A sand ramp (its family falls
+        /// as sand does) undercut falls, and settles as full sand, its base block's `settlesAs`
+        /// "full"; red sand the same by data alone. Red before: the ramp stood in the air (its
+        /// family was ground, not falling), and a falling ramp settled as a ramp.
+        fn an_undercut_sand_ramp_falls_and_settles_as_full_sand(f: dwell_world::FaceFrame) {
+            for (ramp, full) in [
+                (
+                    "dwell:sand_ramp[facing=east,half=bottom,shape=ramp]",
+                    "dwell:sand",
+                ),
+                (
+                    "dwell:red_sand_ramp[facing=east,half=bottom,shape=ramp]",
+                    "dwell:red_sand",
+                ),
+            ] {
+                let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+                let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+                let mut felling = Felling::default();
+                let (ramp, full) = (
+                    dwell_blocks::parse_state(ramp).expect("the ramp"),
+                    dwell_blocks::require(full),
+                );
+                assert_eq!(
+                    info(ramp).support_role,
+                    dwell_blocks::SupportRole::Falls,
+                    "{ramp}: a falling block's ramp falls"
+                );
+                let set = |w: &mut VoxelWorld, r: i32, m: StateId| {
+                    let [x, y, z] = f.cell([0, r, 0]);
+                    w.set_voxel(x, y, z, f.state(m));
+                };
+                set(&mut world, 39, dwell_blocks::require("dwell:stone"));
+                set(&mut world, 40, full);
+                set(&mut world, 41, ramp);
+                // Undercut: the sand under the ramp is dug out.
+                let cut = f.cell([0, 40, 0]);
+                world.set_voxel(cut[0], cut[1], cut[2], M.air);
+                let mut clear =
+                    |w: &mut VoxelWorld, c: [i32; 3], m: StateId| w.set_voxel(c[0], c[1], c[2], m);
+                let new = felling.detach(&mut world, &mut physics, &[cut], 0, None, &mut clear);
+                assert_eq!(new.len(), 1, "the ramp falls");
+                assert_eq!(felling.pieces[new[0]].cells.len(), 1);
+                let taken = |w: &mut VoxelWorld, c: [i32; 3], _: StateId| {
+                    w.get_voxel(c[0], c[1], c[2]) != M.air
+                };
+                let settled = felling.settle(&mut world, &mut physics, new[0], &taken);
+                assert_eq!(settled.cells.len(), 1, "{:?}", settled.cells);
+                let m = settled.cells[0].1;
+                assert_eq!(
+                    m,
+                    f.state(full),
+                    "settles as {}, not {}",
+                    info(full).name,
+                    info(m).name
+                );
+            }
+        }
+    );
+
     #[test]
     fn a_piece_that_settled_once_stays_put_even_unsupported() {
         // face-a-only: counts settles, no up. Owner, 2026-11-02: "The piece should only fall once
@@ -1814,6 +2125,89 @@ mod tests {
         }
     );
 
+    /// A water channel face-locally at rows 34..40 (3 m deep, its surface at 20 m), x −4..=4 and
+    /// z −4..=60, running along +z at `current` m/s; a felled trunk (four logs along x) let go on it.
+    fn trunk_in_a_river(
+        f: dwell_world::FaceFrame,
+        current: f32,
+    ) -> (VoxelWorld, Physics, Felling, dwell_physics::BodyHandle) {
+        let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+        let water = dwell_blocks::require("dwell:water");
+        for x in -4..=4 {
+            for z in -4..=60 {
+                for y in 34..40 {
+                    let [cx, cy, cz] = f.cell([x, y, z]);
+                    world.set_voxel(cx, cy, cz, f.state(water));
+                }
+                let (key, i) = dwell_world::currents::current_key(f, x, z);
+                let mut cells = world
+                    .currents
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| Box::new([[0.0; 2]; dwell_world::currents::CA]));
+                cells[i] = [0.0, current];
+                world.currents.set(key, Some(cells));
+            }
+        }
+        let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+        let mut felling = Felling::default();
+        let cells: Vec<([i32; 3], StateId)> = (0..4)
+            .map(|x| {
+                (
+                    [x, 0, 0],
+                    f.state(with_property(log(), "axis", "x").unwrap()),
+                )
+            })
+            .collect();
+        let at = DVec3::from_array(f.point([-1.5, 40.0 * CELL_H, 0.5]));
+        let i = felling.spawn_body(
+            &mut physics,
+            None,
+            0,
+            0,
+            cells,
+            at,
+            DQuat::IDENTITY,
+            DVec3::ZERO,
+            DVec3::ZERO,
+        );
+        let body = felling.pieces[i].body;
+        (world, physics, felling, body)
+    }
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-12: "trees they are floating in water should never settle, it causes
+        /// them to block up rivers randomly instead of floating downstream". A natural trunk
+        /// afloat in a 1 m/s river drifts downstream for 40 s (past `maxSeconds`' 30 s) and is
+        /// never due to settle into blocks. Red before: due at 30 s, ~25 m down.
+        fn a_trunk_afloat_drifts_downstream_and_never_settles(f: dwell_world::FaceFrame) {
+            let (mut world, mut physics, mut felling, body) = trunk_in_a_river(f, 1.0);
+            let start = f.point(physics.position(body).to_array());
+            let dt = 1.0 / f64::from(dwell_protocol::SIM_HZ);
+            for tick in 0..(60 * 40) {
+                felling.float(&mut world, &mut physics);
+                physics.step(dt);
+                let due = felling.step(&mut physics);
+                assert!(
+                    due.is_empty(),
+                    "due to settle afloat at {:.1} s",
+                    f64::from(tick) / 60.0
+                );
+            }
+            let end = f.point(physics.position(body).to_array());
+            let down = end[2] - start[2];
+            assert!(
+                (25.0..41.0).contains(&down),
+                "drifted {down:.1} m downstream in 40 s at 1 m/s"
+            );
+            assert!(
+                (end[1] - 20.0).abs() < 0.5,
+                "afloat at the surface: {:.2}",
+                end[1]
+            );
+        }
+    );
+
     /// A 1 m log falling at `speed` m/s onto a standing player's head (capsule 0.3 m round,
     /// 1.8 m tall, centre 0.9 m up): what it hurts, twice over (a piece hurts each player once).
     type Hits = Vec<(u64, i32)>;
@@ -1851,6 +2245,8 @@ mod tests {
             held: false,
             pushed: 0,
             anchored: false,
+            afloat: false,
+            dry: u32::MAX,
             reach: 1.0,
         });
         let player = PlayerBody {

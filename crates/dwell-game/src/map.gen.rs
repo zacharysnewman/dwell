@@ -29,6 +29,7 @@ pub const MAP: MapTunables = MapTunables {
     explored_pending_color: 0x4e4c44,
     big_map_levels: &[(1.0, 128.0), (16.0, 3578.0), (256.0, 100000.0)],
     big_map_start_level: 1.0,
+    big_map_zoom_ratio: 2.0,
     big_map_wheel_step_px: 100.0,
     big_map_pinch_step: 1.6,
     big_map_fog_color: 0x14161c,

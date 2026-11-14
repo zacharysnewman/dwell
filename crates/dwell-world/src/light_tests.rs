@@ -688,3 +688,110 @@ crate::both_faces!(
         assert!(w.light().expect("lit").sample(eye(19.0))[1] > 0.7);
     }
 );
+
+/// The tunnel with a lamp in it, held chunk by chunk with each chunk's light resumed `steps`
+/// cells at a time (docs/BUGS.md #72); returns the world, the most cell writes one resume made
+/// and how many resumes the slowest chunk took.
+fn lit_in_slices(fx: &mut Fixture, order: &[ChunkCoord], steps: usize) -> (VoxelWorld, u64, usize) {
+    let mut w = VoxelWorld::streamed();
+    w.enable_light();
+    let (mut most, mut longest) = (0, 0);
+    for &c in order {
+        if let Some(chunk) = fx.src.find(c) {
+            w.put(c, chunk.clone());
+        }
+        w.light_begin(c);
+        let mut n = 0;
+        loop {
+            let before = w.light().expect("lit").writes();
+            let done = w.light_resume(steps);
+            most = most.max(w.light().expect("lit").writes() - before);
+            n += 1;
+            if done {
+                break;
+            }
+            assert_eq!(w.light_pending(), Some(c), "part way");
+        }
+        longest = longest.max(n);
+    }
+    (w, most, longest)
+}
+
+fn lamp_tunnel(f: FaceFrame) -> Fixture {
+    let mut fx = tunnel(f);
+    fx.fill([10, GROUND, 16], [11, GROUND + 1, 17], lamp());
+    fx
+}
+
+crate::both_faces!(
+    /// A chunk's light resumed a slice at a time ends as the one-shot load's, and no slice does
+    /// more than its share (BUGS.md #72: one chunk's light was 15–20 ms of a frame at CPU 6×).
+    fn a_chunk_lit_a_slice_at_a_time_ends_as_the_one_shot_light(f: FaceFrame) {
+        let mut fx = lamp_tunnel(f);
+        let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
+        let whole = snapshot(&fx.lit(&chunks), &chunks);
+        let steps = 512;
+        let (w, most, longest) = lit_in_slices(&mut fx, &chunks, steps);
+        assert!(
+            longest > 4,
+            "the biggest chunk took {longest} slices: not sliced"
+        );
+        // A cell's step writes itself and at most its six neighbours.
+        assert!(most <= 7 * steps as u64, "a slice wrote {most} cells");
+        let sliced = snapshot(&w, &chunks);
+        let differ = whole.iter().zip(&sliced).filter(|(a, b)| a != b).count();
+        assert_eq!(differ, 0, "{differ} cells differ from the one-shot light");
+    }
+);
+
+crate::both_faces!(
+    /// An edit while a chunk's light is part way finishes that light first: the light is the one
+    /// of the load then the edit, one shot each.
+    fn an_edit_while_a_chunk_lights_gives_the_light_of_the_load_then_the_edit(f: FaceFrame) {
+        let mut fx = lamp_tunnel(f);
+        let chunks = fx.chunks(-1..=1, -1..=1, -1..=1);
+        let (last, first) = chunks.split_last().expect("chunks");
+        // The lamp moved deeper into the tunnel.
+        let edits = [([10, GROUND, 16], 0), ([16, GROUND, 16], lamp())];
+        let apply = |w: &mut VoxelWorld| {
+            let cells: Vec<[i32; 3]> = edits
+                .iter()
+                .map(|&(p, id)| {
+                    let [x, y, z] = f.cell(p);
+                    w.set_voxel(x, y, z, id);
+                    [x, y, z]
+                })
+                .collect();
+            w.light_edited(&cells);
+        };
+        // One shot: everything held, then the edit.
+        let mut want = fx.lit(&chunks);
+        apply(&mut want);
+        // Sliced: the last chunk's light part way when the edit comes.
+        let mut w = fx.lit(first);
+        if let Some(chunk) = fx.src.find(*last) {
+            w.put(*last, chunk.clone());
+        }
+        w.light_begin(*last);
+        assert!(!w.light_resume(64), "still part way");
+        // A chunk arriving beside it, not held yet (the chunks streaming in all round), leaves it
+        // part way: the light reads only the chunks it holds.
+        let beside = ChunkCoord::new(last.x + 1, last.y, last.z);
+        assert!(!chunks.contains(&beside));
+        w.put(beside, Chunk::default());
+        assert_eq!(
+            w.light_pending(),
+            Some(*last),
+            "a new chunk's arrival finished it"
+        );
+        apply(&mut w);
+        assert_eq!(w.light_pending(), None, "finished by the edit");
+        let (a, b) = (snapshot(&want, &chunks), snapshot(&w, &chunks));
+        let differ = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+        assert_eq!(
+            differ, 0,
+            "{differ} cells differ from the load then the edit"
+        );
+        assert_matches_scratch(&mut w, &chunks, "the edit mid-light");
+    }
+);

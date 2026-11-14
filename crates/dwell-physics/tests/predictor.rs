@@ -64,6 +64,8 @@ impl Server {
             },
             remotes: Vec::new(),
             pieces: Vec::new(),
+            swing_kinds: false,
+            grid: None,
         }
     }
 }
@@ -439,4 +441,148 @@ fn prediction_runs_stamina_out_as_the_server_does_and_takes_its_corrections() {
     assert_eq!(p.stats().replays, 0, "{:?}", p.stats());
     let error = (p.position() - server.players.position(&server.physics, server.h)).length();
     assert!(error <= f64::from(Predictor::POSITION_TOLERANCE), "{error}");
+}
+
+/// A server and a client predicting it on a generated world with portals (BIFACIAL_WORLD.md
+/// §12.3), the client's world given `client_portals`: the player starts 1 m over a portal's
+/// opening on face A and drops in, facing 45° with no input. The replays, and the face it ends on.
+fn portal_drop(
+    client_portals: dwell_world::portal_shafts::PortalShafts,
+) -> (dwell_physics::predictor::PredictorStats, FaceFrame) {
+    use dwell_world::GENERATOR_TERRAIN;
+    let seed = 0;
+    let world = || {
+        VoxelWorld::new(
+            dwell_worldgen::generator_for(GENERATOR_TERRAIN, seed),
+            Some(dwell_worldgen::air_test_for(GENERATOR_TERRAIN, seed)),
+        )
+    };
+    let portals =
+        dwell_worldgen::portal_shafts_for_sized(GENERATOR_TERRAIN, seed, Default::default());
+    let shaft = portals.shafts[0];
+    let mut server = Server::new();
+    server.world = world();
+    server.world.portals = portals;
+    // Its feet 1 m over the opening (the body's centre is half its height over its feet).
+    let centre =
+        shaft.top(dwell_world::Face::A) + 1.0 + f64::from(server.players.half_height(server.h));
+    let start = DVec3::new(shaft.axis[0], centre, shaft.axis[1]);
+    server
+        .players
+        .teleport(&mut server.physics, server.h, start, Vec3::ZERO);
+    let mut client_world = world();
+    client_world.portals = client_portals;
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    p.on_snapshot(&mut client_world, &server.snapshot(0));
+    let mut in_flight: VecDeque<PhysicsSnapshot> = VecDeque::new();
+    for seq in 1..=60 * 8 {
+        // Facing 45° (between the monument's pillars), level: the look continued across the
+        // midplane is the same (`FaceFrame::look_across` keeps the heading, mirrors the pitch).
+        let input = quantize_input(
+            &Input {
+                look_yaw: 45.0,
+                ..Input::default()
+            },
+            seq,
+        );
+        p.tick(&mut client_world, &input);
+        server.step(&input, None);
+        in_flight.push_back(server.snapshot(seq));
+        if in_flight.len() > 6 {
+            let s = in_flight.pop_front().unwrap();
+            p.on_snapshot(&mut client_world, &s);
+        }
+    }
+    let c = server.players.controller(server.h);
+    assert!(c.ground.grounded, "still in the air after 8 s");
+    (*p.stats(), c.face)
+}
+
+#[test]
+fn the_prediction_agrees_with_the_server_through_a_portal_and_out_of_it() {
+    // both-faces: the drop crosses from face A to face B. The exit push is the shared
+    // controller's, read from each side's own `VoxelWorld::portals`, so the client predicts it.
+    let portals = dwell_worldgen::portal_shafts_for_sized(
+        dwell_world::GENERATOR_TERRAIN,
+        0,
+        Default::default(),
+    );
+    let (stats, face) = portal_drop(portals);
+    assert_eq!(face, FaceFrame::B, "out on the far face");
+    assert_eq!(stats.replays, 0, "{stats:?}");
+    // A client without the shafts mispredicts the push: why both sides set them.
+    let (stats, _) = portal_drop(Default::default());
+    assert!(stats.replays > 0, "{stats:?}");
+}
+
+/// Grid 1 is home's frame moved `OFFSET` m along x (no rotation), and the client never predicts a
+/// carry: the server's move into grid 1 at the same world point is learnt from a snapshot alone.
+struct Shifted;
+const OFFSET: f64 = 600_000.0;
+impl dwell_physics::predictor::GridTravel for Shifted {
+    fn carry(
+        &self,
+        _: u8,
+        _: [f64; 3],
+        _: [f64; 3],
+        _: bool,
+        _: f64,
+    ) -> Option<dwell_physics::predictor::GridCarry> {
+        None
+    }
+    fn far_speed(&self, _: u8, _: [f64; 3], _: f64) -> f32 {
+        0.0
+    }
+    fn gravity_scale(&self, _: u8) -> f32 {
+        1.0
+    }
+    fn to_world(&self, grid: u8, p: [f64; 3], _: f64) -> [f64; 3] {
+        if grid == 1 {
+            [p[0] + OFFSET, p[1], p[2]]
+        } else {
+            p
+        }
+    }
+}
+
+// face-a-only: the frames' coordinate change is what is checked, not which way is up.
+#[test]
+fn a_crossing_predicted_a_tick_apart_is_no_snap() {
+    // The moon trip (BUGS.md #130): a capture or release the server makes on another tick than
+    // the prediction does moves the player ~600 km in coordinates and nowhere in the world; it
+    // was counted as a snap of 1 732 km, hiding the real ones around a trip.
+    let mut server = Server::new();
+    let mut world = VoxelWorld::flat();
+    let mut p = Predictor::new(PlayerControllerConfig::default());
+    p.set_travel(Box::new(Shifted));
+    p.on_snapshot(&mut world, &server.snapshot(0));
+    let idle = |seq| quantize_input(&Input::default(), seq);
+    for seq in 1..=60 {
+        p.tick(&mut world, &idle(seq));
+        server.step(&idle(seq), None);
+        p.on_snapshot(&mut world, &server.snapshot(seq));
+    }
+    let snaps = p.stats().snaps;
+    // The server carries the player into grid 1 at the same world point; the client, 3 ticks
+    // ahead, still predicts home.
+    for seq in 61..=63 {
+        p.tick(&mut world, &idle(seq));
+        server.step(&idle(seq), None);
+    }
+    let mut s = server.snapshot(61);
+    s.local.position[0] -= OFFSET;
+    s.grid = Some(dwell_protocol::GridView {
+        grid: 1,
+        origin: [OFFSET, 0.0, 0.0],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+    });
+    p.on_snapshot(&mut world, &s);
+    assert_eq!(p.grid(), 1, "in the server's grid");
+    assert_eq!(p.stats().grid_misses, 1);
+    assert!(
+        p.stats().last_correction < 0.05,
+        "{} m corrected for a carry to the same world point",
+        p.stats().last_correction
+    );
+    assert_eq!(p.stats().snaps, snaps, "no snap");
 }

@@ -11,6 +11,8 @@ use dwell_world::{
 
 use std::sync::Arc;
 
+use dwell_protocol::world_size::WorldSize;
+
 use crate::noise::seed_word;
 use crate::portals::{MIDPLANE, Portal, PortalRules, Portals};
 use crate::terrain::TerrainGenerator;
@@ -37,9 +39,27 @@ impl BifacialTerrain {
     /// The world's terrain: both faces' height fields with the terrain's volume over them
     /// (`volume.json` `terrain`: the cliffs; WORLD_GENERATION.md §5).
     pub fn new(world_seed: u64) -> Self {
-        match crate::volume::terrain_volume() {
-            Some(def) => Self::with_volume(world_seed, def),
-            None => Self::height_field(world_seed),
+        Self::sized(world_seed, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::new`] in a world of `size` (BIG_MAP.md M2): both faces' maps, discs,
+    /// build volumes and base fields the size's. At today's size, [`BifacialTerrain::new`].
+    pub fn sized(world_seed: u64, size: WorldSize) -> Self {
+        let t = Self::with_portal_rules_sized(world_seed, MIDPLANE.portals, size);
+        let t = match crate::volume::terrain_volume() {
+            Some(def) => Self {
+                a: t.a.with_volume(def),
+                b: t.b.with_volume(def),
+            },
+            None => t,
+        };
+        // The server founds towns on this world (`town_ground_for_sized`): its generators keep
+        // the planned towns clear of trees, bushes and boulders (BUGS.md #169).
+        Self {
+            a: t.a
+                .with_towns(crate::towns::Towns::new(world_seed, Face::A)),
+            b: t.b
+                .with_towns(crate::towns::Towns::new(world_seed, Face::B)),
         }
     }
 
@@ -52,7 +72,12 @@ impl BifacialTerrain {
     /// The terrain of a terrain generator version (`dwell_world::has_terrain`); none for the
     /// other versions.
     pub fn for_generator(version: u32, world_seed: u64) -> Option<Self> {
-        (version == dwell_world::GENERATOR_TERRAIN).then(|| Self::new(world_seed))
+        Self::for_generator_sized(version, world_seed, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::for_generator`] in a world of `size`.
+    pub fn for_generator_sized(version: u32, world_seed: u64, size: WorldSize) -> Option<Self> {
+        (version == dwell_world::GENERATOR_TERRAIN).then(|| Self::sized(world_seed, size))
     }
 
     /// The world with a terrain volume over both faces' height fields (`volume.rs`), each face
@@ -68,13 +93,21 @@ impl BifacialTerrain {
     /// The world with these portal rules in place of the build's (tests add a fixture by data
     /// alone).
     pub fn with_portal_rules(world_seed: u64, rules: PortalRules) -> Self {
+        Self::with_portal_rules_sized(world_seed, rules, WorldSize::DEFAULT)
+    }
+
+    /// [`BifacialTerrain::with_portal_rules`] in a world of `size`.
+    pub fn with_portal_rules_sized(world_seed: u64, rules: PortalRules, size: WorldSize) -> Self {
         // Both faces' world maps at once (on two threads natively) before either face needs one.
-        crate::worldmap::cache::prefetch(&[
-            face_seed(world_seed, Face::A),
-            face_seed(world_seed, Face::B),
-        ]);
-        let a = TerrainGenerator::new(face_seed(world_seed, Face::A));
-        let b = TerrainGenerator::new(face_seed(world_seed, Face::B));
+        crate::worldmap::cache::prefetch_sized(
+            &[
+                face_seed(world_seed, Face::A),
+                face_seed(world_seed, Face::B),
+            ],
+            size,
+        );
+        let a = TerrainGenerator::sized(face_seed(world_seed, Face::A), size);
+        let b = TerrainGenerator::sized(face_seed(world_seed, Face::B), size);
         Self::joined(world_seed, rules, a, b, false)
     }
 
@@ -88,9 +121,18 @@ impl BifacialTerrain {
         mirrored: bool,
     ) -> Self {
         let portals = Arc::new(Portals::resolve(world_seed, rules, &a, &b, mirrored));
+        // Each face's resurrection shrines, sited on its own ground clear of the portals.
+        let shrines = |g: &TerrainGenerator| {
+            Arc::new(crate::shrines::Shrines::new(
+                g.seed(),
+                crate::shrines::rules_for(world_setting_name(g).as_deref()),
+                portals.sites.clone(),
+            ))
+        };
+        let (sa, sb) = (shrines(&a), shrines(&b));
         Self {
-            a: a.with_portals(portals.clone()),
-            b: b.with_portals(portals),
+            a: a.with_portals(portals.clone()).with_shrines(sa),
+            b: b.with_portals(portals).with_shrines(sb),
         }
     }
 
@@ -107,6 +149,110 @@ impl BifacialTerrain {
     pub fn mirrored_with_biomes(world_seed: u64, biomes: &[crate::terrain::Biome]) -> Self {
         let a = TerrainGenerator::new(face_seed(world_seed, Face::A)).with_biomes(biomes);
         Self::joined(world_seed, MIDPLANE.portals, a.clone(), a, true)
+    }
+
+    /// The shrine nearest (x, z) (world metres) on `face`, and where a player stands up at it
+    /// (world feet), if any lies within the search (docs/SHRINES.md).
+    pub fn nearest_shrine(
+        &self,
+        face: Face,
+        x: f64,
+        z: f64,
+    ) -> Option<(crate::shrines::Shrine, [f64; 3])> {
+        let g = self.local(face);
+        let sh = g.shrines()?;
+        let s = sh.nearest(g, x, z)?;
+        let feet = dwell_world::FaceFrame { face }.point(g.shrine_stand(sh, s));
+        Some((s, feet))
+    }
+
+    /// [`Self::nearest_shrine`]'s feet without running the spawn search (the client's guess of
+    /// where it will stand up, for the respawn preload).
+    pub fn nearest_known_shrine(&self, face: Face, x: f64, z: f64) -> Option<[f64; 3]> {
+        let g = self.local(face);
+        let sh = g.shrines()?;
+        let s = sh.nearest_known(g, x, z)?;
+        Some(dwell_world::FaceFrame { face }.point(g.shrine_stand(sh, s)))
+    }
+
+    /// The shrines on `face` in the grid cells within `cells` of column (x, z)'s (the map's).
+    pub fn shrines_round(
+        &self,
+        face: Face,
+        x: i32,
+        z: i32,
+        cells: i32,
+    ) -> Vec<crate::shrines::Shrine> {
+        let g = self.local(face);
+        g.shrines()
+            .map(|sh| sh.in_cells_round(g, x, z, cells))
+            .unwrap_or_default()
+    }
+
+    /// The ground a town site needs at a face-local column (docs/BLUEPRINTS.md §6; the
+    /// `TownGround` the server sites with): its height (face-local m) where it is dry land (no sea,
+    /// lake, river or stream, inside the world) within `towns.heightM` above sea level, clear of the
+    /// shrines and the portals, else None.
+    pub fn town_ground(&self, face: Face, x: i32, z: i32) -> Option<f64> {
+        crate::towns::town_ground(self.local(face), x, z)
+    }
+
+    /// The town sites on `face` in the town grid cells within `cells` of face-local column
+    /// (x, z)'s (the map's; the server's own siting, `TownRules::site_in`, on this ground).
+    pub fn towns_round(
+        &self,
+        world_seed: u64,
+        face: Face,
+        x: i32,
+        z: i32,
+        cells: i32,
+    ) -> Vec<dwell_world::blueprint::TownSite> {
+        let [ci, ck] = dwell_world::blueprint::SHIPPED.towns.cell_of(x, z);
+        let mut out = Vec::new();
+        for k in ck - cells..=ck + cells {
+            for i in ci - cells..=ci + cells {
+                out.extend(self.town_in(world_seed, face, [i, k]));
+            }
+        }
+        out
+    }
+
+    /// The town site in town grid cell `cell` on `face`, if any (`TownRules::site_in` on
+    /// [`Self::town_ground`]).
+    pub fn town_in(
+        &self,
+        world_seed: u64,
+        face: Face,
+        cell: [i32; 2],
+    ) -> Option<dwell_world::blueprint::TownSite> {
+        let ground = |x: i32, z: i32| self.town_ground(face, x, z);
+        dwell_world::blueprint::SHIPPED.towns.site_in(
+            world_seed,
+            dwell_world::FaceFrame { face },
+            cell,
+            &ground,
+        )
+    }
+
+    /// The town site on `face` nearest face-local (x, z), within `radius` m.
+    pub fn nearest_town(
+        &self,
+        world_seed: u64,
+        face: Face,
+        x: f64,
+        z: f64,
+        radius: f64,
+    ) -> Option<dwell_world::blueprint::TownSite> {
+        let f = dwell_world::FaceFrame { face };
+        let ground = |x: i32, z: i32| self.town_ground(face, x, z);
+        let d = |t: &dwell_world::blueprint::TownSite| {
+            (f64::from(t.x) + 0.5 - x).hypot(f64::from(t.z) + 0.5 - z)
+        };
+        dwell_world::blueprint::SHIPPED
+            .towns
+            .sites_near(world_seed, f, x, z, radius, &ground)
+            .into_iter()
+            .min_by(|a, b| d(a).total_cmp(&d(b)))
     }
 
     /// The portals between the faces: their sites and how they are built.
@@ -159,7 +305,7 @@ impl BifacialTerrain {
         cells: &[u16],
     ) -> Vec<(u32, dwell_world::tree_tint::Tint)> {
         let mut out = Vec::new();
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             return out;
         }
         let y0 = lod::section_origin(c).y;
@@ -219,8 +365,17 @@ impl BifacialTerrain {
     }
 
     /// `TerrainGenerator::is_air_chunk_with` for a chunk in the world.
-    pub fn is_air_chunk_with(coord: ChunkCoord, sky_floor: f32) -> bool {
-        TerrainGenerator::is_air_chunk_with(face_local_chunk(coord), sky_floor)
+    pub fn is_air_chunk_with(
+        world: &dwell_world::WorldBounds,
+        coord: ChunkCoord,
+        sky_floor: f32,
+    ) -> bool {
+        TerrainGenerator::is_air_chunk_with(world, face_local_chunk(coord), sky_floor)
+    }
+
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2).
+    pub fn world(&self) -> dwell_world::WorldBounds {
+        self.a.world()
     }
 
     /// The column bounds of both faces.
@@ -259,7 +414,7 @@ impl BifacialTerrain {
             s.clear();
             s.resize(columns, Default::default());
         }
-        if !lod::in_world(c) {
+        if !lod::in_world_of(c, &self.world()) {
             return LodKind::Empty;
         }
         let y0 = lod::section_origin(c).y;
@@ -301,7 +456,8 @@ impl BifacialTerrain {
                 &|r| lod::SECTION_CELLS - 1 - r,
             );
         }
-        let kind = lod::kind_from_bounds(c, &bounds);
+        // Classified in this world's own disc and volume (BUGS.md #108).
+        let kind = lod::kind_from_bounds_of(c, &bounds, &self.world());
         // A section the bounds decide is canonical whatever the passes generated.
         match kind {
             LodKind::Empty => cells.fill(M.air),
@@ -330,4 +486,12 @@ impl BifacialTerrain {
             Face::B => self.b.solid_at(x, mirror_y(y), z),
         }
     }
+}
+
+/// The world setting's name a face's generator was built from (`shared/worldgen/worlds`, its
+/// `name`), if it was built from one: the shrines' `worlds` overrides are keyed by it.
+fn world_setting_name(g: &TerrainGenerator) -> Option<String> {
+    let w = g.map().worldgen.as_ref()?;
+    let v: serde_json::Value = serde_json::from_str(&w.text).ok()?;
+    v.get("name")?.as_str().map(str::to_owned)
 }

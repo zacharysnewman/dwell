@@ -48,6 +48,9 @@ pub enum LookShape {
     /// A small heap of tiny lumps (several, in the look's footprint, the middle one on top):
     /// seeds.
     Cluster,
+    /// An angular flake (an uneven pyramid on a five-sided base, its tip off-centre): a rock shard
+    /// knocked off by a pickaxe's hit (BLOCK_DAMAGE.md §6.2), the piece the carved facet left.
+    Shard,
     /// A prop's own mesh (`look: { model }`, a prop of shared/models/props.json; ADR 0070 §8):
     /// its triangles and palette colours, untextured.
     Model,
@@ -84,11 +87,30 @@ pub struct DropChoice {
     pub weight: f64,
 }
 
-/// A drop rule: at `chance`, one of `choices` (by weight).
+/// A drop rule: at `chance`, one of `choices` (by weight); only for the states whose properties
+/// take one of `when`'s values (property, values; empty: every state, docs/ECOLOGY.md §10).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DropRule {
     pub chance: f64,
+    pub when: &'static [(&'static str, &'static [&'static str])],
     pub choices: &'static [DropChoice],
+}
+
+impl DropRule {
+    /// Whether the rule holds for a state whose property values `value` gives (by name).
+    pub fn holds(&self, value: impl Fn(&str) -> Option<&'static str>) -> bool {
+        self.when
+            .iter()
+            .all(|(p, vs)| value(p).is_some_and(|v| vs.contains(&v)))
+    }
+}
+
+/// The rules of `rules` that hold for a state (its property values by name, [`DropRule::holds`]).
+pub fn rules_for(
+    rules: &[DropRule],
+    value: impl Fn(&str) -> Option<&'static str>,
+) -> Vec<DropRule> {
+    rules.iter().filter(|r| r.holds(&value)).copied().collect()
 }
 
 /// What a block drops, and the item placing it uses up (`cost`: a ramp's base).
@@ -693,7 +715,8 @@ mod tests {
     fn the_stone_axe_wears_by_one_a_hit_and_breaks_after_its_32nd() {
         let hits = |item: &str| crate::chopping::durability(item);
         assert_eq!(hits("dwell:stone_axe"), Some(32));
-        assert_eq!(hits("dwell:metal_axe"), None, "unlimited");
+        // Owner, 2026-11-12: metal tools "have double durability".
+        assert_eq!(hits("dwell:metal_axe"), Some(64), "double the stone axe's");
         let mut inv = Inventory::starting();
         assert_eq!(inv.slots[0].as_ref().unwrap().item, "dwell:stone_axe");
         for n in 1..32 {
@@ -705,13 +728,14 @@ mod tests {
         assert!(before.tool_broke(&inv, hits), "the client's break sound");
         assert_eq!(inv.wear_held(hits), Wear::None, "nothing held");
         // An item that doesn't wear.
-        inv.add("dwell:metal_axe", 1);
+        inv.add("dwell:rock", 1);
         assert_eq!(inv.wear_held(hits), Wear::None);
     }
 
     #[test]
     fn the_stone_pickaxe_and_the_wooden_shovel_wear_like_the_stone_axe() {
-        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; metal tools don't.
+        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; 2026-11-12: metal
+        // tools "have double durability".
         let hits = |item: &str| crate::chopping::durability(item);
         for item in ["dwell:stone_pickaxe", "dwell:wooden_shovel"] {
             assert_eq!(hits(item), Some(32), "{item}");
@@ -725,8 +749,12 @@ mod tests {
             assert_eq!(inv.wear_held(hits), Wear::Broke, "{item}");
             assert!(inv.slots[0].is_none(), "{item}: gone");
         }
-        for item in ["dwell:metal_pickaxe", "dwell:metal_shovel"] {
-            assert_eq!(hits(item), None, "{item}: unlimited");
+        for item in [
+            "dwell:metal_axe",
+            "dwell:metal_pickaxe",
+            "dwell:metal_shovel",
+        ] {
+            assert_eq!(hits(item), Some(64), "{item}: double");
         }
     }
 
@@ -849,8 +877,15 @@ mod tests {
         assert_eq!(items("dwell:dirt"), ["dwell:dirt_clump", "dwell:rock"]);
         assert_eq!(items("dwell:leaves"), ["dwell:stick"]);
         assert_eq!(items("dwell:stone"), ["dwell:rock_shard"]);
+        // Tall grass at full height (its default stage; the other stages drop less, by `when`).
+        let full: Vec<&str> = rules_for(drops_of("dwell:tall_grass").unwrap().drops, |p| {
+            (p == "stage").then_some("3")
+        })
+        .iter()
+        .flat_map(|r| r.choices.iter().map(|c| c.item))
+        .collect();
         assert_eq!(
-            items("dwell:tall_grass"),
+            full,
             [
                 "dwell:grass_fiber",
                 "dwell:grass_seed",
@@ -879,12 +914,15 @@ mod tests {
 
     #[test]
     fn tall_grass_drops_seeds_half_the_time_and_gems_an_eighth_mostly_small() {
-        let rules = drops_of("dwell:tall_grass").unwrap().drops;
+        // Full height (stage 3, the default: placed and saved tall grass) drops as before.
+        let rules = rules_for(drops_of("dwell:tall_grass").unwrap().drops, |p| {
+            (p == "stage").then_some("3")
+        });
         let mut random = rng(0x5eed);
         let n = 40_000;
         let (mut seeds, mut gems, mut large, mut fibers) = (0, 0, 0, 0);
         for _ in 0..n {
-            for s in roll(rules, &mut random) {
+            for s in roll(&rules, &mut random) {
                 match s.item.as_str() {
                     "dwell:grass_seed" => seeds += s.count,
                     "dwell:gem" => gems += s.count,
@@ -907,12 +945,55 @@ mod tests {
     }
 
     #[test]
+    fn taller_tall_grass_drops_more_fiber_and_seeds() {
+        // docs/ECOLOGY.md §10: each stage's rules by its `when`; a sprout drops little.
+        let all = drops_of("dwell:tall_grass").unwrap().drops;
+        let mean = |stage: &'static str, item: &str| {
+            let rules = rules_for(all, |p| (p == "stage").then_some(stage));
+            let mut random = rng(0x5eed);
+            let n = 20_000;
+            let mut got = 0u32;
+            for _ in 0..n {
+                got += roll(&rules, &mut random)
+                    .iter()
+                    .filter(|s| s.item == item)
+                    .map(|s| u32::from(s.count))
+                    .sum::<u32>();
+            }
+            f64::from(got) / f64::from(n)
+        };
+        for item in ["dwell:grass_fiber", "dwell:grass_seed"] {
+            let by: Vec<f64> = ["0", "1", "2", "3"].map(|s| mean(s, item)).to_vec();
+            assert!(by.windows(2).all(|w| w[0] < w[1]), "{item} rises: {by:?}");
+        }
+        assert!(mean("0", "dwell:grass_seed") == 0.0, "a sprout has no seed");
+        assert!(mean("0", "dwell:gem") == 0.0, "nor a gem");
+        // A rule without `when` holds for every state; one with it, only for its values.
+        let fixture = DropRule {
+            chance: 1.0,
+            when: &[("stage", &["2", "3"])],
+            choices: &[],
+        };
+        assert!(fixture.holds(|_| Some("2")));
+        assert!(!fixture.holds(|_| Some("0")));
+        assert!(!fixture.holds(|_| None), "a state without the property");
+        assert!(
+            DropRule {
+                when: &[],
+                ..fixture
+            }
+            .holds(|_| None)
+        );
+    }
+
+    #[test]
     fn a_fixture_drop_table_works_by_data_alone() {
         static FIXTURE: &[BlockDrops] = &[BlockDrops {
             block: "test:ore",
             cost: "test:ore",
             drops: &[DropRule {
                 chance: 1.0,
+                when: &[],
                 choices: &[DropChoice {
                     item: "dwell:rock",
                     min: 2,

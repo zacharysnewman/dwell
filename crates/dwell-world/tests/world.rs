@@ -102,7 +102,7 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:sand[flooded=false]",
             "dwell:log[axis=y,width=4]",
             "dwell:leaves[flooded=false]",
-            "dwell:tall_grass",
+            "dwell:tall_grass[stage=3]",
             "dwell:torch",
             "dwell:snowy_grass[flooded=false]",
             "dwell:snowy_leaves[flooded=false]",
@@ -119,6 +119,11 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:oak_sapling",
             "dwell:pine_sapling",
             "dwell:palm_sapling",
+            "dwell:moon_dust[flooded=false]",
+            "dwell:moon_mare_dust[flooded=false]",
+            "dwell:red_sand[flooded=false]",
+            "dwell:red_dirt[flooded=false]",
+            "dwell:brush[flooded=false]",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));
@@ -661,7 +666,7 @@ fn plants_go_only_into_their_medium() {
     let kelp = row("test:kelp[flooded=true]");
     assert!(medium_allows(kelp, row("dwell:water[fill=8]")));
     assert!(!medium_allows(kelp, row("dwell:air")));
-    let grass = row("dwell:tall_grass");
+    let grass = row("dwell:tall_grass[stage=3]");
     assert!(medium_allows(grass, row("dwell:air")));
     assert!(!medium_allows(grass, row("dwell:water[fill=8]")));
     assert!(medium_allows(

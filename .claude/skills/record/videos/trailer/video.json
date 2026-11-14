@@ -1,0 +1,553 @@
+{
+ "formatVersion": 1,
+ "name": "trailer",
+ "description": "The first cinematic trailer (owner, 2026-11-13: \"Make a 60s or less cinematic trailer for our game. Use these patterns\"; \"Let's do vertical and widescreen. Title and game sound, no music.\"). The orchestrator's 22-shot draft (setup, disruption, escalation, held shot, peak montage, title) in the starter world, the forest world and seed 7, captured square and cut to 9:16 and 16:9 (CAMERA_PATTERNS.md for the patterns; each shot's note names it and any substitution).",
+ "world": {
+  "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+  "storage": {
+   "dwell.clouds": "\"off\"",
+   "dwell.music": "\"off\""
+  }
+ },
+ "capture": {
+  "size": [
+   1920,
+   1920
+  ],
+  "fps": 30
+ },
+ "aspects": {
+  "9x16": [
+   1080,
+   1920
+  ],
+  "16x9": [
+   1920,
+   1080
+  ]
+ },
+ "title": {
+  "text": "DWELL",
+  "fromEndS": 5,
+  "fadeS": 1.5,
+  "width": {
+   "9x16": 0.78,
+   "16x9": 0.42
+  }
+ },
+ "splice": {
+  "fadeIn": 1.0,
+  "crf": 26,
+  "gainDb": 26
+ },
+ "shots": [
+  {
+   "id": "s01",
+   "note": "1. EWS aerial push at dawn over the starter shore toward the sea and the hotspot islands (sub: the coast, not the disc rim). 24 mm, inOutSine push",
+   "kind": "path",
+   "path": "videos/trailer/s01_dawn_push.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 12
+   },
+   "splice": [
+    {
+     "from": 0.5,
+     "to": 6.5
+    }
+   ]
+  },
+  {
+   "id": "s02",
+   "note": "2. WS crane down toward the broadleaf forest, morning, crowns as foreground parallax (sub: no river in frame; the forest test world drew from the wrong face in the driver). 35 mm",
+   "kind": "path",
+   "path": "videos/trailer/s02_forest_crane.json",
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 12
+   },
+   "splice": [
+    {
+     "from": 0.3,
+     "to": 5.8
+    }
+   ]
+  },
+  {
+   "id": "s03",
+   "note": "3. Hero shot: low angle, the player walks toward the camera through the meadow at sunrise, slow push-in (sub: no shrine arch)",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "walk",
+    "start": [
+     10100.5,
+     64,
+     16300.5
+    ],
+    "yaw": 129,
+    "timeOfDay": 0.27,
+    "cam": [
+     18.7,
+     0.9,
+     -15.1
+    ],
+    "camTo": [
+     16.3,
+     1.0,
+     -13.2
+    ],
+    "aim": [
+     0,
+     1.1,
+     0
+    ],
+    "fov": 34,
+    "fovTo": 30,
+    "seconds": 6.5,
+    "walkS": 4.2
+   },
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0.2,
+     "to": 3.2
+    }
+   ]
+  },
+  {
+   "id": "dyn",
+   "note": "4\u20135. CU first person: place the dynamite, light it with the torch (cut on action); then WS locked from a safe distance: the fizz, the flash, the flung pieces, the boom",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "dynamite",
+    "start": [
+     10100.5,
+     64,
+     16300.5
+    ],
+    "yaw": 0,
+    "pitch": -40,
+    "timeOfDay": 0.3,
+    "camOff": [
+     11,
+     5,
+     -9
+    ],
+    "blastMs": 5000
+   },
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "label": "s04",
+     "from": 0.9,
+     "to": 2.95,
+     "cut": true
+    },
+    {
+     "label": "s05",
+     "from": 3.15,
+     "to": 7.0,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "s07",
+   "note": "7. Underwater looking up at the surface: the swim take of the water video (seed 7 sea), its last look up",
+   "kind": "take",
+   "script": "videos/water/water_take.js",
+   "args": {
+    "mode": "swim",
+    "start": [
+     11660,
+     29.5,
+     19560
+    ],
+    "yaw": 0,
+    "timeOfDay": 0.55,
+    "swimMs": 4500,
+    "upMs": 3500
+   },
+   "setup": {
+    "url": "/dwell/?fresh=1&seed=7&at=11660,40,19440",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 7.2,
+     "to": 9.7,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "s08",
+   "note": "8. Mesa country at golden hour: a slow pan across the red benches and walls",
+   "kind": "path",
+   "path": "videos/trailer/s08_mesa_pan.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 12
+   },
+   "splice": [
+    {
+     "from": 1.0,
+     "to": 3.8,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "s09",
+   "note": "9. Villagers gathered on the meadow, a low orbit round them (sub: no blueprint builder)",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "npcs",
+    "start": [
+     10160.5,
+     66,
+     16300.5
+    ],
+    "yaw": 0,
+    "timeOfDay": 0.32,
+    "count": 8,
+    "radius": 4,
+    "cam": [
+     0,
+     1.8,
+     -9
+    ],
+    "aimY": 1.0,
+    "degrees": 50,
+    "seconds": 6,
+    "fov": 45
+   },
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 1.0,
+     "to": 3.6,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "s10",
+   "note": "10. A deer herd and a wolf pack brought in beside the player on the meadow, a high camera easing along with them",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "herd",
+    "start": [
+     10060.5,
+     66,
+     16240.5
+    ],
+    "yaw": 90,
+    "timeOfDay": 0.32,
+    "deer": 6,
+    "deerOff": 16,
+    "wolves": 3,
+    "wolfOff": 36,
+    "cam": [
+     10,
+     16,
+     -26
+    ],
+    "camTo": [
+     22,
+     16,
+     -26
+    ],
+    "aim": [
+     18,
+     0,
+     0
+    ],
+    "aimTo": [
+     26,
+     0,
+     0
+    ],
+    "seconds": 8,
+    "fov": 50,
+    "herdWarmMs": 3000
+   },
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 2.0,
+     "to": 4.6,
+     "cut": true,
+     "crop": {
+      "9x16": [
+       0.62,
+       0.5
+      ],
+      "16x9": [
+       0.5,
+       0.55
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s11",
+   "note": "11. The tall volcano cone at dusk from 8 km east at 3000 m: a slow push (sub: no molten lava; a fresh world's lava lake starts empty and fills over time)",
+   "kind": "path",
+   "path": "videos/trailer/s11_volcano_push.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 14
+   },
+   "splice": [
+    {
+     "from": 1.0,
+     "to": 3.6,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "s12",
+   "note": "12. A drone push low over the broadleaf canopy (sub for the stepped river: none found in the time box)",
+   "kind": "path",
+   "path": "videos/trailer/s12_canopy_push.json",
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 12
+   },
+   "splice": [
+    {
+     "from": 1.0,
+     "to": 3.5,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "rise",
+   "note": "13\u201314. Rise from the shore up through the cloud layer into the thin sky, then a locked hold high over home: the held shot before the peak",
+   "kind": "path",
+   "path": "videos/trailer/s13_rise_to_space.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "medium",
+     "targetOutline": false
+    },
+    "warmS": 10
+   },
+   "splice": [
+    {
+     "label": "s13",
+     "from": 0.5,
+     "to": 3.8,
+     "cut": true
+    },
+    {
+     "label": "s14",
+     "from": 3.8,
+     "to": 8.0,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "m_moon",
+   "note": "15a. The moon's grey ground, first person, a turn (moonLand)",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "moon",
+    "yaw": 0,
+    "pitch": 12,
+    "turn": 25,
+    "seconds": 3,
+    "timeOfDay": 0.3
+   },
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0.5,
+     "to": 1.45,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "m_sun",
+   "note": "15b. The sun's crust beside its lava field, first person (sunLand river)",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "sun",
+    "yaw": 0,
+    "pitch": -15,
+    "turn": 30,
+    "seconds": 3,
+    "timeOfDay": 0.3
+   },
+   "setup": {
+    "reload": true,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0.5,
+     "to": 1.45,
+     "cut": true,
+     "vf": "eq=gamma=1.4"
+    }
+   ]
+  },
+  {
+   "id": "m_die",
+   "note": "15e. Defeat and the respawn at the nearest shrine, first person after the respawn (sub: no kneel animation)",
+   "kind": "take",
+   "script": "videos/trailer/trailer_take.js",
+   "args": {
+    "mode": "die",
+    "start": [
+     10100.5,
+     66,
+     16200.5
+    ],
+    "yaw": 0,
+    "pitch": 0,
+    "turn": 25,
+    "seconds": 3,
+    "respawnMs": 5000,
+    "timeOfDay": 0.3
+   },
+   "setup": {
+    "reload": true,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 6.0,
+     "to": 7.0,
+     "cut": true
+    }
+   ]
+  },
+  {
+   "id": "m_portal",
+   "note": "15d. Into the portal: the drop past the motes, then out of face B's hole (the bifacial video's portal take)",
+   "kind": "take",
+   "script": "videos/bifacial/portal_take.js",
+   "args": {
+    "camB": [
+     1796.3,
+     -50.5,
+     20707.3
+    ],
+    "fov": 50,
+    "up": "auto",
+    "timeOfDay": 0.29
+   },
+   "setup": {
+    "url": "/dwell/?fresh=1&seed=7&spawn=portal",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "label": "m_portal_drop",
+     "from": 2.5,
+     "to": 3.4,
+     "cut": true,
+     "vf": "eq=gamma=1.3"
+    },
+    {
+     "label": "m_portal_out",
+     "from": 5.4,
+     "to": 6.5,
+     "cut": true,
+     "vf": "eq=gamma=1.5"
+    }
+   ]
+  },
+  {
+   "id": "s22",
+   "note": "22. From space: the whole disc edge-on from 160 km, a slow push; the title fades in over it",
+   "kind": "path",
+   "path": "videos/bifacial/s1_outline_push.json",
+   "setup": {
+    "reload": true,
+    "timeOfDay": 0.29,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 10
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 7.0
+    }
+   ]
+  }
+ ]
+}

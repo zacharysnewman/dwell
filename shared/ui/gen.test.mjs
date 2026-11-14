@@ -15,7 +15,13 @@ import {
   validateHud,
   validateLayout,
   validateMap,
+  validateMapLayers,
+  LAYER_FIELDS,
   validateMenuBackgrounds,
+  validateMarkers,
+  markersTs,
+  markersRs,
+  checkIconPath,
 } from './gen.mjs';
 
 const backgroundsData = () => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'menu-backgrounds.json'), 'utf8'));
@@ -199,4 +205,74 @@ test('bad layout entries fail with their path named', () => {
     change(d);
     assert.throws(() => validateLayout(d), message);
   }
+});
+
+const layersData = () => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'mapLayers.json'), 'utf8'));
+
+test('the big map debug layers are valid and name the generator fields (REALISTIC_WORLD.md R6)', () => {
+  const d = validateMapLayers(layersData());
+  for (const l of d.layers) assert.ok(l.field in LAYER_FIELDS);
+  assert.deepEqual(
+    d.layers.map((l) => l.field).sort(),
+    ['plates', 'rain', 'rocks', 'uplift'],
+  );
+});
+
+test('a debug layer added by data alone validates, and bad layers fail naming the entry', () => {
+  const d = layersData();
+  const extra = { name: 'rain_again', label: 'Rain 2', field: 'rain', opacity: 0.3, ramp: [{ at: 0, color: '#000000' }, { at: 1, color: '#ffffff' }] };
+  assert.equal(validateMapLayers({ ...d, layers: [...d.layers, extra] }).layers.length, d.layers.length + 1);
+  const bad = (layer, re) => assert.throws(() => validateMapLayers({ ...d, layers: [layer] }), re);
+  bad({ ...extra, field: 'wind' }, /layers\[0\]\.field must be one of/);
+  bad({ ...extra, ramp: [{ at: 1, color: '#000000' }, { at: 0, color: '#ffffff' }] }, /ramp\[1\]\.at must be above/);
+  bad({ ...extra, colors: {} }, /coloured by a ramp/);
+  bad({ name: 'p', label: 'P', field: 'plates', opacity: 0.5, colors: { oceanic: 'blue' } }, /colors\.oceanic must be a #rrggbb/);
+  bad({ ...extra, opacity: 0 }, /opacity/);
+  assert.throws(() => validateMapLayers({ ...d, layers: [extra, extra] }), /used twice/);
+  assert.throws(() => validateMapLayers({ ...d, key: 'L' }), /key must be/);
+});
+
+const markersData = () => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'markers.json'), 'utf8'));
+
+test('the checked-in markers validate and generate the checked-in TypeScript and Rust', () => {
+  const d = validateMarkers(markersData());
+  const here = dirname(fileURLToPath(import.meta.url));
+  assert.equal(markersTs(d), readFileSync(join(here, '../../client/src/ui/markers.gen.ts'), 'utf8'));
+  assert.equal(markersRs(d), readFileSync(join(here, '../../crates/dwell-protocol/src/markers.gen.rs'), 'utf8'));
+  assert.ok(d.icons.length >= 16, 'the owner asked for ~16 icons');
+});
+
+test('a marker icon added by data alone reaches the output', () => {
+  const d = markersData();
+  d.icons.push({ id: 'anchor', name: 'Anchor', colour: 'blue', path: 'M11 2 H13 V18 L19 14 L12 22 L5 14 L11 18 Z' });
+  assert.match(markersTs(validateMarkers(d)), /\{ id: "anchor", name: "Anchor", colour: "blue", path: "M11 2 H13/);
+});
+
+test('bad marker entries fail naming them', () => {
+  const bad = (edit, re) => {
+    const d = markersData();
+    edit(d);
+    assert.throws(() => validateMarkers(d), re);
+  };
+  const n = markersData().icons.length;
+  bad(
+    (d) => d.icons.push({ ...d.icons[0] }),
+    new RegExp(`icons\\[${n}\\]\\.id: "home" is listed twice`),
+  );
+  bad((d) => (d.icons[0].colour = 'mauve'), /icons\[0\]\.colour must name a palette colour/);
+  bad((d) => (d.icons[0].path = 'M0 0 L30 4 Z'), /outside the 24 × 24 box/);
+  bad((d) => (d.icons[0].path = 'M0 0 l3 4 Z'), /command l is not allowed/);
+  bad((d) => (d.icons[0].path = '🏠'), /not path commands or numbers/);
+  bad((d) => (d.auto[0].icon = 'castle'), /auto\[0\]\.icon must name an icon/);
+  bad((d) => (d.auto[0].keep = 'some'), /auto\[0\]\.keep/);
+  bad((d) => (d.palette[0].rgb = 'red'), /palette\[0\]\.rgb must be #rrggbb/);
+  bad((d) => (d.limits.labelChars = 2), /limits\.labelChars/);
+  bad((d) => delete d.world.farM, /missing entry world\.farM/);
+});
+
+test('an icon path counts its subpaths and checks its numbers', () => {
+  assert.equal(checkIconPath('p', 'M2 2 H22 V22 H2 Z M6 6 H18 V18 H6 Z'), 2);
+  assert.throws(() => checkIconPath('p', 'M2 2 L4'), /L needs 2 numbers/);
+  assert.throws(() => checkIconPath('p', 'L2 2'), /must start with M/);
+  assert.throws(() => checkIconPath('p', 'M2 2 A0 3 0 0 1 4 4'), /radii/);
 });

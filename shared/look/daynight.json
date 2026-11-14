@@ -12,19 +12,21 @@
     "noonElevationDeg": 60
   },
   "sun": {
-    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow).",
+    "$comment": "The disc's angular radius, how much larger it looks on the horizon, its limb darkening (0 none, 1 dark edge), and its halo: a tight bloom and a broad glow (Gaussian widths in degrees, strengths 0\u20131, scaled by each keyframe's glow). distanceM: from the home disc's centre to the sun world's (shared/worldgen/grids.json `dwell:sun`, docs/proposals/SUN_WORLD.md), toward today's sun direction, keeping its radius at radiusDeg (checked to 1%). surface: how much the sun world's baked ground (its face A: lava bright, basalt and obsidian crusts darker) shades the disc (0 today's plain disc, 1 the crusts as dark as their colours); the glow and the sunlight are unchanged (owner: \"The sun's doesn't really light the earth world or moon world, just conceptually.\").",
     "radiusDeg": 1.5,
     "horizonScale": 1.4,
     "limbDarkening": 0.35,
     "bloomDeg": 2.5,
     "bloom": 0.2,
     "glowDeg": 28,
-    "glow": 0.3
+    "glow": 0.3,
+    "distanceM": 954700,
+    "surface": 0.45
   },
   "moon": {
-    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable.",
+    "$comment": "The disc, its phases (a cycle of cycleDays in-game days; startPhase at day 0: 0 new, 0.5 full), its surface (maria darkness, earthshine on the unlit part) and its cool halo (a bloom and a glow, as the sun's, scaled by each keyframe's moonGlow and the lit share). newMoonLight is the share of the moonlight left at new moon, so every night stays readable. relief scales the slopes of the moon's baked normals (its real terrain, MOON_WORLD.md §5) as the sky draws them: its craters are a few degrees steep, too shallow to see from home at 1:1. domeBias is how much of a sphere's shape the disc takes (1 a ball), its normals then tilted by the baked slopes (owner, 2026-11-12: \"You mentioned a dome something, maybe do that\"), so its phases read as crescents, halves and gibbous with the craters on top; the lit share, the halo and the moonlight follow the same blended disc (celestial::disc_lit). lunarLambert is how the disc reflects: 0 Lambert (a ball darkens toward its limb even at full, so the full moon's bright part read smaller than the old flat disc), 1 Lommel-Seeliger, the regolith's law (lit evenly to its edge where it faces the sun, dark only past the terminator; owner, 2026-11-12: \"The moon looks smaller I think compared to the old moon?\").",
     "radiusDeg": 1.2,
-    "cycleDays": 8,
+    "cycleDays": 8.25,
     "startPhase": 0.5,
     "color": "#d6dbe6",
     "maria": 0.45,
@@ -34,7 +36,18 @@
     "glowDeg": 12,
     "glow": 0.14,
     "glowColor": "#c6d6ff",
-    "newMoonLight": 0.55
+    "newMoonLight": 0.55,
+    "relief": 8,
+    "domeBias": 1,
+    "lunarLambert": 1,
+    "nightFloor": 0.15
+  },
+  "moonOrbit": {
+    "$comment": "The celestial model (docs/proposals/MOON_WORLD.md \u00a76, M-4; dwell_look::celestial): the moon on a circle distanceM from the home disc's centre, inclined inclinationDeg to the sun's path, going round once a month (moon.cycleDays, new moon to new moon; moon.startPhase at day 0, or the world's own phase, WorldSettings tag MOON_PHASE) against the sky's daily turn, tidally locked (its face A toward home). Its ascending node sits nodeDeg along the sun's path from the sun at day 0 and turns once against the sun every nodeTurnDays (0: never), so eclipse seasons come round. distanceM keeps the moon grid's radius (shared/worldgen/grids.json) at moon.radiusDeg in the sky (checked to 1%). moon.nightFloor is the share of today's moonlight left on a moonless night (owner: \"A darker floor but a minimum still.\"). Drawn since M-2 (the sky's moon, its glow and the moonlight).",
+    "inclinationDeg": 5,
+    "nodeDeg": 90,
+    "nodeTurnDays": 96,
+    "distanceM": 596800
   },
   "stars": {
     "$comment": "Procedural stars on the turning sky: cells per radian, the share of cells with a star, size in pixels, peak brightness, twinkle depth (0\u20131) and rate, and how far up from the horizon (elevation sine) they fade in.",
@@ -109,8 +122,8 @@
     {
       "name": "morning",
       "sun": 30,
-      "skyZenith": "#6098d8",
-      "skyHorizon": "#e2e2d8",
+      "skyZenith": "#2b68c4",
+      "skyHorizon": "#a8c6e6",
       "sunDisc": "#fff2d8",
       "glow": "#f8dcaa",
       "glowStrength": 0.95,
@@ -132,8 +145,8 @@
     {
       "name": "noon",
       "sun": 90,
-      "skyZenith": "#649ada",
-      "skyHorizon": "#e5e5e1",
+      "skyZenith": "#2563c6",
+      "skyHorizon": "#9cc0ea",
       "sunDisc": "#fffaf0",
       "glow": "#f5d9a2",
       "glowStrength": 1,
@@ -155,8 +168,8 @@
     {
       "name": "afternoon",
       "sun": 150,
-      "skyZenith": "#6098d6",
-      "skyHorizon": "#e6e2d4",
+      "skyZenith": "#2a66c4",
+      "skyHorizon": "#a9c5e4",
       "sunDisc": "#fff0d0",
       "glow": "#f8d8a0",
       "glowStrength": 0.95,

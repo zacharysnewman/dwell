@@ -263,7 +263,14 @@ test('a held ladder climbs the wall it is hung on, and stops where the wall ends
   // The ladder (its own drag: up or down only, whatever the mode) on the pillar's near side.
   expect(await call<boolean>(page, 'd.pick("dwell:ladder")')).toBe(true);
   await lookAtPoint(page, [x + 0.5, (y + 2.5) * CELL_HEIGHT, z + 0.02]);
-  await expect.poll(async () => (await state(page))?.target?.face ?? -1).toBe(5);
+  // The cell looked at, not only its face: the look before (up the pillar) targets the same face
+  // higher up until a frame takes the new look, and a slow page's first ladder went there.
+  await expect
+    .poll(async () => {
+      const t = (await state(page))?.target;
+      return t ? `${t.cell.join()}/${String(t.face)}` : '';
+    })
+    .toBe(`${[x, y + 2, z].join()}/5`);
   await page.waitForTimeout(150); // BLOCK_EDIT_INTERVAL_MS
   expect(await call<boolean>(page, 'd.holdPlace(true)')).toBe(true);
   const isLadder = async (row: number) => {

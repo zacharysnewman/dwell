@@ -12,6 +12,9 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlockDamageDef {
     pub block: &'static str,
+    /// Its volume as a share of a cell's ([`CELL_M3`]; generated from its shape: a full block 1, a
+    /// stored ramp ½), for the bite rule ([`bite_m3_in`]).
+    pub volume: f64,
     /// With bare hands or a tool not listed; none: it can't be broken so.
     pub default: Option<u32>,
     /// Per tool class (`pickaxe`, …) or item (`dwell:metal_pickaxe`), an item's over its class's.
@@ -33,6 +36,18 @@ pub enum DamageLookKind {
     Chips,
 }
 
+/// A carved mark's height field (`damage.look.profile`, BLOCK_DAMAGE.md §6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CarveProfile {
+    /// A smooth bowl (soils' scoops), lit by smooth normals.
+    Bowl,
+    /// Angular facets round an off-centre apex, each lit flat.
+    Facets,
+    /// Spalled flakes (stone, WORK_QUEUE item 18: "stone doesn't dent, it shatters"): each hit
+    /// chips out a few flat, shallow, elongated scars, stepped, lit flat and lighter (fresh rock).
+    Spall,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DamageLook {
     pub kind: DamageLookKind,
@@ -42,6 +57,54 @@ pub struct DamageLook {
     pub color: [u8; 3],
     /// sRGB: the cracks, growing with the damage.
     pub crack: [u8; 3],
+    /// How deep a mark is shaded as cut into the face (cells; look only, its scoop's bowl or shard's
+    /// facets; data `depth`, default 0.1).
+    pub depth: f64,
+    /// A scoop's per-pixel relief (BLOCK_DAMAGE.md §6.1): the loose soil raised round its rim (m;
+    /// data `rim`, default 0.012).
+    pub rim: f64,
+    /// The steps the texture marches into the dent (0: lit only; the Low tier marches none; data
+    /// `parallax`, default 6).
+    pub parallax: u32,
+    /// How much darker its damp floor is (0–1; data `darken`, default 0.35).
+    pub darken: f64,
+    /// The carved mesh's height field (data `profile`; default bowl for scoops, facets otherwise).
+    pub profile: CarveProfile,
+    /// A facet profile's facets round its apex (data `facets`, 3–8; default 5).
+    pub facets: u32,
+    /// A spall profile's flat chip-outs per hit, each smaller and deeper inside the last (data
+    /// `flakes`, 1–4; default 2).
+    pub flakes: u32,
+    /// The dent's grid per side at most (data `grid`, 2–16; default 8).
+    pub grid: u32,
+    /// The cell's triangle budget for its carved faces (data `triangles`, 128–2048; default 256): the grid is
+    /// coarsened until every struck face fits.
+    pub triangles: u32,
+    /// The crack overlay over the damaged cell's faces (BLOCK_DAMAGE.md §6.3; data `cracks`); none:
+    /// no cracks.
+    pub cracks: Option<Cracks>,
+}
+
+/// A block's crack overlay (`damage.look.cracks`, BLOCK_DAMAGE.md §6.3): its crack set's tiles
+/// (`shared/textures/cracks.json`), the damage fraction each starts at, and how far it darkens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cracks {
+    /// The set's atlas tiles in stage order, hairline to branching.
+    pub tiles: &'static [&'static str],
+    /// The damage fraction (0–1) each stage starts at, ascending, one a tile.
+    pub stages: &'static [f64],
+    /// How far a crack darkens the face (0–1; the tile multiplied over it).
+    pub strength: f64,
+    /// The width a crack tile covers round the hit (m; cracks.json `span`).
+    pub span: f64,
+}
+
+impl Cracks {
+    /// The crack stage (an index into `tiles`) at damage `fraction` (0–1): the last stage whose
+    /// start it has reached; none below the first.
+    pub fn stage(&self, fraction: f64) -> Option<usize> {
+        self.stages.iter().rposition(|&s| fraction >= s)
+    }
 }
 
 /// The damage look of a block, by name.
@@ -82,6 +145,82 @@ pub fn hits_to_break_in(
 /// [`hits_to_break_in`] over the build's data.
 pub fn hits_to_break(block: &str, held: Option<&str>) -> Option<u32> {
     hits_to_break_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
+}
+
+/// Whether `block` takes hits to break (it has a `damage` entry in the block data). A wood with one
+/// (the log; WORK_QUEUE item 51, owner 2026-11-12: "Like the others, felling on top") is hit by the
+/// axe through block damage, not cut ([`crate::chopping::Cut`]).
+pub fn takes_damage(block: &str) -> bool {
+    BLOCK_DAMAGE.iter().any(|d| d.block == block)
+}
+
+/// A cell's volume (m³): 1 × ½ × 1 m (`dwell_world::CELL_H`; a dwell-mesh test pins the two).
+pub const CELL_M3: f64 = 0.5;
+/// The share of a block's volume carved away and flown off when it breaks (owner, 2026-11-12: "the
+/// chunks that fly off and show chunked off the blocks should be equivalent to 50% of the block's
+/// volume / number of swings required to break it").
+pub const BROKEN_AT: f64 = 0.5;
+
+/// The bite rule (WORK_QUEUE item 18, BLOCK_DAMAGE.md §10): the volume (m³) one hit on a block of
+/// `volume` m³ carves away and throws off, when it takes `hits` to break: [`BROKEN_AT`] × the
+/// volume ÷ the hits, so the hits before the break total half the block. Every bite in the game is
+/// this: the carve, the flying pieces, the axe's chips.
+pub fn bite_m3(volume_m3: f64, hits: u32) -> f64 {
+    BROKEN_AT * volume_m3 / f64::from(hits.max(1))
+}
+
+/// A block's volume (m³) from its damage data's shape share; a block without `damage`: a cell.
+pub fn volume_m3_in(damage: &[BlockDamageDef], block: &str) -> f64 {
+    damage
+        .iter()
+        .find(|d| d.block == block)
+        .map_or(1.0, |d| d.volume)
+        * CELL_M3
+}
+
+/// [`volume_m3_in`] over the build's data.
+pub fn volume_m3(block: &str) -> f64 {
+    volume_m3_in(BLOCK_DAMAGE, block)
+}
+
+/// The volume (m³) carved out of a cell of `block` at damage `fraction` (0–1, the hits taken over
+/// the hits to break): `fraction` × [`BROKEN_AT`] × its volume, so k hits of n have carved k bites
+/// whatever the tool, half the block at the break.
+pub fn carved_m3(block: &str, fraction: f64) -> f64 {
+    fraction.clamp(0.0, 1.0) * BROKEN_AT * volume_m3(block)
+}
+
+/// The bite (m³) a hit on `block` holding `held` takes ([`bite_m3`] over the block's volume and its
+/// hits to break with that, [`hits_to_break_in`]): none when it can't be broken so. A metal tool's
+/// fewer hits give bigger bites by themselves.
+pub fn bite_m3_in(
+    damage: &[BlockDamageDef],
+    tools: &[BreakTool],
+    block: &str,
+    held: Option<&str>,
+) -> Option<f64> {
+    let n = hits_to_break_in(damage, tools, block, held)?;
+    Some(bite_m3(volume_m3_in(damage, block), n))
+}
+
+/// [`bite_m3_in`] over the build's data.
+pub fn bite_m3_of(block: &str, held: Option<&str>) -> Option<f64> {
+    bite_m3_in(BLOCK_DAMAGE, BREAK_TOOLS, block, held)
+}
+
+/// A bite (m³) as a mark's [`HitMark::chunk`]: sixteenths of [`HitMark::UNIT_M3`] (the bite of a
+/// full block that takes 8 hits), at least 1. The mark's carve is sized by the cell's damage
+/// fraction (the rule); the chunk weighs its marks against each other (a metal hit's bigger).
+pub fn chunk_of_bite(bite_m3: f64) -> u8 {
+    (bite_m3 / HitMark::UNIT_M3 * f64::from(HitMark::ONE))
+        .round()
+        .clamp(1.0, 255.0) as u8
+}
+
+/// The mark chunk of a hit on `block` holding `held` ([`chunk_of_bite`] of [`bite_m3_of`]; a block
+/// it can't break: ×1).
+pub fn hit_chunk(block: &str, held: Option<&str>) -> u8 {
+    bite_m3_of(block, held).map_or(HitMark::ONE, chunk_of_bite)
 }
 
 /// Whether `held` is a breaking tool (one of `tools.json`'s, the pickaxes, shovels and axes): an
@@ -147,12 +286,42 @@ pub fn certain_drops(rules: &[DropRule]) -> Vec<(&'static str, u32)> {
 pub const MAX_HIT_MARKS: usize = 4;
 
 /// Where a hit struck: the face (the edit's face index) and the point on it (each axis in
-/// 1/255ths of the cell).
+/// 1/255ths of the cell), and how big a piece it took off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HitMark {
     pub face: u8,
     pub point: [u8; 3],
+    /// The piece's size, a multiple of the block's `damage.look` mark in sixteenths
+    /// ([`HitMark::ONE`]: ×1; the tool's tier `chunk`, [`hit_chunk`]). The carve scales the mark's
+    /// width and depth by it. Sent only to a `damage.chunks` client and saved after the cells only
+    /// when one differs from ×1, so an older build reads every mark as ×1.
+    pub chunk: u8,
 }
+
+impl HitMark {
+    /// A ×1 piece ([`HitMark::UNIT_M3`]; an older save's or server's mark reads so).
+    pub const ONE: u8 = 16;
+    /// A ×1 mark's bite (m³): a full block's that takes 8 hits ([`bite_m3`]).
+    pub const UNIT_M3: f64 = BROKEN_AT * CELL_M3 / 8.0;
+
+    /// A ×1 mark at `point` on `face`.
+    pub fn at(face: u8, point: [u8; 3]) -> HitMark {
+        HitMark {
+            face,
+            point,
+            chunk: Self::ONE,
+        }
+    }
+
+    /// Its size as a multiple of the look's mark (1: a stone tool's).
+    pub fn scale(&self) -> f64 {
+        f64::from(self.chunk.max(1)) / f64::from(Self::ONE)
+    }
+}
+
+/// The byte opening the marks' chunks after a `Damage` message's cells (to a `damage.chunks`
+/// client) or the save record's cells (when any mark is not ×1).
+pub const CHUNKS_MARK: u8 = 0xC4;
 
 /// A damaged cell: the state it was hit as (another state there now: the damage is gone), the hits
 /// it has taken, and its newest hit marks.
@@ -202,12 +371,24 @@ impl DamageView {
         let n = usize::from(r.u8());
         r.check(n <= MAX_HIT_MARKS);
         let marks = (0..n.min(MAX_HIT_MARKS))
-            .map(|_| HitMark {
-                face: r.u8(),
-                point: [r.u8(), r.u8(), r.u8()],
-            })
+            .map(|_| HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]))
             .collect();
         DamageView { fraction, marks }
+    }
+
+    /// Its marks' chunks (after the cells, [`CHUNKS_MARK`]): one byte a mark, as many as `write`
+    /// wrote.
+    pub fn write_chunks(&self, w: &mut ByteWriter) {
+        for m in &self.marks[..self.marks.len().min(MAX_HIT_MARKS)] {
+            w.u8(m.chunk);
+        }
+    }
+
+    pub fn read_chunks(&mut self, r: &mut ByteReader) {
+        for m in &mut self.marks {
+            m.chunk = r.u8();
+            r.check(m.chunk > 0);
+        }
     }
 }
 
@@ -215,6 +396,13 @@ impl DamageView {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Damage {
     pub cells: HashMap<[i32; 3], CellDamage>,
+}
+
+/// Whether every mark of `d` is ×1 (its record then has no chunks: an older build reads it).
+fn all_marks_one(d: &Damage) -> bool {
+    d.cells
+        .values()
+        .all(|c| c.marks.iter().all(|m| m.chunk == HitMark::ONE))
 }
 
 /// The save record's version.
@@ -288,6 +476,15 @@ impl Damage {
                 }
             }
         }
+        if all_marks_one(self) {
+            return out;
+        }
+        w.u8(CHUNKS_MARK);
+        for (_, d) in self.sorted() {
+            for m in &d.marks {
+                w.u8(m.chunk);
+            }
+        }
         out
     }
 
@@ -307,10 +504,7 @@ impl Damage {
             let need = r.u16();
             let k = usize::from(r.u8()).min(MAX_HIT_MARKS);
             let marks = (0..k)
-                .map(|_| HitMark {
-                    face: r.u8(),
-                    point: [r.u8(), r.u8(), r.u8()],
-                })
+                .map(|_| HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]))
                 .collect();
             cells.insert(
                 c,
@@ -321,6 +515,20 @@ impl Damage {
                     marks,
                 },
             );
+        }
+        // The marks' chunks, when any was not ×1 (in the cells' sorted order; an older record has
+        // none: every mark ×1).
+        if r.ok() && !r.at_end() {
+            let mark = r.u8();
+            r.check(mark == CHUNKS_MARK);
+            let mut keys: Vec<_> = cells.keys().copied().collect();
+            keys.sort();
+            for c in keys {
+                for m in &mut cells.get_mut(&c).expect("a key").marks {
+                    m.chunk = r.u8();
+                    r.check(m.chunk > 0);
+                }
+            }
         }
         (r.ok() && r.at_end()).then_some(Damage { cells })
     }
@@ -402,6 +610,7 @@ mod tests {
     fn a_fixture_block_and_tool_by_data_alone() {
         let damage = [BlockDamageDef {
             block: "test:clay",
+            volume: 1.0,
             default: Some(9),
             tools: &[("trowel", 6), ("test:golden_trowel", 1)],
             look: None,
@@ -413,12 +622,18 @@ mod tests {
                 class: "trowel",
                 tier: "stone",
                 speed: 2.0,
+                contact_s: 0.0,
+                repeat_s: None,
+                clip: "break",
             },
             BreakTool {
                 item: "test:golden_trowel",
                 class: "trowel",
                 tier: "metal",
                 speed: 2.5,
+                contact_s: 0.0,
+                repeat_s: None,
+                clip: "break",
             },
         ];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
@@ -426,6 +641,205 @@ mod tests {
         assert_eq!(h(Some("test:golden_trowel")), Some(1), "item over class");
         assert_eq!(h(None), Some(9));
         assert_eq!(h(Some("test:stick")), Some(9));
+    }
+
+    /// Each metal breaking tool and its class's stone-tier counterpart (the wooden shovel is the
+    /// shovel's stone tier).
+    fn metal_and_stone() -> Vec<(&'static BreakTool, &'static BreakTool)> {
+        let pairs: Vec<_> = BREAK_TOOLS
+            .iter()
+            .filter(|t| t.tier == "metal")
+            .map(|m| {
+                let s = BREAK_TOOLS
+                    .iter()
+                    .find(|t| t.class == m.class && t.tier == "stone")
+                    .expect("a stone counterpart");
+                (m, s)
+            })
+            .collect();
+        assert_eq!(pairs.len(), 3, "the metal axe, pickaxe and shovel");
+        pairs
+    }
+
+    #[test]
+    fn a_metal_tool_is_twice_its_stone_counterpart() {
+        // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
+        // broken faster, which is when the blocks break. Also have double durability."
+        for (m, s) in metal_and_stone() {
+            assert_eq!(m.speed, 2.0 * s.speed, "{}", m.item);
+            let wear = crate::chopping::durability;
+            assert_eq!(
+                wear(m.item),
+                wear(s.item).map(|h| 2 * h),
+                "{}: double durability",
+                m.item
+            );
+            // About half the hits on every block its class has damage for.
+            for d in BLOCK_DAMAGE
+                .iter()
+                .filter(|d| d.tools.iter().any(|(k, _)| *k == m.class))
+            {
+                let (Some(hm), Some(hs)) = (
+                    hits_to_break(d.block, Some(m.item)),
+                    hits_to_break(d.block, Some(s.item)),
+                ) else {
+                    continue;
+                };
+                if hs > 1 {
+                    assert!(
+                        hm <= hs.div_ceil(2) && hm * 2 + 1 >= hs,
+                        "{}: {} {hm} hits against {} {hs}",
+                        d.block,
+                        m.item,
+                        s.item
+                    );
+                }
+            }
+        }
+    }
+
+    /// The bite rule (owner, 2026-11-12: "the chunks that fly off and show chunked off the blocks
+    /// should be equivalent to 50% of the block's volume / number of swings required to break
+    /// it"): k hits total k × 0.5 × V ÷ n, half the block at the break.
+    #[test]
+    fn a_bite_is_half_the_blocks_volume_over_its_hits() {
+        let cases = [
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 5),
+            ("dwell:dirt", None, 11),
+            ("dwell:stone", Some("dwell:stone_pickaxe"), 5),
+            ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
+            ("dwell:sand", Some("dwell:metal_shovel"), 3),
+        ];
+        for (block, held, n) in cases {
+            assert_eq!(hits_to_break(block, held), Some(n), "{block} {held:?}");
+            let bite = bite_m3_of(block, held).expect("breakable");
+            assert!(
+                (bite - 0.5 * CELL_M3 / f64::from(n)).abs() < 1e-12,
+                "{block}: {bite}"
+            );
+            assert!(
+                (f64::from(n) * bite - 0.5 * CELL_M3).abs() < 1e-12,
+                "half at the break"
+            );
+        }
+        // A ramp is half a cell: half the bite.
+        let ramp = bite_m3_of("dwell:stone_ramp", Some("dwell:stone_pickaxe")).unwrap();
+        let full = bite_m3_of("dwell:stone", Some("dwell:stone_pickaxe")).unwrap();
+        assert!((ramp - 0.5 * full).abs() < 1e-12, "{ramp} {full}");
+        // What can't be broken has no bite.
+        assert_eq!(bite_m3_of("dwell:stone", None), None);
+        // The mark's chunk is the bite: a metal pickaxe's 5/3 of the stone one's on stone.
+        assert_eq!(hit_chunk("dwell:stone", Some("dwell:stone_pickaxe")), 26);
+        assert_eq!(hit_chunk("dwell:stone", Some("dwell:metal_pickaxe")), 43);
+        assert_eq!(hit_chunk("dwell:stone", None), HitMark::ONE);
+    }
+
+    #[test]
+    fn a_tool_taking_half_the_hits_bites_twice_as_much_and_a_fixture_block_by_data_alone() {
+        let damage = [BlockDamageDef {
+            block: "test:clay",
+            volume: 0.5,
+            default: None,
+            tools: &[("trowel", 8)],
+            look: None,
+            chips: None,
+        }];
+        let trowel = |item, speed| BreakTool {
+            item,
+            class: "trowel",
+            tier: "t",
+            speed,
+            contact_s: 0.0,
+            repeat_s: None,
+            clip: "break",
+        };
+        let tools = [trowel("test:wood", 1.0), trowel("test:metal", 2.0)];
+        let b = |held| bite_m3_in(&damage, &tools, "test:clay", held);
+        let (w, m) = (
+            b(Some("test:wood")).unwrap(),
+            b(Some("test:metal")).unwrap(),
+        );
+        assert!((w - 0.5 * 0.5 * CELL_M3 / 8.0).abs() < 1e-12, "{w}");
+        assert!((m - 2.0 * w).abs() < 1e-12, "metal twice: {m} {w}");
+        assert_eq!(b(None), None);
+        assert_eq!(
+            HitMark {
+                chunk: 24,
+                ..HitMark::at(0, [0; 3])
+            }
+            .scale(),
+            1.5
+        );
+    }
+
+    #[test]
+    fn a_marks_chunk_is_saved_only_when_not_one_and_an_older_record_reads_as_one() {
+        let mut d = Damage::default();
+        d.hit([0, 1, 2], 7, 5, HitMark::at(2, [10, 20, 30]));
+        let plain = d.to_bytes();
+        // ×1 marks only: the record an older build writes and reads.
+        let n_cell = 4 * 3 + 2 * 3 + 1 + 4;
+        assert_eq!(plain.len(), 1 + 4 + n_cell, "no chunks");
+        assert_eq!(Damage::from_bytes(&plain), Some(d.clone()));
+        d.hit(
+            [0, 1, 2],
+            7,
+            3,
+            HitMark {
+                chunk: 32,
+                ..HitMark::at(2, [40, 50, 60])
+            },
+        );
+        d.hit([-4, 1, 2], 7, 3, HitMark::at(3, [1, 2, 3]));
+        let bytes = d.to_bytes();
+        let back = Damage::from_bytes(&bytes).expect("reads its own record");
+        assert_eq!(back, d);
+        assert_eq!(back.cells[&[0, 1, 2]].marks[1].chunk, 32);
+        assert_eq!(back.cells[&[-4, 1, 2]].marks[0].chunk, HitMark::ONE);
+        // A bad trailer is not read.
+        let mut bad = bytes.clone();
+        let at = bytes.len() - 4;
+        bad[at] = 0;
+        assert_eq!(Damage::from_bytes(&bad), None);
+    }
+
+    #[test]
+    fn a_damage_message_carries_the_chunks_only_when_asked_and_an_older_one_reads_as_one() {
+        use crate::{DamageMessage, Message};
+        let view = DamageView {
+            fraction: 85,
+            marks: vec![
+                HitMark::at(2, [1, 2, 3]),
+                HitMark {
+                    chunk: 32,
+                    ..HitMark::at(2, [4, 5, 6])
+                },
+            ],
+        };
+        let with = Message::Damage(DamageMessage {
+            cells: vec![([1, -2, 3], view.clone())],
+            gone: vec![[7, 8, 9]],
+            chunks: true,
+        });
+        assert_eq!(Message::decode(&with.encode()), Some(with.clone()));
+        // Without (an older client's form): the same bytes as before the chunks, read as ×1.
+        let without = Message::Damage(DamageMessage {
+            cells: vec![([1, -2, 3], view)],
+            gone: vec![[7, 8, 9]],
+            chunks: false,
+        });
+        let bytes = without.encode();
+        assert_eq!(bytes.len() + 1 + 2, with.encode().len());
+        let Some(Message::Damage(back)) = Message::decode(&bytes) else {
+            panic!("a Damage");
+        };
+        assert!(
+            back.cells[0]
+                .1
+                .marks
+                .iter()
+                .all(|m| m.chunk == HitMark::ONE)
+        );
     }
 
     #[test]
@@ -452,15 +866,7 @@ mod tests {
     fn damage_saves_and_loads_and_a_new_state_is_undamaged() {
         let mut d = Damage::default();
         for i in 0..6 {
-            d.hit(
-                [1, -2, 3],
-                7,
-                5,
-                HitMark {
-                    face: 2,
-                    point: [i, 128, 255],
-                },
-            );
+            d.hit([1, -2, 3], 7, 5, HitMark::at(2, [i, 128, 255]));
         }
         assert_eq!(d.hits([1, -2, 3], 7), 6);
         assert_eq!(d.cells[&[1, -2, 3]].view().fraction, 255, "6 of 5: full");
@@ -469,17 +875,6 @@ mod tests {
         let back = Damage::from_bytes(&d.to_bytes()).expect("reads its own record");
         assert_eq!(back, d);
         assert_eq!(Damage::from_bytes(&[9, 0, 0, 0, 0]), None, "a newer record");
-        assert_eq!(
-            d.hit(
-                [1, -2, 3],
-                8,
-                5,
-                HitMark {
-                    face: 0,
-                    point: [0; 3]
-                }
-            ),
-            1
-        );
+        assert_eq!(d.hit([1, -2, 3], 8, 5, HitMark::at(0, [0; 3])), 1);
     }
 }

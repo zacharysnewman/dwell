@@ -1,8 +1,8 @@
 # Dwell — Sound Effects
 
 > **Status: [in progress, Phase 28]** — built and tested; waiting for the owner's listening review
-> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's Starry Sunshine) is
-> built and tested, waiting for the owner's listen. Decisions in [ADR 0032](./adr/0032-audio.md); the built
+> of the WAV renders and answers to §9. The music (§2a, §6a; the owner's eight picks from Andrew Sitkov's
+> Total Music Collection, shuffled, one for nights only) is built and tested. Decisions in [ADR 0032](./adr/0032-audio.md); the built
 > mechanisms are summarised in [`ARCHITECTURE.md`](./ARCHITECTURE.md) §5.2 and §6.1 (the
 > registry's `sound` field). The sounds themselves are **prototype content** (§6.1), like the
 > block set: they exercise the system and are expected to be replaced.
@@ -31,7 +31,10 @@ name the entry) and emits `client/src/audio/sounds.gen.ts` (the data the synth p
 `crates/dwell-game/src/sound.gen.rs` (the event kinds, gaits and their strides and speed ranges for
 the Rust game). CI regenerates both and fails on a diff, as for the block registry.
 
-- **`sounds`** — named sounds. A sound is `{ gain, reverb?, variation, intensity?, layers }`.
+- **`sounds`** — named sounds. A sound is `{ gain, reverb?, voices?, minGapS?, variation, intensity?,
+  layers }`. `voices` (1–24, default 4, `DEFAULT_SOUND_VOICES`): at most that many plays of the sound
+  at once; `minGapS` (0–2 s, default 0): no second play within it of the last. A play over either is
+  dropped; a sounding voice is never cut off or restarted (`voices.ts` `VoiceLimits`, BUGS.md #103).
   - A **layer** is one *source* through a chain of *filters* under an *envelope*:
     - `source: "noise"` with `color` `white | pink | brown | crackle` (crackle: sparse decaying
       pops, about 30 a second, mostly small — band-passed, a fire's crackle; it loops too);
@@ -107,27 +110,61 @@ directly, without CLAUDE.md's questions; the defaults below are open to change.
 | Data | Each track's title, author, file, volume, loop, fades and condition. |
 | Per build, world or player? | Per build; the Music volume per browser. |
 
-One file per namespace (`music.json`), its audio files beside it:
+One file per namespace (`music.json`), its audio files beside it; one file sets the `playlist`:
 
 ```json
-"tracks": { "starry_sunshine": { "title": "Starry Sunshine", "author": "Zachary Newman",
-  "file": "starry-sunshine.mp3", "volume": 0.45, "loop": true, "fadeInS": 4, "fadeOutS": 2,
+"playlist": { "order": "shuffle", "gapMinS": 180, "gapMaxS": 600, "crossfadeS": 0, "dayAt": 0.1,
+  "contexts": { "menu": { "firstDelayMinS": 0, "firstDelayMaxS": 0 },
+                "game": { "firstDelayMinS": 30, "firstDelayMaxS": 180 } } },
+"tracks": { "casual_classic_1": { "title": "Casual Classic #1", "author": "Andrew Sitkov",
+  "file": "casual-classic-1.m4a", "volume": 0.6, "loop": false, "fadeInS": 2, "fadeOutS": 3,
   "when": "always" } }
 ```
+
+- `playlist` (exactly one file has it): `order` from the vocabulary (`shuffle`: a shuffled bag, each
+  track once a round, never the same twice in a row); after a track ends, a gap of silence drawn in
+  [`gapMinS`, `gapMaxS`] (0–3600 s; 3–10 minutes, so music comes and goes at random times); the next
+  starts `crossfadeS` (0–30 s) earlier than that, so with a gap of 0 the two overlap, the old one
+  fading out over its `fadeOutS` as the new one fades in. `contexts` (both of the vocabulary `menu`,
+  `game`, `validate.mjs` `CONTEXTS`): each place's wait before its first track, drawn in
+  [`firstDelayMinS`, `firstDelayMaxS`] (0–3600 s): the menu's 0 (music at once), the game's 30–180 s.
+  `dayAt` (0–1): daylight at or above it is day, for the tracks' `times`.
 
 - `file`: a lower-case `.mp3` or `.m4a` (formats every browser streams) of at most 20 MB, beside
   the data; `volume` 0–1 under the Music volume; `loop`; `fadeInS` / `fadeOutS` (0–60 s: the
   fade-in at the start, the fade-out on a stop and over the end of a track that does not loop);
-  `when`: where it plays, one of the vocabulary (`always`). The first track (namespaces in order,
-  then as listed) whose `when` holds plays.
+  `when`: where it plays, one of the vocabulary (`always`). The playlist plays every track whose
+  `when` holds. Optional `times`: the times of day it may be drawn at, from `day`, `night`
+  (`validate.mjs` `TIMES`; default both).
 - `shared/music/gen.mjs` validates it (messages name the track) and emits
   `client/src/audio/music.gen.ts`, each track with its published name `<file>-<8 hex of its
   SHA-256>.<ext>`; CI regenerates it and fails on a diff, so a changed audio file without a
   regeneration fails too.
-- **Starry Sunshine** (`dwell:starry_sunshine`): the owner's composition, uploaded as "Pitch Black
-  Dungeon" and retitled; its ID3 title rewritten to "Starry Sunshine" and the old cover art
-  dropped, the audio frames untouched (3:33, MP3, 48 kHz stereo, 4.9 MB). First-party, so not in
-  `THIRD_PARTY_NOTICES`: the repository's `LICENSE` covers it as one of its assets.
+- **The casual tracks** (owner 2026-11-12, WORK_QUEUE item 33: "I'd like the casual game music setup in
+  a prototype and make it play randomly in the game … It'll replace the current music which is AI
+  generated."): the owner's picks (2026-11-12, of Casual Classic #1: "I like that one"; after previews of
+  calmer candidates: "I really only like Night: 1, 4, 5 for both day and night."), four tracks from Andrew
+  Sitkov's *Total Music Collection* (Unity Asset Store), each for day and night: *Mega Game Collection / Casual
+  Game Music / Casual Classic #1*, *_UPDATE 1.28 / Close Your Eyes And Fly (Relaxing Themes) / Variation #5*,
+  *Massive Game Music Collection / Lyric Fantasy Background Music Pack / Lyric Fantasy Theme #4* and *Big
+  Cinematic Collection / Beautiful and Emotional Music Pack / Dream On*: the full (not looped) versions,
+  84–159 s each. Converted with ffmpeg: gain to −18 LUFS integrated (sources −15.8 to −25.0), a limiter at
+  −1 dBFS, a 0.3 s fade in and 2.5 s fade out, stereo AAC (AudioToolbox) at 96 kbps, 44.1 kHz, no metadata,
+  faststart: 1.0–1.9 MB each, 5.6 MB together. The other 19 casual candidates of the audition were dropped.
+  Four more (owner 2026-11-13, after round-3 previews: "I want these songs from the music you shared. Piano: 2,
+  4, 5 day or night. Electronic: 1 for night only."): *Massive Game Music Collection / Fire VS Ice - Fantasy
+  Dramatic & Peaceful Music Pack / Quiet Theme #1*, *Big Multi-Genre Music Collection / Positive and Calm
+  Orchestral Music Pack 2 / Theme #5* and *Big Cinematic Collection / Sentimental and Romantic Music Pack /
+  Sentimental Moment* for day and night, and *Massive Game Music Collection / Lyric & Peaceful Space Music Pack
+  / Theme #2* for nights only (`times: ["night"]`), full versions of 83–142 s converted the same way (sources
+  −12.7 to −17.3 LUFS): 1.0–1.7 MB each; the eight 11.6 MB together.
+  Credited in `THIRD_PARTY_NOTICES` (`shared/licenses/third_party.json`) under the Unity Asset Store EULA, as
+  the Imphenzia samples.
+  Starry Sunshine, the AI-generated track they replace, is removed.
+- **Audition page**: [`docs/prototypes/music-audition.html`](./prototypes/music-audition.html)
+  (published: https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe): play, skip, keep or drop each candidate, a shuffle preview
+  with the playlist's gaps, cross-fade and fades (and "start near the end" to hear transitions), the
+  picks exported as JSON.
 
 Blocks: `"sound"` on a block in `shared/blocks/*.json` names a set (`dwell:stone`); the block
 generator checks that it exists and emits it in the TS `BLOCK_DEFS`. Blocks without one use the
@@ -159,6 +196,9 @@ same thing under the name the data already had).
 - `files`: 1–16 lower-case `.m4a` (AAC; every browser decodes it) or `.mp3` names in
   `shared/sounds/samples/`; a missing file fails the generator with the sound's name. All the files
   together may be at most **5,000,000 bytes** (`SAMPLES_MAX_BYTES`, validated).
+- `from` (optional): the pack's own name of each file, in order (`GRUNT_Male_B_Hurt_Short_01`); its
+  first word is the pack's category. The player's own voice (`exhausted`, `gasp`, `strain`, `hurt`,
+  `death`) must be a human category (`GRUNT`, `GROAN`, `BREATH`, `VOICE`; `playerVoice.test.ts`, BUGS.md #159).
 - `gain` (0–4, default 1): the samples' level, times the event's (a gait's) and the sound's
   `intensity.gain` range (a landing's impact); `pitch` (± semitones, default 0) drawn per play.
 - `play`: `"samples"` (default) or `"procedural"` (keep the layers; the samples stay listed).
@@ -188,12 +228,13 @@ mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB i
 | `water_enter` / `water_exit` / `water_swim` / `water_place` | `SPLASH_Designed_Medium_01–03` / `SPLASH_Small_01–03` / `SPLASH_Movement_01–04` / `SPLASH_Designed_Quick_01–02` |
 | `jump` | `WHOOSH_Air_Fast_Subtle_RR1–3` |
 | `hurt` / `death` | `GRUNT_Male_B_Hurt_Short_01–04` / `GROAN_Male_Hurt_Long` |
+| `breath_heavy` (out of stamina) | `VOICE_MALE_Sigh_1` only, the owner's pick (BUGS.md #159) |
 | `body_thud` (impact, piece landing) | `THUD_Dark_01`, `THUD_Medium_01–02` |
 | `fell_crack` | `TREE_Falling_Tree_Only_Cracking_01–02` |
 | `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
 | `chop_bark` / `chop_wood` / `chop_creak` | `AXE_Chop_Tree_01_RR1–3` / `AXE_Chop_Wood_01_RR1–3` / `CREAK_Wood_01–03` |
 | `axe_clank` / `axe_swish` | `PICKAXE_Impact_Metal_01_RR1–3` / `WHOOSH_Air_Blade_RR1–3` |
-| `deny` | `UI_Error_Tone_01` |
+| `deny` | `UI_Click_Tap_Knock_Subtle_Darker` (owner, 2026-11-12: the old `UI_Error_Tone_01` was "way to loud and jarring"; a soft dull 30 ms knock played ~12 dB under it, ±1 semitone) |
 
 Still procedural: the slides and slide stops, `rise`, `dive`, `crouch_on`/`off`, `sprint`,
 `respawn`, `axe_rustle`, the torch's place and break, the fuse, the loops (fire, fuse fizz,
@@ -207,12 +248,15 @@ Owner (2026-11-10): wind stronger up high and in open ground, the sea near the c
 streams near moving water, birds in daytime forests and quieter at night, leaves near trees —
 *"Ongoing/ambient/looping sounds should be quieter so they're not really disruptive, more flavor
 than function."* ([ADR 0077](./adr/0077-ambience-beds.md).)
+Owner (2026-11-12): **"let's disable the wind for now it doesn't seem right like should just be for flying or high
+altitude only."** So the wind bed reads the eye's `height` above the ground (silent below 12 m, full at 60 m), not its
+altitude above the sea: nothing on the ground, even on a mountain; it comes in flying.
 
 ```json
 "ambience": { "volume": 0.35, "fadeS": 2.5, "cap": 0.4,
   "probe": {"radiusM": 16, "trees": ["dwell:leaves", "dwell:snowy_leaves", "dwell:log"]},
   "beds": { "wind": {"files": ["wind-loop-1.m4a"], "gain": 0.3, "when": [
-    {"input": "altitude", "from": 0, "full": 60, "floor": 0.2}, {"input": "open", "from": 0.2, "full": 1}]} } }
+    {"input": "height", "from": 12, "full": 60}, {"input": "open", "from": 0.2, "full": 1}]} } }
 ```
 
 - `volume`: the **Ambience** volume's default (Settings → Sound; the beds' own bus, per browser in
@@ -256,8 +300,13 @@ can be added by data.
   `call` `ANIMAL_Wolf_Howl_01–02` (every 50–140 s); deer and doe — `step` the dirt footsteps, quiet
   (the pack's `ANIMAL_Horse_Walk` is a whole walk, not single hooves); `startle`
   `ANIMAL_Horse_Snort_01–02_Dry`.
-- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` (`MONSTER_Exhausted_05`, `_07`) once
-  stamina runs out; `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
+- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` once stamina runs out: a man's breath,
+  `VOICE_MALE_Sigh_1` alone (an unvoiced in-and-out breath, 0.74 s, centroid ~3.7 kHz), ±0.5 semitone; the owner
+  chose it of three (2026-11-13: "1, sigh is my choice"; `GRUNT_Male_Quick` and `_Quick_Deep` were dropped), and the
+  two noise puffs play only until it decodes. Its
+  samples were `MONSTER_Exhausted_05`, `_07`, a voiced growl that sounded like a bear (BUGS.md #159); the pack
+  has no `BREATH` category, and these were the human takes that read as breath (mostly unvoiced, centroid
+  over 1.2 kHz; `FIGHTING_Chant_Sigh_Male_01` also fits but is a fighting chant); `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
   under 0.7 (surfacing from a long dive); `strain` (`GRUNT_Male_Subtle_Hurt`) as the air crosses 0.25.
 - **Felling**: `fell_crack` now plays `TREE_Falling_Tree_Crack_Then_Impact_02`, `_08`.
 
@@ -275,10 +324,15 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
   entered; a jump off and back on is a second step), `hit` as the break action knocks it loose. The
   stick has both: `stick_snap` at the item. Validated against the events by `shared/ground/gen.mjs`.
 - **Leaves brushed.** A new set event `brush` (`"fallback": false`: a set without one is silent):
-  the grass and snow sets have `leaf_brush` (procedural, a soft rustle; the pack has no foliage
-  brush). The local player's body in a passable block (`foliage_at`: shins, waist or head; leaves,
-  tall grass) rustles every `BRUSH_EVERY_M` (0.8 m) moved through it, at most every `BRUSH_MIN_S`
-  (0.18 s), intensity by speed (`speed: [0.4, 6]`); standing still is silent (`BrushSounds`).
+  the grass and snow sets have `leaf_brush` (procedural, a soft swish: pink noise, a 50 ms attack, no
+  grains; the pack has no foliage brush; one voice, `minGapS` 0.25). The local player's body in a
+  passable block (`foliage_at`: shins, waist or head; leaves, tall grass) rustles **with its
+  footsteps**: on its feet (walking, running, crouching) at most one rustle a step, in the step's
+  tick (`Stride`); off them (falling, flying, climbing) every `brush.everyM` (2.5 m) moved; never
+  closer than `brush.minS` (0.3 s), never on entering a cell; intensity by speed (`speed: [0.4,
+  6]`); standing still is silent (`BrushSounds`). Both rates are data (`shared/sounds` `brush`,
+  generated into `brush_sounds`). BUGS.md #103: it rustled every 0.8 m (~5 a second at the walk,
+  two or three over each footstep), its white-noise grains crackling.
   **Other players** brush and snap too, at their feet, from their drawn (interpolated) snapshot
   positions — no wire message (`RemoteContacts`: each player its own `ContactSounds`, the local
   player's id passed over). A body snaps at most one stick every `SNAP_MIN_S` (0.15 s).
@@ -333,6 +387,25 @@ reflections and a darkening tail), at each sound's `reverb` send (kept low: the 
 Envelopes hold their gain at 0 before they start (a param's intrinsic 1 would pass a source's first
 sample as a click).
 
+### 3a. Under water (BUGS.md #104, 2026-11-12)
+
+With the eye under a fluid's drawn surface the world is heard muffled. The test is the renderer's own
+(`dwell_world::fluid::eye_fluid`, face-local; `dwell_game::ambience::hears_underwater`), so the muffle starts and
+ends with the underwater fog; the client hands it over each frame (`underwater()`), and as the ambience's tenth
+input (`underwater`, 0/1). The data's `underwater` section: `buses` (the mixer's buses that reach the master through
+the muffle: `effects` and `ambience`; the `ui` and `music` buses go straight in and are never muffled), `lowpassHz`
+and `q` (one shared `BiquadFilterNode`, 800 Hz, Q 0.7, under water), `gain` (their level under water, 0.6), `easeS`
+(0.25 s: the cutoff glides exponentially, the level linearly, only at a crossing) and `openHz` (20 kHz in air,
+transparent). The ambience bed `underwater` (the sea loop, through the same filter) fades in under water.
+
+**Swim strokes** pick their sound by the head's depth: with the body's submerged share at the vitals' `headFraction`
+(0.9, the line drowning counts from; another player's from the block at its head line) a stroke plays the set's
+`swim_under`, else its `swim` (`swim_under` has `fallback: false`: a set without one plays nothing). Water's are the
+same `water-swim-*.m4a` recordings: `water_swim_under` an octave down (`shift` −12) through a 600 Hz low-pass,
+`water_swim` quieter, 2 semitones down through a 2.5 kHz low-pass. A sample's `shift` (semitones, every play) and
+`lowpassHz` (a low-pass on every play) are optional fields of `samples` (§2b). The swim gait strokes once per 3 m: a
+stroke a second at the 3 m/s swim speed.
+
 **Levels** were set from the renders: each sound's `gain` was tuned to an A-weighted loudness
 target for its category (footsteps quieter than landings and breaks, hits and player sounds
 quieter still, UI sounds soft), with single plays peaking at or below about 0.6 so overlapping
@@ -373,7 +446,7 @@ tick and each remote player's interpolated state each frame, and turns changes i
 | `fell` | a tree begins to fall: a carrying piece spawns (`EntitySpawn`, [`FELLING.md`](./FELLING.md)), at its origin | `fell_crack` | — |
 | `piece_land` | a falling piece hits something: its velocity changes by over 2 m/s between snapshots, at most every 250 ms a piece and 45 ms for all (`dwell-client` `pieces.rs`) | its first cell's `impact` + a body thud | from that change (2 → 20 m/s) |
 | `fell_land` | a felled trunk comes to a stop (§2e), once | `fell_impact` | from that change, by the trunk's size |
-| `brush` | any player moving through foliage (§2e), every 0.8 m, at most every 0.18 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
+| `brush` | any player moving through foliage (§2e): with each footstep on its feet, every 2.5 m off them, at most every 0.3 s | the foliage (its `brush`; none: silent) | from speed (0.4 → 6 m/s) |
 | `stick_snap` | stepping onto (any player, at most every 0.15 s) or knocking loose a ground item whose kind names it (§2e) | — | 1 |
 | `hurt` | the server's `PlayerEvent` Damage, any player's | — | from the damage (0 → 80 points) |
 | `death` / `respawn` | the server's `PlayerEvent` Death / Respawn, any player's | — | 1 |
@@ -425,6 +498,33 @@ intensity, x, y, z, flags`; flags bit 0 = spatial, bits 1–3 the gait + 1, bits
 camera's position, forward and up. Audio is a side channel: nothing read back affects the
 simulation, and it reads only the predicted state the game already has.
 
+### 5a. Where you hear your own sounds (BUGS.md #110, 2026-11-12)
+
+The game sends the local player's own sounds without a position (`at` none: footsteps, swim strokes, the held tool,
+a swing, a slide); other players', creatures' and the world's carry theirs (another player's step at its feet, a hit
+at the struck point in the block, a break or place at the cell's centre). Played straight to both ears a mono sound
+is heard inside the head (owner: "footsteps sound like they're in your ears"), so the shell places each own sound by
+its event's **`self`**, a placement named in `shared/sounds` `self`:
+
+| Placement | Where (m from the ear: right, up, ahead) | Events |
+|---|---|---|
+| `feet` | 0, −1.5, 0.6; steps alternate ±`stepM` (0.15) left and right; `reverb` 0.08 | `step`, `land`, `jump`, `slide` (its loop follows the ear), `slide_end`, `brush`, `stick_snap` |
+| `body` | 0, −0.7, 0.4; `reverb` 0.05 | `climb`, `swim`, `swim_under`, `enter`, `exit`, `crouch_on`/`_off`, `sprint`, `impact`, `rise`, `dive`, `sizzle` |
+| `hand` | 0.3, −0.35, 0.5 | `tool`, the axe's (`axe_swish`, `axe_clank`, `axe_rustle`, `chop_*`), `break`/`place`/`hit` without a point |
+
+An event without `self` plays at the ear, centred: your own voice (`gasp`, `strain`, `exhausted`, `hurt`, `death`,
+`respawn`), a blast heard at the listener (`explode`), `deny`. A placement is in the **listener's own frame**
+(`client/src/audio/listener.ts` `selfAt`: the eye plus right × `right`, up × `up`, forward × `ahead`), not the body's,
+so looking up or down never moves a footstep behind the ears; level, that is the ground just ahead of the feet.
+`reverb` is sent to the room on top of the sound's own, so a step is not bone dry. The validator refuses an unknown
+placement and one behind the head (`ahead` < 0). Before the first frame's listener the steps fall back to the old
+±0.12 stereo pan.
+
+**The listener.** `listener()` (`dwell-client` game.rs) is the camera's eye, forward and up in the world frame the
+sounds are placed in, on both faces (face B's up is −y and the player's right mirrored); WebAudio's listener is
+right-handed (right = forward × up, ahead −z), which is the drawn view's right (game.rs
+`the_listener_hears_ahead_ahead_and_right_right`). The shell sets it before playing the frame's sounds.
+
 ## 6. The shell (`client/src/audio/`)
 
 - Game actions the shell handles play their `actions` sound: a hotbar change (keys, wheel, tap),
@@ -434,9 +534,11 @@ simulation, and it reads only the predicted state the game already has.
 - `engine.ts`: the AudioContext (created and resumed on the first pointer, key or touch gesture —
   browser autoplay rules, iOS Safari's "interrupted" state), the buses, volumes, muting while the tab
   is hidden, spatial playback (`PannerNode`, HRTF on desktop and equal-power on phones, inverse
-  distance rolloff, events past 48 m dropped), and the listener following the camera.
+  distance rolloff, events past 48 m dropped), at most 24 plays at once and each sound's own
+  `voices` and `minGapS` (`voices.ts`), and the listener following the camera.
 - `events.ts`: decodes the event numbers, resolves block state → block → set → sound (the
-  generated `BLOCK_DEFS`), applies the gait gain and the step alternation.
+  generated `BLOCK_DEFS`), applies the gait gain, and places own sounds by their `self` (§5a) with
+  the step alternation; `listener.ts`: the listener frame and the placements.
 - `uiSounds.ts`: **delegated** listeners on the document (installed once by the game page and the
   main menu, which the launcher also shows, in plain TS without WASM): hover/focus on any button,
   link, tab or slider; click on any button (back on close/cancel/back buttons, tab on
@@ -449,6 +551,21 @@ simulation, and it reads only the predicted state the game already has.
 
 ### 6a. Music playback (`client/src/audio/music.ts`)
 
+- **The playlist** (`client/src/audio/playlist.ts`): the tracks whose `when` holds, in a shuffled
+  bag (`Shuffler`: each once a round; a round never opens with the track the last ended on, so none
+  plays twice in a row). Each track is its own player (below); the playlist polls the playing one
+  every 250 ms and, once its end is near or past, starts the next at the end + the drawn gap −
+  `crossfadeS`. It holds while the tab is hidden. The first track is the one the previous page
+  saved (`dwell.musicAt`, under 30 s old), which plays on at once, else the shuffle's first after
+  the page's context wait (`installPageSounds('menu' | 'game')`: the menu's at once, the game's a
+  random 30–180 s). Owner, 2026-11-12: *"Im following the Minecraft pattern where they play randomly
+  not sequentially"*, *"At random time"*; confirmed *"Yeah 3-10 minutes."*
+- **Day and night**: each draw takes only the tracks whose `times` hold the time of day — day while
+  the listener's daylight (the ambience probe's `day`, 0 with the sun below the face's horizon, 1
+  at 15° up; so both faces) is at least `dayAt`, night below it. The game hands it to the playlist
+  every frame (`setMusicDaylight`); the menu never does, so it plays day tracks. A playing track
+  finishes when day turns to night; with no track for the time, the playlist looks again a gap
+  later.
 - **Streamed**: an `<audio>` element (`preload="auto"`, `loop` from the data) plays the file; it is
   never decoded whole into a buffer, so the 4.9 MB file does not hold up loading. Once the page's
   AudioContext runs, the element is routed into it (`createMediaElementSource` → its own gain →
@@ -535,14 +652,16 @@ simulation, and it reads only the predicted state the game already has.
 1. Is fully procedural right, or do you want recorded samples for some materials later (the data
    format could gain a `sample` source)?
 2. Should remote players' footsteps be audible (they are now, spatialised), and how far?
-3. Footstep loudness and cadence per gait (walk 2.0 m, run 2.7 m, crouch 1.1 m between steps):
+3. Footstep loudness and cadence per gait (walk 2.5 m, run 2.8 m, crouch 1.1 m between steps, since
+   BUGS.md #103 the legs' clips loop every two of them):
    tune after listening?
 4. Should UI sounds be on by default, and at what level relative to effects (now 60 %)?
 5. Should the main menu (launcher) have its own volume control, or only the in-game Settings?
 6. iOS's silent switch mutes Web Audio: acceptable?
 7. Who will author sound sets later — is a sound editor page (like the Adaptive Block Lab) wanted?
-8. Music: is Starry Sunshine's level right (`volume` 0.45 under a 60 % Music default)? Should it
-   play in the main menu too (it does), or only once in a world? When more tracks come, what
-   decides which plays (biome, time of day, menus)?
+8. Music: (picked 2026-11-12: four tracks; four more 2026-11-13, one for nights only, §2a.) Is the level right (`volume`
+   0.6 under a 60 % Music default) and the gap (20–60 s of silence, no cross-fade)? Should it play in
+   the main menu too (it does), or only once in a world? What decides which plays later (biome,
+   time of day, menus)?
 
 **Recordings play dry (0.52.16, owner: "they've got some reverb-like feel"):** a recorded play sends nothing to the room unless its `samples.reverb` asks for some (`roomSend`, `client/src/audio/engine.ts`); a sound's `reverb` is for its procedural layers. Test: samples.test.ts "recordings play dry".

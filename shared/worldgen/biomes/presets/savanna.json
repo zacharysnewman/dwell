@@ -4,18 +4,14 @@
   "description": "Warm and dry: grass on sandy soil, wide flat plains, sandy river banks.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.6,
-      "blend": 0.1
+    "celsius": {
+      "min": 19,
+      "blend": 2
     },
-    "wetness": {
-      "min": 0.15,
-      "max": 0.45,
-      "blend": 0.1
-    },
-    "elevation": {
-      "max": 600,
-      "blend": 120
+    "rain": {
+      "min": 500,
+      "max": 2500,
+      "blend": 150
     }
   },
   "detail": {

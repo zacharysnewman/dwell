@@ -17,7 +17,7 @@ pub mod save;
 
 pub use burn::Burn;
 pub use data::{HotFluid, LavaData, Quench, VentDef, VentKind};
-pub use field::{Field, LavaEvent, Vent};
+pub use field::{Column, Field, Ground, LavaEvent, TILE, Vent};
 pub use save::{field_of, record_of};
 
 mod table {

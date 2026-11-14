@@ -35,11 +35,33 @@ fn dwell_sky(dir: vec3f, face: f32, day: DaySky) -> vec3f {
     let toward = select(0.5, 0.5 + 0.5 * dot(dh, sh) / max(lens, 1e-6), lens > 1e-6);
     let band = day.band.a * pow(max(toward, 1e-6), BAND_SPREAD) * (1.0 - smoothstep(0.0, BAND_HEIGHT, e));
     c = mix(c, day.band.rgb, clamp(band, 0.0, 1.0));
-    let g = day.glow.a * dwell_halo(dot(d, sun), SUN_BLOOM, SUN_BLOOM_K, SUN_GLOW, SUN_GLOW_K);
+    // None on the sun itself (other_stars.z, BUGS.md #145).
+    let g = day.glow.a * (1.0 - day.other_stars.z)
+        * dwell_halo(dot(d, sun), SUN_BLOOM, SUN_BLOOM_K, SUN_GLOW, SUN_GLOW_K);
     // Capped, so the sun's disc stays brighter than the sky around it.
     c = mix(c, day.glow.rgb, clamp(g, 0.0, GLOW_CAP));
     let m = day.disc.a * dwell_halo(dot(d, day.moon.xyz), MOON_BLOOM, MOON_BLOOM_K, MOON_GLOW, MOON_GLOW_K);
-    return mix(c, MOON_GLOW_COLOR, clamp(m, 0.0, 1.0));
+    c = mix(c, MOON_GLOW_COLOR, clamp(m, 0.0, 1.0));
+    // Thinned toward space above the atmosphere's base (docs/DAY_NIGHT.md §15): uniform per frame,
+    // so the ground's sky is today's, untouched.
+    if (day.space.x > 0.0) {
+        let horizon = mix(day.horizon.rgb, day.band.rgb, clamp(day.band.a * pow(max(toward, 1e-6), BAND_SPREAD), 0.0, 1.0));
+        c = dwell_space(c, horizon, above, dot(dir, sun), day);
+    }
+    return c;
+}
+
+// The sky `ground` thinned toward space by the viewer's air (`day.space`: x the thinning, y the
+// limb's elevation sine; dwell-look `atmosphere::space_sky`): space's colour, the limb (the
+// horizon's colour `horizon` in the ray's azimuth gathered at the limb, `rise` the ray's elevation
+// sine) and the sun's tight white bloom (`sun_cos`, the ray's cosine to the sun).
+fn dwell_space(ground: vec3f, horizon: vec3f, rise: f32, sun_cos: f32, day: DaySky) -> vec3f {
+    let off = (rise - day.space.y) / LIMB_WIDTH;
+    // z: how much of the limb shows (none for a viewer far past the rim: BUGS.md #102).
+    let limb = LIMB_BRIGHTNESS * day.space.z * exp(-off * off);
+    let bloom = SPACE_SUN_BLOOM * exp((sun_cos - 1.0) * SUN_BLOOM_K);
+    let space = min(SPACE_COLOR + horizon * limb + vec3f(bloom), vec3f(1.0));
+    return mix(ground, space, day.space.x);
 }
 
 // `v` turned by `angle` about the unit axis `k` (Rodrigues).
@@ -127,9 +149,32 @@ fn dwell_maria(p: vec2f) -> f32 {
     return smoothstep(0.46, 0.64, f);
 }
 
+// The moon's ground at a point of its disc: its albedo (1 the brightest highland) and its normal
+// (moon-local: z toward the viewer). `dwell_moon_ground(p, px)` comes from whoever includes the sky:
+// the client's reads the moon's baked maps (render/moon.rs, MOON_WORLD.md §5); without one, this.
+struct MoonGround {
+    albedo: f32,
+    normal: vec3f,
+}
+
+// The moon before its bake: the procedural maria on a flat disc.
+fn dwell_moon_ground_procedural(p: vec2f) -> MoonGround {
+    return MoonGround(1.0 - MOON_MARIA * dwell_maria(p), vec3f(0.0, 0.0, 1.0));
+}
+
+// Toward the sun from the moon in the moon's disc frame (`x`, `y` across it, z toward the viewer):
+// the real sun direction (the moon's place is the celestial model's, MOON_WORLD.md §6), so its face
+// A is full when the sun is behind the viewer and dark when it is behind the moon.
+fn dwell_moon_sun(day: DaySky, x: vec3f, y: vec3f) -> vec3f {
+    let s = day.sun.xyz;
+    return vec3f(dot(s, x), dot(s, y), -dot(s, day.moon.xyz));
+}
+
 // The moon's light toward `dir` (added) and how much of the pixel its disc covers (w). Its frame is
 // built from world vectors (its direction and the sky's axis), so it keeps its face through the
-// camera's turn across the midplane. Lit from the sun's side by its phase: full faces the viewer, new faces away.
+// camera's turn across the midplane. Its face A (tidally locked) is a flat disc of real terrain:
+// lit by the sun as N·L of each point's baked normal (full: all of it; quarters: the crater walls
+// facing the sun), plus the earthshine; as bright as the moon before at full.
 fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     let z = day.moon.xyz;
     let x = normalize(cross(day.axis.xyz, z));
@@ -137,31 +182,53 @@ fn dwell_moon(dir: vec3f, day: DaySky, px: f32) -> vec4f {
     let p = vec2f(dot(dir, x), dot(dir, y)) / sin(MOON_RADIUS);
     let r = length(p);
     let edge = 1.0 - smoothstep(1.0 - px / MOON_RADIUS, 1.0 + px / MOON_RADIUS, r);
-    if (edge <= 0.0 || dot(dir, z) <= 0.0) {
+    if (edge <= 0.0 || dot(dir, z) <= 0.0 || day.space.w < 0.5) {
         return vec4f(0.0);
     }
-    let n = vec3f(p, sqrt(max(1.0 - r * r, 0.0)));
-    let a = SKY_TAU * day.moon.w;
-    let l = vec3f(sin(a), 0.0, -cos(a));
-    let lit = smoothstep(-0.05, 0.09, dot(n, l));
-    let albedo = MOON_COLOR * (1.0 - MOON_MARIA * dwell_maria(p));
-    let limb = 0.7 + 0.3 * n.z;
-    return vec4f(albedo * limb * (lit + MOON_EARTHSHINE), edge);
+    let g = dwell_moon_ground(p / max(r, 1.0), px / MOON_RADIUS);
+    // Domed (`moon.domeBias`, celestial::disc_lit): the disc's shape a sphere's to that strength,
+    // tilted by the baked ground's slopes, so the phases read as crescents with the craters on
+    // top (a crescent's lit arc along the limb, its crater walls catching the light).
+    // Lit as celestial::moon_shade: Lambert blended `MOON_LUNAR` (`moon.lunarLambert`) toward
+    // Lommel-Seeliger, so the full moon is lit evenly to its edge (a Lambert ball's bright part
+    // ends at 0.87 of its radius) and the phases darken only past the terminator.
+    let ball = vec3f(p / max(r, 1.0), sqrt(max(1.0 - r * r, 0.0)));
+    let shape = normalize(mix(vec3f(0.0, 0.0, 1.0), ball, MOON_DOME));
+    let slope = g.normal.xy / max(g.normal.z, 0.2);
+    let n = normalize(shape + vec3f(slope, 0.0));
+    let sun = dwell_moon_sun(day, x, y);
+    let mu0 = max(dot(n, sun), 0.0);
+    let f = 2.0 * mu0 / max(max(dot(shape, sun), 0.0) + max(shape.z, 0.0), 0.05);
+    let seeliger = select(f, 2.0 - 1.0 / f, f > 1.0);
+    let lit = mix(mu0, seeliger, MOON_LUNAR);
+    return vec4f(MOON_COLOR * g.albedo * (lit + MOON_EARTHSHINE), edge);
 }
 
 // The sun's disc toward `dir` (rgb) and its coverage (w): limb-darkened, larger and in the
-// keyframes' warmer colour near the horizon.
+// keyframes' warmer colour near the horizon, shaded by the sun world's surface.
 fn dwell_sun_disc(dir: vec3f, up: vec3f, day: DaySky, px: f32) -> vec4f {
     let sun = day.sun.xyz;
-    let radius = SUN_RADIUS * mix(SUN_HORIZON_SCALE, 1.0, smoothstep(0.0, 0.35, abs(dot(sun, up))));
-    if (dot(dir, sun) < cos(radius + 3.0 * px)) {
+    // In space no air swells it at the horizon (docs/DAY_NIGHT.md §15).
+    let radius = SUN_RADIUS * mix(SUN_HORIZON_SCALE, 1.0, max(smoothstep(0.0, 0.35, abs(dot(sun, up))), day.space.x));
+    // Not seen from the sun itself (other_stars.z, BUGS.md #145).
+    if (dot(dir, sun) < cos(radius + 3.0 * px) || day.other_stars.z > 0.5) {
         return vec4f(0.0);
     }
     let r = asin(min(length(cross(dir, sun)), 1.0)) / radius;
     let mu = sqrt(max(1.0 - r * r, 0.0));
     let limb = 1.0 - SUN_LIMB * (1.0 - mu);
     let edge = 1.0 - smoothstep(1.0 - px / radius, 1.0 + px / radius, r);
-    let core = mix(day.disc.rgb, vec3f(1.0), 0.45 + 0.5 * mu * mu);
+    var core = mix(day.disc.rgb, vec3f(1.0), 0.45 + 0.5 * mu * mu);
+    // Whiter in space: no air reddens it.
+    core = mix(core, vec3f(1.0), day.space.x * SUN_WHITENESS);
+    // The sun world's face A (docs/proposals/SUN_WORLD.md S-3): its baked ground over its brightest (the lava
+    // 1, the basalt and obsidian crusts darker) shades the disc by `sun.surface`, in the disc's frame
+    // as the moon's (x along the sun's path); the halo and the sunlight are not touched.
+    let sx = normalize(cross(day.axis.xyz, sun));
+    let sy = cross(sun, sx);
+    let sp = vec2f(dot(dir, sx), dot(dir, sy)) / sin(radius);
+    let ground = dwell_sun_ground(sp / max(length(sp), 1.0), px / radius);
+    core = core * mix(1.0, ground, SUN_SURFACE);
     return vec4f(core * limb, edge);
 }
 
@@ -179,7 +246,9 @@ fn dwell_sky_bodies(dir: vec3f, face: f32, day: DaySky, base: vec3f) -> vec3f {
     // the stars).
     let moon = dwell_moon(dir, day, px);
     var c = mix(base, max(base, base * 0.4 + moon.rgb), moon.w);
-    let vis = day.stars.x * smoothstep(0.0, STAR_FADE, e) * (1.0 - smoothstep(0.08, 0.4, dwell_luma(base)));
+    // In space no air hides the stars near the horizon (docs/DAY_NIGHT.md §15).
+    let fade = mix(smoothstep(0.0, STAR_FADE, e), 1.0, day.space.x);
+    let vis = day.stars.x * fade * (1.0 - smoothstep(0.08, 0.4, dwell_luma(base)));
     if (vis > 0.001) {
         c += dwell_stars(dir, day) * vis * (1.0 - moon.w);
     }
@@ -199,6 +268,8 @@ fn dwell_other_day(day: DaySky) -> DaySky {
     o.band = day.other_band;
     o.disc = day.other_disc;
     o.stars.x = day.other_stars.x;
+    // The viewer's air in the other face's frame: the limb's rise flips.
+    o.space.y = -day.space.y;
     return o;
 }
 

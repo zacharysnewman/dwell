@@ -11,7 +11,7 @@ use dwell_world::FaceFrame;
 use crate::sound::ambient;
 
 /// The surroundings the beds read, in the order the shell decodes them (`ambience.ts` `INPUTS`).
-pub const INPUTS: [&str; 9] = [
+pub const INPUTS: [&str; 10] = [
     "altitude",
     "height",
     "open",
@@ -21,6 +21,7 @@ pub const INPUTS: [&str; 9] = [
     "trees",
     "day",
     "fireM",
+    "underwater",
 ];
 
 /// A distance with nothing found (m).
@@ -52,11 +53,13 @@ pub struct Listening {
     pub day: f64,
     /// Metres to the nearest fire (`FAR_M` with none).
     pub fire_m: f64,
+    /// 1 with the eye under a fluid's surface, else 0 ([`hears_underwater`]; the underwater bed).
+    pub underwater: f64,
 }
 
 impl Listening {
     /// In [`INPUTS`] order.
-    pub fn to_array(&self) -> [f64; 9] {
+    pub fn to_array(&self) -> [f64; 10] {
         [
             self.altitude,
             self.height,
@@ -67,8 +70,17 @@ impl Listening {
             self.trees,
             self.day,
             self.fire_m,
+            self.underwater,
         ]
     }
+}
+
+/// Whether the listener hears the world from under water (docs/AUDIO.md §3a, BUGS.md #104): the
+/// eye under a fluid's drawn surface — the same test the renderer's underwater view takes
+/// (`dwell_world::fluid::eye_fluid`, face-local through the eye's `FaceFrame`), so the muffle
+/// starts and ends with the underwater fog.
+pub fn hears_underwater(eye: Option<dwell_world::fluid::EyeFluid>) -> bool {
+    eye.is_some_and(|e| e.under)
 }
 
 /// The blocks that count as trees (shared/sounds `ambience.probe.trees`), as block indices of this
@@ -84,7 +96,8 @@ pub fn tree_blocks() -> Vec<usize> {
 /// Reads the surroundings round `eye` (world) on `face`: a grid of columns over `radius` m, each
 /// read from `ABOVE_M` over the eye down to its first block. `voxel` is a world cell's state,
 /// `is_tree` whether a state is a tree's, `current` the water's speed at a world point (m/s).
-/// `day` and `fire_m` come from elsewhere (the clock, the fires) and are left 0 and `FAR_M`.
+/// `day`, `fire_m` and `underwater` come from elsewhere (the clock, the fires, the eye's fluid) and
+/// are left 0, `FAR_M` and 0.
 pub fn probe(
     eye: [f64; 3],
     face: FaceFrame,
@@ -144,6 +157,7 @@ pub fn probe(
         trees: share(trees),
         day: 0.0,
         fire_m: FAR_M,
+        underwater: 0.0,
     }
 }
 
@@ -274,8 +288,42 @@ mod tests {
             trees: 7.0,
             day: 8.0,
             fire_m: 9.0,
+            underwater: 10.0,
         };
-        assert_eq!(l.to_array(), [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
-        assert_eq!(INPUTS.len(), 9);
+        assert_eq!(
+            l.to_array(),
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        );
+        assert_eq!(INPUTS.len(), 10);
     }
+
+    both_faces!(
+        /// BUGS.md #104: the world is heard muffled with the eye under a fluid's drawn surface (the
+        /// renderer's own underwater test), not in the air just above it, on either face: a pool
+        /// of water in rows 20..=24 (face-local), the eye placed in it and over it through `f`.
+        fn the_listener_hears_underwater_only_with_the_eye_under_the_surface(f: FaceFrame) {
+            let water = st("dwell:water");
+            let rows = 20..=24;
+            let voxel = |x: i32, y: i32, z: i32| {
+                let local = f.row(y);
+                if (x, z) == (0, 0) && rows.contains(&local) {
+                    water
+                } else {
+                    0
+                }
+            };
+            let top = dwell_world::m_of_row(25);
+            let hears = |local_y: f64| {
+                let eye = f.point([0.5, local_y, 0.5]);
+                hears_underwater(dwell_world::fluid::eye_fluid(eye, 1.0, voxel))
+            };
+            assert!(hears(top - 1.0), "a metre under the surface");
+            assert!(hears(top - 0.2), "just under the drawn surface");
+            assert!(
+                !hears(top + 0.1),
+                "just above it, within the waterline's reach"
+            );
+            assert!(!hears(top + 3.0), "high above it");
+        }
+    );
 }

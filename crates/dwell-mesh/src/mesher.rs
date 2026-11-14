@@ -16,7 +16,7 @@ use dwell_blocks::{
 };
 use dwell_protocol::CHUNK_SIZE;
 use dwell_protocol::chopping::Cut;
-use dwell_protocol::damage::DamageView;
+use dwell_protocol::damage::{DamageView, HitMark};
 use dwell_world::FaceFrame;
 use dwell_world::tree_tint::TreeTint;
 
@@ -37,6 +37,8 @@ const N: i32 = CHUNK_SIZE;
 mod damage_mesh;
 mod ground_mesh;
 pub(crate) mod leaves;
+mod ramp_damage;
+pub mod relief;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
 /// Edge of the padded voxel block: the chunk plus one voxel on each side.
@@ -79,6 +81,10 @@ pub struct MeshArrays {
     /// the vertex touches (`flood.rs`). The shader turns them into brightness by
     /// shared/look/light.json's curves.
     pub flood: Vec<f32>,
+    /// The opaque mesh only, and empty when no face in it is cracked: per vertex, the crack
+    /// overlay (docs/BLOCK_DAMAGE.md §6.3) as four unorm bytes, little-endian: the crack tile's s
+    /// and t (over [−½, 1½]), its atlas slot + 1 (0: no crack) and its strength.
+    pub cracks: Vec<u32>,
     /// The transparent mesh's fluid id per vertex (`crate::NO_FLUID` for a see-through face that
     /// is no fluid's); empty in the opaque mesh.
     pub fluids: Vec<f32>,
@@ -99,6 +105,7 @@ impl MeshArrays {
             + self.light.len()
             + self.flood.len()
             + self.fluids.len()
+            + self.cracks.len()
             + self.indices.len())
     }
 }
@@ -468,8 +475,16 @@ impl Builder {
 
     /// Tags the vertices added since the last tag with `fluid` (the transparent mesh's `fluids`).
     fn tag_fluid(&mut self, fluid: Option<dwell_blocks::FluidId>) {
+        self.tag_fluid_shore(fluid, 0);
+    }
+
+    /// [`Self::tag_fluid`] with a water top's shore mask ([`shore_mask`]) packed over the id
+    /// ([`crate::fluid_with_shore`]).
+    fn tag_fluid_shore(&mut self, fluid: Option<dwell_blocks::FluidId>, shore: u32) {
         let n = self.vertex_count() as usize;
-        self.m.fluids.resize(n, fluid_value(fluid));
+        self.m
+            .fluids
+            .resize(n, crate::fluid_with_shore(fluid_value(fluid), shore));
     }
 
     fn push_tile(&mut self, tile: &TileRect) {
@@ -501,10 +516,7 @@ impl Builder {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         let base = self.vertex_count();
-        let tint = face_tint(axis, sign);
-        let r = channel(color, 16) * tint[0];
-        let g = channel(color, 8) * tint[1];
-        let b = channel(color, 0) * tint[2];
+        let [r, g, b] = vertex_rgb(color, face_tint(axis, sign));
         let s = f64::from(sign);
         // A side's texture runs in world metres (a 1 m tile spans 1 m, HALF_HEIGHT_GRID.md §6), so
         // it stays put however the faces merge. A hanging tile (a turf skirt) runs down from the
@@ -570,9 +582,7 @@ impl Builder {
         light: Option<(&[f32], &[[f32; 2]])>,
     ) {
         let base = self.vertex_count();
-        let r = channel(color, 16) * tint[0];
-        let g = channel(color, 8) * tint[1];
-        let b = channel(color, 0) * tint[2];
+        let [r, g, b] = vertex_rgb(color, tint);
         let [nx, ny, nz] = normal_to_m(normal);
         for pt in pts {
             let [qx, qy, qz] = *pt;
@@ -624,6 +634,30 @@ pub(crate) fn flip_diagonal(l: [f32; 4]) -> bool {
     l[1] + l[3] > l[0] + l[2]
 }
 
+/// A vertex colour (`0xRRGGBB`, sRGB) under a face's tint, linear; a heat code (`HEAT_CODE | k`, a
+/// molten block's heat stop, VOLCANOES.md §6.5) is passed untinted as (k, −1, −1), which the
+/// terrain shader reads as the stop (and draws white otherwise).
+fn vertex_rgb(color: u32, tint: [f64; 3]) -> [f64; 3] {
+    if color & HEAT_CODE != 0 {
+        return [f64::from(color & 0xff), -1.0, -1.0];
+    }
+    [
+        channel(color, 16) * tint[0],
+        channel(color, 8) * tint[1],
+        channel(color, 0) * tint[2],
+    ]
+}
+
+/// The flag on a face colour that carries a heat stop instead (`vertex_rgb`).
+pub(crate) const HEAT_CODE: u32 = 1 << 24;
+
+/// A textured face's vertex colour: white, or its block's heat stop (`vertex_rgb`).
+fn white(style: &MaterialStyle) -> u32 {
+    style
+        .heat_stop
+        .map_or(0xffffff, |k| HEAT_CODE | u32::from(k))
+}
+
 /// Vertex colour and texture tile of a face: textured faces take their colour from the texture.
 /// The faces along the block's axis (`style.axis`: up for most, a felled log's length) take its top
 /// and bottom tiles, the rest its side tile, turned where the face's v doesn't run along the axis
@@ -633,12 +667,15 @@ fn surface(style: &MaterialStyle, axis: usize, sign: i32) -> (u32, TileRect) {
         None => (style.color, tile_rect("plain")),
         Some(t) => {
             if axis == style.axis {
-                return (0xffffff, tile_rect(if sign > 0 { t.top } else { t.bottom }));
+                return (
+                    white(style),
+                    tile_rect(if sign > 0 { t.top } else { t.bottom }),
+                );
             }
             let v = if axis == 1 { 2 } else { 1 };
             let mut tile = tile_rect(t.side);
             tile.turn = v != style.axis;
-            (0xffffff, tile)
+            (white(style), tile)
         }
     }
 }
@@ -651,6 +688,30 @@ const SURFACE_BIT: i32 = 1 << 30;
 /// Merge-mask flag: a face drawn on its own, merged with none (a fluid's top by a step,
 /// [`top_on_step`]).
 const ALONE_BIT: i32 = 1 << 29;
+
+/// A liquid top cell's solid neighbours in its own row (WATER_RENDERING.md §21): the bits of
+/// `dwell_look::waterflow::SHORE_W`…, face-local (the padded volume is). A top with any is drawn
+/// alone (merged with none), so its quad carries its own mask to the shore foam.
+fn shore_mask(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> u32 {
+    use dwell_look::waterflow as w;
+    let solid = |dx: i32, dz: i32| {
+        let k = cells.kind(x + dx, y, z + dz);
+        !k.liquid && !k.flooded && k.shape != Shape::Empty && k.style.look != Look::Cross
+    };
+    [
+        (-1, 0, w::SHORE_W),
+        (1, 0, w::SHORE_E),
+        (0, -1, w::SHORE_S),
+        (0, 1, w::SHORE_N),
+        (-1, -1, w::SHORE_SW),
+        (1, -1, w::SHORE_SE),
+        (-1, 1, w::SHORE_NW),
+        (1, 1, w::SHORE_NE),
+    ]
+    .iter()
+    .filter(|(dx, dz, _)| solid(*dx, *dz))
+    .fold(0, |m, (_, _, b)| m | b)
+}
 
 /// The side-tile rule (an index into `k.style.side_under`, block data `sideUnder`) that side face
 /// `face` of the cell at (x, y, z) takes: the first naming the block in the cell above, unless that
@@ -885,20 +946,43 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
     n
 }
 
-/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers.
-fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z: i32) {
+/// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers. A
+/// damaged one (`damage`: its view, face-local) is carved where struck and cracked once staged
+/// (BUGS.md #112, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
+fn shaped_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    [x, y, z]: [i32; 3],
+    damage: Option<&DamageView>,
+) {
     let Some(def) = k.def else {
         return;
     };
-    for f in faces_of(def) {
-        let tag = usize::from(f.tag);
-        if tag < 6 {
+    let faces = faces_of(def);
+    let visible: Vec<bool> = faces
+        .iter()
+        .map(|f| {
+            let tag = usize::from(f.tag);
+            if tag >= 6 {
+                return true;
+            }
             let (axis, sign) = FACES[tag];
             let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-            if face_covered(def, tag, cover(&cells.kind(nx, ny, nz))) {
-                continue;
-            }
+            !face_covered(def, tag, cover(&cells.kind(nx, ny, nz)))
+        })
+        .collect();
+    let hits = damage.and_then(|view| {
+        let look = dwell_protocol::damage::look_of(k.style.block)?;
+        let fraction = f64::from(view.fraction) / 255.0;
+        let carved = dwell_protocol::damage::carved_m3(k.style.block, fraction);
+        ramp_damage::RampDamage::new(def, look, carved, view, [x, y, z], &visible)
+    });
+    for (fi, f) in faces.iter().enumerate() {
+        if !visible[fi] {
+            continue;
         }
+        let tag = usize::from(f.tag);
         let pts: Vec<[f64; 3]> = f.v[..usize::from(f.count)]
             .iter()
             .map(|p| p.map(f64::from))
@@ -934,7 +1018,23 @@ fn shaped_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, x: i32, y: i32, z:
             .iter()
             .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
             .collect();
-        let flood = vec![cells.flood.shaped([x, y, z], normal); pts.len()];
+        let flood_at = cells.flood.shaped([x, y, z], normal);
+        if let Some(h) = &hits {
+            let sky = |p: [f64; 3]| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], p, n_m, salt));
+            let face = ramp_damage::RampFace {
+                cell: [x, y, z],
+                color,
+                tint,
+                tile: &tile,
+                side_top: side_top_of(def, tag),
+                light: &sky,
+                flood: flood_at,
+            };
+            if h.draw(&mut b.m, fi, &face) {
+                continue;
+            }
+        }
+        let flood = vec![flood_at; pts.len()];
         b.polygon(
             &pts,
             at,
@@ -989,7 +1089,28 @@ const CUT_SHADE: f64 = 0.55;
 /// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
 /// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
 /// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
-fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
+/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
+/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell (the server's `log_span`).
+fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
+    match dwell_blocks::octagon::section_of(m) {
+        Some((section, _)) if grain == 1 && section.width < 1.0 => {
+            let w = f64::from(section.width).clamp(0.05, 1.0);
+            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
+        }
+        _ => [0.0, 1.0],
+    }
+}
+
+/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 51), its cut made of its marks
+/// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
+fn carved_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    cell: [i32; 3],
+    cut: &Cut,
+    damage: Option<f64>,
+) {
     let grain = k.style.axis;
     let wood = dwell_protocol::chopping::wood(k.style.block);
     let look = wood.map_or(
@@ -998,6 +1119,8 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             tint: [255; 3],
             open: 2.5,
             kerf_width_m: 0.035,
+            bite: dwell_protocol::chopping::BITE_LOOK,
+            cracks: None,
         },
         |w| w.cut,
     );
@@ -1010,7 +1133,18 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
     let at = [f64::from(x), f64::from(y), f64::from(z)];
     // An octagonal log's cut is carved inside its octagon (round 2 of the chopping prototype).
     let outline = carve_outline(cells, cell, grain);
-    for f in carve::carve_in(grain, cut, &look, outline.as_deref()) {
+    // Each hit's bite where it struck (WORK_QUEUE item 26); a cut without bites (an older server's
+    // or save's) as before: the notch across the side, the kerfs as slits.
+    let faces = if cut.has_bites() {
+        // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
+        let progress =
+            damage.unwrap_or_else(|| wood.map_or(cut.cross(grain), |w| cut.progress(w, grain)));
+        carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
+    } else {
+        carve::carve_in(grain, cut, &look, outline.as_deref())
+    };
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell, damage));
+    for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
             Part::Bark(s) | Part::Cut(s) | Part::Inner(s) => {
@@ -1052,6 +1186,11 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             })
             .collect();
         let flood = vec![cells.flood.cell([nx, ny, nz]); f.pts.len()];
+        // The cracks round the bites, over every face drawn (as a damaged block's, §6.3).
+        if crack.is_some() {
+            let n = b.vertex_count() as usize;
+            b.m.cracks.resize(n, 0);
+        }
         let first = b.m.uvs.len();
         b.polygon(
             &f.pts,
@@ -1063,12 +1202,51 @@ fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cu
             None,
             Some((&light, &flood)),
         );
+        if let Some(c) = &crack {
+            let face = face_of(axis, sign);
+            let (pu, pv) = damage_mesh::plane_axes(axis);
+            let m = |p: &[f64; 3], a: usize| p[a] * if a == 1 { CELL_H } else { 1.0 };
+            b.m.cracks
+                .extend(f.pts.iter().map(|p| c.pack(face, [m(p, pu), m(p, pv)])));
+        }
         if tile.turn {
             for uv in b.m.uvs[first..].chunks_exact_mut(2) {
                 uv.swap(0, 1);
             }
         }
     }
+}
+
+/// A bitten wood cell's crack overlay (WORK_QUEUE item 26; the wood's `cut.cracks`): its stage by
+/// the share of the fell fraction (a standing wood) or the buck fraction cut, centred on the deepest
+/// side's newest bite; none for a cut without bites, below the first stage or without cracks.
+fn cut_cracks(
+    wood: &dwell_protocol::chopping::WoodDef,
+    look: &dwell_protocol::chopping::CutLook,
+    grain: usize,
+    cut: &Cut,
+    cell: [i32; 3],
+    damage: Option<f64>,
+) -> Option<damage_mesh::CrackLayer> {
+    use dwell_protocol::chopping::side_axis;
+    let cracks = look.cracks.as_ref()?;
+    let through = if grain == 1 {
+        wood.fell_fraction
+    } else {
+        wood.buck_fraction
+    };
+    let fraction = damage.unwrap_or_else(|| (cut.cross(grain) / through.max(1e-6)).min(1.0));
+    let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
+    let side = cut.deepest(grain)?;
+    let bite = cut.bites[side].all().last()?;
+    let size = |a: usize| if a == 1 { CELL_H } else { 1.0 };
+    let (a_side, a_u) = (side_axis(grain, side), side_axis(grain, side ^ 2));
+    let mut centre = [0.0; 3];
+    centre[a_side] = if side % 2 == 1 { size(a_side) } else { 0.0 };
+    centre[a_u] = f64::from(bite.u) * size(a_u);
+    centre[grain] = if bite.band == 0 { 0.25 } else { 0.75 } * size(grain);
+    layer.centre = centre;
+    Some(layer)
 }
 
 /// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
@@ -1350,141 +1528,193 @@ fn fluid_side(
     b.tag_fluid(style.fluid);
 }
 
-/// The slope a fluid cell's surface pours down over its side `face` (WATER_FLOW.md §17, the
-/// owner's sloped edges): where the cell's top shows and that side meets an open cell over the same
-/// water half a block or so lower, its own drawn surface at the shared edge (`high`) and the lower
-/// water's (`low`), in cells from the floor of the row below. None where it isn't such a step.
-fn slope_profile(
-    cells: &Cells<'_>,
-    k: &Kind,
-    [x, y, z]: [i32; 3],
-    face: usize,
-) -> Option<(f64, f64)> {
-    let (axis, sign) = FACES[face];
-    if axis == 1 || !k.liquid {
-        return None;
-    }
-    let above = cells.kind(x, y + 1, z);
-    if above.liquid || above.flooded || face_covered(cube(), 2, cover(&above)) {
-        return None;
-    }
-    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-    let kn = cells.kind(nx, ny, nz);
-    if kn.shape != Shape::Empty || kn.liquid || kn.flooded || kn.style.look == Look::Cross {
-        return None;
-    }
-    let kb = cells.kind(nx, ny - 1, nz);
-    if !kb.liquid || kb.base != k.base {
-        return None;
-    }
-    let high = 1.0 + k.fill * (1.0 - k.style.surface_drop);
-    let low = kb.fill * (1.0 - kb.style.surface_drop);
-    if high - low < 0.05 || high - low > 1.5 {
-        return None;
-    }
-    Some((high, low))
+/// Whether the padded cell (x, y, z) can be read (the chunk and its one-cell apron).
+fn in_padded(x: i32, y: i32, z: i32) -> bool {
+    let inside = |c: i32| (-1..=N).contains(&c);
+    inside(x) && inside(y) && inside(z)
 }
 
-/// Water pouring over a step (WATER_FLOW.md §17, the owner's sloped edges): where a fluid
-/// cell's top shows and its side `face` meets an open cell over the same water half a block or so
-/// lower ([`slope_profile`]), its surface goes on as a slope across that cell, from its own drawn
-/// surface at the shared edge down to the lower water's at the far edge, in place of a vertical
-/// side (which the caller then skips). The wedge of water under the slope is closed at its ends
-/// where the cell beside it is open and pours no such slope (a river crossing the grid on the
-/// diagonal steps in a staircase; owner, 2026-11-06, BUGS.md #39): else the eye saw in through the
-/// open end to the slope's back, which isn't drawn from outside the water. False where it isn't
-/// such a step.
-fn slope_over(
-    b: &mut Builder,
-    cells: &Cells<'_>,
-    k: &Kind,
-    [x, y, z]: [i32; 3],
-    face: usize,
-) -> bool {
-    let Some((high, low)) = slope_profile(cells, k, [x, y, z], face) else {
-        return false;
-    };
-    let (axis, sign) = FACES[face];
-    let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
-    // In cell units from (x, y - 1, z): the slope over the neighbour's footprint.
-    let near = if sign > 0 { 1.0 } else { 0.0 };
-    let far = near + f64::from(sign);
-    let run = if axis == 0 { 2 } else { 0 };
-    let corner = |along: f64, across: f64, h: f64| {
-        let mut p = [0.0; 3];
-        p[axis] = along;
-        p[run] = across;
-        p[1] = h;
-        p
-    };
-    let mut pts = vec![
-        corner(near, 0.0, high),
-        corner(near, 1.0, high),
-        corner(far, 1.0, low),
-        corner(far, 0.0, low),
-    ];
-    if polygon_normal(&pts)[1] < 0.0 {
-        pts.reverse();
+/// A step cell's lower water (WATER_FLOW.md §17, WATER_RENDERING.md §18): the liquid or flooded
+/// cell under an open cell (x, y, z) whose surface shows, as (its water, its drawn surface in
+/// cells above its own floor). None where the cell is not open or nothing such is under it.
+fn step_lower(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64)> {
+    if !in_padded(x, y, z) || !in_padded(x, y - 1, z) {
+        return None;
     }
-    let normal = polygon_normal(&pts);
-    let (color, tile) = surface(&k.style, 1, 1);
-    let at = [f64::from(x), f64::from(y - 1), f64::from(z)];
-    let lit = vec![cells.flood.cell([nx, ny, nz]); pts.len()];
-    let light = vec![1.0; pts.len()];
-    b.polygon(
-        &pts,
-        at,
-        normal,
-        face_tint(1, 1),
-        color,
-        &tile,
-        None,
-        Some((&light, &lit)),
-    );
-    // The wedge's ends: a triangle from the lower surface up to the slope, on each side across
-    // the run whose cell is open and doesn't pour the same slope beside this one.
-    for (end, s) in [(0.0, -1), (1.0, 1)] {
-        let side = FACES
+    let k = cells.kind(x, y, z);
+    if k.shape != Shape::Empty
+        || k.liquid
+        || k.flooded
+        || k.ladder_face.is_some()
+        || k.style.look == Look::Cross
+    {
+        return None;
+    }
+    let kb = cells.kind(x, y - 1, z);
+    if kb.liquid {
+        Some((kb, kb.fill * (1.0 - kb.style.surface_drop)))
+    } else if kb.flooded {
+        let water = cells.kinds.flood();
+        let top = flooded_top(cells, &water, x, y - 1, z);
+        (top > 0.0).then_some((water, top))
+    } else {
+        None
+    }
+}
+
+/// The drawn surface (cells above the floor of the row below, so 1 + its own) of the water in
+/// cell (x, y, z) when it is `water`'s and its top shows: a liquid cell of the same water with
+/// nothing hiding its top, or a flooded cell whose water stands in its row. None otherwise.
+fn upper_level(cells: &Cells<'_>, water: &Kind, [x, y, z]: [i32; 3]) -> Option<f64> {
+    if !in_padded(x, y, z) {
+        return None;
+    }
+    let k = cells.kind(x, y, z);
+    if k.liquid && k.base == water.base {
+        if in_padded(x, y + 1, z) {
+            let m = cells.state(x, y, z);
+            let top = fluid_side_top(cells, &k, m, x, y, z);
+            (top < 1.0).then_some(1.0 + top)
+        } else {
+            // Past the apron: taken as showing (the chunk above meshes the cell over it).
+            Some(1.0 + k.fill * (1.0 - k.style.surface_drop))
+        }
+    } else if k.flooded && cells.kinds.flood().base == water.base && in_padded(x, y + 1, z) {
+        let top = flooded_top(cells, water, x, y, z);
+        (top > 0.0 && top < 1.0).then_some(1.0 + top)
+    } else {
+        None
+    }
+}
+
+/// A step cell (BUGS.md #92): an open cell over a pool's water ([`step_lower`]) touching, by a
+/// side or a corner, a column of the same water standing a row higher whose top shows (the next
+/// reach up a river's ½ m steps; [`upper_level`]). Its surface runs from that upper water's level
+/// at its corners that touch it to the lower water's at the rest, so a river stepping down on the
+/// grid or on the diagonal reads as one continuous slope: each corner's height is a function of
+/// the cells round that corner alone, so neighbouring step cells, the upper tops and the lower
+/// tops all meet at the same vertices. Returns (the water, its lower surface, the corners' heights
+/// (x, z) = (0, 0), (1, 0), (1, 1), (0, 1)), in cells above the floor of the row below.
+fn step_cell(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64, [f64; 4])> {
+    let (water, low) = step_lower(cells, [x, y, z])?;
+    let level = |dx: i32, dz: i32| {
+        upper_level(cells, &water, [x + dx, y, z + dz])
+            .filter(|h| *h - low > 0.05 && *h - low <= 1.5)
+    };
+    let mut any = false;
+    let corners = [(0, 0), (1, 0), (1, 1), (0, 1)].map(|(cu, cv)| {
+        let (sx, sz) = (2 * cu - 1, 2 * cv - 1);
+        [(sx, 0), (0, sz), (sx, sz)]
             .iter()
-            .position(|&f| f == (run, s))
-            .expect("a side face");
-        let [lx, ly, lz] = neighbour_of(nx, ny, nz, run, s);
-        let kl = cells.kind(lx, ly, lz);
-        if kl.liquid || kl.flooded || face_covered(cube(), side, cover(&kl)) {
-            continue;
+            .filter_map(|&(dx, dz)| level(dx, dz))
+            .fold(None, |m: Option<f64>, h| Some(m.map_or(h, |m| m.max(h))))
+            .inspect(|_| any = true)
+            .unwrap_or(low)
+    });
+    any.then_some((water, low, corners))
+}
+
+/// Whether the cell `over` (over a pool's water `water`) is a step cell of that water, whose
+/// slope stands in for the pool's top under it.
+fn under_step(cells: &Cells<'_>, water: &Kind, over: [i32; 3]) -> bool {
+    let base = if water.liquid {
+        water.base
+    } else {
+        cells.kinds.flood().base
+    };
+    step_cell(cells, over).is_some_and(|(w, _, _)| w.base == base)
+}
+
+/// A step cell's water ([`step_cell`]): its surface as two triangles split across the diagonal
+/// that leaves a lone raised or lowered corner on its own (so a diagonal band's slope is one
+/// plane), and its sides from the lower surface up to the slope where the cell beside it is open
+/// and holds no such water (a real drop against air, e.g. a river's step at its bank).
+fn step_water(b: &mut Builder, cells: &Cells<'_>, [x, y, z]: [i32; 3]) {
+    let Some((water, low, h)) = step_cell(cells, [x, y, z]) else {
+        return;
+    };
+    let at = [f64::from(x), f64::from(y - 1), f64::from(z)];
+    let lit = cells.flood.cell([x, y, z]);
+    let p = |i: usize| {
+        let (cu, cv) = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)][i];
+        [cu, h[i], cv]
+    };
+    let odd = (0..4).find(|&i| {
+        let others: Vec<f64> = (0..4).filter(|&j| j != i).map(|j| h[j]).collect();
+        (h[i] - others[0]).abs() > 1e-9 && others.iter().all(|o| (o - others[0]).abs() < 1e-9)
+    });
+    let tris: [[usize; 3]; 2] = if matches!(odd, Some(1 | 3)) {
+        [[0, 1, 2], [0, 2, 3]]
+    } else {
+        [[0, 1, 3], [1, 2, 3]]
+    };
+    let (color, tile) = surface(&water.style, 1, 1);
+    for t in tris {
+        let mut pts: Vec<[f64; 3]> = t.iter().map(|&i| p(i)).collect();
+        if polygon_normal(&pts)[1] < 0.0 {
+            pts.reverse();
         }
-        let beside = neighbour_of(x, y, z, run, s);
-        let kk = cells.kind(beside[0], beside[1], beside[2]);
-        let same = slope_profile(cells, &kk, beside, face)
-            .is_some_and(|(h, l)| (h - high).abs() < 1e-9 && (l - low).abs() < 1e-9);
-        if same {
-            continue;
-        }
-        let mut tri = vec![
-            corner(near, end, low),
-            corner(near, end, high),
-            corner(far, end, low),
-        ];
-        if polygon_normal(&tri)[run] * f64::from(s) < 0.0 {
-            tri.reverse();
-        }
-        let normal = polygon_normal(&tri);
-        let (color, tile) = surface(&k.style, run, s);
-        let lit = vec![cells.flood.cell([lx, ly, lz]); tri.len()];
-        let light = vec![1.0; tri.len()];
+        let normal = polygon_normal(&pts);
         b.polygon(
-            &tri,
+            &pts,
             at,
             normal,
-            face_tint(run, s),
+            face_tint(1, 1),
             color,
             &tile,
             None,
-            Some((&light, &lit)),
+            Some((&[1.0; 3], &[lit; 3])),
         );
     }
-    b.tag_fluid(k.style.fluid);
-    true
+    // The sides: on each of the cell's four edges (corners i → j), toward the open cell across.
+    for (face, &(axis, sign)) in FACES.iter().enumerate() {
+        if axis == 1 {
+            continue;
+        }
+        let (i, j) = match (axis, sign) {
+            (0, 1) => (1, 2),
+            (0, _) => (3, 0),
+            (_, 1) => (2, 3),
+            _ => (0, 1),
+        };
+        if h[i] <= low + 1e-9 && h[j] <= low + 1e-9 {
+            continue;
+        }
+        let [nx, ny, nz] = neighbour_of(x, y, z, axis, sign);
+        let kn = cells.kind(nx, ny, nz);
+        if kn.liquid
+            || kn.flooded
+            || face_covered(cube(), face, cover(&kn))
+            || step_lower(cells, [nx, ny, nz]).is_some_and(|(w, _)| w.base == water.base)
+        {
+            continue;
+        }
+        let (pi, pj) = (p(i), p(j));
+        let mut pts = vec![[pi[0], low, pi[2]], [pj[0], low, pj[2]]];
+        if h[j] > low + 1e-9 {
+            pts.push(pj);
+        }
+        if h[i] > low + 1e-9 {
+            pts.push(pi);
+        }
+        if polygon_normal(&pts)[axis] * f64::from(sign) < 0.0 {
+            pts.reverse();
+        }
+        let normal = polygon_normal(&pts);
+        let (color, tile) = surface(&water.style, axis, sign);
+        let n = pts.len();
+        b.polygon(
+            &pts,
+            at,
+            normal,
+            face_tint(axis, sign),
+            color,
+            &tile,
+            None,
+            Some((&vec![1.0; n], &vec![cells.flood.cell([nx, ny, nz]); n])),
+        );
+    }
+    b.tag_fluid(water.style.fluid);
 }
 
 /// A liquid falling onto another (running water onto a pool, WATER_FLOW.md §17): its sides go on
@@ -1589,6 +1819,10 @@ fn flooded_water(b: &mut Builder, cells: &Cells<'_>, x: i32, y: i32, z: i32) {
                 FLOOD_INSET
             };
         if face == 2 {
+            // Under a step cell its top is the step's slope (BUGS.md #92).
+            if under_step(cells, &water, [nx, ny, nz]) {
+                continue;
+            }
             plane = f64::from(y) + top;
         }
         let (color, tile) = surface(&water.style, axis, sign);
@@ -1640,6 +1874,13 @@ fn flip_arrays_y(mut m: MeshArrays) -> MeshArrays {
     }
     for n in m.normals.iter_mut().skip(1).step_by(3) {
         *n = -*n;
+    }
+    // A leaf card's packed plane normal (`leaves::card_speed`) mirrors with the rest.
+    for speed in m.plants.iter_mut().skip(1).step_by(4) {
+        if *speed < 0.0 {
+            let n = leaves::card_normal_of(*speed);
+            *speed = leaves::card_speed([n[0], -n[1], n[2]]);
+        }
     }
     for t in m.indices.chunks_exact_mut(3) {
         t.swap(1, 2);
@@ -1790,7 +2031,13 @@ fn damaged_cells(
         .iter()
         .filter(|(c, _)| in_chunk(*c))
         .map(|(c, v)| {
+            // Face-local as the mirrored chunk's cells are (a ramp's `half` turned over).
             let state = inner[padded_index(c[0], c[1], c[2])];
+            let state = if mirror {
+                mirror_material(state)
+            } else {
+                state
+            };
             let (at, v) = damage_mesh::face_local(*c, v, mirror);
             (at, state, v)
         })
@@ -1806,6 +2053,16 @@ pub struct ChunkFlags {
     /// Leaf cards (shared/look/leaves.json `cards`) are meshed: false on a CPU adapter, the
     /// cheapest tier of everything (`dwell-client` `render::cards_for`).
     pub cards: bool,
+    /// The share of cross plants (tall grass, flowers) meshed, in percent (0–100; the Graphics
+    /// → Tall grass setting, WORK_QUEUE item 30): a plant is kept where its cell's hash is under
+    /// it, so a lower density thins the same plants out evenly and a higher one adds them back.
+    pub plants: u8,
+}
+
+/// Whether the cross plant at world cell `world` is meshed at a density of `percent` (0–100):
+/// all at 100 or more, none at 0, otherwise those whose cell hash falls under it.
+pub fn plant_kept(world: [i64; 3], percent: u8) -> bool {
+    percent >= 100 || cell_noise(world, 9) * 100.0 < f64::from(percent)
 }
 
 impl Default for ChunkFlags {
@@ -1813,6 +2070,7 @@ impl Default for ChunkFlags {
         Self {
             water_tops: true,
             cards: true,
+            plants: 100,
         }
     }
 }
@@ -1911,6 +2169,7 @@ pub(crate) fn mesh_chunk_full(
                 (at, carve::mirror_cut(grain, cut))
             })
             .collect();
+        let damaged = damaged_cells(&inner, damage, true);
         let mut m = mesh_cells(
             kinds,
             &mirror_padded(&inner),
@@ -1920,10 +2179,9 @@ pub(crate) fn mesh_chunk_full(
             &carved,
             flags,
             trees,
+            &damaged,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
-        let damaged = damaged_cells(&inner, damage, true);
-        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -1937,10 +2195,11 @@ pub(crate) fn mesh_chunk_full(
             .filter(|(c, _)| in_chunk(*c))
             .map(|(c, cut)| (*c, *cut))
             .collect();
-        let mut m = mesh_cells(kinds, &inner, &occ, &flood, origin, &carved, flags, trees);
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         let damaged = damaged_cells(&inner, damage, false);
-        damage_mesh::append(&mut m.opaque, kinds, &flood, &damaged);
+        let mut m = mesh_cells(
+            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged,
+        );
+        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         m
     };
     let water = (!flags.water_tops)
@@ -1953,6 +2212,43 @@ pub(crate) fn mesh_chunk_full(
         water,
         ground: ground.map(|g| g.density.clone()).unwrap_or_default(),
     })
+}
+
+/// Whether a cutout triangle (its first index) is a tree's leaf face ([`crate::TREE_LEAF_FADE`]).
+fn is_tree_leaf(m: &MeshArrays, first: u32) -> bool {
+    m.plants.get(first as usize * 4 + 3) == Some(&crate::TREE_LEAF_FADE)
+}
+
+/// Orders a cutout mesh's triangles with the trees' leaf faces last (each kind keeping its own
+/// order), so the indices before [`tree_leaves_from`] are everything but the leaves.
+fn tree_leaves_last(m: &mut MeshArrays) {
+    let (mut rest, mut leaves) = (Vec::with_capacity(m.indices.len()), Vec::new());
+    for tri in m.indices.chunks_exact(3) {
+        if is_tree_leaf(m, tri[0]) {
+            leaves.extend_from_slice(tri);
+        } else {
+            rest.extend_from_slice(tri);
+        }
+    }
+    rest.extend(leaves);
+    m.indices = rest;
+}
+
+/// Where a chunk's cutout mesh (meshed with its trees' leaves last) starts its trees' leaf faces,
+/// as an index into `indices`: the indices before it are the plants, ladders and other cutouts.
+/// Past the far trees' hand-over the shader drops every leaf face, so a chunk there draws only
+/// `0..tree_leaves_from` (WORK_QUEUE item 32: the forest edge is bound by the leaves' vertices).
+pub fn tree_leaves_from(m: &MeshArrays) -> usize {
+    let (mut lo, mut hi) = (0, m.indices.len() / 3);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if is_tree_leaf(m, m.indices[mid * 3]) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo * 3
 }
 
 /// The one-voxel padded block ([`PADDED_VOLUME`]) inside a sky volume ([`SKY_VOLUME`]).
@@ -1982,7 +2278,8 @@ fn in_chunk(c: [i32; 3]) -> bool {
 }
 
 /// The meshes of a chunk of face A (or a mirrored one), in chunk-local cells; `carved` its cut
-/// wood cells (face-local, as the padded block); `trees` the species trees' leaf tints (ADR 0079).
+/// wood cells (face-local, as the padded block); `trees` the species trees' leaf tints (ADR 0079);
+/// `damaged` its damaged cells (face-local), whose struck faces are carved (BLOCK_DAMAGE.md §6.2).
 #[allow(clippy::too_many_arguments)]
 fn mesh_cells(
     kinds: &Kinds,
@@ -1993,7 +2290,79 @@ fn mesh_cells(
     carved: &HashMap<[i32; 3], Cut>,
     flags: ChunkFlags,
     trees: &[TreeTint],
+    damaged: &[([i32; 3], u16, DamageView)],
 ) -> ChunkMeshes {
+    // The struck faces of damaged cubes with a damage look (a cell holding another state than
+    // the one hit is undamaged), by cell and face: carved instead of merged.
+    // A cell cracked (BLOCK_DAMAGE.md §6.3: its look's crack stage reached) leaves the merge on
+    // every face, each drawn with the crack overlay.
+    let mut struck: HashMap<([i32; 3], usize), usize> = HashMap::new();
+    for (i, (c, state, view)) in damaged.iter().enumerate() {
+        let k = kinds.of(*state);
+        if padded[padded_index(c[0], c[1], c[2])] != *state
+            || k.shape != Shape::Full
+            || k.style.render != RenderMode::Opaque
+            || k.style.octagon
+            || k.style.leafy
+            || carved.contains_key(c)
+        {
+            continue;
+        }
+        let Some(look) = dwell_protocol::damage::look_of(k.style.block) else {
+            continue;
+        };
+        if damage_mesh::CrackLayer::of(&look, view, *c).is_some() {
+            for face in 0..6 {
+                struck.insert((*c, face), i);
+            }
+        }
+        for mk in &view.marks {
+            if mk.face < 6 {
+                struck.insert((*c, usize::from(mk.face)), i);
+            }
+        }
+    }
+    // Damaged ramps (BUGS.md #112): carved and cracked in `shaped_voxel`, by cell.
+    let ramp_hits: HashMap<[i32; 3], usize> = damaged
+        .iter()
+        .enumerate()
+        .filter(|(_, (c, state, _))| {
+            let k = kinds.of(*state);
+            padded[padded_index(c[0], c[1], c[2])] == *state
+                && k.shape == Shape::Shaped
+                && k.style.render == RenderMode::Opaque
+                && !k.style.octagon
+                && !k.style.leafy
+                && !carved.contains_key(c)
+        })
+        .map(|(i, (c, _, _))| (*c, i))
+        .collect();
+    let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
+    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 51) is drawn
+    // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
+    // octagon's carve. A cell with an older save's cut keeps the cut's.
+    let mut progress: HashMap<[i32; 3], f64> = HashMap::new();
+    let mut carved = carved.clone();
+    for (c, state, view) in damaged {
+        let k = kinds.of(*state);
+        if padded[padded_index(c[0], c[1], c[2])] != *state || carved.contains_key(c) {
+            continue;
+        }
+        let Some(wood) = dwell_protocol::chopping::wood(k.style.block) else {
+            continue;
+        };
+        let grain = k.style.axis;
+        let cut = dwell_protocol::chopping::cut_of_marks(
+            grain,
+            &view.marks,
+            &wood.cut.bite,
+            wood_span(*state, grain),
+        );
+        if cut.has_bites() {
+            carved.insert(*c, cut);
+            progress.insert(*c, f64::from(view.fraction) / 255.0);
+        }
+    }
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
         .iter()
@@ -2019,6 +2388,8 @@ fn mesh_cells(
     let mut light_mask: Vec<CornerKeys> = vec![[0; 4]; n * n];
     // The slice's sky rays per vertex ((n + 1)², u fastest), computed once a face needs them.
     let mut vertex_rays: Vec<u8> = vec![u8::MAX; (n + 1) * (n + 1)];
+    // Each masked liquid top's shore mask ([`shore_mask`]; 0 elsewhere).
+    let mut shores = vec![0u32; n * n];
 
     for (face, &(axis, sign)) in FACES.iter().enumerate() {
         let u = (axis + 1) % 3;
@@ -2077,7 +2448,11 @@ fn mesh_cells(
                     if k.liquid && axis != 1 && same_fluid(&k, &kn) {
                         let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
-                        if own > theirs + 1e-9 {
+                        // Under the water's slope over a step cell, the strip is inside it.
+                        let inside = theirs < 1.0
+                            && same_fluid(&k, &cells.kind(cx, cy + 1, cz))
+                            && under_step(&cells, &kn, [nx, ny + 1, nz]);
+                        if own > theirs + 1e-9 && !inside {
                             let plane = f64::from(if sign > 0 { d + 1 } else { d });
                             let lit = cells.flood.cell([cx, cy, cz]);
                             fluid_side(
@@ -2102,7 +2477,18 @@ fn mesh_cells(
                     if face == 2 && k.liquid && !flags.water_tops {
                         continue;
                     }
-                    if k.liquid && slope_over(&mut transparent, &cells, &k, cell, face) {
+                    // Under a step cell its top is the step's slope (BUGS.md #92).
+                    if face == 2 && k.liquid && under_step(&cells, &k, [nx, ny, nz]) {
+                        continue;
+                    }
+                    // Toward a step cell of its water, its side is inside the water (BUGS.md #92).
+                    if k.liquid
+                        && axis != 1
+                        && let Some(own) = upper_level(&cells, &k, cell)
+                        && step_cell(&cells, [nx, ny, nz]).is_some_and(|(w, low, _)| {
+                            w.base == k.base && own - low > 0.05 && own - low <= 1.5
+                        })
+                    {
                         continue;
                     }
                     let mut surface_row = 0;
@@ -2135,10 +2521,42 @@ fn mesh_cells(
                             surface_row = SURFACE_BIT;
                         }
                     }
+                    if !struck.is_empty()
+                        && let Some(&di) = struck.get(&(cell, face))
+                    {
+                        let (color, tile) =
+                            side_surface(&k.style, face, side_rule(&cells, &k, cx, cy, cz, face));
+                        let lkey = corner_keys(
+                            &cells,
+                            &mut vertex_rays,
+                            (face, plane),
+                            [i, j],
+                            [nx, ny, nz],
+                        );
+                        struck_faces.push((
+                            damage_mesh::StruckFace {
+                                cell,
+                                face,
+                                color,
+                                tile,
+                                light: lkey.map(key_light),
+                                flood: lkey.map(key_flood),
+                            },
+                            di,
+                        ));
+                        continue;
+                    }
                     let rule = side_rule(&cells, &k, cx, cy, cz, face).map_or(0, |r| r as i32 + 1);
+                    let shore = if face == 2 && k.liquid {
+                        shore_mask(&cells, cell)
+                    } else {
+                        0
+                    };
+                    shores[i as usize + n * j as usize] = shore;
                     let alone = if face == 2
                         && k.liquid
-                        && top_on_step(&cells, &k, k.fill * (1.0 - k.style.surface_drop), cell)
+                        && (shore != 0
+                            || top_on_step(&cells, &k, k.fill * (1.0 - k.style.surface_drop), cell))
                     {
                         ALONE_BIT
                     } else {
@@ -2236,12 +2654,56 @@ fn mesh_cells(
                         lkey.map(key_flood),
                     );
                     if see_through {
-                        target.tag_fluid(style.fluid);
+                        let shore = if face == 2 { shores[i + n * j] } else { 0 };
+                        target.tag_fluid_shore(style.fluid, shore);
                     }
                     i += w;
                 }
             }
         }
+    }
+    // The struck faces carved (BLOCK_DAMAGE.md §6.2): each cell's visible struck faces share its
+    // triangle budget.
+    for (sf, di) in &struck_faces {
+        let (_, state, view) = &damaged[*di];
+        let Some(look) = dwell_protocol::damage::look_of(kinds.of(*state).style.block) else {
+            continue;
+        };
+        let on = |f: usize| view.marks.iter().any(|m| usize::from(m.face) == f);
+        // The cell's carved faces share its budget; a cracked cell's unstruck faces are flat.
+        let faces = struck_faces
+            .iter()
+            .filter(|(o, _)| o.cell == sf.cell && on(o.face))
+            .count();
+        let marks: Vec<_> = view
+            .marks
+            .iter()
+            .filter(|m| usize::from(m.face) == sf.face)
+            .collect();
+        let fraction = f64::from(view.fraction) / 255.0;
+        // The bite rule (BLOCK_DAMAGE.md §10): the cell's carved volume, k bites after k hits,
+        // shared over its struck faces by their marks' bites.
+        let block = kinds.of(*state).style.block;
+        let weight = |ms: &mut dyn Iterator<Item = &HitMark>| ms.map(HitMark::scale).sum::<f64>();
+        let all = weight(&mut view.marks.iter());
+        let share = if all > 0.0 {
+            weight(&mut marks.iter().copied()) / all
+        } else {
+            0.0
+        };
+        let target = dwell_protocol::damage::carved_m3(block, fraction) * share;
+        let carve =
+            (!marks.is_empty()).then(|| damage_mesh::carve_for(sf.face, &marks, &look, target));
+        let crack = damage_mesh::CrackLayer::of(&look, view, sf.cell)
+            .map(|c| c.for_face(sf.face, &view.marks));
+        damage_mesh::carve_face(
+            &mut opaque.m,
+            sf,
+            carve.as_ref(),
+            &look,
+            damage_mesh::grid_for(&look, faces),
+            crack.as_ref(),
+        );
     }
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
     let crowns = leaves::Crowns::new(&cells);
@@ -2251,18 +2713,24 @@ fn mesh_cells(
             for cx in 0..N {
                 let m = padded[padded_index(cx, cy, cz)];
                 if m == 0 {
+                    step_water(&mut transparent, &cells, [cx, cy, cz]);
                     continue;
                 }
                 let k = cells.kind(cx, cy, cz);
                 // A wood ramp with the log's octagon (Phase 55 T4) is drawn as its cut prism below.
                 if k.shape == Shape::Shaped && !k.style.octagon {
-                    shaped_voxel(&mut opaque, &cells, &k, cx, cy, cz);
+                    let hit = (!ramp_hits.is_empty())
+                        .then(|| ramp_hits.get(&[cx, cy, cz]))
+                        .flatten()
+                        .map(|&i| &damaged[i].2);
+                    shaped_voxel(&mut opaque, &cells, &k, [cx, cy, cz], hit);
                 }
                 if let Some(cut) = (!carved.is_empty())
                     .then(|| carved.get(&[cx, cy, cz]))
                     .flatten()
                 {
-                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
+                    let damage = progress.get(&[cx, cy, cz]).copied();
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut, damage);
                 } else if k.style.octagon {
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
                 }
@@ -2295,14 +2763,17 @@ fn mesh_cells(
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     let flood = cells.flood.cell([cx, cy, cz]);
-                    cross_voxel(
-                        target,
-                        &k.style,
-                        world,
-                        [cx, cy, cz],
-                        support,
-                        (light, flood),
-                    );
+                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`).
+                    if plant_kept(world, flags.plants) {
+                        cross_voxel(
+                            target,
+                            &k.style,
+                            world,
+                            [cx, cy, cz],
+                            support,
+                            (light, flood),
+                        );
+                    }
                     if k.style.render == RenderMode::Translucent {
                         target.tag_fluid(k.style.fluid);
                     }
@@ -2313,10 +2784,16 @@ fn mesh_cells(
             }
         }
     }
+    // The crack overlay's stream, once any face has it, covers every opaque vertex (0: none).
+    if !opaque.m.cracks.is_empty() {
+        opaque.m.cracks.resize(opaque.m.positions.len() / 3, 0);
+    }
     // Ladders carry no sway or fade, and take the ink.
     let vertices = cutout.m.positions.len() / 3;
     cutout.m.plants.resize(vertices * 4, 0.0);
     cutout.m.bare.resize(vertices, 0.0);
+    // The trees' leaves last, so a far chunk can draw its plants alone (`tree_leaves_from`).
+    tree_leaves_last(&mut cutout.m);
     // Fluids and see-through faces are lit by their own shader: no baked light, but the flood
     // light (docs/DAY_NIGHT.md §11), so water in a cave or under a roof is dark.
     transparent.m.light.clear();
@@ -2414,4 +2891,25 @@ pub(crate) fn water_runs(kinds: &Kinds, padded: &[u16]) -> Vec<Option<WaterRun>>
         }
     }
     out
+}
+
+#[cfg(test)]
+mod heat_code_tests {
+    #[test]
+    fn a_lava_states_faces_carry_its_heat_stop_untinted() {
+        // VOLCANOES.md §6.5: each `heat` state of dwell:lava is its stop in dwell_lava::DATA.heat,
+        // passed to the shader as (k, -1, -1) whatever the face's tint; other faces are as before.
+        for (k, h) in dwell_lava::DATA.heat.iter().enumerate() {
+            let name = format!("dwell:lava[heat={}]", h.name);
+            let stop = crate::style::heat_stop(&name);
+            assert_eq!(stop, Some(k as u8), "{name}");
+            let code = super::HEAT_CODE | u32::from(stop.unwrap_or(0));
+            assert_eq!(
+                super::vertex_rgb(code, [0.74, 0.77, 0.9]),
+                [k as f64, -1.0, -1.0]
+            );
+        }
+        assert_eq!(crate::style::heat_stop("dwell:stone"), None);
+        assert!(super::vertex_rgb(0xffffff, [1.0, 0.97, 0.9])[1] > 0.0);
+    }
 }

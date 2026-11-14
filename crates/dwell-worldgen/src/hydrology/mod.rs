@@ -166,6 +166,10 @@ pub struct HydrologyParams {
     pub name: &'static str,
     /// Grid cell size (m).
     pub cell: i32,
+    /// The cell (m) whose own area a ridge cell drains in the erosion: set by `sized` to the
+    /// profile's own cell, so a bigger world's coarser grid keeps its ridges' steepness (BUGS.md
+    /// #77). 0 (every profile, and a 1× world): a cell drains its own whole area.
+    pub ridge_cell: f64,
     pub iterations: u32,
     /// Years per iteration.
     pub time_step: f64,
@@ -204,10 +208,73 @@ pub struct HydrologyParams {
     pub delta_max_slope: f64,
 }
 
+/// How a bigger world's map scales with its radius (hydrology.json `bigWorlds`): exponents of the
+/// radius scale for the ranges' coast distances and the least lake, and the flow up to which a
+/// river's lips follow its discharge one for one (`channels.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BigWorlds {
+    pub range_coast_exponent: u32,
+    pub lake_area_exponent: u32,
+    pub lake_depth_exponent: u32,
+    pub lips_linear_to: f64,
+}
+
+impl BigWorlds {
+    /// `k`^`e`, exact for whole k (repeated products): 1 at scale 1.
+    pub fn power(k: u32, e: u32) -> f64 {
+        (0..e).fold(1.0, |v, _| v * f64::from(k))
+    }
+
+    /// A river's lips (whole cells, each passing `per_cell` m³/s) for `cells` cells' worth of
+    /// discharge: one for one up to `lips_linear_to`, then by the square root of the excess
+    /// ratio, so a channel grows as √Q past it. Below it, `cells` exactly.
+    pub fn lips(&self, cells: u32, per_cell: f64) -> u32 {
+        let linear = self.lips_linear_to / per_cell;
+        let c = f64::from(cells);
+        if c <= linear {
+            cells
+        } else {
+            ((linear * (c / linear).sqrt()).round() as u32).max(1)
+        }
+    }
+}
+
 mod table {
     include!("profiles.gen.rs");
 }
-pub use table::{DEFAULT, PROFILES};
+pub use table::{BIG_WORLDS, DEFAULT, PROFILES};
+
+impl HydrologyParams {
+    /// This profile for a world of `size` (BIG_MAP.md M0): the grid's cell × the scale, so the
+    /// whole-map grid keeps today's ~1 M cells (1 km at 10×; rivers and lakes smaller than a cell
+    /// wait for the regional maps, R1–R4), and the uplift layer's range and plate counts × the
+    /// area, so the land keeps today's density of them. At today's size, `self` exactly. (The
+    /// plates' own generator, REALISTIC_WORLD.md R1, is not touched: only its count is.)
+    ///
+    /// So the bigger island is today's, bigger, with its mountains (BUGS.md #77, `BIG_WORLDS`):
+    /// the ranges' coast distances × the scale (they rise across the island, not in a ring by its
+    /// coast; their widths and lengths stay in metres), the erosion's ridges as steep as at the
+    /// profile's own cell (`ridge_cell`), and the least lake today's shape in cells.
+    pub fn sized(&self, size: dwell_protocol::world_size::WorldSize) -> Self {
+        let b = BIG_WORLDS;
+        let k = size.radius_scale;
+        let mut p = *self;
+        p.cell = size.hydrology_cell_m(self.cell);
+        if k > 1 {
+            p.ridge_cell = f64::from(self.cell);
+        }
+        p.lake_min_area *= BigWorlds::power(k, b.lake_area_exponent);
+        p.lake_min_depth *= BigWorlds::power(k, b.lake_depth_exponent);
+        if let Some(t) = &mut p.tectonics {
+            t.ranges.count = size.uplift_count(t.ranges.count);
+            t.plates.count = size.uplift_count(t.plates.count);
+            let c = BigWorlds::power(k, b.range_coast_exponent);
+            t.ranges.min_coast *= c;
+            t.ranges.max_coast *= c;
+        }
+        p
+    }
+}
 
 /// A profile by name.
 pub fn profile(name: &str) -> Option<&'static HydrologyParams> {
@@ -329,11 +396,19 @@ pub struct HydrologyMap {
     /// The uplift layer's range spines and plate points (empty without `tectonics`).
     pub spines: Vec<uplift::Spine>,
     pub plates: Vec<(f64, f64)>,
+    /// With a climate (R3): the coarse ground its wind was marched over and the rain it dropped
+    /// (bounded by `climate.json` `maxGridBytes`; gone with this map once the world map is kept).
+    pub climate: Option<(crate::climate::CoarseGround, crate::climate::RainGrid)>,
 }
 
 /// The grid for a cell size: square, covering the world's disc, with a border of sea.
 pub fn grid_for(cell: i32) -> (Grid, f64) {
-    let r = i64::from(WORLD_RADIUS);
+    grid_for_radius(cell, i64::from(WORLD_RADIUS))
+}
+
+/// [`grid_for`] over a disc of `radius` m (a world size's, `WorldSize::world_radius_m`).
+pub fn grid_for_radius(cell: i32, radius: i64) -> (Grid, f64) {
+    let r = radius;
     let c = i64::from(cell);
     let n = ((2 * r + c - 1) / c + 2) as usize;
     let x0 = -((n as i64 - 1) * c) as f64 * 0.5;
@@ -360,6 +435,19 @@ pub fn generate_seed(seed: u64, p: &HydrologyParams) -> HydrologyMap {
     from_heights(grid, f64::from(p.cell), x0, &h, seed, p)
 }
 
+/// [`generate_seed`] for a world of `size` (BIG_MAP.md M2): the profile `sized` (its cell × the
+/// scale, its uplift counts × the area) over the size's base field (its disc and island). At
+/// today's size, [`generate_seed`] exactly.
+pub fn generate_seed_sized(
+    seed: u64,
+    p: &HydrologyParams,
+    size: dwell_protocol::world_size::WorldSize,
+) -> HydrologyMap {
+    let p = p.sized(size);
+    let (grid, x0, h) = sample_field(&BaseField::sized(seed, size), p.cell);
+    from_heights(grid, f64::from(p.cell), x0, &h, seed, &p)
+}
+
 /// The face's base field on the grid of `cell` m (m above sea level; −∞ beyond the disc): each
 /// cell's centre, with the octaves finer than a cell dropped (the LOD's sampling).
 pub fn sample(terrain: &BifacialTerrain, face: FaceFrame, cell: i32) -> (Grid, f64, Vec<f64>) {
@@ -377,14 +465,65 @@ pub fn generate_with_height(
     p: &HydrologyParams,
     h: crate::terrain::HeightField,
 ) -> HydrologyMap {
-    let base = BaseField::with_height(seed, h);
-    let (grid, x0, hs) = sample_field(&base, p.cell);
-    if !h.tectonics.enabled() {
-        return from_heights(grid, f64::from(p.cell), x0, &hs, seed, p);
+    if h.tectonics.from_plates() {
+        let plates = crate::plate_tectonics::PlateTectonics::for_seed(seed);
+        return generate_with_plates(seed, p, h, &plates);
     }
-    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell.
+    tectonic_map(seed, p, h, BaseField::with_height(seed, h), None)
+}
+
+/// [`generate_with_height`] for a Realistic world (`tectonics.plates` 1, R2) over a given plate
+/// tectonics (the face seed's, or a test's): the plates' coast is the base field's, and every
+/// boundary's landform, arc cone and hotspot island is added as the hand-placed boundary's are.
+pub fn generate_with_plates(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    plates: &crate::plate_tectonics::PlateTectonics,
+) -> HydrologyMap {
+    let layout = std::sync::Arc::new(plates.layout.clone());
+    let base = BaseField::with_plates(seed, h, Some(layout));
+    tectonic_map(seed, p, h, base, Some(plates))
+}
+
+fn tectonic_map(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    base: BaseField,
+    plates: Option<&crate::plate_tectonics::PlateTectonics>,
+) -> HydrologyMap {
+    let (grid, x0, hs, swells) = sample_field_and_swells(&base, p.cell);
+    // A Realistic world's erosion routing (plates.json `variety.flow`); every other world's D8.
+    let routing = if plates.is_some() {
+        crate::plates::VARIETY.flow
+    } else {
+        crate::plates::FlowRouting::D8
+    };
+    // The Realistic world's climate (R3): its rain weights the discharge.
+    let climate = h
+        .tectonics
+        .from_climate()
+        .then(|| crate::climate::Climate::for_seed(seed));
+    if !h.tectonics.enabled() {
+        return from_heights_with(
+            grid,
+            f64::from(p.cell),
+            x0,
+            &hs,
+            seed,
+            p,
+            None,
+            climate.as_ref(),
+            routing,
+            false,
+        );
+    }
+    // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
+    // with plates (R2) every boundary's, arc's and chain's too.
     let t = h.tectonics;
     let volcanoes = t.volcanoes();
+    let hand = t.kind != crate::tectonics::NONE || t.hotspot_count > 0;
     let n = grid.n;
     let (mut extra, mut rising) = (vec![0.0; grid.len()], vec![0.0; grid.len()]);
     let mut shield = vec![0.0; grid.len()];
@@ -394,10 +533,25 @@ pub fn generate_with_height(
             x0 + (i / n) as f64 * f64::from(p.cell),
         );
         if hs[i].is_finite() {
-            let coast = f64::from(base.coast_at(x as i64, z as i64));
-            extra[i] = t.height(&volcanoes, x, z, coast);
-            rising[i] = t.boundary(x, z, coast);
-            shield[i] = t.shield(&volcanoes, x, z);
+            if hand {
+                let coast = f64::from(base.coast_at(x as i64, z as i64));
+                extra[i] = t.height(&volcanoes, x, z, coast);
+                rising[i] = t.boundary(x, z, coast);
+                shield[i] = t.shield(&volcanoes, x, z);
+            }
+            if let Some(pt) = plates {
+                // The interior's basins and swells (plates.json `variety.relief`), kept whole;
+                // a swell keeps rising as a range does (a dome), so the erosion leaves it.
+                let swell = swells[i];
+                // At sea the ridges stay under water (plates.json `uplift.seaRidges`).
+                let coast = f64::from(base.coast_at(x as i64, z as i64));
+                let ridge = pt.boundary(x, z);
+                let kept = pt.at_sea(ridge, hs[i], coast);
+                let share = if ridge > 0.0 { kept / ridge } else { 1.0 };
+                extra[i] += pt.height(x, z) - ridge + kept + swell;
+                rising[i] += share * ridge + swell.max(0.0);
+                shield[i] = shield[i].max(pt.shield(x, z));
+            }
         }
     }
     from_heights_with(
@@ -408,17 +562,53 @@ pub fn generate_with_height(
         seed,
         p,
         Some((&extra, &rising, &shield)),
+        climate.as_ref(),
+        routing,
+        plates.is_some(),
     )
+}
+
+/// [`sample_field`] with each cell's basins and swells (`BaseField::swell_at`; 0 without plates),
+/// the warp and the coast computed once per cell.
+fn sample_field_and_swells(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>, Vec<f64>) {
+    let (grid, x0) = grid_for_radius(cell, g.world_radius());
+    let n = grid.n;
+    let cell = i64::from(cell);
+    let half = (n as i64 - 1) * cell / 2;
+    let (mut h, mut sw) = (
+        Vec::with_capacity(grid.len()),
+        Vec::with_capacity(grid.len()),
+    );
+    for row in 0..n {
+        if row % 64 == 0 {
+            crate::progress::report(crate::progress::MapStep::Base, row as f64 / n as f64);
+        }
+        for col in 0..n {
+            let x = col as i64 * cell - half;
+            let z = row as i64 * cell - half;
+            let (height, swell) = match g.height_and_swell_lod(x, z, cell) {
+                None => (f64::NEG_INFINITY, 0.0),
+                Some((height, swell)) => (f64::from(height) - SEA_LEVEL_M, swell),
+            };
+            h.push(height);
+            sw.push(swell);
+        }
+    }
+    crate::progress::report(crate::progress::MapStep::Base, 1.0);
+    (grid, x0, h, sw)
 }
 
 /// [`sample_seed`] of a given base field.
 fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
-    let (grid, x0) = grid_for(cell);
+    let (grid, x0) = grid_for_radius(cell, g.world_radius());
     let n = grid.n;
     let cell = i64::from(cell);
     let half = (n as i64 - 1) * cell / 2;
     let mut h = Vec::with_capacity(grid.len());
     for row in 0..n {
+        if row % 64 == 0 {
+            crate::progress::report(crate::progress::MapStep::Base, row as f64 / n as f64);
+        }
         for col in 0..n {
             let x = col as i64 * cell - half;
             let z = row as i64 * cell - half;
@@ -428,6 +618,7 @@ fn sample_field(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>) {
             });
         }
     }
+    crate::progress::report(crate::progress::MapStep::Base, 1.0);
     (grid, x0, h)
 }
 
@@ -443,7 +634,18 @@ pub fn from_heights(
     seed: u64,
     p: &HydrologyParams,
 ) -> HydrologyMap {
-    from_heights_with(grid, cell, x0, h0, seed, p, None)
+    from_heights_with(
+        grid,
+        cell,
+        x0,
+        h0,
+        seed,
+        p,
+        None,
+        None,
+        crate::plates::FlowRouting::D8,
+        false,
+    )
 }
 
 /// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
@@ -452,7 +654,9 @@ pub fn from_heights(
 /// keeps rising as the uplift layer's do, the dormant volcanoes not, so the erosion wears them;
 /// `extra.2` the share of the erosion each cell is shielded from (a hardened cone, `coneHardness`:
 /// its erodibility × 1 − the share, and nothing deposited above its uneroded ground, so a tall
-/// cone keeps its height and its crater).
+/// cone keeps its height and its crater). With a `climate` (R3) its rain, marched over the uplifted
+/// ground before the erosion on the coarse grid, takes the profile's rain's place.
+#[allow(clippy::too_many_arguments)]
 pub fn from_heights_with(
     grid: Grid,
     cell: f64,
@@ -461,6 +665,9 @@ pub fn from_heights_with(
     seed: u64,
     p: &HydrologyParams,
     extra: Option<(&[f64], &[f64], &[f64])>,
+    climate: Option<&crate::climate::Climate>,
+    routing: crate::plates::FlowRouting,
+    cap_fade: bool,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -485,6 +692,7 @@ pub fn from_heights_with(
             }
         })
         .collect();
+    crate::progress::report(crate::progress::MapStep::Uplift, 0.0);
     let (uplift, spines, plates) = match &p.tectonics {
         None => (
             h.iter()
@@ -546,20 +754,61 @@ pub fn from_heights_with(
         }
         h.clone()
     });
-    let rain: Vec<f64> = match &p.rain {
-        Rain::Uniform => vec![1.0; len],
-        Rain::Orographic(o) => rain::orographic(grid, cell, &h, &sea, seed, o),
+    let mut marched = None;
+    let rain: Vec<f64> = match (climate, &p.rain) {
+        (Some(c), _) => {
+            let ground = crate::climate::CoarseGround::of(&c.rules, grid.n, cell, x0, &h, &sea);
+            let r = c.rain(&ground);
+            let rain = (0..len)
+                .map(|i| {
+                    if sea[i] {
+                        1.0
+                    } else {
+                        let (x, z) = (
+                            x0 + (i % grid.n) as f64 * cell,
+                            x0 + (i / grid.n) as f64 * cell,
+                        );
+                        r.discharge(x, z)
+                    }
+                })
+                .collect();
+            marched = Some((ground, r));
+            rain
+        }
+        (None, Rain::Uniform) => vec![1.0; len],
+        (None, Rain::Orographic(o)) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
-    erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
+    crate::progress::report(crate::progress::MapStep::Uplift, 1.0);
+    erosion::erode(
+        grid,
+        cell,
+        &mut h,
+        &uplift,
+        &erodibility,
+        &rain,
+        &sea,
+        p,
+        routing,
+    );
     if let (Some(s), Some(u)) = (shield, &uneroded) {
+        // With `cap_fade` (a Realistic world's plate cones) the cap fades out toward the cone's
+        // foot (the shield's cube over its most): capped in full only toward the summit, so the
+        // ground the uplift raised around a cone meets its flank instead of standing as a
+        // circular cliff at its foot (the map check, 2026-11-14). Else (the hand-placed cones of
+        // the default and starter worlds, unchanged) capped in full over the shield.
+        let most = s.iter().copied().fold(0.0f64, f64::max).max(1e-9);
         for i in 0..len {
-            if s[i] > 0.0 && !sea[i] {
-                h[i] = h[i].min(u[i]);
+            if s[i] > 0.0 && !sea[i] && h[i] > u[i] {
+                let w = if cap_fade { (s[i] / most).powi(3) } else { 1.0 };
+                h[i] -= w * (h[i] - u[i]);
             }
         }
     }
+    crate::progress::report(crate::progress::MapStep::Lakes, 0.0);
     lakes::remove_small_pits(grid, cell, &mut h, &sea, p);
     let d = lakes::drainage(grid, cell, &h, &sea);
+    crate::progress::report(crate::progress::MapStep::Lakes, 1.0);
+    crate::progress::report(crate::progress::MapStep::Rivers, 0.0);
     // Discharge (m³/s): rain over the drainage area, donors before receivers.
     let order = lakes::stack(grid, &d.receiver, &sea);
     debug_assert_eq!(order.len(), sea.iter().filter(|s| !**s).count());
@@ -589,6 +838,7 @@ pub fn from_heights_with(
         },
         p,
     );
+    crate::progress::report(crate::progress::MapStep::Rivers, 1.0);
     HydrologyMap {
         grid,
         cell,
@@ -608,6 +858,7 @@ pub fn from_heights_with(
         rain: rain.iter().map(|&v| v as f32).collect(),
         spines,
         plates,
+        climate: marched,
     }
 }
 

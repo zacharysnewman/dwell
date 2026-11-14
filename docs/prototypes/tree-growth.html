@@ -36,6 +36,8 @@ h1 { font-size: 18px; margin: 0 0 2px; }
 h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); margin: 16px 0 6px; }
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .seg.four { grid-template-columns: repeat(4, 1fr); }
+#split { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: rgba(36, 28, 40, .55); pointer-events: none; }
+#labels div.cap { transform: none; top: 10px; font-size: 12.5px; background: rgba(36, 28, 40, .82); }
 button { font: inherit; font-size: 13px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--btn); color: var(--ink); cursor: pointer; }
 button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -68,7 +70,7 @@ pre { font-size: 11px; max-height: 220px; overflow: auto; background: var(--bg);
 </head>
 <body>
 <div id="app">
-  <div id="view"><div id="labels"></div></div>
+  <div id="view"><div id="split" hidden></div><div id="labels"></div></div>
   <div id="panel">
     <h1>Tree Growth</h1>
     <p class="sub">Three species as data, grown from a thin sapling to the mature tree: the same silhouette at every stage, the trunk
@@ -89,6 +91,10 @@ pre { font-size: 11px; max-height: 220px; overflow: auto; background: var(--bg);
       Seed <input id="seed" type="number" value="3"> <button id="reroll">New seed</button></div>
     <div class="stats" id="stats"></div>
 
+    <h2>Palm fronds</h2>
+    <div class="seg" id="fronds"></div>
+    <p class="desc" id="frondsDesc"></p>
+
     <h2>Scene</h2>
     <label class="s">Time of day <output id="timeV"></output><input id="time" type="range" min="0" max="100" value="38"></label>
     <div class="row"><label><input id="grid" type="checkbox"> Show block cells (leaf, frond and log cells)</label></div>
@@ -107,9 +113,13 @@ pre { font-size: 11px; max-height: 220px; overflow: auto; background: var(--bg);
       the trunk's width in ¼ m steps (an octagon of half-width 0.125–0.5 m), the crown is the mature crown scaled. Oak branches appear when
       the trunk is thick enough to carry them: the skeleton reveal of ADR 0033, kept where it fits.</p>
       <p><b>Blocks in game.</b> Oak and pine crowns are 1 m leaf blocks (collision, breaking, placing), drawn chamfered with canopy normals and
-      painted cards. Palm fronds are drawn as long curved blades (cards), not blocks: in game each frond would be a
-      cosmetic card owned by the palm's crown block, and the cells it passes through would be <code>palm_frond</code> blocks with no
-      collision you can still break (shown with <i>Show block cells</i>). The palm's lean is stored as ⅛ m offsets per ½ m trunk segment (a log shape property, not in the game yet).</p>
+      painted cards. Palm fronds can be drawn two ways (<i>Palm fronds</i>, and <i>Split</i>
+      for the two side by side, the same palm from the same camera): <b>leaf blocks</b>, as in the game today (0.52.58): each frond's path
+      sampled 12 times and every ½ m cell it crosses a <code>dwell:leaves</code> block, chamfered and carded like any other leaf; or
+      <b>frond cards</b>: a few long arching painted cards along each frond's path (two to four by its length), the leaf card's painterly
+      strokes in a frond's shape, the droop growing with the frond's length. As cards, each frond would be cosmetic, owned by the palm's
+      crown block, and the cells it passes through <code>palm_frond</code> blocks with no collision you can still break (shown with
+      <i>Show block cells</i>). The palm's lean is stored as ⅛ m offsets per ½ m trunk segment (a log shape property, not in the game yet).</p>
       <p>Content is prototype: block names marked <i>proposed</i> are not in the registry yet, and nothing here is in the game.</p>
     </div>
   </div>
@@ -184,6 +194,13 @@ const S = {
   cards: q.get('cards') !== '0',
   player: q.get('player') !== '0',
   palmAlign: q.get('palmAlign') !== '0',
+  fronds: ['blocks', 'cards', 'split'].includes(q.get('fronds')) ? q.get('fronds') : 'cards',
+};
+const FRONDS = { blocks: 'Leaf blocks (today)', cards: 'Frond cards' };
+const FRONDS_DESC = {
+  blocks: '<b>Leaf blocks</b> (the game today): every ½ m cell a frond passes through is a <code>dwell:leaves</code> block, chamfered, lit with the canopy normals and carded (shared/look/leaves.json).',
+  cards: '<b>Frond cards</b>: two to four long painted cards along each frond, arching and drooping by its length; only the crown heart is a leaf block.',
+  split: '<b>Split</b>: the same palm (seed, stage) with leaf blocks on the left and frond cards on the right, one camera.',
 };
 
 // ---------- RNG ----------
@@ -236,18 +253,26 @@ const needleCard = canvasTex(128, 128, (g, n) => {
     g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * len, y0 + Math.sin(a) * len * .8); g.stroke();
   }
 });
-// palm frond: a rib down the middle (v along the frond), leaflets angled toward the tip
-const frondTex = canvasTex(64, 256, (g, w, h) => {
-  g.lineCap = 'round';
-  for (let i = 0; i < 70; i++) {
-    const v = 8 + (i / 70) * (h - 14), side = i % 2 ? 1 : -1;
-    const len = (w / 2 - 2) * (0.55 + 0.45 * Math.sin(Math.PI * Math.min(1, v / h * 1.05)));
-    const c = [PAL.leaf.shadow, PAL.leaf.base, PAL.leaf.base, PAL.leaf.light][(i * 7) % 4];
-    g.strokeStyle = c; g.lineWidth = 3.2;
-    g.beginPath(); g.moveTo(w / 2, v); g.quadraticCurveTo(w / 2 + side * len * .6, v + 4, w / 2 + side * len, v + 14); g.stroke();
-  }
-  g.strokeStyle = '#8a8a3c'; g.lineWidth = 2.5;
-  g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.stroke();
+// frond card: the leaf card's painterly clump strokes (leafShape, the leaf palette, shadow under base under light) laid along a rib,
+// leaflets swept toward the tip (v = 1 at the top of the canvas), tapering at both ends so a frond's overlapping cards read as one
+const frondCardTex = canvasTex(96, 384, (g, w, h) => {
+  const rf = mulberry32(41), cx = w / 2;
+  const pass = (col, k, n, wid) => {
+    for (let i = 0; i < n; i++) {
+      const v = 0.04 + 0.92 * (i / n) + (rf() - .5) * .02, y = h * (1 - v), side = i % 2 ? 1 : -1;
+      const env = Math.pow(Math.sin(Math.PI * Math.min(1, v * 1.04)), .8);
+      const len = (w / 2 - 4) * (0.35 + 0.65 * env) * k * (0.85 + rf() * .3);
+      // a leaflet starts on the rib and sweeps out and up toward the tip
+      const beta = 0.5 + (rf() - .5) * .3, dx = side * Math.cos(beta), dy = -Math.sin(beta);
+      leafShape(g, cx + side * 1.5, y, len, wid * (0.8 + rf() * .4), Math.atan2(-dx, dy), col, 1);
+    }
+  };
+  pass(PAL.leaf.shadow, 1.06, 64, 5.5);
+  pass(PAL.leaf.base, .96, 64, 4.5);
+  pass(PAL.leaf.light, .62, 44, 3.2);
+  g.strokeStyle = '#7d8a3a'; g.lineCap = 'round';
+  for (let i = 0; i < 2; i++) { g.lineWidth = 3 - i * 1.4; g.globalAlpha = 1 - i * .4; g.beginPath(); g.moveTo(cx, h - 2); g.quadraticCurveTo(cx + 1.5, h / 2, cx, 4); g.stroke(); }
+  g.globalAlpha = 1;
 });
 
 // ---------- renderer / scene ----------
@@ -290,7 +315,7 @@ const M = {
   ring: new THREE.MeshStandardMaterial({ map: GAME.bark, color: '#b89a74', roughness: 1 }),
   end: new THREE.MeshStandardMaterial({ map: GAME.top, roughness: 1 }),
   leaf: {}, card: {},
-  frond: new THREE.MeshStandardMaterial({ map: frondTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .9, color: '#e6f0c0' }),
+  frond: new THREE.MeshStandardMaterial({ map: frondCardTex, alphaTest: .45, side: THREE.DoubleSide, roughness: .95, color: '#ffffff' }),
   cell: new THREE.LineBasicMaterial({ color: 0x241c28, transparent: true, opacity: .35 }),
   frondCell: new THREE.LineBasicMaterial({ color: 0xa04020, transparent: true, opacity: .45 }),
 };
@@ -415,12 +440,15 @@ function growTree(spec, seed, stage, ox, oz) {
       const fr = { a, L, lift: C.lift * (up ? 1.7 : 1), droop: C.droop * (up ? .45 : 1) * (0.85 + r() * .3), wid: C.width * Math.max(.5, s),
         twist: (r() - .5) * .5, origin: new THREE.Vector3(px, H + .35, pz) };
       t.fronds.push(fr);
-      for (let k = 1; k <= 8; k++) {
-        const p = frondPoint(fr, k / 8);
-        t.frondCells.add(key(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)));
+      // as the game builds it (dwell-worldgen species.rs): the path sampled 12 times, each ½ m cell it crosses a leaf
+      for (let k = 1; k <= 12; k++) {
+        const p = frondPoint(fr, k / 12);
+        t.frondCells.add(key(Math.floor(p.x), Math.max(1, Math.floor(p.y / .5)), Math.floor(p.z)));
       }
     }
-    t.frondCells.delete(key(hx, hy, hz));
+    // the crown heart as two ½ m leaf cells over the trunk's top (the game's heart)
+    const hc = Math.round(H / .5);
+    t.heartCells = [key(hx, hc, hz), key(hx, hc + 1, hz)];
   }
   for (const k of t.logCells) t.leaves.delete(k);
   if (!t.segs.length) for (let y = 0; y < Math.ceil(H); y++) t.leaves.delete(key(ox, y, oz));
@@ -594,6 +622,7 @@ function faceUV(p, n) {
 // option 5, part 1+2: leaf blocks chamfered where exposed, lit with the canopy normals
 function leafBlocks(t) {
   const { chamfer: s, blend } = t.spec.look, B = new Builder(), has = (x, y, z) => t.leaves.has(key(x, y, z));
+  const h = t.cellH ?? 1;                                // ½ m cells: built as unit cells, squashed in y (the chamfer 0.28 across, 0.14 up)
   for (const [x, y, z] of t.cells) {
     const ex = DIRS.map(([dx, dy, dz]) => !has(x + dx, y + dy, z + dz));
     if (!ex.some(Boolean)) continue;
@@ -607,17 +636,18 @@ function leafBlocks(t) {
       const n = new THREE.Vector3(...DIRS[sx]).add(new THREE.Vector3(...DIRS[sy])).add(new THREE.Vector3(...DIRS[sz])).normalize();
       faces = clip(faces, n, (1.5 - 2 * s) / Math.sqrt(3));
     }
-    const o = new THREE.Vector3(x + .5, y + .5, z + .5);
+    const o = new THREE.Vector3(x + .5, (y + .5) * h, z + .5), sq = p => new THREE.Vector3(p.x, p.y * h, p.z);
     for (const f of faces) {
       if (f.tag >= 0 && !ex[f.tag]) continue;
       const v = f.v;
       const cr = new THREE.Vector3().subVectors(v[1], v[0]).cross(new THREE.Vector3().subVectors(v[2], v[0]));
       const vv = cr.dot(f.n) < 0 ? [...v].reverse() : v;
-      const wp = vv.map(p => p.clone().add(o)), ns = wp.map(p => blendN(t, p, f.n, blend)), uvs = vv.map(p => faceUV(p, f.n));
+      const fn = new THREE.Vector3(f.n.x, f.n.y / h, f.n.z).normalize();
+      const wp = vv.map(p => sq(p).add(o)), ns = wp.map(p => blendN(t, p, fn, blend)), uvs = vv.map(p => faceUV(sq(p), f.n));
       for (let i = 1; i + 1 < vv.length; i++) B.tri(wp[0], wp[i], wp[i + 1], ns[0], ns[i], ns[i + 1], uvs[0], uvs[i], uvs[i + 1]);
     }
   }
-  const base = M.leaf[t.spec === SPECIES.oak ? 'oak' : t.spec === SPECIES.pine ? 'pine' : 'palm'];
+  const base = M.leaf[specKey(t.spec)];
   const m = new THREE.Mesh(B.geometry(), Object.assign(base.clone(), { color: t.tint.clone() }));
   m.castShadow = m.receiveShadow = true;
   return m;
@@ -626,18 +656,19 @@ function leafBlocks(t) {
 function leafCards(t, seed) {
   const C = t.spec.look.cards, B = new Builder(), has = (x, y, z) => t.leaves.has(key(x, y, z));
   const r = mulberry32(seed * 17 + 3), tmp = new THREE.Vector3();
-  const size = C.size * lerp(.6, 1, t.g);
+  const size = (C.size ?? .95) * lerp(.6, 1, t.g), ch = t.cellH ?? 1, dens = C.density ?? .55;
   for (const [x, y, z] of t.cells) for (let d = 0; d < 6; d++) {
     const [dx, dy, dz] = DIRS[d];
     if (has(x + dx, y + dy, z + dz)) continue;
-    const want = C.density * (d === 3 ? 1.2 : d === 2 ? 2.6 : 2.2);
+    const want = dens * (d === 3 ? 1.2 : d === 2 ? 2.6 : 2.2 * ch);   // per face, by its area
     let k = Math.floor(want) + (r() < want % 1 ? 1 : 0);
     const fn = new THREE.Vector3(dx, dy, dz);
     const a = Math.abs(dx) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0), b = new THREE.Vector3().crossVectors(fn, a);
     while (k-- > 0) {
       const sz = size * (.75 + r() * .5);
-      const c = new THREE.Vector3(x + .5, y + .5, z + .5).addScaledVector(fn, .5 + sz * (.05 + r() * .2))
-        .addScaledVector(a, (r() - .5) * .9).addScaledVector(b, (r() - .5) * .9);
+      const half = Math.abs(dy) ? .5 * ch : .5;           // the face's distance from the cell's centre
+      const c = new THREE.Vector3(x + .5, (y + .5) * ch, z + .5).addScaledVector(fn, half + sz * (.05 + r() * .2))
+        .addScaledVector(a, (r() - .5) * .9 * (Math.abs(a.y) ? ch : 1)).addScaledVector(b, (r() - .5) * .9 * (Math.abs(b.y) ? ch : 1));
       const cn = blendN(t, c, fn, .5).add(tmp.set(r() - .5, r() - .5, r() - .5).multiplyScalar(.9)).normalize();
       const up = Math.abs(cn.y) > .9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
       up.applyAxisAngle(cn, (r() - .5) * 1.2);
@@ -646,57 +677,82 @@ function leafCards(t, seed) {
       B.quad(pts, pts.map(p => blendN(t, p, cn, Math.max(t.spec.look.blend, .6))), [[0, 0], [1, 0], [1, 1], [0, 1]]);
     }
   }
-  const cm = M.card[t.spec === SPECIES.oak ? 'oak' : 'pine'].clone(); cm.color = t.tint.clone().lerp(new THREE.Color('#ffffff'), t.spec === SPECIES.pine ? .6 : 0);
+  const cm = M.card[specKey(t.spec)].clone(); cm.color = t.tint.clone().lerp(new THREE.Color('#ffffff'), t.spec === SPECIES.pine ? .6 : 0);
   const m = new THREE.Mesh(B.geometry(), cm);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
-// palm fronds: each a curved blade folded into a shallow V along its rib
-function frondMesh(t) {
-  const B = new Builder(), SEG = 12;
+// palm fronds as cards: a few long arching cards along each frond's path (two to four, by its length), overlapping, each a bent strip
+// folded into a shallow V along its rib, sagging a little more between its ends the longer the frond; painted with frondCardTex
+const FROND_REF_L = 3.2;                                 // the species' mean frond length: droop grows with L / this
+function frondCards(t, seed) {
+  const B = new Builder(), SEG = 7, r = mulberry32(seed * 23 + 11);
   for (const fr of t.fronds) {
-    const side = new THREE.Vector3(-Math.sin(fr.a), 0, Math.cos(fr.a));
-    const rows = [];
-    for (let i = 0; i <= SEG; i++) {
-      const u = i / SEG, p = frondPoint(fr, u);
-      const wid = fr.wid * Math.pow(Math.sin(Math.PI * Math.min(1, .12 + u * .95)), .7) * (u < .05 ? .3 : 1);
-      const tw = side.clone().applyAxisAngle(new THREE.Vector3(Math.cos(fr.a), 0, Math.sin(fr.a)), fr.twist * u);
-      const down = new THREE.Vector3(0, -wid * .35, 0);
-      rows.push({ c: p, l: p.clone().addScaledVector(tw, -wid).add(down), r: p.clone().addScaledVector(tw, wid).add(down), u });
-    }
-    for (let i = 0; i < SEG; i++) {
-      const a = rows[i], b = rows[i + 1];
-      const n = new THREE.Vector3().subVectors(b.c, a.c).cross(side).normalize().negate();
-      if (n.y < 0) n.negate();
-      const nn = [n, n, n, n];
-      B.quad([a.l, a.c, b.c, b.l], nn, [[0, a.u], [.5, a.u], [.5, b.u], [0, b.u]]);
-      B.quad([a.c, a.r, b.r, b.c], nn, [[.5, a.u], [1, a.u], [1, b.u], [.5, b.u]]);
+    const dir = new THREE.Vector3(Math.cos(fr.a), 0, Math.sin(fr.a)), side = new THREE.Vector3(-Math.sin(fr.a), 0, Math.cos(fr.a));
+    const n = Math.max(2, Math.min(4, Math.round(fr.L / 1.1)));
+    const span = 1 / n, over = span * .45;               // each card overlaps its neighbours by ~45 % of a span
+    const sag = .1 * fr.L * (fr.L / FROND_REF_L);        // a long frond's cards hang lower between their ends
+    for (let j = 0; j < n; j++) {
+      const u0 = Math.max(0, j * span - over * .5), u1 = Math.min(1, (j + 1) * span + over * .5);
+      const roll = (r() - .5) * .35 + fr.twist * (j + .5) / n, lift = .015 * j;
+      const rows = [];
+      for (let i = 0; i <= SEG; i++) {
+        const k = i / SEG, u = lerp(u0, u1, k), p = frondPoint(fr, u);
+        p.y += lift - sag * Math.sin(Math.PI * k) * u;    // the sag between the card's ends, more toward the tip
+        const env = Math.pow(Math.sin(Math.PI * Math.min(1, .1 + u * .93)), .7);
+        const wid = fr.wid * 1.4 * Math.max(.25, env);
+        const tw = side.clone().applyAxisAngle(dir, roll);
+        const down = new THREE.Vector3(0, -wid * .32, 0);
+        rows.push({ c: p, l: p.clone().addScaledVector(tw, -wid).add(down), r: p.clone().addScaledVector(tw, wid).add(down), v: k });
+      }
+      for (let i = 0; i < SEG; i++) {
+        const a = rows[i], b = rows[i + 1];
+        let nrm = new THREE.Vector3().subVectors(b.c, a.c).cross(side).normalize().negate();
+        if (nrm.y < 0) nrm.negate();
+        const nn = [a.l, a.c, b.c, b.l].map(p => blendN(t, p, nrm, .5));
+        B.quad([a.l, a.c, b.c, b.l], nn, [[0, a.v], [.5, a.v], [.5, b.v], [0, b.v]]);
+        const nr = [a.c, a.r, b.r, b.c].map(p => blendN(t, p, nrm, .5));
+        B.quad([a.c, a.r, b.r, b.c], nr, [[.5, a.v], [1, a.v], [1, b.v], [.5, b.v]]);
+      }
     }
   }
-  const fm = M.frond.clone(); fm.color = new THREE.Color('#e6f0c0').multiply(t.tint.clone().lerp(new THREE.Color('#ffffff'), .5));
+  const fm = M.frond.clone(); fm.color = new THREE.Color('#ffffff').lerp(t.tint.clone(), .6);
   const m = new THREE.Mesh(B.geometry(), fm);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
-function cellLines(cells, mat) {
+function cellLines(cells, mat, h = 1) {
   const pts = [], E = [[[0,0,0],[1,0,0]],[[0,0,0],[0,1,0]],[[0,0,0],[0,0,1]],[[1,1,1],[0,1,1]],[[1,1,1],[1,0,1]],[[1,1,1],[1,1,0]],
     [[1,0,0],[1,1,0]],[[1,0,0],[1,0,1]],[[0,1,0],[1,1,0]],[[0,1,0],[0,1,1]],[[0,0,1],[1,0,1]],[[0,0,1],[0,1,1]]];
-  for (const [x, y, z] of cells) for (const [a, b] of E) pts.push(x + a[0], y + a[1], z + a[2], x + b[0], y + b[1], z + b[2]);
+  for (const [x, y, z] of cells) for (const [a, b] of E) pts.push(x + a[0], (y + a[1]) * h, z + a[2], x + b[0], (y + b[1]) * h, z + b[2]);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   return new THREE.LineSegments(g, mat);
 }
-function treeObject(t, seed) {
+const specKey = spec => ORDER.find(k => SPECIES[k] === spec);
+const cellsOf = set => [...set].map(k => k.split(',').map(Number));
+// style: how a palm's fronds are drawn, 'blocks' (leaf cells, the game today) or 'cards'; oak and pine are the same either way
+function treeObject(t, seed, style) {
   const grp = new THREE.Group();
   grp.add(logsGroup(t));
-  if (t.cells.length) grp.add(leafBlocks(t));
   const cards = new THREE.Group(); cards.userData.cards = true;
-  if (t.fronds.length) cards.add(frondMesh(t));
-  else if (t.cells.length) cards.add(leafCards(t, seed));
-  grp.add(cards);
   const grid = new THREE.Group(); grid.userData.grid = true;
-  grid.add(cellLines(t.cells, M.cell));
-  grid.add(cellLines([...t.logCells].map(k => k.split(',').map(Number)), M.cell));
-  if (t.frondCells.size) grid.add(cellLines([...t.frondCells].map(k => k.split(',').map(Number)), M.frondCell));
+  if (t.fronds.length && style === 'blocks') {
+    // the crown heart and every frond cell as ½ m leaf blocks, chamfered and carded like any leaf (shared/look/leaves.json)
+    const half = new Set([...t.heartCells, ...t.frondCells]);
+    for (const k of t.logCells) { const [x, y, z] = k.split(',').map(Number); half.delete(key(x, 2 * y, z)); half.delete(key(x, 2 * y + 1, z)); }
+    const tb = { ...t, leaves: half, cells: cellsOf(half), cellH: .5 };
+    grp.add(leafBlocks(tb));
+    cards.add(leafCards(tb, seed));
+    grid.add(cellLines(tb.cells, M.cell, .5));
+  } else {
+    if (t.cells.length) grp.add(leafBlocks(t));
+    if (t.fronds.length) cards.add(frondCards(t, seed));
+    else if (t.cells.length) cards.add(leafCards(t, seed));
+    grid.add(cellLines(t.cells, M.cell));
+    if (t.frondCells.size) grid.add(cellLines(cellsOf(t.frondCells), M.frondCell, .5));
+  }
+  grp.add(cards);
+  grid.add(cellLines(cellsOf(t.logCells), M.cell));
   grp.add(grid);
   return grp;
 }
@@ -733,27 +789,36 @@ function frameCamera() {
   const c = CAMS[S.mode];
   camera.position.set(...c.p); controls.target.set(...c.t);
   if (S.mode === 'single' && S.species === 'pine') { camera.position.set(14, 10, 18); controls.target.set(0, 6, 0); }
+  if (S.mode === 'single' && S.species === 'palm') { camera.position.set(12, 7, 15); controls.target.set(0, 5, 0); }
+  // Split halves the view's width: step back so the same tree fits each half
+  if (S.fronds === 'split') camera.position.sub(controls.target).multiplyScalar(S.mode === 'single' ? 1.45 : 1.9).add(controls.target);
   controls.update();
 }
 
-let world = new THREE.Group(), placed = [];
-scene.add(world);
+// one world per frond style drawn: Split draws both, the left half of the view leaf blocks, the right half frond cards
+let worlds = {}, placed = [];
+const styles = () => S.fronds === 'split' ? ['blocks', 'cards'] : [S.fronds];
 function rebuild() {
-  world.traverse(o => { if (o.geometry) o.geometry.dispose(); });
-  scene.remove(world); world = new THREE.Group(); placed = [];
-  for (const L of layoutTrees()) {
-    const spec = SPECIES[L.sp], st = stageOf(spec, L.g);
-    const t = growTree(spec, L.seed, st, L.x, L.z);
-    world.add(treeObject(t, L.seed));
-    const pl = playerFigure(); pl.position.set(t.cx + 2.6, 0, t.cz + 1.2); pl.rotation.y = -0.5; world.add(pl);
-    placed.push({ t, L });
+  for (const w of Object.values(worlds)) { w.traverse(o => { if (o.geometry) o.geometry.dispose(); }); scene.remove(w); }
+  worlds = {}; placed = [];
+  const trees = layoutTrees().map(L => {
+    const spec = SPECIES[L.sp];
+    return { L, t: growTree(spec, L.seed, stageOf(spec, L.g), L.x, L.z) };
+  });
+  for (const style of styles()) {
+    const w = new THREE.Group();
+    for (const { L, t } of trees) {
+      w.add(treeObject(t, L.seed, style));
+      const pl = playerFigure(); pl.position.set(t.cx + 2.6, 0, t.cz + 1.2); pl.rotation.y = -0.5; w.add(pl);
+    }
+    w.visible = false; scene.add(w); worlds[style] = w;
   }
+  placed = trees;
   applyToggles();
-  scene.add(world);
   updateStats();
 }
 function applyToggles() {
-  world.traverse(o => { if (o.userData.grid) o.visible = S.grid; if (o.userData.cards) o.visible = S.cards; if (o.userData.player) o.visible = S.player; });
+  for (const world of Object.values(worlds)) world.traverse(o => { if (o.userData.grid) o.visible = S.grid; if (o.userData.cards) o.visible = S.cards; if (o.userData.player) o.visible = S.player; });
 }
 
 // ---------- UI ----------
@@ -763,6 +828,15 @@ ORDER.forEach(k => { const b = document.createElement('button'); b.textContent =
 [['single', 'One'], ['variants', 'Seeds'], ['compare', 'Compare'], ['forest', 'Forest']].forEach(([m, l]) => {
   const b = document.createElement('button'); b.textContent = l; b.dataset.m = m;
   b.onclick = () => { S.mode = m; frameCamera(); sync(); rebuild(); }; $('modes').appendChild(b); });
+[['blocks', 'Leaf blocks'], ['cards', 'Frond cards'], ['split', 'Split']].forEach(([m, l]) => {
+  const b = document.createElement('button'); b.textContent = l; b.dataset.f = m;
+  b.onclick = () => {
+    S.fronds = m;
+    // the comparison is about the palm: a single tree or its seeds jump to it
+    if (m === 'split' && (S.mode === 'single' || S.mode === 'variants')) S.species = 'palm';
+    frameCamera(); sync(); rebuild(); resize();
+  };
+  $('fronds').appendChild(b); });
 function slider(id, k, fmt, on) {
   const el = $(id), out = $(id + 'V');
   el.value = Math.round(S[k] * 100);
@@ -800,6 +874,9 @@ function sync() {
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.m === S.mode));
   $('desc').innerHTML = S.mode === 'compare' || S.mode === 'forest' ? ORDER.map(k => DESC[k]).join('<br>') : DESC[S.species];
   $('growth').disabled = S.mode === 'forest';
+  document.querySelectorAll('#fronds button').forEach(b => b.classList.toggle('on', b.dataset.f === S.fronds));
+  $('frondsDesc').innerHTML = FRONDS_DESC[S.fronds];
+  $('split').hidden = S.fronds !== 'split';
   showGrowth();
 }
 function updateStats() {
@@ -809,12 +886,14 @@ function updateStats() {
   $('stats').innerHTML = S.mode === 'forest' ? 'Forest: each species at stages 1, 3, 5, 6 and 8 of 8, sapling to mature.'
     : `${t.spec.label}, stage ${t.stage + 1}/${t.spec.growth.stages}: trunk ${t.H.toFixed(1)} m tall, ${(2 * t.w).toFixed(2)} m wide ` +
       `(octagon half-width ${t.w.toFixed(3)} m)<br>${t.cells.length} leaf blocks · ${t.logCells.size} branch/trunk log cells` +
-      (t.fronds.length ? ` · ${t.fronds.length} fronds over ${t.frondCells.size} frond cells` : '') + ` · crown ×${t.s.toFixed(2)}`;
+      (t.fronds.length ? ` · ${t.fronds.length} fronds over ${t.frondCells.size} ½ m frond cells (as leaf blocks: ` +
+        `${new Set([...t.heartCells, ...t.frondCells]).size} with the heart; as cards: ` +
+        `${t.fronds.reduce((n, f) => n + Math.max(2, Math.min(4, Math.round(f.L / 1.1))), 0)} cards)` : '') + ` · crown ×${t.s.toFixed(2)}`;
 }
 
 // ---------- render ----------
 const labels = $('labels'), tmpV = new THREE.Vector3();
-function resize() { renderer.setSize(view.clientWidth, view.clientHeight, false); camera.aspect = view.clientWidth / view.clientHeight; camera.updateProjectionMatrix(); }
+function resize() { renderer.setSize(view.clientWidth, view.clientHeight, false); }
 new ResizeObserver(resize).observe(view);
 function frame(now) {
   if (playing) {
@@ -827,18 +906,27 @@ function frame(now) {
     if (g >= 1) { playing = false; $('play').textContent = '▶ Time-lapse'; }
   }
   controls.update();
-  renderer.render(scene, camera);
-  const W = view.clientWidth, H = view.clientHeight;
-  labels.innerHTML = placed.filter(p => p.L.label).map(p => {
-    tmpV.set(p.t.cx, -0.2, p.t.cz).project(camera);
-    if (tmpV.z > 1) return '';
-    return `<div style="left:${(tmpV.x * .5 + .5) * W}px;top:${(-tmpV.y * .5 + .5) * H + 4}px">${p.L.label}</div>`;
-  }).join('');
+  const W = view.clientWidth, H = view.clientHeight, st = styles(), vw = W / st.length;
+  let html = '';
+  renderer.setScissorTest(st.length > 1);
+  st.forEach((style, i) => {
+    for (const k in worlds) worlds[k].visible = k === style;
+    camera.aspect = vw / H; camera.updateProjectionMatrix();
+    renderer.setViewport(i * vw, 0, vw, H); renderer.setScissor(i * vw, 0, vw, H);
+    renderer.render(scene, camera);
+    html += placed.filter(p => p.L.label).map(p => {
+      tmpV.set(p.t.cx, -0.2, p.t.cz).project(camera);
+      if (tmpV.z > 1 || Math.abs(tmpV.x) > 1) return '';
+      return `<div style="left:${i * vw + (tmpV.x * .5 + .5) * vw}px;top:${(-tmpV.y * .5 + .5) * H + 4}px">${p.L.label}</div>`;
+    }).join('');
+    if (st.length > 1) html += `<div class="cap" style="left:${i * vw + 10}px">${FRONDS[style]}</div>`;
+  });
+  labels.innerHTML = html;
   requestAnimationFrame(frame);
 }
 setSky(); sync(); frameCamera(); rebuild(); resize();
 requestAnimationFrame(frame);
-window.__treeGrowth = { S, SPECIES, rebuild, sync, frameCamera, camera, controls, get placed() { return placed; } };
+window.__treeGrowth = { S, SPECIES, rebuild, sync, frameCamera, camera, controls, get placed() { return placed; }, get worlds() { return worlds; } };
 </script>
 </body>
 </html>

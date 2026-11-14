@@ -25,7 +25,11 @@ export interface ConnectOptions {
    * A terrain world's maps (ADR 0049; `world/worldMaps.ts`): the local world's server installs
    * them rather than computing its own on its thread.
    */
-  worldMaps?: (seed: bigint, generatorVersion: number) => Promise<Uint8Array[]> | null;
+  worldMaps?: (
+    seed: bigint,
+    generatorVersion: number,
+    radiusScale?: number,
+  ) => Promise<Uint8Array[]> | null;
   /** The local world's worker's loading stages (§6.3) as it reports them. */
   onStage?: StageReport;
 }
@@ -102,7 +106,12 @@ export async function connectLocal(
   const maps = (async (): Promise<Uint8Array[] | undefined> => {
     try {
       return (
-        (await options.worldMaps?.(BigInt(world.worldSeed), world.generatorVersion)) ?? undefined
+        (await options.worldMaps?.(
+          BigInt(world.worldSeed),
+          world.generatorVersion,
+          // A bigger world's own maps (BIG_MAP.md M2b; a saved world's from its record).
+          world.radiusScale,
+        )) ?? undefined
       );
     } catch (err) {
       // The server computes its own (slower to start, the same terrain).

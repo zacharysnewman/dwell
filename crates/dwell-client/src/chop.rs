@@ -5,7 +5,7 @@
 //! drawing. A swing can start at any time, at nothing (a free swing); the server sweeps the same
 //! arc (`ChopAction::Sweep`) and cuts what it meets.
 
-use dwell_protocol::chopping::{Cut, ToolDef};
+use dwell_protocol::chopping::{CameraOffset, Cut, ToolDef};
 use dwell_protocol::{ChopAction, CutsMessage};
 use dwell_world::{CELL_H, m_of_row};
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ pub fn crosshair_impact(
         face: hit.face ^ 1,
         point: [0, 1, 2].map(|i| eye[i] + look[i] * d),
         step: tool.swing.samples / 2,
-        wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+        wood: dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name).is_some(),
     })
 }
 
@@ -106,6 +106,26 @@ pub struct SwingRun {
     /// that has been shown (a rustle and falling leaves: not a hit, so no hit-stop, no bounce).
     pub clear_step: Option<u32>,
     pub cleared_shown: bool,
+}
+
+/// How the arms' swing clip (the action layer) is driven for a swing this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ArmsDrive {
+    /// Held at clip time `t` (s), laid over the arms' pose at `weight` (1: the clip's pose).
+    At { t: f64, weight: f64 },
+    /// The swing is over: its clip stops (BUGS.md #93: let go, it played on from where it was
+    /// held, a second swing).
+    Release,
+}
+
+impl ArmsDrive {
+    /// Drives the arms' animator `a` so.
+    pub fn apply(self, a: &mut dwell_characters::animator::Animator) {
+        match self {
+            ArmsDrive::At { t, weight } => a.drive_action_weighted(t as f32, weight as f32),
+            ArmsDrive::Release => a.stop_action(),
+        }
+    }
 }
 
 /// Smooth 0..1.
@@ -171,70 +191,140 @@ impl SwingRun {
         self.hit
     }
 
-    /// Where in the arms' swing clip (whose length is a miss's: wind-up, arc, follow-through,
-    /// recovery) the arms are `t` s in: a hit holds the impact's pose through the hit-stop, then
-    /// plays the clip back from it to the rest (the axe pulled out of the cut, or bounced back).
-    pub fn clip_time(&self, t: f64) -> f64 {
-        let s = &self.tool.swing;
-        let Some(at) = self.impact_s() else {
-            return t.min(s.miss_length());
-        };
-        if t < at {
-            t
-        } else if t < at + s.hit_stop_s {
-            at
-        } else {
-            let u = ((t - at - s.hit_stop_s) / s.recover_hit_s.max(1e-6)).clamp(0.0, 1.0);
-            at * (1.0 - ease(u))
+    /// How the arms' swing clip is driven `now_ms` into this swing (`Bodies::drive_arms`, each
+    /// frame the swing is under way and the frame it ends).
+    pub fn arms(&self, now_ms: f64) -> ArmsDrive {
+        if self.done(now_ms) {
+            return ArmsDrive::Release;
+        }
+        let t = self.elapsed(now_ms);
+        ArmsDrive::At {
+            t: self.clip_time(t),
+            weight: self.clip_weight(t),
         }
     }
 
-    /// The camera's motion selling the swing (degrees: to the screen's right, up), `t` s in: drawn
-    /// back with the wind-up, swept through the arc, a jolt against the swing at a hit (bigger
-    /// off what it can't bite), a looser overshoot on a miss, then home.
-    pub fn camera(&self, t: f64) -> (f64, f64) {
+    /// How much of the swing clip's pose the arms show `t` s in: all of it, except a hit's
+    /// pull-out, which fades the held contact pose to the arms' rest over `recoverHitS` (straight
+    /// back, not the wind-up played backwards: BUGS.md #93, a vertical hit went back up over the
+    /// shoulder and down again, a second stroke).
+    pub fn clip_weight(&self, t: f64) -> f64 {
         let s = &self.tool.swing;
-        let a = 0.6 * s.kick_deg.max(0.0) + 0.4;
-        // Along the swing: + is where it winds up (the right, or up), − where it goes.
-        let along = |v: f64| {
-            if self.vertical {
-                (0.0, v)
-            } else {
-                (v, 0.15 * v)
-            }
-        };
-        let arc_end = s.windup_s + s.active_s;
         match self.impact_s() {
-            Some(at) if t >= at => {
-                let u = ((at - s.windup_s) / s.active_s.max(1e-6)).clamp(0.0, 1.0);
-                let held = a * (1.0 - 2.0 * u);
-                let after = t - at;
-                let bite = if self.hit.is_some_and(|h| h.wood) {
-                    1.0
-                } else {
-                    1.6
-                };
-                let kick = s.kick_deg * bite * (-after / (s.hit_stop_s + 0.06).max(1e-3)).exp();
-                let home = 1.0 - ease((after - s.hit_stop_s) / s.recover_hit_s.max(1e-6));
-                along((held + kick) * home)
+            Some(at) if t >= at + s.hit_stop_s => {
+                let u = ((t - at - s.hit_stop_s) / s.recover_hit_s.max(1e-6)).clamp(0.0, 1.0);
+                1.0 - ease(u)
             }
-            _ if t < s.windup_s => along(a * ease(t / s.windup_s.max(1e-6))),
-            _ if t < arc_end => {
-                let u = (t - s.windup_s) / s.active_s.max(1e-6);
-                along(a * (1.0 - 2.0 * u))
-            }
-            _ => {
-                // The miss's overshoot, then home over the recovery.
-                let u = ((t - arc_end) / s.recover_miss_s.max(1e-6)).clamp(0.0, 1.0);
-                let over = -a * (1.0 + 0.4 * (std::f64::consts::PI * u).sin());
-                along(over * (1.0 - ease(u)))
-            }
+            _ => 1.0,
         }
+    }
+
+    /// Where in the arms' swing clip (whose length is a miss's: wind-up, arc, follow-through,
+    /// recovery) the arms are `t` s in: a hit holds the impact's pose from contact on, through
+    /// the hit-stop and the pull-out ([`clip_weight`](Self::clip_weight) fades it to rest).
+    pub fn clip_time(&self, t: f64) -> f64 {
+        let s = &self.tool.swing;
+        match self.impact_s() {
+            None => t.min(s.miss_length()),
+            Some(at) => t.min(at),
+        }
+    }
+
+    /// The view's sway with the swing `t` s in (docs/CHARACTERS.md §5.2): [`swing_camera`] for
+    /// this run.
+    pub fn camera(&self, t: f64) -> CameraOffset {
+        let hit = self
+            .impact_s()
+            .map(|at| (at, self.hit.is_some_and(|h| h.wood)));
+        swing_camera(&self.tool.swing, self.vertical, hit, t)
+    }
+}
+
+/// The view's sway (the tool's `swing.camera` for the swing's kind; owner, 2026-11-12: "The camera
+/// could have some sway with the chop") `t` s into a swing, an offset to the view drawn, never the
+/// aim. The keys follow the miss's timeline (wind-up, arc, recovery) up to the head's contact; a
+/// hit (`hit`: when, and whether into a wood) then holds the contact's offset through the hit-stop
+/// and eases it home over the pull-out, while a miss runs on through its keys. The kick lands at
+/// the contact, a hit's or the arc's middle on a miss (at `kick.miss` of its size; a bounce off
+/// what is not a wood at `kick.bounce`), dying away over `decay_s` and gone by the swing's end.
+/// Zero before the swing, at its end and after.
+pub fn swing_camera(
+    s: &dwell_protocol::chopping::SwingDef,
+    vertical: bool,
+    hit: Option<(f64, bool)>,
+    t: f64,
+) -> CameraOffset {
+    let cam = s.camera(vertical);
+    let (contact, end, k) = match hit {
+        Some((at, wood)) => (
+            at,
+            at + s.hit_stop_s + s.recover_hit_s,
+            if wood { 1.0 } else { cam.kick.bounce },
+        ),
+        None => (s.centre_s(), s.miss_length(), cam.kick.miss),
+    };
+    if !(0.0..end).contains(&t) {
+        return CameraOffset::ZERO;
+    }
+    let keyed = match hit {
+        Some((at, _)) if t >= at => {
+            let home = 1.0 - ease((t - at - s.hit_stop_s) / s.recover_hit_s.max(1e-6));
+            cam.at(s.phase_time(at)).scaled(home)
+        }
+        _ => cam.at(s.phase_time(t)),
+    };
+    if t < contact {
+        return keyed;
+    }
+    // The kick: at once at the contact, dying away, and faded out by the swing's end.
+    let after = t - contact;
+    let left = (end - contact).max(1e-6);
+    let envelope = (-after / cam.kick.decay_s.max(1e-6)).exp() * (1.0 - ease(after / left));
+    keyed.plus(cam.kick.offset.scaled(k * envelope))
+}
+
+/// A camera's place and turn: the eye (world m), yaw and pitch (degrees, the game's) and roll
+/// (radians, the renderer's `aim`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewPose {
+    pub eye: [f64; 3],
+    pub yaw: f64,
+    pub pitch: f64,
+    pub roll: f64,
+}
+
+/// The view drawn from the aim's pose `aim` with the swing's sway `sway` added (off: `on` false,
+/// the Camera sway setting) and any other turn of the view `extra` (a blast's shake: yaw, pitch
+/// degrees, the game's). Face-local through `face`: the sway's yaw toward the screen's right is
+/// `FaceFrame::handed` of the game's yaw (which turns left on face A), its roll and bob are along
+/// the view's own axes. The aim (targeting, the crosshair, the server, the facing) keeps `aim`.
+pub fn swayed_view(
+    aim: ViewPose,
+    sway: CameraOffset,
+    on: bool,
+    extra: (f64, f64),
+    face: dwell_world::FaceFrame,
+) -> ViewPose {
+    let sway = if on { sway } else { CameraOffset::ZERO };
+    let yaw = aim.yaw + extra.0 + face.handed(-sway.yaw);
+    let pitch = aim.pitch + extra.1 + sway.pitch;
+    // Leaning right is the view's right side down: a negative turn about its back axis.
+    let roll = aim.roll - sway.roll.to_radians();
+    let b = crate::render::camera::aim(yaw, pitch, face, roll);
+    let eye = std::array::from_fn(|k| {
+        aim.eye[k] + b.right[k] * sway.bob[0] + b.up[k] * sway.bob[1] + b.back[k] * sway.bob[2]
+    });
+    ViewPose {
+        eye,
+        yaw,
+        pitch,
+        roll,
     }
 }
 
 impl Chopping {
-    /// Use with the axe held: the swing turns between level and vertical.
+    /// A tap of Use with the sword held: its stance turns between level and vertical (a tool
+    /// with one mode, the axe, never asks).
     pub fn toggle(&mut self) -> bool {
         self.vertical = !self.vertical;
         self.vertical
@@ -263,12 +353,14 @@ impl Chopping {
             return None;
         }
         self.last_ms = Some(now_ms);
-        self.run = Some(SwingRun::new(tool, self.vertical, now_ms, hit));
+        // A tool with one mode (the axe) swings level whatever the stance last held (a sword's).
+        let vertical = tool.stance(self.vertical);
+        self.run = Some(SwingRun::new(tool, vertical, now_ms, hit));
         Some(if self.sweep {
             Some(ChopAction::Sweep {
                 tool: tool.name.to_owned(),
                 look: look.map(|v| v as f32),
-                vertical: self.vertical,
+                vertical,
             })
         } else {
             hit.filter(|h| h.wood).map(|h| ChopAction::Swing {
@@ -276,7 +368,7 @@ impl Chopping {
                 cell: h.cell,
                 face: h.face,
                 point: h.point.map(|v| v as f32),
-                vertical: self.vertical,
+                vertical,
             })
         })
     }
@@ -297,13 +389,9 @@ impl Chopping {
         self.cuts.extend(m.cuts);
     }
 
-    /// The hint shown while the axe is held.
-    pub fn hint(&self) -> &'static str {
-        if self.vertical {
-            "Axe: vertical swing (right click: level)"
-        } else {
-            "Axe: level swing (right click: vertical)"
-        }
+    /// The hint shown while `tool` is held, in the current stance (its kind's `hints`).
+    pub fn hint(&self, tool: &ToolDef) -> Option<&'static str> {
+        dwell_protocol::chopping::hint(tool.kind, tool.stance(self.vertical))
     }
 }
 
@@ -519,39 +607,19 @@ mod tests {
         assert_eq!(hit.clip_time(at + 0.5 * s.hit_stop_s), at);
         assert_eq!(hit.clip_time(at + 0.99 * s.hit_stop_s), at);
         // Then back out to the rest; the miss runs on through its follow-through.
-        assert!(hit.clip_time(at + s.hit_stop_s + 0.5 * s.recover_hit_s) < at);
-        assert!(hit.clip_time(hit.length()) < 1e-9);
+        // The pull-out holds the contact's pose and fades it to rest (BUGS.md #93).
+        assert_eq!(hit.clip_time(at + s.hit_stop_s + 0.5 * s.recover_hit_s), at);
+        assert_eq!(hit.clip_weight(at + 0.99 * s.hit_stop_s), 1.0);
+        let w = hit.clip_weight(at + s.hit_stop_s + 0.5 * s.recover_hit_s);
+        assert!(w > 0.0 && w < 1.0, "{w}");
+        assert!(hit.clip_weight(hit.length()) < 1e-9);
+        assert_eq!(miss.clip_weight(miss.length() - 1e-3), 1.0);
         assert!(miss.clip_time(at + s.hit_stop_s) > at + s.hit_stop_s - 1e-9);
         assert!(hit.length() < miss.length(), "a miss recovers longer");
         // The impact fires once, at its moment.
         assert_eq!(hit.take_impact(at * 1000.0 - 1.0), None);
         assert_eq!(hit.take_impact(at * 1000.0 + 1.0), Some(impact(4, true)));
         assert_eq!(hit.take_impact(at * 1000.0 + 2.0), None);
-        // The camera: drawn back with the wind-up, a jolt at the hit, home at the end.
-        let (wound, _) = hit.camera(s.windup_s);
-        assert!(wound > 0.0, "wound back to the right");
-        let (before, _) = hit.camera(at - 1e-3);
-        let (jolt, _) = hit.camera(at + 1e-3);
-        assert!(
-            jolt - before > 0.5 * s.kick_deg,
-            "a jolt against the swing: {before} then {jolt}"
-        );
-        let (home, _) = hit.camera(hit.length());
-        assert!(home.abs() < 0.05, "home: {home}");
-    }
-
-    #[test]
-    fn a_swing_off_stone_bounces_with_a_bigger_jolt_than_into_wood() {
-        let s = axe().swing;
-        let wood = SwingRun::new(axe(), true, 0.0, Some(impact(5, true)));
-        let stone = SwingRun::new(axe(), true, 0.0, Some(impact(5, false)));
-        let at = wood.impact_s().unwrap();
-        let (_, w) = wood.camera(at + 1e-3);
-        let (_, st) = stone.camera(at + 1e-3);
-        assert!(st > w, "the bounce jolts harder: {st} vs {w}");
-        // Both stop and come back alike: a bounce is a hit with no effect.
-        assert_eq!(stone.clip_time(at + 0.5 * s.hit_stop_s), at);
-        assert_eq!(stone.length(), wood.length());
     }
 
     #[test]
@@ -609,18 +677,43 @@ mod tests {
 
     #[test]
     fn the_swing_carries_its_plane() {
+        let sword = dwell_protocol::chopping::tool("dwell:sword").unwrap();
         let mut c = Chopping {
             on: true,
             sweep: true,
             ..Default::default()
         };
         assert!(c.toggle());
-        let m = c.start(axe(), [1.0, 0.0, 0.0], None, 0.0);
+        let m = c.start(sword, [1.0, 0.0, 0.0], None, 0.0);
         assert!(matches!(
             m,
             Some(Some(ChopAction::Sweep { vertical: true, .. }))
         ));
         assert!(c.run.unwrap().vertical);
+    }
+
+    // Owner, 2026-11-14: "Let's simplify the axe to be like the shovel and pick, without the
+    // multiple modes." Whatever stance was left from a sword, the axe swings level, says so to the
+    // server and shows one hint.
+    #[test]
+    fn the_axe_swings_level_whatever_the_stance() {
+        let mut c = Chopping {
+            on: true,
+            sweep: true,
+            vertical: true,
+            ..Default::default()
+        };
+        let m = c.start(axe(), [1.0, 0.0, 0.0], None, 0.0);
+        assert!(matches!(
+            m,
+            Some(Some(ChopAction::Sweep {
+                vertical: false,
+                ..
+            }))
+        ));
+        assert!(!c.run.unwrap().vertical);
+        let level = Chopping::default().hint(axe());
+        assert_eq!(c.hint(axe()), level);
     }
 
     #[test]
@@ -658,4 +751,250 @@ mod tests {
         let mut plain = SwingRun::new(axe(), false, 0.0, Some(impact(5, true)));
         assert!(!plain.take_clear(1e6));
     }
+}
+
+#[cfg(test)]
+mod sway_tests {
+    //! The view's sway with the swing (docs/CHARACTERS.md §5.2; owner, 2026-11-12).
+    use super::*;
+    use dwell_world::FaceFrame;
+
+    fn axe() -> &'static ToolDef {
+        dwell_protocol::chopping::tool("dwell:stone_axe").unwrap()
+    }
+
+    fn hit_at(step: u32, wood: bool) -> Impact {
+        Impact {
+            cell: [3, 0, 0],
+            face: 0,
+            point: [3.0, 0.2, 0.5],
+            step,
+            wood,
+        }
+    }
+
+    /// Every run of both swing kinds: a miss, a hit into wood, a bounce.
+    fn runs() -> Vec<SwingRun> {
+        let mid = axe().swing.samples / 2;
+        [false, true]
+            .into_iter()
+            .flat_map(|v| {
+                [None, Some(hit_at(mid, true)), Some(hit_at(mid, false))]
+                    .map(|h| SwingRun::new(axe(), v, 0.0, h))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_sway_is_zero_at_rest_moves_during_the_swing_and_is_back_to_zero_after() {
+        // The swings a tool has (the axe's one, level; owner 2026-11-14).
+        for run in runs()
+            .into_iter()
+            .filter(|r| r.tool.stance(r.vertical) == r.vertical)
+        {
+            let len = run.length();
+            for t in [-0.2, 0.0, len, len + 0.01, len + 2.0] {
+                assert_eq!(run.camera(t), CameraOffset::ZERO, "{run:?} at {t}");
+            }
+            // It settles: just before the end it is nearly home (no snap back).
+            assert!(run.camera(len - 1e-3).size() < 0.05, "{run:?}");
+            // And it sways: wound up at the wind-up's end by more than half a degree.
+            let wound = run.camera(run.tool.swing.windup_s);
+            assert!(wound.size() > 0.5, "{run:?}: {wound:?}");
+            let peak = (0..200)
+                .map(|i| run.camera(len * f64::from(i) / 200.0).size())
+                .fold(0.0, f64::max);
+            assert!(peak < 6.0, "small: {peak}");
+        }
+    }
+
+    #[test]
+    fn the_level_strike_turns_the_view_left_the_way_the_swing_goes_after_a_lean_right() {
+        let s = axe().swing;
+        let miss = SwingRun::new(axe(), false, 0.0, None);
+        let wound = miss.camera(s.windup_s);
+        let struck = miss.camera(s.windup_s + s.active_s);
+        // The wind-up leans back and right (the head drawn back over the right shoulder).
+        assert!(wound.yaw > 0.5 && wound.roll > 0.5, "{wound:?}");
+        assert!(
+            wound.bob[0] > 0.0 && wound.bob[2] > 0.0,
+            "back and right: {wound:?}"
+        );
+        // The strike turns it left, as the head goes right → left across the screen.
+        assert!(struck.yaw < -0.5, "{struck:?}");
+        let (mut last, mut leftward) = (wound.yaw, 0);
+        for i in 1..=10 {
+            let y = miss
+                .camera(s.windup_s + s.active_s * f64::from(i) / 10.0)
+                .yaw;
+            leftward += usize::from(y < last);
+            last = y;
+        }
+        assert!(
+            leftward >= 8,
+            "the yaw falls through the strike ({leftward}/10)"
+        );
+    }
+
+    #[test]
+    fn the_vertical_chop_pitches_up_on_the_wind_up_and_dips_at_contact() {
+        // The sword's vertical stance (the axe has one mode, its level swing).
+        let sword = dwell_protocol::chopping::tool("dwell:sword").unwrap();
+        let s = sword.swing;
+        let mid = s.samples / 2;
+        let hit = SwingRun::new(sword, true, 0.0, Some(hit_at(mid, true)));
+        let at = hit.impact_s().unwrap();
+        assert!(hit.camera(s.windup_s).pitch > 1.0);
+        let before = hit.camera(at - 1e-3).pitch;
+        let after = hit.camera(at + 0.02).pitch;
+        assert!(
+            after < before - 0.5,
+            "a dip at contact: {before} then {after}"
+        );
+        assert!(after < 0.0);
+    }
+
+    #[test]
+    fn a_hit_kicks_harder_than_a_miss_and_a_bounce_harder_than_wood() {
+        let s = axe().swing;
+        let mid = s.samples / 2;
+        // The axe's one swing (level).
+        {
+            let vertical = false;
+            // The kick's jump across the contact moment.
+            let jump = |run: SwingRun, at: f64| {
+                let a = run.camera(at - 1e-4);
+                let b = run.camera(at + 1e-4);
+                CameraOffset {
+                    yaw: b.yaw - a.yaw,
+                    pitch: b.pitch - a.pitch,
+                    roll: b.roll - a.roll,
+                    bob: std::array::from_fn(|k| b.bob[k] - a.bob[k]),
+                }
+                .size()
+            };
+            let miss = jump(SwingRun::new(axe(), vertical, 0.0, None), s.centre_s());
+            let contact = s.time_of_step(mid);
+            let wood = jump(
+                SwingRun::new(axe(), vertical, 0.0, Some(hit_at(mid, true))),
+                contact,
+            );
+            let stone = jump(
+                SwingRun::new(axe(), vertical, 0.0, Some(hit_at(mid, false))),
+                contact,
+            );
+            assert!(miss > 0.1, "a miss sways (and kicks) too: {miss}");
+            assert!(wood > miss, "a hit kicks harder: {wood} vs {miss}");
+            assert!(stone > wood, "a bounce harder still: {stone} vs {wood}");
+        }
+    }
+
+    fn pose(f: FaceFrame) -> ViewPose {
+        ViewPose {
+            eye: f.point([0.98, dwell_world::m_of_row(35) + 0.2, 0.5]),
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+        }
+    }
+
+    #[test]
+    fn with_the_setting_off_the_view_is_the_aim_plus_a_blasts_shake() {
+        let f = FaceFrame::A;
+        let run = SwingRun::new(axe(), false, 0.0, None);
+        let sway = run.camera(axe().swing.windup_s);
+        let aim = pose(f);
+        let off = swayed_view(aim, sway, false, (0.3, -0.2), f);
+        assert_eq!(
+            off,
+            ViewPose {
+                yaw: 0.3,
+                pitch: -0.2,
+                ..aim
+            }
+        );
+        assert_ne!(swayed_view(aim, sway, true, (0.3, -0.2), f), off);
+        // No swing: the view is the aim.
+        assert_eq!(
+            swayed_view(aim, CameraOffset::ZERO, true, (0.0, 0.0), f),
+            aim
+        );
+    }
+
+    dwell_world::both_faces!(
+        /// The sway is face-local: a yaw toward the screen's right turns the forward toward the
+        /// view's right, a roll leaning right tips its top toward the right, a bob right moves the
+        /// eye to the right, on either face.
+        fn the_sway_goes_the_same_way_on_screen_on_either_face(f: FaceFrame) {
+            use crate::render::camera::{aim, dot, sub};
+            let p = pose(f);
+            let rest = aim(p.yaw, p.pitch, f, p.roll);
+            let turn = |o: CameraOffset| {
+                let v = swayed_view(p, o, true, (0.0, 0.0), f);
+                (v, aim(v.yaw, v.pitch, f, v.roll))
+            };
+            let one = |yaw, roll, bob| CameraOffset {
+                yaw,
+                pitch: 0.0,
+                roll,
+                bob,
+            };
+            let (_, b) = turn(one(3.0, 0.0, [0.0; 3]));
+            assert!(dot(b.forward(), rest.right) > 0.03, "yaw right");
+            let (_, b) = turn(one(0.0, 3.0, [0.0; 3]));
+            assert!(dot(b.up, rest.right) > 0.03, "lean right");
+            assert!(
+                dot(b.forward(), rest.forward()) > 0.9999,
+                "a roll keeps the look"
+            );
+            let (v, _) = turn(one(0.0, 0.0, [0.02, 0.0, 0.0]));
+            assert!(
+                (dot(sub(v.eye, p.eye), rest.right) - 0.02).abs() < 1e-9,
+                "bob right"
+            );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// The sway turns the view only: through a swing the block the aim picks (what targeting,
+        /// the crosshair, the server's swing and the facing use) is the same with the sway on and
+        /// off, while the swayed view itself would have picked another cell at some moment (so the
+        /// fixture can tell).
+        fn the_sway_never_changes_the_aim(f: FaceFrame) {
+            let mut w = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+            let log = dwell_blocks::require("dwell:log");
+            for x in -3..4 {
+                for row in 28..44 {
+                    let [cx, cy, cz] = f.cell([x, row, 3]);
+                    w.set_voxel(cx, cy, cz, log);
+                }
+            }
+            let mut targeting = dwell_game::block_interaction::BlockInteraction::new();
+            let aim = pose(f);
+            let mut view_moved = false;
+            for run in runs() {
+                for i in 0..60 {
+                    let t = run.length() * f64::from(i) / 60.0;
+                    let sway = run.camera(t);
+                    let mut picked = Vec::new();
+                    for on in [false, true] {
+                        let view = swayed_view(aim, sway, on, (0.0, 0.0), f);
+                        // The game targets from the aim; the view only goes to the renderer.
+                        let _ = view;
+                        let t = targeting.update(&mut w, Some(aim.eye), aim.yaw, aim.pitch, f);
+                        picked.push(t.map(|t| t.cell));
+                    }
+                    assert_eq!(picked[0], picked[1]);
+                    assert_eq!(picked[0], Some(f.cell([0, 35, 3])));
+                    let v = swayed_view(aim, sway, true, (0.0, 0.0), f);
+                    let seen = targeting.update(&mut w, Some(v.eye), v.yaw, v.pitch, f);
+                    view_moved |= seen.map(|t| t.cell) != picked[0];
+                }
+            }
+            assert!(
+                view_moved,
+                "the swayed view crosses a cell edge at some moment"
+            );
+        }
+    );
 }

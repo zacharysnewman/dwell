@@ -4,14 +4,14 @@
   "description": "Cold pine forest on rolling uplands, snowy above 900 m.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "max": 0.35,
-      "blend": 0.08
+    "celsius": {
+      "min": -1.5,
+      "max": 6,
+      "blend": 1
     },
-    "elevation": {
-      "min": 150,
-      "max": 1500,
-      "blend": 150
+    "rain": {
+      "min": 250,
+      "blend": 75
     }
   },
   "detail": {

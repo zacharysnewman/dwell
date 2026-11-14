@@ -28,7 +28,7 @@ proposed on 2026-10-16 (§8):
 | Where the data lives | `shared/look/daynight.json` (clock, sun path, sun/moon/star looks, keyframes), generated and validated |
 | Keyframes | 14 over the day, keyed by the sun's angle along its path, interpolated in Oklab |
 | Sun | A limb-darkened disc, larger near the horizon, with a bloom and a glow sized by data |
-| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8-day cycle, maria and earthshine |
+| Moon | Opposite the sun (as the bifacial world had it), with phases over an 8.25-day cycle, maria and earthshine |
 | Stars | Procedural, turning with the sky, faded by the sky's brightness, twinkling |
 | Face B | Shares the one sky: its time of day is face A's + 12 hours (10 min day, 20 min night) |
 | The sky rotation setting | Removed (the time of day is the world's); dev switches replace it |
@@ -65,9 +65,26 @@ is the **solar angle**: 0° rising, 90° noon, 180° setting, 270° lowest. To m
 `dayS` of the day, the angle runs unevenly with time: hour angle `2πu + k·sin 2πu` (u = time from
 noon as a share of the day) with `k` chosen so the sun sets `dayS / 2` after noon; it moves slower
 by day and faster by night, smoothly (k = −0.60 for 20/10 minutes; the generator rejects a split
-whose path would turn back). The **moon is always opposite the sun** (BIFACIAL_WORLD.md §6), so it is
-up exactly when the sun is down. The stars are fixed to the sky, which turns about the path's axis
+whose path would turn back). The sky draws the **moon where the celestial model puts it** (§14, its own orbit; since the moon
+world's M-2), its disc a flat face of the moon's real terrain lit by the sun (BIFACIAL_WORLD.md §6):
+full when opposite the sun; shaped as a sphere (`moon.domeBias` 1) with its normals tilted by the baked slopes, so the phases
+read as crescents, halves and gibbous with the craters on top, and the halo and the moonlight follow
+that disc's lit share (`celestial::disc_lit`). It reflects by the regolith's law, not Lambert's
+(`moon.lunarLambert` 1, `celestial::moon_shade`: Lommel-Seeliger, 2μ₀/(μ₀ + μ), eased past 1): a Lambert
+ball darkens toward its limb even at full, its bright part ending at 0.87 of its radius, so the full moon
+read smaller than the old flat disc (owner, 2026-11-12: "The moon looks smaller I think compared to the
+old moon?"); now the full moon is lit evenly to its edge (×8: 91 px against the old 92 px, the Lambert
+ball 76 px) and the phases still darken only past the terminator. The stars are fixed to the sky, which turns about the path's axis
 by the solar angle.
+
+**A world's own orbit** (orbits by seed, [REALISTIC_WORLD.md](./proposals/REALISTIC_WORLD.md) §8, O1–O2
+**[built]**): `riseYawDeg`, `noonElevationDeg`, the clock and the moon's month, inclination, node and phase above
+are **today's orbit** (`dwell_look::orbits::Orbit::today`: the pole 90° − 60° = 30° over face A's horizon, its yaw
+31°). A world with a Sky preset (a Realistic world; `shared/look/orbits.json`) rolls its own from its seed at
+creation and keeps it in its settings (`CELESTIAL`, `CLOCK`, `MOON_PHASE`): its noon stands 90° − its pole on
+both faces, its sun rises at its pole's yaw, its day and month are its own. `orbits::day_night_for` builds the
+world's cycle from its settings; a world without `CELESTIAL` is today's cycle exactly. The keyframes stay keyed
+by the solar angle, so a lower noon keeps noon's colours.
 
 **Face B** shares the sky. The sun is over face B exactly when it is under face A, so face B's
 solar angle is face A's + 180° and its look is the same keyframes at that angle: when face A has
@@ -92,8 +109,8 @@ Each keyframe sets, at one solar angle, everything the time of day changes (colo
 | `stars`, `moonGlow` | The stars' visibility; the moon's glow (× its lit share) |
 | `saturation` | The lit scene's saturation (moonlight desaturates: 0.5 at midnight) |
 
-The 14 keyframes: sunrise (0°), golden hour (7°), morning (30°), noon (90°, Phase 7's approved
-sky and lights), afternoon (150°), golden hour (173°), sunset (180°), civil, nautical and
+The 14 keyframes: sunrise (0°), golden hour (7°), morning (30°), noon (90°: Phase 7's lights; since
+2026-11-13 a deep blue zenith over a lighter blue horizon, morning and afternoon alike), afternoon (150°), golden hour (173°), sunset (180°), civil, nautical and
 astronomical dusk (187°, 194°, 201°: the sun 6°, 12° and 18° down), midnight (270°), astronomical,
 nautical and civil dawn (339°, 346°, 353°).
 
@@ -108,11 +125,30 @@ horizon's colour in that azimuth. So distant terrain melts into the sky at every
 the warm band toward a setting sun, into the dark blue horizon at night. There is no separate fog
 colour to keep in step. The keyframes vary only the fog's density.
 
+**Aerial perspective (data, off by default; WORK_QUEUE item 29).** `shared/look/fog.json` also holds
+how far land fades, all of it still read from the sky so it stays in step with the time of day:
+
+- `air.elevationDeg`: the colour far land fades toward is the sky's at least that many degrees above
+  the horizon in the ray's azimuth (bluer than the pale horizon by day); 0 is the horizon's, as above.
+- `air.sunTint` with `warm` and `cool` (per-channel multipliers): that colour warmer facing the sun's
+  azimuth, cooler away; 0 none.
+- `veil.saturation`, `veil.contrast`, `veil.halfM`: before the haze hides it, far land greys and its
+  darks fill with the air colour (shadows haze first), half of each by `halfM`; 0s none.
+
+dwell-look `fog.rs` (`air_direction`, `air_tint`, `veiled`) is the reference; the composite's
+`haze_air` and `haze_veiled` (`shaders.rs`) apply it in `fogged`, behind a WGSL constant
+`HAZE_AERIAL`, so with today's zeros the composite is the plain fade, unchanged (the golden test
+`fog::tests::todays_fog_output_is_pinned`). It costs one more `dwell_sky` and a few multiplies per
+fogged pixel when on, the same on the CPU adapter's tier. `presets` in the file name variants over
+these values (`thicker`, `aerial`, `aerial-sun`: item 29's B, C and D); `?haze=<name>` draws one
+(`setHaze`, set before the shaders are built) to compare. The values at the top level are what every
+client draws; picking a preset is moving its values there.
+
 ## 5. Drawing
 
 `dwell-look` evaluates the cycle on the CPU each frame (`DayNight::state`: the time of day, the
 sun, moon and axis, the moon's phase, and each face's keyframe sample) and packs it into the
-`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 23 vec4: the directions, the viewer's face's sky
+`DaySky` uniform block (`daynight::DAY_SKY_WGSL`, 24 vec4: the directions, the viewer's face's sky
 colours, each face's lights, and the other face's sky colours and fog density). The renderer's frame carries it as `frame.day`; clouds and water read it.
 
 - **The sky** (`sky.wgsl` `dwell_sky`): the gradient, the horizon band toward the sun, the sun's
@@ -151,7 +187,9 @@ colours, each face's lights, and the other face's sky colours and fog density). 
 Water's reflection uses `sky()`, which is `dwell_sky` with the frame's `DaySky`, so it follows the
 cycle; its glint takes the face's sun and moon light from the block too. The clouds (Phase 31) take
 their light from the same block (`cloud_lighting_for`: the deck's own face's sun, moon and sky light;
-day or night by the sun's height over that face).
+day or night by the sun's height over that face). The volumetric clouds light with the same colours
+from that block: the sun's or moon's light through a short light march, the sky's light from above and a
+darker ground bounce from below (CLOUDS.md §8.8), so at sunset they warm and at night they take the moon.
 
 ## 6. Dev controls
 
@@ -325,7 +363,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   must be drawn again: the eye has left the slack, the light has turned `lightTurnDeg` (0.25°; the
   sun turns about 0.15° a second), the casters in its box changed (an order-free signature of their
   mesh identities, skirts and whether they fade: a chunk meshed, replaced or dropped, an LOD swap
-  begun or ended), or moving casters are about: other players, or falling pieces (once every `refreshFrames`; a piece's caster identity is its id and part, not its pose, since 0.50.15: with the pose every flying piece redrew a far cascade every frame, DEV_TOOLS.md "Blasts and floods (M1 Air)"). At most `farPerFrame`
+  begun or ended), or moving casters touch its box: other players, or falling pieces (once every `refreshFrames`; one elsewhere in the world doesn't draw it again since 0.58.x; a piece's caster identity is its id and part, not its pose, since 0.50.15: with the pose every flying piece redrew a far cascade every frame, DEV_TOOLS.md "Blasts and floods (M1 Air)"). At most `farPerFrame`
   (1) far cascades are drawn in a frame, the most urgent first and then the longest kept, so a
   frame never draws them all, whatever changed (no spikes); one not drawn yet for this light holds
   nothing (`NO_CASCADE`), and its fragments take the next cascade or the far shadows. Standing or
@@ -339,14 +377,24 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   levels share the map as they share the screen; a stand-in keeps its clip box. Water casts none.
   Opaque casters draw their faces toward the light, those drawn in full through a depth-only
   vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`); plants cast
-  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. The
+  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. Plants
+  (grass, flowers, ladders: a chunk's cutout before its trees' leaves) cast into the nearest
+  `plantCascades` only; a tree's leaves (their faces and cards) cast into every cascade, and the
+  shadow passes drop no leaf card for the side of the crown the camera is on
+  (`shadow_cutout_vs`): what casts follows the light, never the camera (BUGS.md #156). The
   casters' pipelines take a slope-scaled depth bias (`bias.slopeScale`).
 - **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface; a face turned
   away from both lights skips the lookup, `lit_by_direct`, since nothing multiplies it), the characters'
   key light (a body in shade shows its ramp's middle at most) and the water's glint, sparkle,
   in-scatter and foam. A fragment takes the first cascade that holds it, offsets its lookup along
-  its normal by `normalOffsetTexels` of that cascade's texels, subtracts `depthBiasM`, and filters
-  with a soft PCF: `filterTaps`² hardware 2×2 compares over `filterTexels`, a painterly soft edge.
+  its normal by `normalOffsetTexels` of that cascade's texels (a tree's leaves by at least
+  `leafNormalOffsetM`, 0.35 m, the same in every cascade, so a crown never shades its own top with
+  its cards and leaf texels: the fine near cascade did and the coarse ones couldn't, BUGS.md #156),
+  subtracts `depthBiasM`, and filters with a soft PCF: `filterTaps`² hardware 2×2 compares over
+  `filterTexels`, a painterly soft edge. Over the outer `blendBand` (15 %) of a cascade's box it
+  blends toward the next cascade's lookup, all of it at the edge, so a cascade's edge shows no step
+  in a shadow's softness (render/shadows.rs `pick` is the rule in f64, tested on a CPU model of the
+  maps).
 - **Composition**: the shadow multiplies **only the direct sun and moon term**
   (`lambert_lit`'s `shadow`; a shader-source test pins it); the hemisphere light stays the ambient
   and AO's (§9) and the flood light's. Over the last `edgeFade` (20 %) of the shadow distance, and
@@ -688,3 +736,107 @@ each the same sky and clouds from both sides.
 **Not covered.** The water's reflections and the ink's fog keep the eye's face's sky (a lake on the
 other face seen down a shaft reflects the eye's face's sky); the inside-the-cloud fog is the eye's
 deck's only.
+
+## 14. The celestial model: the moon's orbit
+
+**[built, M-4; not drawn yet]** (`dwell-look` `celestial.rs`; design: [the moon world
+proposal](./proposals/MOON_WORLD.md) §6, WORK_QUEUE item 27). Owner, 2026-11-12: "We may need to
+consider a new model for the sun, world, and moon positions in order to get moon phases." Answers:
+tidally locked (home sees the moon's face A), physical phases (no dome bias), "A darker floor but a
+minimum still." for new-moon nights; and "the moon should look bright": today's glow and brightness.
+
+| Body | Model | Data |
+|---|---|---|
+| Sun | today's direction exactly (§3): `Celestial::sun_direction(world_s)` is `sun_direction(solar_deg(time_of_day))` (a golden test pins it) | `clock`, `sunPath` |
+| Home | at rest; positions are offsets from its disc's centre | — |
+| Moon | on a circle `distanceM` out, inclined `inclinationDeg` to the sun's path, once a month (new to new) against the sky's daily turn, so it rises ~1/8 of a day later each day; its ascending node `nodeDeg` along the path from the sun at day 0, turning against the sun every `nodeTurnDays` (eclipse seasons); tidally locked | `moon.cycleDays` (8), `moon.startPhase` or the world's, `moonOrbit` (5°, 90°, 96 days, 596 800 m) |
+
+- **The sky frame** turns with the sun (toward the sun, a quarter turn on along its path, the path's
+  axis); the stars are fixed in it, and the moon's orbit is placed in it, so the phase runs evenly
+  even though the solar angle doesn't.
+- **Phases from geometry** (`Celestial::view(world_s, viewer)`): the face seen (A from anywhere at
+  home), its lit share n·s (the moon is a flat disc: lit as a whole, full when opposite the sun, dark
+  from last quarter to first, crescents only in its crater walls once M-2 lights the baked normals),
+  the phase by its angle behind the sun along the path, and its direction. Both home faces see the
+  same lit share and phase (to the parallax, < 10⁻⁴ of a month).
+- **Moonlight on the ground** (`Celestial::moonlight(world_s, viewer, face)`): the share of today's
+  moonlight = `moon.nightFloor` (0.15, darker than today's `newMoonLight` 0.55) + the rest × the lit
+  share × the share of the disc over the face's horizon. Never under the floor (tested on both faces).
+- **The look** (`Celestial::glow`): today's bloom and glow × the lit share; the lit part as bright as
+  today's `moon.color` (the bake shapes the surface, not its brightness).
+- **The world's month** starts at its own phase: `WorldSettings` optional tag `MOON_PHASE` (0x84,
+  f32); a world without it (every world before it) takes `moon.startPhase`, so older worlds keep
+  working and a world that sets none joins byte-identically. `Celestial::for_world` builds the model
+  from a world's settings.
+- **The month is 8.25 days** (owner, 2026-11-12: "Sounds good" to a fractional month): each
+  month's full moon comes a quarter day later on the clock than the last, so over four months it
+  falls at face A's midnight, dawn, face B's midnight and dusk in turn, and both faces' nights get
+  full moons (`celestial::tests::the_full_moon_comes_round_the_clock_…`). The 8-day month it
+  replaced brought every full moon at face A's midnight.
+- **Tests** (`cargo test -p dwell-look --lib celestial`): the sun golden; the orbit's distance and
+  latitude; full opposite the sun, new between; the lit share monotonic new → full → new; the month
+  and the daily lag; tidally locked (face A toward home at every phase, both faces); both faces'
+  phases equal; the moonlight floor (both faces); the world's phase; an orbit by fixture data alone.
+  `daynight.test.mjs`: the distance keeps grids.json's moon at `radiusDeg`.
+
+## 15. The atmosphere: the sky thinning to space
+
+**[built]** (`dwell-look` `atmosphere.rs`, data `shared/look/atmosphere.json` → `atmosphere.gen.rs`;
+WORK_QUEUE item 28). Owner, 2026-11-12: "Yes for now, let's just do earth gravity out to moon. We
+likely need an atmosphere transition now between sky thinning to space. Clouds shouldn't extend past
+the earth atmosphere either." With far flight to the moon (~597 km) a player climbs far above the sky.
+
+- **The curve.** The viewer's altitude is its height above sea level on its own face (face-local, so
+  both faces alike). At or below `baseM` (3 km, over the clouds' tops) the sky is today's **exactly**:
+  `DayState::air` is `Air::GROUND` and every shader change sits behind `day.space.x > 0`, a uniform
+  branch. Above it the share of the sky's scattering left is the air column over the eye,
+  `(e^(−x/H) − e^(−X/H)) / (1 − e^(−X/H))` (x over the base, X = `topM` − `baseM`, H = `scaleHeightM`
+  9 km), so the thinning (`Atmosphere::thinning`) is 0 at the base, rises fastest just over it, and is
+  1 at `topM` (80 km) and beyond — the moon is in space.
+- **The sky** (`sky.wgsl` `dwell_space`, CPU `atmosphere::space_sky` inside `sky_color`): today's sky
+  mixed by the thinning toward space: `spaceColor`, plus the **limb** — the horizon's colour in the
+  ray's azimuth (with the warm band toward the sun) gathered in a Gaussian `limbWidthDeg` wide at
+  the rim of the world, `limbDistanceM` away, at elevation −atan(height / distance) below the
+  viewer's horizon — plus the sun's tight white bloom (`sunBloom`, the sun's bloom width). The broad
+  glow, the band and the moon's glow go with the air. The limb follows the time of day (a night limb
+  is the night horizon's colour). In the other face's frame (rays that leave by its air) the limb's
+  rise flips (`Air::other`, `dwell_other_day`). The limb is the rim seen from over the disc: for a
+  viewer past the rim it fades out over `limbFadeM` (10 km beyond the world's radius from the axis;
+  `Atmosphere::limb_weight`, `Air::limb_weight`, `DaySky.space.z`), since out in the void no world
+  makes one (BUGS.md #102: it drew a bright band under the disc in every far shot).
+- **Stars by day** (`starsInSpace`): the packed visibility is at least the thinning × it, both faces'
+  (`Air::stars`); in space the stars' horizon fade is off, so they reach down to the limb.
+- **The sun** (`dwell_sun_disc`): in space no air swells it at the horizon, and its colour goes
+  `sunWhiteness` of the way to white.
+- **The fog** thins with the air: `DayState::fog_density` × (1 − thinning), for the eye's face and
+  the other's, so it is gone in space.
+- **One layered sky, per grid's air [built 2026-11-13].** Owner, 2026-11-13: "Sun and moon should be space, the
+  same as night sky. Could perhaps just make space a more general skybox and have 'day' be a closer atmosphere
+  skybox so it can fade out as you leave earth." So the model is two layers: **space** (`spaceColor`, the stars,
+  the sun white, the bodies where they are) is the base sky everywhere, home too, and **day** is a layer over it
+  that belongs to a grid's air: the keyframes' sky (home's blue day, sunsets, the night's deep blue, haze) whose
+  strength is 1 − the thinning (it fades with altitude) and whose transparency to the stars is the keyframes'
+  `stars` (it fades by night). Each grid declares its air as data (`shared/worldgen/grids.json` `atmosphere`:
+  home's true; none unless declared, so the moon and a sun have none); on a grid without air the day layer is
+  gone at every height and hour (`DayState::airless` → `Air::SPACE`: thinning 1, no limb), through the same
+  shader path (`dwell_space`; no grid-specific branch). Home's ground sky is unchanged bit for bit. Tests
+  (`dwell-client` `grid_view`, both faces): no day colour on an airless grid at any hour (the moon, a sun added by
+  data alone), the day layer fading to space flying up from home, home's packed day unchanged at every hour.
+  Left: on the moon the ground's hemisphere light is still home's and its sunlight follows home's keyframes.
+- **Clouds stay inside it.** `clouds.mjs` refuses a deck, a volume top, a data plume's top or a
+  source's height above `topM` (and reads it from `atmosphere.json`); run-time plumes are cut at it
+  (`PlumeList::pack`). From above the deck is already a layer below to its own horizon (`deck_fade`).
+- **The block.** `DaySky.space` (the 24th vec4): x the thinning, y the limb's elevation sine. The
+  renderer fills it from the eye each frame (`render/mod.rs` `day_in_air`).
+- **Cost.** Nothing on the ground; above the base a few ALU in `dwell_sky` (no pass, no texture), so
+  every tier including the CPU adapter draws it.
+- **Out of scope.** The home world seen from far (the M-6 bake, drawn with M-5/M-7) — beyond the LOD's
+  reach the disc below is not drawn yet, so from very high there is space and the limb; the moon has
+  no atmosphere (its sky is space when its own view comes).
+- **Tests.** `cargo test -p dwell-look --lib`: `the_sky_on_the_ground_is_todays_exactly` (a golden
+  pin of `sky_color` recorded before the atmosphere, at four altitudes up to the base, and the packed
+  block unchanged), `climbing_thins_the_sky_to_black_space_with_a_limb_below_the_horizon` (both
+  faces: space's colour overhead, the limb, no fog, stars by day), `atmosphere::tests::*` (the
+  curve, space, the limb, face-local air, every cloud under the top), `plumes::tests::no_plume_is_drawn_past_the_atmospheres_top`
+  (both faces), the naga validation of the sky; `atmosphere.test.mjs`, `clouds.test.mjs`. Not yet
+  checked in the browser (cloud session: no GPU).

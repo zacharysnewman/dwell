@@ -70,3 +70,23 @@ test('bad entries fail with their path named', () => {
     assert.throws(() => validateOverrides(d), message);
   }
 });
+
+test("the Spawn choice lists each other grid's faces from grids.json, a grid added there included", () => {
+  const spawn = (fields) => fields.find((f) => f.param === 'spawn').options.map((o) => o.value);
+  assert.deepEqual(spawn(validateOverrides(data())), ['', 'b', 'portal', 'portal-b', 'moon', 'moon-b', 'sun', 'sun-b']);
+  // A fixture grid (a copy of the moon's entry under another name), by data alone.
+  const read = (p) => {
+    const text = checkedIn(p);
+    if (p !== 'shared/worldgen/grids.json') return text;
+    const g = JSON.parse(text);
+    g.grids.push({ ...g.grids[1], name: 'test:comet_tail' });
+    return JSON.stringify(g);
+  };
+  const fields = validateOverrides(data(), read);
+  assert.deepEqual(spawn(fields).slice(-2), ['comet_tail', 'comet_tail-b']);
+  const labels = fields.find((f) => f.param === 'spawn').options.map((o) => o.label);
+  assert.deepEqual(labels.slice(-2), ['Comet tail (face A)', 'Comet tail (face B)']);
+  const bad = data();
+  bad.overrides.find((f) => f.param === 'spawn').optionsAlso = 'planets';
+  assert.throws(() => validateOverrides(bad), /optionsAlso must be one of gridSpawns/);
+});

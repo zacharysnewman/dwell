@@ -202,27 +202,30 @@ impl WaterTiles {
             immediate_size: 0,
         });
         let pipeline = |entry: &str, format: wgpu::TextureFormat| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(entry),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module,
-                    entry_point: Some("tile_vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[],
+            crate::render::pipeline::create(
+                device,
+                &wgpu::RenderPipelineDescriptor {
+                    label: Some(entry),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module,
+                        entry_point: Some("tile_vs"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module,
+                        entry_point: Some(entry),
+                        compilation_options: Default::default(),
+                        targets: &[Some(format.into())],
+                    }),
+                    primitive: Default::default(),
+                    depth_stencil: None,
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
                 },
-                fragment: Some(wgpu::FragmentState {
-                    module,
-                    entry_point: Some(entry),
-                    compilation_options: Default::default(),
-                    targets: &[Some(format.into())],
-                }),
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
-            })
+            )
         };
         Self {
             noise_pipeline: pipeline("noise_tile_fs", NOISE_FORMAT),

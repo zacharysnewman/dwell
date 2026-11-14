@@ -4,8 +4,24 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyCoat, coatColour, validateCoat } from "./coat.mjs";
 import {
+  applyCoat,
+  applyRepaint,
+  coatColour,
+  validateCoat,
+  validateRepaint,
+} from "./coat.mjs";
+import {
+  allLevelParts,
+  islands,
+  nearestRamp,
+  readMesh,
+  rows,
+  seedParts,
+  validateParts,
+} from "./parts.mjs";
+import {
+  checkCreatureParts,
   generate,
   glbAccessor,
   glbJson,
@@ -144,6 +160,22 @@ test("a retarget map is data: the fixture's lands in the table, bad names fail n
   }
 });
 
+test("your own body in first person is data: its cut validates and lands in the table", () => {
+  const f = fixture();
+  const out = rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures");
+  assert.match(out, /body: Some\(FirstPersonBody \{ hide: &\[\], weight: 0\.5 \}\)/);
+  for (const [edit, re] of [
+    [(b) => (b.hide = ["neck"]), /firstPerson: body: no joint neck/],
+    [(b) => (b.hide = ["tip"]), /firstPerson: body: a joint is listed twice/],
+    [(b) => (b.weight = 0), /firstPerson: body: weight is in \(0, 1\]/],
+    [(b) => delete b.hide, /firstPerson: body: hide names the skin joints/],
+  ]) {
+    const g = fixture();
+    edit(g.models.two_bone.firstPerson.body);
+    assert.throws(() => validate(g, palette, fixtures), re);
+  }
+});
+
 test("a role naming a clip the GLB lacks fails naming it", () => {
   const f = fixture();
   f.models.two_bone.roles.walk.clip = "cartwheel";
@@ -254,13 +286,14 @@ test("a prop is added by data alone: the fixture validates and lands in the tabl
   // Its hold pose by data alone; a prop naming none is held as modelled.
   assert.match(
     rs,
-    /axis: \[0\.0, 1\.0, 0\.0\], hold: PropHold \{ scale: 0\.5, roll: 90\.0 \}/,
+    /axis: \[0\.0, 1\.0, 0\.0\], hold: PropHold \{ scale: 0\.5, roll: 90\.0, yaw: 0\.0 \}/,
   );
   const plain = fixtureProps();
   delete plain.props.plate.hold;
   assert.deepEqual(validateProps(plain, fixtures).plate.hold, {
     scale: 1,
     roll: 0,
+    yaw: 0,
   });
   // The hand that holds it, by data alone.
   assert.match(
@@ -284,7 +317,7 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
-  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll \}/);
+  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll, yaw \}/);
   bad((p) => (p.hold = { size: 1 }), /prop plate: hold has unknown field size/);
   bad(
     (p) => (p.hold = { scale: 0 }),
@@ -292,11 +325,15 @@ test("bad props fail naming the entry and the problem", () => {
   );
   bad(
     (p) => (p.hold = { rotation: [0, 90, 0] }),
-    /prop plate: hold has unknown field rotation \(scale, roll\)/,
+    /prop plate: hold has unknown field rotation \(scale, roll, yaw\)/,
   );
   bad(
     (p) => (p.hold = { roll: 270 }),
     /prop plate: hold\.roll 270 is outside ±180 degrees/,
+  );
+  bad(
+    (p) => (p.hold = { yaw: 60 }),
+    /prop plate: hold\.yaw 60 is outside ±45 degrees/,
   );
   bad(
     (p) => (p.handle = [0, 0.01]),
@@ -501,4 +538,177 @@ test("a handle's axis is measured from its GLB: the props' tools", () => {
   assert.ok(props.metal_shovel.axis[1] < -0.999, `${props.metal_shovel.axis}`);
   assert.ok(Math.abs(props.metal_shovel.grip[2] + 0.056) < 0.003);
   assert.equal(typeof measureHandle, "function");
+});
+
+test("the sword is one sword out of the joined katanas prop, held by its handle", () => {
+  // The katanas FBX is one blade and five colour variants of one handle, stacked (WORK_QUEUE
+  // item 35): the sword is the blade on one handle, not the whole stack.
+  const data = props();
+  const p = data.props.sword;
+  assert.deepEqual(p.objects, ["KatanaBlade.001", "KatanaHandle.001"]);
+  const out = validateProps(data, here).sword;
+  assert.equal(out.length, 1);
+  assert.equal(propSummary(readFileSync(join(here, p.glb))).meshes, 1);
+  // The grip is on the bare handle, toward the pommel end, on its measured axis.
+  const [lo, hi] = [Math.min(...p.handle), Math.max(...p.handle)];
+  assert.ok(out.grip[1] >= lo && out.grip[1] <= hi, `${out.grip}`);
+  assert.ok(out.grip[1] < -0.25, "the handle is the sword's lower quarter");
+  assert.ok(out.axis[1] > 0.99, `${out.axis}`);
+  // A grip off the handle (on the blade) fails with a message.
+  const bad = props();
+  bad.props.sword.grip = [0, 0.2, 0];
+  assert.throws(
+    () => validateProps(bad, here),
+    /prop sword: grip 0\.2 m is outside its handle -0\.47\.\.-0\.25 m/,
+  );
+});
+
+test("idle poses are data: the fixture's lie by data alone, bad entries fail by name", () => {
+  // WORK_QUEUE item 39: an animal's graze, sit or lie as joint turns on its idle clip.
+  const f = fixture();
+  const m = validate(f, palette, fixtures).two_bone;
+  assert.deepEqual(m.poses, [
+    { name: "lie", turns: [{ joint: 1, rot: [90, 0, 0] }], drop: 0 },
+  ]);
+  assert.match(
+    rust(f, validate(f, palette, fixtures), "../../../shared/models/fixtures"),
+    /poses: &\[Grip \{ name: "lie", turns: &\[\(1, \[90\.0, 0\.0, 0\.0\]\)\], drop: 0\.0 \}\], pose_blend_s: 1\.0/,
+  );
+  const bad = (edit, re) => {
+    const g = fixture();
+    edit(g.models.two_bone);
+    assert.throws(() => validate(g, palette, fixtures), re);
+  };
+  bad(
+    (t) => (t.poses = { dance: { tip: [1, 0, 0] } }),
+    /poses: dance is not a pose/,
+  );
+  bad(
+    (t) => (t.poses = { lie: { nose: [1, 0, 0] } }),
+    /poses: lie: no joint nose/,
+  );
+  bad(
+    (t) => (t.poses = { lie: { tip: [1, 0] } }),
+    /poses: lie: tip is \[x, y, z\]/,
+  );
+  bad((t) => (t.poses = { lie: {} }), /poses: lie turns no joint/);
+  bad((t) => (t.poseBlendS = 0), /poseBlendS 0 is outside/);
+  // The shipped animals' poses validate against their skins.
+  const shipped = validate(data(), palette, here);
+  assert.ok(shipped.deer.poses.some((p) => p.name === "graze"));
+  assert.ok(shipped.wolf.poses.some((p) => p.name === "lie"));
+});
+
+test("a pose's $drop lowers the body: the wolf sits and lies down on the ground, a bad drop fails", () => {
+  const rs = rust(data(), validate(data(), palette, here));
+  assert.match(rs, /name: "sit", turns: [^\n]*?drop: 0\.3 \}/);
+  assert.match(rs, /name: "lie", turns: [^\n]*?drop: 0\.5 \}/);
+  const d = data();
+  d.models.wolf.poses.sit.$drop = -1;
+  assert.throws(() => validate(d, palette, here), /\$drop -1 is outside/);
+});
+
+test("the Peasant's hat has a ramp of its own (repaint by part): the hat is wool_yellow, the hair hair_brown", () => {
+  // Owner, 2026-11-12: "Hat gets its own colours"; BUGS.md #96: the repaint by height had caught
+  // the hair's fringe (wool_yellow on the hair, so a villager's hat colour recoloured it).
+  const m = data().models.peasant;
+  const bytes = readFileSync(join(here, m.glb));
+  const file = JSON.parse(readFileSync(join(here, m.parts), "utf8"));
+  const base = Uint8Array.from(file.vertices.join(""), Number);
+  const parts = { names: file.parts, levels: allLevelParts(bytes, base) };
+  assert.ok(
+    Buffer.from(applyRepaint(bytes, m.repaint, palette, parts)).equals(bytes),
+    "applied (idempotent)",
+  );
+  const hat = file.parts.indexOf("hat") + 1;
+  const hair = file.parts.indexOf("hair") + 1;
+  parts.levels.forEach((ps, k) => {
+    const mesh = readMesh(bytes, `detail_${k}`);
+    let hatYellow = 0;
+    for (let i = 0; i < mesh.count; i++) {
+      const ramp = nearestRamp(palette, mesh.colour(i));
+      if (ps[i] === hair)
+        assert.notEqual(ramp, "wool_yellow", `detail_${k}: hair vertex ${i} is the hat's ramp`);
+      if (ps[i] === hat && ramp === "wool_yellow") hatYellow++;
+    }
+    assert.ok(hatYellow > 20, `detail_${k}: the hat repainted: ${hatYellow}`);
+  });
+  assert.throws(
+    () => validateRepaint([{ from: "hair_brown", to: "nope", part: "hat" }], palette),
+    /no palette ramp nope/,
+  );
+  assert.throws(
+    () => validateRepaint([{ from: "hair_brown", to: "leather", part: "cape" }], palette, "r", ["hat"]),
+    /no part cape/,
+  );
+  assert.throws(
+    () => validateRepaint([{ from: "hair_brown", to: "leather", minY: 1 }], palette),
+    /unknown entry minY/,
+  );
+});
+
+test("a part map is checked: its names, every vertex a part, as many as the full mesh", () => {
+  const ok = { parts: ["skin", "hair"], vertices: ["0120", "21"] };
+  assert.equal(validateParts(ok, "p", 6), "012021");
+  assert.throws(() => validateParts(ok, "p", 7), /6 vertices, but the full mesh has 7/);
+  assert.throws(() => validateParts({ ...ok, vertices: ["013"] }, "p"), /vertex 2 is "3", not 0..2/);
+  assert.throws(() => validateParts({ ...ok, parts: ["skin", "skin"] }, "p"), /part skin twice/);
+  assert.throws(() => validateParts({ ...ok, parts: ["Skin"] }, "p"), /not a lower_snake_case/);
+  assert.throws(
+    () => validateParts({ ...ok, parts: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"] }, "p"),
+    /10 parts, at most 9/,
+  );
+  assert.throws(() => validateParts({ ...ok, seed: [{ part: "cape", y: [0, 1] }] }, "p"), /no part cape/);
+  assert.throws(() => validateParts({ ...ok, seed: [{ part: "skin" }] }, "p"), /no test/);
+  assert.throws(() => validateParts({ ...ok, wat: 1 }, "p"), /unknown key wat/);
+});
+
+test("a part map is added by data alone: the fixture's seeds to its checked-in vertices", () => {
+  const f = fixture();
+  const m = f.models.two_bone;
+  const bytes = readFileSync(join(fixtures, m.glb));
+  const file = JSON.parse(readFileSync(join(fixtures, m.parts), "utf8"));
+  const mesh = readMesh(bytes, "detail_0");
+  assert.equal(rows(seedParts(mesh, file, palette)).join(""), file.vertices.join(""));
+  const models = validate(f, palette, fixtures);
+  assert.deepEqual(models.two_bone.partMap.names, ["tip", "base"]);
+  assert.match(generate()[1][1], /parts: Some\(Parts \{ names: &\["tip", "base"\], levels: &\["2122", /);
+  // A part map of the wrong length fails naming the model.
+  const read = (p) =>
+    p.endsWith("two_bone.json")
+      ? Buffer.from(JSON.stringify({ ...file, vertices: ["21"] }))
+      : readFileSync(p);
+  assert.throws(() => validate(f, palette, fixtures, read), /model two_bone: .*2 vertices, but the full mesh has 4/);
+});
+
+test("the Peasant's parts: the hat and the hair are their islands, no head vertex is clothes", () => {
+  const m = data().models.peasant;
+  const bytes = readFileSync(join(here, m.glb));
+  const file = JSON.parse(readFileSync(join(here, m.parts), "utf8"));
+  const mesh = readMesh(bytes, "detail_0");
+  const ps = Uint8Array.from(file.vertices.join(""), Number);
+  const isl = islands(mesh);
+  const num = (n) => file.parts.indexOf(n) + 1;
+  const head = ["spine.005", "spine.006"].map((j) => mesh.jointNames.indexOf(j));
+  const onHead = (i) =>
+    mesh.joints(i).reduce((a, j, k) => a + (head.includes(j) ? mesh.weights(i)[k] : 0), 0) >= 0.5;
+  const islandOf = (part) => new Set([...ps.keys()].filter((i) => ps[i] === num(part)).map((i) => isl[i]));
+  assert.equal(islandOf("hat").size, 1, "the hat is one island");
+  assert.equal(islandOf("hair").size, 1, "the hair is one island");
+  for (let i = 0; i < mesh.count; i++) {
+    if (onHead(i)) assert.ok(![num("shirt"), num("trousers")].includes(ps[i]), `head vertex ${i}`);
+    if (ps[i] === num("hat")) assert.ok(mesh.position(i)[1] >= 1.44, `hat vertex ${i} below the brim`);
+  }
+});
+
+test("every NPC colour part is a part of its model", () => {
+  const models = validate(data(), palette, here);
+  const creatures = JSON.parse(readFileSync(join(root, "shared/creatures/creatures.json"), "utf8"));
+  checkCreatureParts(creatures, models);
+  const bad = structuredClone(creatures);
+  bad.creatures.find((c) => c.npc).npc.colours[0].part = "cape";
+  assert.throws(() => checkCreatureParts(bad, models), /colour part cape is not a part of model peasant/);
+  const none = structuredClone(creatures);
+  none.creatures.find((c) => c.npc).model = "wolf";
+  assert.throws(() => checkCreatureParts(none, models), /need a part map on model wolf/);
 });

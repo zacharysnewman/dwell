@@ -19,8 +19,13 @@
 //!
 //! Worlds without a world map (the flat world, test generators) have no island and no ecology,
 //! unless a test hands the server islands (`ServerConfig::ecology_islands`). The browser's local
-//! server waits for the map to be computed in its own instance (it is computed in the server-jobs
-//! worker today, so a local world's ecology does not run yet: docs/ECOLOGY.md §7).
+//! server runs it too: its worker installs both faces' maps in its own instance before the world
+//! starts (`installWorldMap`), and the islands are made from those (docs/ECOLOGY.md §6).
+//!
+//! **Saving**: each face's forage is written as runs, a cell at its most not written
+//! (`dwell_ecology::codec`), so a fresh or regrown world's record is a few hundred bytes; a save
+//! still writes it only when it changed since the store last held it ([`Ecology::record_to_save`]):
+//! a local world saves every few seconds, the ecology steps once a world day.
 
 use super::{Server, SessionId};
 use dwell_ecology::{DATA, Ecosystem, Island};
@@ -30,8 +35,9 @@ use dwell_protocol::{
 use dwell_world::Face;
 use std::sync::Arc;
 
-/// The most ecology steps in one tick (a catch-up is spread over ticks).
-pub const MAX_STEPS_PER_TICK: u32 = 4;
+/// The most ecology steps in one tick (a catch-up is spread over ticks). One since the real
+/// densities (WORK_QUEUE item 46): a step of both faces' ~600 herds is a few ms natively.
+pub const MAX_STEPS_PER_TICK: u32 = 1;
 /// Behind by this many days or more, the ecology catches up in big steps.
 pub const CATCH_UP_DAYS: f64 = 10.0;
 /// With nobody online the ecology waits until it is this far behind, then catches up.
@@ -63,6 +69,11 @@ pub type GrassShare = Arc<dyn Fn(usize, f64, f64) -> f64 + Send + Sync>;
 /// switch and speed, and the last tick's figures.
 pub struct Ecology {
     pub enabled: bool,
+    /// Dev (`animalsIgnorePlayers`, docs/DEV_TOOLS.md): the near animals see no player.
+    pub ignore_players: bool,
+    /// Dev (`animalPose`): every near animal is sent in this pose (its index in
+    /// `CREATURE_POSES`), whatever its idle, to judge a pose by eye.
+    pub force_pose: Option<u8>,
     pub speed: f64,
     /// Where the islands come from: a test's, or the world maps of this seed (None: no map).
     given: Option<Arc<[Island; 2]>>,
@@ -84,6 +95,12 @@ pub struct Ecology {
     /// The grass's climate share of a cell's most forage at (face index, face-local x, z), applied
     /// to the world maps' islands as they are made (docs/ECOLOGY.md §10; none: as the ground's).
     pub grass_share: Option<GrassShare>,
+    /// A hash of the record the store holds (last restored or handed to a save), so a save whose
+    /// record is unchanged writes nothing: a local world saves every few seconds while the ecology
+    /// steps once a world day.
+    written: Option<u64>,
+    /// Records handed to saves since the server started.
+    pub writes: u64,
 }
 
 /// One herd or pack in the dev read-out.
@@ -136,11 +153,16 @@ impl Ecology {
             world_seed,
             near: crate::herds::Near::default(),
             grass_share: None,
+            written: None,
+            writes: 0,
+            ignore_players: false,
+            force_pose: None,
         }
     }
 
     /// Restores a saved record (`init_storage`).
     pub(super) fn restore(&mut self, bytes: Vec<u8>) {
+        self.written = Some(record_hash(&bytes));
         match decode_record(&bytes) {
             Some((enabled, speed, faces)) => {
                 self.enabled = enabled;
@@ -156,8 +178,8 @@ impl Ecology {
         if let Some(b) = &self.unread {
             return b.clone();
         }
-        let faces: [Vec<u8>; 2] = match (&self.faces, &self.saved) {
-            (Some(f), _) => {
+        let faces: [Vec<u8>; 2] = match (&self.faces, &self.islands, &self.saved) {
+            (Some(f), Some(islands), _) => {
                 // The groups near players are saved as they would fold back now.
                 let mut f = f.clone();
                 for g in &self.near.groups {
@@ -167,12 +189,33 @@ impl Ecology {
                         eco.groups.insert(at, r);
                     }
                 }
-                [f[0].to_bytes(&DATA), f[1].to_bytes(&DATA)]
+                [
+                    f[0].to_bytes(&islands[0], &DATA),
+                    f[1].to_bytes(&islands[1], &DATA),
+                ]
             }
-            (None, Some(s)) => s.clone(),
-            (None, None) => [Vec::new(), Vec::new()],
+            (_, _, Some(s)) => s.clone(),
+            _ => [Vec::new(), Vec::new()],
         };
         encode_record(self.enabled, self.speed, &faces)
+    }
+
+    /// The record to save, or None when the store already holds it (nothing stepped, nothing near
+    /// changed since the last save).
+    pub(super) fn record_to_save(&mut self) -> Option<Vec<u8>> {
+        let r = self.record();
+        let h = record_hash(&r);
+        if self.written == Some(h) {
+            return None;
+        }
+        self.written = Some(h);
+        self.writes += 1;
+        Some(r)
+    }
+
+    /// A save failed: the next one writes the record whatever it holds.
+    pub(super) fn save_failed(&mut self) {
+        self.written = None;
     }
 
     /// The islands, once known: a test's, or both faces' world maps once this process has them
@@ -251,6 +294,13 @@ pub fn night_on(clock: crate::server::WorldClock, world_s: f64, face: Face) -> b
     day_a == (face == Face::B)
 }
 
+fn record_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
+}
+
 fn encode_record(enabled: bool, speed: f64, faces: &[Vec<u8>; 2]) -> Vec<u8> {
     let mut b = vec![RECORD_VERSION, u8::from(enabled)];
     b.extend(speed.to_bits().to_le_bytes());
@@ -320,6 +370,43 @@ impl Server {
     /// The near ecology (docs/ECOLOGY.md §8): records near players become individuals, those far
     /// from all fold back, and the individuals decide; a grazer's eaten block is written here (the
     /// only world change, near players only).
+    /// Dev tools (the local world's `spawnHerd`, docs/DEV_TOOLS.md): a far record of `species`
+    /// (`"dwell:deer"`, `"dwell:wolf"`: the ecology's names) of `size` head, fed and rested, put
+    /// `offset_m` along +x (face-local) from `feet` (world) on its face, where the near ecology
+    /// brings it in as individuals on its next tick, as a herd or pack walking up would be. Its
+    /// record's id, or an error (the ecology off, no such species).
+    pub fn spawn_group_dev(
+        &mut self,
+        species: &str,
+        feet: [f64; 3],
+        size: f64,
+        offset_m: f64,
+    ) -> Result<u32, String> {
+        let s = DATA
+            .find(species)
+            .ok_or_else(|| format!("no species {species:?} in shared/ecology"))?;
+        let f = dwell_world::FaceFrame::at_height(feet[1]);
+        let local = f.point(feet);
+        let k = usize::from(f.is_b());
+        let faces = self
+            .ecology
+            .faces
+            .as_mut()
+            .ok_or_else(|| "the ecology is not running".to_owned())?;
+        Ok(faces[k].push(s, local[0] + offset_m, local[2], size.max(1.0), 0.0, 1.0))
+    }
+
+    /// Dev tools (`animalPose`): every near animal sent in pose `pose` (`CREATURE_POSES`), or as
+    /// it idles (None).
+    pub fn force_animal_pose(&mut self, pose: Option<u8>) {
+        self.ecology.force_pose = pose;
+    }
+
+    /// Dev tools (`animalsIgnorePlayers`): the near animals see no player while `on`.
+    pub fn set_animals_ignore_players(&mut self, on: bool) {
+        self.ecology.ignore_players = on;
+    }
+
     pub(super) fn step_herds(&mut self) {
         let running =
             self.ecology.enabled && self.ecology.unread.is_none() && self.ecology.faces.is_some();
@@ -336,6 +423,8 @@ impl Server {
                 .collect();
         }
         let players = self.living_points();
+        let near = self.presence_points(&players);
+        let stances = self.living_stances();
         let world_s = f64::from(self.tick) / f64::from(SIM_HZ);
         let night = FACES.map(|f| night_on(self.settings.clock, world_s, f));
         let Some(islands) = self.ecology.islands.clone() else {
@@ -356,9 +445,12 @@ impl Server {
                 islands: &islands[..],
                 ecos: &mut faces[..],
                 players: &players,
+                near: &near,
+                stances: &stances,
                 get: &get,
                 night,
                 seed: self.config.world_seed,
+                ignore_players: e.ignore_players,
             };
             e.near.tick(&mut w, &mut self.creatures)
         };
@@ -367,9 +459,25 @@ impl Server {
         }
         let mut changes = super::TickChanges::default();
         for c in eaten {
-            changes.set(&mut self.world, c, dwell_blocks::AIR);
+            let to = self.eaten_to(c);
+            if self.world.get_voxel_if_loaded(c) != to {
+                changes.set(&mut self.world, c, to);
+            }
         }
         self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
+    }
+
+    /// What a grazer's eaten tuft at world cell `c` becomes (docs/ECOLOGY.md §10): in a world that
+    /// grows grass, a sprout over the rule's ground (the roots stay and it regrows stage by stage);
+    /// else air, as before. Public for tests and tools.
+    pub fn eaten_to(&self, c: [i32; 3]) -> dwell_blocks::StateId {
+        if !self.grass.enabled {
+            return dwell_blocks::AIR;
+        }
+        let f = dwell_world::FaceFrame::at_row(c[1]);
+        let [x, y, z] = f.cell(c);
+        let below = f.state(self.world.get_voxel_if_loaded(f.cell([x, y - 1, z])));
+        f.state(self.grass_rule.eaten(below))
     }
 
     /// A client reads the far ecology (`EcologyHello`): the far groups now, then every
@@ -379,20 +487,41 @@ impl Server {
             return;
         };
         s.ecology_hello = true;
-        if let Some(m) = self.ecology_message() {
+        if let Some(m) = self.ecology_message_from(self.session_feet(id)) {
             self.send_reliable(id, &Message::Ecology(m), Channel::World);
         }
     }
 
     /// The far groups for the clients (docs/ECOLOGY.md §9), None while the ecology doesn't run.
     pub fn ecology_message(&self) -> Option<EcologyMessage> {
+        self.ecology_message_from(None)
+    }
+
+    /// [`Self::ecology_message`] for a player at `eye` (world feet): its face's groups nearest
+    /// first, then the other face's, so the [`MAX_ECOLOGY_GROUPS`] sent are the ones it could see
+    /// or find (WORK_QUEUE item 46: ~600 herds a face at real densities); None: in id order.
+    pub fn ecology_message_from(&self, eye: Option<[f64; 3]>) -> Option<EcologyMessage> {
         let snap = self.ecology_snapshot();
         if !snap.enabled || !snap.running {
             return None;
         }
-        let groups = snap
-            .groups
-            .iter()
+        let mut order: Vec<&GroupView> = snap.groups.iter().collect();
+        if let Some(eye) = eye {
+            let f = dwell_world::FaceFrame::at_height(eye[1]);
+            let local = f.point(eye);
+            let key = |g: &GroupView| {
+                (
+                    dwell_world::FaceFrame::of(g.face) != f,
+                    (g.x - local[0]).hypot(g.z - local[2]),
+                )
+            };
+            order.sort_by(|a, b| {
+                let (ka, kb) = (key(a), key(b));
+                ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+            });
+        }
+        let groups = order
+            .into_iter()
             .take(MAX_ECOLOGY_GROUPS)
             .map(|g| EcologyGroupNet {
                 id: g.id,
@@ -409,7 +538,14 @@ impl Server {
         })
     }
 
-    /// Every [`ECOLOGY_SEND_EVERY`] ticks, the far groups to the joined clients that asked.
+    /// The world feet of session `id`'s living player, if it has one.
+    fn session_feet(&self, id: SessionId) -> Option<[f64; 3]> {
+        let h = self.sessions.get(&id)?.handle?;
+        Some(self.players.position(&self.physics, h).to_array())
+    }
+
+    /// Every [`ECOLOGY_SEND_EVERY`] ticks, the far groups to the joined clients that asked, each
+    /// its own nearest first.
     pub(super) fn send_ecology(&mut self) {
         if !self.tick.is_multiple_of(ECOLOGY_SEND_EVERY) {
             return;
@@ -420,15 +556,11 @@ impl Server {
             .filter(|(_, s)| s.joined() && s.ecology_hello)
             .map(|(&id, _)| id)
             .collect();
-        if to.is_empty() {
-            return;
-        }
-        let Some(m) = self.ecology_message() else {
-            return;
-        };
-        let m = Message::Ecology(m);
         for id in to {
-            self.send_reliable(id, &m, Channel::World);
+            let Some(m) = self.ecology_message_from(self.session_feet(id)) else {
+                return;
+            };
+            self.send_reliable(id, &Message::Ecology(m), Channel::World);
         }
     }
 
@@ -471,10 +603,32 @@ impl Server {
         }
     }
 
+    /// The heap the ecology's islands and ecosystems hold on both faces (bytes; the world maps they
+    /// were made from are not counted: those are the installed ones, shared).
+    pub fn ecology_heap_bytes(&self) -> usize {
+        let e = &self.ecology;
+        e.islands
+            .as_ref()
+            .map_or(0, |i| i.iter().map(Island::heap_bytes).sum())
+            + e.faces
+                .as_ref()
+                .map_or(0, |f| f.iter().map(Ecosystem::heap_bytes).sum())
+    }
+
+    /// Tests, tools: the ecology record a save writes now (the `ecology` table's bytes).
+    pub fn ecology_record(&self) -> Vec<u8> {
+        self.ecology.record()
+    }
+
     /// Tests, tools: face `face`'s ecosystem, once it exists.
     pub fn ecosystem(&self, face: Face) -> Option<&Ecosystem> {
         let k = FACES.iter().position(|&f| f == face)?;
         self.ecology.faces.as_ref().map(|f| &f[k])
+    }
+
+    /// Ecology records handed to saves since the server started (an unchanged one is not written).
+    pub fn ecology_writes(&self) -> u64 {
+        self.ecology.writes
     }
 
     /// The last tick's ecology steps and their time (ms), and the steps since the start.

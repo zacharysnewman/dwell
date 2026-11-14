@@ -20,9 +20,10 @@ type Aimed = ([i32; 3], u8, [f64; 3]);
 /// server's eye differ by a tick.
 const REACH_SLACK_M: f64 = 0.75;
 
-/// A wood state's grain: its `axis` property as a world axis (0 x, 1 y, 2 z).
+/// A wood state's grain: its `axis` property as a world axis (0 x, 1 y, 2 z); a wood's fell wedge
+/// (a stump, chopped as its wood: WORK_QUEUE item 26) stands, along y.
 pub(super) fn grain_of(m: dwell_blocks::StateId) -> Option<usize> {
-    chop::wood(block_of(m).name)?;
+    chop::chopped_wood(block_of(m).name)?;
     Some(match state_property(m, "axis") {
         Some("x") => 0,
         Some("z") => 2,
@@ -41,45 +42,253 @@ pub(super) fn band_of(f: FaceFrame, cell: [i32; 3], grain: usize, point: [f64; 3
     usize::from(frac >= 0.5)
 }
 
+/// Where a world point lies across side `side` of a cell with grain `grain` (0..1 along the side's
+/// other axis; face-locally up for y, as [`band_of`]): the hit's place for its bite.
+pub(super) fn across_of(
+    f: FaceFrame,
+    cell: [i32; 3],
+    grain: usize,
+    side: usize,
+    point: [f64; 3],
+) -> f64 {
+    let other = chop::side_axis(grain, side ^ 2);
+    let frac = if other == 1 {
+        (f.y(point[1]) - m_of_row(f.row(cell[1]))) / CELL_H
+    } else {
+        point[other] - f64::from(cell[other])
+    };
+    frac.clamp(0.0, 1.0)
+}
+
+/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
+/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell. Where its bites may lie.
+pub(super) fn log_span(m: dwell_blocks::StateId, grain: usize) -> [f64; 2] {
+    match dwell_blocks::octagon::section_of(m) {
+        Some((section, _)) if grain == 1 && section.width < 1.0 => {
+            let w = f64::from(section.width).clamp(0.05, 1.0);
+            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
+        }
+        _ => [0.0, 1.0],
+    }
+}
+
 impl Server {
     pub(super) fn chop_action(&mut self, id: SessionId, a: ChopAction) {
         match a {
             ChopAction::Hello => {
                 let s = self.sessions.get_mut(&id).expect("session");
                 s.chop_hello = true;
-                // At least one (empty when there are none): the client's sign the server chops.
-                let all = self.cuts.sorted();
-                let parts: Vec<Vec<_>> = if all.is_empty() {
-                    vec![Vec::new()]
-                } else {
-                    all.chunks(MAX_CUTS_PER_MESSAGE)
-                        .map(<[_]>::to_vec)
-                        .collect()
-                };
-                for cuts in parts {
-                    let m = Message::Cuts(CutsMessage {
-                        cuts,
-                        gone: Vec::new(),
-                    });
-                    self.send_reliable(id, &m, Channel::World);
-                }
+                self.send_all_cuts(id);
             }
             // An exhausted player's swing is refused; a swing draws its cost (ADR 0069 §5).
             ChopAction::Swing { ref tool, .. } | ChopAction::Sweep { ref tool, .. }
                 if !self.swing_stamina(id, tool) => {}
-            ChopAction::Swing {
-                tool,
-                cell,
-                face,
-                point,
-                vertical,
-            } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
-            ChopAction::Sweep {
-                tool,
-                look,
-                vertical,
-            } => self.sweep(id, &tool, look.map(f64::from), vertical),
+            a @ (ChopAction::Swing { .. } | ChopAction::Sweep { .. }) => self.start_swing(id, a),
             ChopAction::Held { tool, vertical } => self.held_tool(id, tool, vertical),
+            ChopAction::Guard { raised } => self.guard_action(id, raised),
+        }
+    }
+
+    /// All the cuts to one client: at least one message (empty when there are none), the client's
+    /// sign the server chops (and, to one that said `BitesHello`, that it sends bites).
+    fn send_all_cuts(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get(&id) else {
+            return;
+        };
+        let bites = s.bites_hello;
+        let all = self.cuts.sorted();
+        let parts: Vec<Vec<_>> = if all.is_empty() {
+            vec![Vec::new()]
+        } else {
+            all.chunks(MAX_CUTS_PER_MESSAGE)
+                .map(<[_]>::to_vec)
+                .collect()
+        };
+        for cuts in parts {
+            let m = Message::Cuts(CutsMessage {
+                cuts,
+                gone: Vec::new(),
+                bites,
+            });
+            self.send_reliable(id, &m, Channel::World);
+        }
+    }
+
+    /// A client draws the axe's bites (`BitesHello`, WORK_QUEUE item 26; a datagram, repeated until
+    /// answered): its cuts end with them from now on, and the first brings all of them again (once
+    /// it has said `ChopAction::Hello`; before, that Hello's answer carries them).
+    pub(super) fn bites_hello(&mut self, id: SessionId) {
+        let Some(s) = self.sessions.get_mut(&id) else {
+            return;
+        };
+        if s.bites_hello {
+            return;
+        }
+        s.bites_hello = true;
+        if s.chop_hello {
+            self.send_all_cuts(id);
+        }
+    }
+
+    /// A swing arrives (it left the client at the click): it starts now, spending the swing's
+    /// wait, and lands at its contact (WORK_QUEUE item 25: the head reaching what it hits, the
+    /// tool's `swing` data: `windupS` and the arc's time to the hit, from a sweep now), never
+    /// before the client's. A swing too soon after the last is refused. What it meets is found
+    /// again, and checked, at the contact ([`Self::land_swings`]).
+    fn start_swing(&mut self, id: SessionId, mut a: ChopAction) {
+        let (ChopAction::Swing { tool, .. } | ChopAction::Sweep { tool, .. }) = &a else {
+            return;
+        };
+        let Some(t) = chop::tool(tool) else {
+            return;
+        };
+        // A tool with one mode (the axe; owner, 2026-11-14: "like the shovel and pick, without
+        // the multiple modes") swings level whatever an older client asks.
+        if let ChopAction::Swing { vertical, .. } | ChopAction::Sweep { vertical, .. } = &mut a {
+            *vertical = t.stance(*vertical);
+        }
+        let s = &self.sessions[&id];
+        let Some(h) = s.handle else {
+            return;
+        };
+        if !s.joined() || self.tick < s.chop_ready {
+            return;
+        }
+        let contact = match &a {
+            // A weapon (a sword) strikes creatures: its contact is the first one its head meets.
+            ChopAction::Sweep { look, vertical, .. } if t.is_weapon() => {
+                let len = look
+                    .iter()
+                    .map(|v| f64::from(*v).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                if !(0.5..=1.5).contains(&len) {
+                    return;
+                }
+                let look = look.map(|v| f64::from(v) / len);
+                let eye = self.eye_of(h);
+                self.weapon_contact(t, eye, look, *vertical)
+            }
+            // A weapon cuts no wood: an aimed swing with one is refused.
+            ChopAction::Swing { .. } if t.is_weapon() => return,
+            ChopAction::Sweep { look, vertical, .. } if !self.config.chop2 => {
+                let len = look
+                    .iter()
+                    .map(|v| f64::from(*v).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                if !(0.5..=1.5).contains(&len) {
+                    return;
+                }
+                let look = look.map(|v| f64::from(v) / len);
+                let eye = self.eye_of(h);
+                let arc = dwell_world::swing::Arc::of(t);
+                let swept = dwell_world::swing::sweep(&mut self.world, eye, look, *vertical, &arc);
+                let step = swept
+                    .hit
+                    .map(|x| x.step)
+                    .or_else(|| swept.cleared.iter().map(|c| c.step).min());
+                step.map(|k| t.swing.time_of_step(k))
+            }
+            // An aimed swing, and the prototype's chop at the crosshair: the arc's middle.
+            _ => Some(t.swing.centre_s()),
+        };
+        // The others see the swing start at once, by its direction (WORK_QUEUE item 17); its hit
+        // lands at the contact.
+        let (ChopAction::Swing { vertical, .. } | ChopAction::Sweep { vertical, .. }) = &a else {
+            return;
+        };
+        self.chop_swung(id, *vertical);
+        let tick = self.tick;
+        let s = self.sessions.get_mut(&id).expect("session");
+        s.chop_ready = tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
+        // A weapon's swing is read by the NPCs fighting it, and drops its block meanwhile.
+        if t.is_weapon() {
+            let at = contact.unwrap_or_else(|| t.swing.centre_s());
+            s.weapon_swing = Some(super::WeaponSwing {
+                start: tick,
+                contact: tick + super::contact_ticks(at),
+                end: s.chop_ready,
+                vertical: *vertical,
+                weapon: t.name,
+            });
+        }
+        // A free swing at nothing lands nothing.
+        if let Some(c) = contact {
+            s.pending_chops.push((tick + super::contact_ticks(c), a));
+        }
+    }
+
+    /// The swings whose contact has come land: each swept again from the player's eye now (what
+    /// it meets, its reach) and refused if the tool is no longer in hand (switched away before the
+    /// contact: a cancelled swing lands nothing).
+    pub(super) fn land_swings(&mut self) {
+        let tick = self.tick;
+        let due: Vec<(SessionId, ChopAction)> = self
+            .sessions
+            .iter_mut()
+            .flat_map(|(&id, s)| {
+                let (now, later) = std::mem::take(&mut s.pending_chops)
+                    .into_iter()
+                    .partition::<Vec<_>, _>(|(at, _)| *at <= tick);
+                s.pending_chops = later;
+                now.into_iter().map(move |(_, a)| (id, a))
+            })
+            .collect();
+        for (id, a) in due {
+            let Some(s) = self.sessions.get(&id) else {
+                continue;
+            };
+            let (ChopAction::Swing { tool, .. } | ChopAction::Sweep { tool, .. }) = &a else {
+                continue;
+            };
+            // Where blocks are unlimited the hotbar's tool is what `Held` said (none said: an
+            // older client, trusted); in a mode with items `swing` checks the held slot.
+            if s.held_tool.as_ref().is_some_and(|(held, _)| held != tool) {
+                continue;
+            }
+            match a {
+                ChopAction::Swing {
+                    tool,
+                    cell,
+                    face,
+                    point,
+                    vertical,
+                } => self.swing(id, &tool, cell, face, point.map(f64::from), vertical),
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical,
+                } if chop::tool(&tool).is_some_and(|t| t.is_weapon()) => {
+                    self.weapon_sweep(id, &tool, look.map(f64::from), vertical)
+                }
+                ChopAction::Sweep {
+                    tool,
+                    look,
+                    vertical,
+                } => self.sweep(id, &tool, look.map(f64::from), vertical),
+                _ => {}
+            }
+        }
+    }
+
+    /// Steps this player's swing for the others (a chop, `vertical` or level; a break to a client
+    /// that didn't say `SwingHello`) when it may swing now.
+    fn chop_swung(&mut self, id: SessionId, vertical: bool) {
+        let tick = self.tick;
+        if let Some(s) = self.sessions.get_mut(&id)
+            && s.joined()
+            && s.handle.is_some()
+            && tick >= s.chop_ready
+        {
+            s.swung(
+                true,
+                if vertical {
+                    dwell_protocol::SwingKind::ChopVertical
+                } else {
+                    dwell_protocol::SwingKind::ChopLevel
+                },
+            );
         }
     }
 
@@ -95,7 +304,7 @@ impl Server {
         let Some(h) = s.handle else {
             return;
         };
-        if !s.joined() || self.tick < s.chop_ready {
+        if !s.joined() {
             return;
         }
         let len = (look[0] * look[0] + look[1] * look[1] + look[2] * look[2]).sqrt();
@@ -122,11 +331,36 @@ impl Server {
         let wood = aimed.filter(|x| grain_of(self.world.get_voxel_if_loaded(x.0)).is_some());
         match wood {
             Some((cell, face, point)) => self.swing(id, tool, cell, face, point, vertical),
-            None => {
-                let s = self.sessions.get_mut(&id).expect("session");
-                s.chop_ready =
-                    self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
-            }
+            // A bounce off what is not a wood is a hit: it wears the tool once (owner, 2026-11-12:
+            // "Tools should only consume durability on hit"); a miss, or a swing through only what
+            // it clears (leaves: cleared, not hit), wears nothing.
+            None if aimed.is_some() => self.wear_swung(id, tool),
+            None => {}
+        }
+    }
+
+    /// One landed hit's wear on the tool swung, where a mode wears tools: only while the tool is
+    /// the one in hand (a mode with items).
+    fn wear_swung(&mut self, id: SessionId, tool: &str) {
+        let uses_items = self.uses_items();
+        if !self
+            .sessions
+            .get(&id)
+            .is_some_and(|s| s.joined() && self.may_edit(s))
+        {
+            return;
+        }
+        let s = self.sessions.get_mut(&id).expect("session");
+        let held = s.inventory.slots.get(usize::from(s.inventory.held));
+        if uses_items
+            && held
+                .and_then(|h| h.as_ref())
+                .is_none_or(|st| st.item != tool)
+        {
+            return;
+        }
+        if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+            s.inventory_dirty = true;
         }
     }
 
@@ -243,6 +477,13 @@ impl Server {
             return;
         };
         let first = s.held_tool.is_none();
+        // Its block drops with the weapon put away; a raised one turns with the stance.
+        let weapon = chop::tool(&tool).is_some_and(|t| t.is_weapon());
+        let guard_changed =
+            s.guard_raised && (!weapon || s.held_tool.as_ref().is_none_or(|(_, v)| *v != vertical));
+        if !weapon {
+            s.guard_raised = false;
+        }
         s.held_tool = Some((tool.clone(), vertical));
         let player_id = s.player_id;
         let entry = dwell_protocol::HeldTool {
@@ -259,6 +500,9 @@ impl Server {
         let m = Message::HeldTools(vec![entry]);
         for o in &others {
             self.send_reliable(*o, &m, Channel::World);
+        }
+        if guard_changed {
+            self.send_player_guard(id);
         }
         if first {
             let all: Vec<_> = others
@@ -298,7 +542,7 @@ impl Server {
         point: [f64; 3],
         vertical: bool,
     ) {
-        let Some(t) = chop::tool(tool) else {
+        let Some(t) = chop::tool(tool).filter(|t| !t.is_weapon()) else {
             return;
         };
         let uses_items = self.uses_items();
@@ -318,9 +562,6 @@ impl Server {
                 return;
             }
         }
-        if self.tick < s.chop_ready {
-            return;
-        }
         let eye = self.eye_of(h);
         let to = DVec3::from(point) - DVec3::from(eye);
         if to.length() > f64::from(dwell_world::edit::DEFAULT_REACH) + REACH_SLACK_M {
@@ -337,12 +578,31 @@ impl Server {
         let Some(grain) = grain_of(m) else {
             return;
         };
-        let Some(side) = chop::side_of(grain, usize::from(face / 2), face % 2 == 1) else {
+        let wood = chop::chopped_wood(block_of(m).name).expect("a wood");
+        // A stump's wedge (WORK_QUEUE item 26) is struck on its slope too, a face along the grain:
+        // the side the swing comes in from.
+        let wedge = wood.block != block_of(m).name;
+        let side = chop::side_of(grain, usize::from(face / 2), face % 2 == 1).or_else(|| {
+            wedge
+                .then(|| {
+                    let k = if to.x.abs() >= to.z.abs() { 0 } else { 2 };
+                    let v = if k == 0 { to.x } else { to.z };
+                    chop::side_of(grain, k, v < 0.0)
+                })
+                .flatten()
+        });
+        let Some(side) = side else {
             return;
         };
-        let wood = chop::wood(block_of(m).name).expect("a wood");
+        // A wood with `damage` data (the log; WORK_QUEUE item 51, owner 2026-11-12: "Like the
+        // others, felling on top") takes the hit as every other block does: hits to break by the
+        // tool, a mark where it struck, the break at the count dropping its drops, and the tree
+        // above felled as a body. The chopping prototype keeps its cuts.
+        if !self.config.chop2 && dwell_protocol::damage::takes_damage(block_of(m).name) {
+            self.chop_hit(id, tool, cell, m, grain, side, face, point, eye);
+            return;
+        }
         let s = self.sessions.get_mut(&id).expect("session");
-        s.chop_ready = self.tick + (t.swing_seconds * f64::from(dwell_protocol::SIM_HZ)) as u32;
         // A chop wears the axe (owner, 2026-11-11: "It should survive 32 hits of durability").
         if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
             s.inventory_dirty = true;
@@ -362,7 +622,17 @@ impl Server {
             let along = share < 0.5 * (t.across + t.along);
             cut.chop2(t, wood, grain, side, along);
         } else {
+            let band = cut.open_band(side, band);
             cut.swing(t, grain, side, band, share);
+            // Where it struck across the side (WORK_QUEUE item 26): the bite the client carves.
+            cut.bite_in(
+                grain,
+                side,
+                band,
+                across_of(f, cell, grain, side, point),
+                &wood.cut.bite,
+                log_span(m, grain),
+            );
         }
         let cut = *cut;
         let standing = grain == 1;
@@ -395,7 +665,7 @@ impl Server {
         // The trunk's bottom needs the log above the cut (else no wedges: it falls as before).
         let wedges = wood
             .fell_wedge
-            .filter(|_| standing && self.world.get_voxel_if_loaded(above) == m)
+            .filter(|_| standing && !wedge && self.world.get_voxel_if_loaded(above) == m)
             .and_then(|w| {
                 // The prototype's split keeps the notch: the trunk's bottom is its upper face.
                 let matching = if v2 {
@@ -427,6 +697,15 @@ impl Server {
             let mut changes = TickChanges::default();
             changes.set(&mut self.world, cell, f.state(stump));
             self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        } else if wedge {
+            // A stump chopped down (WORK_QUEUE item 26): its wood drops, as a log cut through.
+            if uses_items {
+                let stacks = inv::roll(wood.buck_drops, &mut || self.random());
+                for st in stacks {
+                    self.loose.drop(st, centre.to_array());
+                }
+            }
+            self.fell(&[cell], 0, Some(DVec3::from(eye)));
         } else if standing {
             // No wedge: it falls toward the notch, as real felling does (owner, 2026-11-08): the
             // uncut side is the hinge, so it tips away from a point out past the side opposite the
@@ -439,6 +718,106 @@ impl Server {
                     self.loose.drop(st, centre.to_array());
                 }
             }
+            self.fell(&[cell], 0, Some(DVec3::from(eye)));
+        }
+    }
+
+    /// One axe hit on a wood that takes block damage (WORK_QUEUE item 51; docs/BLOCK_DAMAGE.md
+    /// §12): the axe wears, the cell records the hit (its mark: the edit face struck and the point,
+    /// the bite rule's chunk) toward its hits to break with the axe held (the block's `damage`:
+    /// the stone axe 10, the metal 5), a hit short of the count drops its share of the block's
+    /// drops; the hit that reaches it breaks the block (its drops' rest, as a pickaxe's last hit)
+    /// and what it held up falls: a standing trunk above as one body, tipping toward the side
+    /// struck (the uncut side its hinge, as the notch steered), a lying log's neighbours as after
+    /// a break. An older save's cut on the cell is carried over as hits (its share of the swings
+    /// to fell) and dropped, so the cell is drawn by its damage from then on.
+    #[allow(clippy::too_many_arguments)]
+    fn chop_hit(
+        &mut self,
+        id: SessionId,
+        tool: &str,
+        cell: [i32; 3],
+        m: dwell_blocks::StateId,
+        grain: usize,
+        side: usize,
+        face: u8,
+        point: [f64; 3],
+        eye: [f64; 3],
+    ) {
+        let uses_items = self.uses_items();
+        let block = block_of(m).name;
+        let need = if self.config.one_hit_breaks {
+            Some(1)
+        } else {
+            dwell_protocol::damage::hits_to_break(block, Some(tool))
+        };
+        let Some(n) = need else {
+            return;
+        };
+        let n = n.clamp(1, u32::from(u16::MAX));
+        let s = self.sessions.get_mut(&id).expect("session");
+        if super::wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+            s.inventory_dirty = true;
+        }
+        // An older save's cut: its progress carried over as hits, the cut itself gone.
+        let carried = self.cuts.cells.remove(&cell).map(|c| {
+            let wood = chop::chopped_wood(block).expect("a wood");
+            (c.progress(wood, grain) * f64::from(n)).floor() as u16
+        });
+        if carried.is_some() {
+            self.send_cuts(Vec::new(), vec![cell]);
+        }
+        // The mark: the edit face struck (the chopping wire's face is `axis × 2 + positive`, an
+        // edit's `axis × 2 + negative`) and the point in 1/255ths of the cell, world-oriented.
+        let lo = [f64::from(cell[0]), m_of_row(cell[1]), f64::from(cell[2])];
+        let size = [1.0, CELL_H, 1.0];
+        let p = std::array::from_fn(|i| {
+            ((point[i] - lo[i]) / size[i] * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        });
+        let mark = dwell_protocol::damage::HitMark {
+            chunk: dwell_protocol::damage::hit_chunk(block, Some(tool)),
+            ..dwell_protocol::damage::HitMark::at(face ^ 1, p)
+        };
+        let mut k = self.damage.hit(cell, m, n as u16, mark);
+        if let Some(extra) = carried
+            && let Some(d) = self.damage.cells.get_mut(&cell)
+        {
+            d.hits = d.hits.saturating_add(extra).min(n as u16);
+            k = d.hits;
+        }
+        let centre = dwell_world::centre_of_cell(cell);
+        if u32::from(k) < n {
+            self.send_damage(&[cell], Vec::new());
+            if uses_items {
+                self.drop_hit(m, centre, n, u32::from(k));
+            }
+            return;
+        }
+        // Broken: the cell's wood is gone (its damage with it, `broadcast_changes`).
+        let mut changes = TickChanges::default();
+        let left = if dwell_blocks::info(m).flooded {
+            M.water
+        } else {
+            M.air
+        };
+        changes.set_and_unsupport(&mut self.world, cell, left);
+        self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        if uses_items {
+            self.drop_destroyed(m, centre, n);
+        }
+        self.knock_ground(&[(cell, m)]);
+        let wood = chop::chopped_wood(block).expect("a wood");
+        let standing = grain == 1 && wood.block == block;
+        if standing {
+            // Toward the side struck: the uncut side is the hinge, so the trunk tips away from a
+            // point out past it (as the notch steered the fall before).
+            let n = chop::side_normal(grain, side);
+            let c = crate::felling::cell_centre(cell);
+            let hinge = c - DVec3::new(f64::from(n[0]), 0.0, f64::from(n[2])) * 2.0;
+            self.fell(&[cell], 0, Some(hinge));
+        } else {
             self.fell(&[cell], 0, Some(DVec3::from(eye)));
         }
     }
@@ -465,8 +844,12 @@ impl Server {
             .filter(|(_, s)| s.chop_hello)
             .map(|(&id, _)| id)
             .collect();
-        let m = Message::Cuts(CutsMessage { cuts, gone });
         for id in to {
+            let m = Message::Cuts(CutsMessage {
+                cuts: cuts.clone(),
+                gone: gone.clone(),
+                bites: self.sessions[&id].bites_hello,
+            });
             self.send_reliable(id, &m, Channel::World);
         }
     }
@@ -474,5 +857,11 @@ impl Server {
     /// A wood cell's cut (tests, the bench).
     pub fn cut_of(&self, cell: [i32; 3]) -> Option<Cut> {
         self.cuts.cells.get(&cell).copied()
+    }
+
+    /// Sets a wood cell's cut as an older build's chopping left it (tests: an older save's cuts,
+    /// WORK_QUEUE item 51; new hits on a log take block damage instead).
+    pub fn put_cut(&mut self, cell: [i32; 3], cut: Cut) {
+        self.cuts.cells.insert(cell, cut);
     }
 }

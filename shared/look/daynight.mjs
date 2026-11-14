@@ -23,6 +23,8 @@ const SCHEMA = {
     bloom: [0, 1],
     glowDeg: [1, 90],
     glow: [0, 1],
+    distanceM: [1000, 1e9],
+    surface: [0, 1],
   },
   moon: {
     radiusDeg: [0.05, 10],
@@ -37,6 +39,16 @@ const SCHEMA = {
     glow: [0, 1],
     glowColor: 'color',
     newMoonLight: [0, 1],
+    relief: [1, 50],
+    domeBias: [0, 1],
+    lunarLambert: [0, 1],
+    nightFloor: [0, 1],
+  },
+  moonOrbit: {
+    inclinationDeg: [0, 89],
+    nodeDeg: [-360, 360],
+    nodeTurnDays: [0, 1e5],
+    distanceM: [1000, 1e9],
   },
   stars: {
     cells: [10, 2000],
@@ -171,6 +183,7 @@ export function dayNightRust(data) {
     sunPath: 'SunPath',
     sun: 'SunLook',
     moon: 'MoonLook',
+    moonOrbit: 'MoonOrbit',
     stars: 'StarLook',
     sky: 'SkyShape',
     eye: 'EyeLook',
@@ -193,8 +206,38 @@ export function dayNightRust(data) {
   return rs.join('\n');
 }
 
+/**
+ * The moon's orbit keeps the moon grid (shared/worldgen/grids.json `dwell:moon`) at the sky's
+ * moon.radiusDeg: radiusM / distanceM = tan(radiusDeg), to 1% (docs/proposals/MOON_WORLD.md §6).
+ */
+export function checkMoonDistance(data, grids) {
+  const moon = (grids?.grids ?? []).find((g) => g.name === 'dwell:moon');
+  if (!moon) fail('shared/worldgen/grids.json has no "dwell:moon" grid for moonOrbit.distanceM to keep in the sky');
+  const want = moon.radiusM / Math.tan((data.moon.radiusDeg * Math.PI) / 180);
+  if (Math.abs(data.moonOrbit.distanceM / want - 1) > 0.01) {
+    fail(`moonOrbit.distanceM must keep the moon's ${moon.radiusM} m radius at moon.radiusDeg ${data.moon.radiusDeg}°: about ${Math.round(want)} m, got ${data.moonOrbit.distanceM}`);
+  }
+  return data;
+}
+
+/**
+ * The sun world (shared/worldgen/grids.json `dwell:sun`, docs/proposals/SUN_WORLD.md) sits sun.distanceM out
+ * on the sun's path, its radius at the sky's sun.radiusDeg: radiusM / distanceM = tan(radiusDeg), to
+ * 1%, so the disc keeps today's size.
+ */
+export function checkSunDistance(data, grids) {
+  const sun = (grids?.grids ?? []).find((g) => g.name === 'dwell:sun');
+  if (!sun) fail('shared/worldgen/grids.json has no "dwell:sun" grid for sun.distanceM to keep in the sky');
+  const want = sun.radiusM / Math.tan((data.sun.radiusDeg * Math.PI) / 180);
+  if (Math.abs(data.sun.distanceM / want - 1) > 0.01) {
+    fail(`sun.distanceM must keep the sun's ${sun.radiusM} m radius at sun.radiusDeg ${data.sun.radiusDeg}°: about ${Math.round(want)} m, got ${data.sun.distanceM}`);
+  }
+  return data;
+}
+
 export function loadDayNight(path = join(here, 'daynight.json')) {
-  return validateDayNight(JSON.parse(readFileSync(path, 'utf8')));
+  const grids = JSON.parse(readFileSync(join(root, 'shared/worldgen/grids.json'), 'utf8'));
+  return checkSunDistance(checkMoonDistance(validateDayNight(JSON.parse(readFileSync(path, 'utf8'))), grids), grids);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

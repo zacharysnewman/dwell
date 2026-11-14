@@ -25,11 +25,10 @@ use dwell_protocol::{
 };
 use dwell_world::lod::{
     INDEX_LEVEL, LodBounds, LodCoord, LodKind, MAX_LEVEL, SECTION_CELLS, cell_index, cell_size,
-    child, chunk_of_lod, in_world, kind_from_bounds, lod_of_chunk, parent, row_face, section_size,
+    child, chunk_of_lod, in_world_of, kind_from_bounds_of, lod_of_chunk, parent, row_face,
+    section_size,
 };
-use dwell_world::{
-    CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, WORLD_RADIUS, chunk_of_pos, chunk_origin_m,
-};
+use dwell_world::{CHUNK_EXTENT_M, ChunkCoord, Face, FaceFrame, chunk_of_pos, chunk_origin_m};
 
 use crate::fade::{Fade, FadeStats, Item, ItemKind, SwapFade};
 use crate::frustum::{Frustum, LodCamera, box_distance};
@@ -256,6 +255,14 @@ pub struct LodStats {
     /// ring's (the full-detail distance, schedule) means the full detail behind is there
     /// (`until nearBehind`).
     pub waiting: [usize; 3],
+    /// Sections the view wants that are not ready yet (this frame's traversal).
+    pub wanted: usize,
+    /// Sections meshed and held (built), drawn or not.
+    pub built: usize,
+    /// Leaves of the selection known to hold nothing (empty or buried): drawn as nothing.
+    pub empty: usize,
+    /// Sections dropped from the cache by its budget since the start (BUGS.md #108's counter).
+    pub evicted: u64,
 }
 
 impl Default for LodStats {
@@ -273,6 +280,10 @@ impl Default for LodStats {
             bytes_per_second: 0,
             fades: FadeStats::default(),
             waiting: [0, 0, 0],
+            wanted: 0,
+            built: 0,
+            empty: 0,
+            evicted: 0,
         }
     }
 }
@@ -309,6 +320,10 @@ pub struct SectionReport {
     pub forced: bool,
     /// Known empty or buried: its chunks need not be drawn.
     pub shows_nothing: bool,
+    /// The nearest ancestor (or the section itself) not split by the last selection — where
+    /// the traversal stopped above the chunks (level, i, j, k, and its kind's code: 0 unknown,
+    /// 1 empty, 2 buried, 3 content); none when it was split down to the section.
+    pub stopped_at: Option<[i32; 5]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -527,6 +542,11 @@ pub struct LodSystem {
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
     view_face: i32,
     near_rim: bool,
+    /// How near the rim the other face shows past the edge (m; `RIM_VIEW_M` for home, a grid's
+    /// scaled to its disc: `set_rim_view`).
+    rim_view_m: f64,
+    /// The world's disc and volume (its size's, BIG_MAP.md M2; `set_world`).
+    world: dwell_world::WorldBounds,
     position: Vec3,
     camera_chunk: ChunkCoord,
     /// Chunks asked of the server (and when), and the pacing of those requests.
@@ -566,9 +586,27 @@ pub struct LodSystem {
     skipped: u64,
     /// When the last selection ran (ms; `update`'s clock), for the streaming report.
     selected_ms: Option<f64>,
+    /// Sections the cache budget has dropped (`LodStats::evicted`).
+    evicted: u64,
 }
 
 impl LodSystem {
+    /// The world's disc and build volume (its size's, BIG_MAP.md M2, from the join's settings):
+    /// which sections are in the world, and where its rim is (`near_rim`).
+    pub fn set_world(&mut self, world: dwell_world::WorldBounds) {
+        self.world = world;
+    }
+
+    /// How near the rim the other face is drawn past the edge (m; [`RIM_VIEW_M`] by default): a
+    /// grid smaller than home scales it to its disc, or a moon 12.5 km across would draw both faces
+    /// from everywhere (BUGS.md #159).
+    pub fn set_rim_view(&mut self, m: f64) {
+        if m != self.rim_view_m {
+            self.revision += 1;
+        }
+        self.rim_view_m = m;
+    }
+
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
             nodes: HashMap::default(),
@@ -600,6 +638,8 @@ impl LodSystem {
             detail_m: None,
             view_face: 1,
             near_rim: false,
+            rim_view_m: RIM_VIEW_M,
+            world: dwell_world::WorldBounds::DEFAULT,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
             chunk_asked: HashMap::default(),
@@ -625,6 +665,7 @@ impl LodSystem {
             selections: 0,
             skipped: 0,
             selected_ms: None,
+            evicted: 0,
         };
         s.request_credit = s.rate();
         s
@@ -697,12 +738,62 @@ impl LodSystem {
             shows_chunks: self.chunk_visible(coord),
             forced: self.covered.contains(&id),
             shows_nothing: self.shows_nothing_at(coord),
+            stopped_at: self.stopped_at(c),
         }
+    }
+
+    /// The highest ancestor of level-1 section `c` (or `c`) the last selection did not split.
+    fn stopped_at(&self, c: LodCoord) -> Option<[i32; 5]> {
+        let mut path = vec![c];
+        while path.last().is_some_and(|a| a.level < MAX_LEVEL) {
+            path.push(parent(*path.last().unwrap()));
+        }
+        path.into_iter().rev().find_map(|a| {
+            let n = self.nodes.get(&id_of(a));
+            let split = n.is_some_and(|n| n.split_frame == self.frame);
+            (!split).then(|| {
+                let k = match n.and_then(|n| n.kind) {
+                    None => 0,
+                    Some(LodKind::Empty) => 1,
+                    Some(LodKind::Buried) => 2,
+                    Some(LodKind::Content) => 3,
+                };
+                [a.level, a.i, a.j, a.k, k]
+            })
+        })
     }
 
     /// The cache budget (bytes, the Distant memory setting).
     pub fn cache_budget(&self) -> usize {
         self.options.cache_bytes
+    }
+
+    /// Drops every section held, their meshes off `view`, and the selection: the viewer left home's
+    /// grid (MOON_WORLD.md §7.3, BUGS.md #124), whose sections stayed uploaded, hidden, while away.
+    /// The index, the bounds, the settings and the jobs in flight are kept (a job's result finds
+    /// no section and is dropped); the next `update` builds again from the root.
+    pub fn drop_all<P>(&mut self, view: &mut dyn LodView<P>) {
+        let ids: Vec<LodId> = self.nodes.keys().copied().collect();
+        for id in ids {
+            self.remove(id, view);
+        }
+        view.show_lod_sections(&[]);
+        view.show_lod_stand_ins(&[]);
+        self.cache_bytes = 0;
+        self.in_use = 0;
+        self.selection = Selection::default();
+        self.chunk_fades.clear();
+        self.fade.clear();
+        self.covered.clear();
+        self.covered_ancestors.clear();
+        self.drawable_since.clear();
+        self.warm.clear();
+        self.asking.clear();
+        self.chunk_asked.clear();
+        self.active = false;
+        self.settled = false;
+        self.last_key = None;
+        self.revision += 1;
     }
 
     /// When the last selection ran (ms, `update`'s clock), or None before the first.
@@ -850,7 +941,7 @@ impl LodSystem {
             self.face_changed();
         }
         self.view_face = view_face;
-        self.near_rim = p[0].hypot(p[2]) > f64::from(WORLD_RADIUS) - RIM_VIEW_M;
+        self.near_rim = p[0].hypot(p[2]) > self.world.radius() as f64 - self.rim_view_m;
         self.position = p;
         let frustum = Frustum::new(*camera);
         self.camera_chunk = chunk_of_pos(p);
@@ -1161,9 +1252,10 @@ impl LodSystem {
             return Kids::of(k);
         }
         let (coord, modified) = (self.n(id).coord, self.n(id).modified);
+        let world = self.world;
         let kids: Vec<LodId> = (0..8)
             .map(|o| child(coord, o))
-            .filter(|&c| in_world(c))
+            .filter(|&c| in_world_of(c, &world))
             .map(|c| self.node(c, modified))
             .collect();
         let out = Kids::of(&kids);
@@ -1196,7 +1288,24 @@ impl LodSystem {
             fallback
         };
         if ready && kind == Some(LodKind::Empty) {
-            selection.empty.push(coord);
+            // A section's kind is the terrain's: one holding only trees (their tops over the
+            // ground below it) is "empty". Up close the streamed chunks are the truth (BUGS.md
+            // #162: 25-40 m over a forest the treetops were missing below the camera), so the
+            // walk goes on to the covered chunks inside it; nothing else here is drawn.
+            if coord.level == 1 && self.covered.contains(&id) {
+                selection.chunks.push(coord);
+                self.split(id);
+            } else if self.covered_ancestors.contains(&id) {
+                self.split(id);
+                for &kid in self.kids(id).as_slice() {
+                    if self.covered.contains(&kid) || self.covered_ancestors.contains(&kid) {
+                        self.touch(kid);
+                        self.visit(kid, frustum, selection, None, host);
+                    }
+                }
+            } else {
+                selection.empty.push(coord);
+            }
             return;
         }
         if ready && kind == Some(LodKind::Buried) {
@@ -1420,7 +1529,7 @@ impl LodSystem {
             for k in at.k - r..=at.k + r {
                 for i in at.i - r..=at.i + r {
                     let c = LodCoord::new(1, i, j, k);
-                    if !in_world(c) || !all_drawable(c, host) {
+                    if !in_world_of(c, &self.world) || !all_drawable(c, host) {
                         continue;
                     }
                     let id = id_of(c);
@@ -1903,7 +2012,8 @@ impl LodSystem {
                 return;
             }
         };
-        let kind = kind_from_bounds(c, &b);
+        // The world's own disc and volume (BUGS.md #108: the 1× test emptied a big world past 50 km).
+        let kind = kind_from_bounds_of(c, &b, &self.world);
         if kind != LodKind::Content && !self.neighbour_modified(c) {
             self.nodes.get_mut(&id).expect("node").kind = Some(kind);
             return;
@@ -2123,6 +2233,7 @@ impl LodSystem {
                 .and_then(|n| n.kids.take())
                 .unwrap_or_default();
             for kid in kids {
+                self.evicted += 1;
                 self.remove(kid, view);
             }
         }
@@ -2165,6 +2276,16 @@ impl LodSystem {
             bytes_per_second: self.received.iter().map(|&(_, b)| b).sum(),
             fades: self.fade.stats(),
             waiting: self.waiting(frustum),
+            wanted: {
+                let mut seen = HashSet::default();
+                self.wanted
+                    .iter()
+                    .filter(|&&id| !self.ready(id) && seen.insert(id))
+                    .count()
+            },
+            built: self.nodes.values().filter(|n| n.meshed).count(),
+            empty: self.selection.empty.len(),
+            evicted: self.evicted,
         }
     }
 

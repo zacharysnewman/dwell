@@ -30,11 +30,17 @@ import { CODEC, compare, decode, type ScenarioReport } from './compare.ts';
 import { flickerOf, type Flicker } from './compareReport.ts';
 import { formatProfile, profileOf, work } from './profile.ts';
 import {
+  buildPage,
   parseScenarios,
   scenarioUrl,
   spotScenario,
   scenarioView,
   timelapseTimes,
+  clipStripCamera,
+  clipStripSheet,
+  clipStripTimes,
+  swingClip,
+  overBudget,
   type Scenario,
   type Step,
   type Vec3,
@@ -139,8 +145,9 @@ async function reachable(url: string): Promise<boolean> {
 
 /** A served build: `--base`, one already on :4173, or `vite preview` started for the run. */
 async function serve(base: string | null): Promise<{ url: string; server: ChildProcess | null }> {
-  // The server's root; a base given with the build's path (`…/dwell/`) works too.
-  if (base) return { url: base.replace(/\/$/, '').replace(/\/dwell$/, ''), server: null };
+  // The server's root, or a build's path (`…/dwell/`, a release's `…/dwell/v/<version>/`):
+  // `buildPage` opens either.
+  if (base) return { url: base.replace(/\/+$/, ''), server: null };
   const url = 'http://localhost:4173';
   if (await reachable(`${url}/dwell/`)) return { url, server: null };
   const server = spawn('npx', ['vite', 'preview', '--port', '4173', '--strictPort'], {
@@ -214,6 +221,18 @@ const LONG_TASKS = `
       for (const e of list.getEntries()) globalThis.__benchLongTasks.push([e.startTime, e.duration]);
     }).observe({ type: 'longtask', buffered: true });
   } catch {}
+  // The page's frame gaps over 100 ms in its first 30 s ([startMs, ms]): a screen that did not
+  // repaint (the main thread held, or the browser's compositor waiting on the GPU process).
+  globalThis.__benchFrameGaps = [];
+  try {
+    let last = null;
+    const tick = (t) => {
+      if (last !== null && t - last > 100) globalThis.__benchFrameGaps.push([last, t - last]);
+      last = t;
+      if (t < 30000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch {}
 `;
 
 interface Telemetry {
@@ -260,6 +279,9 @@ interface Run {
   spots: Spot[];
   /** Each placed `shot`'s camera and how long its view took to settle. */
   shots: ShotResult[];
+  /** Each `flyTo` step's trip (`__dwell.flyTo`: debug/moonTrip.ts `MoonTrip`, `HomeTrip`) and
+   * each `moonLand`'s (`MoonLanding` with the frame's `calls`, `triangles`, `meshBytes`). */
+  trips: Record<string, unknown>[];
 }
 
 interface ShotResult {
@@ -409,7 +431,7 @@ async function serverSamples(run: Run, name: string, seconds: number): Promise<v
   );
 }
 
-async function record(run: Run, name: string): Promise<void> {
+async function record(run: Run, name: string): Promise<Telemetry> {
   const { page } = run;
   const data = await call<{
     telemetry: Telemetry;
@@ -430,6 +452,7 @@ async function record(run: Run, name: string): Promise<void> {
   );
   run.records[name] = { ...data, longTasks, seconds: (data.now - run.markMs) / 1000 };
   summarise(name, data.telemetry, longTasks, (data.now - run.markMs) / 1000);
+  return data.telemetry;
 }
 
 const f = (v: number, digits = 2): string => v.toFixed(v < 10 ? digits : 1);
@@ -503,6 +526,65 @@ const DAY_LENGTH_S = ((c: { dayS: number; nightS: number }) => c.dayS + c.nightS
  * of day runs on from it at the world clock's rate, set every animation frame (the bench holds it
  * still otherwise), so the light moves between the frames as it does in play.
  */
+/** One swing frame by frame, from each view, and a contact sheet (docs/DEV_TOOLS.md "Clip strip"). */
+async function clipStrip(run: Run, s: Extract<Step, { do: 'clip-strip' }>): Promise<void> {
+  const { page } = run;
+  const characters = JSON.parse(
+    readFileSync(new URL('../../shared/characters/characters.json', import.meta.url), 'utf8'),
+  ) as unknown;
+  const { clip, duration } = swingClip(characters, s.vertical);
+  const times = clipStripTimes(duration, s.frames);
+  const [ax, ay, az] = s.at;
+  // A stand-in holding your tool, 4 m ahead of `at` (puppet 0 stands at x − 10, z + 4).
+  const feet = await call<Vec3>(page, 'd.state().feet');
+  const origin: Vec3 = [feet[0] + ax + 10, feet[1] + ay, feet[2] + az];
+  const standIn: Vec3 = [origin[0] - 10, origin[1], origin[2] + 4];
+  const third = s.views.some((v) => v !== 'fp');
+  if (third) {
+    await call(page, `d.puppets(1, ${JSON.stringify(origin)}, ${String(run.up)}, 65535)`);
+  }
+  const frame = (): Promise<unknown> =>
+    page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))');
+  const rows: { view: string; frames: { t: number; src: string }[] }[] = s.views.map((view) => ({
+    view,
+    frames: [],
+  }));
+  const width = Math.max(2, String(times.length - 1).length);
+  try {
+    for (const [i, t] of times.entries()) {
+      await call(page, `d.holdSwing(${String(s.vertical)}, ${String(t)})`);
+      for (const [k, view] of s.views.entries()) {
+        if (view === 'fp') await call(page, 'd.releaseCamera()');
+        else {
+          const c = clipStripCamera(view, standIn, run.up);
+          await call(
+            page,
+            `d.placeCamera(${JSON.stringify(c.position)}, ${String(c.yaw)}, ${String(c.pitch)})`,
+          );
+        }
+        await frame();
+        await frame();
+        const path = join(run.dir, `${s.name}-${view}-${String(i).padStart(width, '0')}.png`);
+        const png = await page.screenshot({ path });
+        rows[k]?.frames.push({ t, src: `data:image/png;base64,${png.toString('base64')}` });
+      }
+    }
+  } finally {
+    await call(page, 'd.holdSwing(false, -1)');
+    if (third) await call(page, 'd.puppets(0, [0, 0, 0], 1, 0)');
+    await call(page, 'd.releaseCamera()');
+    run.camera = undefined;
+  }
+  const sheet = await run.browser.newPage({ viewport: { width: 1600, height: 900 } });
+  try {
+    await sheet.setContent(clipStripSheet(`${s.name}: ${clip}, ${String(s.frames)} frames`, rows));
+    await sheet.screenshot({ path: join(run.dir, `${s.name}-sheet.png`), fullPage: true });
+  } finally {
+    await sheet.close();
+  }
+  console.log(`  clip-strip ${s.name}: ${clip} at ${times.map((t) => t.toFixed(2)).join(', ')} s`);
+}
+
 async function burst(run: Run, s: Extract<Step, { do: 'burst' }>): Promise<void> {
   const { page } = run;
   if (s.clock !== undefined) {
@@ -719,6 +801,15 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'npcs': {
+      const r = await call<string | null>(
+        page,
+        `d.spawnNpcs(${String(s.count)}, ${String(s.radius ?? 3)})`,
+      );
+      if (r === null) throw new Error('npcs: not a local world');
+      console.log(`  npcs: ${r}`);
+      return;
+    }
     case 'settle': {
       const start = Date.now();
       let quiet: number | null = null;
@@ -787,6 +878,140 @@ async function step(run: Run, s: Step): Promise<void> {
       if (r.includes('"error"')) throw new Error(`lava ${s.op}: ${r}`);
       return;
     }
+    case 'herd': {
+      const kind = s.kind === undefined ? 'undefined' : JSON.stringify(s.kind);
+      const list = await call<
+        { species: string; distance: number; bearing: number; size: number }[]
+      >(page, `d.herds(${kind})`);
+      console.log(
+        `  herds: ${String(list.length)} on this face; nearest ${list
+          .slice(0, 3)
+          .map(
+            (h) =>
+              `${h.species} ×${h.size.toFixed(0)} ${h.distance.toFixed(0)} m at ${h.bearing.toFixed(0)}°`,
+          )
+          .join(', ')}`,
+      );
+      const r = await call<string | null>(page, `d.goToHerd(${kind}, ${String(s.back ?? 40)})`);
+      if (r === null) throw new Error('herd: not a local world');
+      console.log(`  goToHerd: ${r}`);
+      if (r === 'null' || r.includes('"error"')) throw new Error(`herd: ${r}`);
+      await page.waitForTimeout(500);
+      return;
+    }
+    case 'flyTo': {
+      const options = Object.fromEntries(
+        Object.entries(s).filter(([k]) => k !== 'do' && k !== 'to'),
+      );
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.flyTo(${JSON.stringify(s.to)}, ${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`flyTo ${s.to}: ${r?.error ?? 'not playing'}`);
+      run.trips.push(r.ok);
+      const n = (k: string): string => (typeof r.ok?.[k] === 'number' ? f(r.ok[k]) : '–');
+      console.log(
+        s.to === 'moon'
+          ? `  flyTo moon: captured after ${n('captureS')} s, down in ${n('descentS')} s, landed in ${n('landS')} s; fell at ${n('fallMps2')} m/s² (the moon's ${n('gravity')})`
+          : `  flyTo home: released after ${n('releaseS')} s, home's ground back in ${n('returnS')} s`,
+      );
+      return;
+    }
+    case 'flyAtMoon': {
+      // As a player flies there (BUGS.md #155): real held keys, the look kept on the moon.
+      type M = {
+        grid: string;
+        distance: number;
+        look: { yaw: number; pitch: number };
+        upMps: number;
+        feet: number[];
+      };
+      const moon = (): Promise<M | null> => call<M | null>(page, 'd.moon()');
+      const snaps = (): Promise<number> => call<number>(page, 'd.state()?.stats?.snaps ?? 0');
+      await call(page, 'd.fly(true)');
+      await call(page, 'd.flySpeed(11)');
+      const m0 = await moon();
+      if (!m0) throw new Error('flyAtMoon: no moon report');
+      await call(page, `d.look(${String(m0.look.yaw)}, ${String(m0.look.pitch)})`);
+      const snaps0 = await snaps();
+      const maxS = s.maxS ?? 120;
+      const every = s.shotEveryS ?? 10;
+      const t0 = Date.now();
+      let nextShot = 0;
+      let shot = 0;
+      let last = m0;
+      let lastT = 0;
+      let capturedS: number | null = null;
+      await call(page, `d.press('KeyW', true)`);
+      if (s.run) await call(page, `d.press('ShiftLeft', true)`);
+      try {
+        for (;;) {
+          const t = (Date.now() - t0) / 1000;
+          const m = await moon();
+          if (!m) throw new Error('flyAtMoon: the moon report went away');
+          if (m.grid === 'moon') {
+            capturedS = t;
+            break;
+          }
+          if (t > maxS) break;
+          await call(page, `d.look(${String(m.look.yaw)}, ${String(m.look.pitch)})`);
+          const closing = t > lastT ? (last.distance - m.distance) / (t - lastT) : 0;
+          if (t >= nextShot) {
+            console.log(
+              `  t ${f(t)} s: ${f(m.distance / 1000)} km to go, look (${f(m.look.yaw)}, ${f(m.look.pitch)}), closing ${f(closing)} m/s, up ${f(m.upMps)} m/s, snaps ${String((await snaps()) - snaps0)}`,
+            );
+            await page.screenshot({
+              path: join(run.dir, `${s.name}-${String(shot).padStart(2, '0')}.png`),
+            });
+            shot += 1;
+            nextShot += every;
+          }
+          last = m;
+          lastT = t;
+          await page.waitForTimeout(500);
+        }
+      } finally {
+        await call(page, `d.press('KeyW', false)`);
+        if (s.run) await call(page, `d.press('ShiftLeft', false)`);
+      }
+      const snapped = (await snaps()) - snaps0;
+      await page.screenshot({ path: join(run.dir, `${s.name}-end.png`) });
+      run.trips.push({ flyAtMoon: s.name, capturedS, snaps: snapped, fromM: m0.distance });
+      console.log(
+        `  flyAtMoon ${s.name}: ${capturedS === null ? `NOT captured in ${f(maxS)} s` : `captured after ${f(capturedS)} s`}, ${String(snapped)} snaps`,
+      );
+      if (capturedS === null) throw new Error(`flyAtMoon: not captured in ${f(maxS)} s`);
+      return;
+    }
+    case 'moonLand':
+    case 'sunLand': {
+      const options = {
+        ...(s.face ? { face: s.face } : {}),
+        ...(s.do === 'sunLand' && s.river ? { river: true } : {}),
+        ...(s.maxS ? { maxS: s.maxS } : {}),
+      };
+      const r = await call<{ ok?: Record<string, unknown>; error?: string } | null>(
+        page,
+        `d.${s.do}(${JSON.stringify(options)}).then((ok) => ({ ok }), (e) => ({ error: String(e?.message ?? e) }))`,
+      );
+      if (!r?.ok) throw new Error(`${s.do}: ${r?.error ?? 'not playing'}`);
+      await sleep(page, s.waitS ?? 3);
+      const stats = await call<{ calls: number; triangles: number; meshBytes: number } | null>(
+        page,
+        'd.renderStats()',
+      );
+      const drawn = {
+        calls: stats?.calls ?? null,
+        triangles: stats?.triangles ?? null,
+        meshBytes: stats?.meshBytes ?? null,
+      };
+      run.trips.push({ ...r.ok, ...drawn });
+      const landS = typeof r.ok.landS === 'number' ? f(r.ok.landS) : '–';
+      console.log(
+        `  ${s.do}: on the ${s.do === 'sunLand' ? 'sun' : 'moon'}'s ground in ${landS} s; drawn: ${String(drawn.calls)} calls, ${String(drawn.triangles)} triangles, meshes ${String(drawn.meshBytes === null ? null : Math.round(drawn.meshBytes / 1e6))} MB`,
+      );
+      return;
+    }
     case 'give': {
       const ok = await call<boolean | null>(
         page,
@@ -826,8 +1051,18 @@ async function step(run: Run, s: Step): Promise<void> {
       await call(page, 'd.telemetryReset()');
       run.markMs = await page.evaluate<number>('performance.now()');
       return;
-    case 'record':
-      return record(run, s.name);
+    case 'record': {
+      const t = await record(run, s.name);
+      const over = s.budget ? overBudget(t.frames, s.budget, t.samples) : [];
+      if (over.length > 0) {
+        const tag = s.reportOnly ? 'OVER BUDGET (report only)' : 'OVER BUDGET';
+        for (const o of over) console.log(`    ${tag} [${s.name}] ${o}`);
+        if (!s.reportOnly) throw new Error(`record ${s.name} over its budget: ${over.join('; ')}`);
+      } else if (s.budget) {
+        console.log(`    within budget [${s.name}]`);
+      }
+      return;
+    }
     case 'shot':
       if (s.place) await placedShot(run, s.name, s.place, s.quietFrames, s.maxS);
       else await page.screenshot({ path: join(run.dir, `${s.name}.png`) });
@@ -843,6 +1078,21 @@ async function step(run: Run, s: Step): Promise<void> {
         `d.setTime(${String(s.t)}${s.moon === undefined ? '' : `, ${String(s.moon)}`})`,
       );
       return;
+    case 'theater': {
+      // Load (a path, or a preset expanded around its subject) and play; wait for the end.
+      const path =
+        s.path ??
+        (await call<unknown>(
+          page,
+          `d.theater('preset', ${JSON.stringify({ name: s.preset, params: s.params ?? {}, subject: s.subject ?? 'player' })})`,
+        ));
+      await call(page, `d.theater('hud', ${JSON.stringify({ shown: s.hud })})`);
+      await call(page, `d.theater('play', ${JSON.stringify({ path })})`);
+      if (s.wait) {
+        await until(page, `d.theater('state', {})?.finished === true`, 3_600_000);
+      }
+      return;
+    }
     case 'waterDebug':
       await call(page, `d.waterDebug(${JSON.stringify(s.names)})`);
       return;
@@ -859,6 +1109,8 @@ async function step(run: Run, s: Step): Promise<void> {
     }
     case 'burst':
       return burst(run, s);
+    case 'clip-strip':
+      return clipStrip(run, s);
     case 'traceStart':
       await run.browser.startTracing(page, {
         screenshots: true,
@@ -968,7 +1220,7 @@ async function runScenario(
   params: Record<string, string> = {},
 ): Promise<ScenarioReport> {
   mkdirSync(dir, { recursive: true });
-  const url = scenarioUrl(`${base}/dwell/`, sc, params);
+  const url = scenarioUrl(buildPage(base), sc, params);
   // A load that isn't playing within the stall bar (`--stall-s`) is retried once in a fresh page
   // (fresh loads at far spots have stalled now and then); the report lists it in `stalls`.
   const stalls: { stalledS: number; errors: string[] }[] = [];
@@ -993,8 +1245,33 @@ async function runScenario(
     stages: await page.evaluate<StageTime[]>(
       '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, beganMs: s.beganMs, endedMs: s.endedMs, firstMs: s.firstMs }))',
     ),
+    // The main thread's long tasks (> 50 ms) from the page's start to playing: [startMs, ms].
+    longTasks: await page.evaluate<number[][]>('globalThis.__benchLongTasks ?? []'),
+    frameGaps: await page.evaluate<number[][]>('globalThis.__benchFrameGaps ?? []'),
+    // The renderer's start, group by group (`dwell:create:<group>` marks, each at its group's end).
+    createMarks: await page.evaluate<[string, number][]>(
+      "performance.getEntriesByType('mark').filter((m) => m.name.startsWith('dwell:create:')).map((m) => [m.name.slice(13), m.startTime])",
+    ),
   };
   if (joined.stages.length) console.log(`  stages: ${formatStageTimes(joined.stages)}`);
+  if (joined.createMarks.length) {
+    // Each group's time since the one before (the first: since the graphics stage began).
+    const began = joined.stages.find((s) => s.id === 'graphics')?.beganMs ?? 0;
+    const steps = joined.createMarks.map(
+      ([n, t], i) => `${n} ${f(t - (i ? joined.createMarks[i - 1][1] : began))}`,
+    );
+    console.log(`  create (ms): ${steps.join(', ')}`);
+  }
+  if (joined.frameGaps.length) {
+    const gaps = joined.frameGaps.map(([t, ms]) => `${f(ms)} ms at ${f(t / 1000)} s`);
+    console.log(`  start's frame gaps > 100 ms: ${gaps.join(', ')}`);
+  }
+  if (joined.longTasks.length) {
+    const longest = joined.longTasks.reduce((a, b) => (b[1] > a[1] ? b : a));
+    console.log(
+      `  start's long tasks: ${String(joined.longTasks.length)}, longest ${f(longest[1])} ms at ${f(longest[0] / 1000)} s`,
+    );
+  }
   console.log(
     `  playing ${f(joined.playingS)} s after opening the page${typeof joined.loading?.openedS === 'number' ? ` (loading screen ${f(joined.loading.openedS)} s${joined.loading.timedOut ? ', timed out' : ''})` : ''}`,
   );
@@ -1014,6 +1291,7 @@ async function runScenario(
     gotos: [],
     spots: runWide.spots,
     shots: [],
+    trips: [],
   };
   for (const s of sc.steps) await step(run, s);
   const report: ScenarioReport = {
@@ -1029,6 +1307,7 @@ async function runScenario(
     gotos: run.gotos,
     servers: run.servers,
     shots: run.shots,
+    trips: run.trips,
     stalls,
     url,
   };

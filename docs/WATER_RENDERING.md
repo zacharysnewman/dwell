@@ -73,7 +73,8 @@ opaque draws and only suits one plane (sea level), so it's an Ultra-tier extra a
 ray-marched reflection through a GPU voxel structure was the planned exact path; it went with the ray
 marcher, ADR 0044.)
 
-**Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id).
+**Underwater.** Eye test into a `Frame` uniform (underwater flag, surface height, fluid id). The same eye test muffles
+the sound (a low-pass on the world's buses, eased at the crossing; docs/AUDIO.md §3a, BUGS.md #104).
 Per-pixel split where a lens point along each view ray crosses the surface (Crest's "water line"; built, §12). Per-channel
 absorption fog replaces height fog while submerged. The surface from below (the water mesh is
 already double-sided): outside Snell's window (critical angle `asin(1/ior)`, about 48.6°) total
@@ -1196,6 +1197,16 @@ warped a little, so the seams bend and the crust flows. The plates' colour is th
 is a quarter on the crust and up to 1.6 × `molten_heat` on the seams. The CPU tier keeps the still
 painted tile. The pattern's constants are shader constants for now (a look file when it is tuned).
 
+### 17.1a Heat stops (lava glow, 2026-11-11)
+
+Owner, 2026-11-11: "Lava looks dark red instead of bright red/orange" / "It should darken as it
+solidifies though." Each molten cell is a `heat` state of `dwell:lava` (VOLCANOES.md §6.5), carried to the
+shader in its faces' vertex colour; the molten branch reads that stop's row (`lava_stop_look`,
+`lava_stop_core`, generated from `shared/fluids/lava.json` `heat`): the seams in the stop's colour with its
+core at their middle, at its emissive, seams widening as the crust thins
+(`MOLTEN_SEAM + MOLTEN_OPEN × (1 − crust)`), the crust plates darker the more they cover. Lava glows
+through `emitted_hue` (the tone curve on the brightest channel, the hue kept). The bloom pass is not built.
+
 ### 17.2 Steam and burning (round 3)
 
 - **Steam's look** is data: `shared/fluids/lava.json` `steam` (colour, life, rise, size, opacity;
@@ -1209,4 +1220,112 @@ painted tile. The pattern's constants are shader constants for now (a look file 
 - **Burning:** a `Burn` damage hit shows a red-orange screen edge (`burnEdge`: colour, opacity,
   seconds; the HUD's `#burn-edge`, `game.rs` `burn_edge_strength`) and plays `sizzle`.
 
+## 18. River steps as one surface: step cells (2026-11-12, BUGS.md #92)
+
+Owner, 2026-11-12: "I'm seeing some edge triangles and thin lines at slope transitions on downhill water." A held
+river's levels step down ½ m (a cell) at a time, in diagonal bands where it crosses the grid on the diagonal. §10's
+pour slopes were drawn one per side of a pool's edge cell (`slope_over`), so on a diagonal staircase an open cell
+with the upper reach on two sides held two slopes crossing, one touching it only at a corner held none (the slopes
+beside ended in vertical wedge triangles), and the lower pool's top stayed under every slope.
+
+Now the water over a step is a **step cell** (`mesher.rs` `step_cell`, `step_water`): an open cell over a pool's
+water (a liquid, or a flooded cell whose water stands in it) that touches, by a side or a corner, a column of the same
+water one row higher whose top shows (0.05–1.5 cells above the pool's surface, as §10's slopes). It draws one surface:
+each corner at the highest such upper level among the three other cells round that corner, else at the pool's
+surface. A corner's height depends only on the cells round it, so step cells, the upper tops and the lower tops all
+meet at the same vertices (no cracks, no T-junctions); the surface splits across the diagonal that leaves a lone
+corner alone, so a diagonal band's two step cells make one plane. The pool's top under a step cell, the upper
+column's side toward it and the strip below it (§10) are not drawn: they are inside the water. Its sides are drawn
+only against open air that holds no such water (a step at a bank, from the pool's surface up to the slope). Calm pools
+and falls are unchanged. Test: `a_diagonal_staircase_river_is_one_continuous_surface` (both faces).
+
+## 19. Underwater toward the ABZÛ reference (2026-11-12)
+
+Owner, 2026-11-12, with a screenshot from ABZÛ: "Underwater reference photo from the game abzu for pretty underwater
+with transparent surface, light rays etc.", then "This is more what I want from the underwater surface." What the
+reference has: bright saturated turquoise water with a long clear view, a bright see-through surface from below (the
+sky in Snell's window, the sun a blown-out disc with light radiating from it, the ripples lit from above, a soft glow
+round the window), strong shafts fanning from the surface, caustics on a colourful, well-lit floor.
+
+What was off (bench, M1, High, seed 7, midday; `before/` in the PR): the ceiling outside the window was a darker blue
+mirror crossed by a strong dark web of cells, the window a plain sky with no sun glow, the fog a mid blue that closed
+in at ~3 m clear, the sand under 4 m of water a uniform blue-green, the shafts faded out by ~14 m.
+
+**Data (all defaults "as before"; `shared/look/underwater.json`, validated by `underwater.mjs`, packed as the fluid's
+17th–19th vec4s, `FLUID_VEC4S` 19):**
+
+- `window.sunGlow`, `window.sunPower`: a glow of the sun's light round the sun's refracted image in the window
+  (`sun_through`), added before the fog, so the window's sun reads as a blown-out white disc with light radiating
+  from it; gone at night with the sun (`own`). Water: 3, power 24.
+- `window.rimGlow`: a soft glow of the sky's light straight up round the window's rim, spilling into the mirror
+  (from 55 % of the critical cosine to the rim). Water: 0.5.
+- `tone`: the colour grade. `fogColor`/`fogShare` pull the fog's in-scatter toward a colour (water: `#16b2d4` by
+  0.55, a turquoise; the fluid's own scatter still colours the water from above), `brightness` its brightness
+  (1.12), `mirror` the mirror outside the window brighter (1.25: lit water, not a dark lid), `floorLight` the share of
+  the absorption the light down to the floor takes (0.35: sand keeps its warm colour under a few metres).
+- `fog.clearM` 3 → 6, `density` 0.3 → 0.22 (a longer clear view); `underside.texture` 0.6 → 0.45 and `breakup`
+  1 → 0.6 (lighter, more line-like ripple highlights, fewer dark gaps), `sunPatch` 4 → 5.
+- `shafts.json` water: strength 2.0 → 2.6, `reachM` 18 → 24, `fadeM` 14 → 24 (the rays reach the deep floor). The
+  same samples a pixel, so no cost.
+
+**Shader:** `underwater()` takes the grade; `composite_underwater` adds the sun glow, the rim glow, the mirror's lift
+and the floor light's share. Two fixes found on the way: a pixel showing the surface's own mesh (within
+`SURFACE_SLACK_M` 0.3 m of the surface along the face's up) takes the composite's surface; and near the window's rim,
+what the pixel shows past the surface fades into the mirror by the window's share, as the sky does: with the
+brighter mirror, the mesh's opaque (Fresnel) body there showed as hard-edged flat blue blobs. Both faces: the
+composite works in `face_up`/`face_y`, the sun glow uses the eye's face's sun.
+
+**Tiers:** the grade, the glows and the floor light are a few ALU ops in the composite on every tier (Low and the
+CPU's included; the CPU tier has no discs, but the glow is the sun's light, not its disc). Nothing new is sampled.
+
+**Tests:** `underwater.test.mjs` (the new entries validate, a bad one fails by name, a fixture fluid's grade by data
+alone, the default as before, water's direction pinned); `render::water`
+`each_fluid_packs_its_underwater_look_and_one_without_takes_the_default` (the new vec4s),
+`the_underwater_grade_is_data_and_a_fluid_without_a_look_is_as_before`,
+`the_surface_mesh_from_below_takes_the_composites_surface`; the WGSL validates with naga.
+
+**Seen (bench, M1, High, seed 7, midday; a scratch scenario: 4 m under a sea 7 m deep looking up 35°, across 5° and
+straight up; 14 m under an 18 m sea up 40° and level; the 1.5 m shallows looking up 20°):** the water is a brighter
+turquoise and reads farther; the ceiling is light water with soft ripple highlights rather than a dark web; the
+window glows white round the sun's image with the sky and clouds in it; the sand under 4 m keeps a warm green-gold
+with its caustics; the shafts reach the deep floor. **Cost** (`gpu.frame` mean / p95 over 5 s, main → this):
+4 m under looking across 6.74 / 9.45 → 6.73 / 9.83 ms; looking straight up 5.82 / 8.86 → 6.18 / 9.08 ms
+(`gpu.composite` 4.02 → 4.30 ms: the rim glow's zenith look-up on every mirror pixel). **Still off against the
+reference:** the sun's glow is a broad white haze rather than a sharp blown-out disc with radiating spokes; the
+ripple highlights are fainter than the reference's bright cells; the floor is still the prototype sand, not a
+colourful reef; in the 1.5 m shallows a soft blue patch of the surface's mesh still shows near the window's rim.
+Outstanding: the owner's look; both faces checked in code and tests, not on screen.
+
+## 20. The shore foam's soft edge (2026-11-13)
+
+Owner, 2026-11-13: "The water foam edge is a little too hard now, the softness of the old version was better and the
+consistency of the new one along the edge is better. Combine those concepts." §14's contact line was solid to
+`lineM` (0.06 m) and gone 3 cm later: a hard line. The rim before it faded over ~0.2 m of depth but was multiplied by
+noise, so it broke into blotches along the shore. The contact line now keeps §14's continuity (noise only nudges its
+core's width, never multiplies it) and feathers into the water: full over half of `shore.lineM` (0.02 m), fading by
+smoothstep to nothing `shore.featherM` (0.2 m) past `lineM`. The bands' sides soften by `shore.bandSoftness` (0-1; 0
+§14's flat top, 1 a fade from the middle out to twice the half-width). Both are data in `shared/look/waterflow.json`,
+packed in the fluid table's last vec4 (`shore_soft`: x the feather, y the softness). `dwell_look::waterflow::shore_foam`
+is the WGSL `foam_amount`'s mirror; its test pins the profile across the edge (no step over 0.08 between samples 5 mm
+apart; 0.52.6's was 0.28) and along it (never under half strength within the feather's first half, whatever the
+noise or time). Same cost: one more smoothstep bound.
+
+## 21. The shore foam's round corners (2026-11-13)
+
+Owner, 2026-11-13: "Can you make it smoother or thicker around corners, so it doesn't looks so squared off." §20's
+distance to the shore is the depth over a slope or the ray's path to a wall, both read from the depth buffer, so on
+blocky land the foam follows each block's outline: a sharp L into an inner corner, and nothing round an outer corner's
+diagonal. The foam now takes the least of those and a distance **across the surface**: the chunk mesher gives each
+liquid top cell with a solid neighbour in its own row (any of the 8; not liquid, not a cross plant) a mask of them
+(`dwell_look::waterflow::SHORE_W`…), draws that top alone (merged with none, so the mask is its own) and packs the mask
+over the vertex's fluid id (`dwell_mesh::fluid_with_shore`: id + 256 × mask; the shader unpacks it into a flat
+`FluidOut.shore` and passes the chunk-local `cell_xz`). The fragment's distance from its place in the cell to those
+neighbours is Euclidean, so an outer corner is a quarter circle, and an inner corner (two sides solid) is filleted with
+radius `shore.cornerRadiusM` (0.4 m, at most ½; `shared/look/waterflow.json`, the fluid table's `shore_soft.z`): the
+land filled out by a quarter circle, so the band rounds and thickens into the corner. Open water, LOD water and the
+heightfield carry no mask and draw §20's foam unchanged. `dwell_look::waterflow::shore_xz` is the WGSL `shore_xz`'s
+mirror; its tests pin an outer corner round (the same distance at the same Euclidean distance in every direction) and an
+inner corner without a step (no jump over a 2 mm grid, symmetric across the bisector, arcs inside the fillet), and a
+mesher test (both faces) the masks. The dev switch `?waterdbg=corners` turns it off for a side by side. Cost: a few
+min/length per foam fragment in shore cells; more, smaller water top quads along shores only.
 

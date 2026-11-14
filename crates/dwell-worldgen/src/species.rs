@@ -22,6 +22,12 @@ mod species_gen {
 }
 pub use species_gen::SPECIES;
 
+/// The test fixtures (shared/trees/fixtures): species added by data alone.
+#[cfg(test)]
+pub(crate) fn species_gen_fixtures() -> &'static [Species] {
+    &species_gen::FIXTURES
+}
+
 /// Height of a cell (m): the ½ m grid.
 const CELL: f32 = 0.5;
 
@@ -136,7 +142,7 @@ pub fn index(name: &str) -> Option<usize> {
 }
 
 /// What a grown tree puts in a cell.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Part {
     /// A log along y (0), x (1) or z (2), its width in ¼ m (4: the full log; only standing
     /// trunk logs are narrower).
@@ -583,8 +589,24 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
+        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf and the mesa's
+        // sagebrush (0.64) are wild only: no sapling of their own yet.
+        let wild: Vec<_> = SPECIES
+            .iter()
+            .filter(|s| s.sapling.is_none())
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(
+            wild,
+            [
+                "dwell:old_oak",
+                "dwell:old_pine",
+                "dwell:sagebrush",
+                "dwell:tall_broadleaf"
+            ]
+        );
         for (i, s) in SPECIES.iter().enumerate() {
-            let p = s.sapling.expect(s.name);
+            let Some(p) = s.sapling else { continue };
             assert_eq!(of_sapling(p.item), Some(i), "{}", s.name);
             assert!(
                 dwell_blocks::find_block(p.item).is_some(),
@@ -674,8 +696,11 @@ mod tests {
             }
             heights.sort_unstable();
             heights.dedup();
+            // At least four heights, or every step the range holds (a shrub's is short).
+            let (lo, hi) = s.mature_height;
+            let steps = ((hi - lo) / s.height_step).round() as usize + 1;
             assert!(
-                heights.len() >= 4,
+                heights.len() >= 4.min(steps),
                 "{}: seeds vary the height: {heights:?}",
                 s.name
             );
@@ -716,8 +741,12 @@ mod tests {
                 let (young, old) = (grow(s, seed, 1), grow(s, seed, s.stages - 1));
                 assert!(
                     old.height > young.height && old.cells.len() > young.cells.len() * 2,
-                    "{}",
-                    s.name
+                    "{}: young {} m {} cells, old {} m {} cells",
+                    s.name,
+                    young.height,
+                    young.cells.len(),
+                    old.height,
+                    old.cells.len()
                 );
             }
         }

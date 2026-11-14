@@ -35,12 +35,57 @@ pub struct Rock {
     pub solubility: f64,
     /// The block its walls show.
     pub face: &'static str,
-    /// The block its treads show.
+    /// The block its treads show where no `cap_by` rule holds.
     pub cap: &'static str,
+    /// The treads' block by the climate (rocks.json `capBy`, the first whose climate holds; BUGS.md
+    /// #134): red sand on a sandstone's treads where it is arid, its `cap` elsewhere.
+    pub cap_by: &'static [CapRule],
     /// The block its talus shows.
     pub scree: &'static str,
     /// Its colour (0xrrggbb), Chisel's rock overlay's.
     pub color: u32,
+}
+
+/// A climate a rock's tread block depends on (rocks.json `capBy`; the code's vocabulary).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CapClimate {
+    /// Dry ground: [`Arid`]'s rain and wetness or less.
+    Arid,
+}
+
+/// One `capBy` entry: in `climate`, a tread shows `cap`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapRule {
+    pub climate: CapClimate,
+    pub cap: &'static str,
+}
+
+/// What arid ground is (rocks.json `arid`): the biomes' climate values (as a preset's `where`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arid {
+    /// Annual rain (mm) at most, where the world has a climate (a world without one: any).
+    pub rain: f64,
+    /// The geography's wetness (0..1: the rain shadow's rainfall and the rivers') at most.
+    pub wetness: f64,
+    /// °C at least: a hot desert's, not a cold one's (the tundra and the boreal's dry ground).
+    pub celsius: f64,
+}
+
+impl Arid {
+    /// Whether ground of `celsius` °C, `wetness` and `rain` (mm; None without a climate) is arid.
+    pub fn holds(&self, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        celsius >= self.celsius && wetness <= self.wetness && rain.is_none_or(|r| r <= self.rain)
+    }
+}
+
+impl CapClimate {
+    /// Whether this climate holds on ground of `celsius` °C, `wetness` and `rain` (mm, None
+    /// without a climate).
+    pub fn holds(self, arid: &Arid, celsius: f64, wetness: f64, rain: Option<f64>) -> bool {
+        match self {
+            CapClimate::Arid => arid.holds(celsius, wetness, rain),
+        }
+    }
 }
 
 /// One layer of a stack: a rock and its thickness (m).
@@ -71,8 +116,23 @@ pub struct Geology {
     pub tread: f64,
     /// How narrow a hard wall is: a bed's rise takes (1 − hardness)^sheer of its height as input.
     pub sheer: f64,
+    /// A bedded soft rock's ledges (m, 0: none; owner 2026-11-13): its bed's slope is broken by a
+    /// near-vertical step this tall every `ledge_every` of the bed, ramped between them.
+    pub ledge: f64,
+    /// How often a ledge breaks a bed's slope, as a share of the bed (0.5: two a bed).
+    pub ledge_every: f64,
+    /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
+    /// little of the ground's relief.
+    pub tread_relief: f64,
+    /// Where the rock shapes the ground (`strength` > 0), where the stored ramps also top a column
+    /// on a diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
+    pub notched: Notched,
     /// The rule-based erosion (T4).
     pub erosion: Erosion,
+    /// Relief on the erosion's mesa tops and floors.
+    pub mesa_relief: MesaRelief,
+    /// The ground blocks' ordered blends by stack.
+    pub blends: &'static [Blend],
     /// The tectonic provinces' stacks (T5, `rocks.json` `tectonic`): a volcano's, the old core's.
     pub volcanic_stack: &'static str,
     pub core_stack: &'static str,
@@ -80,6 +140,313 @@ pub struct Geology {
     pub snow_block: &'static str,
     /// The glacier's cover (`rocks.json` `tectonic.ice`; `terrain.json` `tectonics.iceBelowC`).
     pub ice_block: &'static str,
+    /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5).
+    pub plate_provinces: PlateProvinces,
+    /// What arid ground is, for the rocks' `capBy` (`rocks.json` `arid`).
+    pub arid: Arid,
+}
+
+/// An ordered blend of ground blocks (rocks.json `blends`; owner, 2026-11-13, Monument Valley: "a
+/// blend of red, brown and tan, with brown leading to tan, always smooth color changes"): where a
+/// column's biome stack is one of `stacks`, a ground or under block among `blocks` takes the blend's
+/// tone there, picked by a low-frequency noise (`wavelength` m) plus `slope` × the ground's slope
+/// (which never pushes into the last, palest tone),
+/// dithered by a fine noise (± `dither`, at `dither_wavelength` m), the tones in order with their
+/// `shares` of the range: neighbours are at most one tone apart.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blend {
+    pub name: &'static str,
+    pub stacks: &'static [&'static str],
+    pub blocks: &'static [&'static str],
+    pub shares: &'static [f64],
+    pub wavelength: f64,
+    pub slope: f64,
+    pub dither: f64,
+    pub dither_wavelength: f64,
+}
+
+impl Blend {
+    /// The tone (index into `blocks`) at face-local (x, z) whose ground slopes `slope` (m per m).
+    pub fn tone(&self, seed: u32, x: i64, z: i64, slope: f64) -> usize {
+        let n = |s: u32, w: f64, o: u32| {
+            f64::from(crate::noise::fbm2(
+                crate::noise::seed_word(u64::from(seed), s),
+                x,
+                z,
+                w.max(1.0) as i32,
+                o,
+                None,
+            ))
+        };
+        // A 3-octave fbm's spread is about 0.17: its normal CDF makes `t` near uniform, so each
+        // tone covers about its share of the ground (the slope's push aside).
+        let mut t = normal_cdf(n(0x6E01_0200, self.wavelength, 3) / FBM3_SD);
+        // The slope pushes toward the later tones but never into the last (a talus is red sand,
+        // never the blend's palest patches): a continuous push, so neighbours stay a tone apart.
+        let below_last: f64 = self.shares[..self.shares.len() - 1].iter().sum();
+        if t < below_last {
+            t = (t + self.slope * slope).min(below_last - 1e-6);
+        }
+        if self.dither > 0.0 {
+            t += self.dither * 2.0 * n(0x6E01_0201, self.dither_wavelength, 1);
+        }
+        let mut acc = 0.0;
+        for (k, s) in self.shares.iter().enumerate() {
+            acc += s;
+            if t < acc {
+                return k;
+            }
+        }
+        self.blocks.len() - 1
+    }
+}
+
+/// A 3-octave `fbm2`'s standard deviation (measured over 160 000 points: 0.1725).
+const FBM3_SD: f64 = 0.1725;
+
+/// The standard normal CDF (Abramowitz and Stegun 26.2.17, |error| < 7.5e-8).
+fn normal_cdf(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.231_641_9 * x.abs());
+    let d = 0.398_942_3 * (-x * x / 2.0).exp();
+    let p = d
+        * t
+        * (0.319_381_5 + t * (-0.356_563_8 + t * (1.781_478 + t * (-1.821_256 + t * 1.330_274))));
+    if x >= 0.0 { 1.0 - p } else { p }
+}
+
+/// Where notched ramps go (rocks.json `shaping.notched`; code vocabulary). Owner, 2026-11-13 ("I'd
+/// like the old rule to apply except for mesa edges"): 0.59's `all` made rolling ground nearly all
+/// slopes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Notched {
+    /// Straight edges only (the pre-0.59 rule) everywhere.
+    None,
+    /// Notched only at a rock wall's edge: a column that is, or touches, a wall (an erosion mesa's
+    /// scarp, a hard bed's wall); straight edges elsewhere.
+    MesaEdges,
+    /// Notched wherever the rock shapes the ground (0.59–0.61).
+    All,
+}
+
+/// A column's setting on its face's plate layout (R5; the code's vocabulary, `plateProvinces`
+/// `rules[].setting`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlateSetting {
+    /// On an arc's cone.
+    Arc,
+    /// On a hotspot chain's island.
+    Hotspot,
+    /// Old seafloor scraped onto the overriding plate at a subducting boundary.
+    Accreted,
+    /// A collision's core, or a subducting boundary's range crest.
+    Core,
+    /// A divergent boundary's floor.
+    Rift,
+    /// A plate's quiet interior, far from every boundary.
+    Basin,
+    /// Anywhere.
+    Default,
+}
+
+impl PlateSetting {
+    /// Every setting, in the bit order of [`PlateSettings`].
+    pub const ALL: [Self; 7] = [
+        Self::Arc,
+        Self::Hotspot,
+        Self::Accreted,
+        Self::Core,
+        Self::Rift,
+        Self::Basin,
+        Self::Default,
+    ];
+
+    /// The setting named `name` (the data's spelling).
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// Its name in the data.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Arc => "arc",
+            Self::Hotspot => "hotspot",
+            Self::Accreted => "accreted",
+            Self::Core => "core",
+            Self::Rift => "rift",
+            Self::Basin => "basin",
+            Self::Default => "default",
+        }
+    }
+
+    fn bit(self) -> u8 {
+        1 << Self::ALL.iter().position(|&s| s == self).unwrap_or(0)
+    }
+}
+
+/// The settings that hold at a column (a set; `Default` always).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PlateSettings(u8);
+
+impl PlateSettings {
+    pub fn has(self, s: PlateSetting) -> bool {
+        self.0 & s.bit() != 0
+    }
+
+    fn add(&mut self, s: PlateSetting) {
+        self.0 |= s.bit();
+    }
+}
+
+/// A `plateProvinces` rule: a setting and the stack it takes (by name), with the stacks it mixes
+/// in (`mix`, absent none): the setting's province is then any of them, by the mixing noise.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateRule {
+    pub setting: PlateSetting,
+    pub stack: &'static str,
+    /// Other stacks the setting mixes in, each by its weight (the rule's own `stack` weighs 1).
+    pub mix: &'static [PlateMix],
+}
+
+/// A stack a `plateProvinces` rule mixes in, and its weight (the rule's own stack's is 1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateMix {
+    pub stack: &'static str,
+    pub weight: f64,
+}
+
+/// How a rule's stacks mix and how the settings' edges wander (`plateProvinces.mixing`, WORK_QUEUE
+/// item 15: no province hundreds of km² wide, no band parallel to a boundary). All 0 (absent): one
+/// stack per setting, edges at their widths.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Mixing {
+    /// The mixing noise's wavelength (m): the size of one stack's patch within a setting.
+    pub wavelength: f64,
+    /// The mixing noise's domain warp: amplitude (m) and wavelength (m).
+    pub warp: f64,
+    pub warp_wavelength: f64,
+    /// Every boundary distance shifted by a noise of about ±`edge_shift` m at `edge_wavelength` m,
+    /// so a width's line wanders instead of running parallel to its boundary.
+    pub edge_shift: f64,
+    pub edge_wavelength: f64,
+    /// How far (m) inside a mixed patch's edge the shaping fades in (in place of `edgeFade`, so
+    /// the patches' fades leave most of their ground stepped; 0: `edgeFade`'s).
+    pub fade: f64,
+}
+
+/// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5): the settings'
+/// widths (m) and the rules, the first rule whose setting holds winning.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateProvinces {
+    pub accreted_width: f64,
+    pub core_width: f64,
+    /// [near, far] m behind a subducting boundary on the overriding side: the range's core.
+    pub range_core: [f64; 2],
+    pub rift_width: f64,
+    pub basin_distance: f64,
+    /// How far (m) inside a setting's edge the shaping fades in (0: a sharp edge), so a rule's
+    /// province meets the next with no wall where the shaping is on (WORK_QUEUE item 15).
+    pub edge_fade: f64,
+    /// How the rules' stacks mix and the edges wander (WORK_QUEUE item 15).
+    pub mixing: Mixing,
+    pub rules: &'static [PlateRule],
+}
+
+impl PlateProvinces {
+    /// The settings at (x, z) on the plate tectonics `t` (face-local m).
+    pub fn settings(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+    ) -> PlateSettings {
+        self.settings_and_edge(t, x, z).0
+    }
+
+    /// [`PlateProvinces::settings`] with how far (m) (x, z) lies from the nearest edge where a
+    /// setting starts or stops holding (a cone's rim, a width's line, the plate's own boundary).
+    pub fn settings_and_edge(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+    ) -> (PlateSettings, f64) {
+        self.settings_shifted(t, x, z, 0.0)
+    }
+
+    /// [`PlateProvinces::settings_and_edge`] with every boundary distance `shift` m farther (the
+    /// mixing's wandering edges: `Resolved::province` passes its noise there).
+    pub fn settings_shifted(
+        &self,
+        t: &crate::plate_tectonics::PlateTectonics,
+        x: f64,
+        z: f64,
+        shift: f64,
+    ) -> (PlateSettings, f64) {
+        use crate::plates::BoundaryKind;
+        let mut s = PlateSettings::default();
+        let mut edge = f64::INFINITY;
+        s.add(PlateSetting::Default);
+        for v in &t.volcanoes {
+            let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+            edge = edge.min((r - 0.85 * v.radius).abs());
+            if r < 0.85 * v.radius {
+                s.add(if v.chain == 0 {
+                    PlateSetting::Arc
+                } else {
+                    PlateSetting::Hotspot
+                });
+            }
+        }
+        let plate = t.layout.plate_at(x, z);
+        let mut nearest = f64::INFINITY;
+        for (line, d) in t.lines_of(plate, x, z) {
+            let d = (d + shift).max(0.0);
+            nearest = nearest.min(d);
+            edge = edge.min(d);
+            let mut near = |w: f64| edge = edge.min((d - w).abs());
+            match line.kind {
+                BoundaryKind::Convergent => match line.over {
+                    Some(over) if over == plate => {
+                        near(self.accreted_width);
+                        near(self.range_core[0]);
+                        near(self.range_core[1]);
+                        if d < self.accreted_width {
+                            s.add(PlateSetting::Accreted);
+                        }
+                        if (self.range_core[0]..=self.range_core[1]).contains(&d) {
+                            s.add(PlateSetting::Core);
+                        }
+                    }
+                    Some(_) => {}
+                    None => {
+                        near(self.core_width);
+                        if d < self.core_width {
+                            s.add(PlateSetting::Core);
+                        }
+                    }
+                },
+                // A rift's fill only where the pair cuts one (two continents opening): a passive
+                // margin or a mid-ocean swell is no rift.
+                BoundaryKind::Divergent if line.has_rift() => {
+                    near(self.rift_width);
+                    if d < self.rift_width {
+                        s.add(PlateSetting::Rift);
+                    }
+                }
+                _ => {}
+            }
+        }
+        edge = edge.min((nearest - self.basin_distance).abs());
+        if nearest > self.basin_distance {
+            s.add(PlateSetting::Basin);
+        }
+        (s, edge)
+    }
+
+    /// The first rule whose setting holds in `s`, if any.
+    pub fn rule(&self, s: PlateSettings) -> Option<&PlateRule> {
+        self.rules.iter().find(|r| s.has(r.setting))
+    }
 }
 
 mod table {
@@ -111,6 +478,10 @@ pub enum Part {
     /// A massive rock's unstepped rise.
     Plain,
 }
+
+/// The input height a ledge takes per m of its height: near-vertical (1 m of ledge over 2 cm of
+/// the ground's rise, at most half its run's).
+const LEDGE_INPUT: f64 = 0.02;
 
 /// One piece of a profile: input heights `u0..u1` of the period map to `v0..v1`.
 #[derive(Clone, Copy, Debug)]
@@ -153,9 +524,33 @@ impl Profile {
                         (1.0, 0.25)
                     };
                     let dd = d / n;
+                    // The tread keeps `tread_relief` of the bed's height (a cap with a little of
+                    // the ground's relief); the rise takes the rest.
+                    let relief = dd * g.tread_relief.clamp(0.0, 0.5);
+                    let up = dd - relief;
+                    // A soft bedded rock's slope: ramped runs broken by a ledge `ledge` m tall
+                    // every `ledge_every` of the bed (the run and its ledge share the rise's
+                    // input, the ledge near-vertical); hard rock stands as its wall.
+                    let ledges = if r.jointing == Jointing::Bedded && part == Part::Talus {
+                        let m = (1.0 / g.ledge_every.clamp(0.05, 1.0)).round().max(1.0);
+                        let h = g.ledge.min(up / m);
+                        (h > 0.0).then_some((m, h))
+                    } else {
+                        None
+                    };
                     for _ in 0..n as u32 {
-                        raw.push((rise(dd, steep), dd, ri as u16, part));
-                        raw.push((dd * k * k * g.tread, 0.0, ri as u16, Part::Tread));
+                        match ledges {
+                            Some((m, h)) => {
+                                let input = rise(up, steep) / m;
+                                let ledge_in = (h * LEDGE_INPUT).min(input * 0.5);
+                                for _ in 0..m as u32 {
+                                    raw.push((input - ledge_in, up / m - h, ri as u16, part));
+                                    raw.push((ledge_in, h, ri as u16, Part::Wall));
+                                }
+                            }
+                            None => raw.push((rise(up, steep), up, ri as u16, part)),
+                        }
+                        raw.push((dd * k * k * g.tread, relief, ri as u16, Part::Tread));
                     }
                 }
             }
@@ -215,7 +610,20 @@ pub struct Resolved {
     seed: u32,
     /// The tectonics (T5) and their volcanoes, when on: the stacks they place, by index.
     tectonic: Option<Tectonic>,
+    /// The noise's stacks (weight above 0), by index; `cumulative` is over these.
+    noise_stacks: Vec<usize>,
+    /// The face's plate tectonics and each `plateProvinces` rule's stack (index), in a world
+    /// whose tectonics come from plates (R5).
+    plates: Option<(
+        std::sync::Arc<crate::plate_tectonics::PlateTectonics>,
+        Vec<RuleStacks>,
+    )>,
+    world_seed: u64,
 }
+
+/// A `plateProvinces` rule's stacks (indices) with their cumulative weights over 0..1.
+#[derive(Clone, Debug)]
+struct RuleStacks(Vec<(usize, f64)>);
 
 /// The tectonics, their volcanoes, and the volcanic and core stacks (indices).
 type Tectonic = (
@@ -236,13 +644,16 @@ impl Resolved {
             .iter()
             .map(|s| Profile::of(&geology, s))
             .collect();
-        let total: f64 = geology.stacks.iter().map(|s| s.weight).sum();
+        // A stack of weight 0 is never the noise's (only a rule names it, R5).
+        let noise_stacks: Vec<usize> = (0..geology.stacks.len())
+            .filter(|&i| geology.stacks[i].weight > 0.0)
+            .collect();
+        let total: f64 = noise_stacks.iter().map(|&i| geology.stacks[i].weight).sum();
         let mut c = 0.0;
-        let cumulative = geology
-            .stacks
+        let cumulative = noise_stacks
             .iter()
-            .map(|s| {
-                c += s.weight / total.max(1e-12);
+            .map(|&i| {
+                c += geology.stacks[i].weight / total.max(1e-12);
                 c
             })
             .collect();
@@ -252,12 +663,72 @@ impl Resolved {
             cumulative,
             seed: crate::noise::seed_word(world_seed, 0x6E01_0001),
             tectonic: None,
+            noise_stacks,
+            plates: None,
+            world_seed,
         }
+    }
+
+    /// With the rock provinces from the plate tectonics `t` (R5, `rocks.json` `plateProvinces`):
+    /// a column's setting on `t` picks its stack by the first rule that holds, else the noise.
+    pub fn with_plates(
+        mut self,
+        t: std::sync::Arc<crate::plate_tectonics::PlateTectonics>,
+    ) -> Self {
+        let stacks = self
+            .geology
+            .plate_provinces
+            .rules
+            .iter()
+            .map(|r| {
+                let find = |n: &str| {
+                    self.geology.stack(n).unwrap_or_else(|| {
+                        panic!(
+                            "rocks.json plateProvinces {}: no stack {n}",
+                            r.setting.name()
+                        )
+                    })
+                };
+                let mut all = vec![(find(r.stack), 1.0)];
+                all.extend(r.mix.iter().map(|m| (find(m.stack), m.weight.max(0.0))));
+                let total: f64 = all.iter().map(|a| a.1).sum::<f64>().max(1e-12);
+                let mut c = 0.0;
+                RuleStacks(
+                    all.into_iter()
+                        .map(|(i, w)| {
+                            c += w / total;
+                            (i, c)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        self.plates = Some((t, stacks));
+        self
+    }
+
+    /// The face's plate tectonics, in a world whose rocks come from plates (R5; the big map's
+    /// layers, `map_layers.rs`).
+    pub fn plate_tectonics(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::plate_tectonics::PlateTectonics>> {
+        self.plates.as_ref().map(|(t, _)| t)
+    }
+
+    /// The plate settings at (x, z), in a world whose rocks come from plates (R5).
+    pub fn plate_settings(&self, x: i64, z: i64) -> Option<PlateSettings> {
+        let (t, _) = self.plates.as_ref()?;
+        Some(self.geology.plate_provinces.settings(t, x as f64, z as f64))
     }
 
     /// With the tectonic provinces of `t` (T5): a volcano's ground is the volcanic stack, the old
     /// core's the core stack. Off (`t` disabled): the noise's provinces alone.
     pub fn with_tectonics(mut self, t: crate::tectonics::Tectonics) -> Self {
+        if t.from_plates() {
+            // R5: the face seed's plates (the world map's, `hydrology::generate_with_height`).
+            let plates = crate::plate_tectonics::PlateTectonics::for_seed(self.world_seed);
+            self = self.with_plates(std::sync::Arc::new(plates));
+        }
         if t.enabled() {
             let find = |n: &str| {
                 self.geology
@@ -273,8 +744,59 @@ impl Resolved {
         self
     }
 
+    /// The plate provinces' mixing noise `k` at (x, z) m, of `wavelength` m: about ±0.5, its
+    /// octaves turned off the lattice (WORK_QUEUE item 15).
+    fn mixing_noise(&self, k: u32, x: f64, z: f64, wavelength: f64) -> f32 {
+        let seed = crate::noise::mix32(self.seed ^ crate::noise::mix32(0x31C5_0000 + k));
+        crate::noise::fbm2_turned(seed, x, z, wavelength.max(1.0), 3, 2.13, 37.0, 0.0)
+    }
+
     /// The province's stack at (x, z) and how fully it shapes there (fading to 0 at a border).
     pub fn province(&self, x: i64, z: i64) -> (usize, f64) {
+        if let Some((t, stacks)) = &self.plates {
+            let pp = &self.geology.plate_provinces;
+            let m = pp.mixing;
+            let (xf, zf) = (x as f64, z as f64);
+            // The settings' edges wander (`mixing.edgeShift`), not parallel to their boundary.
+            let shift = if m.edge_shift > 0.0 {
+                m.edge_shift * 2.0 * f64::from(self.mixing_noise(1, xf, zf, m.edge_wavelength))
+            } else {
+                0.0
+            };
+            let (s, mut edge) = pp.settings_shifted(t, xf, zf, shift);
+            if let Some(k) = pp.rules.iter().position(|r| s.has(r.setting)) {
+                let RuleStacks(all) = &stacks[k];
+                let mut stack = all[0].0;
+                if all.len() > 1 && m.wavelength > 0.0 {
+                    // The rule's stacks by a warped noise (`mixing`), each by its weight.
+                    let w = |k| {
+                        m.warp * 2.0 * f64::from(self.mixing_noise(k, xf, zf, m.warp_wavelength))
+                    };
+                    let (wx, wz) = (xf + w(2), zf + w(3));
+                    let u = (0.5 + 1.6 * f64::from(self.mixing_noise(4, wx, wz, m.wavelength)))
+                        .clamp(0.0, 1.0 - 1e-9);
+                    let i = all.iter().position(|a| u < a.1).unwrap_or(all.len() - 1);
+                    stack = all[i].0;
+                    // The noise's distance to the next threshold, in m (its slope about 1.6 / λ).
+                    let lo = if i == 0 { -1.0 } else { all[i - 1].1 };
+                    let hi = if i + 1 == all.len() { 2.0 } else { all[i].1 };
+                    let to_edge = (u - lo).min(hi - u) * m.wavelength / 1.6;
+                    let scale = if m.fade > 0.0 {
+                        pp.edge_fade / m.fade
+                    } else {
+                        1.0
+                    };
+                    edge = edge.min(to_edge * scale);
+                }
+                // The shaping fades in from the setting's edge (rocks.json `edgeFade`).
+                let fade = if pp.edge_fade > 0.0 {
+                    (edge / pp.edge_fade).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                return (stack, fade);
+            }
+        }
         if let Some((t, v, volcanic, core)) = &self.tectonic
             && let Some(on_volcano) = t.province(v, x as f64, z as f64)
         {
@@ -295,7 +817,7 @@ impl Resolved {
             self.cumulative[i]
         };
         let edge = (t - lo).min(hi - t);
-        (i, (edge / PROVINCE_FADE).clamp(0.0, 1.0))
+        (self.noise_stacks[i], (edge / PROVINCE_FADE).clamp(0.0, 1.0))
     }
 }
 
@@ -336,20 +858,79 @@ pub struct Erosion {
     pub gully_depth: f64,
 }
 
+/// Relief on the erosion's mesas (rocks.json `mesaRelief`; owner, 2026-11-13: "mesas are too flat
+/// on the tops and the bottoms, real mesas have height variety"): the standing tops undulate, tilt
+/// and carry knobs; the floors slope to their drainage line with mounds, talus fans and washes.
+/// All 0: the flat tops and floors of 0.58–0.61.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MesaRelief {
+    /// The tops' undulation (m, ±) by noise at `top_wavelength` m.
+    pub top_amplitude: f64,
+    pub top_wavelength: f64,
+    /// Each mesa's tilt of its caprock, about this many m per m, its direction by a noise at `dip_wavelength` m.
+    pub dip: f64,
+    pub dip_wavelength: f64,
+    /// A knob or small butte on a top: one cell of `knob_spacing` m in `knob_chance` holds one, `knob_height` m high and `knob_radius` m wide.
+    pub knob_spacing: f64,
+    pub knob_chance: f64,
+    pub knob_height: f64,
+    pub knob_radius: f64,
+    /// The floors rise away from their drainage line by this many m per m, at most `floor_rise` m.
+    pub floor_slope: f64,
+    pub floor_rise: f64,
+    /// Low mounds on the floors: up to `mound_height` m by noise at `mound_wavelength` m.
+    pub mound_height: f64,
+    pub mound_wavelength: f64,
+    /// Talus fans: the floor raised up to `fan_height` m at a wall's talus, falling off over `fan_width` m beyond it, lobed by noise.
+    pub fan_height: f64,
+    pub fan_width: f64,
+    /// Shallow washes across the floors: `wash_depth` m deep along a noise's zero lines at `wash_wavelength` m.
+    pub wash_depth: f64,
+    pub wash_wavelength: f64,
+}
+
+impl MesaRelief {
+    /// None: flat tops and floors (an edit stored before 0.64).
+    pub const NONE: Self = Self {
+        top_amplitude: 0.0,
+        top_wavelength: 1.0,
+        dip: 0.0,
+        dip_wavelength: 1.0,
+        knob_spacing: 1.0,
+        knob_chance: 0.0,
+        knob_height: 0.0,
+        knob_radius: 1.0,
+        floor_slope: 0.0,
+        floor_rise: 0.0,
+        mound_height: 0.0,
+        mound_wavelength: 1.0,
+        fan_height: 0.0,
+        fan_width: 0.0,
+        wash_depth: 0.0,
+        wash_wavelength: 1.0,
+    };
+}
+
 /// The world map's drainage seen from above (T4): per map cell, the distance (m) to the nearest
 /// drainage line (a cell with at least `threshold` cells of flow accumulation, or the sea), that
-/// line's height and accumulation. Built once per generator, only where a biome erodes.
+/// line's height and accumulation. Built once per generator, only where a biome erodes. Stored by
+/// its exceptions (`grid::SparseGrid`, BUGS.md #70): over the sea every cell is its own line at 0
+/// m; the line's height is read from the world map (its cell's), not copied.
 #[derive(Clone, Debug)]
 pub struct DrainageField {
     n: usize,
     cell: f64,
     x0: f64,
-    dist: Vec<f32>,
-    height: Vec<f32>,
-    accumulation: Vec<f32>,
-    /// Each cell's nearest drainage cell (its index; `u32::MAX` none): the fronts' sources.
-    source: Vec<u32>,
+    dist: crate::grid::SparseGrid<f32>,
+    /// Each cell's flow accumulation (cells), read at its nearest line's cell.
+    acc: crate::grid::SparseGrid<f32>,
+    /// Each cell's nearest drainage cell: `SELF` itself, `u32::MAX` none, else its index (the
+    /// fronts' sources).
+    source: crate::grid::SparseGrid<u32>,
 }
+
+/// `DrainageField::source`'s mark of a cell that is its own line.
+const SELF: u32 = u32::MAX - 1;
 
 impl DrainageField {
     /// The field of `map` with drainage lines at `threshold` cells of accumulation.
@@ -374,6 +955,7 @@ impl DrainageField {
                 }
             }
         }
+        drop(order);
         // Distance to the nearest drainage cell: a Dijkstra over the grid's 8 neighbours.
         let mut dist = vec![f32::INFINITY; len];
         let mut src = vec![usize::MAX; len];
@@ -417,39 +999,50 @@ impl DrainageField {
                 }
             }
         }
-        let height = src
+        let dist: Vec<f32> = dist.into_iter().map(|d| d.min(1.0e9)).collect();
+        let source: Vec<u32> = src
             .iter()
-            .map(|&s| {
-                if s == usize::MAX {
-                    0.0
-                } else {
-                    map.height[s].max(0.0)
-                }
+            .enumerate()
+            .map(|(c, &s)| match s {
+                usize::MAX => u32::MAX,
+                s if s == c => SELF,
+                s => u32::try_from(s).expect("a map of under 2^32 - 2 cells"),
             })
             .collect();
-        let accumulation = src
-            .iter()
-            .map(|&s| if s == usize::MAX { 1.0 } else { acc[s] })
-            .collect();
-        let dist = dist.into_iter().map(|d| d.min(1.0e9)).collect();
-        let source = src
-            .iter()
-            .map(|&s| if s == usize::MAX { u32::MAX } else { s as u32 })
-            .collect();
+        drop(src);
         Self {
             n,
             cell: map.cell,
             x0: map.centre(0).0,
-            dist,
-            height,
-            accumulation,
-            source,
+            dist: crate::grid::SparseGrid::from_dense(&dist, 0.0),
+            acc: crate::grid::SparseGrid::from_dense(&acc, 1.0),
+            source: crate::grid::SparseGrid::from_dense(&source, SELF),
         }
     }
 
+    /// Cell c's nearest drainage cell, if any.
+    #[inline]
+    fn source_of(&self, c: usize) -> Option<usize> {
+        match self.source.get(c) {
+            u32::MAX => None,
+            SELF => Some(c),
+            s => Some(s as usize),
+        }
+    }
+
+    /// The bytes each of its grids holds.
+    pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("drainage distance", self.dist.bytes()),
+            ("drainage accumulation", self.acc.bytes()),
+            ("drainage source", self.source.bytes()),
+        ]
+    }
+
     /// At face-local (x, z), bilinear between the cells' centres: the distance (m) to the nearest
-    /// drainage line, that line's height (m over the sea) and its accumulation (cells).
-    pub fn at(&self, x: f64, z: f64) -> (f64, f64, f64) {
+    /// drainage line, that line's height (m over the sea) and its accumulation (cells). `map` is
+    /// the map the field was built of (its heights are the lines').
+    pub fn at(&self, map: &crate::worldmap::WorldMap, x: f64, z: f64) -> (f64, f64, f64) {
         let n = self.n as i64;
         let fx = ((x - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
         let fz = ((z - self.x0) / self.cell).clamp(0.0, (n - 1) as f64);
@@ -460,9 +1053,13 @@ impl DrainageField {
             for (di, wx) in [(0, 1.0 - tx), (1, tx)] {
                 let c = ((j + dj).min(n - 1) * n + (i + di).min(n - 1)) as usize;
                 let w = wx * wz;
-                out[0] += w * f64::from(self.dist[c]);
-                out[1] += w * f64::from(self.height[c]);
-                out[2] += w * f64::from(self.accumulation[c]);
+                let (height, accumulation) = match self.source_of(c) {
+                    Some(s) => (map.height[s].max(0.0), self.acc.get(s)),
+                    None => (0.0, 1.0),
+                };
+                out[0] += w * f64::from(self.dist.get(c));
+                out[1] += w * f64::from(height);
+                out[2] += w * f64::from(accumulation);
             }
         }
         (out[0], out[1], out[2])
@@ -483,8 +1080,8 @@ impl DrainageField {
         for j in fz - 1..=fz + 2 {
             for i in fx - 1..=fx + 2 {
                 let (i, j) = (i.clamp(0, n - 1), j.clamp(0, n - 1));
-                let s = self.source[(j * n + i) as usize];
-                if s != u32::MAX {
+                if let Some(s) = self.source_of((j * n + i) as usize) {
+                    let s = s as u32;
                     let (si, sj) = (f64::from(s % self.n as u32), f64::from(s / self.n as u32));
                     let (dx, dz) = (self.x0 + si * self.cell - x, self.x0 + sj * self.cell - z);
                     near[k] = ((dx * dx + dz * dz).sqrt(), dx, dz);
@@ -544,4 +1141,223 @@ pub fn soft_top(g: &Geology, stack: &Stack) -> f64 {
         }
     }
     0.0
+}
+
+#[cfg(test)]
+mod plate_province_tests {
+    //! R5 (docs/proposals/REALISTIC_WORLD.md §3.4): the rock provinces from plate history, by
+    //! the two-plate fixtures (plates.json `fixtures`: plates at ±5 km on x, the boundary at x 0).
+    use super::*;
+    use crate::plate_tectonics::{PlateTectonics, UPLIFT};
+    use crate::plates::{FIXTURES, PLATES, Plate, PlateLayout};
+    use std::sync::Arc;
+
+    fn fixture(name: &str) -> Arc<PlateTectonics> {
+        let f = FIXTURES.iter().find(|f| f.name == name).unwrap();
+        let plates = f.plates.map(Plate::from).to_vec();
+        Arc::new(PlateTectonics::new(
+            PlateLayout::of_plates(&PLATES, plates),
+            &UPLIFT,
+        ))
+    }
+
+    fn resolved(g: Geology, t: &Arc<PlateTectonics>) -> Resolved {
+        Resolved::new(g, 1).with_plates(t.clone())
+    }
+
+    fn stack_at(r: &Resolved, x: f64, z: f64) -> &'static str {
+        r.geology.stacks[r.province(x as i64, z as i64).0].name
+    }
+
+    fn rule(setting: PlateSetting) -> &'static str {
+        GEOLOGY
+            .plate_provinces
+            .rules
+            .iter()
+            .find(|r| r.setting == setting)
+            .unwrap()
+            .stack
+    }
+
+    /// The build's geology with no mixing (`plateProvinces.mixing` all 0): each setting its
+    /// rule's own stack, the edges at their widths.
+    fn unmixed() -> Geology {
+        Geology {
+            plate_provinces: PlateProvinces {
+                mixing: Mixing::default(),
+                ..GEOLOGY.plate_provinces
+            },
+            ..GEOLOGY
+        }
+    }
+
+    #[test]
+    fn each_setting_takes_its_rules_stack() {
+        let pp = &GEOLOGY.plate_provinces;
+        // Subduction: the continent (+x) overrides; its accreted strip by the line, the range's
+        // core behind it, the arc's cones farther in, the quiet interior beyond.
+        let t = fixture("ocean_under_continent");
+        let r = resolved(unmixed(), &t);
+        let cones: Vec<_> = t.volcanoes.iter().filter(|v| v.chain == 0).collect();
+        assert!(!cones.is_empty(), "the fixture has an arc");
+        for v in cones {
+            assert!(pp.settings(&t, v.x, v.z).has(PlateSetting::Arc));
+            assert_eq!(stack_at(&r, v.x, v.z), rule(PlateSetting::Arc));
+        }
+        let near = 0.5 * pp.accreted_width;
+        assert!(pp.settings(&t, near, 0.0).has(PlateSetting::Accreted));
+        assert_eq!(stack_at(&r, near, 0.0), rule(PlateSetting::Accreted));
+        // The diving ocean's side has no strip.
+        assert!(!pp.settings(&t, -near, 0.0).has(PlateSetting::Accreted));
+        let crest = 0.5 * (pp.range_core[0] + pp.range_core[1]);
+        assert!(crest > pp.accreted_width);
+        assert_eq!(stack_at(&r, crest, 0.0), rule(PlateSetting::Core));
+        let far = pp.basin_distance + 3000.0;
+        assert!(pp.settings(&t, far, 0.0).has(PlateSetting::Basin));
+        assert_eq!(stack_at(&r, far, 0.0), rule(PlateSetting::Basin));
+        // Collision: the core astride the line, on both plates.
+        let t = fixture("continents_collide");
+        let r = resolved(unmixed(), &t);
+        for x in [-0.5 * pp.core_width, 0.5 * pp.core_width] {
+            assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Core), "x {x}");
+        }
+        // A rift (two continents opening): its fill along the line.
+        let t = fixture("continents_part");
+        let r = resolved(unmixed(), &t);
+        for x in [-0.5 * pp.rift_width, 0.5 * pp.rift_width] {
+            assert_eq!(stack_at(&r, x, 2000.0), rule(PlateSetting::Rift), "x {x}");
+        }
+        // A passive margin (a continent and an ocean opening) is no rift.
+        let t = fixture("rift_opens");
+        assert!(
+            !pp.settings(&t, -0.5 * pp.rift_width, 2000.0)
+                .has(PlateSetting::Rift)
+        );
+    }
+
+    #[test]
+    fn a_setting_mixes_its_rules_stacks() {
+        // WORK_QUEUE item 15 (part B): with the build's mixing, a plate's quiet interior is
+        // patches of the basin rule's stacks (its own and its `mix`), each of them somewhere, no
+        // other; with the mixing off (by data alone), the rule's own stack everywhere.
+        let pp = GEOLOGY.plate_provinces;
+        let basin = pp
+            .rules
+            .iter()
+            .find(|r| r.setting == PlateSetting::Basin)
+            .unwrap();
+        assert!(basin.mix.len() >= 2, "the basin mixes stacks");
+        let mut names: Vec<&str> = vec![basin.stack];
+        names.extend(basin.mix.iter().map(|m| m.stack));
+        let t = fixture("ocean_under_continent");
+        let (mixed, plain) = (resolved(GEOLOGY, &t), resolved(unmixed(), &t));
+        let mut seen = Vec::new();
+        for z in (-12_000..=12_000).step_by(400) {
+            for dx in (0..=8_000).step_by(400) {
+                let x = pp.basin_distance + 2.0 * pp.mixing.edge_shift + f64::from(dx);
+                if !pp.settings(&t, x, f64::from(z)).has(PlateSetting::Basin) {
+                    continue;
+                }
+                let s = stack_at(&mixed, x, f64::from(z));
+                assert!(names.contains(&s), "{s} is the basin's");
+                if !seen.contains(&s) {
+                    seen.push(s);
+                }
+                assert_eq!(stack_at(&plain, x, f64::from(z)), basin.stack);
+            }
+        }
+        assert_eq!(seen.len(), names.len(), "every basin stack shows: {seen:?}");
+    }
+
+    #[test]
+    fn a_settings_edge_fades_the_shaping_in() {
+        // WORK_QUEUE item 15: with the shaping on, a rule's province meets the next with no wall.
+        // On the accreted strip's edge (accretedWidth m from the trench) the fade is 0; edgeFade
+        // m inside it, 1; with edgeFade 0 (by data alone), sharp as before.
+        let pp = GEOLOGY.plate_provinces;
+        assert!(pp.edge_fade > 0.0, "the build fades the edges");
+        let t = fixture("ocean_under_continent");
+        let r = resolved(unmixed(), &t);
+        let fade = |r: &Resolved, x: f64| r.province(x as i64, 0).1;
+        let edge = pp.accreted_width;
+        assert!(
+            fade(&r, edge - 1.0) < 0.01,
+            "at the edge: {}",
+            fade(&r, edge - 1.0)
+        );
+        let inside = edge - pp.edge_fade - 1.0;
+        assert!(pp.settings(&t, inside, 0.0).has(PlateSetting::Accreted));
+        assert!(fade(&r, inside) > 0.99, "inside: {}", fade(&r, inside));
+        let mid = edge - 0.5 * pp.edge_fade;
+        assert!(
+            (fade(&r, mid) - 0.5).abs() < 0.01,
+            "halfway: {}",
+            fade(&r, mid)
+        );
+        let sharp = Geology {
+            plate_provinces: PlateProvinces {
+                edge_fade: 0.0,
+                ..unmixed().plate_provinces
+            },
+            ..GEOLOGY
+        };
+        assert_eq!(fade(&resolved(sharp, &t), edge - 1.0), 1.0);
+    }
+
+    #[test]
+    fn the_build_names_todays_blocks_for_each_setting() {
+        // §7 q5: no new rock blocks; each setting's top rock shows a block of today's registry.
+        let face = |s: PlateSetting| {
+            let st = &GEOLOGY.stacks[GEOLOGY.stack(rule(s)).unwrap()];
+            GEOLOGY.rocks[GEOLOGY.rock(st.layers[0].rock).unwrap()].face
+        };
+        assert_eq!(face(PlateSetting::Arc), "dwell:basalt");
+        assert_eq!(face(PlateSetting::Hotspot), "dwell:basalt");
+        assert_eq!(face(PlateSetting::Core), "dwell:stone");
+        assert_eq!(face(PlateSetting::Accreted), "dwell:stone");
+        assert_eq!(face(PlateSetting::Basin), "dwell:red_sandstone");
+        assert_eq!(face(PlateSetting::Rift), "dwell:red_sandstone");
+    }
+
+    #[test]
+    fn a_rule_or_a_rocks_block_changed_by_data_alone_changes_the_province() {
+        let t = fixture("continents_collide");
+        let at = (0.0, 2000.0);
+        // The core's rule now names the basalt flows: the province follows.
+        let mut rules = GEOLOGY.plate_provinces.rules.to_vec();
+        for r in &mut rules {
+            if r.setting == PlateSetting::Core {
+                r.stack = "dwell:basalt_flows";
+            }
+        }
+        let mut g = GEOLOGY;
+        g.plate_provinces.rules = Box::leak(rules.into_boxed_slice());
+        assert_eq!(stack_at(&resolved(g, &t), at.0, at.1), "dwell:basalt_flows");
+        // A later granite block: the core's rock shows it by data alone.
+        let mut rocks = GEOLOGY.rocks.to_vec();
+        let gi = GEOLOGY.rock("dwell:granite").unwrap();
+        rocks[gi].face = "dwell:bedrock";
+        let mut g = GEOLOGY;
+        g.rocks = Box::leak(rocks.into_boxed_slice());
+        let r = resolved(g, &t);
+        let (stack, _) = r.province(at.0 as i64, at.1 as i64);
+        // The stack's top layer (granite over schist, built from sea level up: 40..100 m).
+        let (_, rock, _) = r.profiles[stack].map(70.0);
+        assert_eq!(r.geology.rocks[rock].face, "dwell:bedrock");
+        // No rule holds (an empty list): the noise's provinces, as without plates.
+        let mut g = GEOLOGY;
+        g.plate_provinces.rules = &[];
+        let (with, without) = (resolved(g, &t), Resolved::new(g, 1));
+        assert_eq!(with.province(0, 2000), without.province(0, 2000));
+    }
+
+    #[test]
+    fn a_zero_weight_stack_is_never_the_noises() {
+        let r = Resolved::new(GEOLOGY, 7);
+        for i in 0..400 {
+            let (x, z) = (i * 1733 - 300_000, i * 977 - 200_000);
+            let (k, _) = r.province(x, z);
+            assert!(GEOLOGY.stacks[k].weight > 0.0, "{}", GEOLOGY.stacks[k].name);
+        }
+    }
 }

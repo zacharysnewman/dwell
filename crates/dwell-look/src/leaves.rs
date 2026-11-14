@@ -32,4 +32,23 @@ pub struct LeafCards {
     /// They dissolve with distance from `fade_start_m` to `fade_end_m` (m).
     pub fade_start_m: f64,
     pub fade_end_m: f64,
+    /// A face's cards are dropped when a leaf cell lies within this many cells straight out of it
+    /// (the face looks into a cavity inside the crown, not out of it); 0 keeps every face's.
+    pub interior_cells: u32,
+    /// The vertex shader drops a card whose plane the eye is more than this far behind (m): a card
+    /// on the crown's far side, facing away; 0 never.
+    pub back_cull_m: f64,
+    /// Which renderer tiers mesh them (`dwell-client` `render::cards_for`).
+    pub tiers: CardTiers,
+}
+
+/// Whether each renderer tier meshes the cards (shared/look/leaves.json `cards.tiers`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CardTiers {
+    /// A GPU on a desktop page.
+    pub desktop: bool,
+    /// A touch device's page (the phone tier).
+    pub phone: bool,
+    /// A CPU adapter (the cheapest tier of everything).
+    pub cpu: bool,
 }

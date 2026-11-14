@@ -11,6 +11,23 @@ const FILE = /^[a-z0-9][a-z0-9-]*\.(mp3|m4a)$/;
 export const WHEN = ["always"];
 /** A track's file may be at most this large (it ships once per site, streamed). */
 export const MAX_BYTES = 20_000_000;
+/** How the playlist picks the next track (client/src/audio/playlist.ts). */
+export const ORDER = ["shuffle"];
+/** The times of day a track may play at (a track's `times`, default both). */
+export const TIMES = ["day", "night"];
+/** Where the playlist plays, each with its own wait before the first track (client/src/audio/page.ts). */
+export const CONTEXTS = ["menu", "game"];
+/** The longest gap or first wait (s). */
+export const MAX_WAIT_S = 3600;
+const PLAYLIST_KEYS = [
+  "order",
+  "gapMinS",
+  "gapMaxS",
+  "crossfadeS",
+  "dayAt",
+  "contexts",
+];
+const CONTEXT_KEYS = ["firstDelayMinS", "firstDelayMaxS"];
 const TRACK_KEYS = [
   "title",
   "author",
@@ -21,6 +38,8 @@ const TRACK_KEYS = [
   "fadeOutS",
   "when",
 ];
+/** Fields a track may leave out. */
+const TRACK_OPTIONAL = ["times"];
 
 function fail(where, message) {
   throw new Error(`shared/music: ${where}: ${message}`);
@@ -45,23 +64,81 @@ export function contentHash(bytes) {
   return createHash("sha256").update(bytes).digest("hex").slice(0, 8);
 }
 
+/** The playlist: the order and the silence (or overlap) between tracks. */
+function resolvePlaylist(where, p) {
+  if (!isObject(p)) fail(where, "must be an object");
+  for (const k of Object.keys(p))
+    if (!PLAYLIST_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
+  for (const k of PLAYLIST_KEYS) if (!(k in p)) fail(where, `missing "${k}"`);
+  if (!ORDER.includes(p.order))
+    fail(`${where}.order`, `"${p.order}" is not one of ${ORDER.join(", ")}`);
+  number(`${where}.gapMinS`, p.gapMinS, 0, MAX_WAIT_S);
+  number(`${where}.gapMaxS`, p.gapMaxS, 0, MAX_WAIT_S);
+  if (p.gapMaxS < p.gapMinS)
+    fail(`${where}.gapMaxS`, `${p.gapMaxS} is below gapMinS ${p.gapMinS}`);
+  number(`${where}.crossfadeS`, p.crossfadeS, 0, 30);
+  number(`${where}.dayAt`, p.dayAt, 0, 1);
+  if (!isObject(p.contexts)) fail(`${where}.contexts`, "must be an object");
+  for (const k of Object.keys(p.contexts))
+    if (!CONTEXTS.includes(k))
+      fail(
+        `${where}.contexts`,
+        `"${k}" is not one of ${CONTEXTS.join(", ")}`,
+      );
+  const contexts = {};
+  for (const name of CONTEXTS) {
+    const w = `${where}.contexts.${name}`;
+    const c = p.contexts[name];
+    if (!(name in p.contexts)) fail(`${where}.contexts`, `missing "${name}"`);
+    if (!isObject(c)) fail(w, "must be an object");
+    for (const k of Object.keys(c))
+      if (!CONTEXT_KEYS.includes(k)) fail(w, `unknown field "${k}"`);
+    for (const k of CONTEXT_KEYS) if (!(k in c)) fail(w, `missing "${k}"`);
+    number(`${w}.firstDelayMinS`, c.firstDelayMinS, 0, MAX_WAIT_S);
+    number(`${w}.firstDelayMaxS`, c.firstDelayMaxS, 0, MAX_WAIT_S);
+    if (c.firstDelayMaxS < c.firstDelayMinS)
+      fail(
+        `${w}.firstDelayMaxS`,
+        `${c.firstDelayMaxS} is below firstDelayMinS ${c.firstDelayMinS}`,
+      );
+    contexts[name] = {
+      firstDelayMinS: c.firstDelayMinS,
+      firstDelayMaxS: c.firstDelayMaxS,
+    };
+  }
+  return {
+    order: p.order,
+    gapMinS: p.gapMinS,
+    gapMaxS: p.gapMaxS,
+    crossfadeS: p.crossfadeS,
+    dayAt: p.dayAt,
+    contexts,
+  };
+}
+
 /**
  * Resolves `files` (parsed shared/music/*.json) against the audio files in `dir`: the tracks in
  * order (by namespace, then as listed), each with its published file name (`name-<hash>.ext`).
  */
 export function resolveMusic(files, dir) {
   const tracks = [];
+  let playlist = null;
   const sorted = [...files].sort((a, b) =>
     a.namespace < b.namespace ? -1 : 1,
   );
   for (const file of sorted) {
     if (!isObject(file)) fail("file", "must be an object");
     for (const k of Object.keys(file))
-      if (!["$comment", "namespace", "tracks"].includes(k))
+      if (!["$comment", "namespace", "playlist", "tracks"].includes(k))
         fail(`namespace ${file.namespace}`, `unknown field "${k}"`);
     if (typeof file.namespace !== "string" || !NAME.test(file.namespace))
       fail("namespace", `bad namespace ${file.namespace}`);
     const ns = file.namespace;
+    if ("playlist" in file) {
+      if (playlist)
+        fail(`namespace ${ns}`, "a second playlist (only one file sets it)");
+      playlist = resolvePlaylist(`playlist (${ns})`, file.playlist);
+    }
     if (!isObject(file.tracks)) fail(ns, "tracks must be an object");
     for (const [name, t] of Object.entries(file.tracks)) {
       const id = `${ns}:${name}`;
@@ -70,9 +147,9 @@ export function resolveMusic(files, dir) {
       if (tracks.some((x) => x.id === id)) fail(where, "defined twice");
       if (!isObject(t)) fail(where, "must be an object");
       for (const k of Object.keys(t))
-        if (!TRACK_KEYS.includes(k)) fail(where, `unknown field "${k}"`);
-      for (const k of TRACK_KEYS)
-        if (!(k in t)) fail(where, `missing "${k}"`);
+        if (!TRACK_KEYS.includes(k) && !TRACK_OPTIONAL.includes(k))
+          fail(where, `unknown field "${k}"`);
+      for (const k of TRACK_KEYS) if (!(k in t)) fail(where, `missing "${k}"`);
       text(`${where}.title`, t.title);
       text(`${where}.author`, t.author);
       if (typeof t.file !== "string" || !FILE.test(t.file))
@@ -96,6 +173,14 @@ export function resolveMusic(files, dir) {
       number(`${where}.fadeOutS`, t.fadeOutS, 0, 60);
       if (!WHEN.includes(t.when))
         fail(`${where}.when`, `"${t.when}" is not one of ${WHEN.join(", ")}`);
+      const times = t.times ?? TIMES;
+      if (!Array.isArray(times) || times.length === 0)
+        fail(`${where}.times`, `must be a non-empty list of ${TIMES.join(", ")}`);
+      for (const x of times)
+        if (!TIMES.includes(x))
+          fail(`${where}.times`, `"${x}" is not one of ${TIMES.join(", ")}`);
+      if (new Set(times).size !== times.length)
+        fail(`${where}.times`, "lists a time twice");
       const dot = t.file.lastIndexOf(".");
       const published = `${t.file.slice(0, dot)}-${contentHash(readFileSync(path))}${t.file.slice(dot)}`;
       tracks.push({
@@ -109,9 +194,11 @@ export function resolveMusic(files, dir) {
         fadeInS: t.fadeInS,
         fadeOutS: t.fadeOutS,
         when: t.when,
+        times: TIMES.filter((x) => times.includes(x)),
       });
     }
   }
   if (tracks.length === 0) fail("tracks", "none");
-  return { tracks };
+  if (!playlist) fail("playlist", "missing (one file sets it)");
+  return { playlist, tracks };
 }

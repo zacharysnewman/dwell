@@ -21,6 +21,8 @@ export const TERRAIN = {
   // volcanic arc and one hotspot chain (tectonics.rs).
   tectonics: {
     kind: [0, 3, true],
+    plates: [0, 1, true],
+    climate: [0, 1, true],
     angle: [-360, 360],
     offset: [-50_000, 50_000],
     width: [{ above: 0 }, 20_000],
@@ -152,6 +154,9 @@ export const TERRAIN = {
     wetReach: [{ above: 0 }, 100_000],
     ditherWavelength: [4, 65_536, true],
     dither: [0, 1],
+    ditherSpeckle: [0, 1],
+    ditherWarp: [0, 1000],
+    treesSharpen: [1, 16],
     windDirection: [0, 360],
     windReach: [{ above: 0 }, 1_000_000],
     baseRain: [0, 1],
@@ -169,8 +174,20 @@ export const TERRAIN = {
 };
 /** An elevation band's blocks, by name: each must be a full block of the registry. */
 const BAND_BLOCKS = ["ground", "under", "rock", "shoreBlock"];
-/** The geography fields a biome's `where` ranges may name (B2's biome map; code, a fixed vocabulary). */
-export const WHERE_FIELDS = ["temperature", "wetness", "elevation", "coast"];
+/**
+ * The geography fields a biome's `where` ranges may name (B2's biome map; code, a fixed vocabulary):
+ * the 0..1 `temperature` and `wetness`, metres of `elevation` and `coast`; `celsius` (°C) and `rain`
+ * (annual mm), the presets' climate envelope (REALISTIC_WORLD.md R4): °C and rain from the climate in
+ * a world with one, `celsius` from the 0..1 temperature and `rain` not read in a world without.
+ */
+export const WHERE_FIELDS = [
+  "temperature",
+  "wetness",
+  "elevation",
+  "coast",
+  "celsius",
+  "rain",
+];
 const BAND_NAME = /^[a-z0-9_]+$/;
 
 /**
@@ -256,7 +273,7 @@ export function checkLavaVents(list, g, fail) {
   list.forEach((v, i) => {
     const at = (m) => fail(`[${i}]: ${m}`);
     if (typeof v !== "object" || v === null) at("must be an object");
-    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle"];
+    const known = ["cone", "index", "kind", "fluid", "rateM3s", "depthM", "radius", "distance", "angle", "faces"];
     const extra = Object.keys(v).filter((k) => !known.includes(k));
     if (extra.length) at(`unknown ${extra.join(", ")}`);
     const index = v.index ?? 0;
@@ -271,6 +288,16 @@ export function checkLavaVents(list, g, fail) {
       at('fluid must be a hot fluid\'s "namespace:name"');
     if (!(isNum(v.rateM3s) && v.rateM3s > 0 && v.rateM3s <= 1000))
       at("rateM3s must be in (0, 1000]");
+    if (
+      v.faces !== undefined &&
+      !(
+        Array.isArray(v.faces) &&
+        v.faces.length > 0 &&
+        v.faces.every((f) => f === "a" || f === "b") &&
+        new Set(v.faces).size === v.faces.length
+      )
+    )
+      at('faces must list "a" and/or "b" (each face generates its own cone)');
     if (!(Number.isInteger(v.radius) && v.radius >= 1 && v.radius <= 64))
       at("radius must be a whole number in [1, 64]");
     for (const [k, lo, hi] of [
@@ -603,12 +630,35 @@ export function validateVegetation(data, rocks, placements, refs = {}) {
   };
   soil(data.fallback, "fallback");
   if (!Array.isArray(data.rockSoils)) fail("rockSoils must be a list");
+  // A rock's entries in order, the first whose climate holds winning (R5); one without a climate
+  // ends them (later ones could never be read).
   const seen = new Set();
   for (const r of data.rockSoils) {
     if (rocks && !rocks.has(r?.rock))
       fail(`rockSoils: ${JSON.stringify(r?.rock)} is not a rock of rocks.json`);
-    if (seen.has(r.rock)) fail(`rockSoils: ${r.rock} is listed twice`);
-    seen.add(r.rock);
+    if (seen.has(r.rock))
+      fail(
+        `rockSoils: ${r.rock} is listed after its entry without a climate (never read)`,
+      );
+    const re = Object.keys(r).filter(
+      (k) => !["rock", "depth", "type", "celsius", "moisture", "$comment"].includes(k),
+    );
+    if (re.length) fail(`rockSoils: ${r.rock}: unknown ${re.join(", ")}`);
+    for (const [k, lo, hi] of [
+      ["celsius", -100, 100],
+      ["moisture", 0, 1],
+    ]) {
+      const v = r[k];
+      if (v === undefined) continue;
+      if (
+        !Array.isArray(v) ||
+        v.length !== 2 ||
+        !v.every((x) => isNum(x) && x >= lo && x <= hi) ||
+        v[0] >= v[1]
+      )
+        fail(`rockSoils: ${r.rock}: ${k} must be [least, most] in [${lo}, ${hi}]`);
+    }
+    if (r.celsius === undefined && r.moisture === undefined) seen.add(r.rock);
     soil(r, `rock ${r.rock}`);
   }
   if (!Array.isArray(data.kinds)) fail("kinds must be a list");
@@ -733,10 +783,29 @@ function checkSnow(s, blocks, fail) {
 
 /** A rock's jointing (code, a fixed vocabulary; systemic terrain T2). */
 export const JOINTING = ["bedded", "vertical", "massive"];
+
+/** The plate settings a `plateProvinces` rule may name (R5; the code's vocabulary). */
+export const PLATE_SETTINGS = [
+  "arc",
+  "hotspot",
+  "accreted",
+  "core",
+  "rift",
+  "basin",
+  "default",
+];
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
-  shaping: { strength: [0, 1], tread: [0, 10], sheer: [0, 10] },
+  shaping: {
+    strength: [0, 1],
+    tread: [0, 10],
+    sheer: [0, 10],
+    ledge: [0, 50],
+    ledgeEvery: [0.05, 1],
+    treadRelief: [0, 0.5],
+    notched: ["none", "mesaEdges", "all"],
+  },
   erosion: {
     strength: [0, 1],
     reach: [0, 10_000],
@@ -753,7 +822,28 @@ export const GEOLOGY = {
     gullyWavelength: [4, 10_000, true],
     gullyDepth: [0, 100],
   },
+  mesaRelief: {
+    topAmplitude: [0, 50],
+    topWavelength: [16, 100000, true],
+    dip: [0, 0.2],
+    dipWavelength: [100, 100000, true],
+    knobSpacing: [16, 100000, true],
+    knobChance: [0, 1],
+    knobHeight: [0, 100],
+    knobRadius: [1, 1000],
+    floorSlope: [0, 0.2],
+    floorRise: [0, 100],
+    moundHeight: [0, 20],
+    moundWavelength: [16, 100000, true],
+    fanHeight: [0, 50],
+    fanWidth: [0, 1000],
+    washDepth: [0, 20],
+    washWavelength: [16, 100000, true],
+  },
 };
+
+/** The climates a rock's `capBy` may name (the code's vocabulary, geology.rs `CapClimate`). */
+export const CAP_CLIMATES = ["arid"];
 
 /**
  * Checks the geology (shared/worldgen/rocks.json, systemic terrain T2): the rock types, the strata
@@ -774,7 +864,12 @@ export function validateRocks(data, blocks) {
         "provinces",
         "shaping",
         "erosion",
+        "mesaRelief",
+        "blends",
         "tectonic",
+        "plateProvinces",
+        "arid",
+        "surfaces",
       ].includes(k),
   );
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
@@ -798,6 +893,7 @@ export function validateRocks(data, blocks) {
       "face",
       "cap",
       "scree",
+      "capBy",
       "color",
       "$comment",
     ];
@@ -814,8 +910,48 @@ export function validateRocks(data, blocks) {
       if (!b) rf(`${k} ${JSON.stringify(r[k])} is not in the registry`);
       if (b.shape !== "full") rf(`${k} ${r[k]} must be a full block`);
     }
+    // capBy (BUGS.md #134): the treads' block by the climate, the first whose climate holds.
+    if (r.capBy !== undefined) {
+      if (!Array.isArray(r.capBy) || r.capBy.length === 0)
+        rf("capBy must be a list of at least one {\"<climate>\": block}");
+      for (const e of r.capBy) {
+        const ks = typeof e === "object" && e !== null && !Array.isArray(e) ? Object.keys(e) : [];
+        if (ks.length !== 1)
+          rf("a capBy entry must be one {\"<climate>\": block}");
+        if (!CAP_CLIMATES.includes(ks[0]))
+          rf(`capBy: unknown climate ${ks[0]} (one of ${CAP_CLIMATES.join(", ")})`);
+        const b = blocks.get(e[ks[0]]);
+        if (!b) rf(`capBy ${ks[0]} ${JSON.stringify(e[ks[0]])} is not in the registry`);
+        if (b.shape !== "full") rf(`capBy ${ks[0]} ${e[ks[0]]} must be a full block`);
+      }
+      if (data.arid === undefined) rf("capBy needs the geology's arid");
+    }
     if (typeof r.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(r.color))
       rf('color must be "#rrggbb"');
+  }
+  if (data.surfaces !== undefined) {
+    const sf = data.surfaces;
+    if (typeof sf !== "object" || sf === null || Array.isArray(sf)) fail("surfaces must be an object");
+    const ex = Object.keys(sf).filter((k) => !["$comment", "replace"].includes(k));
+    if (ex.length) fail(`surfaces: unknown ${ex.join(", ")}`);
+    if (!Array.isArray(sf.replace)) fail("surfaces.replace must be a list");
+    for (const [i, r] of sf.replace.entries()) {
+      const rf = (m) => fail(`surfaces.replace[${i}]: ${m}`);
+      const rex = Object.keys(r).filter((k) => !["$comment", "block", "with", "except"].includes(k));
+      if (rex.length) rf(`unknown ${rex.join(", ")}`);
+      if (typeof r.block !== "string" || typeof r.with !== "string") rf("block and with must be block names");
+      if (!Array.isArray(r.except ?? [])) rf("except must be a list of rocks");
+      for (const k of r.except ?? []) if (!rocks.has(k)) rf(`except: ${k} is not a rock`);
+    }
+  }
+  if (data.arid !== undefined) {
+    const a = data.arid;
+    if (typeof a !== "object" || a === null || Array.isArray(a)) fail("arid must be an object");
+    const ex = Object.keys(a).filter((k) => !["$comment", "rain", "wetness", "celsius"].includes(k));
+    if (ex.length) fail(`arid: unknown ${ex.join(", ")}`);
+    if (!between(a.rain, 0, 20_000)) fail("arid.rain must be in [0, 20000] mm");
+    if (!between(a.wetness, 0, 1)) fail("arid.wetness must be in [0, 1]");
+    if (!between(a.celsius, -100, 100)) fail("arid.celsius must be in [-100, 100] °C");
   }
   if (!Array.isArray(data.stacks) || data.stacks.length === 0)
     fail("stacks must be a list of at least one stack");
@@ -854,8 +990,14 @@ export function validateRocks(data, blocks) {
         fail(`${group} must be an object`);
       const ex = Object.keys(v).filter((k) => k !== "$comment" && !(k in keys));
       if (ex.length) fail(`${group}: unknown ${ex.join(", ")}`);
-      for (const [key, [min, max, whole]] of Object.entries(keys)) {
+      for (const [key, spec] of Object.entries(keys)) {
         const x = v[key];
+        if (typeof spec[0] === "string") {
+          // A word of the code's vocabulary.
+          if (!spec.includes(x)) fail(`${group}.${key} must be one of ${spec.join(", ")}`);
+          continue;
+        }
+        const [min, max, whole] = spec;
         if (!(
           isNum(x) &&
           x >= min &&
@@ -870,6 +1012,39 @@ export function validateRocks(data, blocks) {
     }
   };
   groups(data);
+  // The ground blocks' ordered blends by stack (0.64, Monument Valley): each its stacks, 2–6 full
+  // blocks in order with their shares (summing to 1), the noise and the dither.
+  if (data.blends !== undefined) {
+    if (!Array.isArray(data.blends)) fail("blends must be a list");
+    const seen = new Set();
+    const stackNames = new Set(data.stacks.map((s) => s.name));
+    data.blends.forEach((b, i) => {
+      const bf = (m) => fail(`blends[${i}]${typeof b?.name === "string" ? ` (${b.name})` : ""}: ${m}`);
+      const keys = ["$comment", "name", "stacks", "blocks", "shares", "wavelength", "slope", "dither", "ditherWavelength"];
+      const ex = Object.keys(b).filter((k) => !keys.includes(k));
+      if (ex.length) bf(`unknown ${ex.join(", ")}`);
+      if (typeof b.name !== "string" || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(b.name)) bf("name must be namespaced");
+      if (seen.has(b.name)) bf("listed twice");
+      seen.add(b.name);
+      if (!Array.isArray(b.stacks) || b.stacks.length === 0) bf("stacks must be a list of stack names");
+      for (const s of b.stacks) if (!stackNames.has(s)) bf(`stack ${JSON.stringify(s)} is not a stack`);
+      if (!Array.isArray(b.blocks) || b.blocks.length < 2 || b.blocks.length > 6) bf("blocks must be 2–6 blocks, in order");
+      for (const n of b.blocks) {
+        const bl = blocks.get(n);
+        if (!bl) bf(`block ${JSON.stringify(n)} is not in the registry`);
+        if (bl.shape !== "full") bf(`block ${n} must be a full block`);
+      }
+      if (!Array.isArray(b.shares) || b.shares.length !== b.blocks.length || !b.shares.every((s) => isNum(s) && s > 0))
+        bf("shares must be one positive share per block");
+      if (Math.abs(b.shares.reduce((a, s) => a + s, 0) - 1) > 1e-6) bf("shares must sum to 1");
+      if (!between(b.wavelength, 4, 100_000)) bf("wavelength must be in [4, 100000] m");
+      if (!between(b.slope, 0, 2)) bf("slope must be in [0, 2]");
+      if (!between(b.dither, 0, 0.5)) bf("dither must be in [0, 0.5]");
+      if (!between(b.ditherWavelength, 1, 1000)) bf("ditherWavelength must be in [1, 1000] m");
+      // Neighbours at most one tone apart: the dither may not span a tone.
+      if (2 * b.dither >= Math.min(...b.shares)) bf("dither must be under half the smallest share");
+    });
+  }
   // The tectonic provinces (systemic terrain T5): the stacks of the volcanoes and the old core.
   const t = data.tectonic;
   if (typeof t !== "object" || t === null) fail("tectonic must be an object");
@@ -880,6 +1055,91 @@ export function validateRocks(data, blocks) {
   for (const k of ["volcanic", "core"]) {
     if (!stacks.has(t[k]))
       fail(`tectonic.${k} must name a stack (${String(t[k])} is none)`);
+  }
+  // The rock provinces from plate history (R5): widths and rules of setting → stack; optional.
+  const pp = data.plateProvinces;
+  if (pp !== undefined) {
+    const pf = (m) => fail(`plateProvinces: ${m}`);
+    if (typeof pp !== "object" || pp === null) pf("must be an object");
+    const known = [
+      "$comment",
+      "accretedWidth",
+      "coreWidth",
+      "rangeCore",
+      "riftWidth",
+      "basinDistance",
+      "edgeFade",
+      "mixing",
+      "rules",
+    ];
+    const pe = Object.keys(pp).filter((k) => !known.includes(k));
+    if (pe.length) pf(`unknown ${pe.join(", ")}`);
+    for (const k of ["accretedWidth", "coreWidth", "riftWidth", "basinDistance"]) {
+      if (!between(pp[k], 0, 100000)) pf(`${k} must be in [0, 100000] m`);
+    }
+    // How far inside a setting's edge the shaping fades in (absent: 0, a sharp edge).
+    if (pp.edgeFade !== undefined && !between(pp.edgeFade, 0, 10000))
+      pf("edgeFade must be in [0, 10000] m");
+    // How a rule's stacks mix and the settings' edges wander (WORK_QUEUE item 15); optional.
+    const mx = pp.mixing;
+    if (mx !== undefined) {
+      const mk = ["$comment", "wavelength", "warp", "warpWavelength", "edgeShift", "edgeWavelength", "fade"];
+      if (typeof mx !== "object" || mx === null) pf("mixing must be an object");
+      const me = Object.keys(mx).filter((k) => !mk.includes(k));
+      if (me.length) pf(`mixing: unknown ${me.join(", ")}`);
+      for (const k of ["wavelength", "warpWavelength", "edgeWavelength"])
+        if (!between(mx[k], 100, 100000)) pf(`mixing.${k} must be in [100, 100000] m`);
+      for (const k of ["warp", "edgeShift"])
+        if (!between(mx[k], 0, 20000)) pf(`mixing.${k} must be in [0, 20000] m`);
+      if (mx.fade !== undefined && !between(mx.fade, 0, 10000))
+        pf("mixing.fade must be in [0, 10000] m");
+    }
+    const rc = pp.rangeCore;
+    if (
+      !Array.isArray(rc) ||
+      rc.length !== 2 ||
+      !between(rc[0], 0, 100000) ||
+      !between(rc[1], 0, 100000) ||
+      rc[0] > rc[1]
+    )
+      pf("rangeCore must be [near, far] m with near ≤ far");
+    if (!Array.isArray(pp.rules)) pf("rules must be a list");
+    const seen = new Set();
+    for (const r of pp.rules) {
+      if (!PLATE_SETTINGS.includes(r?.setting))
+        pf(
+          `rule setting ${JSON.stringify(r?.setting)} must be one of ${PLATE_SETTINGS.join(", ")}`,
+        );
+      if (seen.has(r.setting)) pf(`rule ${r.setting} is listed twice`);
+      seen.add(r.setting);
+      const re = Object.keys(r).filter(
+        (k) => !["setting", "stack", "mix", "$comment"].includes(k),
+      );
+      if (re.length) pf(`rule ${r.setting}: unknown ${re.join(", ")}`);
+      if (!stacks.has(r.stack))
+        pf(
+          `rule ${r.setting}: stack ${JSON.stringify(r.stack)} is not a stack of rocks.json`,
+        );
+      // The stacks the setting mixes in, each by its weight (the rule's own weighs 1).
+      if (r.mix !== undefined) {
+        if (!Array.isArray(r.mix) || r.mix.length > 7)
+          pf(`rule ${r.setting}: mix must be a list of at most 7 stacks`);
+        if (r.mix.length && pp.mixing === undefined)
+          pf(`rule ${r.setting}: mix needs plateProvinces.mixing`);
+        const named = new Set([r.stack]);
+        for (const m of r.mix) {
+          const mke = Object.keys(m ?? {}).filter((k) => !["stack", "weight"].includes(k));
+          if (mke.length) pf(`rule ${r.setting}: mix: unknown ${mke.join(", ")}`);
+          if (!stacks.has(m?.stack))
+            pf(
+              `rule ${r.setting}: mix stack ${JSON.stringify(m?.stack)} is not a stack of rocks.json`,
+            );
+          if (named.has(m.stack)) pf(`rule ${r.setting}: mix names ${m.stack} twice`);
+          named.add(m.stack);
+          if (!between(m.weight, 0, 10)) pf(`rule ${r.setting}: mix ${m.stack} weight must be in [0, 10]`);
+        }
+      }
+    }
   }
   // The snow line's cover (terrain.json tectonics.snowBelowC): a full block.
   const sb = blocks.get(t.snow);
@@ -1037,7 +1297,9 @@ export function validateBiomeMap(bm) {
 
 /**
  * The world knobs Chisel may change (ADR 0074 B4, the archipelago's: the coast's islands, the sea
- * floor's shelf, the inland rise, the hills' height): terrain.json's groups and keys.
+ * floor's shelf, the inland rise, the hills' height): terrain.json's groups and their ranged keys
+ * (Chisel's sliders). The groups are those `dwell_worldgen::config::height_from_json` reads; the
+ * tectonics take every ranged key `TERRAIN` has, so a new key there is a knob by itself.
  */
 export const WORLD_KNOBS = {
   islands: ["amplitude", "wavelength", "octaves", "cap"],
@@ -1047,8 +1309,21 @@ export const WORLD_KNOBS = {
   tectonics: Object.keys(TERRAIN.tectonics),
 };
 
-/** Checks Chisel's world knobs (`{ group: { key: v } }`, `WORLD_KNOBS`'s) by `TERRAIN`'s ranges. */
-export function validateWorldKnobs(w) {
+/**
+ * The knob groups' list keys (not sliders: `TERRAIN_LISTS`', e.g. `tectonics.lavaVents`), each
+ * with its checker: derived from `TERRAIN_LISTS`, so a list key gen.mjs accepts Chisel accepts too.
+ */
+export const WORLD_LISTS = Object.fromEntries(
+  Object.keys(WORLD_KNOBS).map((g) => [g, TERRAIN_LISTS[g] ?? {}]),
+);
+
+/**
+ * Checks Chisel's world knobs (`{ group: { key: v } }`): `WORLD_KNOBS`' keys by `TERRAIN`'s
+ * ranges, `WORLD_LISTS`' by their checkers (as gen.mjs's `checkGroups`), each list seeing its
+ * group's knobs over `base`'s (terrain.json, the build's world: a lava vent's cone counted by the
+ * edit's `hotspotCount`, else the build's).
+ */
+export function validateWorldKnobs(w, base = {}) {
   const fail = (m) => {
     throw new Error(`world: ${m}`);
   };
@@ -1056,13 +1331,18 @@ export function validateWorldKnobs(w) {
     fail("must be an object");
   for (const [g, keys] of Object.entries(w)) {
     if (!(g in WORLD_KNOBS)) fail(`${g} is not a world knob`);
+    const lists = WORLD_LISTS[g];
     for (const [k, v] of Object.entries(keys ?? {})) {
+      if (k in lists) continue;
       if (!WORLD_KNOBS[g].includes(k)) fail(`${g}.${k} is not a world knob`);
       const [min, max, whole] = TERRAIN[g][k];
       const low = typeof min === "object" ? v > min.above : v >= min;
       if (!(isNum(v) && low && v <= max && (!whole || Number.isInteger(v))))
         fail(`${g}.${k} is out of range`);
     }
+    const merged = { ...base[g], ...keys };
+    for (const [k, check] of Object.entries(lists))
+      if (keys?.[k] !== undefined) check(keys[k], merged, (m) => fail(`${g}.${k}${m}`));
   }
   return w;
 }

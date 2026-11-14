@@ -45,6 +45,23 @@ export function sanitizeShafts(
   return SHAFT_QUALITIES.find((q) => q === value) ?? fallback;
 }
 
+/**
+ * Bloom, the glow round self-lit surfaces (dwell-look's bloom.rs, WORK_QUEUE item 19): Low draws its
+ * chain at half of High's resolution; Off draws none. A phone and a CPU adapter never draw it,
+ * whatever this says (render/bloom.rs `bloom_for`).
+ */
+export const BLOOM_QUALITIES = ['off', 'low', 'high'] as const;
+export type BloomQuality = (typeof BLOOM_QUALITIES)[number];
+export const DEFAULT_BLOOM: BloomQuality = 'high';
+
+/** A stored Bloom setting; anything else (missing, unknown) takes the fallback (High). */
+export function sanitizeBloom(
+  value: unknown,
+  fallback: BloomQuality = DEFAULT_BLOOM,
+): BloomQuality {
+  return BLOOM_QUALITIES.find((q) => q === value) ?? fallback;
+}
+
 /** The Field of view setting: vertical degrees (dwell-lod's `base_fov` narrows it on wide screens). */
 export const DEFAULT_FOV = 75;
 export const FOV_LIMITS = { min: 60, max: 100 } as const;
@@ -71,15 +88,28 @@ export function sanitizeShowArms(record: unknown): boolean {
   return v !== false;
 }
 
+/**
+ * A stored view record's Leaf cards setting (shared/look/leaves.json `cards`; BUGS.md #72): on
+ * unless stored off (a record from before it has none).
+ */
+export function sanitizeLeafCards(record: unknown): boolean {
+  const v =
+    typeof record === 'object' && record !== null
+      ? (record as Record<string, unknown>).leafCards
+      : undefined;
+  return v !== false;
+}
+
 /** The view record to store: the stored one's other fields kept (newer builds' fields survive). */
 export function viewRecord(
   stored: unknown,
   fovDeg: number,
   showArms = true,
+  leafCards = true,
 ): Record<string, unknown> {
   const base =
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, fovDeg, showArms };
+  return { ...base, fovDeg, showArms, leafCards };
 }

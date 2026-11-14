@@ -4,13 +4,9 @@
   "description": "The coldest heights: snow over everything but the cliffs.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "max": 0.12,
-      "blend": 0.06
-    },
-    "elevation": {
-      "min": 1500,
-      "blend": 250
+    "celsius": {
+      "max": -6,
+      "blend": 1.5
     }
   },
   "detail": {

@@ -140,6 +140,38 @@ pub fn sweep(
     out
 }
 
+/// A weapon's path: each arc step's direction (world, unit) and the head's reach along it.
+pub type Path = Vec<([f64; 3], f64)>;
+
+/// The head's path for a weapon (WORK_QUEUE item 35): each arc step's direction (world, unit) and
+/// how far the head reaches along it, the arc's reach or less where the first solid cell stops it
+/// (plants and the arc's `clears` let it through, as [`sweep`]); the head stops there, so the steps
+/// after a block's hit are left out.
+pub fn reaches(
+    world: &mut VoxelWorld,
+    eye: [f64; 3],
+    look: [f64; 3],
+    vertical: bool,
+    arc: &Arc,
+) -> Path {
+    let f = FaceFrame::at_row(row_of_m(eye[1]));
+    let mut out = Vec::new();
+    for d in arc_dirs(f, look, vertical, arc) {
+        let dir = d.map(|v| v as f32);
+        let hit = raycast_block_past(world, eye, dir, arc.reach_m as f32, |_, m| {
+            arc.clears(m) || !dwell_blocks::info(m).solid
+        });
+        match hit {
+            Some(h) => {
+                out.push((d, f64::from(h.distance).min(arc.reach_m)));
+                return out;
+            }
+            None => out.push((d, arc.reach_m)),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

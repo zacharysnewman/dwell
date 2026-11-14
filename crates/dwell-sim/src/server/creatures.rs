@@ -1,9 +1,17 @@
 //! The server's side of creatures (docs/adr/0073-creatures.md): each tick they spawn near the
 //! living players, wander and despawn far from all of them; clients that said `CreaturesHello`
-//! are told every `SEND_EVERY` ticks (all of them: at most `limits.max`, 64, ~2 KB).
+//! are told every `SEND_EVERY` ticks (all of them: at most `limits.max`, 64, ~2 KB). NPCs
+//! (WORK_QUEUE item 38) are creatures too; a client with the `creatures.npcs` capability also gets
+//! their part (kind, pose, palette variant) at the end of each message.
 
 use super::{Server, SessionId};
-use dwell_protocol::{Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message};
+use dwell_protocol::CreaturePoseNet;
+use dwell_protocol::capability_names::{
+    CREATURES_NPCS, CREATURES_POSES, HUMANS_DEFEAT, NPCS_CARRY, NPCS_SWINGS,
+};
+use dwell_protocol::{
+    CarryNet, Channel, CreatureNet, CreaturesMessage, MAX_CREATURES_PER_MESSAGE, Message, NpcNet,
+};
 use dwell_world::chunk_of;
 
 /// Ticks between sends of the creatures' points (10 a second at 60 Hz).
@@ -17,15 +25,128 @@ impl Server {
             return;
         };
         s.creatures_hello = true;
+        let npcs = s.capabilities.has(CREATURES_NPCS);
+        let poses = npcs && s.capabilities.has(CREATURES_POSES);
+        let swings = npcs && s.capabilities.has(NPCS_SWINGS);
+        let defeat = swings && s.capabilities.has(HUMANS_DEFEAT);
+        let carry = poses && s.capabilities.has(NPCS_CARRY);
         let table = self.creatures.table;
         let all: Vec<CreatureNet> = self.creatures.list.iter().map(|c| c.net(&table)).collect();
         for part in all.chunks(MAX_CREATURES_PER_MESSAGE) {
-            let m = Message::Creatures(CreaturesMessage {
+            let m = CreaturesMessage {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
-            });
+                npcs: None,
+                poses: None,
+                carries: None,
+            };
+            let m = self.with_parts(m, npcs, poses, swings, defeat);
+            let m = Message::Creatures(self.with_carries(m, carry));
             self.send_reliable(id, &m, Channel::World);
         }
+    }
+
+    /// The animals' idle poses near players (WORK_QUEUE item 39): each herd member's creature id
+    /// and its pose's index in `CREATURE_POSES`, stand left out.
+    pub fn creature_poses(&self) -> Vec<CreaturePoseNet> {
+        let mut out = Vec::new();
+        for g in &self.ecology.near.groups {
+            for m in &g.members {
+                let pose = self.ecology.force_pose.map_or_else(
+                    || {
+                        dwell_ecology::IdlePose::ALL
+                            .iter()
+                            .position(|&p| p == m.pose)
+                            .unwrap_or(0)
+                    },
+                    usize::from,
+                );
+                if pose != 0 {
+                    out.push(CreaturePoseNet {
+                        id: m.creature,
+                        pose: pose as u8,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// `m` with its parts for a client's capabilities: the NPCs' (`npcs`, `creatures.npcs`) and
+    /// the animals' poses (`poses`, `creatures.poses`); as it is for a client with neither.
+    fn with_parts(
+        &self,
+        m: CreaturesMessage,
+        npcs: bool,
+        poses: bool,
+        swings: bool,
+        defeat: bool,
+    ) -> CreaturesMessage {
+        let mut m = self.with_npcs(m, npcs, swings, defeat);
+        if poses {
+            let ids: std::collections::HashSet<u32> = m.creatures.iter().map(|c| c.id).collect();
+            m.poses = Some(
+                self.creature_poses()
+                    .into_iter()
+                    .filter(|p| ids.contains(&p.id))
+                    .collect(),
+            );
+        }
+        m
+    }
+
+    /// `m` with its NPCs' carried loads (B5), for a client with `npcs.carry` (`carry`); as it is
+    /// for one without.
+    fn with_carries(&self, mut m: CreaturesMessage, carry: bool) -> CreaturesMessage {
+        if carry {
+            let loads = self.builder_loads();
+            m.carries = Some(
+                m.creatures
+                    .iter()
+                    .filter_map(|c| {
+                        let items = loads.get(&c.id)?;
+                        Some(CarryNet {
+                            id: c.id,
+                            items: items
+                                .iter()
+                                .map(|&(s, n)| {
+                                    (
+                                        dwell_blocks::info(s).name.to_string(),
+                                        n.min(u32::from(u8::MAX)) as u8,
+                                    )
+                                })
+                                .collect(),
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        m
+    }
+
+    /// `m` with its creatures' NPC part, for a client with `creatures.npcs` (`npcs`); as it is
+    /// for one without. `defeat`: the client has `humans.defeat` (defeated NPCs kneel, §11.13).
+    fn with_npcs(
+        &self,
+        mut m: CreaturesMessage,
+        npcs: bool,
+        swings: bool,
+        defeat: bool,
+    ) -> CreaturesMessage {
+        if npcs {
+            let table = self.creatures.table;
+            let part: Vec<NpcNet> = m
+                .creatures
+                .iter()
+                .filter_map(|c| {
+                    self.creatures
+                        .get(c.id)?
+                        .npc_net_for(&table, swings, defeat)
+                })
+                .collect();
+            m.npcs = Some(part);
+        }
+        m
     }
 
     pub(super) fn living_points(&self) -> Vec<[f64; 3]> {
@@ -37,25 +158,63 @@ impl Server {
             .collect()
     }
 
+    /// The living players' stances, in [`Self::living_points`]' order (WORK_QUEUE item 39: animals
+    /// notice a crouching player closer, a running one farther).
+    pub(super) fn living_stances(&self) -> Vec<crate::herds::Stance> {
+        self.sessions
+            .values()
+            .filter(|s| s.joined())
+            .filter_map(|s| s.handle)
+            .map(|h| {
+                let v = self.players.velocity(&self.physics, h);
+                crate::herds::Stance {
+                    crouching: self.players.controller(h).crouching,
+                    speed: f64::from(v.x.hypot(v.z)),
+                }
+            })
+            .collect()
+    }
+
     pub(super) fn step_creatures(&mut self) {
         let players = self.living_points();
+        // Creatures spawn and stay near the bodies and the theater cameras' viewpoints
+        // (THEATER_MODE.md §7); only the bodies bump NPCs and are looked at.
+        let near = self.presence_points(&players);
         // The near ecology's herds and packs (docs/ECOLOGY.md §8) before the creatures move.
         self.step_herds();
-        if players.is_empty() && self.creatures.list.is_empty() {
+        if near.is_empty() && self.creatures.list.is_empty() {
             return;
+        }
+        let before = self.creatures.list.len();
+        if self.tick.is_multiple_of(SPAWN_EVERY) {
+            // The rules' biomes from the world's terrain, once its maps are in (none: unchecked).
+            let terrain = self.grass_terrain();
+            let world = &self.world;
+            let get = |c: [i32; 3]| {
+                world.find(chunk_of(c[0], c[1], c[2]))?;
+                Some(world.get_voxel_if_loaded(c))
+            };
+            let biome = |f: dwell_world::FaceFrame, [x, z]: [i32; 2]| {
+                let t = terrain.as_ref()?.local(f.face);
+                let i = t.biome_mix(i64::from(x), i64::from(z)).chosen;
+                t.biomes().get(usize::from(i)).map(|b| b.name)
+            };
+            self.creatures
+                .spawn_near_in(&near, &get, self.config.world_seed, &biome);
         }
         let world = &self.world;
         let get = |c: [i32; 3]| {
             world.find(chunk_of(c[0], c[1], c[2]))?;
             Some(world.get_voxel_if_loaded(c))
         };
-        let before = self.creatures.list.len();
-        if self.tick.is_multiple_of(SPAWN_EVERY) {
-            self.creatures
-                .spawn_near(&players, &get, self.config.world_seed);
+        self.creatures.step_near(&get, &players);
+        // Defeated NPCs whose kneel is over stand up at the shrine nearest where they fell, on
+        // that face (§11.13, docs/SHRINES.md §5); where none is near, where they knelt.
+        for (id, knelt) in self.creatures.take_stand_ups() {
+            let at = self.npc_stand_point(knelt);
+            self.creatures.stand_at(id, at);
         }
-        self.creatures.step(&get);
-        self.creatures.despawn_far(&players);
+        self.creatures.despawn_far(&near);
         let gone = std::mem::take(&mut self.creatures.removed);
         let spawned = self.creatures.list.len() > before;
         let table = self.creatures.table;
@@ -67,31 +226,66 @@ impl Server {
         if moving.is_empty() && gone.is_empty() {
             return;
         }
-        let hello: Vec<SessionId> = self
+        // Each client's parts by its capabilities: the NPCs', the poses, the swings, defeat, the
+        // carried loads (each implying the ones before it).
+        type Parts = (bool, bool, bool, bool, bool);
+        let hello: Vec<(SessionId, Parts)> = self
             .sessions
             .iter()
             .filter(|(_, s)| s.joined() && s.creatures_hello)
-            .map(|(&id, _)| id)
+            .map(|(&id, s)| {
+                let npcs = s.capabilities.has(CREATURES_NPCS);
+                let poses = npcs && s.capabilities.has(CREATURES_POSES);
+                // As before: the swings with the poses, defeat with the swings.
+                let swings = poses && s.capabilities.has(NPCS_SWINGS);
+                let defeat = swings && s.capabilities.has(HUMANS_DEFEAT);
+                let carry = poses && s.capabilities.has(NPCS_CARRY);
+                (id, (npcs, poses, swings, defeat, carry))
+            })
             .collect();
         let mut msgs = Vec::new();
         for part in moving.chunks(MAX_CREATURES_PER_MESSAGE) {
             msgs.push(CreaturesMessage {
                 creatures: part.to_vec(),
                 gone: Vec::new(),
+                npcs: None,
+                poses: None,
+                carries: None,
             });
         }
         for part in gone.chunks(MAX_CREATURES_PER_MESSAGE) {
             msgs.push(CreaturesMessage {
                 creatures: Vec::new(),
                 gone: part.to_vec(),
+                npcs: None,
+                poses: None,
+                carries: None,
             });
         }
         for m in msgs {
-            let m = Message::Creatures(m);
-            for &id in &hello {
-                self.send_reliable(id, &m, Channel::World);
+            // Built once for each set of parts a client here reads.
+            let mut built: Vec<(Parts, Message)> = Vec::new();
+            for &(id, parts) in &hello {
+                let (npcs, poses, swings, defeat, carry) = parts;
+                if !built.iter().any(|(p, _)| *p == parts) {
+                    let with = self.with_parts(m.clone(), npcs, poses, swings, defeat);
+                    built.push((parts, Message::Creatures(self.with_carries(with, carry))));
+                }
+                let msg = &built.iter().find(|(p, _)| *p == parts).expect("built").1;
+                self.send_reliable(id, msg, Channel::World);
             }
         }
+    }
+
+    /// Where an NPC defeated at `knelt` (world feet) stands up: the stand point of the shrine
+    /// nearest it on its face, else where it knelt.
+    pub(super) fn npc_stand_point(&self, knelt: [f64; 3]) -> [f64; 3] {
+        let Some(at) = self.shrine_respawn.as_ref().and_then(|f| f(knelt)) else {
+            return knelt;
+        };
+        let f = dwell_world::FaceFrame::at_height(knelt[1]);
+        let [x, y, z] = f.point(at);
+        f.point([x + 1.5, y + dwell_world::CELL_H, z])
     }
 
     // --- for tests and tools ---

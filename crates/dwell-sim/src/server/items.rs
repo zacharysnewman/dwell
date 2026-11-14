@@ -1,5 +1,5 @@
 //! The server's side of inventories and loose items (docs/adr/0066-inventory-and-drops.md): what
-//! breaking drops and placing costs, pickup, death drops, and telling clients that understand them.
+//! breaking drops and placing costs, pickup (a defeat drops nothing), and telling clients that understand them.
 
 use super::{Server, SessionId};
 use dwell_blocks::{StateId, block_of, info};
@@ -10,7 +10,7 @@ use dwell_protocol::{
     Channel, InventoryAction, InventoryMessage, ItemDrops, MAX_ITEM_DROPS_PER_MESSAGE, Message,
     inventory_flags,
 };
-use dwell_world::{FaceFrame, M, chunk_of};
+use dwell_world::{M, chunk_of};
 
 /// Ticks between sends of falling items' points (20 a second at 60 Hz).
 const MOVED_EVERY: u32 = 3;
@@ -57,12 +57,23 @@ impl Server {
         }
         let name = block_of(was).name;
         let stacks = match inv::drops_of(name) {
-            // Rolled with the server's entropy.
-            Some(d) => inv::roll(d.drops, &mut || self.random()),
+            // Rolled with the server's entropy, the rules that hold for the state (a stage's).
+            Some(d) => inv::roll(&rules_of(d, was), &mut || self.random()),
             None => vec![Stack::new(name, 1)],
         };
         for s in stacks {
             self.loose.drop(s, at);
+        }
+    }
+
+    /// The drops of the attached blocks (block data `needsSupport`) a blast or a collapse removed
+    /// with what held them (`cell`, what was there), as if broken, where items are used.
+    pub(super) fn drop_attached(&mut self, removed: &[([i32; 3], StateId)]) {
+        if !self.uses_items() {
+            return;
+        }
+        for &(cell, was) in removed {
+            self.drop_block(was, dwell_world::centre_of_cell(cell));
         }
     }
 
@@ -97,7 +108,7 @@ impl Server {
         }
         let name = block_of(was).name;
         let mut stacks = match inv::drops_of(name) {
-            Some(d) => inv::roll(d.drops, &mut || self.random()),
+            Some(d) => inv::roll(&rules_of(d, was), &mut || self.random()),
             None => vec![Stack::new(name, 1)],
         };
         for (item, total) in certain_drops_of(was) {
@@ -134,33 +145,6 @@ impl Server {
                 None => s.inventory_unread = true,
             },
             None => s.inventory = fresh,
-        }
-    }
-
-    /// Everything a dying player holds falls where it died (in a mode that uses items); the
-    /// wallet is kept.
-    pub(super) fn drop_inventory(&mut self, id: SessionId, at: [f64; 3]) {
-        if !self.uses_items() {
-            return;
-        }
-        let s = self.sessions.get_mut(&id).expect("session");
-        let stacks = s.inventory.take_all();
-        if stacks.is_empty() {
-            return;
-        }
-        s.inventory_dirty = true;
-        // Spread a little around the death point, face-local, so they don't sit in one spot.
-        let f = FaceFrame::at_height(at[1]);
-        let local = f.point(at);
-        for (i, st) in stacks.into_iter().enumerate() {
-            let a = i as f64 * 2.399_963; // the golden angle
-            let r = 0.15 * (i as f64).sqrt();
-            let p = f.point([
-                local[0] + r * a.cos(),
-                local[1] + 0.25,
-                local[2] + r * a.sin(),
-            ]);
-            self.loose.drop(st, p);
         }
     }
 
@@ -394,7 +378,45 @@ fn certain_drops_of(was: StateId) -> Vec<(&'static str, u32)> {
     }
     let name = block_of(was).name;
     match inv::drops_of(name) {
-        Some(d) => dwell_protocol::damage::certain_drops(d.drops),
+        Some(d) => dwell_protocol::damage::certain_drops(&rules_of(d, was)),
         None => vec![(name, 1)],
+    }
+}
+
+/// The drop rules of `d` that hold for state `was` (each rule's `when`, by the state's properties).
+pub(super) fn rules_of(d: &inv::BlockDrops, was: StateId) -> Vec<inv::DropRule> {
+    inv::rules_for(d.drops, |p| dwell_blocks::state_property(was, p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_broken_tufts_drops_follow_its_growth_stage() {
+        // face-a-only: block states and drop rules, no world.
+        // docs/ECOLOGY.md §10: the rules that hold for a state by its `stage` (`when`).
+        let grass = dwell_blocks::require("dwell:tall_grass");
+        let d = inv::drops_of("dwell:tall_grass").unwrap();
+        let stage = |v| dwell_blocks::with_property(grass, "stage", v).unwrap();
+        let chance = |s: StateId, item: &str| -> f64 {
+            rules_of(d, s)
+                .iter()
+                .filter(|r| r.choices.iter().any(|c| c.item == item))
+                .map(|r| r.chance)
+                .sum()
+        };
+        // The default (full, as placed or saved before stages) drops as before.
+        assert_eq!(chance(grass, "dwell:grass_fiber"), 1.0);
+        assert_eq!(chance(grass, "dwell:grass_seed"), 0.5);
+        assert_eq!(certain_drops_of(grass), vec![("dwell:grass_fiber", 1)]);
+        assert!(
+            certain_drops_of(stage("0")).is_empty(),
+            "a sprout: nothing certain"
+        );
+        for item in ["dwell:grass_fiber", "dwell:grass_seed"] {
+            let by = ["0", "1", "2", "3"].map(|v| chance(stage(v), item));
+            assert!(by.windows(2).all(|w| w[0] < w[1]), "{item}: {by:?}");
+        }
     }
 }

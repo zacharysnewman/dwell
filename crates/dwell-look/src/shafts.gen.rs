@@ -84,9 +84,9 @@ pub const DEFAULT_FLUID_SHAFTS: FluidShafts = FluidShafts {
 pub const FLUID_SHAFTS: &[FluidShafts] = &[
     FluidShafts {
         fluid: "dwell:water",
-        strength: 2.0,
-        reach_m: 18.0,
-        fade_m: 14.0,
+        strength: 2.6,
+        reach_m: 24.0,
+        fade_m: 24.0,
         cell_m: 0.7,
         speed: 0.25,
         window_color: 0xc8f4ff,

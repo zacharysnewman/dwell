@@ -14,6 +14,10 @@ use crate::codec::*;
 /// 0028: a new compatibility line, so the SQLite formats of the C++ builds are not read). A newer
 /// file is refused: worlds are version-locked, not converted (RELEASES.md §6).
 pub const FORMAT_VERSION: u64 = 1;
+/// The LOD octree's root level the saved LOD rows are keyed under (`meta.lod_root`, BIG_MAP.md M1):
+/// rows saved under another root (or before the scalar, root 12) are dropped at open and rebuilt
+/// from the chunks, as after a registry change.
+pub const LOD_ROOT: u64 = dwell_world::lod::MAX_LEVEL as u64;
 /// File extension of world files (and of the export format: the database itself).
 pub const WORLD_EXTENSION: &str = ".dwellworld";
 
@@ -51,6 +55,14 @@ const WATER: TableDefinition<u32, &[u8]> = TableDefinition::new("water");
 const INVENTORIES: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("inventories");
 /// Players' stamina and oxygen (ADR 0069), keyed by device key; records are the server's.
 const VITALS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("vitals");
+/// Players' map markers (docs/MAP_MARKERS.md; `dwell_protocol::markers::Markers::to_bytes`), keyed
+/// by device key: each player's own, sent to that player only. Optional and additive: a world
+/// without it has no markers, and an older build on the line never opens it.
+const MARKERS: TableDefinition<&[u8; 32], &[u8]> = TableDefinition::new("markers");
+/// The world's blueprints (docs/BLUEPRINTS.md; `dwell_protocol::blueprints::list_to_bytes`): one
+/// record (key 0), rewritten on each save that carries it. Optional and additive: a world without it
+/// has none, and an older build on the line never opens it.
+const BLUEPRINTS: TableDefinition<u32, &[u8]> = TableDefinition::new("blueprints");
 /// The loose items lying in the world (`dwell_sim::loose_items::LooseItems::to_bytes`; ADR 0066):
 /// one record (key 0), rewritten on each save that carries it. Optional, as `inventories`.
 const LOOSE_ITEMS: TableDefinition<u32, &[u8]> = TableDefinition::new("loose_items");
@@ -79,6 +91,12 @@ const ECOLOGY: TableDefinition<u32, &[u8]> = TableDefinition::new("ecology");
 /// grown chunk's last world day. Optional: older builds ignore it; a world without it (an older
 /// save) has no grass growth.
 const GRASS: TableDefinition<u32, &[u8]> = TableDefinition::new("grass_growth");
+/// The chunks of the other grids (docs/proposals/MOON_WORLD.md §7.2, M-7b): (grid name, cx, cy, cz)
+/// → (revision, LZ4 palette + RLE of world state ids, as `chunks`), the grid's local chunks that
+/// were edited. Optional and additive: a world without it has every other grid as generated, and an
+/// older build on the line never opens it (the home grid's chunks stay in `chunks`).
+type GridKey<'a> = (&'a str, i32, i32, i32);
+const GRID_CHUNKS: TableDefinition<GridKey, (u32, &[u8])> = TableDefinition::new("grid_chunks");
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WorldMeta {
@@ -98,6 +116,10 @@ pub struct WorldMeta {
     /// their tagged form, fields a newer build added kept; none: a world from before them (the
     /// build's defaults).
     pub settings: Option<Vec<u8>>,
+    /// The grid face its players spawn on (docs/proposals/MOON_WORLD.md §8: a spawn key, `moon`,
+    /// `sun-b`); none: home. Optional and additive: an older build ignores it and spawns at
+    /// `spawn`; saving `None` leaves a stored one alone.
+    pub spawn_grid: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -233,8 +255,12 @@ pub struct SaveBatch {
     pub inventories: Vec<([u8; 32], Vec<u8>)>,
     /// Players' vitals (device key, record), each replacing its saved one (ADR 0069).
     pub vitals: Vec<([u8; 32], Vec<u8>)>,
+    /// Players' map markers (device key, record), each replacing its saved one (MAP_MARKERS.md).
+    pub markers: Vec<([u8; 32], Vec<u8>)>,
     /// The loose items now, replacing those saved before (None: leave them).
     pub loose_items: Option<Vec<u8>>,
+    /// The world's blueprints now, replacing those saved before (None: leave them; BLUEPRINTS.md).
+    pub blueprints: Option<Vec<u8>>,
     /// The wood cells' cuts now, replacing those saved before (None: leave them; ADR 0067).
     pub cuts: Option<Vec<u8>>,
     /// The ground items gone now, replacing those saved before (None: leave them; ADR 0071).
@@ -249,6 +275,9 @@ pub struct SaveBatch {
     pub ecology: Option<Vec<u8>>,
     /// The grass growth now, replacing what was saved before (None: leave it; ADR 0075 T3c).
     pub grass: Option<Vec<u8>>,
+    /// Chunks of the other grids (by the grid's name; MOON_WORLD.md §7.2), each replacing its saved
+    /// one. The home grid's go in `chunks`.
+    pub grid_chunks: Vec<(String, SavedChunk)>,
 }
 
 /// A [`SaveBatch`] being encoded for its commit (`WorldDb::prepare`): its chunks mapped to the
@@ -262,6 +291,7 @@ pub struct PreparedSave {
     new_states: Vec<(u32, String)>,
     /// The blobs encoded so far, in the batch's order.
     chunks: Vec<Vec<u8>>,
+    grid_chunks: Vec<Vec<u8>>,
     lod: Vec<Vec<u8>>,
     bodies: Vec<Vec<u8>>,
     water: Option<Vec<u8>>,
@@ -273,29 +303,12 @@ impl PreparedSave {
         let b = &mut self.batch;
         if let Some(c) = b.chunks.get_mut(self.chunks.len()) {
             let voxels = std::mem::take(&mut c.voxels);
-            let mut world_voxels = Vec::with_capacity(voxels.len());
-            for v in voxels {
-                // Unknown ids read as air.
-                let v = if dwell_blocks::try_info(v).is_some() {
-                    v
-                } else {
-                    0
-                };
-                let id = match self.states.to_world.get(usize::from(v)).copied().flatten() {
-                    Some(id) => id,
-                    None => {
-                        let id = self.states.strings.len() as u32;
-                        let name = info(v).name;
-                        self.new_states.push((id, name.to_owned()));
-                        self.states.strings.push(name.to_owned());
-                        self.states.to_runtime.push(Some(v));
-                        self.states.set_world(v, id);
-                        id
-                    }
-                };
-                world_voxels.push(id as u16);
-            }
-            self.chunks.push(compress_chunk(&world_voxels));
+            let blob = encode_world_voxels(&mut self.states, &mut self.new_states, voxels);
+            self.chunks.push(blob);
+        } else if let Some((_, c)) = b.grid_chunks.get_mut(self.grid_chunks.len()) {
+            let voxels = std::mem::take(&mut c.voxels);
+            let blob = encode_world_voxels(&mut self.states, &mut self.new_states, voxels);
+            self.grid_chunks.push(blob);
         } else if let Some(l) = b.lod_sections.get(self.lod.len()) {
             self.lod.push(if l.encoded.is_empty() {
                 Vec::new()
@@ -311,6 +324,37 @@ impl PreparedSave {
         }
         true
     }
+}
+
+/// A chunk's runtime ids as the file's world state ids (new states numbered on), compressed.
+fn encode_world_voxels(
+    states: &mut States,
+    new_states: &mut Vec<(u32, String)>,
+    voxels: Vec<u16>,
+) -> Vec<u8> {
+    let mut world_voxels = Vec::with_capacity(voxels.len());
+    for v in voxels {
+        // Unknown ids read as air.
+        let v = if dwell_blocks::try_info(v).is_some() {
+            v
+        } else {
+            0
+        };
+        let id = match states.to_world.get(usize::from(v)).copied().flatten() {
+            Some(id) => id,
+            None => {
+                let id = states.strings.len() as u32;
+                let name = info(v).name;
+                new_states.push((id, name.to_owned()));
+                states.strings.push(name.to_owned());
+                states.to_runtime.push(Some(v));
+                states.set_world(v, id);
+                id
+            }
+        };
+        world_voxels.push(id as u16);
+    }
+    compress_chunk(&world_voxels)
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -426,6 +470,9 @@ fn meta_from(get: impl Fn(&str) -> Option<Vec<u8>>) -> Option<WorldMeta> {
         app_version_created: text("app_version_created"),
         app_version_last: text("app_version_last"),
         settings: get("world_settings"),
+        spawn_grid: get("spawn_grid")
+            .and_then(|b| String::from_utf8(b).ok())
+            .filter(|s| !s.is_empty()),
     })
 }
 
@@ -461,6 +508,7 @@ impl WorldDb {
         let value = |k: &str| meta.get(k).ok().flatten().map(|v| u64_of(v.value()));
         value("format_version") == Some(FORMAT_VERSION)
             && value("registry_hash") == Some(REGISTRY_HASH)
+            && value("lod_root") == Some(LOD_ROOT)
             && txn.open_table(SETTINGS).is_ok()
             && txn.open_table(CHUNKS).is_ok()
             && txn.open_table(LOD_SECTIONS).is_ok()
@@ -502,6 +550,17 @@ impl WorldDb {
                 meta.insert("registry_hash", REGISTRY_HASH.to_le_bytes().as_slice())
                     .map_err(err)?;
             }
+            // And when it was saved under another octree root (BIG_MAP.md M1: its section keys
+            // count from the root's corner; a file without the scalar is from before, root 12).
+            let same_root = meta
+                .get("lod_root")
+                .map_err(err)?
+                .is_some_and(|v| u64_of(v.value()) == LOD_ROOT);
+            if !same_root {
+                meta.insert("lod_root", LOD_ROOT.to_le_bytes().as_slice())
+                    .map_err(err)?;
+            }
+            let same = same && same_root;
             txn.open_table(SETTINGS).map_err(err)?;
             txn.open_table(CHUNKS).map_err(err)?;
             let lod = txn.open_table(LOD_SECTIONS).map_err(err)?;
@@ -611,6 +670,44 @@ impl WorldDb {
             .collect()
     }
 
+    /// The saved chunks of grid `grid` (not the home grid's; MOON_WORLD.md §7.2), in runtime ids;
+    /// an unreadable one or one holding a state this build doesn't know is left out (generated).
+    pub fn grid_chunks(&self, grid: &str) -> Vec<SavedChunk> {
+        let rows: Vec<(ChunkCoord, u32, Vec<u8>)> = (|| {
+            let txn = self.db.begin_read().ok()?;
+            let t = txn.open_table(GRID_CHUNKS).ok()?;
+            let range = t
+                .range((grid, i32::MIN, i32::MIN, i32::MIN)..=(grid, i32::MAX, i32::MAX, i32::MAX))
+                .ok()?;
+            Some(
+                range
+                    .flatten()
+                    .map(|(k, v)| {
+                        let (_, x, y, z) = k.value();
+                        let (revision, blob) = v.value();
+                        (ChunkCoord::new(x, y, z), revision, blob.to_vec())
+                    })
+                    .collect(),
+            )
+        })()
+        .unwrap_or_default();
+        let _ = self.refresh_states();
+        let states = self.states.lock().expect("states");
+        rows.into_iter()
+            .filter_map(|(coord, revision, blob)| {
+                let voxels: Option<Vec<u16>> = decompress_chunk(&blob)?
+                    .iter()
+                    .map(|&w| states.to_runtime.get(usize::from(w)).copied().flatten())
+                    .collect();
+                Some(SavedChunk {
+                    coord,
+                    revision,
+                    voxels: voxels?,
+                })
+            })
+            .collect()
+    }
+
     /// A saved chunk in runtime ids; `None` if missing, unreadable, or holding a state this build
     /// does not know (the chunk is generated instead).
     pub fn load_chunk(&self, c: ChunkCoord) -> Option<SavedChunk> {
@@ -673,6 +770,22 @@ impl WorldDb {
         let txn = self.db.begin_read().ok()?;
         let t = txn.open_table(VITALS).ok()?;
         let v = t.get(key).ok()??;
+        Some(v.value().to_vec())
+    }
+
+    /// A player's saved map markers record (docs/MAP_MARKERS.md), if any.
+    pub fn load_markers(&self, key: &[u8; 32]) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(MARKERS).ok()?;
+        let v = t.get(key).ok()??;
+        Some(v.value().to_vec())
+    }
+
+    /// The world's blueprints as last saved (docs/BLUEPRINTS.md), if any.
+    pub fn blueprints(&self) -> Option<Vec<u8>> {
+        let txn = self.db.begin_read().ok()?;
+        let t = txn.open_table(BLUEPRINTS).ok()?;
+        let v = t.get(0).ok()??;
         Some(v.value().to_vec())
     }
 
@@ -893,6 +1006,7 @@ impl WorldDb {
             states: self.states.lock().expect("states").clone(),
             new_states: Vec::new(),
             chunks: Vec::with_capacity(batch.chunks.len()),
+            grid_chunks: Vec::with_capacity(batch.grid_chunks.len()),
             lod: Vec::with_capacity(batch.lod_sections.len()),
             bodies: Vec::new(),
             water: None,
@@ -909,6 +1023,7 @@ impl WorldDb {
             states,
             new_states,
             chunks: chunk_blobs,
+            grid_chunks: grid_chunk_blobs,
             lod: lod_blobs,
             bodies: body_records,
             water,
@@ -929,6 +1044,9 @@ impl WorldDb {
                 put("world_tick", &u64::from(m.world_tick).to_le_bytes())?;
                 if let Some(s) = &m.settings {
                     put("world_settings", s)?;
+                }
+                if let Some(g) = &m.spawn_grid {
+                    put("spawn_grid", g.as_bytes())?;
                 }
                 put("saved_at", &now.to_le_bytes())?;
                 match m.spawn {
@@ -986,6 +1104,16 @@ impl WorldDb {
                     .map_err(err)?;
             }
         }
+        if !batch.grid_chunks.is_empty() {
+            let mut t = txn.open_table(GRID_CHUNKS).map_err(err)?;
+            for ((grid, c), blob) in batch.grid_chunks.iter().zip(&grid_chunk_blobs) {
+                t.insert(
+                    (grid.as_str(), c.coord.x, c.coord.y, c.coord.z),
+                    (c.revision, blob.as_slice()),
+                )
+                .map_err(err)?;
+            }
+        }
         if batch.clear_lod {
             txn.delete_table(LOD_SECTIONS).map_err(err)?;
         }
@@ -1040,6 +1168,16 @@ impl WorldDb {
             for (key, record) in &batch.vitals {
                 t.insert(key, record.as_slice()).map_err(err)?;
             }
+        }
+        if !batch.markers.is_empty() {
+            let mut t = txn.open_table(MARKERS).map_err(err)?;
+            for (key, record) in &batch.markers {
+                t.insert(key, record.as_slice()).map_err(err)?;
+            }
+        }
+        if let Some(b) = &batch.blueprints {
+            let mut t = txn.open_table(BLUEPRINTS).map_err(err)?;
+            t.insert(0, b.as_slice()).map_err(err)?;
         }
         if let Some(items) = &batch.loose_items {
             let mut t = txn.open_table(LOOSE_ITEMS).map_err(err)?;

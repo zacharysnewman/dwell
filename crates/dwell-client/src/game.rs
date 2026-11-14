@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use dwell_blocks::StateId;
+use dwell_characters::animator::Defeat;
 use dwell_game::block_interaction::{BlockInteraction, BlockTarget, view_direction};
 use dwell_game::brush_tool::{BrushAction, BrushOutline, BrushPanel, BrushTool};
 use dwell_game::chunk_stream::{
@@ -43,6 +44,7 @@ use dwell_physics::config::PlayerControllerConfig;
 use dwell_physics::net::to_net;
 use dwell_physics::predictor::{Predictor, PredictorStats};
 use dwell_physics::{DVec3, Vec3};
+use dwell_protocol::chopping::CameraOffset;
 use dwell_protocol::{
     GroundKind, InputFrame, MAX_INPUTS_PER_DATAGRAM, Message, PlayerEventKind, PlayerInput,
     PlayerState, SIM_HZ, controller_flags, player_flags, players,
@@ -69,6 +71,9 @@ const ARMS_LIGHT: u32 = u32::MAX;
 /// input queue and latency window (dwell-sim `MAX_QUEUED_INPUTS`, `LATENCY_WINDOW_TICKS`) hold a
 /// frame of this many inputs.
 const MAX_TICKS_PER_FRAME: f64 = 60.0;
+/// The clouds' shape-noise bake's slices per worker job (docs/CLOUDS.md §9.4): 64³ base slabs of 4 slices
+/// take ~20 ms each natively.
+const CLOUD_NOISE_SLICES: u32 = 4;
 /// Server input buffer outside [LOW, HIGH] nudges the local tick rate by ±RATE_NUDGE.
 const BUFFER_LOW: u8 = 1;
 const BUFFER_HIGH: u8 = 4;
@@ -93,8 +98,30 @@ const UNACKED_HOLD: u32 = MAX_TICKS_PER_FRAME as u32 + 30;
 const REGION_SELECTION_COLOR: u32 = 0xffffff;
 const REGION_GHOST_COLOR: u32 = 0x6fd3ff;
 
+/// Far trees tiles in flight at once (`Game::update_far_trees`).
+const FAR_TREE_JOBS: usize = 4;
+
 /// The whole cell, as an outline box.
 pub const FULL_CELL: ([f32; 3], [f32; 3]) = ([0.0; 3], [1.0; 3]);
+
+/// Graphics → Effects (WORK_QUEUE item 30): the shell's Hit shards and Particles shares and the
+/// Far herds switch, applied to the game's effects (`Game::set_effects`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EffectSettings {
+    pub hit_shards: crate::effect_share::Share,
+    pub particles: crate::effect_share::Share,
+    pub far_herds: bool,
+}
+
+impl Default for EffectSettings {
+    fn default() -> Self {
+        Self {
+            hit_shards: Default::default(),
+            particles: Default::default(),
+            far_herds: true,
+        }
+    }
+}
 
 /// What the game draws through (the wgpu renderer, or a recorder in tests). The terrain part is
 /// [`TerrainRenderer`]'s: each chunk's and section's meshes; the rest is the camera, players,
@@ -113,6 +140,60 @@ pub trait Scene: TerrainRenderer {
     fn draws_cards(&self) -> bool {
         true
     }
+    /// The share of cross plants chunks are meshed with, percent (Graphics → Tall grass;
+    /// `dwell_mesh::ChunkFlags::plants`).
+    fn plant_percent(&self) -> u8 {
+        100
+    }
+    /// LOD sections are meshed with their trees (Graphics → Far trees;
+    /// `dwell_mesh::mesh_section_trees`).
+    fn draws_far_trees(&self) -> bool {
+        true
+    }
+    /// How far (m) the far trees' impostors draw (render/impostors.rs): the game keeps their tiles
+    /// within it. `None` when they don't draw.
+    fn far_tree_reach(&mut self) -> Option<f32> {
+        None
+    }
+    /// Once, when the impostors first draw: (layers, texels a view) to bake in the workers.
+    fn impostor_bakes(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+    /// A baked impostor layer (`Job::ImpostorBake`'s output).
+    fn impostor_layer(&mut self, _layer: u32, _centre_y: f32, _radius: f32, _a: &[u8], _n: &[u8]) {}
+    /// Whether far trees tile (face, i, k) is held.
+    fn far_tree_tile_held(&self, _key: (u8, i32, i32)) -> bool {
+        false
+    }
+    /// A far trees tile's trees (`Job::FarTrees`'s output).
+    fn far_tree_tile(
+        &mut self,
+        _key: (u8, i32, i32),
+        _trees: &[dwell_worldgen::impostor::FarTree],
+    ) {
+    }
+    /// Drops the far trees tiles `keep` doesn't hold.
+    fn retain_far_tree_tiles(&mut self, _keep: &dyn Fn(&(u8, i32, i32)) -> bool) {}
+    /// How many bytes of finished chunk meshes a frame uploads (shared/render/streaming.json by
+    /// tier; the first mesh of a frame always goes).
+    fn upload_budget_bytes(&self) -> u64 {
+        u64::MAX
+    }
+    /// A chunk mesh is still being written a slice a frame (`render/staged.rs`): no more are
+    /// handed over until it is done.
+    fn uploads_waiting(&self) -> bool {
+        false
+    }
+    /// Terrain collider cells a prediction tick puts in outside the player's reach
+    /// (shared/render/streaming.json `collisionCellsPerTick` by tier; BUGS.md #72).
+    fn collision_cells_per_tick(&self) -> usize {
+        dwell_physics::terrain::COLLISION_CELLS_PER_TICK
+    }
+    /// The chunks the prediction builds collision for ahead of the player, and how many a tick
+    /// (shared/render/streaming.json `collisionAhead` by tier; WORK_QUEUE item 16).
+    fn collision_ahead(&self) -> dwell_physics::terrain::CollisionAhead {
+        dwell_physics::terrain::CollisionAhead::default()
+    }
     /// Rewrites chunk `coord`'s heightfield tile alone (none: its water is gone), its meshes kept.
     fn set_water_tile(
         &mut self,
@@ -122,6 +203,10 @@ pub trait Scene: TerrainRenderer {
     }
     /// Your first-person arms this frame (docs/CHARACTERS.md §5), or none.
     fn set_arms(&mut self, _arms: Option<ArmsView>) {}
+    /// A source's run-time plumes (docs/CLOUDS.md §8.7): every plume whose name starts with
+    /// `prefix` replaced by `plumes`.
+    fn set_plumes(&mut self, _prefix: &str, _plumes: Vec<(String, dwell_look::plumes::PlumeSpec)>) {
+    }
     /// Your own body this frame, cast into the shadow maps only (none while it is drawn).
     fn set_own_shadow(&mut self, _body: Option<PlayerView>) {}
     /// Your own body drawn in first person from the neck down (docs/CHARACTERS.md §5.1), or none.
@@ -192,6 +277,13 @@ pub trait Scene: TerrainRenderer {
     fn set_lod_map(&mut self, _map: Option<&crate::lod_map::LodMap>) {}
     /// A strip of ring `ring` rasterised: world texels `rect`, rgba8 sRGB rows of x.
     fn lod_map_tile(&mut self, _ring: usize, _rect: crate::lod_map::Rect, _rgba: &[u8]) {}
+    /// Whether the clouds' shape noise is wanted and not yet asked for (docs/CLOUDS.md §9.4): the
+    /// game then bakes it in its job workers. Asking marks it asked.
+    fn take_cloud_noise_request(&mut self) -> bool {
+        false
+    }
+    /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base).
+    fn cloud_noise_slab(&mut self, _detail: bool, _z0: u32, _texels: &[u8]) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -541,6 +633,10 @@ impl HudVitals {
     }
 }
 
+/// At most this many chunks of another grid are held for the crossing into it (BUGS.md #136): a
+/// few rings of chunks round a capture.
+const OTHER_GRID_CHUNKS_MAX: usize = 4096;
+
 /// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
 /// LOD view from it while the player stays where it is. Full-detail chunks still stream around the
 /// player only, so away from the player the view is the LOD's.
@@ -550,12 +646,114 @@ pub struct ViewOverride {
     /// Degrees, as the player's look (yaw 0 = +Z; pitch toward the face's up).
     pub yaw_deg: f64,
     pub pitch_deg: f64,
+    /// The vertical field of view (degrees) instead of the setting's (theater mode's paths).
+    pub fov_deg: Option<f64>,
+    /// The face whose up the camera holds wherever it is (a theater path's `up`), its yaw and
+    /// pitch in that face's frame; `None`: the face the eye is over.
+    pub up: Option<FaceFrame>,
+}
+
+/// Theater mode's free-fly step (docs/THEATER_MODE.md §2): `view` moved `forward`, `right` and `up`
+/// metres along its face-local look (forward level, up the face's up) and turned by `yaw`/`pitch`
+/// degrees, the pitch held within ±89°. Written face-local and crossed into the world through the
+/// eye's `FaceFrame`, so a flight on face B is face A's mirror image.
+pub fn fly_step(
+    view: ViewOverride,
+    forward: f64,
+    right: f64,
+    up: f64,
+    yaw: f64,
+    pitch: f64,
+) -> ViewOverride {
+    let f = view.face();
+    let yaw_deg = (view.yaw_deg + f.handed(yaw)).rem_euclid(360.0);
+    let pitch_deg = (view.pitch_deg + pitch).clamp(-89.0, 89.0);
+    let ahead = f.look(yaw_deg, 0.0);
+    let (s, c) = yaw_deg.to_radians().sin_cos();
+    let side = [f.handed(-c), 0.0, f.handed(s)];
+    let rise = f.vector([0.0, 1.0, 0.0]);
+    let eye: [f64; 3] =
+        std::array::from_fn(|k| view.eye[k] + ahead[k] * forward + side[k] * right + rise[k] * up);
+    ViewOverride {
+        eye,
+        yaw_deg,
+        pitch_deg,
+        ..view
+    }
 }
 
 impl ViewOverride {
-    /// The face the eye is over.
-    fn face(&self) -> FaceFrame {
-        FaceFrame::at_height(self.eye[1])
+    /// The frame the look (yaw, pitch) and the camera's up are in: the held `up` face's, else the
+    /// face the eye is over.
+    pub fn face(&self) -> FaceFrame {
+        self.up.unwrap_or_else(|| FaceFrame::at_height(self.eye[1]))
+    }
+    /// The camera as the renderer takes it: (yaw, pitch, face, roll), the look face-local to the
+    /// face the eye is over (the sky, fog, clouds and water are that air's). A held up from the
+    /// other face's side is the same look continued across (`FaceFrame::look_across`) turned
+    /// over by half a turn of roll: that face's view, the world upside down.
+    /// The same view with its up held to `up`'s face (`None`: the eye's): the look kept, its yaw
+    /// and pitch given in the new frame.
+    pub fn with_up(self, up: Option<FaceFrame>) -> Self {
+        let p = dwell_theater::Pose::new(self.eye, self.face().look(self.yaw_deg, self.pitch_deg))
+            .with_up(up);
+        Self {
+            yaw_deg: p.yaw_deg,
+            pitch_deg: p.pitch_deg,
+            up,
+            ..self
+        }
+    }
+    pub fn camera(&self) -> (f64, f64, FaceFrame, f64) {
+        let eye = FaceFrame::at_height(self.eye[1]);
+        if self.face() == eye {
+            (self.yaw_deg, self.pitch_deg, eye, 0.0)
+        } else {
+            let (yaw, pitch) = FaceFrame::look_across(self.yaw_deg, self.pitch_deg);
+            (yaw, pitch, eye, std::f64::consts::PI)
+        }
+    }
+}
+
+/// A frame's step of the theater path (s): the real time since the last frame, or in frame-exact
+/// recording (`exact`) only the step the shell gave (none: the path holds still while the page
+/// catches up).
+pub fn theater_dt(exact: bool, step: Option<f64>, last_ms: Option<f64>, now_ms: f64) -> f64 {
+    if exact {
+        return step.unwrap_or(0.0);
+    }
+    last_ms.map_or(0.0, |t| (now_ms - t) / 1000.0)
+}
+
+/// Theater mode's subjects as the shell's picker reads them (`Client.theaterSubjects`).
+pub fn subjects_json(subjects: &[(u32, &str, [f64; 3], bool)]) -> String {
+    let list: Vec<serde_json::Value> = subjects
+        .iter()
+        .map(|(id, name, at, npc)| serde_json::json!({ "id": id, "name": name, "npc": npc, "at": at }))
+        .collect();
+    serde_json::Value::Array(list).to_string()
+}
+
+/// The targets a theater path names (docs/THEATER_MODE.md §3.1), as this client sees them.
+pub struct TheaterTargets<'a> {
+    player: [f64; 3],
+    creatures: &'a crate::creatures::ClientCreatures,
+}
+
+impl dwell_theater::Targets for TheaterTargets<'_> {
+    fn position(&self, t: &dwell_theater::TargetRef) -> Option<[f64; 3]> {
+        use dwell_theater::TargetRef;
+        match t {
+            TargetRef::Point(p) => Some(*p),
+            TargetRef::Player => Some(self.player),
+            TargetRef::Creature(id) | TargetRef::Npc(id) => {
+                let npc = matches!(t, TargetRef::Npc(_));
+                let (feet, is_npc) = self.creatures.feet_of(u32::try_from(*id).ok()?)?;
+                // A metre up from the feet: the body's middle, on its face.
+                let up = FaceFrame::at_height(feet[1]).up();
+                (is_npc == npc).then(|| std::array::from_fn(|k| feet[k] + up[k]))
+            }
+        }
     }
 }
 
@@ -569,6 +767,7 @@ pub struct LodSettings {
     pub full_mode: bool,
 }
 
+mod blueprints;
 pub mod streaming_report;
 
 pub struct Game<S: Scene> {
@@ -596,6 +795,16 @@ pub struct Game<S: Scene> {
     /// The far ecology's herds and packs the server last told of (`Ecology`, docs/ECOLOGY.md §9;
     /// `__dwell.ecology()`; for far rendering later), and whether `EcologyHello` was sent.
     pub ecology: Option<dwell_protocol::EcologyMessage>,
+    /// The far herds' heads laid out on the ground from the last `ecology` (crate::far_herds),
+    /// and whether it is to be laid out again (a new snapshot, or heads whose ground wasn't loaded).
+    far_heads: Vec<crate::far_herds::Head>,
+    /// The world's terrain for the far herds' ground past the loaded chunks (WORK_QUEUE item 46:
+    /// herds seen to ~2.5 km); set by the shell once the world maps are installed, never computed
+    /// here. None: such heads wait for the chunks.
+    pub far_terrain: Option<std::sync::Arc<dwell_worldgen::BifacialTerrain>>,
+    /// Graphics → Far herds: the far ecology's herds drawn past the near creatures.
+    pub far_herds_shown: bool,
+    far_stale: bool,
     ecology_on: bool,
     /// The server keeps block damage (`inventory_flags::DAMAGE`): `DamageHello` sent, struck
     /// points sent with breaks.
@@ -607,12 +816,47 @@ pub struct Game<S: Scene> {
     inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
+    /// Our tool hits on their way to their swing's contact (WORK_QUEUE item 25).
+    pending_hits: crate::hit_feedback::PendingHits,
     /// Foliage brushed through and ground items stepped onto (AUDIO.md §5): ours, and other
     /// players' from their replicated positions (AUDIO.md §2e).
     contact_sounds: dwell_game::sound::ContactSounds,
     remote_contacts: dwell_game::sound::RemoteContacts,
     /// The world seed (Welcome), the ground items' scatter's (ADR 0071).
     world_seed: u64,
+    /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
+    /// M-5), built the first time each is drawn.
+    grid_meshes: std::collections::HashSet<u8>,
+    /// The LOD tree of the grid the view is on (`grid_lod.rs`; BUGS.md #143, #145, #159), made
+    /// on the first frame there and dropped at every crossing, and the epoch of the next one.
+    grid_lod: Option<crate::grid_lod::GridLod>,
+    grid_lod_epoch: u64,
+    /// The options and full-detail distance home's LOD was made with (the grids' are the same),
+    /// kept up to date by the Detail settings ([`Game::set_lod_detail`]).
+    lod_options: Option<(dwell_lod::LodOptions, Option<f64>)>,
+    /// A crossing onto another grid a snapshot's replay made (from, to, the face before): the
+    /// next input tick carries the look across and eases the view upright.
+    pending_cross: Option<(u8, u8, FaceFrame)>,
+    /// The server carries players onto other grids and says which (`grid.frames`, MOON_WORLD.md
+    /// §7.3): the predictor then runs the grids' travel rules, and the game follows it.
+    grid_frames: bool,
+    /// The capabilities on for the session that a grid may ask for (a grid's `capability`,
+    /// docs/proposals/SUN_WORLD.md §5): the travel map holds only the grids they open. `None` (a
+    /// local rig on this build's server): every grid.
+    grid_capabilities: Option<Vec<String>>,
+    /// The grids' frames and travel rules (the predictor's own copy is its hook), once the world
+    /// is known and the server has `grid.frames`.
+    travel: Option<dwell_sim::travel::TravelMap>,
+    /// The grid whose chunks the streamer holds and the view is drawn in (0 home): the
+    /// predictor's, followed at each crossing (`follow_grid`).
+    grid_drawn: u8,
+    /// Chunks of another grid than the one drawn, held until the crossing into it (BUGS.md #136:
+    /// the server, having moved the player first, streams that grid's chunks before the client
+    /// crosses, and sends each only once), by grid and coordinate.
+    other_grid_chunks: std::collections::HashMap<(u8, [i32; 3]), dwell_protocol::ChunkData>,
+    /// The world's disc and build volume (BIG_MAP.md M2b: its `WorldSettings` size): the LOD's
+    /// rim, the streamer's volume and the big map's levels follow it.
+    world_bounds: dwell_world::WorldBounds,
     /// The server keeps ground items and was told this client draws them (`GroundHello`).
     ground_on: bool,
     /// The ground item under the crosshair (ADR 0071): E or X picks it up.
@@ -621,12 +865,22 @@ pub struct Game<S: Scene> {
     pub chop: crate::chop::Chopping,
     /// The axe's chips in flight (crate::chips; draw-only).
     pub chips: crate::chips::Chips,
+    /// A hit's flying 3D stone fragments (docs/BLOCK_DAMAGE.md §6.4).
+    pub hit_shards: crate::hit_shards::HitShards,
     /// Steam where lava boils water away (crate::steam; the server's `Steam`, VOLCANOES.md §6.3).
     pub steam: crate::steam::Steam,
+    /// The steam plumes over the world's lava vents (crate::vent_plumes, docs/CLOUDS.md §8.7).
+    pub vent_plumes: crate::vent_plumes::VentPlumes,
     /// When the burning edge has faded (ms; a `Burn` hit sets it).
     burn_until_ms: f64,
     /// Said `SteamHello` (the server has `inventory_flags::STEAM`).
     steam_on: bool,
+    /// Asking for the others' swing kinds (`SwingHello`: their chops by direction).
+    swing_hello: dwell_game::remotes::SwingHello,
+    /// Asking for the axe's bites in the server's cuts (`BitesHello`, WORK_QUEUE item 26), repeated
+    /// on the same schedule until a `Cuts` carries them (`bites_seen`).
+    bites_hello: dwell_game::remotes::SwingHello,
+    bites_seen: bool,
     pub inventory_slot: usize,
     /// The creative hotbar's picks (docs/ITEMS.md §6a): its slots' palette items.
     pub creative: dwell_game::creative_hotbar::CreativeHotbar,
@@ -635,6 +889,8 @@ pub struct Game<S: Scene> {
     body_target: Option<crate::pieces::BodyHit>,
     /// When the last body edit went (ms), for the edit interval.
     body_edit_ms: f64,
+    /// When the last punch short of breaking was sent (ms; `breaking.hand.repeatS` apart).
+    punch_ms: Option<f64>,
     /// Settled pieces drawn gliding into their blocks' places (docs/FELLING.md §4.1).
     glides: crate::settle_glide::Glides,
     recent: VecDeque<InputFrame>,
@@ -657,8 +913,22 @@ pub struct Game<S: Scene> {
     /// The world's mode breaks every block in one hit without a tool (`instantBreaks`,
     /// creative): the break prediction asks it as the server does.
     instant_breaks: bool,
+    /// Defeated (the server's `DEAD`: kneeling where it fell; CHARACTERS.md §11.13), and where.
     dead: bool,
     death_feet: [f64; 3],
+    /// The defeat's moment (ms), the facing the body kneels with, and the camera it eases out from
+    /// (eye, pitch).
+    defeated_ms: f64,
+    defeat_yaw: Option<f64>,
+    defeat_from: ([f64; 3], f64),
+    /// Seconds left of the stand at the shrine (`STAND_S`): third person, input held, the view
+    /// fading back in from `stood_ms`.
+    stand_left_s: f64,
+    stood_ms: f64,
+    /// The last camera drawn (eye, pitch): where the defeat camera eases out from.
+    last_camera: ([f64; 3], f64),
+    /// How black the view is (0 clear, 1 black): defeat's fade (`defeat_fade`).
+    fade: f64,
     /// The streaming probe's last feet and heading (`probe_stream`).
     probe: ([f64; 3], [f64; 2]),
     /// Fixed points the streaming probe also reports (`probe.target`, `probe.control`).
@@ -675,6 +945,9 @@ pub struct Game<S: Scene> {
     view_dir: [f64; 3],
     /// Drag fills sent and not yet answered (prediction id → the fill and its tries so far).
     drag_sent: std::collections::HashMap<u32, (dwell_protocol::RegionEdit, u8)>,
+    /// Drag fills sent this frame: a frame's messages reach the server in one tick, whose region
+    /// queue takes `region_edit::MAX_QUEUED` (docs/BUGS.md #30).
+    drag_frame_fills: usize,
     /// When each water chunk's currents last came (docs/WATER_SURFACE_GRID.md §2c): forgotten
     /// `CURRENTS_KEEP_MS` after.
     currents_seen: dwell_world::hash::HashMap<dwell_world::currents::CurrentKey, f64>,
@@ -708,6 +981,11 @@ pub struct Game<S: Scene> {
     held_sent: Option<u16>,
     /// The Show your arms setting (the settings menu; on by default).
     pub show_arms: bool,
+    /// The targeted block's outline drawn (on by default); off for clean recordings (BUGS.md #113,
+    /// `__dwell.setView({ targetOutline: false })`). Targeting itself is unchanged.
+    pub show_outline: bool,
+    /// The Camera sway setting (Settings → Motion): the swing's sway on the view.
+    pub camera_sway: bool,
     /// Stand-in players for the dev tools (`__dwell.puppets`): the frame cost of N bodies and
     /// their clips without N clients.
     pub puppets: Option<Puppets>,
@@ -719,6 +997,15 @@ pub struct Game<S: Scene> {
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
+    /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
+    far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
+    /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
+    /// chunks arrived or changed since they were filtered.
+    far_tree_lists:
+        std::collections::HashMap<(u8, i32, i32), Vec<dwell_worldgen::impostor::FarTree>>,
+    far_tree_felled: std::collections::HashSet<(u8, [i32; 3])>,
+    far_tree_stale: std::collections::HashSet<(u8, i32, i32)>,
     lod_map_on: bool,
     /// The drawing's size in CSS pixels, for LOD selection.
     pub viewport_css: (f64, f64),
@@ -736,6 +1023,15 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// The latest big-map debug layer (`request_map_layer`).
+    map_layer: Option<(u8, u8, Vec<u8>)>,
+    /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
+    /// (`Scene::upload_budget_bytes`, `dwell_game::upload_budget`; BUGS.md #72).
+    mesh_uploads: dwell_game::upload_budget::UploadQueue<(
+        dwell_game::chunk_stream::Coord,
+        u64,
+        Box<ChunkMeshes>,
+    )>,
     /// The revealed big map's finished tiles, not yet taken (`crate::map_reveal::encode_tile`).
     reveal: std::collections::VecDeque<Vec<u8>>,
     /// The explored cells' generated tiles, not yet taken: (face, ti, tk), RGBA (None: no
@@ -749,6 +1045,27 @@ pub struct Game<S: Scene> {
     remote_sounds: dwell_world::hash::HashMap<u16, MoverSounds>,
     /// The tools others hold, by player id (`HeldTools`, ADR 0067): its item name and hold.
     remote_tools: dwell_world::hash::HashMap<u16, (&'static str, bool)>,
+    /// Swordplay (WORK_QUEUE item 35, round 2): the server has `weapons.clash`; this player's block
+    /// input; the others' guards (players' and NPCs': stance, raised) for the renderer; and when
+    /// this player's last strike was blocked (its view's recoil: the time, the weapon, its plane).
+    swordplay: bool,
+    /// Map markers (docs/MAP_MARKERS.md): the server keeps them (`markers.private`), and the
+    /// record it sent, until the shell takes it (`take_markers`).
+    markers_synced: bool,
+    markers_in: Option<dwell_protocol::markers::Markers>,
+    /// The world's blueprints (docs/BLUEPRINTS.md): kept by the server (`blueprints.world`), the
+    /// aimed one's ghost and panel, the held Place's pace.
+    pub(crate) blueprints: crate::blueprints::ClientBlueprints,
+    blueprints_synced: bool,
+    blueprint_aimed: Option<usize>,
+    /// The server takes a tool's hit at its contact (`hits.at_contact`, BUGS.md #111): the hit is
+    /// aimed and sent then, not at the click.
+    hits_at_contact: bool,
+    pub guard_input: crate::swordplay::GuardInput,
+    /// The use (Break) button held: a tool that repeats keeps swinging (crate::held_use).
+    pub held_use: crate::held_use::HeldUse,
+    pub remote_guards: dwell_world::hash::HashMap<dwell_protocol::Fighter, (bool, bool)>,
+    recoil: Option<(f64, &'static dwell_protocol::chopping::ToolDef, bool)>,
     /// The ground densities the chunk meshes were scattered with (ADR 0074 B5), by chunk, where
     /// the biomes vary them: the crosshair's rolls are the mesh's.
     ground_density: dwell_world::hash::HashMap<[i32; 3], dwell_world::ground::GroundDensity>,
@@ -765,6 +1082,8 @@ pub struct Game<S: Scene> {
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
     ambience: dwell_game::ambience::Listening,
     ambience_due_s: f64,
+    /// The eye under a fluid's surface at the last draw (`underwater`).
+    eye_underwater: bool,
     ambience_trees: Vec<usize>,
     /// Other players' health events, held until their bodies are drawn at that moment (the
     /// interpolation delay), so a hurt sounds with the hit that caused it: (local ms, event).
@@ -798,8 +1117,26 @@ pub struct Game<S: Scene> {
     /// The dev switches over the day/night cycle, and its state at the last frame (world time is
     /// `clock`'s).
     pub day_override: DayOverride,
+    /// Theater mode's camera path playing (docs/THEATER_MODE.md): it drives the placed view, the
+    /// field of view and the time of day this viewer sees while it plays.
+    theater: Option<dwell_theater::Player>,
+    /// Frame-exact recording (THEATER_MODE.md §6): the path moves only by the steps the shell
+    /// gives (`theater_advance`), one a drawn frame, whatever the real frame time.
+    theater_exact: bool,
+    theater_step: Option<f64>,
+    /// The last frame `step_theater` ran (ms), for its frame time.
+    theater_ms: Option<f64>,
+    /// The time of day the theater shows (this viewer only), over the dev override.
+    theater_time: Option<f64>,
+    /// Whether the camera is a simulation viewpoint here (THEATER_MODE.md §7): the server has
+    /// `theater.viewpoint` and the world's mode `theaterViewpoint` (creative).
+    theater_viewpoint: bool,
+    /// What of the camera's eye goes to the server, frame by frame.
+    viewpoint_sender: dwell_theater::viewpoint::Sender,
     /// The world's clock (the server's world settings; this build's until they arrive).
-    world_clock: dwell_look::daynight::Clock,
+    /// The world's day/night cycle: its clock, its moon's phase and its orbit (ADR 0054;
+    /// REALISTIC_WORLD.md §8), this build's looks.
+    world_day: dwell_look::daynight::DayNight,
     day: DayState,
     first_draw_ms: Option<f64>,
     /// The loading screen (ARCHITECTURE.md §6.3): off unless `set_loading_screen` turns it on.
@@ -808,6 +1145,9 @@ pub struct Game<S: Scene> {
     near_ring: Vec<Coord>,
     /// The Welcome's verification chunk: the cell under the world's spawn, where a respawn is.
     spawn_chunk: Option<ChunkCoord>,
+    /// The chunk of the shrine a dead player will stand up at, as this client guesses it (the
+    /// respawn preload's centre; the spawn's when unknown).
+    respawn_chunk: Option<ChunkCoord>,
     /// The respawn preload's priorities (§6.3; off with `?respawnPreload=off`).
     respawn_preload_on: bool,
 }
@@ -862,6 +1202,7 @@ impl<S: Scene> Game<S> {
             pieces: crate::pieces::Pieces::default(),
             body_target: None,
             body_edit_ms: f64::NEG_INFINITY,
+            punch_ms: None,
             glides: crate::settle_glide::Glides::default(),
             recent: VecDeque::new(),
             accumulator: 0.0,
@@ -878,6 +1219,13 @@ impl<S: Scene> Game<S> {
                 .allows(dwell_protocol::modes::Ability::InstantBreaks),
             dead: false,
             death_feet: [0.0; 3],
+            defeated_ms: 0.0,
+            defeat_yaw: None,
+            defeat_from: ([0.0; 3], 0.0),
+            stand_left_s: 0.0,
+            stood_ms: 0.0,
+            last_camera: ([0.0; 3], 0.0),
+            fade: 0.0,
             probe: ([0.0; 3], [0.0, 1.0]),
             probe_points: Vec::new(),
             previous: None,
@@ -889,6 +1237,7 @@ impl<S: Scene> Game<S> {
             drag: dwell_game::build_drag::BuildDrag::new(),
             view_dir: [0.0, 0.0, 1.0],
             drag_sent: std::collections::HashMap::new(),
+            drag_frame_fills: 0,
             currents_seen: Default::default(),
             flow_sent: None,
             flow_particles: true,
@@ -907,6 +1256,10 @@ impl<S: Scene> Game<S> {
             lod: None,
             unloads: Default::default(),
             lod_map: None,
+            far_tree_jobs: Default::default(),
+            far_tree_lists: Default::default(),
+            far_tree_felled: Default::default(),
+            far_tree_stale: Default::default(),
             lod_map_on: false,
             viewport_css: (1280.0, 720.0),
             debug_note: String::new(),
@@ -918,6 +1271,8 @@ impl<S: Scene> Game<S> {
             registry: None,
             pending_lod: None,
             map: None,
+            map_layer: None,
+            mesh_uploads: Default::default(),
             reveal: std::collections::VecDeque::new(),
             explore_tiles: std::collections::VecDeque::new(),
             view: None,
@@ -925,6 +1280,19 @@ impl<S: Scene> Game<S> {
             mover_sounds: MoverSounds::new(),
             remote_sounds: Default::default(),
             remote_tools: Default::default(),
+            swordplay: false,
+            markers_synced: false,
+            markers_in: None,
+            blueprints: Default::default(),
+            blueprints_synced: false,
+            blueprint_aimed: None,
+            // As this build's client says it (`Capabilities::this_client`); an older server's
+            // session turns it off (`set_hits_at_contact`).
+            hits_at_contact: true,
+            guard_input: Default::default(),
+            held_use: Default::default(),
+            remote_guards: Default::default(),
+            recoil: None,
             ground_density: Default::default(),
             held_tool_sent: None,
             lean_at: None,
@@ -937,6 +1305,7 @@ impl<S: Scene> Game<S> {
                 ..Default::default()
             },
             ambience_due_s: 0.0,
+            eye_underwater: false,
             ambience_trees: dwell_game::ambience::tree_blocks(),
             pending_player_events: Vec::new(),
             remote_impacts: Default::default(),
@@ -954,12 +1323,20 @@ impl<S: Scene> Game<S> {
             reduced_motion: false,
             lod_camera: None,
             day_override: DayOverride::default(),
-            world_clock: DAY_NIGHT.clock,
+            theater: None,
+            theater_ms: None,
+            theater_time: None,
+            theater_viewpoint: false,
+            theater_exact: false,
+            theater_step: None,
+            viewpoint_sender: Default::default(),
+            world_day: DAY_NIGHT,
             day: DayState::default(),
             first_draw_ms: None,
             loading: LoadingGate::new(LOADING, false),
             near_ring: near_ring_offsets(LOADING.radius_chunks),
             spawn_chunk: verification,
+            respawn_chunk: None,
             respawn_preload_on: true,
             bodies: Bodies::default(),
             held_sent: None,
@@ -967,26 +1344,49 @@ impl<S: Scene> Game<S> {
             creatures: Default::default(),
             creatures_on: false,
             ecology: None,
+            far_heads: Vec::new(),
+            far_terrain: None,
+            far_herds_shown: true,
+            far_stale: false,
             ecology_on: false,
             damage_on: false,
             causes_on: false,
             inventory_flags: 0,
             remote_hits: Default::default(),
+            pending_hits: Default::default(),
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
             world_seed: 0,
+            grid_meshes: Default::default(),
+            grid_lod: None,
+            grid_lod_epoch: 0,
+            lod_options: None,
+            pending_cross: None,
+            grid_frames: false,
+            grid_capabilities: None,
+            travel: None,
+            grid_drawn: 0,
+            other_grid_chunks: std::collections::HashMap::default(),
+            world_bounds: dwell_world::WorldBounds::DEFAULT,
             ground_on: false,
             ground_target: None,
             chop: Default::default(),
             chips: Default::default(),
+            hit_shards: Default::default(),
             steam: Default::default(),
+            vent_plumes: Default::default(),
             burn_until_ms: 0.0,
             steam_on: false,
+            swing_hello: dwell_game::remotes::SwingHello::default(),
+            bites_hello: dwell_game::remotes::SwingHello::default(),
+            bites_seen: false,
             inventory_slot: 0,
             creative: dwell_game::creative_hotbar::CreativeHotbar::new(
                 &dwell_game::block_interaction::palette(),
             ),
             show_arms: true,
+            show_outline: true,
+            camera_sway: true,
             lod_drawn: true,
             puppets: None,
         };
@@ -1023,6 +1423,10 @@ impl<S: Scene> Game<S> {
     }
 
     /// The player's centre (the prediction's), where the loading screen's near ring is centred.
+    /// The world's seed (the server's, from the join).
+    pub fn world_seed(&self) -> u64 {
+        self.world_seed
+    }
     pub fn position(&self) -> [f64; 3] {
         self.current.position
     }
@@ -1047,7 +1451,10 @@ impl<S: Scene> Game<S> {
     /// sections hold ground, not air, and waited 14 frames for their outer chunks, meshed last).
     fn respawn_preload(&self) -> Option<SecondCentre> {
         let radius = RESPAWN_PRELOAD_RADIUS_CHUNKS.filter(|_| self.respawn_preload_on)?;
-        let at = self.spawn_chunk.filter(|_| self.dead)?;
+        let at = self
+            .respawn_chunk
+            .or(self.spawn_chunk)
+            .filter(|_| self.dead)?;
         Some(SecondCentre {
             near: LOADING.radius_chunks,
             at: at.to_array(),
@@ -1073,6 +1480,125 @@ impl<S: Scene> Game<S> {
     }
 
     /// Places the camera (None: back to the player's eyes).
+    /// Holds the axe's level or vertical swing at clip time `t` (s) on your arms and every remote
+    /// body (puppets included), or releases it (none): the bench's `clip-strip` (DEV_TOOLS.md).
+    pub fn hold_swing(&mut self, held: Option<(bool, f64)>) {
+        use dwell_characters::animator::Swing;
+        // The hand takes that swing's hold (the vertical swing's grip differs), as a toggle would:
+        // without it the vertical clip played on the level hold, its head off the crosshair.
+        if let Some((vertical, _)) = held {
+            self.chop.vertical = vertical;
+        }
+        self.bodies.own_tool = self.held_tool().map(|t| t.name);
+        self.bodies.hold_swing(held.map(|(vertical, t)| {
+            let s = if vertical {
+                Swing::ChopVertical
+            } else {
+                Swing::ChopLevel
+            };
+            (s, t.max(0.0) as f32)
+        }));
+    }
+
+    /// Plays a camera path (theater mode, docs/THEATER_MODE.md) from its start: it drives the view
+    /// until [`Game::stop_theater`].
+    pub fn play_theater(&mut self, path: dwell_theater::Path) {
+        self.theater = Some(dwell_theater::Player::new(path));
+        self.theater_ms = None;
+    }
+    /// Stops the camera path: the view returns to the player's eyes, the time of day to the world's.
+    pub fn stop_theater(&mut self) {
+        if self.theater.take().is_some() {
+            self.view = None;
+        }
+        self.theater_time = None;
+        self.theater_ms = None;
+    }
+    /// The path playing: (its time, its length, finished).
+    pub fn theater_state(&self) -> Option<(f64, f64, bool)> {
+        self.theater
+            .as_ref()
+            .map(|p| (p.time, p.path.duration(), p.finished()))
+    }
+    /// Pauses or resumes the path.
+    pub fn pause_theater(&mut self, paused: bool) {
+        if let Some(p) = &mut self.theater {
+            p.playing = !paused;
+        }
+    }
+    /// Where the targets a path names are now: the player's centre, a creature's or NPC's by id.
+    pub fn theater_targets(&self) -> TheaterTargets<'_> {
+        TheaterTargets {
+            player: self.position(),
+            creatures: &self.creatures,
+        }
+    }
+    /// Whether the camera is a simulation viewpoint (THEATER_MODE.md §7, T-4): the server has the
+    /// `theater.viewpoint` capability and the world's mode the `theaterViewpoint` ability. Turned
+    /// off, a viewpoint sent is cleared.
+    pub fn set_theater_viewpoint(&mut self, on: bool) {
+        self.theater_viewpoint = on;
+    }
+
+    /// The viewpoint's message for this frame, if any: the playing path's eye at the rate, or one
+    /// clear after it ends (or the viewpoint is turned off).
+    fn send_viewpoint(&mut self, now_ms: f64) {
+        let eye = self
+            .theater
+            .as_ref()
+            .filter(|_| self.theater_viewpoint)
+            .and(self.view)
+            .map(|v| v.eye);
+        let interval_ms = 1000.0 / dwell_protocol::world::THEATER_VIEWPOINT_HZ as f64;
+        if let Some(m) = self.viewpoint_sender.frame(now_ms, eye, interval_ms) {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::TheaterViewpoint(m)));
+        }
+    }
+
+    /// Steps the camera path to `now_ms` and places the view at its pose (before the frame); the
+    /// viewpoint goes to the server where it is one.
+    pub fn step_theater(&mut self, now_ms: f64) {
+        self.step_theater_path(now_ms);
+        self.send_viewpoint(now_ms);
+    }
+
+    /// Frame-exact recording on or off (THEATER_MODE.md §6): on, the path holds still but for
+    /// the steps `theater_advance` gives.
+    pub fn set_theater_exact(&mut self, on: bool) {
+        self.theater_exact = on;
+        self.theater_step = None;
+    }
+    /// The next frame's step of the path (seconds of real time at the path's speed), in
+    /// frame-exact recording: one frame of the take's rate.
+    pub fn theater_advance(&mut self, dt_s: f64) {
+        self.theater_step = Some(dt_s.max(0.0));
+    }
+
+    fn step_theater_path(&mut self, now_ms: f64) {
+        let Some(mut player) = self.theater.take() else {
+            return;
+        };
+        let dt = theater_dt(
+            self.theater_exact,
+            self.theater_step.take(),
+            self.theater_ms,
+            now_ms,
+        );
+        self.theater_ms = Some(now_ms);
+        let pose = player.step(dt, &self.theater_targets());
+        self.theater = Some(player);
+        self.view = Some(ViewOverride {
+            eye: pose.position,
+            yaw_deg: pose.yaw_deg,
+            pitch_deg: pose.pitch_deg,
+            fov_deg: pose.fov_deg,
+            up: pose.up,
+        });
+        self.theater_time = pose.time_of_day;
+    }
+
     pub fn set_view(&mut self, view: Option<ViewOverride>) {
         self.view = view;
     }
@@ -1160,6 +1686,8 @@ impl<S: Scene> Game<S> {
         let mut lod = LodSystem::new(options);
         lod.set_full_mode(s.full_mode || hash == 0);
         lod.set_detail_distance(s.detail_distance_m);
+        lod.set_world(self.world_bounds);
+        self.lod_options = Some((options, s.detail_distance_m));
         self.lod = Some(lod);
         self.pending_lod = None;
     }
@@ -1174,8 +1702,29 @@ impl<S: Scene> Game<S> {
                 step,
                 n,
                 face,
+                layer: 0,
             },
         );
+    }
+    /// Asks for the big map's debug layer of field `field` (`dwell_worldgen::map_layers::MapField`'s
+    /// index; REALISTIC_WORLD.md R6): n × n samples from face-local (x0, z0), `step` apart, of `face`.
+    pub fn request_map_layer(&mut self, field: u8, x0: i32, z0: i32, step: i32, n: i32, face: u8) {
+        self.pool.borrow_mut().submit(
+            Purpose::MapLayer(field, face),
+            crate::jobs::Job::Map {
+                x0,
+                z0,
+                step,
+                n,
+                face,
+                layer: field.saturating_add(1),
+            },
+        );
+    }
+    /// The latest debug layer, once: (field, face, its `LayerGrid::encode` bytes; empty where the
+    /// world has no such field).
+    pub fn take_map_layer(&mut self) -> Option<(u8, u8, Vec<u8>)> {
+        self.map_layer.take()
     }
     /// The latest map, once (height i16 LE and an outside flag per sample; empty without a terrain).
     pub fn take_map(&mut self) -> Option<Vec<u8>> {
@@ -1244,6 +1793,46 @@ impl<S: Scene> Game<S> {
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }
+    /// The LOD system drawing the view's distance (`__dwell.state().lod`): the grid's while the
+    /// view is on another grid (`grid_drawn`), home's otherwise; none on a grid with no LOD.
+    fn state_lod(&self) -> Option<&LodSystem> {
+        if self.grid_drawn != 0 {
+            self.grid_lod
+                .as_ref()
+                .filter(|g| g.grid() == self.grid_drawn)
+                .map(|g| &g.lod)
+        } else {
+            self.lod.as_ref()
+        }
+    }
+    /// The grid LOD's system, while the view is on a grid with one (BUGS.md #159).
+    pub fn grid_lod(&self) -> Option<&LodSystem> {
+        self.grid_lod.as_ref().map(|g| &g.lod)
+    }
+    /// The Detail settings (§6.6): the full-detail distance, pixel error and cache budget, for
+    /// home's LOD and a grid's, now and made later.
+    pub fn set_lod_detail(
+        &mut self,
+        distance_m: Option<f64>,
+        pixel_error: f64,
+        cache_bytes: usize,
+    ) {
+        for lod in [
+            self.lod.as_mut(),
+            self.grid_lod.as_mut().map(|g| &mut g.lod),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            lod.set_detail_distance(distance_m);
+            lod.set_quality(pixel_error, cache_bytes);
+        }
+        if let Some((o, d)) = &mut self.lod_options {
+            o.pixel_error = pixel_error;
+            o.cache_bytes = cache_bytes;
+            *d = distance_m;
+        }
+    }
     /// How a chunk is drawn, for the streaming probe: 0 as a chunk, 1 loaded but not drawn as one
     /// (waiting for its light or mesh, or the LOD shows its section), 2 not loaded.
     pub fn chunk_detail(&self, c: ChunkCoord) -> u8 {
@@ -1304,8 +1893,15 @@ impl<S: Scene> Game<S> {
         self.chunk_fade(c).is_some()
     }
     /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
-    /// fade.rs), or (None) not at all.
+    /// fade.rs), or (None) not at all. On another grid its own LOD tree answers (BUGS.md #159),
+    /// in full without one: home's selection is in home's coordinates (BUGS.md #123).
     pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
+        if self.grid_drawn != 0 {
+            return self
+                .grid_lod
+                .as_ref()
+                .map_or(Some(Fade::Full), |g| g.lod.chunk_fade(c));
+        }
         self.lod
             .as_ref()
             .map_or(Some(Fade::Full), |l| l.chunk_fade(c))
@@ -1316,6 +1912,11 @@ impl<S: Scene> Game<S> {
     pub fn world(&mut self) -> &mut VoxelWorld {
         self.streamer.store_mut()
     }
+    /// The damage drawn on `cell` (its marks and cracks), if any.
+    pub fn damage_at(&self, cell: [i32; 3]) -> Option<&dwell_protocol::damage::DamageView> {
+        self.streamer.damage_at(cell)
+    }
+
     pub fn voxel(&mut self, x: i32, y: i32, z: i32) -> u16 {
         self.streamer.store_mut().get_voxel(x, y, z)
     }
@@ -1359,7 +1960,24 @@ impl<S: Scene> Game<S> {
                 self.predictor
                     .on_vitals(self.streamer.store_mut(), v.seq, vitals);
             }
+            // Another grid's chunk than the one the view is in (MOON_WORLD.md §7.3): held for the
+            // crossing into it, which the server made first (BUGS.md #136; a crossing the
+            // predictor made first drops the old grid's, which the server forgets too).
+            Message::ChunkData(d) if d.grid != self.grid_drawn => {
+                if self.other_grid_chunks.len() < OTHER_GRID_CHUNKS_MAX {
+                    self.other_grid_chunks.insert((d.grid, d.coord), d);
+                }
+            }
+            Message::ChunkUnload(u) if u.grid != self.grid_drawn => {
+                for c in &u.coords {
+                    self.other_grid_chunks.remove(&(u.grid, *c));
+                }
+            }
+            // Home's cells while the view is on another grid: not the store's (whose cells are
+            // that grid's); home streams again whole on the way back.
+            Message::VoxelModification(_) if self.grid_drawn != 0 => {}
             Message::ChunkData(d) => {
+                self.far_trees_touched(d.coord);
                 // The server's data for the chunk: predictions in it are its business now.
                 self.prediction.forget_chunk(d.coord);
                 self.streamer.on_chunk_data(ChunkMessage::from(d))
@@ -1374,6 +1992,9 @@ impl<S: Scene> Game<S> {
             Message::VoxelModification(mut v) => {
                 // Cells showing a prediction keep it until their edits' ack (§6.5).
                 self.prediction.filter(&mut v.chunks);
+                for c in &v.chunks {
+                    self.far_trees_touched(c.coord);
+                }
                 if v.reason == dwell_protocol::VoxelModificationReason::Edit {
                     let changes = self.cell_changes(&v.chunks);
                     self.edit_sounds.changes(&changes, now_ms, &mut self.sounds);
@@ -1406,6 +2027,17 @@ impl<S: Scene> Game<S> {
                 }
                 self.last_snapshot_tick = s.server_tick;
                 self.clock.observe(s.server_tick, now_ms);
+                if self.swing_hello.on_snapshot(s.swing_kinds, now_ms) {
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Datagram(Message::SwingHello));
+                }
+                // Once the server chops (its first `Cuts`), ask for the bites too.
+                if self.chop.on && self.bites_hello.on_snapshot(self.bites_seen, now_ms) {
+                    self.outbox
+                        .borrow_mut()
+                        .push(Send::Datagram(Message::BitesHello));
+                }
                 // The pieces' poses first: drawn interpolated, and stood in for in the prediction
                 // at their latest carried on to the present, so a replay meets them where the
                 // server had them (docs/FELLING.md §3, BUILT_BODIES.md §6).
@@ -1429,10 +2061,39 @@ impl<S: Scene> Game<S> {
                 // Only the pieces that could touch the player soon are stood in for.
                 telemetry::sample("pieces.standIns", self.predictor.stand_ins() as f64);
                 self.predictor.on_snapshot(self.streamer.store_mut(), &s);
+                // A correction across grids (`regrid`): the view follows the server's grid.
+                if let Some((from, to)) = self.follow_grid() {
+                    // The look goes on across (and the view eases upright) at the next tick.
+                    self.pending_cross = Some((from, to, self.current.face));
+                    self.current = ClientState::of(&self.predictor);
+                    self.previous = None;
+                    self.eye = EyeCamera::new();
+                    self.eye
+                        .tick(&self.current.eye_state(), 1.0 / SIM_HZ as f64);
+                }
                 self.health = s.local.health;
+                let was_dead = self.dead;
                 self.dead = s.local.flags & player_flags::DEAD != 0;
                 if self.dead {
                     self.death_feet = s.local.position;
+                }
+                // Just died: where the server will stand us up, the shrine nearest the death on its
+                // face (docs/SHRINES.md), so the respawn preload readies the terrain there.
+                if !self.dead && was_dead {
+                    // Stood up at the shrine (§11.13): the stand plays, the view fades in.
+                    self.stand_left_s = dwell_protocol::defeat::STAND_S;
+                    self.stood_ms = now_ms;
+                }
+                if self.dead && !was_dead {
+                    self.defeated_ms = now_ms;
+                    self.defeat_yaw = None;
+                    self.defeat_from = self.last_camera;
+                    let feet = s.local.position;
+                    self.respawn_chunk = self.far_terrain.as_deref().and_then(|t| {
+                        let face = dwell_world::FaceFrame::at_height(feet[1]).face;
+                        t.nearest_known_shrine(face, feet[0], feet[2])
+                            .map(dwell_world::chunk_of_pos)
+                    });
                 }
                 self.input_buffer = s.local.input_buffer;
                 self.tick_rate = if self.input_buffer <= BUFFER_LOW {
@@ -1532,6 +2193,7 @@ impl<S: Scene> Game<S> {
             }
             Message::Cuts(c) => {
                 self.chop.on = true;
+                self.bites_seen |= c.bites;
                 // Carved into the terrain mesh (ADR 0067 §11): each changed cell's chunk again.
                 for cell in &c.gone {
                     self.streamer.set_cut(*cell, None);
@@ -1563,7 +2225,9 @@ impl<S: Scene> Game<S> {
                     let at = point_in_cell(cell, mark.point);
                     self.sounds
                         .push(SoundEvent::new(SoundKind::Hit, block, 1.0, Some(at)));
-                    self.hit_chips(block, cell, at, now_ms);
+                    // The mark's chunk is its bite (BLOCK_DAMAGE.md §10).
+                    let bite = mark.scale() * dwell_protocol::damage::HitMark::UNIT_M3;
+                    self.hit_chips(block, cell, at, bite, now_ms);
                 }
                 // Drawn on the struck faces (docs/BLOCK_DAMAGE.md): each changed cell's chunk again.
                 for cell in &d.gone {
@@ -1571,6 +2235,16 @@ impl<S: Scene> Game<S> {
                 }
                 for (cell, view) in &d.cells {
                     self.streamer.set_damage(*cell, Some(view.clone()));
+                }
+            }
+            Message::Swordplay(dwell_protocol::SwordplayMessage::Clash(c)) => {
+                self.on_clash(&c, now_ms);
+            }
+            Message::Markers(m) => self.markers_in = Some(m),
+            Message::Blueprints(m) => self.blueprints.apply(m),
+            Message::Swordplay(dwell_protocol::SwordplayMessage::Guards(list)) => {
+                for g in list {
+                    self.remote_guards.insert(g.who, (g.vertical, g.raised));
                 }
             }
             Message::HeldTools(list) => {
@@ -1652,7 +2326,10 @@ impl<S: Scene> Game<S> {
                 }
             }
             Message::Creatures(m) => self.creatures.apply(m),
-            Message::Ecology(m) => self.ecology = Some(m),
+            Message::Ecology(m) => {
+                self.ecology = Some(m);
+                self.far_stale = true;
+            }
             Message::GroundGone(cells) => {
                 self.streamer.ground_gone(&cells);
             }
@@ -1748,10 +2425,11 @@ impl<S: Scene> Game<S> {
                 (Purpose::Base(c), Output::Chunk { voxels, .. }) => {
                     self.streamer.on_generated_base(c, &voxels)
                 }
-                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(mut m)) => {
-                    let ground = std::mem::take(&mut m.ground);
-                    self.keep_ground_density(c, ground);
-                    self.streamer.on_meshed(c, token, *m)
+                (Purpose::ChunkMesh(c, token), Output::ChunkMesh(m)) => {
+                    let bytes = (m.opaque.byte_len()
+                        + m.transparent.byte_len()
+                        + m.cutout.byte_len()) as u64;
+                    self.mesh_uploads.push((c, token, m), bytes);
                 }
                 (Purpose::Verify, Output::Chunk { hash, voxels }) => {
                     let hash = self
@@ -1761,6 +2439,9 @@ impl<S: Scene> Game<S> {
                     self.verify(hash)
                 }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
+                (Purpose::MapLayer(f, face), Output::Map(bytes)) => {
+                    self.map_layer = Some((f, face, bytes.unwrap_or_default()));
+                }
                 (Purpose::Reveal(face, ti, tk, cell_m), out) => {
                     let rgba = match &out {
                         Output::LodMap(Some(p)) => Some(p.as_slice()),
@@ -1792,6 +2473,35 @@ impl<S: Scene> Game<S> {
                         ),
                         _ => String::new(),
                     };
+                }
+                (
+                    Purpose::ImpostorBake(layer),
+                    Output::Impostor {
+                        centre_y,
+                        radius,
+                        albedo,
+                        normal_depth,
+                    },
+                ) => self.scene.borrow_mut().impostor_layer(
+                    layer,
+                    centre_y,
+                    radius,
+                    &albedo,
+                    &normal_depth,
+                ),
+                (Purpose::FarTrees(face, i, k), out) => {
+                    self.far_tree_jobs.remove(&(face, i, k));
+                    let trees = match out {
+                        Output::FarTrees(t) => t,
+                        _ => Vec::new(),
+                    };
+                    self.far_tree_lists.insert((face, i, k), trees);
+                    self.far_tree_stale.insert((face, i, k));
+                }
+                (Purpose::CloudNoise(detail, z0), Output::CloudNoise(texels)) => {
+                    self.scene
+                        .borrow_mut()
+                        .cloud_noise_slab(detail, z0, &texels);
                 }
                 (Purpose::LodMap(job), out) => {
                     if let Some(map) = &mut self.lod_map
@@ -1837,6 +2547,50 @@ impl<S: Scene> Game<S> {
                         lod.on_generated(token, section);
                     }
                 }
+                (Purpose::GridBounds(epoch, level, i, k), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        let b = if let Output::Bounds(b) = out {
+                            Some(b)
+                        } else {
+                            None
+                        };
+                        g.lod.on_lod_bounds(level, i, k, b);
+                    }
+                }
+                (Purpose::GridSection(epoch, token), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        let section = match out {
+                            Output::Lod {
+                                cells,
+                                surface,
+                                surface_b,
+                                tints,
+                            } => Some(dwell_lod::GeneratedSection {
+                                cells,
+                                surface,
+                                surface_b,
+                                tints,
+                            }),
+                            _ => None,
+                        };
+                        g.lod.on_generated(token, section);
+                    }
+                }
+                (Purpose::GridSectionMesh(epoch, token), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        match out {
+                            Output::SectionMesh(m) => {
+                                let mut view = View(self.scene.clone());
+                                g.lod.on_meshed(
+                                    token,
+                                    *m,
+                                    &mut crate::grid_lod::GridView(&mut view),
+                                )
+                            }
+                            _ => g.lod.on_mesh_failed(token),
+                        }
+                    }
+                }
                 (Purpose::SectionMesh(token), out) => {
                     if let Some(lod) = &mut self.lod {
                         match out {
@@ -1850,6 +2604,27 @@ impl<S: Scene> Game<S> {
                 _ => {}
             }
         }
+        self.upload_meshes();
+    }
+
+    /// Hands this frame's share of the finished chunk meshes to the scene: oldest first, as many
+    /// as fit the scene's byte budget (the first always); the rest wait for the next frame.
+    fn upload_meshes(&mut self) {
+        let (budget, waiting) = {
+            let s = self.scene.borrow();
+            (s.upload_budget_bytes(), s.uploads_waiting())
+        };
+        let take = if waiting {
+            Vec::new()
+        } else {
+            self.mesh_uploads.take(budget)
+        };
+        for (c, token, mut m) in take {
+            let ground = std::mem::take(&mut m.ground);
+            self.keep_ground_density(c, ground);
+            self.streamer.on_meshed(c, token, *m);
+        }
+        telemetry::add("upload.waiting", self.mesh_uploads.len() as f64);
     }
 
     pub fn debug_state(&self) -> DebugState {
@@ -1873,7 +2648,7 @@ impl<S: Scene> Game<S> {
             terrain_ready: self.terrain_ready(),
             target: self.interaction.target(),
             body_target: self.body_target.map(|b| (b.body, b.cell, b.face)),
-            lod: self.lod.as_ref().map(LodSystem::debug_stats),
+            lod: self.state_lod().map(LodSystem::debug_stats),
             flying: c.state == PlayerState::Flying,
             loading_enabled: self.loading.enabled(),
             loading: self.loading.screen(),
@@ -1911,6 +2686,15 @@ impl<S: Scene> Game<S> {
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
         }
+        // Aimed into a blueprint (docs/BLUEPRINTS.md): Place builds its ghost cells only, from
+        // what the player has, whatever the hand holds; held, it builds on at the data's pace.
+        if action == EditAction::Place
+            && !self.brush.active()
+            && !self.region.pasting()
+            && let Some(placed) = self.blueprint_press(holder.is_some(), now_ms)
+        {
+            return placed;
+        }
         // In a world that uses items (ADR 0066) a place needs the held slot to hold a block; a
         // hotbar tool that does not chop (a pickaxe, a shovel) places nothing either.
         if action == EditAction::Place
@@ -1944,6 +2728,50 @@ impl<S: Scene> Game<S> {
             return false;
         };
         let placement = self.interaction.placement();
+        // A tool's hit lands at its swing's contact (`contactS`; WORK_QUEUE item 25): one swing at
+        // a time, and its effects (and a one-hit break's) wait for the contact.
+        let tool_item = (action == EditAction::Break)
+            .then(|| self.held_break_item())
+            .flatten();
+        let contact_s = dwell_protocol::chopping::break_contact_s(tool_item);
+        if contact_s > 0.0 && self.pending_hits.busy(now_ms) {
+            return false;
+        }
+        // A punch short of breaking comes at most every `breaking.hand.repeatS`, as the server
+        // takes them (WORK_QUEUE item 17): clicked or held, one punch per swing of the arms.
+        let punch =
+            action == EditAction::Break && tool_item.is_none() && self.held_tool().is_none() && {
+                let [x, y, z] = target.cell;
+                let name = dwell_blocks::block_of(self.voxel(x, y, z)).name;
+                self.hits_to_break(name).is_some_and(|n| n > 1)
+            };
+        if punch
+            && let (Some(r), Some(last)) = (dwell_protocol::chopping::HAND_REPEAT_S, self.punch_ms)
+            && now_ms - last < r * 1000.0 - 1e-6
+        {
+            return false;
+        }
+        // The click starts the swing; its hit is aimed at what the crosshair holds at the contact
+        // and sent then (BUGS.md #111), a miss there landing nothing.
+        if contact_s > 0.0 && self.hits_at_contact {
+            if self.interaction.act(action, now_ms).is_none() {
+                return false; // the click's rate
+            }
+            self.pending_hits.push(crate::hit_feedback::PendingHit {
+                due_ms: crate::hit_feedback::PendingHits::due(now_ms, contact_s),
+                item: tool_item.expect("a tool with a contact"),
+                cell: target.cell,
+                block: 0,
+                at: None,
+                breaks: false,
+                aimed: true,
+            });
+            // The tool's own break swing (its head onto the crosshair at the contact).
+            self.bodies.own_tool = tool_item;
+            self.bodies
+                .swing_arms(dwell_characters::animator::Swing::Break);
+            return true;
+        }
         // A steep slope's upper half goes with it (`act_upper`), read before the place's
         // prediction changes the target.
         let upper = (action == EditAction::Place)
@@ -1951,8 +2779,38 @@ impl<S: Scene> Game<S> {
             .flatten();
         match self.interaction.act(action, now_ms) {
             Some(m) => {
+                if punch {
+                    self.punch_ms = Some(now_ms);
+                }
                 // The sound first: the prediction changes the block at once.
+                let mut predict = true;
                 match (action, placement) {
+                    (EditAction::Break, _) if contact_s > 0.0 => {
+                        // Sent now (the server lands it at the contact); shown at the contact,
+                        // a one-hit break by the server's change then (not predicted).
+                        let [x, y, z] = target.cell;
+                        let block = self.voxel(x, y, z);
+                        let name = dwell_blocks::block_of(block).name;
+                        let breaks = self.hits_to_break(name) == Some(1);
+                        let at = self
+                            .struck_point(target.cell, target.face)
+                            .map(|p| point_in_cell(target.cell, p));
+                        if breaks {
+                            self.edit_sounds.expect_break(target.cell, now_ms);
+                        } else {
+                            self.remote_hits.own_hit(target.cell, now_ms);
+                        }
+                        self.pending_hits.push(crate::hit_feedback::PendingHit {
+                            due_ms: crate::hit_feedback::PendingHits::due(now_ms, contact_s),
+                            item: tool_item.expect("a tool with a contact"),
+                            cell: target.cell,
+                            block,
+                            at,
+                            breaks,
+                            aimed: false,
+                        });
+                        predict = false;
+                    }
                     (EditAction::Break, _) => {
                         let [x, y, z] = target.cell;
                         let block = self.voxel(x, y, z);
@@ -1975,7 +2833,8 @@ impl<S: Scene> Game<S> {
                             // Its chips; the server's echo of the hit is not shown again.
                             self.remote_hits.own_hit(target.cell, now_ms);
                             if let Some(at) = at {
-                                self.hit_chips(block, target.cell, at, now_ms);
+                                let bite = self.own_bite_m3(block);
+                                self.hit_chips(block, target.cell, at, bite, now_ms);
                             }
                         }
                     }
@@ -1985,6 +2844,7 @@ impl<S: Scene> Game<S> {
                     }
                     (EditAction::Place, None) => {}
                 }
+                self.bodies.own_tool = tool_item;
                 self.bodies.swing_arms(match action {
                     EditAction::Break => dwell_characters::animator::Swing::Break,
                     EditAction::Place => dwell_characters::animator::Swing::Place,
@@ -1997,7 +2857,8 @@ impl<S: Scene> Game<S> {
                 {
                     e.point = self.struck_point(target.cell, target.face);
                 }
-                self.send_edit(m, None);
+                let id = (!predict).then(|| self.prediction.next_id());
+                self.send_edit(m, id);
                 if let Some(u) = upper {
                     self.send_edit(u, None);
                 }
@@ -2047,6 +2908,7 @@ impl<S: Scene> Game<S> {
             self.edit_sounds
                 .local_break(cell, block, now_ms, &mut self.sounds);
         }
+        self.bodies.own_tool = self.held_break_item();
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.outbox
@@ -2072,6 +2934,15 @@ impl<S: Scene> Game<S> {
         holder: dwell_game::build_drag::Holder,
         now_ms: f64,
     ) -> bool {
+        // Break held: a tool that repeats keeps swinging until let go (WORK_QUEUE item 17).
+        if action == EditAction::Break {
+            self.held_use.press(holder);
+            let swung = self.edit_with(action, Some(holder), now_ms);
+            if swung {
+                self.held_use.started(now_ms);
+            }
+            return swung;
+        }
         // On a held body (built on a build platform, so lined up with the world's grid): the click
         // places against it, and the drag builds on in the world's cells next to it, which the
         // server puts into the body (docs/BUILT_BODIES.md §3).
@@ -2128,17 +2999,17 @@ impl<S: Scene> Game<S> {
             let m = Message::BlockEditRequest(dwell_protocol::BlockEditRequest {
                 action: dwell_protocol::BlockEditAction::Place,
                 cell: t.cell,
-                face: t.face,
+                face: t.place_face(),
                 material,
                 rows,
-                down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+                down: t.place_down(rows),
                 point: None,
             });
             let cells: Option<Vec<[i32; 3]>> = self
                 .predicted_changes(&m)
                 .map(|c| c.iter().map(|(c, _)| *c).collect());
             let dir = dwell_world::edit::FACE_DIRS
-                .get(usize::from(t.face))
+                .get(usize::from(t.place_face()))
                 .copied()?;
             Some((m, cells, dir, material))
         });
@@ -2282,8 +3153,187 @@ impl<S: Scene> Game<S> {
     }
 
     /// `holder` let go of Place: its drag stroke ends.
+    /// The use (Break) button let go by `holder`: a held tool stops repeating; the swing under
+    /// way plays out.
+    pub fn release_use(&mut self, holder: dwell_game::build_drag::Holder) {
+        self.held_use.release(holder);
+    }
+
+    /// Whether the tool in hand keeps swinging while Break is held (its `repeatOnHold`).
+    pub fn use_repeats(&self) -> bool {
+        match self.held_tool() {
+            Some(t) => t.repeat_on_hold,
+            None => self.break_repeat() != crate::held_use::Repeat::No,
+        }
+    }
+
+    /// How Break held repeats with no chopping tool in hand: a pickaxe's or shovel's `repeatS`, a
+    /// punch's (`breaking.hand`; WORK_QUEUE item 17) with no tool in hand, unless Break is
+    /// something else now (a creative palette tool, the brush, paste mode: one per press).
+    fn break_repeat(&self) -> crate::held_use::Repeat {
+        let item = self.held_break_item();
+        if item.is_none()
+            && (self.palette_tool().is_some() || self.brush.active() || self.region.pasting())
+        {
+            return crate::held_use::Repeat::No;
+        }
+        crate::held_use::Repeat::of_break(item)
+    }
+
+    /// Break held with a tool whose data repeats (`repeatOnHold`): the next swing, a whole new
+    /// one aimed at what is targeted now, once the last is over (a chopping tool) or its
+    /// `repeatS` has passed and its contact landed (a pickaxe, a shovel).
+    fn repeat_held_use(&mut self, now_ms: f64) {
+        if !self.held_use.held() || self.dead {
+            return;
+        }
+        let (repeat, ready) = match self.held_tool() {
+            Some(t) => (
+                crate::held_use::Repeat::of_tool(t),
+                self.chop.ready(t, now_ms),
+            ),
+            None => (self.break_repeat(), !self.pending_hits.busy(now_ms)),
+        };
+        if self.held_use.due(repeat, ready, now_ms) && self.edit(EditAction::Break, now_ms) {
+            self.held_use.started(now_ms);
+        }
+    }
+
     pub fn release_place(&mut self, holder: dwell_game::build_drag::Holder) {
         self.drag.release(holder);
+        self.blueprints.held = false;
+        // The weapon's block (swordplay): a tap turns the stance, else the block drops.
+        if self.guard_input.pressed()
+            && let Some(w) = self.held_tool().and_then(|t| t.weapon)
+            && self.guard_input.release(&w.guard, self.frame_start_ms)
+                == crate::swordplay::Release::Tap
+        {
+            self.chop.toggle();
+        }
+    }
+
+    /// The server has swordplay (`weapons.clash`): Place held with a weapon raises its block, and
+    /// clashes and others' guards arrive.
+    pub fn set_swordplay(&mut self, on: bool) {
+        self.swordplay = on;
+    }
+
+    /// Whether the server keeps this player's map markers (`markers.private`, MAP_MARKERS.md).
+    pub fn set_markers_synced(&mut self, on: bool) {
+        self.markers_synced = on;
+    }
+
+    /// Whether the server keeps this player's map markers.
+    pub fn markers_synced(&self) -> bool {
+        self.markers_synced
+    }
+
+    /// The markers record the server sent (this player's saved ones), once.
+    pub fn take_markers(&mut self) -> Option<dwell_protocol::markers::Markers> {
+        self.markers_in.take()
+    }
+
+    /// The player's markers now, to the server where it keeps them (the whole record).
+    pub fn send_markers(&mut self, m: dwell_protocol::markers::Markers) {
+        if self.markers_synced {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::Markers(m)));
+        }
+    }
+
+    /// How black the view is for defeat's fade (0 clear, 1 black; CHARACTERS.md §11.13): out over
+    /// the kneel's end, back in as you stand up at the shrine. The HUD draws it.
+    pub fn defeat_fade(&self) -> f64 {
+        self.fade
+    }
+
+    /// Whether you are defeated or standing up again (third person, input held; §11.13).
+    pub fn defeated(&self) -> bool {
+        self.dead || self.stand_left_s > 0.0
+    }
+
+    /// Where the player was defeated, while kneeling (the defeat camera's feet; world metres).
+    pub fn death_feet(&self) -> Option<[f64; 3]> {
+        self.dead.then_some(self.death_feet)
+    }
+
+    /// Whether the server lands a tool's hit on arrival, sent at the swing's contact and aimed
+    /// then (`hits.at_contact`); else the hit goes at the click, at the cell clicked.
+    pub fn set_hits_at_contact(&mut self, on: bool) {
+        self.hits_at_contact = on;
+    }
+
+    /// The block's frame: Place held past the weapon's `raiseAfterS` raises it; a weapon put away
+    /// drops it; a change goes to the server (`ChopAction::Guard`).
+    fn update_guard(&mut self, now_ms: f64) {
+        match self
+            .held_tool()
+            .and_then(|t| t.weapon)
+            .filter(|_| !self.dead)
+        {
+            Some(w) => self.guard_input.frame(&w.guard, now_ms),
+            None => self.guard_input.clear(),
+        }
+        if let Some(raised) = self.guard_input.take_change()
+            && self.swordplay
+        {
+            self.outbox.borrow_mut().push(Send::Control(Message::Chop(
+                dwell_protocol::ChopAction::Guard { raised },
+            )));
+        }
+    }
+
+    /// The first-person pose the arms show for the block now (the stance's `raisedPose`), if it is
+    /// raised and not mid-swing: the renderer's to draw (a local follow-up).
+    pub fn guard_pose(&self) -> Option<&'static str> {
+        let w = self.held_tool()?.weapon?;
+        self.guard_input
+            .pose(&w.guard, self.chop.vertical, self.chop.run.is_some())
+    }
+
+    /// A clash the server sent (`Swordplay`): its sound and sparks at its point by the weapon's
+    /// data, and this player's recoil when its strike was blocked.
+    fn on_clash(&mut self, c: &dwell_protocol::ClashNet, now_ms: f64) {
+        let show = crate::swordplay::show(c, self.player_id);
+        let at = c.point.map(f64::from);
+        // A hit past the defender's block: a creature shows its hurt look (WORK_QUEUE item 35).
+        if let Some(id) = crate::swordplay::hurt_creature(c) {
+            self.creatures.hurt(id, at);
+        }
+        if let Some((name, volume)) = show.sound
+            && let Some(k) = SoundKind::ALL.into_iter().find(|k| k.name() == name)
+        {
+            self.sounds.push(SoundEvent::new(k, 0, volume, Some(at)));
+        }
+        if show.sparks > 0
+            && let Some(look) = crate::chips::spark_chips_of(&c.weapon)
+        {
+            // Out toward the eye, from where the blades met.
+            let eye = self.target_eye.unwrap_or(at);
+            let d: [f64; 3] = std::array::from_fn(|i| eye[i] - at[i]);
+            let len = d.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-6);
+            let n = d.map(|v| v / len);
+            self.chips
+                .burst_n(look, show.sparks as usize, n, at, now_ms / 1000.0);
+        }
+        if show.recoil
+            && let Some(t) = dwell_protocol::chopping::tool(&c.weapon)
+        {
+            self.recoil = Some((now_ms, t, c.striker_vertical));
+        }
+    }
+
+    /// The view's recoil from a blocked strike now (zero when none).
+    fn recoil_camera(&mut self, now_ms: f64) -> CameraOffset {
+        let Some((at, t, vertical)) = self.recoil else {
+            return CameraOffset::ZERO;
+        };
+        let o = crate::swordplay::recoil_camera(t, vertical, (now_ms - at) / 1000.0);
+        if o == CameraOffset::ZERO && now_ms > at {
+            self.recoil = None;
+        }
+        o
     }
 
     /// The next build mode (the key, the controller's button, the touch Build button): its label,
@@ -2350,14 +3400,18 @@ impl<S: Scene> Game<S> {
                 me,
                 settled,
             };
-            self.drag.aim(
+            // Paced by the clock (`buildModes.repeatS`, docs/BUGS.md #30), at each predicted tick.
+            self.drag.aim_at(
                 eye,
                 dir,
                 f64::from(dwell_protocol::players::REACH_DISTANCE),
                 &mut world,
+                now_ms,
             );
         }
-        for (fill, tries) in self.drag.pump_tries(now_ms) {
+        let share = dwell_protocol::region_edit::MAX_QUEUED.saturating_sub(self.drag_frame_fills);
+        for (fill, tries) in self.drag.pump_capped(now_ms, share) {
+            self.drag_frame_fills += 1;
             let at = fill.min;
             let material = fill.material;
             // A retry sounds no second time.
@@ -2369,11 +3423,248 @@ impl<S: Scene> Game<S> {
         }
     }
 
+    /// The world's portals' axes (world x, z; the same on both faces; BIFACIAL_WORLD.md §12).
+    pub fn portal_axes(&self) -> &[[f64; 2]] {
+        &self.portals.0
+    }
+
     /// The world's portals (BIFACIAL_WORLD.md §12): their axes and mote look, from the generator
     /// and seed the server announced, for the motes drawn in their shafts.
-    pub fn set_world(&mut self, generator_version: u32, world_seed: u64) {
-        self.portals = dwell_worldgen::portal_axes_for(generator_version, world_seed);
+    /// `size`: the world's (BIG_MAP.md M2b, its `WorldSettings`), its disc, build volume and maps.
+    pub fn set_world(
+        &mut self,
+        generator_version: u32,
+        world_seed: u64,
+        size: dwell_protocol::world_size::WorldSize,
+    ) {
+        self.portals = dwell_worldgen::portal_axes_for_sized(generator_version, world_seed, size);
+        // And their shafts for the controller's exit push (BIFACIAL_WORLD.md §12.3), the same the
+        // server's world holds, so the prediction pushes as the server does.
+        self.streamer.store_mut().portals =
+            dwell_worldgen::portal_shafts_for_sized(generator_version, world_seed, size);
         self.world_seed = world_seed;
+        self.world_bounds = dwell_world::WorldBounds::of(size);
+        self.streamer.set_volume(*self.world_bounds.volume());
+        // What bounds an edit: the prediction's checks (the store's), the Place, region and brush
+        // pre-checks; the world's, not the 1× build's (BUGS.md #109).
+        self.streamer.store_mut().bounds = self.world_bounds;
+        self.interaction.set_world(self.world_bounds);
+        self.region.bounds = self.world_bounds;
+        if let Some(lod) = &mut self.lod {
+            lod.set_world(self.world_bounds);
+        }
+        self.install_travel();
+    }
+
+    /// Whether the server carries players onto other grids and says which (the `grid.frames`
+    /// capability, MOON_WORLD.md §7.3): only then does the predictor run the travel rules.
+    pub fn set_grid_frames(&mut self, on: bool) {
+        self.grid_frames = on;
+        self.install_travel();
+    }
+
+    /// The session's capabilities a grid may ask for (`Session::capability` of each): the travel
+    /// map then holds only the grids they open, as the server captures this client (the sun's
+    /// `grid.sun`, docs/proposals/SUN_WORLD.md §5).
+    pub fn set_grid_capabilities(&mut self, on: Vec<String>) {
+        self.grid_capabilities = Some(on);
+        self.install_travel();
+    }
+
+    /// The grids' travel rules for the predictor and the view, from the world's seed, size and
+    /// settings (`TravelMap::new`, as the server builds its own), when the server has `grid.frames`;
+    /// only the grids this session's capabilities open (`TravelMap::open_to`).
+    fn install_travel(&mut self) {
+        if !self.grid_frames {
+            return;
+        }
+        let map = || {
+            dwell_sim::travel::TravelMap::new(
+                self.world_seed,
+                self.world_bounds.radius() as f64,
+                dwell_look::celestial::Celestial::new(self.world_day, None),
+            )
+            .open_to(|c| {
+                self.grid_capabilities
+                    .as_ref()
+                    .is_none_or(|on| on.iter().any(|n| n == c))
+            })
+        };
+        self.predictor.set_travel(Box::new(map()));
+        self.travel = Some(map());
+        for g in std::mem::take(&mut self.grid_meshes) {
+            self.scene
+                .borrow_mut()
+                .set_piece(crate::grid_bodies::id(g), None);
+        }
+    }
+
+    /// The travel rules' clock (s): the latest snapshot's tick, as the predictor's carries use.
+    fn travel_s(&self) -> f64 {
+        f64::from(self.last_snapshot_tick) / SIM_HZ as f64
+    }
+
+    /// The other grids drawn as their coarse surface mesh this frame (`grid_bodies.rs`): each
+    /// grid with a `nearMesh` nearer the eye (in the drawn grid's frame) than its `farM`, or the
+    /// grid the view is on; its piece id, pose (in the drawn grid's frame) and rotation.
+    fn grid_bodies_at(&self, world_s: f64, eye: [f64; 3]) -> Vec<(u8, [f64; 3], [f32; 4])> {
+        let Some(m) = &self.travel else {
+            return Vec::new();
+        };
+        let mut with: Vec<_> = m
+            .grids
+            .iter()
+            .filter(|(_, def, _)| def.near_mesh.is_some())
+            .map(|&(g, def, _)| (g, m.frame(g, world_s), def.sky_disc.then_some(def.far_m)))
+            .collect();
+        // Home (the grid at rest, not one of the travel map's) seen from another grid: its mesh,
+        // at every distance when the sky draws no disc of it (M-6).
+        if let Some(home) = dwell_worldgen::grids::grids()
+            .first()
+            .filter(|d| d.near_mesh.is_some())
+        {
+            with.push((
+                0,
+                dwell_world::GridFrame::HOME,
+                home.sky_disc.then_some(home.far_m),
+            ));
+        }
+        crate::grid_bodies::shown(
+            self.grid_drawn,
+            &m.frame(self.grid_drawn, world_s),
+            eye,
+            &with,
+            dwell_sim::travel::GRID_CENTRE,
+        )
+    }
+
+    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time.
+    fn grid_body_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
+        // By the player's place, not the eye's (which eases after a dev move).
+        let shown = self.grid_bodies_at(self.travel_s(), self.current.position);
+        let mut out = Vec::new();
+        for &(g, origin, q) in &shown {
+            if !self.grid_meshes.contains(&g) {
+                let Some(def) = dwell_worldgen::grids::grids().get(usize::from(g)) else {
+                    continue;
+                };
+                let Some(near) = def.near_mesh else { continue };
+                let built = match dwell_worldgen::grids::far_source(def, self.world_seed) {
+                    Some(src) => Some(crate::grid_bodies::near_mesh(&*src, near)),
+                    // Home from its world maps, once the shell holds them (never computed here).
+                    None => self.far_terrain.as_deref().map(|t| {
+                        crate::grid_bodies::near_mesh(
+                            &dwell_worldgen::home_far::HomeFar::new(t),
+                            near,
+                        )
+                    }),
+                };
+                let Some((mesh, radius)) = built else {
+                    continue;
+                };
+                self.scene.borrow_mut().set_piece(
+                    crate::grid_bodies::id(g),
+                    Some((std::slice::from_ref(&mesh), radius)),
+                );
+                self.grid_meshes.insert(g);
+            }
+            out.push((crate::grid_bodies::id(g), origin, q));
+        }
+        out
+    }
+
+    /// The moon from the player (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon"): its world
+    /// position at the latest snapshot's clock, the way and distance to it, the player's grid and
+    /// the gravity; `None` before the travel rules (a server without `grid.frames`) or with no moon.
+    pub fn moon_report(&self) -> Option<crate::moon_probe::MoonReport> {
+        self.grid_report("dwell:moon")
+    }
+
+    /// [`Self::moon_report`] for any grid by name (`dwell:sun`: `__dwell.sun()`).
+    pub fn grid_report(&self, name: &str) -> Option<crate::moon_probe::MoonReport> {
+        let map = self.travel.as_ref()?;
+        let viewer = crate::moon_probe::Viewer {
+            grid: self.grid_drawn,
+            feet: self.current.feet(),
+            velocity: self.current.velocity,
+            world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
+            gravity: f64::from(self.predictor.config().body.gravity),
+        };
+        let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
+        let f = FaceFrame::at_height(viewer.feet[1]);
+        let below = f.point({
+            let l = f.point(viewer.feet);
+            [l[0], l[1] - 0.25, l[2]]
+        });
+        let cell = dwell_world::GridFrame::HOME.cell_of(below);
+        let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        r.ground_held = self.chunk_revision(chunk.to_array()).is_some();
+        Some(r)
+    }
+
+    /// The grid the view is drawn in (0 home; MOON_WORLD.md §7.3).
+    pub fn grid(&self) -> u8 {
+        self.grid_drawn
+    }
+
+    /// The frame of the grid the view is drawn in, at the latest snapshot's tick.
+    pub fn grid_frame(&self) -> dwell_world::GridFrame {
+        let t = f64::from(self.last_snapshot_tick) / SIM_HZ as f64;
+        self.travel
+            .as_ref()
+            .map_or(dwell_world::GridFrame::HOME, |m| {
+                m.frame(self.grid_drawn, t)
+            })
+    }
+
+    /// Follows the predictor onto the grid it is in now (MOON_WORLD.md §7.3): at a crossing the
+    /// chunks of the grid left are dropped (the server streams the new grid's from nothing, and
+    /// home's again on the way back), the edit predictions with them. The (from, to) grids, at a
+    /// crossing.
+    fn follow_grid(&mut self) -> Option<(u8, u8)> {
+        let to = self.predictor.grid();
+        let from = self.grid_drawn;
+        if to == from {
+            return None;
+        }
+        self.streamer.unload_all();
+        // The LOD's sections are home's: their meshes go too (BUGS.md #124), and home's view
+        // builds again from the root on the way back.
+        if let Some(lod) = &mut self.lod {
+            lod.drop_all::<SectionMeshes>(&mut View(self.scene.clone()));
+        }
+        // The grid left's own LOD tree goes too (#879's rule); the new grid's is made on its first
+        // frame there.
+        if let Some(mut g) = self.grid_lod.take() {
+            let mut view = View(self.scene.clone());
+            g.lod
+                .drop_all::<SectionMeshes>(&mut crate::grid_lod::GridView(&mut view));
+        }
+        self.prediction = EditPredictor::new();
+        self.grid_drawn = to;
+        // The new grid's chunks that came before the crossing; any other grid's are stale.
+        let mut held: Vec<_> = std::mem::take(&mut self.other_grid_chunks)
+            .into_iter()
+            .filter(|((g, _), _)| *g == to)
+            .map(|(_, d)| d)
+            .collect();
+        held.sort_by_key(|d| d.coord);
+        for d in held {
+            self.streamer.on_chunk_data(ChunkMessage::from(d));
+        }
+        telemetry::sample("grid.crossings", 1.0);
+        Some((from, to))
+    }
+
+    /// The world's disc and build volume (from its size, `set_world`).
+    pub fn world_bounds(&self) -> dwell_world::WorldBounds {
+        self.world_bounds
+    }
+
+    /// The big map's zoom levels for this world's size (`MapTunables::big_map_levels_sized`):
+    /// (cell side, span) in m, closest first; at 1× `shared/ui/map.json`'s.
+    pub fn big_map_levels(&self) -> Vec<(f64, f64)> {
+        dwell_game::minimap::MAP.big_map_levels_sized(self.world_bounds.size)
     }
 
     /// What the server announced it takes (Welcome flags, and the world's game mode when the host
@@ -2389,6 +3680,19 @@ impl<S: Scene> Game<S> {
     /// creative; owner 2026-11-11), so the break prediction matches the server's.
     pub fn set_instant_breaks(&mut self, on: bool) {
         self.instant_breaks = on;
+    }
+
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the region tools load one from the library only then (STRUCTURES.md §9).
+    pub fn set_structures(&mut self, on: bool) {
+        self.region.structures = on;
+    }
+
+    /// Whether the server takes structure placements as such (the `structures.place` capability,
+    /// ARCHITECTURE.md §8.3): a library structure's paste goes as `RegionEditOp::Structure`, which
+    /// it refuses outside a mode with `structures`; without it, plain pastes (STRUCTURES.md §9).
+    pub fn set_structure_ops(&mut self, on: bool) {
+        self.region.structure_ops = on;
     }
 
     /// The hits the server will take to break `block` with what is held now.
@@ -2676,8 +3980,14 @@ impl<S: Scene> Game<S> {
 
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
     /// `dwell_game::ambience::INPUTS` order.
-    pub fn ambience(&self) -> [f64; 9] {
+    pub fn ambience(&self) -> [f64; 10] {
         self.ambience.to_array()
+    }
+
+    /// Whether the eye is under a fluid's surface at the last draw: the shell muffles the world's
+    /// buses (docs/AUDIO.md §3a, BUGS.md #104).
+    pub fn underwater(&self) -> bool {
+        self.eye_underwater
     }
 
     /// The camera at the last draw, for the audio listener: eye, forward, up.
@@ -2723,26 +4033,52 @@ impl<S: Scene> Game<S> {
     /// The blasts' effects this frame (docs/EXPLOSIVES.md §4): their puffs and flash lights to the
     /// scene, and the camera's shake at `eye` (yaw, pitch degrees).
     /// The axe's chips (crate::chips) ride the same billboard pass.
-    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
-        let (swing_yaw, swing_pitch) = self.update_swing(eye, now_ms);
-        let (y, p) = self.update_blast_effects(eye, now_ms);
-        (y + swing_yaw, p + swing_pitch)
+    fn update_blasts(&mut self, eye: [f64; 3], now_ms: f64) -> (CameraOffset, (f64, f64)) {
+        let sway = self.update_swing(now_ms);
+        (sway, self.update_blast_effects(eye, now_ms))
+    }
+
+    /// The view drawn from the aim's pose this frame: the swing's sway (with the Camera sway
+    /// setting) and a blast's shake added (crate::chop::swayed_view); the aim keeps `aim`.
+    fn view_pose(
+        &self,
+        aim: crate::chop::ViewPose,
+        effects: (CameraOffset, (f64, f64)),
+        face: FaceFrame,
+    ) -> crate::chop::ViewPose {
+        crate::chop::swayed_view(aim, effects.0, self.camera_sway, effects.1, face)
     }
 
     /// The swing under way this frame (crate::chop `SwingRun`): the arms held through the
-    /// hit-stop and pulled back, the impact's effects at its moment, and the camera's motion
-    /// (yaw, pitch degrees).
-    fn update_swing(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
-        let Some(mut run) = self.chop.run else {
-            return (0.0, 0.0);
-        };
-        if run.done(now_ms) {
+    /// hit-stop and pulled back, the impact's effects at its moment, and the view's sway.
+    fn update_swing(&mut self, now_ms: f64) -> CameraOffset {
+        self.update_guard(now_ms);
+        let recoil = self.recoil_camera(now_ms);
+        self.update_swing_run(now_ms).plus(recoil)
+    }
+
+    fn update_swing_run(&mut self, now_ms: f64) -> CameraOffset {
+        self.repeat_held_use(now_ms);
+        // The axe put away mid-swing: the swing stops, landing nothing (the server's too).
+        if self
+            .chop
+            .run
+            .is_some_and(|r| !r.impacted && self.held_tool().is_none_or(|t| t.name != r.tool.name))
+        {
             self.chop.run = None;
-            self.bodies.drive_arms(None);
-            return (0.0, 0.0);
+            self.chop.cleared.clear();
+            self.bodies.drive_arms(crate::chop::ArmsDrive::Release);
+        }
+        let Some(mut run) = self.chop.run else {
+            return CameraOffset::ZERO;
+        };
+        let drive = run.arms(now_ms);
+        self.bodies.drive_arms(drive);
+        if drive == crate::chop::ArmsDrive::Release {
+            self.chop.run = None;
+            return CameraOffset::ZERO;
         }
         let t = run.elapsed(now_ms);
-        self.bodies.drive_arms(Some(run.clip_time(t)));
         if run.take_clear(now_ms) {
             self.swing_clear(run.tool, now_ms);
         }
@@ -2750,9 +4086,78 @@ impl<S: Scene> Game<S> {
             self.swing_impact(run.tool, hit, now_ms);
         }
         self.chop.run = Some(run);
-        let (right, up) = run.camera(t);
-        let f = FaceFrame::at_height(eye[1]);
-        (f.handed(-right), up)
+        run.camera(t)
+    }
+
+    /// Our tool hits whose swing's contact has come (WORK_QUEUE item 25): a hit short of breaking
+    /// sounds the material's hit and bursts its chips at the struck point, a one-hit break its
+    /// break sound; a hit whose tool was put away first shows nothing.
+    fn land_hits(&mut self, now_ms: f64) {
+        let held = self.held_break_item();
+        for h in self.pending_hits.take_due(now_ms, held) {
+            if h.aimed {
+                self.land_aimed_hit(now_ms);
+                continue;
+            }
+            if h.breaks {
+                self.sounds.push(SoundEvent::new(
+                    SoundKind::Break,
+                    h.block,
+                    1.0,
+                    Some(dwell_world::centre_of_cell(h.cell)),
+                ));
+                continue;
+            }
+            self.sounds
+                .push(SoundEvent::new(SoundKind::Hit, h.block, 1.0, h.at));
+            if let Some(at) = h.at {
+                let bite = self.own_bite_m3(h.block);
+                self.hit_chips(h.block, h.cell, at, bite, now_ms);
+            }
+        }
+    }
+
+    /// A tool's hit at its swing's contact, aimed at what the crosshair holds now (BUGS.md #111):
+    /// sent to the server (which lands it on arrival, checked from the eye then), its sound and
+    /// chips, or a one-hit break's sound, at that block. Nothing aimed at (air, or a moving body
+    /// nearer than any block) is a miss: nothing sent, nothing shown, no wear.
+    fn land_aimed_hit(&mut self, now_ms: f64) {
+        if self.dead || self.body_target.is_some() {
+            return;
+        }
+        let (Some(target), Some(mut e)) =
+            (self.interaction.target(), self.interaction.break_request())
+        else {
+            return;
+        };
+        let [x, y, z] = target.cell;
+        let block = self.voxel(x, y, z);
+        let name = dwell_blocks::block_of(block).name;
+        let struck = self.struck_point(target.cell, target.face);
+        let at = struck.map(|p| point_in_cell(target.cell, p));
+        if self.hits_to_break(name) == Some(1) {
+            // Not predicted: the server's change shows it, its sound now.
+            self.edit_sounds.expect_break(target.cell, now_ms);
+            self.sounds.push(SoundEvent::new(
+                SoundKind::Break,
+                block,
+                1.0,
+                Some(dwell_world::centre_of_cell(target.cell)),
+            ));
+        } else {
+            self.remote_hits.own_hit(target.cell, now_ms);
+            self.sounds
+                .push(SoundEvent::new(SoundKind::Hit, block, 1.0, at));
+            if let Some(at) = at {
+                let bite = self.own_bite_m3(block);
+                self.hit_chips(block, target.cell, at, bite, now_ms);
+            }
+        }
+        if self.damage_on {
+            e.point = struck;
+        }
+        let id = self.prediction.next_id();
+        self.send_edit(Message::BlockEditRequest(e), Some(id));
     }
 
     /// What a swing's impact shows: into a wood its chips, its hit's sound by how far the wood is
@@ -2769,7 +4174,7 @@ impl<S: Scene> Game<S> {
         let name = dwell_blocks::block_of(block).name;
         let wood = dwell_protocol::chopping::WOODS
             .iter()
-            .position(|w| w.block == name);
+            .position(|w| w.block == name || w.fell_wedge == Some(name));
         let at = Some(hit.point);
         let event = |n: &str| SoundKind::ALL.into_iter().find(|k| k.name() == n);
         match wood.filter(|_| hit.wood) {
@@ -2835,13 +4240,88 @@ impl<S: Scene> Game<S> {
         crate::chop::TreeLean::of(cell, &cut, w, now_ms / 1000.0 - at)
     }
 
+    /// The far herds' heads (docs/ECOLOGY.md §11), laid out again on a new snapshot; a head's
+    /// ground is the loaded terrain's (one past the loaded chunks waits for them).
+    fn far_herd_puffs(&mut self, eye: [f64; 3]) -> Vec<crate::blasts::Puff> {
+        if self.chips.cpu {
+            return Vec::new();
+        }
+        if self.far_stale
+            && let Some(snapshot) = self.ecology.as_ref()
+        {
+            // Only the groups that could show (within their fade's end, on the eye's face): the
+            // ground scan is per head.
+            let face = dwell_world::FaceFrame::at_height(eye[1]);
+            let local = face.point(eye);
+            let mut near = snapshot.clone();
+            near.groups.retain(|g| {
+                let end = crate::far_herds::FAR_LOOKS
+                    .iter()
+                    .find(|l| l.species == g.species)
+                    .map_or(0.0, |l| l.fade_end_m);
+                u8::from(face.is_b()) == g.face
+                    && (f64::from(g.x) - local[0]).hypot(f64::from(g.z) - local[2]) < end + 32.0
+            });
+            let world = self.streamer.store_mut();
+            let terrain = self.far_terrain.as_deref();
+            self.far_heads =
+                crate::far_herds::lay_out(&near, crate::far_herds::FAR_LOOKS, &mut |f, x, z| {
+                    // The loaded ground, else (past the loaded chunks) the generator's column.
+                    crate::bodies::ground_at(world, f, [x, local[1], z], 48.0).or_else(|| {
+                        let c = terrain?
+                            .local(f.face)
+                            .column_at(x.floor() as i32, z.floor() as i32);
+                        (!c.outside).then_some(f64::from(c.height))
+                    })
+                });
+            self.far_stale = false;
+        }
+        if !self.far_herds_shown {
+            return Vec::new();
+        }
+        let vp = self.viewport();
+        let focal = crate::far_herds::focal_px(vp.height_px, self.frame_fov);
+        crate::far_herds::puffs(&self.far_heads, eye, false, focal)
+    }
+
+    /// The finder (WORK_QUEUE item 46; `__dwell.herds()`): the last snapshot's herds and packs on
+    /// the eye's face, of `species` (None: any), nearest first.
+    pub fn find_herds(&self, species: Option<&str>) -> Vec<crate::far_herds::Found> {
+        let Some(snapshot) = self.ecology.as_ref() else {
+            return Vec::new();
+        };
+        crate::far_herds::find(snapshot, self.current.feet(), species)
+    }
+
+    /// The steam plumes over the world's lava vents, every few seconds: over each vent column's
+    /// top molten cell, gone with the lava (crate::vent_plumes).
+    fn update_vent_plumes(&mut self, now_s: f64) {
+        if !self.vent_plumes.due(now_s) {
+            return;
+        }
+        let world = self.streamer.store_mut();
+        let plumes = self.vent_plumes.plumes(|f, c| {
+            crate::vent_plumes::top_lava_in(
+                f,
+                c,
+                |cell| world.get_voxel_if_loaded(cell),
+                crate::vent_plumes::is_lava,
+            )
+        });
+        self.scene
+            .borrow_mut()
+            .set_plumes(crate::vent_plumes::PREFIX, plumes);
+    }
+
     fn update_blast_effects(&mut self, eye: [f64; 3], now_ms: f64) -> (f64, f64) {
         let now = now_ms / 1000.0;
         self.blasts.prune(now);
         self.chips.prune(now);
         self.steam.prune(now);
+        self.update_vent_plumes(now);
         let mut extra = self.chips.puffs(now);
         extra.extend(self.steam.puffs(now));
+        extra.extend(self.far_herd_puffs(eye));
         if self.blasts.list.is_empty() {
             self.scene.borrow_mut().set_blasts(extra, Vec::new());
             return (0.0, 0.0);
@@ -2855,14 +4335,38 @@ impl<S: Scene> Game<S> {
 
     /// A hit's chips out of `cell` (the block `block`) at the struck point `at` (world), when its
     /// data has `damage.chips` (docs/BLOCK_DAMAGE.md §6).
-    fn hit_chips(&mut self, block: StateId, cell: [i32; 3], at: [f64; 3], now_ms: f64) {
+    fn hit_chips(
+        &mut self,
+        block: StateId,
+        cell: [i32; 3],
+        at: [f64; 3],
+        bite_m3: f64,
+        now_ms: f64,
+    ) {
         if dwell_blocks::try_info(block).is_none() {
             return;
         }
         if let Some(look) = crate::chips::hit_chips_of(dwell_blocks::block_of(block).name) {
             let n = crate::chips::struck_normal(cell, at);
             self.chips.hit_burst(look, n, at, now_ms / 1000.0);
+            let name = dwell_blocks::block_of(block).name;
+            let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
+            if !ids.is_empty() {
+                let face = dwell_world::FaceFrame::at_height(at[1]);
+                let meshes = crate::hit_shards::fragment_meshes(name, bite_m3, face);
+                let mut scene = self.scene.borrow_mut();
+                for id in ids {
+                    scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
+                }
+            }
         }
+    }
+
+    /// The bite (m³) of the player's own hit on `block` with the tool held (the bite rule,
+    /// BLOCK_DAMAGE.md §10); none breakable: none.
+    fn own_bite_m3(&self, block: StateId) -> f64 {
+        let name = dwell_blocks::block_of(block).name;
+        dwell_protocol::damage::bite_m3_of(name, self.held_break_item()).unwrap_or(0.0)
     }
 
     /// A swing's chips out of `face` at `point` of the wood `block` (the server cuts; these show).
@@ -2870,7 +4374,7 @@ impl<S: Scene> Game<S> {
         let name = dwell_blocks::block_of(block).name;
         if let Some(wood) = dwell_protocol::chopping::WOODS
             .iter()
-            .position(|w| w.block == name)
+            .position(|w| w.block == name || w.fell_wedge == Some(name))
         {
             self.chips.burst(
                 wood,
@@ -2880,13 +4384,49 @@ impl<S: Scene> Game<S> {
                 self.view_dir,
                 now_ms / 1000.0,
             );
+            // The chop's wood pieces, together its bite (BLOCK_DAMAGE.md §10): the held axe's,
+            // else the stone axe's.
+            let w = &dwell_protocol::chopping::WOODS[wood];
+            let axe = self
+                .held_break_item()
+                .and_then(dwell_protocol::chopping::tool)
+                .filter(|t| t.weapon.is_none())
+                .or_else(|| dwell_protocol::chopping::tool("dwell:stone_axe"));
+            if let Some(axe) = axe {
+                let at = point.map(f64::from);
+                let n = crate::chips::struck_normal(dwell_world::cell_of_pos(at), at);
+                // A wood hit through block damage (the log, WORK_QUEUE item 51): its bite rule.
+                let bite = dwell_protocol::damage::takes_damage(name)
+                    .then(|| dwell_protocol::damage::bite_m3_of(name, Some(axe.name)))
+                    .flatten()
+                    .unwrap_or_else(|| dwell_protocol::chopping::chop_bite_m3(axe, w));
+                let ids = self.hit_shards.burst(name, n, at, now_ms / 1000.0);
+                if !ids.is_empty() {
+                    let f = dwell_world::FaceFrame::at_height(at[1]);
+                    let meshes = crate::hit_shards::fragment_meshes(name, bite, f);
+                    let mut scene = self.scene.borrow_mut();
+                    for id in ids {
+                        scene.set_piece(id, meshes.as_ref().map(|(m, r)| (m.as_slice(), *r)));
+                    }
+                }
+            }
         }
+    }
+
+    /// Graphics → Effects (WORK_QUEUE item 30): the share of a hit's shards, of the chips, sparks,
+    /// leaves and steam, and whether the far herds are drawn.
+    pub fn set_effects(&mut self, e: EffectSettings) {
+        self.hit_shards.share = e.hit_shards;
+        self.chips.share = e.particles;
+        self.steam.share = e.particles;
+        self.far_herds_shown = e.far_herds;
     }
 
     /// Which blast effects show (Settings → Explosions), and whether the adapter is a CPU's.
     pub fn set_blast_settings(&mut self, s: crate::blasts::BlastSettings) {
         self.blasts.settings = s;
         self.chips.cpu = s.cpu;
+        self.hit_shards.cpu = s.cpu;
         self.steam.cpu = s.cpu;
     }
 
@@ -2924,7 +4464,12 @@ impl<S: Scene> Game<S> {
 
     /// The local player brushing through foliage and stepping onto ground items this tick
     /// (AUDIO.md §5): a rustle by speed, a stick's snap.
-    fn foliage_and_ground_sounds(&mut self, c: &ClientState, grounded: bool) {
+    fn foliage_and_ground_sounds(
+        &mut self,
+        c: &ClientState,
+        grounded: bool,
+        stride: dwell_game::sound::Stride,
+    ) {
         let feet = c.feet();
         let foliage = {
             let store = self.streamer.store_mut();
@@ -2944,6 +4489,7 @@ impl<S: Scene> Game<S> {
             foliage,
             speed,
             1.0 / SIM_HZ as f64,
+            stride,
             cell,
             None,
             |cell| self.ground_step_at(cell),
@@ -2961,7 +4507,12 @@ impl<S: Scene> Game<S> {
 
     /// Other players brushing through foliage and stepping onto ground items (AUDIO.md §2e), from
     /// their drawn (interpolated) positions: no wire message of their own.
-    fn remote_contact_sounds(&mut self, views: &[dwell_game::remotes::RemoteView], dt: f64) {
+    fn remote_contact_sounds(
+        &mut self,
+        views: &[dwell_game::remotes::RemoteView],
+        strides: &dwell_world::hash::HashMap<u16, dwell_game::sound::Stride>,
+        dt: f64,
+    ) {
         let height = self.current.standing_height;
         let samples: Vec<_> = views
             .iter()
@@ -2979,6 +4530,7 @@ impl<S: Scene> Game<S> {
                     .sqrt(),
                 grounded: on_ground(v.state),
                 height,
+                stride: strides.get(&v.player_id).copied().unwrap_or_default(),
             })
             .collect();
         let local = self.player_id;
@@ -3049,15 +4601,16 @@ impl<S: Scene> Game<S> {
             self.current.standing_height
         };
         let store = self.streamer.store_mut();
+        let near = Surroundings::read(feet, face, self.current.radius, height, |[x, y, z]| {
+            store.get_voxel(x, y, z)
+        });
         let Surroundings {
             ground,
             body,
             walls,
             ceiling,
-        } = Surroundings::read(feet, face, self.current.radius, height, |[x, y, z]| {
-            store.get_voxel(x, y, z)
-        });
-        let liquid = |id: u16| id != 0 && dwell_blocks::info(id).liquid;
+            ..
+        } = near;
         MoverSample {
             feet,
             velocity,
@@ -3065,7 +4618,7 @@ impl<S: Scene> Game<S> {
             grounded,
             crouched,
             face,
-            submerged: submerged.unwrap_or(if liquid(body) { 1.0 } else { 0.0 }),
+            submerged: submerged.unwrap_or_else(|| near.submerged()),
             carry: [0.0; 3],
             ground,
             body,
@@ -3175,14 +4728,30 @@ impl<S: Scene> Game<S> {
         self.pool.borrow_mut().water_tops = water_tops;
         let cards = self.scene.borrow().draws_cards();
         self.pool.borrow_mut().cards = cards;
+        // Graphics → Tall grass and Far trees: chunks and sections meshed from now on follow them.
+        let (plants, trees) = {
+            let s = self.scene.borrow();
+            (s.plant_percent(), s.draws_far_trees())
+        };
+        let mut pool = self.pool.borrow_mut();
+        pool.plants = plants;
+        pool.trees = trees;
+        drop(pool);
         let done = telemetry::span("jobs.poll", || self.pool.borrow_mut().poll());
         telemetry::add("jobs.done", done.len() as f64);
         telemetry::span("jobs.apply", || self.on_jobs(done));
         self.update_loading(now_ms);
         let elapsed = self.last_frame_ms.map_or(0.0, |l| now_ms - l);
         self.last_frame_ms = Some(now_ms);
+        self.drag_frame_fills = 0;
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
+        let (cells, ahead) = {
+            let scene = self.scene.borrow();
+            (scene.collision_cells_per_tick(), scene.collision_ahead())
+        };
+        self.predictor.set_collision_cells_per_tick(cells);
+        self.predictor.set_collision_ahead(ahead);
         let t0 = telemetry::now_ms();
         while self.accumulator >= TICK_MS {
             self.accumulator -= TICK_MS;
@@ -3210,9 +4779,50 @@ impl<S: Scene> Game<S> {
         if self.holding || self.predictor.unacked() >= UNACKED_HOLD {
             return;
         }
-        let frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
+        let mut frame = quantize_input(&input.sample(touch), self.predictor.next_seq());
         input.took();
+        if self.stand_left_s > 0.0 {
+            // Standing up at the shrine (§11.13): no moving, jumping or crouching until it is over.
+            frame.move_x = 0;
+            frame.move_y = 0;
+            frame.buttons &= dwell_protocol::input_buttons::FLY_SPEED;
+        }
+        let before = self.current.face;
         self.predictor.tick(self.streamer.store_mut(), &frame);
+        // A crossing in this tick, or one a snapshot's replay made (its look carried on here).
+        let crossed = self
+            .follow_grid()
+            .map(|(from, to)| (from, to, before))
+            .or(self.pending_cross.take());
+        if let Some((from, to, before)) = crossed {
+            // Onto another grid: the look keeps where it points in the world, now on that grid's
+            // face (`look_across`), and the body's face there is no midplane crossing.
+            let after = ClientState::of(&self.predictor);
+            let mut residual = 0.0;
+            if let Some(m) = &self.travel {
+                let t = f64::from(self.last_snapshot_tick) / SIM_HZ as f64;
+                let (ff, tf) = (m.frame(from, t), m.frame(to, t));
+                let was = (input.look.yaw, input.look.pitch);
+                (input.look.yaw, input.look.pitch) = dwell_sim::travel::look_across(
+                    &ff,
+                    before,
+                    &tf,
+                    after.face,
+                    input.look.yaw,
+                    input.look.pitch,
+                );
+                residual = crate::grid_view::crossing_roll(
+                    &ff,
+                    before,
+                    was,
+                    &tf,
+                    after.face,
+                    (input.look.yaw, input.look.pitch),
+                );
+            }
+            // The view eases upright from the one drawn before (MOON_WORLD.md §7.3).
+            self.flip.cross_grid(after.face, residual);
+        }
         self.recent.push_back(frame);
         while self.recent.len() > MAX_INPUTS_PER_DATAGRAM {
             self.recent.pop_front();
@@ -3225,6 +4835,12 @@ impl<S: Scene> Game<S> {
             })));
         self.previous = Some(self.current);
         self.current = ClientState::of(&self.predictor);
+        if crossed.is_some() {
+            // Positions are the new grid's from here: nothing eases or interpolates from the old
+            // grid's coordinates (the world point is the same; MOON_WORLD.md §7.3).
+            self.previous = None;
+            self.eye = EyeCamera::new();
+        }
         let c = self.current;
         let mut sample = self.mover_sample(
             c.feet(),
@@ -3237,8 +4853,10 @@ impl<S: Scene> Game<S> {
             1.0 / SIM_HZ as f64,
         );
         sample.carry = c.carry;
+        let from = self.sounds.len();
         self.mover_sounds.update(&sample, None, &mut self.sounds);
-        self.foliage_and_ground_sounds(&c, sample.grounded);
+        let stride = dwell_game::sound::Stride::of(&sample, &self.sounds[from..]);
+        self.foliage_and_ground_sounds(&c, sample.grounded, stride);
         // Across the midplane the body turns over and the look goes on across: the heading kept,
         // the pitch mirrored, the camera pointing the same way and rolling upright (face_flip.rs).
         (input.look.yaw, input.look.pitch) =
@@ -3386,6 +5004,26 @@ impl<S: Scene> Game<S> {
 
         // Remote players, interpolated.
         let views = self.remotes.sample(now_ms);
+        // Each one's footsteps this frame, for the rustle layered on them (BUGS.md #103).
+        let mut strides = dwell_world::hash::HashMap::default();
+        // Their swings play their tool's clips (WORK_QUEUE item 35: the sword's slashes).
+        self.bodies.tools = self
+            .remote_tools
+            .iter()
+            .map(|(&id, &(name, _))| (id, name))
+            .collect();
+        // Their raised blocks (the server's guards, WORK_QUEUE item 35), by the weapon in hand.
+        self.bodies.guards = self
+            .remote_guards
+            .iter()
+            .filter_map(|(who, &(vertical, raised))| {
+                let dwell_protocol::Fighter::Player(id) = *who else {
+                    return None;
+                };
+                let (tool, _) = self.remote_tools.get(&id)?;
+                Some((id, crate::swordplay::guard_role(tool, vertical, raised)?))
+            })
+            .collect();
         let mut drawn = HashSet::default();
         for v in &views {
             drawn.insert(v.player_id);
@@ -3412,10 +5050,15 @@ impl<S: Scene> Game<S> {
                     dt,
                 );
                 sample.carry = carry;
+                let from = self.sounds.len();
                 self.remote_sounds
                     .entry(v.player_id)
                     .or_insert_with(|| MoverSounds::with_voice(v.player_id))
                     .update(&sample, Some(v.feet), &mut self.sounds);
+                strides.insert(
+                    v.player_id,
+                    dwell_game::sound::Stride::of(&sample, &self.sounds[from..]),
+                );
             }
             // The full body, animated from the snapshot's controller state (bodies.rs).
             let registry = &self.registry;
@@ -3435,18 +5078,26 @@ impl<S: Scene> Game<S> {
                 .borrow_mut()
                 .set_player(u32::from(v.player_id), Some(view));
         }
-        self.remote_contact_sounds(&views, dt);
+        self.remote_contact_sounds(&views, &strides, dt);
         for id in self.remotes.ids() {
             if !drawn.contains(&id) {
                 self.scene.borrow_mut().set_player(u32::from(id), None);
             }
         }
         // The creatures, smoothed toward the server's points, lit where they stand (ADR 0073).
+        let guards = self.remote_guards.clone();
         let creatures: Vec<_> = self
             .creatures
             .advance(dt)
             .into_iter()
-            .map(|v| {
+            .map(|mut v| {
+                // An NPC's raised block (the server's guards, WORK_QUEUE item 35).
+                if let Some(n) = &mut v.npc
+                    && let (Some(held), Some(&(vertical, raised))) =
+                        (n.held, guards.get(&dwell_protocol::Fighter::Creature(v.id)))
+                {
+                    n.guard = crate::swordplay::guard_role(held, vertical, raised);
+                }
                 let light = self.body_light(0x4000_0000 | v.id, v.feet, v.face, dt);
                 (v, light)
             })
@@ -3473,13 +5124,34 @@ impl<S: Scene> Game<S> {
             if p.held == Puppets::HOTBAR {
                 p.held = self.selected_material();
             }
+            let held_swing = self.bodies.swing_held();
             for mut v in p.views(now_ms / 1000.0) {
                 drawn.insert(v.player_id);
+                // A held swing (the bench's `clip-strip`): they stand still facing +Z, so a
+                // placed camera frames them from behind or the side.
+                if held_swing {
+                    use dwell_protocol::player_flags as pf;
+                    (v.yaw, v.velocity, v.state) = (0.0, [0.0; 3], PlayerState::Idle);
+                    let face = dwell_physics::net::face_of_flags(v.flags, pf::FACE_B);
+                    v.flags =
+                        (v.flags & pf::GROUNDED) | dwell_physics::net::face_bit(face, pf::FACE_B);
+                    v.feet[1] = p.origin[1];
+                }
                 // Holding a tool, they swing it (a break swing every 0.8 s): the swing clips seen
                 // on a body (docs/DEV_TOOLS.md `puppets`).
                 if tool.is_some() {
                     use dwell_protocol::swing_flags as sf;
+                    // Your tool's clips (the sword's slashes), as another player's arrive.
+                    if let Some(t) = self.held_tool() {
+                        self.bodies.tools.insert(v.player_id, t.name);
+                    }
                     v.swing = sf::BREAK | ((now_ms / 800.0) as u64 as u8 & sf::COUNT_MASK);
+                    // The chop your hand would swing, as another player's arrives (`SwingHello`).
+                    v.swing_kind = if self.chop.vertical {
+                        dwell_protocol::SwingKind::ChopVertical
+                    } else {
+                        dwell_protocol::SwingKind::ChopLevel
+                    } as u8;
                 }
                 let held = tool.unwrap_or_else(|| crate::bodies::held_from_wire(v.held, Some));
                 let world = self.streamer.store_mut();
@@ -3542,11 +5214,31 @@ impl<S: Scene> Game<S> {
         let camera_eye;
         let held = self.held();
         self.send_held(held);
-        if self.dead {
-            // Third person over the body.
-            // On the face the body lies on, not the controller's (it has no body while dead).
-            let cam = death_camera(self.death_feet, yaw);
-            let mut view = self.bodies.own_dead(self.death_feet, yaw, cam.face, dt);
+        let defeat = dwell_protocol::defeat::of(dwell_protocol::defeat::PLAYER);
+        self.stand_left_s = (self.stand_left_s - dt).max(0.0);
+        self.fade = if self.dead {
+            defeat.fade_out((now_ms - self.defeated_ms) / 1000.0)
+        } else if self.stood_ms > 0.0 {
+            defeat.fade_in((now_ms - self.stood_ms) / 1000.0)
+        } else {
+            0.0
+        };
+        if self.dead || (self.stand_left_s > 0.0 && self.current.active) {
+            // Defeated (§11.13): third person over your body kneeling where you fell, or standing
+            // up at the shrine; on the face the body is on, not the controller's (it has no body
+            // while defeated).
+            let (feet, phase, since) = if self.dead {
+                let body_yaw = *self.defeat_yaw.get_or_insert(yaw);
+                let since = (now_ms - self.defeated_ms) / 1000.0;
+                ((self.death_feet, body_yaw), Defeat::Kneel, since)
+            } else {
+                ((self.current.feet(), yaw), Defeat::Stand, f64::INFINITY)
+            };
+            let (feet, body_yaw) = feet;
+            let cam = defeat_camera(feet, yaw, &defeat.camera, self.defeat_from, since);
+            let mut view = self
+                .bodies
+                .own_defeated(feet, body_yaw, cam.face, phase, held, dt);
             view.light = self.body_light(u32::from(self.player_id), view.feet, view.face, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_player(u32::from(self.player_id), Some(view));
@@ -3554,13 +5246,16 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(None);
             scene.set_own_body(None);
             camera_eye = cam.eye;
+            self.last_camera = (cam.eye, cam.pitch);
             drop(scene);
-            let (sy, sp) = self.update_blasts(cam.eye, now_ms);
+            // Third person: a blast's shake, no swing's sway (the swing is the body's).
+            let (_, (sy, sp)) = self.update_blasts(cam.eye, now_ms);
             self.scene
                 .borrow_mut()
                 .set_camera(cam.eye, yaw + sy, cam.pitch + sp, cam.face, 0.0);
             self.show_hud_text();
             self.target(None, input, now_ms);
+            self.land_hits(now_ms);
             self.update_motion(c.position, dt);
         } else {
             self.scene
@@ -3570,24 +5265,37 @@ impl<S: Scene> Game<S> {
             // Eye height is smoothed per tick (steps, crouching; eye.rs), then interpolated.
             let eye = [center[0], self.eye.draw(alpha), center[2]];
             camera_eye = eye;
-            // A blast's shake turns the view drawn, never the aim.
-            let (sy, sp) = self.update_blasts(eye, now_ms);
+            self.last_camera = (eye, pitch);
+            // A blast's shake and the swing's sway turn the view drawn, never the aim: the
+            // targeting below, the listener and the facing keep `eye`, `yaw` and `pitch`.
+            let effects = self.update_blasts(eye, now_ms);
+            let aim = crate::chop::ViewPose {
+                eye,
+                yaw,
+                pitch,
+                roll,
+            };
+            let v = self.view_pose(aim, effects, face);
             self.scene
                 .borrow_mut()
-                .set_camera(eye, yaw + sy, pitch + sp, face, roll);
+                .set_camera(v.eye, v.yaw, v.pitch, face, v.roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
+            // After the aim of this frame: a hit due now strikes what it holds (BUGS.md #111).
+            self.land_hits(now_ms);
             self.update_motion(eye, dt);
             // Your arms in their own pass (CHARACTERS.md §5): not while zoomed in the spyglass, in
             // a placed camera, or with the setting off.
-            let move_input = crate::bodies::local_input(
+            let mut move_input = crate::bodies::local_input(
                 c.state,
                 c.velocity,
                 c.carry,
                 c.controller_flags,
                 c.face,
             );
+            // Your raised block, on the arms and your body (WORK_QUEUE item 35).
+            move_input.guard = self.guard_pose();
             let mut arms = self.bodies.arms(&move_input, held, dt);
             arms.light = self.eased_light(ARMS_LIGHT, eye, dt);
             let shown = self.show_arms
@@ -3601,15 +5309,32 @@ impl<S: Scene> Game<S> {
             let own = self.bodies.own(feet, yaw, face, &move_input, held, dt);
             let mut scene = self.scene.borrow_mut();
             scene.set_own_shadow(c.active.then_some(own));
-            // And you see it from the neck down, in first person (CHARACTERS.md §5.1): not from a
-            // placed camera.
-            scene.set_own_body((c.active && self.view.is_none()).then_some(own));
+            // And you see it from the neck down, in first person (CHARACTERS.md §5.1); from a
+            // placed camera (theater mode, the bench's camera) your whole body, as others see it.
+            let placed = self.view.as_ref().map(|v| {
+                (0..3)
+                    .map(|k| (v.eye[k] - eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+            });
+            let (neck_down, whole) = own_body_draw(c.active, placed);
+            scene.set_own_body(neck_down.then_some(own));
+            if whole {
+                drop(scene);
+                let mut whole = own;
+                whole.light =
+                    self.body_light(u32::from(self.player_id), whole.feet, whole.face, dt);
+                self.scene
+                    .borrow_mut()
+                    .set_player(u32::from(self.player_id), Some(whole));
+            }
         }
         let camera_eye = match self.view {
             Some(v) => {
+                let (yaw, pitch, face, roll) = v.camera();
                 self.scene
                     .borrow_mut()
-                    .set_camera(v.eye, v.yaw_deg, v.pitch_deg, v.face(), 0.0);
+                    .set_camera(v.eye, yaw, pitch, face, roll);
                 self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
                 v.eye
             }
@@ -3622,6 +5347,7 @@ impl<S: Scene> Game<S> {
             dwell_look::underwater::line_reach_m(),
             |x, y, z| store.get_voxel(x, y, z),
         );
+        self.eye_underwater = dwell_game::ambience::hears_underwater(eye_fluid);
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         let lean = self.tree_lean(now_ms);
         self.scene.borrow_mut().set_tree_lean(lean);
@@ -3656,6 +5382,13 @@ impl<S: Scene> Game<S> {
         let mut poses = self.pieces.poses(now_ms);
         poses.extend(self.glides.poses(now_ms));
         poses.extend(self.loose.poses(now_ms));
+        // The other grids up close, and the one the view is on under its chunks (M-5).
+        poses.extend(self.grid_body_poses());
+        let (fragments, gone) = self.hit_shards.step(now_ms / 1000.0);
+        poses.extend(fragments);
+        for id in gone {
+            self.scene.borrow_mut().set_piece(id, None);
+        }
         self.scene.borrow_mut().show_pieces(poses);
         // The look's time (render_clock.rs): the sky and the flecks stand still while it is paused.
         let look_dt = if crate::render_clock::paused() {
@@ -3739,13 +5472,15 @@ impl<S: Scene> Game<S> {
         }
     }
 
-    /// Uses the world's clock (its settings, DAY_NIGHT.md §2) for the sky.
-    pub fn set_world_clock(&mut self, c: dwell_protocol::world_settings::WorldClock) {
-        self.world_clock = dwell_look::daynight::Clock {
-            day_s: f64::from(c.day_s),
-            night_s: f64::from(c.night_s),
-            start_hour: f64::from(c.start_hour),
-        };
+    /// Uses the world's sky (its settings, DAY_NIGHT.md §2: its clock, its moon's phase and its
+    /// orbit, REALISTIC_WORLD.md §8).
+    /// A retuned world's maps for the generation workers (Chisel in the game, Phase 56 B7).
+    pub fn install_maps(&mut self, maps: &[Vec<u8>]) {
+        self.pool.borrow_mut().install_maps(maps);
+    }
+    pub fn set_world_settings(&mut self, s: &dwell_protocol::world_settings::WorldSettings) {
+        self.world_day = dwell_look::orbits::day_night_for(s);
+        self.install_travel();
     }
 
     /// The day/night cycle at `now_ms`: world time from the server (none before the first
@@ -3755,11 +5490,42 @@ impl<S: Scene> Game<S> {
         let o = self.day_override;
         let world_s =
             self.clock.seconds(now_ms).unwrap_or(0.0) + (o.speed - 1.0) * (now_ms - first) / 1000.0;
-        let d = dwell_look::daynight::DayNight {
-            clock: self.world_clock,
-            ..DAY_NIGHT
-        };
-        self.day = d.state(world_s, o.time, o.moon);
+        self.day = self
+            .world_day
+            .state(world_s, self.theater_time.or(o.time), o.moon);
+        // On another grid the view is in its frame: the sky's directions turned into it, its own
+        // far disc not drawn (MOON_WORLD.md §7.3).
+        if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {
+            let frame = m.frame(self.grid_drawn, world_s);
+            let sun = self.day.sun;
+            self.day = crate::grid_view::day_on_grid(&self.day, &frame, self.grid_drawn);
+            // Its light rig (BUGS.md #145): the bodies lighting it from where they are.
+            let all = dwell_worldgen::grids::grids();
+            if let Some(rig) = all
+                .get(usize::from(self.grid_drawn))
+                .and_then(|d| d.light.as_ref())
+            {
+                let centre = dwell_sim::travel::GRID_CENTRE;
+                let home_r = self.world_bounds.radius() as f64;
+                let body = |name: &str| {
+                    let def = all.iter().find(|d| d.name == name)?;
+                    let f = dwell_sim::travel::grid_frame_at(&m.celestial, def, world_s);
+                    Some((f.to_world(centre), def.radius_m.unwrap_or(home_r)))
+                };
+                let eye = frame.to_world(self.current.position);
+                let lights = crate::grid_light::rig_lights(rig, eye, &frame, sun, body);
+                crate::grid_light::apply(&mut self.day, rig, lights);
+            }
+        }
+        // The moon drawn up close as its mesh (M-5): its far disc in the sky not drawn too.
+        let eye = self.current.position;
+        if self
+            .grid_bodies_at(self.travel_s(), eye)
+            .iter()
+            .any(|&(g, ..)| g != self.grid_drawn)
+        {
+            self.day.moon_shown = false;
+        }
         self.scene
             .borrow_mut()
             .set_day(&self.day, (now_ms - first) / 1000.0);
@@ -3874,6 +5640,7 @@ impl<S: Scene> Game<S> {
             );
             l.day = dwell_game::ambience::daylight(self.day.sun, face);
             l.fire_m = fire_m;
+            l.underwater = f64::from(u8::from(self.eye_underwater));
             self.ambience = l;
         }
         let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
@@ -3942,6 +5709,10 @@ impl<S: Scene> Game<S> {
             effective_fov(viewport.fov_y_deg, out.fov_boost_pct),
             self.spyglass_view.magnification,
         );
+        // A theater path's field of view replaces the setting's.
+        if let Some(f) = self.view.and_then(|v| v.fov_deg) {
+            self.frame_fov = f;
+        }
         let mut scene = self.scene.borrow_mut();
         scene.set_fov(Some(self.frame_fov));
         scene.set_magnification(self.spyglass_view.magnification);
@@ -3960,7 +5731,7 @@ impl<S: Scene> Game<S> {
     }
 
     /// The whole-world view around the camera.
-    fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
+    fn update_lod(&mut self, c: &ClientState, _frame_ms: f64, input: &KeyboardMouseInput) {
         // Dead, the view around the body keeps loading, and the respawn's ring is readied.
         if !(c.active || self.dead) || self.lod.is_none() {
             return;
@@ -4007,6 +5778,12 @@ impl<S: Scene> Game<S> {
             detail_magnification: self.spyglass_view.detail,
         };
         self.lod_camera = Some(camera);
+        // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
+        // home's; the grid's own LOD tree draws its distance, in its frame (BUGS.md #159).
+        if self.grid_drawn != 0 {
+            self.update_grid_lod(&camera);
+            return;
+        }
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),
             pool_mesh: MeshJobs(self.pool.clone()),
@@ -4014,8 +5791,11 @@ impl<S: Scene> Game<S> {
             streamer: &self.streamer,
             outbox: &self.outbox,
         };
+        // The LOD streams on the wall clock: its request rates, fades and memory adaptation are
+        // loading, not game time, and must run while a cinematic take holds the clock (held, its
+        // cache never coarsened and passed 3.5 GB). `now_ms` is the wall clock in live play.
         if let Some(lod) = &mut self.lod {
-            lod.update(&camera, now_ms, &mut host);
+            lod.update(&camera, crate::telemetry::wall_ms(), &mut host);
         }
         if !self.lod_drawn {
             let mut view = View(self.scene.clone());
@@ -4023,6 +5803,159 @@ impl<S: Scene> Game<S> {
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
         self.update_lod_map(position);
+        self.update_cloud_noise();
+        self.update_far_trees(position);
+    }
+
+    /// The grid the view is on's LOD tree (`grid_lod.rs`): made on its first frame there with
+    /// home's options, updated around the camera (in the grid's frame), drawing its sections in
+    /// the renderer's section store; with none (a grid without `lod`) no sections are drawn.
+    fn update_grid_lod(&mut self, camera: &LodCamera) {
+        let g = self.grid_drawn;
+        if self.grid_lod.as_ref().is_some_and(|l| l.grid() != g) {
+            let mut old = self.grid_lod.take().unwrap();
+            let mut view = View(self.scene.clone());
+            old.lod
+                .drop_all::<SectionMeshes>(&mut crate::grid_lod::GridView(&mut view));
+        }
+        if self.grid_lod.is_none()
+            && let Some((options, detail)) = self.lod_options
+        {
+            self.grid_lod_epoch += 1;
+            self.grid_lod =
+                crate::grid_lod::GridLod::for_grid(g, self.grid_lod_epoch, options, detail);
+        }
+        let mut view = View(self.scene.clone());
+        let Some(lod) = &mut self.grid_lod else {
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
+            return;
+        };
+        let mut jobs = crate::pool::GridPool(self.pool.clone());
+        let chunks = StreamerChunks(&self.streamer);
+        let mut host = crate::grid_lod::Host {
+            grid: g,
+            epoch: lod.epoch(),
+            jobs: &mut jobs,
+            view: crate::grid_lod::GridView(&mut view),
+            chunks: &chunks,
+        };
+        // On the wall clock, as the LOD above (a cinematic take holds the frame clock).
+        lod.lod
+            .update(camera, crate::telemetry::wall_ms(), &mut host);
+        if !self.lod_drawn {
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
+        }
+    }
+
+    /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
+    /// goes to the job workers as slabs of a few slices each (no frame waits on it); the slabs go
+    /// into the textures as they come back ([`Scene::cloud_noise_slab`]).
+    fn update_cloud_noise(&mut self) {
+        if !self.scene.borrow_mut().take_cloud_noise_request() {
+            return;
+        }
+        let t = &dwell_look::clouds::CLOUDS;
+        let mut pool = self.pool.borrow_mut();
+        for (detail, z0, z1) in crate::render::cloud_noise_slabs(t, CLOUD_NOISE_SLICES) {
+            let size = if detail {
+                t.form.detail_size
+            } else {
+                t.form.base_size
+            };
+            pool.submit(
+                Purpose::CloudNoise(detail, z0),
+                crate::jobs::Job::CloudNoise {
+                    detail,
+                    size,
+                    z0,
+                    z1,
+                },
+            );
+        }
+    }
+
+    /// The far trees' impostors (render/impostors.rs): once, the atlas's bakes; then the tiles of
+    /// far trees within the tier's reach of the eye (`position`, world) on its face, asked of the
+    /// workers a few at a time, nearest first, and those out of reach dropped.
+    fn update_far_trees(&mut self, position: [f64; 3]) {
+        let mut scene = self.scene.borrow_mut();
+        let Some(reach) = scene.far_tree_reach() else {
+            return;
+        };
+        let mut pool = self.pool.borrow_mut();
+        if let Some((layers, px)) = scene.impostor_bakes() {
+            for layer in 0..layers {
+                pool.submit(
+                    Purpose::ImpostorBake(layer),
+                    crate::jobs::Job::ImpostorBake { layer, px },
+                );
+            }
+        }
+        let face = FaceFrame::at_height(position[1]);
+        let local = face.point(position);
+        let bit = u8::from(face.is_b());
+        let mut want = crate::render::impostors::tiles_within([local[0], local[2]], reach);
+        let keep: std::collections::HashSet<(u8, i32, i32)> =
+            want.iter().map(|&(i, k)| (bit, i, k)).collect();
+        scene.retain_far_tree_tiles(&|t| keep.contains(t));
+        self.far_tree_lists.retain(|t, _| keep.contains(t));
+        // The tiles whose trees or chunks changed: drawn short of the felled trees.
+        let store = self.streamer.store();
+        for key in std::mem::take(&mut self.far_tree_stale) {
+            let Some(trees) = self.far_tree_lists.get(&key) else {
+                continue;
+            };
+            let f = if key.0 == 1 {
+                FaceFrame::B
+            } else {
+                FaceFrame::A
+            };
+            let drawn = crate::render::impostors::standing_trees(
+                f,
+                trees,
+                |c| store.voxel_if_held(c),
+                &mut self.far_tree_felled,
+            );
+            scene.far_tree_tile(key, &drawn);
+        }
+        let t = f64::from(crate::render::impostors::TILE_M);
+        let d2 = |&(i, k): &(i32, i32)| {
+            let dx = (f64::from(i) + 0.5) * t - local[0];
+            let dz = (f64::from(k) + 0.5) * t - local[2];
+            dx * dx + dz * dz
+        };
+        want.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+        for (i, k) in want {
+            if self.far_tree_jobs.len() >= FAR_TREE_JOBS {
+                break;
+            }
+            let key = (bit, i, k);
+            if scene.far_tree_tile_held(key) || !self.far_tree_jobs.insert(key) {
+                continue;
+            }
+            let size = crate::render::impostors::TILE_M;
+            pool.submit(
+                Purpose::FarTrees(bit, i, k),
+                crate::jobs::Job::FarTrees {
+                    face: bit,
+                    x0: i * size,
+                    z0: k * size,
+                    size,
+                },
+            );
+        }
+    }
+
+    /// A chunk arrived or changed (`coord`, world chunk indices): its far trees tiles are filtered
+    /// for felled trees again at the next update.
+    fn far_trees_touched(&mut self, coord: [i32; 3]) {
+        for key in crate::render::impostors::tiles_of_chunk(coord) {
+            if self.far_tree_lists.contains_key(&key) {
+                self.far_tree_stale.insert(key);
+            }
+        }
     }
 
     /// The LOD colour map's rings around the eye (`position`, world): starts the strips its moves
@@ -4081,6 +6014,7 @@ impl<S: Scene> Game<S> {
             block.is_none_or(|b| hit.distance < b).then_some(hit)
         });
         self.drag_build(eye, dir, now_ms);
+        self.blueprint_frame(eye, dir, now_ms);
         self.region
             .aim(self.interaction.placement().map(|(c, _)| c));
         self.show_region_boxes();
@@ -4100,8 +6034,9 @@ impl<S: Scene> Game<S> {
                 // Editable: in the world, with every chunk a stroke there reads loaded.
                 let extent = self.brush.read_extent(dwell_world::cell_of_pos(e));
                 let streamer = &self.streamer;
+                let bounds = self.world_bounds;
                 dwell_game::brush_tool::clamp_aim(e, dir, reach, hit, |c| {
-                    dwell_world::region::box_in_world(c, [1, 1, 1])
+                    dwell_world::region::box_in_world_of(&bounds, c, [1, 1, 1])
                         && extent.is_none_or(|(lo, size)| {
                             streamer.box_loaded(std::array::from_fn(|i| c[i] + lo[i]), size)
                         })
@@ -4123,7 +6058,12 @@ impl<S: Scene> Game<S> {
             .update_preview(materials, &mut self.streamer, now_ms);
         self.scene
             .borrow_mut()
-            .set_brush_outline(self.brush.outline());
+            .set_brush_outline(self.brush.outline().or(self.blueprints.outline()));
+        // Outlines off (a clean recording, BUGS.md #113): the target stays, nothing is drawn.
+        if !self.show_outline {
+            self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+            return;
+        }
         // A moving body's cell aimed at: its box outlined, turned with the body.
         if let Some(b) = self.body_target {
             let half = [0.5f32, 0.5 * dwell_world::CELL_H as f32, 0.5];
@@ -4305,16 +6245,16 @@ impl<S: Scene> Game<S> {
         }))
     }
 
-    /// The swing hint while an axe is held.
+    /// The swing hint while a tool is held (its kind's, shared/tools `hints`).
     pub fn chop_hint(&self) -> Option<&'static str> {
-        self.held_tool().map(|_| self.chop.hint())
+        self.held_tool().and_then(|t| self.chop.hint(t))
     }
 
     /// The swing line the reticle shows while a tool is held: where its path will pass through
     /// the crosshair, `level` or `vertical`.
     pub fn swing_line(&self) -> Option<&'static str> {
-        self.held_tool().map(|_| {
-            if self.chop.vertical {
+        self.held_tool().map(|t| {
+            if t.stance(self.chop.vertical) {
                 "vertical"
             } else {
                 "level"
@@ -4330,6 +6270,16 @@ impl<S: Scene> Game<S> {
         now_ms: f64,
     ) -> bool {
         if action == EditAction::Place {
+            // A weapon with swordplay: held, Place raises the block; a tap turns the stance.
+            if tool.is_weapon() && self.swordplay {
+                self.guard_input.press(now_ms);
+                return true;
+            }
+            // A tool with two stances turns between them; one with one mode (the axe; owner,
+            // 2026-11-14: "like the shovel and pick, without the multiple modes") does nothing.
+            if !tool.has_vertical() {
+                return false;
+            }
             self.chop.toggle();
             return true;
         }
@@ -4352,7 +6302,9 @@ impl<S: Scene> Game<S> {
         let look = self.view_dir;
         let arc = dwell_world::swing::Arc::of(tool);
         let store = self.streamer.store_mut();
-        let swept = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc);
+        // The stance the tool takes: one mode (the axe) is always level.
+        let vertical = tool.stance(self.chop.vertical);
+        let swept = dwell_world::swing::sweep(store, eye, look, vertical, &arc);
         // The chopping prototype (`?chop=v2`): the bite lands at the crosshair.
         let aimed = crate::chop::crosshair_aim()
             .then(|| crate::chop::crosshair_impact(store, tool, eye, look))
@@ -4365,7 +6317,10 @@ impl<S: Scene> Game<S> {
                     face: h.axis_face(),
                     point: h.point,
                     step: h.step,
-                    wood: dwell_protocol::chopping::wood(dwell_blocks::block_of(m).name).is_some(),
+                    // A weapon (a sword) cuts no wood: a log only stops it, as stone does.
+                    wood: !tool.is_weapon()
+                        && dwell_protocol::chopping::chopped_wood(dwell_blocks::block_of(m).name)
+                            .is_some(),
                 }
             })
         });
@@ -4373,7 +6328,8 @@ impl<S: Scene> Game<S> {
             return false;
         };
         self.chop.set_cleared(&swept.cleared);
-        self.bodies.swing_arms(if self.chop.vertical {
+        self.bodies.own_tool = Some(tool.name);
+        self.bodies.swing_arms(if vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {
             dwell_characters::animator::Swing::ChopLevel
@@ -4540,6 +6496,7 @@ impl<S: Scene> Game<S> {
             .push(Send::Control(Message::InventoryAction(
                 dwell_protocol::InventoryAction::Pick { cell: it.cell },
             )));
+        self.bodies.own_tool = self.held_break_item();
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.sound(dwell_game::sound::SoundKind::Tool);
@@ -4637,6 +6594,21 @@ impl<S: Scene> dwell_lod::ChunkReadiness for LodHost<'_, S> {
         Some(self.streamer.drawable_revision())
     }
 }
+/// The streamed chunks' readiness (a grid LOD's level 0: the grid's chunks the streamer holds).
+struct StreamerChunks<'a, S: Scene>(&'a Streamer<S>);
+
+impl<S: Scene> dwell_lod::ChunkReadiness for StreamerChunks<'_, S> {
+    fn chunk_drawable(&self, coord: ChunkCoord) -> bool {
+        self.0.drawable([coord.x, coord.y, coord.z])
+    }
+    fn chunk_loaded(&self, coord: ChunkCoord) -> bool {
+        self.0.is_loaded([coord.x, coord.y, coord.z])
+    }
+    fn drawable_revision(&self) -> Option<u64> {
+        Some(self.0.drawable_revision())
+    }
+}
+
 impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
     fn request_sections(&mut self, sections: Vec<dwell_protocol::LodSectionRequest>) {
         self.outbox
@@ -4674,24 +6646,56 @@ fn sound_event(kind: SoundKind) -> SoundEvent {
 }
 
 /// The audio listener at an eye looking along yaw/pitch on `face`: eye, forward, up.
-/// The third-person camera over your dead body.
+/// The third-person camera over your defeated body.
 struct DeathCamera {
     eye: [f64; 3],
     pitch: f64,
     face: FaceFrame,
 }
 
-/// The camera over a dead body at `feet`, looking along `yaw`: on the face the body lies on (the
-/// predictor's controller has no body while dead and falls back to face A's frame: owner,
-/// 2026-11-06, the camera was upside down on face B), 4 m behind it along that face's look and
-/// 2.5 m along its up, 25° down.
-fn death_camera(feet: [f64; 3], yaw: f64) -> DeathCamera {
+/// How near your own eyes a placed camera is still in your head (m): drawn as first person.
+const PLACED_AT_EYES_M: f64 = 1.0;
+
+/// How your own (living) body is drawn this frame: `(neck_down, whole)`. In first person from the
+/// neck down (CHARACTERS.md §5.1); from a placed camera (theater mode, the bench's camera: the
+/// record skill's third-person shots) whole, as others see it; not at all while inactive.
+/// `placed_from_eyes`: the placed camera's distance from your own eyes (none: no placed camera).
+/// One within `PLACED_AT_EYES_M` of them (the bench's `spot` shots stand you at the camera) is
+/// first person: your whole body drawn there filled the frame with its insides (grey, every
+/// `test:forest` shot, WORK_QUEUE item 32).
+fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
+    let whole = placed_from_eyes.is_some_and(|d| d > PLACED_AT_EYES_M);
+    (active && !whole, active && whole)
+}
+
+/// The camera over a defeated body at `feet` (CHARACTERS.md §11.13), looking along `yaw`: on the
+/// face the body is on (the predictor's controller has no body while defeated and falls back to
+/// face A's frame: owner, 2026-11-06, the camera was upside down on face B), `cam.back_m` behind
+/// it along that face's look and `cam.up_m` along its up, `cam.pitch_deg`; eased out from `from`
+/// (the eye and pitch before the defeat) over `cam.ease_s`, `since` seconds after the defeat.
+fn defeat_camera(
+    feet: [f64; 3],
+    yaw: f64,
+    cam: &dwell_protocol::defeat::DefeatCamera,
+    from: ([f64; 3], f64),
+    since: f64,
+) -> DeathCamera {
     let face = FaceFrame::at_height(feet[1]);
     let ahead = face.look(yaw, 0.0);
     let up = face.up();
+    let out: [f64; 3] = std::array::from_fn(|k| feet[k] - ahead[k] * cam.back_m + up[k] * cam.up_m);
+    let u = if cam.ease_s > 0.0 {
+        (since / cam.ease_s).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let u = u * u * (3.0 - 2.0 * u);
+    // An eye far from the body (a teleport, the first frame) is no place to ease from.
+    let near = (0..3).map(|k| (from.0[k] - feet[k]).powi(2)).sum::<f64>() < 100.0;
+    let u = if near { u } else { 1.0 };
     DeathCamera {
-        eye: std::array::from_fn(|k| feet[k] - ahead[k] * 4.0 + up[k] * 2.5),
-        pitch: -25.0,
+        eye: std::array::from_fn(|k| from.0[k] + (out[k] - from.0[k]) * u),
+        pitch: from.1 + (cam.pitch_deg - from.1) * u,
         face,
     }
 }
@@ -4841,6 +6845,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn frame_exact_recording_steps_the_path_only_by_the_given_frames() {
+        // THEATER_MODE.md §6: a slow page (500 ms between frames) still moves the path by one
+        // frame of the take's rate per drawn frame; a frame the shell gave no step holds still.
+        // face-a-only: no face, a clock.
+        let fps = 30.0;
+        assert_eq!(
+            theater_dt(true, Some(1.0 / fps), Some(0.0), 500.0),
+            1.0 / fps
+        );
+        assert_eq!(theater_dt(true, None, Some(0.0), 500.0), 0.0);
+        // Real time otherwise.
+        assert!((theater_dt(false, None, Some(0.0), 500.0) - 0.5).abs() < 1e-12);
+        assert_eq!(theater_dt(false, None, None, 500.0), 0.0);
+    }
+
+    #[test]
+    fn theater_subjects_list_ids_names_and_kinds() {
+        // face-a-only: a list, no face.
+        let j = subjects_json(&[
+            (7, "deer", [1.0, 2.0, 3.0], false),
+            (9, "villager", [0.0; 3], true),
+        ]);
+        let v: serde_json::Value = serde_json::from_str(&j).unwrap();
+        assert_eq!(v[0]["id"], 7);
+        assert_eq!(v[0]["name"], "deer");
+        assert_eq!(v[0]["npc"], false);
+        assert_eq!(v[0]["at"][2], 3.0);
+        assert_eq!(v[1]["npc"], true);
+    }
+
+    #[test]
+    fn a_placed_camera_draws_your_whole_body() {
+        // The record skill's third-person shots (theater mode on the player) showed no player: a
+        // placed camera drew neither the first-person body nor the whole one. face-a-only: no face.
+        assert_eq!(own_body_draw(true, None), (true, false));
+        assert_eq!(own_body_draw(true, Some(4.0)), (false, true));
+        assert_eq!(own_body_draw(false, Some(4.0)), (false, false));
+        assert_eq!(own_body_draw(false, None), (false, false));
+    }
+
+    #[test]
+    fn a_placed_camera_at_your_eyes_draws_you_as_first_person() {
+        // Every `test:forest` bench shot came out flat grey (WORK_QUEUE item 32): the `spot` shot
+        // stands you at the camera, and your whole body drawn around it filled the frame.
+        // face-a-only: no face involved.
+        assert_eq!(own_body_draw(true, Some(0.0)), (true, false));
+        assert_eq!(
+            own_body_draw(true, Some(PLACED_AT_EYES_M * 0.5)),
+            (true, false)
+        );
+        assert_eq!(
+            own_body_draw(true, Some(PLACED_AT_EYES_M + 0.5)),
+            (false, true)
+        );
+    }
+
+    #[test]
     fn an_empty_inventory_slot_shows_an_empty_hand_whatever_the_palette_held_last() {
         // Owner (2026-11-08): run out of a block in adventure and it was still in your hand: the
         // palette kept the last block selected. face-a-only: no face involved.
@@ -4851,24 +6912,208 @@ mod tests {
         assert_eq!(held_of(false, 0, false), Held::Empty);
     }
 
+    #[test]
+    fn a_struck_point_sounds_inside_the_struck_cell() {
+        // BUGS.md #110: a hit short of breaking sounds at its struck point, in the block, on both
+        // faces' cells. both-faces: the cells are world cells, one on each side of the midplane.
+        for cell in [[4, 30, -2], [4, -31, -2]] {
+            let c = dwell_world::centre_of_cell(cell);
+            for p in [[0, 0, 0], [128, 128, 128], [255, 255, 255]] {
+                let at = point_in_cell(cell, p);
+                let half = [0.5, dwell_world::CELL_H / 2.0, 0.5];
+                for k in 0..3 {
+                    assert!(
+                        (at[k] - c[k]).abs() <= half[k] + 1e-9,
+                        "{cell:?} {p:?} {at:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A point in the audio listener's frame as WebAudio hears it (right-handed: x to the right,
+    /// `forward × up`; y up; z behind, so ahead is −z).
+    fn heard_at(l: [f64; 9], p: [f64; 3]) -> [f64; 3] {
+        use crate::render::camera::{cross, dot, normalize, sub};
+        let (eye, fwd, up) = ([l[0], l[1], l[2]], [l[3], l[4], l[5]], [l[6], l[7], l[8]]);
+        let right = normalize(cross(fwd, up));
+        let d = sub(p, eye);
+        [dot(d, right), dot(d, up), -dot(d, fwd)]
+    }
+
+    dwell_world::both_faces!(
+        /// BUGS.md #110: the listener is the camera in the world frame the sounds are placed in, on
+        /// both faces: a sound 5 m ahead of the eye is heard ahead (−z), one to the player's right
+        /// (forward × the face's up) right, one over the head above, at every heading and at
+        /// pitch 0 and ±45°; and its right is the right of the view drawn.
+        fn the_listener_hears_ahead_ahead_and_right_right(f: FaceFrame) {
+            use crate::render::camera::{aim, cross, dot};
+            let eye = f.point([3.0, 40.0, -7.0]);
+            for yaw in [0.0, 37.0, 90.0, 180.0, 271.0] {
+                for pitch in [0.0, 45.0, -45.0] {
+                    let l = listener(eye, yaw, pitch, f);
+                    let at = |dir: [f64; 3], m: f64| -> [f64; 3] {
+                        std::array::from_fn(|k| eye[k] + dir[k] * m)
+                    };
+                    let ahead = heard_at(l, at(f.look(yaw, pitch), 5.0));
+                    let why = format!("{:?} yaw {yaw} pitch {pitch}", f.face);
+                    assert!((ahead[2] + 5.0).abs() < 1e-9, "ahead: {ahead:?} {why}");
+                    assert!(
+                        ahead[0].abs() < 1e-9 && ahead[1].abs() < 1e-9,
+                        "{ahead:?} {why}"
+                    );
+                    let right_dir = cross(f.look(yaw, 0.0), f.up());
+                    let right = heard_at(l, at(right_dir, 5.0));
+                    assert!((right[0] - 5.0).abs() < 1e-9, "right: {right:?} {why}");
+                    assert!(
+                        right[2].abs() < 1e-9,
+                        "right, not ahead or behind: {right:?} {why}"
+                    );
+                    let over = heard_at(l, at(f.up(), 5.0));
+                    if pitch == 0.0 {
+                        assert!(
+                            (over[1] - 5.0).abs() < 1e-9,
+                            "over the head: {over:?} {why}"
+                        );
+                    } else {
+                        assert!(over[1] > 3.0, "above: {over:?} {why}");
+                    }
+                    let drawn = aim(yaw, pitch, f, 0.0).right;
+                    let heard = cross([l[3], l[4], l[5]], [l[6], l[7], l[8]]);
+                    assert!(
+                        dot(drawn, heard) > 1.0 - 1e-9,
+                        "{drawn:?} vs {heard:?} {why}"
+                    );
+                }
+            }
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// A theater path's held `up` (THEATER_MODE.md §3.1, WORK_QUEUE item 40): a camera on the
+        /// other face's side keeps the held face's up (the world upside down), its forward the
+        /// same; under "auto" it takes the face it is over. Sky, fog and water stay the eye's face.
+        fn a_held_up_keeps_its_face_up_across_the_midplane(f: FaceFrame) {
+            use crate::render::camera::aim;
+            let other = f.other();
+            // 30 m on the other face's side, looking level along +X and a little down.
+            let eye = other.point([0.0, 30.0, 0.0]);
+            let pose = |up: &str| {
+                let p = dwell_theater::Path::parse(&serde_json::json!({
+                    "formatVersion": 1,
+                    "keyframes": [
+                        { "t": 0, "position": eye, "look": [90, -20], "up": up },
+                        { "t": 1 }
+                    ]
+                }))
+                .unwrap_or_else(|e| panic!("{e}"));
+                dwell_theater::pose_at(&p, 0.5, &dwell_theater::NoTargets)
+            };
+            let view = |p: dwell_theater::Pose| ViewOverride {
+                eye: p.position,
+                yaw_deg: p.yaw_deg,
+                pitch_deg: p.pitch_deg,
+                fov_deg: None,
+                up: p.up,
+            };
+            let basis = |v: ViewOverride| {
+                let (yaw, pitch, face, roll) = v.camera();
+                assert_eq!(face, other, "the sky and fog are the eye's face's");
+                aim(yaw, pitch, face, roll)
+            };
+            let held = view(pose(if f.is_b() { "b" } else { "a" }));
+            let auto = view(pose("auto"));
+            let (h, a) = (basis(held), basis(auto));
+            let held_up = f.up();
+            let near = |x: [f64; 3], y: [f64; 3], what: &str| {
+                assert!(
+                    (0..3).all(|k| (x[k] - y[k]).abs() < 1e-9),
+                    "{what}: {x:?} vs {y:?}"
+                );
+            };
+            // The up is the held face's, mostly: the look is 20° below that face's level.
+            let (s, c) = 20f64.to_radians().sin_cos();
+            let world_x = f.vector([1.0, 0.0, 0.0]);
+            let up_of = |u: [f64; 3], x: [f64; 3]| std::array::from_fn(|k| u[k] * c + x[k] * s);
+            near(h.up, up_of(held_up, world_x), "held up");
+            near(a.up, up_of(other.up(), world_x), "auto up");
+            // The forward is the held face's look: along +X, 20° toward the held face's down.
+            let fwd: [f64; 3] = std::array::from_fn(|k| world_x[k] * c - held_up[k] * s);
+            near(h.forward(), fwd, "held forward");
+            // The same look in both frames' own terms: auto's look is the other face's.
+            near(a.forward(), other.look(90.0, -20.0), "auto forward");
+            // The view frame as the LOD takes it: the world pitch of the look.
+            assert!((held.face().pitch(held.pitch_deg) - f.pitch(-20.0)).abs() < 1e-9);
+            // The free camera's up held and released (the editor's Up): the look kept.
+            let freed = held.with_up(None);
+            assert_eq!(freed.up, None);
+            near(basis(freed).forward(), h.forward(), "released forward");
+            near(basis(freed.with_up(Some(f))).up, h.up, "held again");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// Theater mode's free-fly (THEATER_MODE.md §2): forward follows the level look, up the
+        /// face's up, a turn the player's handedness; the pitch stops short of straight up.
+        fn the_theater_camera_flies_along_its_face_local_look(f: FaceFrame) {
+            let v = ViewOverride {
+                eye: f.point([0.0, 40.0, 0.0]),
+                yaw_deg: 0.0,
+                pitch_deg: 30.0,
+                fov_deg: Some(50.0),
+                up: None,
+            };
+            let n = fly_step(v, 2.0, 0.0, 1.0, 0.0, 0.0);
+            let local = f.point(n.eye);
+            assert!(
+                (local[2] - 2.0).abs() < 1e-9,
+                "forward level along +Z: {local:?}"
+            );
+            assert!(
+                (local[1] - 41.0).abs() < 1e-9,
+                "up the face's up: {local:?}"
+            );
+            assert_eq!(n.fov_deg, Some(50.0), "the field of view kept");
+            let r = fly_step(v, 0.0, 1.0, 0.0, 0.0, 0.0);
+            let side = f.point(r.eye);
+            let mirrored = f.handed(1.0);
+            assert!(
+                (side[0] + mirrored).abs() < 1e-9,
+                "right is the camera's right: {side:?}"
+            );
+            let t = fly_step(v, 0.0, 0.0, 0.0, 10.0, 80.0);
+            assert!((t.yaw_deg - f.handed(10.0).rem_euclid(360.0)).abs() < 1e-9);
+            assert_eq!(t.pitch_deg, 89.0, "the pitch held short of straight up");
+        }
+    );
+
     dwell_world::both_faces!(
         /// Owner (2026-11-06): dead on face B, the third-person camera was upside down. The body
-        /// leaves the physics world when it dies and the predictor's controller falls back to face
-        /// A's frame, which the camera used; the camera takes the face the body lies on, sits over
-        /// it along that face's up and looks down at it.
-        fn the_death_camera_is_upright_on_the_face_the_body_lies_on(f: FaceFrame) {
+        /// leaves the physics world when it is defeated and the predictor's controller falls back
+        /// to face A's frame, which the camera used; the camera takes the face the body kneels on,
+        /// sits over it along that face's up and looks down at it, `back_m` and `up_m` from the data
+        /// (shared/defeat, WORK_QUEUE item 55), eased out from the eye over `ease_s`.
+        fn the_defeat_camera_is_upright_on_the_face_the_body_kneels_on(f: FaceFrame) {
             let feet = f.point([3.5, 40.0, 7.5]);
-            let cam = death_camera(feet, 30.0);
-            assert_eq!(cam.face, f, "the face the body lies on");
+            let cam_data = dwell_protocol::defeat::DEFAULT.camera;
+            let eye = f.point([3.5, 41.6, 7.5]);
+            let cam = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), 10.0);
+            assert_eq!(cam.face, f, "the face the body kneels on");
             let up = f.up();
             let rise: f64 = (0..3).map(|k| (cam.eye[k] - feet[k]) * up[k]).sum();
             assert!(
-                (rise - 2.5).abs() < 1e-9,
-                "2.5 m over the body along its up: {rise}"
+                (rise - cam_data.up_m).abs() < 1e-9,
+                "up_m over the body along its up: {rise}"
             );
+            assert!((cam.pitch - cam_data.pitch_deg).abs() < 1e-9);
             let look = f.look(30.0, cam.pitch);
             let toward: f64 = (0..3).map(|k| (feet[k] - cam.eye[k]) * look[k]).sum();
-            assert!(toward > 3.0, "looking at the body: {toward}");
+            assert!(toward > 2.0, "looking at the body: {toward}");
+            // At the defeat it starts from the eye, and is out by `ease_s`.
+            let start = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), 0.0);
+            assert!((0..3).all(|k| (start.eye[k] - eye[k]).abs() < 1e-9));
+            let half = defeat_camera(feet, 30.0, &cam_data, (eye, 0.0), cam_data.ease_s / 2.0);
+            assert!(half.pitch < 0.0 && half.pitch > cam_data.pitch_deg);
         }
     );
 
@@ -4964,6 +7209,7 @@ impl Puppets {
                     flags: flags | face_b | grounded,
                     held: self.held,
                     swing: 0,
+                    swing_kind: 0,
                     jumped: false,
                 }
             })
@@ -4988,8 +7234,15 @@ impl dwell_game::build_drag::DragWorld for DragCells<'_> {
     fn holds(&mut self, cell: [i32; 3], material: StateId) -> bool {
         dwell_world::edit::held_in_place(self.world, cell, material)
     }
+    fn bounds(&self) -> dwell_world::WorldBounds {
+        self.world.bounds
+    }
     fn settled(&mut self) -> bool {
         self.settled
+    }
+    fn placed(&mut self, [x, y, z]: [i32; 3], material: StateId) -> bool {
+        let dry = |m: StateId| dwell_world::edit::flooded_for(m, dwell_world::M.air);
+        dry(self.world.get_voxel(x, y, z)) == dry(material)
     }
 
     fn free(&mut self, [x, y, z]: [i32; 3], material: StateId) -> bool {

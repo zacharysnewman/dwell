@@ -82,6 +82,9 @@ export class LocalCore {
     mode?: string,
     growth?: number,
     chop2 = false,
+    radiusScale?: number,
+    sky?: string,
+    spawnGrid?: string,
   ): Promise<LocalCore> {
     const exports = (await loadWasm()) as { memory?: WebAssembly.Memory };
     const core = new LocalCore(
@@ -99,6 +102,9 @@ export class LocalCore {
         mode,
         growth,
         chop2,
+        radiusScale,
+        sky,
+        spawnGrid,
       ),
     );
     core.memory = exports.memory ?? null;
@@ -124,6 +130,21 @@ export class LocalCore {
   /** The host switches the world's game mode by name (ADR 0065); false for an unknown one. */
   setMode(name: string): boolean {
     return this.world.setMode(name);
+  }
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7). */
+  setTheaterGuests(on: boolean): void {
+    this.world.setTheaterGuests(on);
+  }
+  /** Whether guests may use theater mode in this world. */
+  get theaterGuests(): boolean {
+    return this.world.theaterGuests;
+  }
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7); faces A's and
+   * B's new maps. Throws the refusal's message.
+   */
+  retuneWorldgen(worldgen: string, radius: number): Uint8Array[] {
+    return this.world.retuneWorldgen(worldgen, radius) as Uint8Array[];
   }
   /** The world's game mode's name. */
   get mode(): string {
@@ -184,6 +205,10 @@ export class LocalCore {
   }
   get worldSeed(): bigint {
     return this.world.worldSeed;
+  }
+  /** The world's size's radius scale (a saved world's own; 1 today's), for the server-jobs worker. */
+  get radiusScale(): number {
+    return this.world.radiusScale;
   }
   /** The next job for the server-jobs worker (a chunk to generate, a LOD section). */
   takeJob(): Uint8Array | undefined {
@@ -251,6 +276,10 @@ export class LocalCore {
   /** Advances real time; steps the fixed 60 Hz simulation as far as it reaches. */
   advance(elapsedSeconds: number): number {
     return this.world.advance(elapsedSeconds);
+  }
+  /** Steps exactly `ticks` server ticks (a cinematic take; local.rs `step_ticks`). */
+  stepTicks(ticks: number): number {
+    return this.world.stepTicks(ticks);
   }
 
   /** What the server sends, oldest first (local.rs `encode_outbox`). */

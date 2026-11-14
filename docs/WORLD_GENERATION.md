@@ -211,7 +211,15 @@ of `on` and dry. Of two kept candidates whose boxes come within the spacing, the
 priority hash is dropped, whether or not the higher one survives — so the answer needs only the
 neighbours, and a chunk finds every tree reaching into it from the cells around it (the chunk plus
 three reaches and the spacing), the same whichever chunk generates first. The tree's voxels go over
-air and replaceable cells only (tall grass), never into the ground or water. The sky test leaves
+air and replaceable cells only (tall grass), never into the ground or water. **Trunk pads (0.55,
+WORK_QUEUE item 44):** with `pad` "trunk" (the default for a placement of tree species; the pines'
+rule sets it) the ground under each trunk column — the structure's lowest cells, from its data — is
+filled up to the row under the trunk's base with the column's own ground (its surface block on top,
+its soil under), and a ramp there is made full cells, so a trunk on a slope stands flat on its 1 m
+pad instead of hanging over the drop (owner, 2026-11-12: "For now let's just do level pad, can just
+be the the tree width, 1m."). Only the trunk's columns change (no ring; uphill, the ground the trunk
+stands in is left); the LOD's 2 m level fills under a far tree's trunk the same way; impostors stand
+at the same anchors. Tested on both faces (`tests/tree_pads.rs`). The sky test leaves
 room over the highest ground for the tallest tree; the spawn's level patch is clear of trees.
 
 **Per biome** (ADR 0074 B5, 0.52.39): a rule stands only where a biome listing it in `placements`
@@ -425,7 +433,8 @@ hillside (0.52.8).
 ## Rock types and shaping (2026-11-10, ADR 0075 T2)
 
 Systemic terrain's geology layer: `shared/worldgen/rocks.json` holds the rock types (hardness, jointing
-`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show, a
+`bedded`/`vertical`/`massive`, bed thickness, solubility, the `face`/`cap`/`scree` blocks they show,
+an optional `capBy` (the treads' block by the climate, against the geology's `arid`; 0.60), a
 colour), the strata stacks (layers top to bottom, repeating with height from sea level), the provinces
 (a stack per region by a noise of `provinces.wavelength` m, by the stacks' weights) and the shaping. A
 biome may name its own `rockStack` (the red-rock mesa and badlands presets). Each stack is a monotone
@@ -434,6 +443,16 @@ bed a talus slope, vertical jointing one sheer wall, massive rock unstepped; the
 `shaping.strength` of the way to it (0 in the default world: the terrain unchanged), and at half strength
 a wall shows its rock's face, talus its scree, a tread its cap. Tuned in Chisel (the Rock group and the
 rock overlay). Prototype content (§6.1 of the architecture): today's blocks stand in for the rocks.
+
+**Ledges, notched ramps and the red desert (0.59.0; owner, 2026-11-13).** Realistic's bedded slopes read as
+fields of single-cell ½ m stairs and its mesa tops were dead flat. `shaping.ledge` (2 m) and `ledgeEvery`
+(1: one a bed): a soft bedded rock's talus is ramped runs broken by a near-vertical ledge that tall every that share
+of its bed; `treadRelief` (0.08): every tread rises over that share of its bed (a mesa top keeps a little of
+the ground's roll); `notched` 1: where the shaping is on, the stored ramps also top diagonal contours
+(`HALF_HEIGHT_GRID.md` §10). The red-rock mesa's floors are `dwell:red_sand` (its preset's bands) and its own
+stack `dwell:red_desert_beds` (weight 0) is sandstone over a red `dwell:siltstone` whose talus is red sand.
+`tests/realistic_steps.rs` (both faces): bare ½ m steps on bedded ground 61 % → 0 %, ledges of 2 m ~1.3×, red
+sand and no plain sand on the mesa's surface. Before/after top-down dump: `dump_a_bedded_slope` (ignored test).
 
 ## Tectonics (2026-11-10, ADR 0075 T5)
 

@@ -80,6 +80,8 @@ test('bad items fail with the entry and the problem', () => {
     [(d) => (d.buildModes.modes = []), /buildModes\.modes must be a non-empty list/],
     [(d) => (d.buildModes.clearance = 2), /buildModes\.clearance must be 0\.\.0\.5/],
     [(d) => (d.buildModes.holdMs = -1), /buildModes\.holdMs must be 0\.\.2000/],
+    [(d) => (d.buildModes.repeatS = 0), /buildModes\.repeatS must be 0\.01\.\.1/],
+    [(d) => delete d.buildModes.repeatS, /buildModes\.repeatS must be 0\.01\.\.1/],
     [(d) => d.items.push({ name: 'test:saw', label: 'Saw', category: 'tools', tool: 'test:saw' }), /items\[\d+\]\.tool "test:saw" is not a tool of shared\/tools\/tools\.json/],
     [(d) => d.items.push({ name: 'test:axe2', label: 'Axe', category: 'tools', tool: 'dwell:stone_axe', block: 'dwell:stone' }), /items\[\d+\]: give block or tool \(not both\)/],
     [(d) => d.items.push({ name: 'test:axe3', label: 'Axe', category: 'tools', tool: 'dwell:stone_axe', rows: 1 }), /items\[\d+\]: a tool places nothing \(rows\)/],

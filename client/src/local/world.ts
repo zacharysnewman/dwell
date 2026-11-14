@@ -1,7 +1,9 @@
 // Which world local mode generates (ARCHITECTURE.md §6.3): `?world=terrain|flat|sandbox` picks
 // the generator (procedural terrain by default) and `?seed=N` the world seed.
 
+import { WorldSizes } from '../protocol/constants.gen';
 import { isGameMode } from '../ui/modes';
+import { OVERRIDE_FIELDS } from '../ui/playOverrides.gen';
 
 /**
  * Generator versions by world type, as the Rust side numbers them (`dwell_world::GENERATOR_*`).
@@ -37,6 +39,13 @@ export interface LocalWorld {
    */
   spawnPortal?: boolean;
   /**
+   * A spawn on another grid (docs/proposals/MOON_WORLD.md §8; `?spawn=moon`, `sun-b`, the New world
+   * form's Spawn): the grid face a new world's players start and respawn on, a key of
+   * `GRID_SPAWNS` (from shared/worldgen/grids.json). The server sends there only a build that can be
+   * there; any other starts at home.
+   */
+  spawnGrid?: string;
+  /**
    * A spawn link (`?spawn=`) on a world file that is already there: its player starts at that
    * spawn too, not where it left the world (owner, 2026-10-27). A menu world's chosen spawn is its
    * first one only.
@@ -54,22 +63,94 @@ export interface LocalWorld {
   upgrade?: boolean;
   /** A new world's game mode by name (ADR 0065, the New world form's Mode); a saved world keeps its own. */
   mode?: string;
+  /** A new world's Sky preset (REALISTIC_WORLD.md §8, `shared/look/orbits.json`); a saved world keeps its orbit. */
+  sky?: string;
+  /**
+   * A bigger world's size (docs/proposals/BIG_MAP.md M2b: the New world form's World size, the dev
+   * link `?size=2x`), as its radius scale; absent: today's (1×). A new world is created at it and
+   * saves it in its settings; a saved world keeps its own. Its maps are built at it too.
+   */
+  radiusScale?: number;
 }
 
-/** The spawns a world can start at (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
-export const SPAWNS = ['', 'b', 'portal', 'portal-b'] as const;
-export type Spawn = (typeof SPAWNS)[number];
+/**
+ * The named world sizes (shared/protocol/constants.json `worldSizes`, BIG_MAP.md): name and radius
+ * scale, today's (1×) first.
+ */
+export const WORLD_SIZES: readonly { name: string; radiusScale: number }[] = WorldSizes.sizes;
+
+/** The radius scale of the size named `name` (`2x`), or null for none of `worldSizes`. */
+export function sizeScale(name: string | null | undefined): number | null {
+  return WORLD_SIZES.find((s) => s.name === name)?.radiusScale ?? null;
+}
+
+/** `{ radiusScale }` for a bigger world's scale, nothing for today's (so 1× options are as before). */
+export function sizeOptions(
+  radiusScale: number | null | undefined,
+): Pick<LocalWorld, 'radiusScale'> {
+  return radiusScale !== null &&
+    radiusScale !== undefined &&
+    radiusScale !== 1 &&
+    WORLD_SIZES.some((s) => s.radiusScale === radiusScale)
+    ? { radiusScale }
+    : {};
+}
+
+/**
+ * Home's spawns (`?spawn=`, a new world's Spawn): "" is face A's usual one. `town`, `town-b` (dev,
+ * docs/DEV_TOOLS.md): by the town site nearest the face's spawn, so it founds and builders come.
+ */
+export const HOME_SPAWNS = ['', 'b', 'portal', 'portal-b', 'town', 'town-b'] as const;
+
+/**
+ * The other grids' spawns, both faces of each (`moon`, `moon-b`, `sun`, `sun-b`): the Spawn
+ * choice's options past home's, generated from shared/worldgen/grids.json (shared/play/gen.mjs
+ * `gridSpawnOptions`), so a new world body is a spawn by itself.
+ */
+export const GRID_SPAWNS: readonly string[] = (() => {
+  const field = OVERRIDE_FIELDS.find((f) => f.param === 'spawn');
+  const values = field?.kind === 'choice' ? field.options.map((o) => o.value) : [];
+  return values.filter((v) => !(HOME_SPAWNS as readonly string[]).includes(v));
+})();
+
+/** Every spawn a world can start at. */
+export const SPAWNS: readonly string[] = [...HOME_SPAWNS, ...GRID_SPAWNS];
+/** A spawn: one of `SPAWNS`. */
+export type Spawn = string;
 
 export function isSpawn(v: unknown): v is Spawn {
-  return (SPAWNS as readonly unknown[]).includes(v);
+  return typeof v === 'string' && SPAWNS.includes(v);
 }
 
 /** The local world's options for a spawn. */
-export function spawnOptions(spawn: Spawn): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal'> {
+export function spawnOptions(
+  spawn: Spawn,
+): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal' | 'spawnGrid'> {
   return {
-    ...(spawn === 'b' || spawn === 'portal-b' ? { spawnFaceB: true } : {}),
+    ...(spawn === 'b' || spawn === 'portal-b' || spawn === 'town-b' ? { spawnFaceB: true } : {}),
     ...(spawn === 'portal' || spawn === 'portal-b' ? { spawnPortal: true } : {}),
+    // The worker's spawn key carries the town spawns too (`local::town_spawn_face`).
+    ...(GRID_SPAWNS.includes(spawn) || spawn === 'town' || spawn === 'town-b'
+      ? { spawnGrid: spawn }
+      : {}),
   };
+}
+
+/**
+ * A point the dev tools' `teleport` takes (BUGS.md #84): `[x, y, z]` or `{ x, y, z }` of finite
+ * numbers, or null. Anything else used to reach the worker as NaN, where the move was refused and
+ * the page still answered true.
+ */
+export function feetOf(v: unknown): [number, number, number] | null {
+  const xyz = Array.isArray(v)
+    ? v.length === 3
+      ? v
+      : null
+    : typeof v === 'object' && v !== null
+      ? [(v as { x?: unknown }).x, (v as { y?: unknown }).y, (v as { z?: unknown }).z]
+      : null;
+  if (xyz === null || !xyz.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return xyz as [number, number, number];
 }
 
 /** `?at=x,y,z`: three finite numbers, or null. */
@@ -91,12 +172,20 @@ export function parseLocalWorld(search: string): LocalWorld {
   // `?mode=adventure`: the world's game mode (a link's test world; ADR 0065, 0066).
   const m = params.get('mode');
   const mode = m !== null && isGameMode(m) ? { mode: m } : {};
+  // `?size=2x` (BIG_MAP.md M2b): a bigger terrain world, its own world file (`<name>-x2`) so the
+  // seed's 1× world is untouched; the flat and sandbox worlds are 1× only.
+  const sized =
+    generatorVersion === GENERATORS.terrain ? sizeOptions(sizeScale(params.get('size'))) : {};
+  const suffix = sized.radiusScale ? `-x${String(sized.radiusScale)}` : '';
+  const sizedFile = suffix
+    ? { file: `${localWorldName(generatorVersion, worldSeed)}${suffix}` }
+    : {};
   const at = parseAt(params.get('at'));
-  if (at) return { worldSeed, generatorVersion, spawnAt: at, ...mode };
+  if (at) return { worldSeed, generatorVersion, ...sizedFile, spawnAt: at, ...mode, ...sized };
   const spawn = params.get('spawn');
   if (spawn !== '' && isSpawn(spawn)) {
     // Each spawn is its own world file, so the others are untouched.
-    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}`;
+    const file = `${localWorldName(generatorVersion, worldSeed)}-${spawn === 'b' ? 'faceb' : spawn}${suffix}`;
     return {
       worldSeed,
       generatorVersion,
@@ -104,7 +193,8 @@ export function parseLocalWorld(search: string): LocalWorld {
       ...spawnOptions(spawn),
       spawnOnOpen: true,
       ...mode,
+      ...sized,
     };
   }
-  return { worldSeed, generatorVersion, ...mode };
+  return { worldSeed, generatorVersion, ...sizedFile, ...mode, ...sized };
 }

@@ -4,9 +4,9 @@
   "description": "Rocky headlands over the sea: grass tops, stone faces, no beaches.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "max": 0.6,
-      "blend": 0.1
+    "celsius": {
+      "max": 15,
+      "blend": 2
     },
     "elevation": {
       "min": 25,

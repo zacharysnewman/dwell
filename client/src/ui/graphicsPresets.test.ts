@@ -59,8 +59,8 @@ describe('graphics presets data', () => {
       }),
     ).toThrow(/\(medium\): clouds is missing/);
     expect(
-      bad((d) => ((d.presets[3]?.settings as Record<string, unknown>).bloom = 'high')),
-    ).toThrow(/unknown setting "bloom"/);
+      bad((d) => ((d.presets[3]?.settings as Record<string, unknown>).sparkle = 'high')),
+    ).toThrow(/unknown setting "sparkle"/);
     expect(bad((d) => ((d.presets[4] as GraphicsPreset).id = 'low'))).toThrow(/listed twice/);
     expect(bad((d) => (d.default.mobile = 'phone'))).toThrow(/default.mobile "phone"/);
     expect(bad((d) => ((d.presets[0] as GraphicsPreset).settings.distanceM = 5000))).toThrow(
@@ -86,6 +86,13 @@ describe('graphics presets data', () => {
 });
 
 describe('applying a preset', () => {
+  it('Low turns the leaf cards off (the owner plays on Low, BUGS.md #72); every other preset keeps them', () => {
+    const start = defaultSettings(false);
+    expect(start.leafCards).toBe(true);
+    for (const p of GRAPHICS_PRESETS.presets)
+      expect(applyPreset(start, p, false).leafCards, p.id).toBe(p.id !== 'low');
+  });
+
   // Every setting but the preset's fields, to see that nothing else moves.
   const others = (s: Settings) => ({
     ...s,
@@ -93,7 +100,9 @@ describe('applying a preset', () => {
     water: { ...s.water, quality: null },
     shadows: null,
     shafts: null,
+    bloom: null,
     clouds: null,
+    leafCards: null,
     detail: null,
   });
 

@@ -4,7 +4,9 @@
 //! ([`PLAYER_GLB`]); the others (the animals) are data for the viewer until they spawn.
 
 pub mod anim;
+pub mod first_person;
 pub mod glb;
+pub mod grip;
 pub mod math;
 pub mod retarget;
 
@@ -14,10 +16,128 @@ mod table {
 }
 pub use table::{
     DETAIL_DEFAULT, DETAIL_LEVELS, GLBS, HAND_GRIP, MODELS, PLAYER, PLAYER_GLB, PROP_GLBS, PROPS,
+    RAMP_BASES,
 };
+
+/// The most colours one body's remap swaps (the skinned shader's `remap` rows).
+pub const MAX_REMAP: usize = 9;
+
+/// A palette ramp's base colour (sRGB `0xRRGGBB`), by name: what a model's faces carry (§11.2).
+pub fn ramp_base(name: &str) -> Option<u32> {
+    RAMP_BASES.iter().find(|(n, _)| *n == name).map(|&(_, c)| c)
+}
+
+/// The sRGB curve's inverse (an sRGB channel 0..1 to linear).
+pub fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// A model's part map (shared/models/parts.mjs, docs/CHARACTERS.md §11.11, BUGS.md #96): its part
+/// names and, a string a detail level, each vertex's part (`'0'` none, `'1'`.. the parts in order).
+/// An NPC's colours recolour by part, not by colour.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Parts {
+    pub names: &'static [&'static str],
+    pub levels: &'static [&'static str],
+}
+
+impl Parts {
+    /// Part `name`'s number (1-based: what its vertices carry); None: not a part of the model.
+    pub fn number(&self, name: &str) -> Option<u8> {
+        self.names
+            .iter()
+            .position(|n| *n == name)
+            .map(|k| k as u8 + 1)
+    }
+
+    /// Each vertex's part number (0 none) at detail level `level` (past the last: the last's).
+    pub fn level(&self, level: usize) -> Vec<u8> {
+        let Some(s) = self
+            .levels
+            .get(level.min(self.levels.len().saturating_sub(1)))
+        else {
+            return Vec::new();
+        };
+        s.bytes().map(|b| b - b'0').collect()
+    }
+}
+
+/// A part's remap: the model's base, the base drawn in its place (sRGB 0..1), and how much of the
+/// model's shading inside the part it keeps (0: one flat colour, 1: every shade as modelled).
+pub type PartRemap = ([f32; 3], [f32; 3], f32);
+
+/// A colour by name: a palette ramp's base, or `#rrggbb` (an appearance tone, BUGS.md #152).
+pub fn colour_base(name: &str) -> Option<u32> {
+    match name.strip_prefix('#') {
+        Some(hex) if hex.len() == 6 => u32::from_str_radix(hex, 16).ok(),
+        Some(_) => None,
+        None => ramp_base(name),
+    }
+}
+
+/// A body's colour remap as drawn, by part (docs/CHARACTERS.md §11.11, BUGS.md #96): slot `k` is
+/// part `k + 1`'s (the model's ramp, the colour drawn in its place, the shading it keeps), their
+/// base colours sRGB 0..1; None: the part as modelled. `colours` are (part, from, to, shade); `to` a
+/// ramp or `#rrggbb` ([`colour_base`]); a part the model lacks or a colour unknown is left out. A
+/// ramp kept (`from` = `to`) still recolours its part, so every shade of the part takes the ramp's
+/// hue as in every other variant (the Peasant's neck is skin_tan).
+pub fn part_remap(
+    parts: Option<&Parts>,
+    colours: &[(&str, &str, &str, f32)],
+) -> [Option<PartRemap>; MAX_REMAP] {
+    let rgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+    let mut out = [None; MAX_REMAP];
+    let Some(parts) = parts else { return out };
+    for &(part, from, to, shade) in colours {
+        let Some(n) = parts.number(part) else {
+            continue;
+        };
+        if usize::from(n) > MAX_REMAP {
+            continue;
+        }
+        if let (Some(f), Some(t)) = (ramp_base(from), colour_base(to)) {
+            out[usize::from(n) - 1] = Some((rgb(f), rgb(t), shade.clamp(0.0, 1.0)));
+        }
+    }
+    out
+}
+
+/// A palette colour's luminance (sRGB 0..1, Rec. 709 weights): the recolour keeps a vertex's
+/// shade of its part (its luminance over the part's ramp base's).
+pub fn luma(c: [f32; 3]) -> f32 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/// A vertex's colour (sRGB 0..1) after its body's remap (the skinned shader's `remap_colour`): a
+/// vertex of a remapped part takes the part's new base, at the vertex's shade of the old one
+/// (luminance over the old base's) kept by the part's share (BUGS.md #152: the skin's tan neck
+/// nearly its face's tone), at most 1; any other as modelled.
+pub fn recolour(c: [f32; 3], part: u8, remap: &[Option<PartRemap>]) -> [f32; 3] {
+    let Some(Some((from, to, keep))) = (part as usize).checked_sub(1).and_then(|k| remap.get(k))
+    else {
+        return c;
+    };
+    let shade = 1.0 + (luma(c) / luma(*from).max(1e-3) - 1.0) * keep;
+    to.map(|t| (t * shade).min(1.0))
+}
+
+/// The sRGB curve (a linear channel 0..1 to sRGB): the GLBs' `COLOR_0` is linear, the skinned
+/// vertices carry sRGB bytes (BUGS.md #96: read as sRGB, the linear bytes drew dark colours black).
+pub fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.003_130_8 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
 
 /// The fixture table (shared/models/fixtures): a model added by data alone, for tests.
 #[rustfmt::skip]
+#[allow(unused_imports)]
 pub mod fixture {
     include!("fixture.gen.rs");
 }
@@ -83,6 +203,48 @@ pub struct Retarget {
     pub bones: &'static [RetargetBone],
 }
 
+/// Your first-person arms drawn from a model (models.json `firstPerson`, docs/CHARACTERS.md §11.10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FirstPerson {
+    /// The arm's skin joints (indices into the skin's joints).
+    pub joints: &'static [usize],
+    /// The least share of a vertex's skin weight on `joints` that puts it in the arm.
+    pub weight: f32,
+    /// Degrees, Euler XYZ in view space: the whole arm turned about its hand (the sleeve's cuff
+    /// brought into view, the hand and item kept).
+    pub turn: [f32; 3],
+    /// Your own body in first person from this model (`firstPerson.body`); None: none drawn.
+    pub body: Option<FirstPersonBody>,
+}
+
+/// Your own body seen in first person (models.json `firstPerson.body`, docs/CHARACTERS.md §5.1,
+/// §11.12): the body mesh less every triangle with a vertex that has at least `weight` of its skin
+/// weight on `hide` or on the first-person arm's `joints` (drawn by the arms view).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FirstPersonBody {
+    /// The skin joints left out besides the arm's: the head (its hat and hair), the other arm.
+    pub hide: &'static [usize],
+    pub weight: f32,
+}
+
+/// A pose of the hand (models.json `grips.poses`, docs/CHARACTERS.md §11.10): turns of skin joints
+/// on top of their own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Grip {
+    pub name: &'static str,
+    /// (skin joint index, degrees Euler XYZ in the joint's frame).
+    pub turns: &'static [(usize, [f32; 3])],
+    /// Metres the whole body is lowered while posed (an idle pose's `$drop`; 0 for a grip).
+    pub drop: f32,
+}
+
+impl ModelData {
+    /// Its idle pose of that name (models.json `poses`), if it has one.
+    pub fn pose(&self, name: &str) -> Option<&'static Grip> {
+        self.poses.iter().find(|p| p.name == name)
+    }
+}
+
 /// One model's data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelData {
@@ -101,6 +263,26 @@ pub struct ModelData {
     pub hand: Option<Hand>,
     /// Its joints driven by the characters rig's pose; None: it plays its own clips only.
     pub retarget: Option<Retarget>,
+    /// Your first-person arms drawn from it; None: it draws none.
+    pub first_person: Option<FirstPerson>,
+    /// Its hand's poses, and which each held item (by name) takes; an item not listed: the open
+    /// hand.
+    pub grips: &'static [Grip],
+    pub grip_items: &'static [(&'static str, &'static str)],
+    /// Idle poses as data (models.json `poses`, WORK_QUEUE item 39): per pose name its joints'
+    /// turns on top of the clips, blended in and out over `pose_blend_s` seconds.
+    pub poses: &'static [Grip],
+    pub pose_blend_s: f32,
+    /// Its part map (models.json `parts`): what an NPC's colours recolour; None: none.
+    pub parts: Option<Parts>,
+}
+
+impl ModelData {
+    /// The hand's pose for held item `item` (a characters.json item's name); None: the open hand.
+    pub fn grip(&self, item: &str) -> Option<&'static Grip> {
+        let (_, name) = self.grip_items.iter().find(|(i, _)| *i == item)?;
+        self.grips.iter().find(|g| g.name == *name)
+    }
 }
 
 impl ModelData {
@@ -172,6 +354,9 @@ pub struct PropHold {
     pub scale: f32,
     /// Degrees about the handle, from the prop's +x side facing the hand's `edge`.
     pub roll: f32,
+    /// Degrees more about the handle (the hand's upright axis at rest) turning the head's flank
+    /// toward the eye so it shows (owner, 2026-11-14): the show, where `roll` is the edge's aim.
+    pub yaw: f32,
 }
 
 impl PropHold {
@@ -179,6 +364,7 @@ impl PropHold {
     pub const DEFAULT: PropHold = PropHold {
         scale: 1.0,
         roll: 0.0,
+        yaw: 0.0,
     };
 }
 
@@ -216,7 +402,7 @@ fn unit(a: [f32; 3]) -> [f32; 3] {
 impl PropData {
     /// A point `p` of its GLB (m) in the hand's bone frame held by `hand`: its grip at the fist,
     /// its handle's axis along the hand's grip axis, its +x side (square to the handle) toward
-    /// the hand's edge turned by its `roll` about the handle, scaled about the grip.
+    /// the hand's edge turned by its `roll` and `yaw` about the handle, scaled about the grip.
     pub fn in_hand(&self, hand: &HandGrip, p: [f32; 3]) -> [f32; 3] {
         let a = unit(self.axis);
         // The prop's frame: its handle, its +x side square to it, and the third way.
@@ -227,7 +413,7 @@ impl PropData {
         let ax = unit(hand.axis);
         let e = unit(hand.edge);
         let f = cross(ax, e);
-        let (s, c) = self.hold.roll.to_radians().sin_cos();
+        let (s, c) = (self.hold.roll + self.hold.yaw).to_radians().sin_cos();
         let e = [0, 1, 2].map(|k| e[k] * c + f[k] * s);
         let f = cross(ax, e);
         let q = [0, 1, 2].map(|k| (p[k] - self.grip[k]) * self.hold.scale);
@@ -292,9 +478,121 @@ mod detail_tests {
         assert_eq!(detail_level(levels, "coarse", 0), 1);
         let m = glb::parse(fixture::PLAYER_GLB).unwrap();
         assert_eq!(m.level_count(), levels.len());
-        assert_eq!(m.level(1).indices.len(), 3);
+        assert_eq!(m.level(1).indices.len(), 6);
         // A level past the model's last draws its coarsest.
         assert_eq!(m.level(9).positions.len(), m.level(1).positions.len());
+    }
+}
+
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+
+    const PARTS: Parts = Parts {
+        names: &["skin", "hair"],
+        levels: &["0121", "12"],
+    };
+
+    #[test]
+    fn a_remap_swaps_a_parts_ramp_bases_by_name() {
+        assert_eq!(ramp_base("wool_green"), Some(0x4f8a4a));
+        assert_eq!(ramp_base("nope"), None);
+        let r = part_remap(
+            Some(&PARTS),
+            &[
+                ("hair", "hair_brown", "hair_black", 1.0),
+                ("hat", "wool_yellow", "leather", 1.0),
+                ("skin", "skin_fair", "nope", 1.0),
+            ],
+        );
+        assert_eq!(r[0], None, "an unknown ramp is left out");
+        let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+        assert_eq!(
+            r[1],
+            Some((srgb(0x6b4329), srgb(0x302a3a), 1.0)),
+            "hair, slot 2"
+        );
+        assert!(
+            r[2..].iter().all(Option::is_none),
+            "a part the model lacks: none"
+        );
+        assert_eq!(
+            part_remap(None, &[("hair", "hair_brown", "hair_black", 1.0)]),
+            [None; MAX_REMAP]
+        );
+        assert_eq!(PARTS.level(0), vec![0, 1, 2, 1]);
+        assert_eq!(
+            PARTS.level(7),
+            vec![1, 2],
+            "past the last level: the last's"
+        );
+    }
+
+    #[test]
+    fn a_part_map_is_added_by_data_alone() {
+        // The fixture model's part map (shared/models/fixtures/parts/two_bone.json): the vertex on
+        // the tip joint is the `tip`, the rest the `base`.
+        let parts = find(fixture::MODELS, "two_bone").unwrap().parts.unwrap();
+        assert_eq!(parts.number("tip"), Some(1));
+        assert_eq!(parts.level(0), vec![2, 1, 2, 2]);
+        let r = part_remap(Some(&parts), &[("tip", "wool_green", "wool_red", 1.0)]);
+        assert!(r[0].is_some() && r[1].is_none());
+    }
+
+    #[test]
+    fn a_recolour_keeps_the_vertexs_shade_of_its_part() {
+        let r = part_remap(Some(&PARTS), &[("skin", "skin_fair", "skin_deep", 1.0)]);
+        let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+        let (fair, deep) = (srgb(0xf0c6a6), srgb(0x6b4334));
+        assert_eq!(recolour(fair, 1, &r), deep, "the base takes the new base");
+        let tan = srgb(0xd9a27a);
+        let neck = recolour(tan, 1, &r);
+        assert!(
+            luma(neck) < luma(deep) && luma(neck) > 0.6 * luma(deep),
+            "{neck:?}"
+        );
+        assert_eq!(recolour(fair, 0, &r), fair, "no part: as modelled");
+        assert_eq!(
+            recolour(fair, 2, &r),
+            fair,
+            "a part not remapped: as modelled"
+        );
+    }
+
+    // BUGS.md #152: a tone by `#rrggbb` (shared/creatures/appearance.json) recolours the part, and
+    // its shade share pulls the modelled shades (the Peasant's skin_tan neck, a ramp darker than
+    // its skin_fair face) toward the tone: at 0 the whole part is one colour.
+    #[test]
+    fn a_tone_by_hex_keeps_its_share_of_the_parts_shading() {
+        assert_eq!(colour_base("#6b4334"), Some(0x6b4334));
+        assert_eq!(colour_base("#6b43"), None);
+        assert_eq!(colour_base("skin_deep"), Some(0x6b4334));
+        let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+        let (fair, tan, tone) = (srgb(0xf0c6a6), srgb(0xd9a27a), srgb(0x8a5539));
+        let ratio = |keep: f32| {
+            let r = part_remap(Some(&PARTS), &[("skin", "skin_fair", "#8a5539", keep)]);
+            assert_eq!(recolour(fair, 1, &r), tone, "the base takes the tone");
+            let neck = recolour(tan, 1, &r);
+            let k = [0, 1, 2].map(|c| neck[c] / tone[c]);
+            assert!(
+                k.iter().all(|x| (x - k[0]).abs() < 1e-4),
+                "{neck:?}: a shade of the tone"
+            );
+            k[0]
+        };
+        assert_eq!(ratio(0.0), 1.0, "shade 0: one flat colour");
+        let full = ratio(1.0);
+        let some = ratio(0.35);
+        assert!(full < some && some < 1.0, "{full} {some}");
+        assert!((1.0 - some - 0.35 * (1.0 - full)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn linear_to_srgb_inverts_srgb_to_linear() {
+        for b in [0u8, 3, 37, 107, 200, 255] {
+            let c = f32::from(b) / 255.0;
+            assert!((linear_to_srgb(srgb_to_linear(c)) - c).abs() < 1e-4, "{b}");
+        }
     }
 }
 
@@ -356,7 +654,8 @@ mod props_tests {
             data.hold,
             PropHold {
                 scale: 0.5,
-                roll: 90.0
+                roll: 90.0,
+                yaw: 0.0
             }
         );
         let hand = fixture::HAND_GRIP;
@@ -389,6 +688,7 @@ mod props_tests {
             hold: PropHold {
                 scale: 1.0,
                 roll: 30.0,
+                yaw: 0.0,
             },
         };
         let hand = HAND_GRIP;

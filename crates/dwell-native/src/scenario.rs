@@ -260,6 +260,8 @@ impl Run {
                     eye,
                     yaw_deg: num("yaw")?,
                     pitch_deg: num("pitch")?,
+                    fov_deg: None,
+                    up: None,
                 }));
                 Ok(true)
             }

@@ -46,8 +46,8 @@ pub struct Group {
 pub struct Ecosystem {
     pub seed: u64,
     pub day: f64,
-    /// Each island cell's forage now (deer-days).
-    pub grazing: Vec<f64>,
+    /// Each island land cell's forage now (deer-days; f32, as the island's most).
+    pub grazing: Vec<f32>,
     pub groups: Vec<Group>,
     pub next_id: u32,
     /// The herds and packs near players (individuals now: out of `groups`), as the near side last
@@ -107,8 +107,9 @@ struct Seen {
 }
 
 impl Ecosystem {
-    /// A new ecology on `island`: each species' start groups on cells drawn from the seed (a
-    /// grazer's on cells with forage), every cell's forage full.
+    /// A new ecology on `island`: each species' start groups ([`SpeciesDef::start_groups_on`] its
+    /// range: a grazer's the cells with forage, a hunter's the land) on cells of its range drawn
+    /// from the seed, every cell's forage full.
     pub fn new(island: &Island, data: &Data, seed: u64) -> Self {
         let mut eco = Self {
             seed,
@@ -118,9 +119,7 @@ impl Ecosystem {
             next_id: 0,
             near: Vec::new(),
         };
-        let land: Vec<usize> = (0..island.walkable.len())
-            .filter(|&c| island.walkable[c])
-            .collect();
+        let land: Vec<usize> = (0..island.cells()).collect();
         let pasture: Vec<usize> = land
             .iter()
             .copied()
@@ -134,7 +133,9 @@ impl Ecosystem {
             if cells.is_empty() {
                 continue;
             }
-            for k in 0..sp.start_groups {
+            // Its range's area (km²): a density's start count (WORK_QUEUE item 46).
+            let km2 = cells.len() as f64 * island.cell * island.cell / 1e6;
+            for k in 0..sp.start_groups_on(km2) {
                 let h = hash(seed, s as u64, k as u64);
                 let (x, z) = island.centre(cells[(h % cells.len() as u64) as usize]);
                 eco.push(s, x, z, sp.start_size, 0.2, 1.0);
@@ -143,7 +144,18 @@ impl Ecosystem {
         eco
     }
 
-    fn push(&mut self, species: usize, x: f64, z: f64, size: f64, hunger: f64, energy: f64) {
+    /// Adds a far record of `species` at face-local (`x`, `z`); its id (the start's groups, and
+    /// the dev tools' `spawnHerd`, docs/DEV_TOOLS.md).
+    pub fn push(
+        &mut self,
+        species: usize,
+        x: f64,
+        z: f64,
+        size: f64,
+        hunger: f64,
+        energy: f64,
+    ) -> u32 {
+        let id = self.next_id;
         self.groups.push(Group {
             id: self.next_id,
             species,
@@ -155,6 +167,7 @@ impl Ecosystem {
             activity: Activity::Resting,
         });
         self.next_id += 1;
+        id
     }
 
     /// The head of `species` on the island (the far records; [`Self::near_head`] adds those near
@@ -191,9 +204,15 @@ impl Ecosystem {
             h = splitmix(h ^ u64::from(g.id) ^ ((g.species as u64) << 32));
         }
         for v in &self.grazing {
-            h = splitmix(h ^ v.to_bits());
+            h = splitmix(h ^ u64::from(v.to_bits()));
         }
         h
+    }
+
+    /// The heap the ecosystem holds (bytes): the forage and the groups.
+    pub fn heap_bytes(&self) -> usize {
+        self.grazing.capacity() * std::mem::size_of::<f32>()
+            + (self.groups.capacity() + self.near.capacity()) * std::mem::size_of::<Group>()
     }
 
     /// Advances the ecology `days`, in steps of at most `island.stepDays`.
@@ -209,7 +228,12 @@ impl Ecosystem {
     fn step_once(&mut self, island: &Island, data: &Data, dt: f64) {
         let regrow = (-data.regrow_per_day * dt).exp();
         for (g, &max) in self.grazing.iter_mut().zip(&island.grazing_max) {
-            *g = max - (max - *g) * regrow;
+            // In f64, rounded up to the next f32: never past the most (an f32), never below where
+            // it was, and a regrown cell reaches its most exactly (rounded to nearest, a gap of
+            // one f32 step would stay one step for ever), so its saved forage is not written.
+            let v = f64::from(max) - (f64::from(max) - f64::from(*g)) * regrow;
+            let f = v as f32;
+            *g = if f64::from(f) < v { f.next_up() } else { f };
         }
         let species = data.species.len();
         // The groups near players count in the totals (their grazing pressure, a hunter's prey).
@@ -219,10 +243,19 @@ impl Ecosystem {
         let capacity: Vec<f64> = (0..species)
             .map(|s| island.carrying_capacity(data, s))
             .collect();
+        // What grazers decide by: the groups of the species any grazer flees (few: the packs).
+        let fled: Vec<bool> = (0..species)
+            .map(|s| {
+                data.species
+                    .iter()
+                    .any(|sp| sp.flee.is_some_and(|f| f.from.contains(&s)))
+            })
+            .collect();
         let seen: Vec<Seen> = self
             .groups
             .iter()
             .chain(&self.near)
+            .filter(|g| fled[g.species])
             .map(|g| Seen {
                 species: g.species,
                 x: g.x,
@@ -301,9 +334,11 @@ impl Ecosystem {
         let need = (g.size * per_head * FEED_DAYS).max(1e-9);
         let (flee_from, flee_r): (&[usize], f64) =
             sp.flee.map_or((&[], 0.0), |f| (f.from, f.radius_m));
+        // Only the species it flees are looked at (seen holds every group: at a thousand herds a
+        // scan per herd of them all was most of the step).
         let threats: Vec<(f64, f64)> = seen
             .iter()
-            .filter(|o| flee_from.contains(&o.species))
+            .filter(|o| !flee_from.is_empty() && flee_from.contains(&o.species))
             .map(|o| (o.x, o.z))
             .filter(|&p| dist(p, at) <= flee_r + sp.sense_radius_m)
             .collect();
@@ -327,19 +362,18 @@ impl Ecosystem {
                 if a < 0 || b < 0 || a >= island.n as i64 || b >= island.n as i64 {
                     continue;
                 }
-                let c = b as usize * island.n + a as usize;
-                if !island.walkable[c] {
+                let Some(c) = island.index(a as usize, b as usize) else {
                     continue;
-                }
-                let centre = island.centre(c);
+                };
+                let centre = island.grid_centre(a as usize, b as usize);
                 let d = dist(at, centre);
                 if d > sp.sense_radius_m + island.cell * 0.5 {
                     continue;
                 }
-                let food = (self.grazing[c] / need).min(1.0);
+                let food = (f64::from(self.grazing[c]) / need).min(1.0);
                 let stay = if Some(c) == here { 0.05 } else { 0.0 };
                 // A refuge takes the danger away (a threatened herd makes for the crags).
-                let threat = 2.0 * danger(centre) * (1.0 - island.refuge[c]);
+                let threat = 2.0 * danger(centre) * (1.0 - island.refuge(c));
                 let score = food - threat - 0.02 * d / island.cell + stay;
                 cells.push((score, c, d));
             }
@@ -378,8 +412,9 @@ impl Ecosystem {
             if eaten >= demand {
                 break;
             }
-            let take = self.grazing[c].min(demand - eaten);
-            self.grazing[c] -= take;
+            let have = f64::from(self.grazing[c]);
+            let take = have.min(demand - eaten);
+            self.grazing[c] = (have - take) as f32;
             eaten += take;
         }
         if demand > 0.0 { eaten / demand } else { 1.0 }
@@ -425,6 +460,20 @@ impl Ecosystem {
                 Some((d, _)) if d <= reach_m * 0.5 => (at, Activity::Hunting),
                 Some((_, p)) => (p, Activity::Hunting),
                 None if g.hunger < 0.3 => (at, Activity::Resting),
+                // A hungry hunter heads for the island's nearest prey group (WORK_QUEUE item 39,
+                // owner 2026-11-12: "hungry packs travel toward the nearest herd"), at any distance.
+                None if sp
+                    .roam
+                    .is_some_and(|r| g.hunger > r.toward_prey_above_hunger)
+                    && all().any(huntable) =>
+                {
+                    let nearest = all()
+                        .filter(|o| huntable(o))
+                        .map(|o| (dist(at, (o.x, o.z)), (o.x, o.z)))
+                        .min_by(|a, b| a.0.total_cmp(&b.0))
+                        .map(|(_, p)| p);
+                    (nearest.unwrap_or(at), Activity::Roaming)
+                }
                 None => {
                     let h = hash(self.seed, u64::from(g.id), (self.day / ROAM_DAYS) as u64);
                     let a = unit(h) * std::f64::consts::TAU;
@@ -480,11 +529,26 @@ impl Ecosystem {
     fn merge(&mut self, data: &Data) {
         let n = self.groups.len();
         let mut gone = vec![false; n];
+        // A pair needs one under its `mergeBelow`; a group only grows here, and only as the `i`
+        // of its own turn, so a later group not small now never is: a big `i` scans the small
+        // ones only (at a thousand herds, a scan of every pair was most of the step).
+        let small: Vec<usize> = (0..n)
+            .filter(|&j| {
+                let g = &self.groups[j];
+                g.size < data.species[g.species].group.merge_below
+            })
+            .collect();
         for i in 0..n {
             if gone[i] {
                 continue;
             }
-            for j in i + 1..n {
+            let rules = data.species[self.groups[i].species].group;
+            let all = self.groups[i].size < rules.merge_below;
+            let from = small.partition_point(|&j| j <= i);
+            let later = (i + 1..n)
+                .filter(|_| all)
+                .chain(small[from..].iter().copied().filter(|_| !all));
+            for j in later {
                 if gone[j] || self.groups[j].species != self.groups[i].species {
                     continue;
                 }
@@ -515,12 +579,15 @@ impl Ecosystem {
     /// A group above its cap splits in two (each half lives: cap ≥ 2 × `dieBelow`); at the island's
     /// most groups it stops at the cap instead.
     fn split(&mut self, island: &Island, data: &Data) {
+        let mut count: Vec<usize> = (0..data.species.len())
+            .map(|s| self.group_count(s))
+            .collect();
         let mut i = 0;
         while i < self.groups.len() {
             let s = self.groups[i].species;
             let rules = data.species[s].group;
             while self.groups[i].size > rules.cap {
-                if self.group_count(s) >= rules.max_groups {
+                if count[s] >= rules.max_groups {
                     self.groups[i].size = rules.cap;
                     break;
                 }
@@ -540,6 +607,7 @@ impl Ecosystem {
                 let (hunger, energy) = (g.hunger, g.energy);
                 self.groups[i].size = half;
                 self.push(s, x, z, half, hunger, energy);
+                count[s] += 1;
             }
             i += 1;
         }

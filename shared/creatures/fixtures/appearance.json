@@ -1,0 +1,14 @@
+{
+  "$comment": "The fixture appearance set (tests only, BUGS.md #152): added by data alone; the fixture NPC (fixtures/npcs.json) picks from it. Two tones, the pale one with a hair colour only it has.",
+  "formatVersion": 1,
+  "hair": { "silver": "#c8c8d0", "jet": "#101010" },
+  "sets": {
+    "test:pair": {
+      "shade": 0,
+      "tones": [
+        { "name": "pale", "base": "#fae0d0", "weight": 3, "hair": [{ "colour": "silver", "weight": 1 }, { "colour": "jet", "weight": 1 }] },
+        { "name": "dark", "base": "#402018", "hair": [{ "colour": "jet", "weight": 1 }] }
+      ]
+    }
+  }
+}

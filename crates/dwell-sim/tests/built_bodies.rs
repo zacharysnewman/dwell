@@ -444,3 +444,58 @@ fn a_floating_raft_drifts_with_the_current() {
         "ten seconds on the raft goes {v:?} in a 0.5 m/s current along z"
     );
 }
+
+#[test]
+fn a_felled_trunk_afloat_stays_a_body_and_settles_once_beached() {
+    // Owner, 2026-11-12: "trees they are floating in water should never settle, it causes them to
+    // block up rivers randomly instead of floating downstream." A natural trunk (four logs) let
+    // go in a still pool bobs to rest and stays a body for 35 s (past `maxSeconds`); moved onto
+    // the bank it settles into blocks there once out of the water `beachSeconds` and still. Red
+    // before: it settled afloat about a second after it came to rest.
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let water = dwell_blocks::require("dwell:water");
+    for x in 4..16 {
+        for z in 4..16 {
+            for y in G - 4..G {
+                f.server.world().set_voxel(x, y, z, water);
+            }
+            f.server.world().set_voxel(x, G, z, 0);
+        }
+    }
+    let surface = f64::from(G) * 0.5;
+    let trunk: Vec<([i32; 3], u16)> = (0..4)
+        .map(|x| ([x, 0, 0], dwell_blocks::require("dwell:log[axis=x]")))
+        .collect();
+    let id = f.server.add_body(0, trunk, [8.5, surface + 0.5, 9.5]);
+    steps(&mut f, 60 * 35);
+    let (at, _) = f.server.body_pose(id).expect("afloat, still a body");
+    assert!(
+        (at.y - surface).abs() < 0.3,
+        "afloat at the surface: {:.2} (surface {surface})",
+        at.y
+    );
+    // Onto the bank, the ground beside the pool.
+    let body = f.server.body_handle(id).expect("the trunk");
+    {
+        let (_, physics, _) = f.server.sim();
+        physics.set_position(body, DVec3::new(20.5, surface + 0.3, 9.5));
+        physics.set_velocity(body, DVec3::ZERO);
+        physics.set_angular_velocity(body, DVec3::ZERO);
+    }
+    steps(&mut f, 60 * 5);
+    assert!(
+        f.server.body_pose(id).is_none(),
+        "beached, it settled into blocks"
+    );
+    let log_cells = (19..25)
+        .filter(|&x| {
+            dwell_blocks::info(f.server.world().get_voxel(x, G, 9))
+                .name
+                .starts_with("dwell:log")
+        })
+        .count();
+    assert_eq!(log_cells, 4, "its four logs on the bank");
+}

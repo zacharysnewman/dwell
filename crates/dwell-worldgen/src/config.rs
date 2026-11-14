@@ -104,6 +104,8 @@ pub fn biome_from_json(v: &Value) -> Result<Biome, String> {
         wetness: range(w, "wetness").map_err(at)?,
         elevation: range(w, "elevation").map_err(at)?,
         coast: range(w, "coast").map_err(at)?,
+        celsius: range(w, "celsius").map_err(at)?,
+        rain: range(w, "rain").map_err(at)?,
     };
     let bands = v
         .get("bands")
@@ -394,6 +396,8 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             }
         };
         whole(&mut k.kind, "kind");
+        whole(&mut k.plates, "plates");
+        whole(&mut k.climate, "climate");
         whole(&mut k.arc_count, "arcCount");
         whole(&mut k.hotspot_count, "hotspotCount");
         whole(&mut k.ridge_count, "ridgeCount");
@@ -456,6 +460,8 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
             }
         }
         if !(k.kind <= 3
+            && k.plates <= 1
+            && k.climate <= 1
             && k.arc_count <= 32
             && k.hotspot_count <= 32
             && k.width > 0.0
@@ -498,6 +504,13 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         wet_reach: n("wetReach")?,
         dither_wavelength: n("ditherWavelength")? as i32,
         dither: n("dither")?,
+        // Absent (an edit stored before 0.68): the speckle as before, no warp.
+        dither_speckle: v
+            .get("ditherSpeckle")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0),
+        dither_warp: v.get("ditherWarp").and_then(Value::as_f64).unwrap_or(0.0),
+        trees_sharpen: v.get("treesSharpen").and_then(Value::as_f64).unwrap_or(1.0),
         wind_direction: n("windDirection")?,
         wind_reach: n("windReach")?,
         base_rain: n("baseRain")?,
@@ -542,15 +555,59 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             solubility: num(r, "solubility").map_err(at)?,
             face: text(r, "face").map_err(at)?,
             cap: text(r, "cap").map_err(at)?,
+            cap_by: cap_by_from_json(r.get("capBy")).map_err(at)?,
             scree: text(r, "scree").map_err(at)?,
             color,
         };
-        for id in [rock.face, rock.cap, rock.scree] {
+        for id in [rock.face, rock.cap, rock.scree]
+            .into_iter()
+            .chain(rock.cap_by.iter().map(|c| c.cap))
+        {
             if dwell_blocks::state(id).is_none() {
                 return Err(at(format!("{id} is not in the registry")));
             }
         }
         rocks.push(rock);
+    }
+    // A world's replaced blocks (rocks.json `surfaces.replace`; WORK_QUEUE item 15, 0.68): each
+    // rule's block, wherever a rock shows it, becomes its `with`, except on the rocks it names.
+    if let Some(rules) = v
+        .get("surfaces")
+        .and_then(|s| s.get("replace"))
+        .and_then(Value::as_array)
+    {
+        for rule in rules {
+            let at = |e: String| format!("surfaces.replace: {e}");
+            let (block, with) = (
+                text(rule, "block").map_err(at)?,
+                text(rule, "with").map_err(at)?,
+            );
+            if dwell_blocks::state(with).is_none() {
+                return Err(at(format!("{with} is not in the registry")));
+            }
+            let except: Vec<&str> = rule
+                .get("except")
+                .and_then(Value::as_array)
+                .map(|l| l.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            for r in rocks.iter_mut().filter(|r| !except.contains(&r.name)) {
+                let swap = |b: &'static str| if b == block { with } else { b };
+                r.face = swap(r.face);
+                r.cap = swap(r.cap);
+                r.scree = swap(r.scree);
+                if r.cap_by.iter().any(|c| c.cap == block) {
+                    let by: Vec<_> = r
+                        .cap_by
+                        .iter()
+                        .map(|c| crate::geology::CapRule {
+                            cap: swap(c.cap),
+                            ..*c
+                        })
+                        .collect();
+                    r.cap_by = Box::leak(by.into_boxed_slice());
+                }
+            }
+        }
     }
     let mut stacks = Vec::new();
     for st in list("stacks")? {
@@ -583,6 +640,11 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .ok_or(format!("rocks.json: {grp} is missing"))
             .and_then(|o| num(o, k).map_err(|e| format!("rocks.json: {grp}.{e}")))
     };
+    let opt = |k: &str| {
+        v.get("shaping")
+            .and_then(|o| o.get(k))
+            .and_then(Value::as_f64)
+    };
     Ok(Geology {
         rocks: Box::leak(rocks.into_boxed_slice()),
         stacks: Box::leak(stacks.into_boxed_slice()),
@@ -590,7 +652,24 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         strength: g("shaping", "strength")?.clamp(0.0, 1.0),
         tread: g("shaping", "tread")?,
         sheer: g("shaping", "sheer")?,
+        // Absent (an edit stored before 0.59): none, as before.
+        ledge: opt("ledge").unwrap_or(0.0),
+        ledge_every: opt("ledgeEvery").unwrap_or(1.0),
+        tread_relief: opt("treadRelief").unwrap_or(0.0),
+        // A word (rocks.json `shaping.notched`), or an edit stored in 0.59–0.61: 1 all, else none.
+        notched: match v.get("shaping").and_then(|s| s.get("notched")) {
+            Some(Value::String(w)) => match w.as_str() {
+                "none" => crate::geology::Notched::None,
+                "mesaEdges" => crate::geology::Notched::MesaEdges,
+                "all" => crate::geology::Notched::All,
+                other => return Err(format!("geology: shaping.notched: unknown {other}")),
+            },
+            Some(n) if n.as_f64().is_some_and(|n| n >= 1.0) => crate::geology::Notched::All,
+            _ => crate::geology::Notched::None,
+        },
         erosion: erosion_from_json(v.get("erosion"))?,
+        mesa_relief: mesa_relief_from_json(v.get("mesaRelief"))?,
+        blends: blends_from_json(v.get("blends"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v
             .get("tectonic")
@@ -612,11 +691,194 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
             .and_then(|t| t.get("ice"))
             .and_then(Value::as_str)
             .map_or(GEOLOGY.ice_block, leak),
+        plate_provinces: plate_provinces_from_json(v.get("plateProvinces"))?,
+        // Absent (an edit stored before 0.60): the build's.
+        arid: match v.get("arid") {
+            None => GEOLOGY.arid,
+            Some(a) => crate::geology::Arid {
+                rain: num(a, "rain").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                wetness: num(a, "wetness").map_err(|e| format!("rocks.json: arid.{e}"))?,
+                celsius: num(a, "celsius").map_err(|e| format!("rocks.json: arid.{e}"))?,
+            },
+        },
+    })
+}
+
+/// A rock's `capBy` (its treads' block by the climate; BUGS.md #134): absent, none.
+fn cap_by_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::CapRule], String> {
+    use crate::geology::{CapClimate, CapRule};
+    let Some(v) = v else { return Ok(&[]) };
+    let list = v.as_array().ok_or("capBy must be a list")?;
+    let mut out = Vec::new();
+    for e in list {
+        let o = e
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .ok_or("a capBy entry must be one {\"<climate>\": block}")?;
+        let (k, b) = o.iter().next().expect("one entry");
+        let climate = match k.as_str() {
+            "arid" => CapClimate::Arid,
+            _ => return Err(format!("capBy: unknown climate {k} (arid)")),
+        };
+        let cap = b.as_str().ok_or("a capBy block must be a name")?;
+        out.push(CapRule {
+            climate,
+            cap: leak(cap),
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
+}
+
+/// The rock provinces from plate history (rocks.json `plateProvinces`, R5); absent (an edit
+/// stored before R5): the build's.
+fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateProvinces, String> {
+    use crate::geology::{PlateProvinces, PlateRule, PlateSetting};
+    let Some(v) = v else {
+        return Ok(GEOLOGY.plate_provinces);
+    };
+    let at = |e: String| format!("rocks.json: plateProvinces.{e}");
+    let range = v
+        .get("rangeCore")
+        .and_then(Value::as_array)
+        .and_then(|a| match a.as_slice() {
+            [a, b] => Some([a.as_f64()?, b.as_f64()?]),
+            _ => None,
+        })
+        .ok_or_else(|| at("rangeCore must be [near, far]".into()))?;
+    let mut rules = Vec::new();
+    for r in v
+        .get("rules")
+        .and_then(Value::as_array)
+        .ok_or_else(|| at("rules must be a list".into()))?
+    {
+        let name = text(r, "setting").map_err(at)?;
+        let setting = PlateSetting::parse(name)
+            .ok_or_else(|| at(format!("rules: {name} is not a setting")))?;
+        // The stacks the setting mixes in (absent: none, as before 0.61).
+        let mut mix = Vec::new();
+        for m in r.get("mix").and_then(Value::as_array).into_iter().flatten() {
+            mix.push(crate::geology::PlateMix {
+                stack: text(m, "stack").map_err(at)?,
+                weight: num(m, "weight").map_err(at)?.max(0.0),
+            });
+        }
+        rules.push(PlateRule {
+            setting,
+            stack: text(r, "stack").map_err(at)?,
+            mix: Box::leak(mix.into_boxed_slice()),
+        });
+    }
+    Ok(PlateProvinces {
+        accreted_width: num(v, "accretedWidth").map_err(at)?,
+        core_width: num(v, "coreWidth").map_err(at)?,
+        range_core: range,
+        rift_width: num(v, "riftWidth").map_err(at)?,
+        basin_distance: num(v, "basinDistance").map_err(at)?,
+        // Absent (an edit stored before 0.57): a sharp edge, as then.
+        edge_fade: match v.get("edgeFade") {
+            None => 0.0,
+            Some(_) => num(v, "edgeFade").map_err(at)?,
+        },
+        // Absent (an edit stored before 0.61): one stack per setting, edges at their widths.
+        mixing: match v.get("mixing") {
+            None => crate::geology::Mixing::default(),
+            Some(m) => {
+                let g = |k: &str| num(m, k).map_err(|e| at(format!("mixing.{e}")));
+                crate::geology::Mixing {
+                    wavelength: g("wavelength")?,
+                    warp: g("warp")?,
+                    warp_wavelength: g("warpWavelength")?,
+                    edge_shift: g("edgeShift")?,
+                    edge_wavelength: g("edgeWavelength")?,
+                    fade: match m.get("fade") {
+                        None => 0.0,
+                        Some(_) => g("fade")?,
+                    },
+                }
+            }
+        },
+        rules: Box::leak(rules.into_boxed_slice()),
     })
 }
 
 /// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
 /// the build's.
+/// rocks.json `blends`; absent (an edit stored before 0.64): none.
+fn blends_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::Blend], String> {
+    let Some(list) = v.and_then(Value::as_array) else {
+        return Ok(&[]);
+    };
+    let names = |b: &Value, k: &str| -> Result<&'static [&'static str], String> {
+        let l = b
+            .get(k)
+            .and_then(Value::as_array)
+            .ok_or(format!("rocks.json: blends: {k} must be a list"))?;
+        let v: Vec<&'static str> = l.iter().filter_map(Value::as_str).map(leak).collect();
+        Ok(Box::leak(v.into_boxed_slice()))
+    };
+    let mut out = Vec::new();
+    for b in list {
+        let g = |k: &str| num(b, k).map_err(|e| format!("rocks.json: blends.{e}"));
+        let shares: Vec<f64> = b
+            .get("shares")
+            .and_then(Value::as_array)
+            .ok_or("rocks.json: blends: shares must be a list")?
+            .iter()
+            .filter_map(Value::as_f64)
+            .collect();
+        let blocks = names(b, "blocks")?;
+        if shares.len() != blocks.len() || blocks.len() < 2 {
+            return Err("rocks.json: blends: one share per block, two blocks at least".into());
+        }
+        for n in blocks {
+            if dwell_blocks::find_block(n).is_none() {
+                return Err(format!("rocks.json: blends: {n} is not in the registry"));
+            }
+        }
+        out.push(crate::geology::Blend {
+            name: b
+                .get("name")
+                .and_then(Value::as_str)
+                .map(leak)
+                .unwrap_or("blend"),
+            stacks: names(b, "stacks")?,
+            blocks,
+            shares: Box::leak(shares.into_boxed_slice()),
+            wavelength: g("wavelength")?,
+            slope: g("slope")?,
+            dither: g("dither")?,
+            dither_wavelength: g("ditherWavelength")?,
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
+}
+
+/// rocks.json `mesaRelief`; absent (an edit stored before 0.64): none, flat as before.
+fn mesa_relief_from_json(v: Option<&Value>) -> Result<crate::geology::MesaRelief, String> {
+    let Some(v) = v else {
+        return Ok(crate::geology::MesaRelief::NONE);
+    };
+    let g = |k: &str| num(v, k).map_err(|e| format!("rocks.json: mesaRelief.{e}"));
+    Ok(crate::geology::MesaRelief {
+        top_amplitude: g("topAmplitude")?,
+        top_wavelength: g("topWavelength")?,
+        dip: g("dip")?,
+        dip_wavelength: g("dipWavelength")?,
+        knob_spacing: g("knobSpacing")?,
+        knob_chance: g("knobChance")?,
+        knob_height: g("knobHeight")?,
+        knob_radius: g("knobRadius")?,
+        floor_slope: g("floorSlope")?,
+        floor_rise: g("floorRise")?,
+        mound_height: g("moundHeight")?,
+        mound_wavelength: g("moundWavelength")?,
+        fan_height: g("fanHeight")?,
+        fan_width: g("fanWidth")?,
+        wash_depth: g("washDepth")?,
+        wash_wavelength: g("washWavelength")?,
+    })
+}
+
 fn erosion_from_json(v: Option<&Value>) -> Result<Erosion, String> {
     let Some(v) = v else {
         return Ok(GEOLOGY.erosion);
@@ -692,10 +954,24 @@ pub fn vegetation_from_json(v: &Value) -> Result<Vegetation, String> {
             .ok_or(at(format!("{n} is not a soil type")))
     };
     let soil = |r: &Value, rock: &'static str| -> Result<RockSoil, String> {
+        let range = |k: &str| -> Result<[f64; 2], String> {
+            match r.get(k) {
+                None => Ok(crate::vegetation::NO_RANGE),
+                Some(v) => match v.as_array().map(Vec::as_slice) {
+                    Some([a, b]) => match (a.as_f64(), b.as_f64()) {
+                        (Some(a), Some(b)) if a < b => Ok([a, b]),
+                        _ => Err(at(format!("rockSoils {rock}: {k} must be [least, most]"))),
+                    },
+                    _ => Err(at(format!("rockSoils {rock}: {k} must be [least, most]"))),
+                },
+            }
+        };
         Ok(RockSoil {
             rock,
             depth: num(r, "depth").map_err(at)?,
             soil_type: type_of(r.get("type").unwrap_or(&Value::Null))?,
+            celsius: range("celsius")?,
+            moisture: range("moisture")?,
         })
     };
     let fallback = soil(v.get("fallback").unwrap_or(&Value::Null), "")?;
@@ -841,6 +1117,23 @@ pub fn lava_vents_from_json(world: &Value) -> Result<Vec<crate::tectonics::LavaV
             let (Some(rate), Some(radius)) = (rate, radius) else {
                 return Err(fail("rateM3s must be over 0 and radius a whole 1..64"));
             };
+            let faces = match v.get("faces") {
+                None => [true, true],
+                Some(list) => {
+                    let names: Option<Vec<&str>> = list
+                        .as_array()
+                        .map(|l| l.iter().filter_map(Value::as_str).collect());
+                    let names = names.filter(|n| {
+                        !n.is_empty()
+                            && n.len() == list.as_array().map_or(0, Vec::len)
+                            && n.iter().all(|f| *f == "a" || *f == "b")
+                    });
+                    let Some(names) = names else {
+                        return Err(fail("faces must list \"a\" and/or \"b\""));
+                    };
+                    [names.contains(&"a"), names.contains(&"b")]
+                }
+            };
             Ok(LavaVent {
                 cone,
                 kind,
@@ -850,6 +1143,7 @@ pub fn lava_vents_from_json(world: &Value) -> Result<Vec<crate::tectonics::LavaV
                 radius: radius as u32,
                 distance: n("distance").unwrap_or(0.0),
                 angle: n("angle").unwrap_or(0.0),
+                faces,
             })
         })
         .collect()
@@ -1008,7 +1302,17 @@ pub struct Worldgen {
 /// build's key for the build's ground, else that key with the config's hash, so a test world's
 /// maps never stand in for the seed's own (`-c`: maps that carry their config, from 0.52.37).
 pub fn worldgen_map_key(seed: u64, config: &str) -> String {
-    let key = crate::worldmap::cache::key(seed);
+    worldgen_map_key_sized(seed, config, dwell_protocol::world_size::WorldSize::DEFAULT)
+}
+
+/// [`worldgen_map_key`] in a world of `size` (BIG_MAP.md M2b): today's key at 1×, the size's
+/// (`cache::key_sized`, `-x<scale>`) for a bigger world, so its maps never stand in for 1×'s.
+pub fn worldgen_map_key_sized(
+    seed: u64,
+    config: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> String {
+    let key = crate::worldmap::cache::key_sized(seed, size);
     match world_config(config) {
         Ok(Some(_)) => format!("{key}-c{:016x}", worldgen_hash(config)),
         _ => key,
@@ -1038,6 +1342,41 @@ pub fn installed_worldgen(world_seed: u64) -> String {
         .to_owned()
 }
 
+/// Retunes world `world_seed` to worldgen `config` in place (the in-game Chisel, ADR 0074 B7):
+/// each face's installed map re-wrapped with the new config and installed again, its height field
+/// kept, so nothing is recomputed (a biome, biome map, geology or vegetation edit). An edit that
+/// moves the ground itself (the world knobs: another height field) is refused: that is a new world.
+/// `""` takes the world back to the build's ground. Returns each face's map bytes (A, B), for the
+/// other instances (the page's workers) to install.
+pub fn retune_worldgen(world_seed: u64, config: &str) -> Result<Vec<Vec<u8>>, String> {
+    let height_of = |text: &str| -> Result<Option<HeightField>, String> {
+        Ok(world_config(text)?.and_then(|e| e.height))
+    };
+    let next = height_of(config)?;
+    let mut out = Vec::with_capacity(2);
+    for face in [dwell_world::Face::A, dwell_world::Face::B] {
+        let seed = crate::bifacial::face_seed(world_seed, face);
+        if !crate::worldmap::cache::is_ready(seed) {
+            return Err("the world's maps are not here yet".into());
+        }
+        let m = crate::worldmap::cache::for_seed(seed);
+        if height_of(m.worldgen_text())? != next {
+            return Err(
+                "this edit moves the ground itself (the world knobs): make a new world from Chisel"
+                    .into(),
+            );
+        }
+        let mut copy = crate::worldmap::codec::decode(&crate::worldmap::codec::encode(&m))?;
+        copy.worldgen = None;
+        copy.tectonics = HEIGHT.tectonics;
+        let copy = copy.with_worldgen(config.trim())?;
+        let bytes = crate::worldmap::codec::encode(&copy);
+        crate::worldmap::cache::install(&bytes)?;
+        out.push(bytes);
+    }
+    Ok(out)
+}
+
 /// Face seed `seed`'s world map under worldgen `config` (`worldmap::build_bytes` for the build's
 /// ground; a test world's over its height field, `WorldMap::for_height`, carrying the config).
 pub fn worldgen_map(seed: u64, config: &str) -> Result<Option<crate::worldmap::WorldMap>, String> {
@@ -1057,4 +1396,25 @@ pub fn worldgen_map_bytes(seed: u64, config: &str) -> Result<Vec<u8>, String> {
         None => crate::worldmap::build_bytes(seed),
         Some(m) => crate::worldmap::codec::encode(&m),
     })
+}
+
+/// [`worldgen_map_bytes`] in a world of `size` (BIG_MAP.md M2b: the browser's map builder): 1×'s
+/// exactly at 1×; a bigger world's map over its own disc (`WorldMap::compute_sized`). A test world
+/// with its own height field is 1× only (Chisel tunes a 1× disc): refused at another size.
+pub fn worldgen_map_bytes_sized(
+    seed: u64,
+    config: &str,
+    size: dwell_protocol::world_size::WorldSize,
+) -> Result<Vec<u8>, String> {
+    if size.is_default() {
+        return worldgen_map_bytes(seed, config);
+    }
+    let m = crate::worldmap::WorldMap::compute_sized(seed, size);
+    Ok(crate::worldmap::codec::encode(
+        &match world_config(config)? {
+            None => m,
+            Some(e) if e.height.is_none() => m.with_worldgen(config.trim())?,
+            Some(_) => return Err("a test world with its own ground is only made at 1×".into()),
+        },
+    ))
 }

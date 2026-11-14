@@ -21,7 +21,20 @@ pub fn tile_cells(t: &MapTunables) -> i32 {
 
 /// Whether `cell_m` is a zoom level's cell side (`bigMap.levels`) or the explored cells'.
 pub fn is_level(cell_m: i32, t: &MapTunables) -> bool {
-    cell_m == t.explored_cell_m as i32 || t.big_map_levels.iter().any(|&(c, _)| c as i32 == cell_m)
+    is_level_sized(cell_m, t, dwell_protocol::world_size::WorldSize::DEFAULT)
+}
+
+/// [`is_level`] in a world of `size` (BIG_MAP.md M2b): its own levels'
+/// (`MapTunables::big_map_levels_sized`), so a bigger world's coarser cells are asked for.
+pub fn is_level_sized(
+    cell_m: i32,
+    t: &MapTunables,
+    size: dwell_protocol::world_size::WorldSize,
+) -> bool {
+    cell_m == t.explored_cell_m as i32
+        || t.big_map_levels_sized(size)
+            .iter()
+            .any(|&(c, _)| c as i32 == cell_m)
 }
 
 /// The job generating tile (`ti`, `tk`) of face `f` at cells of `cell_m`: cells `ti·n .. (ti+1)·n`

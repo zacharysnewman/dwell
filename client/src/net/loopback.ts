@@ -14,6 +14,20 @@ export type GuestOutput = Extract<FromWorker, { session: number }>;
 export type StageReport = (id: string, phase: 'begin' | 'end', atMs: number) => void;
 
 /**
+ * What the player reads when the local world's worker failed (BUGS.md #91: a 10× world's server
+ * ran out of WebAssembly memory and the page said only "Could not connect"): a WebAssembly trap or
+ * allocation failure is named as the server running out of memory, with the browser's words kept.
+ */
+export function workerFailure(message: string): string {
+  const m = message.trim() || 'it stopped without saying why';
+  const memory =
+    /out of memory|memory access out of bounds|unreachable|could not allocate|capacity overflow|allocation failed|Maximum call stack|WebAssembly\.Memory/i;
+  return memory.test(m)
+    ? `The world's server ran out of memory and stopped (${m}). A smaller world size may fit.`
+    : `The world's server stopped (${m}).`;
+}
+
+/**
  * Transport to the integrated server running in a local-mode worker (ARCHITECTURE.md §8.1).
  * Carries the same protocol bytes as the network transports.
  */
@@ -33,16 +47,24 @@ export class LoopbackTransport implements Transport {
   serverTickMs: number | null = null;
   /** The world's game mode (ADR 0065) as the local server last said ('' before it did). */
   mode = '';
+  /** Whether guests may use theater mode (THEATER_MODE.md §7), as the host last set it. */
+  theaterGuests = true;
   private readonly modeWaits: ((mode: string) => void)[] = [];
+  private readonly retuneWaits: ((r: { maps: Uint8Array[]; error?: string }) => void)[] = [];
   /** Callers waiting for a save to finish, oldest first (the worker answers in order). */
   private readonly saving: ((ok: boolean) => void)[] = [];
   private readonly reports: ((report: string | null) => void)[] = [];
   private readonly mapFinds: ((result: string | null) => void)[] = [];
   private readonly lavaAnswers: ((result: string | null) => void)[] = [];
+  private readonly steps: ((tick: number | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
       this.onWorkerMessage(e.data);
+    };
+    // A worker that dies once playing (out of memory) closes the session with why, not silently.
+    worker.onerror = (e) => {
+      if (!this.closed) this.finish(workerFailure(e.message));
     };
   }
 
@@ -70,6 +92,7 @@ export class LoopbackTransport implements Transport {
         } else if (e.data.t === 'ready') {
           const transport = new LoopbackTransport(worker);
           transport.mode = e.data.mode ?? '';
+          transport.theaterGuests = e.data.theaterGuests ?? true;
           transport.post({
             t: 'connect',
             session: SESSION,
@@ -82,7 +105,7 @@ export class LoopbackTransport implements Transport {
         }
       };
       worker.onerror = (e) => {
-        reject(new Error(e.message || 'local world worker failed'));
+        reject(new Error(workerFailure(e.message)));
       };
       worker.postMessage({
         t: 'start',
@@ -159,6 +182,26 @@ export class LoopbackTransport implements Transport {
   }
 
   /**
+   * A cinematic take holds the world's real-time clock (THEATER_MODE.md §6.1): while held, the
+   * world moves only by `step`.
+   */
+  holdClock(on: boolean): void {
+    if (!this.closed) this.post({ t: 'clock', manual: on });
+  }
+
+  /**
+   * Steps exactly `ticks` server ticks; resolves with the server's tick once their output has
+   * arrived (null once the transport is closed).
+   */
+  step(ticks: number): Promise<number | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.steps.push(resolve);
+      this.post({ t: 'step', ticks });
+    });
+  }
+
+  /**
    * The host switches the world's game mode (ADR 0065); resolves with the mode the world is in
    * after it (the old one if the name was refused, or once the transport is closed).
    */
@@ -167,6 +210,28 @@ export class LoopbackTransport implements Transport {
     return new Promise((resolve) => {
       this.modeWaits.push(resolve);
       this.post({ t: 'setMode', mode: name });
+    });
+  }
+
+  /** The host turns theater mode on or off for guests (THEATER_MODE.md §7). */
+  setTheaterGuests(on: boolean): void {
+    if (this.closed) return;
+    this.theaterGuests = on;
+    this.post({ t: 'theaterGuests', on });
+  }
+
+  /**
+   * The host retunes the world's worldgen config (Chisel in the game, Phase 56 B7): resolves with
+   * faces A's and B's new maps (for the page to install), or the refusal.
+   */
+  retuneWorldgen(
+    worldgen: string,
+    radius: number,
+  ): Promise<{ maps: Uint8Array[]; error?: string }> {
+    if (this.closed) return Promise.resolve({ maps: [], error: 'the world is closed' });
+    return new Promise((resolve) => {
+      this.retuneWaits.push(resolve);
+      this.post({ t: 'retune', worldgen, radius });
     });
   }
 
@@ -191,7 +256,9 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
     for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
+    for (const resolve of this.steps.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
+    for (const resolve of this.retuneWaits.splice(0)) resolve({ maps: [], error: message });
     this.handlers?.onClose({ message });
     this.handlers = null;
   }
@@ -221,6 +288,9 @@ export class LoopbackTransport implements Transport {
         this.mode = msg.mode;
         this.modeWaits.shift()?.(msg.mode);
         break;
+      case 'retuned':
+        this.retuneWaits.shift()?.(msg);
+        break;
       case 'waterReport':
         this.reports.shift()?.(msg.report);
         break;
@@ -229,6 +299,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'lavaDev':
         this.lavaAnswers.shift()?.(msg.result);
+        break;
+      case 'stepped':
+        this.steps.shift()?.(msg.tick);
         break;
       case 'memory':
         this.heapBytes = msg.bytes;

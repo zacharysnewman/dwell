@@ -6,6 +6,402 @@ pins it.
 
 ## Open
 
+### 173. The dynamite blast looks low framerate: the flung pieces stand still between snapshots
+
+Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "And the dynamite one still looks low framerate,
+probably a physics framerate issue not view?" Measured on the cinematic clip (frame differences): from the blast on,
+one captured frame in three changed only by the camera's drift and the smoke while the pieces held still; the real-time
+take stuttered irregularly the same way. Not the physics (the server steps every piece every tick) and not the view.
+
+**Owner should see:** the flung pieces moving on every frame, smooth through the air, in the cinematic clip and in
+play.
+
+**Cause:** two, both the client's drawing of the pieces (`pieces.rs`). (1) The pieces are drawn on the server's clock,
+estimated as the least delay seen, drifting up only 0.05 ms a snapshot (1 ms a second). A local world's server drops
+time when its worker is busy past the catch-up cap (`LocalCore::advance`: loading, the blast itself), so from then on
+the client drew every piece hundreds of ms past its newest pose, held at the 250 ms extrapolation cap, moving only
+when a snapshot came: with a take's 2 ticks a frame and a snapshot every 3 ticks, one frame in three none came. (2) A
+snapshot's datagram carries ~28 piece poses (docs/FELLING.md §3.1), so of a blast's ~200 pieces each was seen every
+third of a second or so and stood still past its extrapolation between them.
+
+**Fixed:** (1) the estimate is the least delay within the last second (`WINDOW_MS`), so it follows a server that
+dropped time within a second (snapped past 250 ms, slewed under it); (2) the page hosting the world (a loopback
+session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOPBACK_PIECES`, the encoding's most).
+Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
+`game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
+frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
+frame, peaking every third). Remote players (`dwell_game::remotes`) keep the old drifting estimate.
+
+### 172. Trees disappear when the camera gets close
+
+Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "Trees were disappearing when getting close." In the
+forest fly-over (both the cinematic and the real-time take) trees faded out as the camera neared them and nothing
+replaced them.
+
+**Owner should see:** flying close over a forest, every tree stays drawn: its far look until its real one is ready,
+then a short fade to it, never a tree fading to nothing.
+
+**Cause:** the impostor ↔ real-leaves hand-over (#154, `render/tree_fade.rs`) switched a tree to its real leaves by its
+distance alone. Where the tree's chunk mesh wasn't drawn (a theater camera farther than `theaterViewpointMaxM` from
+the body, as in the clip, 20 km away; a chunk not streamed or meshed yet in a fast flight), the ground there was the
+LOD's, which holds no trees while the impostors draw, so the impostor faded out over nothing. Not the held clock.
+
+**Fixed:** a tree switches to its real leaves only once the chunk under its trunk (`ground_chunk`) is held by the
+renderer and drawn (the LOD's `chunk_fade`), and stays (or goes back to) its impostor otherwise, each switch the same
+timed fade. Tests (both faces): `tree_fade` `a_near_tree_stays_its_impostor_until_its_mesh_is_drawn` (red before:
+the share was the real tree's with no mesh) and `a_trees_ground_chunk_holds_the_cell_under_its_foot`.
+
+### 171. Torches without their tops or bottoms: a flame with no stick, a stick with no flame
+
+Owner, 2026-11-14: "A bug: the torches sometimes are placed by me or the generator without their tops or bottoms, it
+should be impossible to have one without the other". Screenshot: at a (bigger, 16 m) shrine, a row of flames on the
+dais with no sticks under them.
+
+**Owner should see:** every torch, at shrines and wherever placed, has both its stick and its flame; you can never
+end up with a floating flame or a headless stick.
+
+Fixed on `claude/torch-pairs-thl8l9` by one rule over the block data's multi-cell blocks (`extends` / `partOf`), not torch
+code (`crates/dwell-world/src/parts.rs`): structures' data must hold a part above its block (`shared/structures`
+gen fails a lone half, `format.mjs` `checkWhole`); the generator stamps a multi-cell block's cells together or
+neither (`Placed::cells_whole`, in `stamp_monuments` and `stamp_trees`); a fill, paste or structure edit drops a
+lone half it would put and clears the other half of one it cuts (`parts::keep_whole` in `check_region_edit`, so
+the client predicts it); every server tick's changes, whatever made them (a break, a blast, water, lava, a falling
+piece, growth, grazing), clear the other cell of a torch they took one cell of (`parts::lone_parts` in
+`broadcast_changes`); and a lone half in a chunk read from a world file is **removed** when it loads
+(`parts::repair_chunk`; removed rather than completed: completing would write a cell nobody put, and breaking either
+half already removes both). Placing by hand was already refused when the flame's cell is taken
+(`check_block_edit`). Tests on both faces: `crates/dwell-world/tests/parts.rs`, the shrines' `every_shrine_torch_is_generated_whole`,
+`shared/structures/gen.test.mjs`.
+
+Not reproduced: on seeds 0, 1, 7 and 42, on both faces, every shrine's torches generate whole on the unfixed code
+too (the new shrine test passes there), so the screenshot's lone flames came from something after generation, most
+likely a write that took the stick's cell without the flame's (the server now clears the flame with it), or a world
+saved earlier with them (cleared when its chunks load). A partner in a chunk that is not loaded when the lone half
+loads is left until an edit beside it. The owner's look at a shrine confirms it.
+
+### 170. The record tool's settle wait never sees the view idle while builders edit nearby
+
+Found recording the builders (2026-11-14): `take.mjs`'s `viewIdle` (the bench's rule) waited its full 30–45 s and
+reported "NOT settled": each builder piece is an edit, and the LOD regenerates and re-asks for the sections it
+touches every second or two (`lod.generating` 8, `asking` 5 for a moment). Fixed in the tool: a view whose in-view
+work is done (`viewLoaded`: nothing `waitingInView`, the chunks meshed) for 3 s counts as settled too (tested in
+`take.test.mjs`). The LOD rebuilding a section per builder edit may be worth a look for cost (not measured).
+
+### 165. The first-person vertical block leans the blade back toward the eye
+
+Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's
+`fp_guard_vertical` (the sheet's top, side and front panels, `docs/clip_probe/guard_vertical_after.svg`) with the grip
+0.75 m ahead of the eye and the tip at 0.29 m, above the screen's top: the blade leans back over the view, where
+the third-person pose (fixed in #87) stands it upright. Not judged on a GPU yet; it may read fine from first
+person (the blade off screen above), so the owner's call. Fix if wanted: fit `fp_guard_vertical` with `clip_probe
+--fit` (no `--body`) to an upright blade ahead of the view. Open.
+
+### 159. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
+
+Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
+unlike home world. The LOD colors don't match either." Cause: since #143/#145 a grid's distance is `grid_lod.rs`'s
+rings of its far source's heights (coarse quads, recentred) right past the full-detail chunks: two levels, no graded
+steps or fades between, and the rings' colour is the far source's albedo (`FarSource::far_albedo`, the blocks'
+`color`), not the block looks the chunks are drawn with. Fix (WORK_QUEUE item 27, branch `claude/grid-lod`): a
+`LodSystem` per grid with sections from the grid's generator, meshed and coloured as home's. **Owner should see:**
+on the moon (and sun), distant terrain steps down in detail gradually like at home, with matching colours from near
+to far, no jump from full detail to a blurry low-detail mesh. **Fixed natively (2026-11-14), the browser look
+outstanding:** the rings are gone; the moon's and the sun's distance is home's LOD over their discs, graded levels
+with fades, tops in the chunks' block looks (the rings wrote the far albedo's sRGB into the linear colour stream:
+0% of tops matched, 100% now). Tests: `dwell-client/tests/grid_lod.rs`, `dwell-worldgen/tests/grid_lod.rs`, the
+`game_local` moon trip. Also found: home's 16 km rim view spans the moon, so it drew both faces from anywhere
+(`LodSystem::set_rim_view`, scaled per grid).
+
+### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
+
+Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
+patches are the rock band (`Band::Rock`, the rock's `face`, red sandstone) though nothing there is a wall. Suspect: the
+rock shaping (`geology.rs` `Profile::map`) labels a column by the piece its natural height falls in; where the natural
+ground is a plateau whose height lies inside a bedded rock's narrow wall piece, every column maps to the same output
+height, so the plateau is flat yet each column is `Part::Wall`. A fix would label a flat wall column (the shaped slope
+under the tread's) a tread. Rare (2 of ~1,000 sampled red floors on seeds 1, 7, 42); not fixed.
+
+### 132. A fresh Realistic world never loads without a start point (not reproduced; a spawn cost fixed)
+
+Brief, 2026-11-13: "a fresh Realistic world never loads without a start point. On 0.59 (a022b0d0),
+`?worldgen=test:realistic&seed=42&fresh=1` with no `at` showed only sky for over 105 s and `__dwell.state()` stayed
+null; with an `at` it loads in seconds." Suspects named: the spawn search with 0.58's "every spawn at a shrine" rule
+(#873), or the spawn search itself on Realistic.
+
+**Not reproduced (2026-11-13, a022b0d).** Natively (`cargo run --release -p dwell-worldgen --example spawn_cost
+<seed> test:realistic`): seeds 1, 7, 42 resolve the spawn search in 2–57 ms and the spawn's shrine in 118–185 ms a
+face; a local-style server join (single-threaded, jobs remote, the Realistic sky) spawns on its first tick; the native
+client with its local server (`game_local.rs`' rig) reaches `terrainReady` in ~2 s on seed 42. In Chromium (the cloud's
+SwiftShader under Xvfb, the release WASM build): the exact link, the bench's form (`?local=1&seed=42&worldgen=…&fresh=1`),
+and fresh links after an `at` link in one profile all joined in 4.6–7.6 s ("Finding a place to stand" 1.3–1.6 s on the
+loading screen) and reached `terrainReady` in 27–33 s. `state()` null means the page never got its Welcome, so the
+owner's stall was before the join: the map build (`Shaping the world map`), the local worker's start or its spawn.
+**Next, on the owner's Mac:** with the loading screen on, which stage it sits on and the console (a worker's error).
+
+**Fixed along the way (0.59.x):** the spawn's shrine on Realistic cost 134 ms of its 143 ms a face natively in its
+cache key (`TerrainGenerator::spawn_key` hashed the `Debug` text of the whole biome set, its whole-map biome field and
+drainage grids included; several times that in WASM, again in every generator that resolves the spawn's shrine). The
+key now names the set's config (`BiomeSet::config_text`, the grids derived from the map and it): 1 ms, the spawn's
+shrine 5–10 ms. Test: `dwell-worldgen` `tests/realistic_spawn.rs` (`the_spawn_keys_cost_is_small_on_realistic`, red at
+136 ms before the fix; `the_realistic_spawn_resolves_in_budget_at_a_shrine`, seeds 1, 7, 42 on both faces within 2 s
+at the nearest shrine: passed before and after, the hang being unreproduced).
+
+### 131. After a face B return from the moon the held stone block looked pink (not reproduced natively)
+
+Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "After a face B return the held stone
+block looked pink (first-person held item's colour/lighting after the crossing — likely the face/grid frame or a light
+uniform not restored)." Read through natively (2026-11-13), not reproduced: nothing in `render/` or the arms' inputs
+is set at a grid crossing and left in place. The held block's tiles and colour (`characters.rs` `block_uniforms`), its
+flood light (`game.rs` `eased_light(ARMS_LIGHT, …)`), the frame block (eye, face sign, the day from `day_on_grid`) and
+the arms' placement are all rebuilt every frame. Suspects, most likely first: (1) `block_uniforms`' fallback colour is
+magenta (`[1, 0, 1]`, untextured) when `dwell_blocks::try_info` doesn't know the held state, and a lit, dimmed magenta
+reads pink: the held id is the hotbar's raw `selected_material()`, never mapped through the session's registry;
+(2) the eye adaptation `adapted_a` (`render/mod.rs`) eases back from face B's look over a few seconds after the
+return; (3) the eased arms light is not reset at `follow_grid` and starts from the moon's last sample while home's
+chunks are missing (open sky). If the pink lasts, check (1) in the browser (`__dwell` the held state id against the
+client's table); if it fades in seconds, (2) or (3). Needs a browser repro (local, GPU) before a red test.
+
+### 128. A cliff-edge ramp can't be aimed at from above at some angles
+
+Brief, 2026-11-13 (screenshot pass on 0.58, after #856): "Aiming at a cliff-edge ramp: from 2 m back, pitches −35° to
+−45° target nothing — the ray passes over the wedge into the drop. The pick ray must hit the wedge's sloped face (its
+real shape), so the ramp is targetable from every angle its face is visible." **Not reproduced natively (2026-11-13):**
+`dwell-world` `tests/ramp_targeting.rs` (both faces) builds a cliff with a red sandstone ramp on its edge (the steep
+pair and the ½ m ramp; shaped into the edge, and placed on it uphill and downhill; every facing) and sweeps the pick
+ray from 1, 2 and 3 m back, 0–30° off the edge, pitches −15° to −70°, against an oracle marching each ray through the
+cells' solids in 0.25 mm steps: `raycast_block` meets the ramp's cell at the oracle's distance (within 2 mm) on every
+ray, and the server's `check_block_edit` takes the break (its sight lines reach it). The mesher draws ramps from the
+same shape (`faces_of`), and the generated terrain near the default spawn has no ramp over a real drop. So the miss
+is not in the pick ray as tested; suspects left are the client's side (its store's state for the cell, the eye it aims
+from, or the outline not drawn), which needs the screenshot's world, position and look (or a bench trace) to chase.
+The test stays as a guard (it passes on main: not a red → green).
+
+### 127. In creative a stone pickaxe only damaged a red sandstone steep ramp
+
+Brief, 2026-11-13 (screenshot pass on 0.58): "the New world form says Creative breaks 'any block … in one hit', but in a
+Creative world 4 stone-pickaxe hits only damaged a red_sandstone steep ramp (slopes take damage like Adventure)."
+Not slope-specific: by the owner's 2026-11-11 rule (BLOCK_DAMAGE.md §7) a held tool keeps its hits in creative (a stone
+pickaxe takes 5 on stone cubes too, pinned by `hits_to_break_come_from_the_tool_held_in_both_modes`). Whether creative
+tools should also break in one hit is the owner's to decide (asked 2026-11-13); until then the rule stays and only the
+form's wording is checked against it.
+
+### 100. Volumetric clouds look like "crazy triangles"
+
+Owner, 2026-11-12: "the clouds look ridiculous at least the volumetric ones. Look like crazy triangles. Find a
+white paper on clouds." Since the shape model (#775) and the view-opacity change (#790). Suspects: the noise baked
+at 64³ (base) / 32³ (detail) sampled with too large a world scale, so tiling and the noise's lattice show as
+straight-edged facets; the coverage remap cutting value noise into hard polygons (a remap without enough softness
+at the new, higher view extinction 0.03 /m, which turns soft gradients into hard silhouettes); the weather map's
+cells (from the deck's noise) visible as shapes; nearest-texel sampling of the 3D textures instead of trilinear.
+Reference: Schneider, "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn" (SIGGRAPH 2015) and "Nubis
+Cubed" (2023).
+Owner, more precisely: "The more recent volumetric shape change for the clouds make them look like 3 sided
+pyramids." A cut that rises with height through a field with linear (or triangular-lattice / simplex) interpolation
+makes cones whose sides are the interpolation's facets: the cloud-type tower ("cloud cores tower above their edges",
+weather `type` from the deck's noise) with a height cut on a linearly interpolated coverage gives a pyramid per cell;
+3 sides suggests a triangular lattice (simplex-style) or the weather texture sampled as triangles. Fix: smooth
+(cubic/Hermite) interpolation or Perlin-Worley for coverage/type, a rounded height profile (the papers' gradient
+times a remap, not a linear cut), erosion to break the silhouette.
+**Fixed in code (2026-11-12, branch `claude/cloud-pyramids`, CLOUDS.md §9.9), the in-game look left for a local
+check:** the cause was each cloud being a heightfield of the deck's 2D noise (`docs/reference/cloud-papers.md`):
+the type tied to each core (`typeFromCoverage` 0.9), the cover a hard 2D cut so the 3D noise carved nothing,
+the view extinction 0.03 a hard shell. Now the type and the cover are regional fields (16 km, 8 km), the 3D
+Perlin–Worley cuts the single clouds (Nubis's `saturate(remap(base, 1 − profile × cover, 1))`, base tile 2 km),
+the profile fades from just over the base (flat bases, domed tops), erosion 0.25, view extinction 0.015. Test
+`clouds::pyramid_tests::the_cloud_tops_are_rounded_not_pyramids` (both faces): the CPU twin's median cloud-top
+slope over fixture patches was 4.1 and 2.6 m per m on main (red), now 0.7–1.0; tallest 2.3–2.5 km → 0.5–1.8 km;
+footprints 300–1500 m; seamless tiling; a cloud behind 400 m of cloud 9 % visible. Not done: adaptive steps.
+
+### 97. Light shafts draw a pixelated dither pattern
+
+Owner, 2026-11-12 (screenshot: low sun behind clouds, a tree in front): "Volumetric lighting also has some weird
+dithering where the light shafts look pixelated. Not sure if this is a bug, a blending problem, or something else."
+A fine diagonal crosshatch covers the trees, ground and sky around the sun, strongest in the shafts behind the tree.
+Suspects: the light-shaft pass marches at reduced resolution with a per-pixel dither (interleaved gradient or a
+Bayer pattern) and is composited without a blur, temporal accumulation or a depth-aware upsample, so the dither
+pattern itself shows; or its accumulation's history is rejected every frame. Fix like #90's clouds: blue-noise
+jitter, temporal accumulation with a clamped history, a depth-aware (bilateral) blur/upsample.
+Owner, 2026-11-12 (later): "Oh that dithering is definitely cloud related." So the volumetric clouds' composite over
+the scene is the first suspect (the pattern covers trees and ground in front of the clouds), the shafts second.
+**Fixed in code (2026-11-12, branch `claude/shaft-dither`), the in-game look left for a local check:**
+- **Clouds (the cause the owner saw):** the composite's depth-aware upsample (`upsampled_clouds`) normalised its weights,
+  so where none of a pixel's four ½- or ¼-resolution texels matched its scene, the fallback's tiny weights became the
+  whole cloud of their marches. Among leaves every texel holds a gap of sky, so its march runs past the leaves to the
+  sky's reach and none matches a leaf pixel: the cloud *behind* the tree drew *over* it, in the texel grid's and the
+  gaps' pattern, jittered frame to frame. Now a fallback texel whose first cloud is past the pixel's scene lends its
+  weight with no cloud (`dwell_cloud_upsample_split`, twin `upsample_cover`; CLOUDS.md §9.6).
+  Test `a_canopy_with_sky_in_every_texel_draws_no_cloud_from_behind_it` (dwell-look `clouds`): failed on main ("a leaf
+  pixel drew 1 of the cloud behind it"), passes now.
+- **Shafts:** their per-texel jitter was a static interleaved gradient (a diagonal pattern) composited with one
+  bilinear tap. Now a 3 × 3 tile of the step's nine strata (`shaft_jitter`, `SHAFT_TILE`) and a 3 × 3 box of bilinear
+  taps in the composite (`shaft_blur`, `SHAFT_BLUR`): nine times the steps where the scene is smooth, no history (the
+  shafts are a screen-space blur toward the light, the same in front of a silhouette as beside it, so no depth test).
+  Cost: 8 more bilinear taps a pixel in the composite, only while shafts draw; the pass is unchanged. Test
+  `the_composited_shafts_behind_a_tree_show_no_dither_pattern` (dwell-look `shafts`): the dither seen (the composite
+  less the same composite of the converged glow) behind a fixture tree failed at the raw pass's on main and is now
+  under a quarter of it; dwell-client pins the shader to the twins.
+Move to Fixed once the owner's look at a low sun behind clouds and a tree confirms it.
+
+### 91. A 10× world sits for minutes on "Shaping the world map… 0/2" with no sign of progress (fixed natively after 0.54.143; the owner's browser check outstanding)
+
+Owner, 2026-11-12 (M4 Max MacBook Pro): "I tried to start a 10x world … And it's up to 3 minutes so far on 'Shaping the
+world map...' 0/2. Doesn't indicate well what it's doing." At 10× the world map runs at a 1 km cell (about 1 M cells
+a face, today's count), so it should take seconds, not minutes; something scales with the radius or the uplift's
+×100 counts. And the stage reports only whole faces (0/2), so minutes pass with no visible progress. Expected: a
+10× map in seconds (or a measured, honest estimate), and progress inside each face's build (its steps: base field,
+tectonics, hydrology, erosion, rivers, biome field).
+Owner, later: "Looks like it started the server 200+ seconds in and now it's at almost 1 minute looking for a place to
+stand. And still 0/2 280+ seconds in on shaping the world map." So the map takes ~200 s, the spawn search ~1 minute
+more, and the map stage's counter stays at 0/2 even after the server has started (it never advances or completes).
+Then: "Loaded in 300s in, but I can only see the skies of both faces, no world." / "Can't move." The world finished
+loading after ~300 s but no terrain drew (only the sky of both faces, as if the player is in the gap between them or
+no chunks arrived) and the player can't move (no ground chunks, so the controller waits; or the spawn point is
+invalid at 10×, e.g. outside the generated area or NaN). Likely related to #76 (memory at big sizes) or the spawn
+search's result at 10×.
+Then: "Oh I see, 'Could not connect to 10x...'" — the empty sky is the join failing (`client/src/main.ts`'s
+"Could not connect to …" status), not missing terrain: the in-browser server either died (memory, #76) or didn't
+answer within the client's connect timeouts (`transport.rs` CONNECT_TIMEOUT_MS 8 s, `peer.ts` 20 s) while still busy.
+
+**Cause and fix (2026-11-12, measured natively, BIG_MAP.md §3.1).** Two steps of a face's map grew with the
+radius, not the cell count: the uplift measured every land cell against every segment of every range (300 ranges at
+10×: 17 s), and the channels' index listed each ~1 km river segment in thousands of 64 m squares (21 s and a **12.4 GB**
+index). One 10× face took 43.7 s natively (1×: 1.9 s) and a native 10× server 114 s at a 12.4 GB peak. In the browser
+that is past the 4 GB of WebAssembly memory: the map workers never finished (so the stage stayed at 0/2: no face's
+event was lost, none arrived), the local server built its own maps inside its "Finding a place to stand" stage (the spawn search itself is
+at most 1.2 s natively at every size) and its worker died, and the page said "Could not
+connect" over an empty sky. The local world has no connect timeout (the loopback waits for the worker's `ready`), so
+no timeout was to blame. Now: the spines are indexed by where they reach and the channels' square follows the cell
+(both exact: the 1× goldens are unchanged); a 10× face is 3.1 s and a 10× server starts in 6.2 s at 484 MB.
+`dwell-worldgen/tests/map_build_budget.rs` pins the op counts per cell at 1× and 10× on both faces (red on the old code:
+21 322 segment tests a land cell at 10× against 208 at 1×). The map builder reports its steps (`progress.rs`, the labels
+`loading.json` `mapSteps`) through the map worker to the stage ("Shaping the world map — rivers (5/6), face 1 of 2", the
+bar moving inside each face; `ui/mapProgress.ts`, Vitest in `mapProgress.test.ts` and `worldMaps.test.ts`); a failed map
+build ends the stage saying so; a dying local world worker says it ran out of memory (`workerFailure`,
+`loopback.test.ts`) and closes the session with why, also once playing. `tests/world_size.rs`
+`a_10x_world_s_spawn_stands_on_its_ground` (both faces) checks the 10× spawn is on the disc with its feet on solid
+ground. Not checked here (no GPU in the cloud session): the 10× world in the browser, walking there, and its memory
+(#76); the 10× channel index still holds ~16 M entries.
+
+### 90. Volumetric clouds look badly dithered and pixelated where they overlap, mostly at cloud level
+
+Owner, 2026-11-12: "The clouds also look really badly dithered when they overlap? I think mostly when you get to their
+level? Looks very pixelated." Suspects: the volume pass runs at ½ or ¼ resolution with a per-frame jitter and temporal
+accumulation; near or inside the layer the reprojection fails (the camera moves through the volume, depths change
+fast), so the history is rejected and the raw jittered low-res result shows, then a plain upsample makes it blocky.
+Fixes to weigh: blue-noise jitter, a depth-aware (bilateral) upsample, neighbourhood clamping instead of history
+rejection, more steps or full resolution when the eye is in or near the layer.
+**Fixed in code (2026-11-12, branch `claude/cloud-shapes`, CLOUDS.md §9.6), the look to check locally:** the jitter
+is a baked blue-noise tile; a resolve pass clamps the history into the texel's 3 × 3 neighbourhood (matching scene
+only) instead of dropping it as the eye moves; near or in the layer a tier takes its `nearSteps`/`nearDivisor`
+(Medium ½ and 14 steps, High 24 steps); the composite keeps §8.9's depth-aware upsample. Tests (`dwell-look`
+`shape_tests`): the resolve's variance under the jitter sequence with the eye moving is under a quarter of the raw
+march's (the old pass showed the raw march there), stale history is clamped, a silhouette stays sharp, the near tier
+comes from the data. Move to Fixed once the owner's look at cloud level confirms it.
+
+### 89. Sub-60 fps flying at High on the owner's M1 MacBook Air (measured; partial)
+
+Reported 2026-11-12 (owner): "Im seeing on this m1 Mac that im getting sub-60FPS when flying on High. Im wondering
+if the new trees and volumetric clouds are at fault!" Target (WORK_QUEUE item 30): High at 60 fps on an M1 Air.
+
+Measured on this M1 Air (`npm run bench -- --warm --unthrottled high-fly`, docs/DEV_TOOLS.md "Flying at High on the
+M1"): flying at level 4 from the starter's mixed forest toward the tall cone, `gpu.frame` 8.8 ms mean over open
+ground and **13.4–15.0 mean, p95 15.6–17.3 (18.5 in one run) over the forests**; the main thread is not the limit
+(`frame.cpu` p95 ≤ 10.5 ms, no long tasks). **Not the volumetric clouds**: Medium → Low (the 2D deck) for the
+same flight changed nothing (15.0 → 15.7 ms, within the spread); their steps are fixed per pixel, so altitude does
+not grow them. **Not streaming**: 330–400 MiB of chunk meshes uploaded per 4 s over forest, but a 1 MiB desktop
+upload budget (from 4) moved the frame ≤ 1.8 ms and lagged the uploads, so it was not adopted. **The trees are, as
+standing still in #78**: over forest the near pass goes 3 → 6–8 ms (the cutout leaves and tall grass) and the sun
+shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts nothing measurable.
+
+Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
+the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
+the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
+### 85. A dev `look` with an object kicks the player: "refused the connection: Malformed message"
+
+Found 2026-11-12 filming the sword duel. `__dwell.look({yaw: 0, pitch: -5})` (the signature is
+`look(yaw, pitch)`, numbers) turns the look to NaN; the next sword swing sends its `Sweep` with a
+NaN look, the server's decode refuses it (`r.check(look.iter().all(is_finite))`) and rejects the
+whole session as malformed. Repro: a flat local world, `pick('dwell:sword')`, `look({yaw:0,pitch:-5})`,
+`edit('break')`. Fix: the dev hook checks its numbers (as `teleport` now does, #84), and the client
+never sends a non-finite look (clamp or drop at the sender). Open.
+
+### 84. `?at=` at a far spot hung the page loading (part of #84; not reproduced)
+
+Found 2026-11-12 reaching a wolf pack 5 km off. Natively a spawn link 5 km off (in the air, at the
+ground, under it) loads in under 2 s (`game_local.rs` `a_spawn_link_five_km_off_loads`), and in the
+browser a dev teleport of 400 m+ arrived and its terrain streamed. Not reproduced: needs the link
+and seed that hung. The teleport half is fixed (Fixed, #84).
+
+### 78. 26 fps at High on the owner's M1 MacBook Air ("I think cards are killing my m1 mac")
+
+Reported 2026-11-12 (owner): "It seems like we're hiding some performance settings. I don't see 'tree' options in
+our settings for graphics. I think cards are killing my m1 mac too." / "Running 26fps." / "GPU at 31ms". On the
+cards: "I think the internal leaf cards may be sucking up a lot of unneeded power and I think the leaf cards on the
+back sides of trees and farther out trees are rendering which is unnecessary." Target (WORK_QUEUE item 30): High at
+60 fps on an M1 Air.
+
+Measured on this M1 (8-core, 2560×1600 buffer, High = 50 % render scale, `npm run bench -- --warm --unthrottled
+high-forest high-open`, `gpu.frame` mean ms, docs/DEV_TOOLS.md "High on the M1"): the starter's broadleaf spot
+15.5–15.7 ms at High (55 fps unthrottled), open ground 9.2. The leaf cards cost **0.6 ms** there; the cutout meshes
+as a whole (the leaves' cutout cubes, tall grass, flowers, ladders and the cards) **4.5–4.7 ms**, the full-detail
+distance 256 → 128 m 2.4–2.7, sun shadows 1.4–1.7, water Medium → Low 0.8–0.9, bloom 0.4–0.6; shafts, torch
+shadows and clouds ≤ 0.3. This Mac did not reproduce 31 ms at High (the owner's view was likely denser or
+fuller-screen; not known).
+
+Done (this change): leaf cards culled three ways — no cards on a face looking into a cavity inside the crown (a leaf
+cell within `interiorCells` 4 straight out), the vertex shader drops a card whose plane the eye is more than
+`backCullM` 0.5 m behind (the crown's far side) and every card past its fade's end (they were rasterised and
+discarded per pixel), and the fade pulled in to 24–40 m (was 48–64) — card cost 0.62 → 0.29 ms; The starter's mixed forest (`high-mixed`, denser) read **17.05 ms** at High after the culls (cards 0.23, the cutout meshes 4.2), over budget, so **High's full detail went 256 → 192 m** (shared/settings/graphics-presets.json; 256 m and up are Ultra's): **13.88 ms** there (61 fps unthrottled). Leaf cards moved
+to a Graphics → Trees group; an audit test (`client/src/ui/graphicsAudit.test.ts`) fails when a renderer tier
+function has neither a Graphics setting nor a stated reason. Tests: `a_crowns_inner_cavity_draws_no_cards` (red
+with `interiorCells` 0: 36 and 42 cards in the hollow on faces A and B), `a_leaf_cards_packed_normal_is_its_plane_on_both_faces`
+(red on face B without the mirror's re-pack).
+
+Outstanding: a Tall grass setting needs a mesher flag (`ChunkFlags`): the renderer's cutout switch hides the leaves
+and ladders with the grass, so it can't be the setting; distant (LOD) shadows follow Shadows; tall grass density,
+far trees, hit shards and far herds have no tier function yet to put behind a setting; the owner's 31 ms needs his
+view (a dense forest spot) to reproduce.
+
+### 76. A bigger world's page takes memory that grows with the area (2× +230 MB, 4× +1.07 GB)
+
+Found 2026-11-11 (0.54.59) checking BIG_MAP.md M2b on the M1's warm bench (seed 0, 1280×720, `memory()`
+once settled at the spawn; session scratchpad `bigworld/`). Everything but the meshes (which follow the
+view), in MB:
+
+| | core | server | each of 4 job workers | the other 4 workers | non-mesh total |
+|---|---|---|---|---|---|
+| 1× | 194 | 61 | 77–79 | 22–28 | 749 |
+| 2× | 198 | 203 | 107 | 22–26 | 979 |
+| 4× | 337 | 334 | 241 | 22–24 | 1 819 |
+
+The world map is 1002² cells at every size (its cell doubles), and natively a 2× world peaks at 176 MB
+against 1×'s 164 MB, so something in the job workers and the local server grows with the disc's
+area (job workers ~+9 MB a 1× area). Suspects: a grid at a fixed cell over the disc or the build volume
+(the LOD's or streamer's per-column tables, the water's held sea, the hydrology grid's
+`grid_for_radius(cell, WORLD_RADIUS)` callers), or the big map's disc-level reveal state. Next: a
+`memory()` per worker kind after each of `prepareWorld`, the spawn search and the first terrain, at 1×
+and 4×. At 8× and 10× this decides whether the desktop test fits at all.
+
+### 77. A bigger world's island loses its mountains and fills with small lakes
+
+Found 2026-11-11 (0.54.59), same check: the big map's widest level at 1×, 2× and 4× (scratchpad
+`bigworld/bw-1x_map-l2.png`, `bw-2x_map-l2.png`, `bw-4x_map-l2.png`). 1×'s island has two snowy ranges
+and a few long rivers; 2×'s has thin ridges and its interior speckled with small lakes and a
+grid-like mesh of streams; 4×'s has no snow at all and the speckle covers the island. The ground at
+the spawn still plays well (`bw-2x_spawn.png`, `bw-4x_spawn.png`). Suspects: the uplift's ranges and
+the island shape's absolute tunables (BIG_MAP.md §1) narrower than the map's coarser cell (200 m at 2×,
+400 m at 4×), and the erosion and lake fill tuned per cell rather than per metre. A worldgen look
+question for the owner (the plates are to decide the land, REALISTIC_WORLD.md), not a crash.
+
+Owner, 2026-11-12: "any idea why 10x worlds are super flat with massive rivers and lakes? And no
+mountains?" **Quick fix built** (branch `claude/notes-batch-2`, WORK_QUEUE item 52; the 0.56 line, which
+the owner raises; 1× unchanged): the ranges' coast distances × the radius scale, ridges eroded as at the
+profile's cell, the least lake × the scale², river lips by √Q past 100 m³/s (`hydrology.json`
+`bigWorlds`). Measured (BIG_MAP.md §5.1): 10× before max 1 427 m, 0.0 % above 1 500 m, a 6.5 km channel,
+5 888 lakes on 10.5 % of the land; after 2 692 m, 8.1 %, 807 m, 1 lake (1×: 2 613 m, 6.4 %). Regression
+test `tests/big_terrain.rs` (4×, 10×, both faces), red on the old rules. Left: the ranges per column at
+full resolution and the regional 100 m maps (small rivers and lakes).
+
 ### 69. A dark vertical column in the far terrain before the starter world's volcano
 
 Found 2026-11-11 (0.52.64) on the starter world's tour: `?worldgen=test:starter&fresh=1&at=8571.5,350,-4866.5`
@@ -170,19 +566,6 @@ preload's screen from opening in its 3 frames (`with_the_lod_a_preloaded_respawn
 and was dropped. **Left:** the owner's check on the river in the browser, and the report's other half
 (edited chunks refined only up close).
 
-### 52. A felled trunk landing on its chopper can fling them far
-
-Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
-`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
-chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
-`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
-Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
-ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
-the grounded controller cancels the downward part of the push each step, and the solver's
-separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
-mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
-contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
-
 ### 51. Reopening a world in the same tab stalls on CI: spawn's reload and settings' reload
 
 Found 2026-11-08 getting CI green (PR #421). On CI's software renderer, two specs fail on all three
@@ -265,7 +648,7 @@ with #338 reverted, and main with #340 reverted (both of those include #339). Cu
 currents' datagrams to a quarter didn't help, and there is no water near the native server's spawn
 (seed 0, (2128, 7544)). Next: re-run main at #340 and bisect #338's pieces on a branch from #336.
 
-### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
+### 30. A held Place builds too little at a few frames a second (the pace fixed after 0.63.6; towers still short)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
 SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
@@ -290,14 +673,1698 @@ towering, both bridging tests (a tower first) and the held ladder still fall a p
 35.5 m of 36; the ladder's first piece missing). Main's shard 1 failed six of these before. Next:
 the tick trace on CI (it builds a metre a jump locally at 3 fps).
 
-### 23. A block can't be placed against the downhill side of a ramp
+**Fixed after 0.63.6** (brief, 2026-11-13: "the held Place's repeat is frame-bound: make it time-based … a rate
+from data, accumulated per tick, not one per rendered frame, so a slow page still builds at the data rate"). The
+rest was the pace: a stroke built at most one piece a frame, and a line waited for the server's answer to each piece
+before the next, read once a frame, so a page built a piece a frame (natively: 5 a second at 5 fps, 60 at 60 fps).
+Now a piece every `buildModes.repeatS` (0.05 s, `shared/items/items.json`) by the clock, counted at each predicted
+tick (`BuildDrag::aim_at`); only a tower still waits for each answer (its crouch-jump regression); another line
+builds on unanswered, goes back to a piece the server refused and steps over the ones it built after it; a frame
+sends at most the server's region queue (`region_edit::MAX_QUEUED`, 4: a frame's fills reach it in one tick), which
+under ~5 fps sets the rate instead (3 fps: ~12 a second). `game_local.rs`
+`a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second` (red before: 3 pieces at 233 ms at
+60 fps with 1 due; 7 of 12 after 1.2 s at 5 fps), `build_drag.rs`
+`a_held_stroke_builds_a_piece_every_repeat_s_by_the_clock`, `a_line_builds_on_unanswered_and_goes_back_to_a_refused_piece`.
+At 60 fps a held line now builds 20 a second, not 60.
+
+**The spec under the software renderer (cloud session, SwiftShader, after the fix):** the line up, Flat, walking
+back in Line mode, the crouch-jump tower, the edge click and the held ladder pass; towering and both bridging tests
+(each a tower first) still fall short, 34–35 m of 36, **the same on main's build** (34.5–35 m): the tower part, still
+open (a tower still waits for each answer and builds a jump at a time; untouched here). The held ladder failed 2 of
+3 on this branch and 1 of 3 on main: a race in the test, fixed in the spec — after the step back the crosshair still
+met the pillar's −Z face, but higher up, until a frame took the new look, and the test waited for the face only, so
+the first ladder went there (it now waits for the cell).
+
+
+## Fixed
+
+### 171. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types (fixed in 0.65.0)
+
+Owner, 2026-11-14 00:05, iPhone, the live site (0.64.x or 0.65.0), a Realistic world seen flying high: **"Still seeing
+harsh bands of terrain types, strips, lines, etc"**. The screenshot, looking down: long, perfectly straight dark-brown
+strips (dirt / red-dirt colour) a few blocks wide crossing the land in a lattice of straight lines at a few angles,
+like roads; straight grey stone strips, and straight green grass strips along some of them; large patches of speckled
+tan/brown/cream noise (the palette dither) with hard straight edges; rivers with straight channel edges and a stepped,
+pixelated blue fringe. Suspects (orchestrator): erosion drainage lines or washes carved as straight segments; the mesa
+palette's ordered blend; province or plate edges straight at this scale; biome bands following map cells. Top priority
+of the 0.68 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
+natural, irregular, blended edges; no straight strips, lines or lattices of dirt, stone or grass. **Fixed in 0.65.0** (the owner, 2026-11-14: "I think
+that 65 does fix that issue"): reproduced natively at the owner's spot (seed 4065579781, face A, x 10472, z −3091) on
+0.64.2: the lattice was the plate provinces (rocks.json `plateProvinces`), each setting a band of one stack at a fixed
+width along straight plate boundaries (`rift` → `dwell:rift_fill`'s loamy dirt); 0.65 curved the boundaries, made the
+settings' edges wander and mixed stacks inside them. Regression test `tests/realistic_bands.rs` (both faces, seeds 1,
+7, 42, 274005646, 2741893632, 4065579781): the provinces' boundary cells on straight 1.3 km runs, 0.64.2 28.3 % (A) /
+15.5 % (B), 41.9 % at the owner's spot; 0.65 0.07 % / 0.12 %. The speckle and blended edges the owner asked for next
+are WORK_QUEUE item 15 (0b).
+
+### 169. A founded town's blueprints go up around the trees standing on its site (fixed in 0.66.0)
+
+Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
+(688, 7979) on face A. Founding placed the plan's blueprints on the ground as it was and the builders skip occupied
+cells, so the generated trees inside the footprint stayed: a broadleaf between the well and a hut, another in front
+of the second hut's door (stills `builders-end.png`). Fix, at generation (like the shrines' clear ground): each face's
+generator of the server's world (`BifacialTerrain::sized`) sites the towns as the server does (`dwell-worldgen`
+`towns.rs`, `TownRules::site_in` on the same `town_ground`, cached per grid cell) and places no tree, bush or boulder
+whose footprint reaches a site's `TownRules::clear_box`: the box round every blueprint's structure, whichever way it
+is turned, plus `towns.clearM` (4 m, `blueprints.json`, validated by `gen.mjs`), so the doors and the paths between
+the buildings are clear too. Changes the terrain a seed generates: the 0.66 line. Test (both faces, red → green):
+`dwell-worldgen` `tests/towns.rs` `no_tree_bush_or_boulder_stands_on_a_planned_towns_layout` (seeds 0, 1, 7, 42, the
+sites within 2.5 km of the origin and seed 0's hamlet at (688, 7979); red: a pine on seed 0's town box on each face).
+Owner, 2026-11-14 (asked whether "town plans will clear trees" means villagers clear them): clearing a town's ground
+stays instant, at generation, for now; villagers felling the trees on a town's footprint comes later, with harvesting
+(WORK_QUEUE item 57's later phases, docs/BLUEPRINTS.md §9).
+
+### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
+
+Owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't be shown and they cause z fighting."
+Cause: since WORK_QUEUE item 48 (0.55) a leaf face against a `leafFlush` log is drawn whole and flat on the cell
+face, so it lay in the same plane as the log's octagon side (or cap) there, and the cutout leaves (drawn from both
+sides) flickered against the bark. Fix: the flush face is drawn less the log's own faces lying on it
+(`mesher/leaves.rs` `flush_holes`, `subtract`): only the corner gaps beside the octagon's chamfers are filled, nothing
+coplanar with bark. The far trees' trunks draw no side toward a leaf, so they had no overlap. Tests (both faces, red →
+green): `no_leaf_face_lies_on_the_bark_it_touches` (a trunk and a lying branch in leaves: no two faces of the chunk
+coplanar and overlapping; red, a leaf square over the bark), `a_leaf_beside_a_log_draws_only_the_octagons_corner_gaps`,
+`leaves_lie_flat_against_a_trunk` (now the square less the bark), the guard `a_far_trees_leaves_lie_on_none_of_its_bark`.
+**Owner should see:** no flickering or z-fighting where leaves meet trunks and branches; the octagon's corner gaps
+still closed by leaf.
+
+### 168. A felled (lying) log's octagon is squashed: short corners, uneven sides (fixed after 0.64.1)
+
+Owner, 2026-11-13: "Also sideways logs (after a tree is felled) octagon shape corners are shorter than when upright,
+the sides aren't the same length and they should be the same." Cause: the corner cut (`crossSection.chamfer`, and
+the bark `ring`) was a fraction of the cell's shorter side in metres; a log lying along x or z is two ½ m cells, so
+its corners were cut by 0.29 × ½ m: sides 0.71 m and chamfers 0.21 m, against the standing log's eight 0.41 m sides.
+Fix: `dwell_blocks::octagon::across_m`, the log's width across: a lying half joined to its other half measures by the
+whole 1 m log (a lone ½ m cell keeps its own). Collision uses the same outline, so a felled log rests on the same
+octagon. Tests (red → green): `a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon` (each axis: 8
+equal sides, the standing log's), `a_lying_logs_bark_ring_is_the_standing_logs_width`. **Owner should see:** a felled
+log's end shows the same even octagon as a standing trunk.
+
+### 166. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
+
+Found 2026-11-14 by the 0.64 terrain fixes (the realistic batch's BUGS.md #162, its commit b9c0379): with the biomes
+reading the blurred rain, seed 1 face A showed red sand on 2 red rock mesa floors where the climate is not arid
+(e.g. (−17500, 10750)), against #134's rule. Cause: the erosion snaps a floor down to the stack's soft layer
+(`Cut::Floor`), the red desert beds' siltstone, whose `cap` was `dwell:red_sand` with no `capBy`, so its treads were
+red sand in any climate; latent on main, the blur moved the mesa's edge over such floors. Fix (data, `rocks.json`): the
+siltstone's cap is red sandstone with `capBy` arid red sand, as the sandstone's. Test:
+`tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (red with the seam fixes, green after).
+
+### 164. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+
+Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
+this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
+and glacier blue-white ground with lakes on the left, dense green forest and grass on the right: a data or render seam,
+not a natural biome edge. **Owner should see:** no straight lines across the land between terrain types. Snow, forest,
+desert and grass meet along natural, wandering edges. Causes: (1) the plate boundaries' points sat on the 500 m scan's grid lines (the cells' midpoint), so a
+near-vertical or near-horizontal boundary became a polyline exactly along one grid line, up to 30 km, and every landform
+and province edge along it was axis-aligned; (2) the climate's marched rain is near all or nothing cell to cell, and read
+bilinearly on its 500 m grid the biomes' edges ran along the grid's rows and columns. Fix: each boundary point is the
+crossing found by halving between the two cells' centres (`plates.rs` `crossing`); `climate.json` `rain.blurM` (4000 m)
+low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_the_plates_not_the_scans_grid` (30 000 m
+axis-aligned before, under 1500 m after; under 2500 m on the 0.65 line, whose finest plate warp can put three crossings on one scan column), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
+biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
+
+### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
+
+Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas
+there's these spiky edges where slopes are up against the side of other slopes. I don't mind slopes with edges exposed but
+I do mind slopes that back up against open air." Seen on 0.61.7, seed 274005646, around (−11859, 263, −1617), stone: in
+the dump, stone_ramp cells (facing east/north, shapes ramp/steep_lower/steep_upper) sit on diagonal contours, their high
+(back) side facing air, so each shows a tall vertical back face in open air, a sawtooth along bowl corners and diagonal
+slopes. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no sawtooth
+spikes. Ramps meet higher ground at their backs; only their triangular sides may show. Cause: the notched rule (0.59–0.61 wherever the rock shaped the ground) let a ramp back onto
+a column that was itself a ramp descending toward it or along it, so the ramp's high side stood over lower ground. Fix:
+`ramps::top_backed_by` (`RampRule::top_backed`): a ramp keeps its facing only where the column behind its high side stands
+at least its top along their shared edge (that column as its own rule shapes it, `ramps::edge_height`), else the column
+is a full block; a column ends as its unchecked top or flat, and flat stands at least as high on every edge, so the check
+holds whatever the neighbour becomes; steep pairs alike; the triangular sides may show. Terrain (each column's own strict
+or notched rule) and the grid worlds use it, in every world. Deviation: another facing is not tried (it could expose a neighbour's back);
+the column is a full block. Tests: `ramps::tests::a_bowls_corners_back_no_ramp_onto_open_air` (the notched rule: 52 of 600
+bowl ramps exposed unchecked, 0 backed), `straight_slopes_keep_their_ramps`, `tests/ramp_backs.rs` (seeds 1, 7, 42,
+274005646, both faces, the default and the Realistic world: 134 and 194 exposed ramps on seed 274005646's Realistic faces
+unchecked, 0 after). The default world's goldens are unchanged (its strict rule never backed a ramp onto air).
+
+### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
+
+*Found 2026-11-13 in a GPU screenshot pass on 05925aea (test:forest seed 0, High).* 25 m over the dense stand only
+flat-topped trunks were drawn under the camera; at 40 m a hole of bare trunk stubs sat below with crowns at the
+frame's edges; at 80 m the canopy was whole. Confirmed in a real flight (flying up from the forest floor looking
+down). Not the impostor hand-over (#927, already the eye's 3D distance): the LOD walk. A coarse LOD section's kind
+comes from the terrain alone, so the level-2 section over the forest floor (only the trees' upper parts in it) was
+"empty", and the walk stopped there: the streamed chunks inside it (loaded, meshed, drawable) were never shown, and the
+trees there were near, so no impostor drew either. The trunks were cut at that section's floor (y 320 there). Now an
+empty section on the way to the chunks around the camera (`find_covered`) is walked through to them, as a buried one
+already was (`dwell-lod` `visit`). `system::tests::draws_the_streamed_chunks_inside_a_section_the_coarse_levels_call_empty`
+(red on the unfixed walk: the chunks 64-80 m up not shown). The streaming report (F8) now names where the walk stopped
+above a chunk (`lod.stoppedAt`), which found this.
+
+The same pass saw the crowns cast almost no shadow on the forest floor: the missing crowns were most of that (with
+them drawn, the canopy's shadow lies on the floor in the after shot); a check from the ground is still worth a look.
+
+Owner should see: flying up over a forest and looking down, the canopy stays whole at every height (no hole of trunk
+stubs below), and the canopy's shadow on the floor.
+
+### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
+**Fixed after 0.63.6.** A ramp's slope was always aimed at through its top (its normal is mostly up; a 45° one's
+tie goes up too), so a place went on top of the ramp, never past its low edge, and a side face would have been
+refused by the server's line of sight (a ramp has no polygon facing its low side). Now the hit also gives the side a
+slope faces out through at the point met (`dwell_world::edit::slope_side`, along its normal in cell space: a ½ m
+ramp's lower half faces out its low side, its upper half its top), the client places through it
+(`BlockTarget::place_face`; a 1 m piece stands up from there) and breaks through the top as before, and the server
+takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs`
+`a_place_aimed_at_a_ramps_lower_half_goes_off_its_downhill_side` and `block_interaction.rs`
+`a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
+face +Y, placed on top).
 
-## Fixed
+### 87. An NPC's raised vertical block leaned the blade back over its shoulder (fixed after 0.61.1)
+
+Found fixing #86 (2026-11-12), not reported: `clip_probe` put the third-person `guard_vertical` pose's sword grip
+at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead): the blade ~66° off
+upright, its tip behind the body, where `biped_guard_vertical` meant "the blade upright ahead of the face" (a
+first guess, never fitted). Fixed: the clip fitted with `clip_probe guard_vertical --item dwell:sword --body --fit
+0/0.12,1.2,0.42/0.1,1.97,0.48` (grip now (0.12, 1.19, 0.43), tip (0.13, 2.04, 0.47): the fist before the chest,
+the blade upright ahead of the face), and the sword's `guard.stances.vertical.blade` refitted to it, so a clash's
+sparks stay on the drawn blade. Test (`clip_probe` `the_vertical_block_stands_upright_ahead_of_the_face`): red on
+the old clip ("66° off upright"), green on the new; `the_raised_blades_data_is_where_the_raised_poses_draw_it`
+holds the data to it. Sheets: `docs/clip_probe/guard_vertical_before.svg`, `_after.svg` (the third-person panel).
+
+### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13, shot 04c; refinement, owner: "Focus on
+refinement only for now"): at a sun river head (`sunLand {river:true}`) the basalt crust by the lava was nearly black,
+so #145's reflected light from home and the moon barely showed. Cause: tuning. The sun's light rig (grids.json
+`dwell:sun` `light`) gave open ground facing up a luma of 0.076 (an ambient floor 0.06 and the glow 0.45, 0.4 of it
+from the sky), and home and the moon at 0.9 and 0.35. Fix, data only: the floor 1.2 in a softer warm (#ffa476), the
+glow 2.5, home 6.0 and the moon 2.0 (luma 0.88 facing up; the basalt ramp is very dark, #35323a); the lava's own emissive look unchanged. Test:
+`grid_light::the_suns_crust_reads_as_warm_lit_rock_not_black` (both faces; red before at 0.076, green after).
+Shots (before → after, `sunLand {river:true}` on the real GPU): the open crust went from black to dark basalt with its blocks' steps showing, the lava unchanged. **Owner should see:** on the sun, the crust beside the lava reads as dark, warm-lit basalt with
+its blocks' form visible, brighter on the side facing home; the lava as bright as before.
+
+### 160. Theater on a phone in portrait: the flying controls vanish while the bottom sheet is open (fixed after 0.63.10)
+
+Same pass (01b, 390×844): the stick and Up/Down showed in landscape (beside the side sheet) and with the bottom sheet
+collapsed, but a stylesheet rule hid them while it was open, so the camera couldn't be flown while setting keys.
+Fix: they show with the sheet open too, riding just above its top edge (mode.ts `showTouch` sets their `bottom` from
+the sheet's rect, layout.ts `touchBottomOverSheet`, open or collapsed); the sheet's 58 % cap leaves room for the
+stick. Test: panel.test.ts "show above the open sheet at 390×844, their rect clear of it" (red before: the hiding
+rule, no placement). **Owner should see:** on a phone in portrait, theater's stick and Up/Down sit just above the
+open sheet, and flying works while the sheet is open.
+
+### 159. Theater's recording dot is barely visible (fixed after 0.63.10)
+
+Same pass (01d): the REC badge's dot read as a faint pink smudge on a pink pill, and it blinked out (hidden) half of
+every second. Fix (style.css `.tb-rec`): a saturated red dot (#e0201a) ringed in white with a soft red glow, on a
+near-white pill with a red hairline, pulsing gently between 100 % and 60 % opacity (never hidden; no pulse with
+reduced motion). Test: panel.test.ts "shows a saturated red dot that stands out on its pill and never blinks out"
+(the dot's red saturation, ≥ 3:1 contrast on its pill over the glass, its keyframes never hide it or go under 60 %;
+red before). **Owner should see:** while a take records, a clear red dot beside REC and the timer, steady or gently
+pulsing.
+
+### 158. Villagers' skin reads cold blue-grey with the sun behind them (fixed after 0.63.8)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13; refinement, owner: "Focus on refinement only
+for now"): on a flat world at time 0.45, villagers facing the camera with the sun behind them had grey-blue faces and
+arms ((160, 174, 188) on a porcelain face, #f5d7c4), though every skin tone is warm. Not the recolour (the skin
+mapping is right; the same villager from behind, sunlit, is right). Cause: a body's light (`skin_key`, and the rigid
+characters' `key_light`) is the light on a face looking up, its direct share shadowed at the fragment: on the side
+away from the sun that left only the blue sky's hemisphere, through the ramp's cool shade (0.55, 0.58, 0.78), with no
+light thrown back off the sunlit ground. Applies to every body (the player's too). Fix: a warm ground bounce for
+bodies by data, shared/look/light.json `characters.bounce` (`color` #e8a878, `strength` 0.6), times the sun's light
+on the open ground and the body's sky openness, added to the skinned bodies' and the rigid characters' light
+(`body_bounce`). Test: `skinned::a_bodys_light_carries_the_grounds_warm_bounce` (red before: no bounce in either
+body's light), and light.test.mjs's data checks. The same face now reads (211, 194, 195); a side-lit one (134, 132,
+113) → (197, 158, 126). **Owner should see:** villagers (and your own body) facing you with the sun behind them keep
+warm skin on the shaded side, not grey-blue.
+
+### 157. Trees stay stippled with the camera still (fixed after 0.63.8)
+
+Found in the same GPU pass (02a, 02b): standing still at 8 m and 32 m over `test:forest`, trees about 15–60 m off
+were dithered after 3 s or more, though #154 made each tree fully near or fully its impostor once its 0.3 s fade
+ends. Two distance dithers were left: (1) the impostor picked each pixel's view by the screen noise among up to four
+baked views (`imp_pick`, `Config::dither`), so a tree seen between two views showed both, stippled where their
+silhouettes differ, the trunk's red dotted through (the main one: it stayed with `?cards=0`); (2) the leaf cards
+dissolved by distance over 24–40 m (`fadeStartM`–`fadeEndM`). Fix: (1) each impostor draws its nearest view
+(`Config::nearest`, WGSL `imp_nearest`: azimuth and band each rounded), the same for every pixel; the view changes
+only as the camera moves round the tree; (2) a tree's cards switch on and off with the tree in time, as its leaves
+do: on nearer than `fadeStartM`, off past the middle of `fadeStartM`–`fadeEndM` (32 m) from its crown, each switch
+faded over the tier's `fadeS` (render/tree_fade.rs, the map's second plane, `tree_cards_share`), dropped whole past
+32 + 10 m. Left by distance on purpose: the near-eye dissolve of a leaf face within a few metres (the camera inside a
+crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier `off`). Tests:
+`impostors::a_tree_draws_one_view_with_no_per_pixel_dither` (red before), `impostor::a_tree_draws_its_nearest_view_…`,
+`tree_fade::a_still_eye_sees_every_trees_cards_whole_or_gone` and `a_trees_cards_fade_once_in_time_…` (both faces).
+**Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
+as solid painted shapes.
+
+### 165. Dynamite flings tall grass as physics pieces (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Dynamite blows up (physics) tall grass that's wrong. It should just be destroyed if the block
+under it is moved or destroyed."
+
+Cause (`dwell-sim` `Server::blast`): every non-liquid, breakable cell in the shell became a flung one-cell piece,
+tall grass included, and the blast's clears used the plain `TickChanges::set`, so a plant standing on a flung or
+destroyed cell just past the radius was left floating; a collapse's clears (`Server::fell`: sand falling under a
+torch) did the same. Fix, a data rule (docs/EXPLOSIVES.md §3.13): an attached block (`needsSupport`, or `partOf`
+one: tall grass, torches, saplings, ladders; `dwell_world::edit::attached`) is removed in a blast, never a piece,
+and counts as open space; every cell a blast or a collapse clears takes the attached blocks on it
+(`set_and_unsupport`); in adventure they drop as when broken. Tests (both faces, `tests/explosives.rs`): red → green
+`a_blast_over_tall_grass_flings_no_grass_and_removes_it` (68 grass pieces before),
+`attached_blocks_on_flung_blocks_go_and_are_not_carried`, `a_torch_on_sand_that_falls_goes_and_is_not_left_floating`
+(the torch stayed floating before); `tall_grass_on_a_block_broken_by_a_tool_goes_with_it` pins the tool break (it
+already worked). **Owner should see:** dynamite near grass blows away dirt and stone as pieces, while the grass on
+them simply disappears — no flying grass.
+
+### 159. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
+pitch problem or if it's the wrong sound effect, happens when you run out of stamina and maybe other related player
+effects." Cause: the wrong sound effect, not the pitch. `exhausted` plays `breath_heavy`, whose samples were the pack's
+`MONSTER_Exhausted_05` and `_07` (0.52.20's pick by filename, unheard): analysed, they are voiced throughout (a pitch in
+30 of 39 loud frames, ~110–180 Hz) with a low spectral centroid (840–970 Hz), a creature's growling exhale, where a
+person's heavy breath is mostly unvoiced noise. The pitch math was right: a sample's `pitch` is ± semitones
+(`2^(s/12)`), and every player vocal sound draws ±0.5 semitone (rate 0.97–1.03). The other player vocals are the pack's
+human male takes (`hurt` `GRUNT_Male_B_Hurt_Short_01–04`, `death` `GROAN_Male_Hurt_Long`, `gasp`
+`GRUNT_Male_Hurt_With_Cough`, `strain` `GRUNT_Male_Subtle_Hurt`; f0 ~245–510 Hz, centroid 1.1–2.3 kHz) and stay. Fix:
+the monster files are removed and the breath plays its procedural layers (two breathy noise puffs) until a human breath
+is picked from the pack; a sound's samples now name their pack files (`samples.from`), whose category the test checks.
+Tests: `client/src/audio/playerVoice.test.ts` (red: `dwell:breath_heavy plays MONSTER_Exhausted_05`; green after), each
+player vocal event a human category and every play's rate within 0.9–1.1, and the semitones → rate math.
+
+**Owner should hear:** when you run out of stamina (and on other player effort/hurt sounds), a human breath/grunt at a
+natural pitch, not a growl. Follow-up (2026-11-13, `claude/human-breath`): the breath plays recorded human takes again,
+picked by analysis (the pack has no `BREATH` category): `VOICE_MALE_Sigh_1` (unvoiced, 0.74 s, centroid ~3.7 kHz),
+`GRUNT_Male_Quick` and `GRUNT_Male_Quick_Deep` (the gasp's and the strain's voice, breathy exhales, 20–36 % voiced,
+centroid 2.3–2.6 kHz), ±0.5 semitone; the noise puffs stay as the fallback before they decode. Test: `playerVoice.test.ts`
+"the out-of-stamina breath is a man's recorded breath" (red: `breath_heavy plays recorded samples, not only noise`;
+green after). Unheard by a person yet: the owner should hear it.
+
+Follow-up (2026-11-13, `claude/breath-sigh`): the owner heard the three previews and chose the sigh. Owner: "1, sigh is
+my choice". `breath_heavy` plays only `breath-heavy-1.m4a` (`VOICE_MALE_Sigh_1`), ±0.5 semitone, same gain;
+`breath-heavy-2/-3.m4a` (`GRUNT_Male_Quick`, `_Quick_Deep`) are deleted. The noise puffs stay only as the fallback
+until the sigh decodes. Test: `playerVoice.test.ts` "the out-of-stamina breath is the owner's pick, the sigh alone"
+(red on the three takes: `breath_heavy plays only the sigh`; green after).
+
+**Owner should hear:** run out of stamina: one human sigh every time (a little pitch spread), never a short grunt.
+
+
+### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
+
+Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
+move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
+tree is casting a shadow onto itself."
+
+Causes (render/shadows.rs, render/mod.rs, the cutout shaders): (1) a chunk's whole cutout mesh, its trees' leaves
+included, was a *plant* caster, drawn into the nearest `plantCascades` only (Low: the first of 2, out to ~20 m; High:
+2 of 3, ~44 m), so past them a crown cast nothing at all, on the ground or on itself; (2) the shadow passes used the
+scene's `cutout_vs`, which drops a leaf card the camera is behind (`card_dropped`'s back-cull), so which cards cast —
+the crown's top cards seen from below, its far side's — changed with where the camera stood; (3) the lookup's normal
+offset was 1.5 of each cascade's texels (2 cm in the near cascade, 7–26 cm in the far ones), so the near cascade
+shaded the crown's top with the shadows of its cards standing a few centimetres off it and the far ones couldn't;
+(4) a fragment switched cascade at the box's edge with no blend. Fix: leaves cast into every cascade (plants still
+into the nearest only; `shadows::casts`, a `Part::Leaves` range); the shadow passes' own `shadow_cutout_vs` drops no
+card for the camera's side; a tree's leaves look up at least `bias.leafNormalOffsetM` (0.35 m) out, the same in every
+cascade (`normal_offset_m`); the outer `cascades.blendBand` (15 %) of a cascade's box blends toward the next
+(`pick`, `shadow_cascades`). The choice: **no texel-scale self-shadow on a crown in any cascade** (the owner's
+first look, "only below"): the coarse cascades can't draw a card's shadow on the face under it, and the owner read
+the other look as the odd one; a crown still takes shadows from other trees, cliffs and its own upper crown more
+than 0.35 m above a face, and the ground under it is shaded in every cascade. Tests (render/shadows.rs, a CPU model
+of the maps and the lookup, both faces): `a_crowns_texel_gets_the_same_shadow_whichever_cascade_reads_it` (red
+before: the crown's top 0 under a card in the near cascades, and the ground under the crown lit past
+`plantCascades`), `a_cascades_edge_changes_a_fixed_receivers_shadow_by_the_blend` (red before: a step
+at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest`,
+`a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
+trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
+### 155. Flying at the moon never got closer (fixed after 0.63.6)
+
+Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and
+couldn't get there. It didn't seem to get any closer." On the Mac (keyboard and mouse, the released build; 0.63.6 is
+deployed and has #905's space flight since 0.60.14). Cause: creative flight's forward was level along the yaw
+(PLAYER_CONTROLLER.md §6.7), so aiming at the moon in the sky and holding W flew level under it at 362 m/s, never
+climbing out of home's slab, where far flight (#905) stays off; the moon rose overhead as the player flew. Reproduced
+natively (W held, the look on the moon from home's ground: 90 s, 572 km of 597 km left, up 0 m/s) and in Chrome
+(the bench's `flyAtMoon` step, real held W: 100 s, 599 km left). Now forward follows the look's pitch (`fly.follow_pitch`,
+`controller::fly_direction`); Space and crouch still rise and sink. From home's ground the same flight is captured in
+47.8 s natively (face B, where the moon is up at the rig's clock) and 50.4 s in Chrome. The moon's disc is drawn where
+it is: it sits under the crosshair the whole way (`moon-fly`'s shots). Tests: `dwell-physics`
+`forward_flies_where_the_camera_looks` (red: rose 0 m in 1 s; and its mirror run), `dwell-client`
+`holding_forward_at_the_moon_from_home_reaches_it` (red: not captured in 90 s, nearest 572 329 m; green 47.8 s, no snap).
+Open: the browser run counted 18 snaps (server corrections) on the way, most while far flight sped up (native lockstep:
+none); not fixed here.
+
+**Owner should see:** aim at the moon in the sky in creative flight at the top speed and hold W: the ground falls
+away, the speed climbs into space, and the moon is reached in under a minute; look elsewhere to steer.
+
+### 154. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
+
+Owner, 2026-11-13, with two screenshots: "There seems to be doubled partially faded imposters, they can't fade
+slowly based on distance alone because they are obviously faded. Not sure why there's 2 and they seem to split and
+combine as you fly up and down in front of them. It can be a fade transition but it shouldn't ever be partial
+transitions over distance, but over time. Does that make sense?" The shots: pines at the hand-over distance drew
+both the near leaves (dithered, half faded) and the impostor (dithered, half faded) at once, the two copies offset
+and sliding apart and together as the camera moved up and down. WORK_QUEUE item 31.
+
+Owner should see: flying toward and away from a forest, trees swap between near and far with a brief fade, never a
+steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+
+**Cause:** (1) the hand-over was a blend by distance (`fromM` 48 over `fadeM` 16): every tree 48–64 m off drew
+both copies, each on its share of the pixels, for as long as the eye stayed there. (2) The impostor dithered
+between baked views 40° apart in elevation (0° and 40°), which see different silhouettes: from a rising eye two
+crowns up to 0.55 m apart (vertically) were interleaved, their weights shifting with the height.
+
+**Fixed (natively; the browser look a local check on a GPU):** (1) each tree is in one state, its real leaves or its
+impostor, switched by its crown's distance with hysteresis (`impostors.json` `far.tiers.on` `inM` 54, `outM` 58)
+and cross-faded over `fadeS` 0.3 s at each switch (client `render/tree_fade.rs`: per-tree states, a byte map of
+the near share about the eye that the leaves read at their fragment and the impostor at its tree's foot, so a
+tree's leaves and its impostor fade as one). Tests (both faces): `a_still_eye_sees_no_half_faded_tree_at_any_distance`,
+`crossing_the_switch_fades_once_over_time`, `the_gap_between_in_and_out_keeps_a_tree_from_flickering`,
+`a_crown_reads_its_trees_state_and_an_unbaked_tree_stays_real`; the old distance blend (`Far::share`, 0.5 at 56 m)
+is gone and a tier naming `fadeM` fails to parse. (2) The view layout is 6 azimuths × 0°, 20°, 40°, 60° + the top
+(25 views, the atlas 1.25× the bytes; the phone's 14 MB): `impostor`
+`the_impostor_registers_with_the_real_crown_as_the_eye_rises` (pine and oak, the eye from 3° to 65° up) red
+before (0.55 m off, overlap 0.65), 0.27 m and 0.68 after. Tried and dropped (each measured worse or no better): an
+upright proxy plane per view, a depth-refined reprojection, a narrower blend between views. Left: during the
+0.3 s fade the impostor is a baked seed variant, not the tree itself, so the two shapes differ for that moment.
+### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
+
+Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator
+showed up several hundred meters in the air over the portal." Cause: a seen portal's marker took its rim's loaded top,
+read only within 256 m of the eye (`map_markers::ground`); flying higher, nothing was found (NaN), and the shell's
+fallback chain (`markerGroundY`: the map's height, else **the player's height**) put the marker at the player's
+altitude; `noteAuto` never moved a portal marker once noted, so it stayed there for good. Now `seen_portals` gives the
+opening's height from the generator's shafts (`world.portals`, the same the controller's exit push uses), known from
+the seed wherever the player is; an unknown height takes only the map's (provisional) or waits, never the player's; a
+portal seen again at its known height corrects its marker (the saved bad ones too); a marker placed on the map over
+unloaded ground is put back on its ground once the column loads, and one saved more than `regroundAboveM` (8 m,
+`shared/ui/markers.json`) above its loaded ground is corrected (`regroundMarkers`). Tests: `dwell-client`
+`a_portal_seen_from_far_overhead_stands_at_its_openings_height` (both faces; red: `[1.0, 10.5, NaN, 0.5]`),
+`markers.test.ts` "never notes a portal at the player height while flying high over it", "corrects a saved portal
+marker far above its opening when the portal is seen again", "puts placed markers back on their ground once it loads"
+(red on the old code: 472 kept, `regroundMarkers` missing).
+
+### 152. A villager's neck and jaw were another skin colour than its face and arms (fixed after 0.63.3)
+
+Owner, 2026-11-13: "face should always match arms, etc. shouldn't have different skin colors on different skin parts."
+The Peasant's skin part is modelled in two ramps (skin_fair face and arms, a skin_tan neck and jaw), and the recolour
+kept a vertex's whole shade of the part's base, so the neck and jaw drew 0.83 of the tone: a second skin. Skin and
+hair also came from independent random lists (a deep skin with blond hair as often as black). Now the skin and hair
+come from `shared/creatures/appearance.json` (tones, each with its hair colours), and the skin part keeps only the
+set's `shade` share (0.25) of the modelled shading. Tests: `dwell-client`
+`every_skin_vertex_of_a_villager_draws_its_one_skin_tone` (200 villagers, every level; red at a share of 1: "skin
+vertex 693 draws … x0.83"), `dwell-sim` `a_villagers_hair_always_goes_with_its_skin_tone`, `dwell-models`
+`a_tone_by_hex_keeps_its_share_of_the_parts_shading`, `shared/creatures/gen.test.mjs` (bad entries by name). Left: the
+coarser detail levels' part map puts a few sleeve-edge and lip vertices of other colours in the skin part; they draw
+the tone at 0.86–1.0.
+
+### 151. `dwell-sim` `items.rs` `dying_in_adventure_drops_everything_where_the_player_died` failed on main (fixed after 0.63.1)
+
+Found 2026-11-13 (branch `claude/collision-ahead`, not caused by it: the same failure on main at 0.61.1 and after
+merging main): both faces failed at `items.rs:202`, `a stack a slot: []`: `kill_player` in adventure left no loose
+items at once (4 expected: the starting axe, two stacks of dirt, the sticks). Cause: the defeat kneel (WORK_QUEUE
+item 55, "humans don't die") moved the drop to the stand, and the test still expected the old death drop at once.
+(Numbered 142 at first, a duplicate of the first-person feet's #142.) The owner decided (2026-11-13, "Keep
+everything"): a defeat drops nothing. Fixed: the stand's drop is gone (`drop_on_stand`, `drop_inventory`); the test is
+now `a_defeat_in_adventure_keeps_everything_and_drops_nothing` (both faces: the inventory, held slot and wallet
+exactly as before the defeat, at the shrine, no loose items), red on the old code (the axe, dirt and sticks dropped
+at the stand) and green after.
+### 150. The bench's `flyTo` step rejected `marginM` (fixed after 0.63.1)
+
+Brief, 2026-11-13 (browser check on 0.60.16, seed 7, local world, M1): "the bench `flyTo` step rejects `marginM` although
+`__dwell.flyTo` takes it — accept it." The step's key list (`scenarios.ts` `STEP_KEYS.flyTo`) left it out. Now accepted
+for a trip to the moon (0–100 km) and passed through. Test: `scripts/scenarios.test.ts` "flies to the moon and home"
+(red before: the step with `marginM: 500` failed the parse).
+
+### 149. The moon was not drawn from near it on the home grid (fixed after 0.63.1)
+
+Brief, 2026-11-13: "The moon was not drawn from 7–25 km out during a flyTo approach (14 calls, 1.7 k triangles, no near
+mesh), possibly a side effect of 2." Partly #147: after the failed `moonLand` the player was on the home grid inside the
+moon's capture sphere, not captured. There, and anywhere on the home grid inside the moon's `farM` (150 km), the moon is
+its near mesh (M-5), a piece, its far disc off; the far pass's near plane (`render::far_pass_near`) moves out to 0.8 × the
+eye's altitude over home's terrain, ~480 km at the moon's ~600 km, and clipped the whole mesh. On the moon grid the mesh
+is drawn (the eye inside its sphere; `the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). Fixed: the near
+plane also stays short of the nearest shown piece's bounding sphere (`Renderer::nearest_piece_m`). Test:
+`render::tests::the_far_pass_keeps_the_moons_near_mesh_from_home_high_up` (red before: the plane at 479 km with the moon
+20 km off). **Not checked in a browser** (no GPU in the cloud session): the owner's re-check of a `flyTo` approach.
+
+### 148. A teleport far outside the disc failed silently (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+message." `__dwell.teleport` posted the move to the worker and returned true; the local core moved the player past the
+rim, where no world streams (natively the server stood it on 9.5 m and the client on 6.5 m), and a point on the other
+face was dropped with no word. Now `__dwell.teleport` is answered (the worker's `teleport` op, `LocalCore::
+teleport_checked`) and rejects with why: past the rim ("… m from the disc's centre, past its rim (… m): no world there"),
+on the other face ("a teleport keeps the face"), or the player not at home. Test: `game_local`
+`a_teleport_past_the_rim_fails_with_a_message` (red before: the far point was taken).
+
+### 147. `moonLand` from a fresh spawn never landed, and travel stuck after it (fixed after 0.63.1)
+
+Brief, 2026-11-13: "Travel stuck after the spyglass: fresh spawn → spyglass(true, 3) → spyglass(false) → setTime →
+moonLand timed out ('not standing on the moon in 60 s (grid home, chunk held false)'); after that every flyTo('home')
+failed ('home's chunk … not back in 120 s'), sunLand said 'not at home', and the player ended on the moon grid ~17.7 km
+up with its ground not held." Cause: not the spyglass. The dev teleport (`LocalCore::grid_land`) put the player inside
+the capture sphere and left the capture to the next tick, which takes only fliers (`Server::travel_players`);
+`teleportToMoon` turns flight off first, so a player who had never flown stayed on the home grid out in space
+(earlier checks had flown, and won the race with the flight-off input). Then `flyTo('home')` had no trip start
+(`moonLand` threw before keeping one) and fell back to the feet in space, waiting for ground there; a later flight
+caught the player in the capture sphere. Fixed: the teleport carries the player onto the grid itself
+(`Server::carry_onto_grid`, a transfer recorded as a capture's), and the page keeps the way home before each trip starts,
+from home ground only (`moonTrip.ts` `tripStartOf`). Tests: `game_local`
+`moon_land_from_a_fresh_spawn_after_the_spyglass_lands_on_the_moon` (both faces; red before: "client grid 0, server
+Some(0)"), `moonTrip.test.ts` "tripStartOf".
+
+### 146. No lava flowing on the sun (fixed after 0.63.1)
+
+Brief, 2026-11-13: "after sunLand on face A, `d.lava('report')` gives `fields: []` and two frames 4 s apart look the
+same … find why no field runs near a player standing on the sun." Two causes: the report listed home's fields only
+(`Server::lava_report`), and the sun's stand point, where `sunLand` puts the player, is out of reach of the river heads'
+fields (seed 7: the nearest head 390 m off on face A, its field placed but out of sight; 438 m on face B, its field
+never run; a field runs only within lava.json `nearRadiusM`, 96 m, of a player). The vents were placed and run by the
+rules near a head. Fixed: the report lists every grid's fields with a `grid` key (`home`, `dwell:sun`), and
+`sunLand({river: true})` (bench `sunLand {river: true}`, `LocalCore::grid_land_by_river`) stands the player on dry
+ground beside the river head nearest the stand point. Test: `game_local`
+`by_a_sun_river_head_the_report_lists_a_running_field` (both faces, seed 7; red before: no sun field in the report),
+its field's molten columns growing over 20 s.
+
+
+### 145. The sun draws no terrain past its chunks and has no light but the lava's
+
+Owner, 2026-11-13: "In addition to the moon, the sun doesn't render chunks past high detail. It needs some directional
+lighting, let's make it from the earth and moon reflections." / "Sun should also be glowing generally 'due to the
+lava'." As #143 on the moon; and the sun's ground is lit by home's sunlight keyframes turned into its frame (the sun
+lights nothing from inside it). WORK_QUEUE items 27, 42.
+
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** the sun's rings to its horizon as #143's;
+a light rig per grid (`grids.json` `light`, `dwell-client` `grid_light.rs`): the sun `sunlit` false, lit by home and
+the moon from their true directions by albedo × phase × (apparent size)², an ambient floor and its lava `glow` from
+below; its own sun disc and halo not drawn there (`DayState::on_sun`). Tests (both faces): `grid_light`
+`on_the_sun_the_ground_is_lit_from_home_and_the_moon` (lit side toward home, the strength by the phase),
+`the_sun_glows_warm_from_below_and_the_moon_and_home_do_not`, `homes_lighting_is_unchanged`,
+`on_the_moon_home_is_a_faint_fill`; `grid_lod` `on_the_sun_its_terrain_is_drawn_to_its_horizon`. Not done:
+shadows from home's or the moon's light (the shadow maps follow the sun's direction); the rig lights terrain and
+pieces (`lambert_lit`), not yet water or characters.
+
+### 144. The moon's ground is ½ m steps with no ramps
+
+Owner, 0.61, iPhone, 2026-11-13: "And moon rock should have slopes, seems to only be generating half blocks." 0.59 gave
+moon dust its ramp family (HALF_HEIGHT_GRID.md §10), but the `cratered` generator (`grids.rs`
+`CrateredTerrain::generate`) fills each column with full cells to its top row and never runs the §4 rule. WORK_QUEUE
+item 27.
+
+**Fixed (0.63.0, a new compatibility line: the moon's terrain changes):** a grid generator's `ramps` (`none`, `strict`,
+`notched`; the moon `notched`, home's Realistic rule; HALF_HEIGHT_GRID.md §10). Red → green:
+`dwell-worldgen` `tests/grids.rs` `moon_slopes_are_ramps_not_bare_half_metre_stairs` (both faces): every ½ m edge bare
+before, under 1 % after (the strict rule left 36–43 %).
+
+### 143. The moon draws no terrain past its chunks; a cratered disc in its own sky; home not in it
+
+Owner, 0.61, iPhone, 2026-11-13: "3 things on the moon: it doesn't seem to have real LODs, can't see terrain very far in a
+meaningful way. Is there a moon visible from the moon?" Screenshots: standing on the moon the ground ends at the chunk
+distance in a flat pale band (M-5's coarse near mesh, under the chunks), then black sky; looking up, a cratered disc in
+the starry sky; home is not drawn (M-6's drawing not built). WORK_QUEUE item 27.
+
+**Fixed (0.63.0, natively; the browser look a local check on a GPU):** (1) the sky on the moon drew no moon disc
+already (#869), but still packed the moon's halo, its water glint and its moonlight: `DayState::on_moon` zeroes them
+(red → green: `grid_view` `the_moon_is_never_in_its_own_sky`, both faces, 108 moments, failed on the halo). The
+cratered disc in the screenshot is most likely the **sun**: its disc is shaded by the sun world's baked crust and
+cones (S-3, `sun.surface` 0.45) and goes white in space. (2) The moon's (and the sun's) terrain past the chunks:
+`grids.json` `lod`, rings of the grid's real surface round the viewer out past its rim (`dwell-client` `grid_lod.rs`),
+in place of M-5's identity mesh on the grid (tests: `grid_lod` on both faces, `game_local`
+`the_moon_up_close_is_its_surface_mesh_then_under_its_chunks`). (3) Home in the moon's sky (M-6): home's `nearMesh`
+from its world maps (`HomeFar`), drawn from the moon at its true place and size (`skyDisc` false).
+### 142. Your own feet in first person seemed to float (fixed after 0.61.3)
+
+Owner, 2026-11-13 (after #140): "Is the first person model lined up with the ground though? The feet were first
+person feet that didn't line up / seemed to be floating?" Measured: your own body in first person was moved back
+**whole** along its −z to keep it off the eye (`own::shift`: `back` 0.1 m, 0.4 m looking straight down), so its
+soles stood 0.1–0.4 m behind where you stand: off their shadow (cast by the unmoved body where you stand), and on a
+ramp or slope over or under the ground there (the old code's lowest sole was 5 cm off another player's at a level
+look on a ½ m ramp, and up to ~40 cm looking down on a 1 m slope). The soles' height was right; their place was
+not. In the bench (flat world, looking straight down) the drawn feet sat well behind the crosshair while the shadow's
+feet met at it. Fixed (CHARACTERS.md §5.1): the body now **leans back from its soles** (`own::lean`, a shear: each
+point moved back by the offset × its height ÷ the eye's), so the soles stand where you stand, on the ground and their
+shadow, and the chest is still kept off the eye; a pose that still brings a vertex within `clear` (a crouch under a
+lagging eye) is moved back whole as much more as clears it, and a body off its feet (lowest point 12 cm up) or in a
+role that stands on nothing (swim, climb, fly) moves back whole as before. Test: `render::skinned`
+`your_own_bodys_soles_stand_on_the_ground_in_first_person` (both faces; red before: "idle t 0/4, pitch 0, grade
+0.5: your sole -0.049 m over the ground, another player's -0.099"): idle and walking, looking level, 60° and
+straight down, on flat ground, a ½ m ramp and a 1 m slope, your lowest sole is on the ground where another player's
+is (1 cm idle; walking 1 cm + 3 cm × the grade, a lifted foot leans a little), and at idle on flat ground within
+2 cm of the feet. The near-camera and screen-fill sweep passes unchanged. Screenshots: bench scratch scenarios
+looking down 89° and 60°, standing and walking, flat and generated terrain.
+
+### 141. Lava expired into rock and "all just goes away" (fixed after 0.60.11)
+
+Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it all just goes
+away then, it should solidify when it stops moving, touches water, or is a source block, not while flowing." Cause: lava
+cooled by time (`coolingSeconds`, faster at its edges and when thin), flowing or not, so a river's spreading margins and
+its thinning sheet hardened while it still ran; lava under a quarter metre deep fills no ½ m cell, so a thin sheet
+hardening left no visible rock either, and the flow seemed to vanish. Fixed by hardening by rule (VOLCANOES.md §6.6,
+WORK_QUEUE item 8): flowing lava never hardens, lava at rest hardens after `restSeconds` into rock in the cells it
+filled, sources and lava within `sourceKeepM` of one stay molten, water quenches any. Tests (both faces,
+`crates/dwell-lava/tests/lava.rs`): the river, the tongue and the source-distance tests failed on the old code (the
+channel hardened while flowing; a tongue hardened at 18 s, before a rest; a pool 1 m from a source hardened) and pass.
+
+### 140. The player character floats a bit above the ground (scaled up, 2026-11-13)
+
+Owner, 2026-11-13: "I think my player character is floating a bit above the ground now. We didn't talk about
+scaling for the new player model. It's likely shorter and may need to be scaled up." Measured (`models.json`
+`scale` 1.04): the collider rests exactly on the ground (feet 0.000 m over a flat floor, head 1.800 m, natively);
+the Peasant's lowest sole is 0.0005 m over its feet at rest and −0.7 to −0.2 cm in the idle clip (−3.0 to +2.5 cm
+through the walk), on every detail level, so its soles were on the ground; its whole height with the hat is
+1.82 m, but its **eyes were 1.546 m over the feet, 7.3 cm under the camera's 1.62 m eye** (the body under the hat
+~5 % small), which reads as a short body seen from a camera that sits above it. Side-on screenshots on the flat
+world (bench `player-scale`) showed the boots touching the ground. Fixed by data: the Peasant's `scale` 1.09, so
+its eyes (the decor piece's) are at 1.621 m (the hat's top 1.91 m). Test: `render::skinned`
+`the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras` (both faces; red before: eyes 1.546 m): at idle
+the lowest sole within 2 cm of the feet, the eyes within 3 cm of the camera's eye, your own first-person body's
+soles on the same ground as another player's. The held item still sits within 0.161 m and 5.2° of the rig's hand
+(`the_retargeted_hand_follows_the_rigs_hand_in_the_world`, 0.2 m bar); the first-person arm is scaled to the
+rig's reach, so its fits are unchanged. Not checked: on a ramp the capsule touches the slope off its axis, so
+the feet point (and the body) sits r·(1/cos θ − 1) over the slope under it (~3.5 cm on a ½ m-in-1 m ramp); a
+remote body plants its feet there (`plant_feet`), your own whole body seen from a placed camera does not.
+
+### 126. Home's sky shows on the moon (fixed 2026-11-13)
+
+Same flight: home's blue sky and clouds show on the moon. Home's clouds were hidden off home first
+(`DayState::clouds_shown`). Fixed 2026-11-13 with the sky as one layered model (owner: "Sun and moon should be
+space, the same as night sky"): space is the base sky everywhere and day a layer of a grid's air (`grids.json`
+`atmosphere`, none unless declared), thinning with height (DAY_NIGHT.md §15); on the moon (no air) the sky is
+space at every hour, the stars out, the sun white, no fog (`DayState::airless`, `Air::SPACE`). Tests `grid_view`
+`on_a_grid_without_air_day_colours_never_show` (the moon and a sun added by data),
+`flying_up_from_home_the_day_layer_fades_to_space`, `homes_day_and_night_look_as_before` (both faces). Left: the
+ground's ambient on the moon is still home's hemisphere light, and its sunlight follows home's keyframes.
+
+### 139. A moon landing read 0.11–0.24 m under the ground (fixed 2026-11-13)
+
+Owner's brief, 2026-11-13: "Landing sits slightly below the ground (groundM −0.11 m face A, −0.24 m face B after
+landing): find why and fix." Cause: the report, not the landing. `__dwell.moon()`'s `groundM` measured the feet
+against the moon's smooth generated height, but the ground a player stands on is the column's top cell
+(`CrateredTerrain::top_row`, the height rounded to the ½ m cells), up to a quarter cell over or under it. Fixed:
+`groundM` reads the column's top (`moon_probe.rs` `ground_top`). Tests: `moon_probe`
+`standing_on_the_moons_ground_reads_zero` (both faces; red before: 0.12 m off), `game_local`
+`the_moon_report_steers_a_flight_into_its_capture` (the landing stands within 5 cm of it, both faces).
+
+### 138. The view turned at once at a crossing onto the moon (fixed 2026-11-13)
+
+At a capture or release the look kept its world direction but the view's up jumped to the new grid's face up in
+one frame. Now it eases upright from the view drawn before over `shared/look/motion.json` `gridCrossingRollS`
+(0.6 s; `FaceFlip::cross_grid`, `grid_view::crossing_roll`), also when a snapshot's replay made the crossing,
+which before did not carry the look across at all. Tests: `grid_view`
+`the_crossing_roll_draws_the_view_before_then_eases_to_the_new_up`, `face_flip`
+`a_grid_crossing_eases_the_view_upright_over_the_data` (both faces), `game_local`'s flight to the moon (a roll at
+the capture, none after; red before: no roll at all).
+
+### 137. Opening the inventory opened the game menu on top of it (fixed after 0.60.7)
+
+Owner, 2026-11-13: "Opening your inventory currently opens the menu too, on top of your inventory. Which isn't correct.
+Should just open your inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz"
+
+Cause: opening the inventory (E, the controller's inventory button, the touch bag) released the pointer lock, and the
+game menu opened on any lock loss (`enableGameMenu`'s `pointerlockchange`), as for the browser's Esc. Closing the
+inventory never asked for the lock again, and the big map (M) had the same menu-on-open path. Fix: one owner of which
+panel is open, `client/src/ui/panels.ts` (`Panels`: playing, the inventory, the game menu, the big map; one at a time).
+Opening a panel frees the mouse and a lock it freed opens nothing; a lock lost while playing (Esc, alt-tab) still opens
+the menu. Closing a panel (its key, Esc, Resume, Back, the backdrop, the controller) asks for the lock from the closing
+gesture; a request the browser refuses (Esc grants no user activation, the cooldown after an Esc) is retried on the next
+click on the game, without opening the menu. Esc goes through the owner too (closes the open panel, else opens the
+menu). Test: `client/src/ui/panels.test.ts` (fake document and pointer lock), red on the reported case (3 tests: the
+inventory and the big map opened the menu) with the old rule (any lock loss opens the menu), green with the fix.
+
+### 136. Teleported onto the moon, the ground under the player never arrives (fixed after 0.58.9)
+
+Found by the teleport the owner asked for (2026-11-13, below #123's test): put straight onto the moon's ground, the
+client never held the chunk under its feet. Cause: the server captures first and at once streams the moon's chunks
+round the player, each sent once, while the client is still on home's grid; the game dropped `ChunkData` of another
+grid than the one drawn. A flight in from far up hid it (the chunks round the capture point are air, and the ground
+ones are asked for later). Fixed (`game.rs`): another grid's chunks are held (at most `OTHER_GRID_CHUNKS_MAX`, a
+`ChunkUnload` drops them) and fed to the streamer at the crossing into it; the rest are dropped then. Test: the
+teleport in `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (both faces): red on the unfixed code
+(the moon's chunk under the player never meshed), green after.
+
+### 134. Red sand wasn't on the red desert's floors (fixed in 0.60.0)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Red sand isn't where the owner asked ('We need a red
+brown sand for the red desert areas'): in a Realistic world (seed 42 face A around (−6000, −9000)) the red mesa floors
+are red_sandstone, and the nearest red_sand surface is a small patch 23 km away at a grass edge." Cause: 0.59.0 gave
+red sand to the red rock mesa preset's bands and its own stack (`dwell:red_desert_beds`), but Realistic's red mesas
+are the basins' `dwell:red_beds` (plate provinces) under steppe, cold desert, meadow and forest, and the Starter's
+badlands and mesa tops are sandstone treads: a rock's tread shows its `cap`, and sandstone's was red sandstone.
+Orchestrator, 2026-11-13: red sand only in the red *desert*, not under forest, by a climate rule on the cap as data.
+Fix: a rock's optional `capBy` (`[{"arid": "dwell:red_sand"}]` on sandstone, its `cap` red sandstone) and the
+geology's `arid` (rocks.json: rain ≤ 450 mm where the world has a climate, wetness ≤ 0.3, the red rock mesa's `where`
+values, and ≥ 6 °C so the tundra's and the boreal's dry ground is not desert), validated by `biomes.mjs`
+`validateRocks` and read by `config.rs` for world edits. Arid red rock floors are red sand, the rest red sandstone;
+the walls red sandstone everywhere. At the reported spot the steppe's and cold desert's floors are red sand, the
+meadows' and forests' red sandstone. Pinned by `dwell-worldgen` `tests/realistic_rocks.rs`
+`the_red_desert_floors_are_red_sand` (both faces, seeds 1, 7, 42: every flat sandstone tread is red sand where arid
+and not in a forest, red sandstone otherwise; red before: 283 and 1,345 arid floors of red sandstone on seed 1),
+`gen.test.mjs` (the field's validation) and `worldgen_config.rs` `a_geology_edit_reads_cap_by_and_arid`. Realistic's
+golden rewritten, the Starter re-pinned, the 0.60 line raised. Follow-up: #135.
+
+### 133. Red sand drew as the magenta and black checker (fixed in 0.60.0)
+
+Browser check of 0.59 (#888) on a022b0d0, brief 2026-11-13: "Every red_sand cell (and likely red_sand_ramp) draws as
+the magenta/black missing checker: `redSand` is baked (painterly.gen.rs) but not in the atlas layout TILE_ORDER, so
+drawable() fails." Cause: the atlas layout was a hand-kept list (`dwell-mesh` `textures.rs` `TILE_ORDER`) beside the
+texture set's own (`PAINTERLY_TILES`); 0.59.0 added `redSand` to the set only. The guard existed
+(`every_build_state_draws_with_its_own_look`) but runs in the `mesh` check, not the `data` one the block change ran.
+Fix: `TILE_ORDER` is now `PAINTERLY_TILES` (the set's order), so it can't drift; `shared/textures/gen.mjs` already
+fails on a tile a block asks for that the set doesn't paint. Tests (`dwell-mesh` `lib.rs`):
+`every_tile_a_block_asks_for_is_in_the_atlas_layout` (faces, `sideUnder` skirts, log hearts; red sand and its ramps
+drawable) and `a_fixture_block_with_an_unpainted_tile_fails_the_atlas_guard` (the fixture's `test:glow`, by data
+alone). Red before the fix: `every_build_state_draws_with_its_own_look` failed on `dwell:red_sand[flooded=false]`.
+
+### 130. A capture or release counted as a ~600 km snap, hiding the real snaps around a moon trip (fixed after 0.58.8)
+
+Second browser moon flight (0.58.8 on facaaaf1, seed 7, M1), brief 2026-11-13: "A grid change counts as a snap (~640 km
+at each capture and release), hiding real snaps around a trip: don't count the crossing's own coordinate change as a
+snap/correction." Cause: when a snapshot's grid differed from the one predicted at its ack (a capture or release the
+prediction made a tick apart from the server's) and the replay ended in another grid than the present's, the
+predictor (`Predictor::on_snapshot`) took the correction as 1e6 m on each axis (1 732 km) and counted a snap, however
+close the two were in the world. Fixed: such a correction is measured in world coordinates, through the travel
+rules' frames at the present's clock (`GridTravel::to_world`, `TravelMap`'s grid frames); only a real difference over
+the snap distance counts, and the render offset is still reset at a crossing. Test `dwell-physics` `tests/predictor.rs`
+`a_crossing_predicted_a_tick_apart_is_no_snap`: a server's move into a grid 600 km off at the same world point; red on
+the unfixed code (1 732 051 m corrected, a snap), green after (0 m, no snap). Note: the trip's dev moves (`moonApproach`
+before the capture, `placeHome` after the release) are real server moves of ~550–640 km and still count as one snap
+each, as any server teleport does; read a trip's snaps net of those two.
+
+### 129. The test tool's flight home left the player in space 2 of 4 times (fixed after 0.58.8)
+
+Same flight: "`flyHome` calls `placeHome` as soon as the client shows the player back on the home grid, but
+`place_home` checks the server, which may not have released the player yet, and answers 'not at home'; the player is
+left in space, and the next `flyTo('moon')` saves that spot as 'home'." Fixed (`client/src/debug/moonTrip.ts`):
+`flyHome` asks `placeHome` again every poll while the answer is "not at home", for at most `PLACE_HOME_S` (10 s), then
+throws; `flyToMoon` saves its start as the trip's home only on home ground (`onHomeGround`: the home grid, the chunk
+under the feet held, outside the release sphere), so a spot in space never becomes "home". Tests `moonTrip.test.ts`
+"waits for the server to release the player before moving it home" and "never saves a spot in space as the next trip
+home" (red on the unfixed code, green after), and "gives up when the server never releases the player".
+
+### 123. On the moon its ground is not drawn: sky above, stars below (fixed after 0.58.4; the browser check outstanding)
+
+Owner's first browser flight (0.58 on e4220fcd, M1, seed 7, both faces): on the moon the client held 232 chunks,
+all meshed, `__dwell.voxel()` found solid cells under the feet and the target outline showed, but only 16–17 draw
+calls (~1.8k triangles; home 527, 820k) were drawn: the screen was sky above and a starfield below. Cause: the
+renderer draws a chunk by `Game::chunk_fade`, which asked home's LOD; while away the LOD's selection is frozen
+(`update_lod` returns on another grid) and was made in home's coordinates, so the moon's grid-local chunks mostly
+read "the LOD draws here" and were skipped. The native test checked chunks requested and meshed, not drawn.
+Fixed: off home every chunk held is drawn in full (`chunk_fade`), and home's LOD is dropped at the crossing (#124).
+Test `game_local` `on_the_moon_its_chunks_are_drawn_and_homes_lod_meshes_dropped` (both faces, LOD on): the
+moon's chunk under the player and every moon chunk meshed are drawn; red on the unfixed code (the chunk under the
+player not drawn), green after.
+
+### 124. Mesh memory grows across moon trips: home's LOD meshes kept while away (fixed after 0.58.4)
+
+Same flight: mesh memory 44 MB on the first moon visit, 164 MB back home, 256 MB on the second visit with still 232
+moon chunks. Cause: at the crossing the chunks were dropped (`ChunkStreamer::unload_all`) but home's LOD sections
+stayed uploaded, only hidden. Fixed: `LodSystem::drop_all` (every section's mesh off the view, the selection and
+fades cleared; the index, bounds and jobs in flight kept), called at each crossing (`Game::follow_grid`); back home
+the LOD builds again from the root. Same test: no section held at the capture or on the moon (red: 57 held), and
+home's sections meshed and shown again after the release.
+
+### 125. Snaps at the moon's capture and release (fixed after 0.58.4; the browser check outstanding)
+
+Same flight: after the face A landing 2 snaps + 1 reset (the dev move's snap and the join's reset, and one more:
+last correction 34 m); the face B trip 3 → 11 snaps (last 18.7 m). Cause: the predictor carries the player at
+its guess of the server tick an input runs in (the latest snapshot's `server_tick − 1 − ack`); with uneven frames
+and a laggy link the server runs it a few ticks off, and the carry turns positions with the moon's frame at that
+other moment of its ~1 km/s orbit (~17 m a tick: 34 m is 2 ticks, 18.7 m one). Natively the rig ran in lock-step
+and showed none. Fixed (`dwell-physics` `predictor.rs`): for `CARRY_WINDOW` inputs after a carry a correction up to
+the grids' relative speed × `CARRY_SLIP_TICKS` (8) ticks is smoothed out (the 0.1 s display offset) instead of
+snapped. Test `game_local` `a_moon_trip_on_a_jittery_device_makes_no_snap` (both faces: 6 ticks of latency, every
+7th frame 4 ticks): no snap through the capture, descent, landing and release; red on the unfixed code (a 45–93 m
+correction snapped at the first snapshot on the moon), green after.
+### 119. Zoomed out to the whole disc, the big map shows no shrines and no cluster counts (fixed after 0.58.4)
+
+Owner's browser check of #115 (2026-11-13, M1 GPU, seed 0): zoomed fully out (the whole disc, a 20 km scale bar) no
+shrine icons or counts appeared at all after ~5 s; a level in (500 m) ~9 separate icons. Cause: the cutoff
+`minSpacingPx` (16 px) hid every shrine where the 2 km grid draws under it on screen, and the whole disc draws it
+~12 px apart. Fixed: the cutoff is gone (`shrines.json` `map`, `gen.mjs`); at every zoom the shrines are clustered
+with counts (`shrineIcons`, `clusterShrines`). In adventure only explored ground's shrines count (a fresh world shows
+those near the spawn); creative shows all. Test `mapShrines.test.ts` "zoomed out to the whole disc, shows them as
+clusters with counts": red before (no icons), green after.
+
+### 120. The big map's zoom jumps 20 m → 500 m → 20 km (fixed after 0.58.4)
+
+Same check: the zoom buttons stepped one tile level a press (spans 128 m, 3.6 km, 100 km: ×28 a step). Fixed: zoom
+stops about `bigMap.zoomRatio` (2, `shared/ui/map.json`) apart, each level's span an exact stop and the stops between
+spaced geometrically (`zoomStops`, 11 today); a stop is drawn with the closest level whose span holds it
+(`levelForSpan`), so no level is drawn wider than before. The buttons, keys, wheel (a notch a stop), pinch and
+controller all step a stop. Test `minimap.test.ts` "zooms in steps of about 2×": red before (a ×27.95 step), green after.
+
+### 121. After "Center on me" and a zoom, the player's arrow is off the view (fixed after 0.58.4)
+
+Same check. Cause: the wheel zoomed about the cursor, and zooming out to the whole disc recentred the view on the world,
+so zooming back in was about the world's centre. Fixed: opened or after "Center on me", until dragged, the map is
+centred on the player (`BigMapState.centred`) and every zoom (buttons, keys, wheel, pinch, controller) keeps them in
+the middle; the whole disc still shows centred on the world, and zooming in from it returns to the player. Test
+`minimap.test.ts` "after Center on me every zoom keeps the player in the middle" (both faces): red before (the player
+9.7 km off the middle), green after.
+
+### 122. The marker picker shows Delete for a marker not yet saved (fixed after 0.58.4)
+
+Same check. Cause: the picker set `hidden` on Delete for a new marker, but `#world-map .map-button`'s
+`display: inline-flex` overrode the `[hidden]` attribute. Fixed: `#world-map .map-button[hidden] { display: none }`
+(`style.css`), so a new marker shows Save and Cancel only. Test `markers.test.ts` "a hidden map button is display:
+none": red before (no such rule), green after.
+
+### 115. Zoomed out, the big map's shrines are a dense glowing block in a square patch (fixed after 0.58.2)
+
+Found in a browser screenshot pass of the map markers and shrines (2026-11-13; a 4× world and a Realistic world):
+zoomed out, shrine icons are drawn only in a square patch round the view's centre, a dense block of overlapping
+glowing icons. Cause: the big map asked the crate for the shrine cells within at most 4 of the centre's (`cellsFor`,
+an 18 km square) and drew every icon at its spot whatever the zoom. Fixed (`mapShrines.ts`): every shrine cell on
+the visible map and on the disc (`shrineCellsIn`; in adventure only those with explored ground, `ShrineSites`),
+new cells sited within `siteMsPerDraw` ms a draw and the rest the next draws; icons nearer than `clusterPx` on
+screen merged into one with a count (`clusterShrines`); none drawn when the 2 km grid is under `minSpacingPx` on
+screen (shrines.json `map`, validated). Tests `mapShrines.test.ts` (the whole view's cells, clustering without
+overlap, the zoom, the budget): red on the unfixed code (the functions missing, `cellsFor` capped at 4), green after.
+
+### 116. Standing on the spawn, its waypoint reads "1 m" stuck to the top of the screen (fixed after 0.58.2)
+
+Same pass: the spawn's auto marker's waypoint shows "1 m" pinned to the top screen edge while standing on it. Cause:
+the waypoint's spot (1.5 m over the feet) is at the eye, so its projection had no direction and was edge-clamped.
+Fixed: a marker within `world.hideWithinM` (4 m, `markers.json`) of the eye or across the ground (so one at or
+under the camera) shows no waypoint (`waypointShown`). Test `markers.test.ts` "a waypoint at or under the camera":
+red before (no `hideWithinM`), green after.
+
+### 117. No pin at the clicked spot while the marker picker is open (fixed after 0.58.2)
+
+Same pass: a click on the big map opens the picker for a new marker, but nothing marks where it will go until it is
+saved. Fixed: a pending pin (the picker's current icon and colour, ringed) at the clicked spot until it is saved or
+cancelled (`bigMapPins`, the picker's `look` and `onChange`). Test `markers.test.ts` "the big map pins": red before
+(no pending pin), green after.
+
+### 118. New world → More options repeats World type, Seed and Spawn, without a Realistic choice (fixed after 0.58.2)
+
+Same pass: More options (Play advanced's panel) repeats the form's World type, Seed and Spawn, and its World type
+has no Realistic. Fixed: More options shows Play advanced's fields less the form's (`moreOptionsFields`,
+`NEW_WORLD_FORM_PARAMS`); its Play takes the Type or World (Realistic as `worldgen`, with its Sky), Seed and Spawn
+from the form above (`moreOptionsRoute`), so each field has one source. Test `mainMenu.test.ts` "New world → More
+options": red before (the functions missing), green after.
+
+### 113. First-person recordings show the block-target box; no dev toggle hides it (fixed after 0.57.4)
+
+Found recording showcase video 2 (water, 2026-11-12): wading in off seed 7's beach, the thin black box round the
+targeted cell (the sand under shallow water, within reach) draws in the first-person frames, over the water and the
+caustics. Hiding the DOM HUD doesn't remove it, and `d.setView` has no option for it. Suspect: the target box is
+drawn by the renderer, not the DOM HUD. Wanted: a dev/theater switch (e.g. `d.setView({ target: false })`, or off
+whenever the theater HUD is off) so clean first-person takes have no box.
+Fixed: a dev view switch, `__dwell.setView({ targetOutline: false })` (`Client.setTargetOutline`, the game's
+`show_outline`): the block stays targeted, its outline isn't drawn. The water manifest's shots set it.
+`game_local.rs` `the_target_outline_can_be_hidden_for_recordings`: red with the switch ignored ("but not
+outlined"), green with it.
+
+### 114. The starter world's terrain pin failed on main since the 0.55 line (fixed after 0.56.4)
+
+Reported by two sessions, 2026-11-13: `cargo test --release -p dwell-worldgen --test starter_memory`
+`the_starter_worlds_terrain_is_unchanged` fails on main (already at 0.55.21). Not a terrain change: bisecting the
+first-parent merges from #841 to #868 natively, every one hashes the starter to the same values, as does the 0.55
+line's own commit (58f72da, "the starter pin regenerated for both together"). Its combined pin never matched the
+code it was committed with, while each branch's own pin (#834's f53b86d, #838's 0416b7b) passes at its commit. So
+no merge since changed 1× or the starter (#861's big-world terrain and #868's Realistic stepping leave it as is),
+and the 0.55 line has shipped this terrain since 0.55.0. Fixed by re-pinning to the hashes those builds generate
+(`5e9869d57483a3a3`, `a55324f4fdc776e2`); red at main, green after; the worldgen goldens pass unchanged.
+
+### 112. Slopes show no mark when hit with a tool, though they break (fixed after 0.55.13)
+
+Owner, 2026-11-12: "Slopes aren't affected visually by tools when hit, though they do break." A ½ m stored ramp
+(`dwell:dirt_ramp`, `dwell:stone_ramp`, …; HALF_HEIGHT_GRID.md) takes damage and breaks by the bite rule (#794,
+BLOCK_DAMAGE.md §10, a ramp's volume ½), but the mesher carved only full cubes: `mesh_cells` left a damaged cell
+of `Shape::Shaped` out of the struck faces and `shaped_voxel` drew it whole, so no carved bite, crack overlay or
+hit look showed on it. Repro: dig a slope with a shovel or pickaxe; the slope stays smooth until it breaks. Fixed (BLOCK_DAMAGE.md §6.5, `mesher/ramp_damage.rs`): a
+damaged ramp's planes (the slope's two triangles merged) are carved where the hit point lies by the bite rule's
+volume, kept inside the solid and watertight at the planes' edges, and cracked once staged; a face-B chunk's damaged
+cell now turns its state over with the chunk (it never matched a mirrored ramp). Tests (`ramp_damage_tests.rs`, both
+faces): the carved volume k × ½ × V ÷ n, the slope carved where struck, the mesh closed, cracks staged, a fixture
+look by data alone; red on the unfixed mesher (8 triangles, nothing carved, no cracks), green after.
+
+### 111. A tool hit lands on the block clicked, not the one aimed at when the swing connects (fixed after 0.55.11)
+
+Owner, 2026-11-12: "I've noticed on tool hits they don't check where they're aimed at hit time, if I click on a
+block, and move my cursor to aim at the block below it, I'll see and hear the tool hit, but it won't be on the
+block I'm aiming at, it'll be the one I clicked on first before the hit played." Earlier decisions (WORK_QUEUE
+items 17, 25): marks at the swing's contact, wear only on a hit, a held swing "each swing hitting what is targeted
+then". Cause: the pickaxe's and shovel's `BlockEditRequest` named its cell at the click; the server landed that
+cell `contactS` later and the client's sound and chips played at it.
+**Fix:** the hit is aimed and sent at the contact, and the server lands it on arrival (capability
+`hits.at_contact`; docs/BLOCK_DAMAGE.md §11). Tests: `dwell-client` `game_local`
+`a_pickaxe_hit_lands_on_what_is_aimed_at_its_contact_not_the_block_clicked`, `…aimed_at_air…_is_a_miss`,
+`a_held_pickaxe_swing_strikes_what_is_aimed_at_each_contact`; `dwell-sim` `damage`
+`a_hit_sent_at_its_contact_lands_on_arrival_checked_from_the_eye_then` (both faces); red → green.
+### 110. Some sound effects sound like they come from right behind your head (fixed; the listening check is the owner's)
+
+Owner, 2026-11-12: "I think the sound 'source' direction might be the issue with some of our sound effects. They
+sound like they're coming from right behind your head. Are we using 2D sound?" The engine is 3D: positioned sounds go
+through a PannerNode (HRTF on desktop, equal-power on mobile; inverse distance, ref 2 m), the listener at the camera
+(`setListener(position, forward, up)`). Suspects: the listener's forward/up not matching the camera in world space
+(a sign or axis swap, face B's frame, or forward sent face-local while positions are world), which mirrors front and
+back; the player's own sounds (footsteps at the feet, swings, the held tool, breaking at the target, the swim
+strokes) positioned at or just behind/below the head, where HRTF puts them behind or inside the head; positions
+lagging a frame behind a moving listener.
+Then (owner, more precisely): "Like footsteps sound like they're in your ears." So your own footsteps should sound
+grounded — from below and slightly ahead (at the feet, ~1.6 m under the ear), with a touch of the room, not dry and
+centred in the head; positioned at the feet in front of the body rather than made non-positional, and never flipping
+behind the head when looking up or down.
+
+**Cause.** Not the listener: its forward and up are the drawn camera's, in the world frame the sounds are placed in,
+on both faces (checked: `dwell-client` game.rs `the_listener_hears_ahead_ahead_and_right_right`, a sound 5 m ahead
+heard at −z, one to the player's right at +x, the listener's right the view's, at pitch 0 and ±45°, faces A and B).
+The game sends the local player's own sounds without a position (`at` none), and the shell played them dry and
+unpanned at the ear (the footsteps ±0.12 stereo pan): a mono sound straight into both ears is heard inside the head.
+Hits and breaks were already at the block, other players' and creatures' sounds at them.
+
+**Fix.** Own sounds are placed round the ear by data (AUDIO.md §5a): each event names a placement in
+`shared/sounds` `self` — `feet` (1.5 m under the ear, 0.6 m ahead, steps alternating 0.15 m left and right, 0.08 to
+the room), `body` (swim strokes, climbing, water in and out, crouch, sprint, a wall hit), `hand` (the held tool, the
+axe's swish, a break or hit without a point: 0.3 m to the right) — in the listener's own frame, so looking up or
+down never moves them behind the head; an event without one (a gasp, a hurt: your own voice) stays at the ear. A
+slide's loop follows the ear. The listener is now set before the frame's sounds are played (it lagged a frame). The
+validator refuses a placement behind the head. Tests: `client/src/audio/listener.test.ts` (the listener frame and the
+feet below and ahead of the ears at pitch 0 and ±45° on both faces; own sounds take the self path, a remote step
+keeps its feet; red before: the own steps played at the ear with pan ±0.12, the slide's loop at the origin);
+`dwell-game` sound.rs `own_footsteps_go_to_the_ear_and_anothers_sound_at_its_feet` (both faces),
+`our_hit_on_a_block_sounds_at_the_block`; game.rs `a_struck_point_sounds_inside_the_struck_cell`. The owner's listening
+check (headphones: footsteps from the ground ahead, the tool to the right) is outstanding.
+
+### 109. In a big world the client won't place a block past 50 km from the centre (fixed after 0.55.9)
+
+Found 2026-11-12 fixing #108 (not reproduced in game): `dwell-game` `block_interaction.rs` drops a Place outside
+the build volume before sending it, testing `inside_build_volume`, the 1× build's (50 km), not the world's
+(`WorldBounds::volume`). In a 4×–10× world, where the spawn is often past 50 km, placing would do nothing while
+breaking works. Fix: give the block interaction the world's volume (`Game::set_world`), with a 4× test.
+
+Cause, wider than the Place: every edit check took the 1× bounds. The client's Place pre-check
+(`BlockInteraction::act`), the region tools' and the drag's box checks and the brush's aim (`region::box_in_world`),
+and the shared checks the server and the client's prediction both run (`edit::check_block_edit`,
+`edit_writes_all`, `unsupported_after`, `region::check_region_edit`) all tested `inside_build_volume` and
+`inside_world_disc`, the 50 km disc and sphere. So past 50 km the server refused every Place as `OutOfWorld` too
+(a Break has no bounds test, so it worked). Fixed: the world's bounds go with its voxels (`VoxelWorld::bounds`,
+set by the server from its size and by the client's `Game::set_world`), the edit checks read them
+(`WorldBounds::contains_cell`, `region::box_in_world_of`, which replaces the 1× `box_in_world`), and
+`Game::set_world` hands them to the block interaction (`set_world`), the region tools and the drag
+(`DragWorld::bounds`). Left at 1× on purpose: the flat test world's generator and LOD (its ground is the 1× disc's),
+test fixtures, and the shaders' and fog's `WORLD_RADIUS` readers (BIG_MAP.md M3).
+
+Tests (both faces; red on main, green after): `dwell-sim` `tests/big_world_edits.rs`
+`a_4x_and_a_10x_world_take_edits_60_and_200_km_out` (a player at 60 km and 199.5 km in a 4× world, 60 km and
+200 km in a 10×, places a stone and breaks it, the server applying both; red: "4x: the place at 60000 m: left
+(OutOfWorld, 0)") and `a_1x_world_still_refuses_a_place_past_its_rim` (green before and after);
+`dwell-game` `places_and_breaks_past_50_km_in_a_big_world` (the client sends the Place and the Break at the same
+spots, and no Place past a 1× world's rim; red with the 1× check: "4x: no Place sent at 60000 m"); the 2× client
+test in `game_local.rs` checks `Game::set_world` gave the bounds to the interaction, the region tools and the
+prediction's world.
+
+### 106. Trees look like sticks (fixed after 0.55.2)
+
+Owner, 2026-11-12 (on a release after the blocked stretch, ~60 versions newer than the last they played): "What
+happened to the trees, they just look like sticks?" Suspects, all from today: the far-tree impostors (#797) — the
+near crowns fade out from 48 m and hand over to the impostors, but the trunks don't (they show under them), so if
+the impostors don't draw (atlas bake not finished/failed, the Far trees tier, a CPU adapter, a shader error) or draw
+too faint, every tree past ~48 m is a bare trunk; the faded-plant drop (#773/#784) dropping whole cutout chunks;
+the leaf-card face-B packed-normal change (#799).
+Then (owner's screenshot, 0.54.204, a grassy hill of pines): every tree past ~50–60 m is a bare dark trunk; the
+nearest trees are leafy but already dithered; no impostor crowns anywhere. So the near crowns are dropped past the
+hand-over (`card_dropped`: leaf faces past `far_trees.x + .y + 2` when `frame.far_trees.w` is set) while the
+impostors draw nothing. The leaves must not fade out unless the impostors for those trees actually draw (atlas
+uploaded, the tile's instances in), and why the impostors draw nothing on the release needs finding.
+Then (local GPU check, test:starter seed 0, High): past ~48 m (at 80 and 150 m) most trees are thin trunks with
+small, faint crowns, so the impostors do draw, but too small/faint; `?impostors=0` brings back the full crowns at
+40–150 m; at 300 m both look alike.
+**Gate (claude/tree-sticks):** the frame's hand-over (`impostors::drawn`) is the tier's only once the impostors are
+ready about the eye (`impostors::ready`: every atlas layer baked, every tile within `fromM + fadeM + 64` m in, at
+least one tree there); until then the near crowns draw to the full-detail distance, chunk cutouts aren't cut and the
+LOD sections keep their trees (`render/mod.rs` `the_near_crowns_and_lod_trees_stay_until_the_impostors_are_ready`,
+red on main → green). `__dwell.impostors()` reads out ready, layers baked, tiles, instances, drawn and the last
+upload error (a layer of the wrong size used to be dropped silently). **Root cause still open:** the bake matches
+the real trees (radius and side area within ~10–30% for every species' wild trees), and a CPU emulation of
+`imp_fs`'s sampling (quad point, per-pixel view dither, texel) covers 1.02× the real crown's side silhouette with
+0.80 overlap (`dwell-worldgen` `crown_match`), so the shrinkage is on the GPU path not emulated: the vertex stage
+(layer spheres from the layer buffer, the instance foot), MSAA sample masks, lighting/fog darkening the crowns, or
+the near trunks with the dropped crowns. Next: a local GPU session reads `__dwell.impostors()` on the release and
+on test:starter, and screenshots `?impostors=1` with the near trees hidden.
+
+**Cause (found on the M1's GPU, 0.55.2, test:starter seed 0, High, `__dwell.impostorDebug`):** two things, neither in
+the bake or the sampling. (1) **Depth:** the impostor quad stood at its bounding sphere's centre, but the near tree's
+logs stay drawn past the hand-over (only its leaves drop), so its trunk and branches, in front of that plane, won the
+depth test over the crown: every far tree showed its branch fork as dark "T"s across a flattened crown, the "sticks".
+The quads were the right size and place (debug 1, solid quads) and the alpha-tested silhouettes were full crowns
+(debug 2, solid silhouettes). (2) **Shading:** a leaf texel was lit as open sky (`open_light()`, ambient 1) with the
+palette's leaf colour, so the crowns came out lighter than the near crowns (which take baked sky light, corner
+occlusion and the darker painted tile), about the grass's colour behind them: the "faint". **Fix:** the quad is moved
+to its sphere's near side, scaled toward the eye so it covers the same pixels (`impostors::near_side`, WGSL
+`imp_near_side`; `the_quad_stands_in_front_of_everything_in_its_sphere`, red with the quad at the centre, green
+after), and leaf texels take `impostors.json` `leafShade` (ambient 0.6, albedo x 0.8, fitted against
+`?impostors=0`). Before / after / `?impostors=0` shots at 50-200 m: the crowns match the full-detail ones in size,
+density and colour, no branch forks. `__dwell.impostorDebug(mode, ambient?, albedo?)` stays as the debug view
+(DEV_TOOLS.md).
+### 107. In the browser a player dropped into a portal doesn't come out beside face B's hole (fixed after 0.55.5)
+
+Found recording showcase #1 v3 (2026-11-12, 0.54.205's tree). Seed 7's portal (`?fresh=1&seed=7&spawn=portal`,
+axis 1779.5, 20690.5; `top` A 51.0, B 44.5): walked in on the diagonal (yaw 45) and dropped, the player rises ~12 m
+out of face B's hole (feet to y −56.3), gets no sideways push, falls straight back and swings on; on the return the
+push **does** act on face A (lands ~6.7 m from the axis on face A's ground). 5 of 5 browser drops the same, with and
+without the theater camera, with the look held at yaw 45 or let go after the crossing, from yaw 45 or 135. Natively
+the same shaft works: `drop_in` (`crates/dwell-physics/tests/portal_exit.rs`) on seed 7's nearest shaft from face A
+lands on face B 5.96 m from the axis after one crossing. Suspects: something in the browser path on face B only —
+the look the client sends after the crossing (`look_yaw`), the client's prediction against the local server, or
+the input after the face change. Repro to start from: the take script
+`.claude/skills/record/paths/bifacial-v3/portaltake.js` (`{"noCam": true}` logs the drop, the apex and where it
+ends).
+
+**Cause:** not the face or the look (the yaw crosses unchanged, the browser's local server and the prediction both
+hold the shafts). The take *walked* in: with the walk's momentum the body fell into the shaft wall's corner on the
+diagonal (1.29 m out on each axis) and rose against it, and the push acted only **under** the opening, inside the
+shaft, along the facing (yaw 45): straight into that wall, which took it all. `drop_in` starts on the axis, so it
+never met the wall. On face A's return the body had drifted where its facing had room. **Fix:** the push acts in the
+`exit.depth` m **over** the opening (clear of every wall), on a body that passed the opening at `minRise` or more
+(`rise² + 2g·(feet − top)`, stateless; a jump from the rim never qualifies). Tests, red before and green after:
+`bug_107_a_player_who_walks_into_a_portal_lands_beside_the_far_hole` (`crates/dwell-client/tests/game_local.rs`: the
+take's walk-in on seed 7 through `LocalCore`, the session and the game's prediction; the rig now calls
+`Game::set_world` for every size, as the web app does) and
+`a_player_who_falls_against_the_shafts_wall_still_lands_beside_the_far_hole` (`portal_exit.rs`, both faces). The
+browser check is left for the next video take.
+
+### 108. Worlds bigger than 2× stop drawing terrain past a stepped edge (it's there to walk on) (fixed after 0.54.215)
+
+Owner, 2026-11-12 (two screenshots, a >2× world from the air): "worlds bigger than 2x seem to give up loading
+chunks at some point, and just cutoff. The full minimap shows the whole world, and the terrain is playable. It just
+doesn't show up. It even has collision on the chunks that didn't load in." The far ground ends in a jagged edge of
+square steps (LOD section boundaries) with open sea/sky beyond, while the map has land there and walking onto it
+collides. So the server/collision side has the chunks; the client's drawing (LOD sections and/or near meshes) stops.
+Suspects: the LOD tree's root/levels or a section budget sized for 1×–2× (a fixed max section count, a memory cap,
+an f32 coordinate or index overflow in section keys at large radius), the LOD's bounds tied to the 50 km radius, or
+the client's mesh budget (BUGS #76, memory at big sizes) silently refusing new sections.
+
+Owner, 2026-11-12, adding: "Sizes 8x and 10x for the map spawn you in the void where there's no terrain only
+collision." So at 8× and 10× even the chunks round the spawn didn't draw.
+
+Cause: one test of "is this section in the world" left at the 1× disc. The LOD's `classify` and the worker's
+generator (`BifacialTerrain::generate_lod`) both judged a section by `lod::kind_from_bounds`, which starts with
+`in_world(c)`, the build's 50 km disc and volume, not the world's. Every section past 50 km from the centre was
+classified Empty at any size, so the far ground stopped at the 50 km circle, drawn in the coarse sections' squares
+(the stepped edge). The streamed chunks are only drawn where the LOD reaches their level-1 section, and an empty
+section is never descended into, so at 8× and 10× (spawns 50 km+ out) the spawn's own chunks never showed, though
+the server sent them and the controller collided with them. Not a budget or a cap: the cache, the levels (the root
+holds 10×, M1) and the section keys were fine. The fix classifies in the world's bounds:
+`lod::kind_from_bounds_of(c, bounds, world)` (`LodSystem::classify` with `set_world`'s bounds, `generate_lod` with
+the terrain's). The dev report also took the 1× volume (`streamingReport`'s near ring read `outsideVolume` there).
+`__dwell.debug().lod` gains `wanted`, `built`, `drawnTotal`, `empty` and `evicted` (dropped by the cache budget).
+
+Tests (red on main, green after; both faces): `dwell-lod` `a_4x_world_s_lod_tiles_the_view_out_to_60_km_with_no_holes`
+and its 10× twin (a camera 300 m up three quarters of the way to the rim: every ground column out to 60 km is drawn
+by exactly one level and none by an empty leaf; the cache and the view's sections within the budget; red: "the
+ground 0 m out … drawn by 0 leaves, 1 empty"), `an_8x_world_draws_the_chunks_round_a_far_out_player` and its 10×
+twin (every ground chunk within the 48 m full-detail distance drawn; red: "not drawn"); `dwell-worldgen`
+`tests/world_size.rs` `an_8x_world_s_spawn_ground_is_drawn_at_every_lod_level` and its 10× twin (the real 8×/10×
+spawn's sections at levels 1–8 classify and generate as content; red at `generate_lod`: Empty). Outstanding: the
+owner's look in the browser (no GPU in the cloud session); BIG_MAP.md M3 (f32 world coordinates in the shaders, ~3 cm
+steps at 500 km) is unchanged.
+
+### 102. A bright horizontal band in face B's sky seen from beyond the rim (fixed after 0.54.191)
+
+Found 2026-11-12 with #101's camera, clouds off: a soft white-grey band a few degrees wide crosses the whole frame
+below the disc (in face B's half of the sky, between the disc and the stars), and stays there while the camera
+pushes in, orbits and rises; from under face B it shows below the disc the same way. It reads as a glow stripe
+that isn't anything in the world: likely face B's sky horizon/haze glow drawn at its own horizon for a camera far
+outside the disc. Cosmetic; it shows in every far shot of the outline.
+
+Cause: the atmosphere's limb (`atmosphere.json`: the horizon's colour gathered into a band `limbWidthDeg` wide at
+`−atan(height / limbDistanceM)`, the rim as seen from over the disc), drawn for any viewer above the atmosphere's
+base wherever it was: 11 km up it sits at −12.4°, under the disc, in both the eye's sky and the other face's (whose
+limb, flipped into its frame, lands on the same rows). Out past the rim there is no world to make one. Fixed: the
+limb fades out for a viewer past the rim over `limbFadeM` (10 km; `Atmosphere::limb_weight`, `Air::limb_weight`,
+`DaySky.space.z`, the renderer's `day_in_air` with the eye's distance from the axis); over the disc it is as before.
+Test (`lib.rs`, both faces): `no_bright_band_under_the_disc_from_far_past_the_rim` — the sky across the rows 2–22°
+below the horizon from the reported view has no row brighter than the rows 2° either side (red before: "a band at
+11° below the horizon: 0.479 over 0.446"), the limb still there for an eye over the disc, and the sky above the
+horizon unchanged. The look is still to be checked on the Mac.
+
+### 101. Clouds draw in the void beyond the world's rim, under a far camera (fixed after 0.54.191)
+
+Found 2026-11-12 recording the bifacial showcase (seed 7, a theater camera 140 km from the centre, 11 km up,
+looking at the disc, time 0.29). With clouds on, a cloud layer fills the void below the camera out there, where
+there is no world: on **Low** (the 2D deck) a flat sheet of hard-edged white blotches from the frame's bottom to the
+horizon; on **High** (volumetric) rows of tall, thin grey spires with noisy, jagged edges — "crazy triangles" from a
+distance — standing in front of the stars. Neither tier draws anything visible over the island itself from there.
+At 120 km out and 3 km up the camera sits inside the layer and the frame is a wall of grey smears. The clouds seem
+to be a layer around the camera, not clipped to the disc (or to its face's sky). Off, the frame is clean. Expected:
+no clouds beyond the rim (a cloud field bounded by the disc, fading out at the edge). Stills: the bifacial v2
+deliverables (`outline_clouds_off/low/high.png`). Showcase work uses clouds off meanwhile.
+
+Cause: the deck (a sphere under the eye) and the volume's march (out to `volume.maxDistanceM` along the ray) were
+both a layer round the eye, with nothing tying them to the world; from 140 km out the deck's horizon (~86 km) and
+the march's 22 km reach all lay in the void, so the clouds drew there and none over the island. Fixed: both are
+masked to the world's radius (its size's, `Renderer::set_world_radius` at the join) plus `deck.rimMarginM` (2 km)
+from the disc's axis, fading out over the last `deck.rimFadeM` (6 km) — the frame's `cloud_disc` uniform,
+`dwell_cloud_rim` on the deck's hit and on each march sample's cover, and `cloud_rim_span` cutting the march to the
+part of the ray over the disc, so a far eye's march takes no samples. The eye-in-cloud fog is masked the same way.
+The density function is untouched (#100). Tests (`clouds.rs` `rim_tests`, both faces, the CPU twins `rim_cover` /
+`rim_span`): `a_far_eye_sees_no_deck_beyond_the_rim` and `a_far_eye_marches_nothing_in_the_void` (red with the mask
+off: cloud 88.9 km from the axis), `over_the_island_the_clouds_are_as_before`, and
+`the_shader_masks_the_deck_and_the_march_by_the_rim`. The look from the showcase's camera is still to be checked on
+the Mac (cloud sessions have no GPU).
+
+### 105. The "no" sound for clicking at nothing is too loud and jarring (fixed after 0.54.205)
+
+Owner, 2026-11-12: "The 'no' sound effect for clicking when nothing is there is way to loud and jarring and generally
+a bad sound effect for it. Read the names and waveform to find a good one from our package." The `deny` sound (Break
+or Place with nothing targeted) played Universal Sound FX's `UI_Error_Tone_01`: a 0.18 s buzzy error tone peaking at
+−0.5 dBFS, at sample gain 0.4 (~−8.5 dBFS as played). Fix: candidates picked by name (UI clicks and taps, errors,
+denied notifications, toggles, subtle thuds and knocks) and measured (duration, peak, RMS, attack, spectral centroid,
+energy above 2 kHz); the pick is `UI_Click_Tap_Knock_Subtle_Darker`, a dull 30 ms knock (centroid ~260 Hz, no
+energy above 2 kHz, peak −6.1 dBFS) at gain 0.2 with ±1 semitone: ~12 dB under the old tone's peak, ~16 dB under its
+loudness. The procedural fallback's gain went from 0.879 to 0.3. Test: samples.test.ts "keeps the deny sound soft"
+(red on the old data, green on the new).
+
+### 104. Swimming underwater sounds like swimming at the surface; underwater sound isn't muffled (fixed; the listening check is the owner's)
+
+Owner, 2026-11-12: "swimming underwater sounds like swimming on the water surface, when underwater sounds should be
+muffled, high pass filter maybe?" Underwater, the swim strokes play the surface splash sounds, and the world's sounds
+aren't filtered. Expected: underwater strokes their own soft, deep sounds; everything heard with the head
+underwater through a low-pass filter (muffled: highs cut, ~500–1000 Hz) with a little reverb/volume drop, eased in
+and out at the surface crossing.
+Owner, 2026-11-12, more: "Swimming in the surface is too loud and high even then, like a kid learning to swim
+splashing." So the surface strokes too: much quieter and lower/softer (a calm stroke, not a splash), fewer/longer
+strokes matching the swim stroke's rate, slight pitch/volume variation, a softer asset or the current one filtered.
+
+**Fix.** A stroke is chosen by the head's depth (`dwell_game::sound::head_under`: the body's submerged share at the
+vitals' `headFraction`, 0.9, the line drowning counts from; another player's read at its head line,
+`Surroundings::submerged`): head under plays the set's new `swim_under` (`dwell:water_swim_under`: the
+`water-swim-*.m4a` recordings an octave down, `shift` −12, through a 600 Hz low-pass); at the surface `swim`
+(`dwell:water_swim`: the same recordings quieter, 0.6 → 0.32, 2 semitones down, ±1.5 semitones of variation, a 2.5 kHz
+low-pass; the procedural form lost its bright droplet plinks). The swim gait is one stroke per 3 m (was 2.4: a stroke a
+second at the 3 m/s swim speed) at gain 0.45 (was 0.7). With the eye under a fluid's surface (the renderer's own test,
+`hears_underwater` over `eye_fluid`, face-local) the data's buses (`underwater.buses`: effects and ambience; never
+the UI or music) go through a low-pass at 800 Hz and drop to 0.6, gliding over 0.25 s at the crossing, and the
+`underwater` ambience bed (the sea loop, heard through the filter) fades in. All data (`shared/sounds/dwell.json`
+`underwater`, samples `shift`/`lowpassHz`, AUDIO.md §3a). Tests: `a_swim_stroke_is_chosen_by_how_deep_the_head_is`
+(both faces; red before: 13 surface strokes and none deep with the head under),
+`surface_strokes_sound_once_a_stroke_about_once_a_second` (red before: 25 strokes in 20 s),
+`another_swimmers_depth_is_read_at_its_head_line` and `the_listener_hears_underwater_only_with_the_eye_under_the_surface`
+(both faces), `client/src/audio/underwater.test.ts` (the filter's targets and glide, the UI and music buses dry, the
+strokes' bounded gains, red before: 0.7 × 0.6 = 0.42 over the 0.2 bound). The listening check is the owner's.
+
+### 103. Walking through tall grass is loud, fast and crackly; the first-person legs step too fast (fixed after 0.54.201; the listening check is the owner's)
+
+Owner, 2026-11-12: "Walking through tall grass is really loud and obnoxious. Bad sound effect for it I think, it's
+also playing really fast. ... the feet are moving really fast, way faster than normal legs step/walk. And there's an
+occasional crackly sound too, are there 3 SFX playing while walking on grass?" (On 0.54.153: the own-body change
+#791 hadn't shipped — releases failed from ~18:45 until the typecheck fix.) Check: how many sounds play per step on
+grass with tall grass (the footstep on the grass block, a brush sound per tall-grass cell entered, the cross plant's
+own sound — possibly all three, each per cell or per tick rather than per step), their volume and rate; the crackle
+(clipping from stacked sounds, or a sound restarted every tick); the first-person body's walk clip speed against the
+walk speed (stride length 1.6 m a loop vs the controller's speed — too high a playback rate).
+**Fixed (branch `claude/grass-steps`):** what played per step on grass with tall grass, walking at 5 m/s: the
+footstep (`step` on the grass block → `dwell:grass_step`, a sample at 0.5 × the walk's 0.55, one per 2.0 m: 2.5 a
+second) and the rustle (`brush` on the tall grass → `dwell:leaf_brush`, procedural, gain 0.35 with five to nine
+2 ms white-noise grains, one per 0.8 m but ≥ 0.18 s apart: ~5.3 a second, each ~0.35 s long, so two or three
+overlapping over every step, and one at once on entering each patch). No third sound on open grass (a stick's snap
+only under trees); the "three" was the stacked rustles, and the crackle their grains. No one-shot was restarted while
+playing (each play is a new voice; nothing per-sound limited them). The legs: `biped_walk` looped every 1.6 m, so
+6.25 steps a second at the walk (the sprint 5.3 at 8 m/s), on your own body, other players and the shadow alike.
+Now: on its feet a body rustles only with a footstep, at most one a step (`Stride`, `brush` `minS` 0.3 s; off its
+feet every `everyM` 2.5 m); `leaf_brush` is a soft pink-noise swish (gain 0.16, no grains, one voice, `minGapS`
+0.25); every sound has a voice limit (`voices`, default 4, over it a play is dropped, never restarted); grass steps
+at 0.4; the strides are walk 2.5 m, run 2.8 m (2.0 and 2.9 steps a second) and the gait clips loop every two of
+them (walk 5 m, sprint 5.6 m, crouch-walk 2.2 m). Tests, red on main → green:
+`walking_through_tall_grass_is_one_footstep_a_step_and_at_most_one_rustle_on_it` (main: 15 steps, 32 rustles over
+30 m), `rustles_on_feet_are_never_closer_than_the_min_interval`, `voices.test.ts` (main: the step + rustle stack
+0.635, no voice limit, crackle grains), `the_gaits_step_at_a_natural_cadence_at_the_controllers_speeds` (main: 6.25
+steps a second), `gen.test.mjs` (a gait's cycle = two footstep strides).
+
+### 92. Downhill water shows edge triangles and thin lines at its ½ m level steps (fixed after 0.54.142; the browser check left local)
+
+Owner, 2026-11-12 (screenshot + block dump): "I'm seeing some edge triangles and thin lines at slope transitions on
+downhill water." Build 0.54.142 (f68d23af), seed 950418385, generatorVersion 8, feet (1061.8, 79.6, 12359.4), yaw 313°,
+pitch −15.6°. A held, asleep river on sand (`dwell:sand[flooded=true]`, `dwell:sand_ramp[facing=south,flooded=true,
+half=bottom,shape=ramp]`): the surface grid's levels step down ½ m at a time along the flow (81 → 80.5 → 80 → … → 68.5,
+in diagonal bands), every column `held`, none awake. In the screenshot each band edge draws a bright vertical
+triangle where a step meets another step at a corner, and thin light lines along the step edges. Suspects: the water
+mesher's side faces (skirts) at a level step — drawn as full quads/triangles between neighbours whose corner heights
+are averaged differently, so a corner shared by three levels leaves a sliver or wedge; or the surface's per-corner
+smoothing across a step (T-junction cracks showing the sky/specular through). Expected: a downhill river reads as
+one continuous sloped surface (or clean steps), with no wedges or cracks.
+
+Cause (read in the code and the fixture): a river stepping down on the diagonal crosses the grid in a staircase, and
+each pool's edge was drawn as a pour slope across the open cell beyond it, one per side (`slope_over`). An open cell
+with an upper column on two sides got two slopes crossing inside it; one touching the upper reach only at a corner got
+none, so the slopes beside it ended in vertical wedge triangles (closed against the open cell, the bright vertical
+wedges); and the lower pool's flat top was still drawn under every slope, coplanar with it at the far edge (the thin
+light lines where the two met).
+
+Fixed (WATER_RENDERING.md §18): an open cell over a pool touching, by a side or a corner, the same water one row higher
+is a **step cell** (`mesher.rs` `step_cell`), drawn as one surface whose corner heights each depend only on the cells
+round that corner (the upper water's level where one touches it, the pool's elsewhere), so neighbouring step cells,
+the upper tops and the lower tops share their vertices; split across the diagonal that leaves a lone corner on its
+own, a diagonal band's slope is one plane. The pool's top under a step cell, the upper column's side toward it and
+the strip under it are not drawn (they were inside the water), and its sides stand only against open air (a step at
+a bank). Calm pools and falls (drops of more than a row) are unchanged. Test: dwell-mesh
+`a_diagonal_staircase_river_is_one_continuous_surface` (both faces; three diagonal bands two cells deep on flooded
+sand and sand ramps: one surface over every column, continuous across every column edge, no vertical water face above
+the lowest surface, no crease T-junctions; red on main, 152 sample points under two or three surfaces, then green).
+Left local: the owner's spot in the browser (seed 950418385, feet (1061.8, 79.6, 12359.4)).
+
+### 99. A placed camera on the player shows no player (fixed after 0.54.181)
+
+Found recording showcase video 1 (the bifacial world, 2026-11-12): theater mode's `track` / `orbit` on `"player"`, and
+any `placeCamera` view, drew an empty sky where the player was. A placed camera hid the first-person body (neck down)
+and drew nothing in its place, so the record skill's third-person shots of the player could not be made. Fixed: from
+a placed camera your whole body is drawn as others see it, lit like a remote player (`game.rs` `own_body_draw`, test
+`a_placed_camera_draws_your_whole_body`, red on the old rule, then green).
+
+### 95. Far trees seen from above have holes through to the sky below (fixed after 0.54.175)
+
+Owner, 2026-11-12 (screenshot at night, looking straight down from high up): "looking down at trees from high up,
+where you can first make out individual trees, they seem to have visible holes through them into the ground (sky on
+the other side). This is most obvious at night, so the day sky shines through the ground." In the shot each far
+tree (the LOD's crownless trees: dark crosses and squares on the grass) shows bright light-blue pixels at its
+centre — through the tree and the ground under it, the other face's (day) sky shows. Suspects: the LOD terrain
+leaves a hole (or an unfilled cell) under each far tree's trunk/column (the tree cells cut from the LOD's ground and
+not filled), or T-junction cracks where the far tree's mesh meets the LOD ground; at that distance the gap is a
+pixel or two and the sky behind the disc shows through.
+
+Looked at 2026-11-12 (impostors session, not fixed): with the impostors on (`claude/impostors-gpu`) the LOD sections
+mesh **no** tree cells (`mesh_section_trees(…, false)`). The section's surface pass draws a column's top cell only
+(`lod_mesher.rs` ~l. 499 skips tree cells above the surface, `special.y`); where a column's top is a tree cell (a
+trunk, a crown) the ground cell under it is not the column's top and gets no top face, so without the tree cells
+there is a hole in the ground the size of the trunk's column — the likely cause, and with impostors the holes show
+between the far trees from above. Fix: the generator's "ground without trees" for the section's surface (proposal
+I-4), with a watertightness test (every column of a forest section has a top face at its ground).
+
+Fixed 2026-11-12 (`claude/far-ground-holes`): the cause was as suspected, and it held with the trees drawn too.
+The section's ground pass took a tree cell as solid: the log over a trunk's ground cell hid that cell's top, and
+with the surface data the column's topmost solid cell was the tree's, so its ground found no surface. The tree
+pass draws a log as an octagon (its corners open) and a leaf chamfered, so even with Far trees on the sky showed
+through beside each trunk; with them off (the impostors) the whole trunk column was a hole. Now
+`mesh_section_above` meshes the ground from the section's cells with the tree cells cleared (the tree pass still
+draws them, over the ground); the near chunks are unchanged. Test `lod_mesher_tests.rs` `far_ground_under_trees`
+(crowned and crownless trees, on the section's edge and corner too, with and without surface data, trees on and
+off: every column's top covered at the ground's height, and trees off meshes exactly as the treeless ground, so no
+seam a neighbour section's LOD meets changes), on both faces: red (holes at every trunk) → green. Not checked:
+the in-game look from high up at night (local, a GPU).
+
+### 98. `dwell-mesh`'s face-parity test fails on face B at a leaf card's packed normal (fixed after 0.54.173)
+
+Owner's brief, 2026-11-12: "`cargo test -p dwell-mesh` a_chunk_meshes_the_same_face_local_on_either_face::b fails on
+main (\"cutout plants\"), reported by two sessions." Suspected: 6578783's Tall grass density (a per-cell hash not
+face-local) or the faded-plant drop. Cause: neither; the test fails the same at e9b27e2, before 6578783. The
+differing value is a leaf card's `plants.y`, its plane normal octahedral-packed (#78's far-side cull, `card_speed`).
+Two parts: the test's `local_mesh` turned positions and normals face-local but not the packed normal; and the
+packing's 2047-step grid is odd, so the octahedral fold falls between grid points and face B's mirror (unpack, flip
+y, re-pack in `flip_arrays_y`) drifted a step from face A's (-786733 vs -786734). Fixed: the grid is 2048 steps
+(`leaves::CARD_GRID`, radix 2049, the WGSL `card_normal` with it), the square's folded edges and corners packed one
+way, and `local_mesh` un-flips the packed normal. Tests: the parity test (red → green), and
+`a_leaf_cards_packed_normal_flips_exactly` (red on the old grid: a flip and back changed the bits).
+
+### 96. Villagers' faces are jet black, not their skin colour (fixed after 0.54.171)
+
+Owner, 2026-11-12: "Why do all the villagers look like their faces are jet black? Not even matching the rest of
+their skin color?" Then: "Oh maybe not all of them, but their hair and faces are really crazy looking." and "I think
+some of the clothes and hat vertices are being assigned incorrectly (like they should be face and hair)." And: "You
+should have tooling for debugging this and setting up a model so it can be retextured" (WORK_QUEUE item 43).
+- **Cause:** two. (1) The GLBs' vertex colours are linear (glTF `COLOR_0`) and the skinned shader read them as sRGB
+  bytes, decoding them a second time: every skinned model drew darker than its palette and the dark ramps near
+  black — a skin_deep villager's face at a sixteenth of its brightness, skin_brown at a third. Your own body and the
+  other players drew darker too, but in skin_fair it reads as skin. (2) The villager's colour parts recoloured by
+  colour, not by part: the hat's repaint by height (hair_brown → wool_yellow above 1.4 m and out past 16 cm) had
+  caught the hair's fringe, so the fringe took the hat's colour; the neck (skin_tan) and the hair's shading
+  (skin_brown, soil) kept the model's colours whatever the variant.
+- **Fix:** the vertices carry sRGB bytes (`skinned::vertex_bytes` through `dwell_models::linear_to_srgb`), and a
+  **part map** per model (`shared/models/parts/peasant.json`, `shared/models/parts.mjs`: a part a vertex, seeded
+  from the mesh: the hat and the hair are islands of their own, the skin, shirt and trousers by colour on the body)
+  is what an NPC's colours recolour (each vertex's part in its colour's alpha byte; the part's new ramp at the
+  vertex's shade). The repaint is by part now, and gives the fringe its hair_brown back. `parts.mjs --render` draws
+  a part map to PNGs, `--stats` counts it.
+- **Tests:** `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (dwell-client,
+  render/skinned.rs): at every detail level and 64 variants, by position, the face draws the variant's skin as
+  bright as its ramp, the back of the head its hair, no head vertex is clothes, the hat is only its brim and crown.
+  The same check run on main's pipeline (colour-matched remap, linear bytes) failed: a skin_deep face drew at
+  luminance 0.0044 against the ramp's 0.071, and 5 fringe vertices carried the hat's wool_yellow at detail 1. Also
+  gen.test.mjs (the part map's checks, the fixture's part map by data alone, the repaint by part, the Peasant's
+  islands) and dwell-models' `a_part_map_is_added_by_data_alone`.
+
+### 94. Jumping into a tree's leaves rubber-bands you toward the ground until you back out (fixed after 0.54.14x)
+
+Owner, 2026-11-12: "A bug I just found seems to be a mismatch between server and client for leaves collision.
+Jumping into the leaves of a tree makes you rubberband falling to the ground endlessly until you back out of the
+leaves." Suspects: the client's predicted controller and the server's disagree about leaves — one treats leaf cells
+as solid (or as a climbable/slowing medium) and the other as passable, so every snapshot corrects the predicted
+position and prediction falls again; candidates: leaves' collision shape or `solid` flag read from different data
+(block registry vs the mesher's leaf cards / leaf density), trees composed at chunk load on one side only
+(TREE_GROWTH layer, tombstones/growers) so the server or client has no leaf blocks there, or leaves' `flooded`/state
+aliasing differing across the registry sync.
+Cause: not the collision or the leaf cells — both sides built the same crown voxel for voxel, and both controllers pass
+through leaves (`passable`). The server alone also runs the buried-player lift (`server/buried.rs`, BUGS #82), which
+read any `solid` full cell as ground to be lifted out of: leaves are `solid` (and `passable`), so a player whose centre
+entered a crown was teleported to the crown's top every tick while the client's prediction fell through it — each
+snapshot pulled the prediction back up and it fell again, until the player left the leaves. Fixed: the lift asks
+`dwell_blocks::collision_class`, the terrain collision's own test, so a passable block buries no one. Tests:
+`netcode` `jumping_into_a_trees_leaves_is_predicted_exactly_without_latency` (the real server and a predicting
+client on a flat world with a pine, walking and jumping in and out of the crown: 10 replays of 1–3 m on the unfixed
+code → 0, every acknowledged position exact) and `buried` `a_player_inside_leaves_is_not_buried_and_falls_through_them`
+(both faces: held at the crown's top 4.6 m up on the unfixed code → falls to the stone).
+
+### 93. Vertical swings (axe, sword, …) play twice for one swing (fixed after 0.54.14x; the look in game left local)
+
+Owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double swings." One vertical swing shows two
+down-strokes (or a stroke, a snap back and a second stroke). Suspects: the vertical clip's keyframes loop or include a
+second stroke; the swing restarted by a second trigger (the click and the hit event, or the server's echo of the
+swing re-starting the local one); the level/vertical choice flipping mid-swing. Check with `clip_probe` and the
+swing's trace, both faces.
+Owner, 2026-11-12, clarifying: **"The animation double swings"**: the vertical swing's animation itself (the arms and
+tool show two strokes per swing), not two hits.
+Cause (`clip_probe`, a swing played frame by frame through the arms' animator as `game.rs` drives it): the miss's clip
+has one stroke; a **hit** drew three. After the hit-stop the pull-out played the clip backwards from contact to its start,
+so the head went back up over the shoulder (screen y +3.3) and came down to rest again, and when the swing ended the
+clip was let go at that start (`drive_action(None)`) and ran on by itself: the whole swing a second time. The level
+swing did the same, reading as a pull back and a second chop. Fixed: the contact's pose is held and faded straight
+back to the arms' rest over `recoverHitS` (`SwingRun::clip_weight`, `Animator::drive_action_weighted`), and an ended
+swing stops its clip (`ArmsDrive::Release` → `Animator::stop_action`). Test: `clip_probe`
+`one_swing_draws_one_stroke_hit_or_miss` (vertical and level, a hit at the arc's middle, an early hit and a miss: one
+stroke, back at rest), red on the unfixed code (vertical hit: 3 down-strokes) → green.
+
+### 88. Volumetric clouds z-fight against tall terrain (fixed after 0.54.135; the browser check left local)
+
+Owner, 2026-11-12: "a bug with volumetric clouds z fighting against tall terrain like mountains." Where a mountain
+rises into the cloud layer, the cloud volume and the terrain flickered against each other. Cause (read in the code):
+the clouds pass (`clouds_fs`) marched the whole layer, not to the scene, and kept the distance to its first cloud,
+jittered every frame by `cloud_jitter` by up to a step (hundreds of metres at Medium); the composite's
+`upsampled_clouds` cut the clouds against the scene by a ±5 % band of that distance, so on a slope inside the layer
+the cut flipped frame to frame; and the colour held the cloud behind the rock too.
+
+Fixed (docs/CLOUDS.md §8.9): the pass reads the scene's depth under each texel (nearest and farthest of its
+full-resolution pixels) and marches only to the farthest (the whole layer where any of it is sky): no cloud behind
+a texel's rock. It keeps that span beside the colour instead of the jittered first cloud, and the composite and the
+history's reprojection weigh the four texels round a pixel by whether their march ended at the pixel's scene, within
+a band in metres of the texel's depth range (3–15 % of the distance, `volume.depthBand`/`depthBandRange`): depths
+alone decide, so nothing flips with the jitter. Tests: `crates/dwell-look/src/clouds.rs` `depth_tests` (a CPU model of
+the pass and composite, red before: the cut swung 0 → 0.79 over the jitter's 16 frames, samples went past the rock),
+both faces; `dwell-client` `shaders.rs` pins the wiring and naga validates the module. Not checked on a GPU (cloud
+session): the look at a mountain in the layer and the `gpu.clouds`/`gpu.composite` timings are for a local
+`npm run bench -- --warm`.
+
+### 86. A sword clash's sparks show ~1.5 m beside the blades, in the air (fixed after 0.54.123)
+
+Owner's duel, filmed 2026-11-12 (WORK_QUEUE item 35, round 5): the villager blocks and strikes back,
+but the clash's sparks fly about 1.5 m to the side of the blades, in the air. Cause: the server's clash
+point (`ClashNet::point`) was never on the blades: a player's strike sent the middle of the striker's eye
+and the creature's body (`clash_point(eye, feet, rows)`), an NPC's blow the middle of the two eyes. The
+client was right: it bursts the sparks at the point it is sent (`Game::on_clash`, world, no offset).
+Fixed: each guard stance's raised blade is data (shared/tools `guard.stances.*.blade`: grip and tip from
+the holder's feet, right / up / ahead, fitted to the third-person raised poses), and the clash point is
+the middle of the two blades' nearest points where the swing's arc (finely, between its steps) comes
+nearest the raised blade; a strike on no raised blade puts it on the striking blade nearest the body.
+Tests: `crates/dwell-sim/tests/weapons.rs` `a_clash_point_lies_where_the_blades_met` (a level slash on
+a villager's upright counter: red before, 0.65 m from the guard's blade; both faces) and the NPC's
+blocked blow in `an_npc_blocks_the_wind_up_by_counter_then_strikes_back_unhurting` (red before, 0.41 m
+from the player's level blade); `clip_probe.rs` `the_raised_blades_data_is_where_the_raised_poses_draw_it`
+keeps the data within 0.1 m of the clips.
+
+### 84. A dev `teleport` did not move the player (fixed after 0.54.116)
+
+Found 2026-11-12 reaching a wolf pack 5 km off. `__dwell.teleport(feet)` posted whatever it was
+given to the worker and answered `true`; a point that was not `[x, y, z]` of finite numbers (an
+object `{x, y, z}`, a string) reached `teleport_local_player` as NaN, which refused it silently.
+Now `feetOf` takes `[x, y, z]` or `{x, y, z}` and anything else throws, naming the input
+(`client/src/local/world.ts`, `world.test.ts` "feetOf"); a single far teleport (5 km) moves the
+player and its terrain arrives (`game_local.rs` `a_single_teleport_five_km_off_…`, which passed on
+the old code too: the core was right, the page's hook was not). The `?at=` hang is open (#84 above).
+
+### 83. The sword showed the axe's hint (fixed after 0.54.116)
+
+"Axe: level swing (right click: vertical)" while holding the sword: the hint was a constant in
+`chop.rs`. Now each tool kind's hint is data (shared/tools `hints`, every kind a tool uses needs one;
+`dwell_protocol::chopping::hint`), tested in `chopping.rs` `each_tool_shows_its_own_kinds_hint` and
+`gen.test.mjs` (red before: no weapon hint existed). Seen in game: "Sword: level stance (tap right
+click: vertical, hold: block)".
+
+### 79. A herd grows by several animals within seconds of coming near (fixed after 0.54.101)
+
+Seen filming the deer (2026-11-12, seed 7, herd id 3 at 3000,2200 face A): a herd that arrived as 6 head had 9 within
+seconds and 12–13 within a minute. Not a double spawn: the record leaves its face's far groups once and becomes one
+creature per member (checked). The cause was births: a fed, rested pair within 2 m tried every half-second decision
+at the deer's 0.5 chance, so a fed herd of 6 had 6 young in its first minute. Fixed by pacing births as data (each
+species' `near.mate`): each parent, and the young, rest `restS` before mating again (deer 600 s, wolves 1800 s), and a
+group has at most one young every `groupEveryS` (deer 240 s, wolves 900 s), counted from when it came near, so a herd
+never grows in front of a player who just arrived. Pinned by `dwell-sim` `herds.rs`
+`a_fed_herd_near_a_player_has_at_most_one_young_a_minute` (red: 6 young in a minute; it also checks the herd spawned
+once) and `births_follow_the_data_s_pace` (the pace by data alone), both faces.
+
+### 80. Deer in a herd stand inside each other (fixed after 0.54.101)
+
+Seen in the deer video (still_01 and clip 1): two does occupy the same space for seconds. Herd members had no spacing:
+they spawn 1–4 m round the record, walk to a groupmate's exact place for company and mating, and young are born by a
+parent. Fixed: every creature has a body radius by data (shared/creatures `bodyRadiusM`: doe 0.35 m, stag 0.4, wolf
+0.3), and each tick `Creatures::separate` steers two closer than their radii plus `limits.gapM` (0.25 m) apart at up
+to `limits.pushMps` (1.2 m/s) and pushes two overlapping straight out (a few passes for a crowd), each move kept to
+ground the creature can stand on with its body clear. Pinned by `herds.rs` `herd_members_never_stand_inside_each_other`
+(red: 0.69 m of overlap), both faces.
+
+### 81. A wolf walks partly inside a cliff wall (fixed after 0.54.101)
+
+Seen in the wolf clip (pack id 9 at -7800,-15600, a terraced cliff): a wolf's body overlapped the stone wall at the
+cliff foot. A creature's step checked only the column under its centre, so its body went up to its radius into a
+wall. Fixed: a step is taken only if the columns its body's disc reaches (`bodyRadiusM`) have nothing solid from its
+`climbRows` up to its height (a step it can climb is no wall); else it slides along the wall on one axis, else
+stops; knockback and separation keep to the same rule; a body already against a wall moves by its centre so it can
+walk out. Pinned by `creatures.rs` `a_creature_s_body_keeps_out_of_a_wall_it_walks_into` (red: 0.297 m inside the
+wall), both faces.
+
+### 82. `?at=` or a teleport to a y inside the ground drops the player through to face B (fixed after 0.54.101)
+
+`?at=3000,260,2200` where the ground is at 381 fell through to face B; a teleport while flying to a y inside a
+mountain did the same: inside a solid cell the terrain's collision has no face to stop the capsule. Fixed on the
+server, for every way in (a spawn link, a teleport, the dev tools): each tick before the controller, a player whose
+capsule's centre is in a solid full cell is put, at rest, on the first row above its feet with ground under it and
+its height free (`server/buried.rs`); one whose way up isn't loaded yet is held where it is until it is. Pinned by
+`dwell-sim` `tests/buried.rs` `a_spawn_inside_the_ground_stands_on_the_ground_above` and
+`a_teleport_into_the_ground_lifts_the_player_out` (red: the feet fell to 6 and 10 m in a 52 m world), both faces.
+`tests/stream_cost.rs`'s held flight now rises over a hill on its way, as a player would.
+
+### 75. A tree never falls to a player's swings (fixed after 0.54.25)
+
+Found 2026-11-12 by visual pass 2 (WORK_QUEUE "Smaller items"): a one-cell log column on the flat world, 4 level
+swings aimed high (pitch −3°) cut nothing visible, 4 low (−18°) a kerf, 12 more alternating high and low and 4 vertical
+left a thin kerf and a slit, no notch and no fall (`fell-probe-sheet.png`, `c-alt-12.png`). Native tests felled trees
+because they swung at a cell's two bands in turn. The cause: a standing log's ½ m row has two quarter-metre bands, and
+a player's swings at one aim all land in the same band, hacking one kerf that binds deeper each swing (`bite / (1 +
+kerf / bindM)`): 40 swept level swings at −3° or −18° from 1.5 m felled nothing (−3° and −18° hit different rows, so
+alternating them split the cut over two cells). Fixed: a swing aimed at the band cut deeper than the other lands in the
+other, in the open wood (`dwell_protocol::chopping::Cut::open_band`), so one aim notches; the stone axe's `biteM` 0.12
+→ 0.1 makes it 11 swings (the owner's ~12, WORK_QUEUE item 7). Pinned by `dwell-sim` `tests/chopping.rs`
+`the_same_level_aim_swing_after_swing_fells_a_trunk_in_about_twelve` (both faces; red: no fall in 40) and
+`aiming_at_one_spot_notches_as_alternating_the_bands_does`, and `dwell-protocol`
+`a_swing_at_the_deeper_band_lands_in_the_open_one`. Bench: `fell-tree`.
+
+### 74. Damage cracks never drawn in game (fixed after 0.54.25)
+
+Found 2026-11-12 by visual pass 2: stone after 2 and 4 pickaxe hits and dirt after 2 and 4 shovel hits showed the carve
+but no crack strokes; a pixel diff against the undamaged cell changed only inside the dent (`diff-stone-4.png`,
+`stone-zoom-0-2-4.png`). The native tests passed on `mesh_chunk_damaged`, which meshes no ground items. The game's
+chunks do (`mesh_chunk_trees` with a `GroundJob`): the items were appended to the opaque mesh after the crack stream
+was padded to the cells' vertices, so the stream fell short (712 entries for 1036 vertices in the test) and the client's
+`textured_vertices` dropped a stream of the wrong length whole: no crack in any chunk with a pebble or stick. Fixed:
+`ground_mesh::append` pads the stream over the items, and the client keeps a short stream's entries (0 past them).
+Pinned by `dwell-mesh` `a_chunk_with_ground_items_keeps_its_cracks_for_every_vertex` (both faces; red before) and
+`dwell-client` `terrain_vertices_carry_the_crack_bytes` (a short stream).
+
+### 52. A felled trunk landing on its chopper can fling them far (fixed after 0.54.15)
+
+Owner, 2026-11-08: "we shouldn't be capping player kick like that" — "the cap is removed". 0.50.37's
+`max_body_kick` cap is gone (0.50.39), so this is open again: a 10 m trunk felled toward its
+chopper throws them ~150 m at ~75 m/s (`dwell-sim` `tests/chopping.rs`
+`a_felled_trunk_falling_on_the_chopper_does_not_fling_them`, ignored until fixed; both faces).
+Measured (2026-11-08): the trunk's slanted underside comes down on the player standing on the
+ground at ~5–9 m/s at the contact; the frictionless capsule is pinched between it and the ground,
+the grounded controller cancels the downward part of the push each step, and the solver's
+separation compounds sideways each step (16 → 48 m/s over 12 ticks). Later options: the tree's
+mass (a non-dominant piece), contact softness or a corrective-velocity limit for player–piece
+contacts, CCD so the overlap stays shallow, or the controller keeping the pinch's downward push.
+Measured again 2026-11-12 (WORK_QUEUE item 24): with the log's `fellWedgeTrunk` now `open` (the gash, the
+trunk's foot thin at the notch) the ignored repro flings the chopper ~155–160 m (face A 154.7 m, face B 160.0 m),
+up from ~104–108 m on the `matching` wedge (103.8 m, 107.8 m) just before; still open.
+Fixed 2026-11-12, at the cause, with no cap on the kick: the fling is the frictionless squeeze (a "watermelon
+seed"). Pinched between a nearly flat underside (normal 14° off vertical, flattening to 0°) and the ground, a
+capsule with no friction can only go sideways, at the descent over the slant's slope: 5 m/s at 14° is 20 m/s,
+and as the slant flattens the speed grows without bound (−15 → −57 m/s over 10 ticks, then airborne). The
+solver did what rigid frictionless bodies must; real bodies grip what they press on. So a piece's contact
+whose normal toward the player points down (face-local y below −0.5) takes the piece's own friction
+(`PIECE_FRICTION`, 0.8: it holds a wedge flatter than 39°), in a Rapier contact hook (`physics::PinchGrip`,
+the player's collider asking for it); the capsule stays frictionless on the ground, walls and side hits.
+The chopper is now shoved ~2 m/s as the trunk passes and moves 0.5 m (face A) / 0.4 m (face B)
+(`a_felled_trunk_falling_on_the_chopper_does_not_fling_them_{a,b}`, un-ignored). `dwell-physics`
+`tests/pieces.rs`: `a_piece_coming_down_on_a_standing_player_pins_them_not_squeezes_them_out` (red without
+the grip: 1.88 m at 12.1 m/s; green 0.04 m at 0.7 m/s) and
+`a_piece_moving_into_a_standing_player_throws_them_as_hard_as_physics_says` (a 900 kg log at 10 m/s throws the
+player at 9.26 m/s, the inelastic momentum's 9.2, uncapped). Both faces (`DWELL_FACE=b`).
+
+### 73. A felled trunk lying diagonally up a slope loses most of its cells when it settles (fixed after 0.54.10)
+
+Owner, 2026-11-12: "I've also seen big chunks of a tree disappear if it settled diagonal long ways up a high, it
+settles flat and most of the tree disappears into the ground." The settle snapped the body's rotation to lying flat
+about its reference cell (its foot), so a trunk resting up a hill was laid level at its foot's height, inside the
+hill; lifting the whole piece one or two rows didn't free it, and every carrier whose cell was taken was dropped.
+Now a piece at rest tilted follows its pose column by column (`felling::follow_pose`), and a column whose carriers
+are blocked rises to the first free rows (or drops a row onto the ground under it): it steps along the hill, the log
+axis along the trunk, no wood lost (docs/FELLING.md §4). Pinned by `dwell-sim` `felling.rs`
+`a_trunk_at_rest_up_a_slope_settles_whole_along_the_hill` (both faces; an 8 m trunk on a 1:2 hillside): red before
+(3 of 16 logs settled), green with the fix.
+
+### 72. ~23 fps on an iPhone at Low, and z-fighting where leaf cards meet tree trunks (fixed after 0.52.109; the frame rate partly)
+
+Owner, 2026-11-11 (iPhone 17, Safari, quality Low): "I'm only getting ~23 fps on mobile, seeing lots of z-fighting on
+tree trunks with the leaf cards. What might be dropping frames since the last while. Used to get 60 fps."
+
+- **Z-fighting:** a leaf cell's cards (shared/look/leaves.json `cards`, 0.52.56) stood off every exposed face, and a face
+  toward a log counts as exposed (an octagonal log covers nothing), so cards were placed through and along the trunk's bark
+  beside it. Now a card with any corner reaching into a neighbouring block that is neither leaves nor empty is dropped
+  (`mesher/leaves.rs` `leaf_voxel`). Pinned by `dwell-mesh` `leaf_cards_stay_out_of_the_logs_beside_them` (both faces):
+  red on the unfixed mesher (a card's corner inside the log beside the leaf), green with the fix.
+- **Frame rate:** the cards are now off on the phone tier by data (`cards.tiers.phone`, `render::cards_for`; a `?cards=0|1`
+  dev override). Measured on the bench's `--touch` phone page (393 × 852 at 3×, Low preset, unthrottled, M-series desktop
+  GPU): in the starter's broadleaf forest `gpu.frame` p95 4.76 → 4.36 ms (−8 %; `gpu.near` 3.55 → 3.18, `gpu.far`
+  2.38 → 2.10) with cards off; at the default world's spawn (no near trees) no change. The cards are one cost, not the
+  whole regression: the largest passes on Low are `gpu.composite` (~2.9–3.3 ms), `gpu.arms` (~2.1 ms at the spawn) and
+  `gpu.water.tiles` (1.1–1.7 ms with no water in view). **Outstanding:** those three toggled one by one, and a comparison
+  with a release from before the leaf, cloud and lava work: the launcher's builds (`/dwell/v/0.51.24/`) did not start
+  under the bench (a 404 on a resource), and 0.52.40 is no longer published.
+- **Round 2 (branch `claude/mobile-fps-2`):** the bench's `--base` opened a release as `…/v/<version>/dwell/` (the 404);
+  it now opens the path as given. The **Low preset turns the leaf cards off** (a `leafCards` preset field and a Leaf
+  cards setting, Settings → Graphics; `graphicsPresets.test.ts` red with Low's on, green off). Versions compared on the
+  `--touch` phone page at Low, the default world's spawn, Chrome's CPU throttled 4×, M-series GPU (mean ms):
+
+  | Build | frame.cpu | draw.render | lod | gpu.frame | gpu.near | gpu.composite | gpu.arms | gpu.water.tiles |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 0.51.24 | 3.84 | 1.98 | 1.06 | 4.50 | 2.81 | 2.01 | 1.30 | 0.90 |
+  | 0.52.77-dev.529 | 3.50 | 1.77 | 0.89 | 4.38 | 2.87 | 2.12 | 1.37 | 0.91 |
+  | this branch (≈ 0.52.111) | 3.23 | 1.44 | 0.93 | 4.32 | 2.77 | 2.24 | 1.42 | 0.88 |
+
+  No regression on the desktop at the spawn, CPU or GPU: the composite, arms and water-tile costs were already there in
+  0.51.24. The local server's water worker ticks at 0.15 ms mean. So what dropped the phone to ~23 fps does not show on a
+  desktop GPU at the spawn. The likeliest cause is the leaf cards on the phone's tile GPU: alpha-cut (`discard`) quads
+  defeat an Apple GPU's hidden-surface removal, so their overdraw costs far more there than the desktop's 8 %. The
+  cards are now off on the phone tier and on Low. 0.52.101 and newer releases still don't start under the bench (another
+  404, not looked into), so 0.52.78–0.52.110 are not bisected. **Outstanding:** a real iPhone check on a build with the
+  cards off; then, if it is still slow, the arms pass (a separate pass, a store and reload of the frame on a tile GPU)
+  and the composite.
+- **Round 3, moving (branch `claude/fps-moving`).** Owner, 2026-11-12, after the cards went off on Low: "I got 60 fps
+  when standing still on Low", so the drops left come while moving. Measured on the bench's `--touch` phone page
+  (393 × 852 at 3×, Low, M-series GPU) with Chrome's CPU throttled 4×, walking, sprinting and flying (level 4) +X for 8 s
+  from the default world's spawn and the starter's (the bench's `phone-moving` scenario). Standing still frame.cpu is
+  ~3.5 ms; moving its p95 is 13–20 ms, and every frame over 16.7 ms is **loading work on the main thread**, never the
+  draw (`draw.render` ~1.4 ms): the worst frames are `mesh_dirty` 12–17 ms (the flood light of an arrived chunk, then
+  a mesh start, each as its kind's "first of the frame" past the 8 ms deadline) plus `jobs.apply` 4–15 ms (2–4
+  finished chunk meshes interleaved and written at once, 1.8–3.7 MB; one near chunk's mesh is 1.2–2 MB). The Chrome
+  trace of the default world's flight (11 s, main thread 6.3 s busy): `padded_box` (copying a chunk's 44 × 64 × 44 sky
+  volume out for its mesh job) 0.99 s, the flood light `LightMap::load` 0.84 s, `interleave` 0.41 s, `writeBuffer`
+  0.28 s, `encode_job` 0.27 s, the minimap (`fillReveal`, `render_disc`, `scan_tops`) ~0.55 s, `LodSystem::update`
+  0.41 s. No long task over 50 ms; LOD section uploads are small (`upload.section` p95 0).
+  **Cuts:** (1) finished chunk meshes upload under a per-frame **byte budget by tier** (data:
+  `shared/render/streaming.json` `uploadBytesPerFrame`, phone 512 KiB, desktop 4 MiB; `dwell-game` `upload_budget.rs`,
+  oldest first, the first of a frame always): test `game_local`
+  `no_frame_uploads_more_chunk_mesh_bytes_than_the_scenes_budget`, red with the budget ignored (55 of 80 frames over
+  256 KiB, up to 4.66 MB), green with it; scheduler tests in `upload_budget.rs`. (2) A late frame runs **one** loading
+  item past its deadline, the light's or a mesh start's in turn (`chunk_stream` `mesh_first`): test
+  `a_late_frame_runs_one_item_past_its_deadline_and_the_light_and_meshing_take_turns`, red on the old rule (a mesh
+  start after the light had passed the deadline), green. (3) `interleave` copies one stream at a time into its column
+  (test `interleave_puts_each_vertex_streams_in_order`). (4) The bench's `record` takes a `budget`
+  (`{"frame.cpu.p95": …}`), failing the scenario when over, and the `phone-moving` scenario sets one.
+  Before and after (CPU 4×, one 8 s run each, ms; "dropped": frame intervals over 20 ms):
+
+  | Route | World | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | jobs.apply p95 / max | mesh_dirty p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | default | main (0.54.3) | 16.7 / 18.3 / 18.6 | 3 of 477 | 3.6 / 15.8 / 21.2 | 19 | 4.0 / 14.6 | 9.5 / 14.7 |
+  | walk | default | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.7 / 14.0 / 17.1 | 6 | 3.3 / 6.9 | 8.8 / 12.4 |
+  | walk | starter | main (0.54.3) | 16.7 / 18.6 / 18.7 | 0 of 478 | 3.6 / 12.7 / 18.7 | 14 | 3.1 / 7.1 | 7.9 / 14.8 |
+  | walk | starter | this branch | 16.7 / 18.4 / 18.6 | 1 of 478 | 3.6 / 12.1 / 17.6 | 6 | 2.4 / 5.9 | 8.0 / 13.3 |
+  | sprint | default | main (0.54.3) | 16.7 / 18.6 / 31.5 | 6 of 473 | 8.2 / 16.3 / 21.4 | 22 | 5.0 / 10.9 | 11.1 / 14.7 |
+  | sprint | default | this branch | 16.7 / 18.6 / 18.7 | 2 of 477 | 8.6 / 14.1 / 17.5 | 9 | 4.1 / 7.6 | 8.9 / 13.5 |
+  | sprint | starter | main (0.54.3) | 16.7 / 18.5 / 18.7 | 1 of 479 | 3.7 / 14.1 / 18.7 | 14 | 3.0 / 7.8 | 8.8 / 16.2 |
+  | sprint | starter | this branch | 16.7 / 18.5 / 18.6 | 0 of 478 | 4.0 / 12.5 / 17.3 | 6 | 2.4 / 4.1 | 7.6 / 14.3 |
+  | fly | default | main (0.54.3) | 16.7 / 31.8 / 35.0 | 36 of 579 | 9.6 / 19.7 / 26.0 | 58 | 6.2 / 15.0 | 14.1 / 16.8 |
+  | fly | default | this branch | 16.7 / 18.6 / 33.7 | 23 of 603 | 9.7 / 16.9 / 20.5 | 34 | 4.3 / 8.6 | 11.7 / 14.0 |
+  | fly | starter | main (0.54.3) | 16.7 / 18.5 / 33.4 | 14 of 602 | 3.9 / 14.6 / 20.3 | 21 | 3.1 / 7.6 | 7.8 / 16.7 |
+  | fly | starter | this branch | 16.7 / 18.3 / 32.8 | 8 of 618 | 4.0 / 12.5 / 18.5 | 11 | 2.3 / 4.4 | 7.7 / 13.8 |
+
+  The cuts take the frames over 16.7 ms of CPU from 148 to 72 over the six runs and the flight's dropped frames from
+  36 to 23 (default) and 14 to 8 (starter); `jobs.apply`'s worst from 15.0 to 8.6 ms and `interleave` 0.41 → 0.28 s in
+  the flight's trace. Desktop is unchanged by design (4 MiB a frame is above any burst measured). At CPU 6× (this
+  branch, `phone-moving`, default world) the walk drew 57.3 fps (interval p95 18.7, p99 33.9, max 51 ms) and went over
+  the scenario's 4× budget (`frame.cpu` p95 18.8 against 18.5), which stopped the run there: the budgets are set for 4×.
+  **Outstanding:** a single chunk's light or mesh start is still 5–14 ms at 4× (`mesh_dirty` max 12–14), and one near
+  chunk's upload 5–8 ms (it is over the phone's budget alone): the next cuts are the flood light off the main thread
+  (DEV_TOOLS.md "Flight loading", fix 2), the sky volume's copy (`padded_box`, the largest main-thread cost: copy it in
+  the worker, or ship the chunk and its neighbours once), a chunk's upload split across frames, and the minimap's
+  tile work; then a real iPhone check while moving.
+- **Round 4 (branch `claude/fps-moving-2`).** The bench's `phone-moving` scenario (walk, sprint, fly 8 s each in turn,
+  default world, Low) at CPU 4× and 6×, budgets left out so every route runs, against main after round 3:
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 478 | 3.7 / 13.8 / 17.5 | 7 | 8.8 / 12.3 | 3.4 / 7.2 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | sprint | 4x | main (round 3) | 16.7 / 18.5 / 18.6 | 0 of 480 | 3.1 / 10.9 / 15.3 | 2 | 6.8 / 12.4 | 3.4 / 7.4 |
+  | sprint | 4x | this branch | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | fly | 4x | main (round 3) | 16.7 / 18.3 / 18.6 | 5 of 606 | 3.6 / 13.3 / 18.4 | 13 | 7.4 / 13.1 | 3.6 / 8.5 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | walk | 6x | main (round 3) | 16.7 / 31.7 / 35.0 | 28 of 452 | 6.2 / 18.7 / 26.3 | 28 | 9.6 / 18.7 | 5.4 / 8.6 |
+  | walk | 6x | this branch | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | sprint | 6x | main (round 3) | 16.7 / 18.6 / 33.4 | 18 of 463 | 4.9 / 14.7 / 25.1 | 17 | 6.4 / 18.0 | 6.7 / 10.8 |
+  | sprint | 6x | this branch | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | fly | 6x | main (round 3) | 16.7 / 33.7 / 48.7 | 69 of 523 | 5.1 / 22.4 / 30.1 | 49 | 8.6 / 20.0 | 5.1 / 13.5 |
+  | fly | 6x | this branch | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+
+  Over the three routes at 6× the dropped frames go from 115 to 77 and `jobs.apply`'s worst from 13.5 to 8.3 ms (4×:
+  8.5 → 5.3); at 4× the routes were already near 60 and move little. **Cuts:** (1) the sky volume's copy
+  (`padded_box`): the fluid continuation into missing neighbours (BUGS 8) looked a neighbour up for each of the
+  volume's 124k voxels at every chunk on the streamed view's edge; it now looks each up once and visits only the
+  missing ones' part of the apron (`voxel.rs` `continue_fluids_into_missing`; 0.44 → 0.12 s in the 4× flight's
+  trace). Tests `padded_fluids`: the blocks equal the per-voxel rule's for five sets of missing neighbours, and
+  `a_chunk_on_the_streamed_edge_copies_its_sky_volume_about_as_fast_as_one_inside`, red on the old rule (edge 0.38 ms,
+  inside 0.05), green. (2) A mesh job's message is written into one buffer sized up front (`jobs/codec.rs`): test
+  `a_mesh_job_is_written_into_one_buffer_sized_up_front`, red on the old writer (535 KB in a 1 MB doubling buffer),
+  green; `encode_job` left the trace's top. (3) A chunk mesh over the frame's upload budget is written a slice a frame
+  into room reserved in the arena (`render/staged.rs`, pumped before each draw; the old mesh drawn until it is whole;
+  `upload.staged_bytes` ≤ 512 KiB a frame on the phone), and no further mesh is handed over meanwhile
+  (`Scene::uploads_waiting`): tests `staged` (no frame over the budget, a chunk shown only once whole, a replaced one
+  dropped) and `game_local` `no_mesh_is_handed_over_while_the_scene_is_still_writing_one`, red with the wait ignored
+  (288 meshes handed over), green. The sky volume is still copied on the main thread (`padded_box` 0.12 s, the copy
+  itself); sending the worker the chunk and its neighbours instead would need the workers to hold the streamed world.
+  **Not done:** the flood light off the main thread (`LightMap::load`, now the largest main-thread cost: `run_from`
+  0.26–0.40 s self, and `mesh_dirty`'s worst frames at 6×, 18–21 ms, are one chunk's light). It is a larger change than
+  this round's box: the light map is the main thread's state (edits relight it at once, meshes read its padded light,
+  creatures and players their flood light), so a worker would have to hold the streamed voxels and the light map
+  and answer each mesh start's padded light; a smaller step is lighting a chunk across frames (the BFS resumable
+  under the stream budget). The minimap's tiles were not touched: they are under their own 2 ms budget
+  (`shared/ui/map.json` `revealed.budgetMs`; `fillReveal` 0.1–0.2 s in the traces). Then a real iPhone check.
+- **Round 5 (branch `claude/fps-moving-3`): a chunk's flood light across frames.** `LightMap::begin_load` and `resume`
+  run the one-shot load's own steps (each channel's removal queue, the cells lit back, the brightest-first spread)
+  a slice at a time, the search's state kept between frames; the streamer resumes it `LIGHT_SLICE_CELLS` (1024) cells
+  between looks at the clock while the next slice fits its light budget, and the chunk stays unlit for meshing (its
+  own and its neighbours') until it is done, so no mesh starts on half its light. Any other light update finishes it
+  first, and so does a change to a chunk the light holds in its column or the ones beside it
+  (`VoxelWorld::settle_light_near`); the chunks arriving all round while it lights, not held until their own light,
+  leave it be (finishing it at each arrival put 14–19 ms into `jobs.apply` at 6× in the first try). Tests (both
+  faces): the light lit 512 cells a slice ends as the one-shot light, every slice within 7 × its cells' writes
+  (red with the budget ignored: one slice); an edit mid-light gives the load-then-edit light and matches a relight
+  from scratch, and a new chunk arriving beside it leaves it part way (red when any nearby arrival finished it);
+  the streamer's `a_big_chunks_light_runs_across_frames_within_their_budget_and_meshes_once_lit` (a 30 ms light at
+  an 8 ms budget: red at once, frame 0 spent 30 ms; green, at most 4.8 ms + one slice a frame, meshed only once lit).
+  `phone-moving` at CPU 4× and 6× (Low, default world, one run each, against main after round 4):
+
+  | Route | CPU | Build | interval p50 / p95 / p99 | dropped (> 20 ms) | frame.cpu p50 / p95 / p99 | frames > 16.7 ms CPU | mesh_dirty p95 / max | jobs.apply p95 / max |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | main (round 4) | 16.7 / 18.5 / 18.7 | 0 of 478 | 3.9 / 13.4 / 17.5 | 6 | 7.9 / 13.3 | 2.2 / 3.7 |
+  | walk | 4x | this branch | 16.7 / 18.5 / 18.7 | 0 of 479 | 3.9 / 11.3 / 12.1 | 1 | 6.8 / 8.5 | 2.1 / 4.4 |
+  | sprint | 4x | main (round 4) | 16.7 / 18.5 / 18.6 | 0 of 479 | 3.5 / 9.1 / 15.7 | 4 | 4.0 / 12.7 | 2.3 / 4.5 |
+  | sprint | 4x | this branch | 16.7 / 18.4 / 18.7 | 0 of 479 | 3.4 / 10.1 / 12.0 | 0 | 4.6 / 8.4 | 2.3 / 4.4 |
+  | fly | 4x | main (round 4) | 16.7 / 18.3 / 18.6 | 5 of 609 | 3.7 / 12.4 / 17.8 | 12 | 5.8 / 13.5 | 2.4 / 5.3 |
+  | fly | 4x | this branch | 16.7 / 18.3 / 18.6 | 2 of 613 | 3.6 / 11.7 / 12.6 | 1 | 6.0 / 8.1 | 2.3 / 5.4 |
+  | walk | 6x | main (round 4) | 16.7 / 18.7 / 33.3 | 17 of 461 | 5.7 / 19.9 / 25.4 | 29 | 10.8 / 17.9 | 3.4 / 6.4 |
+  | walk | 6x | this branch | 16.7 / 18.6 / 32.0 | 8 of 471 | 5.9 / 13.2 / 17.8 | 6 | 7.1 / 8.4 | 3.3 / 5.8 |
+  | sprint | 6x | main (round 4) | 16.7 / 18.5 / 32.8 | 11 of 470 | 5.2 / 13.0 / 23.1 | 12 | 5.0 / 18.6 | 3.4 / 7.3 |
+  | sprint | 6x | this branch | 16.7 / 18.6 / 18.7 | 4 of 478 | 5.2 / 12.9 / 14.8 | 2 | 6.4 / 8.8 | 3.4 / 7.7 |
+  | fly | 6x | main (round 4) | 16.7 / 33.2 / 48.8 | 49 of 551 | 5.5 / 21.1 / 28.1 | 36 | 9.3 / 21.2 | 3.4 / 8.3 |
+  | fly | 6x | this branch | 16.7 / 32.9 / 34.5 | 43 of 562 | 5.6 / 15.0 / 23.9 | 16 | 6.7 / 8.4 | 3.5 / 8.2 |
+
+  **The 6× flight's worst `mesh_dirty` is 8.4 ms (21.2 before; the target was under 16.7)**, every route's at 4× and 6×
+  under 9.1 ms. Frames over 16.7 ms of CPU at 6×: 77 → 24 over the three routes; dropped frames at 6×: 77 → 55. The
+  6× flight's worst frames now are `ticks` (13–20 ms: the prediction's ticks, the terrain collision loading while
+  flying), not the loading: the next cut there. Still open: a real iPhone check while moving.
+- **Round 6 (branch `claude/fps-moving-4`): the prediction's ticks.** A tick of 13–20 ms in the 6× flight is one
+  tick (`ticks.count` 1), not a catch-up of several, and its time is the terrain collider (`Players::tick_terrain`):
+  natively, on a streamed world like the client's, a tick that reaches new chunks takes up to 1.4 ms building them
+  (`ensure_box`) and up to 1.6 ms putting cells in the voxel collider (`catch_up`: the cells in the player's reach,
+  then `COLLISION_CELLS_PER_TICK`, 8192, more of new chunks a tick), ~8–10 ms each at 6×; Rapier's step is
+  ~0.4 ms a tick. **Cut:** the prediction's tick puts fewer of those background cells in on a phone
+  (`Players::set_collision_cells_per_tick`, data: `shared/render/streaming.json` `collisionCellsPerTick`, desktop the
+  server's 8192, phone 1024); the cells within the player's reach still go in at once whatever the budget, so the
+  player moves the same, and the server is unchanged. Test `dwell-physics` `collision_budget`
+  `a_smaller_collision_budget_bounds_a_ticks_cells_and_moves_the_player_the_same`: red with the budget ignored (a
+  tick put 8437 cells in), green (≤ 1024 + the reach's), and the run's feet equal the default budget's on every one
+  of 600 ticks across a chunk border; `streaming` pins desktop at the server's budget and the phone's below it. The
+  controller suites pass on both faces (`cargo test -p dwell-physics`, 263 tests, and again with `DWELL_FACE=b`). Main's #642 (the
+  `PinchGrip` contact hook, contact recycling off for the player's pairs) measured with it (the last column): no
+  cost on the tick here, mean and p95 within the runs' noise. `phone-moving`, ms:
+
+  | Route | CPU | main (round 5) ticks mean / p95 / max | this branch, before #642 | this branch with #642 | frames > 16.7 ms CPU (main → branch) | dropped (> 20 ms) (main → branch) |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | walk | 4x | 0.50 / 1.2 / 11.7 | 0.54 / 1.5 / 8.2 | 0.42 / 1.3 / 8.3 | 1 → 1 | 0 → 0 |
+  | sprint | 4x | 0.34 / 1.0 / 11.1 | 0.45 / 1.4 / 7.9 | 0.41 / 1.3 / 8.2 | 0 → 0 | 0 → 0 |
+  | fly | 4x | 0.62 / 1.7 / 14.1 | 0.73 / 2.0 / 11.2 | 0.67 / 2.0 / 10.8 | 1 → 1 | 2 → 2 |
+  | walk | 6x | 0.83 / 1.7 / 17.5 | 0.80 / 1.9 / 11.6 | 0.68 / 1.9 / 12.6 | 6 → 2 | 8 → 5 |
+  | sprint | 6x | 0.61 / 1.6 / 15.8 | 0.72 / 2.2 / 11.7 | 0.62 / 1.7 / 10.9 | 2 → 2 | 4 → 8 |
+  | fly | 6x | 1.05 / 2.5 / 19.8 | 1.25 / 3.9 / 16.4 | 1.12 / 3.3 / 18.8 | 16 → 8 | 43 → 37 |
+
+  The 6× ticks' worst: walk 17.5 → 12.6, sprint 15.8 → 10.9, fly 19.8 → 18.8 (one frame; the flight's p95 2.5 → 3.3,
+  the cells within reach now going in as the player reaches them). What is left in the worst ticks is building a
+  newly reached chunk's collision (`ensure_box`, ~1.4 ms natively): building the chunks ahead of a moving player
+  between frames was tried and parked (on the test's generated world the builds ahead read neighbours that then
+  changed, and their rebuilds landed in the ticks; it needs a streamed-world test). Still open: that, and a real
+  iPhone check while moving.
+- **Round 7 (branch `claude/collision-ahead`): a newly reached chunk's collision built ahead.** The chunks a
+  moving player (≥ 1 m/s) is heading into are built before its reach gets there, a few a tick
+  (`TerrainCollision::ahead_chunks` / `ensure_ahead`; data: `shared/render/streaming.json` `collisionAhead`, 1 s of
+  travel, ≤ 48 m, the reach + 1 m; 2 chunks a tick on the server and a desktop, 1 on a phone), and their cells go in
+  first from the background budget. Round 6's parked problem is handled: a chunk is built ahead only once the world
+  holds (or generates) the 26 chunks around it, so a streamed neighbour's arrival never rebuilds it. A standing
+  player builds nothing ahead and its cells go in in the old order (the explosives debris test, chaotic, settled in
+  17.95 s instead of 9.75 s while a standing player's chunks were reordered; now the same as main, and the golden
+  five-player trace unchanged). Tests `dwell-physics` `tests/collision_ahead.rs` (both faces, `DWELL_FACE=b`, and
+  far out): sprinting and flying (levels 4 and 6, the phone's 1 a tick) across chunk borders build no chunk on the
+  tick that reaches it and never stand the player in an unbuilt chunk, red without the look-ahead (each test checks
+  its own run without it reaches chunks unbuilt); the budget holds with many chunks ahead; on a streamed world (the
+  client's) every build is the look-ahead's, one a tick, none a rebuild (red with it off: tick 4 built when reached);
+  the feet equal the run without it on every tick. Measured natively (`measure_the_tick_cost_with_and_without_the_look_ahead`,
+  ignored: 600 ticks over the seed-0 terrain, the path pre-generated; `Players::tick_terrain` ms, a cloud container):
+
+  | Run | cells/tick | ahead/tick | reached unbuilt | built ahead | mean | p99 | max | ticks > 2 ms |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | sprint | 8192 | 0 → 2 | 10 → 0 | 0 → 20 | 0.044 → 0.090 | 1.11 → 1.39 | 2.93 → 1.98 | 2 → 0 |
+  | fly 6 | 8192 | 0 → 2 | 62 → 0 | 0 → 66 | 0.172 → 0.192 | 2.38 → 1.84 | 3.35 → 2.67 | 8 → 4 |
+  | fly 6 | 1024 (phone) | 0 → 1 | 62 → 0 | 0 → 66 | 0.145 → 0.152 | 2.36 → 0.92 | 3.25 → 1.49 | 7 → 0 |
+  | fly 8 | 1024 (phone) | 0 → 1 | 94 → 3 | 0 → 95 | 0.120 → 0.138 | 1.83 → 1.19 | 3.21 → 1.60 | 4 → 0 |
+
+  The work is the same or a little more (a chunk beside the path is built too), spread: the phone's worst terrain
+  tick about halves, none over 2 ms. At fly level 8 one a tick lets 3 of ~95 chunks be reached first. Not measured
+  in the browser (no GPU in the cloud session): the `phone-moving` bench at CPU 6× before and after, and a real
+  iPhone check while moving, are left.
+
+### 71. "Starting the graphics" takes a long time with no elapsed time shown (fixed after 0.52.101)
+
+Owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing elapsed time." The stage is
+painted before its work (`client/src/ui/startStages.ts`), but `Client.create` then makes the renderer in one
+long main-thread task, so the screen can't repaint and the stage's timer stands still until it is done.
+
+Measured 2026-11-11 (bench `idle-spawn`, M-series Mac, Chrome's Metal shader cache emptied for a cold
+start; the bench now prints the start's frame gaps, long tasks and `dwell:create:*` marks): the
+premise above is wrong. `create` holds the main thread ~40 ms (the atlas 25, the characters 8, the
+rest ≤ 2 ms each; no long task in the stage). Cold, the stage is 1.8 s, of which the device request
+is 1.5–1.75 s (warm 7–125 ms), and the page's frames stutter (gaps of 170–800 ms). Then the GPU
+process compiles the renderer's pipelines for **9.0 s** with the page painting **no frame at all**
+(one 8.9–9.0 s frame gap, warm: none over 400 ms), so the screen stands on its last paint, "Starting
+the graphics… 1.8 s"; the join waits on the compile (5.2–11.4 s cold vs 0.1–0.2 s warm). First step
+(this change): the compile is its own stage, `shaders` "Preparing the shaders", from `create`'s end
+to `Client.gpuSettled` (a queue fence), beside the world's stages, so the timeline and the frozen
+screen name it (test `startStages.test.ts` "shows the GPU's compile after create as its own stage",
+red then green).
+
+**Fix:** the renderer makes its pipelines lazily (`render/pipeline.rs`: `Lazy`, built on first use;
+36 of the 38 that `with_samples` made, the water tiles' two left). While the loading screen is up the
+frame's draw waits for `Renderer::warm_pipelines`, which builds one pipeline a frame and the next only
+once the GPU has done the last (a queue fence), so the GPU process compiles them one at a time with
+paints between; a tier that is off (shadows, distant shadows, clouds, light shafts) is not warmed and
+its pipelines are made when it is switched on. Cold, after: the longest no-paint gap after `create`
+is **683 ms** (before 9.0 s); the longest of the whole start 815 ms, in the device request; playing
+**14.1 s** (before 15.1–15.6 s); warm unchanged (7.45 s, no gap over 160 ms). Tests: `render::tests::
+a_renderer_makes_its_pipelines_lazily_and_warms_them_in_batches` (38 made up front before: red, then
+green with 2) and `a_tier_switched_off_is_not_warmed_and_is_made_on_first_use`. Left: the device
+request itself (~1.7 s cold, gaps to 815 ms), Chrome's.
 
 ### 68. LOD holes and tall walls near a 4400 m summit (fixed after 0.52.92)
 
@@ -389,6 +2456,45 @@ and fit only ~18 s later; it now steps by the overshoot, ×√(in use / budget) 
 the page can read; the F3 memory line is the game's own count); the starter's grids could shrink further
 (f16 grids, the drainage's height copy of the map), and the server and the world workers still hold one
 copy each.
+
+**The grids shrunk (pending release, 2026-11-11).** Natively measured, seed 7, both faces of a
+process (`tests/starter_memory.rs`, `BiomeSet::grid_bytes`; each face's map 1002 × 1002 cells, 79 % sea):
+
+| Grid (one face) | Before | Now | How |
+| --- | --- | --- | --- |
+| Biome field coast | 3.83 MB | 0.98 MB | stored by its exceptions: 0 over the sea |
+| Biome field fresh water | 3.83 MB | 3.83 MB | dense f32 (no common value) |
+| Biome field rain | 3.83 MB | 0.98 MB | by its exceptions: the sea's flat rate |
+| Drainage distance | 3.83 MB | 0.80 MB | by its exceptions: 0 on a line (the sea) |
+| Drainage line height | 3.83 MB | — | read from the world map at the line's cell |
+| Drainage accumulation | 3.83 MB | 0.60 MB | per cell, by its exceptions (1); read at the line's cell |
+| Drainage source | 3.83 MB | 0.80 MB | by its exceptions: a line is its own source |
+| **Both faces (a process)** | **53.6 MB** | **15.9 MB** | test bar 20 MB (red at 53.6) |
+
+`grid::SparseGrid` keeps a default and the cells whose bits differ from it, so every read is the dense
+grid's value exactly: the starter's terrain is pinned bit for bit on both faces
+(`the_starter_worlds_terrain_is_unchanged`: the grids' reads, columns every 128 m, chunks and LOD
+sections; recorded before the change) and the build's goldens are unchanged. Build scratch (the
+drainage's sort order and sources, the biome field's wet and sea masks) is dropped as soon as it is
+used, and face A's set now holds ~8 MB while face B's is built, so a WASM memory's high-water mark falls
+too. Not done: f16 or quantized grids (they would change the terrain, a new compatibility line); lazy
+grids per process (the server, the chunk worker and the LOD worker each generate the biome surface and
+the erosion, so each reads every grid). Expected ~37 MB less in each of the three processes (~110 MB
+of the 850 MB); the page's numbers are to be re-measured on the bench (`memory-phone --touch`).
+
+**Re-measured, 0.53.2 (2026-11-11)**, the same method (`memory-phone --touch --compare` with a `{"worldgen":
+"test:starter"}` config, the M1's GPU; MB at the end of loading, 30 s later in brackets):
+
+| World | Total at load | Server | World workers | Core | GPU meshes |
+| --- | --- | --- | --- | --- | --- |
+| Default, 0.53.2 | 662 MB (583) | 60 | 77 + 77 (+ 20 + 22) | 96 | 285 (206) |
+| Starter, 0.53.2 | **661 MB** (588) | 83 | 83 + 83 (+ 16 + 15) | 99 | 258 (184) |
+
+The starter now reads the same as the default world (850 → 661 MB at load): the grids' cut took ~31 MB
+from the server and each big world worker, as expected. "One world worker on phones" is not needed for
+the memory: nothing in the starter dominates any more; the GPU meshes (the LOD's cache and the near
+chunks) are the largest share in both worlds, then the two big world workers. (The two smaller workers,
+~20 MB each, are the second pool's.) Still not measured on the iPhone itself.
 
 ### 67. The minimap fragmented, black-edged and coarse when moving fast (fixed pending release 0.52.10)
 
@@ -489,7 +2595,6 @@ colours moved to `COLOR_0`, and `shared/models/blender_import.py` removes a mesh
 before adding ours. Test: `every_model_is_coloured_not_plain_white` (dwell-models; red on the old
 GLBs: "kitty: one colour only").
 
-
 ### 59. On a slow device the loading screen waited its whole 20 s timeout (fixed in 0.51.8)
 
 Found 2026-11-10 from CI: `e2e/join.spec.ts:55` and `:113` ran into their 30 s test timeout on most main runs
@@ -535,7 +2640,6 @@ Tests: `a_finger_whose_lift_never_arrived_does_not_block_the_next`, `a_tap_after
 `a_held_build_whose_lift_never_arrived_ends_when_a_new_finger_comes`,
 `a_new_stick_finger_takes_over_a_lost_one` (dwell-game touch; red: the second finger was ignored).
 Check on the device: if it still happens, lifting every finger once should bring touch back.
-
 
 ### 55. Walking animations played while standing still on a moving body (fixed in 0.50.65)
 

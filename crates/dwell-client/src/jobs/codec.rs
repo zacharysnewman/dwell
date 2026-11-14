@@ -27,20 +27,25 @@ impl W {
     fn f64(&mut self, v: f64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn u16s(&mut self, v: &[u16]) {
+    /// A length, then each value's `N` little-endian bytes, written into space made at once
+    /// (BUGS.md #72: a push per value, with the buffer doubling under a mesh job's 248 KB sky
+    /// volume, was `encode_job`'s 0.13–0.27 s of the main thread in a phone flight).
+    fn values<T: Copy, const N: usize>(&mut self, v: &[T], le: impl Fn(T) -> [u8; N]) {
         self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        let start = self.0.len();
+        self.0.resize(start + N * v.len(), 0);
+        for (d, &x) in self.0[start..].chunks_exact_mut(N).zip(v) {
+            d.copy_from_slice(&le(x));
+        }
+    }
+    fn u16s(&mut self, v: &[u16]) {
+        self.values(v, u16::to_le_bytes);
     }
     fn u32s(&mut self, v: &[u32]) {
-        self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        self.values(v, u32::to_le_bytes);
     }
     fn f32s(&mut self, v: &[f32]) {
-        self.u32(v.len() as u32);
-        v.iter()
-            .for_each(|x| self.0.extend_from_slice(&x.to_le_bytes()));
+        self.values(v, f32::to_le_bytes);
     }
     fn bytes(&mut self, v: &[u8]) {
         self.u32(v.len() as u32);
@@ -78,6 +83,7 @@ impl W {
         self.f32s(&m.bare);
         self.f32s(&m.light);
         self.f32s(&m.flood);
+        self.u32s(&m.cracks);
         self.u32s(&m.indices);
     }
     fn flat(&mut self, m: &FlatMesh) {
@@ -198,6 +204,7 @@ impl R<'_> {
             bare: self.f32s()?,
             light: self.f32s()?,
             flood: self.f32s()?,
+            cracks: self.u32s()?,
             indices: self.u32s()?,
         })
     }
@@ -238,10 +245,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             step,
             n,
             face,
+            layer,
         } => {
             w.u8(3);
             [*x0, *z0, *step, *n].into_iter().for_each(|v| w.i32(v));
             w.u8(*face);
+            w.u8(*layer);
         }
         Job::MeshChunk {
             padded,
@@ -253,10 +262,20 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             ground,
             water_tops,
             cards,
+            plants,
         } => {
             w.u8(4);
+            // The message's size up front: one allocation, not a doubling buffer.
+            let generated = ground
+                .as_ref()
+                .map_or(0, |(_, gone, g)| 12 * gone.len() + 2 * g.len());
+            let damage_bytes: usize = damage.len() * 64;
+            w.0.reserve(
+                64 + 2 * padded.len() + light.len() + cuts.len() * 128 + generated + damage_bytes,
+            );
             // Bit 0 the mirror, bit 1 no water tops, bit 2 no leaf cards.
             w.u8(u8::from(*mirror) | if *water_tops { 0 } else { 2 } | if *cards { 0 } else { 4 });
+            w.u8(*plants);
             origin.iter().for_each(|v| w.i32(*v));
             w.u16s(padded);
             w.bytes(light);
@@ -270,6 +289,10 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                     .copied()
                     .collect();
                 w.f32s(&f);
+                // Its bites (WORK_QUEUE item 26), as the wire writes them.
+                let mut bites = Vec::new();
+                cut.write_bites(&mut dwell_protocol::bytes::ByteWriter::new(&mut bites));
+                w.bytes(&bites);
             }
             match ground {
                 None => w.u8(0),
@@ -285,7 +308,9 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             for (c, d) in damage {
                 c.iter().for_each(|v| w.i32(*v));
                 let mut b = Vec::new();
-                d.write(&mut dwell_protocol::bytes::ByteWriter::new(&mut b));
+                let mut bw = dwell_protocol::bytes::ByteWriter::new(&mut b);
+                d.write(&mut bw);
+                d.write_chunks(&mut bw);
                 w.bytes(&b);
             }
         }
@@ -295,9 +320,11 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             water_drop,
             mirror,
             tints,
+            trees,
         } => {
             w.u8(5);
-            w.u8(u8::from(*mirror));
+            // Bit 0 the mirror, bit 1 no trees (Graphics → Far trees).
+            w.u8(u8::from(*mirror) | if *trees { 0 } else { 2 });
             w.f64(*water_drop);
             w.u16s(cells);
             w.opt_f32s(surface);
@@ -306,6 +333,38 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
         Job::Registry { payload } => {
             w.u8(6);
             w.bytes(payload);
+        }
+        Job::CloudNoise {
+            detail,
+            size,
+            z0,
+            z1,
+        } => {
+            w.u8(8);
+            w.u8(u8::from(*detail));
+            [*size, *z0, *z1].into_iter().for_each(|v| w.u32(v));
+        }
+        Job::ImpostorBake { layer, px } => {
+            w.u8(9);
+            w.u32(*layer);
+            w.u32(*px);
+        }
+        Job::FarTrees { face, x0, z0, size } => {
+            w.u8(10);
+            w.u8(*face);
+            [*x0, *z0, *size].into_iter().for_each(|v| w.i32(v));
+        }
+        Job::GridLod { grid, coord } => {
+            w.u8(11);
+            w.u8(*grid);
+            [coord.level, coord.i, coord.j, coord.k]
+                .into_iter()
+                .for_each(|v| w.i32(v));
+        }
+        Job::GridLodBounds { grid, level, i, k } => {
+            w.u8(12);
+            w.u8(*grid);
+            [*level, *i, *k].into_iter().for_each(|v| w.i32(v));
         }
         Job::LodMap {
             face,
@@ -352,10 +411,12 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             step: r.i32()?,
             n: r.i32()?,
             face: r.u8()?,
+            layer: r.u8()?,
         },
         4 => {
             let bits = r.u8()?;
             let (mirror, water_tops, cards) = (bits & 1 != 0, bits & 2 == 0, bits & 4 == 0);
+            let plants = r.u8()?;
             let origin = [r.i32()?, r.i32()?, r.i32()?];
             let padded = r.u16s()?;
             let light = r.bytes()?;
@@ -371,6 +432,12 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 cut.notch.copy_from_slice(&f[..4]);
                 for (k, v) in cut.kerf.iter_mut().flatten().enumerate() {
                     *v = f[4 + k];
+                }
+                let bites = r.bytes()?;
+                let mut br = dwell_protocol::bytes::ByteReader::new(&bites);
+                cut.read_bites(&mut br);
+                if !(br.ok() && br.at_end()) {
+                    return Err(DecodeError);
                 }
                 cuts.push((c, cut));
             }
@@ -393,7 +460,8 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 let c = [r.i32()?, r.i32()?, r.i32()?];
                 let b = r.bytes()?;
                 let mut br = dwell_protocol::bytes::ByteReader::new(&b);
-                let d = dwell_protocol::damage::DamageView::read(&mut br);
+                let mut d = dwell_protocol::damage::DamageView::read(&mut br);
+                d.read_chunks(&mut br);
                 if !(br.ok() && br.at_end()) {
                     return Err(DecodeError);
                 }
@@ -409,13 +477,16 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 ground,
                 water_tops,
                 cards,
+                plants,
             }
         }
         5 => {
-            let mirror = r.u8()? != 0;
+            let bits = r.u8()?;
+            let (mirror, trees) = (bits & 1 != 0, bits & 2 == 0);
             let water_drop = r.f64()?;
             Job::MeshSection {
                 mirror,
+                trees,
                 water_drop,
                 cells: r.u16s()?,
                 surface: r.opt_f32s()?,
@@ -433,6 +504,32 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             z0: r.i32()?,
             w: r.i32()?,
             h: r.i32()?,
+        },
+        8 => Job::CloudNoise {
+            detail: r.u8()? == 1,
+            size: r.u32()?,
+            z0: r.u32()?,
+            z1: r.u32()?,
+        },
+        9 => Job::ImpostorBake {
+            layer: r.u32()?,
+            px: r.u32()?,
+        },
+        10 => Job::FarTrees {
+            face: r.u8()?,
+            x0: r.i32()?,
+            z0: r.i32()?,
+            size: r.i32()?,
+        },
+        11 => Job::GridLod {
+            grid: r.u8()?,
+            coord: LodCoord::new(r.i32()?, r.i32()?, r.i32()?, r.i32()?),
+        },
+        12 => Job::GridLodBounds {
+            grid: r.u8()?,
+            level: r.i32()?,
+            i: r.i32()?,
+            k: r.i32()?,
         },
         _ => return Err(DecodeError),
     };
@@ -513,6 +610,34 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
                     w.bytes(b);
                 }
                 None => w.u8(0),
+            }
+        }
+        Output::CloudNoise(b) => {
+            w.u8(9);
+            w.bytes(b);
+        }
+        Output::Impostor {
+            centre_y,
+            radius,
+            albedo,
+            normal_depth,
+        } => {
+            w.u8(10);
+            w.u32(centre_y.to_bits());
+            w.u32(radius.to_bits());
+            w.bytes(albedo);
+            w.bytes(normal_depth);
+        }
+        Output::FarTrees(trees) => {
+            w.u8(11);
+            w.u32(trees.len() as u32);
+            for t in trees {
+                t.anchor.into_iter().for_each(|v| w.i32(v));
+                w.u32(u32::from(t.species));
+                w.u32(t.seed);
+                w.u32(t.stage);
+                t.stem.into_iter().for_each(|v| w.i32(v));
+                w.u8(t.stem_cells);
             }
         }
     }
@@ -596,6 +721,28 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         6 => Output::Failed(String::from_utf8_lossy(&r.bytes()?).into_owned()),
         7 => Output::Done,
         8 => Output::LodMap(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
+        9 => Output::CloudNoise(r.bytes()?),
+        10 => Output::Impostor {
+            centre_y: f32::from_bits(r.u32()?),
+            radius: f32::from_bits(r.u32()?),
+            albedo: r.bytes()?,
+            normal_depth: r.bytes()?,
+        },
+        11 => {
+            let n = r.u32()? as usize;
+            let mut trees = Vec::with_capacity(n.min(1 << 16));
+            for _ in 0..n {
+                trees.push(dwell_worldgen::impostor::FarTree {
+                    anchor: [r.i32()?, r.i32()?, r.i32()?],
+                    species: r.u32()? as u16,
+                    seed: r.u32()?,
+                    stage: r.u32()?,
+                    stem: [r.i32()?, r.i32()?, r.i32()?],
+                    stem_cells: r.u8()?,
+                });
+            }
+            Output::FarTrees(trees)
+        }
         _ => return Err(DecodeError),
     };
     Ok((id, out))
@@ -606,6 +753,40 @@ mod tests {
     use super::super::Runner;
     use super::*;
     use dwell_world::GENERATOR_TERRAIN;
+
+    #[test]
+    fn a_mesh_job_is_written_into_one_buffer_sized_up_front() {
+        // BUGS.md #72: the sky volume (44 × 64 × 44 cells, 248 KB) pushed a value at a time into a
+        // doubling buffer made `encode_job` a tenth of the main thread's loading work on a phone.
+        let n = dwell_world::SKY_VOLUME;
+        let job = Job::MeshChunk {
+            padded: (0..n).map(|i| i as u16).collect(),
+            light: vec![0xf3; dwell_mesh::PADDED_VOLUME],
+            mirror: false,
+            origin: [0, 0, 0],
+            cuts: Vec::new(),
+            damage: Vec::new(),
+            ground: Some((7, vec![[1, 2, 3]], vec![5; n])),
+            water_tops: true,
+            cards: true,
+            plants: 100,
+        };
+        let out = encode_job(9, &job);
+        assert!(
+            out.capacity() - out.len() <= 4096,
+            "{} B written into a {} B buffer: it grew as it went",
+            out.len(),
+            out.capacity()
+        );
+        let (id, back) = decode_job(&out).expect("decodes");
+        assert_eq!(id, 9);
+        let Job::MeshChunk { padded, ground, .. } = back else {
+            panic!("a mesh job");
+        };
+        assert_eq!(padded.len(), n);
+        assert_eq!(padded[1234], 1234);
+        assert_eq!(ground.map(|g| g.2.len()), Some(n));
+    }
 
     #[test]
     fn every_job_and_result_round_trips() {
@@ -628,6 +809,7 @@ mod tests {
                 step: 8,
                 n: 4,
                 face: 1,
+                layer: 2,
             },
             Job::Registry {
                 payload: dwell_blocks::sync::extension_payload(),
@@ -641,6 +823,29 @@ mod tests {
                 w: 5,
                 h: 2,
             },
+            Job::CloudNoise {
+                detail: true,
+                size: 16,
+                z0: 3,
+                z1: 9,
+            },
+            Job::ImpostorBake { layer: 17, px: 64 },
+            Job::FarTrees {
+                face: 1,
+                x0: -128,
+                z0: 64,
+                size: 64,
+            },
+            Job::GridLod {
+                grid: 1,
+                coord: dwell_lod::grid::section_at(5, [100.0, 0.0, -40.0]),
+            },
+            Job::GridLodBounds {
+                grid: 2,
+                level: 6,
+                i: 1,
+                k: -3,
+            },
         ];
         let mut jobs = jobs.to_vec();
         jobs.push(Job::MeshChunk {
@@ -652,21 +857,23 @@ mod tests {
                 let mut c = dwell_protocol::chopping::Cut::default();
                 c.notch[2] = 0.25;
                 c.kerf[2][1] = 0.04;
+                // Its bites go to the worker too (WORK_QUEUE item 26).
+                let look = dwell_protocol::chopping::BITE_LOOK;
+                c.bite(1, 2, 1, 0.3, &look);
+                c.bite(1, 2, 1, 0.3, &look);
                 c
             })],
             damage: vec![(
                 [4, 5, 6],
                 dwell_protocol::damage::DamageView {
                     fraction: 140,
-                    marks: vec![dwell_protocol::damage::HitMark {
-                        face: 2,
-                        point: [10, 255, 0],
-                    }],
+                    marks: vec![dwell_protocol::damage::HitMark::at(2, [10, 255, 0])],
                 },
             )],
             ground: Some((0x1234_5678_9abc, vec![[1, 2, 3], [4, 5, 6]], vec![3, 4])),
             water_tops: false,
             cards: false,
+            plants: 37,
         });
         jobs.push(Job::MeshSection {
             cells: vec![1; dwell_world::lod::VOLUME],
@@ -683,6 +890,7 @@ mod tests {
                 ),
                 (40, Tint::NONE),
             ],
+            trees: false,
         });
         for (n, job) in jobs.into_iter().enumerate() {
             let id = 1000 + n as u32;
@@ -710,6 +918,33 @@ mod tests {
             decode_output(&encode_output(3, &failed)).unwrap(),
             (3, failed)
         );
+        let noise = Output::CloudNoise(vec![1, 2, 3, 250]);
+        assert_eq!(
+            decode_output(&encode_output(5, &noise)).unwrap(),
+            (5, noise)
+        );
+        let baked = Output::Impostor {
+            centre_y: 6.25,
+            radius: 7.5,
+            albedo: vec![9, 8, 7, 255],
+            normal_depth: vec![128, 255, 128, 3],
+        };
+        assert_eq!(
+            decode_output(&encode_output(6, &baked)).unwrap(),
+            (6, baked)
+        );
+        let trees = Output::FarTrees(vec![dwell_worldgen::impostor::FarTree {
+            anchor: [-5, 130, 77],
+            species: 2,
+            seed: 0xdead_beef,
+            stage: 6,
+            stem: [-6, 130, 77],
+            stem_cells: 9,
+        }]);
+        assert_eq!(
+            decode_output(&encode_output(7, &trees)).unwrap(),
+            (7, trees)
+        );
     }
 
     #[test]
@@ -726,6 +961,7 @@ mod tests {
                 ground: Some((7, vec![[1, 2, 3]], vec![9])),
                 water_tops: true,
                 cards: true,
+                plants: 100,
             },
         );
         for n in 0..bytes.len() {

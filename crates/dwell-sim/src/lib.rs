@@ -16,6 +16,7 @@ pub mod lod_propagation;
 pub mod loose_items;
 pub mod server;
 pub mod sky_columns;
+pub mod travel;
 pub mod water;
 pub mod watergrid;
 pub mod worldgen_pool;

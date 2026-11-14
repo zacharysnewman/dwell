@@ -13,7 +13,7 @@ use dwell_look::normal_tint;
 use dwell_world::tree_tint::Tint;
 use dwell_world::{CELL_H, normal_to_m};
 
-use crate::mesher::leaves::{Crowns, Piece, canopy_normal, column_pieces, pieces};
+use crate::mesher::leaves::{Crowns, Piece, canopy_normal, column_pieces, flush_pieces};
 use crate::style::material_style;
 
 const N: i32 = dwell_world::lod::SECTION_CELLS;
@@ -85,9 +85,23 @@ pub(crate) fn tree_cells(
             }
             let n = at(o[0], o[1], o[2]);
             let k = tree_kind(n);
-            // Open beside air, a liquid, or a log (whose corners are open); a leaf, or any other
-            // solid (a full cube at LOD), closes it.
-            n == 0 || k == 2 || (k != 1 && crate::lod_mesher::is_liquid(n))
+            // Open beside air, a liquid, or a log (whose corners are open) that leaves don't lie
+            // flush against; a leaf, or any other solid (a full cube at LOD), closes it.
+            n == 0
+                || (k == 2 && !material_style(n).leaf_flush)
+                || (k != 1 && crate::lod_mesher::is_liquid(n))
+        })
+    };
+    // A leaf's faces lying flat against a log (block data `leafFlush`, WORK_QUEUE item 48): drawn
+    // whole, cut on no edge, as the chunk mesher's leaves.
+    let flush_at = |c: [i32; 3]| -> [bool; 6] {
+        std::array::from_fn(|i| {
+            let o = nb(i, c);
+            if !inside(o) {
+                return false;
+            }
+            let n = at(o[0], o[1], o[2]);
+            tree_kind(n) == 2 && material_style(n).leaf_flush
         })
     };
     for y in 0..N {
@@ -112,7 +126,7 @@ pub(crate) fn tree_cells(
                             [false; 6]
                         }
                     });
-                    pieces(ex, leafy, nb_ex, LEAVES.chamfer)
+                    flush_pieces(ex, flush_at(c), leafy, nb_ex, LEAVES.chamfer)
                 } else {
                     // A log's ends are closed by the log above and below; it is open on its sides
                     // where nothing solid stands, and drawn square where a log joins it.
@@ -184,7 +198,9 @@ fn emit(
 
 #[cfg(test)]
 mod tests {
-    use crate::lod_mesher::{MeshSectionOptions, mesh_section, mesh_section_tinted};
+    use crate::lod_mesher::{
+        MeshSectionOptions, mesh_section, mesh_section_tinted, mesh_section_trees,
+    };
     use crate::mesher::{ChunkFlags, mesh_chunk_flags};
     use dwell_blocks::require;
     use dwell_world::FaceFrame;
@@ -227,6 +243,42 @@ mod tests {
     }
 
     dwell_world::both_faces!(
+        /// WORK_QUEUE item 30: Graphics → Far trees off meshes a section without its trees (no
+        /// log or leaf cell drawn, so a lone tree's section draws nothing); on, as before (red
+        /// before the switch: there was no way to leave them out).
+        fn far_trees_off_leaves_the_sections_trees_out(f: FaceFrame) {
+            let cells = tree();
+            let options = MeshSectionOptions {
+                mirror: f.is_b(),
+                ..Default::default()
+            };
+            let on = mesh_section_trees(&cells, &options, &[], true).expect("cells");
+            let off = mesh_section_trees(&cells, &options, &[], false).expect("cells");
+            assert_eq!(on, mesh_section(&cells, &options).expect("cells"));
+            assert!(!on.opaque.positions.is_empty(), "the tree is drawn");
+            assert!(off.opaque.positions.is_empty(), "no tree drawn");
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// BUGS.md #167 at a distance: the far tree's trunk draws no side toward a leaf, so its
+        /// leaves, flat against it, lie on none of its bark: no two of the section's faces are
+        /// coplanar and overlap (held before the near fix too; a guard).
+        fn a_far_trees_leaves_lie_on_none_of_its_bark(f: FaceFrame) {
+            let options = MeshSectionOptions {
+                mirror: f.is_b(),
+                ..Default::default()
+            };
+            let m = mesh_section_trees(&tree(), &options, &[], true).expect("cells");
+            let tris =
+                crate::coplanar_tests::triangles(&m.opaque.positions, &m.opaque.indices, &[]);
+            assert!(tris.len() > 50, "{}", tris.len());
+            let hit = crate::coplanar_tests::coplanar_overlap(&tris, 1e-4, 1e-6);
+            assert!(hit.is_none(), "coplanar and overlapping: {hit:?}");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// At the LOD's finest cells a tree has the near tree's silhouette (its bounds, within
         /// 0.05 m: the chamfered crown, the octagon trunk), its leaf normals lean out of the crown,
         /// and its trunk has the octagon's diagonal sides, not a square's.
@@ -242,6 +294,7 @@ mod tests {
                 ChunkFlags {
                     water_tops: true,
                     cards: false,
+                    ..ChunkFlags::default()
                 },
             )
             .expect("padded");
@@ -342,6 +395,7 @@ mod tests {
             let flags = ChunkFlags {
                 water_tops: true,
                 cards: true,
+                ..ChunkFlags::default()
             };
             let near = |trees: &[TreeTint]| {
                 mesh_chunk_trees(&cells, &[], f.is_b(), origin, &[], None, flags, &[], trees)

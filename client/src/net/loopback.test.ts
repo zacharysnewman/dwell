@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FromWorker, ToWorker } from '../local/messages';
 import { Channel, TransportKind } from '../protocol/constants.gen';
-import { LOCAL_SESSION, LoopbackTransport, type GuestOutput } from './loopback';
+import { LOCAL_SESSION, LoopbackTransport, type GuestOutput, workerFailure } from './loopback';
 
 /** Stands in for the local-mode worker: records what it's sent, answers on request. */
 class FakeWorker {
@@ -28,6 +28,34 @@ async function started(): Promise<{ worker: FakeWorker; transport: LoopbackTrans
 }
 
 describe('loopback transport', () => {
+  it("says the world's server ran out of memory when its worker dies of it (BUGS.md #91)", async () => {
+    const worker = new FakeWorker();
+    const pending = LoopbackTransport.start(worker as unknown as Worker, {
+      worldSeed: 7,
+      generatorVersion: 8,
+    });
+    worker.onerror?.({ message: 'Uncaught RuntimeError: unreachable' } as ErrorEvent);
+    await expect(pending).rejects.toThrow(/ran out of memory.*unreachable/);
+    expect(workerFailure('')).toBe("The world's server stopped (it stopped without saying why).");
+    expect(workerFailure('boom')).toBe("The world's server stopped (boom).");
+  });
+
+  it('closes the session with why when the worker dies once playing', async () => {
+    const { worker, transport } = await started();
+    const closed: string[] = [];
+    transport.setHandlers({
+      onReliable: () => undefined,
+      onDatagram: () => undefined,
+      onClose: (info) => closed.push(info.message),
+    });
+    worker.onerror?.({
+      message: 'RangeError: WebAssembly.Memory.grow(): Maximum memory size exceeded',
+    } as ErrorEvent);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatch(/ran out of memory/);
+    expect(await transport.save()).toBe(false);
+  });
+
   it('opens the chosen world file', async () => {
     const { worker } = await started();
     expect(worker.sent[0]).toEqual({ t: 'start', worldSeed: 7, generatorVersion: 0, file: 'wabc' });

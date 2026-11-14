@@ -37,7 +37,7 @@ done for the day). `--warm` on a bench run does the same before the run and leav
 Options: `--cpu-throttle N` (Chrome slows the page's CPU N×, CDP `Emulation.setCPUThrottlingRate`: a phone's CPU-side costs such as HUD and DOM work show up), `--touch` (a touch device: the phone's touch controls and HUD), `--swiftshader` (software WebGPU, for machines without a GPU such as CI or a Linux
 sandbox; under Xvfb there), `--unthrottled` (no vsync or frame-rate cap, so frame intervals show
 the frame's real cost rather than 16.7 ms), `--base URL` (a served build; by default it reuses
-`vite preview` on :4173 or starts one; the server's root or the build's `…/dwell/`), `--out DIR`
+`vite preview` on :4173 or starts one; the server's root, the build's `…/dwell/`, or a release behind the launcher, `https://dropkickarcade.com/dwell/v/<version>/` (the published ones: `/dwell/versions.json`), opened at that path: `scripts/scenarios.ts` `buildPage`), `--out DIR`
 (default `bench/out/<timestamp>`, ignored by git), `--file FILE` (another scenarios file, e.g. a
 throwaway one in a scratch directory), `--compare` with `--configs A,B` and `--configs-file FILE`
 (each scenario once per configuration, side by side: below), `--warm` (the warm client, above),
@@ -119,6 +119,7 @@ fields, ranges and names fail with the entry named):
 | `goto {find, radius?, surface?, minDepth?, minArea?, minCurrent?, face?, height?, aim? \| yaw? \| toward? \| lookAt?, turn?, pitch?, move?, scope?, water?, maxS?}` | finds a place by what is there and puts the camera over it (`__dwell.goto`, [Finding places](#finding-places)): e.g. `{ "find": "water", "scope": "world", "water": "sea", "minDepth": 2, "minArea": 1000, "height": 2, "lookAt": "land", "turn": 180, "pitch": -3, "maxS": 120 }` (the nearest sea at least 2 m deep on the world map, the player moved there, the camera 2 m up with its back to the shore) or `{ "find": "water", "minCurrent": 0.1, "aim": "downstream", "pitch": -15 }`. Prints what it found and saves it in `report.json`'s `gotos`; **finding nothing within `maxS` fails the run** with what it looked for and where, so a scenario never measures the wrong scene. `water-views`, `water-shore`, `water-reflections` and `water-river` find their water this way |
 | `edit {action}`, `select {slot}` | break/place at the crosshair; selects a hotbar slot (0 to `hotbarSlots` − 1, shared/inventory/inventory.json: a slot past the hotbar fails the scenario's parse, as it would wrap onto another) |
 | `pick {item}` | creative: puts the item named `item` (`"dwell:torch"`, shared/items/items.json) in the selected slot (`__dwell.pick`), failing the run if it is not a creative item; reach an item by `select` then `pick`, not by its place in the item list |
+| `npcs {count, radius?}` | `count` villagers within `radius` m (3) of the player (`__dwell.spawnNpcs`, a local world); scenario `player-scale` shoots your whole body side on, at its feet and beside a villager (BUGS.md #140) |
 | `region {op, from, to, up?}` | a region edit (the region tools, `__dwell.tool('cornerA@x,y,z')`) of the box between `from` and `to`, offsets in metres from the player's feet (`up` −1 on face B): `fill` with the selected hotbar block or `clear` to air — to build a scene, e.g. `tunnel-a`/`tunnel-b`'s hill and tunnel (DAY_NIGHT.md §11), and `torch-cave-a`/`torch-cave-b`'s tunnel and room at midnight with the torch held and placed (LIGHTS.md; `torch-night-puppets` records 8 torch-bearing stand-ins against none; `torch-scale-a` shoots the 1 m torch beside a stand-in at noon and midnight and the held flame by day and night); `torch-shadows-a`/`torch-shadows-b` place a torch before a stone pillar in the room and hold one too, recording the Torch shadows' cost with `--configs torch-shadows-off,torch-shadows-high`; `felling` builds a tree on the flat world and breaks its trunk, shooting the fall and the settled logs, FELLING.md) |
 | `brush {command}` | drives the brush tool as its keys and clicks do (`__dwell.brush`: `toggle`, `preset:<name>`, `size:<n>`, `apply`, …; [`BRUSHES.md`](./BRUSHES.md)), in every world (creative; the sandbox with a `--compare` config `params: {"world": "sandbox"}`) |
 | `settle {maxS}` | waits until the LOD has had nothing to generate, mesh or ask for, for 1 s |
@@ -126,19 +127,25 @@ fields, ranges and names fail with the entry named):
 | `carry {speed, yaw, s, lift?}` | stands the player on a 4 × 4 log raft `lift` m (default 1) over its feet and moves the raft at `speed` m/s toward `yaw` (degrees, 0 = +Z) for `s` seconds, holding it `lift` m over the ground or water under and just ahead of it, then waits out the ride (`__dwell.carry`, `LocalCore::carry_local_player`; a local world on face A only): a rig for "carried by a moving body" bugs (BUGS.md #54) |
 | `probe {at}` | up to two fixed points (offsets in metres from the feet) the per-frame streaming probe reports: `probe.target` and `probe.control` (how their chunks are drawn, below) and `probe.target_m`, `probe.control_m` (their horizontal distance) |
 | `die {maxS}` | kills the local player (`__dwell.die()`, a local world only), waits for its respawn, then (at most `maxS`) until it is playing again, and saves the respawn → playing seconds with the loading screen's wait in `report.json`'s `respawns` (ARCHITECTURE.md §6.3). `respawn-far` flies 700 m from the spawn and dies there; `--compare --configs raster,respawn-preload-off` runs it with and without the respawn preload (`?respawnPreload=off`) |
-| `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields (face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
+| `herd {kind?, back?}` | the finder (WORK_QUEUE item 46): logs the far herds nearest first (`__dwell.herds`) and stands the player `back` m (40) short of the nearest of `kind` (`deer`, `wolf`; either) on the ground (`goToHerd`, a local world); fails when there is none. Scenario `herds` |
+| `lava {op, args?}` | the local server's lava (`__dwell.lava(op, args)`, VOLCANOES.md §6.3), its JSON printed: `report` its fields, home's and the other grids' (`grid`: `home` or the grid's name, e.g. `dwell:sun`, in that grid's coordinates; face, centre, origin, `molten` columns, deepest m, vents, the world's worldgen, `steamCells` sent so far), `rate` [k] every vent's rate × k (fill a lake in seconds), `vent` [x, y, z, rateM3s, depthM] a lake vent at a world point, `ventNear` [dx, dz, rateM3s, depthM] one off the player's feet; `lava-lake` shoots the starter's summit lake and lava meeting the sea. A scenario's `query` (e.g. `{"worldgen": "test:starter", "seed": "0", "at": "x,y,z"}`) opens a test world at a point for steps of its own |
+| `flyTo {to, face?, marginM?, landM?, maxS?}` | the moon trip ([The moon](#the-moon-__dwellmoon-the-flyto-step); `__dwell.flyTo`, a local world): `to: "moon"` moves the player `marginM` m (2000) outside the moon's capture sphere over its face `face` (`a`, `b`) with the dev move, flies it in for real until captured, down to `landM` m (40) over the moon's ground, measures the fall with flight off (**failing the run unless it is the moon's gravity within 25 %**) and lands; `to: "home"` flies up past the release sphere, back to where the trip started, and waits until the client holds home's chunk under the feet. Each leg at most `maxS` s (120); saved in `report.json`'s `trips`. Scenario `moon-trip` |
+| `flyAtMoon {name, maxS?, run?, shotEveryS?}` | a player's flight to the moon (BUGS.md #155): flight on at the top level, W held as a key (Shift too with `run`), the look turned onto `__dwell.moon().look` every ½ s, until captured or `maxS` (120); prints the distance, closing speed, rise and snaps, shoots `<name>-NN.png` every `shotEveryS` (10) and `<name>-end.png`; fails uncaptured. Scenario `moon-fly` (face B, where the bench clock's moon is up) |
+| `sunLand {face?, river?, maxS?, waitS?}` | `moonLand` onto the sun's dry crust (`__dwell.sunLand`, its stand point away from lava; SUN_WORLD.md); `river: true` onto dry ground beside the river head nearest it instead, where its lava field runs. Scenario `sun-draw` (face A: `sun-a-across`, `sun-a-down`) |
+| `moonLand {face?, maxS?, waitS?}` | teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world), no flight, waits until standing there with its chunk held and `waitS` (3) s more, and prints the frame's draw calls, triangles and mesh bytes (saved in `report.json`'s `trips`). Scenario `moon-draw` |
 | `give {item, count}` | gives the local player `count` of `item` (`__dwell.give`, a local world that uses items, e.g. `?mode=adventure`): `pieces-combine` fills the backpack with pieces to shoot its Combine section |
 | `mark` | forgets the telemetry so far: the next `record` measures from here |
-| `record {name}` | saves everything above under `name` |
+| `record {name, budget?, reportOnly?}` | saves everything above under `name`; a `budget` (`{"<series>.<stat>": max}`, stat `mean`, `p50`, `p95`, `p99` or `max`, e.g. `{"frame.cpu.p95": 18.5}`) fails the scenario when a value is over its maximum or not recorded (`overBudget`). `phone-moving` (walk, sprint, fly 8 s each on an iPhone-sized page; run `--touch --cpu-throttle 4` at Low, BUGS.md #72) bounds `frame.cpu`, `jobs.apply` and `mesh_dirty` while moving; with `reportOnly` true a value over it prints `OVER BUDGET (report only)` and the scenario goes on (`forest-perf`, a target not met yet) |
 | `shot {name, at? \| above?, yaw?, pitch?, face?, quietFrames?, maxS?}` | screenshot; with a placement an exact one ([Screenshots of a place](#screenshots-of-a-place)): `at` [x, y, z] the eye, or `above` [x, z, height] the eye `height` m over the ground there along `face`'s up; the camera placed, the view settled, then shot; saved in `report.json`'s `shots` |
 | `spot {spot, name?}` | a placed `shot` of the saved spot `spot` (`bench/spots.json`), named `name` (default the spot's, `:` → `-`) |
 | `traceStart`, `traceStop {name}` | a Chrome performance trace (timeline, GPU, V8, the CPU profiler) and its profile summary |
 | `time {t, moon?}` | shows the time of day `t` (0–1, 0 midnight) and optionally the moon's phase on this client (`?time=`, `?moon=`; DAY_NIGHT.md) |
 | `timelapse {name, frames, from?, to?, waitS?}` | `frames` screenshots `<name>-00.png`… from time of day `from` (0) toward `to` (1), wrapping past midnight, waiting `waitS` (0.3 s) after each |
 | `lod {on}` | draws the distant terrain (LOD) or not, live (`__dwell.setLod`; the sections still stream, so it comes back at once): what the full-detail chunks alone hold. `?lod=off` (or `?lod=0`) runs with no LOD at all |
-| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls; each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
+| `view {clouds?, speedEffects?, distanceM?, pixelError?, smoke?, flowParticles?, flowRipples?, flowFoam?, waterfalls?, shafts?, bloom?, torchShadows?, cards?, grass?, renderScale?}` | sets other settings mid-run, not stored (`__dwell.setView`): the clouds (`off`, `low`, `medium`, `high`), the speed effects (motion blur and streaks), the full-detail distance (m) and the LOD's pixel error, the blasts' smoke, the water's flecks, flow ripples, flow foam and waterfalls, the light shafts, bloom and torch shadows (`off`, `low`, `high`), the leaf cards (true/false: only chunks meshed after it follow, so measure them with a configuration, `cards-off`), every cutout mesh drawn or not (`grass`: plants, ladders and the leaf cards together) and the render scale (0.25–1); each one given replaces the menu's value. With `water` and `shadows`, one page can record every feature on and off in turn ([Cost profile](#cost-profile-m1-air)) |
 | `water {quality?, debug?}` | sets the water quality (`low`, `medium`, `high`) and/or its cost-isolation switches (`?waterdbg=` names, `""` for none) mid-run, through `__dwell.setWater` |
 | `burst {name, frames, clock?, maxFlicker?}` | a still camera's burst: `frames` screenshots `<name>-00.png`… back to back (the HUD hidden) and their **flicker** (`flickerOf`: the share of pixels whose brightness moves more than 3 of 255 from one frame to the next, and the mean move), printed and saved in `report.json`'s `bursts`; over `maxFlicker` (a share) the run fails. With `clock` the time of day runs on from it at the world clock's rate, set every animation frame (the bench's is otherwise held), so the light moves as in play. `shadows-still` reads the shadows' flicker against Off's (DAY_NIGHT.md §10). With `drift {position, yaw, pitch}` (after a `camera` step) the camera moves on by that much each frame (metres and degrees, at most 1 m and 1°): z-fighting shows only while the view moves (it stops with the camera), and a drift of millimetres and thousandths of a degree moves the view under a pixel by a fraction of a pixel, so surfaces swap only where they fight in depth. Such a burst is read by its **hue flips** (`hueFlipsOf`, also in every burst's result: the share of pixels, coloured in both frames, whose hue moves over 40° from one frame to the next — grass becoming dirt); over `maxHueFlips` the run fails. `lod-zfight` holds the LOD's z-fighting under a bar (ARCHITECTURE.md §6.6, "Known bug class") |
+| `clip-strip {name, vertical?, frames?, views?, at?}` | one axe swing frame by frame (see "Clip probe and clip strip" below): the level (or `vertical`) chop held at `frames` (2–24, default 8) clip times from 0 to the clip's end (`__dwell.holdSwing`), each shot from the `views` (`fp` your eyes; `tp-behind`, `tp-side`: a stand-in 4 m ahead of `at` holding your tool, standing still facing +Z, seen from behind-right and from its right side), `<name>-<view>-00.png`…, and a contact sheet `<name>-sheet.png` (a row per view, each frame labelled with its clip time). Hold the axe first (`give`, `pick`) |
 | `repeat {times, steps}` | runs `steps` `times` times (e.g. `edit-burst`'s 300 edits); no `mark`, `record`, `shot`, `timelapse` or trace steps inside |
 
 Scenarios for comparing configurations, besides `idle-spawn`, `fly-low-fast`, `fly-low-faster` and
@@ -284,7 +291,7 @@ still continues across and the eye still swings across over `crossingRollS`.
 Plants (docs/TRANSPARENT_BLOCKS.md): `__dwell.plants(wind, shown)` scales their wind and hides or
 shows every cutout mesh, for an A/B of their cost at one camera pose.
 
-Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places. Waterfalls (§2e): `__dwell.waterFalls()` lists the falls the client found near the eye (each one's high column, way, width, lip and landing heights, flow per metre and lip speed). Creatures (ADR 0073): `__dwell.creatures()` lists the creatures drawn (each one's feet, heading and speed). The far ecology (docs/ECOLOGY.md §9): `__dwell.ecology()` gives the far herds and packs the server last sent (`{ day, groups: [{ id, face, species, x, z, size }] }`, face-local metres, every 2 s), or null before the first or from a server without one (a local world's ecology doesn't run yet). Blasts (docs/EXPLOSIVES.md §4): `__dwell.blasts()` lists the blasts whose effects are still going (each one's place and age, s); telemetry `blasts.puffs` counts the smoke, dust and fireball billboards drawn a frame.
+Cloud plumes (docs/CLOUDS.md §8.7): `__dwell.plume(op, args)` drives the run-time plume list, JSON back: `list`; `add` [name, x, y, z, radius?, height?, density?, riseMps?] a plume of the lava vent's look based at a world point (on that point's face); `near` [name, dx, dz] one 40 m under the eye; `move` [name, x, y, z]; `remove` [name]; `clear`. Drawn on Medium and High clouds only. Water flow (docs/WATER_SURFACE_GRID.md §2c): `__dwell.waterFlowAt(x, y, z)` gives the client's current there (m/s along x and z), the flecks near the eye, and the first few flecks' places. Waterfalls (§2e): `__dwell.waterFalls()` lists the falls the client found near the eye (each one's high column, way, width, lip and landing heights, flow per metre and lip speed). Creatures (ADR 0073): `__dwell.creatures()` lists the creatures drawn (each one's feet, heading and speed). The far ecology (docs/ECOLOGY.md §9): `__dwell.ecology()` gives the far herds and packs the server last sent (`{ day, groups: [{ id, face, species, x, z, size }] }`, face-local metres, every 2 s), or null before the first or from a server without one; `herds()` lists them nearest first. Blasts (docs/EXPLOSIVES.md §4): `__dwell.blasts()` lists the blasts whose effects are still going (each one's place and age, s); telemetry `blasts.puffs` counts the smoke, dust and fireball billboards drawn a frame.
 
 From the console: `__dwell.telemetry()`, `__dwell.telemetryFrames()`, `__dwell.ticks()`,
 `__dwell.telemetryReset()` (types in `client/src/main.ts`).
@@ -294,7 +301,13 @@ page's first moment, before `__dwell`) gives each loading stage that ran — `id
 running) and `firstMs` (when its count first moved: the wait before the terrain counts) on the page's clock —
 and every stage is a User Timing measure `dwell:stage:<id>` in a Chrome trace's Timings track. Every bench run
 prints them after the join (`stages: page 0.00–0.03 s, game 0.03–0.08 s, …`) and saves them in
-`report.json`'s `join.stages`.
+`report.json`'s `join.stages`, with the start's main-thread long tasks (`join.longTasks`), its frame
+gaps over 100 ms in the first 30 s (`join.frameGaps`: a screen that did not repaint, the main thread
+held or the GPU process busy) and the renderer's start group by group (`join.createMarks`, the
+`dwell:create:<group>` User Timing marks, each at its group's end: `device`, `module`, `layouts`,
+`scene-pipelines`, `passes`, `atlas`, `bindings`, `characters`, `renderer`). A cold start: empty
+Chrome's Metal shader cache (`$(getconf DARWIN_USER_CACHE_DIR)com.google.Chrome.helper/com.apple.metal`)
+before the run; the bench's fresh profile alone is not cold.
 
 ## Interactive use
 
@@ -310,12 +323,24 @@ another generator) opens that seed's world file. Add:
   (no version lock, no prompt; every load of the link starts over).
 - `at=x,y,z` — the player starts at that world point (feet, metres), the world's spawn moved there,
   however the world was left (`LocalCore::create_spawning`'s `at`).
+- `spawn=town` (`town-b` on face B) — the player starts 24 m south of the town site nearest the face's spawn
+  (docs/BLUEPRINTS.md §6b), in its own world file (`…-town`), so the town founds at once and its builders come:
+  `?local=1&seed=0&fresh=1&spawn=town` to watch builders put up the hamlet. A world without towns (flat, sandbox)
+  starts at its usual spawn.
 - `time=0.45` (the time of day), `debug=1`, `lod=off` and the other page parameters as usual.
+- `haze=<preset>` draws a distance-haze preset from `shared/look/fog.json` `presets` (`thicker`,
+  `aerial`, `aerial-sun`, and the height fog alone: `fog-11k`, `fog-8k`, `fog-6k`) instead of the fog every client draws, to compare them (DAY_NIGHT.md §4,
+  WORK_QUEUE item 29); a bench scenario passes it in its `query`.
 
 For example `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5&time=0.45` opens a new seed 0 world at
 the owner's dam site; then `__dwell.fly(true)`, `__dwell.tool('cornerA@…')`, `tool('fill')` and
 `placeCamera` set the scene up. `?new=1&seed=<n>&name=<name>` instead adds a new world to the
 menu's list and opens it.
+
+**A bigger world** (BIG_MAP.md M2b): `?size=2x` (any size of `constants.json` `worldSizes`: `2x`,
+`4x`, `8x`, `10x`; with `seed=`, `spawn=`, `at=`, `fresh=1` as above, alone seed 0) opens a terrain world
+of that size, its own world file (`local-g8-s<seed>-x2`), created at it and saved with it; the flat and
+sandbox worlds are 1× only. New world → More options' **World size** (desktop pages) makes one in the menu.
 
 **Play a test world** (0.52.27): `?worldgen=test:tall_peak` (any fixture world's name,
 `shared/worldgen/worlds/*.json`; with `seed=`, `fresh=1`, `at=` as above, alone seed 0) opens a
@@ -382,6 +407,44 @@ first, each one's `tick` (the server's, 60 a second), `cell`, `from` and `to` (c
 strings) and `reason`. The local world's water report carries it as `edits`, so the block dump has
 it at `water.edits`: what was done near a reported spot, in order, to replay in a native probe.
 
+## Theater: camera paths (`__dwell.theater`, the `theater` step)
+
+Theater mode's camera engine ([`THEATER_MODE.md`](THEATER_MODE.md), `crates/dwell-theater`) plays camera
+paths — keyframes joined by moves (`cut`, `linear`, `ease`, `orbit`, `track`, `dolly`, `crane`, `pan`) with
+easings, a field of view, the viewer's time of day and a speed ramp — into the placed view, frame-rate
+independently. Use it for cinematic moves instead of per-frame `placeCamera` scripts.
+
+- `__dwell.theater('preset', { name, params, subject })` → a path (JSON object): a preset of
+  `shared/theater/presets.json` (`orbit`, `dolly`, `track`, `rise`, `pan`) expanded around `subject`
+  (`"player"`, `[x, y, z]`, `{creature: id}`, `{npc: id}`) from where the camera is now (the placed view, or the
+  player's eyes), with `params` over its defaults (clamped to the preset's ranges).
+- `__dwell.theater('play', { path })` plays a path from its start (a bad path throws the engine's message,
+  naming the entry); `'state'` → `{ time, duration, finished }`; `'pause', { paused }`; `'stop'` (or
+  `releaseCamera`) back to the player's eyes, the time of day to the world's.
+- `__dwell.theater('hud', { shown: false })` hides every element but the canvas (theater mode's HUD switch,
+  `src/theater/hud.ts`: classes on `body` whose rules are in `style.css` — the page's CSP forbids inline style, so
+  an injected rule does nothing); `'stop'` shows it again.
+- **Theater mode in game** (`__dwell.theaterMode(op, args)`, `src/theater/mode.ts`): `'enter'`/`'exit'` (as F9),
+  `'state'` → `{ active, keys, duration }`, `'keys', { path }` loads a path into the keyframe editor, and
+  `'record', { path, aspect: '9:16' | '16:9', height: 720 | 1080 | 1440 | 1920, fps: 24 | 30 | 60, download }` → a
+  promise of `{ bytes (base64), mime, width, height }`: the in-game recorder (MediaRecorder on the canvas, resized
+  to the take; MP4 on Chrome) records while the path plays and ends with it; without a path, `'endTake'` ends it.
+  Real time: a slow page records fewer frames (the screencast route of the record skill is frame-exact).
+- **A cinematic take** (`__dwell.cinematic({ path, size: [w, h], settings })`, THEATER_MODE.md §6.1): the path
+  rendered offline — the local world stepped 1/fps a frame, the client's clock held, each frame settled, a pre-roll
+  first, supersampled PNG frames and the frame-exact sound (`audio.wav`) handed to `window.__dwellRecSink` (the
+  record driver's `/cine/start?name=`) — resolving with a report: frames, render time, the settle waits and capped
+  frames, the ticks, the sound's alignment. Settings: `shared/theater/cinematic.json`.
+  `audio: true` adds the game's sound (effects and ambience, never the music).
+- **The recording tap** (`__dwell.audioTap({ music: false })` → `{ stream, buses, close }` or null): the game's mix as
+  a MediaStream, effects and ambience by default (`music`/`ui: true` to include those buses), on a parallel graph so
+  the speakers are unchanged; it starts the AudioContext if the page may (the record driver's Chrome needs no
+  gesture). The record skill's driver records it during a take (`/rec/start?…&audio=1`; the skill's §0b).
+- The bench's step: `{ "do": "theater", "preset": "orbit", "params": { "radiusM": 25, "heightM": 8,
+  "timeFrom": 0.7, "timeTo": 0.8 }, "subject": "player" }` or `{ "do": "theater", "path": { … } }`; it waits
+  for the path's end unless `"wait": false`, and hides the HUD unless `"hud": true`. Record around it with
+  the `record` step or the record skill's screencast.
+
 ## Finding places
 
 Tests and benchmarks find their scene by what is there, not by coordinates that go stale when the
@@ -414,9 +477,26 @@ the `goto` step.
   rings, moves the player there and searches its cells once they stream in. `maxS` keeps trying
   (0; 60 for the world scope). It rejects with what it looked for when nothing is found.
 - `__dwell.teleport(feet)`: moves the local player's feet there, at rest (a local world, on the
-  face it is on; the local core's `teleport_local_player`, through the worker, not a network
-  message). The client follows: a player the server moved while the prediction waits for terrain
+  face it is on, inside the disc's rim; the local core's `teleport_checked`, the worker's `teleport`
+  op, not a network message). It resolves true once moved and rejects with why it can't: a point on
+  the other face, past the rim (no world there), or the player on another grid (BUGS.md #148). The client follows: a player the server moved while the prediction waits for terrain
   takes the server's place (`game.rs`), so it waits for the terrain there.
+- `__dwell.spawnHerd(kind, size?, offset?)`: a deer herd (`'deer'`) or a wolf pack (`'wolf'`) of
+  `size` (5) put `offset` m (12) along +x from the local player as a far record, which the near
+  ecology brings in as animals at once (a local world; CHARACTERS.md §11.11). `spawnNpcs(n,
+  radius?, variant?)` does the same for villagers.
+- `__dwell.herds(kind?)` (WORK_QUEUE item 46, the finder): the far herds and packs on the player's face
+  from the last `ecology` (`'deer'`, `'wolf'`, or any), nearest first: `[{ id, species, x, z, size,
+  distance, bearing }]` (face-local metres; `bearing` the yaw facing it). Any server: the server sends
+  each client its face's nearest groups first (up to 1024). `__dwell.goToHerd(kind?, back?)` (a local
+  world) stands the player `back` m (40) short of the nearest one on the line from where it is, on the
+  generator's ground of its face, so the group comes near (`near.spawnM` 64 m): JSON `{ id, species,
+  size, distance, at }`, `"null"` when there is none. The bench step `herd {kind?, back?}` does both
+  and logs them (scenario `herds`).
+- `__dwell.animalsIgnorePlayers(on)`: the near animals see no player (no fleeing or avoiding), for
+  filming their idles up close; `__dwell.animalPose(name | null)` draws every near animal in one pose
+  (`graze`, `lookUp`, `sit`, …) to judge it by eye; `__dwell.npcsFight()` turns every NPC on the local
+  player as if struck (local worlds).
 - `__dwell.camera()`: the placed camera (`placeCamera`, `goto`) or null; `view()` is the player's
   look, not a placed camera's.
 
@@ -426,6 +506,53 @@ player, so `view()` after `placeCamera` still reads the player's own look.
 
 Seed 0's river at `?local=1&seed=0&fresh=1&at=2364.5,142,7443.5` is a known river by link (the
 player there with yaw 0 looks down it); `goto` finds water wherever the terrain puts it.
+
+## The moon (`__dwell.moon()`, the `flyTo` step)
+
+MOON_WORLD.md §7.3's browser flight. **`__dwell.moon()`** (`Game::moon_report`, `crates/dwell-client/src/moon_probe.rs`)
+returns the moon as the client's travel rules place it at the latest snapshot's clock, or null before playing, from
+a server without `grid.frames` or in a world with no moon:
+
+- `position` its centre (the midplane's centre) and `feet` the player's, world m; `direction` the unit way from the
+  feet to it and `distance` (m); `captureM` and `releaseM` (× `releaseFactor`) round its centre;
+- `grid` the player's grid now (`home`, `moon`) and `index` the moon's (`grids.json`);
+- `gravity` the moon's (m/s²: home's controller gravity × its `gravityScale`) and `gravityNow` where the player is;
+- `look` `{yaw, pitch}` toward its centre in the player's face-local look (as `look` takes it), `upMps` the
+  velocity along the face's up, `groundM` the feet's height over the moon's generated ground, its column's top cell (on the moon; null
+  at home), and `groundHeld` whether the client holds the chunk under the feet.
+
+**`__dwell.flyTo('moon' | 'home', options?)`** (`client/src/debug/moonTrip.ts`, node-tested with a fake page in
+`moonTrip.test.ts`; a local world) is the step's page side. `moon`: the dev move (`LocalCore::moon_approach`, the
+worker's `moonApproach` op) puts the player at home `marginM` (2000) m outside the capture sphere over the moon's
+spawn on face `face`, moving with the moon; flight on at the top speed, it flies along `look` (level by the yaw,
+Space or crouch for a pitch over 20°) until `grid` is `moon`, then down with crouch (level 6 under 600 m) to
+`landM`, hovers a second, turns flight off and measures the fall over a second, and waits until it stands on the
+ground. `home`: Space until released, then `placeHome` (the worker's op: the feet back where the last trip to the
+moon started, on either face) and a wait for `groundHeld`. The native check of the same flight is `game_local`'s
+`the_moon_report_steers_a_flight_into_its_capture` (both faces: the report from home and on the moon, the capture,
+the descent, ⅙ g ± 10 %, the landing).
+
+**`__dwell.moonLand({face?, maxS?})`** (`teleportToMoon` in `moonTrip.ts`; a local world) teleports instead of
+flying, for checking what the moon draws (owner, 2026-11-13: "We should just teleport to the moon to see if ground
+draws, flying there is an inefficient test of drawing"): the worker's `moonLand` op (`LocalCore::moon_land`) puts
+the player 1.5 m over the moon's spawn on face `face`, moving with it, carried onto the moon at once
+(`Server::carry_onto_grid`: the tick's capture takes only fliers, BUGS.md #147); flight off, it waits until the player stands there with the chunk under the feet held. `flyTo('home')` comes back: the way home is kept before each trip starts (`tripStartOf`, home ground only), so a
+trip that fails still leaves it. The bench step
+`moonLand {face?, maxS?, waitS?}` then waits `waitS` (3) s and prints the frame's draw calls, triangles and mesh
+bytes (saved in `trips`); `npm run bench -- --warm moon-draw` lands on face A, shoots `moon-a-across` and
+`moon-a-down`, goes home, lands on face B and shoots `moon-b-across`. A moon whose ground draws shows hundreds of
+calls, not tens (BUGS.md #123: 16–17).
+
+**`__dwell.sunLand({face?, maxS?, river?})`** is the same onto the sun (`LocalCore::grid_land("dwell:sun", …)`: 1.5 m over
+its stand point, dry crust away from lava; with `river: true`, `grid_land_by_river`: over dry ground 8–96 m from the
+river head nearest the stand point, where the head's lava field is placed and runs, BUGS.md #146 — the stand point is
+out of every head's reach on some seeds, and a field runs only within lava.json `nearRadiusM`, 96 m, of a player), with `__dwell.sun()` its report (the moon report's fields for
+`dwell:sun`); the worker also takes `sunApproach` [margin, face]. `npm run bench -- --warm sun-draw` lands on face A
+and shoots `sun-a-across` and `sun-a-down` with the frame's draw calls and triangles.
+
+`npm run bench -- --warm moon-trip` flies there, lands, shoots `on-the-moon` and `moon-sky` at noon, flies
+back and shoots `home-again`; the capture, descent, landing and return seconds and the fall are printed and saved in
+`report.json`'s `trips`.
 
 ## Screenshots of a place
 
@@ -464,6 +591,101 @@ How agents take screenshots: an exact camera, a settled view, a saved spot.
   (`crates/dwell-client/src/web/app.rs`).
 - A kind of place to find: a filter on `find.rs`'s `Query` (with a both-faces test), its option
   in `client/src/debug/find.ts` and the `goto` step's parser.
+
+## Clip probe and clip strip
+
+Owner, 2026-11-11: "Make yourself some tools to properly observe animations, movement directions,
+positions over time" and "may need to see multiple perspectives to see animation and understand it".
+
+**The clip probe** (native, no browser; `crates/dwell-client/src/clip_probe.rs`, CLI
+`examples/clip_probe.rs`) samples a clip through the same posing the game draws with: the arms'
+animator (`Space::Arms`, the swing on its action layer driven to clip time as `Bodies::drive_arms`
+does), the held item's turns (`with_item`), `arm_transforms`, the tool drawn as its model on the hold
+(`prop_mesh`, `held_item`) and the arms pass's projection (the first person `fov`); and the body's
+animator (`Space::Body`, `bone_transforms`: the rig pose the skinned player model retargets) for
+third person. It follows points — `tool_head` (the far tenth of the model along the handle),
+`tool_tip`, `grip`, `elbow`, `shoulder`, any bone by name, or a part of the held characters item
+(`axe_blade`) — and reports them in five views of the same swing:
+
+| View | What | Axes |
+| --- | --- | --- |
+| `fp` | the first-person screen, what the player sees | NDC x right, y up (−1..1), and the depth |
+| `top` | the player's frame from above | right, ahead |
+| `side` | from the player's right | ahead, up |
+| `front` | facing the player | the player's right on the left, up |
+| `tp` | the whole body from behind and to its right (perspective, the rest skeleton drawn) | screen |
+
+```sh
+cargo run -p dwell-client --example clip_probe -- chop_level                # table + phases
+cargo run -p dwell-client --example clip_probe -- chop_vertical --part tool_head,grip,elbow \
+  --svg /tmp/v.svg --views fp,top,side,front,tp                              # the panel sheet
+cargo run -p dwell-client --example clip_probe -- fp_break --item none --part grip --csv
+```
+
+The clip is an arms role (`chop_level`) or a clip name (`fp_chop_level`); `--item` the inventory item
+in hand (default `dwell:stone_axe`, `none` empty-handed); `--samples` (default 31); `--face a|b`,
+`--yaw`, `--pitch` place the world space output (`--csv` prints every sample in every space: screen,
+the player's frame, eye-relative world, the body). The table gives each sample's first-person screen
+place and body place, then the **phases** — from the tool's `swing` timings for a chop (wind-up
+`windupS`, strike the arc's `activeS`, recovery), else thirds — each with its travel and dominant way
+(`right→left`, `top→bottom`) on screen and on the body, the **peak** screen speed and when, and the
+**contact**: where the head is at the arc's middle step (a centred hit), which should be the
+crosshair. The SVG draws each view as a panel: every point's path with a dot per sample, a time label
+every fifth, arrows along the travel, the phases coloured (amber wind-up, red strike, blue recovery),
+the contact circled, the screen's edge dashed in `fp`; the sheet is square (five views: three by two)
+so `qlmanage -t -s 1600 -o DIR sheet.svg` makes a PNG with every panel. Saved sheets of the 2026-11-11
+fixes: `docs/clip_probe/` (`*_before`/`*_after`: the directions; `*_arms`: the arm-driven refit).
+
+**The camera's sway** (CHARACTERS.md §5.2): for a chop each sample also carries the view's sway at
+that clip time (`Sample::camera`, a miss's, `chop::swing_camera`), printed as the table's last column
+`camera yaw,pitch,roll ° bob r,u,b cm` and the CSV's `cam_yaw … cam_bob_back`.
+
+**Orientation** (owner, 2026-11-11: "Ensure your tooling helps you tell rotation too"): each sample
+also carries how things are turned (`Sample::orient`, `clip_probe::Orient`): the blade's edge facing
+(`edge_points`: from the `axe_lashing` out through the `axe_blade`) and the handle's axis (grip to
+head), each arm bone's (`arm_r`, `forearm_r`, `hand_r`) local axes in the player's frame and its
+angular speed, the hand's roll about its own long axis against the forearm (a wrist flip shows as a
+jump), and the angle between the edge's facing and the edge's motion (under 90° the edge leads). The
+table adds the columns `edge∠motion`, `hand roll` and `spin arm,fore,hand °/s`; the SVG draws, every
+third sample in every view, the handle (a grey line, grip to head) and the edge's facing (a dark red
+arrow from the edge), and every sixth each arm bone's axes as a small tripod (x red, y green, z blue).
+
+**Fitting keys** (`--fit`, repeatable): instead of probing, fit a key for the clip at time `t` that
+puts the grip and the tool head at given places and, optionally, turns the blade's edge (`axe_blade`
+from `axe_lashing`) toward a direction (the strike's way, so the edge leads):
+
+```sh
+cargo run -p dwell-client --example clip_probe -- chop_level \
+  --fit 0.3/0.55,-0.25,0.25/0.95,0,0.35/-1,0,0.5 --fit 0.355/0.2,-0.25,0.42/0,-0.02,0.75/-1,0,0
+cargo run -p dwell-client --example clip_probe -- chop_level --body --fit 0.3/0.35,1.25,-0.05/0.65,1.5,-0.35
+```
+
+Places are the player's frame (right, up, ahead of the eye) for first person, the body's (right, up,
+ahead of the feet) with `--body`. The blade term uses the same edge facing the probe reports (`edge_points`). It runs coordinate
+descent on the game's own posing (`clip_probe::fit`:
+the arm, elbow and wrist turns within the rig's limits, plus the arms' root offset, kept small, or the
+body's chest twist), each key starting from the one before, and prints the keys as the clip's JSON with
+the reached grip, head and blade on stderr. A key far from the one before can land in another pose;
+fit it alone (from the hold) if it does.
+
+Tests over it (`clip_probe::chop_swing_tests`) pin the axe: the level strike right → left on screen,
+the vertical one top → bottom (monotonic through the strike), the level one level (its up/down under
+0.3 of its travel across), the hands travelling at least 0.4 of the head's path through the strike,
+a 0.25–0.35 s wind-up drawing the head 0.45 m and the hands 0.35 m back, the edge facing within
+50° of its motion through the strike (red on the 0.52.11x clips: 64°), no wrist flip (the hand's
+roll under 2000°/s between samples and within 120° over the swing), the head on the crosshair at contact and
+the peak speed inside the strike, the wind-up the other way, the recovery back to rest, nothing behind
+the eye; in the world on both faces (`both_faces!`) along the view's left and down at any heading; and
+on the body (third person) across from its right to its left, or down, in front of it. A new swing
+clip gets the same checks by adding a case.
+
+**The clip strip** (browser, the bench's `clip-strip` step) is the visual check after the probe: it
+holds a swing at K clip times (`__dwell.holdSwing(vertical, t)`, which poses your arms and every
+stand-in at that clip time until released with a negative `t`; stand-ins then stand still facing +Z)
+and shoots each from first person and from two third-person cameras (`clipStripCamera`: behind-right,
+and the right side) into one contact sheet. Local machine only (a GPU); e.g. a scratch scenario with
+`{ "do": "give", "item": "dwell:stone_axe" }`, a `pick` of it, and `{ "do": "clip-strip", "name":
+"level" }`. Its face B cameras are mirrored by the unit test only, not yet seen in game.
 
 ## Menu panoramas
 
@@ -709,6 +931,74 @@ texture, which its compositor then draws), and the native loop spinning a core (
 on a chip whose CPU and GPU share power and memory bandwidth. Whatever native gains, it is not GPU
 time, so the GPU budget is the one to spend work on.
 
+## High on the M1 (BUGS.md #78)
+
+WORK_QUEUE item 30's measurement, 2026-11-12, on this repo's M1 (8-core GPU) on the real GPU: `npm run bench --
+--warm --unthrottled high-forest high-open` (`?preset=high`, a 1280×800 window at pixel ratio 2, so a 2560×1600
+buffer drawn at High's 50 %). Each scenario settles at its spot (the starter's broadleaf forest from 8 m up; its
+beach), then switches one feature off at a time mid-run (`view`, `shadows`, `water` steps), 1.5 s to settle and 4 s
+recorded each. The leaf cards follow their switch only in chunks meshed after it, so their row is a fresh page per
+configuration (`--compare --configs raster,cards-off`). `gpu.frame` mean (ms):
+
+| Record (feature off) | Forest before | Δ | Forest after | Δ | Open ground (before) | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| High | 15.63 / 15.73 | | 15.47 | | 9.24 | |
+| Leaf cards off (`?cards=0`, a fresh page) | 15.11 | −0.62 | 15.18 | −0.29 | — | |
+| Shadows Low | 15.43 | −0.20 | 15.23 | −0.24 | 8.91 | −0.33 |
+| Shadows Off | 13.96 | −1.67 | 14.03 | −1.44 | 8.27 | −0.97 |
+| Torch shadows Off | 15.58 | −0.05 | 15.45 | −0.02 | 9.13 | −0.12 |
+| Light shafts Off | 15.78 | +0.15 | 15.50 | +0.03 | 9.13 | −0.12 |
+| Bloom Off | 15.19 | −0.44 | 14.88 | −0.60 | 8.71 | −0.53 |
+| Clouds Off (from Medium) | 15.65 | +0.02 | 15.23 | −0.24 | 8.80 | −0.45 |
+| Water Low | 14.81 | −0.82 | 14.58 | −0.89 | 8.39 | −0.86 |
+| Every cutout mesh off (leaf cubes' cutout, tall grass, flowers, ladders, cards) | 10.90 | −4.73 | 11.00 | −4.47 | 7.68 | −1.56 |
+| Full detail 128 m (from 256) | 12.98 | −2.65 | 13.06 | −2.41 | 7.64 | −1.61 |
+| Render scale 100 % (from 50 %) | 29.93 | +14.30 | 29.58 | +14.11 | 19.92 | +10.67 |
+
+The spot's view holds few trees and much grass (its screenshot), so the cutout row is mostly tall grass. Run-to-run
+spread is ~0.3–0.5 ms. The denser mixed forest (`high-mixed`, after the culls) read 17.05 ms at High (cards 0.23, the cutout meshes 4.2),
+so High's full detail went 256 → 192 m: 13.88 ms there. The largest levers left are the cutout meshes (a Tall grass
+setting needs a mesher flag), the full-detail distance and sun shadows.
+
+### Flying at High on the M1 (BUGS.md #89)
+
+The owner's "sub-60FPS when flying on High … the new trees and volumetric clouds?" (2026-11-12), on this M1 Air:
+`npm run bench -- --warm --unthrottled high-fly`. The scenario spawns over the starter's mixed forest
+(`?at=-18100.5,140,-6500.5`, `?preset=high`, 1280×800 at pixel ratio 2), climbs 3 s at fly level 6, then flies +X
+at level 4 (~16 m/s, ~64 m a record) toward the tall cone with W held for 11 records of 4 s: High, then each
+suspect off with High recorded again between (`fly-high`, `fly-clouds-low`, `fly-high-2`, `fly-speed-effects-off`,
+… `fly-high-6`). The path is the same in every run (`probe.x` within ~15 m), so **two runs with one change are an
+A/B record by record**; within one run the scenery under the flight changes (forest first and last, open ground in
+the middle), so a mid-run switch is only a rough read. `gpu.frame` mean / p95 ms and the main thread:
+
+| Record (over) | `gpu.frame` | `gpu.near` | `gpu.gaps` | `frame.cpu` mean / p95 / p99 | `jobs.apply` p95 | Uploaded (MiB / 4 s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `fly-high` (mixed forest) | 15.0 / 17.3 | 7.9 | 2.9 | 3.9 / 9.3 / 10.1 | 4.6 | 402 |
+| `fly-high-2` (open ground) | 8.8 / 10.1 | 2.9 | 0.2 | 1.8 / 5.5 / 8.5 | 2.9 | 134 |
+| `fly-high-3` (open ground) | 8.9 / 10.0 | 3.0 | 0.1 | 1.5 / 5.3 / 9.0 | 0.5 | 39 |
+| `fly-high-4` (forest edge) | 8.9 / 10.1 | 3.5 | 0.6 | 3.1 / 8.3 / 9.1 | 3.1 | 205 |
+| `fly-high-5` (forest) | 13.5 / 15.6 | 6.8 | 2.2 | 5.0 / 9.9 / 10.7 | 4.3 | 333 |
+| `fly-high-6` (forest) | 13.4 / 15.6 | 6.3 | 2.2 | 5.7 / 10.3 / 10.9 | 4.3 | 331 |
+
+The suspects, each the A/B that isolates it best (`gpu.frame` mean / p95):
+
+| Suspect | Read | Effect |
+| --- | --- | --- |
+| Volumetric clouds Medium → Low (the 2D deck) | a second run with clouds Low from the start: `fly-high` 15.7 / 18.5 vs 15.0 / 17.3 | **none** (the volume's `gpu.clouds` 2.2–3.4 ms overlaps the scene passes on the M1; with it off, `gpu.gaps` 2.9 → 0.2 but the frame is no shorter). Its steps are fixed per pixel (shared/look/clouds.json `tiers`), not by the ray's length, so altitude does not grow them |
+| Speed effects (the wind's motion pass, full canvas resolution) | `fly-speed-effects-off` vs `fly-high-2`/`-3` | −0.5 / −0.6 |
+| Leaf cards + tall grass (mid-run: cards change only in chunks meshed after) | `fly-trees-off` vs `fly-high-3`/`-4` | −0.5 / −0.4, over open ground; over forest the near pass is the cost (`gpu.near` 3 → 6–8 ms), the cutout meshes of #78 (4.5 ms there) |
+| Shadows High → Low | `fly-shadows-low` vs `fly-high-5` (forest) | about −2 / −1.7 (confounded by the forest's start) |
+| Bloom + shafts off | `fly-bloom-off` vs `fly-high-5`/`-6` | none (±0.5, noise) |
+| Desktop upload budget 4 → 1 MiB a frame (`shared/render/streaming.json`, a second run) | record by record | −0.4 to −1.8 over forest, +0.3 over open ground; `jobs.apply` p95 4.6 → 1.8; uploads halved (a backlog). Not adopted: the GPU's extra time over forest is the near pass and its gaps, not the copies |
+
+**What this says:** flying at High on the M1 fits 60 fps over open ground with room (8.8 ms) and sits at the line
+over the forests (13.4–15.0 mean, **p95 15.6–17.3**, the first record up to 18.5 in another run); the main thread is
+never the limit (`frame.cpu` p95 ≤ 10.5 ms, `mesh_dirty` p95 ≤ 7.6, no long task while flying). Neither the
+volumetric clouds nor streaming is at fault; the forest's geometry is (the near pass's cutout leaves and grass,
+their sun shadows), the cost #78 measured standing still. The frame interval p95 reads 17.7–18.7 in every record,
+even at 8 ms GPU frames: the page's pacing (`pacing.done` p95 30–50 ms), not the frame's cost; read the vsync'd
+drop count from a run without `--unthrottled`.
+
 ## Cost profile (M1 Air)
 
 The owner's "can you truly benchmark the game to determine our most costly pieces … each feature by CPU and
@@ -906,6 +1196,83 @@ Not covered here: a moving flight (the bench's held key stalled, above), a flood
 first-person arms and the stand-in characters on their own, night (stars, torches). Re-run the same
 scratch scenarios after each fix to read its gain.
 
+## The tree performance reference (`forest-perf`)
+
+**THE place every tree, leaf, card or impostor change is measured** (WORK_QUEUE items 30–32; the owner's
+target: High at 60 fps on an M1 MacBook Air). The world is `test:forest` (`shared/worldgen/worlds/forest.json`):
+gentle land that is the old-growth forest (`preset:old_growth`, ADR 0074) everywhere, ~220 trees a hectare,
+old-growth pines up to 26 m and broadleaf up to 14 m over thick tall grass; fixed by its data and seed 0,
+so before and after compare the same stand. Its spots (`bench/spots.json`):
+
+| Spot | Where |
+| --- | --- |
+| `forest:inside` | standing in the densest stand (49 trees in a 40 m square, at 40, −40), eye at a player's height along the trunks |
+| `forest:edge` | 32 m over the highest ground 440 m south, just over the crowns, looking north across the canopy |
+| `forest:over25`, `forest:over40`, `forest:over80` | 25, 40 and 80 m over the densest stand, looking straight down at the crowns (the overhead view, BUGS.md #162) |
+| `forest:above` | flying 150 m over the stand, looking north and down to the horizon (every LOD tree level) |
+
+The scenario `forest-perf` opens it at `?preset=high` (1280 × 720 by default) and, at each spot, shoots it
+(`inside.png`, `edge.png`, `over25.png`, `over40.png`, `over80.png`, `above.png`), then records 8 s at each
+(`inside`, `edge`, `over25`, `over40`, `over80`, `above`); `forest-overhead` records the 25 and 40 m spots alone
+for quick A/Bs: `frame.cpu`,
+`gpu.frame` and every pass. Its budget is a 16.7 ms frame (`frame.cpu.p95`, `gpu.frame.p95`), **report
+only** until item 30 lands: a record over it prints `OVER BUDGET (report only)` and the run goes on; make it
+failing (drop `reportOnly`) once High holds 60 fps there. On the M1 Air, before and after a change:
+
+```
+npm run bench -- --warm forest-perf
+npm run bench -- --warm --compare forest-perf   # a configuration against the baseline, side by side
+```
+
+Numbers (2026-11-12, M1 Air, `--unthrottled`, `gpu.frame` p50 / p95 ms), before → after tall grass past
+its fade was dropped in the vertex stage: inside 17.0 / 18.8 → 14.7 / 15.4, edge 25.2 / 26.4 → 24.3 / 25.7,
+above 14.6 / 15.8 → 14.5 / 15.8. `forest-edge-ablate` splits the edge's frame by switching each suspect off
+for 4 s (cutout meshes −14.8 ms, sun shadows −3.3, full detail 192 → 96 m −1.8).
+
+**The cutout's split** (2026-11-12, same machine, `--compare` with the configurations `cards-off` (`?cards=0`)
+and `grass-off` (`?tallgrass=0`, the Tall grass share as a dev override), `gpu.frame` p50 ms, base → off): leaf
+cards inside 14.3 → 13.8, edge 23.8 → 23.3, above 14.1 → 13.8; tall grass inside 14.3 → 13.0, edge 23.8 → 23.2,
+above 14.1 → 13.8. Neither is the edge's cost: the cutout **leaf blocks** themselves are (the `grass` view
+switch hides every cutout mesh, leaves included). The edge's near pass is bound by its **geometry**, not its
+pixels: at render scale 1 (`scale-full`, four times High's pixels) `gpu.near` p50 went only 21.1 → 24.8. A
+depth prepass for the cutout (an alpha-tested depth-only draw, then the colour on equal depth, shading each
+sample once) was built and measured and made it worse, every spot +6–8 ms (edge 31.4, inside 20.2, above 18.4):
+drawing the leaves' geometry twice costs more than the overdraw it saves. Not adopted. The levers left are
+fewer leaf triangles past the near trees (impostors from nearer than 96 m, or a plainer leaf mesh with
+distance). `forest-edge` is the edge alone (6 s) for quick A/Bs. (2026-11-13: chunks past the hand-over draw their plants without
+their leaves, the edge's triangles ~5.4 M → 4.0 M, its frame unchanged within noise: 23.4 / 25.4 ms p50 / p95;
+WORK_QUEUE item 32.)
+
+**Every number above was of a covered view** (found 2026-11-13, WORK_QUEUE item 32): the `spot` shot stands
+the player at the camera, and a placed camera drew your whole body around it, so every `test:forest` shot (and
+the frame recorded after it) was the inside of your body: grey, the scene mostly hidden by it (cheaper `near`,
+`composite` and `clouds`), and your body a moving shadow caster, which redrew a far cascade every
+`refreshFrames` (`gpu.shadows` p95 9 ms at the edge). A placed camera within 1 m of your eyes now draws you as
+first person (`game.rs` `own_body_draw`), and a far cascade is drawn again only for the moving casters touching
+its box. The real view (M1 Air, High, `--unthrottled`, p50 / p95 ms), covered → real: `gpu.frame` inside
+13.6 / 17.0 → 14.1 / 15.4, edge 21.5 / 25.7 → 20.6 / 25.4, above 10.3 / 12.6 → 12.5 / 14.2; `gpu.shadows`
+inside 3.0 / 6.1 → 0.7 / 1.2, edge 1.0 / 9.0 → 0.8 / 1.1, above 0.4 / 2.8 → 0.3 / 0.5. The edge's frame is
+now `gpu.near` 16.0, `composite` 6.5, `clouds` 5.4 (p50): the sun shadows are not its cost.
+
+**Packed vertices** (2026-11-13, WORK_QUEUE item 32): terrain and cutout vertices carry their normal (snorm8x4)
+and light and flood light (unorm8x4) in one float's slot each (84 → 64 and 92 → 72 bytes). `gpu.frame` p50 / p95
+ms: inside 13.4 / 14.1 → 12.6 / 13.0, edge 20.5 / 21.1 → 18.7 / 19.3, above 12.4 / 12.8 → 12.0 / 12.4. The M1's
+pass timestamps overlap (the passes sum to well over the frame), so a pass's own cost is measured by switching it
+off, not read from its time.
+
+**Far tree impostors** (2026-11-12, WORK_QUEUE item 31): the configuration `impostors-off` (`?impostors=0`)
+draws the far trees as before (the LOD sections' tree cells, near leaves to the full-detail distance); `npm run
+bench -- --warm --compare --configs impostors-off forest-perf` is the before/after. `gpu.frame` p95, off → on (48 m
+hand-over): inside 15.5 → 15.5, edge 25.8 → 23.4, above 15.6 → 12.3. Telemetry: `impostor.ktris`.
+`__dwell.impostors()` reads out whether they draw (ready, layers baked, tiles, instances, the last upload error);
+`__dwell.impostorDebug(mode, ambient?, albedo?)` is their debug view (BUGS.md #106): 1 draws every quad solid
+magenta (size and place), 2 the alpha-tested silhouettes solid (the crown's shape), 3 the albedo unlit, 0 off;
+`ambient` and `albedo` override `impostors.json` `leafShade` live, for fitting it against `?impostors=0`.
+
+Cloud sessions have no GPU: there it is not run; `cargo test --release -p dwell-worldgen --test forest_world`
+checks the world (every column old-growth, the density in range on both faces, deterministic), and its
+ignored `spots` test prints the places the spots stand at.
+
 ## Render scale and upscaling
 
 The owner's "try the upscaling options and compare performance and screenshots" (2026-11-07), after the
@@ -1029,13 +1396,27 @@ changed by hand is pinned and reads **Custom** (ARCHITECTURE.md §5, the game me
 the exposure and the water's flow switches are outside the presets. `?preset=<id>` draws a visit at a preset
 (the bench's runs below), whatever is stored.
 
-| Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Clouds | Full detail | Distant detail | Distant memory |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | 352 m | 2 px | 512 MB |
-| High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | 256 m | 4 px | 256 MB |
-| Medium | 50 % Stretch | Medium | Low | Off | Low | High | 192 m | 6 px | 192 MB |
-| Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Low | 128 m | 8 px | 96 MB |
-| Low | 50 % Stretch | Low | Off | Off | Off | Off | 96 m | 12 px | 64 MB |
+**Every visual feature has a setting** (WORK_QUEUE item 30, owner 2026-11-12: "Ensure all of our graphics have
+settings in our graphics menu"). The Graphics page groups them as Display, Lighting, Sky & weather, Water,
+Terrain & trees, Effects and Distance. The features that had no switch before got one, set by every preset to
+what was drawn before (`client/src/ui/featureSettings.ts`, the `dwell.features` record): **Tall grass** (0–100 %
+of the grass and small plants, kept by cell hash so a lower share thins the same field evenly), **Far trees** (the
+LOD sections' trees), **Distant shadows** (the LOD shadows, at the Shadows tier; they followed Shadows alone
+before), **Hit shards** and **Particles** (0–100 % of a pickaxe hit's fragments, and of the chips, sparks, falling
+leaves and steam), and **Far herds**. Tall grass and Far trees apply to chunks and sections meshed after the
+change (as Leaf cards do), so a world reopened or streamed in shows them at once. To measure one, set it in a
+scratch preset or pin it in Settings before a `--compare` run. `client/src/ui/graphicsAudit.test.ts` is the
+list: every renderer tier function (`render/*_for`), look data file (`shared/look/*.json`), mesher switch
+(`dwell_mesh::ChunkFlags`' fields, the sections' trees) and CPU-tiered client effect (`src/*.rs` with
+`cpu: bool`) names its setting or a written reason it has none, and a new one fails CI until it does.
+
+| Preset | Render scale | Water | Sun & moon shadows | Torch shadows | Light shafts | Bloom | Clouds | Full detail | Distant detail | Distant memory |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ultra | 100 % | Medium (High until 0.50.29) | High | High | High | High | High | 352 m | 2 px | 512 MB |
+| High (desktop default) | 50 % Stretch | Medium | High | Low | High | High | High | 256 m | 4 px | 256 MB |
+| Medium | 50 % Stretch | Medium | Low | Off | Low | Low | High | 192 m | 6 px | 192 MB |
+| Mobile (phone default) | 50 % Stretch | Low | Low | Off | Low | Off | Low | 128 m | 8 px | 96 MB |
+| Low | 50 % Stretch | Low | Off | Off | Off | Off | Off | 96 m | 12 px | 64 MB |
 
 **The order of the cuts**, by GPU time saved per beauty lost, from the [cost profile](#cost-profile-m1-air),
 [render scale](#render-scale-and-upscaling) and [water cost](#water-cost-m1-air) measurements: the render
@@ -1455,6 +1836,21 @@ shading off, to attribute `gpu.*.water` and `gpu.frame` to them; a `--compare` c
 `params` (`{ "name": "no-caustics", "params": { "waterdbg": "caustics" } }`), and a
 scenario's `water` step switches it mid-run. On a GPU shared with other processes, compare a pass's `min` (in
 every summary) rather than its p50. WATER_RENDERING.md §8 ("Cost") has the method and the numbers.
+
+## The clouds' view opacity (`?cloudExtinction=`)
+
+`?cloudExtinction=0.05` sets the volumetric clouds' view opacity (per m at density 1) over the data's
+`volume.extinction` (0.03), for an A/B of how much a cloud hides the ones behind it (0.006 was the old value);
+`__dwell.cloudExtinction(x)` changes it mid-run (0 or none: the data's). The light through the clouds keeps
+`volume.lightExtinction` whatever it is (CLOUDS.md §9.8). A `--compare` configuration can set it with
+`params` (`{ "name": "opaque", "params": { "cloudExtinction": "0.05" } }`).
+
+## The leaf cards (`?cards=`)
+
+`?cards=1` meshes the leaf cards whatever the renderer's tier says (`shared/look/leaves.json` `cards.tiers`: off on the
+phone tier and a CPU adapter), and `?cards=0` meshes none; set at page load, before the world streams in. A bench
+`--compare` configuration with `params: {"cards": "1"}` measures their cost on the `--touch` phone page (BUGS.md #72). It
+wins over the Leaf cards setting (Settings → Graphics; the presets' `leafCards`, off on Low).
 
 ## The GPU heightfield (`?heightfield=`)
 

@@ -3,15 +3,20 @@
 //! vectors in `shared/protocol/vectors.txt`.
 
 pub mod auth;
+pub mod blueprints;
 pub mod bytes;
+pub mod capabilities;
 pub mod chopping;
 pub mod damage;
+pub mod defeat;
 pub mod fragment;
 pub mod inventory;
+pub mod markers;
 mod messages;
 pub mod modes;
 pub mod vitals;
 pub mod world_settings;
+pub mod world_size;
 
 #[rustfmt::skip]
 mod constants {

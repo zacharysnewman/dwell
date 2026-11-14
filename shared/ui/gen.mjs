@@ -135,6 +135,8 @@ export const MAP_FIELDS = {
     // across the panel is computed (`levelSpans`).
     levels: ['levels'],
     startLevel: ['int', 0, 4],
+    // The zoom's steps between the levels' spans (BUGS.md #120: once a level a step).
+    zoomRatio: ['num', 1.25, 4],
     wheelStepPx: ['num', 1, 2000],
     pinchStep: ['num', 1.05, 8],
     fogColor: ['color'],
@@ -257,6 +259,56 @@ export function validateMap(data) {
   if (!isPow2(data.explored.cellM)) mapFail('explored.cellM must be a whole power of two');
   const pad = ['padZoomIn', 'padZoomInAlt', 'padZoomOut', 'padZoomOutAlt', 'padCenter', 'padClose'].map((k) => b[k]);
   if (new Set(pad).size !== pad.length || pad.includes('view')) mapFail('bigMap: the controller buttons must differ (View closes the map)');
+  return data;
+}
+
+// The big map's debug layers (shared/ui/mapLayers.json; REALISTIC_WORLD.md R6): read as JSON by
+// the shell (`ui/mapLayers.ts`), checked here. The fields are the generator's fixed vocabulary
+// (`dwell-worldgen` `map_layers.rs` `MapField`, whose test reads the same file).
+export const LAYER_FIELDS = { plates: 'category', uplift: 'value', rain: 'value', rocks: 'category' };
+
+const layersFail = (m) => {
+  throw new Error(`mapLayers.json: ${m}`);
+};
+const isColor = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
+/** Checks the debug layers' data; returns it. Throws naming the entry. */
+export function validateMapLayers(data) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) layersFail('(root) must be an object');
+  for (const k of Object.keys(data)) if (!['$comment', 'key', 'samples', 'layers'].includes(k)) layersFail(`unknown entry ${k}`);
+  if (typeof data.key !== 'string' || !/^Key[A-Z]$/.test(data.key)) layersFail(`key must be a letter key's code (KeyA–KeyZ), got ${JSON.stringify(data.key)}`);
+  if (!Number.isInteger(data.samples) || data.samples < 16 || data.samples > 512) layersFail(`samples must be a whole number within 16–512, got ${JSON.stringify(data.samples)}`);
+  if (!Array.isArray(data.layers) || data.layers.length === 0) layersFail('layers must be a list of at least one layer');
+  const names = new Set();
+  data.layers.forEach((l, i) => {
+    const at = `layers[${i}]`;
+    if (typeof l !== 'object' || l === null || Array.isArray(l)) layersFail(`${at} must be an object`);
+    for (const k of Object.keys(l)) if (!['$comment', 'name', 'label', 'field', 'opacity', 'colors', 'outlineColor', 'ramp'].includes(k)) layersFail(`unknown entry ${at}.${k}`);
+    if (typeof l.name !== 'string' || !/^[a-z][a-z0-9_]*$/.test(l.name)) layersFail(`${at}.name must be a lower-case name, got ${JSON.stringify(l.name)}`);
+    if (names.has(l.name)) layersFail(`${at}.name ${l.name} is used twice`);
+    names.add(l.name);
+    if (typeof l.label !== 'string' || l.label.length < 1 || l.label.length > 24) layersFail(`${at}.label must be 1 to 24 characters`);
+    const kind = LAYER_FIELDS[l.field];
+    if (!kind) layersFail(`${at}.field must be one of ${Object.keys(LAYER_FIELDS).join(', ')}, got ${JSON.stringify(l.field)}`);
+    if (typeof l.opacity !== 'number' || !(l.opacity > 0 && l.opacity <= 1)) layersFail(`${at}.opacity must be a number within 0 (exclusive) and 1`);
+    if (kind === 'category') {
+      if (l.ramp !== undefined) layersFail(`${at}.ramp: a ${l.field} layer is coloured by category (colors), not a ramp`);
+      if (typeof l.colors !== 'object' || l.colors === null || Array.isArray(l.colors)) layersFail(`${at}.colors must be an object of category → #rrggbb`);
+      for (const [c, v] of Object.entries(l.colors)) if (!isColor(v)) layersFail(`${at}.colors.${c} must be a #rrggbb colour, got ${JSON.stringify(v)}`);
+      if (l.outlineColor !== undefined && !isColor(l.outlineColor)) layersFail(`${at}.outlineColor must be a #rrggbb colour`);
+    } else {
+      if (l.colors !== undefined || l.outlineColor !== undefined) layersFail(`${at}: a ${l.field} layer is coloured by a ramp, not colors`);
+      if (!Array.isArray(l.ramp) || l.ramp.length < 2) layersFail(`${at}.ramp must be a list of at least two { at, color } stops`);
+      l.ramp.forEach((s, k) => {
+        const where = `${at}.ramp[${k}]`;
+        if (typeof s !== 'object' || s === null || Array.isArray(s)) layersFail(`${where} must be an object`);
+        for (const sk of Object.keys(s)) if (sk !== 'at' && sk !== 'color') layersFail(`unknown entry ${where}.${sk}`);
+        if (typeof s.at !== 'number' || !Number.isFinite(s.at)) layersFail(`${where}.at must be a number`);
+        if (k > 0 && !(s.at > l.ramp[k - 1].at)) layersFail(`${where}.at must be above the stop before it (${l.ramp[k - 1].at})`);
+        if (!isColor(s.color)) layersFail(`${where}.color must be a #rrggbb colour, got ${JSON.stringify(s.color)}`);
+      });
+    }
+  });
   return data;
 }
 
@@ -508,6 +560,201 @@ export function menuBackgroundsTs(data) {
   return ts.join('\n');
 }
 
+// ---- Map markers (shared/ui/markers.json → client/src/ui/markers.gen.ts and
+// crates/dwell-protocol/src/markers.gen.rs; docs/MAP_MARKERS.md). ----
+
+const markersHeader = 'Generated by shared/ui/gen.mjs from shared/ui/markers.json. Do not edit.';
+const mkFail = (m) => {
+  throw new Error(`markers.json: ${m}`);
+};
+const MARKER_TOP = ['$comment', 'palette', 'icons', 'auto', 'limits', 'world'];
+const MARKER_LIMITS = { maxMarkers: [1, 1000], labelChars: [4, 64], nameBytes: [8, 64], pickRadiusPx: [4, 64] };
+const MARKER_WORLD = { sizePx: [8, 96], nearM: [0, 1000], farM: [1, 100000], fadedAlpha: [0, 1], edgePx: [0, 200], showM: [10, 100000], hideWithinM: [0, 100], regroundAboveM: [0.5, 1000] };
+/** The SVG path commands an icon may use (absolute only, so every point can be checked) and their numbers. */
+const PATH_ARGS = { M: 2, L: 2, H: 1, V: 1, C: 6, Q: 4, A: 7, Z: 0 };
+/** An icon's box (its path's points lie in 0..BOX). */
+export const ICON_BOX = 24;
+
+/**
+ * Checks an icon's SVG path data: absolute M L H V C Q A Z only, each with whole sets of numbers,
+ * starting with M, every point (end and control points; an arc's end) inside the 24 × 24 box.
+ * Returns the number of subpaths. Throws a message naming what is wrong.
+ */
+export function checkIconPath(where, d) {
+  if (typeof d !== 'string' || d.trim() === '') mkFail(`${where} must be SVG path data`);
+  const tokens = d.match(/[A-Za-z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) ?? [];
+  if (tokens.join('').length !== d.replace(/[\s,]/g, '').length) mkFail(`${where} has characters that are not path commands or numbers`);
+  let i = 0;
+  let cmd = '';
+  let x = 0;
+  let y = 0;
+  let subpaths = 0;
+  const pt = (px, py) => {
+    if (!(px >= 0 && px <= ICON_BOX && py >= 0 && py <= ICON_BOX))
+      mkFail(`${where}: the point (${px}, ${py}) is outside the ${ICON_BOX} × ${ICON_BOX} box`);
+  };
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (/[A-Za-z]/.test(t)) {
+      if (!(t in PATH_ARGS)) mkFail(`${where}: command ${t} is not allowed (absolute M L H V C Q A Z only)`);
+      if (cmd === '' && t !== 'M') mkFail(`${where} must start with M`);
+      cmd = t;
+      i++;
+      if (t === 'M') subpaths++;
+      if (t === 'Z') continue;
+    } else if (cmd === '' || cmd === 'Z') mkFail(`${where}: a number with no command before it`);
+    const n = PATH_ARGS[cmd];
+    const args = tokens.slice(i, i + n);
+    if (args.length < n || args.some((a) => /[A-Za-z]/.test(a))) mkFail(`${where}: ${cmd} needs ${n} numbers`);
+    const v = args.map(Number);
+    i += n;
+    if (cmd === 'H') x = v[0];
+    else if (cmd === 'V') y = v[0];
+    else if (cmd === 'A') {
+      if (!(v[0] > 0 && v[1] > 0)) mkFail(`${where}: an arc's radii must be positive`);
+      if (![0, 1].includes(v[3]) || ![0, 1].includes(v[4])) mkFail(`${where}: an arc's flags must be 0 or 1`);
+      [x, y] = [v[5], v[6]];
+    } else {
+      for (let k = 0; k + 1 < n - 2; k += 2) pt(v[k], v[k + 1]);
+      [x, y] = [v[n - 2], v[n - 1]];
+    }
+    pt(x, y);
+  }
+  return subpaths;
+}
+
+const colourOf = (where, v, names) => {
+  if (!names.has(v)) mkFail(`${where} must name a palette colour (${[...names].join(', ')}), got ${JSON.stringify(v)}`);
+};
+const mkNum = (where, v, [lo, hi]) => {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) mkFail(`${where} must be a number in ${lo}..${hi}, got ${JSON.stringify(v)}`);
+};
+const mkObj = (where, v, keys) => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) mkFail(`${where} must be an object`);
+  for (const k of Object.keys(v)) if (k !== '$comment' && !keys.includes(k)) mkFail(`unknown entry ${where}.${k}`);
+  for (const k of keys) if (!(k in v)) mkFail(`missing entry ${where}.${k}`);
+};
+
+/** Checks the marker icons, palette, auto kinds and limits; returns them. Throws naming the entry. */
+export function validateMarkers(data) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) mkFail('(root) must be an object');
+  for (const k of Object.keys(data)) if (!MARKER_TOP.includes(k)) mkFail(`unknown entry ${k}`);
+  for (const k of MARKER_TOP.slice(1)) if (!(k in data)) mkFail(`missing entry ${k}`);
+  mkObj('limits', data.limits, Object.keys(MARKER_LIMITS));
+  for (const [k, r] of Object.entries(MARKER_LIMITS)) {
+    mkNum(`limits.${k}`, data.limits[k], r);
+    if (!Number.isInteger(data.limits[k])) mkFail(`limits.${k} must be a whole number`);
+  }
+  mkObj('world', data.world, Object.keys(MARKER_WORLD));
+  for (const [k, r] of Object.entries(MARKER_WORLD)) mkNum(`world.${k}`, data.world[k], r);
+  if (data.world.farM <= data.world.nearM) mkFail('world.farM must be past world.nearM');
+  const id = (where, v) => {
+    if (typeof v !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(v) || v.length > data.limits.nameBytes)
+      mkFail(`${where} must be lowercase words joined by dashes, at most limits.nameBytes, got ${JSON.stringify(v)}`);
+  };
+  if (!Array.isArray(data.palette) || data.palette.length < 2 || data.palette.length > 16) mkFail('palette must be a list of 2 to 16 colours');
+  const colours = new Set();
+  data.palette.forEach((c, i) => {
+    const where = `palette[${i}]`;
+    mkObj(where, c, ['name', 'rgb']);
+    id(`${where}.name`, c.name);
+    if (typeof c.rgb !== 'string' || !/^#[0-9a-f]{6}$/.test(c.rgb)) mkFail(`${where}.rgb must be #rrggbb (lowercase), got ${JSON.stringify(c.rgb)}`);
+    if (colours.has(c.name)) mkFail(`${where}.name: "${c.name}" is listed twice`);
+    colours.add(c.name);
+  });
+  if (!Array.isArray(data.icons) || data.icons.length === 0) mkFail('icons must be a list of icons');
+  const icons = new Set();
+  data.icons.forEach((ic, i) => {
+    const where = `icons[${i}]`;
+    mkObj(where, ic, ['id', 'name', 'colour', 'path']);
+    id(`${where}.id`, ic.id);
+    if (typeof ic.name !== 'string' || ic.name.trim() === '' || ic.name.length > data.limits.labelChars) mkFail(`${where}.name must be some text, at most limits.labelChars`);
+    colourOf(`${where}.colour`, ic.colour, colours);
+    checkIconPath(`${where}.path`, ic.path);
+    if (icons.has(ic.id)) mkFail(`${where}.id: "${ic.id}" is listed twice`);
+    icons.add(ic.id);
+  });
+  if (!Array.isArray(data.auto)) mkFail('auto must be a list of kinds');
+  const kinds = new Set();
+  data.auto.forEach((a, i) => {
+    const where = `auto[${i}]`;
+    mkObj(where, a, ['kind', 'on', 'keep', 'icon', 'colour', 'label']);
+    id(`${where}.kind`, a.kind);
+    if (typeof a.on !== 'boolean') mkFail(`${where}.on must be true or false`);
+    if (a.keep !== 'one' && a.keep !== 'each') mkFail(`${where}.keep must be "one" or "each", got ${JSON.stringify(a.keep)}`);
+    if (!icons.has(a.icon)) mkFail(`${where}.icon must name an icon, got ${JSON.stringify(a.icon)}`);
+    colourOf(`${where}.colour`, a.colour, colours);
+    if (typeof a.label !== 'string' || a.label.trim() === '' || [...a.label].length > data.limits.labelChars) mkFail(`${where}.label must be some text, at most limits.labelChars`);
+    if (kinds.has(a.kind)) mkFail(`${where}.kind: "${a.kind}" is listed twice`);
+    kinds.add(a.kind);
+  });
+  return data;
+}
+
+/** The TypeScript for validated markers data. */
+export function markersTs(data) {
+  const ts = [`// ${markersHeader}`, ''];
+  ts.push('/** A marker icon (shared/ui/markers.json): SVG path data in a 24 × 24 box, filled even-odd. */');
+  ts.push('export interface MarkerIcon {');
+  ts.push('  id: string;');
+  ts.push('  name: string;');
+  ts.push('  /** Its default colour, a palette name. */');
+  ts.push('  colour: string;');
+  ts.push('  path: string;');
+  ts.push('}');
+  ts.push('');
+  ts.push('/** A kind of marker the game places by itself. */');
+  ts.push('export interface AutoMarkerKind {');
+  ts.push('  kind: string;');
+  ts.push('  on: boolean;');
+  ts.push("  keep: 'one' | 'each';");
+  ts.push('  icon: string;');
+  ts.push('  colour: string;');
+  ts.push('  label: string;');
+  ts.push('}');
+  ts.push('');
+  ts.push(`export const ICON_BOX = ${ICON_BOX};`);
+  ts.push('');
+  ts.push('// prettier-ignore');
+  ts.push('export const MARKER_PALETTE: readonly { name: string; rgb: string }[] = [');
+  for (const c of data.palette) ts.push(`  { name: ${JSON.stringify(c.name)}, rgb: ${JSON.stringify(c.rgb)} },`);
+  ts.push('];');
+  ts.push('');
+  ts.push('// prettier-ignore');
+  ts.push('export const MARKER_ICONS: readonly MarkerIcon[] = [');
+  for (const ic of data.icons)
+    ts.push(`  { id: ${JSON.stringify(ic.id)}, name: ${JSON.stringify(ic.name)}, colour: ${JSON.stringify(ic.colour)}, path: ${JSON.stringify(ic.path)} },`);
+  ts.push('];');
+  ts.push('');
+  ts.push('// prettier-ignore');
+  ts.push('export const AUTO_MARKERS: readonly AutoMarkerKind[] = [');
+  for (const a of data.auto) ts.push(`  ${JSON.stringify({ kind: a.kind, on: a.on, keep: a.keep, icon: a.icon, colour: a.colour, label: a.label })},`);
+  ts.push('];');
+  ts.push('');
+  ts.push('// prettier-ignore');
+  ts.push(`export const MARKER_LIMITS = ${JSON.stringify(Object.fromEntries(Object.keys(MARKER_LIMITS).map((k) => [k, data.limits[k]])))} as const;`);
+  ts.push('');
+  ts.push('// prettier-ignore');
+  ts.push(`export const MARKER_WORLD = ${JSON.stringify(Object.fromEntries(Object.keys(MARKER_WORLD).map((k) => [k, data.world[k]])))} as const;`);
+  ts.push('');
+  return ts.join('\n');
+}
+
+/** The Rust for validated markers data: the limits the server holds a player's markers to. */
+export function markersRs(data) {
+  return [
+    `// ${markersHeader}`,
+    '',
+    '/// The most markers a player keeps in a world, the auto ones included (`limits.maxMarkers`).',
+    `pub const MAX_MARKERS: usize = ${data.limits.maxMarkers};`,
+    "/// A label's most characters (`limits.labelChars`).",
+    `pub const LABEL_CHARS: usize = ${data.limits.labelChars};`,
+    "/// An icon's or an auto kind's name's most bytes (`limits.nameBytes`).",
+    `pub const NAME_BYTES: usize = ${data.limits.nameBytes};`,
+    '',
+  ].join('\n');
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const data = validateHud(JSON.parse(readFileSync(join(here, 'hud.json'), 'utf8')));
   writeFileSync(join(root, 'client/src/ui/hud.gen.ts'), hudTs(data));
@@ -515,6 +762,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const map = validateMap(JSON.parse(readFileSync(join(here, 'map.json'), 'utf8')));
   writeFileSync(join(root, 'crates/dwell-game/src/map.gen.rs'), mapRs(map));
   writeFileSync(join(root, 'client/src/ui/map.gen.ts'), mapTs(map));
+  validateMapLayers(JSON.parse(readFileSync(join(here, 'mapLayers.json'), 'utf8')));
   const layout = validateLayout(JSON.parse(readFileSync(join(here, 'layout.json'), 'utf8')));
   writeFileSync(join(root, 'client/src/ui/layout.gen.ts'), layoutTs(layout));
   const backgrounds = validateMenuBackgrounds(
@@ -522,6 +770,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     (file) => existsSync(join(here, 'menu-backgrounds', file)),
   );
   writeFileSync(join(root, 'client/src/ui/menuBackgrounds.gen.ts'), menuBackgroundsTs(backgrounds));
-  console.log('ui: HUD parts, the layout, the map and the menu backgrounds generated');
+  const markers = validateMarkers(JSON.parse(readFileSync(join(here, 'markers.json'), 'utf8')));
+  writeFileSync(join(root, 'client/src/ui/markers.gen.ts'), markersTs(markers));
+  writeFileSync(join(root, 'crates/dwell-protocol/src/markers.gen.rs'), markersRs(markers));
+  console.log('ui: HUD parts, the layout, the map, the menu backgrounds and the map markers generated');
 }
 

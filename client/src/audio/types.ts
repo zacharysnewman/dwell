@@ -83,7 +83,13 @@ export interface IntensityDef {
 }
 
 export interface SoundDef {
+  $comment?: string;
   gain: number;
+  /** At most this many plays of the sound at once; more are dropped, never restarted (default
+   * `DEFAULT_SOUND_VOICES`, BUGS.md #103). */
+  voices?: number;
+  /** No second play within this many seconds of the last one (default 0). */
+  minGapS?: number;
   /** Send to the room reverb, 0–1. */
   reverb?: number;
   variation: VariationDef | 'none';
@@ -101,10 +107,19 @@ export interface SoundDef {
 export interface SamplesDef {
   /** Published names under the site's `media/` (`stone-step-1-<hash>.m4a`). */
   files: string[];
+  /**
+   * The pack's own name of each file, in order (`GRUNT_Male_B_Hurt_Short_01`): its category is the
+   * first word. A player's voice must be a human one (BUGS.md #159).
+   */
+  from?: string[];
   /** Level (default 1), times the play's gain. */
   gain?: number;
   /** ± semitones per play. */
   pitch?: number;
+  /** Semitones every play is moved by (a lower, softer take of the same recordings). */
+  shift?: number;
+  /** A low-pass on every play (Hz): the recordings' highs cut (a calm stroke, not a splash). */
+  lowpassHz?: number;
   /**
    * The share sent to the room (default 0: dry). Recordings carry their own room in them, so the
    * sound's `reverb` (for its procedural layers) would add a second, echoey room on top (owner,
@@ -127,7 +142,8 @@ export type SetEvent =
   | 'burn'
   | 'explode'
   | 'impact'
-  | 'brush';
+  | 'brush'
+  | 'swim_under';
 /** An event's part in a continuous sound: start the mover's voice, update it, stop it. */
 export type LoopPart = 'start' | 'update' | 'stop';
 export type Gait = 'walk' | 'run' | 'crouch' | 'climb' | 'swim';
@@ -146,6 +162,22 @@ export interface EventDef {
   fallback?: false;
   /** A creature's event (AUDIO.md §2d): the event's `block` is the model's index in `creatures`. */
   creature?: 'step' | 'startle' | 'call';
+  /** Where the local player's own play of it is heard (a placement in `self`); none: at the ear. */
+  self?: string;
+}
+
+/**
+ * Where an own sound is heard (AUDIO.md §5a, BUGS.md #110): metres from the ear in the listener's
+ * own frame, so looking up or down never moves it behind the head.
+ */
+export interface SelfPlacement {
+  right: number;
+  up: number;
+  ahead: number;
+  /** Alternate plays (footsteps) move this far left and right. */
+  stepM?: number;
+  /** The share sent to the room on top of the sound's own. */
+  reverb?: number;
 }
 
 /** The ambient sounds' tunables (AUDIO.md §2), read by the Rust game. */
@@ -182,6 +214,23 @@ export interface AmbienceDef {
   beds: Record<string, BedDef>;
 }
 
+/** A bus of the mixer (AUDIO.md §3). */
+export type Bus = 'effects' | 'ambience' | 'ui' | 'music';
+
+/** The underwater muffle (AUDIO.md §3a): the buses it filters, the filter and level under water. */
+export interface UnderwaterDef {
+  buses: Bus[];
+  /** The low-pass's cutoff with the eye under water (Hz). */
+  lowpassHz: number;
+  q: number;
+  /** The filtered buses' level under water (1 in air). */
+  gain: number;
+  /** The glide at the surface crossing (s). */
+  easeS: number;
+  /** The filter's cutoff in air (Hz): open, transparent. */
+  openHz: number;
+}
+
 export type ControlSounds = string[] | { silent: string };
 
 export interface SoundData {
@@ -192,12 +241,15 @@ export interface SoundData {
   gaitOrder: string[];
   /** In the Rust game's numbering (SoundKind). */
   events: EventDef[];
+  /** The own sounds' placements by name (an event's `self`). */
+  self: Record<string, SelfPlacement>;
   sets: Record<string, Partial<Record<SetEvent, string>>>;
   actions: Record<string, string>;
   ui: Record<string, string>;
   controls: Record<string, ControlSounds>;
   ambient: AmbientDef;
   ambience: AmbienceDef;
+  underwater: UnderwaterDef;
   /** Each creature model's sounds (AUDIO.md §2d), in the Rust game's order. */
   creatures: {
     radiusM: number;
@@ -212,6 +264,8 @@ export interface SoundData {
       }
     >;
   };
+  /** Brushing through foliage (AUDIO.md §5 `brush`): the Rust game's rate; here for the checks. */
+  brush: { everyM: number; minS: number };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];

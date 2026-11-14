@@ -1,0 +1,9 @@
+{ "formatVersion": 1, "name": "water s3: the waterline, a camera going straight down slowly from 2 m above the sea to 3 m below (level 32, the bed 27.5), slowest through the surface",
+  "keyframes": [
+    { "t": 0, "position": [11660, 34.0, 19575], "look": [0, -12], "fov": 65, "timeOfDay": 0.55 },
+    { "t": 3.5, "position": [11660, 32.5, 19575], "look": [0, -10] },
+    { "t": 8.5, "position": [11660, 31.5, 19575], "look": [0, -8] },
+    { "t": 11.5, "position": [11660, 29.0, 19575], "look": [0, -6] },
+    { "t": 14, "position": [11660, 29.0, 19575], "look": [0, 22] }
+  ],
+  "segments": [ { "move": "ease", "easing": "inSine" }, { "move": "linear" }, { "move": "ease", "easing": "outSine" }, { "move": "ease", "easing": "inOutSine" } ] }

@@ -210,7 +210,9 @@ dwell_world::both_faces!(
                 let top = g.ground_y(x, z).unwrap();
                 let under = dwell_blocks::block_of(g.state_at(x, top - 1, z)).name;
                 let rock = g.rock_at_surface(x.into(), z.into()).0;
-                let soil = veg.soil_types[usize::from(veg.rock_soil(rock.name).soil_type)].name;
+                let soil = veg.soil_types
+                    [usize::from(veg.rock_soil(rock.name, f64::NAN, f64::NAN).soil_type)]
+                .name;
                 *seen.entry((soil, under)).or_insert(0) += 1;
             }
             seen

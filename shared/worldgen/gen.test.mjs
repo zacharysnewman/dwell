@@ -8,18 +8,25 @@ import {
   decorationsRust,
   hydrologyRust,
   midplaneRust,
+  platesRust,
+  climateRust,
+  validateClimate,
   placementsRust,
   rocksRust,
   validateRocks,
+  CAP_CLIMATES,
   vegetationRust,
   validateVegetation,
   registryBlocks,
+  surfaceBlocks,
+  validateSurfaceRamps,
   registryStructures,
   terrainRust,
   loadBiomes,
   validateDecorations,
   validateHydrology,
   validateMidplane,
+  validatePlates,
   validatePlacements,
   validateTerrainAndBiomes,
   validateBiome,
@@ -53,8 +60,21 @@ test('an entry added by data alone is emitted', () => {
     height: [0, 50],
   });
   const rs = decorationsRust(validateDecorations(d, blocks));
-  assert.match(rs, /DECORATIONS: \[Decoration; 2\]/);
-  assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50/);
+  assert.ok(rs.includes(`DECORATIONS: [Decoration; ${d.decorations.length}]`));
+  assert.match(rs, /name: "dirt_tufts", block: "dwell:tall_grass", on: &\["dwell:dirt"\], density: 0\.1, patch_wavelength: 0, patch_coverage: 1\.0, max_slope: 2, min_height: 0, max_height: 50, on_ramps: false/);
+});
+
+test('a rule on ramps needs its ground to have ramps its block may stand on', () => {
+  const d = load();
+  d.decorations[0].onRamps = true;
+  validateDecorations(d, blocks);
+  const strict = new Map(blocks);
+  const grass = strict.get('dwell:tall_grass');
+  strict.set('dwell:tall_grass', { ...grass, placeOn: grass.placeOn.filter((b) => b !== 'dwell:grass_ramp') });
+  assert.throws(() => validateDecorations(d, strict), /onRamps: dwell:tall_grass may not stand on dwell:grass_ramp/);
+  const noRamps = new Map(blocks);
+  noRamps.delete('dwell:grass_ramp');
+  assert.throws(() => validateDecorations(d, noRamps), /onRamps: dwell:grass has no ramps/);
 });
 
 test('a bad entry fails with its name and the problem', () => {
@@ -68,6 +88,7 @@ test('a bad entry fails with its name and the problem', () => {
     [(d) => (d.decorations[0].maxSlope = 1.5), /maxSlope must be a whole number/],
     [(d) => (d.decorations[0].height = [10, 5]), /height must be \[min, max\]/],
     [(d) => (d.decorations[0].rarity = 1), /unknown rarity/],
+    [(d) => (d.decorations[0].onRamps = 1), /onRamps must be true or false/],
     [(d) => d.decorations.push({ ...d.decorations[0] }), /duplicate name/],
   ];
   for (const [edit, message] of cases) {
@@ -142,7 +163,9 @@ test('a bad biome or world terrain fails with the key and the problem', () => {
     [(b) => (b.bands[0].roughness = 1), /bands\[0\]: unknown roughness/],
     [(b) => (b.bands = []), /bands must be a list of elevation bands/],
     [(b) => (b.where.weight = 0), /where\.weight must be in \(0, 1000\]/],
-    [(b) => (b.where.rain = { min: 0, blend: 0 }), /where: unknown rain/],
+    [(b) => (b.where.snowfall = { min: 0, blend: 0 }), /where: unknown snowfall/],
+    [(b) => (b.where.celsius = { min: 20, max: 10, blend: 1 }), /where\.celsius\.max must be greater/],
+    [(b) => (b.where.rain = { max: 500 }), /where\.rain\.blend must be/],
     [(b) => (b.where.wetness = { min: 0.5, max: 0.2, blend: 0 }), /where\.wetness\.max must be greater/],
     [(b) => (b.where.coast = { blend: 1 }), /where\.coast needs a min or a max/],
     [(b) => (b.where.elevation = { min: 0 }), /where\.elevation\.blend must be/],
@@ -219,12 +242,34 @@ test('a placement added by data alone is emitted', () => {
   assert.ok(rs.includes(`PLACEMENTS: [Placement; ${String(n + 1)}]`));
   assert.match(
     rs,
-    /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+grid: 24,/,
+    /name: "rock_scatter",\n\s+structures: &\[\("dwell:proto_rock", 1\)\],\n\s+on: &\["dwell:grass", "dwell:dirt"\],\n\s+footprint_on: false,\n\s+pad_trunk: false,\n\s+grid: 24,/,
   );
   // No groves: everywhere; no rise: flat; 30° as a squared gradient (tan² 30° = 1/3); quarter turns.
   assert.match(rs, /grove_wavelength: 0,\n\s+grove_coverage: 1\.0,\n\s+grove_outside: 1\.0,/);
   assert.match(rs, /rise_full: 0,\n\s+rise_low: 1\.0,\n\s+max_gradient_sq: 0\.33333334,/);
   assert.match(rs, /rotations: &\[0, 2\],/);
+});
+
+test('a placement pads its trunks by its `pad`, by default when it lists a tree species', () => {
+  // WORK_QUEUE item 44: the ground under the trunk's columns is levelled to its base.
+  const d = loadPlacements();
+  const base = { on: ['dwell:grass'], footprint: 'anchor', grid: 24, density: 0.2, height: [0, 600], maxSlopeDeg: 30, spacing: 0, rotate: [0] };
+  d.placements = [
+    { ...base, name: 'species_default', structures: { 'dwell:oak': 1 } },
+    { ...base, name: 'structure_default', structures: { 'dwell:proto_rock': 1 } },
+    { ...base, name: 'species_none', structures: { 'dwell:oak': 1 }, pad: 'none' },
+    { ...base, name: 'structure_trunk', structures: { 'dwell:proto_tree': 1 }, pad: 'trunk' },
+  ];
+  const rs = placementsRust(validatePlacements(d, blocks, structures));
+  const pads = [...rs.matchAll(/pad_trunk: (true|false),/g)].map((m) => m[1]);
+  assert.deepEqual(pads, ['true', 'false', 'false', 'true']);
+  // The checked-in tree placements all pad; the boulders don't.
+  const built = placementsRust(validatePlacements(loadPlacements(), blocks, structures));
+  const names = [...built.matchAll(/name: "([a-z_]+)",\n(?:.*\n){3}\s+pad_trunk: (true|false)/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(
+    names.filter(([, p]) => p === 'false').map(([n]) => n),
+    ['boulders'],
+  );
 });
 
 test('a bad placement fails with its name and the problem', () => {
@@ -236,6 +281,7 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.on = ['dwell:moss']), /on names unknown block dwell:moss/],
     [(p) => (p.on = ['dwell:water']), /on block dwell:water is not a full block/],
     [(p) => (p.footprint = 'crown'), /footprint must be one of on, anchor/],
+    [(p) => (p.pad = 'ring'), /pine_groves: pad must be one of trunk, none/],
     [(p) => (p.grid = 1), /grid must be a whole number of metres in \[2, 256\]/],
     [(p) => (p.density = 1.5), /density must be in \(0, 1\]/],
     [(p) => (p.groves.wavelength = 4), /groves\.wavelength/],
@@ -243,7 +289,7 @@ test('a bad placement fails with its name and the problem', () => {
     [(p) => (p.height = [500, 400]), /height must be \[min, max\]/],
     [(p) => (p.rise.full = 1900), /rise\.full must be a whole number of metres in \(height\[0\], height\[1\]\]/],
     [(p) => (p.maxSlopeDeg = 90), /maxSlopeDeg must be in \(0, 90\) degrees/],
-    [(p) => (p.spacing = -1), /spacing must be a whole number of blocks/],
+    [(p) => (p.spacing = -5), /spacing must be a whole number of blocks/],
     [(p) => (p.rotate = [0, 45]), /rotate must be distinct angles from 0, 90, 180, 270/],
     [(p) => (p.mirror = ['x']), /pine_groves: unknown mirror/],
     [(p) => (p.variants[0].replace = { 'dwell:leaves': 'dwell:moss' }), /variant snowy: replace names unknown block dwell:moss/],
@@ -388,7 +434,9 @@ test('portal rules changed by data alone are emitted', () => {
   m.portals.ladder.wall = 'east';
   m.portals.rim = { block: 'dwell:sand', width: 2, height: 1 };
   m.bedrock.thickness = 2.5;
+  m.portals.exit = { push: 12.5, depth: 3, minRise: 9 };
   const rs = midplaneRust(validateMidplane(m, blocks));
+  assert.match(rs, /exit: PortalExit \{ push: 12\.5, depth: 3\.0, min_rise: 9\.0 \},/);
   assert.match(rs, /count_min: 2,/);
   assert.match(rs, /radius: 4\.0,/);
   assert.match(rs, /ladder: "dwell:ladder\[facing=west\]",/);
@@ -417,6 +465,11 @@ test('bad bedrock or portal entries fail with the key and the problem', () => {
     [(m) => (m.portals.clear = 1), /portals\.monument\.structure dwell:portal_arch reaches 7\.1 m from the axis, past the clear ground \(4\.5 m\)/],
     [(m) => (m.portals.monument.lodCellM = 3), /portals\.monument\.lodCellM must be a power of two in \[1, 64\]/],
     [(m) => (m.portals.monument.extra = 1), /portals\.monument: unknown extra/],
+    [(m) => delete m.portals.exit, /portals\.exit must be an object/],
+    [(m) => (m.portals.exit.push = -1), /portals\.exit\.push must be in \[0, 1000\]/],
+    [(m) => (m.portals.exit.depth = 100), /portals\.exit\.depth must be in \[0, 64\]/],
+    [(m) => (m.portals.exit.speed = 3), /portals\.exit: unknown speed/],
+    [(m) => (m.portals.exit.minRise = 5), /portals\.exit\.minRise must be at least 8 m\/s/],
   ];
   for (const [change, message] of cases) {
     const m = loadMidplane();
@@ -433,6 +486,116 @@ test('a portal monument is named by data: another structure, or none', () => {
   assert.match(rs, /monument_lod_cell: 4,/);
   m.portals.monument.structure = null;
   assert.match(midplaneRust(validateMidplane(m, blocks)), /monument: None,/);
+});
+
+const loadPlates = () => JSON.parse(readFileSync(join(here, 'plates.json'), 'utf8'));
+
+test('the checked-in plate layout rules are valid and generate the checked-in Rust', () => {
+  const rs = platesRust(validatePlates(loadPlates()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/plates.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a plate fixture and new ranges added by data alone are emitted', () => {
+  const p = loadPlates();
+  p.count = [6, 9];
+  p.kinds.oceanic.min = 2;
+  p.fixtures.push({
+    name: 'young_ocean_dives_last',
+    plates: [
+      { kind: 'oceanic', at: [0, 0], motion: [2, 0], age: 300 },
+      { kind: 'oceanic', at: [4000, 0], motion: [-2, 0], age: 10 },
+    ],
+    expect: { kind: 'convergent', subducts: 0 },
+  });
+  const rs = platesRust(validatePlates(p));
+  assert.match(rs, /count_min: 6,/);
+  assert.match(rs, /count_max: 9,/);
+  assert.match(rs, /oceanic: KindRule \{ weight: 0\.5, min: 2, interior: 5000\.0 \},/);
+  assert.match(rs, /name: "young_ocean_dives_last",/);
+  assert.match(rs, /age: 300\.0 \},\n.*age: 10\.0 \},\n {8}\],\n {8}kind: BoundaryKind::Convergent,\n {8}subducts: Some\(0\),/);
+});
+
+test('a pair landform added by data alone is emitted', () => {
+  // Realistic batch A: a back-arc basin behind a continental arc, by data.
+  const p = loadPlates();
+  const pair = p.uplift.pairs.find(
+    (e) => e.boundary === 'convergent' && e.plates.join() === 'continental,oceanic',
+  );
+  pair.landforms.push({ side: 'over', height: -40, width: 3000, distance: 16000 });
+  const rs = platesRust(validatePlates(p));
+  assert.match(
+    rs,
+    /PairForm \{ side: Side::Over, shape: Shape::Bump, height: -40\.0, width: 3000\.0, distance: 16000\.0 \}\], arc: ArcMode::Crest/,
+  );
+  assert.match(rs, /rim: RimRule \{ edge_sea: 2500\.0,/);
+  assert.match(rs, /rift: RiftRule \{ segment_length: \[8000\.0, 15000\.0\],/);
+});
+
+test('the erosion\'s routing and the interior relief are chosen by data alone', () => {
+  const p = loadPlates();
+  p.variety.flow.routing = 'd8';
+  p.variety.relief.swells.height = 140;
+  p.variety.relief.lacunarity = 1.87;
+  const rs = platesRust(validatePlates(p));
+  assert.match(rs, /flow: FlowRouting::D8,/);
+  assert.match(rs, /swell_height: 140\.0,/);
+  assert.match(rs, /lacunarity: 1\.87,/);
+  p.variety.flow = { routing: 'random', exponent: 2 };
+  assert.match(platesRust(validatePlates(p)), /flow: FlowRouting::Random \{ exponent: 2\.0 \},/);
+});
+
+test('bad plate entries fail with the key and the problem', () => {
+  const cases = [
+    [(p) => (p.count = [5, 3]), /plates\.json: count must be \[min, max\]/],
+    [(p) => (p.count = [0, 3]), /count must be \[min, max\], whole numbers 1–32/],
+    [(p) => delete p.reach, /plates\.json: reach is missing/],
+    [(p) => (p.seaMargin = 2000), /the file: unknown seaMargin/],
+    [(p) => (p.centres = 1000), /centres must be in \[50000, 200000\]/],
+    [(p) => (p.rim.noise.amplitude = 5000), /rim\.noise\.amplitude must be in \[0, 1000\]/],
+    [(p) => (p.hotspots.within = 49000), /hotspots\.within must leave the rim's edgeSea band clear/],
+    [(p) => (p.kinds.oceanic.interior = -1), /kinds\.oceanic\.interior must be in/],
+    [(p) => p.uplift.pairs.pop(), /uplift\.pairs: no entry for transform:oceanic-oceanic/],
+    [(p) => p.uplift.pairs.push(p.uplift.pairs[0]), /duplicate pair convergent:continental-continental/],
+    [(p) => (p.uplift.pairs[0].plates = ['oceanic', 'continental']), /plates must be two plate kinds, continental first/],
+    [(p) => (p.uplift.pairs[0].landforms[0].side = 'over'), /side over: only on a subducting pair/],
+    [(p) => (p.uplift.pairs[5].landforms[0].side = 'continental'), /side continental: the pair has no continental plate/],
+    [(p) => (p.uplift.pairs[1].landforms[0].shape = 'rift'), /shape rift must be astride/],
+    [(p) => (p.uplift.pairs[3].arc = 'island'), /arc island: only on a subducting pair/],
+    [(p) => (p.uplift.rift.sill = [0.1, 0.9]), /sill's max must be under depth's min/],
+    [(p) => (p.uplift.along.height = 1), /uplift\.along\.height must be in \[0, 0\.9\]/],
+    [(p) => (p.kinds.basaltic = { weight: 1, min: 0 }), /kinds: unknown basaltic/],
+    [(p) => delete p.kinds.oceanic, /kinds\.oceanic is missing/],
+    [(p) => (p.kinds.oceanic.weight = 2), /kinds\.oceanic\.weight must be in \[0, 1\]/],
+    [(p) => ((p.kinds.oceanic.weight = 0), (p.kinds.continental.weight = 0)), /kinds: the weights must not all be 0/],
+    [(p) => (p.kinds.oceanic.min = 7), /kinds: the kinds' mins \(8\) exceed the least plate count \(7\)/],
+    [(p) => (p.warp.wavelength = 1.5), /warp\.wavelength must be a whole number/],
+    [(p) => (p.transformBelow = 1.5), /transformBelow must be in \[0, 1\]/],
+    [(p) => (p.hotspots.extra = 1), /hotspots: unknown extra/],
+    [(p) => (p.other = 1), /the file: unknown other/],
+    [(p) => (p.uplift.cell = 100), /uplift\.cell must be in \[500, 10000\]/],
+    [(p) => delete p.uplift.rift, /uplift\.rift must be an object/],
+    [(p) => (p.uplift.pairs[0].landforms[0].width = 0), /uplift\.pairs\[0\]\.landforms\[0\]\.width must be in \[1, 50000\]/],
+    [(p) => (p.uplift.arc.maxCones = 2.5), /uplift\.arc\.maxCones must be a whole number/],
+    [(p) => delete p.uplift.hotspot.decay, /uplift\.hotspot\.decay is missing/],
+    [(p) => (p.uplift.wobble = 1), /uplift: unknown wobble/],
+    [(p) => (p.variety.flow.routing = 'mfd'), /variety\.flow\.routing must be one of d8, random/],
+    [(p) => (p.variety.relief.lacunarity = 2.0001 - 1), /variety\.relief\.lacunarity must be in \[1\.1, 4\]/],
+    [(p) => (p.variety.relief.hillVary.min = 2), /variety\.relief\.hillVary \[min, max\] must be/],
+    [(p) => (p.variety.relief.swells.octaves = 1.5), /variety\.relief\.swells\.octaves must be a whole number/],
+    [(p) => delete p.variety, /plates\.json: variety is missing/],
+    [(p) => (p.fixtures[0].plates[1].kind = 'mantle'), /fixtures\[0\] \(ocean_under_continent\)\.plates\[1\]\.kind must be one of oceanic, continental/],
+    [(p) => p.fixtures[0].plates.pop(), /fixtures\[0\] \(ocean_under_continent\)\.plates must be two plates/],
+    [(p) => (p.fixtures[0].plates[0].at = [5000, 0]), /plates must not share a centre/],
+    [(p) => (p.fixtures[0].expect.kind = 'sideways'), /expect\.kind must be one of convergent, divergent, transform/],
+    [(p) => (p.fixtures[3].expect.subducts = 0), /fixtures\[3\] \(rift_opens\)\.expect\.subducts must be null for a divergent boundary/],
+    [(p) => (p.fixtures[1].name = p.fixtures[0].name), /fixtures\[1\] \(ocean_under_continent\): duplicate name/],
+  ];
+  for (const [change, message] of cases) {
+    const p = loadPlates();
+    change(p);
+    assert.throws(() => validatePlates(p), message);
+  }
 });
 
 test('the checked-in volumes are valid and generate the checked-in Rust', () => {
@@ -584,6 +747,18 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
+  // 0.64: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
+  bad((x) => (x.shaping.notched = 'some'), /shaping.notched must be one of none, mesaEdges, all/);
+  bad((x) => (x.mesaRelief.topAmplitude = 99), /mesaRelief.topAmplitude must be in \[0, 50\]/);
+  bad((x) => (x.blends[0].shares = [0.7, 0.7]), /shares must sum to 1/);
+  bad((x) => (x.blends[0].blocks[0] = 'dwell:nothing'), /block "dwell:nothing" is not in the registry/);
+  bad((x) => (x.blends[0].stacks = ['dwell:nothing']), /stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.blends[0].dither = 0.2), /dither must be under half the smallest share/);
+  {
+    const x = rocks();
+    x.blends.push({ name: 'test:greys', stacks: ['dwell:granite_core'], blocks: ['dwell:stone', 'dwell:dirt'], shares: [0.5, 0.5], wavelength: 50, slope: 0, dither: 0.1, ditherWavelength: 2 });
+    assert.match(rocksRust(validateRocks(x, blocks)), /Blend \{ name: "test:greys", stacks: &\["dwell:granite_core"\]/);
+  }
   bad((x) => (x.extra = 1), /unknown extra/);
   // The erosion (T4): its knobs by data alone; bad ones named.
   const e = rocks();
@@ -592,6 +767,109 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.erosion.threshold = 0.5), /erosion.threshold must be/);
   bad((x) => delete x.erosion.wall, /erosion.wall must be/);
   bad((x) => (x.erosion.flow = 1), /erosion: unknown flow/);
+});
+
+test('a rock\'s capBy picks its treads\' block by the climate, by data alone; bad entries fail naming them (BUGS.md #134)', () => {
+  const rocks = () => JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  const sandstone = rocks().rocks.find((r) => r.name === 'dwell:sandstone');
+  assert.equal(sandstone.cap, 'dwell:red_sandstone', 'red sandstone treads away from the desert');
+  assert.deepEqual(sandstone.capBy, [{ arid: 'dwell:red_sand' }], 'red sand on arid treads');
+  assert.deepEqual(CAP_CLIMATES, ['arid']);
+  // A rock gains a capBy by data alone.
+  const d = rocks();
+  d.rocks.find((r) => r.name === 'dwell:shale').capBy = [{ arid: 'dwell:sand' }];
+  d.arid.rain = 300;
+  const out = rocksRust(validateRocks(d, blocks));
+  assert.match(out, /cap: "dwell:dirt",\n {8}cap_by: &\[CapRule \{ climate: CapClimate::Arid, cap: "dwell:sand" \}\],/);
+  assert.match(out, /arid: Arid \{ rain: 300\.0, wetness: 0\.3, celsius: 6\.0 \},/);
+  const bad = (f, msg) => {
+    const x = rocks();
+    f(x);
+    assert.throws(() => validateRocks(x, blocks), msg);
+  };
+  const ss = (x) => x.rocks.find((r) => r.name === 'dwell:sandstone');
+  bad((x) => (ss(x).capBy = []), /rock dwell:sandstone: capBy must be a list of at least one/);
+  bad((x) => (ss(x).capBy = { arid: 'dwell:red_sand' }), /rock dwell:sandstone: capBy must be a list/);
+  bad((x) => (ss(x).capBy = [{ humid: 'dwell:red_sand' }]), /rock dwell:sandstone: capBy: unknown climate humid \(one of arid\)/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:red_sand', humid: 'dwell:sand' }]), /a capBy entry must be one/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:nothing' }]), /capBy arid "dwell:nothing" is not in the registry/);
+  bad((x) => (ss(x).capBy = [{ arid: 'dwell:red_sand_ramp' }]), /capBy arid dwell:red_sand_ramp must be a full block/);
+  bad((x) => delete x.arid, /rock dwell:sandstone: capBy needs the geology's arid/);
+  bad((x) => (x.arid.wetness = 2), /arid.wetness must be in \[0, 1\]/);
+  bad((x) => delete x.arid.rain, /arid.rain must be in/);
+  bad((x) => (x.arid.celsius = 'warm'), /arid.celsius must be in/);
+  bad((x) => (x.arid.snow = 1), /arid: unknown snow/);
+});
+
+test('R5: plateProvinces map plate settings to stacks by name, by data alone; bad entries fail naming them', () => {
+  const rocks = () => JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  const d = rocks();
+  // Every rule names a stack; the new stacks take no share of the noise's provinces.
+  const stacks = new Map(d.stacks.map((s) => [s.name, s]));
+  for (const r of d.plateProvinces.rules) assert.ok(stacks.has(r.stack), r.setting);
+  for (const n of ['dwell:arc_volcanics', 'dwell:hotspot_shield', 'dwell:collision_core', 'dwell:rift_fill'])
+    assert.equal(stacks.get(n).weight, 0, n);
+  // A rule swapped and one added by data alone.
+  const core = d.plateProvinces.rules.find((r) => r.setting === 'core');
+  core.stack = 'dwell:basalt_flows';
+  core.mix = [{ stack: 'dwell:granite_core', weight: 0.5 }];
+  d.plateProvinces.rules = d.plateProvinces.rules.filter((r) => r.setting !== 'default');
+  d.plateProvinces.rules.push({ setting: 'default', stack: 'dwell:badland_beds' });
+  d.plateProvinces.mixing.wavelength = 3100;
+  const out = rocksRust(validateRocks(d, blocks));
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:basalt_flows", mix: &\[PlateMix \{ stack: "dwell:granite_core", weight: 0\.5 \}\] \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds", mix: &\[\] \}/);
+  assert.match(out, /mixing: Mixing \{ wavelength: 3100\.0,/);
+  const bad = (f, msg) => {
+    const x = rocks();
+    f(x);
+    assert.throws(() => validateRocks(x, blocks), msg);
+  };
+  bad((x) => (x.plateProvinces.rules[0].setting = 'mantle'), /plateProvinces: rule setting "mantle" must be one of/);
+  bad((x) => (x.plateProvinces.rules[0].stack = 'dwell:nothing'), /plateProvinces: rule arc: stack "dwell:nothing" is not a stack/);
+  bad((x) => x.plateProvinces.rules.push({ ...x.plateProvinces.rules[0] }), /plateProvinces: rule arc is listed twice/);
+  bad((x) => (x.plateProvinces.rangeCore = [9000, 1000]), /plateProvinces: rangeCore must be/);
+  bad((x) => (x.plateProvinces.riftWidth = -1), /plateProvinces: riftWidth must be/);
+  bad((x) => (x.plateProvinces.depth = 1), /plateProvinces: unknown depth/);
+  bad((x) => (x.plateProvinces.edgeFade = -5), /plateProvinces: edgeFade must be/);
+  // The mixing (WORK_QUEUE item 15, part B).
+  bad((x) => (x.plateProvinces.mixing.wavelength = 10), /plateProvinces: mixing\.wavelength must be in \[100, 100000\]/);
+  bad((x) => (x.plateProvinces.mixing.swirl = 1), /plateProvinces: mixing: unknown swirl/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:nothing'), /rule basin: mix stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:red_beds'), /rule basin: mix names dwell:red_beds twice/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].weight = -1), /rule basin: mix dwell:limestone_shelf weight must be/);
+  bad((x) => delete x.plateProvinces.mixing, /rule accreted: mix needs plateProvinces\.mixing/);
+});
+
+test('item 15: the Realistic world steps by its rock, not the global cliffs volume (data)', () => {
+  const r = JSON.parse(readFileSync(join(here, 'worlds/realistic.json'), 'utf8'));
+  assert.equal(r.cliffs, 0, 'no global terrace volume in Realistic worlds');
+  assert.ok(r.geology.shaping.strength > 0, 'the rock shaping is on');
+  assert.ok(r.geology.erosion.strength > 0, 'the erosion is on');
+  const rocks = JSON.parse(readFileSync(join(here, 'rocks.json'), 'utf8'));
+  assert.ok(rocks.plateProvinces.edgeFade > 0, 'the provinces fade at their edges');
+});
+
+test('R5: a rock\'s soils by climate, in order; bad climates fail naming the rock', () => {
+  const veg = () => JSON.parse(readFileSync(join(here, 'vegetation.json'), 'utf8'));
+  const andesite = veg().rockSoils.filter((r) => r.rock === 'dwell:andesite');
+  assert.ok(new Set(andesite.map((r) => r.type)).size >= 2, 'andesite weathers by climate');
+  assert.ok(!andesite.at(-1).celsius && !andesite.at(-1).moisture, 'its last entry names no climate');
+  const d = veg();
+  d.rockSoils.unshift({ rock: 'dwell:granite', celsius: [10, 40], moisture: [0.5, 1], depth: 1.5, type: 'dwell:loamy' });
+  assert.match(
+    vegetationRust(validateVegetation(d)),
+    /RockSoil \{ rock: "dwell:granite", depth: 1\.5, soil_type: 1, celsius: \[10\.0, 40\.0\], moisture: \[0\.5, 1\.0\] \}/,
+  );
+  const bad = (f, msg) => {
+    const x = veg();
+    f(x);
+    assert.throws(() => validateVegetation(x), msg);
+  };
+  bad((x) => x.rockSoils.push({ rock: 'dwell:shale', depth: 1, type: 'dwell:loamy' }), /rockSoils: dwell:shale is listed after its entry without a climate/);
+  bad((x) => (x.rockSoils[0].celsius = [5, 1]), /rockSoils: dwell:sandstone: celsius must be \[least, most\]/);
+  bad((x) => (x.rockSoils[0].moisture = [0, 2]), /rockSoils: dwell:sandstone: moisture must be/);
+  bad((x) => (x.rockSoils[0].rain = [0, 1]), /rockSoils: dwell:sandstone: unknown rain/);
 });
 
 test('a biome opts in to erosion and gullies in [0, 1]; the default biome does not', async () => {
@@ -808,7 +1086,9 @@ test('lava vents on a cone are fixture-world data: checked, and a new one added 
   assert.equal(w.world.tectonics.lavaVents[0].kind, 'river');
   assert.equal(world.tectonics.lavaVents, undefined, 'the default world lists none');
   const starter = validateFixtureWorlds(loadBiomes(join(here, 'worlds')), world).find((w) => w.name === 'test:starter');
-  assert.equal(starter.world.tectonics.lavaVents.length, 1, 'the starter world has its vent');
+  assert.equal(starter.world.tectonics.lavaVents.length, 2, 'the starter world has its lake and its river');
+  const [w2] = validateFixtureWorlds(of({ ...vent, faces: ['b'] }), world);
+  assert.deepEqual(w2.world.tectonics.lavaVents[0].faces, ['b'], 'a vent on one face');
   for (const [v, msg] of [
     [{ ...vent, index: 2 }, /no hotspot cone 2/],
     [{ ...vent, cone: 'arc' }, /no arc cone 0/],
@@ -817,6 +1097,8 @@ test('lava vents on a cone are fixture-world data: checked, and a new one added 
     [{ ...vent, radius: 0 }, /radius must be a whole number/],
     [{ ...vent, rateM3s: 0 }, /rateM3s must be in/],
     [{ ...vent, heat: 1 }, /unknown heat/],
+    [{ ...vent, faces: ['c'] }, /faces must list "a" and\/or "b"/],
+    [{ ...vent, faces: [] }, /faces must list "a" and\/or "b"/],
   ])
     assert.throws(() => validateFixtureWorlds(of(v), world), msg);
 });
@@ -837,7 +1119,273 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   bad({ maxDensity: 0.1 }, /maxDensity 0.1 is under decoration meadow_grass/);
   bad({ reach: 1.5 }, /reach must be a whole number/);
   bad({ extra: 1 }, /unknown extra/);
+  bad({ onRamps: 1 }, /onRamps must be true or false/);
+  const strict = new Map(blocks);
+  const tall = strict.get('dwell:tall_grass');
+  strict.set('dwell:tall_grass', { ...tall, placeOn: tall.placeOn.filter((b) => b !== 'dwell:grass_ramp') });
+  assert.throws(() => validateGrass(grass(), strict, decorations), /onRamps: dwell:tall_grass may not stand on dwell:grass_ramp/);
+  const noRamps = new Map(blocks);
+  noRamps.delete('dwell:grass_ramp');
+  assert.throws(() => validateGrass(grass(), noRamps, decorations), /onRamps: dwell:grass has no ramps/);
+  assert.match(grassRust(g), /on_ramps: true,/);
+  assert.match(grassRust({ ...g, onRamps: undefined }), /on_ramps: false,/);
   // A rule by data alone: another ground and rates.
   const fixture = validateGrass({ ...grass(), on: ['dwell:dirt'], spreadPerDay: 1, reach: 2 }, blocks, decorations);
   assert.match(grassRust(fixture), /on: &\["dwell:dirt"\]/);
+  // Growing in height (docs/ECOLOGY.md §10): the stages, by data.
+  const stages = (patch) => ({ ...grass(), stages: { ...grass().stages, ...patch } });
+  const badStages = (patch, re) => assert.throws(() => validateGrass(stages(patch), blocks, decorations), re);
+  badStages({ property: 'nope' }, /stages.property "nope" is not a property of dwell:tall_grass/);
+  badStages({ order: ['0', '1', '3'], days: [3, 4], share: [0, 0.5, 1] }, /at least 4 values/);
+  badStages({ order: ['3', '2', '1', '0'] }, /must end with the property's default 3/);
+  badStages({ order: ['0', '1', '1', '3'] }, /each of dwell:tall_grass's stage values once/);
+  badStages({ days: [1, 1, 1] }, /add up to at least 7/);
+  badStages({ days: [3, 4] }, /stages.days must give each stage but the last/);
+  badStages({ share: [0.1, 0.2, 0.4, 0.6] }, /must start at 0/);
+  badStages({ share: [0, 0.5, 0.4, 0.6] }, /must not fall/);
+  badStages({ extra: 1 }, /stages: unknown extra/);
+  assert.throws(() => validateGrass({ ...grass(), stages: undefined }, blocks, decorations), /stages must be an object/);
+  // A fixture's slower stages by data alone.
+  const slow = validateGrass(stages({ days: [10, 10, 10], share: [0, 0, 0, 0.9] }), blocks, decorations);
+  assert.match(grassRust(slow), /GrassStage \{ value: "1", days: 10\.0, share: 0\.0 \}/);
+  assert.match(grassRust(slow), /GrassStage \{ value: "3", days: 0\.0, share: 0\.9 \}/);
+});
+
+const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));
+
+test('the checked-in climate is valid and generates the checked-in Rust', () => {
+  const rs = climateRust(validateClimate(loadClimate()));
+  const checkedIn = readFileSync(join(here, '../../crates/dwell-worldgen/src/climate.gen.rs'), 'utf8');
+  assert.equal(rs, checkedIn, 'run `node shared/worldgen/gen.mjs`');
+});
+
+test('a latitude band and a wind cell added by data alone are emitted', () => {
+  const c = loadClimate();
+  c.bands.push({ name: 'polar', weight: 0.5, latitude: [76, 86], rainMm: 200 });
+  c.winds.push({ name: 'doldrums', latitude: [0, 5], from: 90 });
+  const rs = climateRust(validateClimate(c));
+  assert.match(rs, /Band \{ name: "polar", weight: 0\.5, latitude: \[76\.0, 86\.0\], rain_mm: 200\.0 \}/);
+  assert.match(rs, /WindCell \{ name: "doldrums", latitude: \[0\.0, 5\.0\], from: 90\.0 \}/);
+});
+
+test('a bad climate entry fails naming it', () => {
+  for (const [edit, message] of [
+    [(c) => (c.bands[0].latitude = [40, 30]), /bands\[0\]\.latitude must be \[south, north\]/],
+    [(c) => (c.bands[1].name = c.bands[0].name), /bands\[1\]: subtropical is named twice/],
+    [(c) => (c.bands[0].colour = 'red'), /bands\[0\]: unknown colour/],
+    [(c) => c.seaLevel.reverse(), /seaLevel\[1\]: latitudes must ascend/],
+    [(c) => (c.winds = [{ name: 'westerlies', latitude: [30, 60], from: 240 }]), /bands\[0\] \(subtropical\): no wind cell covers its middle latitude 21/],
+    [(c) => (c.rain.maxCells = 1024), /rain\.maxCells 1024 a side needs more than maxGridBytes/],
+    [(c) => (c.rain.cell = 50), /rain\.cell must be in \[100, 10000\]/],
+    [(c) => (c.discharge = { min: 2, max: 4 }), /discharge must be \[min ≤ 1, max ≥ 1\]/],
+    [(c) => delete c.lapseRate, /the file: missing lapseRate/],
+    [(c) => delete c.bands[0].rainMm, /bands\[0\]: missing rainMm/],
+    [(c) => (c.biomes.wetMm = 0), /biomes\.wetMm must be in \[1, 50000\]/],
+    [(c) => (c.biomes.moistureShare = 2), /biomes\.moistureShare must be in \[0, 1\]/],
+  ]) {
+    const c = loadClimate();
+    edit(c);
+    assert.throws(() => validateClimate(c), message);
+  }
+});
+
+// ---- Resurrection shrines (shrines.json, docs/SHRINES.md) -----------------------------------------
+
+import { shrineStructure, shrinesRust, validateShrines } from './gen.mjs';
+
+const loadShrines = () =>
+  JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'shrines.json'), 'utf8'));
+
+test('the shrine design builds the owner\'s shrine: 16 × 16 m, a half circle of stepping pillars with gaps, the tallest half joined over a quarter circle', () => {
+  // Owner, 2026-11-12: "a 8x8m terraced and filled stone circle with stepping pillars forming a
+  // half circle. Only the tallest pillars (half of them) are connected at the top. Forming a
+  // quarter circle." Owner, 2026-11-13: "Double the shrine radius, make it 3 times as tall."
+  const d = loadShrines();
+  const { structure: s, pillars, lintel } = shrineStructure(d.structure, d.design, registryBlocks());
+  const N = 16;
+  const C = N / 2;
+  assert.equal(s.size[0], N);
+  assert.equal(s.size[2], N);
+  // Filled from the bottom row: every column of the circle has stone from row 0 up (no hollow).
+  const at = (x, y, z) => s.layers[y][z][x];
+  let floor = 0;
+  for (let z = 0; z < N; z++)
+    for (let x = 0; x < N; x++) {
+      if (at(x, 0, z) === '.') continue;
+      floor++;
+      for (let y = 0; y < d.design.base / 0.5; y++) assert.notEqual(at(x, y, z), '.', `${x},${y},${z}`);
+    }
+  assert.ok(floor >= 190, `${floor} floor columns`);
+  // Terraced: the centre stands higher than the rim by a row a step.
+  const top = (x, z) => {
+    let t = 0;
+    while (t < s.size[1] && at(x, t, z) === 's') t++;
+    return t;
+  };
+  assert.equal(top(C, C) - top(C, N - 1), d.design.steps.length);
+  // The pillars: a half circle (180° to 360°, the −z half), all on one side of the axis.
+  const ids = [...new Set(pillars.map((p) => p.i))];
+  assert.equal(ids.length, d.design.pillars.count);
+  const degs = ids.map((i) => pillars.find((p) => p.i === i).deg);
+  assert.equal(Math.min(...degs), 180);
+  assert.equal(Math.max(...degs), 360);
+  for (const p of pillars) assert.ok(p.z <= C, `${p.x},${p.z} on the back half`);
+  // Heights step up toward the arc's middle and back down: symmetric, strictly rising to it.
+  const h = ids.map((i) => pillars.find((p) => p.i === i).height);
+  // Three times the 0.59 shrine's 2.5 / 3 / 3.5 / 3 / 2.5 m, in ½ m rows.
+  assert.deepEqual(h.map((r) => r * 0.5), [7.5, 9, 10.5, 9, 7.5]);
+  const mid = (h.length - 1) / 2;
+  for (let i = 0; i < mid; i++) {
+    assert.ok(h[i + 1] > h[i], `rising ${h}`);
+    assert.equal(h[i], h[h.length - 1 - i], `symmetric ${h}`);
+  }
+  // The joined ones are the tallest half, spanning a quarter circle (90°).
+  const joined = ids.filter((i) => pillars.find((p) => p.i === i).joined);
+  assert.equal(joined.length, (d.design.pillars.count + 1) / 2);
+  const jh = joined.map((i) => h[i]);
+  const rest = ids.filter((i) => !joined.includes(i)).map((i) => h[i]);
+  assert.ok(Math.min(...jh) > Math.max(...rest), 'the joined are the tallest');
+  const jd = joined.map((i) => degs[i]);
+  assert.equal(Math.max(...jd) - Math.min(...jd), 90);
+  // The lintel lies only between joined pillars, at their tops, and every lintel cell is filled.
+  assert.ok(lintel.length > 0);
+  for (const p of pillars.filter((q) => !q.joined)) {
+    assert.ok(!lintel.includes(`${p.x},${p.z}`), 'no lintel over a lower pillar');
+    for (let y = p.top; y < s.size[1]; y++) assert.equal(at(p.x, y, p.z), '.', 'open over it');
+  }
+  const lintelCells = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 'l');
+  assert.ok(lintelCells.length > 0);
+  // Owner, 2026-11-13: "Yes, shrine pillars have gaps." Each pillar is `width` m square and no two
+  // pillars' columns touch, side or corner: a full cell of air between neighbours at every height.
+  for (const i of ids)
+    assert.equal(pillars.filter((p) => p.i === i).length, d.design.pillars.width ** 2, `pillar ${i}'s width`);
+  for (const a of pillars)
+    for (const b of pillars)
+      if (a.i < b.i)
+        assert.ok(Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z)) >= 2, `pillars ${a.i} and ${b.i} touch`);
+  const pillarOf = (x, z) => pillars.find((p) => p.x === x && p.z === z);
+  const floorTop = (x, z) => {
+    let t = 0;
+    while (t < s.size[1] && at(x, t, z) === 's') t++;
+    return t;
+  };
+  // Between neighbouring pillars: every column on the line between them holds air from the floor
+  // up to the lintel (a joined pair) or to the shorter top (any other pair), at least 1 m of it.
+  for (let k = 0; k + 1 < ids.length; k++) {
+    const [a, b] = [pillars.filter((p) => p.i === ids[k]), pillars.filter((p) => p.i === ids[k + 1])];
+    const centre = (ps) => [0, 1].map((j) => ps.reduce((t, q) => t + [q.x, q.z][j] + 0.5, 0) / ps.length);
+    const [ca, cb] = [centre(a), centre(b)];
+    const gap = new Set();
+    for (let t = 0; t <= 1; t += 0.01) {
+      const [x, z] = [0, 1].map((j) => Math.floor(ca[j] + (cb[j] - ca[j]) * t));
+      if (!pillarOf(x, z)) gap.add(`${x},${z}`);
+    }
+    assert.ok(gap.size >= 1, `a column between pillars ${ids[k]} and ${ids[k + 1]}`);
+    const upTo = Math.min(a[0].top, b[0].top);
+    for (const key of gap) {
+      const [x, z] = key.split(',').map(Number);
+      let y = floorTop(x, z);
+      const from = y;
+      while (y < upTo && at(x, y, z) === '.') y++;
+      for (let r = y; r < upTo; r++) assert.equal(at(x, r, z), 'l', `${x},${r},${z}: air, then only the lintel`);
+      // At least 6 m of air (12 rows) under the lintel, and 1 m between the lower pillars.
+      const least = a[0].joined && b[0].joined ? 12 : 2;
+      assert.ok(y - from >= least, `air between pillars ${ids[k]} and ${ids[k + 1]} at ${key} (${y - from} rows)`);
+    }
+  }
+  // The lintel sits on the tallest half only: no lintel cell beside a lower pillar, and it joins the
+  // tallest pillars' tops into one arch (connected through lintel and pillar cells above the floor).
+  for (let y = 0; y < s.size[1]; y++)
+    for (let z = 0; z < N; z++)
+      for (let x = 0; x < N; x++) {
+        if (at(x, y, z) !== 'l') continue;
+        for (const p of pillars.filter((q) => !q.joined))
+          assert.ok(Math.max(Math.abs(p.x - x), Math.abs(p.z - z)) >= 2, `lintel ${x},${y},${z} by lower pillar ${p.i}`);
+      }
+  const start = pillars.find((p) => p.joined);
+  const seen = new Set([`${start.x},${start.top - 1},${start.z}`]);
+  const stack = [[start.x, start.top - 1, start.z]];
+  while (stack.length) {
+    const [x, y, z] = stack.pop();
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const [nx, ny, nz] = [x + dx, y + dy, z + dz];
+          if (nx < 0 || nz < 0 || nx >= N || nz >= N || ny < 0 || ny >= s.size[1]) continue;
+          const c = at(nx, ny, nz);
+          if (!(c === 'l' || (c === 'p' && ny >= pillarOf(nx, nz).top - 1))) continue;
+          const key = `${nx},${ny},${nz}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            stack.push([nx, ny, nz]);
+          }
+        }
+  }
+  for (const p of pillars)
+    assert.equal(seen.has(`${p.x},${p.top - 1},${p.z}`), p.joined, `pillar ${p.i}'s top ${p.joined ? 'joined' : 'apart'}`);
+  // The light stands at the centre of the dais, a disc of torches that reads at this size.
+  assert.equal(at(C, top(C, C), C), 't');
+  const torches = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 't').length;
+  assert.ok(torches >= 9, `${torches} torches`);
+});
+
+test('the shrine rules validate, each world\'s overrides too, and the generated table is current', () => {
+  const d = loadShrines();
+  const v = validateShrines(d);
+  assert.equal(v.rules.spacing, 2000);
+  const rs = shrinesRust(v);
+  assert.equal(
+    rs,
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../crates/dwell-worldgen/src/shrines.gen.rs'), 'utf8'),
+  );
+  // A fixture world's overrides by data alone.
+  const w = validateShrines({ ...d, worlds: { 'test:fixture': { spacing: 900 } } });
+  assert.equal(w.worlds[0][1].spacing, 900);
+  assert.match(shrinesRust(w), /"test:fixture"/);
+  const bad = (patch, msg) => assert.throws(() => validateShrines({ ...d, ...patch }), msg);
+  bad({ spacing: 10 }, /spacing must be/);
+  bad({ jitter: 2 }, /jitter must be/);
+  bad({ structure: 'dwell:nothing' }, /structure "dwell:nothing" is not in/);
+  bad({ stand: [0, 9] }, /stand \[0,9\] lies outside/);
+  // Under the lintel: not open over the floor.
+  bad({ stand: [-4, -7] }, /stand \[-4,-7\] must stand on a floor/);
+  bad({ map: { ...d.map, reveal: 'sometimes' } }, /map.reveal must be one of/);
+  // The big map's thinning: merged icons must not overlap, and the zoom and budget must be sane.
+  bad({ map: { ...d.map, clusterPx: d.map.iconPx - 1 } }, /map.clusterPx must be a whole number from map.iconPx/);
+  bad({ map: { ...d.map, siteMsPerDraw: 0 } }, /map.siteMsPerDraw must be/);
+  bad({ worlds: { x: { design: {} } } }, /worlds.x: unknown design/);
+  bad({ lodCellM: 12 }, /power of two/);
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 8 } }, registryBlocks()),
+    /pillars.count must be 1 more than a multiple of 4/,
+  );
+  // Too many pillars for the arc leave no air between them (9 of 2 m on the 16 m shrine's 7 m arc).
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, count: 9 } }, registryBlocks()),
+    /leave no air between pillars/,
+  );
+  assert.throws(
+    () => shrineStructure(d.structure, { ...d.design, pillars: { ...d.design.pillars, width: 3 } }, registryBlocks()),
+    /pillars.width must be/,
+  );
+});
+
+// Ramps for every terrain block (owner, 2026-11-13): every block a worldgen surface rule places has
+// stored ramps, so a new terrain block gets them by rule.
+test('every block worldgen places on a surface has a ramp family', () => {
+  const surface = surfaceBlocks();
+  const ids = new Set(surface.map(([id]) => id));
+  for (const id of ['dwell:red_sand', 'dwell:basalt', 'dwell:moon_dust', 'dwell:moon_mare_dust', 'dwell:obsidian', 'dwell:red_sandstone']) {
+    assert.ok(ids.has(id), `${id} is a surface block`);
+  }
+  validateSurfaceRamps(surface);
+});
+
+test('a surface block without ramps fails naming it and where it is placed', () => {
+  const blocks = registryBlocks();
+  blocks.delete('dwell:basalt_ramp');
+  assert.throws(() => validateSurfaceRamps(surfaceBlocks(), blocks), /dwell:basalt is placed on the surface by worldgen but has no ramps: add basalt to its namespace's rampFamilies/);
+  // A fixture biome placing a block with no ramps (torch stands in for a new terrain block).
+  const biome = { name: 'test:new_ground', bands: [{ name: 'only', ground: 'dwell:torch', under: 'dwell:dirt', rock: 'dwell:stone', shoreBlock: 'dwell:sand' }] };
+  assert.throws(() => validateSurfaceRamps(surfaceBlocks({ biomes: [biome], worlds: [] })), /biome test:new_ground band only ground: dwell:torch .* no ramps/);
 });

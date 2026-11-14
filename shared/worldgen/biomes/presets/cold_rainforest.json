@@ -4,18 +4,14 @@
   "description": "Wet, cool, dense lowland forest by the rivers and the coast, with dark still water.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.2,
-      "max": 0.45,
-      "blend": 0.08
+    "celsius": {
+      "min": 4,
+      "max": 12,
+      "blend": 1.5
     },
-    "wetness": {
-      "min": 0.6,
-      "blend": 0.12
-    },
-    "elevation": {
-      "max": 400,
-      "blend": 100
+    "rain": {
+      "min": 1800,
+      "blend": 300
     }
   },
   "detail": {

@@ -51,6 +51,8 @@ export interface ScenarioReport {
   respawns?: { s: number | null; loading: Record<string, unknown> | null }[];
   /** Each `goto` step's result: what it found and where it put the camera (docs/DEV_TOOLS.md). */
   gotos?: unknown[];
+  /** Each `flyTo` step's trip (debug/moonTrip.ts; docs/DEV_TOOLS.md "The moon"). */
+  trips?: unknown[];
   /** The page address it ran at. */
   url: string;
 }
@@ -68,10 +70,10 @@ export interface CompareOptions {
   run: (sc: Scenario, dir: string, params: Record<string, string>) => Promise<ScenarioReport>;
 }
 
-/** The `shot` names of `steps`, in order. */
+/** The `shot` and `spot` names of `steps` (each saves `<name>.png`), in order. */
 function shots(steps: readonly Step[]): string[] {
   return steps.flatMap((s) =>
-    s.do === 'shot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
+    s.do === 'shot' || s.do === 'spot' ? [s.name] : s.do === 'repeat' ? shots(s.steps) : [],
   );
 }
 

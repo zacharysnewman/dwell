@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ecologyRust, generate, validateEcology } from './gen.mjs';
+import { ecologyRust, farLooksRust, generate, validateEcology } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'ecology.json'), 'utf8'));
@@ -43,6 +43,14 @@ test('a fixture species is added by data alone', () => {
   assert.equal(validateEcology(d).species[2].diet.graze.perHeadPerDay, 0.2);
 });
 
+test('a start is a fixed count or a density per km² of the range (WORK_QUEUE item 46)', () => {
+  const d = data();
+  const rs = ecologyRust(validateEcology(d), 'x');
+  assert.match(rs, /start_groups: 0,\n\s+start_per_km2: 3\.0,\n\s+start_min_groups: 2,\n\s+start_size: 10\.0,/);
+  d.species[0].start = { groups: 5, size: 6 };
+  assert.match(ecologyRust(validateEcology(d), 'x'), /start_groups: 5,\n\s+start_per_km2: 0\.0,\n\s+start_min_groups: 1,/);
+});
+
 test('bad entries fail with a message naming them', () => {
   const bad = (edit, re) => {
     const d = data();
@@ -57,7 +65,11 @@ test('bad entries fail with a message naming them', () => {
   bad((d) => (d.grazing.grounds[0].refuge = 2), /grazing\.grounds\.meadow\.refuge must be a number in \[0, 1\]/);
   bad((d) => delete d.species[1].diet.prey.halfSaturationHead, /species\.dwell:wolf\.diet\.prey\.halfSaturationHead must be a number/);
   bad((d) => (d.species[0].start.size = 40), /species\.dwell:deer\.start\.size/);
-  bad((d) => (d.species[0].start.groups = 99), /species\.dwell:deer\.start\.groups/);
+  bad((d) => (d.species[0].start = { groups: 9999, size: 6 }), /species\.dwell:deer\.start\.groups/);
+  bad((d) => (d.species[0].start.groups = 4), /species\.dwell:deer\.start must give exactly one of groups and perKm2/);
+  bad((d) => (d.species[0].start.perKm2 = 0), /species\.dwell:deer\.start\.perKm2/);
+  bad((d) => (d.species[0].start.minGroups = 1.5), /species\.dwell:deer\.start\.minGroups/);
+  bad((d) => (d.species[0].far.minPx = -1), /species\.dwell:deer\.far\.minPx/);
   bad((d) => (d.species[0].flee.from = ['dwell:bear']), /species\.dwell:deer\.flee\.from\[0\]: "dwell:bear" is not a species/);
   bad((d) => (d.species[1].diet.prey.species = ['dwell:wolf']), /a species cannot hunt itself/);
   bad((d) => (d.species[0].diet = { graze: { perHeadPerDay: 1 }, prey: {} }), /diet must name exactly one/);
@@ -81,4 +93,45 @@ test('bad entries fail with a message naming them', () => {
     },
     /"dwell:wolf" must graze/,
   );
+});
+
+test("a species' far look (how clients draw a far herd) is data, validated, and reaches the client", () => {
+  const d = data();
+  const rs = farLooksRust(validateEcology(d), 'x');
+  assert.match(rs, /FarLook \{ species: "dwell:deer", color: \[154, 107, 69\], size_m: 1\.3, fade_start_m: 1800\.0, fade_end_m: 2500\.0, min_px: 3\.0 \}/);
+  // A fixture species' look by data alone.
+  d.species.push({ ...d.species[0], name: 'test:elk', far: { color: '#102030', sizeM: 2, fadeStartM: 10, fadeEndM: 20 } });
+  delete d.species[2].flee;
+  delete d.species[2].near;
+  assert.match(farLooksRust(validateEcology(d), 'x'), /species: "test:elk", color: \[16, 32, 48\], size_m: 2\.0/);
+  const bad = (far, re) => {
+    const e = data();
+    e.species[0].far = far;
+    assert.throws(() => validateEcology(e), re);
+  };
+  bad({ color: 'tan', sizeM: 1, fadeStartM: 1, fadeEndM: 2 }, /far\.color must be a #rrggbb colour/);
+  bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 2 }, /far\.fadeEndM must be past fadeStartM/);
+  bad({ color: '#102030', sizeM: 1, fadeStartM: 5, fadeEndM: 9, glow: 1 }, /glow/);
+});
+
+test('players, idles, tracking and roaming validate and emit (WORK_QUEUE item 39)', () => {
+  const d = JSON.parse(readFileSync(join(here, 'ecology.json'), 'utf8'));
+  const rs = ecologyRust(validateEcology(d), 'x');
+  assert.match(rs, /players: Some\(NearPlayers \{ react: PlayerReact::Flee, notice_m: 22\.0, crouch_m: 8\.0/);
+  assert.match(rs, /react: PlayerReact::Avoid/);
+  assert.match(rs, /NearIdle \{ pose: IdlePose::Graze, weight: 5\.0/);
+  assert.match(rs, /IdlePose::Lie/);
+  assert.match(rs, /track_m: 160\.0/);
+  assert.match(rs, /roam: Some\(Roam \{ toward_prey_above_hunger: 0\.3 \}\)/);
+  const bad = (edit, msg) => {
+    const e = JSON.parse(JSON.stringify(d));
+    edit(e);
+    assert.throws(() => validateEcology(e), msg);
+  };
+  bad((e) => (e.species[0].near.players.react = 'charge'), /players\.react must be one of flee, avoid/);
+  bad((e) => (e.species[0].near.idles[0].pose = 'dance'), /idles\[0\]\.pose must be one of/);
+  bad((e) => (e.species[0].near.idles[0].weight = 0), /idles\[0\]\.weight/);
+  bad((e) => (e.species[0].near.idles[0].seconds = [5, 1]), /idles\[0\]\.seconds\[1\]/);
+  bad((e) => (e.species[1].near.hunt.trackM = 10), /trackM must be past senseM/);
+  bad((e) => (e.species[0].roam = { towardPreyAboveHunger: 0.3 }), /only a hunter roams/);
 });

@@ -49,6 +49,19 @@ recorded here for the owner to correct in §10):
 - *Scope*: per build (the data ships with a release, like the block registry). A player's chosen
   look is per player (§9.4).
 
+## 1a. Design rule: humans never die (owner, 2026-11-13)
+
+> "This is their 'defeat' animation. Humans won't die in this game (general design rule)."
+
+A human — the player and every NPC or villager — is never killed. At 0 health it is **defeated**: it
+kneels where it fell (one knee down, head bowed, a hand on the hilt of its sword planted point-down
+before it; with no sword, the hand on the raised knee), the view fades, and it **stands up at the
+resurrection shrine nearest where it fell**, on that face ([`SHRINES.md`](./SHRINES.md)), playing the
+stand. Nothing about a human is drawn or simulated as a death: no lying body, no "You died", no
+removal. A defeated human **keeps everything** it carries (owner, 2026-11-13: "Keep everything"): it
+stands up at the shrine with its hotbar and inventory exactly as before. Animals still die. §11.13 has
+how it is built.
+
 ## 2. Art direction for characters
 
 The world's style ([`ART_DIRECTION.md`](./ART_DIRECTION.md)) applies unchanged: the same palette
@@ -144,8 +157,12 @@ one stop of it (`"brass"`, `"leather.shadow"`), a swatch (`"ink"`), a colour slo
 - **`clips`**: `{ rig, space?, layer, duration, loop, ease, cycle?, grounded?, blend?, keys }`. A key is `{ t, bones:
   { bone: [x, y, z] degrees }, root?: [x, y, z] metres }`; each bone interpolates between the keys
   that name it, so a key lists only what moves at that moment. `cycle` is the distance travelled per
-  loop: a gait plays at `speed / cycle` loops a second, so feet don't slide. The arms' gaits have no
-  feet, so their `cycle` sets the hand bob's rate (§5).
+  loop: a gait plays at `speed / cycle` loops a second. A body gait's `cycle` is two footsteps of the
+  sound data's stride for that gait (`shared/sounds` `gaits`; a test pins it), so the feet land with
+  the footsteps at a natural cadence (~2 steps a second walking) rather than matching the
+  controller's fast 5 m/s walk foot-for-foot (BUGS.md #103: 1.6 m a loop stepped 6.25 a second); the
+  feet slide a little at the walk. The arms' gaits have no feet, so their `cycle` sets the hand bob's
+  rate (§5).
 
 A part, from the file:
 
@@ -198,13 +215,19 @@ deer's tail hung 7 cm behind the rump.
 
 ## 5. The first-person arms
 
-The arms are a **separate view** of the same character, as first-person games do it:
+The arms are a **separate view** of the same character, as first-person games do it. Since 0.54 the
+arm drawn is the **Peasant's** (the player model others see, §11.10), posed from this view's clips
+and chain; the rigid parts below are drawn only with the dev switch `?fparms=rigid`.
 
-- **The same parts.** The arms view draws the parts on the `firstPerson.bones` chain (and the
+- **The same parts** (the rigid arms). The arms view draws the parts on the `firstPerson.bones` chain (and the
   accessories and held item on them) from the same composed model as the full body, with the same
   materials and shading. Nothing is duplicated, so the arms match the body exactly; parts marked
   `"view": "arms"` add close-up detail (knuckles) the body doesn't need, and `"view": "body"` parts
-  are left out. A test pins that every body part on the chain is in the arms view.
+  are left out. A test pins that every body part on the chain is in the arms view. The upper arm's
+  sleeve (`upper_arm`, `sleeve_hem`) is `"view": "body"`: the level chop lifts the shoulder in front
+  of the eye, where the sleeve showed as a blob at the bottom of the screen, so the arms view draws the
+  chain from the elbow down (a `clip_probe` test pins that no upper-arm part is on screen and the
+  elbow's end stays off it through the swings).
 - **Its own camera and pass.** The chain's first bone is placed at `anchor` in view space, not on
   the chest; there is no head or torso in the view at all, so nothing clips the camera. The arms are
   drawn after the world over a cleared depth buffer, with their own FOV (`fov`, 62°) and near plane
@@ -215,7 +238,7 @@ The arms are a **separate view** of the same character, as first-person games do
   (owner's playtest, 2026-10-20: was 0.65 high and up to the crosshair, then 0.43 read too small; set by moving the anchor
   out and ahead, the FOV unchanged; `crates/dwell-characters/tests/first_person.rs` pins it).
 - **Its own clips.** `fp_idle` (the arm held into view, breathing), `fp_walk` (a bob on the anchor,
-  two dips a loop at 4 m a loop, not the legs' 1.6 m: ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
+  two dips a loop at 4 m a loop, not the legs' 5 m (1.6 m before BUGS.md #103): ~2.5 Hz at the 5 m/s walk; `fp_sprint` shares
   the 4 m, so its bob is faster in proportion to the speed, ~4 Hz at the 8 m/s run), `fp_break` (a wind-up and a chop down-forward, 0.5 s), `fp_place` (a push
   forward, 0.36 s). They key the same bones as the body's `hold`, `break` and `place`, so a swing
   seen by others is the same gesture.
@@ -224,17 +247,69 @@ The arms are a **separate view** of the same character, as first-person games do
   an entry, and its swing a clip.
 
 - **The axe's swings** (ADR 0067, 0.50.36): `fp_chop_level` and `fp_chop_vertical`, the arms'
-  `chop_level` and `chop_vertical` roles, played on each axe swing by its direction; a character
-  without them plays its `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
+  `chop_level` and `chop_vertical` roles, played on each axe swing by its direction, and the body's
+  `biped_chop_level` and `biped_chop_vertical` (third person, 2026-11-11; before, others saw a
+  `break`); a character without them plays its `break`. Their direction is measured on the drawn
+  axe's head with the clip probe (DEV_TOOLS.md "Clip probe and clip strip"): the level swing winds
+  out to the right and strikes right to left across the screen, the vertical one is raised and
+  strikes top to bottom, both through the crosshair at the arc's middle (0.355 s), on the body across
+  its front from its right to its left, or down (owner, 2026-11-11: "They don't swing in the right
+  direction at all"; the clips' ease is `spline`, so the head doesn't stop at the contact key). The
+  arms drive them, not the wrist (owner's review, 2026-11-11: the hands barely travelled): a 0.3 s
+  wind-up (the tool's `windupS`) draws the hands back to the right shoulder at eye height (level) or
+  up over the head (vertical), then a fast 0.12 s strike (`activeS`) carries the hands across in front
+  to the left, or down to the waist, with the head; the keys, first person and body alike, are fitted
+  with `clip_probe --fit` to grip, head and blade-facing targets (DEV_TOOLS.md), so the edge leads. Remote players
+  play the chop too (WORK_QUEUE item 17): the server steps the swinger's swing count on each chop as
+  a break and sends its kind (`SwingKind`: `chop_level`, `chop_vertical`) to clients that said
+  `SwingHello` (ARCHITECTURE.md §8.3), whose remote body starts `biped_chop_level` or
+  `biped_chop_vertical` as the count steps (`bodies.rs` `swing_of`); an older client, or any
+  client of an older server, plays the body's `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
   flint head across its tip, its edge `axe_blade`, a leather lashing), named by the tool's `held` in
-  `shared/tools/tools.json`; the vertical swing's hold is `stone_axe_vertical` (`heldVertical`: the
-  same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away
+  `shared/tools/tools.json`; the vertical swing's hold was `stone_axe_vertical` (`heldVertical`: the
+  same parts, another `pose`; 0.50.39). **One mode since 2026-11-14** (owner: "Let's simplify the axe to
+  be like the shovel and pick, without the multiple modes"): the axe names no `heldVertical`, so it has
+  only its level swing (`ToolDef::stance`), Use does nothing with it, and an older peer's vertical chop
+  plays and sweeps level; `fp_chop_vertical`, `biped_chop_vertical` and the `stone_axe_vertical` item
+  stay as the default vertical role and hold a two-stance tool's data could name. The blade faces away
   from the eye in both holds and leads the head through each swing (`tests/axe.rs`; it was held
   backwards before). The clips are timed to a miss (0.62 s: wind-up, arc, follow-through,
-  recovery); a hit drives them (`Animator::drive_action`): held through the hit-stop, then played
-  back to the rest.
+  recovery); a hit drives them (`Animator::drive_action_weighted`): held at contact through the
+  hit-stop, then the held pose faded straight back to the arms' rest over `recoverHitS`, and the clip
+  stopped at the swing's end (`Animator::stop_action`). Before 0.54.x a hit played the clip backwards
+  to its start (a vertical swing's head back up over the shoulder and down again) and let it run on
+  from there, a second swing (BUGS.md #93; `clip_probe` `one_swing_draws_one_stroke_hit_or_miss`).
 
-### 5.1 Your own body in first person **[built, C1b]**
+- **Each tool's swing onto the crosshair** (owner, 2026-11-14: "each tool should be rotated slightly
+  around the Y(?) in your hand so you can see the head of it. Also, when it swings it should swing
+  toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair.
+  Ensure the hit happens when it 'hits' your crosshair."). Each held tool is turned about its handle
+  by its prop's `hold.yaw` (props.json; ITEMS.md §1a) so its head's flank shows at rest, first and
+  third person alike. Each break tool names its own arms clip (`breaking.tools[].clip`:
+  `fp_break_stone_pickaxe`, `fp_break_metal_pickaxe`, `fp_break_wooden_shovel`,
+  `fp_break_metal_shovel`; their heads sit at different lengths, so one shared `fp_break` could not
+  put them all on the crosshair): drawn back out to the screen's right by 0.14 s, swung in to the left
+  and forward, the head on the crosshair's ray at the tool's `contactS` (0.26 s), when the hit lands
+  on what the crosshair holds then (`hits.at_contact`, BLOCK_DAMAGE.md §11), then back to rest; keys
+  fitted with `clip_probe break_<item> --item dwell:<item> --fit`. Others see the body's `break`
+  (`swing_as` falls back to it). The axe's level chop already crosses the crosshair at its contact
+  (0.355 s). `clip_probe` `tool_swing_tests` pins, for every tool: the head within 0.12 of the
+  crosshair on screen and 8 cm of its ray in the world at contact (both faces), nearest the crosshair
+  then, a clip key at a break tool's contact, the swing coming in from the right, and the head on
+  screen and clear of the hand at rest, turned to show more of it (`clip_probe::head_view`). Probe
+  sheets: `docs/clip_probe/tool-swings/`.
+
+**The sword (WORK_QUEUE item 35).** A `weapon` tool swings through the same arms clips as the axe
+(`chop_level` right to left, `chop_vertical` top to bottom, fitted with `clip_probe --fit`), so its
+`swing` keeps the axe's timings (0.3 s wind-up, 0.12 s arc, 0.36 s recovery after a miss), the contact
+at the clips' strike. Its holds are `sword` and `sword_vertical` (shared/characters `items`: no parts,
+the prop drawn as its model; the poses lean it as the axe's). **Outstanding (local):** slash clips of
+its own (`fp_slash_level`, `fp_slash_vertical` and the bodies', the blade's edge leading, fitted with
+`clip_probe --fit` and pinned by the probe's direction and edge tests, the clip named per tool), once the
+single sword's grip is measured from the FBX (ITEMS.md §1a′); and the block's raised pose (§ ARCHITECTURE.md
+"Weapons": a player's raised block turns an NPC's strike across its blade; one past it hurts).
+
+### 5.1 Your own body in first person **[built, C1b; drawn from the Peasant since 0.54, §11.12]**
 
 The owner (2026-10-21): "I want to see legs in first person, particularly when sliding." The
 answers (question tool):
@@ -248,6 +323,11 @@ answers (question tool):
   clipping the camera into the player model." No body geometry may come inside the camera's near
   plane or fill the view, in any clip or pose, looking fully down or up, on both faces.
 
+Since 0.54 the body drawn is the **Peasant's** skinned mesh (§11.12): what it leaves out is cut by
+skin weight (`models.json` `firstPerson.body`), and where it stands is this section's placement, the
+same data (`back`, `lookDown`, `clear`, `near`) over its skinned vertices. The rigid body described
+here is drawn only with `?fparms=rigid` (with the rigid arms, for comparison).
+
 **The design** (data: `firstPerson.body` in `characters.json`; code: `dwell-characters` `own.rs`,
 `render/characters.rs` `own_frame`):
 
@@ -256,12 +336,17 @@ answers (question tool):
   it: the hood's mantle, the scarf's wrap, whose broad faces came within 13 cm of the eye in the
   sweep). `"view": "arms"` parts are never in it. A part added on a hidden bone is hidden by data
   alone. The arms view stays on top as it was, holding the item; the body holds nothing.
-- **Where it stands.** On your feet, turned to your look's yaw, and moved back along its own −z:
-  `back` (0.1 m) always, `lookDown` (0.3 m) more looking straight down (by the sine of the downward
-  pitch), and then as much more as keeps every vertex `clear` (0.22 m) of the eye
-  (`own::shift`, per frame from the posed vertices: the crouch, whose clip leans the chest forward to
-  the 0.8 m crouched eye, the slide, a swim stroke, the eye lagging a step low while the step view
-  smooths it). The feet stay on the ground; only the horizontal place moves. It is computed in the
+- **Where it stands.** On your feet, turned to your look's yaw, and **leaned back from its soles**
+  (`own::lean`, a shear: each point moved along the body's −z by the offset × its height over the
+  soles ÷ the eye's): `back` (0.1 m at the eye) always, `lookDown` (0.3 m) more looking straight down
+  (by the sine of the downward pitch). The soles stay where you stand, on the ground and on their
+  shadow, on flat ground, ramps and slopes alike (BUGS.md #142: moved back whole, they stood 0.1–0.4 m
+  behind you, off their shadow and over or under a slope, and "seemed to be floating"). A pose that
+  still brings a vertex within `clear` (0.22 m) of the eye (the crouch, whose clip leans the chest
+  forward to the 0.8 m crouched eye, under an eye easing out of it or lagging a step low) is then
+  moved back whole as much more as clears it; a body off its feet (its lowest point 12 cm up, eased
+  from 4 cm) or in a role that stands on nothing (`own::stands`: swim, climb, fly) moves back whole
+  instead of leaning (`own::keep_clear`, per frame from the posed vertices). It is computed in the
   body's own frame (+y up, the feet at the origin), so face B is the same.
 - **Safety net.** Fragments within the camera's near plane (5 cm) plus `near` (0.08 m) of the eye
   are discarded in the shader (`Instance::cfg.x`), for any pose the sweep has not seen.
@@ -281,6 +366,42 @@ answers (question tool):
   half FOV; they come in from about 15° down. Showing them level would need a slide camera (lower,
   or pitched) or a slide clip with the lead leg raised, a question for the owner (§10).
 
+### 5.2 The camera's sway with the swing **[built]**
+
+The owner (2026-11-12): "The camera could have some sway with the chop." The view leans and kicks a
+little with each swing of the axe; the aim never does.
+
+- **Data.** Each tool's `swing.camera` in `shared/tools/tools.json`, per swing kind (`level`,
+  `vertical`): `keys` over the swing's **phase time** `t` (0 its start, 1 the wind-up's end, 2 the
+  arc's end, 3 a miss's recovery's end, so the keys follow the timings when `windupS`/`activeS`/
+  `recoverMissS` change), each `yaw` (degrees toward the screen's right), `pitch` (up), `roll` (the
+  view leaning right) and `bob` ([right, up, back] metres along the view's own axes), eased between
+  keys; and a `kick` at contact (the same offsets, dying away over `decayS`). The generator checks
+  the keys start and end at rest (t 0 and 3, every offset 0), run in order, and stay within ±10° and
+  ±0.1 m; a tool with no `camera` has no sway (`shared/tools/gen.test.mjs` adds one by data alone).
+  It replaces the swing's old `kickDeg` and its hardcoded wind-up/jolt curve.
+- **The stone and metal axes.** Level: a lean back and right into the wind-up (yaw +1.8°, roll
+  +1.4°, the eye 1.5 cm back and 1.2 cm right), a turn left through the strike (to −2° at the arc's
+  end, the way the head goes on screen), settling over the recovery; the kick a small dip and recoil.
+  Vertical: a pitch up of 2.2° on the wind-up, down through the strike, and a 1.4° dip at contact.
+- **Hit and miss** (`chop::swing_camera`). Up to the contact the sway follows the keys on a miss's
+  timeline. A miss runs on through them, kicking at `kick.miss` (0.35) as the head passes the arc's
+  middle. A hit holds the contact's offset through the hit-stop, eases it home over the pull-out,
+  and kicks at full size into a wood, at `kick.bounce` (1.6×) off anything else. Zero before the
+  swing, at its end and after it.
+- **The view only** (`chop::swayed_view`). The game passes the unswayed eye, yaw and pitch to the
+  targeting, the outline, the listener, the swing sent to the server and the facing; the swayed pose
+  goes only to the renderer's `set_camera`, with a blast's shake. Face-local: the yaw toward the
+  screen's right goes through `FaceFrame::handed`, the roll and bob along the view's own axes.
+- **Setting.** Settings → Motion → **Camera sway** (`motion.cameraSway` in the append-only
+  `dwell.motion` record; on, off when the browser asks for reduced motion), `Client.setCameraSway`.
+- **Tests.** `chop::sway_tests`: zero at rest and back to zero after every kind of swing, the level
+  strike's yaw turning left after a lean right, the vertical chop's pitch up and dip, a hit kicking
+  harder than a miss and a bounce harder than wood, the setting off leaving the view the aim, the
+  same way on screen on both faces, and the block the aim picks unchanged through every swing with
+  the sway on or off (`both_faces!`) while the swayed view would have picked another. The clip
+  probe prints the offset per sample (DEV_TOOLS.md "Clip probe").
+
 
 ## 6. Poses and animation
 
@@ -288,7 +409,8 @@ Clips are keyed rotations on the rig (and a root offset for bob), sampled and la
 
 | Character | Base | Hold | Action |
 | --- | --- | --- | --- |
-| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 1.6 m a loop: legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 3 m: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 0.9 m), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
+| Player (body), defeat (§11.13) | `biped_kneel` (1.3 s, one-shot, held: onto the left knee, the right raised, head bowed, the right hand on the raised knee), `biped_kneel_sword` (the same, the fist on the hilt of the sword planted before the knee), `biped_stand` and `biped_stand_sword` (1.4 s: rising to idle, the sword drawn up out of the ground back into the hold) | | |
+| Player (body) | `biped_idle` (breathing, 3 s), `biped_walk` (1 s, 5 m a loop, two footsteps of the sound data's 2.5 m walk stride: ~2 steps a second at the 5 m/s walk; legs, counter-swinging arms, hips and chest twist, bob), `biped_sprint` (0.66 s, 5.6 m, two 2.8 m run strides, ~2.9 steps a second at 8 m/s: chest forward, arms pumping, high knees), `biped_crouch` (a deep squat, chest forward), `biped_crouch_walk` (1 s, 2.2 m, two 1.1 m crouch strides), `biped_slide` (low and leaning back, the lead leg out, the other folded under, the left arm out for balance), `biped_jump` (0.42 s, one-shot: a dip, the push onto the toes with the arms swinging up, then knees tucked), `biped_fall` (legs loose, arms up and out), `biped_land` (0.4 s, one-shot: the squash on touching down, to standing), `biped_climb` (hand over hand, 1.2 m a loop), `biped_swim` (a breaststroke and a frog kick, leaning into it), `biped_fly` (a hover, legs trailing) | `biped_hold` (the right forearm forward) | `biped_break`, `biped_place` |
 | Player (arms) | `fp_idle`, `fp_walk`, `fp_sprint` (a bigger, faster bob and the arm pumping), `fp_slide` (the arm out to the right and lowered), `fp_jump` (a dip on the take-off, the arm lifting with the push), `fp_fall` (raised a little, fluttering), `fp_land` (a dip, back to the hold) | (in the base) | `fp_break`, `fp_place` |
 | Wolf | `wolf_idle` (tail sway, head turns, an ear flick), `wolf_trot` (0.56 s, 1.4 m: diagonal pairs, a suspended bob, the tail up and swaying) | | |
 | Deer | `deer_idle` (head turns, ear and tail flicks), `deer_walk` (1.2 s, 1.1 m: four beats, left hind, left fore, right hind, right fore), `deer_graze` (6 s: head down to the grass, nibbling, a look up with ears forward, down again) | | |
@@ -559,6 +681,8 @@ characters and animals first, the tools pack after.
 - **Data** (`shared/models/models.json`): per model its GLB, `source` (pack and paths, to rerun the
   import), `scale`, `yaw`, `remap`, `fallback`, and `roles` (role → `{clip, speed}`); `player` names the
   model other players are drawn as. Edit it, then `node shared/models/gen.mjs`.
+  The Peasant's `scale` (1.09 since BUGS.md #140) puts its eyes at the controller's eye height (1.62 m) with its
+  soles on the collider's bottom (`the_peasant_stands_on_its_soles_with_its_eyes_at_the_cameras`).
 - **Generator** (`gen.mjs`): validates against the GLBs and the palette and writes
   `crates/dwell-models/src/models.gen.rs` (and `fixture.gen.rs` from `fixtures/`: the two-joint test
   model, made by `fixtures/make_two_bone.mjs`). CI runs it and `gen.test.mjs` and fails on a diff.
@@ -599,9 +723,8 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   light rides the same frame. A model with no `hand` (the animals) holds nothing.
 - **Your shadow** (the `cast_only` body) is the Peasant, into the nearest cascade only, with your
   held item in its hand: your shadow is what others see.
-- **Still rigid**: your **first-person arms** and your **own body** seen in first person (§5.1). The
-  Peasant's arms are part of its one body mesh, with no arms mesh or first-person clips; drawing them
-  at the eye needs its own view and clips (later).
+- **Your own body** seen in first person (§5.1) and your first-person arms are the Peasant's
+  since 0.54 (§11.12, §11.10): nothing of the player is drawn rigid except under `?fparms=rigid`.
 
 ### 11.6 The animals in the world (phase 3, ADR 0073)
 
@@ -625,6 +748,17 @@ characters' ramp from the vertex's palette colour, the same lights and shadow ma
   instead of a colour a face: the wolf's grey saddle, fawn flanks, cream belly and legs, pale muzzle
   and dark tail tip, faces still flat-shaded. Colours are palette references mixed in sRGB, so a
   coat holds blends between palette stops.
+
+- **Idle poses** (WORK_QUEUE item 39): the animals' packs have only idle, walk and run clips, so a
+  pose (`graze`, `lookUp`, `earFlick`, `sit`, `lie`: the ecology's idle poses) is data on the model,
+  `models.json` `poses`: per pose the joints' turns (degrees, Euler XYZ in each joint's frame) put on
+  top of the idle clip, faded in and out over `poseBlendS` (`skinned::blend_pose`; the old pose fades
+  out before the next comes in). `gen.mjs` fails an unknown pose name or joint, a bad turn or blend;
+  the fixture's two-joint model lies down by data alone. The server sends each herd member's pose
+  (`IdlePose`) as the `creatures.poses` capability's part of `Creatures`, after the NPCs' part
+  (ARCHITECTURE.md §8); a creature left out stands, a moving one shows none, and older clients get
+  neither part. The deer's and the wolf's poses are first guesses tuned by eye.
+- **NPCs** (WORK_QUEUE item 38, §11.11): people drawn as the Peasant who wander among the animals.
 
 ### 11.7 What is left (next)
 
@@ -680,6 +814,315 @@ animator play (§6), not the Peasant's own idle and walk.
   the height (arms overhead in the swim: the Peasant's shoulders are lower); in the world, on both
   faces, the skinned hand (where a held item is drawn) is within 0.15 m and 5.2° of the rigid body's
   hand bone.
-- **Not yet**: the first-person arms still play their own view-space clips (`fp_*`), so the arms on
-  screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
+- **Not yet**: the first-person arms play their own view-space clips (`fp_*`, now on the Peasant's
+  arm, §11.10), so the arms on screen and the shadow's arms differ by design; the Peasant's proportions differ from the rig's
   (shorter arms, lower shoulders), so a shadow's hand sits up to ~0.15 m from the rigid body's.
+
+### 11.10 Your first-person arms from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "I thought we were going to swap out the AI generated first person character
+model?" Your arm on screen is the Peasant's own right arm, the same sleeve, cuff and hand others see.
+
+- **Data**: a model's `firstPerson` in `models.json`: `joints` (the arm's skin joints: the Peasant's
+  `upper_arm.R`, `forearm.R`, `hand.R` and its fingers and thumb) and `weight` (0.5). The generator
+  fails on an unknown or repeated joint, a weight outside (0, 1] or a model with no `retarget`.
+- **The mesh** (`dwell_models::first_person::arm_triangles`, at load and on a detail change): the
+  triangles of the one body mesh whose three vertices each have at least `weight` of their skin
+  weight on `joints`, a second index buffer over the body's own vertices (the cut is where the
+  shoulder's weights take over). No new vertices: the arm is the body's.
+- **The pose** (`first_person::pose`, every frame): the first-person clips' pose (`fp_*`, with the
+  held item's turns), its `firstPerson.bones` chain in view space (`arm_transforms`, the anchor, the
+  walk bob) turned onto the arm's joints by the model's `retarget` map (§11.9; only the chain's
+  bones: the rest of the body keeps its rest). The arm's shoulder joint is put on the chain's first
+  bone and the arm scaled so its rest reach (shoulder to hand) is the rig's, so the hand lands where
+  the clips were fitted (`clip_probe` stays the source of truth): over every first-person clip the
+  Peasant's `hand.R` is within 6 cm of the rigid hand bone (`the_skinned_hand_follows_the_rigid_arms_hand_through_the_swings`).
+- **The grip** (`models.json` `grips`, `dwell_models::grip`): hand poses as data (`fist`: the two
+  finger joints bent 90° each about their z) and the pose each held item takes (the tools, both axe
+  holds and the brush close the fist; a block or a torch sits on the open hand). Put on top of the
+  retarget, first person and third alike; `a_fist_closes_round_the_handle_and_an_open_hand_does_not`
+  pins the fingertips within 2.5 cm of the handle's line (1.3 cm; 8 cm open).
+- **The arm's turn** (`firstPerson.turn`, 40° about view +x): the whole arm turned about the rig's
+  hand, so the hand and item stay put and more of the forearm shows across the bottom right. The
+  Peasant's green sleeve is short (it ends above the elbow), so it only shows when the clips bring
+  the upper arm on screen.
+- **Drawing**: the skinned pipeline in the arms pass (its frame group, the cleared depth), the
+  joints through `arms_frame`; the held item on the Peasant's hand by `models.json` `hand`, as on
+  another player's body (§11.5). Since 0.54 the item is put on the skinned hand as it is, in first
+  and third person: the hand already carries the item's turns from the retarget (they were applied
+  twice before, the axe 50° off the rig's hand; `another_players_item_is_turned_once_on_the_skinned_hand`). `?fparms=rigid` (`setRigidArms`) draws the old rigid arms and the old rigid
+  body (§5.1) together instead, a dev switch for comparison; the rigid parts stay in
+  `characters.json` for it.
+
+### 11.11 Wandering NPCs (WORK_QUEUE item 38, 2026-11-12)
+
+The owner (2026-11-12): "wandering NPCs. They'll use the same player character model." Answers: wander,
+idle (look around, sit), turn to look at a nearby player, step aside when bumped — no talking or trading
+yet; a few near players by a data rule (count, spacing, biomes), simulated only nearby, like the
+animals; colour variations of the Peasant per NPC by palette remaps, seeded, as data. Later the same day:
+"Wandering NPCs will get swords" (item 35's swordplay): a held item slot by data, a disposition (neutral
+by default) and a combat hook; the combat AI waits for the sword mechanic.
+
+- **Data**: an NPC is a creature in `shared/creatures/creatures.json` with an `npc` block (the villager,
+  model `peasant`): `idles` (`pose` from the fixed vocabulary `stand`, `look`, `sit`; `weight`;
+  `seconds`; a `sit` idle's `seat`: `on` `ground`, the fixed vocabulary's one kind for now, and `levelM`), `lookAtM` and `turnDegPerS`, `bumpM` and `sidestepM`, `held` (an item of
+  `shared/items/items.json`, none for the villager until the sword is an item), `disposition`
+  (`neutral`), `combat` (`none` or `fightBack`), `colours`: per clothes part (`shirt`, `trousers`,
+  `hat`) the palette ramp the Peasant's mesh has (`from`) and the ramps one is picked from (`to`), and
+  `appearance` (BUGS.md #152): its skin and hair from a set of `shared/creatures/appearance.json` — a
+  skin tone picked by weight (ten, light to deep, `#rrggbb`), then a hair colour from that tone's own
+  weighted list. The whole skin part takes the one tone, keeping only the set's `shade` share (0.25) of
+  the mesh's own shading inside it (the skin_tan neck and jaw), so face, neck, arms and hands match;
+  the remap's second row's w carries that share to the shader. The spawn rule is a creature rule with
+  `spacingM` (no group within that of another of its kind) and `biomes` (biome names). `gen.mjs`
+  validates the poses, ramps, items and biomes; `fixtures/npcs.json`'s `test:person` is a kind added by
+  data alone. Which ramp of the Peasant's mesh is which part is a first guess from its colours (the
+  ramps by vertex count: `hair_brown` 942, `skin_fair` 908, `wool_green` 564, `skin_brown` 501,
+  `flint` 440): prototype data to tune by eye.
+- **Server** (`dwell_sim::creatures`): idle in a pose picked by weight; while idle, turn toward the
+  nearest player within `lookAtM`, else hold its heading (looking around is the `look` clip's scan; before
+  item 38's clips the whole body swept ±60° over 4 s, sliding on its feet); sitting only where its sit
+  idle's `seat` holds (`Seat::holds`: on the ground, the columns `levelM` round it at its feet's row, no
+  step or drop; else it stands for that idle, and stands up if the ground beside it goes); a player or another NPC
+  within `bumpM` sends it `sidestepM` away (to its side when right on top); `Creatures::attacked` turns
+  a `fightBack` NPC on its attacker for its `fight.giveUpS` (each strike starts it again). **Fighting
+  with a sword** (round 2 of WORK_QUEUE item 35; `npc.fight`, `Creatures::step_fights`): while the
+  player it fights winds up a weapon swing it raises its block in a stance by its `stance` rule
+  (`counter`: the one that blocks that swing, `GuardDef::counter`; `random`), lowered otherwise; while
+  the player recovers, within `strikeWithinM` and its `cooldownS` over, it swings back in its stance
+  (attacking drops its block) and the server resolves the blow against the player's raised block
+  (blocked recoils the NPC); a blow past the block **hurts the player** (WORK_QUEUE item 38: the weapon's
+  `damage`, cause `Weapon`, a `knockbackMps`/`liftMps` push; none in creative). The
+  villager is 4 rows (2 m) tall since round 2: at 2 rows a level slash at eye height passed over it. Each NPC's `variant` is seeded from the world seed and
+  its spawn cell; `npc_colours(def, variant)` picks one `to` per part, deterministically.
+- **Wire**: `Creatures` as before, plus, for a client with the `creatures.npcs` capability, its NPCs'
+  part (id, kind, pose, variant; ARCHITECTURE.md §8). Older clients draw a plain Peasant.
+- **Swordplay** (the `weapons.clash` capability, ARCHITECTURE.md "Weapons"): the player's block, raised by
+  holding Place with a weapon (past the weapon's `guard.raiseAfterS`; a tap still turns the stance), shows
+  the stance's raised pose: `guard.stances.*.raisedPose` names a **role** (`guard_level`,
+  `guard_vertical`), each character's clips give it (shared/characters: `biped_guard_*` in `clips`,
+  `fp_guard_*` in `firstPerson.clips`, layer `hold`), and the animator lays it over the gait in place
+  of the hold while no swing plays (`MoveInput::guard`; attacking drops the block; a character without
+  the role shows its hold). Your arms and your body take `Game::guard_pose`; other players' and NPCs'
+  raised guards arrive as `Swordplay` guards (`Game::remote_guards`) and are drawn by the same roles
+  (`swordplay::guard_role` from the weapon in hand: `Bodies::guards` for players, `NpcLook::guard`
+  for NPCs, laid over `npc_rig_pose` before the item's turns). The clash's sparks and sound play at
+  the clash's point (`Game::on_clash`). The level raise is fitted with `clip_probe --fit`; the probe
+  poses a guard role through `MoveInput::guard`, as the game does. An NPC's own swing reaches clients
+  with the `npcs.swings` capability: its NPC part's pose is 3 (level) or 4 (vertical) while it swings
+  (`NPC_STRIKE_POSES`), and the client plays the rig's `chop_level` or `chop_vertical` for it
+  (`creatures::npc_role`).
+- **Part maps** (BUGS.md #96, WORK_QUEUE item 43; `shared/models/parts.mjs`, models.json `parts`): which
+  part each vertex of a model's full mesh (`detail_0`) belongs to, a file a model
+  (`shared/models/parts/peasant.json`: `parts` the names, at most 6; `vertices` one character a vertex,
+  `0` none, `k` the k-th part; `seed` the rules that made the first painting). The vertices are the
+  source of truth; the Model Part Painter (`docs/prototypes/model-part-painter.html`, item 43) paints
+  them by hand. `--seed` paints from rules (the
+  vertex's mesh island nearest a point, its colour's nearest palette ramp, its skin weight on joints,
+  its height; the first rule matching wins): the Peasant's hat and hair are islands of their own, the
+  skin (`skin_fair`, `skin_tan`), shirt (`wool_green`, `leaf`) and trousers (`flint`) by colour on the
+  body; the boots, belt and collar are no part and keep their colours. Each lower detail level takes
+  its parts from the full mesh (a triangle votes with its corners and centre, each the part of the
+  nearest full-mesh vertex of its colour). `gen.mjs` checks the file (names, every vertex a known part,
+  as many as the mesh has, every NPC colour part a part of its model) and writes each level's parts
+  into the model's table (`ModelData::parts`, `dwell_models::Parts`). `--render` draws the part map to
+  front, side and back PNGs (a colour a part) for checking it without the game; `--stats` counts the
+  vertices of each part at each level.
+- **Repaint** (models.json `repaint`, shared/models/coat.mjs `applyRepaint`): a part of a model's mesh
+  given a palette ramp of its own: each vertex of `part` coloured with a stop of `from` takes the same
+  stop of `to`. The Peasant's hat is hair_brown in the pack, so it becomes `wool_yellow` (owner,
+  2026-11-12: "Hat gets its own colours"); the hair's fringe, caught by the first repaint (by height,
+  to 0.54.171), takes `hair_brown` back. `import.mjs --coat` applies it to the checked-in GLB with no
+  packs needed (re-seeding the part map if a re-import changed the mesh), and gen.mjs fails when the
+  GLB isn't repainted.
+- **Idle poses' `$drop`** (§11.6, models.json `poses`): metres the whole body is lowered while posed, for
+  a sitting or lying animal, since joint turns can't bring the hips down. It is blended in with the
+  pose (`Grip::drop`, render/skinned.rs). The wolf's skeleton: `spine.004` is the hips, `spine`…`spine.003`
+  the tail, and `spine.005`…`spine.008` the chest and neck to `scull`.
+- **Hints**: the line shown while a tool is held is its kind's (shared/tools `hints`: `{ <kind>:
+  { level, vertical } }`, every kind a tool uses needs one; `dwell_protocol::chopping::hint`).
+- **Client** (`dwell-client` `creatures.rs`): `CreatureView::npc` holds the NPC's colours (from its
+  kind's data and variant) and held item; its role is its speed's while moving, else `look` or `sit`
+  (the Peasant has neither clip yet, so they play its fallback, idle).
+- **Drawn** (2026-11-12): `render::characters::creature_draw` turns a creature into its skinned draw
+  and what its hand shows. An NPC's colours become a **remap by part** (`dwell_models::part_remap`:
+  per part of its model's part map, the model ramp's base and the picked ramp's base, sRGB, by name
+  from `RAMP_BASES`, which `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most
+  `MAX_REMAP` 9 parts: the clothes, skin and hair, and the four places of the rings' pattern, §11.14), sent per body in the skinned instance block after the light (`remap` rows, a
+  pair a part). Each vertex carries its part in its colour's alpha byte (`skinned::vertex_bytes`), and
+  the vertex shader gives a remapped part's vertex the new base at its shade of the old (luminance over
+  the old base's; `dwell_models::recolour` mirrors it), so the Peasant's skin_tan neck and the hair's
+  shading follow the variant too. To 0.54.171 the remap matched colours, so whatever shared a
+  ramp with a part took its colour (BUGS.md #96). Its `held` item is drawn as a player's
+  is, on the Peasant's `hand.R` (§11.5), in the item's tool's level hold (`sword`), the fist closed
+  on it (`grips`). Animals, and NPCs from servers without the NPC part, draw as modelled.
+  `an_npc_is_drawn_in_its_variants_colours_with_its_sword_in_its_fist` pins it (both faces).
+  `__dwell.creatures()` marks NPCs (`npc`).
+- **Posed from the rig** (round 2): an NPC is posed as other players are (§11.9), from the
+  characters rig's clip for its role (`npc_rig_pose`: idle, walk, sprint; a role the rig has no clip
+  for, `look` and `sit`, plays idle), looped at a phase of its own, its held item's hold on top, so the
+  sword sits in its fist as in a player's.
+- **The vertices carry sRGB colours** (BUGS.md #96): the GLBs' `COLOR_0` is linear (glTF), and the
+  skinned shader reads its vertex colour as sRGB bytes; to 0.54.171 the linear values went in
+  as they were, so every skinned model drew darker than its palette and the dark ramps near black
+  (a skin_deep villager's face at a sixteenth of its brightness: "jet black"). `vertex_bytes` now
+  encodes them through the sRGB curve (`dwell_models::linear_to_srgb`), so a model draws its palette's
+  colours. `every_villager_variant_draws_its_face_in_its_skin_and_its_hair_in_its_hair` (render/skinned.rs)
+  pins it: at every detail level and 64 variants, the face (the head's front at nose height) draws the
+  variant's skin at its shade and as bright as the ramp, the back of the head its hair, no head vertex
+  is clothes and the hat is only its brim and crown.
+- **Dev**: `__dwell.spawnHerd(kind, size?, offset?)` (a local world) puts a far record of a deer
+  herd (`'deer'`) or a wolf pack (`'wolf'`) of `size` head (5) `offset` m (12) along +x from the
+  player, fed and rested; the near ecology brings it in as individuals on its next tick, posed by
+  its `near.idles` (`Server::spawn_group_dev`; for filming the animals' poses, §11.6).
+- **Dev**: `__dwell.spawnNpcs(n, radius?, variant?)` (a local world) puts `n` villagers (≤ 16) in a
+  ring round the player, each its own variant (`Server::spawn_npcs_dev`).
+- **Not yet**: sit and look-around clips (the rig has none); the NPC's raised guard and swings drawn
+  from the server's fight (item 35).
+
+- **Sit and look-around clips** (WORK_QUEUE item 38, 2026-11-13): the roles `sit` and `look` the client plays
+  for an NPC's poses (`creatures::npc_role`), in `characters.json` (`biped_sit`, `biped_look`, base layer,
+  played on the Peasant through the retarget map as every NPC clip). **Sitting on the ground** where it stands
+  (not on a block's edge: no seat search or path to one yet; a later `seat` `on` value): the seat, the heels and
+  the left hand behind it on the ground, the left leg out, the right knee up with the right forearm (and the
+  sword, upright) over it, breathing; 4 s. **Looking around**: standing still, the head (±55°) and chest (±20°)
+  scanning left, a pause, through the middle to the right, a pause, back; 10 s. Checked with `clip_probe` (an
+  NPC role is posed as the game poses it, `npc_rig_pose`; the point `<bone>_ahead`, 0.3 m ahead of a bone, shows
+  a turn as a path): sheets `docs/clip_probe/npc_sit.svg`, `npc_look.svg`; tests (`clip_probe::defeat_tests`,
+  both faces): the seat, ankles and left hand at the ground, the legs out ahead, the right knee up, the sword
+  clear of the ground; the head scanning past 60° each way under 60°/s, the hips and feet still. The ground
+  test (`gen.test.mjs`, the lowest point within 6 cm of the ground) covers the sit as every grounded clip.
+  Not yet: a sit-down and stand-up (the pose changes with the clips' 0.4 s `blend` where the animator plays
+  them; an NPC's role switches directly, `npc_rig_pose`).
+
+### 11.12 Your own body from the Peasant (0.54, WORK_QUEUE item 37)
+
+The owner (2026-11-12): "Im noticing my hands look like the new model, but my legs/body doesn't?
+What's up with that?" Looking down or sliding you now see the Peasant's own trousers, boots and
+tunic, the body others see and your shadow casts.
+
+- **Data**: `models.json` `firstPerson.body`: `hide` (skin joints: the Peasant's neck and head
+  `spine.004`–`spine.006`, so its hat and hair, and the left arm `upper_arm.L` down: the owner's
+  "never two pairs") and `weight` (0.5). The generator fails on an unknown joint, one listed twice
+  (the arm's `firstPerson.joints` are hidden already) or a weight outside (0, 1]; the fixture's
+  two-joint model draws a body by data alone (`a_fixture_models_body_is_cut_by_data_alone`).
+- **The mesh** (`dwell_models::first_person::body_triangles`, at load and on a detail change): the
+  body mesh less every triangle with a vertex that has at least `weight` of its skin weight on
+  `hide` or on the first-person arm's joints: a third index buffer over the body's vertices, the
+  arms view's arm and it sharing no triangle (the head and hat are 40 % of the Peasant).
+- **The pose**: the rig's pose your shadow plays (the same clips, times, swings and held-item
+  turns, through the retarget map, §11.9); no grip and no held item (the arms view holds it).
+- **Where it stands**: as the rigid body does (§5.1): on your feet, turned to your yaw, leaned back
+  from its soles by `own::keep_clear` (`back`, `lookDown`, `clear`) over its kept vertices
+  skinned on the CPU in the body's frame (`skinned::own_joints`), so the same on both faces;
+  fragments within `near` past the near plane discarded (the instance's `light.z`).
+- **Tests** (`render::characters` `own_body`, `both_faces!`): the §5.1 sweep (every clip and swing,
+  the pitch −90°…90°, the eye a step low and easing out of a crouch) at every detail level: no
+  triangle within 0.13 m of the eye (the nearest 0.166 m), at most 21 % of the screen covered
+  (crouch-walking, looking straight up), the feet in view looking down; the lowest vertex within
+  8 cm of the ground under the eye and of the rigid body's, standing, walking, crouched and sliding
+  (`your_skinned_bodys_feet_are_the_rigs_height_below_the_eye`).
+- **Differs from the rigid body**: the Peasant's legs are shorter than the rig's, so sliding its
+  feet reach less far ahead and come into view from 30° down (the rigid legs' from 15°). The in-game
+  look is to be checked on a GPU.
+
+### 11.13 Defeat: the kneel and the stand (WORK_QUEUE item 55, 2026-11-13)
+
+The owner (2026-11-13): "Can you setup a kneeling animation for my human characters. Head down, hand
+on sword hilt, sword in the ground. And a stand too." / "This is their 'defeat' animation. Humans
+won't die in this game (general design rule)" (§1a). Answers: after the kneel they respawn at the
+nearest resurrection shrine, where the stand plays; players and NPCs alike; with no sword in hand
+they kneel without one, the hand on the knee.
+
+- **Clips (data)**: the characters' roles `kneel`, `kneel_sword`, `stand`, `stand_sword` (§6's table;
+  `shared/characters/characters.json`, played on the Peasant through the retarget map, §11.9). The
+  kneel is a one-shot held at its end; each stand plays once and hands over to idle (the armed one
+  ends on `biped_hold`'s arm, so the hold takes over without a jump). The sword is **drawn back to
+  hand**, not sheathed: it rises out of the ground with the stand. Fitted with `clip_probe`: the
+  armed kneel's arm by `clip_probe kneel_sword --item dwell:sword --body --fit 1.3/0.1,0.82,0.55/0.1,0,0.6`
+  (`fit_at`: a defeat role is fitted on its own kneeling body, not the rest pose), the legs and body
+  by forward kinematics from the rig's bones; the probe takes body-only roles (`clip_probe kneel
+  --item none --part hand_r,shin_r,head_bone --svg …`; the top, side and front views then show the
+  body from its feet). Tests (`clip_probe::defeat_tests`, both faces through `place_frame`): the
+  grip 0.7–1 m up and ahead of the knee, the sword's tip within 6 cm of the ground and the blade
+  upright, the left knee down and the right up, the head bowed over 45°; unarmed, the right hand
+  within 15 cm of the raised knee; each stand from kneeling to standing, the sword back in hand.
+- **The animator** (`dwell_characters::animator`): `MoveInput::defeat` (`Defeat::Kneel` or
+  `Stand`) and `armed` (a weapon in hand: `Held::is_weapon`, a tool of kind `Weapon`) pick the role
+  by the names in `dwell_protocol::defeat::ROLES`; no hold layer, raised guard, look or foot
+  planting is laid over a defeat role (`is_defeat_role`).
+- **Data** (`shared/defeat/defeat.json`, `shared/defeat/gen.mjs` → `dwell_protocol::defeat`):
+  `kneelS` (4 s on the knee), `fadeS` (1 s to black, and back in after the stand), `standS` (1.4 s:
+  at least every stand clip), the four roles, the `camera` (`backM` 3.2, `upM` 1.5, `pitchDeg` −20,
+  `easeS` 0.8) and per-character overrides by name (`dwell:villager` kneels 5 s). The generator
+  fails a role a biped character has no clip for, a looping kneel, a stand longer than `standS`, an
+  unknown field or name, or a value out of range.
+- **The server** (`dwell-sim` `server.rs` `kill`): at 0 health the player's body leaves the physics
+  and its snapshots carry it `DEAD` (on the wire, now *defeated*) where it fell, with the facing it
+  knelt with; it **keeps everything** it carries (owner, 2026-11-13: "Keep everything", Guild Wars
+  style): the hotbar, the inventory, the held slot and the wallet stay on it through the kneel and the
+  stand, in every mode and on every grid, and nothing drops (a held sword is seen planted). After `kneelS + fadeS` (`defeat_ticks`) it
+  stands up at the shrine nearest where it fell (SHRINES.md §5). An NPC hurt to 0 health
+  (`Creatures::hurt`: `Hurt::defeated`, no drops, not removed) kneels still and unhurt for its kind's
+  kneel and fade, then the server stands it up whole at the stand point of the shrine nearest where
+  it fell, on that face (`take_stand_ups`, `stand_at`, `npc_stand_point`; where none is near, where it
+  knelt), still for `standS`, then wandering. An NPC standing up at a far shrine is despawned there
+  like any creature with no player near: its **own shrine respawn**, not a despawn-and-respawn.
+- **The wire** (additive): a defeated player needs nothing new (the `DEAD` flag, now with the yaw it
+  knelt with, which older clients ignore). A defeated NPC is sent pose 5 (kneeling) or 6 (standing
+  up; `NPC_DEFEAT_POSES`) to a client with the `humans.defeat` capability, and pose 0 to one without
+  (its decode refuses a pose past 4).
+- **The client**: other players defeated play the kneel where they fell (`bodies::defeat_input`) and
+  the stand for `STAND_S` once they appear at the shrine; NPCs play the role of their pose from the
+  pose's start (`npc_role`, `CreatureView::pose_s`). Your own defeat: the camera eases out from your
+  eyes to third person over the kneeling body (`defeat_camera`, on the face the body is on), the
+  view fades to black over `fadeS` after `kneelS` (`Game::defeat_fade`, the HUD's `#defeat-fade`),
+  and at the shrine you stand up in third person, input held (no move, jump or crouch), as the view
+  fades back in; then first person again. The HUD says "Defeated — you will rise at the nearest
+  shrine…". The old lying body (`place_frame`'s `dead`) is gone.
+- **Not yet**: the stand's facing at the shrine is the look's (SHRINES.md §9); a sheathe on the back.
+
+### 11.14 Decor: the eyes, the hat's band, the waist ring (WORK_QUEUE item 43, 2026-11-13)
+
+A model's `decor` (models.json, `shared/models/decor.mjs`) is applied by the importer's `--coat` step after
+`repaint`, to every detail level; `gen.mjs` fails when the checked-in GLB isn't as `--coat` leaves it.
+
+- **Pieces** (`kind: "piece"`): small flat quads **added as geometry**, for features smaller than a face of
+  the mesh (the Peasant's face is ~10 triangles at 60 %, so painted eyes are lost). Each is laid on each
+  level's own surface where a ray along `facing` hits it, `lift` off it, skinned wholly to `joint`. The
+  added vertices follow the mesh's own; the primitive's `extras.decor` counts them so a second run replaces
+  them, and the part map lists them with no part. The Peasant's eyes: a dark quad and a pale glint a side
+  on `spine.006` (16 vertices a level). First person hides them with the head. A piece is placed by `at`
+  (with `mirror`) or by `faces`: lists of the full mesh's triangle ids (`detail_0`, primitive 0, the Model Part
+  Painter's numbering, each list joined by shared edges), each list's area-weighted centre cast along `facing`
+  onto every level, an anchor at -x flipping u as `mirror` does. The Peasant's eyes are the owner's picks
+  (2026-11-14): `faces: [[808, 809], [1518, 1519]]`, a quad each side of the nose (x ±0.061, y 1.463).
+- **Bands**: a ring of alternating colours round the vertical axis, by height and radius (and a part). By
+  `segments` (equal sectors) or `order: true` (the facets sorted round the ring take the colours in turn:
+  strict alternation on irregular triangles); `span` drops tall facets (no spikes), `outer` keeps only the
+  outermost. The Peasant's hat band: the hat part inside r 0.19 m (the crown; the brim is beyond), y
+  1.555–1.635, no facet taller than 0.1 m. The waist ring: the outermost facets at the belt's height, no taller
+  than 0.12 m (60 % and 100 % show a ring round the sides and back; the front's facets at 60 % are tall, so
+  none is painted there; at 35 % the waist is a few short facets and at 20 % none). An ordered band holds a
+  whole number of its sequence round the ring (the narrowest facets left over join the segment before them; a
+  ring shorter than one sequence is left unpainted), so the sequence never meets itself at the seam.
+- **Band parts** (2026-11-13, owner: "losing the colorful waist of the shirt patterns. I want those back, but
+  cleaner … a colorful day of the dead Mexico kind of vibes"): a band's `parts` puts each place of its
+  sequence in a part of its own (the Peasant's `pattern_1`..`pattern_4`, in the part map's names but on no
+  vertex of its own; `gen.mjs` puts them on the facets each band paints, at every level, `decorParts`). So
+  the shirt's and hat's recolour (§11.11) no longer repaint the rings (to 0.63.x the waist ring sat in the
+  shirt part and the band in the hat's, and read as light and dark of the clothes). Both rings run four
+  places, painted wool_red, brass, wool_blue, wool_green in the GLB (what the player's own model shows).
+- **The villager's pattern** (`shared/creatures/patterns.json`, creatures.json `npc.pattern`): a set of
+  patterns, each a sequence of 2 to 4 colours round the ring (`#rrggbb`, its length dividing the ring's
+  places, no colour next to itself; a 3-colour pattern is a 4-long sequence like a b c b) and the clothes
+  bases it `pairs` with (per clothes part). An NPC picks a pattern by weight from its seed
+  (`dwell_sim::creatures::npc_pattern`), then its clothes from the pattern's pairs (a part it pairs; any
+  other from its own `to`), and each place takes its colour flat (shade 0). The `fiesta` set: magenta,
+  marigold, turquoise, sun yellow, lime, violet, scarlet and a bone white, paired with plain linen, canvas,
+  dark or straw clothes. A fixture set (`fixtures/patterns.json`) is picked by data alone in a test.
+- **Fills** (`kind: "fill"`): one colour over the facets of a part in a height and radius range. The
+  Peasant's crown above the brim (r under 0.19 m, from y 1.5) is filled with the hat's ramp before the band
+  is painted, so the crown above the band is one colour at every level (the pack's brass and bark triangles,
+  and the first band's tall facets reaching up the crown, are gone): owner, 2026-11-13, "the hat tops have
+  some color artifacts, not just above the brim".

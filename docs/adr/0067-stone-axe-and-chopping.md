@@ -31,7 +31,7 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
 ## Decision
 
 1. **Tools are data.** `shared/tools/tools.json`'s `tools`: an item name (an inventory item), a
-   `kind` from a fixed vocabulary (`axe`), `swingSeconds` (0.45), `biteM` (0.12: metres a swing
+   `kind` from a fixed vocabulary (`axe`), `swingSeconds` (0.45), `biteM` (0.1 since 2026-11-12, was 0.12: metres a swing
    straight across the grain cuts into open wood), `bindM` (0.05: a kerf this deep past the notch
    halves a swing into it), `across` (1) and `along` (0.15) shares and `sharpness` (2): a swing's
    share is `along + (across − along) |cos θ|^sharpness`, θ the angle between the swing plane's
@@ -52,13 +52,22 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    With the data: notching fells in **9** swings, hacking one spot in **28** (3.1×), vertical
    swings at a standing trunk take **61** (level and vertical alternated by band). The share of the
    cross-section cut is the most of any two opposite sides together over the cell's size.
+   **Amended 2026-11-12 (BUGS.md #75):** a quarter-metre band is too fine for a player to aim at,
+   so in game every swing at one spot hit the same band and no tree fell. A swing aimed at the band
+   cut deeper than the other now lands in the other (`Cut::open_band`, the head coming in beside
+   its last kerf, in the open wood), so the same aim notches; hacking one kerf no longer happens.
+   With the stone axe's `biteM` 0.1 (was 0.12; the owner's "about 12 good chops", WORK_QUEUE item 7)
+   a standing trunk falls in **11** swings at one aim, as alternating the bands does.
 3. **Aim.** The client casts its view ray into the targeted cell's box: the face it enters and the
    point, sent with the swing. The server checks the point is on that cell (5 cm slack) and within
    the edit reach (+0.75 m), that the cell is a wood and the face a side (end grain: nothing), and
    takes the band from the point and the swing plane from the eye-to-point direction, all
    face-locally through `FaceFrame` (+y up on both faces): a level swing's normal is up, a vertical
    swing's is level and square to the look's heading.
-4. **The swing direction** is the client's: **Use (right click) with the axe held toggles** level
+4. *(Amended 2026-11-14, WORK_QUEUE item 17: the axe has one mode, its level swing — owner: "Let's
+   simplify the axe to be like the shovel and pick, without the multiple modes". A tool toggles only
+   with a `heldVertical`, the sword's; the server sweeps an axe's vertical ask level.)*
+   **The swing direction** is the client's: **Use (right click) with the axe held toggles** level
    and vertical, sent with each swing; the HUD shows it ("Axe: level swing (right click:
    vertical)") in the hotbar's status line. Break (left click) swings, at most every
    `swingSeconds` (the server holds the same wait per player).
@@ -98,7 +107,16 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    past the hinge side). At 0.75 and 0.85 the 3.5 m test trunk leant ~5° and rocked back upright on
    the matching slope; at 1 it is down past 60° toward the notch in ~1.25 s on both faces, so the
    log's `fellTip` is 1. A breaking change (new block states, a changed fell): it ships
-   in 0.51.0, the line's first release.
+   in 0.51.0, the line's first release. **Revised 2026-11-12** (WORK_QUEUE item 24; owner: "The
+   tree chop currently makes 2 half slopes both at the same angle, which doesn't line up with the
+   chop you make in the side of the tree … supposed to have the big gash … 2 half blocks one upside
+   down one right side up, both with the 'short side' facing the cut"; confirmed "Yes that was the
+   shape I meant"): the log's `fellWedgeTrunk` is `open` (the default stays `matching`), so the
+   stump's ramp is low at the notch rising away and the trunk's thin at the notch, a V open toward
+   the side chopped; the notch's direction is the deepest side's (`side_normal`), so any of the
+   four sides. `fellTip` stays 1: the trunk falls toward the notch from each side on both faces
+   (`tests/chopping.rs` `felled_from_each_side_the_cut_opens_a_gash_toward_the_notch`). Not
+   breaking: the states exist, a fell's outcome only.
 6. **Bucking.** A lying wood (grain level) is cut the same way, best by vertical swings across it,
    and cut through at `buckFraction`: its cell (a 1 m length) goes and, in a mode that uses items,
    drops `buckDrops` (rolled with the server's entropy) as loose items (ADR 0066). In creative
@@ -188,7 +206,7 @@ Still parked (defaults chosen):
 
 4. **Cuts on a felled trunk.** Cuts on cells that fall with a piece are dropped; carry them into the
    piece and back when it settles?
-6. **Numbers.** 9 notching swings, 28 hacking (3.1×; the owner asked 3–4×: a smaller `bindM` raises it), 0.45 s a swing; 0.55 of the cross-section to fell
+6. **Numbers.** 11 swings at one aim with `biteM` 0.1 (2026-11-12, BUGS.md #75: a swing at the deeper band lands in the open one, so hacking one kerf, once 28 swings at 3.1× the notching the owner asked, no longer happens), 0.45 s a swing; 0.55 of the cross-section to fell
    or buck. All data.
 7. **Leaning trunks** (a log at an angle): logs are only ever along x, y or z, so a lean is not
    stored; the share rule handles any angle once a body's cells can be chopped (bodies: next).
@@ -230,7 +248,9 @@ weighty first-person physical swings (the mechanics only). Built:
   `windupS` 0.12, `activeS` 0.14 (the arc), `hitStopS` 0.08, `recoverHitS` 0.22, `recoverMissS`
   0.36, `reachM` 2.2, `arcDeg` 110, `samples` 12, `kickDeg` 1.6, `staminaCost` 8 (unused until
   stamina exists: swinging, swimming and sprinting will draw on it), `swish` and `bounce` sound
-  events. A miss must last at least `swingSeconds` (the server's wait).
+  events. A miss must last at least `swingSeconds` (the server's wait). (2026-11-12: `kickDeg` and the
+  hardcoded camera curve were replaced by `swing.camera`, keyed view sway per swing kind with a kick at
+  contact; docs/CHARACTERS.md §5.2.)
 - **The path is what hits; free swings.** A swing goes any time, at nothing too. `dwell_world::swing`
   sweeps the head's arc face-locally (level: the screen's right to its left; vertical: top to
   bottom); the first solid cell is hit. The client sends `Chop::Sweep` (look, plane) to a server
@@ -240,7 +260,8 @@ weighty first-person physical swings (the mechanics only). Built:
   stone post on the path takes the hit; free swings and stone do nothing and spend the swing (both
   faces). A sweep hit's face is converted to the chopping wire's `axis × 2 + positive` (`SwingHit::axis_face`; red → green in the browser and `tests/chopping.rs`: the notch went on the far side).
 - **The feel** (`chop.rs` `SwingRun`, tested): the arms' clip (timed to a miss) is held at the
-  impact for the hit-stop and played back to the rest after a hit, runs through its follow-through
+  impact for the hit-stop and faded from there to the rest after a hit (BUGS.md #93: no longer played
+  back through the wind-up), runs through its follow-through
   on a miss; the camera winds back, sweeps, jolts against the swing at a hit (harder off stone);
   the impact shows chips, the hit's sound by the cut (`sounds`: bark thud, wood chunk, creaks from
   40%), shakes leaves from the tree's leaf blocks (`leaves`), or clanks off stone (no effect).
@@ -327,8 +348,68 @@ split keeps the notch (`fellWedgeTrunk: open`). With the switch off nothing here
 pins it). Adopting it would replace §§2–5's swing share, bands and kerfs; see
 docs/proposals/CHOPPING_REDESIGN.md §7.
 
+## Note 2026-11-12: the swing lands at its contact (WORK_QUEUE item 25)
+
+The server cut a swing on its arrival, so the notch appeared on the click. Now a `Sweep` (or `Swing`)
+starts on arrival (the swing's wait spent; one too soon refused) and lands at its contact: `windupS` plus
+the arc's time to the step it hits (or to its first cleared cell), from a sweep at arrival; then it is
+swept again from the player's eye and applied as before, or dropped if the axe is no longer in hand
+(`land_swings`). A bounce off a non-wood solid now wears the axe once (owner, 2026-11-12: "Tools should
+only consume durability on hit"); a miss or a swing through only leaves does not. The client's swing stops
+if the axe is put away before its contact. docs/BLOCK_DAMAGE.md §8.
+
+## Note 2026-11-12: the axe's bites (WORK_QUEUE item 26)
+
+Owner, 2026-11-12: "The tree chopping slice doesn't match the other tools style. It cuts a line all the
+way across which is much bigger than the tool head. It should align more with the dirt and stone ones."
+Then: "Yes axe bites proposal looks good." The cut model (§2: bands, notch, kerfs, `open_band`, the fell
+and buck fractions) is unchanged, so a standing trunk still falls in 11 swings at one aim and leaves item
+24's gash. What changes is the look: each landed hit also records where it struck the side
+(`Cut::bites`, per side at most 12: `u` across the side, face-locally up for y, and the band cut), and
+§11's carve draws a head-sized V there instead of the notch and kerf across the whole side
+(`dwell-mesh` `carve/bites.rs`). A hit on a spot already bitten in its band lands beside it
+(`Cut::bite`: `step` × the width from it, nearest the aim), so hacking one spot widens the bites across
+the side and they join into the notch, whose cross-section is their union. Data: the wood's
+`cut.bite` (`widthM` 0.14, `endsM` 0.03, `step` 0.6) and `cut.cracks` (the `wood` crack set; stages by the
+share of the fell fraction cut), validated by `shared/tools/gen.mjs`. Wire and save, additive: the bites
+ride after a `Cuts` message's cells only to a client that said `BitesHello` (a datagram, as
+`SwingHello`), and after the `cuts` record's cells (an older record loads with none). A cut without
+bites is drawn as before. ARCHITECTURE.md §8.3, BLOCK_DAMAGE.md §6.4.
+
+## Note 2026-11-12: bites round 2, and the stump keeps its gash (WORK_QUEUE item 26)
+
+The in-game check found the bites growing down the cell into a slot, no cracks showing, and a swing
+after the fall clearing the stump's ramp (the axe's `clears` held `dwell:log_ramp`). Owner, on the
+stump: "I think let's do your recommendation." So: a hit lands beside any bite on its side, both bands,
+within the log's width (`Cut::bite_in`), every V in the notch's band (the cell's middle half), the grid
+carved across the octagon's chamfers; the wood's cracks painted in ink at 0.85. A wood's `fellWedge` is
+chopped as that wood (`chopped_wood`) and never cleared: a bite and a wear a hit, down at the fell
+fraction with the wood's `buckDrops`; no tool's `clears` may name one (the generator fails it). The
+cut model (§2) and felling at 11 swings are unchanged. BLOCK_DAMAGE.md §6.4 "Round 2".
+
+## Note 2026-11-12: superseded for new hits: the axe like the other tools (WORK_QUEUE item 51)
+
+Owner: "Also the axe doesn't behave like the other tools. I think it should." and, asked how, **"Like the
+others, felling on top"**. A log now takes block damage (ADR 0078, docs/BLOCK_DAMAGE.md §12): its `damage`
+data gives the axe 10 hits (stone) or 5 (metal), each hit a mark, a wear and its share of the drops, the
+last breaking the block. Breaking a standing log fells the trunk above as one body toward the side struck,
+as this ADR's felling did. **Superseded:** the cut model of §2 for new hits (bite, bind, kerfs, bands, the
+grain share, fell and buck fractions, the fell wedges and the gash); the swing, its arc, contact, clears,
+leaves shaken, sounds, chips, durability and felling into a body are kept. **Kept for old data:** the
+`cuts` save table and the `Cuts` wire still load, send and draw; a cell's cut gives way to damage at its
+next hit, its progress carried over. The chopping prototype (`chop2`, behind its switch) is unchanged.
+
 ## Consequences
 
 - A new tool is an item and a `tools` entry; a new wood a block with an `axis` and a `woods` entry;
   a new tool kind (a pick, a saw) is code with its data.
 - Reversing it: drop the flag; the `cuts` table stays, unread.
+
+**Note (2026-11-12, metal tools twice as good; BLOCK_DAMAGE.md §9).** Owner: "Metal tools break double
+sized bigger chunks off and reach 50% broken faster, which is when the blocks break. Also have double
+durability." The metal axe already bit twice as deep as the stone axe (`biteM` 0.2 to 0.1) and fells a
+standing trunk at one aim in 5 swings to 11 (`tests/chopping.rs`
+`a_metal_axe_fells_in_about_half_the_stone_axes_swings_and_wears_half_as_fast`, both faces); the fell rule
+(`fellFraction`) is unchanged. The chopping prototype's metal `chop2.bite` is now twice the stone axe's
+(0.09, was 0.075). The metal axe now wears: 64 hits, twice the stone axe's 32 (before: never). The breaking
+tiers (`breaking.tiers`) gain a `chunk`, metal's 2, which sizes the pickaxe's and shovel's marks.

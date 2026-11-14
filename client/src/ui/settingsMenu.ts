@@ -30,11 +30,15 @@ import {
   sanitizeAntialias,
 } from './antialiasSettings';
 import {
+  BLOOM_QUALITIES,
   CLOUD_QUALITIES,
+  DEFAULT_BLOOM,
   DEFAULT_SHAFTS,
   SHAFT_QUALITIES,
   defaultClouds,
+  sanitizeBloom,
   sanitizeShafts,
+  type BloomQuality,
   type CloudQuality,
   type ShaftQuality,
 } from './viewSettings';
@@ -43,6 +47,7 @@ import {
   FOV_LIMITS,
   VIEW_KEY,
   sanitizeFovSetting,
+  sanitizeLeafCards,
   sanitizeShowArms,
   viewRecord,
 } from './viewSettings';
@@ -63,6 +68,7 @@ import {
   PRESET_KEY,
   SHADOWS_KEY,
   SHAFTS_KEY,
+  BLOOM_KEY,
   WATER_KEY,
   pinnedRecord,
   pinsIn,
@@ -80,6 +86,13 @@ import {
   RANDOM_BACKGROUND,
   sanitizeMenuBackground,
 } from './menuBackground';
+import {
+  FEATURES_KEY,
+  defaultFeatures,
+  featureRecord,
+  sanitizeFeatures,
+  type FeatureSettings,
+} from './featureSettings';
 import { audio } from '../audio/engine';
 import { DEFAULT_VOLUMES, type Volumes } from '../audio/mixer';
 import { AUDIO_KEY, loadVolumes } from '../audio/settings';
@@ -152,6 +165,8 @@ export interface Settings {
   clouds: CloudQuality;
   /** The light shafts: off, low or high (dwell-look's shafts.rs, ADR 0064). */
   shafts: ShaftQuality;
+  /** Bloom, the glow round self-lit surfaces: off, low or high (dwell-look's bloom.rs). */
+  bloom: BloomQuality;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** The sun's and moon's shadows (ui/shadowSettings.ts). */
@@ -164,6 +179,16 @@ export interface Settings {
   fovDeg: number;
   /** Your first-person arms and what they hold (docs/CHARACTERS.md §5). */
   showArms: boolean;
+  /**
+   * The leaf cards on trees (shared/look/leaves.json `cards`): off draws none; on, the renderer's
+   * tier decides (none on a phone or a CPU adapter). Chunks meshed from then on follow it.
+   */
+  leafCards: boolean;
+  /**
+   * The features with no tier of their own before WORK_QUEUE item 30 (ui/featureSettings.ts): tall
+   * grass, far trees, distant shadows, hit shards, particles, far herds.
+   */
+  features: FeatureSettings;
   /** What the on-screen interface shows (ui/hudSettings.ts, shared/ui/hud.json). */
   hud: HudSettings;
   /** Render scale and its upscaler (ui/renderScaleSettings.ts, shared/render/upscale.json). */
@@ -192,12 +217,15 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     audio: { ...DEFAULT_VOLUMES },
     clouds: defaultClouds(mobile),
     shafts: DEFAULT_SHAFTS,
+    bloom: DEFAULT_BLOOM,
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
     explosions: defaultExplosions(reducedMotion),
     fovDeg: DEFAULT_FOV,
     showArms: true,
+    leafCards: true,
+    features: defaultFeatures(),
     hud: defaultHud(),
     renderScale: defaultRenderScale(),
     menuBackground: DEFAULT_MENU_BACKGROUND,
@@ -224,6 +252,7 @@ export function settingsJson(s: Settings): string {
     },
     clouds: s.clouds,
     shafts: s.shafts,
+    bloom: s.bloom,
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -236,10 +265,18 @@ export function settingsJson(s: Settings): string {
       speedEffects: s.motion.speedEffects,
       fovBoost: Math.round(s.motion.fovBoost * 100) / 100,
       plantSway: s.motion.plantSway,
+      cameraSway: s.motion.cameraSway,
     },
     explosions: { ...s.explosions },
     fovDeg: Math.round(s.fovDeg),
     showArms: s.showArms,
+    leafCards: s.leafCards,
+    features: {
+      ...s.features,
+      tallGrass: Math.round(s.features.tallGrass * 100) / 100,
+      hitShards: Math.round(s.features.hitShards * 100) / 100,
+      particles: Math.round(s.features.particles * 100) / 100,
+    },
     hud: { shown: { ...s.hud.shown }, mapShading: s.hud.mapShading },
     renderScale: { ...s.renderScale },
     menuBackground: s.menuBackground,
@@ -328,12 +365,15 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     audio: loadVolumes(),
     clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
     shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
+    bloom: sanitizeBloom(load(BLOOM_KEY), defaults.bloom),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
     explosions: sanitizeExplosions(load(EXPLOSIONS_KEY), defaultExplosions(prefersReducedMotion())),
     fovDeg: sanitizeFovSetting(load(VIEW_KEY)),
     showArms: sanitizeShowArms(load(VIEW_KEY)),
+    leafCards: sanitizeLeafCards(load(VIEW_KEY)),
+    features: sanitizeFeatures(load(FEATURES_KEY), defaults.features),
     hud: sanitizeHud(load(HUD_KEY)),
     renderScale: sanitizeRenderScale(load(RENDER_SCALE_KEY), UPSCALE, defaults.renderScale),
     menuBackground: sanitizeMenuBackground(load(MENU_KEY)),
@@ -392,10 +432,12 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [AUDIO_KEY, { ...asRecord(load(AUDIO_KEY)), ...s.audio }],
     [CLOUDS_KEY, s.clouds],
     [SHAFTS_KEY, s.shafts],
+    [BLOOM_KEY, s.bloom],
     [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
     [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
     [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
-    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms)],
+    [VIEW_KEY, viewRecord(load(VIEW_KEY), s.fovDeg, s.showArms, s.leafCards)],
+    [FEATURES_KEY, featureRecord(load(FEATURES_KEY), s.features)],
     [HUD_KEY, hudRecord(load(HUD_KEY), s.hud)],
     [RENDER_SCALE_KEY, renderScaleRecord(load(RENDER_SCALE_KEY), s.renderScale)],
     [EXPLOSIONS_KEY, explosionRecord(load(EXPLOSIONS_KEY), s.explosions)],
@@ -529,6 +571,15 @@ const CHOICES: ChoiceSpec<ShaftQuality>[] = [
     get: (s) => s.shafts,
     with: (s, v) => ({ ...s, shafts: v }),
   },
+  {
+    label: 'Bloom',
+    pin: 'bloom',
+    hint: 'The glow round lava, torches and flames; Low is lighter on the GPU (never on phones)',
+    choices: BLOOM_QUALITIES,
+    labels: { off: 'Off', low: 'Low', high: 'High' },
+    get: (s) => s.bloom,
+    with: (s, v) => ({ ...s, bloom: v }),
+  },
 ];
 
 /** The Graphics section's choices, from the data (shared/render/upscale.json). */
@@ -612,21 +663,124 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
       with: (s, v) => ({ ...s, audio: { ...s.audio, [key]: v } }),
     },
   });
+  // A 0–1 share of a feature (ui/featureSettings.ts), as a percent slider.
+  const share = (
+    label: string,
+    key: 'tallGrass' | 'hitShards' | 'particles',
+    hint: string,
+  ): Row => ({
+    slider: {
+      label,
+      pin: `features.${key}`,
+      hint,
+      min: 0,
+      max: 1,
+      log: false,
+      format: (v) => `${String(Math.round(v * 100))}%`,
+      get: (s) => s.features[key],
+      with: (s, v) => ({ ...s, features: { ...s.features, [key]: v } }),
+    },
+  });
   const choice = <T extends string>(spec: ChoiceSpec<T>): Row => ({
     choice: spec as unknown as ChoiceSpec<string>,
   });
   return {
+    // WORK_QUEUE item 30 (owner, 2026-11-12: "Ensure all of our graphics have settings in our
+    // graphics menu"): every visual feature's setting, grouped; graphicsAudit.test.ts fails on a
+    // feature with none.
     graphics: [
       {
-        title: 'Quality',
+        title: 'Display',
         rows: [
           ...RENDER_SCALE_CHOICES.map(choice),
           ...ANTIALIAS_CHOICES.map(choice),
-          choice(WATER_CHOICE),
+          {
+            slider: {
+              label: 'Exposure',
+              pin: 'exposure',
+              hint: 'How bright the picture is after tone mapping',
+              ...EXPOSURE_LIMITS,
+              log: true,
+              format: (v) => `${v.toFixed(2)}×`,
+              get: (s) => s.exposure,
+              with: (s, v) => ({ ...s, exposure: v }),
+            },
+          },
+          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
+          // we can remove the slider and make 60% the default"): the level is models.json's
+          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
+        ],
+      },
+      {
+        title: 'Lighting',
+        rows: [
           choice(SHADOW_CHOICE),
+          {
+            toggle: {
+              label: 'Distant shadows',
+              pin: 'features.distantShadows',
+              hint: 'Sun shadows on the distant terrain, at the Shadows quality; off is lighter on the GPU',
+              get: (s) => s.features.distantShadows,
+              with: (s, v) => ({ ...s, features: { ...s.features, distantShadows: v } }),
+            },
+          },
           choice(TORCH_SHADOW_CHOICE),
-          choice(CLOUD_CHOICE),
           ...CHOICES.map(choice),
+        ],
+      },
+      { title: 'Sky & weather', rows: [choice(CLOUD_CHOICE)] },
+      {
+        title: 'Water',
+        rows: [choice(WATER_CHOICE), ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle }))],
+      },
+      {
+        // BUGS.md #78 (owner: "I don't see 'tree' options in our settings for graphics").
+        title: 'Terrain & trees',
+        rows: [
+          {
+            toggle: {
+              label: 'Leaf cards',
+              pin: 'leafCards',
+              hint: 'Painted leaf clumps on near trees; off is lighter on the GPU (never drawn on phones)',
+              get: (s) => s.leafCards,
+              with: (s, v) => ({ ...s, leafCards: v }),
+            },
+          },
+          share(
+            'Tall grass',
+            'tallGrass',
+            'How much of the tall grass and small plants is drawn; less is lighter on the GPU',
+          ),
+          {
+            toggle: {
+              label: 'Far trees',
+              pin: 'features.farTrees',
+              hint: 'Trees on the distant terrain; off draws its ground alone',
+              get: (s) => s.features.farTrees,
+              with: (s, v) => ({ ...s, features: { ...s.features, farTrees: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Effects',
+        rows: [
+          share('Hit shards', 'hitShards', 'How many stone fragments fly from a pickaxe hit'),
+          share('Particles', 'particles', 'How many chips, sparks, falling leaves and steam puffs'),
+          {
+            toggle: {
+              label: 'Far herds',
+              pin: 'features.farHerds',
+              hint: 'Herds of animals far off, past the ones near you',
+              get: (s) => s.features.farHerds,
+              with: (s, v) => ({ ...s, features: { ...s.features, farHerds: v } }),
+            },
+          },
+        ],
+      },
+      {
+        title: 'Distance',
+        rows: [
           {
             slider: {
               label: 'Full detail',
@@ -663,27 +817,6 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               with: (s, v) => ({ ...s, detail: { ...s.detail, memoryMb: v } }),
             },
           },
-        ],
-      },
-      {
-        title: 'Look',
-        rows: [
-          {
-            slider: {
-              label: 'Exposure',
-              pin: 'exposure',
-              hint: 'How bright the picture is after tone mapping',
-              ...EXPOSURE_LIMITS,
-              log: true,
-              format: (v) => `${v.toFixed(2)}×`,
-              get: (s) => s.exposure,
-              with: (s, v) => ({ ...s, exposure: v }),
-            },
-          },
-          // No Model detail slider (owner, 2026-11-10: "Keep the logic for changing the detail. But
-          // we can remove the slider and make 60% the default"): the level is models.json's
-          // `detail.default`, a pin stored before still applies, and ?modeldetail= overrides it.
-          ...WATER_FLOW_TOGGLES.map((toggle) => ({ toggle })),
         ],
       },
     ],
@@ -757,6 +890,15 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
               hint: 'Tall grass sways in the wind',
               get: (s) => s.motion.plantSway,
               with: (s, v) => ({ ...s, motion: { ...s.motion, plantSway: v } }),
+            },
+          },
+          {
+            toggle: {
+              label: 'Camera sway',
+              pin: 'motion.cameraSway',
+              hint: 'The view leans and kicks a little with a swing of the axe (never your aim)',
+              get: (s) => s.motion.cameraSway,
+              with: (s, v) => ({ ...s, motion: { ...s.motion, cameraSway: v } }),
             },
           },
         ],
@@ -922,16 +1064,19 @@ export interface DebugTool {
   on?: () => boolean;
 }
 
-type Page = SettingsPane | 'controller' | 'controls' | 'structures' | 'debug' | 'host';
+type Page =
+  SettingsPane | 'controller' | 'controls' | 'theater' | 'structures' | 'debug' | 'host' | 'chisel';
 
 /** The pages in the order they are listed, whatever order they are added in. */
 const PAGE_ORDER: readonly Page[] = [
   ...SETTINGS_PANES,
   'controller',
   'controls',
+  'theater',
   'structures',
   'debug',
   'host',
+  'chisel',
 ];
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -941,9 +1086,11 @@ const PAGE_TITLES: Record<Page, string> = {
   screen: 'On screen',
   controller: 'Controller',
   controls: 'Controls',
+  theater: 'Theater',
   structures: 'Structures',
   debug: 'Debug',
   host: 'Host',
+  chisel: 'Chisel',
 };
 
 /** A setting's row as the Settings page draws it: its label, the setting it changes, its kind. */
@@ -1205,6 +1352,45 @@ export class SettingsMenu {
     this.leaveController = onLeave;
   }
 
+  /**
+   * Adds the Theater page (docs/THEATER_MODE.md §2): a button that turns theater mode on (and
+   * closes the menu), with its key; `allowed` false (the host turned it off for guests) shows why.
+   */
+  addTheaterPage(key: string, enter: () => void, allowed: () => boolean): void {
+    const page = el('section');
+    const b = el('button', 'block-button theater-enter', 'Enter theater mode');
+    b.type = 'button';
+    b.id = 'menu-theater-enter';
+    const note = el(
+      'p',
+      'gm-lead gm-unavailable',
+      'The host has turned theater mode off for guests.',
+    );
+    b.addEventListener('click', () => {
+      if (!allowed()) return;
+      this.setOpen(false);
+      enter();
+    });
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        'A free camera, camera moves and keyframed paths, and recording the view to a file. ' +
+          'Your character stays where it is.',
+      ),
+      b,
+      ...keycaps(key),
+      note,
+    );
+    this.addPage('theater', page);
+    const tab = this.pages.get('theater')?.tab;
+    tab?.setAttribute('id', 'menu-theater');
+    tab?.addEventListener('click', () => {
+      b.disabled = !allowed();
+      note.hidden = allowed();
+    });
+  }
+
   /** Adds the Host page (local worlds, Phase 5c): `panel` is ui/hostPanel.ts's. */
   addHostPanel(panel: HTMLElement): void {
     panel.hidden = false;
@@ -1219,6 +1405,26 @@ export class SettingsMenu {
     );
     this.addPage('host', page);
     this.pages.get('host')?.tab.setAttribute('id', 'menu-host');
+  }
+
+  /**
+   * Adds the Chisel page (local worlds, Phase 56 B7): `panel` is ui/chiselPanel.ts's; `onShow`
+   * runs each time it is opened (the sliders redrawn for the world's mode then).
+   */
+  addChiselPanel(panel: HTMLElement, onShow: () => void): void {
+    const page = el('section');
+    page.append(
+      el(
+        'p',
+        'gm-lead',
+        "Tune this world's biomes: the terrain around you is generated again, your builds kept.",
+      ),
+      panel,
+    );
+    this.addPage('chisel', page);
+    const tab = this.pages.get('chisel')?.tab;
+    tab?.setAttribute('id', 'menu-chisel');
+    tab?.addEventListener('click', onShow);
   }
 
   /**

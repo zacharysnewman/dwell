@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GamepadInput } from '../input/gamepad';
 import { CREATIVE } from './buildModes.gen';
-import { catalogue, dropAssignments, loadPicks, PICKS_KEY, savePicks } from './creativeInventory';
+import {
+  catalogue,
+  dropAssignments,
+  loadPicks,
+  PICKS_KEY,
+  savePicks,
+  structureEntries,
+} from './creativeInventory';
 import { HOTBAR_SLOTS } from './inventory.gen';
 
 const palette = CREATIVE.items.map((i) => i.name);
@@ -166,5 +173,33 @@ describe('dragging onto the creative slots', () => {
   });
   it('moves into an empty slot', () => {
     expect(dropAssignments({ slot: 1 }, 5, [10, 11])).toEqual([[5, 11]]);
+  });
+});
+
+describe('the Structures tab (STRUCTURES.md §9)', () => {
+  const stored = [
+    {
+      file: 'hall.json',
+      status: 'ok' as const,
+      structure: { name: 'dwell:hall', size: [70, 40, 33] },
+    },
+    { file: 'next.json', status: 'unreadable' as const },
+    {
+      file: 'post.json',
+      status: 'ok' as const,
+      structure: { name: 'dwell:post', size: [1, 2, 1] },
+    },
+  ];
+
+  it('lists the readable saved structures with their sizes; a newer build’s file is not placed', () => {
+    expect(structureEntries(stored)).toEqual([
+      { file: 'hall.json', label: 'dwell:hall', size: '70 × 40 × 33' },
+      { file: 'post.json', label: 'dwell:post', size: '1 × 2 × 1' },
+    ]);
+  });
+
+  it('the search keeps the structures whose name holds it', () => {
+    expect(structureEntries(stored, ' HALL ').map((e) => e.file)).toEqual(['hall.json']);
+    expect(structureEntries(stored, 'nothing')).toEqual([]);
   });
 });

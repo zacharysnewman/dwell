@@ -19,6 +19,7 @@ const CAP: Rock = Rock {
     solubility: 0.0,
     face: "dwell:stone",
     cap: "dwell:stone",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0xaa3322,
 };
@@ -30,6 +31,7 @@ const SOFT: Rock = Rock {
     solubility: 0.0,
     face: "dwell:dirt",
     cap: "dwell:dirt",
+    cap_by: &[],
     scree: "dwell:sand",
     color: 0x886655,
 };
@@ -56,6 +58,9 @@ fn geology(e: Erosion) -> Geology {
         stacks: STACKS,
         strength: 0.0,
         erosion: e,
+        // The erosion engine's own shapes, flat tops and floors: the mesas' relief over them
+        // (rocks.json `mesaRelief`, 0.64) is `tests/realistic_mesas.rs`'s.
+        mesa_relief: dwell_worldgen::geology::MesaRelief::NONE,
         ..GEOLOGY
     }
 }

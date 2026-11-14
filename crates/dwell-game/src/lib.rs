@@ -29,6 +29,7 @@ pub mod remotes;
 pub mod sound;
 pub mod stream_budget;
 pub mod touch;
+pub mod upload_budget;
 
 /// Rounds half up, like JavaScript's `Math.round`.
 pub(crate) fn js_round(v: f64) -> f64 {

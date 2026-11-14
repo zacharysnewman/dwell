@@ -98,7 +98,17 @@ fn main() {
             Rain::Orographic(o) => rain::orographic(grid, cell, &h, &sea, seed, o),
         };
         lap("rock bands + rain");
-        erosion::erode(grid, cell, &mut h, &up, &erod, &rainv, &sea, p);
+        erosion::erode(
+            grid,
+            cell,
+            &mut h,
+            &up,
+            &erod,
+            &rainv,
+            &sea,
+            p,
+            dwell_worldgen::plates::FlowRouting::D8,
+        );
         lap("erosion");
         lakes::remove_small_pits(grid, cell, &mut h, &sea, p);
         let d = lakes::drainage(grid, cell, &h, &sea);

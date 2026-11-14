@@ -4,7 +4,7 @@
 // the index is what the main menu shows.
 import { recordedVersion } from '../buildInfo';
 import { isVersion } from '../version/semver';
-import { GENERATORS, RETIRED_PLAYGROUND, type Spawn } from './world';
+import { GENERATORS, RETIRED_PLAYGROUND, sizeOptions, type Spawn } from './world';
 
 /** The types a new world can have. */
 export type CreatableType = keyof typeof GENERATORS;
@@ -47,6 +47,19 @@ export interface WorldMeta {
    * the build's terrain (every world the New world form makes).
    */
   worldgen?: string;
+  /**
+   * A bigger world's size as its radius scale (docs/proposals/BIG_MAP.md M2b: the New world
+   * form's World size; `shared/protocol/constants.json` `worldSizes`). The world file's settings
+   * are its truth once created; kept here so the page builds its maps at that size before the
+   * world starts. Absent: today's (1×).
+   */
+  radiusScale?: number;
+  /**
+   * A Realistic world's Sky preset (docs/proposals/REALISTIC_WORLD.md §8: the New world form's
+   * Sky, `shared/look/orbits.json`): its orbit is rolled from its seed when its file is created
+   * (the world file keeps the orbit after that). Absent: today's sky.
+   */
+  sky?: string;
 }
 
 /** The part of `Storage` the index uses. */
@@ -249,6 +262,8 @@ export class WorldIndex {
       ...(world.spawn ? { spawn: world.spawn } : {}),
       ...(world.mode ? { mode: world.mode } : {}),
       ...(world.worldgen ? { worldgen: world.worldgen } : {}),
+      ...(world.radiusScale ? { radiusScale: world.radiusScale } : {}),
+      ...(world.sky ? { sky: world.sky } : {}),
     };
     this.put(copy);
     return copy;
@@ -264,6 +279,10 @@ export class WorldIndex {
       mode?: string;
       /** A test world's worldgen config (dev links and Chisel only; `WorldMeta.worldgen`). */
       worldgen?: string;
+      /** A bigger terrain world's radius scale (`WorldMeta.radiusScale`); 1 or absent: today's. */
+      radiusScale?: number;
+      /** A Realistic world's Sky preset (`WorldMeta.sky`); absent: today's sky. */
+      sky?: string;
     },
     now: number,
     random: () => number = Math.random,
@@ -283,6 +302,8 @@ export class WorldIndex {
       ...(options.spawn ? { spawn: options.spawn } : {}),
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.worldgen ? { worldgen: options.worldgen } : {}),
+      ...(options.type === 'terrain' ? sizeOptions(options.radiusScale) : {}),
+      ...(options.sky ? { sky: options.sky } : {}),
     };
     this.put(world);
     return world;

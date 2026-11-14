@@ -1,0 +1,87 @@
+{
+  "$comment": "Theater mode's camera presets (docs/THEATER_MODE.md §4): a move kind (orbit, dolly, track, crane, pan), an easing and its parameters' defaults and ranges. Read by dwell-theater (crates/dwell-theater/src/preset.rs), which validates it; the parameter names each move understands are the code's.",
+  "formatVersion": 1,
+  "presets": [
+    {
+      "name": "orbit",
+      "label": "Orbit",
+      "move": "orbit",
+      "easing": "linear",
+      "params": {
+        "seconds": { "default": 20, "min": 2, "max": 600 },
+        "radiusM": { "default": 12, "min": 1, "max": 2000 },
+        "heightM": { "default": 4, "min": -50, "max": 2000 },
+        "degrees": { "default": 360, "min": -3600, "max": 3600 },
+        "fov": { "min": 10, "max": 120 },
+        "timeFrom": { "min": 0, "max": 1 },
+        "timeTo": { "min": 0, "max": 1 },
+        "days": { "min": 0, "max": 30 }
+      }
+    },
+    {
+      "name": "dolly",
+      "label": "Dolly in",
+      "move": "dolly",
+      "easing": "inOutSine",
+      "params": {
+        "seconds": { "default": 10, "min": 1, "max": 300 },
+        "fromM": { "default": 20, "min": 0.5, "max": 2000 },
+        "toM": { "default": 6, "min": 0.5, "max": 2000 },
+        "heightM": { "default": 1.6, "min": -50, "max": 500 },
+        "vertigo": { "default": 0, "min": 0, "max": 1 },
+        "fov": { "default": 60, "min": 10, "max": 120 },
+        "timeFrom": { "min": 0, "max": 1 },
+        "timeTo": { "min": 0, "max": 1 },
+        "days": { "min": 0, "max": 30 }
+      }
+    },
+    {
+      "name": "track",
+      "label": "Track",
+      "move": "track",
+      "easing": "linear",
+      "params": {
+        "seconds": { "default": 20, "min": 1, "max": 600 },
+        "distanceM": { "default": 6, "min": 1, "max": 200 },
+        "sideM": { "default": 1.5, "min": -50, "max": 50 },
+        "heightM": { "default": 2, "min": -20, "max": 200 },
+        "smoothingS": { "default": 0.6, "min": 0, "max": 10 },
+        "fov": { "min": 10, "max": 120 },
+        "timeFrom": { "min": 0, "max": 1 },
+        "timeTo": { "min": 0, "max": 1 },
+        "days": { "min": 0, "max": 30 }
+      }
+    },
+    {
+      "name": "rise",
+      "label": "Drone rise",
+      "move": "crane",
+      "easing": "inOutSine",
+      "params": {
+        "seconds": { "default": 15, "min": 1, "max": 600 },
+        "backM": { "default": 10, "min": 0, "max": 2000 },
+        "fromM": { "default": 3, "min": -50, "max": 5000 },
+        "toM": { "default": 80, "min": -50, "max": 5000 },
+        "fov": { "min": 10, "max": 120 },
+        "timeFrom": { "min": 0, "max": 1 },
+        "timeTo": { "min": 0, "max": 1 },
+        "days": { "min": 0, "max": 30 }
+      }
+    },
+    {
+      "name": "pan",
+      "label": "Pan",
+      "move": "pan",
+      "easing": "inOutSine",
+      "params": {
+        "seconds": { "default": 12, "min": 1, "max": 600 },
+        "degrees": { "default": 90, "min": -720, "max": 720 },
+        "pitch": { "min": -89, "max": 89 },
+        "fov": { "min": 10, "max": 120 },
+        "timeFrom": { "min": 0, "max": 1 },
+        "timeTo": { "min": 0, "max": 1 },
+        "days": { "min": 0, "max": 30 }
+      }
+    }
+  ]
+}

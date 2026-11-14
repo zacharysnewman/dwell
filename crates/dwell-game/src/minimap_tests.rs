@@ -993,3 +993,65 @@ dwell_world::both_faces!(
         }
     }
 );
+
+#[test]
+fn the_big_maps_levels_follow_the_worlds_size() {
+    // BIG_MAP.md M0: today's size is the data's levels exactly; at each bigger size the closest
+    // level is unchanged, the coarser cells grow by a power of two, the widest spans the bigger
+    // disc, and no coarse level builds more tiles than today's.
+    use dwell_protocol::world_size::WorldSize;
+    assert_eq!(
+        MAP.big_map_levels_sized(WorldSize::DEFAULT),
+        MAP.big_map_levels
+    );
+    let tiles = |cell: f64, across: f64| (across / (cell * 32.0)).ceil().powi(2);
+    for (n, size) in WorldSize::all() {
+        let levels = MAP.big_map_levels_sized(size);
+        assert_eq!(levels.len(), MAP.big_map_levels.len(), "{n}");
+        assert_eq!(levels[0], MAP.big_map_levels[0], "{n}: the closest level");
+        let disc = 2.0 * size.world_radius_m() as f64;
+        assert_eq!(
+            levels[levels.len() - 1].1,
+            disc,
+            "{n}: the widest spans the disc"
+        );
+        for w in levels.windows(2) {
+            assert!(w[1].0 > w[0].0 && w[1].1 > w[0].1, "{n}");
+        }
+        for (i, (&(c, _), &(c0, _))) in levels.iter().zip(MAP.big_map_levels).enumerate().skip(1) {
+            assert!((c as u32).is_power_of_two(), "{n}");
+            assert!(
+                tiles(c, disc) <= tiles(c0, 2.0 * dwell_protocol::world::WORLD_RADIUS as f64),
+                "{n}: level {i}"
+            );
+        }
+    }
+    let ten = MAP.big_map_levels_sized(WorldSize::named("10x").unwrap());
+    assert_eq!(
+        ten.iter().map(|l| l.0).collect::<Vec<_>>(),
+        [1.0, 256.0, 4096.0]
+    );
+}
+
+dwell_world::both_faces!(
+    fn a_columns_ground_is_its_top_blocks_top_face_locally(f: FaceFrame) {
+        // A marker placed on the big map stands on the loaded ground (docs/MAP_MARKERS.md): the
+        // floor's top, a pillar's top where one stands, nothing where nothing is loaded.
+        let mut w = floor(f, 6);
+        for row in GROUND..GROUND + 6 {
+            let [x, y, z] = f.cell([2, row, 3]);
+            w.set_voxel(x, y, z, stone());
+        }
+        let eye = m_of_row(GROUND) + 1.6;
+        let at = |x, z| ground_at(&w, f, x, z, eye + 64.0, eye - 64.0);
+        assert_eq!(at(0, 0), Some(m_of_row(GROUND)), "the floor's top");
+        assert_eq!(at(2, 3), Some(m_of_row(GROUND + 6)), "the pillar's top");
+        assert_eq!(at(40, 40), None, "nothing loaded");
+        // The other face's ground under the same x and z is not this face's.
+        assert_eq!(
+            ground_at(&w, f.other(), 0, 0, eye + 64.0, eye - 64.0),
+            None,
+            "the other face"
+        );
+    }
+);

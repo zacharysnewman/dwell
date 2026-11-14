@@ -4,21 +4,34 @@
 //! the renderer's smoke scene, which `client/e2e-webgpu` checks in headless Chromium.
 
 pub mod blasts;
+pub mod blueprints;
 pub mod bodies;
 pub mod chips;
 pub mod chisel;
 pub mod chisel_section;
 pub mod chop;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod clip_probe;
 pub mod creatures;
+pub mod effect_share;
+pub mod far_herds;
 pub mod find;
 pub mod flecks;
 pub mod game;
+pub mod grid_bodies;
+pub mod grid_light;
+pub mod grid_lod;
+pub mod grid_view;
+pub mod held_use;
 pub mod hit_feedback;
+pub mod hit_shards;
 pub mod jobs;
 pub mod local;
 pub mod lod_map;
 pub mod loose_items;
+pub mod map_markers;
 pub mod map_reveal;
+pub mod moon_probe;
 pub mod net;
 pub mod pieces;
 pub mod pool;
@@ -26,7 +39,10 @@ pub mod render;
 pub mod render_clock;
 pub mod settle_glide;
 pub mod steam;
+pub mod step_clock;
+pub mod swordplay;
 pub mod telemetry;
+pub mod vent_plumes;
 #[cfg(target_arch = "wasm32")]
 mod web;
 pub mod world_clock;
@@ -73,27 +89,30 @@ pub fn triangle_pipeline(
         label: Some("probe"),
         source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
     });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("probe"),
-        layout: None,
-        vertex: wgpu::VertexState {
-            module: &module,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[],
+    crate::render::pipeline::create(
+        device,
+        &wgpu::RenderPipelineDescriptor {
+            label: Some("probe"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(format.into())],
+            }),
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
         },
-        fragment: Some(wgpu::FragmentState {
-            module: &module,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(format.into())],
-        }),
-        primitive: Default::default(),
-        depth_stencil: None,
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    })
+    )
 }
 
 /// Records the probe's pass: clear, then the triangle.
@@ -233,7 +252,6 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             feet: [16.0, 9.0, 16.0],
             face: dwell_world::FaceFrame::A,
             yaw: 0.0,
-            dead: false,
             // The red-tunicked look, which the smoke test finds.
             look: "tinker",
             pose: Default::default(),
@@ -243,18 +261,14 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
             light: [1.0, 0.0],
         }),
     );
-    // A dead player lying beside it, and one turned to face the camera's right.
-    for (id, feet, yaw, dead) in [
-        (2, [13.0, 9.0, 15.0], 0.0, true),
-        (3, [19.0, 9.0, 16.0], 90.0, false),
-    ] {
+    // Another player beside it, and one turned to face the camera's right.
+    for (id, feet, yaw) in [(2, [13.0, 9.0, 15.0], 0.0), (3, [19.0, 9.0, 16.0], 90.0)] {
         renderer.set_player(
             id,
             Some(render::PlayerView {
                 feet,
                 face: dwell_world::FaceFrame::A,
                 yaw,
-                dead,
                 look: dwell_characters::DEFAULT_LOOK,
                 pose: Default::default(),
                 role: "idle",

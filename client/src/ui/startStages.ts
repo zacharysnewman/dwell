@@ -5,6 +5,14 @@
 // thread (seconds on a cold GPU shader cache), and it began in the same task that ended 'game',
 // so the browser never painted "Starting the graphics…": the screen stood on "Loading the game…
 // x MB 0.0 s" until it was done. Each stage is now painted before its work starts.
+//
+// Bug #71 (owner, 2026-11-11: "'Starting the graphics' now takes a long time without showing
+// elapsed time"): measured, `create` holds the main thread ~40 ms; the time is the GPU's. On a cold
+// shader cache the request for the device takes ~1.7 s, and then the browser's GPU process compiles
+// the renderer's pipelines for ~9 s (Metal, M-series), during which the page paints no frame at
+// all, though its main thread is free: the screen stood on "Starting the graphics… 1.8 s". That
+// compile is its own stage now, 'shaders', from `create`'s end until the GPU has done the work
+// sent so far (`settled`); it runs beside the world's stages rather than holding them back.
 import type { WasmBytes } from '../engine/wasm';
 import type { StageTracker } from './loadingStages';
 
@@ -15,6 +23,8 @@ export interface StartSteps<C> {
   create(): Promise<C>;
   /** Draws the screen now and resolves once the browser has painted it (`paintedFrame`). */
   painted(): Promise<void>;
+  /** Resolves once the GPU has done the work `create` sent (its pipelines compiled). */
+  settled(client: C): Promise<void>;
   /** The page's clock (ms). */
   now(): number;
 }
@@ -31,6 +41,16 @@ export async function runStartStages<C>(stages: StageTracker, steps: StartSteps<
   await steps.painted();
   const client = await steps.create();
   stages.end('graphics', steps.now());
+  // Not awaited: the world's stages (its file, maps, server) run on the CPU meanwhile.
+  stages.begin('shaders', steps.now());
+  void steps.settled(client).then(
+    () => {
+      stages.end('shaders', steps.now());
+    },
+    () => {
+      stages.end('shaders', steps.now());
+    },
+  );
   return client;
 }
 

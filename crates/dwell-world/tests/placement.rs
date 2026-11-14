@@ -326,3 +326,94 @@ dwell_world::both_faces!(
         assert_eq!(o.check, EditCheck::Unbreakable);
     }
 );
+
+/// Aims from face-local `eye` at face-local point `at` (m) and places `rows` of stone against the
+/// face the hit gives a place (a slope's side on its lower half, `BlockHit::slope_side`): the
+/// cell aimed at, the face sent, and the outcome.
+fn aim_place(
+    w: &mut VoxelWorld,
+    f: FaceFrame,
+    eye: [f64; 3],
+    at: [f64; 3],
+    rows: u8,
+) -> ([i32; 3], u8, EditOutcome) {
+    let d: [f64; 3] = std::array::from_fn(|k| at[k] - eye[k]);
+    let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    let dir = f.vector(d.map(|v| v / n)).map(|v| v as f32);
+    let hit = raycast_block(w, f.point(eye), dir, 8.0).expect("the slope is aimed at");
+    let face = hit.slope_side.unwrap_or(hit.face);
+    let r = BlockEditRequest {
+        action: BlockEditAction::Place,
+        cell: hit.cell,
+        face,
+        material: f.state(s("dwell:stone")),
+        rows,
+        down: false,
+        point: None,
+    };
+    let o = check_block_edit(w, &r, f.point(eye), &[], DEFAULT_REACH);
+    (f.cell(hit.cell), face, o)
+}
+
+dwell_world::both_faces!(
+    /// docs/BUGS.md #23 (owner, 2026-11-03): "I can't place a block against the outer edge of
+    /// (downhill) side of a shallow ramp, maybe same problem with steep ramps too?" A slope's face
+    /// was always its top, so a place went on top of the ramp, never off its low edge. Now a place
+    /// goes into the cell the slope faces out into where it is aimed at: from its lower half, out
+    /// past its low edge into the downhill cell (the server taking the slope as seen from there);
+    /// from its upper half, on top as before. Red before: the downhill places went on top.
+    fn a_place_aimed_at_a_ramps_lower_half_goes_off_its_downhill_side(f: FaceFrame) {
+        let ramp = |shape: &str| {
+            s(&format!(
+                "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape={shape}]"
+            ))
+        };
+        let side = f.cell_face(5) as u8; // −z, the side it descends toward (north)
+        let eye = [1.5, 1.62, 0.0];
+        // A ½ m ramp in (1, 0, 2): its slope rises 0.5 m from z 2 to 3.
+        let mut w = ground(f);
+        set(&mut w, f, [1, 0, 2], ramp("ramp"));
+        let (cell, face, o) = aim_place(&mut w, f, eye, [1.5, 0.1, 2.2], 1);
+        assert_eq!(
+            (cell, face),
+            ([1, 0, 2], side),
+            "its lower half: the low side"
+        );
+        assert_eq!(o.check, EditCheck::Ok);
+        assert_eq!(cells(f, &o), vec![[1, 0, 1]], "off the downhill edge");
+        // A 1 m piece there stands on the ground, up from the cell.
+        let (_, _, o) = aim_place(&mut w, f, eye, [1.5, 0.1, 2.2], 2);
+        assert_eq!(cells(f, &o), vec![[1, 0, 1], [1, 1, 1]]);
+        let (_, face, o) = aim_place(&mut w, f, eye, [1.5, 0.4, 2.8], 1);
+        assert_eq!(face, f.cell_face(2) as u8, "its upper half: the top");
+        assert_eq!(cells(f, &o), vec![[1, 1, 2]], "on top, as before");
+        // A 1 m (45°) ramp: its lower piece's slope from z 2 to 2.5, its upper's from 2.5 to 3.
+        let mut w = ground(f);
+        set(&mut w, f, [1, 0, 2], ramp("steep_lower"));
+        set(&mut w, f, [1, 1, 2], ramp("steep_upper"));
+        let (cell, face, o) = aim_place(&mut w, f, eye, [1.5, 0.1, 2.1], 1);
+        assert_eq!((cell, face, o.check), ([1, 0, 2], side, EditCheck::Ok));
+        assert_eq!(cells(f, &o), vec![[1, 0, 1]], "off the steep ramp's foot");
+        let (cell, face, o) = aim_place(&mut w, f, eye, [1.5, 0.6, 2.6], 1);
+        assert_eq!((cell, face, o.check), ([1, 1, 2], side, EditCheck::Ok));
+        assert_eq!(cells(f, &o), vec![[1, 1, 1]], "beside its upper piece");
+    }
+);
+
+#[test]
+fn a_flat_face_or_a_slopes_top_half_has_no_side() {
+    // face-a-only: cell-space arithmetic, no up.
+    assert_eq!(slope_side([0.0, 1.0, 0.0], [0.5, 1.0, 0.1]), None, "a top");
+    assert_eq!(
+        slope_side([0.0, 0.0, -1.0], [0.5, 0.5, 0.0]),
+        None,
+        "a side"
+    );
+    // A ½ m ramp descending −z (cell-space normal (0, 1, −1)): out the side under half way.
+    let n = [0.0, 1.0, -1.0];
+    assert_eq!(slope_side(n, [0.5, 0.2, 0.2]), Some(5));
+    assert_eq!(slope_side(n, [0.5, 0.5, 0.5]), None, "a tie: the top");
+    assert_eq!(slope_side(n, [0.5, 0.8, 0.8]), None);
+    // Hanging (face B): out its bottom or its side.
+    assert_eq!(slope_side([0.0, -1.0, 1.0], [0.5, 0.8, 0.8]), Some(4));
+}

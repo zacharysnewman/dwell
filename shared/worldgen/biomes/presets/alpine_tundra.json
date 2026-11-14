@@ -4,13 +4,10 @@
   "description": "Bare, frosty ground above the trees: snowy turf over rock, stone on every steep face.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "max": 0.3,
-      "blend": 0.08
-    },
-    "elevation": {
-      "min": 1000,
-      "blend": 200
+    "celsius": {
+      "min": -7,
+      "max": -1.5,
+      "blend": 1
     }
   },
   "detail": {

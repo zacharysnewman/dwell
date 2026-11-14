@@ -35,6 +35,23 @@ test('main menu: a turning panorama, and every setting from the Settings button'
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-${shown.name}.png` });
 
   await openMenuPage(page, 'home');
+  // Settings and Versions are the home's block buttons, not links (owner, 2026-11-11), the same width,
+  // side by side under the big actions and as wide as them.
+  for (const id of ['#menu-settings', '#home-versions']) {
+    await expect(page.locator(id)).toHaveClass(/\bmm-action\b/);
+  }
+  const box = async (id: string) => {
+    const b = await page.locator(id).boundingBox();
+    if (!b) throw new Error(`${id} has no box`);
+    return b;
+  };
+  const [s, v, a] = await Promise.all(
+    ['#menu-settings', '#home-versions', '#home-worlds'].map(box),
+  );
+  expect(Math.abs(s.y - v.y)).toBeLessThan(2);
+  expect(Math.abs(s.width - v.width)).toBeLessThan(2);
+  expect(Math.abs(s.x - a.x)).toBeLessThan(2);
+  expect(Math.abs(v.x + v.width - (a.x + a.width))).toBeLessThan(2);
   await page.locator('#menu-settings').click();
   const menu = page.locator('#settings-menu');
   await expect(menu).toBeVisible();

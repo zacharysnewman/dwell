@@ -9,13 +9,19 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use dwell_protocol::world_size::WorldSize;
+
 use super::{FINGERPRINT, WorldMap, codec};
 
 type Slot = Arc<OnceLock<Arc<WorldMap>>>;
 
+/// A map's place: its face seed and its world's size (BIG_MAP.md M2; a seed's maps at two sizes
+/// are two maps).
+type Key = (u64, WorldSize);
+
 /// The maps of this process, most recently used last. A world uses two (its faces); a few more
 /// are kept for tools and tests that visit several seeds.
-static MAPS: Mutex<Vec<(u64, Slot)>> = Mutex::new(Vec::new());
+static MAPS: Mutex<Vec<(Key, Slot)>> = Mutex::new(Vec::new());
 const KEEP: usize = 8;
 
 static DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -25,7 +31,7 @@ pub fn set_cache_dir(dir: PathBuf) {
     *DIR.lock().expect("map dir") = Some(dir);
 }
 
-fn slot(seed: u64) -> Slot {
+fn slot(seed: Key) -> Slot {
     let mut maps = MAPS.lock().expect("world maps");
     if let Some(at) = maps.iter().position(|(s, _)| *s == seed) {
         let entry = maps.remove(at);
@@ -43,12 +49,17 @@ fn slot(seed: u64) -> Slot {
 
 /// The map of face seed `seed`: the installed or cached one, else computed now (and kept).
 pub fn for_seed(seed: u64) -> Arc<WorldMap> {
-    slot(seed)
+    for_seed_sized(seed, WorldSize::DEFAULT)
+}
+
+/// The map of face seed `seed` in a world of `size` (BIG_MAP.md M2).
+pub fn for_seed_sized(seed: u64, size: WorldSize) -> Arc<WorldMap> {
+    slot((seed, size))
         .get_or_init(|| {
-            if let Some(m) = disk::read(seed) {
+            if let Some(m) = disk::read(seed, size) {
                 return Arc::new(m);
             }
-            let m = WorldMap::compute(seed);
+            let m = WorldMap::compute_sized(seed, size);
             disk::write(&m);
             Arc::new(m)
         })
@@ -57,18 +68,32 @@ pub fn for_seed(seed: u64) -> Arc<WorldMap> {
 
 /// Whether a map for `seed` is ready in this process (installed or computed).
 pub fn is_ready(seed: u64) -> bool {
+    is_ready_sized(seed, WorldSize::DEFAULT)
+}
+
+/// [`is_ready`] in a world of `size`.
+pub fn is_ready_sized(seed: u64, size: WorldSize) -> bool {
     MAPS.lock()
         .expect("world maps")
         .iter()
-        .any(|(s, slot)| *s == seed && slot.get().is_some())
+        .any(|(s, slot)| *s == (seed, size) && slot.get().is_some())
 }
 
 /// Computes the maps of several seeds at once (natively on threads; one after another in WASM).
 pub fn prefetch(seeds: &[u64]) {
-    let missing: Vec<u64> = seeds.iter().copied().filter(|&s| !is_ready(s)).collect();
+    prefetch_sized(seeds, WorldSize::DEFAULT)
+}
+
+/// [`prefetch`] in a world of `size`.
+pub fn prefetch_sized(seeds: &[u64], size: WorldSize) {
+    let missing: Vec<u64> = seeds
+        .iter()
+        .copied()
+        .filter(|&s| !is_ready_sized(s, size))
+        .collect();
     if missing.len() < 2 {
         for seed in missing {
-            for_seed(seed);
+            for_seed_sized(seed, size);
         }
         return;
     }
@@ -76,13 +101,13 @@ pub fn prefetch(seeds: &[u64]) {
     std::thread::scope(|s| {
         for seed in missing {
             s.spawn(move || {
-                for_seed(seed);
+                for_seed_sized(seed, size);
             });
         }
     });
     #[cfg(target_family = "wasm")]
     for seed in missing {
-        for_seed(seed);
+        for_seed_sized(seed, size);
     }
 }
 
@@ -90,27 +115,27 @@ pub fn prefetch(seeds: &[u64]) {
 /// by another build.
 pub fn install(bytes: &[u8]) -> Result<u64, String> {
     let seed = codec::verify(bytes)?;
-    let s = slot(seed);
+    let m = codec::decode(bytes)?;
+    let size = m.size;
+    let s = slot((seed, size));
     if s.get().is_some() {
         // The same map kept; another one for the seed (a test world's, ADR 0074 B7, after the
         // seed's own was computed or installed here, or the other way round) replaces it, so a
         // generator built after the install never uses the wrong ground.
-        let m = codec::decode(bytes)?;
         if s.get()
             .is_some_and(|k| k.worldgen_text() == m.worldgen_text())
         {
             return Ok(seed);
         }
-        replace(seed, m);
+        replace((seed, size), m);
         return Ok(seed);
     }
-    let m = codec::decode(bytes)?;
     let _ = s.set(Arc::new(m));
     Ok(seed)
 }
 
 /// Puts `m` in seed `seed`'s place (a fresh slot; generators holding the old map keep it).
-fn replace(seed: u64, m: WorldMap) {
+fn replace(seed: Key, m: WorldMap) {
     let mut maps = MAPS.lock().expect("world maps");
     maps.retain(|(s, _)| *s != seed);
     if maps.len() >= KEEP {
@@ -123,15 +148,30 @@ fn replace(seed: u64, m: WorldMap) {
 
 /// Computes face seed `seed`'s map and returns its bytes (the browser's builder worker).
 pub fn build_bytes(seed: u64) -> Vec<u8> {
-    codec::encode(&for_seed(seed))
+    build_bytes_sized(seed, WorldSize::DEFAULT)
+}
+
+/// [`build_bytes`] in a world of `size`.
+pub fn build_bytes_sized(seed: u64, size: WorldSize) -> Vec<u8> {
+    codec::encode(&for_seed_sized(seed, size))
 }
 
 /// The cache key of a seed's map in this build (`<fingerprint>-<settings hash>-<seed>`, hex).
 pub fn key(seed: u64) -> String {
-    format!(
+    key_sized(seed, WorldSize::DEFAULT)
+}
+
+/// [`key`] in a world of `size`: today's key at 1×, `-x<scale>` after it for a bigger world.
+pub fn key_sized(seed: u64, size: WorldSize) -> String {
+    let k = format!(
         "{FINGERPRINT:016x}-{:016x}-{seed:016x}",
         super::SETTINGS_HASH
-    )
+    );
+    if size.is_default() {
+        k
+    } else {
+        format!("{k}-x{}", size.radius_scale)
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -147,13 +187,15 @@ mod disk {
             .unwrap_or_else(|| std::env::temp_dir().join("dwell-world-maps"))
     }
 
-    fn path(seed: u64) -> PathBuf {
-        dir().join(format!("{}.dwmap", key(seed)))
+    fn path(seed: u64, size: WorldSize) -> PathBuf {
+        dir().join(format!("{}.dwmap", key_sized(seed, size)))
     }
 
-    pub fn read(seed: u64) -> Option<WorldMap> {
-        let bytes = std::fs::read(path(seed)).ok()?;
-        codec::decode(&bytes).ok().filter(|m| m.seed == seed)
+    pub fn read(seed: u64, size: WorldSize) -> Option<WorldMap> {
+        let bytes = std::fs::read(path(seed, size)).ok()?;
+        codec::decode(&bytes)
+            .ok()
+            .filter(|m| m.seed == seed && m.size == size)
     }
 
     pub fn write(m: &WorldMap) {
@@ -161,10 +203,10 @@ mod disk {
         if std::fs::create_dir_all(&d).is_err() {
             return;
         }
-        let target = path(m.seed);
+        let target = path(m.seed, m.size);
         let tmp = d.join(format!(
             "{}.{}.tmp",
-            key(m.seed),
+            key_sized(m.seed, m.size),
             std::process::id() as u64 ^ (std::thread::current().id().as_u64_hash())
         ));
         if std::fs::write(&tmp, codec::encode(m)).is_ok() && std::fs::rename(&tmp, &target).is_err()
@@ -188,8 +230,8 @@ mod disk {
 
 #[cfg(target_family = "wasm")]
 mod disk {
-    use super::WorldMap;
-    pub fn read(_seed: u64) -> Option<WorldMap> {
+    use super::{WorldMap, WorldSize};
+    pub fn read(_seed: u64, _size: WorldSize) -> Option<WorldMap> {
         None
     }
     pub fn write(_m: &WorldMap) {}

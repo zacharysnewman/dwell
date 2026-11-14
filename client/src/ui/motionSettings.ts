@@ -1,6 +1,7 @@
 // The motion effects' settings (docs/MOTION_EFFECTS.md, Phase 29): speed effects on or off (the
 // FOV widening with speed and the wind streaks), the FOV boost's strength, and (Phase 33,
-// docs/TRANSPARENT_BLOCKS.md) whether plants sway in the wind. Kept per browser under
+// docs/TRANSPARENT_BLOCKS.md) whether plants sway in the wind, and (docs/CHARACTERS.md §5.2)
+// whether the view sways with a swing of the axe. Kept per browser under
 // their own key; the stored record is append-only (unknown fields kept on rewrite), like every
 // cross-version browser store (CLAUDE.md, RELEASES.md).
 
@@ -11,13 +12,20 @@ export interface MotionSettings {
   fovBoost: number;
   /** Plants (tall grass) sway in the wind. */
   plantSway: boolean;
+  /** The view sways with a swing of the axe (never the aim). */
+  cameraSway: boolean;
 }
 
 export const MOTION_KEY = 'dwell.motion';
 
 /** On by default, off when the browser asks for reduced motion. */
 export function defaultMotion(reducedMotion: boolean): MotionSettings {
-  return { speedEffects: !reducedMotion, fovBoost: 1, plantSway: !reducedMotion };
+  return {
+    speedEffects: !reducedMotion,
+    fovBoost: 1,
+    plantSway: !reducedMotion,
+    cameraSway: !reducedMotion,
+  };
 }
 
 /** Whether the browser asks for reduced motion (false where it can't say). */
@@ -42,6 +50,7 @@ export function sanitizeMotion(value: unknown, reducedMotion: boolean): MotionSe
         ? Math.min(1, Math.max(0, boost))
         : d.fovBoost,
     plantSway: typeof v.plantSway === 'boolean' ? v.plantSway : d.plantSway,
+    cameraSway: typeof v.cameraSway === 'boolean' ? v.cameraSway : d.cameraSway,
   };
 }
 
@@ -51,5 +60,11 @@ export function motionRecord(stored: unknown, s: MotionSettings): Record<string,
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...base, speedEffects: s.speedEffects, fovBoost: s.fovBoost, plantSway: s.plantSway };
+  return {
+    ...base,
+    speedEffects: s.speedEffects,
+    fovBoost: s.fovBoost,
+    plantSway: s.plantSway,
+    cameraSway: s.cameraSway,
+  };
 }

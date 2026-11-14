@@ -31,6 +31,9 @@ pub struct Decoration {
     /// The ground's top (m above sea level, face-local) must lie in [min_height, max_height].
     pub min_height: i32,
     pub max_height: i32,
+    /// It also stands over a ½ m ramp of its ground (data `onRamps`; HALF_HEIGHT_GRID.md §5): in
+    /// the cell over the ramp, its foot drawn down to the ramp's surface (`sitOnSupport`).
+    pub on_ramps: bool,
 }
 
 mod table {
@@ -54,6 +57,7 @@ pub struct Placer {
     max_slope: i32,
     min_height: i32,
     max_height: i32,
+    on_ramps: bool,
 }
 
 /// The patches' soft edge: half its width in the patch noise's units.
@@ -82,6 +86,7 @@ impl Placer {
                     max_slope: rows_for_m(f64::from(d.max_slope)),
                     min_height: rows_for_m(f64::from(d.min_height)),
                     max_height: rows_for_m(f64::from(d.max_height)),
+                    on_ramps: d.on_ramps,
                 }
             })
             .collect()
@@ -154,6 +159,11 @@ impl Placer {
     pub fn state(&self) -> StateId {
         self.state
     }
+
+    /// Whether it also stands over a ½ m ramp of its ground (data `onRamps`).
+    pub fn on_ramps(&self) -> bool {
+        self.on_ramps
+    }
 }
 
 #[cfg(test)]
@@ -179,6 +189,7 @@ mod tests {
             max_slope: 1,
             min_height: 2,
             max_height: 10,
+            on_ramps: false,
         };
         let p = &Placer::resolve(&[rule], 3)[0];
         let dirt = dwell_blocks::require("dwell:dirt");

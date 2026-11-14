@@ -476,8 +476,17 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
     // near, the suitable land nearest the disc's centre first.
     let rule = dwell_worldgen::terrain::SURFACE;
     let mut by_river = 0;
+    // The spawn search's point (since 0.58 the spawn is the shrine nearest it, tests/shrines.rs).
     for seed in 0..16u64 {
-        let s = spawn_point_for(GENERATOR_TERRAIN, seed);
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
+        let a = t.local(dwell_world::Face::A);
+        let s = a.spawn_search_point();
+        // With no grid shrine near the point, the spawn's own shrine stands on the patch (seed 3):
+        // the patch is then the shrine's floor, not open air (tests/shrines.rs checks its stand).
+        let sh = a.shrines().expect("shrines");
+        let spawn = sh.spawn_shrine(a);
+        let built_here = (f64::from(spawn.x) + 0.5 - s[0]).hypot(f64::from(spawn.z) + 0.5 - s[2])
+            <= f64::from(sh.reach() + 6);
         let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
         // The feet stand on the top of a level patch's top cell (row g): no ramp tops it.
         let (x, g, z) = (s[0].floor() as i32, row_of_m(s[1]) - 1, s[2].floor() as i32);
@@ -505,6 +514,9 @@ fn players_spawn_on_level_dry_ground_by_a_river_not_on_a_peak() {
             for dx in -4..=4 {
                 assert!(solid(world.get_voxel(x + dx, g, z + dz)), "seed {seed}");
                 // Open: air, or a decoration players walk through (tall grass).
+                if built_here {
+                    continue;
+                }
                 let at = world.get_voxel(x + dx, g + 1, z + dz);
                 assert!(at == M.air || (decoration(at) && !solid(at)), "seed {seed}");
                 // Headroom: 2 m clear above the plant's cell.
@@ -794,6 +806,62 @@ fn meadows_of_tall_grass_grow_on_grass_by_the_decoration_data() {
     );
 }
 
+both_faces!(
+    /// WORK_QUEUE item 21 (owner, 2026-11-11: "Yes make the meadow grass fix"): tall grass grows over
+    /// the meadow's ½ m grass ramps too (decorations.json `onRamps`), in the cell over the ramp, at
+    /// about the share it grows on flat grass; never over a 1 m ramp. Red before: no ramp had any,
+    /// so ~40 % of a meadow's surface showed bare stripes. Read through the world on either face.
+    fn tall_grass_grows_over_half_metre_grass_ramps(f: FaceFrame) {
+        use dwell_blocks::state_property;
+        let seed = 7;
+        let terrain = bifacial::BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed).unwrap();
+        let g = terrain.local(f.face);
+        let mut world = VoxelWorld::new(generator_for(GENERATOR_TERRAIN, seed), None);
+        let tall = require("dwell:tall_grass");
+        let grass_ramp = dwell_blocks::find_block("dwell:grass_ramp").expect("grass ramps");
+        let (mut flat, mut flat_tufts, mut ramps, mut ramp_tufts, mut steep_tufts) =
+            (0, 0, 0, 0, 0);
+        for (cx, cz) in [(0, 0), (1, 0), (0, 1), (-3, 5), (12, -7), (5, 5), (-6, -2)] {
+            for z in cz * S..cz * S + S {
+                for x in cx * S..cx * S + S {
+                    let top = g.ground_y(x, z).expect("inside");
+                    let mut at = |y: i32| {
+                        let [wx, wy, wz] = f.cell([x, y, z]);
+                        f.state(world.get_voxel(wx, wy, wz))
+                    };
+                    let (m, over) = (at(top), at(top + 1));
+                    let tuft = over == tall;
+                    if m == M.grass {
+                        flat += 1;
+                        flat_tufts += i32::from(tuft);
+                    } else if dwell_blocks::block_of(m).name == grass_ramp.name {
+                        match state_property(m, "shape") {
+                            Some("ramp") => {
+                                ramps += 1;
+                                ramp_tufts += i32::from(tuft);
+                            }
+                            _ => steep_tufts += i32::from(tuft),
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            flat > 500 && ramps > 200,
+            "{flat} flat, {ramps} ramp grass tops"
+        );
+        let (on_flat, on_ramps) = (
+            f64::from(flat_tufts) / f64::from(flat),
+            f64::from(ramp_tufts) / f64::from(ramps),
+        );
+        assert!(
+            ramp_tufts > 20 && on_ramps > 0.5 * on_flat,
+            "tufts on {ramp_tufts} of {ramps} ramps ({on_ramps:.3}) against {on_flat:.3} on flat"
+        );
+        assert_eq!(steep_tufts, 0, "none over a 1 m ramp");
+    }
+);
+
 #[test]
 fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_shore() {
     // HALF_HEIGHT_GRID.md §4: each natural top is the rule's answer over its 9 columns' heights,
@@ -814,8 +882,18 @@ fn generated_ramps_follow_the_rule_across_chunk_borders_and_hold_the_sea_at_the_
     let (sx, sz) = steepest_near_centre(&g);
     let strips = [(cx - 3000, cx + 40, cz), (sx - 300, sx + 300, sz)];
     for (x0, x1, zc) in strips {
+        // A tree's trunk stands on a flat pad, no ramp (WORK_QUEUE item 44): its columns are not
+        // the rule's.
+        let pads: std::collections::HashSet<(i32, i32)> = g
+            .trees_in((x0, zc - 8), (x1 - 1, zc + 7))
+            .iter()
+            .flat_map(|t| g.planters()[t.planter as usize].pad(t).0)
+            .collect();
         for z in zc - 8..zc + 8 {
             for x in x0..x1 {
+                if pads.contains(&(x, z)) {
+                    continue;
+                }
                 let top = g.ground_y(x, z).expect("inside");
                 let around: Around = std::array::from_fn(|r| {
                     std::array::from_fn(|c| {
@@ -1662,6 +1740,7 @@ fn the_default_biome_takes_only_the_weight_left() {
         wetness: 0.0,
         elevation: 50.0,
         coast: 500.0,
+        ..Geography::default()
     };
     let w = fallback_weights(&set, &hot_dry);
     assert_eq!(
@@ -1857,17 +1936,21 @@ dwell_world::both_faces!(
 fn existing_seeds_spawn_where_they_did() {
     // both-faces: pins each face's spawn. WORLD_SCALE.md §3.2's bounded spawn search changes only
     // searches that failed: seeds 0 and 7 spawn where they did before it (0.51.20), on both faces.
+    // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
+    // the search's, which is unchanged.
     for (seed, a, b) in [
         (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
         (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
     ] {
+        let t = dwell_worldgen::BifacialTerrain::new(seed);
         assert_eq!(
-            spawn_point_for(GENERATOR_TERRAIN, seed),
+            t.local(dwell_world::Face::A).spawn_search_point(),
             a,
             "seed {seed} face A"
         );
+        let [x, y, z] = t.local(dwell_world::Face::B).spawn_search_point();
         assert_eq!(
-            dwell_worldgen::spawn_point_b_for(GENERATOR_TERRAIN, seed),
+            [x, dwell_world::FaceFrame::B.y(y), z],
             b,
             "seed {seed} face B"
         );

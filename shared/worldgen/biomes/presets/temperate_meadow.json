@@ -4,17 +4,14 @@
   "description": "Open, rolling grassland with tall grass: mild, moist lowlands.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.35,
-      "max": 0.7,
-      "blend": 0.1
+    "celsius": {
+      "min": 4,
+      "max": 18,
+      "blend": 1.5
     },
-    "wetness": {
-      "min": 0.25,
-      "blend": 0.15
-    },
-    "elevation": {
-      "max": 700,
+    "rain": {
+      "min": 450,
+      "max": 1000,
       "blend": 150
     }
   },

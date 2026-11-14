@@ -119,8 +119,9 @@ fn level_0_is_the_chunk_grid_and_the_root_holds_the_disc() {
     }
     let root = LodCoord::new(MAX_LEVEL, 0, 0, 0);
     assert!(in_world(root));
-    assert_eq!(section_size(MAX_LEVEL), 1 << 17);
-    assert_eq!(section_origin(root).x, -(1 << 16));
+    // BIG_MAP.md M1: the root holds the largest world size (10×), centred on the origin.
+    assert_eq!(section_size(MAX_LEVEL), 1 << 20);
+    assert_eq!(section_origin(root).x, -(1 << 19));
     assert!(!in_world(LodCoord::new(MAX_LEVEL, 1, 0, 0)));
     assert_eq!(
         ancestor(
@@ -136,7 +137,10 @@ fn rows_cover_the_build_sphere_one_row_at_the_root() {
     assert_eq!(last_row(0) - first_row(0) + 1, 3126);
     assert_eq!(last_row(6) - first_row(6) + 1, 50);
     assert_eq!(last_row(8) - first_row(8) + 1, 14);
-    assert_eq!((first_row(12), last_row(12)), (0, 0));
+    // BIG_MAP.md M1: one row at the root (level 15); the 1× world's top level (12) now has two,
+    // either side of the midplane, as every level below the root does.
+    assert_eq!((first_row(MAX_LEVEL), last_row(MAX_LEVEL)), (0, 0));
+    assert_eq!(last_row(12) - first_row(12) + 1, 2);
     assert_eq!(
         lod_of_chunk(ChunkCoord::new(0, MIN_CHUNK_Y, 0)).j,
         first_row(0)
@@ -155,12 +159,14 @@ fn rows_cover_the_build_sphere_one_row_at_the_root() {
         MAX_CHUNK_Y + 1,
         0
     ))));
-    let j8 = first_row(8);
-    assert!(in_world(LodCoord::new(8, 8, j8, 8)) && in_world(LodCoord::new(8, 8, j8 + 13, 8)));
+    // The level-8 column at the origin (BIG_MAP.md M1: 2^(MAX_LEVEL-9) sections from the corner).
+    let (j8, o) = (first_row(8), 1 << (MAX_LEVEL - 9));
+    assert!(in_world(LodCoord::new(8, o, j8, o)) && in_world(LodCoord::new(8, o, j8 + 13, o)));
     assert!(
-        !in_world(LodCoord::new(8, 8, j8 - 1, 8)) && !in_world(LodCoord::new(8, 8, j8 + 14, 8))
+        !in_world(LodCoord::new(8, o, j8 - 1, o)) && !in_world(LodCoord::new(8, o, j8 + 14, o))
     );
-    for level in 0..=11 {
+    // Every level below the root lies on one face (11 before M1's root).
+    for level in 0..MAX_LEVEL {
         let s = section_at(level, 0, i64::from(MIDPLANE_Y), 0);
         assert_eq!(section_origin(s).y, i64::from(MIDPLANE_Y));
         assert_eq!((row_face(s, -1), row_face(s, 0)), (Face::B, Face::A));
@@ -170,7 +176,7 @@ fn rows_cover_the_build_sphere_one_row_at_the_root() {
             (Face::B, Face::A)
         );
     }
-    let straddle = section_at(12, 0, i64::from(MIDPLANE_Y), 0);
+    let straddle = section_at(MAX_LEVEL, 0, i64::from(MIDPLANE_Y), 0);
     assert_eq!(
         (row_face(straddle, 0), row_face(straddle, 31)),
         (Face::B, Face::A)

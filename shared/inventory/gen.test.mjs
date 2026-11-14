@@ -50,7 +50,7 @@ test('an item and a block with a custom drop added by data alone are emitted', (
   assert.match(rs, /ItemDef \{ name: "dwell:crystal", label: "Crystal", color: \[170, 204, 255\], size: 0.1, stack: 16, value: 0, look: None \}/);
   assert.match(
     rs,
-    /BlockDrops \{ block: "test:ore", cost: "test:ore", drops: &\[DropRule \{ chance: 0.25, choices: &\[DropChoice \{ item: "dwell:crystal", min: 1, max: 3, weight: 1.0 \}\] \}\] \}/,
+    /BlockDrops \{ block: "test:ore", cost: "test:ore", drops: &\[DropRule \{ chance: 0.25, when: &\[\], choices: &\[DropChoice \{ item: "dwell:crystal", min: 1, max: 3, weight: 1.0 \}\] \}\] \}/,
   );
   assert.match(inventoryTs(d), /name: "dwell:crystal"/);
 });
@@ -85,6 +85,21 @@ test('a cluster look added by data alone carries it; the grass seed is one', () 
   assert.match(rs, /name: "dwell:grass_seed".*look: Some\(ItemLook \{ shape: LookShape::Cluster/);
 });
 
+test('a drop rule holds only for the states its `when` lists (tall grass by stage)', () => {
+  const d = validateInventory(...fresh());
+  const grass = d.drops.find((b) => b.block === 'dwell:tall_grass');
+  const of = (stage) => grass.drops.filter((r) => r.when.every((w) => w.values.includes(stage)));
+  const chance = (stage, item) => of(stage).filter((r) => r.choices.some((c) => c.item === item)).reduce((a, r) => a + r.chance, 0);
+  // More drops the taller it is; the full stage (the default) drops as before.
+  for (const item of ['dwell:grass_fiber', 'dwell:grass_seed']) {
+    for (const [lo, hi] of [['0', '1'], ['1', '2'], ['2', '3']]) assert.ok(chance(lo, item) < chance(hi, item), `${item} ${lo} < ${hi}`);
+  }
+  assert.equal(chance('3', 'dwell:grass_fiber'), 1);
+  assert.equal(chance('3', 'dwell:grass_seed'), 0.5);
+  assert.match(inventoryRust(d), /DropRule \{ chance: 0\.5, when: &\[\("stage", &\["3"\]\)\], choices: &\[DropChoice \{ item: "dwell:grass_seed"/);
+  assert.match(inventoryRust(d), /block: "dwell:dirt", cost: "dwell:dirt", drops: &\[DropRule \{ chance: 1\.0, when: &\[\], /);
+});
+
 test('bad entries fail naming the entry and the problem', () => {
   const cases = [
     [(i) => (i.stackSize = 0), /stackSize must be a whole number/],
@@ -106,6 +121,9 @@ test('bad entries fail naming the entry and the problem', () => {
     [(i, b) => (b[0].blocks.find((x) => x.name === 'dirt').drops = [{ pick: [{ item: 'dwell:dirt', weight: 0 }] }]), /dwell:dirt: drops\[0\]\.pick\[0\]: weight must be above 0/],
     [(i, b) => (b[0].blocks.find((x) => x.name === 'dirt').drops = [{ item: 'dwell:dirt', pick: [] }]), /give item or pick/],
     [(i, b) => (b[0].blocks.find((x) => x.name === 'dirt').drops = 'dirt'), /dwell:dirt: drops must be a list/],
+    [(i, b) => (b[0].blocks.find((x) => x.name === 'tall_grass').drops = [{ item: 'dwell:dirt', when: { age: ['1'] } }]), /dwell:tall_grass: drops\[0\]: when\.age is not a property of dwell:tall_grass/],
+    [(i, b) => (b[0].blocks.find((x) => x.name === 'tall_grass').drops = [{ item: 'dwell:dirt', when: { stage: ['9'] } }]), /dwell:tall_grass: drops\[0\]: when\.stage must list values of the property/],
+    [(i, b) => (b[0].blocks.find((x) => x.name === 'tall_grass').drops = [{ item: 'dwell:dirt', when: {} }]), /dwell:tall_grass: drops\[0\]: when must map a property/],
   ];
   for (const [change, message] of cases) {
     const [inv, blocks] = fresh();

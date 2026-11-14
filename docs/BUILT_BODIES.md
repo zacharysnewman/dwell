@@ -120,8 +120,34 @@ angular damping by the submerged fraction (data, §8).
 - **Enclosed air is not counted** in the first version: a boat floats by its material, not by a
   hollow hull (a stone hull sinks even if hollow). Counting a hull's enclosed volume is an open
   question (§10).
-- Natural pieces float too: a felled tree that falls into a lake floats (and settles where it comes
-  to rest on the bottom or a shore, as today).
+- Natural pieces float too: a felled tree that falls into a lake floats. **Afloat it never settles**
+  (WORK_QUEUE item 45; owner, 2026-11-12: floating trees "should never settle, it causes them
+  to block up rivers randomly instead of floating downstream"): it drifts with the current until it
+  beaches, and settles on the shore (or, if it sinks, the bottom) as today. See §6a.
+
+## 6a. Afloat bodies don't settle (WORK_QUEUE item 45, as built)
+
+Owner, 2026-11-12: **"trees they are floating in water should never settle, it causes them to block up
+rivers randomly instead of floating downstream."**
+
+- **Afloat:** `Felling::float` marks a body afloat on a tick when a cell of it is in a liquid
+  (`cell_in_liquid`) and its cells' mean block `density` is under that liquid's (a log 700, leaves 200
+  under water's 1000; a sand piece, 1600, sinks and settles on the bed as before).
+- **The rule as data:** a body kind's `settlesAfloat` (`shared/physics/bodies.json`, optional, default
+  false; `BodyKind::settles_afloat`). A kind that doesn't settle afloat has its still and age counters
+  reset each tick it is afloat and for `beachSeconds` (2 s, `shared/physics/felling.json`) after, so it
+  settles only once it has been out of the water that long and then still for `sleepSeconds` (or
+  moving for `maxSeconds`), counted from when it beached. Rapier never sleeps a piece
+  (`can_sleep(false)`), so a body afloat always feels the current (its water drag is relative to the
+  current, §6 and WATER_SURFACE_GRID.md §2c) and drifts downstream.
+- **Later, waterlogging** (WORK_QUEUE Future; not built): soaked bodies sinking to settle on the bed,
+  by per-block data (soak time, distance) consulted where `afloat` is decided.
+- Tests: `felling.rs` `a_trunk_afloat_drifts_downstream_and_never_settles` (both faces: a four-log
+  trunk in a 1 m/s river drifts 25–41 m in 40 s and is never due; red: due at 30 s),
+  `tests/built_bodies.rs` `a_felled_trunk_afloat_stays_a_body_and_settles_once_beached` (35 s afloat
+  still a body; moved onto the bank, its four logs settle there within 5 s; red: settled afloat),
+  `tests/netcode.rs` `a_felled_trunk_afloat_stays_a_body_and_is_predicted_without_snaps` (a natural
+  raft afloat, pushed: no snaps, corrections under 3 cm; red: it had settled, no body).
 
 ## 7. Saving
 
@@ -216,8 +242,8 @@ the cell's ½ m³ × that share, face-locally up, at the cell's centre; a body i
 `angularDrag` 1.5 /s on its spin, times its share under. Tests: `a_cells_share_under_water_is_read_on_either_face` (both faces), `tests/built_bodies.rs`
 `a_wooden_raft_floats_and_a_stone_one_sinks` (a 3 × 3 log raft floats 0.1 m under, level; a stone
 one rests on the pool's floor), the water rules' data tests. Cost: nine voxel reads a cell a tick
-(37k for a body at the 4,096-cell cap). Natural pieces float too: a felled tree in a lake bobs until
-`maxSeconds` (30 s) and settles where it is.
+(37k for a body at the 4,096-cell cap). Natural pieces float too; until item 45 a felled tree in a lake
+bobbed until `maxSeconds` (30 s) and settled where it was, damming a river (§6a now).
 
 **Playtest fixes (0.41.4; owner, 2026-11-02).**
 - *"I couldn't push it"* (a 2 × 2 log raft afloat): heavy pieces are held from players' pushes while

@@ -134,10 +134,15 @@ impl Fixture {
                 Some(Message::WorldSettings(f)) => settings = Some(f),
                 Some(Message::Welcome(w)) => {
                     let defaults = self.server.world_settings();
+                    let settings = settings.expect("the world's settings before Welcome");
+                    // The server's capabilities ride in an optional settings field (§8.3).
                     assert_eq!(
-                        settings
-                            .expect("the world's settings before Welcome")
-                            .settings(defaults),
+                        settings.capabilities(),
+                        Some(dwell_protocol::capabilities::Capabilities::this_build()),
+                        "the join announces the server's capabilities"
+                    );
+                    assert_eq!(
+                        settings.settings(defaults),
                         Ok(defaults),
                         "the server's settings"
                     );

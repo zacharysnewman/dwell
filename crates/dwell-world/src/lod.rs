@@ -2,7 +2,10 @@
 //! at level L a cell is 2^L level-0 cells on a side (2^L m wide and 2^L rows tall: cell space,
 //! HALF_HEIGHT_GRID.md §2) and a section 32³ cells, so level 0 is the chunk grid.
 //! Section coordinates count from the root's corner (−2¹⁶, −2¹⁶, −2¹⁶) cells: one root at
-//! `MAX_LEVEL` (131 km wide) holds the whole disc and build volume, centred on the origin.
+//! `MAX_LEVEL` (1 049 km wide since BIG_MAP.md M1: the largest world size's disc, `lod.maxLevel`
+//! checked by `shared/protocol/gen.mjs`) holds the whole disc and build volume, centred on the
+//! origin. A smaller world's sections above its own top level (`WorldSize::lod_max_level`, 12 for
+//! today's 50 km) are few and coarse.
 //! Section content is 34³ cells (the section and a one-cell apron) in layer order (x fastest, then
 //! z, then y): the codec's order and the client mesher's padded layout.
 
@@ -112,12 +115,18 @@ pub fn ancestor(c: LodCoord, level: i32) -> LodCoord {
 
 const CHUNK_OFFSET_XZ: i32 = (-ORIGIN_X / CHUNK_SIZE as i64) as i32;
 const CHUNK_OFFSET_Y: i32 = (-ORIGIN_Y / CHUNK_SIZE as i64) as i32;
-const _: () = assert!(CHUNK_OFFSET_Y == 1 << 11);
+const _: () = assert!(CHUNK_OFFSET_Y == 1 << (MAX_LEVEL - 1));
 const _: () = assert!(
     -ORIGIN_Y >= crate::BUILD_VOLUME.y_range().1
         && ORIGIN_Y <= crate::BUILD_VOLUME.y_range().0
         && -ORIGIN_X >= WORLD_RADIUS as i64,
     "the root holds the disc and the build volume"
+);
+// BIG_MAP.md M1: the compiled root holds every world size (`lod.maxLevel` is the largest's).
+const _: () = assert!(
+    dwell_protocol::world_size::WorldSize::DEFAULT.fits_lod_root()
+        && dwell_protocol::world_size::WorldSize::LARGEST.fits_lod_root(),
+    "the root holds every world size"
 );
 
 /// The level-0 section that is this chunk.
@@ -141,6 +150,11 @@ pub fn chunk_of_lod(c: LodCoord) -> ChunkCoord {
 /// Inside the octree, within the world's rows, overlapping the world's disc and not wholly outside
 /// the build volume (sections that are, are never generated, stored or requested).
 pub fn in_world(c: LodCoord) -> bool {
+    in_world_of(c, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`in_world`] for a world of these bounds (its own disc and build volume, BIG_MAP.md M2).
+pub fn in_world_of(c: LodCoord, w: &crate::WorldBounds) -> bool {
     if c.level < 0 || c.level > MAX_LEVEL {
         return false;
     }
@@ -162,8 +176,9 @@ pub fn in_world(c: LodCoord) -> bool {
             0
         }
     };
-    inside_world_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
-        && crate::BUILD_VOLUME.box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
+    w.inside_disc(nearest(o.x, o.x + s), nearest(o.z, o.z + s))
+        && w.volume()
+            .box_overlap([o.x, o.y, o.z], [o.x + s, o.y + s, o.z + s])
             != crate::Overlap::Outside
 }
 
@@ -476,9 +491,17 @@ pub fn first_face_a_row(c: LodCoord) -> i32 {
 }
 
 /// Empty or Buried when the bounds decide the section (with its apron), else Content. A section
-/// straddling the midplane is empty or buried only when both parts are.
+/// straddling the midplane is empty or buried only when both parts are. A 1× world's: a bigger one
+/// classifies with [`kind_from_bounds_of`] and its own bounds.
 pub fn kind_from_bounds(c: LodCoord, b: &LodBounds) -> LodKind {
-    if !in_world(c) || !b.any_inside {
+    kind_from_bounds_of(c, b, &crate::WorldBounds::DEFAULT)
+}
+
+/// [`kind_from_bounds`] in a world of these bounds: a section outside *its* disc and build volume
+/// is empty (BUGS.md #108: with the 1× test a 4× world's sections past 50 km were empty, so the
+/// terrain stopped drawing there, and at 8× and 10× the spawn's own chunks never showed).
+pub fn kind_from_bounds_of(c: LodCoord, b: &LodBounds, w: &crate::WorldBounds) -> LodKind {
+    if !in_world_of(c, w) || !b.any_inside {
         return LodKind::Empty;
     }
     if !b.bifacial {

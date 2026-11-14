@@ -168,9 +168,21 @@ test('main menu: shows the app version, and the licence notices from About', asy
   await page.goto('./');
   await openMenuPage(page, 'home');
   await expect(page.locator('#app-version')).toContainText(/Dwell \d+\.\d+\.\d+/);
-  await page.getByRole('button', { name: 'About' }).click();
+  // A disclosure that says whether it is open (owner, 2026-11-12), and shows a chevron.
+  const about = page.getByRole('button', { name: 'About' });
+  await expect(about).toHaveAttribute('aria-expanded', 'false');
+  await expect(about).toHaveAttribute('aria-controls', 'about-details');
+  expect(await about.evaluate((el) => getComputedStyle(el, '::after').borderRightStyle)).toBe(
+    'solid',
+  );
+  await about.click();
+  await expect(about).toHaveAttribute('aria-expanded', 'true');
   const notices = page.getByRole('link', { name: 'Third-party notices' });
   await expect(notices).toBeVisible();
+  await about.click();
+  await expect(about).toHaveAttribute('aria-expanded', 'false');
+  await expect(notices).toBeHidden();
+  await about.click();
   const href = await notices.getAttribute('href');
   const response = await request.get(new URL(href ?? '', page.url()).href);
   expect(response.ok()).toBe(true);

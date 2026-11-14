@@ -4,6 +4,7 @@
 export const TOOLS: readonly { name: string; kind: string }[] = [
   { name: 'dwell:stone_axe', kind: 'axe' },
   { name: 'dwell:metal_axe', kind: 'axe' },
+  { name: 'dwell:sword', kind: 'weapon' },
 ];
 
 /** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */
@@ -16,12 +17,14 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:dirt', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:grass', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:sand', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:log', default: 24, tools: { axe: 15 } },
   { block: 'dwell:stone_ramp', default: null, tools: { pickaxe: 7 } },
   { block: 'dwell:dirt_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:grass_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:sand_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:snowy_grass', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:snowy_grass_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:log_ramp', default: 12, tools: { axe: 8 } },
   { block: 'dwell:snow', default: 6, tools: { shovel: 3 } },
   { block: 'dwell:snow_ramp', default: 6, tools: { shovel: 3 } },
   { block: 'dwell:glacier_ice', default: null, tools: { pickaxe: 4 } },
@@ -30,6 +33,16 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:red_sandstone_ramp', default: null, tools: { pickaxe: 7 } },
   { block: 'dwell:basalt', default: null, tools: { pickaxe: 7 } },
   { block: 'dwell:obsidian', default: null, tools: { pickaxe: 12 } },
+  { block: 'dwell:moon_dust', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:moon_mare_dust', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_sand', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:basalt_ramp', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:obsidian_ramp', default: null, tools: { pickaxe: 12 } },
+  { block: 'dwell:moon_dust_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:moon_mare_dust_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_sand_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_dirt', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_dirt_ramp', default: 11, tools: { shovel: 7 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */
@@ -37,4 +50,8 @@ export const DURABILITY: Readonly<Record<string, number>> = {
   'dwell:stone_axe': 32,
   'dwell:stone_pickaxe': 32,
   'dwell:wooden_shovel': 32,
+  'dwell:metal_axe': 64,
+  'dwell:metal_pickaxe': 64,
+  'dwell:metal_shovel': 64,
+  'dwell:sword': 120,
 };

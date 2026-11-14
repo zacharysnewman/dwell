@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { ENGINE_TILES, atlasTiles, bake, labPage, rustSource, tileEmissive, tileHang, tileMolten } from './gen.mjs';
+import { ENGINE_TILES, atlasTiles, bake, crackTiles, labPage, loadCracks, rustSource, tileEmissive, tileHang, tileMolten, validateCracks } from './gen.mjs';
 import { TILE, imageRows, materialRamp, paintMaterial, resolveColor, validateMaterials, validatePalette } from './paint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -160,6 +160,38 @@ test('"strokes" alpha covers only the strokes; clip paints inside them', () => {
   assert.deepEqual(texel(imageRows(tile), 16, TILE - 2), texel(tile, 16, 1));
 });
 
+test('tall grass is painted like the grass top it stands on, darker at the foot', () => {
+  // WORK_QUEUE item 21 (owner, 2026-11-11): the tufts read pale, whitish-green, against the grass
+  // (tips in the meadow ramp's light stop, #c8e06a). Covered texels' average in linear light, by
+  // rows of the tile (row 0 is the foot).
+  const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const average = (tile, y0, y1) => {
+    const sum = [0, 0, 0];
+    let n = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const t = texel(tile, x, y);
+        if (t[3] < 128) continue;
+        for (let k = 0; k < 3; k++) sum[k] += lin(t[k]);
+        n++;
+      }
+    }
+    return sum.map((v) => v / n);
+  };
+  const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const grass = average(paintMaterial('grass_top', materials, palette), 0, TILE);
+  const tuft = paintMaterial('tall_grass', materials, palette);
+  const [foot, tips, all] = [average(tuft, 0, 11), average(tuft, 21, TILE), average(tuft, 0, TILE)];
+  // The tips the grass top's colour (each channel within 12 %), never lighter than it by more.
+  for (let k = 0; k < 3; k++) {
+    assert.ok(Math.abs(tips[k] - grass[k]) <= 0.12 * grass[k], `tips ${tips} against the grass top's ${grass}`);
+  }
+  assert.ok(luma(tips) <= 1.12 * luma(grass), `tips ${luma(tips)} against ${luma(grass)}`);
+  // A bit darker at the foot, and overall no paler than the grass.
+  assert.ok(luma(foot) < 0.92 * luma(tips), `foot ${luma(foot)}, tips ${luma(tips)}`);
+  assert.ok(luma(all) <= luma(grass), `the tuft ${luma(all)} against the grass top's ${luma(grass)}`);
+});
+
 test('bad entries fail with a message naming them', () => {
   const cases = [
     [(m) => (m.materials.stone.layers[1].kind = 'splat'), /materials\.stone\.layers\[1\]\.kind must be one of/],
@@ -277,4 +309,30 @@ test("the utility tiles: plain is white, grid is white with a faint edge line, m
       assert.deepEqual(texel(missing, x, y), want, `${x}, ${y}`);
     }
   }
+});
+
+test('the crack sets (BLOCK_DAMAGE.md §6.3) are atlas tiles, painted, growing stage by stage; bad sets fail naming them', () => {
+  const cracks = loadCracks();
+  for (const t of crackTiles(cracks)) assert.ok(tiles.includes(t), `the atlas has ${t}`);
+  for (const [set, names] of Object.entries(cracks.sets)) {
+    let last = 0;
+    for (const n of names) {
+      const tile = paintMaterial(materials.tiles[n], materials, palette);
+      assert.deepEqual(texel(tile, 0, 0), [255, 255, 255, 255], `${n}: white (no darkening) where uncracked`);
+      let dark = 0;
+      for (let k = 0; k < TILE * TILE; k++) if (tile[k * 4] < 200) dark++;
+      assert.ok(dark > last, `${set}: ${n} covers more than the stage before (${dark} ≤ ${last})`);
+      last = dark;
+    }
+  }
+  // A fixture set by data alone becomes atlas tiles the materials must paint.
+  const extra = { span: 1, sets: { glass: ['crackGlass1'] } };
+  assert.ok(atlasTiles({ blocks: [] }, [], [], crackTiles(extra)).includes('crackGlass1'));
+  const bad = (c, re) => assert.throws(() => validateCracks(c), re);
+  bad({ span: 1, sets: {} }, /cracks\.json: sets must be a non-empty object/);
+  bad({ span: 9, sets: { a: ['x1'] } }, /cracks\.json: span must be a number of metres in \[0\.5, 4\]/);
+  bad({ span: 1, sets: { Bad: ['x1'] } }, /cracks\.json: set name "Bad" must be lower_snake_case/);
+  bad({ span: 1, sets: { a: [] } }, /cracks\.json: sets\.a must list 1–8 tiles/);
+  bad({ span: 1, sets: { a: ['x1'], b: ['x1'] } }, /cracks\.json: sets\.b: tile "x1" is already in set a/);
+  bad({ span: 1, sets: { a: ['x1'] }, extra: 1 }, /cracks\.json: unknown entry extra/);
 });

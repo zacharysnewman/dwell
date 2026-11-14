@@ -40,12 +40,19 @@
 //! 3 −Y, 4 +Z, 5 −Z), shown when the neighbour there is not drawn at the same level.
 
 mod carve;
+#[cfg(test)]
+mod coplanar_tests;
 mod flood;
 #[cfg(test)]
 mod flood_tests;
 pub mod heightfield;
 mod lod_mesher;
 mod lod_trees;
+
+/// A tree's leaf face in a chunk's cutout mesh carries this as its `plants` fade start and end
+/// (a plant's are ≥ 0): the shader fades it out by the frame's far trees hand-over instead of a
+/// fixed distance, the impostors taking over (docs/proposals/TREE_IMPOSTORS.md §5).
+pub const TREE_LEAF_FADE: f32 = -1.0;
 mod mesher;
 mod sky;
 mod style;
@@ -54,17 +61,33 @@ mod textures;
 pub use dwell_look::{Rgb, face_tint, normal_tint};
 pub use lod_mesher::{
     FlatMesh, MeshSectionOptions, SKIRT_SINK, SURFACE_STEPS, SURFACE_STRIDE, SectionMeshes,
-    lod_color, mesh_section, mesh_section_tinted, mirror_rows, section_bytes,
+    lod_color, mesh_section, mesh_section_tinted, mesh_section_trees, mirror_rows, section_bytes,
 };
 pub use lod_trees::has_leaves;
+pub use mesher::relief;
 pub use mesher::{
     ChunkFlags, ChunkMeshes, GroundJob, MeshArrays, PAD, PADDED_VOLUME, face_covered,
     ground_scatter, look_mesh, look_swatch, mesh_chunk, mesh_chunk_at, mesh_chunk_cut,
     mesh_chunk_damaged, mesh_chunk_flags, mesh_chunk_ground, mesh_chunk_lit, mesh_chunk_trees,
-    mirror_padded, padded_index,
+    mirror_padded, padded_index, plant_kept, tree_leaves_from,
 };
 /// The `fluids` stream's value for a see-through face that is not a fluid's.
 pub const NO_FLUID: f32 = 255.0;
+/// A fluid vertex's value spans this per shore mask step: the value is the fluid id plus
+/// `SHORE_SPAN` × its water top's shore mask (the mesher's `shore_mask`, WATER_RENDERING.md §21).
+pub const SHORE_SPAN: f32 = 256.0;
+/// A fluid vertex's value for fluid id `fluid` and shore mask `shore` (0..256).
+pub fn fluid_with_shore(fluid: f32, shore: u32) -> f32 {
+    fluid + SHORE_SPAN * shore as f32
+}
+/// A fluid vertex value's fluid id.
+pub fn fluid_id(v: f32) -> f32 {
+    v % SHORE_SPAN
+}
+/// A fluid vertex value's shore mask.
+pub fn shore_of(v: f32) -> u32 {
+    (v / SHORE_SPAN) as u32
+}
 
 pub use textures::{
     ATLAS_CELLS, ATLAS_SIZE, ATLAS_TILES, CELL, GUTTER, MISSING_TILE, PAINTERLY_TILE,
@@ -96,6 +119,60 @@ mod fallback_tests {
                 s.name
             );
         }
+    }
+
+    /// Every texture tile a state asks for (its faces', its `sideUnder` skirts' and its log
+    /// heart's) that the atlas layout lacks, as (state, tile).
+    fn tiles_missing_from_atlas(
+        states: &[dwell_blocks::StateInfo],
+    ) -> Vec<(&'static str, &'static str)> {
+        let mut out = Vec::new();
+        for s in states {
+            let mut asks: Vec<&'static str> = Vec::new();
+            if let Some(t) = s.textures {
+                asks.extend([t.top, t.side, t.bottom]);
+            }
+            asks.extend(s.side_under.iter().map(|r| r.side));
+            asks.extend(s.cross_section.and_then(|c| c.heart));
+            for tile in asks {
+                if !has_tile(tile) && !out.contains(&(s.name, tile)) {
+                    out.push((s.name, tile));
+                }
+            }
+        }
+        out
+    }
+
+    /// BUGS.md #133: 0.59.0 baked `redSand` but the hand-kept atlas layout lacked it, so every red
+    /// sand cell and its ramps drew as the checker. Every tile any block (and its ramp family) asks
+    /// for is in the layout.
+    #[test]
+    fn every_tile_a_block_asks_for_is_in_the_atlas_layout() {
+        assert_eq!(tiles_missing_from_atlas(&STATES), []);
+        for name in ["dwell:red_sand", "dwell:red_sand_ramp"] {
+            let states = STATES
+                .iter()
+                .filter(|s| s.name.split('[').next() == Some(name));
+            assert!(states.clone().count() > 0, "{name}");
+            for s in states {
+                assert_eq!(s.textures.map(|t| t.top), Some("redSand"), "{}", s.name);
+                assert!(style::drawable(s, &FLUIDS), "{}", s.name);
+            }
+        }
+    }
+
+    /// The guard catches a block by data alone: the fixture's `test:glow`
+    /// (`shared/blocks/fixtures/test.json`) asks for `testGlow`, a tile the set doesn't paint.
+    #[test]
+    fn a_fixture_block_with_an_unpainted_tile_fails_the_atlas_guard() {
+        let missing = tiles_missing_from_atlas(&dwell_blocks::fixture::STATES);
+        assert!(!missing.is_empty());
+        assert!(
+            missing
+                .iter()
+                .all(|(s, t)| s.starts_with("test:glow") && *t == "testGlow"),
+            "{missing:?}"
+        );
     }
 
     #[test]

@@ -226,10 +226,11 @@ struct Options {
     loading_screen: bool,
     /// The scene's samples per pixel asked for (the Anti-aliasing setting; `samples_for`).
     samples: u32,
-    /// `prepareWorld(worldSeed: bigint, generatorVersion, worldgen: string) → Promise<Uint8Array[] |
-    /// null>`: the world's maps (ADR 0049), from the shell's cache or built in workers; none: each
-    /// instance computes its own. `worldgen` is the world's config as its server sent it (ADR 0074
-    /// B7; `""`: the build's ground, or the shell's own for its local world).
+    /// `prepareWorld(worldSeed: bigint, generatorVersion, worldgen: string, radiusScale: number) →
+    /// Promise<Uint8Array[] | null>`: the world's maps (ADR 0049), from the shell's cache or built in
+    /// workers; none: each instance computes its own. `worldgen` is the world's config as its server
+    /// sent it (ADR 0074 B7; `""`: the build's ground, or the shell's own for its local world);
+    /// `radiusScale` its size's (BIG_MAP.md M2b, 1 today's).
     prepare_world: Option<Function>,
 }
 
@@ -279,6 +280,8 @@ struct Inner {
     falls_shown: bool,
     /// The Explosions settings (docs/EXPLOSIVES.md §4): flash, smoke and dust, screen shake.
     blast_settings: crate::blasts::BlastSettings,
+    /// Graphics → Effects (`setEffects`), applied to each game as it starts.
+    effects: crate::game::EffectSettings,
     /// Input events for the shell (toggles, hotbar changes, flight), drained by `takeEvents`.
     shell_events: Vec<JsValue>,
     /// The F3 overlay is on: kept here so it holds for a game started later (`?debug=1`).
@@ -296,6 +299,10 @@ struct Inner {
     reduced_motion: bool,
     /// The Show your arms setting (docs/CHARACTERS.md §5).
     show_arms: bool,
+    /// The targeted block's outline drawn (a dev view switch, BUGS.md #113).
+    show_outline: bool,
+    /// The Camera sway setting (Settings → Motion).
+    camera_sway: bool,
     /// How long the camera rolls upright across the midplane (s; 0 snaps): `?crossingroll=` or
     /// `setCrossingRoll`, kept here for a game started later.
     crossing_roll: f64,
@@ -308,6 +315,15 @@ fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
     set(&o, "t", kind);
     set(&o, "value", value);
     o.into()
+}
+
+/// The map's town sites by (seed, face B, grid cell x, z).
+type TownCells =
+    std::collections::HashMap<(u64, bool, i32, i32), Option<dwell_world::blueprint::TownSite>>;
+
+thread_local! {
+    /// The map's town sites, each grid cell sited once (`mapTowns`).
+    static TOWN_CELLS: std::cell::RefCell<TownCells> = std::cell::RefCell::default();
 }
 
 #[wasm_bindgen]
@@ -363,6 +379,7 @@ impl Client {
         let (adapter, device, queue) = crate::request_device(&instance, Some(&surface))
             .await
             .map_err(|e| JsError::new(&e))?;
+        crate::telemetry::mark("dwell:create:device");
         let caps = surface.get_capabilities(&adapter);
         // Encoding to sRGB is done in the shader (tone mapping first), so the canvas is linear.
         let format = caps
@@ -398,6 +415,7 @@ impl Client {
             format,
             crate::render::samples_for(device_type, options.samples),
         );
+        crate::telemetry::mark("dwell:create:renderer");
         renderer.set_adapter(device_type);
         renderer.resize(width, height, 1.0);
         renderer.set_lod_level_colors(options.lod_colors);
@@ -435,6 +453,7 @@ impl Client {
             flow_particles: true,
             falls_shown: true,
             blast_settings: crate::blasts::BlastSettings::default(),
+            effects: crate::game::EffectSettings::default(),
             lod_settings: LodSettings {
                 pixel_error: 2.0,
                 cache_bytes: 256 << 20,
@@ -450,12 +469,29 @@ impl Client {
             fov_setting: dwell_lod::frustum::VERTICAL_FOV,
             reduced_motion: false,
             show_arms: true,
+            show_outline: true,
+            camera_sway: true,
             crossing_roll,
             shaping: Shaping::NotAsked,
         };
         Ok(Client {
             last_end: std::cell::Cell::new(None),
             inner: Rc::new(RefCell::new(inner)),
+        })
+    }
+
+    /// Resolves once the GPU has done the work sent so far: on a cold shader cache the browser
+    /// compiles the renderer's pipelines for seconds after `create` (bug #71), the loading screen's
+    /// 'shaders' stage (`client/src/ui/startStages.ts`).
+    #[wasm_bindgen(js_name = gpuSettled)]
+    pub fn gpu_settled(&self) -> js_sys::Promise {
+        let queue = self.inner.borrow().renderer.borrow().queue.clone();
+        js_sys::Promise::new(&mut |resolve, _reject| {
+            queue.on_submitted_work_done(move || {
+                let _ = resolve.call0(&JsValue::NULL);
+            });
+            // A fence even with nothing submitted yet: the callback answers after the pipelines.
+            queue.submit([]);
         })
     }
 
@@ -569,7 +605,9 @@ impl Client {
         if s.game.is_none() {
             s.start_game();
         }
-        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5).
+        // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5); in
+        // Break mode with a tool that keeps swinging, it swings on (WORK_QUEUE item 17).
+        s.touch.hold_breaks = s.game.as_ref().is_some_and(|g| g.use_repeats());
         if let Some(e) = s.touch.hold_due(now_ms) {
             s.on_touch_event(e, now_ms);
         }
@@ -596,6 +634,33 @@ impl Client {
                 game.set_capabilities(region_edits, brushes);
                 game.set_vitals_rules(session.vitals_rules());
                 game.set_instant_breaks(session.instant_breaks());
+                game.set_structures(session.structures());
+                game.set_structure_ops(
+                    session.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
+                );
+                // The moon (MOON_WORLD.md §7.3): the predictor and the view follow the player
+                // onto another grid only on a server that carries it there.
+                game.set_grid_frames(
+                    session.capability(dwell_protocol::capability_names::GRID_FRAMES),
+                );
+                game.set_swordplay(
+                    session.capability(dwell_protocol::capability_names::WEAPONS_CLASH),
+                );
+                game.set_hits_at_contact(
+                    session.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
+                );
+                game.set_markers_synced(
+                    session.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
+                );
+                game.set_blueprints_synced(
+                    session.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
+                );
+                // The theater camera as a simulation viewpoint (THEATER_MODE.md §7): creative
+                // on a server that takes it.
+                game.set_theater_viewpoint(
+                    session.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
+                        && session.theater_viewpoint(),
+                );
                 if let Some(v) = s.input.flight.set_allowed(may_fly) {
                     s.shell_events.push(shell_event("flightAllowed", v));
                 }
@@ -607,9 +672,13 @@ impl Client {
             game.fov_setting = s.fov_setting;
             game.reduced_motion = s.reduced_motion;
             game.show_arms = s.show_arms;
+            game.show_outline = s.show_outline;
+            game.camera_sway = s.camera_sway;
             let touch = s.touch_used.then_some(s.touch.state);
             let perf = web_sys::window().and_then(|w| w.performance());
             let mut clock = || perf.as_ref().map_or(0.0, |p| p.now());
+            // Theater mode's camera path places the view before the frame draws it.
+            game.step_theater(now_ms);
             game.frame(now_ms, &mut s.input, touch.as_ref(), &mut clock);
             for out in game.take_outbox() {
                 match out {
@@ -843,6 +912,8 @@ impl Client {
             eye,
             yaw_deg: yaw,
             pitch_deg: pitch,
+            fov_deg: None,
+            up: None,
         }));
         let o = Object::new();
         set(
@@ -1040,6 +1111,7 @@ impl Client {
         // A button released while the window was away sends no mouseup here.
         if let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     /// Presses or releases a key programmatically (tests and automation).
@@ -1057,6 +1129,7 @@ impl Client {
         s.input.pointer_locked = locked;
         if !locked && let Some(g) = &mut s.game {
             g.release_place(Holder::Mouse);
+            g.release_use(Holder::Mouse);
         }
     }
     #[wasm_bindgen(js_name = mouseMove)]
@@ -1085,14 +1158,18 @@ impl Client {
             s.edit_held(action, Holder::Mouse, now_ms);
         }
     }
-    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5).
+    /// A `mouseup`: letting go of Place stops building on (docs/ITEMS.md §5), of Break a held
+    /// tool's swinging on (WORK_QUEUE item 17).
     #[wasm_bindgen(js_name = mouseUp)]
     pub fn mouse_up(&self, button: i16) {
         let mut s = self.inner.borrow_mut();
-        if s.input.mouse_down(button) == Some(EditAction::Place)
-            && let Some(g) = &mut s.game
-        {
-            g.release_place(Holder::Mouse);
+        let action = s.input.mouse_down(button);
+        if let Some(g) = &mut s.game {
+            match action {
+                Some(EditAction::Place) => g.release_place(Holder::Mouse),
+                Some(EditAction::Break) => g.release_use(Holder::Mouse),
+                None => {}
+            }
         }
     }
     /// The build mode's label (`Line`, `Flat`; data), for the HUD and the touch Build button.
@@ -1153,7 +1230,7 @@ impl Client {
         for a in actions {
             match a {
                 A::Break => {
-                    s.edit(EditAction::Break, now_ms);
+                    s.edit_held(EditAction::Break, Holder::Gamepad, now_ms);
                 }
                 A::Place => {
                     s.edit_held(EditAction::Place, Holder::Gamepad, now_ms);
@@ -1197,6 +1274,12 @@ impl Client {
             && let Some(g) = &mut s.game
         {
             g.release_place(Holder::Gamepad);
+        }
+        // Break let go (or a menu opened): a held tool stops swinging on.
+        if (!playing || !s.input.gamepad.down(A::Break))
+            && let Some(g) = &mut s.game
+        {
+            g.release_use(Holder::Gamepad);
         }
         shell
     }
@@ -1249,7 +1332,19 @@ impl Client {
             eye: [x, y, z],
             yaw_deg: yaw,
             pitch_deg: pitch,
+            fov_deg: None,
+            up: None,
         }));
+        true
+    }
+    /// Holds the axe's swing (`vertical` or level) at clip time `t` s on your arms and every
+    /// stand-in body for the dev tools (`__dwell.holdSwing`, the bench's `clip-strip`); a negative
+    /// `t` releases it.
+    #[wasm_bindgen(js_name = holdSwing)]
+    pub fn hold_swing(&self, vertical: bool, t: f64) -> bool {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else { return false };
+        g.hold_swing((t >= 0.0).then_some((vertical, t)));
         true
     }
     /// Stand-in players for the dev tools (`__dwell.puppets`): `count` bodies ahead of `x, y, z`
@@ -1266,9 +1361,232 @@ impl Client {
         });
         true
     }
+    /// Theater mode (docs/THEATER_MODE.md): plays a camera path (its JSON) from the start; fails
+    /// with the path's message. The view, field of view and time of day follow it until
+    /// `theaterStop`.
+    #[wasm_bindgen(js_name = theaterPlay)]
+    pub fn theater_play(&self, json: &str) -> Result<(), JsValue> {
+        let path = dwell_theater::Path::parse_str(json).map_err(|e| JsValue::from_str(&e))?;
+        let mut s = self.inner.borrow_mut();
+        let g = s.game.as_mut().ok_or("no game yet")?;
+        g.play_theater(path);
+        Ok(())
+    }
+    /// Stops the camera path: the view returns to the player's eyes.
+    #[wasm_bindgen(js_name = theaterStop)]
+    pub fn theater_stop(&self) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.stop_theater();
+        }
+    }
+    /// Holds (true) or releases the client's clock for a cinematic take (THEATER_MODE.md §6.1,
+    /// `step_clock`): held, it moves only by `stepClockTo`. Returns the clock (ms).
+    #[wasm_bindgen(js_name = holdClock)]
+    pub fn hold_clock(&self, on: bool) -> f64 {
+        crate::step_clock::set_held(on, telemetry::wall_ms())
+    }
+    /// Sets the held clock (ms; the take computes it from its frame count).
+    #[wasm_bindgen(js_name = stepClockTo)]
+    pub fn step_clock_to(&self, ms: f64) {
+        crate::step_clock::set(ms);
+    }
+    /// Frame-exact recording on or off (THEATER_MODE.md §6): on, the path moves only by
+    /// `theaterAdvance`'s steps, one a drawn frame.
+    #[wasm_bindgen(js_name = theaterExact)]
+    pub fn theater_exact(&self, on: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.set_theater_exact(on);
+        }
+    }
+    /// The next frame's step of the path in frame-exact recording (s: 1 / the take's rate).
+    #[wasm_bindgen(js_name = theaterAdvance)]
+    pub fn theater_advance(&self, dt_s: f64) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.theater_advance(dt_s);
+        }
+    }
+    /// Pauses or resumes the camera path.
+    #[wasm_bindgen(js_name = theaterPause)]
+    pub fn theater_pause(&self, paused: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.pause_theater(paused);
+        }
+    }
+    /// The camera path playing: `{ time, duration, finished }` (path seconds), or null.
+    #[wasm_bindgen(js_name = theaterState)]
+    pub fn theater_state(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some((time, duration, finished)) = s.game.as_ref().and_then(|g| g.theater_state())
+        else {
+            return JsValue::NULL;
+        };
+        let o = Object::new();
+        set(&o, "time", time);
+        set(&o, "duration", duration);
+        set(&o, "finished", finished);
+        o.into()
+    }
+    /// The presets file (`shared/theater/presets.json`) as the build has it.
+    /// Whether the world lets guests use theater mode (THEATER_MODE.md §7; the host always may):
+    /// true before joining and on a server that never sets it.
+    #[wasm_bindgen(js_name = theaterGuests)]
+    pub fn theater_guests(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_none_or(|s| s.theater_guests())
+    }
+    /// Theater mode's subjects to follow (THEATER_MODE.md §2): the creatures and NPCs this
+    /// client sees, as JSON `[{ "id", "name", "npc", "at": [x, y, z] }]` (world metres, the feet),
+    /// by id. A path aims at one as `{"creature": id}` or `{"npc": id}`.
+    #[wasm_bindgen(js_name = theaterSubjects)]
+    pub fn theater_subjects(&self) -> String {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return "[]".to_owned();
+        };
+        crate::game::subjects_json(&g.creatures.subjects())
+    }
+    #[wasm_bindgen(js_name = theaterPresets)]
+    pub fn theater_presets(&self) -> String {
+        dwell_theater::preset::PRESETS_JSON.to_owned()
+    }
+    /// A preset expanded into a camera path (its JSON) around `subject` (`"player"`, `[x, y, z]`,
+    /// `{"creature": id}` or `{"npc": id}`; null for a pan) from where the camera is now, with
+    /// `params` (`{name: value}`) over its defaults.
+    #[wasm_bindgen(js_name = theaterPreset)]
+    pub fn theater_preset(
+        &self,
+        name: &str,
+        params_json: &str,
+        subject_json: &str,
+    ) -> Result<String, JsValue> {
+        use dwell_theater::Targets;
+        let s = self.inner.borrow();
+        let g = s.game.as_ref().ok_or("no game yet")?;
+        let presets = dwell_theater::presets();
+        let preset = presets
+            .iter()
+            .find(|p| p.name == name)
+            .ok_or_else(|| JsValue::from_str(&format!("no preset {name}")))?;
+        let params: serde_json::Value = serde_json::from_str(if params_json.is_empty() {
+            "{}"
+        } else {
+            params_json
+        })
+        .map_err(|e| JsValue::from_str(&format!("params: {e}")))?;
+        let overrides: Vec<(String, f64)> = params
+            .as_object()
+            .ok_or("params must be an object")?
+            .iter()
+            .filter_map(|(k, v)| Some((k.clone(), v.as_f64()?)))
+            .collect();
+        // `up` ("a", "b" or "auto") is the one parameter that isn't a number.
+        let up = match params.get("up") {
+            None => None,
+            Some(u) => {
+                dwell_theater::path::parse_up(u, "params.up").map_err(|e| JsValue::from_str(&e))?
+            }
+        };
+        let subject_v: serde_json::Value = serde_json::from_str(if subject_json.is_empty() {
+            "null"
+        } else {
+            subject_json
+        })
+        .map_err(|e| JsValue::from_str(&format!("subject: {e}")))?;
+        let targets = g.theater_targets();
+        let subject = if subject_v.is_null() {
+            None
+        } else {
+            let t = dwell_theater::TargetRef::from_json(&subject_v, "subject")
+                .map_err(|e| JsValue::from_str(&e))?;
+            let at = targets
+                .position(&t)
+                .ok_or_else(|| JsValue::from_str("the subject isn't in view"))?;
+            Some((t, at))
+        };
+        // From the placed view, or the player's eyes.
+        let camera = match g.view() {
+            Some(v) => {
+                dwell_theater::Pose::new(v.eye, v.face().look(v.yaw_deg, v.pitch_deg)).with_up(v.up)
+            }
+            None => {
+                let eye = g.position();
+                let f = dwell_world::FaceFrame::at_height(eye[1]);
+                dwell_theater::Pose::new(eye, f.look(s.input.look.yaw, s.input.look.pitch))
+            }
+        };
+        let path = preset
+            .expand(
+                &dwell_theater::Context {
+                    subject,
+                    camera,
+                    up,
+                },
+                &overrides,
+            )
+            .map_err(|e| JsValue::from_str(&e))?;
+        Ok(path.to_json().to_string())
+    }
+    /// Theater mode's free-fly camera (docs/THEATER_MODE.md §2): moves the placed view (from the
+    /// player's eyes the first time) by `forward`, `right` and `up` metres along its face-local
+    /// look, and turns it by `yaw`/`pitch` degrees (pitch held within ±89°). The body stays put.
+    /// Returns the view as `[x, y, z, yaw, pitch]`, or empty before the game has started.
+    #[wasm_bindgen(js_name = theaterFly)]
+    pub fn theater_fly(&self, forward: f64, right: f64, up: f64, yaw: f64, pitch: f64) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        let look = (s.input.look.yaw, s.input.look.pitch);
+        let Some(g) = &mut s.game else {
+            return Vec::new();
+        };
+        if g.theater_state().is_some() {
+            g.stop_theater();
+        }
+        let v = g.view().unwrap_or(crate::game::ViewOverride {
+            eye: g.position(),
+            yaw_deg: look.0,
+            pitch_deg: look.1,
+            fov_deg: None,
+            up: None,
+        });
+        let next = crate::game::fly_step(v, forward, right, up, yaw, pitch);
+        g.set_view(Some(next));
+        vec![
+            next.eye[0],
+            next.eye[1],
+            next.eye[2],
+            next.yaw_deg,
+            next.pitch_deg,
+        ]
+    }
+    /// Theater mode's held up (docs/THEATER_MODE.md §3.1): the placed view (from the player's
+    /// eyes the first time) keeps `up`'s face's up wherever it flies (`"a"`, `"b"`), or the face
+    /// it is over (`"auto"`); the look is kept. The keyframe editor's Up sets it, so the looks it
+    /// keys are in that frame.
+    #[wasm_bindgen(js_name = theaterUp)]
+    pub fn theater_up(&self, up: &str) -> Result<(), JsValue> {
+        let up = dwell_theater::path::parse_up(&serde_json::json!(up), "up")
+            .map_err(|e| JsValue::from_str(&e))?;
+        let mut s = self.inner.borrow_mut();
+        let look = (s.input.look.yaw, s.input.look.pitch);
+        let Some(g) = &mut s.game else {
+            return Ok(());
+        };
+        let v = g.view().unwrap_or(crate::game::ViewOverride {
+            eye: g.position(),
+            yaw_deg: look.0,
+            pitch_deg: look.1,
+            fov_deg: None,
+            up: None,
+        });
+        g.set_view(Some(v.with_up(up)));
+        Ok(())
+    }
     #[wasm_bindgen(js_name = releaseCamera)]
     pub fn release_camera(&self) {
         if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.stop_theater();
             g.set_view(None);
         }
     }
@@ -1363,7 +1681,7 @@ impl Client {
 
     /// The game's sound events since the last call (docs/AUDIO.md §5): 7 numbers each (kind,
     /// block state, intensity, x, y, z, flags), for the shell's audio (`client/src/audio`).
-    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 9 numbers in
+    /// The listener's surroundings for the ambience beds (docs/AUDIO.md §2c): 10 numbers in
     /// `dwell_game::ambience::INPUTS` order; empty before the game runs.
     pub fn ambience(&self) -> Vec<f64> {
         self.inner
@@ -1371,6 +1689,16 @@ impl Client {
             .game
             .as_ref()
             .map_or_else(Vec::new, |g| g.ambience().to_vec())
+    }
+
+    /// Whether the eye is under a fluid's surface (docs/AUDIO.md §3a): the shell muffles the
+    /// world's buses. False before the game runs.
+    pub fn underwater(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.underwater())
     }
 
     #[wasm_bindgen(js_name = takeSounds)]
@@ -1584,6 +1912,21 @@ impl Client {
         set(&o, "material", material);
         o.into()
     }
+    /// The moon from the player as JSON (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon";
+    /// `moon_probe::MoonReport`), or None before playing, from a server without `grid.frames`, or
+    /// in a world with no moon.
+    pub fn moon(&self) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.moon_report().map(|r| r.json())
+    }
+    /// A grid from the player as JSON, by name (`__dwell.sun()` is `dwell:sun`'s; the moon report's
+    /// fields, SUN_WORLD.md), or None before playing, from a server without `grid.frames`, or in a
+    /// world without that grid (or one this build's session can't be on).
+    #[wasm_bindgen(js_name = gridReport)]
+    pub fn grid_report(&self, name: String) -> Option<String> {
+        let s = self.inner.borrow();
+        s.game.as_ref()?.grid_report(&name).map(|r| r.json())
+    }
     pub fn voxel(&self, x: i32, y: i32, z: i32) -> u16 {
         self.inner
             .borrow_mut()
@@ -1620,6 +1963,16 @@ impl Client {
     /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
     /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
     /// error message, or empty when loaded.
+    /// Whether the world's mode places saved structures (`structures`, creative only for now):
+    /// the creative inventory's Structures tab shows only then (STRUCTURES.md §9).
+    #[wasm_bindgen(js_name = structuresAllowed)]
+    pub fn structures_allowed(&self) -> bool {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_some_and(|s| s.structures())
+    }
     #[wasm_bindgen(js_name = loadStructure)]
     pub fn load_structure(
         &self,
@@ -1698,6 +2051,30 @@ impl Client {
             .borrow_mut()
             .set_clouds(CloudQuality::from_name(quality).unwrap_or(CloudQuality::High));
     }
+    /// A retuned world's maps (Chisel in the game, Phase 56 B7; the local world's `retuneWorldgen`
+    /// gave them): installed in this instance and in the generation workers, which make their
+    /// generators again, so the chunks they generate next are the new config's. The chunks the
+    /// server generated again arrive whole. False if a map is refused.
+    #[wasm_bindgen(js_name = installWorldMaps)]
+    pub fn install_world_maps(&self, maps: Array) -> bool {
+        let maps: Vec<Vec<u8>> = maps
+            .iter()
+            .filter_map(|m| m.dyn_into::<Uint8Array>().ok())
+            .map(|m| m.to_vec())
+            .collect();
+        if maps
+            .iter()
+            .any(|m| dwell_worldgen::worldmap::install(m).is_err())
+        {
+            return false;
+        }
+        let mut s = self.inner.borrow_mut();
+        s.shaping = Shaping::Ready(maps.iter().map(|m| Uint8Array::from(&m[..])).collect());
+        if let Some(g) = s.game.as_mut() {
+            g.install_maps(&maps);
+        }
+        true
+    }
     /// The Model detail setting: a level of shared/models/models.json's `detail.levels`, by id
     /// (anything else: the data's default; ADR 0070 §10).
     #[wasm_bindgen(js_name = setModelDetail)]
@@ -1713,6 +2090,16 @@ impl Client {
             .borrow_mut()
             .set_model_detail(k);
     }
+    /// Your first-person arms from the rigid parts (`true`, `?fparms=rigid`: a dev switch for
+    /// comparison) or the player model (docs/CHARACTERS.md §11.10).
+    #[wasm_bindgen(js_name = setRigidArms)]
+    pub fn set_rigid_arms(&self, rigid: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_rigid_arms(rigid);
+    }
     /// The Light shafts setting: `off`, `low` or `high` (anything else: high; ADR 0064).
     #[wasm_bindgen(js_name = setShafts)]
     pub fn set_shafts(&self, quality: &str) {
@@ -1723,6 +2110,26 @@ impl Client {
             .borrow_mut()
             .set_shafts(ShaftQuality::from_name(quality).unwrap_or(ShaftQuality::High));
     }
+    /// The Bloom setting: `off`, `low` or `high` (anything else: high; WORK_QUEUE item 19).
+    #[wasm_bindgen(js_name = setBloom)]
+    pub fn set_bloom(&self, quality: &str) {
+        use dwell_look::bloom::BloomQuality;
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_bloom(BloomQuality::from_name(quality).unwrap_or(BloomQuality::High));
+    }
+    /// The run-time plumes' dev tools (`__dwell.plume`, docs/CLOUDS.md §8.7;
+    /// `dwell_look::plumes::dev`): `list`, `add` [x, y, z, radius?, height?, density?, riseMps?],
+    /// `near` [dx, dz], `move` [x, y, z], `remove`, `clear`; JSON back.
+    #[wasm_bindgen(js_name = plumeDev)]
+    pub fn plume_dev(&self, op: &str, name: &str, args: Vec<f64>) -> String {
+        let inner = self.inner.borrow();
+        let mut r = inner.renderer.borrow_mut();
+        let eye = r.eye_position();
+        dwell_look::plumes::dev(&mut r.plumes, op, name, &args, eye)
+    }
     /// The clouds' coverage, 0 (clear) to 1 (overcast): for a weather system, or by hand.
     #[wasm_bindgen(js_name = setCloudCoverage)]
     pub fn set_cloud_coverage(&self, coverage: f64) {
@@ -1731,6 +2138,16 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_cloud_coverage(coverage);
+    }
+    /// The volume's view opacity over the data's (`?cloudExtinction=`, a dev A/B knob; 0: the
+    /// data's `volume.extinction`; docs/CLOUDS.md §9.8).
+    #[wasm_bindgen(js_name = setCloudExtinction)]
+    pub fn set_cloud_extinction(&self, extinction: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cloud_extinction(extinction);
     }
     /// The Shadows setting (0 Off, 1 Low, 2 High; DAY_NIGHT.md §10). A CPU adapter draws Low at
     /// most.
@@ -1784,6 +2201,40 @@ impl Client {
         s.flow_particles = particles;
         s.falls_shown = falls;
     }
+    /// Graphics → Effects (WORK_QUEUE item 30): the share of a hit's flying shards (0–1), of the
+    /// chips, sparks, leaves and steam (0–1), and whether the far herds are drawn.
+    #[wasm_bindgen(js_name = setEffects)]
+    pub fn set_effects(&self, hit_shards: f64, particles: f64, far_herds: bool) {
+        let mut s = self.inner.borrow_mut();
+        s.effects = crate::game::EffectSettings {
+            hit_shards: crate::effect_share::Share::new(hit_shards),
+            particles: crate::effect_share::Share::new(particles),
+            far_herds,
+        };
+        let e = s.effects;
+        if let Some(g) = &mut s.game {
+            g.set_effects(e);
+        }
+    }
+    /// Graphics → Tall grass (0–1, the share of grass and small plants drawn) and Far trees (the
+    /// distant terrain's trees): chunks and sections meshed from then on follow them.
+    #[wasm_bindgen(js_name = setTerrainDetail)]
+    pub fn set_terrain_detail(&self, tall_grass: f64, far_trees: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_terrain_detail(tall_grass, far_trees);
+    }
+    /// Graphics → Distant shadows: the distant terrain's sun shadows, on at the Shadows tier or off.
+    #[wasm_bindgen(js_name = setDistantShadows)]
+    pub fn set_distant_shadows(&self, on: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_distant_shadows(on);
+    }
     /// Which blast effects show (docs/EXPLOSIVES.md §4, the Explosions settings): the flash, smoke
     /// and dust, the screen shake.
     #[wasm_bindgen(js_name = setExplosions)]
@@ -1802,8 +2253,8 @@ impl Client {
     }
     /// The blasts whose effects are still going (docs/EXPLOSIVES.md; DEV_TOOLS.md): 4 numbers each,
     /// its place (world x, y, z) and its age (s).
-    /// The creatures drawn (ADR 0073; DEV_TOOLS.md): 5 numbers each, the feet (world x, y, z),
-    /// the heading (degrees) and the speed (m/s).
+    /// The creatures drawn (ADR 0073; DEV_TOOLS.md): 6 numbers each, the feet (world x, y, z),
+    /// the heading (degrees), the speed (m/s) and 1 for an NPC (else 0).
     #[wasm_bindgen(js_name = creatures)]
     pub fn creatures(&self) -> Vec<f64> {
         let s = self.inner.borrow();
@@ -1813,7 +2264,16 @@ impl Client {
         g.creatures
             .shown()
             .into_iter()
-            .flat_map(|(p, yaw, speed)| [p[0], p[1], p[2], yaw, f64::from(speed)])
+            .flat_map(|(p, yaw, speed, npc)| {
+                [
+                    p[0],
+                    p[1],
+                    p[2],
+                    yaw,
+                    f64::from(speed),
+                    f64::from(u8::from(npc)),
+                ]
+            })
             .collect()
     }
     /// The far ecology the server last told of (docs/ECOLOGY.md §9; DEV_TOOLS.md): `{ day, groups:
@@ -1843,6 +2303,32 @@ impl Client {
         set(&o, "day", m.day);
         set(&o, "groups", groups);
         o.into()
+    }
+    /// The finder (WORK_QUEUE item 46; DEV_TOOLS.md `herds`): the far herds and packs on the
+    /// player's face from the last `ecology`, of `species` (empty: any), nearest first: `[{ id,
+    /// species, x, z, size, distance, bearing }]` (face-local metres; bearing the yaw facing it).
+    #[wasm_bindgen(js_name = herds)]
+    pub fn herds(&self, species: String) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(g) = s.game.as_ref() else {
+            return Array::new().into();
+        };
+        let want = (!species.is_empty()).then_some(species.as_str());
+        g.find_herds(want)
+            .into_iter()
+            .map(|h| {
+                let o = Object::new();
+                set(&o, "id", h.id);
+                set(&o, "species", h.species.as_str());
+                set(&o, "x", h.x);
+                set(&o, "z", h.z);
+                set(&o, "size", h.size);
+                set(&o, "distance", h.distance);
+                set(&o, "bearing", h.bearing_deg);
+                JsValue::from(o)
+            })
+            .collect::<Array>()
+            .into()
     }
     #[wasm_bindgen(js_name = blasts)]
     pub fn blasts(&self) -> Vec<f64> {
@@ -1909,6 +2395,49 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_heightfield_override(on);
+    }
+    /// Forces the leaf cards on (1) or off (0), or back to the tier's (any other value): `?cards=`,
+    /// a dev tool (docs/DEV_TOOLS.md). Chunks meshed after it follow it, so it is set before the
+    /// world streams in.
+    #[wasm_bindgen(js_name = setCards)]
+    pub fn set_cards(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_cards_override(on);
+    }
+    /// `?impostors=0|1` (docs/DEV_TOOLS.md): 0 draws the far trees as the LOD sections' tree
+    /// cells (`lod_trees.rs`, before the impostors); 1 or anything else the impostors.
+    #[wasm_bindgen(js_name = setImpostors)]
+    pub fn set_impostors(&self, mode: i32) {
+        let on = match mode {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        };
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_impostors_override(on);
+    }
+    /// The impostors' debug view (`__dwell.impostorDebug`, BUGS.md #106): 0 off, 1 the quads
+    /// solid, 2 the silhouettes solid, 3 the albedo unlit; `ambient` and `albedo` (both ≥ 0)
+    /// override `leafShade` for tuning.
+    #[wasm_bindgen(js_name = setImpostorDebug)]
+    pub fn set_impostor_debug(&self, mode: u32, ambient: f32, albedo: f32) {
+        let shade = (ambient >= 0.0 && albedo >= 0.0).then_some([ambient, albedo]);
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_impostor_debug(mode, shade);
     }
     /// The ink outline's mode by name (`shared/look/outline.json`; docs/ART_DIRECTION.md §7), as
     /// `?outline=` takes it; `off` or an unknown name turns it off. True when a mode is on.
@@ -2000,6 +2529,17 @@ impl Client {
     pub fn set_show_arms(&self, shown: bool) {
         self.inner.borrow_mut().show_arms = shown;
     }
+    /// The targeted block's outline drawn or not (a dev view switch for clean recordings, BUGS.md #113).
+    #[wasm_bindgen(js_name = setTargetOutline)]
+    pub fn set_target_outline(&self, shown: bool) {
+        self.inner.borrow_mut().show_outline = shown;
+    }
+    /// The Camera sway setting (Settings → Motion; docs/CHARACTERS.md §5.2): the view's sway with
+    /// a swing of the axe. Off: the view holds still (the aim never sways either way).
+    #[wasm_bindgen(js_name = setCameraSway)]
+    pub fn set_camera_sway(&self, on: bool) {
+        self.inner.borrow_mut().camera_sway = on;
+    }
     /// Whether the browser asks for reduced motion: the spyglass then zooms without easing.
     #[wasm_bindgen(js_name = setReducedMotion)]
     pub fn set_reduced_motion(&self, reduced: bool) {
@@ -2060,9 +2600,8 @@ impl Client {
         s.lod_settings.detail_distance_m = distance;
         s.lod_settings.pixel_error = pixel_error;
         s.lod_settings.cache_bytes = (memory_mb * 1_048_576.0) as usize;
-        if let Some(lod) = s.game.as_mut().and_then(|g| g.lod()) {
-            lod.set_detail_distance(distance);
-            lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
+        if let Some(g) = s.game.as_mut() {
+            g.set_lod_detail(distance, pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
     #[wasm_bindgen(js_name = setDebugVisible)]
@@ -2201,6 +2740,8 @@ impl Client {
             let edge = dwell_lava::DATA.burn_edge;
             set(&o, "burn", g.hud.burn * f64::from(edge.opacity));
             set(&o, "burnColor", edge.color);
+            // Defeat's fade (CHARACTERS.md §11.13): 0 clear, 1 black.
+            set(&o, "fade", g.defeat_fade());
             set(&o, "region", g.region.status().as_str());
             // The held axe's swing hint (ADR 0067): null without one.
             set(
@@ -2456,6 +2997,13 @@ impl Client {
                 set(&r, "waitingInView", l.waiting[0] as u32);
                 set(&r, "waitingOffView", l.waiting[1] as u32);
                 set(&r, "waitingNearOffView", l.waiting[2] as u32);
+                // BUGS.md #108: what the view wants, holds meshed, draws as nothing, and what the
+                // budget dropped (with `drawn` per level and `errorScale`, raised over the budget).
+                set(&r, "wanted", l.wanted as u32);
+                set(&r, "built", l.built as u32);
+                set(&r, "drawnTotal", l.drawn.iter().sum::<usize>() as u32);
+                set(&r, "empty", l.empty as u32);
+                set(&r, "evicted", l.evicted as f64);
                 r.into()
             }),
         );
@@ -2483,6 +3031,26 @@ impl Client {
         set(&o, "arms", c.arms);
         set(&o, "characterMeshBytes", c.mesh_bytes as f64);
         set(&o, "characterUploadBytes", c.upload_bytes as f64);
+        o.into()
+    }
+
+    /// The far trees' impostors now (`__dwell.impostors()`, BUGS.md #106): `{ made, tierOn, ready,
+    /// baked, layers, requested, tiles, instances, drawn, lastError }`. `ready` false: the frame
+    /// draws the near crowns to the full-detail distance and the LOD sections keep their trees.
+    #[wasm_bindgen(js_name = impostorStatus)]
+    pub fn impostor_status(&self) -> JsValue {
+        let st = self.inner.borrow().renderer.borrow().impostor_status();
+        let o = Object::new();
+        set(&o, "made", st.made);
+        set(&o, "tierOn", st.tier_on);
+        set(&o, "ready", st.ready);
+        set(&o, "baked", st.baked);
+        set(&o, "layers", st.layers);
+        set(&o, "requested", st.requested);
+        set(&o, "tiles", st.tiles);
+        set(&o, "instances", st.instances);
+        set(&o, "drawn", st.drawn);
+        set(&o, "lastError", st.last_error.as_str());
         o.into()
     }
 
@@ -2627,6 +3195,283 @@ impl Client {
         }
         out
     }
+    /// The resurrection shrines on face `face` (0 A, 1 B) in the grid cells within `cells` of
+    /// face-local column (x, z)'s (docs/SHRINES.md), each its anchor [x, z] (face-local m); the
+    /// big map shows the explored ones. Empty for a world without them.
+    #[wasm_bindgen(js_name = mapShrines)]
+    pub fn map_shrines(&self, face: u8, x: f64, z: f64, cells: i32) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(t) = s.game.as_ref().and_then(|g| g.far_terrain.clone()) else {
+            return Vec::new();
+        };
+        let face = if face == 1 {
+            dwell_world::Face::B
+        } else {
+            dwell_world::Face::A
+        };
+        let mut out = Vec::new();
+        for sh in t.shrines_round(face, x.floor() as i32, z.floor() as i32, cells.clamp(0, 4)) {
+            out.extend([f64::from(sh.x) + 0.5, f64::from(sh.z) + 0.5]);
+        }
+        out
+    }
+    /// The town sites on face `face` (0 A, 1 B) in the town grid cells within `cells` of
+    /// face-local column (x, z)'s (docs/BLUEPRINTS.md §6, sited from the seed as the server sites
+    /// them), each [x, z (its centre, face-local m), state (0 a site, 1 building: a blueprint of the
+    /// world's within its footprint)]; the maps show the explored ones. Empty for a world without them.
+    #[wasm_bindgen(js_name = mapTowns)]
+    pub fn map_towns(&self, face: u8, x: f64, z: f64, cells: i32) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = s.game.as_ref() else {
+            return Vec::new();
+        };
+        let Some(t) = g.far_terrain.clone() else {
+            return Vec::new();
+        };
+        let face = if face == 1 {
+            dwell_world::Face::B
+        } else {
+            dwell_world::Face::A
+        };
+        // Each grid cell sited once per world (up to 40 columns of the height field each): the
+        // minimap asks every frame.
+        let seed = g.world_seed();
+        let rules = &dwell_world::blueprint::SHIPPED.towns;
+        let [ci, ck] = rules.cell_of(x.floor() as i32, z.floor() as i32);
+        let n = cells.clamp(0, 4);
+        let mut sites = Vec::new();
+        TOWN_CELLS.with_borrow_mut(|cache| {
+            if cache.len() > 4096 {
+                cache.clear();
+            }
+            for k in ck - n..=ck + n {
+                for i in ci - n..=ci + n {
+                    let key = (seed, face == dwell_world::Face::B, i, k);
+                    let site = *cache
+                        .entry(key)
+                        .or_insert_with(|| t.town_in(seed, face, [i, k]));
+                    sites.extend(site);
+                }
+            }
+        });
+        let boxes: Vec<[i32; 4]> = g
+            .blueprints
+            .ghosts
+            .iter()
+            .filter(|b| b.face.face == face)
+            .map(|b| [b.min[0], b.min[2], b.max[0], b.max[2]])
+            .collect();
+        let reach = dwell_world::blueprint::SHIPPED.towns.footprint_m;
+        crate::map_markers::town_states(&sites, &boxes, reach)
+    }
+    /// Map markers (docs/MAP_MARKERS.md): the player's place for them, [face (0 A, 1 B), x, y, z
+    /// (face-local m, the feet), dead (1/0), then while dead the death's face, x, y, z].
+    #[wasm_bindgen(js_name = markerPose)]
+    pub fn marker_pose(&self) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return Vec::new();
+        };
+        let local = |p: [f64; 3]| {
+            let f = dwell_world::FaceFrame::at_height(p[1]);
+            let [x, y, z] = f.point(p);
+            [f64::from(u8::from(f.is_b())), x, y, z]
+        };
+        let mut out = local(g.position()).to_vec();
+        match g.death_feet() {
+            Some(d) => {
+                out.push(1.0);
+                out.extend(local(d));
+            }
+            None => out.push(0.0),
+        }
+        out
+    }
+    /// A marker's spot in the view (docs/MAP_MARKERS.md): its face (0 A, 1 B) and face-local point
+    /// → [x, y (−1..1 across the view, +y up), depth along the view (≤ 0 behind), distance from the
+    /// eye (m)].
+    #[wasm_bindgen(js_name = markerScreen)]
+    pub fn marker_screen(&self, face: u8, x: f64, y: f64, z: f64) -> Vec<f64> {
+        let s = self.inner.borrow();
+        let f = if face == 1 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let p = f.point([x, y, z]);
+        let r = s.renderer.borrow();
+        let [sx, sy, depth] = r.project(p);
+        let eye = r.eye();
+        let d =
+            ((p[0] - eye[0]).powi(2) + (p[1] - eye[1]).powi(2) + (p[2] - eye[2]).powi(2)).sqrt();
+        vec![sx, sy, depth, d]
+    }
+    /// The loaded ground under face-local (`x`, `z`) on `face` (0 A, 1 B): its face-local height
+    /// (m), for a marker placed on the big map (`crate::map_markers::ground`); undefined where
+    /// nothing is loaded (the shell takes the map's height).
+    #[wasm_bindgen(js_name = markerGround)]
+    pub fn marker_ground(&self, face: u8, x: f64, z: f64) -> Option<f64> {
+        let mut s = self.inner.borrow_mut();
+        let g = s.game.as_mut()?;
+        let pos = g.position();
+        let me = dwell_world::FaceFrame::at_height(pos[1]);
+        let f = if face == 1 {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let eye_y = me.point(pos)[1];
+        crate::map_markers::ground(g.world(), f, x, z, eye_y)
+    }
+    /// The portals the player sees now (the `portal` auto markers): [face, x, y, z]* face-local,
+    /// y NaN where the rim isn't loaded (`crate::map_markers::seen_portals`).
+    #[wasm_bindgen(js_name = seenPortals)]
+    pub fn seen_portals(&self) -> Vec<f64> {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
+            return Vec::new();
+        };
+        let pos = g.position();
+        let axes = g.portal_axes().to_vec();
+        crate::map_markers::seen_portals(g.world(), &axes, pos)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+    /// The player's saved markers the server sent (a `dwell_protocol::markers` record), once.
+    #[wasm_bindgen(js_name = takeMarkers)]
+    pub fn take_markers(&self) -> Option<Vec<u8>> {
+        let mut s = self.inner.borrow_mut();
+        s.game.as_mut()?.take_markers().map(|m| m.to_bytes())
+    }
+    /// Whether the server keeps the player's markers (`markers.private`); else they last the
+    /// session only.
+    #[wasm_bindgen(js_name = markersSynced)]
+    pub fn markers_synced(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.markers_synced())
+    }
+    /// The player's markers now (a `dwell_protocol::markers` record), to the server; false if the
+    /// record is malformed.
+    #[wasm_bindgen(js_name = setMarkers)]
+    pub fn set_markers(&self, record: &[u8]) -> bool {
+        let Some(m) = dwell_protocol::markers::Markers::from_bytes(record) else {
+            return false;
+        };
+        if let Some(g) = self.inner.borrow_mut().game.as_mut() {
+            g.send_markers(m);
+        }
+        true
+    }
+    /// Blueprints (docs/BLUEPRINTS.md): whether the server keeps the world's (`blueprints.world`).
+    #[wasm_bindgen(js_name = blueprintsSynced)]
+    pub fn blueprints_synced(&self) -> bool {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .is_some_and(|g| g.blueprints_synced())
+    }
+    /// The repository's blueprints offered in the Blueprints list (`blueprints.json` `catalog`):
+    /// each "name sx sy sz".
+    #[wasm_bindgen(js_name = blueprintCatalog)]
+    pub fn blueprint_catalog(&self) -> Vec<String> {
+        dwell_world::blueprint::SHIPPED
+            .catalog
+            .iter()
+            .filter_map(|n| dwell_world::structure::load(n).ok())
+            .map(|s| format!("{} {} {} {}", s.name, s.size[0], s.size[1], s.size[2]))
+            .collect()
+    }
+    /// Places the catalog's blueprint `name` at the crosshair's place cell, turned `turn` quarter
+    /// turns; false with no aim, an unknown name or a server that keeps none.
+    #[wasm_bindgen(js_name = placeBlueprint)]
+    pub fn place_blueprint(&self, name: &str, turn: u8) -> bool {
+        if !dwell_world::blueprint::SHIPPED.catalog.contains(&name) {
+            return false;
+        }
+        let Ok(s) = dwell_world::structure::load(name) else {
+            return false;
+        };
+        let mut st = self.inner.borrow_mut();
+        st.game
+            .as_mut()
+            .is_some_and(|g| g.place_blueprint_structure(&s, turn))
+    }
+    /// Places a structure of the player's library as a blueprint at the crosshair's place cell:
+    /// its size, anchor, palette (state names, one a line) and cells (x fastest, then z, then y;
+    /// 0 kept, k the palette's k-th), turned `turn` quarter turns.
+    #[wasm_bindgen(js_name = placeBlueprintCells)]
+    pub fn place_blueprint_cells(
+        &self,
+        name: &str,
+        size: Vec<u8>,
+        anchor: Vec<u8>,
+        palette: &str,
+        cells: Vec<u8>,
+        turn: u8,
+    ) -> bool {
+        let (Ok(size), Ok(anchor)) = (<[u8; 3]>::try_from(size), <[u8; 3]>::try_from(anchor))
+        else {
+            return false;
+        };
+        let names: Vec<String> = palette.lines().map(str::to_owned).collect();
+        let states: Vec<Option<dwell_blocks::StateId>> = cells
+            .iter()
+            .map(|&c| {
+                (c > 0)
+                    .then(|| names.get(usize::from(c) - 1))
+                    .flatten()
+                    .and_then(|n| dwell_blocks::parse_state(n).ok())
+            })
+            .collect();
+        if states.len() != size.iter().map(|&n| usize::from(n)).product::<usize>() {
+            return false;
+        }
+        let s = dwell_world::structure::Structure::from_cells(
+            dwell_blocks::intern(name),
+            0,
+            size.map(i32::from),
+            anchor.map(i32::from),
+            &states,
+        );
+        let mut st = self.inner.borrow_mut();
+        st.game
+            .as_mut()
+            .is_some_and(|g| g.place_blueprint_structure(&s, turn))
+    }
+    /// Removes the blueprint the view aims into; false when none is.
+    #[wasm_bindgen(js_name = removeAimedBlueprint)]
+    pub fn remove_aimed_blueprint(&self) -> bool {
+        let mut st = self.inner.borrow_mut();
+        st.game.as_mut().is_some_and(|g| g.remove_aimed_blueprint())
+    }
+    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left, then per item
+    /// still needed "item have need", one a line ("" with none aimed); a last line "+n" folds rows
+    /// past the panel's most.
+    #[wasm_bindgen(js_name = blueprintPanel)]
+    pub fn blueprint_panel(&self) -> String {
+        let mut st = self.inner.borrow_mut();
+        let Some(p) = st.game.as_mut().and_then(|g| g.blueprint_panel()) else {
+            return String::new();
+        };
+        let mut out = format!("{}\n{}", p.name, p.left);
+        for r in &p.rows {
+            let have = if r.have == u32::MAX {
+                "∞".to_string()
+            } else {
+                r.have.to_string()
+            };
+            out.push_str(&format!("\n{} {} {}", r.block, have, r.need));
+        }
+        if p.more > 0 {
+            out.push_str(&format!("\n+{}", p.more));
+        }
+        out
+    }
     /// The player on the explored map: [face (0 A, 1 B), x, z (face-local m), heading (degrees)].
     #[wasm_bindgen(js_name = mapPose)]
     pub fn map_pose(&self) -> Vec<f64> {
@@ -2663,6 +3508,14 @@ impl Client {
         let t = &dwell_game::minimap::MAP;
         dwell_game::minimap::shade_grid(t, &colours, &codes, w as usize, h as usize)
     }
+    /// The maps' label off home (`grid_view::map_away_label`): "" at home; on another grid the
+    /// maps (home's terrain) are hidden and this shows instead.
+    #[wasm_bindgen(js_name = mapAway)]
+    pub fn map_away(&self) -> String {
+        let s = self.inner.borrow();
+        let grid = s.game.as_ref().map_or(0, |g| g.grid());
+        crate::grid_view::map_away_label(grid).unwrap_or_default()
+    }
     /// Whether the world's game mode shows the maps (the `map` ability, ADR 0068): a server that
     /// names no mode shows them.
     #[wasm_bindgen(js_name = mapAllowed)]
@@ -2691,12 +3544,39 @@ impl Client {
     /// generated. Another cell size is ignored.
     #[wasm_bindgen(js_name = requestReveal)]
     pub fn request_reveal(&self, face: u8, ti: i32, tk: i32, cell_m: i32) {
-        if !crate::map_reveal::is_level(cell_m, &dwell_game::minimap::MAP) {
-            return;
-        }
         if let Some(g) = &mut self.inner.borrow_mut().game {
-            g.request_reveal(face, ti, tk, cell_m);
+            // The world's own levels (BIG_MAP.md M2b: a bigger world's coarser cells).
+            let size = g.world_bounds().size;
+            if crate::map_reveal::is_level_sized(cell_m, &dwell_game::minimap::MAP, size) {
+                g.request_reveal(face, ti, tk, cell_m);
+            }
         }
+    }
+    /// The joined world's size (BIG_MAP.md M2b): its radius scale, 1 for today's (and before the
+    /// join's settings arrive), for the big map's levels and disc.
+    #[wasm_bindgen(js_name = worldRadiusScale)]
+    pub fn world_radius_scale(&self) -> u32 {
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .map_or(1, |s| s.world_size().radius_scale)
+    }
+    /// The big map's zoom levels for the joined world's size, closest first, as
+    /// [cellM, spanM, cellM, spanM, …] (`MapTunables::big_map_levels_sized`; at 1× map.json's).
+    #[wasm_bindgen(js_name = bigMapLevels)]
+    pub fn big_map_levels(&self) -> Vec<f64> {
+        let size = self
+            .inner
+            .borrow()
+            .session
+            .as_ref()
+            .map_or(Default::default(), |s| s.world_size());
+        dwell_game::minimap::MAP
+            .big_map_levels_sized(size)
+            .into_iter()
+            .flat_map(|(c, s)| [c, s])
+            .collect()
     }
     /// Tile (`ti`, `tk`) of the big map's level of `cell_m` cells on `face` read now from the
     /// loaded terrain (`crate::map_reveal::live_tile`: the closest levels' real blocks, ADR 0068),
@@ -2746,6 +3626,38 @@ impl Client {
             g.request_map(x0, z0, step, n, face);
         }
     }
+    /// Asks for the big map's debug layer of field index `field` (REALISTIC_WORLD.md R6; the
+    /// fields are `dwell_worldgen::map_layers::MapField`'s, by name in `mapLayerFields`).
+    #[wasm_bindgen(js_name = requestMapLayer)]
+    pub fn request_map_layer(&self, field: u8, x0: i32, z0: i32, step: i32, n: i32, face: u8) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.request_map_layer(field, x0, z0, step, n, face);
+        }
+    }
+    /// The requested debug layer once: its field index and face (0 A, 1 B) as the first two bytes,
+    /// then its `LayerGrid::encode` bytes (nothing after them: the world has no such field).
+    #[wasm_bindgen(js_name = takeMapLayer)]
+    pub fn take_map_layer(&self) -> Option<Vec<u8>> {
+        let (f, face, bytes) = self
+            .inner
+            .borrow_mut()
+            .game
+            .as_mut()
+            .and_then(|g| g.take_map_layer())?;
+        let mut out = Vec::with_capacity(2 + bytes.len());
+        out.push(f);
+        out.push(face);
+        out.extend_from_slice(&bytes);
+        Some(out)
+    }
+    /// The debug layers' field names, by index (`dwell_worldgen::map_layers::MapField::ALL`).
+    #[wasm_bindgen(js_name = mapLayerFields)]
+    pub fn map_layer_fields(&self) -> Vec<String> {
+        dwell_worldgen::map_layers::MapField::ALL
+            .iter()
+            .map(|f| f.name().to_owned())
+            .collect()
+    }
     /// The requested map (3 bytes per sample: height i16 LE, outside flag), or undefined.
     #[wasm_bindgen(js_name = takeMap)]
     pub fn take_map(&self) -> Option<Vec<u8>> {
@@ -2784,10 +3696,9 @@ impl Client {
 }
 
 /// Milliseconds on `performance.now()`'s timeline, which `frame`'s timestamps are on.
+/// The client's clock: `performance.now()`, or the stepped clock while a cinematic take holds it.
 fn perf_now() -> f64 {
-    web_sys::window()
-        .and_then(|w| w.performance())
-        .map_or(0.0, |p| p.now())
+    telemetry::now_ms()
 }
 
 fn touch_button(name: &str) -> Option<TouchButton> {
@@ -2867,11 +3778,17 @@ impl Inner {
                 self.edit(action, now_ms);
             }
             TouchEvent::Hold => {
-                self.edit_held(EditAction::Place, Holder::Touch, now_ms);
+                // Place mode builds on; Break mode keeps a held tool swinging (WORK_QUEUE item 17).
+                let action = self
+                    .game
+                    .as_ref()
+                    .map_or(EditAction::Break, |g| g.interaction.touch_action);
+                self.edit_held(action, Holder::Touch, now_ms);
             }
             TouchEvent::HoldEnd => {
                 if let Some(g) = &mut self.game {
                     g.release_place(Holder::Touch);
+                    g.release_use(Holder::Touch);
                 }
             }
             TouchEvent::BuildMode => self.cycle_build_mode(),
@@ -2997,12 +3914,16 @@ impl Inner {
         let Some(maps) = self.world_maps(world_seed, generator_version) else {
             return;
         };
+        let world_size = self
+            .session
+            .as_ref()
+            .map_or(Default::default(), |s| s.world_size());
         let workers = self.options.workers;
         let jobs = match WebJobs::new(
             &self.options.make_worker,
             workers,
             workers,
-            (generator_version, world_seed),
+            (generator_version, world_seed, world_size),
             &maps,
             self.options.lod_map,
         ) {
@@ -3027,14 +3948,62 @@ impl Inner {
         game.viewport_css = (f64::from(size.0) / ratio, f64::from(size.1) / ratio);
         game.debug_visible = self.debug_visible;
         game.set_capabilities(region_edits, brushes);
-        game.set_world(generator_version, world_seed);
+        game.set_world(generator_version, world_seed, world_size);
+        // The far herds' ground past the loaded chunks (WORK_QUEUE item 46), only once this
+        // instance holds the world's maps (never computed on the page's thread).
+        if !maps.is_empty() {
+            game.far_terrain = dwell_worldgen::BifacialTerrain::for_generator_sized(
+                generator_version,
+                world_seed,
+                world_size,
+            )
+            .map(std::sync::Arc::new);
+        }
+        self.renderer
+            .borrow_mut()
+            .set_world_radius(world_size.world_radius_m() as f64);
+        // The moon in the sky from its real terrain (MOON_WORLD.md §5, M-2): its face A baked once
+        // at the join (~0.1 s natively at 256²), every world its own moon.
+        if let Some(bake) = crate::render::moon::bake_for(world_seed) {
+            self.renderer.borrow_mut().set_moon(&bake);
+        }
+        // The sun's disc from the sun world's face A (docs/proposals/SUN_WORLD.md S-3; ~60 ms natively).
+        if let Some(bake) = crate::render::moon::sun_bake_for(world_seed) {
+            self.renderer.borrow_mut().set_sun(&bake);
+        }
+        game.vent_plumes = crate::vent_plumes::VentPlumes::from_worldgen(
+            self.session.as_ref().map_or("", |s| s.worldgen_config()),
+        );
         game.day_override = self.options.day;
         if let Some(w) = self.session.as_ref().and_then(|s| s.world_settings()) {
-            game.set_world_clock(w.clock);
+            game.set_world_settings(&w);
         }
         if let Some(s) = self.session.as_ref() {
             game.set_vitals_rules(s.vitals_rules());
             game.set_instant_breaks(s.instant_breaks());
+            game.set_structures(s.structures());
+            game.set_structure_ops(
+                s.capability(dwell_protocol::capability_names::STRUCTURES_PLACE),
+            );
+            game.set_grid_capabilities(
+                dwell_protocol::capability_names::ALL
+                    .iter()
+                    .filter(|c| s.capability(c))
+                    .map(|c| c.to_string())
+                    .collect(),
+            );
+            game.set_grid_frames(s.capability(dwell_protocol::capability_names::GRID_FRAMES));
+            game.set_swordplay(s.capability(dwell_protocol::capability_names::WEAPONS_CLASH));
+            game.set_hits_at_contact(
+                s.capability(dwell_protocol::capability_names::HITS_AT_CONTACT),
+            );
+            game.set_markers_synced(
+                s.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
+            );
+            game.set_theater_viewpoint(
+                s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
+                    && s.theater_viewpoint(),
+            );
         }
         game.set_loading_screen(self.options.loading_screen);
         game.set_crossing_roll(self.crossing_roll);
@@ -3077,6 +4046,7 @@ impl Inner {
         game.set_flow_particles(self.flow_particles);
         game.set_falls_shown(self.falls_shown);
         game.set_blast_settings(self.blast_settings_now());
+        game.set_effects(self.effects);
         self.game = Some(game);
     }
 
@@ -3139,11 +4109,19 @@ impl Inner {
             .as_ref()
             .map_or("", |s| s.worldgen_config())
             .to_owned();
-        let promise = prepare.call3(
+        // And its size (BIG_MAP.md M2b): a bigger world's maps are its own.
+        let scale = self
+            .session
+            .as_ref()
+            .map_or(1, |s| s.world_size().radius_scale);
+        let promise = prepare.apply(
             &JsValue::NULL,
-            &js_sys::BigInt::from(world_seed).into(),
-            &generator_version.into(),
-            &worldgen.into(),
+            &Array::of4(
+                &js_sys::BigInt::from(world_seed).into(),
+                &generator_version.into(),
+                &worldgen.into(),
+                &scale.into(),
+            ),
         );
         let into = slot.clone();
         spawn_local(async move {
@@ -3173,6 +4151,12 @@ impl Inner {
 
     /// Draws the frame; whether it did (not while the GPU is behind, nor without a surface).
     fn draw(&mut self) -> bool {
+        // Not until the pipelines are made, a few a frame (render/pipeline.rs, bug #71): on a cold
+        // shader cache each compiles for a while in the GPU process, which paints no frame then.
+        if !self.renderer.borrow_mut().warm_pipelines() {
+            telemetry::count("draw.warming", 1.0);
+            return false;
+        }
         // Not while the GPU is still behind on earlier frames (render/pacing.rs): recording now
         // would block this thread until it caught up.
         if !self

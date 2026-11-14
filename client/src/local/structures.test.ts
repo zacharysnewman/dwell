@@ -147,9 +147,14 @@ describe('structures in the client', () => {
       expect(() => checkStructure(json, 'post.json')).toThrow(why);
       expect(() => validate(json, 'post.json', vectorRegistry)).toThrow(why);
     }
+    // Over one file's cap it is the library's tiles (structureLibrary.test.ts), up to its limit.
+    expect(
+      structureFromVoxels({ name: 'dwell:big', size: [33, 1, 1], cells: Array(33).fill(stone) })
+        .kind,
+    ).toBe('tiles');
     expect(() =>
-      structureFromVoxels({ name: 'dwell:big', size: [33, 1, 1], cells: Array(33).fill(stone) }),
-    ).toThrow('at most 32');
+      structureFromVoxels({ name: 'dwell:big', size: [129, 1, 1], cells: Array(129).fill(stone) }),
+    ).toThrow('at most 128 × 64 × 128');
   });
 
   it('ignores fields a newer build added, which the generator rejects', () => {

@@ -64,7 +64,7 @@ Hotspot islands map to effusive; arc cones to dormant, waiting or blown.
 
 ### Answers (owner, 2026-11-11)
 
-1. **Lava's danger:** open. Default until answered: heavy damage while in it, plus a moment of burning
+1. **Lava's danger:** answered (owner, 2026-11-11: "Yes that default for lava danger is great."): heavy damage while in it, plus a moment of burning
    after leaving it.
 2. **Active scale:** "Both?" — crater lava lakes with occasional flows **and** lava rivers reaching the
    sea, building new land, chosen as data per vent.
@@ -90,7 +90,7 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   once wired) and the steam events.
 - **Flow:** the viscous gravity-current law with a yield depth (a Bingham plug), far slower than the
   water's for the same slope (tested against the water's own Manning speed).
-- **Cooling:** from the edges and top into `dwell:basalt` (new land); the quench edge with water is
+- **Cooling:** (replaced 2026-11-13 by hardening by rule, §6.6) into `dwell:basalt` (new land); the quench edge with water is
   `dwell:obsidian` plus a steam event. Both blocks are added (break, drop and sound like stone;
   placeholder looks: stone's tile under a dark tint).
 - **Vents as data:** lake (held at its level: the crater fills to its rim and stays molten under its
@@ -172,7 +172,189 @@ look and the in-game check come next, locally). ARCHITECTURE.md §6.8 has the mo
   colour for now.
 - **Round 3:** world-space crust plates with glowing seams (WATER_RENDERING.md §17.1); steam's own look
   as data, a hiss, the burning screen edge and a sizzle (§17.2).
-- **Outstanding:** heat per cell (brighter where hotter/thicker: the field's heat isn't in the cells).
+- **Heat per cell:** built in §6.5.
 
-**Next:** the rest of the look (steam, burning feedback, heat per cell); the water grid's columns as the
-fields' water; then V2's vents on the hotspot cones (rivers to the sea, eruptions).
+### 6.5 Lava glow: heat stops and heat in the cells (2026-11-11)
+
+Owner, 2026-11-11: "Lava should have bloom glow." / "Lava looks dark red instead of bright red/orange" /
+"It should darken as it solidifies though."
+
+- **The look by heat as data:** `lava.json` `heat` stops, hottest first (`name`, `above` the column heat
+  it starts at, `color` the seams' glow, `core` the glow at the middle of the seams, `intensity` emissive,
+  `crust` the plates' cover) and `heatHysteresis`; validated by `lava.mjs` (descending `above`, the coolest
+  at 0, names, colours, ranges, and the fluid's block's `heat` property equal to the stops' names) and
+  generated into `dwell_lava::DATA.heat`; a fixture's fifth stop by data alone. Tuned: hot (≥ 0.85)
+  orange-red #ff5a14 with a #ffa030 core, emissive 2.4, 30 % crust; warm (≥ 0.6) deeper orange-red;
+  cooling (≥ 0.3) dark red, 80 % crust; crusting near-black red, 95 % crust. The thresholds follow the
+  field: a running river's columns sit at 0.9–1.0 and a stopped flow passes through the rest as it cools.
+- **Heat in the cells: a `heat` property on `dwell:lava`** (hot, warm, cooling, crusting; `hot` the
+  default, so additive, ADR 0063). The server's lava tick writes each column's cells as its stop's state
+  (`dwell-sim` `lava.rs` `heat_states`), rewriting a column only when `LavaData::heat_stop` (with the
+  hysteresis) changes its stop: a cooling column is rewritten once per stop, through the edit sync, no
+  protocol change. Lava cells are compared by block, not state. Chosen over a per-chunk side channel: the
+  cells already sync, and the mesher already keys looks by state. Tested on both faces.
+- **Drawn per cell:** the mesher passes a molten state's stop in its faces' vertex colour (an untinted
+  code, `vertex_rgb`, `HEAT_CODE`); the terrain shader reads the stop's row of a table generated from the
+  data (`shaders.rs` `lava_wgsl`): seam colour and core, emissive, crust cover (seams widen as it thins).
+- **Hue kept:** lava's glow goes through `glow_hue` (`render/lights.rs`): the tone curve on the brightest
+  channel only, the colour scaled with it, so a hot orange doesn't wash to mustard.
+- **Bloom (built, pending release):** the glow round the lava, torches and flames (`render/bloom.rs`,
+  `shared/look/bloom.json`; ARCHITECTURE.md, Bloom). Keyed on the scene's self-lit flag, not on raw
+  brightness (`glow` caps emissive at `GLOW_PEAK` before the tone curve, so brightness alone can't find
+  it): the self-lit pixels' linear light above a threshold, blurred over a halving chain (dual filter
+  down, tent up) and added to the scene's linear light before the tone curve. Settings → Graphics →
+  Bloom: High on the High and Ultra presets, Low (half its resolution) on Medium, off on Low and Mobile;
+  never on a phone or a CPU adapter.
+
+### 6.4 As built: V2, rivers to the sea (2026-11-11)
+
+Logic and tests only (no shaders): the owner's "rivers of lava reaching the sea and building new land",
+beside V1's lakes. §6.2's note stood: a 25-column field can't reach a coast 2.6 km off.
+
+- **Fields that grow with their flow.** A field is a set of tiles of 8 × 8 columns keyed by tile
+  (`dwell_lava::field::TILE`), not a fixed rectangle. A growing field (`Field::growing`; every field the
+  server places) asks, as a run goes, for the tile past an edge its lava reaches, read from the world
+  by the run's `Ground` (bed and water per column; `None` a wall), up to `maxTiles` (`lava.json`, the cap
+  on its area: 2048 tiles, 0.13 km²; a refused tile is a wall), and drops the tiles that are all rock at
+  the end of a run (no lava in or beside them, no vent, nothing written as lava left in the world). A
+  re-added tile reads its bed again, so in the server it gets its rock back from the world's cells. V1's
+  rectangle (`Field::new`) is kept as a fixed field (tests; a V1 record).
+- **Cost by molten area.** A step visits the molten tiles' columns and the columns their flow reaches out
+  of them, nothing else (`Field::work` counts them); links across tile edges are cached per column.
+  A long river's tick near a player is tested under a budget (columns a substep ≤ the molten tiles' and
+  their edges'; under 20 ms a tick).
+- **Tubes (`tubeSpeedMs`)** kept a moving river's heat; removed 2026-11-13 with the timed cooling
+  (§6.6): flowing lava never hardens now.
+- **Ponds (`stepDepthM`).** A substep is sized for lava up to 2 m deep; each face's flow is limited to
+  the explicit law's stable share of the two surfaces' difference, so a deeper pond levels instead of
+  shrinking every substep (it had cut the step to 2 ms behind a crusted dam).
+- **The sea.** Lava now quenches *in* a water column, not beside one: it runs into the sea, turns to
+  obsidian on the sea floor (a steam event per quenched row), and once the rock stands above the water's
+  surface (`Field::water_top`, read with the water) the column is dry land. Before, lava beside water
+  quenched on the shore and never entered it, so no coast could grow.
+- **Saves:** record version 2 (tiles, the water's surface per column, whether it grows); version 1
+  still loads as a fixed field. An older build keeps a version 2 record unread (V1 slice 2's rule), so
+  the change is additive.
+- **The server:** fields are placed with the vent at their column (0, 0), covering `radius` to start
+  (`lavaVents` `radius` is now the starting reach); a tick reads new tiles from the world round the bed
+  beside them (`dwell-sim` `lava.rs` `ground_at`) and writes only the tiles its steps visited.
+- **The starter world's river** (`tectonics.lavaVents`, with a new optional `faces` key): on the
+  youngest hotspot island's flank on face B, 400 m out at 75° (158 m up), 2 m³/s of `dwell:lava`. Each
+  face generates its own island: face A's drains its flanks into an enclosed basin above the sea at
+  almost every bearing (a pour walk, filling each hollow until it spills, never reaches the sea), so the
+  river is face B's alone (`faces: ["b"]`; the lake stays on both). Its way down (the same pour) meets the
+  sea 1.3 km off with no hollow deeper than 2 m (tested).
+- **Breakouts (`breakoutDepthM`, per fluid; `dwell:lava` 3 m).** Each column remembers the rock its own
+  lava laid (`Field::crust`, saved); molten lava at least that deep beside a dry column of that crust
+  standing over its bed melts it down to the bed again, at the pond's heat (volume kept, a
+  `LavaEvent::Melt` the server clears to air before writing the lava), so a river dammed by its own
+  frozen overflow runs on through the gap. At 1 m it melted the river's own levees (its channel runs
+  ~2 m deep) and the flow spread into a sheet; 3 m keeps the levees and breaks the dams.
+- **The starter river did not reach the sea (V2).** On the fixture flank (a smooth slope) the
+  build's lava runs 1.1 km to the sea in ~3 lava hours (14 world days) and builds land. On the generated
+  terrain, without breakouts it reached ~480 m in 6 world days and then dammed itself, ponding 16 m deep
+  behind walls its overflow froze into. With breakouts (3 m) it no longer dams (the deepest pond stays
+  ~3 m) and reaches ~630 m in 18 world days (~740 m at 4 m³/s), but it slows as it spreads sideways into
+  a wide sheet (~300 tiles at 2 m³/s, ~540 at 4) instead of keeping one channel; at 1 m breakouts it
+  stalled at ~300 m as a sheet. What would close it: channelling (levees from the edges' cooling that a
+  breakout at the front doesn't melt, or a channel's banks held as data), or a runnier `dwell:lava`.
+  The ignored test `the_starter_river_runs_its_course` (`dwell-sim` `tests/lava_world.rs`,
+  ~3 min, `DWELL_LAVA_TRACE=1` for progress) is the check; too long for CI either way.
+- **Outcomes, not a target (owner, 2026-11-11):** "Lava may not reach the sea since it solidifies over
+  time as it cools… Sometimes it may, other times it may not reach the sea." Whether a river gets there
+  is the physics' (the vent's rate, the slope, the cooling), not a goal tuned for. What changed:
+  - **Levees hold (channelling).** A breakout melts only a dam on the pond's way down: the ground under
+    the dam's crust lower than under the pond's. A levee beside the channel (overflow frozen on ground
+    as high as the channel's) is not melted, so a channel keeps its banks; before, a pond 3 m deep broke
+    out sideways as readily as forward. Tested: `a_levee_beside_the_channel_holds` (red on the old rule),
+    and the dam test now stands its dam on lower ground.
+  - **The outcomes, tested on the fixture flank** (`rivers.rs`, the fixture's `test:runny`): the strong
+    vent (1 m³/s) on the 0.3 flank reaches the sea within two lava hours and builds land (as before); a
+    weak one (0.2 m³/s) on a 0.03 slope runs ~150 m in 45 lava minutes, crusts and stands still, no land
+    (`a_weak_vent_on_a_shallow_slope_crusts_and_stops_short`; at 0.1 it piles at its vent, at 0.3 it
+    still runs at the hour).
+  - **The starter river's outcome:** with the build's lava it reaches ~600 m of its 1.3 km by 18 world
+    days and crusts there as a wide flow (~260 tiles), no land in the sea. The ignored long test reports
+    this and checks only that the river ran well down the flank; `DWELL_LAVA_TUNE=rate=4,breakout=3,…`
+    runs it with other data (viscosity, yield, cooling, edge, thin, tube, breakout, rate, step, far).
+  - **Tried and dropped:** lava stiffening as it cools (viscosity × 30 or × 300 at heat 0, geometric in
+    heat) only slowed the whole flow (~420 / ~370 m by day 6 against ~500) at the same width per metre of
+    reach; it did not channel, so it was not kept.
+- **Tests** (`crates/dwell-lava/tests/rivers.rs`, both faces): on a fixture flank (a 0.3 slope 1.1 km to
+  a shore, a fixture runny lava `test:runny` and vent `test:flank_river` by data alone) a river runs past
+  1 km and reaches the sea within two lava hours, builds dry land past the shore out of the sea, its
+  tiles follow it there; a stopped river cools and every tile drops; the cap holds; a save mid-flow runs
+  on identically; a V1 record loads. In the server (`dwell-sim` `tests/lava.rs`): a river's field grows
+  down a stone ramp and its lava is in the chunks past where it started.
+- **Fixed on the way:** none shipped (a stale lake index after a tile's removal was caught by the
+  server tests before commit).
+
+### 6.6 Hardening by rule, not by expiring (2026-11-13)
+
+Owner, 2026-11-13: "Another thing I observed, I think Lava needs to not just expire into rock, since it
+all just goes away then, it should solidify when it stops moving, touches water, or is a source block,
+not while flowing." Clarified: sources never solidify (molten unless water touches them); only lava that
+has stopped moving hardens; flowing lava never does; water hardens any lava. And: "We may need lava to
+not harden when within a distance of a sourceblock too."
+
+- **The rules, per fluid as data** (`lava.json`; `coolingSeconds`, `edgeCooling`, `thinDepthM` and
+  `tubeSpeedMs` are gone): a column whose lava moves faster than `stillMs` (0.005 m/s: its throughflow,
+  m³/s through its four faces, over twice its depth) is flowing, its heat held at 1; one at rest loses
+  heat at `1 / restSeconds` (20 s) and at 0 hardens into the fluid's `rock`, its lava added to its bed,
+  so its volume stays as rock in the cells it filled. Heat is now this rest clock (it is no longer carried
+  with the flow), so the heat stops (§6.5) darken a resting flow before it hardens; the save is unchanged.
+- **Sources.** A vent's column, the lava joined to it through at most `sourceKeepM` (4 m) of lava
+  columns, and a lake vent's lake below its level are held molten. The distance is counted along the
+  connected lava columns (breadth first from every vent each substep, bounded by `sourceKeepM`), not in a
+  straight line, so a pool beside a source across a wall or a dry gap hardens.
+- **Water** hardens any lava at once, a source's included, as before: lava in a water column turns to
+  the quench rock (`dwell:obsidian`) with a steam event; a vent in water quenches what it pours, builds
+  its column up out of the water, and then pours molten lava on top. Lava beside a water column (not in
+  it) is not quenched: the lava runs into the water column and quenches there, which is how a river
+  builds land out into the sea (quenching at the shoreline would pile a wall there instead).
+- **What changes in play:** a river fed by its vent stays molten its whole length (the sun's
+  always-flowing rivers too: their sources are river vents); its still margins and a stopped front harden;
+  a vent turned off leaves its river to drain downhill, molten while it moves, and harden where it stops
+  (on the fixture flank all of it is rock about 95 lava minutes after). A weak vent no longer "crusts and
+  stops short": while it pours its front runs on (the fixture's 0.2 m³/s on a 0.03 slope ~47 m every
+  15 lava minutes), against the 2026-11-11 outcome "sometimes it may not reach the sea" (WORK_QUEUE item 8,
+  for the owner). Viscous lava levelling in a trench counts as flowing for minutes before it rests.
+- **Tests (both faces):** `crates/dwell-lava/tests/lava.rs`: a river stays molten while it flows; a
+  tongue hardens where it stops, rock in the cells its lava filled and its volume kept; a source stays
+  molten for 50 rests; a still pool within `sourceKeepM` of a source stays molten while the rest, and the
+  same pool with no source or a source in the next basin, harden; water hardens a source. `rivers.rs`: a
+  stopped river drains and every tile drops; a weak vent's river runs on while it pours. `dwell-sim`
+  `tests/lava.rs`: a trench's still lava past `sourceKeepM` is basalt in the chunks, by its vent still
+  lava; resting lava's cells show darker stops. Red on the old code: the river, tongue and source-distance
+  tests.
+
+**Next:** the rest of the look (heat per cell); the water grid's columns as the fields' water (and the sea's level taken back where
+lava builds land); eruptions (V3–V5).
+
+### 6.7 Active and dormant volcanoes in terrain generation (2026-11-13, the 0.64 batch; WORK_QUEUE item 15)
+
+Owner, 2026-11-13: "Also active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they
+should slowly gain dirt and grass, and trees." Clarified: "By slowly gain, we can make that a system eventually, but as
+part of terrain generation." Each volcano a Realistic world places (its arc cones and hotspot islands,
+`plates.json` `uplift`) has a state from data: active (an apron of lava stone spilled into the shallows around its shore,
+bare dark rock on the cone) or dormant with a weathering age that sets how far soil, grass and trees cover it (the biome
+and climate still choose the plants). Set once when the terrain is generated; the default world's hand-placed tectonics
+(`terrain.json` `tectonics`) are not changed. **Owner should see:** active volcanic islands ringed by dark, ragged lava
+rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and trees, the oldest mostly
+forested. Later (docs/FUTURE.md): cover spreading over time as a live system.
+
+**Built (2026-11-14, the 0.65 line):** `plates.json` `uplift.volcanism`, `PlateTectonics::states`
+(`VolcanoState`: active, age, apron) and `TerrainGenerator::volcanic_surface`. Which volcanoes: the Realistic world's arc
+cones (active with chance 0.4, else dormant at a drawn age) and hotspot islands (the youngest active, the older ones
+dormant by their place down the chain, ± 0.1), and their satellites (their parent's state); the default and starter
+worlds' hand-placed volcanoes (`terrain.json` `tectonics`) are unchanged. A volcano's ground is its outline out to its
+radius, the edge moved ± 0.2 of it by noise and faded over its last quarter (no ring). On it the cover share by age
+(smoothstep 0.05–0.85; 0 when active) keeps the biome's own ground by a 70 m patch noise, dirt patches at the cover's
+edge (`soil`: the shale's dirt cap), bare `dwell:shield_basalt` (basalt) beyond; steep faces and the crater stay rock.
+Trees × a smoothstep of the age (0.45–0.95). An active one's apron: the sea floor under at most 22 m of water within
+50–180 m of its shore (drawn per volcano, ± half by noise; the distance read as the depth over the slope) is basalt, 30 %
+`dwell:lava_glass` (obsidian, a rock in no stack). No relief is added to the apron yet (material only).
+`tests/realistic_volcanoes.rs` (both faces, five seeds): lava rock 85 % / 71 % of active shores' shallows against 1–3 %
+at dormant ones; active ground 100 % bare; dormant cover 0.08–0.11 (age ≤ 0.3) against 0.92–0.93 (age ≥ 0.6); trees none
+on the young, 10–38 per ha on the old; the bare edge's radius varies round each active cone (cv 0.13–0.60).
+

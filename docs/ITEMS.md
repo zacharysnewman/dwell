@@ -59,18 +59,21 @@ An item may be a **`tool`** (an item of `shared/tools/tools.json` by name) inste
 it places nothing, so it takes none of `rows`, `drag`, `state`, `facing` or `upper` (each fails
 naming the entry, as does an unknown tool or giving both). The generator emits `ItemDef.tool`; the
 palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
-axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it and right click
-toggles level and vertical swings, as the inventory's axe does in adventure. Owner, 2026-11-08.
+axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it, as the inventory's
+axe does in adventure. Owner, 2026-11-08. Since 2026-11-14 the axe has **one mode** (owner: "Let's simplify
+the axe to be like the shovel and pick, without the multiple modes"): its level swing; right click does
+nothing with it (a tool has a second stance only with a `heldVertical`: the sword's).
 
 The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
-follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.12), the
+follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.1), the
 stone and metal pickaxe and the wooden and metal shovel. A `tool` may also name a **breaking tool**
 (`shared/tools/tools.json` `breaking.tools`): it places nothing (Place is refused) and Break breaks as
 a bare hand does. Every tool's item has a model look (`shared/inventory` `look.model`, a prop of
 `shared/models/props.json`), so the hotbar, the backpack, a loose item and the hand all show its
 model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
 gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
-(`stone` 1.5, `metal` 2.5, a multiple of the bare hand's speed); `break_speed(block, held)` is that
+(`stone` 1.5, `metal` 3, a multiple of the bare hand's speed, and each a `chunk`: stone 1, metal 2, the size of
+the piece a hit takes off; BLOCK_DAMAGE.md §9); `break_speed(block, held)` is that
 speed for the right class and 1 otherwise. **Block damage (0.52.28, ADR 0078, docs/BLOCK_DAMAGE.md):**
 a block's `damage` (block data) gives its hits to break by bare hands (`default`; `null`: can't) and per
 tool class or item; a class's count is divided by the held tool's tier speed. Stone takes 5 hits with the
@@ -97,9 +100,13 @@ and 0.52.22's per-tool turn tilted each off the hand. Now the grip is data on bo
 - **The pose**: `dwell_models::PropData::in_hand` puts the grip at the fist and the handle along the
   grip axis, then turns the tool about its handle by `hold.roll` (degrees, from its +x side facing the
   hand's `edge`: the axes' edges and the picks' points away from the eye, the shovels' faces turned
-  90° to face ahead), at `hold.scale` (1: full size). The lean toward the crosshair is the hand's:
+  90° to face ahead) and `hold.yaw` more (±45°; owner, 2026-11-14: "each tool should be rotated
+  slightly around the Y(?) in your hand so you can see the head of it": the axes and the stone pickaxe
+  −25°, the metal pickaxe 30°, the shovels 5°, each the most head on screen clear of the crosshair,
+  measured with `dwell_client::clip_probe::head_view`; first and third person alike), at `hold.scale`
+  (1: full size). The lean toward the crosshair is the hand's:
   the hold item's pose (`shared/characters/characters.json` `tool`, the pickaxes' and shovels' hold,
-  `MODEL_HOLD`; the axes keep `stone_axe` and `stone_axe_vertical`), not a turn of the tool off the
+  `MODEL_HOLD`; the axes keep `stone_axe`), not a turn of the tool off the
   hand. The first-person hand is a closed mitten fist; it has no fingers to curl.
 
 Tests: `every_tool_is_held_as_its_model_its_handle_through_the_fist` measures the drawn mesh (the
@@ -112,9 +119,56 @@ projects each held model in the arms' idle at the arms' FOV (16:9 and 2.18:1): i
 view's area 4 (full size, not shrunk), and through the break and both axe swings nothing in view
 comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
+**Hold to keep swinging (WORK_QUEUE item 17).** Owner, 2026-11-12: "I wanted you to be able to hold
+the key down for tools like the axe." Holding the use (Break) button with a tool whose data says
+`repeatOnHold` swings it again and again until let go: a chopping tool (`tools[].repeatOnHold` in
+`shared/tools/tools.json`: both axes, the sword) as soon as the last swing is over (its whole length and
+`swingSeconds`), a break tool (`breaking.tools[].repeatOnHold` and `repeatS`, default 0.5 s and never
+before its `contactS`: the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
+aimed and swept when it starts (what is targeted then), sent as a click's is, so others see every swing
+by its swing count; it lands one contact, and a tool wears only on a hit. Letting go stops the repeats;
+the swing under way plays out. The mouse, the controller's Break and, in touch Break mode with such a
+tool, a still hold on the view (`TouchControls::hold_breaks`) all hold it, each releasing its own
+(`dwell-client` `held_use.rs`). The generator validates the fields (a boolean; `repeatS` in
+[max(contactS, 0.1), 5] and only with `repeatOnHold`; a chopping tool's hold set in `tools`, never in
+`breaking.tools`); the fixture stick club repeats by data alone. Tests: `held_use.rs` (n swings for a
+hold of n swing lengths, one contact each; let go mid-swing: that swing ends, no other), `gen.test.mjs`,
+the touch hold (`dwell-game` `touch.rs`).
+
+**Hold to punch (WORK_QUEUE item 17).** Owner, 2026-11-13: "You should also be able to hold 'punch' to
+dig with your hand." A Break holding no breaking or chopping tool (an empty hand, a block, any other
+item: a punch, as the damage rules count it) repeats while held every `breaking.hand.repeatS`
+(`repeatOnHold`, default 0.5 s, in [0.1, 5]; 0.4 s today; `dwell_protocol::chopping::HAND_REPEAT_S`,
+`break_repeat_s`, `is_punch`), each punch landing at once on what is aimed at then. A creative palette
+tool, the brush and paste mode keep one per press. A punch short of breaking is sent at most that often,
+clicked or held, and the server refuses faster ones (BLOCK_DAMAGE.md §13).
+
 **Wear.** The stone axe, the stone pickaxe and the wooden shovel survive 32 hits each
 (`shared/tools/tools.json` `durability`; owner, 2026-11-11: "stone pick wears too like axe, same with
-shovel"); the metal tools never wear, and nothing wears in creative (`creativeWear` false).
+shovel"); the metal axe, pickaxe and shovel 64 each (owner, 2026-11-12: metal tools "have double
+durability"), and nothing wears in creative (`creativeWear` false).
+
+### 1a′. Weapons: the sword (WORK_QUEUE item 35)
+
+Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got the tools from as
+weapons." The sword (`dwell:sword`, shared/inventory, a model look `sword` from the same
+*3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
+and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
+adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical: the sword keeps two stances,
+its `held`/`heldVertical` holds `sword` and `sword_vertical` in shared/characters), and its swing
+strikes the animals its arc crosses at contact (never a player): damage, knockback, the most creatures
+a swing hits and its durability are its `weapon` data, its swordplay (blocking by blade angle) its
+`weapon.guard` (ARCHITECTURE.md "Weapons"). It cuts no wood: a log stops the blade as stone does.
+A weapon wears once a creature struck (the sword 120, by `weapon.durability`; not in creative).
+
+**The model** (2026-11-12): the pack's `katanas-swords` FBX is one katana blade
+(`KatanaBlade.001`) and five colour variants of one handle stacked on each other (`KatanaHandle.001`
+to `.005`, the same vertices); there is no straight sword in the pack. The `sword` prop
+(props.json) is the blade on the first handle (`objects`), 1 m long (`length`), its `handle` the
+bare grip's span (−0.47 to −0.25 m, the pommel end first) and its `grip` at −0.36 m, on the
+measured axis (a 6° lean: the katana's curve). The generator fails a grip outside its handle
+(`grip … is outside its handle`); the fist closes on it (models.json `grips`: `sword` and
+`sword_vertical` are `fist`). `katanas_swords` stays listed as the pack's whole file, not built in.
 
 ### 1b. Saplings (ADR 0079 S4)
 
@@ -148,7 +202,7 @@ prediction alike.
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
 | `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
-| `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`) |
+| `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
 The engine is `dwell_world::edit::check_block_edit`; the registry sync carries the new fields
@@ -212,12 +266,16 @@ controller button and a touch button switch the modes; mouse, controller and tou
   fill (the side of the block underfoot is a face the eye can't see); plain blocks only.
 - **A click is one block** (owner, 2026-10-28): a stroke builds on only once Place has been held
   `buildModes.holdMs` (200 ms, data; `BuildDrag::armed`); a touch hold has waited its 350 ms
-  already. Then **one piece a frame**, and a line across only **up to where the view ray crosses
-  its middle** (the spot looked at; level with the eye, the nearest point of the line), so a
-  shallow aim doesn't build several at once.
+  already. Then **a piece every `buildModes.repeatS`** (0.05 s, data; BUGS.md #30), by the clock at
+  each predicted tick (`BuildDrag::aim_at`), so a page at a few frames a second builds at the same
+  rate (it was one a frame), no burst saved up while it can't build; and a line across only **up to
+  where the view ray crosses its middle** (the spot looked at; level with the eye, the nearest point
+  of the line), so a shallow aim doesn't build several at once.
 - **Answered pieces** (owner, 2026-10-28: a crouch-jump tower built over a skipped block, then
-  above the head): a line builds its next piece only once the server has answered for the last
-  (`DragWorld::settled`), and goes back to a piece it refused or skipped (`BuildDrag::refused`; a
+  above the head): a tower builds its next piece only once the server has answered for the last
+  (`DragWorld::settled`); any other line builds on unanswered (answers arrive once a frame: BUGS.md
+  #30), stepping over the pieces it built itself (`DragWorld::placed`) when it goes on again. A line
+  goes back to a piece it refused or skipped (`BuildDrag::refused`; a
   region fill skips a cell its view of the body is in without refusing, so the client checks the
   cells after the answer, `BuildDrag::answered`). A piece counts as built when its cells hold the
   block flooded or not (`build_drag::fill_placed`): a block put into water is written in its
@@ -246,7 +304,9 @@ controller button and a touch button switch the modes; mouse, controller and tou
   change). A `BlockEditRequest` is refused against a face the eye can't see (line of sight), which a
   floor reaching away or a line past the eye needs; region edits are checked for reach and the world
   only. They go out at a quarter of the server's region queue a tick (`MAX_QUEUED` 4 → 1 a tick:
-  edits bunch, and a local world's worker refused a Flat sweep's at 2), predicted at once; one the
+  edits bunch, and a local world's worker refused a Flat sweep's at 2), and at most `MAX_QUEUED` a
+  frame (`BuildDrag::pump_capped`: a frame's messages reach the server in one tick, so under ~5 fps
+  this sets the rate), predicted at once; one the
   server refuses goes again while its cells are free, up to `RETRIES` (3) times. Only plain blocks drag (`build_drag::drags`): a region fill runs no place rules, so a
   ladder (facing, support), a torch (other cells) or tall grass (`placeOn`) is placed a click at a time.
 - **Tests**: `build_drag.rs` (both faces: a line up and across, a level's swept cells around a block,
@@ -283,6 +343,10 @@ Since 0.52.23 the hotbar has **6 slots** in both modes (`shared/inventory/invent
 `slot_for_digit`), and the wheel, the step keys and LB / RB wrap over the six.
 
 ## 6a. The inventory view **[built, 0.52.23]**
+
+*Structures tab (WORK_QUEUE item 12, STRUCTURES.md §9):* in a mode with the `structures` ability
+(creative), the view ends with the player's saved structures; a click places one with the paste ghost
+(R turns it 90°, right click places). It is not a hotbar item: a structure is not in `items.json`.
 
 Owner, 2026-11-10: "Cap the hotbar at 6 slots. We need inventory view. For both adventure and
 creative." `E`, the touch **Bag** button (top left) or the controller's `inventory` button (D-pad
@@ -371,8 +435,10 @@ placements overlay shows the ground items in their looks' colours beside the str
   axe, or the same inputs → a stone pickaxe (the player picks).
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
   `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
-  validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe 32; every
-  other tool unlimited (the owner named only the axe). A hit that counts uses one: a chop, or a block
+  validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe, stone
+  pickaxe and wooden shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
+  "have double durability"; they also break in about half the hits with pieces twice the size,
+  BLOCK_DAMAGE.md §9). A hit that counts uses one: a chop, or a block
   break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is
   gone from its slot and the client plays `stick_snap`. Creative: `creativeWear` false, tools don't
   wear. The wear is a slot's `Stack::wear`, carried by moves; it rides in the inventory record as

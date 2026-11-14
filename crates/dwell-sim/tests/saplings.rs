@@ -266,6 +266,7 @@ fn a_leaf_drops_a_sapling_at_the_species_drop_chance() {
         e.fill(&mut b);
         (u64::from_le_bytes(b) >> 11) as f64 / (1u64 << 53) as f64
     };
+    // A species without a sapling (the tall broadleaf) drops none: `sapling_drop` is None for it.
     for (i, s) in SPECIES.iter().enumerate() {
         let r = Record {
             anchor: [0, 0, 0],
@@ -283,7 +284,7 @@ fn a_leaf_drops_a_sapling_at_the_species_drop_chance() {
         let got = (0..n)
             .filter(|_| sapling_drop(&r, roll()).is_some())
             .count();
-        let want = f64::from(s.sapling.unwrap().drop_chance);
+        let want = f64::from(s.sapling.map_or(0.0, |p| p.drop_chance));
         let rate = got as f64 / n as f64;
         assert!(
             (rate - want).abs() < 0.01,

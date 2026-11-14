@@ -1,5 +1,5 @@
 {
-  "$comment": "Dwell's static models, the props (ADR 0070 \u00a78, docs/CHARACTERS.md \u00a711.7): no skin, no clips. Each is a GLB in shared/models/glb/props (the checked-in source of truth, made once by `node shared/models/import.mjs --props --from <unpacked packs>` from its pack's FBX: every face one palette colour, the pack's gradient texture snapped to the nearest ramp's base, its longest side scaled to `length` metres (else its category's), its origin at its bounds' centre). `category` is one of `categories`, whose `length` is the default size and `min`/`max` the sizes a prop of it may be (the generator fails outside them). `grip` (optional, metres from the origin) is where a hand holds it, for a prop an item's look names (shared/inventory `look.model`); `handle` (optional) [from, to] the bare handle's span along +y, `from` the end away from the head: the generator measures its axis from the GLB (the centres of the two halves' bounds) and moves the grip onto it at the grip's height; the handle is then laid along `hand`'s grip axis with the grip at the fist. `hold` (optional): `scale` (0.1..2) and `roll` degrees about the handle, from its +x side facing the hand's `edge` (docs/ITEMS.md \u00a71a); a lean toward the crosshair is the hand's pose, not the prop's. `source.pack` names the unpacked pack and `source.root` the path inside it the `fbx` paths are under. Prototype content: which props become items is the owner's to decide. Run `node shared/models/gen.mjs` after editing.",
+  "$comment": "Dwell's static models, the props (ADR 0070 \u00a78, docs/CHARACTERS.md \u00a711.7): no skin, no clips. Each is a GLB in shared/models/glb/props (the checked-in source of truth, made once by `node shared/models/import.mjs --props --from <unpacked packs>` from its pack's FBX: every face one palette colour, the pack's gradient texture snapped to the nearest ramp's base, its longest side scaled to `length` metres (else its category's), its origin at its bounds' centre). `category` is one of `categories`, whose `length` is the default size and `min`/`max` the sizes a prop of it may be (the generator fails outside them). `grip` (optional, metres from the origin) is where a hand holds it, for a prop an item's look names (shared/inventory `look.model`); `handle` (optional) [from, to] the bare handle's span along +y, `from` the end away from the head: the generator measures its axis from the GLB (the centres of the two halves' bounds) and moves the grip onto it at the grip's height; the handle is then laid along `hand`'s grip axis with the grip at the fist. `hold` (optional): `scale` (0.1..2) and `roll` degrees about the handle, from its +x side facing the hand's `edge` (docs/ITEMS.md \u00a71a), and `yaw` degrees (±45) more about the handle, the hand's upright axis at rest, turning the head's flank toward the eye so it shows (owner, 2026-11-14: \"each tool should be rotated slightly around the Y(?) in your hand so you can see the head of it\"; the axes and the stone pickaxe −25, the metal pickaxe 30 (turned the other way: its longer pick reached the crosshair turned left), the shovels 5 (already broadside, and clear of the view's top): the most head on screen, measured with `clip_probe::head_view`), first and third person alike; a lean toward the crosshair is the hand's pose, not the prop's. `source.pack` names the unpacked pack and `source.root` the path inside it the `fbx` paths are under. Prototype content: which props become items is the owner's to decide. Run `node shared/models/gen.mjs` after editing.",
   "source": {
     "pack": "3D_Low_Poly_Tools_Weapons_Containers",
     "root": "Assets/WeaponsAndPropsAssetPack_NAS/",
@@ -204,7 +204,7 @@
       "length": 0.65,
       "grip": [0, -0.24, 0],
       "handle": [-0.32, 0.12],
-      "hold": { "scale": 1, "roll": 0 }
+      "hold": { "scale": 1, "roll": 0, "yaw": -25 }
     },
     "metal_fork": {
       "category": "tools",
@@ -226,7 +226,7 @@
       "length": 0.7,
       "grip": [0, -0.27, 0],
       "handle": [-0.34, 0.2],
-      "hold": { "scale": 1, "roll": 0 }
+      "hold": { "scale": 1, "roll": 0, "yaw": 30 }
     },
     "metal_shovel": {
       "category": "tools",
@@ -236,7 +236,7 @@
       "length": 1.0,
       "grip": [0, 0.1, 0],
       "handle": [0.4, -0.2],
-      "hold": { "scale": 1, "roll": 90 }
+      "hold": { "scale": 1, "roll": 90, "yaw": 5 }
     },
     "modern_hoe": {
       "category": "tools",
@@ -260,7 +260,7 @@
       "length": 0.6,
       "grip": [0, -0.22, 0],
       "handle": [-0.3, 0.1],
-      "hold": { "scale": 1, "roll": 0 }
+      "hold": { "scale": 1, "roll": 0, "yaw": -25 }
     },
     "stone_hammer": {
       "category": "tools",
@@ -275,7 +275,7 @@
       "length": 0.6,
       "grip": [0, -0.24, 0],
       "handle": [-0.3, 0.15],
-      "hold": { "scale": 1, "roll": 0 }
+      "hold": { "scale": 1, "roll": 0, "yaw": -25 }
     },
     "wooden_shovel": {
       "category": "tools",
@@ -284,7 +284,7 @@
       "length": 1.0,
       "grip": [0, 0.15, 0],
       "handle": [0.5, -0.2],
-      "hold": { "scale": 1, "roll": 90 }
+      "hold": { "scale": 1, "roll": 90, "yaw": 5 }
     },
     "wrenches": {
       "category": "tools",
@@ -301,6 +301,16 @@
       "category": "weapons",
       "glb": "glb/props/katanas_swords.glb",
       "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-katanas-swords.fbx"
+    },
+    "sword": {
+      "category": "weapons",
+      "glb": "glb/props/sword.glb",
+      "fbx": "Assets/Tools, Weapons And Props/AssetsPack-01-NAS-katanas-swords.fbx",
+      "objects": ["KatanaBlade.001", "KatanaHandle.001"],
+      "length": 1.0,
+      "grip": [0, -0.36, 0],
+      "handle": [-0.47, -0.25],
+      "hold": { "scale": 1, "roll": 0 }
     },
     "metal_bat": {
       "category": "weapons",

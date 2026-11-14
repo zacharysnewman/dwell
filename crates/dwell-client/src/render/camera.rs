@@ -134,6 +134,18 @@ pub fn mul(a: &Mat4, b: &Mat4) -> Mat4 {
     out
 }
 
+/// A world point in the view of a camera at `eye` with `basis` (a waypoint over a map marker,
+/// docs/MAP_MARKERS.md): [x, y, depth], x and y in normalized device units (−1..1 across the view,
+/// +y up) and depth along the view axis (m; ≤ 0 behind the camera, where x and y point the way to
+/// turn). `tan_y` is the tangent of half the vertical FOV.
+pub fn project(basis: &Basis, eye: V3, tan_y: f64, aspect: f64, p: V3) -> V3 {
+    let rel = sub(p, eye);
+    let depth = dot(rel, basis.forward());
+    let (rx, ry) = (dot(rel, basis.right), dot(rel, basis.up));
+    let d = depth.abs().max(1e-6);
+    [rx / (d * tan_y * aspect), ry / (d * tan_y), depth]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +195,32 @@ mod tests {
         }
         (views, look)
     }
+
+    dwell_world::both_faces!(
+        fn a_point_ahead_projects_to_the_centre_and_one_to_the_right_to_the_right(f: FaceFrame) {
+            // Face-local: the eye 2 m up, looking at yaw 0 (+Z), level.
+            let basis = aim(0.0, 0.0, f, 0.0);
+            let eye = f.point([0.0, 2.0, 0.0]);
+            let tan_y = (VERTICAL_FOV.to_radians() / 2.0).tan();
+            let ahead = project(&basis, eye, tan_y, 1.5, f.point([0.0, 2.0, 10.0]));
+            assert!(
+                ahead[0].abs() < 1e-9 && ahead[1].abs() < 1e-9 && (ahead[2] - 10.0).abs() < 1e-9
+            );
+            // A yaw-0 player's right: −x on face A, the mirror's +x on face B (`aim`'s `handed`).
+            let right = project(
+                &basis,
+                eye,
+                tan_y,
+                1.5,
+                f.point([f.handed(-3.0), 2.0, 10.0]),
+            );
+            assert!(right[0] > 0.0, "{right:?}");
+            let above = project(&basis, eye, tan_y, 1.5, f.point([0.0, 5.0, 10.0]));
+            assert!(above[1] > 0.0, "up is the face's up: {above:?}");
+            let behind = project(&basis, eye, tan_y, 1.5, f.point([0.0, 2.0, -10.0]));
+            assert!(behind[2] < 0.0, "{behind:?}");
+        }
+    );
 
     dwell_world::both_faces!(
         /// The owner (BIFACIAL_WORLD.md §6, 2026-10-21): "whichever method lets you remain looking

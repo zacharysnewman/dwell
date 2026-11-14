@@ -26,6 +26,8 @@ let reportsDue = 0;
 const tickStats = { ticks: 0, ms: 0, maxMs: 0 };
 /** The host paused the world (their page is hidden, §10.2): no simulation steps. */
 let paused = false;
+/** A cinematic take holds the real-time clock: the world moves only by `step` messages. */
+let manual = false;
 const queued: ToWorker[] = [];
 
 /** A loading stage (shared/look/loading.json `stages`) began or ended, for the page's screen (§6.3). */
@@ -193,6 +195,15 @@ function handle(msg: ToWorker): void {
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;
+    case 'clock':
+      manual = msg.manual;
+      break;
+    case 'step': {
+      const tick = core.stepTicks(msg.ticks);
+      flush();
+      scope.postMessage({ t: 'stepped', tick });
+      break;
+    }
     case 'reliable':
       core.reliable(msg.session, msg.channel, msg.bytes);
       break;
@@ -209,6 +220,32 @@ function handle(msg: ToWorker): void {
       scope.postMessage({ t: 'mode', mode: core.mode });
       void save();
       break;
+    case 'theaterGuests':
+      core.setTheaterGuests(msg.on);
+      void save();
+      break;
+    case 'retune': {
+      // Chisel in the game (Phase 56 B7): the server's chunks near the player generated again and
+      // the config saved with the world; the server-jobs worker's generators made again over the
+      // new maps; the page installs them too.
+      let maps: Uint8Array[] = [];
+      let error: string | undefined;
+      try {
+        maps = core.retuneWorldgen(msg.worldgen, msg.radius);
+        jobs?.postMessage({ t: 'start', maps: maps.map((m) => m.slice()) });
+        jobs?.postMessage({
+          t: 'init',
+          generatorVersion: core.generatorVersion,
+          worldSeed: core.worldSeed,
+          radiusScale: core.radiusScale,
+        });
+        void save();
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+      }
+      scope.postMessage({ t: 'retuned', maps, ...(error ? { error } : {}) });
+      break;
+    }
     case 'save':
       void save().then((ok) => {
         scope.postMessage({ t: 'saved', ok });
@@ -233,6 +270,9 @@ async function start(
   mode?: string,
   growth?: number,
   chop2 = false,
+  radiusScale?: number,
+  sky?: string,
+  spawnGrid?: string,
 ): Promise<void> {
   // The world file (§6.4): the chosen world's (by default one per generator and seed), in OPFS.
   // Without it the world lives in memory only (no OPFS, or the world is open in another tab).
@@ -274,12 +314,17 @@ async function start(
       mode,
       growth,
       chop2,
+      radiusScale,
+      sky,
+      spawnGrid,
     );
     stage('spawn', 'end');
     jobs?.postMessage({
       t: 'init',
       generatorVersion: core.generatorVersion,
       worldSeed: core.worldSeed,
+      // The world's size (BIG_MAP.md M2b): a saved world's own, read from its file.
+      radiusScale: core.radiusScale,
     });
   } catch (err) {
     scope.postMessage({
@@ -291,7 +336,12 @@ async function start(
   if (files && !core.persisted) {
     console.warn(`Dwell: the local world file could not be opened (${core.storageError}).`);
   }
-  scope.postMessage({ t: 'ready', persisted: core.persisted, mode: core.mode });
+  scope.postMessage({
+    t: 'ready',
+    persisted: core.persisted,
+    mode: core.mode,
+    theaterGuests: core.theaterGuests,
+  });
   for (const msg of queued.splice(0)) handle(msg);
 
   // Fixed-step simulation clock (the core accumulates real time into 60 Hz steps).
@@ -322,7 +372,8 @@ async function start(
   }, 1000);
   setInterval(() => {
     const now = performance.now();
-    if (!paused && core) {
+    // A cinematic take steps the world itself (`step`); `last` keeps up, so no catch-up after.
+    if (!paused && !manual && core) {
       // `advance` returns the server's tick: the ticks run are its difference.
       const t = core.advance((now - last) / 1000);
       const ms = performance.now() - now;
@@ -365,6 +416,9 @@ scope.onmessage = (e) => {
       msg.mode,
       msg.growth,
       msg.chop2,
+      msg.radiusScale,
+      msg.sky,
+      msg.spawnGrid,
     );
   else handle(msg);
 };

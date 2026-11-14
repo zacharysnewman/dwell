@@ -9,7 +9,7 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Adaptive Block Lab | [`adaptive-block-lab.html`](./adaptive-block-lab.html) | https://claude.ai/artifact/7gvrFMfUyT6GegnyKPTTqV | The adaptive-block rules on whole scenes and three voxel grids |
 | Shape Playground | [`shape-playground.html`](./shape-playground.html) | https://claude.ai/artifact/Sc4Pu3UqX8TcpcrRrEYpVz | Every shape and situation, hand-shaped by the owner; the rules fitted to it |
 | Half-Height Voxel Lab | [`half-height-lab.html`](./half-height-lab.html) | https://claude.ai/artifact/DGQZG6GH1GhxvZRtPgh5MN | Today's 1 m cells beside 1 × ½ × 1 m cells with 1 m double blocks: shapes, 27° and 45° slopes, plants standing on the ground, ½ m growth ([proposal](../proposals/HALF_HEIGHT_VOXELS.md)) |
-| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | Oak, pine and palm as species data, grown from a thin sapling to maturity in stages (the same silhouette, the trunk thickening in ¼ m steps), in the Leaf Lab's chosen look (option 5) with octagonal logs; seeds, compare, a forest row (2026-11-11) |
+| Tree Growth | [`tree-growth.html`](./tree-growth.html) | https://claude.ai/artifact/MRW4RcNKTHkYdxMyRKLLHz | Oak, pine and palm as species data, grown from a thin sapling to maturity in stages (the same silhouette, the trunk thickening in ¼ m steps), in the Leaf Lab's chosen look (option 5) with octagonal logs; seeds, compare, a forest row (2026-11-11); *Palm fronds*: leaf blocks (the game today), frond cards, or *Split* side by side (2026-11-12; **needs republishing to its link**) |
 | Tree Growth: skeleton | [`tree-growth-skeleton.html`](./tree-growth-skeleton.html) | not published | The G0 page: a hand-built tree grown by revealing its skeleton, obstacles, and jitter variants (Phase 30, G0) |
 | Chisel (biome editor) | [`client/chisel.html`](../../client/chisel.html) | not published (runs the client's WASM: `npm run build:wasm`, `npm run dev`, then `/dwell/chisel.html`) | The world's biomes edited with sliders and previewed live on the real generator; Export/Import the biome JSON (Phase 56 B3, ADR 0074) |
 | Painterly Texture Lab | [`painterly-texture-lab.html`](./painterly-texture-lab.html) | https://claude.ai/artifact/4CTkNW4G6p8p67MkSNMUJA | The painterly materials and palette edited live with the game's generator; the JSON copied back (Phase 39). Folded into Chisel's Textures tab (0.52.42); kept for the character and sky materials |
@@ -20,6 +20,8 @@ link). They are not part of any build; Prettier and CI ignore `docs/`.
 | Falling-sand water (3D) | [`fluid-ca-3d.html`](./fluid-ca-3d.html) | not published | The same rules in 3D (fall, diagonal, a per-layer distance field): basins, a spring filling a valley, tanks and a pipe ([evaluation](../proposals/WATER_MODEL_EVALUATION.md) §5) |
 | Leaf Lab | [`leaf-lab.html`](./leaf-lab.html) | https://claude.ai/artifact/FXhLL4srjPF1tzCts5m6cq | Ways to make 1 m leaf cells read better beside the octagonal trunks ([ADR 0072](../adr/0072-octagonal-logs.md)): canopy normals, chamfered exposed cells, painted leaf cards, their combinations and a smooth-blob reference, side by side, with a growth slider |
 | Voxel models | [`vox/`](./vox/README.md) | not published (open the `.vox` files in MagicaVoxel) | The player, the wolf and the deer from `shared/characters` voxelized at their rest pose, one named model per part in a group per bone, for artists to refine (C0 follow-up) |
+| Model Part Painter | [`model-part-painter.html`](./model-part-painter.html) | https://claude.ai/artifact/Jc7FsiFetXgkNX6QHnbyYS (the published copy embeds the Peasant; use Copy JSON there, downloads are blocked) | Paint which part (skin, hair, hat, shirt, …) each vertex of a skinned model's full mesh belongs to, preview a creature's colour variants by part, export the part map (`shared/models/parts/<model>.json`; WORK_QUEUE item 43, [CHARACTERS.md §11.11](../CHARACTERS.md)) |
+| Music Audition | [`music-audition.html`](./music-audition.html) | https://claude.ai/artifact/Ccdtsp5eiQYF4b9uzspyYe (the tracks published beside it as .mp4) | The game's four music tracks (the owner's picks, 2026-11-12; the published link still holds the 20 candidates they were picked from): play, skip, keep or drop each, a shuffle preview with the playlist's gaps and cross-fade, the picks copied as JSON (WORK_QUEUE item 33, [AUDIO.md §2a](../AUDIO.md)); in the repo it plays `shared/music/` (serve the repo root) |
 
 The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, formerly 9e) and
 [ADR 0024](../adr/0024-adaptive-natural-blocks.md); Tree Growth feeds
@@ -63,7 +65,13 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   normals, leaf look, growth stages); *Show species JSON* prints it. Oak: thick trunk, two to four heavy
   branches stepping out and up, a lumpy crown with its lumps on the branch tips. Pine: tall straight
   trunk, a cone of 2 m tiers (a wide layer and a narrower one), thin whorl stubs. Palm: a leaning trunk
-  of ½ m ring segments offset in ⅛ m steps, a crown heart block and long drooping fronds drawn as blades.
+  of ½ m ring segments offset in ⅛ m steps, a crown heart block and long drooping fronds.
+- **Palm fronds** (2026-11-12, WORK_QUEUE answer 8: "I'd like to see a comparison of the two"): *Leaf blocks* draws each
+  frond as the game builds it today (the path sampled 12 times, every ½ m cell it crosses a `dwell:leaves` block,
+  chamfered and carded like any leaf); *Frond cards* draws two to four long arching painted cards along each frond's
+  path (by its length; the longer, the more they sag), the leaf card's painterly strokes in a frond's shape; *Split*
+  shows the same palm (seed, stage) both ways from one camera, blocks left, cards right, with the player for scale.
+  `?fronds=blocks|cards|split`. The edit is not on the published link yet: republish the page to it.
 - **Growth**: a slider and a time-lapse; each species has 8 stages, height in ½ m steps, trunk width in
   ¼ m steps, the crown the mature crown scaled. Oak branches and pine whorls appear from a stage on.
 - **Views**: One, Seeds (four variants), Compare (the three side by side), Forest (each species at
@@ -141,6 +149,55 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   generator's own validation message.
 - **Copy back**: one material, the whole `materials.json` or `palette.json`, ready to paste into
   `shared/textures/`. Edits are kept in the browser; **Reset** returns to the repo's data.
+
+## Model Part Painter
+
+- WORK_QUEUE item 43 (owner, 2026-11-12: "You should have tooling for debugging this and setting up a model so it
+  can be retextured."), after bug #96. Feeds [`CHARACTERS.md`](../CHARACTERS.md) §11.11's part maps.
+- **Loads** a GLB (Open files, drag-drop, or **Load the Peasant**, which fetches its GLB, part map, `models.json`,
+  the palette and `creatures.json` when the page is served from the repo's root: `python3 -m http.server`, then
+  `/docs/prototypes/model-part-painter.html`), a part map (refused with a message if its vertex count is not the
+  GLB's `detail_0`), `palette.json`, `creatures.json` and `models.json` (its `palette.exclude`), each recognised
+  by its content. Or starts a **new empty map** or one **seeded from colours** (each vertex its nearest palette
+  ramp, the six commonest ramps a part each).
+- **Views:** flat-shaded; **Parts** (a colour a part), **Real
+  colours** (the GLB's), **Variant** (a creature's `colours` entries, each `from → to` picked or cycled, recoloured
+  by part with `dwell_models::recolour`'s luminance-ratio rule) and **Weights** (a joint's skin weight as heat;
+  Alt-click picks the vertex's heaviest joint). Vertex dots and edges. The **Level** select shows `detail_1…`
+  with their parts mapped from `detail_0` as `parts.mjs` `levelParts` does (read-only). Hovering shows the
+  vertex's index, part, island, colour and nearest ramp, height and weights.
+- **Paint:** a brush (radius in screen pixels, `[` `]`; **front faces only** skips vertices hidden behind the
+  mesh), **Fill island** (the welded, connected island under the cursor, as `parts.mjs` `islands`), **Fill same
+  colour** (the vertices in the brush of the colour under the cursor). The part list adds and renames up to six
+  parts (a rename or delete carries to the `seed` rules), shows vertex counts and a display colour; `0`–`6` pick
+  a part, `0` erases. Undo and redo.
+- **Export** downloads or copies the part map exactly as `parts.mjs` writes it (`$comment` and `seed` kept);
+  loading the exported file reproduces it. Put it at `shared/models/parts/` and run `node shared/models/gen.mjs`.
+- **Camera** (owner, 2026-11-14): left-drag orbits (while painting: middle-drag, hold Space, or the Orbit tool),
+  right- or shift-drag pans, the wheel or a pinch zooms toward the point under the cursor, double-click focuses
+  there; the pitch stops short of the poles (no flips) and the distance is clamped to the model's size. Views:
+  Front, Back, Left, Right (the model's own sides), Top, ¾, Reset (`F`), eased. Touch: one finger orbits (a tap
+  selects), two pan and pinch. The help box folds on a click.
+- **Select faces** (the Edit switch; owner, 2026-11-14: "copy those Face IDs so I can paste them here and talk about
+  them"): click toggles a face, shift-click adds, ctrl-click removes; alt-drag or the **Box** tool selects the
+  faces whose centre is in the box (plain replaces, shift adds, ctrl removes; with "only faces I can see",
+  front-facing and not hidden behind the mesh); **connected same colour** makes a click take the joined faces of
+  its colour; Select none (`Esc`), Invert. Selected faces are tinted pink with a yellow outline; the hovered face is
+  outlined cyan and the corner shows its id, part, colour, vertices, height and radius. **Numbering:** a face id is
+  the triangle's index in the level's GLB primitive (`detail_k`, primitive 0: indices 3t..3t+2), so each level
+  (100/60/35/20 %, the Level picker) numbers its own faces from 0 and keeps its own selection.
+- **Copy face ids** (`Ctrl+C`) writes `peasant @60% faces: 1203,1204,1210–1215 (8) — parts: shirt 6, belt 2 —
+  colours: wool_green 6, leather 2` (runs of three or more as ranges, the count, the faces' parts and palette
+  ramps) to the clipboard and the text box under it (select it by hand when the clipboard is blocked, as on the
+  published link). **Load selection** reads that text back (or a bare list like `4, 6-8`), switching to its
+  level. **Band from selection** prints a decor `band` entry (`models.json` `decor`) whose `y`, `r` and `span`
+  cover the selection; decor picks facets by position, so check the render.
+- **Tested:** the page's pure core (`<script id="core">`: the GLB reader, islands, rows, the check, the export,
+  the level mapping, the recolour, and the face ids' ranges, the copied text's round trip, the box select's
+  centre and winding test, the hidden test, the connected-colour fill and the band) is run by
+  `node --test shared/models/painter.test.mjs` against `parts.mjs` on the Peasant (the export byte for byte).
+  `window.painter` drives it from a script (`setEdit("faces")`, `selectFaces`, `boxSelect`, `selectionText`,
+  `loadSelection`, the camera's `zoomAt`, `panBy`, `orbitBy`, `focusAt`).
 
 ## Updating them
 

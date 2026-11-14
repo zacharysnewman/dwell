@@ -1,12 +1,16 @@
 {
   "name": "preset:red_rock_mesa",
   "label": "Red-rock canyon / mesa",
-  "description": "Sand floors under stone mesas, cliff bands on every steep face (stone stands in for red rock until rock types).",
+  "description": "Red dirt floors with red sand and pale tan patches under dark red sandstone mesas, cliff bands on every steep face.",
   "where": {
     "weight": 1,
-    "temperature": {
-      "min": 0.55,
-      "blend": 0.1
+    "celsius": {
+      "min": 12,
+      "blend": 2
+    },
+    "rain": {
+      "max": 450,
+      "blend": 100
     },
     "wetness": {
       "max": 0.3,
@@ -47,26 +51,26 @@
   "bands": [
     {
       "name": "canyon_floor",
-      "ground": "dwell:sand",
-      "under": "dwell:sand",
-      "rock": "dwell:stone",
-      "shoreBlock": "dwell:sand"
+      "ground": "dwell:red_dirt",
+      "under": "dwell:red_dirt",
+      "rock": "dwell:red_sandstone",
+      "shoreBlock": "dwell:red_sand"
     },
     {
       "name": "mesa",
       "from": 260,
-      "ground": "dwell:stone",
-      "under": "dwell:stone",
-      "rock": "dwell:stone",
-      "shoreBlock": "dwell:sand"
+      "ground": "dwell:red_dirt",
+      "under": "dwell:red_dirt",
+      "rock": "dwell:red_sandstone",
+      "shoreBlock": "dwell:red_sand"
     }
   ],
   "decorations": [],
-  "placements": ["boulders"],
+  "placements": ["boulders", "sagebrush"],
   "ground": { "dwell:ground_rock": 2.5 },
-  "trees": { "boulders": 1.5 },
+  "trees": { "boulders": 1.5, "sagebrush": 1 },
   "water": "dwell:water",
-  "rockStack": "dwell:red_beds",
+  "rockStack": "dwell:red_desert_beds",
   "erosion": 1,
   "arches": {
     "$comment": "Arches (ADR 0074 B8): openings carved through narrow fins of the bedded sandstone the cut-back leaves (Arches NP): density sites per km² (one chance per 32 m square), span across the fin, rise of its crown over the floor, lintel the rock left above (each [min, max] m), fin the thickest fin cut through (m); overhangs: a scarp's site (low on one side) cut as an overhang from its low side. Absent or density 0: none.",
