@@ -97,6 +97,7 @@ impl<S: Scene> Game<S> {
                             "showsChunks": l.shows_chunks,
                             "forced": l.forced,
                             "showsNothing": l.shows_nothing,
+                            "stoppedAt": l.stopped_at,
                         });
                     }
                     if !full && in_volume {

@@ -320,6 +320,10 @@ pub struct SectionReport {
     pub forced: bool,
     /// Known empty or buried: its chunks need not be drawn.
     pub shows_nothing: bool,
+    /// The nearest ancestor (or the section itself) not split by the last selection — where
+    /// the traversal stopped above the chunks (level, i, j, k, and its kind's code: 0 unknown,
+    /// 1 empty, 2 buried, 3 content); none when it was split down to the section.
+    pub stopped_at: Option<[i32; 5]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -734,7 +738,29 @@ impl LodSystem {
             shows_chunks: self.chunk_visible(coord),
             forced: self.covered.contains(&id),
             shows_nothing: self.shows_nothing_at(coord),
+            stopped_at: self.stopped_at(c),
         }
+    }
+
+    /// The highest ancestor of level-1 section `c` (or `c`) the last selection did not split.
+    fn stopped_at(&self, c: LodCoord) -> Option<[i32; 5]> {
+        let mut path = vec![c];
+        while path.last().is_some_and(|a| a.level < MAX_LEVEL) {
+            path.push(parent(*path.last().unwrap()));
+        }
+        path.into_iter().rev().find_map(|a| {
+            let n = self.nodes.get(&id_of(a));
+            let split = n.is_some_and(|n| n.split_frame == self.frame);
+            (!split).then(|| {
+                let k = match n.and_then(|n| n.kind) {
+                    None => 0,
+                    Some(LodKind::Empty) => 1,
+                    Some(LodKind::Buried) => 2,
+                    Some(LodKind::Content) => 3,
+                };
+                [a.level, a.i, a.j, a.k, k]
+            })
+        })
     }
 
     /// The cache budget (bytes, the Distant memory setting).
@@ -1262,7 +1288,24 @@ impl LodSystem {
             fallback
         };
         if ready && kind == Some(LodKind::Empty) {
-            selection.empty.push(coord);
+            // A section's kind is the terrain's: one holding only trees (their tops over the
+            // ground below it) is "empty". Up close the streamed chunks are the truth (BUGS.md
+            // #162: 25-40 m over a forest the treetops were missing below the camera), so the
+            // walk goes on to the covered chunks inside it; nothing else here is drawn.
+            if coord.level == 1 && self.covered.contains(&id) {
+                selection.chunks.push(coord);
+                self.split(id);
+            } else if self.covered_ancestors.contains(&id) {
+                self.split(id);
+                for &kid in self.kids(id).as_slice() {
+                    if self.covered.contains(&kid) || self.covered_ancestors.contains(&kid) {
+                        self.touch(kid);
+                        self.visit(kid, frustum, selection, None, host);
+                    }
+                }
+            } else {
+                selection.empty.push(coord);
+            }
             return;
         }
         if ready && kind == Some(LodKind::Buried) {
