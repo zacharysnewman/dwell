@@ -128,7 +128,7 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Face B again for every ramp backed (BUGS.md #163) and the bigger shrines (the same line).
 /// Both faces again for the mesa tops' shorter undulation (160 m) and main's merge (the same line).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "ced63fe12493bd1d"), (Face::B, "299f3619d537c18b")];
+    [(Face::A, "f311ecf1699d1d4d"), (Face::B, "befc654b6be1cb95")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

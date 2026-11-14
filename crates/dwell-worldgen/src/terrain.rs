@@ -856,18 +856,17 @@ impl BiomeSet {
             });
             palettes.len() as u16 - 2
         };
-        // A rock only in stacks of weight 0 (R5) takes its palettes last (below).
+        // A rock in no stack of weight above 0 (only in weight-0 stacks, R5, or in none, named by
+        // a rule such as plates.json `volcanism`) takes its palettes last (below), so it moves no
+        // other palette.
         let late: Vec<bool> = geology
             .rocks
             .iter()
             .map(|r| {
-                let in_stack = |w: bool| {
-                    geology
-                        .stacks
-                        .iter()
-                        .any(|s| (s.weight > 0.0) == w && s.layers.iter().any(|l| l.rock == r.name))
-                };
-                !in_stack(true) && in_stack(false)
+                !geology
+                    .stacks
+                    .iter()
+                    .any(|s| s.weight > 0.0 && s.layers.iter().any(|l| l.rock == r.name))
             })
             .collect();
         let mut rock_palette = vec![0u16; geology.rocks.len()];

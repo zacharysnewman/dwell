@@ -516,6 +516,7 @@ fn tectonic_map(
             None,
             climate.as_ref(),
             routing,
+            false,
         );
     }
     // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
@@ -563,6 +564,7 @@ fn tectonic_map(
         Some((&extra, &rising, &shield)),
         climate.as_ref(),
         routing,
+        plates.is_some(),
     )
 }
 
@@ -642,6 +644,7 @@ pub fn from_heights(
         None,
         None,
         crate::plates::FlowRouting::D8,
+        false,
     )
 }
 
@@ -664,6 +667,7 @@ pub fn from_heights_with(
     extra: Option<(&[f64], &[f64], &[f64])>,
     climate: Option<&crate::climate::Climate>,
     routing: crate::plates::FlowRouting,
+    cap_fade: bool,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -787,13 +791,15 @@ pub fn from_heights_with(
         routing,
     );
     if let (Some(s), Some(u)) = (shield, &uneroded) {
-        // The cap fades out toward the cone's foot (the shield's cube over its most): capped in
-        // full only toward the summit, so the ground the uplift raised around a cone meets its
-        // flank instead of standing as a circular cliff at its foot (the map check, 2026-11-14).
+        // With `cap_fade` (a Realistic world's plate cones) the cap fades out toward the cone's
+        // foot (the shield's cube over its most): capped in full only toward the summit, so the
+        // ground the uplift raised around a cone meets its flank instead of standing as a
+        // circular cliff at its foot (the map check, 2026-11-14). Else (the hand-placed cones of
+        // the default and starter worlds, unchanged) capped in full over the shield.
         let most = s.iter().copied().fold(0.0f64, f64::max).max(1e-9);
         for i in 0..len {
             if s[i] > 0.0 && !sea[i] && h[i] > u[i] {
-                let w = (s[i] / most).powi(3);
+                let w = if cap_fade { (s[i] / most).powi(3) } else { 1.0 };
                 h[i] -= w * (h[i] - u[i]);
             }
         }

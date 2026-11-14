@@ -31,7 +31,7 @@
     "preset:mixed_forest",
     "preset:old_growth",
     "preset:red_rock_mesa",
-    "preset:sand_desert",
+    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands" },
     "preset:savanna",
     "preset:snowfield",
     "preset:steppe",
