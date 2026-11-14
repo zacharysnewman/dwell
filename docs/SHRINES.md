@@ -32,7 +32,7 @@ the map is per player (their explored cells); the filter is per browser.
 | `flatBelowDeg` | 2° | Flatter ground takes the seed's quarter turn, steeper the downhill one |
 | `structure`, `design` | `dwell:shrine` | The structure, built from `design` by `gen.mjs` (§3): 16 × 16 m, 5 pillars 2 m wide and 7.5–10.5 m tall with gaps, the tallest 3 lintelled |
 | `lodCellM` | 16 | The LOD draws it at levels whose cells are at most 16 m |
-| `stand` | [0, 2] | Where a player stands up: the column 2 m from the anchor on the open side (turned with it), on its floor |
+| `stand` | [0, 5] | Where a player stands up: the column 5 m from the anchor on the open side (turned with it), on its floor (the front tread, out of the torches; 2 m on the 8 m shrine) |
 | `searchCells`, `spawnWithin` | 3, 1500 m | A death searches the cells within 3 of its own; the spawn's shrine lies within 1500 m of the spawn search's point, else one is built at the point |
 | `worlds` | `test:archipelago` | Overrides per world setting name (not `design`) |
 | `map` | explored, `shrine`, `#7fd6ff`, 18 px, 28 px, 8 ms | The big map's reveal (`explored`: shown once its 8 m explored cell is; `all`), the markers' icon it draws, its colour and size; `clusterPx` (icons nearer on screen merge into one with a count, at every zoom), `siteMsPerDraw` (new cells sited a draw) |

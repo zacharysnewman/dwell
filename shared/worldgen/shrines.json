@@ -34,7 +34,7 @@
     }
   },
   "lodCellM": 16,
-  "stand": [0, 2],
+  "stand": [0, 5],
   "searchCells": 3,
   "spawnWithin": 1500,
   "worlds": {

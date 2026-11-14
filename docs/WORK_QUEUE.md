@@ -2628,7 +2628,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    joined half is a quarter circle) 2 m square on the 7 m arc (about 3.3 m of air between neighbours), `lowest` 7.5 and
    `rise` 1.5 (7.5 / 9 / 10.5 / 9 / 7.5 m); the lintel 1 m thick and as deep as the pillars (gen.mjs: the lintel is now
    `width` deep, not one column), 8 m or more of air under it; torches over a 2 m radius (12 of them) on the dais's
-   top. Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
+   top; `stand` moved from [0, 2] to [0, 5] (the front tread, out of the torch disc). Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
    2.4 m, under the 3 m dais) derive from the structure; the portal clearance (250 m), `clear` (3 m) and `spawnWithin`
    kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Changes the terrain
    seeds generate: ships with the Realistic batch's 0.64 line (branch `claude/realistic-geography-batch-a-k0fcrg`).
