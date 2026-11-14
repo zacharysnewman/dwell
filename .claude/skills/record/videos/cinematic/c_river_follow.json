@@ -1,0 +1,72 @@
+{
+ "formatVersion": 1,
+ "name": "cinematic c: the seed-7 hill river down its stepped pools (water)",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    11620,
+    190,
+    -11960
+   ],
+   "target": [
+    11730,
+    140,
+    -11868
+   ],
+   "fov": 60,
+   "timeOfDay": 0.72
+  },
+  {
+   "t": 4,
+   "position": [
+    11700,
+    178,
+    -11890
+   ],
+   "target": [
+    11811,
+    134,
+    -11790
+   ]
+  },
+  {
+   "t": 8,
+   "position": [
+    11780,
+    170,
+    -11815
+   ],
+   "target": [
+    11891,
+    132,
+    -11710
+   ]
+  },
+  {
+   "t": 10,
+   "position": [
+    11820,
+    168,
+    -11775
+   ],
+   "target": [
+    11930.5,
+    128.5,
+    -11670.5
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inSine"
+  },
+  {
+   "move": "linear"
+  },
+  {
+   "move": "linear"
+  }
+ ]
+}

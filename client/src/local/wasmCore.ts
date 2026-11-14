@@ -277,6 +277,10 @@ export class LocalCore {
   advance(elapsedSeconds: number): number {
     return this.world.advance(elapsedSeconds);
   }
+  /** Steps exactly `ticks` server ticks (a cinematic take; local.rs `step_ticks`). */
+  stepTicks(ticks: number): number {
+    return this.world.stepTicks(ticks);
+  }
 
   /** What the server sends, oldest first (local.rs `encode_outbox`). */
   takeOutbox(): Outgoing[] {

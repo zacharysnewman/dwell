@@ -26,6 +26,8 @@ let reportsDue = 0;
 const tickStats = { ticks: 0, ms: 0, maxMs: 0 };
 /** The host paused the world (their page is hidden, §10.2): no simulation steps. */
 let paused = false;
+/** A cinematic take holds the real-time clock: the world moves only by `step` messages. */
+let manual = false;
 const queued: ToWorker[] = [];
 
 /** A loading stage (shared/look/loading.json `stages`) began or ended, for the page's screen (§6.3). */
@@ -193,6 +195,15 @@ function handle(msg: ToWorker): void {
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;
+    case 'clock':
+      manual = msg.manual;
+      break;
+    case 'step': {
+      const tick = core.stepTicks(msg.ticks);
+      flush();
+      scope.postMessage({ t: 'stepped', tick });
+      break;
+    }
     case 'reliable':
       core.reliable(msg.session, msg.channel, msg.bytes);
       break;
@@ -361,7 +372,8 @@ async function start(
   }, 1000);
   setInterval(() => {
     const now = performance.now();
-    if (!paused && core) {
+    // A cinematic take steps the world itself (`step`); `last` keeps up, so no catch-up after.
+    if (!paused && !manual && core) {
       // `advance` returns the server's tick: the ticks run are its difference.
       const t = core.advance((now - last) / 1000);
       const ms = performance.now() - now;

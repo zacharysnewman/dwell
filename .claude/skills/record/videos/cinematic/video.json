@@ -1,0 +1,225 @@
+{
+ "formatVersion": 1,
+ "name": "cinematic",
+ "description": "WORK_QUEUE item 41, cinematic takes: five 10 s 16:9 clips, each recorded in real time and as a cinematic take (render: \"cinematic\"), to compare side by side.",
+ "world": {
+  "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+  "storage": {
+   "dwell.clouds": "\"off\"",
+   "dwell.music": "\"off\""
+  }
+ },
+ "capture": {
+  "size": [
+   1920,
+   1080
+  ],
+  "fps": 30
+ },
+ "audio": true,
+ "shots": [
+  {
+   "id": "a_rt",
+   "note": "a fast fly-over of a forest (real time)",
+   "kind": "path",
+   "path": "videos/cinematic/a_forest_flyover.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 2
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ]
+  },
+  {
+   "id": "a_cine",
+   "note": "a fast fly-over of a forest (cinematic)",
+   "kind": "path",
+   "path": "videos/cinematic/a_forest_flyover.json",
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ],
+   "render": "cinematic"
+  },
+  {
+   "id": "b_rt",
+   "note": "a dynamite blast with flung pieces (real time)",
+   "kind": "path",
+   "path": "videos/cinematic/b_dynamite_blast.json",
+   "setup": {
+    "reload": true,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 0.5,
+    "settleS": 0,
+    "eval": "(async () => { const sl = (ms) => new Promise((r) => setTimeout(r, ms)); d.fly(false); d.teleport([10100.5, 64, 16300.5]); await sl(3000); d.look(0, -40); await sl(400); d.pick('dwell:dynamite'); await sl(300); d.edit('place'); await sl(700); d.pick('dwell:torch'); await sl(700); d.edit('place'); await sl(200); d.teleport([10070.5, 66, 16270.5]); return 'lit'; })()"
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ]
+  },
+  {
+   "id": "b_cine",
+   "note": "a dynamite blast with flung pieces (cinematic)",
+   "kind": "path",
+   "path": "videos/cinematic/b_dynamite_blast.json",
+   "setup": {
+    "reload": true,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "eval": "(async () => { const sl = (ms) => new Promise((r) => setTimeout(r, ms)); d.fly(false); d.teleport([10100.5, 64, 16300.5]); await sl(3000); d.look(0, -40); await sl(400); d.pick('dwell:dynamite'); await sl(300); d.edit('place'); await sl(700); d.pick('dwell:torch'); await sl(700); d.edit('place'); await sl(200); d.teleport([10070.5, 66, 16270.5]); return 'lit'; })()"
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ],
+   "render": "cinematic"
+  },
+  {
+   "id": "c_rt",
+   "note": "a river and its stepped pools (real time)",
+   "kind": "path",
+   "path": "videos/cinematic/c_river_follow.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&seed=7&at=11780,200,-11850",
+    "timeOfDay": 0.72,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 2
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ]
+  },
+  {
+   "id": "c_cine",
+   "note": "a river and its stepped pools (cinematic)",
+   "kind": "path",
+   "path": "videos/cinematic/c_river_follow.json",
+   "setup": {
+    "timeOfDay": 0.72,
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ],
+   "render": "cinematic"
+  },
+  {
+   "id": "d_rt",
+   "note": "a mesa landscape at golden hour from high (real time)",
+   "kind": "path",
+   "path": "videos/cinematic/d_mesa_golden.json",
+   "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 2
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ]
+  },
+  {
+   "id": "d_cine",
+   "note": "a mesa landscape at golden hour from high (cinematic)",
+   "kind": "path",
+   "path": "videos/cinematic/d_mesa_golden.json",
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ],
+   "render": "cinematic"
+  },
+  {
+   "id": "e_rt",
+   "note": "villagers building at a town (real time)",
+   "kind": "path",
+   "path": "videos/cinematic/e_town_builders.json",
+   "setup": {
+    "url": "/dwell/?local=1&seed=0&fresh=1&spawn=town&time=0.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    },
+    "warmS": 2,
+    "settleS": 20
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ]
+  },
+  {
+   "id": "e_cine",
+   "note": "villagers building at a town (cinematic)",
+   "kind": "path",
+   "path": "videos/cinematic/e_town_builders.json",
+   "setup": {
+    "url": "/dwell/?local=1&seed=0&fresh=1&spawn=town&time=0.5",
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "splice": [
+    {
+     "from": 0,
+     "to": 10
+    }
+   ],
+   "render": "cinematic"
+  }
+ ]
+}

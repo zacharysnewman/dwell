@@ -1,0 +1,40 @@
+{
+ "formatVersion": 1,
+ "name": "cinematic b: a lit stick of dynamite from a safe distance (the blast, flung pieces)",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    10111.5,
+    69.5,
+    16293.5
+   ],
+   "target": [
+    10100.5,
+    65.5,
+    16302.5
+   ],
+   "fov": 45,
+   "timeOfDay": 0.3
+  },
+  {
+   "t": 10,
+   "position": [
+    10113.5,
+    70.5,
+    16291.5
+   ],
+   "target": [
+    10100.5,
+    65.5,
+    16302.5
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inOutSine"
+  }
+ ]
+}

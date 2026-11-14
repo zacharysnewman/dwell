@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
-import { alignFilter, audioAlignment, audioStartExpr, encodeArgs, partAudio } from './audio.mjs';
+import { alignFilter, audioAlignment, audioStartExpr, cinematicEncodeArgs, encodeArgs, partAudio } from './audio.mjs';
 import { encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
@@ -413,4 +413,35 @@ test('a shot waits until the chunks and the LOD settle (WORK_QUEUE item 40: half
   // The manifest's knob: a number, 0 skips it.
   const m = bifacial(); m.shots[0].setup = { ...(m.shots[0].setup ?? {}), settleS: 30 }; validate(m);
   m.shots[0].setup.settleS = 'long'; fails(m, /setup.settleS/);
+});
+
+test('render: "cinematic" is a path-shot option with settings overrides, and it is part of the fingerprint', () => {
+  const m = loadVideo('cinematic');
+  const cine = m.shots.find((s) => s.render === 'cinematic');
+  const rt = m.shots.find((s) => s.id === cine.id.replace('_cine', '_rt'));
+  assert.ok(cine && rt && !rt.render);
+  // the same path, rendered two ways: two recipes
+  assert.notEqual(fingerprint(m, cine), fingerprint(m, { ...cine, render: undefined }));
+  const over = copy(m);
+  over.shots.find((s) => s.id === cine.id).cinematic = { supersample: 1 };
+  assert.notEqual(fingerprint(over, over.shots.find((s) => s.id === cine.id)), fingerprint(m, cine));
+  validate(over);
+  const bad = copy(m);
+  bad.shots[0].render = 'offline';
+  fails(bad, /render: expected one of realtime, cinematic/);
+  const take = copy(bifacial());
+  take.shots.find((s) => s.kind === 'take').render = 'cinematic';
+  fails(take, /"cinematic" renders a path shot only/);
+  const loose = copy(m);
+  loose.shots.find((s) => s.id === rt.id).cinematic = { fps: 60 };
+  fails(loose, /on a "cinematic" shot only/);
+});
+
+test('a cinematic folder encodes at its exact rate with its stepped sound muxed as is (no alignment)', () => {
+  const a = cinematicEncodeArgs({ frames: '/x/a_cine', fps: 30, out: '/x/a.mp4', wav: '/x/a_cine/audio.wav' });
+  assert.deepEqual(a.slice(0, 8), ['-v', 'error', '-y', '-framerate', '30', '-i', '/x/a_cine/f%05d.png', '-i']);
+  assert.ok(a.includes('apad') && a.includes('-shortest'), 'the sound is padded and cut to the frames');
+  assert.ok(!a.join(' ').includes('adelay') && !a.join(' ').includes('atrim'), 'no alignment: the take stepped it');
+  const silent = cinematicEncodeArgs({ frames: '/x/a', fps: 24, out: '/x/a.mp4' });
+  assert.ok(silent.includes('-an') && silent.includes('24'));
 });

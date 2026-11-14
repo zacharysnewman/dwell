@@ -2473,6 +2473,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the bottom sheet, open or collapsed. **Owner should see:** a clear red recording dot; on a phone in portrait, the
    stick and Up/Down above the open sheet, flying the camera while the sheet is open.
 
+   **Cinematic render mode (owner, 2026-11-14):** "For our video recordings, is there a way to sort of 'pre render' like
+   real 3D animation or physics simulations sometimes do? … take more time to render it so it looks at its prettiest?
+   Without seeing LODs load in, physics stutters, etc?" → "Yes queue it and try it on a 10s video to see how it works in
+   different conditions/terrain, etc." Then: "If we can, let's update sound to align with frame exact time, at least in
+   recording mode." So a take option `render: "cinematic"` (settings as data, `shared/theater/cinematic.json`): the
+   game time (the local core's server ticks, physics, water, lava, creatures, the day clock, the camera path) moves
+   exactly 1/fps per captured frame however long the frame takes; each frame waits for the view to load (capped,
+   reported); a pre-roll flies the path once before the take; the take's quality overrides (the top preset, longer
+   detail, supersampling, optional motion blur by sub-frames); lossless frames encoded after; the sound stepped with
+   the frames (live play unchanged). Tried on five 10 s 16:9 clips, each real time and cinematic side by side (a
+   forest fly-over, a dynamite blast, a river and waterfall, a Realistic mesa at golden hour, villagers building).
+   **Owner should see:** the side-by-side clips — the cinematic halves with no LOD pop-in, no physics stutter, smooth
+   camera at a steady 30 fps, sound on the frames it belongs to.
+
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
    lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a

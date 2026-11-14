@@ -120,6 +120,27 @@ once; five builders put it up in about 2.5 min (well, two huts, watchtower, wall
 the sound time-stretched) to 16:9 and 9:16. Start the shot right after `terrainReady` (the settle wait costs a third
 of the build); a tree stands inside the hamlet (BUGS.md #169). By hand in the driver: `curl -s localhost:4999/eval -d "$(node -e "import('./.claude/skills/record/scripts/take.mjs').then(m => console.log(m.settleScript()))")"`.
 
+## 0e. Cinematic shots: rendered offline, frame-exact
+
+Owner, 2026-11-14 (WORK_QUEUE item 41): "take more time to render it so it looks at its prettiest? Without seeing LODs
+load in, physics stutters, etc?" A path shot with **`"render": "cinematic"`** is rendered offline by `__dwell.cinematic`
+(docs/THEATER_MODE.md §6.1): the local world stepped exactly 1/fps a frame (its real-time clock held), the client's clock
+and the camera path set from the frame count, each frame waiting for the view to load (capped; the log lists any frame
+that hit the cap), a pre-roll that flies the path once first, the take's quality (`shared/theater/cinematic.json`
+`quality`: finer LOD, full render scale, high shadows, shafts and bloom; the canvas supersampled 2× and scaled down),
+lossless PNG frames written by the driver's sink (`/cine/start?name=`), and the **sound stepped with the frames**
+(`audio.wav`, already frame-exact: muxed as is, no alignment). A shot's **`cinematic`** object overrides any setting
+(`{"subframes": 4}` for motion blur, `{"supersample": 1}` for speed, `{"settle": {"capMs": 3000}}`). No `warmS` or
+`settleS` is needed: the pre-roll does both. The log prints the render time, the settle waits (mean, p95, max), the
+capped frames, the ticks and the sound's alignment (`error mean … max … ms, late N`).
+
+- **Setup runs in real time** before the take holds the world (a lit fuse burns until the take starts; the hold then
+  freezes it through the pre-roll). A real-time twin of the same shot should skip the settle (`settleS: 0`) so its fuse
+  doesn't burn out first.
+- **Local worlds only**: on a remote server only the client's clock and the camera are stepped.
+- `videos/cinematic/` holds the first comparison (five 10 s 16:9 shots, each `_rt` and `_cine`); `--no-splice`
+  records without splicing (the side-by-sides are made from the clips with ffmpeg `hstack`).
+
 ## 1. Run the game (new camera spots)
 
 Use the warm bench preview (`docs/DEV_TOOLS.md`, the `bench` skill): `npm run bench:warm` from `client/`

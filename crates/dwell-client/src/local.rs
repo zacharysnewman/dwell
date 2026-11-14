@@ -320,6 +320,17 @@ impl LocalCore {
         self.server.tick()
     }
 
+    /// Steps the server exactly `ticks` times whatever the wall clock (a cinematic take, the record
+    /// skill's `render: "cinematic"`: the game moves 1 / fps a captured frame), with no catch-up cap;
+    /// the real-time accumulator is left as it was. Returns the server's tick.
+    pub fn step_ticks(&mut self, ticks: u32) -> u32 {
+        for _ in 0..ticks {
+            self.drive_carry();
+            self.server.step();
+        }
+        self.server.tick()
+    }
+
     pub fn take_outbox(&mut self) -> Vec<Outgoing> {
         self.server.take_outbox()
     }
@@ -1108,6 +1119,27 @@ mod tests {
             u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize,
             out.len()
         );
+    }
+
+    #[test]
+    fn a_stepped_world_runs_exactly_the_ticks_asked_for_with_no_cap() {
+        let mut core = LocalCore::create(
+            0,
+            dwell_world::GENERATOR_FLAT,
+            None::<SharedBytes>,
+            Box::new(SeededEntropy(1)),
+        )
+        .unwrap();
+        assert_eq!(join(&mut core), 1);
+        let t0 = core.step_ticks(0);
+        // A cinematic take at 30 fps: 2 ticks a frame for 900 frames (30 s), however long each took.
+        let mut t = t0;
+        for _ in 0..900 {
+            t = core.step_ticks(2);
+        }
+        assert_eq!(t - t0, 1800);
+        // No catch-up cap (real time's `advance` caps a call at 8 steps).
+        assert_eq!(core.step_ticks(40) - t, 40);
     }
 
     #[test]
