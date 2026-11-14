@@ -643,8 +643,10 @@ both_faces!(
             f.face
         );
         assert!(edges > 300, "enough slope sampled: {edges}");
+        // Under a sixth (a tenth before every ramp was backed, BUGS.md #157: a ramp that would
+        // back onto open air is a full block, its ½ m edge bare; 7 % on face A, 14 % on B).
         assert!(
-            share < 0.1,
+            share < 0.16,
             "the moon's slopes ramp, not a field of ½ m stairs: {bare} of {edges} bare"
         );
     }

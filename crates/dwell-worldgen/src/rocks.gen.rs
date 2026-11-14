@@ -231,7 +231,7 @@ pub const GEOLOGY: Geology = Geology {
     ],
     mesa_relief: MesaRelief {
         top_amplitude: 3.5,
-        top_wavelength: 220.0,
+        top_wavelength: 160.0,
         dip: 0.012,
         dip_wavelength: 1400.0,
         knob_spacing: 420.0,

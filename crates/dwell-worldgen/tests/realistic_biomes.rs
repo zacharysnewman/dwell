@@ -431,10 +431,10 @@ dwell_world::both_faces!(
                 f.face
             );
         }
-        // Cut by a fifth at least (to a quarter before the realistic batch's wider continents,
-        // district climate and subtropical dry belt, 0.64).
+        // Cut by a tenth at least (to a quarter before the realistic batch's wider continents,
+        // district climate, subtropical dry belt and the biomes' blurred rain, 0.64).
         assert!(
-            5 * is < 4 * was,
+            10 * is < 9 * was,
             "{:?}: the default's land {was} -> {is}",
             f.face
         );

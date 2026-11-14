@@ -319,7 +319,8 @@ impl BiomeField {
             let h: Vec<f64> = map.height.iter().map(|&v| f64::from(v)).collect();
             let sea: Vec<bool> = (0..n * n).map(|i| map.is_sea(i)).collect();
             let g = crate::climate::CoarseGround::of(&c.rules, n, cell, x0, &h, &sea);
-            let rain = c.rain(&g);
+            // The biomes read the march low-passed (`rain.blurM`, BUGS.md #158).
+            let rain = c.rain(&g).blurred(c.rules.rain.blur_m);
             (c, rain)
         });
         let coast = chamfer(n, cell, |c| map.is_sea(c));
