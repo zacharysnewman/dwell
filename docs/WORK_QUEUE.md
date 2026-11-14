@@ -959,7 +959,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    spill across the border). (4, part) sagebrush on the mesa tops: as dense as the floors (0.065 / m²) → 0.008 (the
    placements' `tops`, sagebrush 0.12); thin fins, the lake's grey band and mesa presence not yet (mesa presence
    waits on the realism audit's climate scale). (5, part) dormant islands: a mostly green cone (cover ≥ `coverFull`)
-   shows bare rock only near its shore and its vent (`volcanism.bareShore`, `bareVent`); the straight red strip not
+   shows bare rock only near its shore and its vent (`volcanism.bareShore`, `bareVent`, `coverFull`): old cones'
+   lowland bare lava 6.4 % / 8.8 % → 0.7 % / 1.8 % (`tests/realistic_volcanoes.rs`); the straight red strip not
    yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
    and talus, (0d) placement bleed and snowy leaves, (6).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
