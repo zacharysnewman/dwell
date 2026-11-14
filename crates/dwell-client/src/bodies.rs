@@ -222,13 +222,22 @@ pub struct Bodies {
     pub own_tool: Option<&'static str>,
 }
 
-/// The role swing `s` plays with `tool` in hand: a chop plays the tool's `clips` role for its
-/// kind (the sword's `slash_level`), anything else its own role.
+/// The role swing `s` plays with `tool` (an item's name) in hand: a chop plays the tool's `clips`
+/// role for its kind (the sword's `slash_level`), a break with a break tool its `clip` (the
+/// pickaxe's `break_stone_pickaxe`: each tool's head fitted onto the crosshair at its contact;
+/// owner, 2026-11-14), anything else its own role. A character without the role plays `s`'s.
 pub fn swing_role(s: Swing, tool: Option<&str>) -> &'static str {
     let t = tool.and_then(dwell_protocol::chopping::tool);
     match (s, t) {
         (Swing::ChopLevel, Some(t)) => t.swing_role(false),
         (Swing::ChopVertical, Some(t)) => t.swing_role(true),
+        (Swing::Break, None) => tool
+            .and_then(|n| {
+                dwell_protocol::chopping::BREAK_TOOLS
+                    .iter()
+                    .find(|b| b.item == n)
+            })
+            .map_or(s.role(), |b| b.clip),
         _ => s.role(),
     }
 }
@@ -655,11 +664,20 @@ mod tests {
                 model: "stone_axes"
             }
         );
+        // One mode (owner, 2026-11-14): an older peer's vertical axe is held as the level one;
+        // the sword keeps its vertical stance's hold.
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", true))),
             Held::Model {
-                hold: "stone_axe_vertical",
+                hold: "stone_axe",
                 model: "stone_axes"
+            }
+        );
+        assert_eq!(
+            with_tool(Held::Empty, Some(("dwell:sword", true))),
+            Held::Model {
+                hold: "sword_vertical",
+                model: "sword"
             }
         );
         assert_eq!(with_tool(Held::Block(4), None), Held::Block(4));

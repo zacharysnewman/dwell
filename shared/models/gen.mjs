@@ -743,12 +743,15 @@ export function validateHand(h) {
 }
 
 /** The pose a prop is held in when it names none: as modelled, at its grip. */
-export const DEFAULT_HOLD = { scale: 1, roll: 0 };
+export const DEFAULT_HOLD = { scale: 1, roll: 0, yaw: 0 };
 
 /**
  * A prop's hold (`hold`, optional): `scale` (0.1..2, about the grip) and `roll` degrees (within
- * ±180) about its handle, from its +x side facing the hand's `edge`; missing fields take
- * DEFAULT_HOLD's. The handle lies along the hand's grip axis: a lean comes from the hand's pose.
+ * ±180) about its handle, from its +x side facing the hand's `edge`; `yaw` degrees (within ±45)
+ * more about the handle, the hand's upright axis at rest, turning the head's flank toward the eye
+ * so it shows (owner, 2026-11-14: "each tool should be rotated slightly around the Y(?) in your hand
+ * so you can see the head of it"; the edge's aim is `roll`'s, the show is `yaw`'s); missing fields
+ * take DEFAULT_HOLD's. The handle lies along the hand's grip axis: a lean comes from the hand's pose.
  */
 export function validateHold(h, at) {
   const fail = (msg) => {
@@ -756,17 +759,20 @@ export function validateHold(h, at) {
   };
   if (h === undefined) return { ...DEFAULT_HOLD };
   if (h === null || typeof h !== "object" || Array.isArray(h))
-    fail(`${at}: hold is { scale, roll }`);
+    fail(`${at}: hold is { scale, roll, yaw }`);
   for (const k of Object.keys(h))
-    if (!["scale", "roll"].includes(k))
-      fail(`${at}: hold has unknown field ${k} (scale, roll)`);
+    if (!["scale", "roll", "yaw"].includes(k))
+      fail(`${at}: hold has unknown field ${k} (scale, roll, yaw)`);
   const scale = h.scale ?? DEFAULT_HOLD.scale;
   if (!(Number.isFinite(scale) && scale >= 0.1 && scale <= 2))
     fail(`${at}: hold.scale ${scale} is outside 0.1..2`);
   const roll = h.roll ?? DEFAULT_HOLD.roll;
   if (!(Number.isFinite(roll) && Math.abs(roll) <= 180))
     fail(`${at}: hold.roll ${roll} is outside ±180 degrees`);
-  return { scale, roll };
+  const yaw = h.yaw ?? DEFAULT_HOLD.yaw;
+  if (!(Number.isFinite(yaw) && Math.abs(yaw) <= 45))
+    fail(`${at}: hold.yaw ${yaw} is outside ±45 degrees`);
+  return { scale, roll, yaw };
 }
 
 /** The props an item's look names (shared/inventory `look.model`): the ones built into the game. */
@@ -789,7 +795,7 @@ export function rustProps(props, glbRoot, built, hand) {
   ];
   for (const [name, p] of Object.entries(props))
     lines.push(
-      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, axis: ${v3(p.axis)}, hold: PropHold { scale: ${f32(p.hold.scale)}, roll: ${f32(p.hold.roll)} } },`,
+      `    PropData { name: ${JSON.stringify(name)}, category: ${JSON.stringify(p.category)}, glb: ${JSON.stringify(p.glb)}, length: ${f32(p.length)}, size: ${v3(p.size)}, grip: ${v3(p.grip)}, axis: ${v3(p.axis)}, hold: PropHold { scale: ${f32(p.hold.scale)}, roll: ${f32(p.hold.roll)}, yaw: ${f32(p.hold.yaw)} } },`,
     );
   lines.push("];", "");
   return lines.join("\n");

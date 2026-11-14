@@ -23,6 +23,7 @@ pub mod parts;
 pub mod portal_shafts;
 pub mod ramps;
 pub mod region;
+pub mod stock;
 pub mod structure;
 pub mod support;
 pub mod swing;

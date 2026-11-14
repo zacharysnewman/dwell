@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
+use dwell_protocol::CarryNet;
 use dwell_protocol::{
     CREATURE_POSES, CreatureNet, CreaturesMessage, NPC_POSES, NPC_STRIKE_POSES, NpcNet,
 };
@@ -115,6 +117,27 @@ pub struct CreatureView {
     /// Its hurt flash (sRGB 0..1 and the strength mixed toward it; strength 0: none), its kind's
     /// `hurtLook` after a hit that connected (WORK_QUEUE item 35, round 2).
     pub tint: [f32; 4],
+    /// What it carries on its back (B5, `npcs.carry`): each piece's block (a client state), in
+    /// load order, the stack's bottom first; empty: nothing.
+    pub carry: Vec<u16>,
+}
+
+/// A carried load's pieces (client states) from its part on the wire: each block state name this
+/// build knows, repeated by its count, at most `max` in all (names it doesn't know left out).
+pub fn carry_pieces(items: &[(String, u8)], max: usize) -> Vec<u16> {
+    let mut out = Vec::new();
+    for (name, n) in items {
+        let Ok(state) = dwell_blocks::parse_state(name) else {
+            continue;
+        };
+        for _ in 0..*n {
+            if out.len() >= max {
+                return out;
+            }
+            out.push(state);
+        }
+    }
+    out
 }
 
 /// The hurt look of a creature drawn with `model` (an NPC's by its `kind`): its kind's data, else
@@ -143,6 +166,8 @@ struct Seen {
     /// A hit that connected: seconds since, and the blow's way along the ground (face-local unit
     /// x, z: away from the striker).
     hurt: Option<(f64, [f64; 2])>,
+    /// What it carries (pieces, client states).
+    carry: Vec<u16>,
 }
 
 #[derive(Debug, Default)]
@@ -161,6 +186,18 @@ impl ClientCreatures {
         let poses: Option<HashMap<u32, u8>> = m
             .poses
             .map(|p| p.into_iter().map(|c| (c.id, c.pose)).collect());
+        // The carried loads' part lists the NPCs carrying something; one absent carries nothing.
+        let max = dwell_world::blueprint::SHIPPED
+            .jobs
+            .iter()
+            .map(|j| j.carry_max as usize)
+            .max()
+            .unwrap_or(0);
+        let carries: Option<HashMap<u32, Vec<u16>>> = m.carries.map(|c| {
+            c.into_iter()
+                .map(|c| (c.id, carry_pieces(&c.items, max)))
+                .collect()
+        });
         for c in m.creatures {
             let Some(data) = dwell_models::find(dwell_models::MODELS, &c.model) else {
                 continue;
@@ -175,9 +212,13 @@ impl ClientCreatures {
                 npc_pose: (0, 0.0),
                 pose: 0,
                 hurt: None,
+                carry: Vec::new(),
             });
             if let Some(p) = &poses {
                 e.pose = p.get(&c.id).copied().unwrap_or(0);
+            }
+            if let Some(k) = &carries {
+                e.carry = k.get(&c.id).cloned().unwrap_or_default();
             }
             if let Some(n) = npcs.get(&c.id) {
                 let same = e
@@ -278,6 +319,7 @@ impl ClientCreatures {
                         .flatten(),
                     pose_s: s.npc_pose.1,
                     tint,
+                    carry: s.carry.clone(),
                 }
             })
             .collect();
@@ -374,6 +416,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             let rest = c.advance(0.0)[0].clone();
             assert_eq!(rest.tint[3], 0.0, "no flash before a hit");
@@ -424,6 +467,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             c.apply(CreaturesMessage {
                 creatures: vec![CreatureNet {
@@ -434,6 +478,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             let v = c.advance(0.016);
             assert_eq!(v.len(), 1, "a model this build lacks is skipped");
@@ -443,6 +488,7 @@ mod tests {
                 gone: vec![],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             assert_eq!(c.advance(0.016)[0].role, "idle");
             assert_eq!(c.advance(0.016)[0].pose, None, "no poses' part: standing");
@@ -457,6 +503,7 @@ mod tests {
                         .into_iter()
                         .collect(),
                 ),
+                carries: None,
             };
             c.apply(posed(Some(5), 0.0));
             assert_eq!(c.advance(0.016)[0].pose, Some("lie"));
@@ -471,6 +518,7 @@ mod tests {
                 gone: vec![4],
                 npcs: None,
                 poses: None,
+                carries: None,
             });
             assert!(c.advance(0.016).is_empty());
         }
@@ -502,6 +550,7 @@ mod tests {
                 gone: vec![],
                 npcs,
                 poses: None,
+                carries: None,
             };
             c.apply(msg(0.0, None));
             let v = c.advance(0.016);
@@ -540,6 +589,46 @@ mod tests {
             let v = c.advance(0.016);
             assert_eq!(v[0].role, "idle");
             assert!(v[0].npc.as_ref().unwrap().colours.is_empty());
+        }
+    );
+
+    // B5: a builder's carried load (`npcs.carry`) is drawn as its pieces, bottom first, as many as
+    // it carries; one the part leaves out carries nothing; a server without the part, nothing.
+    dwell_world::both_faces!(
+        fn a_carried_load_is_its_pieces_and_empty_without_one(f: FaceFrame) {
+            let mut c = ClientCreatures::default();
+            let net = CreatureNet {
+                id: 7,
+                model: "peasant".into(),
+                position: f.point([1.0, 12.0, 1.0]).map(|v| v as f32),
+                yaw: 0.0,
+                speed: 1.1,
+            };
+            let msg = |carries: Option<Vec<CarryNet>>| CreaturesMessage {
+                creatures: vec![net.clone()],
+                gone: vec![],
+                npcs: None,
+                poses: None,
+                carries,
+            };
+            c.apply(msg(None));
+            assert!(c.advance(0.016)[0].carry.is_empty(), "nothing told");
+            let stone = dwell_blocks::require("dwell:stone");
+            let load = vec![
+                (dwell_blocks::info(stone).name.to_string(), 3),
+                ("mod:unknown".to_string(), 2),
+                ("dwell:log".to_string(), 4),
+            ];
+            c.apply(msg(Some(vec![CarryNet { id: 7, items: load }])));
+            let v = c.advance(0.016);
+            assert_eq!(
+                v[0].carry.len(),
+                7,
+                "three stone and four logs (the unknown left out)"
+            );
+            assert_eq!(&v[0].carry[..3], &[stone; 3]);
+            c.apply(msg(Some(vec![])));
+            assert!(c.advance(0.016)[0].carry.is_empty(), "emptied");
         }
     );
 }

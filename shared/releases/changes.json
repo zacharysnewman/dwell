@@ -2,6 +2,28 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.67.1",
+      "changes": [
+        "The axe has one swing, like the pickaxe and shovel: right click no longer switches it to a vertical chop",
+        "Every tool is held turned a little so you can see its head",
+        "Pickaxe and shovel swings come in from the right and the head strikes right at the crosshair, the moment the block takes the hit"
+      ]
+    },
+    {
+      "version": "0.67.0",
+      "changes": [
+        "A new compatibility line: every town now starts with a storehouse, built first",
+        "Builders fetch their blocks from the town's storehouse, up to ten at a time, carry them to the building site as a stack on their back, build, and walk back for more",
+        "When a building is finished, its builder moves on to the town's next one"
+      ]
+    },
+    {
+      "version": "0.66.1",
+      "changes": [
+        "Falls hurt from 5 m and are deadly at 15 m"
+      ]
+    },
+    {
       "version": "0.66.0",
       "changes": [
         "A new compatibility line: towns are planned on clear ground, so no trees, bushes or boulders grow where a hamlet's huts, well, watchtower, wall and the paths between them go up"
