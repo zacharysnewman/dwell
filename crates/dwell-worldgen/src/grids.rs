@@ -1283,7 +1283,7 @@ impl CrateredTerrain {
                 top(x + c as i64 - 2, z + r as i64 - 2).map_or(i32::MIN / 2, |t| (t + 1) as i32)
             })
         });
-        // Every ramp backed by its neighbour (BUGS.md #153).
+        // Every ramp backed by its neighbour (BUGS.md #157).
         let (facing, steep) = match self.rules.ramps.top_backed(&around, rows_for_m(1.0)) {
             Top::Flat => return &[],
             Top::Gentle(f) => (f, false),

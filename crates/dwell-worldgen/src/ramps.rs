@@ -137,7 +137,7 @@ pub fn edge_height(h: i32, top: Top, toward: RampFacing) -> i32 {
 }
 
 impl RampRule {
-    /// [`RampRule::top`] with every ramp **backed** (BUGS.md #153; owner, 2026-11-13: "I don't
+    /// [`RampRule::top`] with every ramp **backed** (BUGS.md #157; owner, 2026-11-13: "I don't
     /// mind slopes with edges exposed but I do mind slopes that back up against open air"): a
     /// ramp's high side must meet the column behind it standing at least the ramp's top height
     /// along their shared edge (that column as this rule shapes it, before its own check), else
@@ -323,7 +323,7 @@ mod tests {
 
     /// A field of heights (rows) over `w` × `w` columns and, for each interior column, the top
     /// `pick` gives from its 5 × 5 window: then how many ramps have their high side against a
-    /// column standing lower than their top along the shared edge (BUGS.md #153).
+    /// column standing lower than their top along the shared edge (BUGS.md #157).
     fn exposed(
         heights: &dyn Fn(i32, i32) -> i32,
         w: i32,
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn a_bowls_corners_back_no_ramp_onto_open_air() {
-        // BUGS.md #153: the unchecked notched rule leaves ramps backing onto lower ground (red),
+        // BUGS.md #157: the unchecked notched rule leaves ramps backing onto lower ground (red),
         // the backed rule none (green), for the strict and the notched rules.
         for rule in [RampRule::Strict, RampRule::Notched] {
             let raw = exposed(&bowl, 40, &|n| rule.top(&window(n, (0, 0)), 2));

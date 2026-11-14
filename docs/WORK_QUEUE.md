@@ -807,14 +807,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    only on steep faces; the red desert and mesas stay red, the tan sand desert a separate biome. **Owner should see:**
    on a typical Realistic seed, at least one big tan sand desert with dunes, in a warm dry region, separate from the
    red mesa country.
-   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #153): "Also we might be in process on slopes or something,
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #157): "Also we might be in process on slopes or something,
    but I'm noticing at the corners of bowl areas there's these spiky edges where slopes are up against the side of other
    slopes. I don't mind slopes with edges exposed but I do mind slopes that back up against open air." The rule, for
    every world and grid, in the shared stored-ramp placement (V2 and notched): a ramp's high side is backed by solid
    ground at its top height (steep pairs too); else another facing whose back is solid, else a full block; exposed side
    edges are fine. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no
    sawtooth spikes. Ramps meet higher ground at their backs; only their triangular sides may show.
-   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #154): "This might be part of the realistic fix, but I'm
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #158): "This might be part of the realistic fix, but I'm
    seeing really sharp edges between terrain types like this." (A Realistic world on 0.61.x from high up: a dead-straight,
    axis-aligned line many km long, snow, ice and glacier ground left, dense forest and grass right.) **Owner should
    see:** no straight lines across the land between terrain types. Snow, forest, desert and grass meet along natural,
@@ -1133,6 +1133,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
 27. **The moon as a real bifacial world** — **M-7c client built (2026-11-13, branch
+   **Flying to the moon (2026-11-13, BUGS.md #155):** owner: "Also, are you supposed to be able to fly to the moon? I tried
+   for like 8 minutes at max speed and couldn't get there. It didn't seem to get any closer." Fixed on
+   `claude/moon-flight-real`: flight's forward follows the look's pitch, so aiming at the moon and holding W reaches it
+   (~50 s from home's ground, Chrome and natively). Owner should see: aim at the moon, hold W at the top flight speed,
+   arrive in under a minute. Open: 18 server snaps on the browser flight while far flight speeds up.
    `claude/moon-client-m7c-mxftge`):** the game client sets the travel hook (`Game::set_grid_frames`, from the
    session's `grid.frames`), holds only its grid's chunks (dropped at a crossing; the server sends the moon's as
    voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned
@@ -1526,6 +1531,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
    the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
    `impostors-off`); I-5 shadows (GPU work, local).
+   **Doubled, half-faded impostors (owner, 2026-11-13, with two screenshots; BUGS.md #154):** "There seems to be
+   doubled partially faded imposters, they can't fade slowly based on distance alone because they are obviously
+   faded. Not sure why there's 2 and they seem to split and combine as you fly up and down in front of them. It can
+   be a fade transition but it shouldn't ever be partial transitions over distance, but over time. Does that make
+   sense?" Owner should see: flying toward and away from a forest, trees swap between near and far with a brief
+   fade, never a steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+   **Built (2026-11-13, cloud, `claude/impostor-fade-time-biapw1`):** the hand-over is per tree and in time: near or
+   impostor by distance with hysteresis (`far.tiers.on` `inM` 54 / `outM` 58, replacing `fromM`/`fadeM`), each switch
+   a `fadeS` 0.3 s cross-fade (`render/tree_fade.rs`: a byte map of each tree's near share about the eye, group 0
+   binding 21, read by the leaves per fragment and by the impostor at its foot); the views 6 azimuths × 0/20/40/60°
+   + top (was 8 × 0/40°), the crown's silhouette within 0.27 m of the real one's from any height (was 0.55 m).
+   **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
+   no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
+   and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1853,6 +1872,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
    back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
    on flat ground, ramps and slopes.
+   Owner, 2026-11-13: **"Can you make a collection of skin tone ranges with hair color ranges so it's not completely
+   random. Also, face should always match arms, etc. shouldn't have different skin colors on different skin parts."**
+   **Built (BUGS.md #152):** `shared/creatures/appearance.json` holds the skin tones (ten, porcelain to ebony) and, for
+   each, the hair colours that go with it by weight (light skins blond, ginger, auburn, brown; deep skins mostly black
+   and dark brown); a villager picks a tone from its seed, then a hair colour from that tone's list; clothes keep their
+   own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
+   arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
+   of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
+   **Patterns** (owner, 2026-11-13: **"The villagers look good, other than losing the colorful waist of the shirt
+   patterns. I want those back, but cleaner. Also the hat tops have some color artifacts, not just above the brim,
+   those look good. I'm imagining a colorful day of the dead Mexico kind of vibes."**): built on branch
+   `claude/villager-patterns`, see item 43. Owner should see: a festive pattern round each villager's hat and
+   waist, its own per villager, and the clothes chosen to go with it.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2533,6 +2565,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
    100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
    20 % the waist is long triangles, so the ring is a few facets or none.
+   **Patterns back, cleaner** (owner, 2026-11-13, after the skin tones, #924): **"The villagers look good, other
+   than losing the colorful waist of the shirt patterns. I want those back, but cleaner. Also the hat tops have
+   some color artifacts, not just above the brim, those look good. I'm imagining a colorful day of the dead
+   Mexico kind of vibes."** Cause: the recolour is by part, and the waist ring sat in the shirt part, the band
+   in the hat's, so both took the clothes' colour; the crown above the band kept the pack's brass and bark
+   triangles and the band's tall facets. **Built (branch `claude/villager-patterns`, 2026-11-13):** the rings'
+   places are parts of their own (`pattern_1`..`pattern_4`, decor band `parts`; MAX_REMAP 9), each villager
+   picks a festive pattern by seed from `shared/creatures/patterns.json` (8 Day-of-the-Dead sets of 2-4
+   colours in strict sequence) with clothes bases that pair with it; the crown above the band is filled with
+   the hat's colour (decor `fill`); ordered bands hold whole sequences, no spikes. CHARACTERS.md §11.14.
+   **Owner should see:** villagers with a bright magenta/marigold/turquoise/lime/violet band round the hat
+   and the same pattern round the waist (sides and back), the hat's top one clean colour, the clothes plainer
+   to set the pattern off. **Left:** at 60 % the front of the waist has no short facets, so the ring shows on
+   the sides and back only.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
@@ -2682,6 +2728,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
+   **Bug, owner 2026-11-13:** **"Another bug, Im not sure if it's because I was flying high at the time, but the
+   portal indicator showed up several hundred meters in the air over the portal."** Fixed after 0.63.3 (BUGS.md
+   #153): a seen portal's marker stands at its opening's height from the generator (the portal shafts), never the
+   player's; a marker placed over unloaded ground is put back on it when its column loads, and a saved one far above
+   its ground (or a portal's above its opening) is corrected once seen. **Owner should see:** fly a few hundred
+   metres up over a portal you have not seen yet: its marker appears on the rim, not at your height; an old floating
+   portal marker drops onto its rim when you come back within the render radius.
 
 54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
    Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across

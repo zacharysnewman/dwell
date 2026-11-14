@@ -13,7 +13,7 @@ import {
   validateCoat,
   validateRepaint,
 } from "./coat.mjs";
-import { addPieces, applyDecor, decorBase, validateDecor } from "./decor.mjs";
+import { addPieces, applyDecor, decorBase, decorParts, validateDecor } from "./decor.mjs";
 import { allLevelParts, readMesh, validateParts } from "./parts.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -310,6 +310,9 @@ export function validate(
       );
       if (!Buffer.from(again).equals(Buffer.from(bytes)))
         fail(`${at}: ${m.glb} is not decorated: run node shared/models/import.mjs --coat ${name}`);
+      // A band's `parts`: its facets in those parts (an NPC's pattern recolours them, not the shirt's).
+      if (parts && partsFile)
+        parts = { ...parts, levels: decorParts(bytes, m.decor, parts.names, parts.levels, decorBase(bytes, partsFile)) };
     }
     const roles = Object.entries(m.roles ?? {});
     if (!roles.length) fail(`${at}: no roles`);
@@ -923,7 +926,9 @@ export function generate() {
  */
 export function checkCreatureParts(creatures, models) {
   for (const c of creatures.creatures ?? []) {
-    for (const slot of c.npc?.colours ?? []) {
+    const app = c.npc?.appearance;
+    const slots = [...(c.npc?.colours ?? []), ...(app ? [app.skin, app.hair] : [])];
+    for (const slot of slots) {
       const names = models[c.model]?.partMap?.names;
       if (!names)
         throw new Error(

@@ -20,7 +20,7 @@ pub use table::{
 };
 
 /// The most colours one body's remap swaps (the skinned shader's `remap` rows).
-pub const MAX_REMAP: usize = 6;
+pub const MAX_REMAP: usize = 9;
 
 /// A palette ramp's base colour (sRGB `0xRRGGBB`), by name: what a model's faces carry (§11.2).
 pub fn ramp_base(name: &str) -> Option<u32> {
@@ -66,27 +66,41 @@ impl Parts {
     }
 }
 
+/// A part's remap: the model's base, the base drawn in its place (sRGB 0..1), and how much of the
+/// model's shading inside the part it keeps (0: one flat colour, 1: every shade as modelled).
+pub type PartRemap = ([f32; 3], [f32; 3], f32);
+
+/// A colour by name: a palette ramp's base, or `#rrggbb` (an appearance tone, BUGS.md #152).
+pub fn colour_base(name: &str) -> Option<u32> {
+    match name.strip_prefix('#') {
+        Some(hex) if hex.len() == 6 => u32::from_str_radix(hex, 16).ok(),
+        Some(_) => None,
+        None => ramp_base(name),
+    }
+}
+
 /// A body's colour remap as drawn, by part (docs/CHARACTERS.md §11.11, BUGS.md #96): slot `k` is
-/// part `k + 1`'s (the model's ramp, the ramp drawn in its place), their base colours sRGB 0..1;
-/// None: the part as modelled. `colours` are (part, from, to); a part the model lacks or a ramp the
-/// palette lacks is left out. A ramp kept (`from` = `to`) still recolours its part, so every shade of
-/// the part takes the ramp's hue as in every other variant (the Peasant's neck is skin_tan).
+/// part `k + 1`'s (the model's ramp, the colour drawn in its place, the shading it keeps), their
+/// base colours sRGB 0..1; None: the part as modelled. `colours` are (part, from, to, shade); `to` a
+/// ramp or `#rrggbb` ([`colour_base`]); a part the model lacks or a colour unknown is left out. A
+/// ramp kept (`from` = `to`) still recolours its part, so every shade of the part takes the ramp's
+/// hue as in every other variant (the Peasant's neck is skin_tan).
 pub fn part_remap(
     parts: Option<&Parts>,
-    colours: &[(&str, &str, &str)],
-) -> [Option<([f32; 3], [f32; 3])>; MAX_REMAP] {
+    colours: &[(&str, &str, &str, f32)],
+) -> [Option<PartRemap>; MAX_REMAP] {
     let rgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
     let mut out = [None; MAX_REMAP];
     let Some(parts) = parts else { return out };
-    for (part, from, to) in colours {
+    for &(part, from, to, shade) in colours {
         let Some(n) = parts.number(part) else {
             continue;
         };
         if usize::from(n) > MAX_REMAP {
             continue;
         }
-        if let (Some(f), Some(t)) = (ramp_base(from), ramp_base(to)) {
-            out[usize::from(n) - 1] = Some((rgb(f), rgb(t)));
+        if let (Some(f), Some(t)) = (ramp_base(from), colour_base(to)) {
+            out[usize::from(n) - 1] = Some((rgb(f), rgb(t), shade.clamp(0.0, 1.0)));
         }
     }
     out
@@ -100,12 +114,14 @@ pub fn luma(c: [f32; 3]) -> f32 {
 
 /// A vertex's colour (sRGB 0..1) after its body's remap (the skinned shader's `remap_colour`): a
 /// vertex of a remapped part takes the part's new base, at the vertex's shade of the old one
-/// (luminance over the old base's), at most 1; any other as modelled.
-pub fn recolour(c: [f32; 3], part: u8, remap: &[Option<([f32; 3], [f32; 3])>]) -> [f32; 3] {
-    let Some(Some((from, to))) = (part as usize).checked_sub(1).and_then(|k| remap.get(k)) else {
+/// (luminance over the old base's) kept by the part's share (BUGS.md #152: the skin's tan neck
+/// nearly its face's tone), at most 1; any other as modelled.
+pub fn recolour(c: [f32; 3], part: u8, remap: &[Option<PartRemap>]) -> [f32; 3] {
+    let Some(Some((from, to, keep))) = (part as usize).checked_sub(1).and_then(|k| remap.get(k))
+    else {
         return c;
     };
-    let shade = luma(c) / luma(*from).max(1e-3);
+    let shade = 1.0 + (luma(c) / luma(*from).max(1e-3) - 1.0) * keep;
     to.map(|t| (t * shade).min(1.0))
 }
 
@@ -480,20 +496,24 @@ mod remap_tests {
         let r = part_remap(
             Some(&PARTS),
             &[
-                ("hair", "hair_brown", "hair_black"),
-                ("hat", "wool_yellow", "leather"),
-                ("skin", "skin_fair", "nope"),
+                ("hair", "hair_brown", "hair_black", 1.0),
+                ("hat", "wool_yellow", "leather", 1.0),
+                ("skin", "skin_fair", "nope", 1.0),
             ],
         );
         assert_eq!(r[0], None, "an unknown ramp is left out");
         let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
-        assert_eq!(r[1], Some((srgb(0x6b4329), srgb(0x302a3a))), "hair, slot 2");
+        assert_eq!(
+            r[1],
+            Some((srgb(0x6b4329), srgb(0x302a3a), 1.0)),
+            "hair, slot 2"
+        );
         assert!(
             r[2..].iter().all(Option::is_none),
             "a part the model lacks: none"
         );
         assert_eq!(
-            part_remap(None, &[("hair", "hair_brown", "hair_black")]),
+            part_remap(None, &[("hair", "hair_brown", "hair_black", 1.0)]),
             [None; MAX_REMAP]
         );
         assert_eq!(PARTS.level(0), vec![0, 1, 2, 1]);
@@ -511,13 +531,13 @@ mod remap_tests {
         let parts = find(fixture::MODELS, "two_bone").unwrap().parts.unwrap();
         assert_eq!(parts.number("tip"), Some(1));
         assert_eq!(parts.level(0), vec![2, 1, 2, 2]);
-        let r = part_remap(Some(&parts), &[("tip", "wool_green", "wool_red")]);
+        let r = part_remap(Some(&parts), &[("tip", "wool_green", "wool_red", 1.0)]);
         assert!(r[0].is_some() && r[1].is_none());
     }
 
     #[test]
     fn a_recolour_keeps_the_vertexs_shade_of_its_part() {
-        let r = part_remap(Some(&PARTS), &[("skin", "skin_fair", "skin_deep")]);
+        let r = part_remap(Some(&PARTS), &[("skin", "skin_fair", "skin_deep", 1.0)]);
         let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
         let (fair, deep) = (srgb(0xf0c6a6), srgb(0x6b4334));
         assert_eq!(recolour(fair, 1, &r), deep, "the base takes the new base");
@@ -533,6 +553,34 @@ mod remap_tests {
             fair,
             "a part not remapped: as modelled"
         );
+    }
+
+    // BUGS.md #152: a tone by `#rrggbb` (shared/creatures/appearance.json) recolours the part, and
+    // its shade share pulls the modelled shades (the Peasant's skin_tan neck, a ramp darker than
+    // its skin_fair face) toward the tone: at 0 the whole part is one colour.
+    #[test]
+    fn a_tone_by_hex_keeps_its_share_of_the_parts_shading() {
+        assert_eq!(colour_base("#6b4334"), Some(0x6b4334));
+        assert_eq!(colour_base("#6b43"), None);
+        assert_eq!(colour_base("skin_deep"), Some(0x6b4334));
+        let srgb = |c: u32| [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0);
+        let (fair, tan, tone) = (srgb(0xf0c6a6), srgb(0xd9a27a), srgb(0x8a5539));
+        let ratio = |keep: f32| {
+            let r = part_remap(Some(&PARTS), &[("skin", "skin_fair", "#8a5539", keep)]);
+            assert_eq!(recolour(fair, 1, &r), tone, "the base takes the tone");
+            let neck = recolour(tan, 1, &r);
+            let k = [0, 1, 2].map(|c| neck[c] / tone[c]);
+            assert!(
+                k.iter().all(|x| (x - k[0]).abs() < 1e-4),
+                "{neck:?}: a shade of the tone"
+            );
+            k[0]
+        };
+        assert_eq!(ratio(0.0), 1.0, "shade 0: one flat colour");
+        let full = ratio(1.0);
+        let some = ratio(0.35);
+        assert!(full < some && some < 1.0, "{full} {some}");
+        assert!((1.0 - some - 0.35 * (1.0 - full)).abs() < 1e-4);
     }
 
     #[test]

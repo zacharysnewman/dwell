@@ -65,4 +65,4 @@ export const AUTO_MARKERS: readonly AutoMarkerKind[] = [
 export const MARKER_LIMITS = {"maxMarkers":200,"labelChars":24,"nameBytes":32,"pickRadiusPx":14} as const;
 
 // prettier-ignore
-export const MARKER_WORLD = {"sizePx":26,"nearM":16,"farM":400,"fadedAlpha":0.45,"edgePx":28,"showM":1500,"hideWithinM":4} as const;
+export const MARKER_WORLD = {"sizePx":26,"nearM":16,"farM":400,"fadedAlpha":0.45,"edgePx":28,"showM":1500,"hideWithinM":4,"regroundAboveM":8} as const;

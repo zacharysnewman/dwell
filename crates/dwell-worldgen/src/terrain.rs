@@ -4333,7 +4333,7 @@ impl TerrainGenerator {
     }
 
     /// The stored ramp topping column (x, z) by the generation rule (HALF_HEIGHT_GRID.md §4),
-    /// every ramp backed (BUGS.md #153), its neighbours' columns from `column`.
+    /// every ramp backed (BUGS.md #157), its neighbours' columns from `column`.
     fn shape_with(
         &self,
         column: &impl Fn(i32, i32) -> Column,
@@ -4341,7 +4341,7 @@ impl TerrainGenerator {
         z: i32,
         col: &Column,
     ) -> Top {
-        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #153), the column
+        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #157), the column
         // behind each ramp's high side with its own neighbours.
         let cols: [[Column; 5]; 5] = std::array::from_fn(|r| {
             std::array::from_fn(|c| {

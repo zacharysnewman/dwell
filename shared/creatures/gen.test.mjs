@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadBlocks } from '../inventory/gen.mjs';
-import { generate, loadModels, validateCreatures } from './gen.mjs';
+import { generate, loadAppearance, loadModels, loadPatterns, validateAppearance, validateCreatures, validatePatterns } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'creatures.json'), 'utf8'));
@@ -25,7 +25,9 @@ test('a fixture creature is added by data alone', () => {
 
 test('a fixture NPC is added by data alone', () => {
   const d = JSON.parse(readFileSync(join(here, 'fixtures/npcs.json'), 'utf8'));
-  const v = validateCreatures(d, blocks, models);
+  const v = validateCreatures(d, blocks, models, undefined, undefined, undefined, undefined, loadAppearance('fixtures/appearance.json'), loadPatterns('fixtures/patterns.json'));
+  assert.equal(v.creatures[0].npc.appearance.set, 'test:pair');
+  assert.equal(v.creatures[0].npc.pattern.set, 'test:duo');
   assert.equal(v.creatures[0].npc.held, 'dwell:stone_axe');
   assert.equal(v.rules[0].spacing, 20);
 });
@@ -35,7 +37,7 @@ test('the villager is the Peasant, its colours palette ramps (WORK_QUEUE item 38
   assert.equal(v.model, 'peasant');
   assert.deepEqual(
     v.npc.colours.map((c) => c.part),
-    ['shirt', 'trousers', 'skin', 'hair', 'hat'],
+    ['shirt', 'trousers', 'hat'],
   );
 });
 
@@ -123,4 +125,72 @@ test('a creature’s attack and hurt look are checked, defaulted and emitted', a
   bad((_, c) => (c.hurtLook = { tint: 'red' }), /hurtLook\.tint must be #rrggbb/);
   bad((d) => (d.hurtLook.strength = 2), /hurtLook\.strength must be in \[0, 1\]/);
   bad((d) => (d.hurtLook.glow = 1), /glow/);
+});
+
+// BUGS.md #152: the skin tones and the hair colours that go with each, as data.
+const appearance = () => JSON.parse(readFileSync(join(here, 'appearance.json'), 'utf8'));
+
+test('the appearance sets validate, and the villagers pick from one', () => {
+  const sets = loadAppearance();
+  const v = sets.get('villagers');
+  assert.ok(v.tones.length >= 8, 'a natural range of skin tones');
+  for (const t of v.tones) assert.ok(t.hair.length > 0 && t.hair.every((h) => /^#[0-9a-f]{6}$/.test(h.colour)), t.name);
+  const villager = validateCreatures(data(), blocks, models).creatures.find((c) => c.name === 'dwell:villager');
+  assert.equal(villager.npc.appearance.set, 'villagers');
+  assert.ok(!villager.npc.colours.some((c) => c.part === 'skin' || c.part === 'hair'), 'skin and hair come from the set only');
+  // The fixture set, by data alone.
+  assert.deepEqual([...loadAppearance('fixtures/appearance.json').get('test:pair').tones.map((t) => t.name)], ['pale', 'dark']);
+});
+
+test('bad appearance entries fail naming the set and tone', () => {
+  const bad = (edit, re) => {
+    const d = appearance();
+    edit(d);
+    assert.throws(() => validateAppearance(d), re);
+  };
+  bad((d) => (d.sets.villagers.tones[0].base = 'pink'), /set villagers: tone porcelain: base must be #rrggbb/);
+  bad((d) => (d.sets.villagers.tones[1].hair = []), /set villagers: tone fair: hair must list at least one colour/);
+  bad((d) => (d.sets.villagers.tones[2].hair[0].colour = 'green'), /set villagers: tone rose: hair\[0\]: "green" is not a hair colour/);
+  bad((d) => (d.hair.black = '#12'), /hair black must be #rrggbb/);
+  bad((d) => (d.sets.villagers.tones = []), /set villagers: tones must list 1-32/);
+  bad((d) => (d.sets.villagers.shade = 2), /set villagers: shade must be in \[0, 1\]/);
+  bad((d) => d.sets.villagers.tones.push({ ...d.sets.villagers.tones[0] }), /tone porcelain: listed twice/);
+  const npc = (edit, re) => {
+    const d = data();
+    edit(d.creatures.find((c) => c.name === 'dwell:villager').npc);
+    assert.throws(() => validateCreatures(d, blocks, models), re);
+  };
+  npc((n) => (n.appearance.set = 'elves'), /appearance: set "elves" is not in appearance.json/);
+  npc((n) => n.colours.push({ part: 'skin', from: 'skin_tan', to: ['skin_tan'] }), /appearance\.skin: part skin is also in colours/);
+  npc((n) => (n.appearance.hair.from = 'nope'), /appearance\.hair: from "nope" is not a palette ramp/);
+});
+
+// WORK_QUEUE item 43 (owner, 2026-11-13: "a colorful day of the dead Mexico kind of vibes"): the
+// pattern sets are data, checked with a message naming the bad entry.
+test('the pattern sets are checked: sequences divide the places, no colour next to itself', () => {
+  const sets = loadPatterns();
+  const fiesta = sets.get('fiesta');
+  assert.equal(fiesta.places, 4);
+  for (const p of fiesta.patterns) {
+    assert.ok(p.colours.length >= 2 && 4 % p.colours.length === 0, p.name);
+    p.colours.forEach((c, i) => assert.notEqual(c, p.colours[(i + 1) % p.colours.length], p.name));
+  }
+  const ok = { formatVersion: 1, sets: { t: { places: 4, patterns: [{ name: 'a', colours: ['#111111', '#222222'] }] } } };
+  assert.equal(validatePatterns(ok).get('t').patterns[0].weight, 1);
+  const bad = (patch, re) => {
+    const d = structuredClone(ok);
+    Object.assign(d.sets.t.patterns[0], patch);
+    assert.throws(() => validatePatterns(d), re);
+  };
+  bad({ colours: ['#111111', '#222222', '#333333'] }, /length divides the ring's 4 places/);
+  bad({ colours: ['#111111', '#111111'] }, /next to itself/);
+  bad({ colours: ['#111111', 'red'] }, /must be #rrggbb/);
+  bad({ pairs: { shirt: ['nope'] } }, /neither a palette ramp nor #rrggbb/);
+  // An NPC's pattern names the set's places, and a pattern pairs only its clothes parts.
+  const d = JSON.parse(readFileSync(join(here, 'fixtures/npcs.json'), 'utf8'));
+  d.creatures[0].npc.pattern.places.pop();
+  assert.throws(
+    () => validateCreatures(d, blocks, models, undefined, undefined, undefined, undefined, loadAppearance('fixtures/appearance.json'), loadPatterns('fixtures/patterns.json')),
+    /places must list the set's 4 places/,
+  );
 });

@@ -103,15 +103,21 @@ label, Save / Delete / Cancel; `PickerDraft` its rules); `minimap.ts` draws them
   its buttons edit (the picker) or delete it.
 - **Portals:** the client crate's `map_markers::seen_portals` (`Client.seenPortals`) gives each portal
   opening on the player's face within the render radius (`RENDER_RADIUS_CHUNKS` chunks, across the
-  ground), standing on its rim's top (the loaded column beside the opening; NaN while not loaded, when
-  the shell takes the map's height). The shell notes each, a few times a second, as `noteAuto('portal',
-  …)`; `each` counts a place within 2 m **across the ground** as seen, so a height read again finer
-  makes no second marker. A portal's two openings are two markers, one per face.
+  ground), standing at its opening's height (the rim's top) from the generator's shafts (`world.portals`,
+  known from the seed wherever the player is), else the loaded rim's top, else NaN, when the shell takes
+  the map's height as a provisional guess, or notes nothing yet: never the player's height (BUGS.md #153).
+  The shell notes each, a few times a second, as `noteAuto('portal', …, settled)`; `each` counts a place
+  within 2 m **across the ground** as seen, so a re-read makes no second marker, and a settled height
+  (the opening's) moves the marker there, which corrects a saved one at a wrong height. A portal's two
+  openings are two markers, one per face.
 - **The ground under a placed marker:** a marker placed or dragged on the big map stands at
   `markerGroundY`: the loaded column's top there (`Client.markerGround`, `dwell_game::minimap::ground_at`
   read round the eye, face-local), else the map's height for its cell (the finest level's, else the
   explored cell's; a water cell's is its bed's), else the player's height on that face. The waypoint
-  then floats 1.5 m over the ground there.
+  then floats 1.5 m over the ground there. A marker placed or dragged where the column wasn't loaded is
+  provisional (for the session) and is put back on its ground once the column loads; one standing more
+  than `world.regroundAboveM` (8 m) over its loaded ground (one saved before this fix at the player's
+  height) is too (`regroundMarkers`, within the render radius, a few times a second).
 
 Tests: `dwell-game` `a_columns_ground_is_its_top_blocks_top_face_locally` and `dwell-client`
 `map_markers` (both faces); `markers.test.ts`' list rows against the big map's `toScreen` on both

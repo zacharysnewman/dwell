@@ -26,6 +26,18 @@
 //   only the outermost (no other triangle of the mesh further out along the facet's direction from
 //   the axis: the ring a viewer sees, not what is under it).
 //
+//   A band's "parts": [p0, p1, ...] (one a colour, its place in the sequence) puts each painted facet
+//   in that part of the model's part map (gen.mjs, every detail level: `decorParts`), so an NPC's
+//   pattern recolours each place of the ring as its own (shared/creatures/patterns.json) and the
+//   shirt's or hat's recolour never repaints it. An ordered band holds a whole number of sequences
+//   round the ring: when its facet count is not a multiple of the colours' count, the narrowest
+//   facets left over join the segment before them (a wider segment, never two of one colour apart);
+//   a ring of fewer facets than one sequence (a low detail level's) is left unpainted.
+//
+//   { "kind": "fill",                 one colour over a region: the facets (of part `part`) whose
+//     "part": "hat", "colour": "wool_yellow",   centre's height is in `y` and distance from the axis
+//     "y": [min, max], "r": [min, max] }        in `r` (the hat's crown above its band, one colour)
+//
 //   { "kind": "piece",                small geometry added to every detail level (the Peasant's eyes:
 //     "joint": "spine.006",           smaller than a face of the mesh, which paint can't show): flat
 //     "at": [x, y, z], "facing": "+z",  quads laid on the level's surface where a ray from `at`
@@ -38,13 +50,14 @@
 //   primitive's `extras.decor` so a second run replaces them rather than adding more.
 //
 // Colours are palette references (shared/textures/palette.json), written as the GLB's linear
-// COLOR_0 as `repaint` does. A decor colour may not be a `repaint` source ramp (the repaint would
-// take it on the next run). Applying it again changes nothing.
+// COLOR_0 as `repaint` does. A decor colour may not be a `repaint` source ramp of a repaint that
+// reaches its part (the repaint would take it on the next run). Applying it again changes nothing.
 import { resolveColor } from "./gen.mjs";
 
 const KINDS = {
   mark: new Set(["kind", "colour", "at", "radius", "mirror", "$comment"]),
-  band: new Set(["kind", "part", "y", "r", "colours", "segments", "phase", "order", "span", "outer", "$comment"]),
+  band: new Set(["kind", "part", "y", "r", "colours", "segments", "phase", "order", "span", "outer", "parts", "$comment"]),
+  fill: new Set(["kind", "part", "y", "r", "colour", "$comment"]),
   piece: new Set(["kind", "joint", "at", "facing", "lift", "mirror", "quads", "$comment"]),
 };
 const QUAD_KEYS = new Set(["colour", "at", "size", "lift", "$comment"]);
@@ -61,15 +74,17 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
     throw new Error(`${at}: ${msg}`);
   };
   if (!Array.isArray(list) || !list.length) fail("is a non-empty list");
-  const sources = new Set((repaint ?? []).map((r) => r.from));
-  const colour = (ref, w) => {
+  const colour = (ref, w, part = undefined) => {
     try {
       resolveColor(palette, ref);
     } catch (e) {
       fail(`${w}: ${e.message}`);
     }
     const ramp = String(ref).split(".")[0];
-    if (sources.has(ramp)) fail(`${w}: ${ref} is a repaint source ramp (the repaint would take it)`);
+    const hit = (repaint ?? []).some(
+      (r) => r.from === ramp && (r.part === undefined || part === undefined || r.part === part),
+    );
+    if (hit) fail(`${w}: ${ref} is a repaint source ramp (the repaint would take it)`);
   };
   const range = (v, w) => {
     if (!Array.isArray(v) || v.length !== 2 || !v.every(Number.isFinite) || !(v[0] < v[1]))
@@ -105,6 +120,13 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
           fail(`${qw}.size is [w, h], both positive`);
         if (q.lift !== undefined && !(q.lift >= 0)) fail(`${qw}.lift is a distance (0 or more)`);
       });
+    } else if (d.kind === "fill") {
+      if (d.part !== undefined && parts && !parts.includes(d.part))
+        fail(`${w}.part: the model's part map has no part ${d.part}`);
+      if (d.part !== undefined && !parts) fail(`${w}.part needs a part map (models.json parts)`);
+      range(d.y, `${w}.y`);
+      if (d.r !== undefined) range(d.r, `${w}.r`);
+      colour(d.colour, `${w}.colour`, d.part);
     } else {
       if (d.part !== undefined && parts && !parts.includes(d.part))
         fail(`${w}.part: the model's part map has no part ${d.part}`);
@@ -115,7 +137,15 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
         if (d.r[0] < 0) fail(`${w}.r starts at 0 or more`);
       }
       if (!Array.isArray(d.colours) || d.colours.length < 2) fail(`${w}.colours is a list of two or more`);
-      d.colours.forEach((c, k) => colour(c, `${w}.colours[${k}]`));
+      d.colours.forEach((c, k) => colour(c, `${w}.colours[${k}]`, d.part));
+      if (d.parts !== undefined) {
+        if (!Array.isArray(d.parts) || d.parts.length !== d.colours.length)
+          fail(`${w}.parts is a list of part names, one a colour (${d.colours.length})`);
+        if (!parts) fail(`${w}.parts needs a part map (models.json parts)`);
+        d.parts.forEach((p, k) => {
+          if (!parts.includes(p)) fail(`${w}.parts[${k}]: the model's part map has no part ${p}`);
+        });
+      }
       if (d.order !== undefined && d.order !== true) fail(`${w}.order is true (or left out)`);
       if (d.order && d.segments !== undefined) fail(`${w}: an ordered band has no segments`);
       if (!d.order && (!Number.isInteger(d.segments) || d.segments < d.colours.length || d.segments % d.colours.length))
@@ -184,6 +214,15 @@ export function decorPlan(list, groups, pos, partOf, indices = undefined) {
         if (!hit.length) hit = [dist.indexOf(Math.min(...dist))];
         for (const g of hit) out.push([groups[g], d.colour]);
       }
+    } else if (d.kind === "fill") {
+      groups.forEach((vs, g) => {
+        const [x, y, z] = centre[g];
+        if (y < d.y[0] || y > d.y[1]) return;
+        const r = Math.hypot(x, z);
+        if (d.r && (r < d.r[0] || r > d.r[1])) return;
+        if (d.part !== undefined && !vs.some((v) => partOf(pos(v)) === d.part)) return;
+        out.push([vs, d.colour]);
+      });
     } else if (d.kind === "band") {
       const ring = [];
       groups.forEach((vs, g) => {
@@ -195,15 +234,41 @@ export function decorPlan(list, groups, pos, partOf, indices = undefined) {
           const ys = vs.map((v) => pos(v)[1]);
           if (Math.max(...ys) - Math.min(...ys) > d.span) return;
         }
-        if (d.part !== undefined && partOf(pos(vs[0])) !== d.part) return;
+        if (d.part !== undefined && !vs.some((v) => partOf(pos(v)) === d.part)) return;
         if (d.outer && indices && covered(centre[g], vs, indices, pos)) return;
         ring.push([vs, x, z]);
       });
       if (d.order) {
         const deg = ([, x, z]) => ((((Math.atan2(x, z) * 180) / Math.PI - (d.phase ?? 0)) % 360) + 360) % 360;
         ring.sort((a, b) => deg(a) - deg(b));
-        ring.forEach(([vs], k) => out.push([vs, d.colours[k % d.colours.length]]));
-      } else for (const [vs, x, z] of ring) out.push([vs, d.colours[bandSector(d, x, z)]]);
+        // A whole number of sequences: the narrowest facets left over join the segment before them.
+        const n = d.colours.length;
+        if (ring.length < n) continue;
+        const extra = ring.length % n;
+        const width = (vs) => {
+          const as = vs.map((v) => Math.atan2(pos(v)[0], pos(v)[2]));
+          const lo = Math.min(...as);
+          const hi = Math.max(...as);
+          return hi - lo > Math.PI ? 2 * Math.PI - (hi - lo) : hi - lo;
+        };
+        const joined = new Set(
+          ring
+            .map(([vs], k) => [width(vs), k])
+            .filter(([, k]) => k > 0)
+            .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+            .slice(0, extra)
+            .map(([, k]) => k),
+        );
+        let k = -1;
+        ring.forEach(([vs], j) => {
+          if (!joined.has(j) || k < 0) k++;
+          out.push([vs, d.colours[((k % n) + n) % n], d.parts?.[k % n]]);
+        });
+      } else
+        for (const [vs, x, z] of ring) {
+          const s = bandSector(d, x, z);
+          out.push([vs, d.colours[s], d.parts?.[s]]);
+        }
     }
   }
   return out;
@@ -484,6 +549,41 @@ export function addPieces(bytes, list, palette) {
     u32(bin.length, 0x004e4942),
     bin,
   ]);
+}
+
+/**
+ * Every detail level's parts (`levels`, from parts.mjs `allLevelParts`, in mesh order detail_0,
+ * detail_1, …) with each band's `parts` put on the facets it paints: a new list. `names`: the part
+ * map's part names; `base`: `decorBase` (a band's `part` filter).
+ */
+export function decorParts(bytes, list, names, levels, base) {
+  const withParts = list.filter((d) => d.kind === "band" && d.parts);
+  if (!withParts.length) return levels;
+  const { b, json, binAt } = chunks(bytes);
+  const partOf = (p) => {
+    let best = 0;
+    let bd = Infinity;
+    base.positions.forEach((q, i) => {
+      const d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2;
+      if (d < bd) [bd, best] = [d, i];
+    });
+    return base.names[base.parts[best] - 1];
+  };
+  const meshes = (json.meshes ?? []).filter((m) => /^detail_\d+$/.test(m.name));
+  meshes.sort((x, y) => Number(x.name.slice(7)) - Number(y.name.slice(7)));
+  return levels.map((lv, l) => {
+    const m = meshes[l];
+    if (!m) return lv;
+    const p = m.primitives[0];
+    const pos = view(b, json, binAt, p.attributes.POSITION);
+    const ix = view(b, json, binAt, p.indices);
+    const indices = Array.from({ length: ix.count }, (_, i) => ix.get(i));
+    const at = (i) => [0, 1, 2].map((k) => pos.get(i, k));
+    const out = Uint8Array.from(lv);
+    for (const [vs, , part] of decorPlan(withParts, facets(indices, pos.count), at, partOf, indices))
+      if (part !== undefined) for (const v of vs) out[v] = names.indexOf(part) + 1;
+    return out;
+  });
 }
 
 /** The full mesh's positions and parts (a part map file), which a band's `part` is read from. */

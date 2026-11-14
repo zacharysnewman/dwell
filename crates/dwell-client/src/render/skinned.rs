@@ -34,7 +34,7 @@ use super::frame::{HDR, VIEW_DEPTH};
 
 /// Bytes of one body's uniforms (the joint rows and its light): a multiple of 256 for the dynamic
 /// offset.
-pub const INSTANCE_BYTES: u64 = 3328;
+pub const INSTANCE_BYTES: u64 = 3584;
 const INSTANCE_FLOATS: usize = INSTANCE_BYTES as usize / 4;
 const JOINT_FLOATS: usize = MAX_JOINTS * 12;
 /// The remap's rows after the light: two vec4 a pair (docs/CHARACTERS.md §11.11).
@@ -111,15 +111,18 @@ pub fn blend_pose(
 }
 
 /// A body's remap rows for the shader (`REMAP_FLOATS` floats): per part slot (part `k + 1`) the
-/// model's base and the base in its place (sRGB 0..1), w 1 where used, 0 where not.
-pub fn remap_floats(remap: &[Option<([f32; 3], [f32; 3])>]) -> [f32; REMAP_FLOATS] {
+/// model's base and the base in its place (sRGB 0..1), the first's w 1 where used, 0 where not, the
+/// second's w the share of the part's shading kept (BUGS.md #152).
+pub fn remap_floats(remap: &[Option<dwell_models::PartRemap>]) -> [f32; REMAP_FLOATS] {
     let mut out = [0.0; REMAP_FLOATS];
     for (k, pair) in remap.iter().take(dwell_models::MAX_REMAP).enumerate() {
-        let Some((from, to)) = pair else { continue };
+        let Some((from, to, keep)) = pair else {
+            continue;
+        };
         out[k * 8..k * 8 + 3].copy_from_slice(from);
         out[k * 8 + 3] = 1.0;
         out[k * 8 + 4..k * 8 + 7].copy_from_slice(to);
-        out[k * 8 + 7] = 1.0;
+        out[k * 8 + 7] = *keep;
     }
     out
 }
@@ -260,7 +263,8 @@ fn joint_apply(j: u32, p: vec3f, w: f32) -> vec3f {
 
 // A vertex's palette colour (sRGB 0..1) after the body's remap, by its part (the colour's alpha
 // byte: 0 none, k part k): a remapped part's vertex takes the new base at its shade of the old
-// (luminance over the old base's). dwell_models::recolour mirrors it.
+// (luminance over the old base's), keeping the to row's w share of it (BUGS.md #152: one skin).
+// dwell_models::recolour mirrors it.
 fn remap_colour(c: vec4f) -> vec3f {
     let part = u32(round(c.a * 255.0));
     if (part == 0u || part * 2u > REMAP_ROWS) {
@@ -271,8 +275,9 @@ fn remap_colour(c: vec4f) -> vec3f {
         return c.rgb;
     }
     let luma = vec3f(0.2126, 0.7152, 0.0722);
-    let shade = dot(c.rgb, luma) / max(dot(was.rgb, luma), 1e-3);
-    return min(skin.remap[part * 2u - 1u].rgb * shade, vec3f(1.0));
+    let to = skin.remap[part * 2u - 1u];
+    let shade = mix(1.0, dot(c.rgb, luma) / max(dot(was.rgb, luma), 1e-3), to.w);
+    return min(to.rgb * shade, vec3f(1.0));
 }
 
 @vertex
@@ -1716,9 +1721,9 @@ mod villager_colour_tests {
     use super::*;
     use dwell_sim::creatures::{Table, npc_colours};
 
-    /// A palette ramp's base, sRGB 0..1.
+    /// A colour's base (a palette ramp's, or `#rrggbb`), sRGB 0..1.
     fn base(ramp: &str) -> [f32; 3] {
-        let c = dwell_models::ramp_base(ramp).unwrap();
+        let c = dwell_models::colour_base(ramp).unwrap();
         [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32 / 255.0)
     }
 
@@ -1849,6 +1854,133 @@ mod villager_colour_tests {
                             .all(|x| (x - r[0]).abs() < 0.05 || d.iter().any(|&c| c >= 1.0)),
                         "level {level} variant {variant}: hair vertex {i} draws {d:?}, not its hair {}",
                         to("hair")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_villagers_waist_ring_and_hat_band_keep_their_pattern_after_its_recolour() {
+        // both-faces: model space at rest (a vertex's colour does not depend on the face).
+        // WORK_QUEUE item 43 (owner, 2026-11-13): "The villagers look good, other than losing the
+        // colorful waist of the shirt patterns. I want those back, but cleaner." The rings were
+        // painted on the shirt and hat parts, so the shirt's and hat's recolour repainted them in
+        // the clothes' colour. Now every ring facet is a pattern part: across 200 seeded villagers,
+        // at every detail level, each pattern vertex draws its place's pattern colour exactly
+        // (never the shirt's or hat's), and the places run the pattern's sequence.
+        let (data, model) = dwell_models::model("peasant").unwrap();
+        let parts = data.parts.expect("the Peasant has a part map");
+        let def = Table::SHIPPED.npc("dwell:villager").unwrap();
+        let pd = def.pattern.expect("villagers have a pattern set");
+        let places: Vec<u8> = pd
+            .places
+            .iter()
+            .map(|(p, _)| parts.number(p).unwrap())
+            .collect();
+        let mut names = std::collections::HashSet::new();
+        for level in 0..dwell_models::DETAIL_LEVELS.len() {
+            let (v, _) = vertex_bytes(model, level, &parts.level(level));
+            let n = v.len() / VERTEX_BYTES;
+            let colour = |i: usize| {
+                let c = &v[i * VERTEX_BYTES + 24..i * VERTEX_BYTES + 28];
+                ([c[0], c[1], c[2]].map(|b| f32::from(b) / 255.0), c[3])
+            };
+            let ring: Vec<usize> = (0..n).filter(|&i| places.contains(&colour(i).1)).collect();
+            if level <= 1 {
+                assert!(
+                    ring.len() >= 32,
+                    "level {level}: {} ring vertices",
+                    ring.len()
+                );
+            }
+            for variant in 0..200u32 {
+                let seed = variant.wrapping_mul(0x9e37_79b9);
+                let pattern = dwell_sim::creatures::npc_pattern(&pd, seed);
+                names.insert(pattern.name);
+                let colours = npc_colours(def, seed);
+                let to = |p: &str| colours.iter().find(|c| c.0 == p).unwrap().2;
+                let remap = dwell_models::part_remap(Some(&parts), &colours);
+                let (shirt, hat) = (base(to("shirt")), base(to("hat")));
+                for &i in &ring {
+                    let (c, part) = colour(i);
+                    let k = places.iter().position(|&p| p == part).unwrap();
+                    let want = base(pattern.colours[k % pattern.colours.len()]);
+                    let got = dwell_models::recolour(c, part, &remap);
+                    let off = |a: [f32; 3], b: [f32; 3]| {
+                        (0..3).map(|j| (a[j] - b[j]).abs()).fold(0.0, f32::max)
+                    };
+                    assert!(
+                        off(got, want) < 1e-4,
+                        "level {level} seed {variant}: vertex {i} of place {k}: {got:?}, not {want:?}"
+                    );
+                    if pattern.colours.iter().all(|c| base(c) != shirt) {
+                        assert!(
+                            off(got, shirt) > 1e-3,
+                            "level {level} seed {variant}: vertex {i} took the shirt's colour"
+                        );
+                    }
+                    if pattern.colours.iter().all(|c| base(c) != hat) {
+                        assert!(
+                            off(got, hat) > 1e-3,
+                            "level {level} seed {variant}: vertex {i} took the hat's colour"
+                        );
+                    }
+                }
+                // The clothes come from the pattern's pairs.
+                for (part, list) in pattern.pairs {
+                    assert!(
+                        list.contains(&to(part)),
+                        "seed {variant}: {part} {} not paired with {}",
+                        to(part),
+                        pattern.name
+                    );
+                }
+            }
+        }
+        assert_eq!(names.len(), pd.patterns.len(), "every pattern turns up");
+    }
+
+    #[test]
+    fn every_skin_vertex_of_a_villager_draws_its_one_skin_tone() {
+        // both-faces: model space at rest (a vertex's colour does not depend on the face).
+        // BUGS.md #152 (owner, 2026-11-13): "face should always match arms, etc. shouldn't have
+        // different skin colors on different skin parts." The Peasant's skin part is modelled in
+        // two ramps (skin_fair face and arms, a skin_tan neck and jaw a ramp darker), and the
+        // recolour kept that whole step, so the neck and jaw read as another skin. Across 200
+        // seeded villagers, at every detail level, every vertex of the skin part draws the
+        // villager's one tone (its appearance pick) at a shade within a few percent of it.
+        let (data, model) = dwell_models::model("peasant").unwrap();
+        let parts = data.parts.expect("the Peasant has a part map");
+        let skin = parts.number("skin").unwrap();
+        let def = Table::SHIPPED.npc("dwell:villager").unwrap();
+        let a = def.appearance.expect("villagers have an appearance set");
+        for level in 0..dwell_models::DETAIL_LEVELS.len() {
+            let (v, _) = vertex_bytes(model, level, &parts.level(level));
+            let n = v.len() / VERTEX_BYTES;
+            for variant in 0..200u32 {
+                let seed = variant.wrapping_mul(0x9e37_79b9);
+                let colours = npc_colours(def, seed);
+                let (tone, _) = dwell_sim::creatures::npc_appearance(&a, seed);
+                let want = base(tone.base);
+                let remap = dwell_models::part_remap(Some(&parts), &colours);
+                for i in 0..n {
+                    let c = &v[i * VERTEX_BYTES + 24..i * VERTEX_BYTES + 28];
+                    if c[3] != skin {
+                        continue;
+                    }
+                    let d = dwell_models::recolour(
+                        [c[0], c[1], c[2]].map(|b| f32::from(b) / 255.0),
+                        c[3],
+                        &remap,
+                    );
+                    let k = [0, 1, 2].map(|j| d[j] / want[j].max(1e-3));
+                    assert!(
+                        k.iter()
+                            .all(|x| (x - k[0]).abs() < 0.02 || d.iter().any(|&c| c >= 1.0))
+                            && (0.85..1.06).contains(&k[0]),
+                        "level {level} variant {variant}: skin vertex {i} draws {d:?}, not its tone {} {want:?} (x{k:?})",
+                        tone.name
                     );
                 }
             }

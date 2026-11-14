@@ -28,11 +28,18 @@ pub fn ground(world: &VoxelWorld, f: FaceFrame, x: f64, z: f64, eye_y: f64) -> O
 
 /// The portals seen from world point `pos`: those whose axis (world x, z, the same on both faces)
 /// lies within [`seen_m`] across the ground, on the player's face, as [face (0 A, 1 B), x, y, z]
-/// face-local, y the top of the rim beside the opening (NaN while its rim is not loaded: the shell
-/// takes the map's height there).
+/// face-local, y the top of the rim beside the opening: the opening's height the generator gives
+/// (`world.portals`, the shaft's `top`, known from the seed wherever the player is: BUGS.md #153,
+/// a player flying hundreds of metres up read no ground and the marker took their own height),
+/// else the loaded rim's top, else NaN (the shell takes the map's height there, or waits).
 pub fn seen_portals(world: &VoxelWorld, axes: &[[f64; 2]], pos: [f64; 3]) -> Vec<[f64; 4]> {
     let f = FaceFrame::at_height(pos[1]);
     let eye_y = f.point(pos)[1];
+    let face = if f.is_b() {
+        dwell_world::Face::B
+    } else {
+        dwell_world::Face::A
+    };
     let rules = dwell_worldgen::portals::MIDPLANE.portals;
     // The rim's middle, east of the axis (the ladder's wall side is the rim's too; any side is).
     let rim = f64::from(rules.radius + rules.rim_width / 2.0);
@@ -42,7 +49,10 @@ pub fn seen_portals(world: &VoxelWorld, axes: &[[f64; 2]], pos: [f64; 3]) -> Vec
         if (x - pos[0]).hypot(z - pos[2]) > far {
             continue;
         }
-        let y = ground(world, f, x + rim, z, eye_y).unwrap_or(f64::NAN);
+        let y = match world.portals.at(x, z) {
+            Some(shaft) => shaft.top(face),
+            None => ground(world, f, x + rim, z, eye_y).unwrap_or(f64::NAN),
+        };
         out.push([f64::from(u8::from(f.is_b())), x, y, z]);
     }
     out
@@ -92,6 +102,33 @@ mod tests {
             let [uf, ux, uy, uz] = seen[1];
             assert_eq!([uf, ux, uz], [face, -200.5, 0.5]);
             assert!(uy.is_nan(), "an unloaded rim's height is unknown: {uy}");
+        }
+    );
+
+    both_faces!(
+        fn a_portal_seen_from_far_overhead_stands_at_its_openings_height(f: FaceFrame) {
+            // BUGS.md #153: 400 m over a portal whose ground isn't loaded, the marker took the
+            // player's height. The opening's height comes from the generator's shafts.
+            let mut w = VoxelWorld::new(empty_generator(), None);
+            let top = m_of_row(GROUND + 1);
+            let mut tops = [0.0; 2];
+            tops[usize::from(f.is_b())] = top;
+            w.portals = dwell_world::portal_shafts::PortalShafts::new(
+                vec![dwell_world::portal_shafts::Shaft {
+                    axis: [10.5, 0.5],
+                    radius: 2.0,
+                    top: tops,
+                }],
+                Default::default(),
+            );
+            let pos = f.point([10.5, m_of_row(GROUND) + 400.0, 0.5]);
+            let seen = seen_portals(&w, &[[10.5, 0.5]], pos);
+            let face = f64::from(u8::from(f.is_b()));
+            assert_eq!(
+                seen,
+                vec![[face, 10.5, top, 0.5]],
+                "at the opening, not the eye"
+            );
         }
     );
 
