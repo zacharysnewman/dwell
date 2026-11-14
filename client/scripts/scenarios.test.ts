@@ -679,14 +679,28 @@ describe('record budgets', () => {
     expect(() => step({ budget: { 'gpu.frame.p95': 1 }, reportOnly: 1 })).toThrow(/expected true/);
   });
 
-  it('forest-perf records the three forest spots at High against a report-only 16.7 ms frame', () => {
+  it('forest-perf records the six forest spots at High against a report-only 16.7 ms frame', () => {
     const all = parseScenarios(JSON.parse(readFileSync('bench/scenarios.json', 'utf8')));
     const s = all.find((x) => x.name === 'forest-perf');
     expect(s?.query).toMatchObject({ worldgen: 'test:forest', preset: 'high' });
     const spots = s?.steps.filter((x) => x.do === 'spot').map((x) => x.spot);
-    expect(spots).toEqual(['forest:inside', 'forest:edge', 'forest:above']);
+    expect(spots).toEqual([
+      'forest:inside',
+      'forest:edge',
+      'forest:over25',
+      'forest:over40',
+      'forest:over80',
+      'forest:above',
+    ]);
     const records = s?.steps.filter((x) => x.do === 'record') ?? [];
-    expect(records.map((r) => r.name)).toEqual(['inside', 'edge', 'above']);
+    expect(records.map((r) => r.name)).toEqual([
+      'inside',
+      'edge',
+      'over25',
+      'over40',
+      'over80',
+      'above',
+    ]);
     for (const r of records) {
       expect(r).toMatchObject({
         reportOnly: true,

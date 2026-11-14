@@ -495,6 +495,46 @@ mod tests {
     }
 
     dwell_world::both_faces! {
+        /// The canopy stays whole from above (BUGS.md #162): a tree straight below the eye, at
+        /// any height, is drawn once the fade time is past, as its real leaves (its chunk's
+        /// cutout drawn whole) or as its impostor (within the far trees' reach).
+        fn a_tree_straight_below_is_always_drawn(face: FaceFrame) {
+            let far = far();
+            let tree = Tree {
+                key: [0, 0, 0],
+                foot: [0.5, 10.0, 0.5],
+                centre_y: 6.0,
+                radius: 1.2,
+                baked: true,
+            };
+            let trees = vec![tree];
+            for h in [17.0, 20.0, 25.0, 30.0, 35.0, 40.0, 50.0, 60.0, 80.0, 120.0, 200.0] {
+                let mut f = TreeFades::new(window());
+                let eye = eye_at(face, [0.5, 10.0 + h, 0.5]);
+                for k in 0..30 {
+                    step(&mut f, f64::from(k) * 0.05, face, eye, &trees);
+                }
+                let s = f.share_at(0.5, 0.5);
+                let d = (h - 6.0) as f32; // the eye to the crown's centre
+                if s == 1.0 {
+                    let leaf = (d - CROWN_M).max(0.0);
+                    assert_eq!(
+                        crate::render::impostors::cutout_draw(Some(far), leaf),
+                        crate::render::impostors::CutoutDraw::All,
+                        "{h} m up: the real tree's leaves are drawn"
+                    );
+                } else {
+                    assert_eq!(s, 0.0, "{h} m up: whole, not half faded");
+                    assert!(
+                        d <= crate::render::impostors::reach(&far),
+                        "{h} m up: its impostor is drawn"
+                    );
+                }
+            }
+        }
+    }
+
+    dwell_world::both_faces! {
         /// Crossing the switch distance starts one fade, done in `fadeS`; then nothing moves.
         fn crossing_the_switch_fades_once_over_time(face: FaceFrame) {
             let far = far();
