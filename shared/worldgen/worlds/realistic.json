@@ -11,6 +11,7 @@
     "ditherWavelength": 48,
     "ditherWarp": 60,
     "treesSharpen": 4,
+    "sharpen": 3,
     "rockEdge": 0.3
   },
   "geology": {
@@ -45,7 +46,7 @@
     "preset:mixed_forest",
     "preset:old_growth",
     "preset:red_rock_mesa",
-    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
+    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "bands": [{ "name": "dunes", "ground": "dwell:sand", "under": "dwell:sand", "rock": "dwell:sand", "shoreBlock": "dwell:sand" }], "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
     "preset:savanna",
     "preset:snowfield",
     "preset:steppe",

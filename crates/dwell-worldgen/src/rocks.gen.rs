@@ -121,7 +121,7 @@ pub const ROCKS: &[Rock] = &[
         jointing: Jointing::Massive,
         bed: 4.0,
         solubility: 0.0,
-        face: "dwell:stone",
+        face: "dwell:sand",
         cap: "dwell:sand",
         cap_by: &[],
         scree: "dwell:sand",

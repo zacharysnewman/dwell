@@ -140,3 +140,71 @@ both_faces!(
 );
 
 const SAND_SHARE: f64 = 0.8;
+
+/// At most this share of the sand desert's dry columns (where it weighs at least 0.6) topped
+/// by anything but sand.
+const BLOBS: f64 = 0.02;
+
+both_faces!(
+    fn the_sand_desert_has_no_pasted_blobs(f: FaceFrame) {
+        // WORK_QUEUE item 15, the 0.69 follow-up (the map check: "pasted-looking red-dirt/stone
+        // blobs on the sand desert"): the red rock mesa's ground picked in patches across a
+        // km-wide mixing zone, and the dune rock's walls and the desert's steep faces grey stone.
+        // Now the Realistic biome pick is sharper (`biomeMap.sharpen` 3) and its dunes are sand
+        // throughout.
+        use dwell_worldgen::terrain::{TerrainGenerator, Water};
+        let (mut n, mut other) = (0usize, 0usize);
+        let mut by = std::collections::BTreeMap::<&str, usize>::new();
+        for world in [1, 7, 42, 274_005_646, 2_741_893_632] {
+            let e = world_config(NAME).unwrap().unwrap();
+            let seed = face_seed(world, f.face);
+            let map = Arc::new(
+                WorldMap::for_height(seed, e.height.unwrap())
+                    .with_worldgen(NAME)
+                    .unwrap(),
+            );
+            let g = TerrainGenerator::with_map(seed, map)
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+                .with_vegetation(e.vegetation);
+            let desert = g
+                .biomes()
+                .iter()
+                .position(|b| b.name == "preset:sand_desert")
+                .unwrap();
+            for z in (-40_000..40_000).step_by(61) {
+                for x in (-40_000..40_000).step_by(61) {
+                    let mix = g.biome_mix(x.into(), z.into());
+                    if mix.iter().all(|(b, w)| b != desert || w < 0.6) {
+                        continue;
+                    }
+                    let c = g.column_at(x, z);
+                    if c.outside || c.water != Water::None {
+                        continue;
+                    }
+                    let Some(y) = g.ground_y(x, z) else { continue };
+                    let name = dwell_blocks::info(g.state_at(x, y, z)).name;
+                    let name = name.split('[').next().unwrap_or(name);
+                    let name = name.strip_suffix("_ramp").unwrap_or(name);
+                    n += 1;
+                    if name != "dwell:sand" {
+                        other += 1;
+                        *by.entry(name).or_default() += 1;
+                    }
+                }
+            }
+        }
+        let share = other as f64 / n.max(1) as f64;
+        eprintln!(
+            "{:?}: {other} of {n} desert columns not sand ({:.1} %): {by:?}",
+            f.face,
+            100.0 * share
+        );
+        assert!(n > 2000, "{:?}: desert sampled ({n})", f.face);
+        assert!(
+            share <= BLOBS,
+            "{:?}: {:.1} % of the sand desert not sand: {by:?}",
+            f.face,
+            100.0 * share
+        );
+    }
+);
