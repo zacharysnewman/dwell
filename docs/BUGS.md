@@ -472,6 +472,11 @@ march's sideways reach makes the column; what is left is the sweep's and the fra
 horizon map's texel rows, level boundaries) or the real light's azimuth at the world's opening hour
 (7:00, not due east). Next: read the horizon map itself back on the GPU along that line.
 
+Triage 2026-11-14 (main merged into `claude/lod-shadow-69`): main changed nothing in the sweep since round 3, so
+the sub-steps are still needed for the over-shading they fix (the wall test red with the cap at 1, the old march;
+green at 8). They ship as a partial fix; the column itself stays open, its next step unchanged (a GPU readback of
+the horizon map, a local GPU session).
+
 ### 60. On the software renderer the page draws no frame for ~6 s just after the first torch is placed
 
 Found 2026-11-10 chasing main's e2e failure on 0.51.8: `edit.spec.ts`'s every-palette-block test failed

@@ -2537,6 +2537,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (`claude/visual-small-1`), data only:** the rig's ambient floor 0.06 → 1.2 (a softer warm), the glow 0.45 → 2.5,
    home 0.9 → 6.0, the moon 0.35 → 2.0. **Owner should see:** at a sun river head, the crust reads as dark warm-lit
    basalt with its form visible, brighter toward home; the lava as bright as before.
+
+58. **World generation settings, a new version (owner, 2026-11-14, closing PR #234):** "Can close #234 sounds
+   outdated. We should have this but a new version of it." Not started; **deferred (owner, 2026-11-13: refinement
+   only)**: a new feature, after the refinement priority lifts. #234's world generation settings are not revived as
+   they were; the new version is built on today's terrain. Ask the owner before designing (CLAUDE.md "extendable
+   system": which presets and sliders, per world, by data).
+   **Owner should see:** a create-world screen with world generation presets/sliders built on today's terrain
+   (Realistic).
+59. **The flood light off the main thread, unparked (owner, 2026-11-14, on PR #482, parked 2026-11-10):** "Let's
+   unpark it but put it last in priority." Unparked; **last in this queue's priority order** (item 16's
+   fps-moving statuses list it as left). **Owner should see:** smoother chunk loading when flying fast (no
+   light-recompute stalls on the main thread), measured on the M1 Air at High.
+
 ## Done
 
 - **Treetops missing below the camera 25-40 m over a forest (BUGS.md #162; brief 2026-11-13: "first confirm with a
