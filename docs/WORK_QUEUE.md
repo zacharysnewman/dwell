@@ -1234,7 +1234,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
    browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
    **Real LOD on the moon and the sun (owner, 2026-11-13):** "The moon looks really bad. The LODs look like it's either
-   high detail or super duper low detail, unlike home world. The LOD colors don't match either." (BUGS.md #155.) Brief:
+   high detail or super duper low detail, unlike home world. The LOD colors don't match either." (BUGS.md #156.) Brief:
    a per-grid LOD instance (home's `LodSystem`, graded levels and fades) whose sections come from the grid's own
    generator, coloured by the same block-look path as home's LOD, dropped and rebuilt at crossings (#879's rule),
    replacing `grid_lod.rs`'s rings on the grid (the far-body bake kept for seeing the grid from outside). Branch

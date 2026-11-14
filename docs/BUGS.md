@@ -6,7 +6,7 @@ pins it.
 
 ## Open
 
-### 155. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
+### 156. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
 
 Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
 unlike home world. The LOD colors don't match either." Cause: since #143/#145 a grid's distance is `grid_lod.rs`'s
