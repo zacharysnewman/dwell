@@ -81,3 +81,62 @@ both_faces!(
         }
     }
 );
+
+both_faces!(
+    /// The sand desert surfaces as tan sand (the map check, 2026-11-14: grey stone with shrubs where
+    /// the biome map said sand desert): its own stack (`rockStack` `dwell:dune_sands`, a massive
+    /// rock capped and screed with sand) in place of the province's rock; at least [`SAND_SHARE`] of
+    /// its dry surface is sand, rock only on its steepest faces.
+    fn the_sand_desert_surfaces_as_tan_sand(f: FaceFrame) {
+        use dwell_worldgen::terrain::{TerrainGenerator, Water};
+        let e = world_config(NAME).unwrap().expect("the Realistic world");
+        let desert = e
+            .biomes
+            .iter()
+            .position(|b| b.name == "preset:sand_desert")
+            .expect("the sand desert");
+        let (mut cols, mut sand) = (0usize, 0usize);
+        for world in SEEDS {
+            let seed = face_seed(world, f.face);
+            let map = Arc::new(
+                WorldMap::for_height(seed, e.height.expect("its height field"))
+                    .with_worldgen(NAME)
+                    .unwrap(),
+            );
+            let g = TerrainGenerator::with_map(seed, map)
+                .with_biomes_and_geology(&e.biomes, e.map, e.geology)
+                .with_vegetation(e.vegetation);
+            for z in (-46_000..=46_000).step_by(400) {
+                for x in (-46_000..=46_000).step_by(400) {
+                    if usize::from(g.biome_mix(x.into(), z.into()).chosen) != desert {
+                        continue;
+                    }
+                    let c = g.column_at(x, z);
+                    if c.outside || c.water != Water::None {
+                        continue;
+                    }
+                    let Some(y) = g.ground_y(x, z) else { continue };
+                    let n = dwell_blocks::info(g.state_at(x, y, z)).name;
+                    let n = n.split('[').next().unwrap_or(n);
+                    cols += 1;
+                    sand += usize::from(n == "dwell:sand" || n == "dwell:sand_ramp");
+                }
+            }
+        }
+        let share = sand as f64 / cols.max(1) as f64;
+        eprintln!(
+            "{:?}: sand desert surface {sand} of {cols} sand ({:.1} %)",
+            f.face,
+            100.0 * share
+        );
+        assert!(cols > 200, "{:?}: sand desert sampled {cols}", f.face);
+        assert!(
+            share >= SAND_SHARE,
+            "{:?}: the sand desert {:.1} % sand",
+            f.face,
+            100.0 * share
+        );
+    }
+);
+
+const SAND_SHARE: f64 = 0.8;

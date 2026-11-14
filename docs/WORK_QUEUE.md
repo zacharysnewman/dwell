@@ -838,6 +838,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    seeds. **Owner should see:** cones that blend into their range with eroded flanks; coasts with bays and headlands, none
    straight for more than 1–2 km; islands of varied sizes and shapes, unevenly spaced; no thin land strips; tan sand dune
    deserts with rock only on steep faces; mesa country on typical seeds.
+   Owner, 2026-11-14, after the 0.64 before/after maps: "Yeah something about the volcano islands are the exact same size,
+   perfectly round, and evenly spaced in a line. I think maybe our tectonic plates are too straight, our continents don't
+   have natural curves inner and outer, with noise variation." So: the plate field itself domain-warped at two or three
+   scales (15–30 km sweeps, 3–6 km wiggles), continents with inner and outer curves, bays and peninsulas from the warped
+   plates and multi-octave coast noise; island chains of varied, irregular islands on curving tracks with uneven spacing,
+   arc islands along the curved trench with gaps; all amplitudes and wavelengths data. **Owner should see:** continents and
+   plates with natural sweeping curves, bays and peninsulas, and volcanic island chains of varied, irregular islands along
+   a curving line. Nothing straight, round or evenly spaced at map scale.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

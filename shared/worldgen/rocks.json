@@ -9,7 +9,8 @@
     { "name": "dwell:andesite", "hardness": 0.8, "jointing": "vertical", "bed": 16, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:stone", "color": "#5a5652" },
     { "name": "dwell:shield_basalt", "hardness": 0.85, "jointing": "vertical", "bed": 12, "solubility": 0, "face": "dwell:basalt", "cap": "dwell:basalt", "scree": "dwell:basalt", "color": "#2c2c32" },
     { "name": "dwell:siltstone", "hardness": 0.2, "jointing": "bedded", "bed": 6, "solubility": 0, "face": "dwell:red_sandstone", "cap": "dwell:red_dirt", "scree": "dwell:red_sand", "color": "#b0603e" },
-    { "name": "dwell:schist", "hardness": 0.75, "jointing": "bedded", "bed": 10, "solubility": 0, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#7f8a86" }
+    { "name": "dwell:schist", "hardness": 0.75, "jointing": "bedded", "bed": 10, "solubility": 0, "face": "dwell:stone", "cap": "dwell:stone", "scree": "dwell:stone", "color": "#7f8a86" },
+    { "name": "dwell:dune_sand", "hardness": 0.1, "jointing": "massive", "bed": 4, "solubility": 0, "face": "dwell:stone", "cap": "dwell:sand", "scree": "dwell:sand", "color": "#e0c890" }
   ],
   "stacks": [
     { "name": "dwell:red_beds", "weight": 1, "layers": [ { "rock": "dwell:sandstone", "thickness": 24 }, { "rock": "dwell:shale", "thickness": 36 } ] },
@@ -21,7 +22,8 @@
     { "name": "dwell:arc_volcanics", "weight": 0, "layers": [ { "rock": "dwell:andesite", "thickness": 32 } ] },
     { "name": "dwell:hotspot_shield", "weight": 0, "layers": [ { "rock": "dwell:shield_basalt", "thickness": 24 } ] },
     { "name": "dwell:collision_core", "weight": 0, "layers": [ { "rock": "dwell:granite", "thickness": 60 }, { "rock": "dwell:schist", "thickness": 40 } ] },
-    { "name": "dwell:rift_fill", "weight": 0, "layers": [ { "rock": "dwell:sandstone", "thickness": 8 }, { "rock": "dwell:shale", "thickness": 10 } ] }
+    { "name": "dwell:rift_fill", "weight": 0, "layers": [ { "rock": "dwell:sandstone", "thickness": 8 }, { "rock": "dwell:shale", "thickness": 10 } ] },
+    { "name": "dwell:dune_sands", "weight": 0, "layers": [ { "rock": "dwell:dune_sand", "thickness": 40 } ] }
   ],
   "arid": { "$comment": "What arid ground is, for a rock's `capBy` (BUGS.md #134; owner, 2026-11-13: \"We need a red brown sand for the red desert areas\"): the biomes' own climate values, as the red rock mesa's `where` (rain in mm where the world has a climate, any without one; the geography's wetness, 0..1; celsius at least, so a hot desert, not the boreal's or the tundra's dry ground). A rock's `capBy` lists {\"<climate>\": block} (the code's vocabulary: arid), the first whose climate holds giving its treads' block, else its `cap`: sandstone's treads are red sand where it is arid, red sandstone elsewhere.", "rain": 450, "wetness": 0.3, "celsius": 6 },
   "provinces": { "wavelength": 12000 },

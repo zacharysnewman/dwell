@@ -115,6 +115,18 @@ pub const ROCKS: &[Rock] = &[
         scree: "dwell:stone",
         color: 0x7f8a86,
     },
+    Rock {
+        name: "dwell:dune_sand",
+        hardness: 0.1,
+        jointing: Jointing::Massive,
+        bed: 4.0,
+        solubility: 0.0,
+        face: "dwell:stone",
+        cap: "dwell:sand",
+        cap_by: &[],
+        scree: "dwell:sand",
+        color: 0xe0c890,
+    },
 ];
 
 /// The strata stacks (rocks.json `stacks`), layers top to bottom.
@@ -194,6 +206,13 @@ pub const STACKS: &[Stack] = &[
         layers: &[
             Layer { rock: "dwell:sandstone", thickness: 8.0 },
             Layer { rock: "dwell:shale", thickness: 10.0 },
+        ],
+    },
+    Stack {
+        name: "dwell:dune_sands",
+        weight: 0.0,
+        layers: &[
+            Layer { rock: "dwell:dune_sand", thickness: 40.0 },
         ],
     },
 ];

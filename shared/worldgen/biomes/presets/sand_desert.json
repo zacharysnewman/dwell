@@ -58,5 +58,6 @@
   "placements": ["boulders", "sagebrush"],
   "ground": { "dwell:ground_rock": 2 },
   "trees": { "boulders": 0.6, "sagebrush": 0.3 },
-  "water": "dwell:water"
+  "water": "dwell:water",
+  "rockStack": "dwell:dune_sands"
 }
