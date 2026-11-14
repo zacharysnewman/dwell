@@ -160,7 +160,7 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   GLB's `detail_0`), `palette.json`, `creatures.json` and `models.json` (its `palette.exclude`), each recognised
   by its content. Or starts a **new empty map** or one **seeded from colours** (each vertex its nearest palette
   ramp, the six commonest ramps a part each).
-- **Views:** flat-shaded, orbit, pan and zoom, front, side, back and top; **Parts** (a colour a part), **Real
+- **Views:** flat-shaded; **Parts** (a colour a part), **Real
   colours** (the GLB's), **Variant** (a creature's `colours` entries, each `from → to` picked or cycled, recoloured
   by part with `dwell_models::recolour`'s luminance-ratio rule) and **Weights** (a joint's skin weight as heat;
   Alt-click picks the vertex's heaviest joint). Vertex dots and edges. The **Level** select shows `detail_1…`
@@ -173,9 +173,31 @@ The first two feed [`ADAPTIVE_BLOCKS.md`](../ADAPTIVE_BLOCKS.md) (Phase 18, form
   a part, `0` erases. Undo and redo.
 - **Export** downloads or copies the part map exactly as `parts.mjs` writes it (`$comment` and `seed` kept);
   loading the exported file reproduces it. Put it at `shared/models/parts/` and run `node shared/models/gen.mjs`.
+- **Camera** (owner, 2026-11-14): left-drag orbits (while painting: middle-drag, hold Space, or the Orbit tool),
+  right- or shift-drag pans, the wheel or a pinch zooms toward the point under the cursor, double-click focuses
+  there; the pitch stops short of the poles (no flips) and the distance is clamped to the model's size. Views:
+  Front, Back, Left, Right (the model's own sides), Top, ¾, Reset (`F`), eased. Touch: one finger orbits (a tap
+  selects), two pan and pinch. The help box folds on a click.
+- **Select faces** (the Edit switch; owner, 2026-11-14: "copy those Face IDs so I can paste them here and talk about
+  them"): click toggles a face, shift-click adds, ctrl-click removes; alt-drag or the **Box** tool selects the
+  faces whose centre is in the box (plain replaces, shift adds, ctrl removes; with "only faces I can see",
+  front-facing and not hidden behind the mesh); **connected same colour** makes a click take the joined faces of
+  its colour; Select none (`Esc`), Invert. Selected faces are tinted pink with a yellow outline; the hovered face is
+  outlined cyan and the corner shows its id, part, colour, vertices, height and radius. **Numbering:** a face id is
+  the triangle's index in the level's GLB primitive (`detail_k`, primitive 0: indices 3t..3t+2), so each level
+  (100/60/35/20 %, the Level picker) numbers its own faces from 0 and keeps its own selection.
+- **Copy face ids** (`Ctrl+C`) writes `peasant @60% faces: 1203,1204,1210–1215 (8) — parts: shirt 6, belt 2 —
+  colours: wool_green 6, leather 2` (runs of three or more as ranges, the count, the faces' parts and palette
+  ramps) to the clipboard and the text box under it (select it by hand when the clipboard is blocked, as on the
+  published link). **Load selection** reads that text back (or a bare list like `4, 6-8`), switching to its
+  level. **Band from selection** prints a decor `band` entry (`models.json` `decor`) whose `y`, `r` and `span`
+  cover the selection; decor picks facets by position, so check the render.
 - **Tested:** the page's pure core (`<script id="core">`: the GLB reader, islands, rows, the check, the export,
-  the level mapping, the recolour) is run by `node --test shared/models/painter.test.mjs` against `parts.mjs`
-  on the Peasant (the export byte for byte). `window.painter` drives it from a script.
+  the level mapping, the recolour, and the face ids' ranges, the copied text's round trip, the box select's
+  centre and winding test, the hidden test, the connected-colour fill and the band) is run by
+  `node --test shared/models/painter.test.mjs` against `parts.mjs` on the Peasant (the export byte for byte).
+  `window.painter` drives it from a script (`setEdit("faces")`, `selectFaces`, `boxSelect`, `selectionText`,
+  `loadSelection`, the camera's `zoomAt`, `panBy`, `orbitBy`, `focusAt`).
 
 ## Updating them
 

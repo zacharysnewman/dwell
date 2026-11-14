@@ -2790,6 +2790,23 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and the same pattern round the waist (sides and back), the hat's top one clean colour, the clothes plainer
    to set the pattern off. **Left:** at 60 % the front of the waist has no short facets, so the ring shows on
    the sides and back only.
+   **Face select in the painter** (owner, 2026-11-14): **"For the model painter tool, make an easy tool to
+   select/deselect faces on the mesh, so solid camera controls are needed. And then copy those Face IDs so I can
+   paste them here and talk about them. Like what faces to put the colorful belt on."** **Built (branch
+   `claude/painter-faces`, 2026-11-14):** the painter's camera reworked (left-drag orbit with the pitch clamped
+   short of the poles, right/shift-drag pan, wheel and pinch zoom toward the cursor, clamped; double-click focuses
+   a point; Front/Back/Left/Right/Top/¾/Reset, eased; one finger orbits, two pan and pinch); an Edit switch
+   between **Paint parts** and **Select faces**: click toggles a face (shift adds, ctrl removes), alt-drag or the
+   Box tool box-selects the faces it can see, "connected same colour", Select none, Invert; hover shows the face's
+   id, part and colour; the Level picker (100/60/35/20 %) selects per level. A face id is the triangle's index in
+   that level's GLB primitive (`detail_k`, primitive 0), each level numbered from 0. **Copy face ids** puts e.g.
+   `peasant @60% faces: 1203,1204,1210–1215 (8) — parts: shirt 6, belt 2 — colours: wool_green 6, leather 2` on
+   the clipboard (and in a text box when the clipboard is blocked); **Load selection** takes that text back (on its
+   level). **Band from selection** prints a decor `band` entry covering the selection's heights and radii.
+   `node --test shared/models/painter.test.mjs` covers the id ranges, the text's round trip, the box and
+   visibility tests and the connected-colour fill. **Owner should see:** in the painter (republished link), orbit
+   and zoom around the villager smoothly, click faces to select them (they highlight pink with a yellow outline),
+   and press Copy face ids to get a short list of face ids to paste into chat.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
