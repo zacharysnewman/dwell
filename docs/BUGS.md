@@ -581,6 +581,68 @@ takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs
 `a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
 face +Y, placed on top).
 
+### 158. Villagers' skin reads cold blue-grey with the sun behind them (fixed after 0.63.8)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13; refinement, owner: "Focus on refinement only
+for now"): on a flat world at time 0.45, villagers facing the camera with the sun behind them had grey-blue faces and
+arms ((160, 174, 188) on a porcelain face, #f5d7c4), though every skin tone is warm. Not the recolour (the skin
+mapping is right; the same villager from behind, sunlit, is right). Cause: a body's light (`skin_key`, and the rigid
+characters' `key_light`) is the light on a face looking up, its direct share shadowed at the fragment: on the side
+away from the sun that left only the blue sky's hemisphere, through the ramp's cool shade (0.55, 0.58, 0.78), with no
+light thrown back off the sunlit ground. Applies to every body (the player's too). Fix: a warm ground bounce for
+bodies by data, shared/look/light.json `characters.bounce` (`color` #e8a878, `strength` 0.6), times the sun's light
+on the open ground and the body's sky openness, added to the skinned bodies' and the rigid characters' light
+(`body_bounce`). Test: `skinned::a_bodys_light_carries_the_grounds_warm_bounce` (red before: no bounce in either
+body's light), and light.test.mjs's data checks. The same face now reads (211, 194, 195); a side-lit one (134, 132,
+113) → (197, 158, 126). **Owner should see:** villagers (and your own body) facing you with the sun behind them keep
+warm skin on the shaded side, not grey-blue.
+
+### 157. Trees stay stippled with the camera still (fixed after 0.63.8)
+
+Found in the same GPU pass (02a, 02b): standing still at 8 m and 32 m over `test:forest`, trees about 15–60 m off
+were dithered after 3 s or more, though #154 made each tree fully near or fully its impostor once its 0.3 s fade
+ends. Two distance dithers were left: (1) the impostor picked each pixel's view by the screen noise among up to four
+baked views (`imp_pick`, `Config::dither`), so a tree seen between two views showed both, stippled where their
+silhouettes differ, the trunk's red dotted through (the main one: it stayed with `?cards=0`); (2) the leaf cards
+dissolved by distance over 24–40 m (`fadeStartM`–`fadeEndM`). Fix: (1) each impostor draws its nearest view
+(`Config::nearest`, WGSL `imp_nearest`: azimuth and band each rounded), the same for every pixel; the view changes
+only as the camera moves round the tree; (2) a tree's cards switch on and off with the tree in time, as its leaves
+do: on nearer than `fadeStartM`, off past the middle of `fadeStartM`–`fadeEndM` (32 m) from its crown, each switch
+faded over the tier's `fadeS` (render/tree_fade.rs, the map's second plane, `tree_cards_share`), dropped whole past
+32 + 10 m. Left by distance on purpose: the near-eye dissolve of a leaf face within a few metres (the camera inside a
+crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier `off`). Tests:
+`impostors::a_tree_draws_one_view_with_no_per_pixel_dither` (red before), `impostor::a_tree_draws_its_nearest_view_…`,
+`tree_fade::a_still_eye_sees_every_trees_cards_whole_or_gone` and `a_trees_cards_fade_once_in_time_…` (both faces).
+**Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
+as solid painted shapes.
+
+### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
+
+Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
+move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
+tree is casting a shadow onto itself."
+
+Causes (render/shadows.rs, render/mod.rs, the cutout shaders): (1) a chunk's whole cutout mesh, its trees' leaves
+included, was a *plant* caster, drawn into the nearest `plantCascades` only (Low: the first of 2, out to ~20 m; High:
+2 of 3, ~44 m), so past them a crown cast nothing at all, on the ground or on itself; (2) the shadow passes used the
+scene's `cutout_vs`, which drops a leaf card the camera is behind (`card_dropped`'s back-cull), so which cards cast —
+the crown's top cards seen from below, its far side's — changed with where the camera stood; (3) the lookup's normal
+offset was 1.5 of each cascade's texels (2 cm in the near cascade, 7–26 cm in the far ones), so the near cascade
+shaded the crown's top with the shadows of its cards standing a few centimetres off it and the far ones couldn't;
+(4) a fragment switched cascade at the box's edge with no blend. Fix: leaves cast into every cascade (plants still
+into the nearest only; `shadows::casts`, a `Part::Leaves` range); the shadow passes' own `shadow_cutout_vs` drops no
+card for the camera's side; a tree's leaves look up at least `bias.leafNormalOffsetM` (0.35 m) out, the same in every
+cascade (`normal_offset_m`); the outer `cascades.blendBand` (15 %) of a cascade's box blends toward the next
+(`pick`, `shadow_cascades`). The choice: **no texel-scale self-shadow on a crown in any cascade** (the owner's
+first look, "only below"): the coarse cascades can't draw a card's shadow on the face under it, and the owner read
+the other look as the odd one; a crown still takes shadows from other trees, cliffs and its own upper crown more
+than 0.35 m above a face, and the ground under it is shaded in every cascade. Tests (render/shadows.rs, a CPU model
+of the maps and the lookup, both faces): `a_crowns_texel_gets_the_same_shadow_whichever_cascade_reads_it` (red
+before: the crown's top 0 under a card in the near cascades, and the ground under the crown lit past
+`plantCascades`), `a_cascades_edge_changes_a_fixed_receivers_shadow_by_the_blend` (red before: a step
+at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest`,
+`a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
+trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
 ### 155. Flying at the moon never got closer (fixed after 0.63.6)
 
 Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and

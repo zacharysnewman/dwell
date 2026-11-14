@@ -31,11 +31,13 @@ const CASCADES = {
   slack: [0, 1],
   lightTurnDeg: [0, 10],
   lightStepDeg: [0, 10],
+  blendBand: [0, 0.5],
 };
 const BIAS = {
   normalOffsetTexels: [0, 16],
   depthBiasM: [0, 4],
   slopeScale: [0, 16],
+  leafNormalOffsetM: [0, 4],
 };
 const LIGHT = {
   fadeStartDeg: [-10, 90],
