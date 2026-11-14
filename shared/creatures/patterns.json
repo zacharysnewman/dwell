@@ -1,0 +1,19 @@
+{
+  "$comment": "NPC pattern sets (WORK_QUEUE items 38 and 43; owner, 2026-11-13: \"losing the colorful waist of the shirt patterns. I want those back, but cleaner ... I'm imagining a colorful day of the dead Mexico kind of vibes\"). A set (`sets`, named; an NPC's `pattern.set` in creatures.json names one) has `places`, how many places its rings have round them (the model's band parts: the Peasant's waist ring and hat band, models.json `decor`), and `patterns`: each a `name`, an optional `weight` (default 1), `colours` the sequence round the ring (#rrggbb, 2 to `places` long, its length dividing `places`, no colour next to itself round the ring, a 3-colour pattern written as a 4-long sequence) and `pairs` (optional): per clothes part (creatures.json `colours[].part`), the bases that go with the pattern (palette ramps or #rrggbb), picked from in place of that part's own `to`. An NPC picks a pattern by weight from its variant seed (dwell-sim `npc_pattern`), then its clothes from the pattern's pairs. Prototype content (ARCHITECTURE.md §6.1). Run `node shared/creatures/gen.mjs` after editing.",
+  "formatVersion": 1,
+  "sets": {
+    "fiesta": {
+      "places": 4,
+      "patterns": [
+        { "name": "marigold", "colours": ["#e63a8f", "#f39a1e", "#1fb3aa", "#f6cf2f"], "pairs": { "shirt": ["linen", "canvas", "bark"], "trousers": ["flint", "bark", "hair_black"], "hat": ["wool_yellow", "canvas"] } },
+        { "name": "papel", "colours": ["#e63a8f", "#9ac53c", "#e63a8f", "#7b4bb8"], "pairs": { "shirt": ["linen", "canvas", "wool_blue"], "trousers": ["flint", "leather", "wool_blue"], "hat": ["wool_yellow", "leather"] } },
+        { "name": "calavera", "colours": ["#e63a8f", "#f6f1e4", "#1fb3aa", "#f6f1e4"], "pairs": { "shirt": ["hair_black", "wool_blue", "bark"], "trousers": ["hair_black", "flint", "leather"], "hat": ["hair_black", "wool_yellow", "bark"] } },
+        { "name": "ocaso", "colours": ["#f39a1e", "#7b4bb8"], "pairs": { "shirt": ["linen", "canvas", "leather"], "trousers": ["flint", "canvas", "bark"], "hat": ["wool_yellow", "canvas", "leather"] } },
+        { "name": "jade", "colours": ["#1fb3aa", "#f6cf2f", "#9ac53c", "#f6cf2f"], "pairs": { "shirt": ["linen", "wool_red", "canvas"], "trousers": ["flint", "leather", "bark"], "hat": ["wool_yellow", "bark"] } },
+        { "name": "rosa", "colours": ["#e63a8f", "#f6cf2f"], "pairs": { "shirt": ["linen", "wool_blue", "wool_green"], "trousers": ["flint", "wool_blue", "bark"], "hat": ["wool_yellow", "canvas", "flint"] } },
+        { "name": "cempasuchil", "colours": ["#f39a1e", "#d8283f", "#f6cf2f", "#d8283f"], "pairs": { "shirt": ["linen", "canvas", "wool_green"], "trousers": ["flint", "leather", "hair_black"], "hat": ["wool_yellow", "leather", "bark"] } },
+        { "name": "fandango", "colours": ["#7b4bb8", "#9ac53c", "#e63a8f", "#1fb3aa"], "pairs": { "shirt": ["linen", "canvas", "wool_yellow"], "trousers": ["flint", "canvas", "wool_blue"], "hat": ["wool_yellow", "canvas", "stone"] } }
+      ]
+    }
+  }
+}

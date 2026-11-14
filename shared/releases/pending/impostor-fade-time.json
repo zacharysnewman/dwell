@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Far trees no longer show as doubled, half-faded copies: each tree is either its full-detail self or its distant stand-in, swapping with a short fade as you cross the hand-over distance",
-    "Distant trees stay lined up with the real ones as you fly up and down (more viewing angles baked)"
-  ]
-}

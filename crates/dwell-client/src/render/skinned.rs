@@ -34,7 +34,7 @@ use super::frame::{HDR, VIEW_DEPTH};
 
 /// Bytes of one body's uniforms (the joint rows and its light): a multiple of 256 for the dynamic
 /// offset.
-pub const INSTANCE_BYTES: u64 = 3328;
+pub const INSTANCE_BYTES: u64 = 3584;
 const INSTANCE_FLOATS: usize = INSTANCE_BYTES as usize / 4;
 const JOINT_FLOATS: usize = MAX_JOINTS * 12;
 /// The remap's rows after the light: two vec4 a pair (docs/CHARACTERS.md §11.11).
@@ -1858,6 +1858,87 @@ mod villager_colour_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_villagers_waist_ring_and_hat_band_keep_their_pattern_after_its_recolour() {
+        // both-faces: model space at rest (a vertex's colour does not depend on the face).
+        // WORK_QUEUE item 43 (owner, 2026-11-13): "The villagers look good, other than losing the
+        // colorful waist of the shirt patterns. I want those back, but cleaner." The rings were
+        // painted on the shirt and hat parts, so the shirt's and hat's recolour repainted them in
+        // the clothes' colour. Now every ring facet is a pattern part: across 200 seeded villagers,
+        // at every detail level, each pattern vertex draws its place's pattern colour exactly
+        // (never the shirt's or hat's), and the places run the pattern's sequence.
+        let (data, model) = dwell_models::model("peasant").unwrap();
+        let parts = data.parts.expect("the Peasant has a part map");
+        let def = Table::SHIPPED.npc("dwell:villager").unwrap();
+        let pd = def.pattern.expect("villagers have a pattern set");
+        let places: Vec<u8> = pd
+            .places
+            .iter()
+            .map(|(p, _)| parts.number(p).unwrap())
+            .collect();
+        let mut names = std::collections::HashSet::new();
+        for level in 0..dwell_models::DETAIL_LEVELS.len() {
+            let (v, _) = vertex_bytes(model, level, &parts.level(level));
+            let n = v.len() / VERTEX_BYTES;
+            let colour = |i: usize| {
+                let c = &v[i * VERTEX_BYTES + 24..i * VERTEX_BYTES + 28];
+                ([c[0], c[1], c[2]].map(|b| f32::from(b) / 255.0), c[3])
+            };
+            let ring: Vec<usize> = (0..n).filter(|&i| places.contains(&colour(i).1)).collect();
+            if level <= 1 {
+                assert!(
+                    ring.len() >= 32,
+                    "level {level}: {} ring vertices",
+                    ring.len()
+                );
+            }
+            for variant in 0..200u32 {
+                let seed = variant.wrapping_mul(0x9e37_79b9);
+                let pattern = dwell_sim::creatures::npc_pattern(&pd, seed);
+                names.insert(pattern.name);
+                let colours = npc_colours(def, seed);
+                let to = |p: &str| colours.iter().find(|c| c.0 == p).unwrap().2;
+                let remap = dwell_models::part_remap(Some(&parts), &colours);
+                let (shirt, hat) = (base(to("shirt")), base(to("hat")));
+                for &i in &ring {
+                    let (c, part) = colour(i);
+                    let k = places.iter().position(|&p| p == part).unwrap();
+                    let want = base(pattern.colours[k % pattern.colours.len()]);
+                    let got = dwell_models::recolour(c, part, &remap);
+                    let off = |a: [f32; 3], b: [f32; 3]| {
+                        (0..3).map(|j| (a[j] - b[j]).abs()).fold(0.0, f32::max)
+                    };
+                    assert!(
+                        off(got, want) < 1e-4,
+                        "level {level} seed {variant}: vertex {i} of place {k}: {got:?}, not {want:?}"
+                    );
+                    if pattern.colours.iter().all(|c| base(c) != shirt) {
+                        assert!(
+                            off(got, shirt) > 1e-3,
+                            "level {level} seed {variant}: vertex {i} took the shirt's colour"
+                        );
+                    }
+                    if pattern.colours.iter().all(|c| base(c) != hat) {
+                        assert!(
+                            off(got, hat) > 1e-3,
+                            "level {level} seed {variant}: vertex {i} took the hat's colour"
+                        );
+                    }
+                }
+                // The clothes come from the pattern's pairs.
+                for (part, list) in pattern.pairs {
+                    assert!(
+                        list.contains(&to(part)),
+                        "seed {variant}: {part} {} not paired with {}",
+                        to(part),
+                        pattern.name
+                    );
+                }
+            }
+        }
+        assert_eq!(names.len(), pd.patterns.len(), "every pattern turns up");
     }
 
     #[test]

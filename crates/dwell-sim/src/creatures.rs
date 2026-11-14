@@ -145,6 +145,38 @@ pub struct NpcDef {
     pub colours: &'static [ColourSlot],
     /// Its skin and hair (shared/creatures/appearance.json, BUGS.md #152); None: none.
     pub appearance: Option<AppearanceDef>,
+    /// Its waist ring's and hat band's pattern (shared/creatures/patterns.json, WORK_QUEUE item 43);
+    /// None: the rings as modelled.
+    pub pattern: Option<PatternDef>,
+}
+
+/// An NPC's ring pattern (shared/creatures/patterns.json, WORK_QUEUE item 43): the model's part
+/// for each place round its rings and the ramp the model paints it (`places`), and the set's
+/// `patterns`, one picked by weight from the NPC's seed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PatternDef {
+    pub set: &'static str,
+    pub places: &'static [(&'static str, &'static str)],
+    pub patterns: &'static [Pattern],
+}
+
+/// A ring pattern: its colours in sequence round the ring (`#rrggbb`; place `k` takes
+/// `colours[k % len]`) and, per clothes part, the bases that go with it (`pairs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pattern {
+    pub name: &'static str,
+    pub weight: f64,
+    pub colours: &'static [&'static str],
+    pub pairs: &'static [(&'static str, &'static [&'static str])],
+}
+
+/// An NPC's ring pattern from its `variant` seed, by weight (WORK_QUEUE item 43). Deterministic.
+pub fn npc_pattern(p: &PatternDef, variant: u32) -> &'static Pattern {
+    by_weight(
+        p.patterns,
+        |x| x.weight,
+        unit(mix(u64::from(variant), [0, 3, 0], 0x7061_7474)),
+    )
 }
 
 /// An NPC's skin and hair (shared/creatures/appearance.json, BUGS.md #152): the model's skin and
@@ -206,18 +238,29 @@ pub fn npc_appearance(a: &AppearanceDef, variant: u32) -> (&'static SkinTone, &'
 
 /// An NPC's colours from its `variant` seed: per part, (the part, the model's ramp, the ramp drawn
 /// in its place; BUGS.md #96: the recolour is by part). Deterministic: the same seed always picks the same.
-/// Its appearance's skin and hair follow: every skin vertex in the one tone (BUGS.md #152).
+/// Its appearance's skin and hair follow: every skin vertex in the one tone (BUGS.md #152). Its
+/// pattern (WORK_QUEUE item 43) picks the clothes from the pattern's `pairs` (a part it pairs; any
+/// other from its own `to`) and colours each place round its rings, flat (the decor paints them so).
 pub fn npc_colours(def: &NpcDef, variant: u32) -> Vec<NpcColour> {
+    let pattern = def.pattern.as_ref().map(|p| (p, npc_pattern(p, variant)));
     let mut out: Vec<NpcColour> = def
         .colours
         .iter()
         .enumerate()
         .map(|(j, c)| {
+            let to = pattern
+                .and_then(|(_, pt)| pt.pairs.iter().find(|(part, _)| *part == c.part))
+                .map_or(c.to, |&(_, list)| list);
             let h = unit(mix(u64::from(variant), [j as i32, 0, 0], 0x636f_6c6f));
-            let i = ((h * c.to.len() as f64) as usize).min(c.to.len() - 1);
-            (c.part, c.from, c.to[i], 1.0)
+            let i = ((h * to.len() as f64) as usize).min(to.len() - 1);
+            (c.part, c.from, to[i], 1.0)
         })
         .collect();
+    if let Some((p, pt)) = pattern {
+        for (k, &(part, from)) in p.places.iter().enumerate() {
+            out.push((part, from, pt.colours[k % pt.colours.len()], 0.0));
+        }
+    }
     if let Some(a) = &def.appearance {
         let (tone, hair) = npc_appearance(a, variant);
         out.push((a.skin_part, a.skin_from, tone.base, a.shade));
@@ -2364,22 +2407,39 @@ mod tests {
                 npc_colours(def, v.wrapping_mul(0x9e37_79b9)),
                 "deterministic"
             );
+            // The pattern's pairs stand in for a part's own `to` (fixtures/patterns.json, by data alone).
+            let pattern = def
+                .pattern
+                .map(|p| npc_pattern(&p, v.wrapping_mul(0x9e37_79b9)));
+            let options = |slot: &ColourSlot| {
+                pattern
+                    .and_then(|p| p.pairs.iter().find(|(part, _)| *part == slot.part))
+                    .map_or(slot.to, |&(_, l)| l)
+            };
             for ((part, from, to, _), (slot, seen)) in
                 c.iter().zip(def.colours.iter().zip(&mut seen))
             {
                 assert_eq!((*part, *from), (slot.part, slot.from));
-                assert!(slot.to.contains(to));
+                assert!(options(slot).contains(to));
                 seen.insert(*to);
             }
+            // Its pattern's places, flat, in sequence.
+            if let (Some(pd), Some(pt)) = (def.pattern, pattern) {
+                for (k, (part, from)) in pd.places.iter().enumerate() {
+                    let x = c.iter().find(|x| x.0 == *part).unwrap();
+                    assert_eq!(
+                        (x.1, x.2, x.3),
+                        (*from, pt.colours[k % pt.colours.len()], 0.0)
+                    );
+                }
+            }
         }
-        for (slot, seen) in def.colours.iter().zip(&seen) {
-            assert_eq!(
-                seen.len(),
-                slot.to.len(),
-                "every option of {} turns up",
-                slot.part
-            );
-        }
+        assert_eq!(def.pattern.map(|p| p.set), Some("test:duo"));
+        assert_eq!(
+            seen[0].iter().copied().collect::<Vec<_>>(),
+            vec!["#405060"],
+            "the fixture pattern pairs the shirt"
+        );
         // The game's villager: the Peasant, five parts (the hat its own: owner 2026-11-12), sent with its kind and variant.
         let t = Table::SHIPPED;
         let v = t.npc("dwell:villager").expect("the villager");
