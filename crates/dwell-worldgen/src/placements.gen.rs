@@ -3,7 +3,7 @@
 use crate::placements::{Placement, Variant};
 
 /// The structure placements (shared/worldgen/placements.json), in their file order.
-pub static PLACEMENTS: [Placement; 8] = [
+pub static PLACEMENTS: [Placement; 9] = [
     Placement {
         name: "pine_groves",
         structures: &[("dwell:pine_tree", 55), ("dwell:tall_pine_tree", 45)],
@@ -24,6 +24,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250, on: &["dwell:snowy_grass", "dwell:snow"] }],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "broadleaf_groves",
@@ -45,6 +47,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "conifer_groves",
@@ -66,6 +70,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250, on: &["dwell:snowy_grass", "dwell:snow"] }],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "palm_coasts",
@@ -87,6 +93,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "boulders",
@@ -108,6 +116,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "old_growth",
@@ -129,6 +139,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "rainforest_groves",
@@ -150,6 +162,8 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
     },
     Placement {
         name: "sagebrush",
@@ -171,5 +185,30 @@ pub static PLACEMENTS: [Placement; 8] = [
         rotations: &[0, 1, 2, 3],
         variants: &[],
         tops: 0.12,
+        cliff_reach: 0.0,
+        wet: false,
+    },
+    Placement {
+        name: "talus",
+        structures: &[("dwell:talus_stone", 5), ("dwell:talus_block", 3), ("dwell:proto_rock", 2)],
+        on: &["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:sand", "dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone", "dwell:snowy_grass", "dwell:basalt"],
+        footprint_on: false,
+        pad_trunk: false,
+        grid: 4,
+        density: 0.25,
+        grove_wavelength: 0,
+        grove_coverage: 1.0,
+        grove_outside: 1.0,
+        min_height: -60,
+        max_height: 2500,
+        rise_full: -60,
+        rise_low: 1.0,
+        max_gradient_sq: 1.4202766,
+        spacing: 0,
+        rotations: &[0, 1, 2, 3],
+        variants: &[Variant { name: "red", replace: &[("dwell:stone", "dwell:red_sandstone"), ("dwell:dirt", "dwell:red_sandstone")], from: 100000, full: 100000, on: &["dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone"] }],
+        tops: 1.0,
+        cliff_reach: 12.0,
+        wet: true,
     },
 ];
