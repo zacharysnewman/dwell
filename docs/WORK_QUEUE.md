@@ -2814,6 +2814,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    visibility tests and the connected-colour fill. **Owner should see:** in the painter (republished link), orbit
    and zoom around the villager smoothly, click faces to select them (they highlight pink with a yellow outline),
    and press Copy face ids to get a short list of face ids to paste into chat.
+   **Eyes on the picked faces** (owner, 2026-11-14, with the painter's face select): **"Eyes should be centered on
+   these faces: peasant @100% faces: 808,809,1518,1519 (4) — parts: skin 4 — colours: skin_fair 4"**. Each pair
+   is a quad of `detail_0` (two triangles sharing an edge): 808+809 the +x eye, 1518+1519 the -x, mirror images.
+   **Built (branch `claude/eyes-placement`, 2026-11-14):** a decor `piece` may be anchored by `faces` (lists of
+   detail_0 triangle ids, the painter's numbering) in place of `at`/`mirror`: each list's area-weighted centre is
+   cast along `facing` onto every level as before; the Peasant's eyes are `faces: [[808, 809], [1518, 1519]]`. The
+   eyes moved from x ±0.035, y 1.486 to x ±0.061, y 1.463 (2.6 cm out, 2.3 cm down), within 1.5 mm across and
+   up of the picks' centre at every level (the 3 mm lift off the tilted face), symmetric within 0.4 mm across and up
+   (1.1 mm in depth) (`decor.test.mjs`). Renders before/after at
+   100 % and 60 % in the PR. **Owner should see:** the villagers' eyes centred on the face spots picked in the
+   painter.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
