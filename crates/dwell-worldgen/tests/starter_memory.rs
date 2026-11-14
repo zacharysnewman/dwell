@@ -125,8 +125,9 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// notched ramps only at rock walls' edges (rocks.json `shaping.notched` `mesaEdges`), the mesas'
 /// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
 /// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
+/// Face B again for every ramp backed (BUGS.md #157) and the bigger shrines (the same line).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "6f73f8b3cbaec507"), (Face::B, "aa1c445c34fefd3a")];
+    [(Face::A, "6f73f8b3cbaec507"), (Face::B, "912d53ac7e44284c")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
