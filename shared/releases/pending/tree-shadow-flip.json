@@ -1,7 +1,0 @@
-{
-  "changes": [
-    "Trees' shadows no longer flip between two looks as you move: a crown no longer shades its own top up close",
-    "Trees cast their leaves' shadows at every distance shadows are drawn, not only up close",
-    "No visible step where the shadows' detail changes with distance"
-  ]
-}
