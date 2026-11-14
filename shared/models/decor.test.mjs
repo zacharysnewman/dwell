@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { addPieces, addedVertices, bandSector, decorBase, decorPlan, facets, rayHit, validateDecor } from "./decor.mjs";
+import { addPieces, addedVertices, bandSector, decorBase, decorParts, decorPlan, facets, rayHit, validateDecor } from "./decor.mjs";
 import { resolveColor } from "./gen.mjs";
 import { allLevelParts, readMesh } from "./parts.mjs";
 
@@ -156,14 +156,15 @@ test("the Peasant's crown band is on the hat's crown only, never the brim, at ev
       });
       return base.names[base.parts[best] - 1];
     });
-    assert.ok(partPlan.length >= 8, `detail_${k}: a ring (${partPlan.length} facets)`);
+    // The 20 % level keeps no crown facet short enough for the band (no spikes up the crown).
+    if (k <= 2) assert.ok(partPlan.length >= 8, `detail_${k}: a ring (${partPlan.length} facets)`);
     assert.ok(plan.length >= partPlan.length);
     for (const [vs] of partPlan) {
       const c = centreOf(m, vs);
       assert.ok(Math.hypot(c[0], c[2]) <= brimR, `detail_${k}: a brim facet painted`);
     }
     // No brim facet (the hat's, beyond the crown) carries a band colour it didn't have.
-    const red = hexRgb(resolveColor(palette, crown.colours[1])).map(toLinear);
+    const red = hexRgb(resolveColor(palette, crown.colours[0])).map(toLinear);
     for (const vs of facets(m.indices, m.count)) {
       const c = centreOf(m, vs);
       if (Math.hypot(c[0], c[2]) <= brimR || levelParts[k][vs[0]] !== hat) continue;
@@ -172,28 +173,93 @@ test("the Peasant's crown band is on the hat's crown only, never the brim, at ev
   });
 });
 
-test("the Peasant's waist ring strictly alternates its two colours round the body, no spikes, at every level", () => {
-  const ring = entry("band", undefined);
-  assert.equal(ring.part, undefined);
-  assert.ok(ring.order && ring.span);
-  const cols = ring.colours.map((c) => hexRgb(resolveColor(palette, c)).map(toLinear));
-  levels.forEach((m, k) => {
-    const plan = decorPlan([ring], facets(m.indices, m.count), m.position, () => undefined, m.indices);
-    // The default (60 %) and full levels show a ring; the 35 % and 20 % keep only a few short facets.
-    assert.ok(plan.length >= (k <= 1 ? 8 : 0), `detail_${k}: a ring (${plan.length} facets)`);
-    const round = plan
-      .map(([vs, colour]) => {
-        const c = centreOf(m, vs);
-        return { deg: ((Math.atan2(c[0], c[2]) * 180) / Math.PI + 360) % 360, vs, colour };
-      })
-      .sort((a, b) => a.deg - b.deg);
-    round.forEach(({ vs, colour }, i) => {
-      assert.equal(colour, ring.colours[i % 2], `detail_${k}: facet ${i} round the ring`);
-      // Painted so in the GLB.
-      assert.ok(near(m.colour(vs[0]), cols[i % 2]), `detail_${k}: facet ${i} is painted ${colour}`);
-      const ys = vs.map((v) => m.position(v)[1]);
-      assert.ok(Math.max(...ys) - Math.min(...ys) <= ring.span, `detail_${k}: a spike`);
+/** A band's plan as segments round the ring: runs of one colour, in angle order (one wrapped run joined). */
+function segments(plan, m) {
+  const round = plan
+    .map(([vs, colour, part]) => {
+      const c = centreOf(m, vs);
+      return { deg: ((Math.atan2(c[0], c[2]) * 180) / Math.PI + 360) % 360, vs, colour, part };
+    })
+    .sort((x, y) => x.deg - y.deg);
+  const runs = [];
+  for (const f of round) {
+    if (runs.length && runs.at(-1).colour === f.colour) runs.at(-1).facets.push(f);
+    else runs.push({ colour: f.colour, part: f.part, facets: [f] });
+  }
+  if (runs.length > 1 && runs[0].colour === runs.at(-1).colour) runs[0].facets.push(...runs.pop().facets);
+  return runs;
+}
+
+test("the Peasant's waist ring and crown band run their pattern's places strictly in sequence, no spikes, at every level", () => {
+  // Owner, 2026-11-13: "losing the colorful waist of the shirt patterns. I want those back, but cleaner".
+  for (const d of [entry("band", undefined), entry("band", "hat")]) {
+    assert.ok(d.order && d.span && d.parts.length === d.colours.length);
+    const cols = d.colours.map((c) => hexRgb(resolveColor(palette, c)).map(toLinear));
+    const base = decorBase(glb, partsFile);
+    const partOf = (p) => {
+      let best = 0;
+      let bd = Infinity;
+      base.positions.forEach((q, i) => {
+        const e = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2;
+        if (e < bd) [bd, best] = [e, i];
+      });
+      return base.names[base.parts[best] - 1];
+    };
+    levels.forEach((m, k) => {
+      const plan = decorPlan([d], facets(m.indices, m.count), m.position, partOf, m.indices);
+      // The default (60 %) and full levels show a ring; a ring shorter than one sequence is left out.
+      if (k <= 1) assert.ok(plan.length >= 8, `detail_${k}: a ring (${plan.length} facets)`);
+      if (!plan.length) return;
+      const runs = segments(plan, m);
+      assert.equal(runs.length % d.colours.length, 0, `detail_${k}: whole sequences round the ring`);
+      runs.forEach((r, j) => {
+        assert.equal(r.colour, d.colours[j % d.colours.length], `detail_${k}: segment ${j} in sequence`);
+        assert.equal(r.part, d.parts[j % d.colours.length], `detail_${k}: segment ${j}'s part`);
+      });
+      for (const [vs, colour] of plan) {
+        assert.ok(near(m.colour(vs[0]), cols[d.colours.indexOf(colour)]), `detail_${k}: painted ${colour}`);
+        const ys = vs.map((v) => m.position(v)[1]);
+        assert.ok(Math.max(...ys) - Math.min(...ys) <= d.span, `detail_${k}: a spike`);
+      }
     });
+  }
+});
+
+test("every painted ring facet is in its pattern part at every level (the shirt's and hat's recolour never reach it)", () => {
+  const names = partsFile.parts;
+  const parts = decorParts(glb, peasant.decor, names, levelParts, decorBase(glb, partsFile));
+  const pattern = new Set(["pattern_1", "pattern_2", "pattern_3", "pattern_4"].map((p) => names.indexOf(p) + 1));
+  const ringCols = entry("band", undefined).colours.map((c) => hexRgb(resolveColor(palette, c)).map(toLinear));
+  levels.forEach((m, k) => {
+    let n = 0;
+    for (let v = 0; v < m.count; v++) {
+      if (!pattern.has(parts[k][v])) continue;
+      n++;
+      const want = ringCols[parts[k][v] - names.indexOf("pattern_1") - 1];
+      assert.ok(near(m.colour(v), want), `detail_${k}: vertex ${v} of ${names[parts[k][v] - 1]} is its place's colour`);
+    }
+    if (k <= 1) assert.ok(n > 0, `detail_${k}: pattern vertices`);
+    // No pattern part on the map's own vertices: the bands put them on.
+    assert.ok(![...levelParts[k]].some((p) => pattern.has(p)));
+  });
+});
+
+test("the Peasant's crown above its band is one colour at every level (no stray triangles)", () => {
+  // Owner, 2026-11-13: "the hat tops have some color artifacts, not just above the brim".
+  const fill = entry("fill", "hat");
+  const crown = entry("band", "hat");
+  const want = hexRgb(resolveColor(palette, fill.colour)).map(toLinear);
+  const hat = partsFile.parts.indexOf("hat") + 1;
+  const parts = decorParts(glb, peasant.decor, partsFile.parts, levelParts, decorBase(glb, partsFile));
+  levels.forEach((m, k) => {
+    let n = 0;
+    for (const vs of facets(m.indices, m.count)) {
+      const c = centreOf(m, vs);
+      if (c[1] <= crown.y[1] || Math.hypot(c[0], c[2]) > crown.r[1] || parts[k][vs[0]] !== hat) continue;
+      n++;
+      for (const v of vs) assert.ok(near(m.colour(v), want), `detail_${k}: a crown facet at [${c.map((x) => x.toFixed(2))}] off the hat's colour`);
+    }
+    assert.ok(n > 3, `detail_${k}: the crown (${n} facets)`);
   });
 });
 

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadBlocks } from '../inventory/gen.mjs';
-import { generate, loadAppearance, loadModels, validateAppearance, validateCreatures } from './gen.mjs';
+import { generate, loadAppearance, loadModels, loadPatterns, validateAppearance, validateCreatures, validatePatterns } from './gen.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = () => JSON.parse(readFileSync(join(here, 'creatures.json'), 'utf8'));
@@ -25,8 +25,9 @@ test('a fixture creature is added by data alone', () => {
 
 test('a fixture NPC is added by data alone', () => {
   const d = JSON.parse(readFileSync(join(here, 'fixtures/npcs.json'), 'utf8'));
-  const v = validateCreatures(d, blocks, models, undefined, undefined, undefined, undefined, loadAppearance('fixtures/appearance.json'));
+  const v = validateCreatures(d, blocks, models, undefined, undefined, undefined, undefined, loadAppearance('fixtures/appearance.json'), loadPatterns('fixtures/patterns.json'));
   assert.equal(v.creatures[0].npc.appearance.set, 'test:pair');
+  assert.equal(v.creatures[0].npc.pattern.set, 'test:duo');
   assert.equal(v.creatures[0].npc.held, 'dwell:stone_axe');
   assert.equal(v.rules[0].spacing, 20);
 });
@@ -162,4 +163,34 @@ test('bad appearance entries fail naming the set and tone', () => {
   npc((n) => (n.appearance.set = 'elves'), /appearance: set "elves" is not in appearance.json/);
   npc((n) => n.colours.push({ part: 'skin', from: 'skin_tan', to: ['skin_tan'] }), /appearance\.skin: part skin is also in colours/);
   npc((n) => (n.appearance.hair.from = 'nope'), /appearance\.hair: from "nope" is not a palette ramp/);
+});
+
+// WORK_QUEUE item 43 (owner, 2026-11-13: "a colorful day of the dead Mexico kind of vibes"): the
+// pattern sets are data, checked with a message naming the bad entry.
+test('the pattern sets are checked: sequences divide the places, no colour next to itself', () => {
+  const sets = loadPatterns();
+  const fiesta = sets.get('fiesta');
+  assert.equal(fiesta.places, 4);
+  for (const p of fiesta.patterns) {
+    assert.ok(p.colours.length >= 2 && 4 % p.colours.length === 0, p.name);
+    p.colours.forEach((c, i) => assert.notEqual(c, p.colours[(i + 1) % p.colours.length], p.name));
+  }
+  const ok = { formatVersion: 1, sets: { t: { places: 4, patterns: [{ name: 'a', colours: ['#111111', '#222222'] }] } } };
+  assert.equal(validatePatterns(ok).get('t').patterns[0].weight, 1);
+  const bad = (patch, re) => {
+    const d = structuredClone(ok);
+    Object.assign(d.sets.t.patterns[0], patch);
+    assert.throws(() => validatePatterns(d), re);
+  };
+  bad({ colours: ['#111111', '#222222', '#333333'] }, /length divides the ring's 4 places/);
+  bad({ colours: ['#111111', '#111111'] }, /next to itself/);
+  bad({ colours: ['#111111', 'red'] }, /must be #rrggbb/);
+  bad({ pairs: { shirt: ['nope'] } }, /neither a palette ramp nor #rrggbb/);
+  // An NPC's pattern names the set's places, and a pattern pairs only its clothes parts.
+  const d = JSON.parse(readFileSync(join(here, 'fixtures/npcs.json'), 'utf8'));
+  d.creatures[0].npc.pattern.places.pop();
+  assert.throws(
+    () => validateCreatures(d, blocks, models, undefined, undefined, undefined, undefined, loadAppearance('fixtures/appearance.json'), loadPatterns('fixtures/patterns.json')),
+    /places must list the set's 4 places/,
+  );
 });

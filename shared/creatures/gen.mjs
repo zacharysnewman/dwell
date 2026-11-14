@@ -22,7 +22,7 @@ const ATTACK_FIELDS = ['reachM', 'cooldownS', 'damage', 'knockbackMps', 'liftMps
 /** A death's drop (WORK_QUEUE item 35): an item and how many, [min, max] or n. */
 const DROP_FIELDS = ['item', 'count'];
 const RULE_FIELDS = ['creature', 'on', 'chance', 'group', 'mix', 'spacingM', 'biomes'];
-const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'appearance', 'held', 'disposition', 'combat', 'fight'];
+const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'appearance', 'pattern', 'held', 'disposition', 'combat', 'fight'];
 /** How an NPC whose `fightBack` triggered fights with a held weapon (WORK_QUEUE items 35 and 38,
  * round 2): the stance it picks (`counter`: the one that blocks its foe's swing; `random`: either,
  * picked anew each wind-up), whether it raises its block while its foe winds up, whether it strikes
@@ -47,6 +47,70 @@ const APPEARANCE_SET_FIELDS = ['shade', 'tones'];
 const TONE_FIELDS = ['name', 'base', 'weight', 'hair'];
 const HAIR_PICK_FIELDS = ['colour', 'weight'];
 const HEX = /^#[0-9a-fA-F]{6}$/;
+/** An NPC's pattern (WORK_QUEUE item 43): a set of shared/creatures/patterns.json and the model's
+ * parts for the ring's places, each with the ramp the model paints it. */
+const PATTERN_FIELDS = ['set', 'places'];
+const PATTERN_FILE_FIELDS = ['formatVersion', 'sets'];
+const PATTERN_SET_FIELDS = ['places', 'patterns'];
+const PATTERN_ENTRY_FIELDS = ['name', 'weight', 'colours', 'pairs'];
+/** The most places a ring has (the model's part slots, dwell_models::MAX_REMAP, bound it). */
+export const MAX_PLACES = 8;
+
+/**
+ * A pattern file (shared/creatures/patterns.json, WORK_QUEUE item 43): the sets of ring patterns,
+ * each pattern a sequence of colours round the ring and the clothes bases it pairs with. A bad
+ * colour, a sequence that does not divide the ring's places or puts a colour next to itself, or an
+ * empty list fails naming the set and pattern. Returns the sets by name.
+ */
+export function validatePatterns(a, at = 'patterns.json', ramps = loadRamps()) {
+  if (!isObject(a)) fail(`${at} must hold an object`);
+  unknown(a, PATTERN_FILE_FIELDS, at);
+  if (a.formatVersion !== 1) fail(`${at}: formatVersion must be 1, not ${a.formatVersion}`);
+  if (!isObject(a.sets) || Object.keys(a.sets).length === 0) fail(`${at}: sets must hold at least one set`);
+  const sets = new Map();
+  for (const [name, set] of Object.entries(a.sets)) {
+    if (name[0] === '$') continue;
+    const sat = `${at}: set ${name}`;
+    if (!NAME.test(name)) fail(`${sat}: the name must be lowercase (namespace:name allowed)`);
+    if (!isObject(set)) fail(`${sat} must be an object`);
+    unknown(set, PATTERN_SET_FIELDS, sat);
+    if (!int(set.places, 2, MAX_PLACES)) fail(`${sat}: places must be a whole number in [2, ${MAX_PLACES}]`);
+    if (!Array.isArray(set.patterns) || set.patterns.length === 0 || set.patterns.length > 64) fail(`${sat}: patterns must list 1-64 patterns`);
+    const names = new Set();
+    const patterns = set.patterns.map((p, i) => {
+      const pat = `${sat}: pattern ${p?.name ?? i}`;
+      if (!isObject(p)) fail(`${pat} must be an object`);
+      unknown(p, PATTERN_ENTRY_FIELDS, pat);
+      if (typeof p.name !== 'string' || !NAME.test(p.name)) fail(`${pat}: name must be a lowercase name`);
+      if (names.has(p.name)) fail(`${pat}: listed twice`);
+      names.add(p.name);
+      const weight = p.weight ?? 1;
+      if (!num(weight) || weight <= 0 || weight > 1000) fail(`${pat}: weight must be in (0, 1000]`);
+      const c = p.colours;
+      if (!Array.isArray(c) || c.length < 2 || c.length > set.places || set.places % c.length !== 0)
+        fail(`${pat}: colours must be a sequence of 2-${set.places} whose length divides the ring's ${set.places} places`);
+      c.forEach((x, j) => {
+        if (typeof x !== 'string' || !HEX.test(x)) fail(`${pat}: colours[${j}] must be #rrggbb, not ${JSON.stringify(x)}`);
+        if (x.toLowerCase() === c[(j + 1) % c.length].toLowerCase()) fail(`${pat}: colours[${j}] is next to itself round the ring`);
+      });
+      const pairs = [];
+      if (p.pairs !== undefined) {
+        if (!isObject(p.pairs)) fail(`${pat}: pairs must be an object of clothes parts`);
+        for (const [part, list] of Object.entries(p.pairs)) {
+          if (!/^[a-z][a-z0-9_]*$/.test(part)) fail(`${pat}: pairs ${JSON.stringify(part)} must be a lowercase part name`);
+          if (!Array.isArray(list) || list.length === 0 || list.length > 32) fail(`${pat}: pairs.${part} must list 1-32 colours`);
+          list.forEach((x, j) => {
+            if (!(typeof x === 'string' && (ramps.has(x) || HEX.test(x)))) fail(`${pat}: pairs.${part}[${j}] ${JSON.stringify(x)} is neither a palette ramp nor #rrggbb`);
+          });
+          pairs.push([part, list.map((x) => (HEX.test(x) ? x.toLowerCase() : x))]);
+        }
+      }
+      return { name: p.name, weight, colours: c.map((x) => x.toLowerCase()), pairs };
+    });
+    sets.set(name, { name, places: set.places, patterns });
+  }
+  return sets;
+}
 const NAME = /^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$/;
 
 /**
@@ -119,7 +183,7 @@ const unknown = (o, fields, at) => {
 };
 
 /** An NPC's behaviour and colours (WORK_QUEUE item 38, CHARACTERS.md §11.10). */
-function validateNpc(n, at, ramps, items, appearance) {
+function validateNpc(n, at, ramps, items, appearance, patterns = loadPatterns()) {
   if (!isObject(n)) fail(`${at} must be an object`);
   unknown(n, NPC_FIELDS, at);
   const range = (k, lo, hi) => {
@@ -194,12 +258,35 @@ function validateNpc(n, at, ramps, items, appearance) {
     }
     a.resolved = set;
   }
+  if (n.pattern !== undefined) {
+    const p = n.pattern;
+    const pat = `${at}.pattern`;
+    if (!isObject(p)) fail(`${pat} must be an object`);
+    unknown(p, PATTERN_FIELDS, pat);
+    const set = patterns.get(p.set);
+    if (!set) fail(`${pat}: set ${JSON.stringify(p.set)} is not in patterns.json (${[...patterns.keys()].join(', ')})`);
+    if (!Array.isArray(p.places) || p.places.length !== set.places) fail(`${pat}: places must list the set's ${set.places} places, each { part, from }`);
+    p.places.forEach((slot, i) => {
+      const sat = `${pat}.places[${i}]`;
+      if (!isObject(slot)) fail(`${sat} must be { part, from }`);
+      unknown(slot, APPEARANCE_SLOT_FIELDS, sat);
+      if (typeof slot.part !== 'string' || !/^[a-z][a-z0-9_]*$/.test(slot.part)) fail(`${sat}: part must be a lowercase name`);
+      if (parts.has(slot.part)) fail(`${sat}: part ${slot.part} is also another slot's`);
+      parts.add(slot.part);
+      if (!ramps.has(slot.from)) fail(`${sat}: from ${JSON.stringify(slot.from)} is not a palette ramp`);
+    });
+    const clothes = new Set(n.colours.map((c) => c.part));
+    for (const pt of set.patterns)
+      for (const [part] of pt.pairs)
+        if (!clothes.has(part)) fail(`${pat}: pattern ${pt.name} pairs ${part}, which is not one of the NPC's colours parts (${[...clothes].join(', ')})`);
+    p.resolved = set;
+  }
   return n;
 }
 
 /** Checks the creatures against the block files (`{ namespace, blocks }`) and the model names;
  * NPCs' colours against the palette's ramps and rules' biomes against the biome names. */
-export function validateCreatures(data, namespaces, models, ramps = loadRamps(), biomes = loadBiomes(), items = loadItems(), dropItems = loadDropItems(namespaces), appearance = loadAppearance()) {
+export function validateCreatures(data, namespaces, models, ramps = loadRamps(), biomes = loadBiomes(), items = loadItems(), dropItems = loadDropItems(namespaces), appearance = loadAppearance(), patterns = loadPatterns()) {
   if (!isObject(data)) fail('the file must hold an object');
   unknown(data, TOP_FIELDS, 'the file');
   if (data.formatVersion !== 1) fail(`formatVersion must be 1, not ${data.formatVersion}`);
@@ -253,7 +340,7 @@ export function validateCreatures(data, namespaces, models, ramps = loadRamps(),
       return { item: d.item, min, max };
     });
     if (drops.length > 0 && health === 0) fail(`${at}: drops need health (a creature that can't be hurt never dies)`);
-    if (c.npc !== undefined) validateNpc(c.npc, `${at}.npc`, ramps, items, appearance);
+    if (c.npc !== undefined) validateNpc(c.npc, `${at}.npc`, ramps, items, appearance, patterns);
     // Its attack on players (WORK_QUEUE item 35, round 2: wolves bite): only on the player that
     // struck it, for `angryS` after the hit, within `reachM` in front of it (`frontDeg`), every
     // `cooldownS`, taking `damage` health and pushing the player away and up.
@@ -340,6 +427,11 @@ export function loadAppearance(path = 'appearance.json') {
   return validateAppearance(JSON.parse(readFileSync(join(here, path), 'utf8')), `shared/creatures/${path}`);
 }
 
+/** The pattern sets of a pattern file (default shared/creatures/patterns.json). */
+export function loadPatterns(path = 'patterns.json') {
+  return validatePatterns(JSON.parse(readFileSync(join(here, path), 'utf8')), `shared/creatures/${path}`);
+}
+
 /** The biome names (shared/worldgen/biomes: the default and the presets). */
 export function loadBiomes() {
   const dir = join(root, 'shared/worldgen/biomes');
@@ -374,7 +466,13 @@ function npcRust(n) {
   const appearance = a
     ? `Some(AppearanceDef { set: ${JSON.stringify(a.set)}, skin_part: ${JSON.stringify(a.skin.part)}, skin_from: ${JSON.stringify(a.skin.from)}, hair_part: ${JSON.stringify(a.hair.part)}, hair_from: ${JSON.stringify(a.hair.from)}, shade: ${f(a.resolved.shade)}, tones: &[${tones}] })`
     : 'None';
-  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}], appearance: ${appearance} })`;
+  const p = n.pattern;
+  const pattern = p
+    ? `Some(PatternDef { set: ${JSON.stringify(p.set)}, places: &[${p.places.map((s) => `(${JSON.stringify(s.part)}, ${JSON.stringify(s.from)})`).join(', ')}], patterns: &[${p.resolved.patterns
+        .map((pt) => `Pattern { name: ${JSON.stringify(pt.name)}, weight: ${f(pt.weight)}, colours: ${strs(pt.colours)}, pairs: &[${pt.pairs.map(([part, list]) => `(${JSON.stringify(part)}, ${strs(list)})`).join(', ')}] }`)
+        .join(', ')}] })`
+    : 'None';
+  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}], appearance: ${appearance}, pattern: ${pattern} })`;
 }
 
 /**
@@ -411,7 +509,7 @@ function attackRust(a) {
 }
 
 export function creaturesRust(d, source) {
-  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{AppearanceDef, AttackDef, ColourSlot, HairPick, SkinTone, Combat, CreatureDef, Disposition, FightDef, FightStance, HurtLook, Idle, Limits, MixPart, NpcDef, Pose, SpawnRule};', ''];
+  const rs = [`// Generated by shared/creatures/gen.mjs from ${source}. Do not edit.`, '', '#[allow(unused_imports)]', 'use crate::creatures::{AppearanceDef, AttackDef, ColourSlot, HairPick, SkinTone, Combat, CreatureDef, Disposition, FightDef, FightStance, HurtLook, Idle, Limits, MixPart, NpcDef, Pattern, PatternDef, Pose, SpawnRule};', ''];
   const l = d.limits;
   rs.push(`pub const LIMITS: Limits = Limits { spawn_chunks: ${l.spawnChunks}, despawn_m: ${f(l.despawnM)}, max: ${l.max}, gap_m: ${f(l.gapM)}, push_mps: ${f(l.pushMps)} };`, '');
   rs.push(`pub const CREATURES: [CreatureDef; ${d.creatures.length}] = [`);
@@ -436,12 +534,12 @@ export function generate() {
   const models = loadModels();
   const read = (p) => JSON.parse(readFileSync(join(here, p), 'utf8'));
   return [
-    ['creatures.json', 'creatures.gen.rs', 'appearance.json'],
-    ['fixtures/creatures.json', 'creatures_fixture.gen.rs', 'appearance.json'],
-    ['fixtures/npcs.json', 'npcs_fixture.gen.rs', 'fixtures/appearance.json'],
-  ].map(([src, out, app]) => [
+    ['creatures.json', 'creatures.gen.rs', 'appearance.json', 'patterns.json'],
+    ['fixtures/creatures.json', 'creatures_fixture.gen.rs', 'appearance.json', 'patterns.json'],
+    ['fixtures/npcs.json', 'npcs_fixture.gen.rs', 'fixtures/appearance.json', 'fixtures/patterns.json'],
+  ].map(([src, out, app, pat]) => [
     join(root, 'crates/dwell-sim/src', out),
-    creaturesRust(validateCreatures(read(src), blocks, models, loadRamps(), loadBiomes(), loadItems(), loadDropItems(blocks), loadAppearance(app)), `shared/creatures/${src}`),
+    creaturesRust(validateCreatures(read(src), blocks, models, loadRamps(), loadBiomes(), loadItems(), loadDropItems(blocks), loadAppearance(app), loadPatterns(pat)), `shared/creatures/${src}`),
   ]);
 }
 
