@@ -26,6 +26,8 @@ export interface AudioStep {
   impulses: number;
   meanErrorMs: number;
   maxErrorMs: number;
+  /** How far the recorder had slipped a frame's mark before the re-timing (ms). */
+  rawMaxSlipMs: number;
   /** Steps whose context ran past the next sound's scheduled time (a sound would have been late). */
   late: number;
   wav: Uint8Array;
@@ -99,6 +101,54 @@ export function impulseErrors(ch: Float32Array, expected: readonly number[], sr:
       if (f >= lo && f < hi && (Number.isNaN(best) || Math.abs(f - e) < Math.abs(best - e)))
         best = f;
     return Number.isNaN(best) ? NaN : ((best - e) / sr) * 1000;
+  });
+}
+
+/**
+ * Each frame's mark in a recorded stream: the impulse nearest where it should be (the last mark plus
+ * the frames' spacing), within half a frame; a mark not found is put at that prediction.
+ */
+export function findMarks(
+  ch: Float32Array,
+  expected: readonly number[],
+  threshold = 0.5,
+): number[] {
+  const marks: number[] = [];
+  for (let i = 0; i < expected.length; i++) {
+    const e = expected[i] ?? 0;
+    const prevE = expected[i - 1] ?? e;
+    const guess = i === 0 ? e : (marks[i - 1] ?? 0) + (e - prevE);
+    const half = Math.max(1, Math.floor(((expected[i + 1] ?? e + (e - prevE || 1)) - e) / 2));
+    let best = -1;
+    for (let k = Math.max(0, guess - half); k < Math.min(ch.length, guess + half); k++)
+      if ((ch[k] ?? 0) > threshold && (best < 0 || Math.abs(k - guess) < Math.abs(best - guess)))
+        best = k;
+    marks.push(best < 0 ? guess : best);
+  }
+  return marks;
+}
+
+/**
+ * The stream re-timed by its frame marks: frame i's audio (from its mark on) laid at its expected
+ * sample, so every frame's sounds start exactly on their frame whatever the recorder slipped (it slips
+ * a block now and then across a suspend). Within a frame the samples run on unbroken; a frame whose
+ * recorded span was longer or shorter drops or repeats a few samples at its end.
+ */
+export function realign(
+  raw: readonly Float32Array[],
+  marks: readonly number[],
+  expected: readonly number[],
+  n: number,
+): Float32Array[] {
+  return raw.map((src) => {
+    const out = new Float32Array(n);
+    for (let i = 0; i < expected.length; i++) {
+      const from = expected[i] ?? 0;
+      const to = Math.min(n, expected[i + 1] ?? n);
+      const m = marks[i] ?? from;
+      for (let k = from; k < to; k++) out[k] = src[m + (k - from)] ?? 0;
+    }
+    return out;
   });
 }
 
@@ -228,12 +278,13 @@ export async function startCinematicAudio(
       // The stream from frame 0's mark (scheduled at the origin): the recorder's latency drops out.
       const whole = joinChunks(chunks, 3, 0, chunkSamples(chunks));
       const start = Math.max(0, firstAbove(whole[2] ?? new Float32Array(0), 0));
-      const track = joinChunks(chunks, 3, start, n);
-      const errs = impulseErrors(
-        track[2] ?? new Float32Array(0),
-        times.map((t) => Math.round(t * sr)).filter((e) => e < n),
-        sr,
-      );
+      const raw = joinChunks(chunks, 3, start, n + sr);
+      const expected = times.map((t) => Math.round(t * sr)).filter((e) => e < n);
+      // Where each frame's mark landed in the raw stream (the recorder's slips), then re-timed on them.
+      const marks = findMarks(raw[2] ?? new Float32Array(0), expected);
+      const slips = marks.map((m, i) => ((m - (expected[i] ?? 0)) / sr) * 1000);
+      const track = realign(raw, marks, expected, n);
+      const errs = impulseErrors(track[2] ?? new Float32Array(0), expected, sr);
       const ok = errs.filter((e) => !Number.isNaN(e));
       return {
         sampleRate: sr,
@@ -243,6 +294,7 @@ export async function startCinematicAudio(
         impulses: ok.length,
         meanErrorMs: ok.reduce((a, b) => a + Math.abs(b), 0) / Math.max(1, ok.length),
         maxErrorMs: Math.max(0, ...ok.map(Math.abs)),
+        rawMaxSlipMs: Math.max(0, ...slips.map(Math.abs)),
         late,
         wav: wavBytes([track[0] ?? new Float32Array(n), track[1] ?? new Float32Array(n)], sr),
       };

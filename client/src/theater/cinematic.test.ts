@@ -14,7 +14,15 @@ import {
   type CinematicHost,
   type ViewState,
 } from './cinematic';
-import { chunkSamples, firstAbove, impulseErrors, joinChunks, wavBytes } from './cinematicAudio';
+import {
+  chunkSamples,
+  findMarks,
+  firstAbove,
+  impulseErrors,
+  joinChunks,
+  realign,
+  wavBytes,
+} from './cinematicAudio';
 
 const loaded: ViewState = { lod: { waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
 const loading: ViewState = { lod: { waitingInView: 300 }, terrain: { dirty: 0, meshing: 0 } };
@@ -243,6 +251,30 @@ describe("the take's sound", () => {
     expect(Math.max(...others.map(Math.abs))).toBeLessThanOrEqual(1);
     expect(errs[5000]).toBeCloseTo(2, 6);
     expect(firstAbove(ch, 1)).toBe(expected[1]);
+  });
+  it('a stream the recorder slipped is re-timed on its frame marks: every event back on its frame', () => {
+    const sr = 48_000;
+    const fps = 30;
+    const frames = 300;
+    const expected = Array.from({ length: frames }, (_, i) => Math.round((i / fps) * sr));
+    const n = Math.round((frames / fps) * sr);
+    // a recording that lost 768 samples at frame 100 and gained 256 at frame 200 (a block across a suspend)
+    const slip = (i: number): number => (i >= 200 ? -512 : i >= 100 ? -768 : 0);
+    const marksCh = new Float32Array(n + sr);
+    const sound = new Float32Array(n + sr);
+    for (let i = 0; i < frames; i++) {
+      const at = (expected[i] ?? 0) + slip(i);
+      marksCh[at] = 1;
+      if (i % 30 === 7) sound[at] = 0.9; // a sound triggered on frame i
+    }
+    expect(Math.max(...impulseErrors(marksCh, expected, sr).map(Math.abs))).toBeGreaterThan(10);
+    const marks = findMarks(marksCh, expected);
+    const [snd, m] = realign([sound, marksCh], marks, expected, n);
+    expect(
+      Math.max(...impulseErrors(m ?? new Float32Array(0), expected, sr).map(Math.abs)),
+    ).toBeLessThanOrEqual(1);
+    for (let i = 7; i < frames; i += 30) expect(snd?.[expected[i] ?? 0]).toBeCloseTo(0.9, 6);
+    expect(snd?.length).toBe(n);
   });
   it("the track's length is the frames' length: a 16-bit stereo WAV of exactly frames / fps", () => {
     const sr = 48_000;
