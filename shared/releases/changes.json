@@ -2,6 +2,20 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.13",
+      "changes": [
+        "Theater mode's recording dot is a clear red that no longer blinks out.",
+        "On a phone in portrait, theater's fly stick and Up/Down stay above the open panel, so you can fly the camera while editing.",
+        "On the sun, the rock beside the lava is lit warm by the lava and by home and the moon instead of reading black."
+      ]
+    },
+    {
+      "version": "0.63.12",
+      "changes": [
+        "Running out of stamina now sounds like a person catching their breath, not a growling bear."
+      ]
+    },
+    {
       "version": "0.63.11",
       "changes": [
         "Aiming low on a ramp's slope now places a block against its downhill side, instead of on top of the ramp.",
