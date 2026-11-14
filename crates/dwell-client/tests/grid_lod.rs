@@ -71,6 +71,9 @@ impl ChunkReadiness for NoChunks {
     }
 }
 
+/// A drawn section: its box (lo, hi), level, cell size (m) and meshes.
+type Drawn<'a> = ([f64; 3], [f64; 3], i64, f64, &'a SectionMeshes);
+
 struct Run {
     lod: GridLod,
     view: Recorder,
@@ -174,7 +177,7 @@ impl Run {
     }
 
     /// The drawn sections: (box lo, box hi, level, cell, meshes).
-    fn drawn(&self) -> Vec<([f64; 3], [f64; 3], i64, f64, &SectionMeshes)> {
+    fn drawn(&self) -> Vec<Drawn<'_>> {
         self.view
             .shown
             .iter()

@@ -15,7 +15,12 @@ steps or fades between, and the rings' colour is the far source's albedo (`FarSo
 `color`), not the block looks the chunks are drawn with. Fix (WORK_QUEUE item 27, branch `claude/grid-lod`): a
 `LodSystem` per grid with sections from the grid's generator, meshed and coloured as home's. **Owner should see:**
 on the moon (and sun), distant terrain steps down in detail gradually like at home, with matching colours from near
-to far, no jump from full detail to a blurry low-detail mesh. Open (paused 2026-11-13 before any code).
+to far, no jump from full detail to a blurry low-detail mesh. **Fixed natively (2026-11-14), the browser look
+outstanding:** the rings are gone; the moon's and the sun's distance is home's LOD over their discs, graded levels
+with fades, tops in the chunks' block looks (the rings wrote the far albedo's sRGB into the linear colour stream:
+0% of tops matched, 100% now). Tests: `dwell-client/tests/grid_lod.rs`, `dwell-worldgen/tests/grid_lod.rs`, the
+`game_local` moon trip. Also found: home's 16 km rim view spans the moon, so it drew both faces from anywhere
+(`LodSystem::set_rim_view`, scaled per grid).
 
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 

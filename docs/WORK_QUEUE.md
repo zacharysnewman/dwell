@@ -1240,7 +1240,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    replacing `grid_lod.rs`'s rings on the grid (the far-body bake kept for seeing the grid from outside). Branch
    `claude/grid-lod`. **Owner should see:** on the moon (and sun), distant terrain steps down in detail gradually like
    at home, with matching colours from near to far, no jump from full detail to a blurry low-detail mesh.
-   **Status (2026-11-13): paused by the owner before any code;** the plan is in the draft PR.
+   **Built natively (2026-11-14):** a `LodSystem` per grid (`dwell-client` `grid_lod.rs`), its sections from the
+   grid's generator in the job workers (`Job::GridLod`; `dwell-worldgen` `grid_lod.rs`), meshed and coloured as
+   home's; `grids.json` `lod: true`; the rim view scaled per grid (the moon drew both faces). Tests both faces, moon
+   and sun (BUGS.md #156). **Left:** the owner's look on a GPU (screenshots on the moon and the sun, near to far).
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a

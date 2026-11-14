@@ -47,7 +47,7 @@ fn the_build_s_grids_are_home_at_rest_and_a_cratered_moon() {
 /// A bad entry fails with a message naming it.
 #[test]
 fn bad_grids_fail_with_a_message() {
-    let cases: [(&str, &str, &str); 15] = [
+    let cases: [(&str, &str, &str); 14] = [
         (
             "\"ramps\": \"notched\"",
             "\"ramps\": \"wavy\"",
@@ -73,8 +73,7 @@ fn bad_grids_fail_with_a_message() {
         ("\"atmosphere\": false", "\"atmosphere\": 0", "atmosphere"),
         ("\"cells\": 96", "\"cells\": 2", "nearMesh.cells"),
         ("\"sinkM\": 8", "\"sinkM\": -1", "nearMesh.sinkM"),
-        ("\"levels\": 9", "\"levels\": 3", "must reach its disc"),
-        ("\"cells\": 48", "\"cells\": 50", "lod.cells"),
+        ("\"lod\": true", "\"lod\": 1", "`lod` must be true or false"),
     ];
     for (from, to, want) in cases {
         assert!(
