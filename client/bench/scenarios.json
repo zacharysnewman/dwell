@@ -9314,6 +9314,15 @@
       ]
     },
     {
+      "name": "moon-fly",
+      "notes": "A player's flight to the moon from home's ground (BUGS.md #155): flight at the top level, W held as a key, the look kept on the moon in the sky every ½ s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
+      "face": "b",
+      "steps": [
+        { "do": "settle", "maxS": 60 },
+        { "do": "flyAtMoon", "name": "approach", "maxS": 100, "shotEveryS": 8 }
+      ]
+    },
+    {
       "name": "moon-trip",
       "notes": "The browser flight to the moon and back (MOON_WORLD.md §7.3; docs/DEV_TOOLS.md \"The moon\"): from the spawn, flyTo moon puts the player just outside the moon's capture sphere over its face A with the dev move, flies it in for real until captured, down to 40 m over the moon's ground, measures the fall with flight off (the run fails unless it is the moon's ⅙ g within 25 %) and lands; a shot on the moon at noon looking across its ground and one looking up; then flyTo home flies up past the release sphere, moves the player back to the spawn and waits until the client holds home's chunk under the feet again, and a last shot at home. The trips (capture, descent and landing seconds, the fall) are in report.json's trips.",
       "steps": [
