@@ -48,6 +48,7 @@ test('bad entries fail naming them', () => {
   bad((d) => (d.towns.plans[0].blueprints[0].structure = 'dwell:nope'), /towns.plans\[0\].blueprints\[0\]: unknown structure/);
   bad((d) => (d.towns.plans[0].blueprints[1].turn = 4), /blueprints\[1\].turn must be 0..3/);
   bad((d) => (d.towns.plans[0].blueprints[0].at = [999, 0]), /within footprintM/);
+  bad((d) => (d.towns.clearM = -1), /towns.clearM must be an integer/);
   bad((d) => (d.towns.spacingM = 10), /towns.spacingM must be an integer in 64/);
   bad((d) => (d.towns.heightM = [5, 1]), /towns.heightM/);
   bad((d) => (d.towns.plans = []), /towns.plans must be a non-empty list/);

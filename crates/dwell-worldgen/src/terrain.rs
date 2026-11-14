@@ -1225,6 +1225,9 @@ pub struct TerrainGenerator {
     portals: Option<Arc<Portals>>,
     /// This face's resurrection shrines (`shrines.rs`); none for a face's generator on its own.
     shrines: Option<Arc<crate::shrines::Shrines>>,
+    /// This face's town sites (`towns.rs`), kept clear of trees; none but on the server's world
+    /// (`BifacialTerrain::sized`), whose towns are founded.
+    towns: Option<Arc<crate::towns::Towns>>,
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
@@ -1389,6 +1392,7 @@ impl TerrainGenerator {
             biomes,
             portals: None,
             shrines: None,
+            towns: None,
             rise: DECORATION_RISE as f32,
             lod_valleys: None,
             volume: None,
@@ -2073,6 +2077,18 @@ impl TerrainGenerator {
         self.shrines = Some(shrines);
         self.cache_id = next_cache_id();
         self
+    }
+
+    /// The generator with this face's town sites kept clear of trees (BUGS.md #169).
+    pub fn with_towns(mut self, towns: Arc<crate::towns::Towns>) -> Self {
+        self.towns = Some(towns);
+        self.cache_id = next_cache_id();
+        self
+    }
+
+    /// This face's town sites, if this generator keeps them clear.
+    pub fn towns(&self) -> Option<&Arc<crate::towns::Towns>> {
+        self.towns.as_ref()
     }
 
     /// This face's shrines, if this generator has them.
@@ -3675,7 +3691,19 @@ impl TerrainGenerator {
             .map(|p| p.rule().name)
     }
 
-    pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
+    pub fn trees_in(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Tree> {
+        self.trees_in_keeping(lo, hi, true)
+    }
+
+    /// [`Self::trees_in`], with the planned towns kept clear only when `towns` is set. The spawn
+    /// search asks without them: the towns' ground keeps off the spawn's own shrine, which that
+    /// search is resolving, and a patch clear of every tree is clear of the towns' trees too.
+    fn trees_in_keeping(
+        &self,
+        (x0, z0): (i32, i32),
+        (x1, z1): (i32, i32),
+        towns: bool,
+    ) -> Vec<Tree> {
         if self.planters.is_empty() {
             return Vec::new();
         }
@@ -3703,7 +3731,7 @@ impl TerrainGenerator {
                 self.ground_of(&self.column_at(x, z))
             }
         };
-        self.trees_over((x0, z0), (x1, z1), &ground)
+        self.trees_over((x0, z0), (x1, z1), &ground, towns)
     }
 
     /// The species trees reaching columns [x0, x1] × [z0, z1] (face-local) with their leaf tints
@@ -3823,7 +3851,7 @@ impl TerrainGenerator {
             return Vec::new();
         }
         let ground = |x: i32, z: i32| self.ground_of(&self.column_at(x, z));
-        self.trees_over(lo, hi, &ground)
+        self.trees_over(lo, hi, &ground, true)
     }
 
     /// The structures placed reaching [x0, x1] × [z0, z1], `ground` answering any column.
@@ -3832,6 +3860,7 @@ impl TerrainGenerator {
         (x0, z0): (i32, i32),
         (x1, z1): (i32, i32),
         ground: &dyn Fn(i32, i32) -> Option<Ground>,
+        towns: bool,
     ) -> Vec<Tree> {
         // The climate's factor on each candidate (systemic terrain T3): none unless a biome opts in,
         // so the default world asks nothing of it.
@@ -3893,6 +3922,13 @@ impl TerrainGenerator {
             trees.retain(|t| {
                 let fp = self.planters[t.planter as usize].footprint(t);
                 !sh.box_reaches_clear(self, (fp[0], fp[1]), (fp[2], fp[3]))
+            });
+        }
+        // Nor over a planned town's layout or its clear ground (BUGS.md #169).
+        if let Some(tw) = self.towns.as_deref().filter(|_| towns) {
+            trees.retain(|t| {
+                let fp = self.planters[t.planter as usize].footprint(t);
+                !tw.box_reaches_clear(self, (fp[0], fp[1]), (fp[2], fp[3]))
             });
         }
         trees
@@ -5430,7 +5466,7 @@ impl TerrainGenerator {
             .portals
             .as_ref()
             .is_some_and(|p| p.box_reaches_clear(lo, hi))
-            || !self.trees_in(lo, hi).is_empty()
+            || !self.trees_in_keeping(lo, hi, false).is_empty()
         {
             return None;
         }

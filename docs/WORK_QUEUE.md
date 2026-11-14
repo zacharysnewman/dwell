@@ -2526,6 +2526,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Hamlets on clear ground (BUGS.md #169, 2026-11-14, `claude/town-trees`), built; owner to look.** From the builders'
+  recording (not reported by the owner): a founded hamlet's blueprints went up round the generated trees on its site.
+  Brief: "town plans clear trees (and bushes/boulders) from their whole layout footprint plus a margin (data) —
+  preferably at generation like the shrine". Done at generation: the generator sites each face's towns as the server
+  does and places no tree, bush or boulder reaching a site's layout box (every blueprint's structure, any turn) plus
+  `blueprints.json` `towns.clearM` (4 m). Changes the terrain a seed generates: the 0.66 line. Owner should see:
+  hamlets built on clear ground, with no trees growing through the huts, well or doorways (`?local=1&seed=0&fresh=1&spawn=town`).
+
 - **Sliding and the out-of-stamina breath quieter (2026-11-13, `claude/quieter-slide-breath`), done.** Owner:
   "Sliding and stamina breath expire should be 75% of their current volume." Every gain of those sounds is 0.75 × what it
   was: the four ground slide loops (`*_slide`, 0.8 → 0.6) and their stops (`*_slide_stop`, 0.7 → 0.525, so the end of a

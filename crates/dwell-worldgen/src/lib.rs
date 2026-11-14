@@ -32,6 +32,7 @@ pub mod shrines;
 pub mod species;
 pub mod tectonics;
 pub mod terrain;
+pub mod towns;
 pub mod variety;
 pub mod vegetation;
 pub mod volcanic;

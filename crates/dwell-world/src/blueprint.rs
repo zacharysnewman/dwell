@@ -82,6 +82,9 @@ pub struct TownRules {
     pub footprint_m: i32,
     /// A living player this near (m) founds it.
     pub found_m: f64,
+    /// The clear ground round a site's layout (m): no tree, bush or boulder is generated within
+    /// this of any of its blueprints' boxes (`clear_box`, BUGS.md #169).
+    pub clear_m: i32,
     pub plans: &'static [TownPlan],
 }
 
@@ -509,6 +512,36 @@ impl TownRules {
             }
         }
         out
+    }
+
+    /// The face-local columns [x0, z0, x1, z1] (inclusive) a site's layout covers plus `clear_m`:
+    /// the box round every blueprint's structure, whichever way it is turned (each structure's
+    /// furthest column from its anchor, either way), widened by the clear margin. The generator
+    /// places no tree, bush or boulder reaching it (BUGS.md #169), so a town is founded on clear
+    /// ground, its doors and the paths between its buildings included.
+    pub fn clear_box(&self, t: &TownSite) -> [i32; 4] {
+        let [x0, z0, x1, z1] = self.plan_box(t.plan);
+        [t.x + x0, t.z + z0, t.x + x1, t.z + z1]
+    }
+
+    /// [`Self::clear_box`] about the site's centre for plan `plan`.
+    pub fn plan_box(&self, plan: usize) -> [i32; 4] {
+        let mut b = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
+        for p in self.plans[plan].blueprints {
+            let r = crate::structure::find(p.structure)
+                .and_then(|d| crate::structure::Structure::from_def(d).ok())
+                .map_or(0, |s| {
+                    let [sx, _, sz] = s.size;
+                    let [ax, _, az] = s.anchor;
+                    ax.max(sx - 1 - ax).max(az).max(sz - 1 - az)
+                });
+            b[0] = b[0].min(p.at[0] - r);
+            b[1] = b[1].min(p.at[1] - r);
+            b[2] = b[2].max(p.at[0] + r);
+            b[3] = b[3].max(p.at[1] + r);
+        }
+        let c = self.clear_m;
+        [b[0] - c, b[1] - c, b[2] + c, b[3] + c]
     }
 
     /// A site's blueprints: each structure's name, its anchor's face-local column and its turn.
