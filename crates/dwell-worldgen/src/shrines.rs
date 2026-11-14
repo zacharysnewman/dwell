@@ -248,14 +248,26 @@ impl Shrines {
             return None;
         }
         let turn = self.turn_at(g, x, z);
+        let width = (2 * self.reach + 1) as f32;
+        let rise = width * r.max_slope_deg.to_radians().tan();
+        // Every footprint column must suit and their heights lie within `rise`: a sparse sample of
+        // the footprint first (most rejected points fail on it), stopping at the first column that
+        // fails either way. The same rule as checking them all, at a fraction of the columns.
+        let foot = &self.foot[usize::from(turn)];
         let (mut min, mut max) = (f32::MAX, f32::MIN);
-        for &(dx, dz) in &self.foot[usize::from(turn)] {
+        let sparse = foot.iter().filter(|&&(dx, dz)| dx % 4 == 0 && dz % 4 == 0);
+        let rest = foot
+            .iter()
+            .filter(|&&(dx, dz)| !(dx % 4 == 0 && dz % 4 == 0));
+        for &(dx, dz) in sparse.chain(rest) {
             let h = ok(x + dx, z + dz)?;
             min = min.min(h);
             max = max.max(h);
+            if max - min > rise {
+                return None;
+            }
         }
-        let width = (2 * self.reach + 1) as f32;
-        (max - min <= width * r.max_slope_deg.to_radians().tan()).then_some(Shrine { x, z, turn })
+        Some(Shrine { x, z, turn })
     }
 
     /// The grid's shrines whose clear ground reaches columns [x0, x1] × [z0, z1] (`pad` more

@@ -28,7 +28,8 @@
     "reachM": 5000,
     "baseRain": 0.15,
     "upliftRain": 1.5,
-    "leeDry": 1
+    "leeDry": 1,
+    "blurM": 4000
   },
   "maxGridBytes": 1048576,
   "discharge": { "min": 0.05, "max": 4 },

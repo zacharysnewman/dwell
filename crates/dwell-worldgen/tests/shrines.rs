@@ -51,7 +51,8 @@ dwell_world::both_faces!(
     /// nearer than the jitter allows), each on dry ground in the height band over its whole
     /// footprint, no steeper than the rule, inland and clear of the portals.
     fn shrines_are_sited_from_the_seed_a_grid_apart_on_dry_level_ground(f: FaceFrame) {
-        for seed in [0u64, 7] {
+        // Seeds 1, 7 and 42 (owner's check for the 16 m shrine, 2026-11-13) and 0.
+        for seed in [0u64, 1, 7, 42] {
             let g = BifacialTerrain::new(seed);
             let sites = shrines_of(&g, f.face);
             assert!(sites.len() >= 20, "seed {seed}: {} shrines", sites.len());
@@ -184,7 +185,8 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// On face `f`, the shrine as placed at its sites (each turned its own way): 8 × 8 m, its
+    /// On face `f`, the shrine as placed at its sites (each turned its own way): 16 × 16 m (owner,
+    /// 2026-11-13: "Double the shrine radius, make it 3 times as tall."), pillars 7.5 to 10.5 m, its
     /// pillars standing apart with a full cell of air between neighbours at every height (owner,
     /// 2026-11-13: "Yes, shrine pillars have gaps."), air under the lintel, and the lintel on the
     /// tallest half only, joining their tops over a quarter circle into one arch.
@@ -199,8 +201,8 @@ dwell_world::both_faces!(
             let placed = t.shrine(sh, s);
             let cells: HashMap<[i32; 3], StateId> = placed.cells().collect();
             let [x0, _, z0] = placed.min;
-            assert_eq!(placed.max[0] - x0 + 1, 8, "{s:?} 8 m across x");
-            assert_eq!(placed.max[2] - z0 + 1, 8, "{s:?} 8 m across z");
+            assert_eq!(placed.max[0] - x0 + 1, 16, "{s:?} 16 m across x");
+            assert_eq!(placed.max[2] - z0 + 1, 16, "{s:?} 16 m across z");
             let is_stone = |x: i32, y: i32, z: i32| cells.get(&[x, y, z]) == Some(&stone);
             // Above the dais's top (the torches' row) only the pillars and the lintel stand.
             let dais = cells
@@ -211,8 +213,8 @@ dwell_world::both_faces!(
                 .expect("torches");
             // The pillars: the 8-connected groups of stone columns at the dais's top.
             let mut cols: Vec<[i32; 2]> = Vec::new();
-            for z in z0..z0 + 8 {
-                for x in x0..x0 + 8 {
+            for z in z0..z0 + 16 {
+                for x in x0..x0 + 16 {
                     if is_stone(x, dais, z) {
                         cols.push([x, z]);
                     }
@@ -251,6 +253,34 @@ dwell_world::both_faces!(
                 .map(|(p, _)| *p)
                 .collect();
             assert!(!lintel.is_empty(), "{s:?} has a lintel");
+            // Three times as tall: each pillar 7.5, 9 or 10.5 m over the base it stands on (its
+            // column's stone runs from the bottom row to its top), the tallest 10.5 m.
+            let base = placed.min[1] + 2;
+            let mut heights: Vec<f32> = pillars
+                .iter()
+                .map(|p| (top(p) - base) as f32 * CELL_H as f32)
+                .collect();
+            heights.sort_by(f32::total_cmp);
+            heights.dedup();
+            assert_eq!(heights, vec![7.5, 9.0, 10.5], "{s:?} pillar heights");
+            // At least 6 m of air under the lintel, from the floor of its column.
+            for &[x, y, z] in &lintel {
+                let mut floor = placed.min[1];
+                while is_stone(x, floor, z) {
+                    floor += 1;
+                }
+                let under = lintel
+                    .iter()
+                    .filter(|q| q[0] == x && q[2] == z)
+                    .map(|q| q[1])
+                    .min()
+                    .unwrap_or(y);
+                assert!(
+                    (under - floor) as f32 * CELL_H as f32 >= 6.0,
+                    "{s:?}: {} m under the lintel at {x},{z}",
+                    (under - floor) as f32 * CELL_H as f32
+                );
+            }
             for &[x, y, z] in &lintel {
                 // Air under it, down to the dais's top.
                 for r in dais..y {
@@ -301,7 +331,7 @@ dwell_world::both_faces!(
                 assert_eq!(joined, tall.contains(&i), "{s:?}: pillar {i} joined");
             }
             // The joined tops span a quarter circle about the footprint's centre.
-            let (cx, cz) = (f64::from(x0) + 4.0, f64::from(z0) + 4.0);
+            let (cx, cz) = (f64::from(x0) + 8.0, f64::from(z0) + 8.0);
             let angle = |p: &Vec<[i32; 2]>| {
                 let n = p.len() as f64;
                 let x = p.iter().map(|q| f64::from(q[0]) + 0.5).sum::<f64>() / n - cx;

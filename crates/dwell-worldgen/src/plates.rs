@@ -254,6 +254,9 @@ impl Boundary {
     }
 }
 
+/// How many halvings place a boundary point between two scan cells (500 m / 2⁸ ≈ 2 m).
+pub const CROSSING_STEPS: u32 = 8;
+
 /// The scan points within this many scan cells of a point taken into a polyline are its stretch.
 pub const ABSORB: f64 = 0.8;
 
@@ -464,12 +467,15 @@ impl PlateLayout {
                     usize::MAX
                 };
                 if here != usize::MAX {
+                    // The crossing itself, found between the two cells' centres (BUGS.md #158: a
+                    // point at the cells' midpoint put every near-vertical or near-horizontal
+                    // stretch of boundary on the scan's grid lines, km-long axis-aligned edges).
                     if left != usize::MAX && left != here {
-                        add(left, here, [x - 0.5 * SCAN_CELL, z]);
+                        add(left, here, self.crossing([x - SCAN_CELL, z], [x, z], left));
                     }
                     let up = row[i as usize];
                     if up != usize::MAX && up != here {
-                        add(up, here, [x, z - 0.5 * SCAN_CELL]);
+                        add(up, here, self.crossing([x, z - SCAN_CELL], [x, z], up));
                     }
                 }
                 left = here;
@@ -478,6 +484,20 @@ impl PlateLayout {
         }
         found.sort_by_key(|b| b.plates);
         found
+    }
+
+    /// Where the plate under the segment `a`–`b` changes from `from` (at `a`) to another (at `b`):
+    /// [`CROSSING_STEPS`] halvings of the segment.
+    fn crossing(&self, mut a: [f64; 2], mut b: [f64; 2], from: usize) -> [f64; 2] {
+        for _ in 0..CROSSING_STEPS {
+            let m = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
+            if self.plate_at(m[0], m[1]) == from {
+                a = m;
+            } else {
+                b = m;
+            }
+        }
+        [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])]
     }
 
     fn draw_hotspots(&self, seed: u64) -> Vec<Hotspot> {

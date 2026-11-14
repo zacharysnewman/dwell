@@ -33,6 +33,7 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         base_rain: 0.15,
         uplift_rain: 1.5,
         lee_dry: 1.0,
+        blur_m: 4000.0,
     },
     max_grid_bytes: 1048576,
     discharge: [0.05, 4.0],
