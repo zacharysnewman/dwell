@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.65.1",
+      "changes": [
+        "Behind the scenes: the model painter can pick faces"
+      ]
+    },
+    {
       "version": "0.65.0",
       "changes": [
         "A new compatibility line for Realistic worlds, their terrain redrawn from the seed: curving plates and coastlines with gulfs and headlands, rifts as chains of lakes, no sliver plates or thin land strips, ranges with peaks and saddles",
