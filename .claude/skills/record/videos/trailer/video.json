@@ -63,7 +63,7 @@
   },
   {
    "id": "s02",
-   "note": "2. WS crane down into the broadleaf forest, morning, trees as foreground parallax (sub: no river in frame). 35 mm",
+   "note": "2. WS crane down toward the broadleaf forest, morning, crowns as foreground parallax (sub: no river in frame; the forest test world drew from the wrong face in the driver). 35 mm",
    "kind": "path",
    "path": "videos/trailer/s02_forest_crane.json",
    "setup": {
@@ -71,7 +71,7 @@
      "clouds": "off",
      "targetOutline": false
     },
-    "warmS": 10
+    "warmS": 12
    },
    "splice": [
     {
@@ -90,31 +90,32 @@
     "start": [
      10100.5,
      64,
-     16326.5
+     16300.5
     ],
-    "yaw": 180,
+    "yaw": 129,
     "timeOfDay": 0.27,
     "cam": [
-     0,
-     0.3,
-     -26
+     18.7,
+     0.9,
+     -15.1
     ],
     "camTo": [
-     0,
-     0.6,
-     -23
+     16.3,
+     1.0,
+     -13.2
     ],
     "aim": [
      0,
-     1.0,
+     1.1,
      0
     ],
     "fov": 34,
     "fovTo": 30,
     "seconds": 6.5,
-    "walkS": 6.5
+    "walkS": 4.2
    },
    "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
     "view": {
      "clouds": "off",
      "targetOutline": false
@@ -158,47 +159,14 @@
    "splice": [
     {
      "label": "s04",
-     "from": 0.6,
-     "to": 2.5,
+     "from": 0.9,
+     "to": 2.95,
      "cut": true
     },
     {
      "label": "s05",
      "from": 3.15,
      "to": 7.0,
-     "cut": true
-    }
-   ]
-  },
-  {
-   "id": "s06",
-   "note": "6. First person: the axe chops into a trunk in the forest world's densest stand (sub: the tree may not fall in the clip)",
-   "kind": "take",
-   "script": "videos/trailer/trailer_take.js",
-   "args": {
-    "mode": "chop",
-    "start": [
-     40.5,
-     113,
-     -39.5
-    ],
-    "yaw": 45,
-    "pitch": -5,
-    "timeOfDay": 0.32,
-    "seconds": 5,
-    "hitMs": 420
-   },
-   "setup": {
-    "url": "/dwell/?fresh=1&worldgen=test:forest&seed=0&at=40.5,130,-39.5",
-    "view": {
-     "clouds": "off",
-     "targetOutline": false
-    }
-   },
-   "splice": [
-    {
-     "from": 0.3,
-     "to": 3.3,
      "cut": true
     }
    ]
@@ -348,21 +316,32 @@
     {
      "from": 2.0,
      "to": 4.6,
-     "cut": true
+     "cut": true,
+     "crop": {
+      "9x16": [
+       0.62,
+       0.5
+      ],
+      "16x9": [
+       0.5,
+       0.55
+      ]
+     }
     }
    ]
   },
   {
    "id": "s11",
-   "note": "11. The lava lake on the hotspot summit at dusk, a slow pan (sub: pan, not a low orbit \u2014 a low orbit clips the rim)",
+   "note": "11. The tall volcano cone at dusk from 8 km east at 3000 m: a slow push (sub: no molten lava; a fresh world's lava lake starts empty and fills over time)",
    "kind": "path",
-   "path": "videos/trailer/s11_lava_pan.json",
+   "path": "videos/trailer/s11_volcano_push.json",
    "setup": {
+    "url": "/dwell/?fresh=1&worldgen=test:starter&seed=0&at=10100.5,70,16300.5",
     "view": {
      "clouds": "off",
      "targetOutline": false
     },
-    "warmS": 12
+    "warmS": 14
    },
    "splice": [
     {
@@ -374,11 +353,10 @@
   },
   {
    "id": "s12",
-   "note": "12. A drone push low over the forest canopy (sub for the stepped river: no stepped river found in the time box)",
+   "note": "12. A drone push low over the broadleaf canopy (sub for the stepped river: none found in the time box)",
    "kind": "path",
    "path": "videos/trailer/s12_canopy_push.json",
    "setup": {
-    "url": "/dwell/?fresh=1&worldgen=test:forest&seed=0&at=40.5,130,-39.5",
     "view": {
      "clouds": "off",
      "targetOutline": false
@@ -462,6 +440,7 @@
     "timeOfDay": 0.3
    },
    "setup": {
+    "reload": true,
     "view": {
      "clouds": "off",
      "targetOutline": false

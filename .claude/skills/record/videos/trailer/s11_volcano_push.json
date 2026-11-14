@@ -1,37 +1,37 @@
 {
  "formatVersion": 1,
- "name": "trailer s11: lava lake at dusk",
+ "name": "trailer s11: the tall cone at dusk",
  "keyframes": [
   {
    "t": 0,
    "position": [
-    30006.5,
-    250,
-    -8006.5
+    1500.5,
+    3000,
+    -5200.5
    ],
    "look": [
-    -55,
-    -48
+    -90,
+    3
    ],
-   "fov": 50,
-   "timeOfDay": 0.79
+   "fov": 40,
+   "timeOfDay": 0.77
   },
   {
    "t": 5,
    "position": [
-    30006.5,
-    250,
-    -8006.5
+    1100.5,
+    2990,
+    -5200.5
    ],
    "look": [
-    -30,
-    -44
+    -90,
+    3
    ]
   }
  ],
  "segments": [
   {
-   "move": "pan",
+   "move": "ease",
    "easing": "inOutSine"
   }
  ]
