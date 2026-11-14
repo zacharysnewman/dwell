@@ -1058,3 +1058,53 @@ impl Server {
         self.blueprints.rules = rules;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Walks a point from `at` toward `to` round the box `bx` × `bz` as a builder does (a step of
+    /// 1.1 m/s at 60 Hz toward `round_box`'s point each tick, never into the box grown by its
+    /// body); the ticks it took, None when it didn't arrive.
+    fn walk(bx: [f64; 2], bz: [f64; 2], mut at: [f64; 2], to: [f64; 2]) -> Option<u32> {
+        let step: f64 = 1.1 / 60.0;
+        for t in 0..60 * 60 {
+            if (at[0] - to[0]).hypot(at[1] - to[1]) < 0.1 {
+                return Some(t);
+            }
+            let p = round_box(bx, bz, 1.5, at, to);
+            let d = (p[0] - at[0]).hypot(p[1] - at[1]).max(1e-9);
+            let next = [
+                at[0] + (p[0] - at[0]) / d * step.min(d),
+                at[1] + (p[1] - at[1]) / d * step.min(d),
+            ];
+            let r = 0.3;
+            let blocked = next[0] > bx[0] - r
+                && next[0] < bx[1] + r
+                && next[1] > bz[0] - r
+                && next[1] < bz[1] + r;
+            if !blocked {
+                at = next;
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn a_builder_goes_round_a_box_to_its_far_side() {
+        // face-a-only: face-local x and z, no face.
+        let (bx, bz) = ([6.0, 11.0], [6.0, 11.0]);
+        // From a corner of the ring to the far side (before: stuck between two corners).
+        assert!(
+            walk(bx, bz, [12.4, 12.4], [4.5, 8.0]).is_some(),
+            "from the corner"
+        );
+        // From against the box's side, in its margin, to the other side (before: into the wall).
+        assert!(
+            walk(bx, bz, [5.69, 6.2], [13.0, 6.2]).is_some(),
+            "from against its side"
+        );
+        // Clear ways stay straight.
+        assert_eq!(round_box(bx, bz, 1.5, [0.0, 0.0], [0.0, 20.0]), [0.0, 20.0]);
+    }
+}
