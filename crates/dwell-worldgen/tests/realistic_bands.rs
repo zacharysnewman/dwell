@@ -9,7 +9,12 @@
 //! The measure: windows of the surface's top blocks at 2 m over the land of every measured seed and
 //! face (and the owner's spot); each boundary cell between two block types gets a line fitted to
 //! the boundary cells within 50 m (`support/map_shapes.rs` `straight_share`), straight when they
-//! lie within 2 m of it over at least 80 m. A lattice of strips is many such runs.
+//! lie within 2 m of it over at least 80 m. A lattice of strips is many such runs. From high up
+//! (the owner's view), the same over the rock provinces at 64 m, a run straight within 40 m over
+//! 1.3 km: 0.64.2 28.3 % (A) / 15.5 % (B), the owner's spot 41.9 %; 0.65 0.07 % / 0.12 %.
+//!
+//! And no speckle (WORK_QUEUE item 15, 0.66; owner, 2026-11-14: "speckled terrain looks gross"):
+//! at biome borders, 1 m windows of the top blocks hold few lone cells and big patches.
 
 use std::sync::Arc;
 
@@ -217,27 +222,35 @@ both_faces!(
 
 /// Speckle windows: `S` × `S` columns at 1 m.
 const S: usize = 96;
-/// At most this share of the columns a lone cell (its four neighbours all another block).
-const ISOLATED: f64 = 0.02;
-/// The area-weighted mean patch (4-connected columns of one top block) at least this (m²).
-const PATCH: f64 = 400.0;
+/// At most this share of the columns lone cells (their four neighbours all another block): over
+/// the face's border windows, and in any one window. 0.65 (the border's per-column hash, the mesa
+/// blend's 3 m dither): 0.47 % (A) / 0.91 % (B), up to 4.3 % in a window; 0.66: 0.02 % / 0.05 %,
+/// at most 0.97 %.
+const ISOLATED: f64 = 0.0025;
+const ISOLATED_WINDOW: f64 = 0.015;
+/// Every window's area-weighted mean patch (4-connected columns of one top block) at least this
+/// (m²; 0.65: 846, 0.66: 1659).
+const PATCH: f64 = 1500.0;
 
 /// Up to four window centres on a face's dry land where two biomes mix (each weighing over a
 /// quarter): where a border's dither shows.
 fn borders(g: &TerrainGenerator, map: &WorldMap) -> Vec<(i32, i32)> {
-    let mut out = Vec::new();
-    for c in (0..map.height.len()).step_by(97) {
+    let mut all = Vec::new();
+    for c in (0..map.height.len()).step_by(37) {
         let (x, z) = map.centre(c);
-        if map.is_sea(c) || x.hypot(z) > 40_000.0 || out.len() >= 4 {
+        if map.is_sea(c) || x.hypot(z) > 40_000.0 {
             continue;
         }
         let (x, z) = (x as i64, z as i64);
         let mixed = g.biome_mix(x, z).iter().filter(|(_, w)| *w > 0.25).count() >= 2;
         if mixed && g.column_at(x as i32, z as i32).water == dwell_worldgen::terrain::Water::None {
-            out.push((x as i32, z as i32));
+            all.push((x as i32, z as i32));
         }
     }
-    out
+    // Four spread through them.
+    (0..4)
+        .filter_map(|k| all.get(all.len() * (2 * k + 1) / 8).copied())
+        .collect()
 }
 
 /// A 1 m window's lone-cell share and its area-weighted mean patch (m²).
@@ -300,6 +313,7 @@ both_faces!(
         // WORK_QUEUE item 15, 0.66 (owner, 2026-11-14): "speckled terrain looks gross" … patches
         // "big.": few lone cells, and the ground in patches tens of metres across.
         let (mut lone, mut patch, mut n) = (0.0, 0.0, 0);
+        let (mut worst, mut smallest) = (0.0f64, f64::MAX);
         for world in SEEDS {
             let (g, map) = generator(face_seed(world, f.face));
             for (x, z) in borders(&g, &map) {
@@ -311,6 +325,8 @@ both_faces!(
                 );
                 lone += l;
                 patch += p;
+                worst = worst.max(l);
+                smallest = smallest.min(p);
                 n += 1;
             }
         }
@@ -327,6 +343,16 @@ both_faces!(
             100.0 * lone,
             100.0 * ISOLATED
         );
-        assert!(patch >= PATCH, "{:?}: mean patch {patch:.0} m²", f.face);
+        assert!(
+            worst <= ISOLATED_WINDOW,
+            "{:?}: a window {:.2} % lone cells",
+            f.face,
+            100.0 * worst
+        );
+        assert!(
+            smallest >= PATCH,
+            "{:?}: a window's mean patch {smallest:.0} m²",
+            f.face
+        );
     }
 );

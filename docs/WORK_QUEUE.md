@@ -931,6 +931,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    wall's foot, single blocks to multi-block boulders by data; (iii) where a cliff meets a lake, river or the sea,
    the boulders continue into the shallows. **Owner should see:** bushy undergrowth and shrub clumps through
    Realistic land; rock-strewn talus at the foot of every stone cliff, spilling into the water where cliffs meet it.
+   (0d) **Placements bleed across borders; snowy leaves at the snow line.** Owner, 2026-11-14: **"Bushes, shrubs,
+   rocks, trees, should bleed into the edge of the neighboring terrain to help with blending. Also, trees at snow level
+   should use snow leaves."** So: each placement kind extends past its region's edge into the neighbour, its density
+   falling over a bleed distance (data per kind, ~20–60 m) and noise-modulated (ragged, patchy), both sides
+   interpenetrating, on the same boundary field as the surface blend; and a tree at or above the snow line (the rule
+   that tops the ground with snow or snowy grass) takes snowy leaves (`snowy_leaves`, a data mapping from leaf to
+   snowy variant) with a small noisy band round the line. **Owner should see:** forests, scrub and rocks fading
+   raggedly into neighbouring terrain instead of stopping at a line; snow-dusted leaves on trees up at the snow line.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
