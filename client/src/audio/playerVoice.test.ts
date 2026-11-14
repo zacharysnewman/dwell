@@ -80,12 +80,14 @@ describe("the player's voice (BUGS.md #159)", () => {
       }
     });
 
-  it("the out-of-stamina breath is a man's recorded breath, within ±0.5 semitone", () => {
+  it("the out-of-stamina breath is the owner's pick, the sigh alone, within ±0.5 semitone", () => {
     const [id, s] = soundOf('exhausted');
     expect(id).toBe('dwell:breath_heavy');
     expect(usesSamples(s), 'breath_heavy plays recorded samples, not only noise').toBe(true);
     const from = s.samples?.from ?? [];
-    expect(from.length).toBeGreaterThanOrEqual(2);
+    // Owner, 2026-11-13, of the three picks: "1, sigh is my choice".
+    expect(from, 'breath_heavy plays only the sigh').toEqual(['VOICE_MALE_Sigh_1']);
+    expect(s.samples?.files).toEqual(['breath-heavy-1.m4a']);
     for (const name of from) {
       expect(['GRUNT', 'BREATH', 'VOICE'], name).toContain(name.split('_')[0]);
       expect(name, 'a male voice, like the gasp and the strain').toMatch(/_Male_/i);

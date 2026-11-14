@@ -6199,17 +6199,13 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
-      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack has no BREATH category, so its one unvoiced in-and-out breath (VOICE_MALE_Sigh_1) and the two breathy exhales of the gasp's and the strain's voice (GRUNT_Male_Quick, _Quick_Deep). The layers (two puffs of noise) play until they decode.",
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
       "samples": {
         "files": [
-          "breath-heavy-1-13f5fdde.m4a",
-          "breath-heavy-2-3274375d.m4a",
-          "breath-heavy-3-76fd7007.m4a"
+          "breath-heavy-1-13f5fdde.m4a"
         ],
         "from": [
-          "VOICE_MALE_Sigh_1",
-          "GRUNT_Male_Quick",
-          "GRUNT_Male_Quick_Deep"
+          "VOICE_MALE_Sigh_1"
         ],
         "gain": 0.5,
         "pitch": 0.5
@@ -7982,14 +7978,6 @@ export const SOUND_DATA: SoundData = {
       "source": "breath-heavy-1.m4a"
     },
     {
-      "file": "breath-heavy-2-3274375d.m4a",
-      "source": "breath-heavy-2.m4a"
-    },
-    {
-      "file": "breath-heavy-3-76fd7007.m4a",
-      "source": "breath-heavy-3.m4a"
-    },
-    {
       "file": "gasp-1-7f7bc6f6.m4a",
       "source": "gasp-1.m4a"
     },
@@ -8054,7 +8042,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1512036,
+  "sampleBytes": 1505733,
   "gaitOrder": [
     "walk",
     "run",

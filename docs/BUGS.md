@@ -688,6 +688,14 @@ centroid 2.3–2.6 kHz), ±0.5 semitone; the noise puffs stay as the fallback be
 "the out-of-stamina breath is a man's recorded breath" (red: `breath_heavy plays recorded samples, not only noise`;
 green after). Unheard by a person yet: the owner should hear it.
 
+Follow-up (2026-11-13, `claude/breath-sigh`): the owner heard the three previews and chose the sigh. Owner: "1, sigh is
+my choice". `breath_heavy` plays only `breath-heavy-1.m4a` (`VOICE_MALE_Sigh_1`), ±0.5 semitone, same gain;
+`breath-heavy-2/-3.m4a` (`GRUNT_Male_Quick`, `_Quick_Deep`) are deleted. The noise puffs stay only as the fallback
+until the sigh decodes. Test: `playerVoice.test.ts` "the out-of-stamina breath is the owner's pick, the sigh alone"
+(red on the three takes: `breath_heavy plays only the sigh`; green after).
+
+**Owner should hear:** run out of stamina: one human sigh every time (a little pitch spread), never a short grunt.
+
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
