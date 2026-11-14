@@ -104,6 +104,12 @@ the screen. Now:
 - **Pieces at rest** are sent once and then not again until they move.
 - **The client goes on** from a piece's newest pose at its velocity and spin, for up to 250 ms
   (`pieces.rs` `EXTRAPOLATE_MS`), so a piece updated every few snapshots moves smoothly.
+- **The page hosting the world** (a loopback session, no datagram to keep under) gets up to 255 pieces a
+  snapshot (`LOOPBACK_PIECES`, the encoding's most; BUGS.md #173): a blast's pieces each seen every third
+  of a second stood still past their extrapolation between snapshots.
+- **The client's clock for the pieces** is the least snapshot delay within the last second
+  (`pieces.rs` `WINDOW_MS`), so it follows a server that dropped time (a local world's busy worker)
+  within a second; it drifted 1 ms a second before, and the pieces were drawn past their newest poses.
 - Tests: `every_falling_piece_reaches_the_snapshots_however_many_fall` (98 sand pieces; red: 68 never
   sent), the ledger's unit tests, `past_its_newest_snapshot_a_piece_goes_on_…`.
 - Next (with Phase 51's protocol change): more room per snapshot for pieces (extra datagrams within a

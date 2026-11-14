@@ -151,6 +151,11 @@ const CHUNK_REQUESTS_PER_TICK: f64 = wc::CHUNK_REQUESTS_PER_SECOND as f64 / SIM_
 
 /// A falling piece's bytes in a snapshot: id, posfix × 3, rotation i16 × 4, velocity and spin f16 × 3.
 const PIECE_STATE_BYTES: usize = 4 + 12 + 8 + 6 + 6;
+/// The most pieces a snapshot carries to a session on the page hosting the world (a loopback, no
+/// datagram size to keep under): the encoding's most (its count is a byte). A blast's pieces went a
+/// few dozen a snapshot, each seen every third of a second or so, and stood still between
+/// (BUGS.md #173).
+const LOOPBACK_PIECES: usize = 255;
 
 /// One tick's voxel changes per chunk (the next VoxelModification), in the order chunks and cells
 /// were first touched; a cell changed twice keeps its last state.
@@ -4681,7 +4686,11 @@ impl Server {
             // The falling pieces in what room is left: chosen by the player's ledger below
             // (docs/FELLING.md §3.1).
             let used = encode(&Message::PhysicsSnapshot(snap.clone())).len();
-            let room = MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES;
+            let room = if s.kind == TransportKind::Loopback {
+                LOOPBACK_PIECES
+            } else {
+                MAX_DATAGRAM_BYTES.saturating_sub(used) / PIECE_STATE_BYTES
+            };
             out.push((id, snap, room, l.position));
         }
         for (id, mut snap, room, at) in out {
