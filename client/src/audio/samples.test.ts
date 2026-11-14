@@ -90,6 +90,24 @@ describe('sound samples: data', () => {
         },
         'is not one of samples, procedural',
       ],
+      [
+        (f) => {
+          (f.sounds.hurt as Record<string, unknown>).samples = {
+            files: ['hurt-1.m4a', 'hurt-2.m4a'],
+            from: ['GRUNT_Male_B_Hurt_Short_01'],
+          };
+        },
+        "must name the pack's file for each of files",
+      ],
+      [
+        (f) => {
+          (f.sounds.hurt as Record<string, unknown>).samples = {
+            files: ['hurt-1.m4a'],
+            from: ['grunt male'],
+          };
+        },
+        'is not a pack file name',
+      ],
     ];
     for (const [edit, message] of cases) {
       const fs = files();

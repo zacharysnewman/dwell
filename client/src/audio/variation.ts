@@ -68,6 +68,9 @@ export function layerAt(layer: LayerDef, alt: number): LayerDef {
   return a ? { ...layer, ...a } : layer;
 }
 
+/** A pitch in semitones as a playback rate: 12 semitones up doubles it, 12 down halves it. */
+export const semitonesToRate = (semitones: number): number => 2 ** (semitones / 12);
+
 /** Closest two successive plays of one sound may be in pitch (semitones) before a redraw. */
 export const MIN_PITCH_STEP = 0.25;
 

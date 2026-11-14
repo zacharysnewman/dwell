@@ -4,7 +4,7 @@
 // loading, failed, or the data says `play: "procedural"`) plays its procedural layers instead.
 // Pure apart from the loader, which the engine gives the AudioContext's decode.
 import type { SoundData, SoundDef } from './types';
-import type { Rng } from './variation';
+import { semitonesToRate, type Rng } from './variation';
 
 /** A decoded sample: what the engine needs of an AudioBuffer. */
 export interface Decoded {
@@ -81,7 +81,7 @@ export class SampleBank<B extends Decoded> {
     this.last.set(id, file);
     const semis = sound.samples.pitch ?? 0;
     const shift = sound.samples.shift ?? 0;
-    const rate = 2 ** ((shift + (this.rng() * 2 - 1) * semis) / 12);
+    const rate = semitonesToRate(shift + (this.rng() * 2 - 1) * semis);
     const lowpassHz = sound.samples.lowpassHz;
     return {
       file,

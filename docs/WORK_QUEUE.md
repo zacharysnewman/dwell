@@ -2238,6 +2238,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **The player's voice sounded like a bear (BUGS.md #157, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
+  bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
+  the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:
+  the out-of-stamina breath played the pack's `MONSTER_Exhausted_05/_07`; it is procedural now, and every player vocal
+  sound is checked to be a human take (`samples.from`) at a rate within 0.9–1.1. Owner should hear: when you run out of
+  stamina (and on other player effort/hurt sounds), a human breath/grunt at a natural pitch, not a growl. Next: pick a
+  recorded human breath from the pack.
+
 - **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
   your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your
   inventory and free your mouse. Closing it, should immediately lock your mouse again, same for menuz". One owner of

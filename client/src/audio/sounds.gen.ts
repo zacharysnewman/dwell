@@ -6199,14 +6199,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
-      "samples": {
-        "files": [
-          "breath-heavy-1-de91518c.m4a",
-          "breath-heavy-2-b55d091c.m4a"
-        ],
-        "gain": 0.35,
-        "pitch": 0.5
-      },
+      "$comment": "Out of stamina: a person's heavy breath, two breathy puffs of noise (BUGS.md #157). Its samples were the pack's MONSTER_Exhausted_05/_07, a voiced growl that sounded like a bear; procedural until a human breath is picked (samples with `from`, a human category).",
       "gain": 0.4,
       "reverb": 0.05,
       "variation": {
@@ -6258,6 +6251,9 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "gasp-1-7f7bc6f6.m4a"
         ],
+        "from": [
+          "GRUNT_Male_Hurt_With_Cough"
+        ],
         "gain": 0.45,
         "pitch": 0.5
       },
@@ -6294,6 +6290,9 @@ export const SOUND_DATA: SoundData = {
       "samples": {
         "files": [
           "strain-1-1122e92f.m4a"
+        ],
+        "from": [
+          "GRUNT_Male_Subtle_Hurt"
         ],
         "gain": 0.4,
         "pitch": 0.5
@@ -6411,6 +6410,10 @@ export const SOUND_DATA: SoundData = {
           "wolf-howl-1-b5f4a467.m4a",
           "wolf-howl-2-54005519.m4a"
         ],
+        "from": [
+          "ANIMAL_Wolf_Howl_01",
+          "ANIMAL_Wolf_Howl_02"
+        ],
         "gain": 0.4,
         "pitch": 1,
         "reverb": 0.1
@@ -6443,6 +6446,10 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "wolf-growl-1-9a226a35.m4a",
           "wolf-growl-2-eedbfbc3.m4a"
+        ],
+        "from": [
+          "ANIMAL_Dog_Growl_01_RR01",
+          "ANIMAL_Dog_Growl_01_RR02"
         ],
         "gain": 0.45,
         "pitch": 1
@@ -6480,6 +6487,10 @@ export const SOUND_DATA: SoundData = {
         "files": [
           "deer-snort-1-d7ae1675.m4a",
           "deer-snort-2-3094de0e.m4a"
+        ],
+        "from": [
+          "ANIMAL_Horse_Snort_01_Dry",
+          "ANIMAL_Horse_Snort_02_Dry"
         ],
         "gain": 0.45,
         "pitch": 1
@@ -6519,6 +6530,12 @@ export const SOUND_DATA: SoundData = {
           "hurt-2-3f3e9f4e.m4a",
           "hurt-3-6a61ad9d.m4a",
           "hurt-4-592b9a06.m4a"
+        ],
+        "from": [
+          "GRUNT_Male_B_Hurt_Short_01",
+          "GRUNT_Male_B_Hurt_Short_02",
+          "GRUNT_Male_B_Hurt_Short_03",
+          "GRUNT_Male_B_Hurt_Short_04"
         ],
         "gain": 0.5,
         "pitch": 0.5
@@ -6598,6 +6615,9 @@ export const SOUND_DATA: SoundData = {
       "samples": {
         "files": [
           "death-1-239f74ee.m4a"
+        ],
+        "from": [
+          "GROAN_Male_Hurt_Long"
         ],
         "gain": 0.5,
         "pitch": 0.5
@@ -7944,14 +7964,6 @@ export const SOUND_DATA: SoundData = {
       "source": "body-thud-3.m4a"
     },
     {
-      "file": "breath-heavy-1-de91518c.m4a",
-      "source": "breath-heavy-1.m4a"
-    },
-    {
-      "file": "breath-heavy-2-b55d091c.m4a",
-      "source": "breath-heavy-2.m4a"
-    },
-    {
       "file": "gasp-1-7f7bc6f6.m4a",
       "source": "gasp-1.m4a"
     },
@@ -8016,7 +8028,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1528111,
+  "sampleBytes": 1498514,
   "gaitOrder": [
     "walk",
     "run",

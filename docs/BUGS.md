@@ -547,6 +547,25 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 157. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
+pitch problem or if it's the wrong sound effect, happens when you run out of stamina and maybe other related player
+effects." Cause: the wrong sound effect, not the pitch. `exhausted` plays `breath_heavy`, whose samples were the pack's
+`MONSTER_Exhausted_05` and `_07` (0.52.20's pick by filename, unheard): analysed, they are voiced throughout (a pitch in
+30 of 39 loud frames, ~110–180 Hz) with a low spectral centroid (840–970 Hz), a creature's growling exhale, where a
+person's heavy breath is mostly unvoiced noise. The pitch math was right: a sample's `pitch` is ± semitones
+(`2^(s/12)`), and every player vocal sound draws ±0.5 semitone (rate 0.97–1.03). The other player vocals are the pack's
+human male takes (`hurt` `GRUNT_Male_B_Hurt_Short_01–04`, `death` `GROAN_Male_Hurt_Long`, `gasp`
+`GRUNT_Male_Hurt_With_Cough`, `strain` `GRUNT_Male_Subtle_Hurt`; f0 ~245–510 Hz, centroid 1.1–2.3 kHz) and stay. Fix:
+the monster files are removed and the breath plays its procedural layers (two breathy noise puffs) until a human breath
+is picked from the pack; a sound's samples now name their pack files (`samples.from`), whose category the test checks.
+Tests: `client/src/audio/playerVoice.test.ts` (red: `dwell:breath_heavy plays MONSTER_Exhausted_05`; green after), each
+player vocal event a human category and every play's rate within 0.9–1.1, and the semitones → rate math.
+
+**Owner should hear:** when you run out of stamina (and on other player effort/hurt sounds), a human breath/grunt at a
+natural pitch, not a growl. Outstanding: picking a recorded human breath for it (the pack's own; add it with `from`).
+
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you

@@ -337,7 +337,7 @@ export function validateSound(where, s) {
   s.layers.forEach((l, i) => validateLayer(`${where}.layers[${i}]`, l, loop));
   if (s.samples !== undefined) {
     const sm = s.samples;
-    keysIn(`${where}.samples`, sm, ["files", "gain", "pitch", "shift", "lowpassHz", "reverb"]);
+    keysIn(`${where}.samples`, sm, ["files", "from", "gain", "pitch", "shift", "lowpassHz", "reverb"]);
     if (loop) fail(`${where}.samples`, "loop sounds are procedural only");
     if (
       !Array.isArray(sm.files) ||
@@ -351,6 +351,15 @@ export function validateSound(where, s) {
           `${where}.samples.files`,
           `"${f}" is not a lower-case .m4a or .mp3 name`,
         );
+    if (sm.from !== undefined) {
+      // The pack's own name of each file (AUDIO.md §2b), one per file: its category is the
+      // name's first word (`GRUNT_Male_…`, `MONSTER_…`, `ANIMAL_…`).
+      if (!Array.isArray(sm.from) || sm.from.length !== sm.files.length)
+        fail(`${where}.samples.from`, "must name the pack's file for each of files, in order");
+      for (const n of sm.from)
+        if (typeof n !== "string" || !/^[A-Z]+_[A-Za-z0-9_-]+$/.test(n))
+          fail(`${where}.samples.from`, `"${n}" is not a pack file name (CATEGORY_Name)`);
+    }
     number(`${where}.samples.gain`, sm.gain, 0, 4, { optional: true });
     number(`${where}.samples.pitch`, sm.pitch, 0, 12, { optional: true });
     number(`${where}.samples.reverb`, sm.reverb, 0, 1, { optional: true });
