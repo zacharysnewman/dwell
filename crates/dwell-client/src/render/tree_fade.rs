@@ -11,6 +11,12 @@
 //! fragment's texel up (`cutout_fs`, `tree_near_share`) and the impostor its tree's foot
 //! (`imp_vs`), so a tree's leaves and its impostor fade as one and keep complementary pixels.
 //! Leaves no listed tree owns (a player's) are the real ones within `inM` of the eye.
+//!
+//! A tree's leaf cards (shared/look/leaves.json `cards`) switch the same way, in time (BUGS.md
+//! #157: they dissolved over 24–40 m by distance, so a still eye saw a stipple on every tree in
+//! that band): on once its crown is nearer than `fadeStartM`, off once farther than the middle of
+//! `fadeStartM`–`fadeEndM` ([`cards_range`]), each switch fading over the tier's `fadeS`. Their
+//! shares are the map's second plane (`tree_cards_share`).
 
 use std::collections::HashMap;
 
@@ -26,6 +32,20 @@ pub const CROWN_M: f32 = 10.0;
 const SNAP_M: i32 = 8;
 /// No tree owns the texel.
 const NONE: u32 = u32::MAX;
+
+/// A tree's cards' switch distances (m, the eye to its crown's centre): on nearer than the
+/// first, off farther than the second (shared/look/leaves.json `cards`: `fadeStartM` and the
+/// middle of `fadeStartM`–`fadeEndM`, so a card stays within about `fadeEndM` of the eye).
+pub fn cards_range() -> [f32; 2] {
+    let c = &dwell_look::leaves::LEAVES.cards;
+    let (start, end) = (c.fade_start_m as f32, c.fade_end_m as f32);
+    [start, (start + end) * 0.5]
+}
+
+/// How far (m) a tree's card can be from the eye: past it every card is dropped whole.
+pub fn cards_reach() -> f32 {
+    cards_range()[1] + CROWN_M
+}
 
 /// The map's side (texels, one a metre): every tier's `outM` + [`CROWN_M`] each way from the eye,
 /// with a snap step's slack each side, rounded up to a multiple of 4 (a word holds 4 texels).
@@ -109,8 +129,11 @@ pub struct TreeFades {
     pub origin: [i32; 2],
     trees: Vec<Tree>,
     states: HashMap<[i32; 3], State>,
+    /// Each tree's cards' state (`near` = drawn).
+    cards: HashMap<[i32; 3], State>,
     owner: Vec<u32>,
-    /// One byte a texel, row z then x: the near tree's share.
+    /// One byte a texel, row z then x: the near tree's share; then a second plane as large, its
+    /// cards' share.
     pub texels: Vec<u8>,
     rebuild: bool,
 }
@@ -130,8 +153,9 @@ impl TreeFades {
             origin: [i32::MIN, i32::MIN],
             trees: Vec::new(),
             states: HashMap::new(),
+            cards: HashMap::new(),
             owner: vec![NONE; cells],
-            texels: vec![0; cells],
+            texels: vec![0; 2 * cells],
             rebuild: true,
         }
     }
@@ -148,13 +172,22 @@ impl TreeFades {
 
     /// The near tree's share at face-local `x`, `z` from the map (0 outside it).
     pub fn share_at(&self, x: f64, z: f64) -> f32 {
+        self.plane_at(0, x, z)
+    }
+
+    /// The tree's cards' share at face-local `x`, `z` from the map (0 outside it).
+    pub fn cards_at(&self, x: f64, z: f64) -> f32 {
+        self.plane_at(1, x, z)
+    }
+
+    fn plane_at(&self, plane: usize, x: f64, z: f64) -> f32 {
         let i = (x.floor() as i64) - i64::from(self.origin[0]);
         let k = (z.floor() as i64) - i64::from(self.origin[1]);
         let n = i64::from(self.n);
         if !(0..n).contains(&i) || !(0..n).contains(&k) {
             return 0.0;
         }
-        f32::from(self.texels[(k * n + i) as usize]) / 255.0
+        f32::from(self.texels[plane * (n * n) as usize + (k * n + i) as usize]) / 255.0
     }
 
     /// The frame uniform's `far_trees` (shaders.rs `tree_near_share`): the eye's face-local x and
@@ -187,6 +220,7 @@ impl TreeFades {
         if origin != self.origin || self.face != Some(face) || self.rebuild {
             if self.face != Some(face) {
                 self.states.clear();
+                self.cards.clear();
             }
             self.origin = origin;
             self.face = Some(face);
@@ -205,10 +239,13 @@ impl TreeFades {
             let keep: std::collections::HashSet<[i32; 3]> =
                 self.trees.iter().map(|t| t.key).collect();
             self.states.retain(|k, _| keep.contains(k));
+            self.cards.retain(|k, _| keep.contains(k));
         }
         // Each tree's state: first seen, settled where its distance puts it; then switched with
         // hysteresis, a timed fade each switch.
         let mut shares = Vec::with_capacity(self.trees.len());
+        let mut card_shares = Vec::with_capacity(self.trees.len());
+        let [cards_in, cards_out] = cards_range();
         for t in &self.trees {
             let c = [t.foot[0], t.foot[1] + t.centre_y, t.foot[2]];
             let d = ((f64::from(c[0]) - e[0]).powi(2)
@@ -222,27 +259,37 @@ impl TreeFades {
             let want = !t.baked || far.near_after(s.near, d);
             s.switch(want, now, far.fade_s);
             shares.push((s.near_share(now, far.fade_s) * 255.0).round() as u8);
+            // Its cards: on nearer than `cards_in`, off farther than `cards_out`, faded in time.
+            let c = self
+                .cards
+                .entry(t.key)
+                .or_insert_with(|| State::settled(d <= (cards_in + cards_out) * 0.5));
+            let want = if c.near { d <= cards_out } else { d < cards_in };
+            c.switch(want, now, far.fade_s);
+            card_shares.push((c.near_share(now, far.fade_s) * 255.0).round() as u8);
         }
         let n = self.n as usize;
         let mut changed = false;
         for k in 0..n {
             for i in 0..n {
                 let at = k * n + i;
-                let v = match self.owner[at] {
+                let (v, c) = match self.owner[at] {
                     NONE => {
                         let dx = f64::from(self.origin[0]) + i as f64 + 0.5 - e[0];
                         let dz = f64::from(self.origin[1]) + k as f64 + 0.5 - e[2];
-                        if (dx * dx + dz * dz).sqrt() < f64::from(far.in_m) {
-                            255
-                        } else {
-                            0
-                        }
+                        let d = (dx * dx + dz * dz).sqrt();
+                        (
+                            if d < f64::from(far.in_m) { 255 } else { 0 },
+                            if d < f64::from(cards_in) { 255 } else { 0 },
+                        )
                     }
-                    o => shares[o as usize],
+                    o => (shares[o as usize], card_shares[o as usize]),
                 };
-                if self.texels[at] != v {
-                    self.texels[at] = v;
-                    changed = true;
+                for (at, v) in [(at, v), (n * n + at, c)] {
+                    if self.texels[at] != v {
+                        self.texels[at] = v;
+                        changed = true;
+                    }
                 }
             }
         }
@@ -290,7 +337,7 @@ pub fn layout_entry() -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-/// The map on the GPU: [`window`]² bytes as words.
+/// The map on the GPU: two planes of [`window`]² bytes as words.
 pub struct TreeFadeGpu {
     pub buffer: wgpu::Buffer,
 }
@@ -321,9 +368,9 @@ impl TreeFadeGpu {
         }
     }
 
-    /// GPU bytes held.
+    /// GPU bytes held: the near shares' plane and the cards'.
     pub fn bytes() -> u64 {
-        u64::from(window()).pow(2)
+        2 * u64::from(window()).pow(2)
     }
 }
 
@@ -333,16 +380,33 @@ pub fn wgsl() -> String {
     format!(
         "@group(0) @binding({BINDING}) var<storage, read> tree_fades: array<u32>;
 const TREE_FADE_N: i32 = {n};
+// How far (m) a tree's leaf card reaches from the eye (`cards_reach`): past it, dropped whole.
+const TREE_CARDS_REACH: f32 = {cards:?};
 
-// The near tree's share (0–1) at `p` m (face-local x, z) from the map's corner
-// (render/tree_fade.rs); 0 outside it.
-fn tree_near_at(p: vec2f) -> f32 {{
+// The map's `plane` (0 the near trees' shares, 1 their cards') at `p` m (face-local x, z) from
+// the map's corner (render/tree_fade.rs); 0 outside it.
+fn tree_plane_at(plane: u32, p: vec2f) -> f32 {{
     let t = vec2i(floor(p));
     if (t.x < 0 || t.y < 0 || t.x >= TREE_FADE_N || t.y >= TREE_FADE_N) {{
         return 0.0;
     }}
-    let i = u32(t.y * TREE_FADE_N + t.x);
+    let i = plane * u32(TREE_FADE_N * TREE_FADE_N) + u32(t.y * TREE_FADE_N + t.x);
     return f32((tree_fades[i / 4u] >> ((i % 4u) * 8u)) & 0xffu) / 255.0;
+}}
+
+// The near tree's share (0–1) at `p` m (face-local x, z) from the map's corner.
+fn tree_near_at(p: vec2f) -> f32 {{
+    return tree_plane_at(0u, p);
+}}
+
+// A leaf card's share (`TreeFades` cards): its tree's cards' state, switched in time (BUGS.md
+// #157). A card on the other face is drawn.
+fn tree_cards_share(rel: vec3f) -> f32 {{
+    let face = frame.eye.y;
+    if (face_at(frame.eye.x + rel.y) != face) {{
+        return 1.0;
+    }}
+    return tree_plane_at(1u, frame.far_trees.xy + face_vector(face, rel).xz);
 }}
 
 // The near trees' share of a leaf fragment `rel` from the eye (`TreeFades`): its tree's state, 1
@@ -359,6 +423,7 @@ fn tree_near_share(rel: vec3f) -> f32 {{
 }}
 ",
         n = window(),
+        cards = cards_reach(),
     )
 }
 
@@ -507,6 +572,82 @@ mod tests {
             assert_eq!(f.share_at(-1.5, 1.5), 0.0, "the far tree's crown edge: its impostor");
             assert_eq!(f.share_at(1.5, 8.0), 1.0, "the unbaked one's: the real leaves");
         }
+    }
+
+    dwell_world::both_faces! {
+        /// BUGS.md #157: the leaf cards dissolved over 24–40 m by distance, so a still eye saw
+        /// every tree in that band stippled. Each tree's cards are now on or off by its crown's
+        /// distance, switched in time: once the fade time is past, every share is 0 or 1.
+        fn a_still_eye_sees_every_trees_cards_whole_or_gone(face: FaceFrame) {
+            let trees = row(10.0);
+            let [cards_in, cards_out] = cards_range();
+            for eye_x in [0.0, 5.0, 11.0] {
+                let mut f = TreeFades::new(window());
+                let eye = eye_at(face, [eye_x, 16.0, 0.5]);
+                for k in 0..30 {
+                    step(&mut f, f64::from(k) * 0.05, face, eye, &trees);
+                }
+                let (mut on, mut off) = (0, 0);
+                for t in &trees {
+                    let s = f.cards_at(f64::from(t.foot[0]), f64::from(t.foot[2]));
+                    assert!(s == 0.0 || s == 1.0, "a tree's cards at {:?} drawn at {s}", t.foot);
+                    let d = ((f64::from(t.foot[0]) - eye_x).powi(2)
+                        + (f64::from(t.foot[1] + t.centre_y) - 16.0).powi(2))
+                    .sqrt() as f32;
+                    if d < cards_in {
+                        assert_eq!(s, 1.0, "a tree {d} m off has its cards");
+                    }
+                    if d > cards_out {
+                        assert_eq!(s, 0.0, "a tree {d} m off has none");
+                    }
+                    on += usize::from(s == 1.0);
+                    off += usize::from(s == 0.0);
+                }
+                assert!(on > 0 && off > 0, "the row spans the cards' switch");
+            }
+        }
+    }
+
+    dwell_world::both_faces! {
+        /// Crossing the cards' switch starts one fade over `fadeS`; then they stay put.
+        fn a_trees_cards_fade_once_in_time_when_it_crosses_their_switch(face: FaceFrame) {
+            let far = far();
+            let [cards_in, cards_out] = cards_range();
+            let tree = Tree {
+                key: [0, 0, 0],
+                foot: [0.5, 10.0, 0.5],
+                centre_y: 5.0,
+                radius: 2.0,
+                baked: true,
+            };
+            let trees = [tree];
+            let mut f = TreeFades::new(window());
+            let at = |d: f64| eye_at(face, [0.5 - d, 15.0, 0.5]);
+            step(&mut f, 0.0, face, at(f64::from(cards_in) - 3.0), &trees);
+            assert_eq!(f.cards_at(0.5, 0.5), 1.0);
+            let out = at(f64::from(cards_out) + 1.0);
+            let mut now = 1.0;
+            step(&mut f, now, face, out, &trees);
+            let mid = f.cards_at(0.5, 0.5);
+            assert!(mid > 0.5, "just switched: {mid}");
+            while now < 1.0 + f64::from(far.fade_s) + 0.05 {
+                now += 0.02;
+                step(&mut f, now, face, out, &trees);
+            }
+            assert_eq!(f.cards_at(0.5, 0.5), 0.0, "gone after fadeS");
+            assert_eq!(f.share_at(0.5, 0.5), 1.0, "the tree itself still the real one");
+        }
+    }
+
+    #[test]
+    fn the_cards_switch_is_the_leaves_data_and_inside_the_map() {
+        // face-a-only: sizes only.
+        let c = &dwell_look::leaves::LEAVES.cards;
+        let [a, b] = cards_range();
+        assert_eq!(a, c.fade_start_m as f32);
+        assert!(a < b && b <= c.fade_end_m as f32);
+        assert!(window() as f32 / 2.0 - SNAP_M as f32 >= cards_reach());
+        assert!(wgsl().contains("fn tree_cards_share("));
     }
 
     #[test]

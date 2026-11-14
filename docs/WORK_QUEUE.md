@@ -1455,6 +1455,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    drawn again rarely). **Owner should see:** walking and flying around trees, their shadows (on the ground and
    within the canopy) stay the same, with no flip between two looks. Left (local GPU): the same-spot before/after
    at `starter:broadleaf` walking 10→60 m from a tree and flying over it, Low and High.
+
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** trees
+   still stippled with the camera still at 15–60 m (BUGS.md #157): the impostor dithered between its baked views per
+   pixel, and the leaf cards dissolved by distance over 24–40 m. **Fixed (`claude/still-stipple-skin`):** one view a
+   tree (the nearest), and each tree's cards switched in time with it (on inside 24 m, off past 32 m, 0.3 s fade).
+   **Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved. Same pass:
+   villagers' skin read cold blue-grey with the sun behind them (BUGS.md #158); fixed with a warm ground bounce on
+   every body's light by data (light.json `characters.bounce`). **Owner should see:** villagers facing you with the
+   sun behind them keep warm skin on the shaded side.
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
