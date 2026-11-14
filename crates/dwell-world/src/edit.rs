@@ -421,6 +421,53 @@ pub struct BlockHit {
     /// The face the ray entered through.
     pub face: u8,
     pub distance: f32,
+    /// Met on a slope (a ramp's sloped face) where it faces out through a side: the side face a
+    /// place against it goes through ([`slope_side`], docs/BUGS.md #23); `face` stays the slope's
+    /// own (its top), for a break.
+    pub slope_side: Option<u8>,
+}
+
+/// A place against a slope at the point met (docs/BUGS.md #23): the cell a sloped face (a ramp's)
+/// faces out into from there, along its normal — the side face it leaves its cell through when
+/// that comes before the top (or bottom), None when it is the top (the place goes on top, as
+/// against any top) or the face is not sloped. In cell space (y in rows, `local` the point in
+/// the cell, 0..1 each way; `normal` outward, any length), so a ½ m ramp's lower half faces out
+/// through its low side and its upper half through its top; ties go to the top.
+pub fn slope_side(normal: [f32; 3], local: [f32; 3]) -> Option<u8> {
+    const ZERO: f32 = 1e-4;
+    if normal.iter().filter(|v| v.abs() > ZERO).count() < 2 {
+        return None;
+    }
+    let mut best: Option<(f32, usize)> = None;
+    // The vertical first, so a tie stays on top.
+    for k in [1, 0, 2] {
+        let n = normal[k];
+        if n.abs() <= ZERO {
+            continue;
+        }
+        let d = if n > 0.0 {
+            (1.0 - local[k]) / n
+        } else {
+            local[k] / -n
+        };
+        if best.is_none_or(|(b, _)| d < b - 1e-6) {
+            best = Some((d, k));
+        }
+    }
+    match best? {
+        (_, 1) => None,
+        (_, k) => Some((2 * k + usize::from(normal[k] < 0.0)) as u8),
+    }
+}
+
+/// A sloped face with outward cell-space `normal` faces out through `face` too ([`slope_side`]'s
+/// sides: a place against a ramp's slope through its low side).
+fn slope_faces(normal: [f32; 3], face: u8) -> bool {
+    let Some(dir) = FACE_DIRS.get(usize::from(face)) else {
+        return false;
+    };
+    let along: f32 = (0..3).map(|k| normal[k] * dir[k] as f32).sum();
+    normal.iter().filter(|v| v.abs() > 1e-4).count() >= 2 && along > 1e-4
 }
 
 /// The nearest targetable cell along the ray (unit `dir`, metres) within `max_distance` (m), as its
@@ -526,10 +573,14 @@ pub fn raycast_block_past(
                 && t <= max_distance
             {
                 let n = normal_to_m(normal.map(f64::from)).map(|v| v as f32);
+                // Where it was met, in its cell (cell space): a slope's side for a place.
+                let local: [f32; 3] =
+                    std::array::from_fn(|k| o[k] + dir[k] * t - (cell[k] - base[k]) as f32);
                 return Some(BlockHit {
                     cell,
                     face: face_of_normal(n),
                     distance: t,
+                    slope_side: slope_side(normal, local),
                 });
             }
         }
@@ -689,7 +740,11 @@ pub fn check_block_edit(
         for v in &mut normal {
             *v /= length_n;
         }
-        if face_of_normal(normal_to_m(normal.map(f64::from)).map(|v| v as f32)) != request.face {
+        // A place against a slope may go through the side it faces out of (docs/BUGS.md #23).
+        let faces = face_of_normal(normal_to_m(normal.map(f64::from)).map(|v| v as f32))
+            == request.face
+            || (request.action == BlockEditAction::Place && slope_faces(normal, request.face));
+        if !faces {
             continue;
         }
         let side: f64 = (0..3)

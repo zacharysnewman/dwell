@@ -172,11 +172,12 @@ function validateHotbar(h) {
 /** Checks the build modes (what holding Place does). */
 function validateBuildModes(m) {
   if (typeof m !== 'object' || m === null || Array.isArray(m)) fail('buildModes must be an object');
-  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'holdMs', 'modes'].includes(k));
+  const extra = Object.keys(m).filter((k) => !['$comment', 'key', 'clearance', 'holdMs', 'repeatS', 'modes'].includes(k));
   if (extra.length) fail(`buildModes: unknown ${extra.join(', ')}`);
   if (typeof m.key !== 'string' || !KEY_CODE.test(m.key)) fail('buildModes.key must be a KeyboardEvent.code, e.g. KeyL');
   if (typeof m.clearance !== 'number' || !(m.clearance >= 0 && m.clearance <= 0.5)) fail('buildModes.clearance must be 0..0.5 (m)');
   if (!Number.isInteger(m.holdMs) || m.holdMs < 0 || m.holdMs > 2000) fail('buildModes.holdMs must be 0..2000 (ms)');
+  if (typeof m.repeatS !== 'number' || !(m.repeatS >= 0.01 && m.repeatS <= 1)) fail('buildModes.repeatS must be 0.01..1 (s)');
   if (!Array.isArray(m.modes) || m.modes.length === 0) fail('buildModes.modes must be a non-empty list');
   const names = new Set();
   m.modes.forEach((mode, i) => {
@@ -223,6 +224,8 @@ export function itemsRust(data) {
   rs.push(`pub const BUILD_HOLD_MS: f64 = ${m.holdMs}.0;`, '');
   rs.push('/// How far (m) the player\'s own body must be clear of a cell before a block goes in it.');
   rs.push(`pub const BUILD_CLEARANCE: f64 = ${Number.isInteger(m.clearance) ? `${m.clearance}.0` : m.clearance};`, '');
+  rs.push('/// How often (s) a held stroke builds its next piece at most, by the clock (docs/BUGS.md #30).');
+  rs.push(`pub const BUILD_REPEAT_S: f64 = ${f(m.repeatS)};`, '');
   rs.push('/// What holding Place does after the first block, in the order the key cycles them.');
   rs.push(`pub const BUILD_MODES: [BuildModeDef; ${m.modes.length}] = [`);
   for (const mode of m.modes) {
