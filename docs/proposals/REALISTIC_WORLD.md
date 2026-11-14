@@ -604,6 +604,26 @@ them: red with the new rocks' palettes among the old, green after). `Resolved::w
     in warm dry climate; temperate and subarctic faces have little or none (cold deserts there). `tests/realistic_deserts.rs`.
   - The map's build time: 1.44× the default's (the time test's bar 1.6×, was 1.3×) after sharing the warp and coast
     between the height and the swells.
+- **Realistic batch, the map check and the curves (2026-11-14, the 0.65 line: 0.64 shipped this batch's seam, ramp
+  and shrine fixes on their own; WORK_QUEUE item 15).** All data in `plates.json` with `gen.mjs` validation, tests on
+  both faces over seeds 1, 7, 42, 274005646 and 2741893632:
+  - **Curved plates and coasts** (owner: "our tectonic plates are too straight"): the plate warp in three layers
+    (`warp` 3.5 km at 30 km, `warp.detail` 2.2 km at 7 km and 0.6 km at 2 km; each layer now moves about ± its
+    amplitude); every coast, the rim's too, moved by layered noise (`rim.coast`: 4.5 km at 18 km, 0.9 km at 3 km), kept
+    off the outer band. `tests/realistic_shapes.rs`: plate boundaries' straight 2 km windows 57 % → ≤ 3 %, 5 km
+    windows 81 % → ≤ 2 %, coasts' 3.1 % → ≤ 0.9 %.
+  - **No thin strips:** at sea the boundaries' landforms stop 6 m under the surface (`uplift.seaRidges`; an oceanic
+    transform's ridge stood out of the 20 m deep sea as an 11 km strip): the longest strip under 1 km wide ≤ 3.6 km.
+  - **Varied islands** (`uplift.cones`): each cone's radius and height drawn, its outline from harmonics 2–7 of seeded
+    amplitude, a chain island's own size, 0–3 satellite islets, arc sites skipped with chance 0.2, spacing ± half:
+    islands' radius cv ≥ 0.88, spacing cv ≥ 0.57, outlines 1.7–3.3 × a disc's irregularity.
+  - **Cones blend into their range:** the erosion's cap on a plate cone fades out toward its foot (hand-placed cones
+    unchanged). `tests/realistic_cones.rs`: the slope break at the foot 0.60–0.96 → −0.31 to 0.26.
+  - **Volcano states** (`uplift.volcanism`, VOLCANOES.md §6.7): active cones bare lava rock with an apron of basalt and
+    obsidian in the shallows; dormant ones covered by age. `tests/realistic_volcanoes.rs`.
+  - **Tan deserts' own stack** (`dwell:dune_sands`, the Realistic world's `preset:sand_desert` entry, not the preset:
+    the starter's desert unchanged): 99.7 % tan sand; mesa country on every face outside the subarctic
+    (`tests/realistic_mesa_presence.rs`).
 - **Later (not phased):** strata tilt near boundaries; lava vents by rule; a 10× Realistic once the
   world map tiles.
 
