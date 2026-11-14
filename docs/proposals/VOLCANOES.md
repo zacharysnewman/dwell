@@ -330,3 +330,15 @@ not harden when within a distance of a sourceblock too."
 
 **Next:** the rest of the look (heat per cell); the water grid's columns as the fields' water (and the sea's level taken back where
 lava builds land); eruptions (V3–V5).
+
+### 6.7 Active and dormant volcanoes in terrain generation (2026-11-13, the 0.64 batch; WORK_QUEUE item 15)
+
+Owner, 2026-11-13: "Also active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they
+should slowly gain dirt and grass, and trees." Clarified: "By slowly gain, we can make that a system eventually, but as
+part of terrain generation." Each volcano a Realistic world places (its arc cones and hotspot islands,
+`plates.json` `uplift`) has a state from data: active (an apron of lava stone spilled into the shallows around its shore,
+bare dark rock on the cone) or dormant with a weathering age that sets how far soil, grass and trees cover it (the biome
+and climate still choose the plants). Set once when the terrain is generated; the default world's hand-placed tectonics
+(`terrain.json` `tectonics`) are not changed. **Owner should see:** active volcanic islands ringed by dark, ragged lava
+rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and trees, the oldest mostly
+forested. Later (docs/FUTURE.md): cover spreading over time as a live system.

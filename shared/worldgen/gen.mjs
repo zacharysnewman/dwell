@@ -2714,9 +2714,18 @@ export function validatePlates(data) {
     );
   range("speed", data.speed, 0, 100);
   range("age", data.age, 0, 4000);
-  obj("warp", data.warp, ["amplitude", "wavelength"]);
+  obj("warp", data.warp, ["amplitude", "wavelength", "detail"]);
   num("warp.amplitude", data.warp.amplitude, 0, data.reach);
   num("warp.wavelength", data.warp.wavelength, 100, 1_000_000, true);
+  // Finer warps over the first (0.64; the owner: "our tectonic plates are too straight"), each
+  // {amplitude, wavelength}, at most four.
+  const detail = data.warp.detail ?? [];
+  if (!(Array.isArray(detail) && detail.length <= 4)) fail("warp.detail must be a list of at most four");
+  detail.forEach((w, i) => {
+    obj(`warp.detail[${i}]`, w, ["amplitude", "wavelength"]);
+    num(`warp.detail[${i}].amplitude`, w.amplitude, 0, data.reach);
+    num(`warp.detail[${i}].wavelength`, w.wavelength, 100, 1_000_000, true);
+  });
   num("transformBelow", data.transformBelow, 0, 1);
   obj("hotspots", data.hotspots, ["count", "within"]);
   range("hotspots.count", data.hotspots.count, 0, 32, true);
@@ -2943,6 +2952,10 @@ export function platesRust(data) {
     ["age", `[${rf(data.age[0])}, ${rf(data.age[1])}]`],
     ["warp_amplitude", rf(data.warp.amplitude)],
     ["warp_wavelength", `${data.warp.wavelength}`],
+    [
+      "warp_detail",
+      `&[${(data.warp.detail ?? []).map((w) => `(${rf(w.amplitude)}, ${w.wavelength})`).join(", ")}]`,
+    ],
     ["transform_below", rf(data.transformBelow)],
     ["hotspots_min", `${data.hotspots.count[0]}`],
     ["hotspots_max", `${data.hotspots.count[1]}`],

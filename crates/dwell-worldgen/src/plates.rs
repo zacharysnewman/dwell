@@ -96,6 +96,10 @@ pub struct PlateRules {
     /// The boundaries curve by this much noise (m) at this wavelength (m).
     pub warp_amplitude: f64,
     pub warp_wavelength: i32,
+    /// Finer warps over the first, (amplitude m, wavelength m) each: sweeping arcs with smaller
+    /// bends, not a Voronoi's straight bisectors (owner, 2026-11-14: "our tectonic plates are too
+    /// straight").
+    pub warp_detail: &'static [(f64, i32)],
     /// A boundary is a transform where |closing rate| < this × the relative speed.
     pub transform_below: f64,
     /// The seed picks a hotspot count in `hotspots_min ..= hotspots_max`, each within
@@ -432,6 +436,7 @@ impl PlateLayout {
     pub fn of_plates(rules: &PlateRules, plates: Vec<Plate>) -> Self {
         let mut rules = *rules;
         rules.warp_amplitude = 0.0;
+        rules.warp_detail = &[];
         let mut layout = Self {
             rules,
             plates,
@@ -623,10 +628,16 @@ impl PlateLayout {
         }
         let (xi, zi) = (x as i64, z as i64);
         let w = self.rules.warp_wavelength;
-        (
+        let (mut wx, mut wz) = (
             x + a * f64::from(fbm2(self.warp_seeds.0, xi, zi, w, 2, None)),
             z + a * f64::from(fbm2(self.warp_seeds.1, xi, zi, w, 2, None)),
-        )
+        );
+        for (k, &(da, dw)) in self.rules.warp_detail.iter().enumerate() {
+            let k = k as u32 + 1;
+            wx += da * f64::from(fbm2(mix32(self.warp_seeds.0 ^ k), xi, zi, dw, 2, None));
+            wz += da * f64::from(fbm2(mix32(self.warp_seeds.1 ^ k), xi, zi, dw, 2, None));
+        }
+        (wx, wz)
     }
 
     /// The boundaries: scan cells within the reach, each neighbour pair on different plates adds

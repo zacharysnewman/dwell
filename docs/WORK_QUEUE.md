@@ -846,6 +846,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    arc islands along the curved trench with gaps; all amplitudes and wavelengths data. **Owner should see:** continents and
    plates with natural sweeping curves, bays and peninsulas, and volcanic island chains of varied, irregular islands along
    a curving line. Nothing straight, round or evenly spaced at map scale.
+   Owner, 2026-11-13, added to the 0.64 batch: "Also active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they
+   should slowly gain dirt and grass, and trees." Clarified: "By slowly gain, we can make that a system eventually, but as
+   part of terrain generation." So each placed volcano
+   (the Realistic world's arc cones and hotspot islands) has a state from data, active or dormant: active ones spill a
+   noisy apron of lava stone (basalt, obsidian where it met water) tens to a hundred-plus metres into the shallows, bare
+   dark rock on the cone; dormant ones carry soil, grass and trees by a weathering age (the chain's position), set once at
+   terrain generation (no live growth yet: a later system, docs/FUTURE.md). **Owner should see:** active volcanic islands
+   ringed by dark, ragged lava rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and
+   trees, the oldest mostly forested.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
