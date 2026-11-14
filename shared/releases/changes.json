@@ -12,6 +12,30 @@
       ]
     },
     {
+      "version": "0.65.4",
+      "changes": [
+        "Villagers' eyes sit where they should"
+      ]
+    },
+    {
+      "version": "0.65.3",
+      "changes": [
+        "Showcase recordings wait for the world around the camera to finish loading before each shot, even while builders are at work."
+      ]
+    },
+    {
+      "version": "0.65.2",
+      "changes": [
+        "Town sites show on the big map and the minimap: a town icon where each town stands, brighter while its builders are at work, with a Towns filter to hide them."
+      ]
+    },
+    {
+      "version": "0.65.1",
+      "changes": [
+        "Behind the scenes: the model painter can pick faces"
+      ]
+    },
+    {
       "version": "0.65.0",
       "changes": [
         "A new compatibility line for Realistic worlds, their terrain redrawn from the seed: curving plates and coastlines with gulfs and headlands, rifts as chains of lakes, no sliver plates or thin land strips, ranges with peaks and saddles",

@@ -104,6 +104,22 @@ effects and ambiance are good"; "Yes it's for the recordings"). How it works:
   no `.webm`, and its clip is silent in the splice (the driver's `/rec/start` reply says "with sound (effects,
   ambience)" when it taps).
 
+## 0d. Wait for the terrain (every shot)
+
+Owner, 2026-11-14: the trailer was "really bad right now because the terrain looks bad and half of it isn't loaded
+in". `take.mjs` now waits before each shot records until the view is **settled** — the bench's placed-shot rule
+(`viewIdle`: the LOD generating, meshing and asking for nothing with nothing waiting in view, and the chunks meshed)
+held for 1 s, or **loaded** (`viewLoaded`: nothing waiting in view, the chunks meshed) held for 3 s, since edits nearby
+(builders at work) keep the LOD re-asking for the sections they touch (BUGS.md #170) — after a path shot's first-keyframe hold (`warmS`, now 2 s by default) or a take's setup phase. A
+shot's `setup.settleS` caps the wait (default 60 s; `0` skips it); the log prints `view settled 12.3` or `view NOT
+settled 60.0` (the take goes on).
+
+**Builders at work (2026-11-14):** `?local=1&seed=0&fresh=1&spawn=town&time=0.5` founds the hamlet at (688, 7979) at
+once; five builders put it up in about 2.5 min (well, two huts, watchtower, wall). The take: a 120 s eased arc from
+[716, 390, 7952] to [662, 392, 7950], target [687, 375, 7979], fov 50, recorded square (1440²) and spliced at 2× (58 s,
+the sound time-stretched) to 16:9 and 9:16. Start the shot right after `terrainReady` (the settle wait costs a third
+of the build); a tree stands inside the hamlet (BUGS.md #169). By hand in the driver: `curl -s localhost:4999/eval -d "$(node -e "import('./.claude/skills/record/scripts/take.mjs').then(m => console.log(m.settleScript()))")"`.
+
 ## 1. Run the game (new camera spots)
 
 Use the warm bench preview (`docs/DEV_TOOLS.md`, the `bench` skill): `npm run bench:warm` from `client/`

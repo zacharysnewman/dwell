@@ -217,6 +217,14 @@ impl LocalWorld {
                 c.world_size = dwell_protocol::world_size::WorldSize::playable(radius_scale);
                 // A new world's Sky (the server reads a saved world's orbit from its file).
                 c.sky = sky;
+                // `?spawn=town` (`town-b`, dev; docs/DEV_TOOLS.md): the player stands by the town
+                // site nearest the face's spawn, so it founds and its builders come.
+                if let Some(f) = spawn_grid
+                    .as_deref()
+                    .and_then(crate::local::town_spawn_face)
+                {
+                    crate::local::spawn_by_town(c, f);
+                }
                 // A new world's spawn grid (the server reads a saved world's own from its file).
                 c.spawn_grid =
                     spawn_grid.filter(|k| dwell_worldgen::grids::grid_spawn(k).is_some());

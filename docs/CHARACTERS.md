@@ -1069,7 +1069,11 @@ A model's `decor` (models.json, `shared/models/decor.mjs`) is applied by the imp
   level's own surface where a ray along `facing` hits it, `lift` off it, skinned wholly to `joint`. The
   added vertices follow the mesh's own; the primitive's `extras.decor` counts them so a second run replaces
   them, and the part map lists them with no part. The Peasant's eyes: a dark quad and a pale glint a side
-  on `spine.006` (16 vertices a level). First person hides them with the head.
+  on `spine.006` (16 vertices a level). First person hides them with the head. A piece is placed by `at`
+  (with `mirror`) or by `faces`: lists of the full mesh's triangle ids (`detail_0`, primitive 0, the Model Part
+  Painter's numbering, each list joined by shared edges), each list's area-weighted centre cast along `facing`
+  onto every level, an anchor at -x flipping u as `mirror` does. The Peasant's eyes are the owner's picks
+  (2026-11-14): `faces: [[808, 809], [1518, 1519]]`, a quad each side of the nose (x ±0.061, y 1.463).
 - **Bands**: a ring of alternating colours round the vertical axis, by height and radius (and a part). By
   `segments` (equal sectors) or `order: true` (the facets sorted round the ring take the colours in turn:
   strict alternation on irregular triangles); `span` drops tall facets (no spikes), `outer` keeps only the

@@ -905,7 +905,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **The 0.66 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
    branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
    both faces) found these still wrong; each gets a test on both faces over those seeds:
-   (0, top priority) **Straight strips from the air** (BUGS.md #169; owner, 2026-11-14 00:05, iPhone, flying high over
+   (0, top priority) **Straight strips from the air** (BUGS.md #171; owner, 2026-11-14 00:05, iPhone, flying high over
    a Realistic world): **"Still seeing harsh bands of terrain types, strips, lines, etc"** (straight dark-brown strips in
    a lattice like roads, straight grey stone and green grass strips, hard-edged patches of the palette dither, rivers
    with straight edges and a stepped fringe). **Owner should see:** from the air, Realistic terrain types meet along
@@ -2333,6 +2333,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    in frame, the chop, sword, felled log and dynamite chain cut, the montage 5 cuts not 7.
    **Owner should see:** the two cuts (trailer-9x16.mp4, trailer-16x9.mp4) and the shot-by-shot notes; edit the draft
    (or a shot's note in the manifest) where a shot misses, and it re-records alone.
+   **The trailer's terrain (owner, 2026-11-14):** **"The trailers really bad right now because the terrain looks bad and
+   half of it isn't loaded in. We'll leave it alone for now."** Left alone, as asked; one tool fix so it doesn't happen
+   again: every take now waits until the chunks and the LOD settle before it records (`take.mjs` `viewIdle`, the
+   bench's placed-shot rule; a shot's `setup.settleS` caps the wait, 0 skips it; tested in `take.test.mjs`).
+   **Builders at work (owner, 2026-11-14, item 56: "a recording of builders"):** a time-lapse of a builder putting up
+   the hamlet from its founding, 16:9 and 9:16, game sound, no music, HUD hidden, clouds off, midday. **Owner should
+   see:** the clips (builders-16x9.mp4, builders-9x16.mp4) and their stills.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
@@ -2879,6 +2886,34 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    and the same pattern round the waist (sides and back), the hat's top one clean colour, the clothes plainer
    to set the pattern off. **Left:** at 60 % the front of the waist has no short facets, so the ring shows on
    the sides and back only.
+   **Face select in the painter** (owner, 2026-11-14): **"For the model painter tool, make an easy tool to
+   select/deselect faces on the mesh, so solid camera controls are needed. And then copy those Face IDs so I can
+   paste them here and talk about them. Like what faces to put the colorful belt on."** **Built (branch
+   `claude/painter-faces`, 2026-11-14):** the painter's camera reworked (left-drag orbit with the pitch clamped
+   short of the poles, right/shift-drag pan, wheel and pinch zoom toward the cursor, clamped; double-click focuses
+   a point; Front/Back/Left/Right/Top/¾/Reset, eased; one finger orbits, two pan and pinch); an Edit switch
+   between **Paint parts** and **Select faces**: click toggles a face (shift adds, ctrl removes), alt-drag or the
+   Box tool box-selects the faces it can see, "connected same colour", Select none, Invert; hover shows the face's
+   id, part and colour; the Level picker (100/60/35/20 %) selects per level. A face id is the triangle's index in
+   that level's GLB primitive (`detail_k`, primitive 0), each level numbered from 0. **Copy face ids** puts e.g.
+   `peasant @60% faces: 1203,1204,1210–1215 (8) — parts: shirt 6, belt 2 — colours: wool_green 6, leather 2` on
+   the clipboard (and in a text box when the clipboard is blocked); **Load selection** takes that text back (on its
+   level). **Band from selection** prints a decor `band` entry covering the selection's heights and radii.
+   `node --test shared/models/painter.test.mjs` covers the id ranges, the text's round trip, the box and
+   visibility tests and the connected-colour fill. **Owner should see:** in the painter (republished link), orbit
+   and zoom around the villager smoothly, click faces to select them (they highlight pink with a yellow outline),
+   and press Copy face ids to get a short list of face ids to paste into chat.
+   **Eyes on the picked faces** (owner, 2026-11-14, with the painter's face select): **"Eyes should be centered on
+   these faces: peasant @100% faces: 808,809,1518,1519 (4) — parts: skin 4 — colours: skin_fair 4"**. Each pair
+   is a quad of `detail_0` (two triangles sharing an edge): 808+809 the +x eye, 1518+1519 the -x, mirror images.
+   **Built (branch `claude/eyes-placement`, 2026-11-14):** a decor `piece` may be anchored by `faces` (lists of
+   detail_0 triangle ids, the painter's numbering) in place of `at`/`mirror`: each list's area-weighted centre is
+   cast along `facing` onto every level as before; the Peasant's eyes are `faces: [[808, 809], [1518, 1519]]`. The
+   eyes moved from x ±0.035, y 1.486 to x ±0.061, y 1.463 (2.6 cm out, 2.3 cm down), within 1.5 mm across and
+   up of the picks' centre at every level (the 3 mm lift off the tilted face), symmetric within 0.4 mm across and up
+   (1.1 mm in depth) (`decor.test.mjs`). Renders before/after at
+   100 % and 60 % in the PR. **Owner should see:** the villagers' eyes centred on the face spots picked in the
+   painter.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
@@ -3144,6 +3179,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
    `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
    within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.
+   **Watching the builders (owner, 2026-11-14):** **"Is there a way for me to watch the NPC's build a house?"** →
+   offered options (town markers on the map, a link that drops you by a town, a recording) → **"Yes let's get town
+   markers and a recording of builders."** Built 2026-11-14 (branch `claude/town-markers`): the town sites on the big
+   map and the minimap as a derived layer like the shrines (item 53's filters: "Towns"), the vector `town` icon at
+   each site in explored ground (creative's revealed map: all), a founded town still being built in its own colour;
+   the dev link `?local=1&seed=0&fresh=1&spawn=town` (`town-b` for face B) stands you 24 m south of the town site
+   nearest the spawn, so it founds and the builders come (docs/DEV_TOOLS.md); a recording of a builder at work
+   (see item 40). **Owner should see:** open the big map (M) in a world you have explored: a town icon where each
+   town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
+   the `spawn=town` link and watch the builders put up the hamlet in front of you.
 
 ## Future (needs owner answers)
 

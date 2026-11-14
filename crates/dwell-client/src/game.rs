@@ -1423,6 +1423,10 @@ impl<S: Scene> Game<S> {
     }
 
     /// The player's centre (the prediction's), where the loading screen's near ring is centred.
+    /// The world's seed (the server's, from the join).
+    pub fn world_seed(&self) -> u64 {
+        self.world_seed
+    }
     pub fn position(&self) -> [f64; 3] {
         self.current.position
     }

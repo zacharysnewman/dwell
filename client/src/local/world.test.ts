@@ -142,6 +142,10 @@ describe('local world options', () => {
     expect(spawnOptions('b')).toEqual({ spawnFaceB: true });
     expect(spawnOptions('portal')).toEqual({ spawnPortal: true });
     expect(spawnOptions('portal-b')).toEqual({ spawnFaceB: true, spawnPortal: true });
+    // The dev town spawns (docs/DEV_TOOLS.md), their own world files.
+    expect(spawnOptions('town')).toEqual({ spawnGrid: 'town' });
+    expect(spawnOptions('town-b')).toEqual({ spawnFaceB: true, spawnGrid: 'town-b' });
+    expect(parseLocalWorld('?spawn=town&seed=4').file).toMatch(/-town$/);
   });
 });
 

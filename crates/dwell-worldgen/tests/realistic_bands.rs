@@ -1,4 +1,4 @@
-//! No straight strips, bands or lattices of terrain types from the air (BUGS.md #169; owner,
+//! No straight strips, bands or lattices of terrain types from the air (BUGS.md #171; owner,
 //! 2026-11-14, flying high over a Realistic world on 0.64.2: "Still seeing harsh bands of terrain
 //! types, strips, lines, etc"). The owner's spot (seed 4065579781, face A, x 10472, z −3091) showed
 //! a lattice of straight dirt strips a few hundred metres wide: the plate provinces (`rocks.json`

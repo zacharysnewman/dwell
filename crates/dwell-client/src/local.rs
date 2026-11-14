@@ -970,9 +970,67 @@ pub fn with_world_file_version(bytes: Vec<u8>, version: &str) -> Result<Vec<u8>,
 /// Wall-clock budget hint for hosts that cannot measure time (see dwell_sim::clock).
 pub const TICK_BUDGET: Duration = Duration::from_millis(4);
 
+/// How far south of a town site's centre the dev link `?spawn=town` stands the player (m): outside
+/// the hamlet's wall, looking north at it.
+pub const TOWN_SPAWN_BACK_M: f64 = 24.0;
+
+/// The face a dev town spawn key names: `town` face A, `town-b` face B (docs/DEV_TOOLS.md).
+pub fn town_spawn_face(key: &str) -> Option<dwell_world::Face> {
+    match key {
+        "town" => Some(dwell_world::Face::A),
+        "town-b" => Some(dwell_world::Face::B),
+        _ => None,
+    }
+}
+
+/// The dev link `?spawn=town`: the world's spawn by the town site nearest the face's spawn
+/// ([`TOWN_SPAWN_BACK_M`] south of it, so a player there founds it) and the player starting there.
+/// False (the config as it was) for a world without towns.
+pub fn spawn_by_town(c: &mut ServerConfig, face: dwell_world::Face) -> bool {
+    let Some([x, y, z]) = dwell_worldgen::town_spawn_for_sized(
+        c.generator_version,
+        c.world_seed,
+        c.world_size,
+        face,
+        TOWN_SPAWN_BACK_M,
+    ) else {
+        return false;
+    };
+    // The local player (player 1) lands on the point itself: its spawn spread taken back.
+    let [dx, dz] = dwell_sim::server::spawn_spread(1);
+    c.spawn = Some([x - dx, y, z - dz]);
+    c.join_at_spawn = true;
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    dwell_world::both_faces!(
+        fn the_town_link_spawns_by_a_town_site(f: FaceFrame) {
+            let key = if f.is_b() { "town-b" } else { "town" };
+            let face = town_spawn_face(key).expect("a town key");
+            assert_eq!(face, f.face);
+            let mut c = ServerConfig {
+                world_seed: 0,
+                generator_version: dwell_world::GENERATOR_TERRAIN,
+                ..ServerConfig::default()
+            };
+            assert!(spawn_by_town(&mut c, face));
+            let spawn = c.spawn.expect("a spawn");
+            assert_eq!(dwell_world::FaceFrame::at_height(spawn[1]), f);
+            assert!(c.join_at_spawn);
+            // The flat world has no towns: the config is left as it was.
+            let mut flat = ServerConfig {
+                generator_version: dwell_world::GENERATOR_FLAT,
+                ..ServerConfig::default()
+            };
+            assert!(!spawn_by_town(&mut flat, face));
+            assert!(flat.spawn.is_none());
+            assert_eq!(town_spawn_face("moon"), None);
+        }
+    );
 
     use dwell_protocol::*;
     use dwell_sim::entropy::SeededEntropy;

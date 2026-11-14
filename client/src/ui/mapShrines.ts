@@ -157,17 +157,19 @@ export class ShrineSites {
   /**
    * The shrines of `cells` on `face`: `site(x, z)` gives a cell's (asked at its centre; `mapShrines`
    * with no cells round it), a cell not sited before only while `overBudget()` is false; `pending`
-   * counts those left. A shrine two cells give (the spawn's) is listed once.
+   * counts those left. A shrine two cells give (the spawn's) is listed once. `parse` reads a
+   * cell's answer (the shrines' [x, z]*; the town sites', mapTowns.ts, with their state).
    */
-  gather(
+  gather<T extends MapShrine = MapShrine>(
     face: number,
     cells: readonly (readonly [number, number])[],
     site: (x: number, z: number) => ArrayLike<number>,
     overBudget: () => boolean,
-  ): { shrines: MapShrine[]; pending: number } {
+    parse: (flat: ArrayLike<number>) => T[] = parseShrines as (flat: ArrayLike<number>) => T[],
+  ): { shrines: T[]; pending: number } {
     const s = this.spacing;
     const seen = new Set<string>();
-    const shrines: MapShrine[] = [];
+    const shrines: T[] = [];
     let pending = 0;
     for (const [i, k] of cells) {
       const key = this.key(face, i, k);
@@ -178,7 +180,7 @@ export class ShrineSites {
         }
         this.sited.add(key);
       }
-      for (const sh of parseShrines(site((i + 0.5) * s, (k + 0.5) * s))) {
+      for (const sh of parse(site((i + 0.5) * s, (k + 0.5) * s))) {
         const at = `${String(sh.x)},${String(sh.z)}`;
         if (seen.has(at)) continue;
         seen.add(at);
@@ -193,19 +195,20 @@ export class ShrineSites {
  * The shrines the map shows: none with the filter off; with it on, every one when the rule is
  * "all" or the map is revealed, else those whose explored cell (`explored(x, z)`) is known.
  */
-export function visibleShrines(
-  sites: MapShrine[],
+export function visibleShrines<T extends MapShrine>(
+  sites: T[],
   on: boolean,
   explored: (x: number, z: number) => boolean,
   revealed: boolean,
-  rules: ShrineMapRules = SHRINE_MAP,
-): MapShrine[] {
+  rules: Pick<ShrineMapRules, 'reveal'> = SHRINE_MAP,
+): T[] {
   if (!on) return [];
   if (revealed || rules.reveal === 'all') return sites;
   return sites.filter((s) => explored(s.x, s.z));
 }
 
-/** A layer of the map the filters show or hide: the shrines, each auto marker kind, the player's own. */
+/** A layer of the map the filters show or hide: the shrines, the towns, each auto marker kind, the
+ * player's own. */
 export interface FilterLayer {
   key: string;
   label: string;
@@ -214,10 +217,12 @@ export interface FilterLayer {
 /** The player's own markers' layer key (a marker with no auto kind). */
 export const OWN_MARKERS = 'own';
 
-/** The map's filter layers: the shrines, then the marker kinds by data, then the player's own. */
+/** The map's filter layers: the shrines, the town sites (mapTowns.ts), then the marker kinds by
+ * data, then the player's own. */
 export function filterLayers(auto: readonly { kind: string; label: string }[]): FilterLayer[] {
   return [
     { key: 'shrine', label: 'Shrines' },
+    { key: 'town', label: 'Towns' },
     ...auto.map((a) => ({ key: a.kind, label: a.label })),
     { key: OWN_MARKERS, label: 'My markers' },
   ];

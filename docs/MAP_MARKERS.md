@@ -42,7 +42,8 @@ notes `spawn`, `death` and the portals the client crate sees, `map_markers::seen
 
 The big map's filter button lists the layers the maps show (`client/src/ui/mapShrines.ts`
 `filterLayers`): the resurrection shrines ([SHRINES.md](SHRINES.md), a derived layer drawn with the
-`shrine` icon, not saved markers), each `auto` kind by data, and the player's own markers. A hidden
+`shrine` icon, not saved markers), the town sites ([BLUEPRINTS.md](BLUEPRINTS.md) §6b, a derived layer drawn with
+the `town` icon, brighter while a town is being built), each `auto` kind by data, and the player's own markers. A hidden
 layer leaves the big map, the minimap and the world waypoints, and its markers aren't picked;
 the choices are per browser (`dwell.map.filters`).
 

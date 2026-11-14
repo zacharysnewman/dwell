@@ -96,8 +96,11 @@ export function sizeOptions(
     : {};
 }
 
-/** Home's spawns (`?spawn=`, a new world's Spawn): "" is face A's usual one. */
-export const HOME_SPAWNS = ['', 'b', 'portal', 'portal-b'] as const;
+/**
+ * Home's spawns (`?spawn=`, a new world's Spawn): "" is face A's usual one. `town`, `town-b` (dev,
+ * docs/DEV_TOOLS.md): by the town site nearest the face's spawn, so it founds and builders come.
+ */
+export const HOME_SPAWNS = ['', 'b', 'portal', 'portal-b', 'town', 'town-b'] as const;
 
 /**
  * The other grids' spawns, both faces of each (`moon`, `moon-b`, `sun`, `sun-b`): the Spawn
@@ -124,9 +127,12 @@ export function spawnOptions(
   spawn: Spawn,
 ): Pick<LocalWorld, 'spawnFaceB' | 'spawnPortal' | 'spawnGrid'> {
   return {
-    ...(spawn === 'b' || spawn === 'portal-b' ? { spawnFaceB: true } : {}),
+    ...(spawn === 'b' || spawn === 'portal-b' || spawn === 'town-b' ? { spawnFaceB: true } : {}),
     ...(spawn === 'portal' || spawn === 'portal-b' ? { spawnPortal: true } : {}),
-    ...(GRID_SPAWNS.includes(spawn) ? { spawnGrid: spawn } : {}),
+    // The worker's spawn key carries the town spawns too (`local::town_spawn_face`).
+    ...(GRID_SPAWNS.includes(spawn) || spawn === 'town' || spawn === 'town-b'
+      ? { spawnGrid: spawn }
+      : {}),
   };
 }
 

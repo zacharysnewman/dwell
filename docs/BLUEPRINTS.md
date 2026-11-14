@@ -103,6 +103,23 @@ an older build wouldn't found or save.
 **Cost** (release, seed 0): the sites within 3 km of the spawn, 16 on face A and 10 on face B, in 30–130 ms the
 first time (the shrines' cells sited and cached); a founding check looks at the cells within `foundM` only.
 
+## 6b. Towns on the map (2026-11-14)
+
+The owner: **"Is there a way for me to watch the NPC's build a house?"** → **"Yes let's get town markers and a
+recording of builders."** The town sites are a derived layer of the big map and the minimap, like the shrines
+(MAP_MARKERS.md "Filters"): the client crate sites them from the seed as the server does
+(`BifacialTerrain::town_in` on `town_ground`, each grid cell sited once and cached; `mapTowns`), with a state: 1
+while a blueprint of the world's lies within `footprintM` of the site (founded, being built), else 0 (not founded,
+or built: a finished blueprint is gone, and the client keeps no founded list). The shell (`client/src/ui/mapTowns.ts`)
+draws the markers' vector `town` icon at each site in explored ground (`reveal`), clustered as the shrines, in
+`color` or `buildingColor`, behind the "Towns" filter. Its looks are data: `blueprints.json` `towns.map`, validated by
+`gen.mjs`. Tests: `dwell-worldgen` `tests/towns.rs` (both faces: the map's sites are the server's; the town link
+stands by one), `dwell-client` `map_markers` (the state), `mapTowns.test.ts`.
+
+The dev link **`?spawn=town`** (`town-b`) opens its own world file with the spawn 24 m south of the town site nearest
+the face's spawn (`dwell_worldgen::town_spawn_for_sized`, `local::spawn_by_town`), so it founds at once and its
+builders come (docs/DEV_TOOLS.md).
+
 ## 7. Built, and left
 
 Built (B1–B4): the data and its generator, the four test blueprints, the record and message behind the
@@ -112,7 +129,7 @@ active), the held Place, the panel, the Structures page's Blueprints list, and t
 
 Left:
 - Towns' plans beyond the hamlet (more plans are data); paths and roads between their blueprints; player-placed
-  towns (the owner: later). A town on the map.
+  towns (the owner: later).
 - A ghost preview while choosing where to place one (it is placed straight at the crosshair, as a turn picked
   on the page; the paste ghost box could follow the crosshair first, as for a structure).
 - A blueprint's ghost is drawn only while aimed into (within four reaches); a brush in use hides it.

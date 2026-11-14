@@ -42,6 +42,9 @@ test('bad entries fail naming them', () => {
   bad((d) => (d.limits.perWorld = 1.5), /limits.perWorld must be an integer/);
   bad((d) => (d.builder.speed = 1), /builder: unknown field "speed"/);
   bad((d) => (d.extra = 1), /unknown field "extra"/);
+  bad((d) => (d.towns.map.icon = 'castle'), /towns.map.icon "castle" is not an icon/);
+  bad((d) => (d.towns.map.buildingColor = 'gold'), /towns.map.buildingColor must be #rrggbb/);
+  bad((d) => (d.towns.map.size = 3), /towns.map: unknown field "size"/);
   bad((d) => (d.towns.plans[0].blueprints[0].structure = 'dwell:nope'), /towns.plans\[0\].blueprints\[0\]: unknown structure/);
   bad((d) => (d.towns.plans[0].blueprints[1].turn = 4), /blueprints\[1\].turn must be 0..3/);
   bad((d) => (d.towns.plans[0].blueprints[0].at = [999, 0]), /within footprintM/);
