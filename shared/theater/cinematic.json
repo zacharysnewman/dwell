@@ -6,8 +6,8 @@
   "supersample": 2,
   "settle": {
     "minFrames": 2,
-    "maxWaiting": 128,
-    "capMs": 8000,
+    "maxWaiting": 256,
+    "capMs": 1500,
     "firstCapMs": 60000
   },
   "preroll": { "stepS": 0.5, "capMs": 4000 },
