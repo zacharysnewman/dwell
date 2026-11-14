@@ -601,6 +601,9 @@ is turned, plus `towns.clearM` (4 m, `blueprints.json`, validated by `gen.mjs`),
 the buildings are clear too. Changes the terrain a seed generates: the 0.66 line. Test (both faces, red → green):
 `dwell-worldgen` `tests/towns.rs` `no_tree_bush_or_boulder_stands_on_a_planned_towns_layout` (seeds 0, 1, 7, 42, the
 sites within 2.5 km of the origin and seed 0's hamlet at (688, 7979); red: a pine on seed 0's town box on each face).
+Owner, 2026-11-14 (asked whether "town plans will clear trees" means villagers clear them): clearing a town's ground
+stays instant, at generation, for now; villagers felling the trees on a town's footprint comes later, with harvesting
+(WORK_QUEUE item 57's later phases, docs/BLUEPRINTS.md §9).
 
 ### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 
