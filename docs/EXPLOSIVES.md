@@ -501,7 +501,7 @@ core destroys is judged at its cell, not where it would have flown).
 
 ### 3.13 Attached blocks are removed, never flung (2026-11-14)
 
-Owner, 2026-11-13 (BUGS.md #157): "Dynamite blows up (physics) tall grass that's wrong. It should just be
+Owner, 2026-11-13 (BUGS.md #159): "Dynamite blows up (physics) tall grass that's wrong. It should just be
 destroyed if the block under it is moved or destroyed." The rule is block data, not a tall-grass case: an
 **attached block** is one with `needsSupport` (`below`: tall grass and its stages, a torch, the saplings;
 `behind`: a ladder), or a cell `partOf` one (a torch's upper cell) — `dwell_world::edit::attached`. In a

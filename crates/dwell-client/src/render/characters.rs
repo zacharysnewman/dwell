@@ -437,7 +437,7 @@ fn key_light(frag_y: f32, l: TerrainLight) -> Key {
     let d = frame.day;
     var k: Key;
     k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
-    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l);
+    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l) + body_bounce(frag_y, l);
     return k;
 }
 

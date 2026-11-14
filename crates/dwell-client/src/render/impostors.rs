@@ -11,8 +11,8 @@
 //! - **The instances:** per tile of [`TILE_M`] m, the trees `TerrainGenerator::far_trees` lists
 //!   (`Job::FarTrees`), as `Config::instances` places them; the game keeps the tiles within the
 //!   tier's `toM` of the eye ([`tiles_within`]) and the buffer is rebuilt when they change.
-//! - **The view:** per pixel, `Config::dither`'s pick of the baked views (the WGSL twin
-//!   `imp_pick`), each sampled at the quad point projected into that view.
+//! - **The view:** per tree, `Config::nearest`'s baked view (the WGSL twin `imp_nearest`; BUGS.md
+//!   #157: no dither between views), sampled at the quad point projected into that view.
 //! - **The hand-over:** per tree, in time (render/tree_fade.rs, BUGS.md #154): each tree is its
 //!   real leaves or its impostor by its distance with hysteresis, a switch cross-fading over the
 //!   tier's `fadeS`; the near leaves keep the pixels whose noise is under their tree's share
@@ -461,8 +461,10 @@ fn imp_ring(b: u32, a: u32) -> u32 {
     return select(b * IMP_AZ + a, IMP_NE * IMP_AZ, b >= IMP_NE);
 }
 
-// `Config::dither`: the view whose share of `Config::pick`'s bilinear weights holds `threshold`.
-fn imp_pick(dir: vec3f, threshold: f32) -> u32 {
+// `Config::nearest`: the corner of `Config::pick`'s grid nearest `dir` (azimuth and band each
+// rounded), one view for every pixel of a tree (BUGS.md #157: a per-pixel dither between views
+// stippled every tree a still camera saw between two of them).
+fn imp_nearest(dir: vec3f) -> u32 {
     let d = normalize(dir);
     let elev = asin(clamp(d.y, -1.0, 1.0));
     var az = atan2(d.z, d.x);
@@ -492,19 +494,7 @@ fn imp_pick(dir: vec3f, threshold: f32) -> u32 {
             }
         }
     }
-    var acc = (1.0 - tb) * (1.0 - ta);
-    if (threshold < acc) {
-        return imp_ring(b0, a0);
-    }
-    acc += (1.0 - tb) * ta;
-    if (threshold < acc) {
-        return imp_ring(b0, a1);
-    }
-    acc += tb * (1.0 - ta);
-    if (threshold < acc) {
-        return imp_ring(b1, a0);
-    }
-    return imp_ring(b1, a1);
+    return imp_ring(select(b0, b1, tb >= 0.5), select(a0, a1, ta >= 0.5));
 }
 
 // The scale toward the eye that moves a quad at `dist` m to the near side of its sphere of
@@ -572,7 +562,7 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     let levels = max(u32(imp.debug.w), 1u);
     let level = min(u32(max(floor(log2(max(foot, 1.0))), 0.0)), levels - 1u);
     // The view this pixel draws, then the quad point in that view's square.
-    let k = imp_pick(i.dir, pixel_noise(i.clip.xy + vec2f(37.0, 17.0)));
+    let k = imp_nearest(i.dir);
     let vk = imp_view(k);
     let right = imp_basis_right(vk);
     let up = cross(vk, right);
@@ -1335,6 +1325,18 @@ mod tests {
                 "{entry}"
             );
         }
+    }
+
+    #[test]
+    fn a_tree_draws_one_view_with_no_per_pixel_dither() {
+        // face-a-only: shader text. BUGS.md #157: `imp_fs` picked each pixel's view by the
+        // screen's noise among up to four, so a still camera saw trees between two views stippled.
+        // The view is the tree's (`imp_nearest`, `Config::nearest`'s twin), the same every pixel.
+        let src = super::super::shaders::source(4);
+        let fs = &src[src.find("fn imp_fs(").expect("imp_fs")..];
+        let fs = &fs[..fs.find("\n}\n").expect("its end")];
+        assert!(fs.contains("let k = imp_nearest(i.dir);"), "{fs}");
+        assert!(!src.contains("imp_pick("), "no dithered pick left");
     }
 
     dwell_world::both_faces!(

@@ -423,6 +423,18 @@ fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     );
 }
 
+// The warm light the sunlit ground throws back onto a body (shared/look/light.json
+// `characters.bounce`, BUGS.md #158), as `lambert_lit` gives a white top face (/ π): the sun's
+// light on the open ground (its height over the face's horizon), as open to the sky as the body
+// is. Without it a body's side away from the sun took the blue sky alone and its skin read cold.
+fn body_bounce(frag_y: f32, l: TerrainLight) -> vec3f {
+    let face = face_at(frag_y);
+    let d = frame.day;
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, face > 0.0);
+    let ground = max(dot(face_up(face), d.sun.xyz), 0.0) * own(d.sun.xyz, face);
+    return BODY_BOUNCE * sun * ground * l.ambient / PI;
+}
+
 // `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
 // hemisphere light by `l.ambient`, the sun and moon by `l.direct`, the block light's warm glow and
 // the dynamic lights (`l.points`).
@@ -976,7 +988,14 @@ fn card_normal(packed: f32) -> vec3f {
 // the crown the camera is on (BUGS.md #156: the cards on the crown's far side and on its top, seen
 // from below, cast nothing, and the crown's shadow on itself came and went as the camera moved).
 fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f, back_cull: bool) -> bool {
-    if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+    // A tree's leaf card (`plant.y` < 0) while the far trees' map is on switches with its tree in
+    // time (`tree_cards_share`, BUGS.md #157): dropped past the farthest a drawn one reaches.
+    let tree_card = plant.y < 0.0 && plant.w > 0.0 && frame.far_trees.w > 0.5;
+    if (tree_card) {
+        if (length(rel) > TREE_CARDS_REACH + 2.0) {
+            return true;
+        }
+    } else if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
         return true;
     }
     // A tree's leaf face (`TREE_LEAF_FADE`) past the near leaves' reach: the impostors' alone.
@@ -1089,7 +1108,14 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
     var fade = 1.0;
     if (i.fade.y > 0.0) {
-        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        // A tree's leaf card (BUGS.md #157): on or off with its tree, faded in time, so a still
+        // eye sees no card half dissolved; other plants (and cards with no far trees' map) by
+        // distance.
+        if (i.leaf > 0.5 && frame.far_trees.w > 0.5) {
+            fade = tree_cards_share(i.rel);
+        } else {
+            fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        }
         cover *= fade;
     }
     // A tree's leaf face hands over to the far trees' impostors by its tree's state, cross-faded
@@ -3812,8 +3838,14 @@ pub fn source(samples: u32) -> String {
 fn light_wgsl() -> String {
     let l = dwell_world::light::LIGHT;
     let c = l.block_color.map(|v| dwell_look::srgb_to_linear(v) as f32);
+    let b = l
+        .character_bounce_color
+        .map(|v| (dwell_look::srgb_to_linear(v) * l.character_bounce_strength) as f32);
     format!(
-        "const SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        "const BODY_BOUNCE: vec3f = vec3f({:?}, {:?}, {:?});\nconst SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        b[0],
+        b[1],
+        b[2],
         l.sky_curve as f32,
         f32::from(l.direct_from),
         f32::from(l.direct_full),

@@ -1581,7 +1581,7 @@ dwell_world::both_faces!(
     }
 );
 
-// Attached blocks in a blast (BUGS.md #81; owner, 2026-11-13: "Dynamite blows up (physics) tall
+// Attached blocks in a blast (BUGS.md #159; owner, 2026-11-13: "Dynamite blows up (physics) tall
 // grass that's wrong. It should just be destroyed if the block under it is moved or destroyed."):
 // a block with `needsSupport` (tall grass, a torch, a sapling, a ladder; the rule is the data's, no
 // block is named in the code) is never a flung piece, and goes with the block holding it.
