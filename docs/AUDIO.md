@@ -228,6 +228,7 @@ mono AAC 64 kbps, 44.1 kHz, leading and trailing silence trimmed; about 0.8 MB i
 | `water_enter` / `water_exit` / `water_swim` / `water_place` | `SPLASH_Designed_Medium_01–03` / `SPLASH_Small_01–03` / `SPLASH_Movement_01–04` / `SPLASH_Designed_Quick_01–02` |
 | `jump` | `WHOOSH_Air_Fast_Subtle_RR1–3` |
 | `hurt` / `death` | `GRUNT_Male_B_Hurt_Short_01–04` / `GROAN_Male_Hurt_Long` |
+| `breath_heavy` (out of stamina) | `VOICE_MALE_Sigh_1`, `GRUNT_Male_Quick`, `GRUNT_Male_Quick_Deep` (BUGS.md #159) |
 | `body_thud` (impact, piece landing) | `THUD_Dark_01`, `THUD_Medium_01–02` |
 | `fell_crack` | `TREE_Falling_Tree_Only_Cracking_01–02` |
 | `dynamite_boom` | `EXPLOSION_Medium_Blast_Scatter_Debris`, `EXPLOSION_Short_Dark_Debris`, `EXPLOSION_Medium_Fast_with_Rock_Debris` |
@@ -299,9 +300,12 @@ can be added by data.
   `call` `ANIMAL_Wolf_Howl_01–02` (every 50–140 s); deer and doe — `step` the dirt footsteps, quiet
   (the pack's `ANIMAL_Horse_Walk` is a whole walk, not single hooves); `startle`
   `ANIMAL_Horse_Snort_01–02_Dry`.
-- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` once stamina runs out, procedural (two
-  breathy puffs) since BUGS.md #159: its samples were `MONSTER_Exhausted_05`, `_07`, a voiced growl that
-  sounded like a bear, removed until a human breath is picked; `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
+- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` once stamina runs out: a man's breath,
+  `VOICE_MALE_Sigh_1` (an unvoiced in-and-out breath, 0.74 s, centroid ~3.7 kHz), `GRUNT_Male_Quick` and
+  `GRUNT_Male_Quick_Deep` (breathy exhales of the gasp's and the strain's voice, ~0.2 s), ±0.5 semitone. Its
+  samples were `MONSTER_Exhausted_05`, `_07`, a voiced growl that sounded like a bear (BUGS.md #159); the pack
+  has no `BREATH` category, and these were the human takes that read as breath (mostly unvoiced, centroid
+  over 1.2 kHz; `FIGHTING_Chant_Sigh_Male_01` also fits but is a fighting chant); `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
   under 0.7 (surfacing from a long dive); `strain` (`GRUNT_Male_Subtle_Hurt`) as the air crosses 0.25.
 - **Felling**: `fell_crack` now plays `TREE_Falling_Tree_Crack_Then_Impact_02`, `_08`.
 
