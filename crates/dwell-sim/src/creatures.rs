@@ -1116,7 +1116,10 @@ impl Creatures {
             // Its heading: yaw = atan2(dx, dz) in degrees.
             let (s, k) = c.yaw.to_radians().sin_cos();
             let reach = def.body_radius_m + ahead_m;
-            for p in [[local[0], local[2]], [local[0] + s * reach, local[2] + k * reach]] {
+            for p in [
+                [local[0], local[2]],
+                [local[0] + s * reach, local[2] + k * reach],
+            ] {
                 for dx in [-1.0, 0.0, 1.0] {
                     for dz in [-1.0, 0.0, 1.0] {
                         let q = [p[0] + dx * def.body_radius_m, p[1] + dz * def.body_radius_m];

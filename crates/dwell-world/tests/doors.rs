@@ -58,7 +58,11 @@ dwell_world::both_faces!(
     fn a_door_is_one_block_over_four_cells(f: FaceFrame) {
         let (mut w, cells) = door_world(f);
         for (k, c) in cells.iter().enumerate() {
-            assert_eq!(w.get_voxel(c[0], c[1], c[2]), door(PARTS[k], false), "cell {k}");
+            assert_eq!(
+                w.get_voxel(c[0], c[1], c[2]),
+                door(PARTS[k], false),
+                "cell {k}"
+            );
         }
         assert_eq!(partners(cells[1], door("lower", false)).len(), 3);
         for target in cells {
@@ -72,7 +76,10 @@ dwell_world::both_faces!(
         }
         // A cell written over by anything else (a blast's air) leaves the rest lone: all cleared.
         w.set_voxel(cells[2][0], cells[2][1], cells[2][2], s("dwell:air"));
-        let mut lone: Vec<[i32; 3]> = lone_parts(&w, &[cells[2]]).iter().map(|(c, _)| *c).collect();
+        let mut lone: Vec<[i32; 3]> = lone_parts(&w, &[cells[2]])
+            .iter()
+            .map(|(c, _)| *c)
+            .collect();
         lone.sort_unstable();
         let mut want = vec![cells[0], cells[1], cells[3]];
         want.sort_unstable();
@@ -92,13 +99,19 @@ dwell_world::both_faces!(
         let face = f.cell_face(5) as u8; // its -z side, toward the eye
         for held in [s("dwell:stone"), 0] {
             for target in [cells[0], cells[2]] {
-                let out = check_block_edit(&mut w, &place(target, face, held), eye, &[], DEFAULT_REACH);
-                assert_eq!(out.check, EditCheck::Ok, "aimed at {target:?} holding {held}");
+                let out =
+                    check_block_edit(&mut w, &place(target, face, held), eye, &[], DEFAULT_REACH);
+                assert_eq!(
+                    out.check,
+                    EditCheck::Ok,
+                    "aimed at {target:?} holding {held}"
+                );
                 assert!(out.toggled);
                 assert_eq!(out.cell, target, "nothing placed beside it");
                 let writes = out.writes(&mut w, medium_kept);
                 assert_eq!(writes.len(), 4, "{writes:?}");
-                let was_open = state_property(w.get_voxel(target[0], target[1], target[2]), "open") == Some("true");
+                let was_open = state_property(w.get_voxel(target[0], target[1], target[2]), "open")
+                    == Some("true");
                 apply(&mut w, &writes);
                 for (k, c) in cells.iter().enumerate() {
                     let m = w.get_voxel(c[0], c[1], c[2]);
@@ -118,7 +131,13 @@ dwell_world::both_faces!(
             radius: 0.3,
             half_cylinder: 0.6,
         };
-        let out = check_block_edit(&mut w, &place(cells[0], face, 0), eye, &[body], DEFAULT_REACH);
+        let out = check_block_edit(
+            &mut w,
+            &place(cells[0], face, 0),
+            eye,
+            &[body],
+            DEFAULT_REACH,
+        );
         assert_eq!(out.check, EditCheck::IntoPlayer);
     }
 );
@@ -138,7 +157,10 @@ fn an_open_door_is_a_plate_turned_toward_its_hinge() {
     assert!(b[3] - b[0] < 0.2 || b[5] - b[2] < 0.2, "{b:?}");
     // Only the bottom cell stands on what is under it.
     assert_eq!(closed.needs_support, dwell_blocks::Support::Below);
-    assert_eq!(info(door("upper", true)).needs_support, dwell_blocks::Support::None);
+    assert_eq!(
+        info(door("upper", true)).needs_support,
+        dwell_blocks::Support::None
+    );
     // The toggle and the column come from the data.
     assert_eq!(closed.toggle, Some("open"));
     assert_eq!(closed.column.map(|c| (c.index, c.count)), Some((0, 4)));

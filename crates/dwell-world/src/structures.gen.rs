@@ -3,12 +3,12 @@
 pub static STRUCTURES: [StructureDef; 12] = [
     StructureDef {
         name: "dwell:bp_hut",
-        hash: 0x2c1e5d6a1f2057a3,
+        hash: 0xa410d2ec520fc8f4,
         body: Body::Voxels {
-            size: [5, 6, 5],
+            size: [5, 8, 5],
             anchor: [2, 0, 2],
-            palette: &[('.', None), ('l', Some("dwell:log[axis=y,width=4]")), ('s', Some("dwell:stone[flooded=false]"))],
-            cells: "sssssssssssssssssssssssssllllll...ll...ll...lll.llllllll...ll...ll...lll.llllllll...ll...ll...lll.llllllll...ll...ll...llllllsssssssssssssssssssssssss",
+            palette: &[('.', None), ('0', Some("dwell:door[facing=south,hinge=left,open=false,part=bottom]")), ('1', Some("dwell:door[facing=south,hinge=left,open=false,part=lower]")), ('2', Some("dwell:door[facing=south,hinge=left,open=false,part=upper]")), ('3', Some("dwell:door[facing=south,hinge=left,open=false,part=top]")), ('b', Some("dwell:stone_brick")), ('n', Some("dwell:thatch_ramp[facing=north,flooded=false,half=bottom,shape=ramp]")), ('p', Some("dwell:planks")), ('s', Some("dwell:thatch_ramp[facing=south,flooded=false,half=bottom,shape=ramp]")), ('t', Some("dwell:thatch"))],
+            cells: "pppppppppppppppppppppppppbbbbbb...bb...bb...bbb0bbbbbbbb...bb...bb...bbb1bbbbbbbb...bb...bb...bbb2bbbbbbbb...bb...bb...bbb3bbbbbbbbpppbbpppbbpppbbbbbbnnnnntttttttttttttttsssss.....nnnnntttttsssss.....",
         },
         variants: &[],
     },

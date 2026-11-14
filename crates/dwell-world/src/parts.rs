@@ -39,7 +39,11 @@ pub fn multi_cell(m: StateId) -> bool {
 pub fn up_by(cell: [i32; 3], k: i32) -> [i32; 3] {
     let mut c = cell;
     for _ in 0..k.unsigned_abs() {
-        c = if k > 0 { edit::above(c) } else { edit::below(c) };
+        c = if k > 0 {
+            edit::above(c)
+        } else {
+            edit::below(c)
+        };
     }
     c
 }

@@ -43,6 +43,9 @@ export interface StructuresDeps {
     catalog(): { name: string; size: string }[];
     placeCatalog(name: string, turn: number): string;
     place(s: ValidStructure, turn: number): string;
+    /** "Test in town" (docs/BLUEPRINTS.md §6c): beside the nearest town for its builders, else at
+     * the crosshair; where it went ('town', 'here') or an error message. */
+    placeInTown(s: ValidStructure, turn: number): { at: 'town' | 'here' } | { error: string };
     removeAimed(): boolean;
   };
 }
@@ -438,6 +441,20 @@ export class StructuresPanel {
       else this.deps.close();
     });
     asBlueprint.hidden = !this.deps.blueprints?.synced();
+    // Test in town (owner, 2026-11-14): the town's builders build it, for everyone to see.
+    const inTown = button('Test in town', () => {
+      const out = this.deps.blueprints?.placeInTown(s, Number(this.turn.value)) ?? {
+        error: 'No blueprints here.',
+      };
+      if ('error' in out) {
+        this.say(out.error);
+        return;
+      }
+      if (out.at === 'here') this.say('No town near: placed where you aim.');
+      this.deps.close();
+    });
+    inTown.dataset.testInTown = s.name;
+    inTown.hidden = asBlueprint.hidden;
     const rename = button('Rename', () => {
       const to = prompt('New name', s.name);
       if (to === null) return;
@@ -465,7 +482,7 @@ export class StructuresPanel {
         })
         .then(() => this.renderList());
     });
-    actions.append(load, asBlueprint, download_, copy, rename, remove);
+    actions.append(load, asBlueprint, inTown, download_, copy, rename, remove);
     row.append(info, actions);
     return row;
   }
