@@ -1454,8 +1454,11 @@ mod tests {
     }
 
     /// The Peasant's eyes in its bind pose (model units) and their joint: models.json's decor piece
-    /// that adds them (docs/CHARACTERS.md §11.14), so the test follows the data.
-    fn peasant_eyes() -> ([f32; 3], String) {
+    /// that adds them (docs/CHARACTERS.md §11.14), so the test follows the data. The piece is
+    /// anchored by `faces` (since 2026-11-14, the owner's picks in the Model Part Painter): the
+    /// first eye's centre is its triangles' area-weighted centre on the full mesh (decor.mjs
+    /// `pieceAnchors`); an older `at` is read as is.
+    fn peasant_eyes(model: &Model) -> ([f32; 3], String) {
         let json: serde_json::Value =
             serde_json::from_str(include_str!("../../../../shared/models/models.json")).unwrap();
         let piece = json["models"]["peasant"]["decor"]
@@ -1464,11 +1467,33 @@ mod tests {
             .iter()
             .find(|d| d["kind"] == "piece")
             .expect("the Peasant's eyes are a decor piece");
-        let at = piece["at"].as_array().unwrap();
-        (
-            std::array::from_fn(|k| at[k].as_f64().unwrap() as f32),
-            piece["joint"].as_str().unwrap().to_string(),
-        )
+        let joint = piece["joint"].as_str().unwrap().to_string();
+        if let Some(at) = piece["at"].as_array() {
+            return (
+                std::array::from_fn(|k| at[k].as_f64().unwrap() as f32),
+                joint,
+            );
+        }
+        let faces = piece["faces"][0].as_array().expect("an eye's faces");
+        let full = model.level(0);
+        let (mut sum, mut area) = ([0.0f32; 3], 0.0f32);
+        for f in faces {
+            let t = f.as_u64().unwrap() as usize;
+            let [a, b, c] = [0, 1, 2].map(|k| full.positions[full.indices[t * 3 + k] as usize]);
+            let u: [f32; 3] = std::array::from_fn(|k| b[k] - a[k]);
+            let v: [f32; 3] = std::array::from_fn(|k| c[k] - a[k]);
+            let n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let w = 0.5 * (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            for k in 0..3 {
+                sum[k] += w * (a[k] + b[k] + c[k]) / 3.0;
+            }
+            area += w;
+        }
+        (sum.map(|x| x / area), joint)
     }
 
     // Owner, 2026-11-13 (BUGS.md #140): "I think my player character is floating a bit above the
@@ -1484,7 +1509,7 @@ mod tests {
             let ch = dwell_characters::player();
             let cfg = dwell_physics::config::PlayerControllerConfig::default();
             let body = ch.first_person.and_then(|f| f.body).unwrap();
-            let (eyes, eye_joint) = peasant_eyes();
+            let (eyes, eye_joint) = peasant_eyes(model);
             let eye_skin = model
                 .skin
                 .iter()
@@ -1814,9 +1839,11 @@ mod villager_colour_tests {
             let n = m.positions.len();
             // The face: the head's front at nose height, near the middle (within 3 cm of the
             // frontmost there); the hair: the back of the head above the neck, inside the brim.
+            // The eyes are decor laid on the face (models.json; part 0, no part), dark by design:
+            // since they were centred on the owner's face picks (2026-11-14) they sit in this band.
             let band = |i: usize| {
                 let p = m.positions[i];
-                on_head(i) && (1.36..1.46).contains(&p[1]) && p[0].abs() < 0.08
+                on_head(i) && (1.36..1.46).contains(&p[1]) && p[0].abs() < 0.08 && colour(i).1 != 0
             };
             let front = (0..n)
                 .filter(|&i| band(i))

@@ -743,7 +743,7 @@ dwell_world::both_faces!(
     }
 );
 
-// --- What rests on a destroyed block drops with it (WORK_QUEUE item 58, BUGS.md #177) ---
+// --- What rests on a destroyed block drops with it (WORK_QUEUE item 58, BUGS.md #178) ---
 // Owner, 2026-11-14: "When you destroy a block with grass, rock, sticks on it, those should drop
 // too." and "Essentially a general rule of blocks or items sitting on a block should be dropped
 // when that block is destroyed." One rule however the block goes (a break, a region's clearing, a

@@ -107,7 +107,7 @@ export function validateInventory(data, namespaces) {
     // hotbar, loose and lying on the ground (shared/ground names the item, not a look of its own).
     let look = null;
     // Every item draws its own look: without one a loose item fell back to a small stone block in
-    // its colour (BUGS.md #178; owner, 2026-11-14: "Plant fiber looks like a block for the drop.").
+    // its colour (BUGS.md #179; owner, 2026-11-14: "Plant fiber looks like a block for the drop.").
     if (it.look === undefined) fail(`${at}: needs a \`look\` (a shape or a model): an item without one is drawn as a block`);
     if (it.look !== undefined) {
       const l = it.look;

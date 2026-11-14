@@ -842,7 +842,7 @@ mod tests {
     #[test]
     fn the_grass_fibre_draws_strands_not_a_block() {
         // both-faces: item-local geometry; the loose item and the ground mirror it with its face.
-        // Owner, 2026-11-14: "Plant fiber looks like a block for the drop." (BUGS.md #178.)
+        // Owner, 2026-11-14: "Plant fiber looks like a block for the drop." (BUGS.md #179.)
         let l = look("dwell:grass_fiber");
         assert_eq!(l.shape, GroundShape::Strands);
         let m = look_mesh(&l);

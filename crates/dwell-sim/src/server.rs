@@ -3451,7 +3451,7 @@ impl Server {
         // blast, a fall into a piece, a felling; owner, 2026-11-14: "a general rule of blocks or
         // items sitting on a block should be dropped when that block is destroyed"): the attached
         // blocks the writes removed drop their drops, and a ground item on a cell that is no
-        // longer solid is knocked loose (WORK_QUEUE item 58, BUGS.md #177).
+        // longer solid is knocked loose (WORK_QUEUE item 58, BUGS.md #178).
         let lost: Vec<([i32; 3], u16)> = before
             .iter()
             .filter(|&&(c, was)| {

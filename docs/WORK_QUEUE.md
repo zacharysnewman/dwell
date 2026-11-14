@@ -3345,7 +3345,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    fewer hits than the wooden one and breaks after 32 hits.
    (b) **"When you destroy a block with grass, rock, sticks on it, those should drop too."** Then: **"Essentially a
    general rule of blocks or items sitting on a block should be dropped when that block is destroyed."** One general
-   rule (BUGS.md #177): anything the destroyed block holds up — a block whose placement needs the cell under it
+   rule (BUGS.md #178): anything the destroyed block holds up — a block whose placement needs the cell under it
    (`needsSupport`, `placeOn`: plants, torches, saplings, any piece the support rule says no longer stands) and any
    ground item lying on its top — breaks and drops its own drops (loose items, in adventure), cascading upward.
    Blocks that stand on their own keep the existing support and falling rules.
@@ -3357,7 +3357,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    8 a ½ m sand cell (as dirt's clumps), and 8 sand clumps → sand. Red sand and red dirt keep their drops (red dirt
    drops plain dirt clumps; red sand drops itself).
    **Owner should see:** digging sand drops sand clumps; the backpack's Combine makes a sand slab from 8 of them.
-   (e) **"Plant fiber looks like a block for the drop."** (BUGS.md #178.) Grass fibre's look was a `cluster`
+   (e) **"Plant fiber looks like a block for the drop."** (BUGS.md #179.) Grass fibre's look was a `cluster`
    (seeds' heap of lumps) that read as a little block, and the gems had no look at all (drawn as a stone block in
    their colour). Now a `strands` look (five thin blades splayed flat) for the fibre, the gems a shard each, and an
    item without a look fails the generator.

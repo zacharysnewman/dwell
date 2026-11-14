@@ -53,7 +53,7 @@ pub enum LookShape {
     Shard,
     /// Thin blades splayed flat from one end (five long, narrow strips in the look's footprint,
     /// fanned a little and stacked a hair apart): a bundle of grass fibre (owner, 2026-11-14:
-    /// "Plant fiber looks like a block for the drop.", BUGS.md #178).
+    /// "Plant fiber looks like a block for the drop.", BUGS.md #179).
     Strands,
     /// A prop's own mesh (`look: { model }`, a prop of shared/models/props.json; ADR 0070 §8):
     /// its triangles and palette colours, untextured.

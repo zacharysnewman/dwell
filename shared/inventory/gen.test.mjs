@@ -178,7 +178,7 @@ test('the wood chunk has a shaped look (a lump of log), not a plain dot', () => 
 });
 
 test('every item that is not a block has its own look, and grass fibre is strands (owner, 2026-11-14: "Plant fiber looks like a block for the drop.")', () => {
-  // Without a look a loose item is drawn as a small stone block in its colour (BUGS.md #178):
+  // Without a look a loose item is drawn as a small stone block in its colour (BUGS.md #179):
   // every non-block item now names one, and a missing one fails the generator.
   const d = validateInventory(...fresh());
   const missing = d.items.filter((it) => !it.look).map((it) => it.name);
