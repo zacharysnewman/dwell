@@ -1,11 +1,15 @@
 {
-  "$comment": "The Peasant's part map (shared/models/parts.mjs, BUGS.md #96): the parts the villager's colours (shared/creatures/creatures.json `colours`) recolour. Seeded from the mesh: the hat and the hair are islands of their own (the hat's crown and brim; the hair with its fringe and shading), the skin, shirt and trousers by colour on the body (the boots, belt and collar keep their colours). The vertices are the source of truth; re-seed only on a re-import.",
+  "$comment": "The Peasant's part map (shared/models/parts.mjs, BUGS.md #96): the parts the villager's colours (shared/creatures/creatures.json `colours`) recolour; pattern_1..4 are the four places of the waist ring's and the hat band's pattern (models.json `decor` bands' `parts`; no vertex of this map: the bands put them on every detail level), recoloured by the villager's pattern (shared/creatures/patterns.json). Seeded from the mesh: the hat and the hair are islands of their own (the hat's crown and brim; the hair with its fringe and shading), the skin, shirt and trousers by colour on the body (the boots, belt and collar keep their colours). The vertices are the source of truth; re-seed only on a re-import.",
   "parts": [
     "skin",
     "hair",
     "hat",
     "shirt",
-    "trousers"
+    "trousers",
+    "pattern_1",
+    "pattern_2",
+    "pattern_3",
+    "pattern_4"
   ],
   "seed": [
     {

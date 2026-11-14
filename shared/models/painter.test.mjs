@@ -99,7 +99,7 @@ test("a part map of the wrong vertex count is refused with a message", () => {
     { parts: ["a", "a"], vertices: ["1"] },
     { parts: ["a"], vertices: ["2"] },
     { parts: ["a"], vertices: ["1"], extra: 1 },
-    { parts: ["a", "b", "c", "d", "e", "f", "g"], vertices: ["1"] },
+    { parts: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"], vertices: ["1"] },
   ]) {
     const ref = (() => { try { validateParts(bad, "x"); return "ok"; } catch (e) { return e.message; } })();
     const got = (() => { try { C.validateParts(bad, "x"); return "ok"; } catch (e) { return e.message; } })();
