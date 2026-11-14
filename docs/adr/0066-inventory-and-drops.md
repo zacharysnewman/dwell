@@ -22,7 +22,8 @@ use it up. The owner's answers (2026-11-07/08):
   those times). **Wallet is separate from inventory slots, maxed at 99** with starting wallet."
   (owner, 2026-11-08; not another game's names: `dwell:gem` and `dwell:gem_large`, prototype.)
 - Dropped items **vanish after a while** (data, 5 minutes).
-- On **death** in adventure, everything drops where the player died.
+- On **death** in adventure, everything drops where the player died. *(Superseded 2026-11-13: humans are
+  defeated, never killed, and a defeat keeps everything — owner: "Keep everything"; CHARACTERS.md §11.13.)*
 - **Creative is unchanged:** unlimited blocks, nothing drops. The inventory is per player, saved
   with the world; the mode decides whether placing consumes and breaking drops.
 

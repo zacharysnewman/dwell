@@ -37,6 +37,7 @@ pub mod skinned;
 pub mod staged;
 pub mod streaming;
 pub mod timing;
+pub mod tree_fade;
 pub mod upscale;
 pub mod water;
 pub mod water_tiles;
@@ -87,9 +88,14 @@ const TERRAIN_TOP_M: f64 = 1024.0;
 /// with the altitude over the higher of it and `TERRAIN_TOP_M`, never inside the near pass's split.
 /// A test world's 4800 m peak stands far over `TERRAIN_TOP_M`: from over its summit the near plane
 /// clipped the cone (docs/BUGS.md #68).
-pub fn far_pass_near(eye_y: f64, drawn_top: f64) -> f64 {
+///
+/// `nearest_piece_m` is the distance from the eye to the nearest shown piece's bounding sphere
+/// (∞ with none): the plane stays short of it too. The moon's near mesh is a piece (M-5): from home
+/// ~600 km up its orbit, near it, the plane sat at ~480 km by the altitude alone and clipped the
+/// whole mesh, its far disc already off, so nothing drew (BUGS.md #149).
+pub fn far_pass_near(eye_y: f64, drawn_top: f64, nearest_piece_m: f64) -> f64 {
     let altitude = eye_y - TERRAIN_TOP_M.max(drawn_top);
-    (NEAR_SPLIT * 0.95).max(altitude * 0.8)
+    (NEAR_SPLIT * 0.95).max((altitude * 0.8).min(nearest_piece_m * 0.8))
 }
 pub const SAMPLES: u32 = 4;
 
@@ -1842,6 +1848,7 @@ impl Renderer {
             .chain(lod_map::layout_entries())
             .chain([flow::layout_entry()])
             .chain([moon::layout_entry()])
+            .chain([tree_fade::layout_entry()])
             .collect();
         let frame_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
@@ -2463,6 +2470,7 @@ impl Renderer {
             light_buffer: lights::buffer(&device),
             flow: flow::FlowGpu::new(&device),
             moon: moon::MoonGpu::new(&device, &queue),
+            tree_fade: tree_fade::TreeFadeGpu::new(&device),
         };
         // No maps until the first frame asks for some (`ensure_shadow_maps`): a 1×1 stand-in.
         let shadow_maps = frame_bindings.shadow_maps(&device, (1, 1));
@@ -3316,6 +3324,30 @@ impl Renderer {
         let i = self.impostors.as_ref()?;
         impostors::drawn(i.far, i.ready(self.face, self.eye))
     }
+    /// The frame uniform's `far_trees` (shaders.rs `tree_near_share`, render/tree_fade.rs): the
+    /// eye from the tree map's corner, the leaves' reach, 1 once the impostors draw; zeros (the
+    /// near trees' leaves to the full-detail distance) before.
+    fn far_uniform(&self) -> [f32; 4] {
+        match (self.far_drawn(), &self.impostors) {
+            (Some(f), Some(i)) if f.impostor => i.fades.uniform(&f, self.face, self.eye),
+            _ => [0.0; 4],
+        }
+    }
+    /// This frame's tree states (render/tree_fade.rs) at `now` (s), and the GPU's map when they
+    /// changed.
+    fn update_tree_fades(&mut self, now: f64) {
+        let Some(far) = self.far_drawn() else {
+            return;
+        };
+        let (face, eye) = (self.face, self.eye);
+        if let Some(i) = self.impostors.as_mut()
+            && i.update_fades(now, face, eye, &far)
+        {
+            self.frame_bindings
+                .tree_fade
+                .write(&self.queue, &i.fades.texels);
+        }
+    }
     /// What the far trees' impostors hold now (`__dwell.impostors()`).
     pub fn impostor_status(&self) -> impostors::Status {
         let ready = self.far_drawn().is_some();
@@ -3748,7 +3780,7 @@ impl Renderer {
         for v in lean_uniforms(self.tree_lean, self.eye) {
             put(&v);
         }
-        put(&impostors::far_uniform(self.far_drawn()));
+        put(&self.far_uniform());
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -4506,10 +4538,15 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
+        self.update_tree_fades(collect_start / 1000.0);
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
-        let far_near = far_pass_near(self.face.y(self.eye[1]), self.drawn_top());
+        let far_near = far_pass_near(
+            self.face.y(self.eye[1]),
+            self.drawn_top(),
+            self.nearest_piece_m(),
+        );
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
         let draws = self.collect(passes, chunk_fade);
         let mut near_uniforms = None;
@@ -5555,6 +5592,22 @@ impl Renderer {
 
     /// The highest face-local top (m) of the terrain shown on the viewer's face: the LOD sections'
     /// and stand-ins' boxes and the chunks' (−∞ with none); `far_pass_near` keeps it in the far pass.
+    /// The distance from the eye to the nearest shown piece's bounding sphere (m; ∞ with none,
+    /// 0 inside one): `far_pass_near` keeps the far pass's near plane short of it.
+    fn nearest_piece_m(&self) -> f64 {
+        self.piece_poses
+            .iter()
+            .filter_map(|&(id, origin, _)| {
+                let r = self.terrain.pieces.get(&id)?.radius;
+                let d = (0..3)
+                    .map(|k| (origin[k] - self.eye[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                Some((d - r).max(0.0))
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
     fn drawn_top(&self) -> f64 {
         let f = self.face;
         let top = |lo: V3, hi: V3| {
@@ -6233,6 +6286,8 @@ struct FrameBindings {
     flow: flow::FlowGpu,
     /// The moon's baked maps (moon.rs), written once a world's bake is done.
     moon: moon::MoonGpu,
+    /// The far trees' near/impostor states about the eye (tree_fade.rs), written when they change.
+    tree_fade: tree_fade::TreeFadeGpu,
 }
 
 impl FrameBindings {
@@ -6332,6 +6387,7 @@ impl FrameBindings {
                 .chain(color_map.group_entries())
                 .chain([self.flow.group_entry()])
                 .chain([self.moon.group_entry()])
+                .chain([self.tree_fade.group_entry()])
                 .collect();
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame"),
@@ -6764,13 +6820,37 @@ mod tests {
     }
 
     #[test]
+    fn the_far_pass_keeps_the_moons_near_mesh_from_home_high_up() {
+        // face-a-only: `far_pass_near` takes face-local heights and a distance, no face.
+        // BUGS.md #149: from home's grid ~600 km up the moon's orbit, 20 km from its near mesh
+        // (a piece, its far disc off inside `farM`), the far pass's near plane sat at
+        // 0.8 × (600 km − 1024 m) ≈ 479 km and clipped the whole mesh: the moon drew nothing.
+        let eye_y = 600_000.0;
+        let nearest = 20_000.0;
+        let near = far_pass_near(eye_y, f64::NEG_INFINITY, nearest);
+        assert!(
+            near < nearest,
+            "near plane {near} m clips the moon {nearest} m off"
+        );
+        assert!(near >= NEAR_SPLIT * 0.95);
+        // Inside a piece's sphere (on the moon, its mesh round the eye): the split's.
+        assert_eq!(
+            far_pass_near(eye_y, f64::NEG_INFINITY, 0.0),
+            NEAR_SPLIT * 0.95
+        );
+        // A piece farther than the altitude changes nothing.
+        let far = far_pass_near(5300.0, 600.0, 1.0e9);
+        assert!((far - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs() < 1e-9);
+    }
+
+    #[test]
     fn the_far_pass_keeps_terrain_drawn_over_the_default_top_from_above_it() {
         // face-a-only: `far_pass_near` takes face-local heights; `drawn_top` maps them through
         // the viewer's FaceFrame.
         // BUGS.md #68: 300 m over the tall peak's ~4400 m rim (sections drawn up to 4608 m) the far
         // pass's near plane sat at 0.8 × (5300 − 1024) = 3421 m, clipping the cone 0.9–2 km away:
         // a hole to the sky round the crater. Red before: the drawn terrain was not considered.
-        let near = far_pass_near(5300.0, 4608.0);
+        let near = far_pass_near(5300.0, 4608.0, f64::INFINITY);
         // Nearer than the summit, or the near pass's own (which draws it).
         let summit = 5300.0 - 4608.0;
         assert!(
@@ -6778,16 +6858,24 @@ mod tests {
             "near plane {near} m clips the summit"
         );
         // Over the default terrain (nothing drawn above the default top) it still moves out.
-        assert!((far_pass_near(5300.0, 600.0) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs() < 1e-9);
         assert!(
-            (far_pass_near(5300.0, f64::NEG_INFINITY) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs()
+            (far_pass_near(5300.0, 600.0, f64::INFINITY) - 0.8 * (5300.0 - TERRAIN_TOP_M)).abs()
+                < 1e-9
+        );
+        assert!(
+            (far_pass_near(5300.0, f64::NEG_INFINITY, f64::INFINITY)
+                - 0.8 * (5300.0 - TERRAIN_TOP_M))
+                .abs()
                 < 1e-9
         );
         // From 8 km over that summit: out past the split, short of the summit.
-        let high = far_pass_near(12_608.0, 4608.0);
+        let high = far_pass_near(12_608.0, 4608.0, f64::INFINITY);
         assert!(high > NEAR_SPLIT && high < 8000.0, "{high}");
         // Near the ground, the split's.
-        assert_eq!(far_pass_near(300.0, 290.0), NEAR_SPLIT * 0.95);
+        assert_eq!(
+            far_pass_near(300.0, 290.0, f64::INFINITY),
+            NEAR_SPLIT * 0.95
+        );
     }
     use super::*;
 
@@ -7304,7 +7392,7 @@ mod tests {
         assert!(reach > 0.0);
         let unready = |r: &Renderer| {
             (
-                impostors::far_uniform(r.far_drawn()),
+                r.far_uniform(),
                 impostors::cutout_reach(r.far_drawn()),
                 r.draws_far_trees(),
             )
@@ -7346,7 +7434,7 @@ mod tests {
         assert!(!r.impostor_status().last_error.is_empty());
         r.impostor_layer(c.layer_count() - 1, 3.0, 4.0, &bytes, &bytes);
         assert_eq!(r.far_drawn(), Some(far));
-        assert_eq!(impostors::far_uniform(r.far_drawn())[3], 1.0);
+        assert_eq!(r.far_uniform()[3], 1.0);
         assert!(!r.draws_far_trees(), "the impostors draw the far trees");
         let st = r.impostor_status();
         assert!(

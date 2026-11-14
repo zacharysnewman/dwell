@@ -654,8 +654,6 @@ struct Session {
     death_position: [f64; 3],
     /// The facing it knelt with (degrees), so the others see it kneel the way it faced.
     death_yaw: f32,
-    /// A defeat's inventory, left where it knelt when it stands up (a mode with items).
-    drop_on_stand: bool,
     last_knockback_seq: u32,
     rate_window_tick: u32,
     rate_window_count: u32,
@@ -860,7 +858,6 @@ impl Session {
             respawn_tick: 0,
             death_position: [0.0; 3],
             death_yaw: 0.0,
-            drop_on_stand: false,
             last_knockback_seq: 0,
             rate_window_tick: 0,
             rate_window_count: 0,
@@ -2029,10 +2026,10 @@ impl Server {
     /// faced, for its defeat's `kneel_s` and `fade_s` (shared/defeat), then stands up at the
     /// shrine nearest where it fell (the respawn below). Its body leaves the physics while it
     /// kneels (snapshots carry it as `DEAD` at `death_position`, which clients draw kneeling);
-    /// its inventory stays with it until it stands up, then is left where it knelt.
+    /// it keeps everything it carries (owner, 2026-11-13: "Keep everything"): nothing drops.
     fn kill(&mut self, id: SessionId, cause: DamageCause) {
         // On another grid (the sun's lava, SUN_WORLD.md §6): out of its space, the inventory kept
-        // (items aren't on other grids yet), up again at the world's spawn.
+        // (as on every grid), up again at the world's spawn.
         let (death, yaw, away) = match (self.sessions[&id].handle, self.sessions[&id].away) {
             (Some(h), _) => {
                 let p = self.players.position(&self.physics, h);
@@ -2067,8 +2064,6 @@ impl Server {
         s.grid_respawn = away;
         s.death_position = death;
         s.death_yaw = yaw;
-        // Away, the inventory stays with the player (items aren't on other grids yet).
-        s.drop_on_stand = !away;
         s.handle = None;
         s.health = 0;
         s.inputs.clear();
@@ -2306,12 +2301,7 @@ impl Server {
             }
             let s = self.sessions.get_mut(&id).expect("session");
             let at = s.respawn_at.take();
-            // What it carried is left where it knelt (§11.13: kept through the kneel, so a held
-            // sword stays planted before it).
-            if std::mem::take(&mut s.drop_on_stand) {
-                let knelt = s.death_position;
-                self.drop_inventory(id, knelt);
-            }
+            // A defeat keeps everything it carried (owner, 2026-11-13: "Keep everything"; §11.13).
             self.spawn_player(id, at);
             self.sessions.get_mut(&id).expect("session").preload_center = None;
             let h = self.sessions[&id].handle.expect("spawned");

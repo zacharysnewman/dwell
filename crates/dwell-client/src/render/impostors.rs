@@ -13,9 +13,11 @@
 //!   tier's `toM` of the eye ([`tiles_within`]) and the buffer is rebuilt when they change.
 //! - **The view:** per pixel, `Config::dither`'s pick of the baked views (the WGSL twin
 //!   `imp_pick`), each sampled at the quad point projected into that view.
-//! - **The hand-over:** `Far::share` by the fragment's distance; the near leaves keep the pixels
-//!   whose noise is under their share (`cutout_fs`, `TREE_LEAF_FADE`) and the impostor the rest, so
-//!   no pixel draws both; past the fade the near leaves are dropped whole in the vertex stage.
+//! - **The hand-over:** per tree, in time (render/tree_fade.rs, BUGS.md #154): each tree is its
+//!   real leaves or its impostor by its distance with hysteresis, a switch cross-fading over the
+//!   tier's `fadeS`; the near leaves keep the pixels whose noise is under their tree's share
+//!   (`cutout_fs`, `TREE_LEAF_FADE`) and the impostor the rest, so no pixel draws both; past the
+//!   leaves' reach the near leaves are dropped whole in the vertex stage.
 //! - **Faces:** instances are face-local (`Config::instances`) and cross into the world through
 //!   `FaceFrame::point`; the shader turns the baked frame into the world by `face_vector`.
 //! - **Shadows:** received (the scene's shadow lookup); not cast (I-5).
@@ -27,6 +29,7 @@ use dwell_worldgen::impostor::{Config, Far, FarTree, Instance, Tier};
 
 use super::frame::{DEPTH, DEPTH_COMPARE, HDR, VIEW_DEPTH};
 use super::pipeline;
+use super::tree_fade::{self, TreeFades};
 
 /// A far trees tile's side (m): the unit the game asks the workers for.
 pub const TILE_M: i32 = 64;
@@ -209,7 +212,7 @@ pub fn lod_trees(far_trees: bool, drawn: Option<Far>) -> bool {
 /// The radius (m) about the eye whose far trees tiles must all be in before the impostors take
 /// over ([`ready`]): the hand-over's end and a tile, past which the tiles stream in nearest first.
 pub fn ready_radius(far: &Far) -> f32 {
-    (far.from + far.fade + TILE_M as f32).min(reach(far))
+    (tree_fade::leaves_reach(far) + TILE_M as f32).min(reach(far))
 }
 
 /// Whether the impostors can draw the far trees around the eye (`eye`, world, on `face`): every
@@ -262,15 +265,6 @@ pub struct Status {
     pub last_error: String,
 }
 
-/// The frame uniform's `far_trees` vec4 (shaders.rs `near_tree_share`): from, fade, reach, 1 when
-/// impostors draw; zeros (the near trees' leaves to the full-detail distance) without.
-pub fn far_uniform(far: Option<Far>) -> [f32; 4] {
-    match far {
-        Some(f) if f.impostor => [f.from, f.fade, reach(&f), 1.0],
-        _ => [0.0; 4],
-    }
-}
-
 /// The farthest any cutout plant or leaf card draws (m): every block's distance fade end
 /// (`fade`, e.g. tall grass) and the leaf cards' (shared/look/leaves.json `cards.fadeEndM`).
 pub fn plants_reach() -> f32 {
@@ -290,7 +284,7 @@ pub fn plants_reach() -> f32 {
 /// by, WORK_QUEUE item 32). `None`: every chunk's (no impostors).
 pub fn cutout_reach(far: Option<Far>) -> Option<f32> {
     let f = far.filter(|f| f.impostor)?;
-    Some((f.from + f.fade).max(plants_reach()) + REACH_MARGIN_M)
+    Some(tree_fade::leaves_reach(&f).max(plants_reach()) + REACH_MARGIN_M)
 }
 
 /// What of a chunk's cutout mesh draws (its triangles ordered with the trees' leaves last,
@@ -314,7 +308,7 @@ pub fn cutout_draw(far: Option<Far>, d: f32) -> CutoutDraw {
     let (Some(f), Some(end)) = (far.filter(|f| f.impostor), cutout_reach(far)) else {
         return CutoutDraw::All;
     };
-    if d <= f.from + f.fade + REACH_MARGIN_M {
+    if d <= tree_fade::leaves_reach(&f) + REACH_MARGIN_M {
         CutoutDraw::All
     } else if d <= end {
         CutoutDraw::Plants
@@ -396,7 +390,7 @@ pub fn wgsl(config: &Config) -> String {
 
 const IMPOSTOR_WGSL: &str = r#"
 // Far tree impostors (render/impostors.rs). eye: the eye's world position, w the eye's face (±1,
-// FaceFrame); far: the hand-over (from, fade, to, 1 on); leaf: the baked leaf albedo (linear), w a
+// FaceFrame); far: the hand-over (in, out, to, 1 on; the trees' states are render/tree_fade.rs's); leaf: the baked leaf albedo (linear), w a
 // view's side in texels.
 struct ImpostorScene {
     eye: vec4f,
@@ -428,6 +422,8 @@ struct ImpOut {
     @location(4) @interpolate(flat) tint: vec3f,
     @location(5) @interpolate(flat) centre: vec3f,
     @location(6) @interpolate(flat) radius: f32,
+    // The near tree's share of this tree (render/tree_fade.rs): the impostor keeps the rest.
+    @location(7) @interpolate(flat) near: f32,
 };
 
 // A quarter-turned vector about the tree's up (q quarter turns), as `Config::instances` turns it.
@@ -511,14 +507,6 @@ fn imp_pick(dir: vec3f, threshold: f32) -> u32 {
     return imp_ring(b1, a1);
 }
 
-// `Far::share`: the impostor's share at `dist` m (0 nearer than the hand-over, 1 past its fade).
-fn imp_share(dist: f32) -> f32 {
-    if (imp.far.w < 0.5 || dist > imp.far.z) {
-        return 0.0;
-    }
-    return clamp((dist - imp.far.x) / max(imp.far.y, 1e-3), 0.0, 1.0);
-}
-
 // The scale toward the eye that moves a quad at `dist` m to the near side of its sphere of
 // radius `r` (render/impostors.rs `near_side`).
 fn imp_near_side(dist: f32, r: f32) -> f32 {
@@ -543,8 +531,12 @@ fn imp_vs(v: ImpIn, @builtin(vertex_index) vi: u32) -> ImpOut {
     o.centre = centre;
     o.radius = r;
     o.dir = d;
-    // Not baked yet, or every pixel of it the near tree's or past the far trees: nothing.
-    if (info.z < 0.5 || imp_share(dist + r) <= 0.0 || dist - r > imp.far.z) {
+    // Its tree's state (render/tree_fade.rs), looked up at its foot: the leaves read the same tree.
+    // Before the impostors draw (`frame.far_trees.w` 0) the near trees are everything.
+    o.near = select(1.0, tree_near_at(frame.far_trees.xy + face_vector(face, centre).xz),
+        frame.far_trees.w > 0.5);
+    // Not baked yet, the real tree's alone or past the far trees: nothing.
+    if (info.z < 0.5 || o.near >= 0.999 || dist - r > imp.far.z) {
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
         return o;
     }
@@ -615,9 +607,9 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
     // The texel's real point: on the view's plane at the sphere's near side, moved back by its depth.
     let p = right * u * r + up * v * r + vk * r * (1.0 - 2.0 * nd.a);
     let rel = i.centre + face_vector(face, imp_turn(p, i.turns));
-    let dist = length(rel);
-    // The hand-over: the near leaves keep the pixels whose noise is under their share (`cutout_fs`).
-    let near = 1.0 - imp_share(dist);
+    // The hand-over: the near leaves keep the pixels whose noise is under their tree's share
+    // (`cutout_fs`), cross-faded in time (render/tree_fade.rs).
+    let near = i.near;
     let noise = pixel_noise(i.clip.xy);
     var mask = 0xffffffffu;
     if (SCENE_SAMPLES > 1) {
@@ -668,6 +660,10 @@ pub struct Impostors {
     count: u32,
     /// The tiles' instances (packed), by (face, tile i, tile k).
     tiles: HashMap<(u8, i32, i32), Vec<u8>>,
+    /// The tiles' instances as placed (face-local), for the trees' states.
+    placed: HashMap<(u8, i32, i32), Vec<Instance>>,
+    /// Each tree's near/impostor state about the eye and the GPU's map of them.
+    pub fades: TreeFades,
     dirty: bool,
     /// The hand-over in use (`None`: no impostors drawn).
     pub far: Option<Far>,
@@ -896,6 +892,8 @@ impl Impostors {
             instances: None,
             count: 0,
             tiles: HashMap::new(),
+            placed: HashMap::new(),
+            fades: TreeFades::default(),
             dirty: false,
             far: None,
             requested: false,
@@ -1008,6 +1006,7 @@ impl Impostors {
         }
         *slot = [centre_y, radius, 1.0, 0.0];
         self.layers_dirty = true;
+        self.fades.touch();
     }
 
     /// A tile's far trees on `face` (tile indices `ti`, `tk`), placed as `Config::instances` does.
@@ -1017,20 +1016,56 @@ impl Impostors {
         for (t, inst) in trees.iter().zip(self.config.instances(trees)) {
             bytes.extend_from_slice(&pack(face, &inst, tint_ratio(t, leaf)));
         }
-        self.tiles.insert((u8::from(face.is_b()), ti, tk), bytes);
+        let key = (u8::from(face.is_b()), ti, tk);
+        self.tiles.insert(key, bytes);
+        self.placed.insert(key, self.config.instances(trees));
         self.dirty = true;
+        self.fades.touch();
     }
 
     /// Drops the tiles `keep` doesn't hold (face, i, k).
     pub fn retain_tiles(&mut self, keep: impl Fn(&(u8, i32, i32)) -> bool) {
         let before = self.tiles.len();
         self.tiles.retain(|k, _| keep(k));
-        self.dirty |= self.tiles.len() != before;
+        self.placed.retain(|k, _| keep(k));
+        if self.tiles.len() != before {
+            self.dirty = true;
+            self.fades.touch();
+        }
     }
 
     /// Whether tile (face, i, k) is held.
     pub fn has_tile(&self, key: &(u8, i32, i32)) -> bool {
         self.tiles.contains_key(key)
+    }
+
+    /// This frame's tree states at `now` (s) about `eye` (world) on `face` (render/tree_fade.rs):
+    /// whether the map changed.
+    pub fn update_fades(&mut self, now: f64, face: FaceFrame, eye: [f64; 3], far: &Far) -> bool {
+        let bit = u8::from(face.is_b());
+        let (placed, layers) = (&self.placed, &self.layers);
+        self.fades.update(now, face, eye, far, move || {
+            Box::new(
+                placed
+                    .iter()
+                    .filter(move |(k, _)| k.0 == bit)
+                    .flat_map(|(_, v)| v.iter())
+                    .map(move |inst| {
+                        let l = layers.get(inst.layer as usize).copied().unwrap_or_default();
+                        tree_fade::Tree {
+                            key: [
+                                inst.foot[0].floor() as i32,
+                                (inst.foot[1] / dwell_world::CELL_H as f32).round() as i32,
+                                inst.foot[2].floor() as i32,
+                            ],
+                            foot: inst.foot,
+                            centre_y: l[0],
+                            radius: l[1],
+                            baked: l[2] > 0.5,
+                        }
+                    }),
+            )
+        })
     }
 
     /// The instances drawn.
@@ -1048,8 +1083,9 @@ impl Impostors {
     ) {
         let far = self.far.unwrap_or(Far {
             impostor: false,
-            from: 0.0,
-            fade: 0.0,
+            in_m: 0.0,
+            out_m: 0.0,
+            fade_s: 0.0,
             to: 0.0,
         });
         let lin = |c: f32| dwell_look::srgb_to_linear(f64::from(c)) as f32;
@@ -1059,8 +1095,8 @@ impl Impostors {
             eye[1] as f32,
             eye[2] as f32,
             face.vector([0.0, 1.0, 0.0])[1] as f32,
-            far.from,
-            far.fade,
+            far.in_m,
+            far.out_m,
             reach(&far),
             if far.impostor { 1.0 } else { 0.0 },
             leaf[0],
@@ -1163,7 +1199,10 @@ mod tests {
         assert_eq!(cutout_reach(c.far("off")), None);
         assert_eq!(cutout_reach(None), None);
         let r = cutout_reach(Some(on)).expect("impostors");
-        assert!(r > on.from + on.fade, "every near leaf faded out first");
+        assert!(
+            r > tree_fade::leaves_reach(&on),
+            "every near leaf dropped first"
+        );
         assert!(r > plants_reach(), "tall grass faded out first");
         assert!(plants_reach() >= dwell_look::leaves::LEAVES.cards.fade_end_m as f32);
     }
@@ -1172,11 +1211,12 @@ mod tests {
     fn a_chunk_past_the_hand_over_draws_its_plants_without_its_leaves() {
         // face-a-only: distances only.
         // WORK_QUEUE item 32 (the forest edge): the leaves stop at the data's hand-over end
-        // (impostors.json `far.tiers.on` fromM + fadeM), the plants at their own fades. Red
+        // (impostors.json `far.tiers.on` outM and a crown, `tree_fade::leaves_reach`), the plants
+        // at their own fades. Red
         // before: every chunk within the plants' reach drew its leaves too.
         let c = Config::get();
         let on = c.far("on").expect("on");
-        let leaves_end = on.from + on.fade + REACH_MARGIN_M;
+        let leaves_end = tree_fade::leaves_reach(&on) + REACH_MARGIN_M;
         assert!(leaves_end < plants_reach(), "the band this saves is empty");
         assert_eq!(cutout_draw(Some(on), 0.0), CutoutDraw::All);
         assert_eq!(cutout_draw(Some(on), leaves_end), CutoutDraw::All);
@@ -1186,7 +1226,7 @@ mod tests {
         assert_eq!(cutout_draw(Some(on), end + 0.5), CutoutDraw::Nothing);
         // The switch is the data's: a later hand-over keeps the leaves later.
         let later = Far {
-            from: on.from + 20.0,
+            out_m: on.out_m + 20.0,
             ..on
         };
         assert_eq!(cutout_draw(Some(later), leaves_end + 0.5), CutoutDraw::All);
@@ -1200,7 +1240,7 @@ mod tests {
         // face-a-only: data only.
         let c = Config::get();
         let on = c.far("on").expect("on");
-        assert!(reach(&on) > on.from + on.fade);
+        assert!(reach(&on) > tree_fade::leaves_reach(&on));
         assert!(reach(&on) <= MAX_REACH_M);
     }
 
@@ -1397,6 +1437,7 @@ mod tests {
         let (desk, phone) = (atlas_bytes(c, Tier::Desktop), atlas_bytes(c, Tier::Phone));
         assert!(c.px(Tier::Phone) < c.px(Tier::Desktop));
         assert_eq!(desk, phone * 4, "half the side: a quarter of the bytes");
-        assert!(phone <= 12 << 20, "the phone's atlas {} MB", phone >> 20);
+        // 16 MB: 25 views since BUGS.md #154 (6 azimuths × 4 elevations + the top, 1.25× the 17).
+        assert!(phone <= 16 << 20, "the phone's atlas {} MB", phone >> 20);
     }
 }

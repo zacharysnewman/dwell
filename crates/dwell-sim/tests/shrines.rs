@@ -104,9 +104,9 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     /// WORK_QUEUE item 55 (owner, 2026-11-13: "Humans won't die in this game (general design
     /// rule)"): health 0 is a defeat, never the old death. The player kneels where it fell (others
-    /// see it there, `DEAD` being the defeat on the wire), keeps its things while it kneels (the
-    /// death dropped them at once), and stands up at the shrine nearest where it fell after its
-    /// defeat's kneel and fade (shared/defeat), leaving its things where it knelt.
+    /// see it there, `DEAD` being the defeat on the wire), keeps its things (owner, 2026-11-13:
+    /// "Keep everything"), and stands up at the shrine nearest where it fell after its defeat's
+    /// kneel and fade (shared/defeat), nothing left where it knelt.
     fn a_defeated_player_kneels_where_it_fell_then_stands_at_the_shrine(f: FaceFrame) {
         let mut fx = Fixture::new(terrain("adventure"));
         fx.join(1, &Client::new(1));
@@ -118,6 +118,7 @@ dwell_world::both_faces!(
         fx.server.give(1, "dwell:stone_axe", 1);
         let knelt = fx.server.feet_of(1).expect("joined");
         let want = expected(f, 1, knelt);
+        let kept = fx.server.inventory_of(1).expect("joined").clone();
         fx.server.kill_player(1);
         assert_eq!(fx.server.health_of(1), 0);
         let down = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER);
@@ -171,14 +172,9 @@ dwell_world::both_faces!(
         );
         assert_eq!(FaceFrame::at_height(at[1]).face, f.face);
         assert_eq!(fx.server.health_of(1), players::MAX_HEALTH as i32);
-        // Its things were left where it knelt.
-        let items = fx.server.loose_items();
-        assert!(!items.is_empty());
-        assert!(items.iter().all(|it| {
-            let p = f.point(it.position);
-            let k = f.point(knelt);
-            (p[0] - k[0]).hypot(p[2] - k[2]) < 1.5
-        }));
+        // It kept its things: nothing was left where it knelt.
+        assert!(fx.server.loose_items().is_empty());
+        assert_eq!(fx.server.inventory_of(1), Some(&kept));
     }
 );
 

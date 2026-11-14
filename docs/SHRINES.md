@@ -91,6 +91,9 @@ Humans never die (CHARACTERS.md §1a, WORK_QUEUE item 55): at 0 health a player 
 **defeated**, kneels where it fell for its defeat's `kneelS` and `fadeS` (`shared/defeat`), and then
 stands up at the shrine below, playing the stand (CHARACTERS.md §11.13). A defeated NPC stands up at
 the stand point of the shrine nearest where it fell, on that face, 1.5 m along +x (`npc_stand_point`).
+A defeated player **keeps everything** (owner, 2026-11-13: "Keep everything"): it stands up at the
+shrine with its hotbar, inventory and wallet exactly as before; nothing drops where it knelt
+(`dwell-sim` `items.rs` `a_defeat_in_adventure_keeps_everything_and_drops_nothing`).
 
 `kill` takes the respawn point from `ShrineRespawn` (`dwell_worldgen::shrine_respawn_for_sized`): the
 shrine nearest the death on the death's face (`FaceFrame::at_height`), its stand point plus the players'

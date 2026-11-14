@@ -106,9 +106,10 @@ struct Frame {
     lean_hinge: vec4f,
     lean_up: vec4f,
     lean_axis: vec4f,
-    // The far trees' hand-over (render/impostors.rs, dwell-worldgen `impostor::Far`): x where it
-    // starts, y its fade (m), z where far trees stop, w 1 when impostors draw (else the near
-    // trees' leaves draw to the full-detail distance as before).
+    // The far trees' hand-over (render/tree_fade.rs, dwell-worldgen `impostor::Far`): xy the eye's
+    // face-local x and z from the tree map's corner, z the near leaves' reach (m; every leaf past it
+    // is the impostors'), w 1 when impostors draw (else the near trees' leaves draw to the
+    // full-detail distance as before).
     far_trees: vec4f,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
@@ -973,9 +974,8 @@ fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
     if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
         return true;
     }
-    // A tree's leaf face (`TREE_LEAF_FADE`) past the far trees' hand-over: the impostors' alone.
-    if (plant.w < 0.0 && frame.far_trees.w > 0.5
-        && length(rel) > frame.far_trees.x + frame.far_trees.y + 2.0) {
+    // A tree's leaf face (`TREE_LEAF_FADE`) past the near leaves' reach: the impostors' alone.
+    if (plant.w < 0.0 && frame.far_trees.w > 0.5 && length(rel) > frame.far_trees.z + 2.0) {
         return true;
     }
     if (plant.y >= 0.0) {
@@ -1032,15 +1032,6 @@ struct CutoutSceneOut {
     @builtin(sample_mask) mask: u32,
 };
 
-// The near trees' share of a pixel `dist` m off (`Far::near_share`): 1 nearer than the far
-// trees' hand-over, falling to 0 across its fade (1 when no impostors draw).
-fn near_tree_share(dist: f32) -> f32 {
-    if (frame.far_trees.w < 0.5) {
-        return 1.0;
-    }
-    return 1.0 - clamp((dist - frame.far_trees.x) / max(frame.far_trees.y, 1e-3), 0.0, 1.0);
-}
-
 // A per-pixel value in [0, 1) that varies from pixel to pixel (interleaved gradient noise).
 fn pixel_noise(p: vec2f) -> f32 {
     return fract(52.9829189 * fract(dot(floor(p), vec2f(0.06711056, 0.00583715))));
@@ -1084,9 +1075,10 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
         cover *= fade;
     }
-    // A tree's leaf face hands over to the far trees' impostors (`imp_fs` keeps the other pixels).
+    // A tree's leaf face hands over to the far trees' impostors by its tree's state, cross-faded
+    // in time (render/tree_fade.rs; `imp_fs` keeps the other pixels).
     if (i.fade.y < 0.0) {
-        fade = near_tree_share(length(i.rel));
+        fade = tree_near_share(i.rel);
         cover *= fade;
     }
     // Near the eye a leaf's faces dissolve (dithered, as a fading plant), from a third of its
@@ -3791,7 +3783,7 @@ pub fn source(samples: u32) -> String {
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
-        super::flow::wgsl(),
+        super::flow::wgsl() + &super::tree_fade::wgsl(),
         scene_bindings(samples),
         water_slope()
     ) + &super::heightfield::wgsl()

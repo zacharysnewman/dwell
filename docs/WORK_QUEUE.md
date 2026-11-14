@@ -16,6 +16,16 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
+  #146–#150):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
+  after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
+  message. The moon was not drawn from 7–25 km out during a flyTo approach … Small: the bench `flyTo` step rejects
+  `marginM` although `__dwell.flyTo` takes it — accept it." Fixed on `claude/space-bugs` (each with a red → green test):
+  the lava report lists the sun's fields and `sunLand({river: true})` lands by a river head; `moonLand`/`sunLand` carry
+  the player onto the grid themselves (the capture took only fliers) and the trip keeps its way home before starting;
+  the teleport refuses a point past the rim or on the other face with a message; the far pass's near plane no longer
+  clips the moon's near mesh from home; the `flyTo` step takes `marginM`. **Open:** the owner's browser re-check (the
+  moon's mesh from home inside `farM`; the sun's river by `sunLand({river: true})`).
 - **Realistic spawn without `at` (brief, 2026-11-13; BUGS.md #132):** "a fresh Realistic world never loads without a
   start point … fix (bounded search with a fallback; the whole spawn ≤ ~2 s natively); a test that the Realistic spawn
   resolves within a time/step budget on seeds 1, 7, 42 and stands at a shrine. Also check whether the client shows a
@@ -1414,6 +1424,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
    the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
    `impostors-off`); I-5 shadows (GPU work, local).
+   **Doubled, half-faded impostors (owner, 2026-11-13, with two screenshots; BUGS.md #154):** "There seems to be
+   doubled partially faded imposters, they can't fade slowly based on distance alone because they are obviously
+   faded. Not sure why there's 2 and they seem to split and combine as you fly up and down in front of them. It can
+   be a fade transition but it shouldn't ever be partial transitions over distance, but over time. Does that make
+   sense?" Owner should see: flying toward and away from a forest, trees swap between near and far with a brief
+   fade, never a steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+   **Built (2026-11-13, cloud, `claude/impostor-fade-time-biapw1`):** the hand-over is per tree and in time: near or
+   impostor by distance with hysteresis (`far.tiers.on` `inM` 54 / `outM` 58, replacing `fromM`/`fadeM`), each switch
+   a `fadeS` 0.3 s cross-fade (`render/tree_fade.rs`: a byte map of each tree's near share about the eye, group 0
+   binding 21, read by the leaves per fragment and by the impostor at its foot); the views 6 azimuths × 0/20/40/60°
+   + top (was 8 × 0/40°), the crown's silhouette within 0.27 m of the real one's from any height (was 0.55 m).
+   **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
+   no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
+   and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1741,6 +1765,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    feet that didn't line up / seemed to be floating?"** **Fixed (BUGS.md #142):** your first-person body was moved
    back whole (0.1–0.4 m) off its feet and their shadow; it now leans back from its soles, which stand where you do
    on flat ground, ramps and slopes.
+   Owner, 2026-11-13: **"Can you make a collection of skin tone ranges with hair color ranges so it's not completely
+   random. Also, face should always match arms, etc. shouldn't have different skin colors on different skin parts."**
+   **Built (BUGS.md #152):** `shared/creatures/appearance.json` holds the skin tones (ten, porcelain to ebony) and, for
+   each, the hair colours that go with it by weight (light skins blond, ginger, auburn, brown; deep skins mostly black
+   and dark brown); a villager picks a tone from its seed, then a hair colour from that tone's list; clothes keep their
+   own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
+   arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
+   of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2570,6 +2602,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
+   **Bug, owner 2026-11-13:** **"Another bug, Im not sure if it's because I was flying high at the time, but the
+   portal indicator showed up several hundred meters in the air over the portal."** Fixed after 0.63.3 (BUGS.md
+   #153): a seen portal's marker stands at its opening's height from the generator (the portal shafts), never the
+   player's; a marker placed over unloaded ground is put back on it when its column loads, and a saved one far above
+   its ground (or a portal's above its opening) is corrected once seen. **Owner should see:** fly a few hundred
+   metres up over a portal you have not seen yet: its marker appears on the rim, not at your height; an old floating
+   portal marker drops onto its rim when you come back within the render radius.
 
 54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
    Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across
@@ -2645,6 +2684,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `stand`; others see both; the wire change additive; data for the kneel's time, the fade, the camera and
    per-character overrides; tests by data on both faces. Design rule recorded in docs/CHARACTERS.md §1a. Built on
    branch `claude/defeat-kneel` (docs/CHARACTERS.md §11.13, docs/SHRINES.md §5).
+   **Items on defeat** (owner 2026-11-13, asked "When a human is defeated (kneels, then stands at a shrine), what
+   happens to their inventory?"): **"Keep everything"** (Guild Wars style). Before, a defeat dropped your things where
+   you knelt, at the stand. Built (branch `claude/defeat-keeps-items-xqlhag`): a defeated player keeps every item (hotbar,
+   inventory, held slot, wallet) through the kneel and the stand, in every mode and on every grid; nothing drops
+   (`dwell-sim` `items.rs` `a_defeat_in_adventure_keeps_everything_and_drops_nothing`; BUGS.md #151). **Owner should
+   see:** after being defeated and standing up at a shrine, the hotbar and inventory are exactly as before.
 
 56. **Blueprints and builder NPCs** (owner 2026-11-13: **"I also want to add a new version of the human NPC, same looks, no
    sword capable of building blueprints like the ones you can save right now. In adventure you can place "blueprints" but
