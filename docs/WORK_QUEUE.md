@@ -2335,6 +2335,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
+- **Sliding and the out-of-stamina breath quieter (2026-11-13, `claude/quieter-slide-breath`), done.** Owner:
+  "Sliding and stamina breath expire should be 75% of their current volume." Every gain of those sounds is 0.75 × what it
+  was: the four ground slide loops (`*_slide`, 0.8 → 0.6) and their stops (`*_slide_stop`, 0.7 → 0.525, so the end of a
+  slide stays level with it), and `breath_heavy` played by `exhausted` (the sigh's `samples.gain` 0.5 → 0.375, which the
+  sound's own `gain` does not scale, and the fallback layers' `gain` 0.4 → 0.3); no other sound changed
+  (`quieterSounds.test.ts`). Owner should hear: slide on any ground and run out of stamina; both a quarter quieter than before.
+
 - **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
   bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
   the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:

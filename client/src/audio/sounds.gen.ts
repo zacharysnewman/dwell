@@ -3764,7 +3764,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3840,7 +3840,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3910,7 +3910,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -3983,7 +3983,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {
@@ -4053,7 +4053,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:stone_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4139,7 +4139,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:dirt_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4197,7 +4197,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:grass_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -4255,7 +4255,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:sand_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {
         "pitch": 1.5,
@@ -6207,10 +6207,10 @@ export const SOUND_DATA: SoundData = {
         "from": [
           "VOICE_MALE_Sigh_1"
         ],
-        "gain": 0.5,
+        "gain": 0.375,
         "pitch": 0.5
       },
-      "gain": 0.4,
+      "gain": 0.3,
       "reverb": 0.05,
       "variation": {
         "pitch": 1,

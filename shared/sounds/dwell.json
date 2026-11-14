@@ -1509,7 +1509,7 @@
       ]
     },
     "stone_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1521,7 +1521,7 @@
       ]
     },
     "dirt_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1533,7 +1533,7 @@
       ]
     },
     "grass_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1545,7 +1545,7 @@
       ]
     },
     "sand_slide": {
-      "gain": 0.8,
+      "gain": 0.6,
       "reverb": 0.06,
       "loop": true,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1},
@@ -1557,7 +1557,7 @@
       ]
     },
     "stone_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1568,7 +1568,7 @@
       ]
     },
     "dirt_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1578,7 +1578,7 @@
       ]
     },
     "grass_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -1588,7 +1588,7 @@
       ]
     },
     "sand_slide_stop": {
-      "gain": 0.7,
+      "gain": 0.525,
       "reverb": 0.08,
       "variation": {"pitch": 1.5, "gain": 1.5, "cutoff": 0.15, "time": 0.15},
       "intensity": {"gain": [0.3, 1], "cutoff": [0.7, 1.1], "time": [0.8, 1.2]},
@@ -2221,8 +2221,8 @@
     },
     "breath_heavy": {
       "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
-      "samples": {"files": ["breath-heavy-1.m4a"], "from": ["VOICE_MALE_Sigh_1"], "gain": 0.5, "pitch": 0.5},
-      "gain": 0.4, "reverb": 0.05,
+      "samples": {"files": ["breath-heavy-1.m4a"], "from": ["VOICE_MALE_Sigh_1"], "gain": 0.375, "pitch": 0.5},
+      "gain": 0.3, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
         {"source": "noise", "color": "pink", "gain": 0.3, "filters": [{"type": "bandpass", "freq": 1100, "q": 0.8}], "env": {"attack": 0.15, "hold": 0.1, "decay": 0.4}},
