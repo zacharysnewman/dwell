@@ -6199,7 +6199,21 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
-      "$comment": "Out of stamina: a person's heavy breath, two breathy puffs of noise (BUGS.md #159). Its samples were the pack's MONSTER_Exhausted_05/_07, a voiced growl that sounded like a bear; procedural until a human breath is picked (samples with `from`, a human category).",
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack has no BREATH category, so its one unvoiced in-and-out breath (VOICE_MALE_Sigh_1) and the two breathy exhales of the gasp's and the strain's voice (GRUNT_Male_Quick, _Quick_Deep). The layers (two puffs of noise) play until they decode.",
+      "samples": {
+        "files": [
+          "breath-heavy-1-13f5fdde.m4a",
+          "breath-heavy-2-3274375d.m4a",
+          "breath-heavy-3-76fd7007.m4a"
+        ],
+        "from": [
+          "VOICE_MALE_Sigh_1",
+          "GRUNT_Male_Quick",
+          "GRUNT_Male_Quick_Deep"
+        ],
+        "gain": 0.5,
+        "pitch": 0.5
+      },
       "gain": 0.4,
       "reverb": 0.05,
       "variation": {
@@ -7964,6 +7978,18 @@ export const SOUND_DATA: SoundData = {
       "source": "body-thud-3.m4a"
     },
     {
+      "file": "breath-heavy-1-13f5fdde.m4a",
+      "source": "breath-heavy-1.m4a"
+    },
+    {
+      "file": "breath-heavy-2-3274375d.m4a",
+      "source": "breath-heavy-2.m4a"
+    },
+    {
+      "file": "breath-heavy-3-76fd7007.m4a",
+      "source": "breath-heavy-3.m4a"
+    },
+    {
       "file": "gasp-1-7f7bc6f6.m4a",
       "source": "gasp-1.m4a"
     },
@@ -8028,7 +8054,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1498514,
+  "sampleBytes": 1512036,
   "gaitOrder": [
     "walk",
     "run",

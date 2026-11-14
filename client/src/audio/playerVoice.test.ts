@@ -80,6 +80,25 @@ describe("the player's voice (BUGS.md #159)", () => {
       }
     });
 
+  it("the out-of-stamina breath is a man's recorded breath, within ±0.5 semitone", () => {
+    const [id, s] = soundOf('exhausted');
+    expect(id).toBe('dwell:breath_heavy');
+    expect(usesSamples(s), 'breath_heavy plays recorded samples, not only noise').toBe(true);
+    const from = s.samples?.from ?? [];
+    expect(from.length).toBeGreaterThanOrEqual(2);
+    for (const name of from) {
+      expect(['GRUNT', 'BREATH', 'VOICE'], name).toContain(name.split('_')[0]);
+      expect(name, 'a male voice, like the gasp and the strain').toMatch(/_Male_/i);
+    }
+    const bank = new SampleBank<{ duration: number }>(mulberry32(5));
+    for (const f of s.samples?.files ?? []) bank.set(f, { duration: 1 });
+    for (let i = 0; i < 300; i++) {
+      const r = bank.pick(id, s)?.rate ?? NaN;
+      expect(r).toBeGreaterThanOrEqual(semitonesToRate(-0.5) - 1e-9);
+      expect(r).toBeLessThanOrEqual(semitonesToRate(0.5) + 1e-9);
+    }
+  });
+
   it("the creatures' voices are named by the pack too (an animal's, not a person's)", () => {
     for (const [id, s] of Object.entries(SOUND_DATA.sounds))
       for (const name of s.samples?.from ?? [])
