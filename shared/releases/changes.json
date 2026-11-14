@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.19",
+      "changes": [
+        "Dynamite no longer flings tall grass, torches, saplings or ladders as flying pieces: they're simply destroyed, dropping what they would when broken.",
+        "Grass and torches standing on a block that's blown away or falls now go with it instead of floating in the air."
+      ]
+    },
+    {
       "version": "0.63.18",
       "changes": [
         "Villagers now sit down on level ground, legs out and the sword across a raised knee, instead of standing.",
