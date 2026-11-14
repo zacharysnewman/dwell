@@ -6,6 +6,24 @@ pins it.
 
 ## Open
 
+### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
+
+Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
+a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
+and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
+`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
+generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
+only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
+height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
+(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
+borders), and none was bisected yet.
+
+**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
+(about 9 s).
+
+**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
+as from face A.
+
 ### 174. On a phone nothing in the inventory answers after opening the bag
 
 Owner, 2026-11-14: "A bug too for mobile, I can't seem to access inventory, after opening bag, nothing is
