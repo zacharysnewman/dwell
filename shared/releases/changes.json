@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.67.1",
+      "changes": [
+        "The axe has one swing, like the pickaxe and shovel: right click no longer switches it to a vertical chop",
+        "Every tool is held turned a little so you can see its head",
+        "Pickaxe and shovel swings come in from the right and the head strikes right at the crosshair, the moment the block takes the hit"
+      ]
+    },
+    {
       "version": "0.67.0",
       "changes": [
         "A new compatibility line: every town now starts with a storehouse, built first",
