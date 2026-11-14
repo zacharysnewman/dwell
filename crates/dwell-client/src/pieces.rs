@@ -91,20 +91,25 @@ const SETTLE_REACH_M: f64 = 4.0;
 /// restarted server) is taken at once.
 const SLEW: f64 = 0.03;
 const SNAP_MS: f64 = 250.0;
-/// How fast (ms a snapshot) the delivery estimate drifts up, so the clock follows a slower link
-/// (as `dwell_game::remotes`).
-const DRIFT_MS: f64 = 0.05;
+/// How long (ms, local) a snapshot's delay counts toward the estimate: the estimate is the least
+/// delay seen within it, so it follows a slower link, or a server that dropped time (a local
+/// world's worker busy past its catch-up cap, `LocalCore::advance`), within this. It drifted up
+/// 0.05 ms a snapshot before (BUGS.md #173): after the server dropped ½ s the pieces were drawn
+/// past their newest poses for minutes, moving only on frames a snapshot came.
+const WINDOW_MS: f64 = 1000.0;
 
 /// The server's clock as the pieces are drawn on it: a pose is timed by the server tick it was
 /// taken at, not by when the frame read its snapshot (an arrival a frame earlier or later drew
 /// 50 ms of motion over 33 or 67 ms, the shake of every moving piece, owner 2026-11-09). The
-/// local-minus-server offset is the least-delayed snapshot's (as `dwell_game::remotes`), and the
-/// offset drawn with moves toward it continuously at `SLEW`, so a better estimate never jumps
-/// the drawn time.
-#[derive(Clone, Copy, Debug, Default)]
+/// local-minus-server offset is the least-delayed snapshot's within [`WINDOW_MS`] (as
+/// `dwell_game::remotes`), and the offset drawn with moves toward it continuously at `SLEW`, so a
+/// better estimate never jumps the drawn time.
+#[derive(Clone, Debug, Default)]
 struct Timeline {
-    /// The offset (local − server, ms) estimated: the smallest seen, drifting up by `DRIFT_MS`.
+    /// The offset (local − server, ms) estimated: the smallest within the window.
     target: Option<f64>,
+    /// The offsets seen within the window: (local ms, offset).
+    seen: VecDeque<(f64, f64)>,
     /// The offset drawn with at local time `anchor_ms`, moving toward `target` from there.
     anchor: f64,
     anchor_ms: f64,
@@ -120,23 +125,23 @@ impl Timeline {
     /// A snapshot of server time `server_ms` read at local `now_ms`.
     fn observe(&mut self, server_ms: f64, now_ms: f64) {
         let seen = now_ms - server_ms;
-        let (anchor, target) = match (self.offset(now_ms), self.target) {
-            (Some(drawn), Some(t)) => {
-                let target = seen.min(t + DRIFT_MS);
-                let drawn = if (target - drawn).abs() > SNAP_MS {
-                    target
-                } else {
-                    drawn
-                };
-                (drawn, target)
-            }
-            _ => (seen, seen),
+        let drawn = self.offset(now_ms);
+        self.seen.push_back((now_ms, seen));
+        while self
+            .seen
+            .front()
+            .is_some_and(|&(at, _)| at < now_ms - WINDOW_MS)
+        {
+            self.seen.pop_front();
+        }
+        let target = self.seen.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
+        let anchor = match drawn {
+            Some(d) if (target - d).abs() <= SNAP_MS => d,
+            _ => target,
         };
-        *self = Self {
-            target: Some(target),
-            anchor,
-            anchor_ms: now_ms,
-        };
+        self.target = Some(target);
+        self.anchor = anchor;
+        self.anchor_ms = now_ms;
     }
 
     /// The server time (ms) at local `now_ms`, if a snapshot has been seen.

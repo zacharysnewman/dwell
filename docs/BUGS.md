@@ -6,6 +6,51 @@ pins it.
 
 ## Open
 
+### 173. The dynamite blast looks low framerate: the flung pieces stand still between snapshots
+
+Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "And the dynamite one still looks low framerate,
+probably a physics framerate issue not view?" Measured on the cinematic clip (frame differences): from the blast on,
+one captured frame in three changed only by the camera's drift and the smoke while the pieces held still; the real-time
+take stuttered irregularly the same way. Not the physics (the server steps every piece every tick) and not the view.
+
+**Owner should see:** the flung pieces moving on every frame, smooth through the air, in the cinematic clip and in
+play.
+
+**Cause:** two, both the client's drawing of the pieces (`pieces.rs`). (1) The pieces are drawn on the server's clock,
+estimated as the least delay seen, drifting up only 0.05 ms a snapshot (1 ms a second). A local world's server drops
+time when its worker is busy past the catch-up cap (`LocalCore::advance`: loading, the blast itself), so from then on
+the client drew every piece hundreds of ms past its newest pose, held at the 250 ms extrapolation cap, moving only
+when a snapshot came: with a take's 2 ticks a frame and a snapshot every 3 ticks, one frame in three none came. (2) A
+snapshot's datagram carries ~28 piece poses (docs/FELLING.md §3.1), so of a blast's ~200 pieces each was seen every
+third of a second or so and stood still past its extrapolation between them.
+
+**Fixed:** (1) the estimate is the least delay within the last second (`WINDOW_MS`), so it follows a server that
+dropped time within a second (snapped past 250 ms, slewed under it); (2) the page hosting the world (a loopback
+session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOPBACK_PIECES`, the encoding's most).
+Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
+`game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
+frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
+frame, peaking every third). Remote players (`dwell_game::remotes`) keep the old drifting estimate.
+
+### 172. Trees disappear when the camera gets close
+
+Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "Trees were disappearing when getting close." In the
+forest fly-over (both the cinematic and the real-time take) trees faded out as the camera neared them and nothing
+replaced them.
+
+**Owner should see:** flying close over a forest, every tree stays drawn: its far look until its real one is ready,
+then a short fade to it, never a tree fading to nothing.
+
+**Cause:** the impostor ↔ real-leaves hand-over (#154, `render/tree_fade.rs`) switched a tree to its real leaves by its
+distance alone. Where the tree's chunk mesh wasn't drawn (a theater camera farther than `theaterViewpointMaxM` from
+the body, as in the clip, 20 km away; a chunk not streamed or meshed yet in a fast flight), the ground there was the
+LOD's, which holds no trees while the impostors draw, so the impostor faded out over nothing. Not the held clock.
+
+**Fixed:** a tree switches to its real leaves only once the chunk under its trunk (`ground_chunk`) is held by the
+renderer and drawn (the LOD's `chunk_fade`), and stays (or goes back to) its impostor otherwise, each switch the same
+timed fade. Tests (both faces): `tree_fade` `a_near_tree_stays_its_impostor_until_its_mesh_is_drawn` (red before:
+the share was the real tree's with no mesh) and `a_trees_ground_chunk_holds_the_cell_under_its_foot`.
+
 ### 171. Torches without their tops or bottoms: a flame with no stick, a stick with no flame
 
 Owner, 2026-11-14: "A bug: the torches sometimes are placed by me or the generator without their tops or bottoms, it

@@ -1088,7 +1088,11 @@ the canvas in real time, or **frame-exact** path takes (the path stepped one fra
 local world's worker stops its real-time clock and steps exactly each frame's ticks (`clock`/`step` messages,
 `LocalCore::step_ticks`), the client's clock is held and set from the frame count (`step_clock` behind
 `telemetry::now_ms`), each frame waits for the view to load, and the sound is stepped with the frames (the
-AudioContext suspended between them, plays scheduled at their frame's time). The
+AudioContext suspended between them, plays scheduled at their frame's time). Before a take the **camera
+clearance check** (THEATER_MODE.md §6.2, `src/theater/clearance.ts`, `dwell-client` `camera_clearance`) samples the
+path every 0.05 s and probes each eye against the solid blocks within 0.3 m (on a local world in its worker,
+`LocalCore::camera_clearance`, chunks generated as needed; else the client's loaded chunks); a path through solid
+ground fails the take unless it allows clipping. The
 host's `theaterGuests` world setting (`WorldSettings` 0x87) turns the mode off for guests; the host (the loopback
 session or an op) always may, and the server ignores a guest's viewpoint while it is off.
 

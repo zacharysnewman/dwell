@@ -12,6 +12,26 @@
       ]
     },
     {
+      "version": "0.68.3",
+      "changes": [
+        "Trees no longer vanish as you fly close: a tree keeps its far look until its real one is ready, then fades to it",
+        "A dynamite blast's flung pieces move smoothly on every frame instead of standing still between updates"
+      ]
+    },
+    {
+      "version": "0.68.2",
+      "changes": [
+        "Recordings: a cinematic take renders a camera path offline, one exact frame at a time: the world and the camera move exactly one frame's time per frame however long it takes to draw, and each frame waits for the view to finish loading.",
+        "Cinematic takes fly the path once first to load what they will see, draw at a higher quality, and step the game's sound with the frames so every sound lands on its frame."
+      ]
+    },
+    {
+      "version": "0.68.1",
+      "changes": [
+        "Recordings: a camera path that passes through the ground now fails before it records, naming where and how far to lift it (a deliberate shot can allow it)."
+      ]
+    },
+    {
       "version": "0.68.0",
       "changes": [
         "A new compatibility line for Realistic worlds: their ground redrawn from the seed",

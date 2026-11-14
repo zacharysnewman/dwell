@@ -2487,6 +2487,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** the side-by-side clips — the cinematic halves with no LOD pop-in, no physics stutter, smooth
    camera at a steady 30 fps, sound on the frames it belongs to.
 
+   **Two bugs in the cinematic clips (owner, 2026-11-14):** "A couple bugs in those recordings I see. Trees were
+   disappearing when getting close. And the dynamite one still looks low framerate, probably a physics framerate issue
+   not view?" BUGS.md #172 (trees) and #173 (the blast). Both in live play too, not only the cinematic takes: a tree
+   handed over from its impostor to its real leaves by distance alone, also where its chunk's mesh wasn't drawn (the
+   theater camera far from the body, a chunk not streamed yet); the blast's pieces reached the client a few dozen a
+   snapshot and, once the local world's server had dropped time, were drawn past their newest poses and stood still
+   between snapshots (one frame in three at 30 fps). Re-rendered: `a_forest_flyover-cinematic-v2.mp4`,
+   `b_dynamite_blast-cinematic-v2.mp4`.
+   **Owner should see:** flying close over a forest, every tree stays drawn (its far look until its real one is
+   ready, then a short fade to it); the dynamite's flung pieces moving on every frame, smooth in the air, in the
+   cinematic clip and in play.
+   **The camera through a wall (owner, 2026-11-14):** "That flyover video goes straight through a wall. Not a big deal
+   since you're just showing something but that shouldn't be included in most recordings." The forest fly-over's path
+   ends inside a hill (8.35–10 s). Built: a camera clearance check (THEATER_MODE.md §6.2, the record skill's §0f):
+   every path shot's eye sampled every 0.05 s and probed against the world's solid blocks within 0.3 m (the local
+   world's own voxels, generated as needed; data in `shared/theater/cinematic.json` `clearance`); a path through
+   solid ground fails the take with the times, positions and the lift that clears it, unless the shot sets
+   `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
+   four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
+   unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
+
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
    lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a

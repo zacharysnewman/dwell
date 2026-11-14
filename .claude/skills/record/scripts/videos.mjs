@@ -18,7 +18,7 @@ const KEYS = {
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
   splice: ['fade', 'fadeIn', 'crf', 'gainDb'],
-  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice', 'render', 'cinematic'],
+  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice', 'render', 'cinematic', 'allowClipping'],
   setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'settleS', 'eval'],
   part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio', 'crop'],
 };
@@ -97,6 +97,8 @@ export function validate(m, base = SKILL) {
     if (s.render !== undefined && !RENDERS.includes(s.render)) errs.push(`${at}.render: expected one of ${RENDERS.join(', ')}, got ${JSON.stringify(s.render)}`);
     if (s.render === 'cinematic' && s.kind !== 'path') errs.push(`${at}.render: "cinematic" renders a path shot only`);
     if (s.cinematic !== undefined && (!obj(s.cinematic) || s.render !== 'cinematic')) errs.push(`${at}.cinematic: an object of settings overrides, on a "cinematic" shot only`);
+    // allowClipping: a deliberate shot through solid ground (the clearance check, THEATER_MODE.md §6.2, reports it but doesn't fail)
+    if (s.allowClipping !== undefined && (typeof s.allowClipping !== 'boolean' || s.kind !== 'path')) errs.push(`${at}.allowClipping: true or false, on a "path" shot only`);
     if (s.args !== undefined && (s.kind !== 'take' || !obj(s.args))) errs.push(`${at}.args: an object, on a "take" shot only`);
     if (s.setup !== undefined && keys(s.setup, 'setup', `${at}.setup`)) {
       const u = s.setup;

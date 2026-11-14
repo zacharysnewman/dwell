@@ -5233,3 +5233,119 @@ fn holding_forward_at_the_moon_from_home_reaches_it() {
         "no server correction on the way"
     );
 }
+
+/// Blows dynamite 17 m from the player on the flat world, after the server has dropped `stall_ms`
+/// of the client's time (a local world's worker busy past its catch-up cap, `LocalCore::advance`),
+/// then draws 45 frames of 2 server ticks each (a cinematic take at 30 fps): the piece-frames in
+/// the air (the server moved the piece over the frame), and per frame those drawn where they were
+/// the frame before.
+fn blast_at_30_fps(stall_ms: f64) -> (usize, Vec<(usize, usize)>) {
+    use dwell_world::explosives::{EXPLOSIVES, lit_state};
+    let mut rig = Rig::with_generator(dwell_world::GENERATOR_FLAT);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.run_until(60, |_| false);
+    // The server drops the stall (it steps no catch-up), then runs on at the clock's rate.
+    rig.now += stall_ms;
+    rig.run_until(120, |_| false);
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let e = *EXPLOSIVES
+        .iter()
+        .find(|e| e.name == "dwell:dynamite")
+        .unwrap();
+    let c = dwell_world::cell_of_pos([feet[0] + 14.0, feet[1] - 0.25, feet[2] + 10.0]);
+    rig.core
+        .server()
+        .world()
+        .set_voxel(c[0], c[1], c[2], lit_state(&e).unwrap());
+    rig.core.server().light_fuse(c, 0, 0.0);
+    let drawn = |rig: &Rig| -> std::collections::HashMap<u32, [f64; 3]> {
+        rig.scene
+            .borrow()
+            .poses
+            .iter()
+            .map(|p| (p.0, p.1))
+            .collect()
+    };
+    let truth = |rig: &mut Rig, ids: &[u32]| -> std::collections::HashMap<u32, [f64; 3]> {
+        ids.iter()
+            .filter_map(|&id| Some((id, rig.core.server().body_pose(id)?.0.to_array())))
+            .collect()
+    };
+    for _ in 0..12 {
+        rig.slow_frame(2);
+    }
+    let mut last = drawn(&rig);
+    let ids: Vec<u32> = last.keys().copied().collect();
+    // The server's poses, a frame each, newest last.
+    let mut history = vec![truth(&mut rig, &ids)];
+    let moved =
+        |a: &[f64; 3], b: &[f64; 3]| (0..3).map(|k| (a[k] - b[k]).abs()).fold(0.0, f64::max);
+    // Drawn `INTERP_DELAY_MS` (100 ms, 3 frames) behind: a piece is in the air for the frame when
+    // the server moved it over each of the last 4 frames.
+    let back = 4;
+    let (mut flying, mut frozen) = (0usize, Vec::new());
+    for f in 0..45 {
+        rig.slow_frame(2);
+        let now = drawn(&rig);
+        history.push(truth(&mut rig, &ids));
+        let mut still = 0;
+        for (id, p) in &now {
+            let Some(a) = last.get(id) else {
+                continue;
+            };
+            let air = history.len() > back
+                && history[history.len() - 1 - back..].windows(2).all(|w| {
+                    matches!((w[0].get(id), w[1].get(id)), (Some(t0), Some(t1)) if moved(t0, t1) > 0.02)
+                });
+            if air {
+                flying += 1;
+                still += usize::from(moved(a, p) == 0.0);
+            }
+        }
+        if still > 0 {
+            frozen.push((f, still));
+        }
+        last = now;
+    }
+    (flying, frozen)
+}
+
+/// The cinematic dynamite take looked low framerate (owner, 2026-11-14: "the dynamite one still
+/// looks low framerate, probably a physics framerate issue not view?"; BUGS.md #173): of a blast's
+/// pieces in the air, a datagram carried a few dozen a snapshot, so most were drawn past their
+/// newest pose and stood still there until their next. A local world's own player gets them all.
+/// face-a-only: timing of the drawn poses, no up or down.
+#[test]
+fn a_blasts_flung_pieces_move_every_frame_at_30_fps() {
+    let (flying, frozen) = blast_at_30_fps(0.0);
+    assert!(
+        flying > 500,
+        "the blast flung pieces: {flying} piece-frames in the air"
+    );
+    assert!(
+        frozen.is_empty(),
+        "of {flying} piece-frames in the air, (frame, drawn still): {frozen:?}"
+    );
+}
+
+/// BUGS.md #173 too: once the local world's server had dropped time (its worker busy past the
+/// catch-up cap), the pieces' clock kept the old, smaller delay for minutes (it drifted up 1 ms a
+/// second), so every piece was drawn past its newest pose and moved only on frames a snapshot
+/// came: with 2 ticks a frame and a snapshot every 3, one frame in three held still.
+/// face-a-only: timing of the drawn poses, no up or down.
+#[test]
+fn after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame() {
+    let (flying, frozen) = blast_at_30_fps(700.0);
+    assert!(
+        flying > 500,
+        "the blast flung pieces: {flying} piece-frames in the air"
+    );
+    assert!(
+        frozen.is_empty(),
+        "of {flying} piece-frames in the air, (frame, drawn still): {frozen:?}"
+    );
+}
