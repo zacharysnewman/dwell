@@ -56,6 +56,7 @@ export class LoopbackTransport implements Transport {
   private readonly reports: ((report: string | null) => void)[] = [];
   private readonly mapFinds: ((result: string | null) => void)[] = [];
   private readonly lavaAnswers: ((result: string | null) => void)[] = [];
+  private readonly steps: ((tick: number | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -181,6 +182,26 @@ export class LoopbackTransport implements Transport {
   }
 
   /**
+   * A cinematic take holds the world's real-time clock (THEATER_MODE.md §6.1): while held, the
+   * world moves only by `step`.
+   */
+  holdClock(on: boolean): void {
+    if (!this.closed) this.post({ t: 'clock', manual: on });
+  }
+
+  /**
+   * Steps exactly `ticks` server ticks; resolves with the server's tick once their output has
+   * arrived (null once the transport is closed).
+   */
+  step(ticks: number): Promise<number | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.steps.push(resolve);
+      this.post({ t: 'step', ticks });
+    });
+  }
+
+  /**
    * The host switches the world's game mode (ADR 0065); resolves with the mode the world is in
    * after it (the old one if the name was refused, or once the transport is closed).
    */
@@ -235,6 +256,7 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
     for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
+    for (const resolve of this.steps.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
     for (const resolve of this.retuneWaits.splice(0)) resolve({ maps: [], error: message });
     this.handlers?.onClose({ message });
@@ -277,6 +299,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'lavaDev':
         this.lavaAnswers.shift()?.(msg.result);
+        break;
+      case 'stepped':
+        this.steps.shift()?.(msg.tick);
         break;
       case 'memory':
         this.heapBytes = msg.bytes;

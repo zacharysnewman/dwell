@@ -59,6 +59,11 @@ export class AudioEngine {
   /** The latest plays' ids, newest last (the `window.__dwell.sounds()` debug hook). */
   readonly recent: string[] = [];
   private hidden = false;
+  /**
+   * A cinematic take's clock (THEATER_MODE.md §6.1): sounds are scheduled at its time, not the
+   * context's, and only the take resumes and suspends the context (it steps it by the frames).
+   */
+  private takeClock: (() => number) | null = null;
   /** The recorded samples (AUDIO.md §2b), decoded on the first gesture. */
   readonly samples = new SampleBank<AudioBuffer>(mulberry32((Date.now() & 0xffff) + 7));
 
@@ -80,10 +85,33 @@ export class AudioEngine {
       doc.addEventListener(type, unlock, { capture: true, passive: true });
     doc.addEventListener('visibilitychange', () => {
       this.hidden = doc.visibilityState === 'hidden';
-      if (!this.ctx) return;
+      if (!this.ctx || this.takeClock) return;
       if (this.hidden) void this.ctx.suspend().catch(() => undefined);
       else void this.ctx.resume().catch(() => undefined);
     });
+  }
+
+  /** The time sounds are scheduled at: the context's, or a cinematic take's. */
+  private time(ctx: BaseAudioContext): number {
+    return this.takeClock?.() ?? ctx.currentTime;
+  }
+
+  /**
+   * A cinematic take holds the audio clock (`clock` the take's time on the context's timeline,
+   * kept at or ahead of the context's own) or releases it (null). While held, nothing else
+   * resumes or suspends the context. Returns the context (started if it can be), or null.
+   */
+  holdClock(clock: (() => number) | null): AudioContext | null {
+    this.unlock();
+    this.takeClock = clock;
+    return this.ctx;
+  }
+
+  /** Taps the mix (effects and ambience by default) into `dest`, a node of this context. */
+  tapInto(dest: AudioNode, o: TapOptions = {}): { buses: string[]; close(): void } | null {
+    if (!this.mixer) return null;
+    const tap = this.mixer.tap(dest, tapBuses(o));
+    return { buses: [...tap.buses], close: () => { tap.close(); } };
   }
 
   /** Creates or resumes the context; must run in a user gesture the first time. */
@@ -112,7 +140,7 @@ export class AudioEngine {
         this.loadSamples(ctx);
       }
       // 'interrupted' (iOS, after a call or another app's audio) resumes the same way.
-      if (this.ctx.state !== 'running' && !this.hidden)
+      if (this.ctx.state !== 'running' && !this.hidden && !this.takeClock)
         void this.ctx.resume().catch(() => undefined);
     } catch {
       // No audio on this page: everything else still works.
@@ -131,7 +159,8 @@ export class AudioEngine {
   }
 
   get running(): boolean {
-    return this.ctx?.state === 'running';
+    // A cinematic take suspends the context between frames: it counts as running.
+    return this.ctx?.state === 'running' || (this.ctx !== null && this.takeClock !== null);
   }
 
   private readonly whenRunning: (() => void)[] = [];
@@ -143,7 +172,8 @@ export class AudioEngine {
   }
 
   private notifyRunning(): void {
-    if (!this.running) return;
+    // A cinematic take's steps resume the context every frame: not a start.
+    if (!this.running || this.takeClock) return;
     for (const fn of this.whenRunning) fn();
   }
 
@@ -162,7 +192,7 @@ export class AudioEngine {
       source.connect(gain);
       gain.connect(mixer.music);
       return (level) => {
-        gain.gain.setTargetAtTime(level, ctx.currentTime, 0.05);
+        gain.gain.setTargetAtTime(level, this.time(ctx), 0.05);
       };
     } catch {
       return null;
@@ -207,7 +237,7 @@ export class AudioEngine {
   /** The eye under a fluid's surface or not (§3a): the world's buses muffle or open. */
   setUnderwater(under: boolean): void {
     const { ctx, mixer } = this;
-    if (ctx && mixer) mixer.setUnderwater(under, ctx.currentTime);
+    if (ctx && mixer) mixer.setUnderwater(under, this.time(ctx));
   }
 
   /** The camera: position, forward and up (unit vectors). */
@@ -250,7 +280,7 @@ export class AudioEngine {
     if (!ctx || !mixer || !noise || !sound || this.hidden || ctx.state === 'closed') return false;
     const at = req.at ?? null;
     if (at && distance(at, this.listener) > MAX_DISTANCE) return false;
-    const now = ctx.currentTime;
+    const now = this.time(ctx);
     while (this.ends.length && (this.ends[0] ?? 0) <= now) this.ends.shift();
     if (this.ends.length >= MAX_VOICES) return false;
     if (!this.perSound.admit(id, sound, now)) return false;
@@ -317,7 +347,7 @@ export class AudioEngine {
       input,
       sound,
       params,
-      ctx.currentTime + 0.005,
+      this.time(ctx) + 0.005,
       req.intensity ?? 1,
       {
         ...(req.gain !== undefined ? { gain: req.gain } : {}),
@@ -333,7 +363,7 @@ export class AudioEngine {
   updateLoop(voice: string, intensity: number, at: Vec3 | null = null): boolean {
     const l = this.loops.get(voice);
     if (!l || !this.ctx) return false;
-    l.voice.set(intensity, this.ctx.currentTime);
+    l.voice.set(intensity, this.time(this.ctx));
     if (l.panner && at) setPosition(l.panner, at);
     return true;
   }
@@ -342,7 +372,7 @@ export class AudioEngine {
   stopLoop(voice: string): void {
     const l = this.loops.get(voice);
     if (!l || !this.ctx) return;
-    l.voice.stop(this.ctx.currentTime);
+    l.voice.stop(this.time(this.ctx));
     this.loops.delete(voice);
   }
 
@@ -353,7 +383,9 @@ export class AudioEngine {
   readonly bedOutput = {
     start: (id: string, files: string[]): boolean => {
       const { ctx, mixer } = this;
-      if (!ctx || !mixer || this.hidden || ctx.state !== 'running') return false;
+      // A cinematic take's context is suspended between frames: its beds start all the same.
+      if (!ctx || !mixer || this.hidden || (ctx.state !== 'running' && !this.takeClock))
+        return false;
       const ready = files.filter((f) => this.samples.get(f));
       const file = ready[Math.floor(Math.random() * ready.length)];
       const buffer = file === undefined ? undefined : this.samples.get(file);
@@ -366,18 +398,18 @@ export class AudioEngine {
       src.connect(gain);
       gain.connect(mixer.ambience);
       // A random start point: two beds from one recording never line up.
-      src.start(ctx.currentTime + 0.01, Math.random() * buffer.duration);
+      src.start(this.time(ctx) + 0.01, Math.random() * buffer.duration);
       this.beds.set(id, { src, gain });
       return true;
     },
     level: (id: string, gain: number, fadeS: number): void => {
       const b = this.beds.get(id);
-      if (b && this.ctx) b.gain.gain.setTargetAtTime(gain, this.ctx.currentTime, fadeS);
+      if (b && this.ctx) b.gain.gain.setTargetAtTime(gain, this.time(this.ctx), fadeS);
     },
     stop: (id: string, fadeS: number): void => {
       const b = this.beds.get(id);
       if (!b || !this.ctx) return;
-      const now = this.ctx.currentTime;
+      const now = this.time(this.ctx);
       b.gain.gain.setTargetAtTime(0, now, fadeS);
       b.src.stop(now + fadeS * 5);
       this.beds.delete(id);

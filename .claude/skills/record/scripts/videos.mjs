@@ -18,11 +18,13 @@ const KEYS = {
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
   splice: ['fade', 'fadeIn', 'crf', 'gainDb'],
-  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice'],
+  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice', 'render', 'cinematic'],
   setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'settleS', 'eval'],
   part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio', 'crop'],
 };
 const KINDS = { path: 'path', take: 'script' };
+/** How a shot is rendered: in real time (the screencast) or offline, frame-exact (`__dwell.cinematic`). */
+export const RENDERS = ['realtime', 'cinematic'];
 
 /** Throws with every problem in the manifest (unknown keys, missing files, bad times), or returns it. */
 export function validate(m, base = SKILL) {
@@ -90,6 +92,11 @@ export function validate(m, base = SKILL) {
       }
     }
     if (s.audio !== undefined && typeof s.audio !== 'boolean') errs.push(`${at}.audio: expected true or false`);
+    // render: "cinematic" renders the path offline, frame-exact (THEATER_MODE.md §6.1, __dwell.cinematic); `cinematic`
+    // overrides shared/theater/cinematic.json's settings for the shot
+    if (s.render !== undefined && !RENDERS.includes(s.render)) errs.push(`${at}.render: expected one of ${RENDERS.join(', ')}, got ${JSON.stringify(s.render)}`);
+    if (s.render === 'cinematic' && s.kind !== 'path') errs.push(`${at}.render: "cinematic" renders a path shot only`);
+    if (s.cinematic !== undefined && (!obj(s.cinematic) || s.render !== 'cinematic')) errs.push(`${at}.cinematic: an object of settings overrides, on a "cinematic" shot only`);
     if (s.args !== undefined && (s.kind !== 'take' || !obj(s.args))) errs.push(`${at}.args: an object, on a "take" shot only`);
     if (s.setup !== undefined && keys(s.setup, 'setup', `${at}.setup`)) {
       const u = s.setup;
@@ -167,6 +174,8 @@ export function fingerprint(m, shot, base = SKILL) {
   const recipe = {
     world: m.world, capture: { ...m.capture, ...shot.capture }, kind: shot.kind, args: shot.args ?? null,
     setup: shot.setup ?? null, file: readFileSync(resolve(base, file), 'utf8'), audio: shotAudio(m, shot),
+    // only when set, so a real-time shot's fingerprint (its cached clip) is what it was before cinematic takes
+    ...(shot.render ? { render: shot.render, cinematic: shot.cinematic ?? null } : {}),
   };
   return createHash('sha256').update(JSON.stringify(recipe)).digest('hex').slice(0, 16);
 }

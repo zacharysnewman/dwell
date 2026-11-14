@@ -247,8 +247,14 @@ pub fn count(name: &'static str, n: f64) {
     with(|t| t.count(name, n));
 }
 
-/// A monotonic clock in milliseconds: `performance.now()` in the browser.
+/// A monotonic clock in milliseconds: `performance.now()` in the browser, unless a cinematic take
+/// holds the stepped clock (`step_clock`).
 pub fn now_ms() -> f64 {
+    crate::step_clock::at(wall_ms())
+}
+
+/// The wall clock in milliseconds: `performance.now()` in the browser.
+pub fn wall_ms() -> f64 {
     #[cfg(target_arch = "wasm32")]
     {
         web_sys::window()

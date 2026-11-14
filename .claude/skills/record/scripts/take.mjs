@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SKILL, aspectsOf, clipPath, fingerprint, loadVideo, metaPath, selectShots, shotAudio, splicePlan } from './videos.mjs';
 import { renderTitle } from './title.mjs';
-import { audioAlignment, encodeArgs } from './audio.mjs';
+import { audioAlignment, cinematicEncodeArgs, encodeArgs } from './audio.mjs';
 
 const DRIVER = `http://localhost:${process.env.RECORD_PORT || 4999}`;
 const REPO = resolve(SKILL, '../../..');
@@ -49,6 +49,7 @@ function args(argv) {
     else if (a === '--aspect') o.aspect = argv[++i];
     else if (a === '--dry-run') o.dryRun = true;
     else if (a === '--keep') o.keep = true;
+    else if (a === '--no-splice') o.noSplice = true;
     else if (a === '--clean') o.clean = true;
     else if (a === '--cache') o.cache = resolve(argv[++i]);
     else if (a === '--base') o.base = argv[++i].replace(/\/$/, '');
@@ -172,6 +173,7 @@ async function recordShot(m, shot, o, state) {
     ${s.eval ? `await (${s.eval});` : ''} return 'setup'; })()`);
   let log = '', started = '';
   const sound = shotAudio(m, shot) ? '&audio=1' : '';
+  if (shot.render === 'cinematic') return recordCinematic(m, shot, size, s);
   if (shot.kind === 'path') {
     const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
     const hold = { formatVersion: 1, keyframes: [{ ...path.keyframes[0], t: 0 }, { t: 1000 }], segments: [{ move: 'cut' }] };
@@ -193,6 +195,36 @@ async function recordShot(m, shot, o, state) {
   console.log(`  ${shot.id}: ${stats.frames} frames, ${stats.seconds.toFixed(1)} s, ${stats.fps.toFixed(1)} fps — ${log}`);
   // an attached driver (started by hand) writes its frames under its own folder: the reply names it
   return { stats, log, frames: /^"?recording (\S+)/.exec(started)?.[1] ?? null };
+}
+
+/**
+ * A cinematic shot (THEATER_MODE.md §6.1): `__dwell.cinematic` renders the path offline — the game stepped
+ * 1/fps a frame, each frame settled, a pre-roll first — and the driver's sink writes its PNG frames and the
+ * stepped sound (audio.wav) to raw/<shot>/. No warm hold or settle wait here: the take's pre-roll does both.
+ */
+async function recordCinematic(m, shot, size, s) {
+  const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
+  const started = await post(`/cine/start?name=${shot.id}`); console.log(' ', started);
+  const settings = { ...(shot.cinematic ?? {}), ...(shotAudio(m, shot) ? {} : { audio: { on: false } }) };
+  const report = JSON.parse(await post('/eval', `(async () => { d.theater('hud', { shown: false });
+    return JSON.stringify(await d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)} })); })()`));
+  const r = typeof report === 'string' ? JSON.parse(report) : report;
+  const a = r.audio;
+  console.log(`  ${shot.id}: ${r.frames} frames (${r.seconds.toFixed(2)} s at ${r.fps} fps) in ${r.wallS.toFixed(0)} s (pre-roll ${r.prerollS.toFixed(0)} s);`
+    + ` settle mean ${r.settle.meanMs.toFixed(0)} ms, p95 ${r.settle.p95Ms.toFixed(0)}, max ${r.settle.maxMs.toFixed(0)}, capped ${r.settle.capped.length ? r.settle.capped.join(',') : 'none'};`
+    + ` ${r.ticks} ticks` + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}` : '; silent'));
+  const dir = /^"?cinematic (\S+?)"?$/.exec(started.trim())?.[1] ?? null;
+  return { stats: { frames: r.frames, seconds: r.seconds, fps: r.fps }, log: r, frames: dir, cinematic: { fps: r.fps } };
+}
+
+/** A cinematic folder → its clip: the PNG frames at the take's exact rate, its stepped sound muxed as is. */
+export function encodeCinematic(dir, out, fps) {
+  const tmp = out.replace(/\.mp4$/, '.part.mp4');
+  const wav = existsSync(join(dir, 'audio.wav')) ? join(dir, 'audio.wav') : null;
+  const r = spawnSync('ffmpeg', cinematicEncodeArgs({ frames: dir, fps, out: tmp, wav }), { stdio: 'inherit' });
+  if (r.status !== 0) throw new Error(`ffmpeg failed encoding ${dir}`);
+  renameSync(tmp, out);
+  return { frames: readdirSync(dir).filter((f) => f.endsWith('.png')).length, rate: fps, audio: wav ? 0 : null };
 }
 
 async function main() {
@@ -228,9 +260,10 @@ async function main() {
         const shot = m.shots.find((s) => s.id === p.id);
         const t0 = Date.now();
         console.log(`— ${shot.id}: ${shot.note ?? shot.kind}`);
-        const { stats, log, frames: dirFromDriver } = await recordShot(m, shot, o, state);
+        const { stats, log, frames: dirFromDriver, cinematic } = await recordShot(m, shot, o, state);
         const frames = dirFromDriver ?? join(raw, shot.id);
-        const enc = encodeClip(frames, clipPath(o.cache, m, shot.id), { fps: shot.capture?.fps });
+        const enc = cinematic ? encodeCinematic(frames, clipPath(o.cache, m, shot.id), cinematic.fps)
+          : encodeClip(frames, clipPath(o.cache, m, shot.id), { fps: shot.capture?.fps });
         for (const f of [frames, frames + '.webm', frames + '.audio.json']) rmSync(f, { recursive: true, force: true });
         writeFileSync(metaPath(o.cache, m, shot.id), JSON.stringify({ fingerprint: fingerprint(m, shot), frames: enc.frames,
           fps: enc.rate, seconds: stats.seconds, audioOffsetS: enc.audio, log, recordedAt: new Date().toISOString(),
@@ -242,6 +275,7 @@ async function main() {
       rmSync(raw, { recursive: true, force: true });
     }
   }
+  if (o.noSplice) return console.log(`clips in ${dir} (no splice: --no-splice)`);
   for (const [n, splice] of splices.entries()) {
     const aspect = aspects[n];
     if (splice.titleCard) console.log('title', JSON.stringify(await renderTitle(m.title.text, splice.titleCard.image, splice.titleCard.widthPx)));

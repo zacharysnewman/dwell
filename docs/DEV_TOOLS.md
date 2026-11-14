@@ -430,6 +430,11 @@ independently. Use it for cinematic moves instead of per-frame `placeCamera` scr
   promise of `{ bytes (base64), mime, width, height }`: the in-game recorder (MediaRecorder on the canvas, resized
   to the take; MP4 on Chrome) records while the path plays and ends with it; without a path, `'endTake'` ends it.
   Real time: a slow page records fewer frames (the screencast route of the record skill is frame-exact).
+- **A cinematic take** (`__dwell.cinematic({ path, size: [w, h], settings })`, THEATER_MODE.md §6.1): the path
+  rendered offline — the local world stepped 1/fps a frame, the client's clock held, each frame settled, a pre-roll
+  first, supersampled PNG frames and the frame-exact sound (`audio.wav`) handed to `window.__dwellRecSink` (the
+  record driver's `/cine/start?name=`) — resolving with a report: frames, render time, the settle waits and capped
+  frames, the ticks, the sound's alignment. Settings: `shared/theater/cinematic.json`.
   `audio: true` adds the game's sound (effects and ambience, never the music).
 - **The recording tap** (`__dwell.audioTap({ music: false })` → `{ stream, buses, close }` or null): the game's mix as
   a MediaStream, effects and ambience by default (`music`/`ui: true` to include those buses), on a parallel graph so

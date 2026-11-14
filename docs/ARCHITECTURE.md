@@ -1083,7 +1083,12 @@ docked on a desktop and a bottom or side sheet on a phone (`layout.ts`), worked 
 camera (keys, mouse drag, sticks, a phone's stick and Up/Down buttons, `touch.ts`), presets and keyframes, a
 creature or NPC picked to follow by id (`Client.theaterSubjects`), the path store, and recording: MediaRecorder on
 the canvas in real time, or **frame-exact** path takes (the path stepped one frame of the rate per drawn frame,
-`Client.theaterExact`/`theaterAdvance`; the canvas encoded by WebCodecs and written as WebM by `webm.ts`). The
+`Client.theaterExact`/`theaterAdvance`; the canvas encoded by WebCodecs and written as WebM by `webm.ts`), and
+**cinematic takes** (THEATER_MODE.md §6.1, `src/theater/cinematic.ts`, settings in `shared/theater/cinematic.json`): the
+local world's worker stops its real-time clock and steps exactly each frame's ticks (`clock`/`step` messages,
+`LocalCore::step_ticks`), the client's clock is held and set from the frame count (`step_clock` behind
+`telemetry::now_ms`), each frame waits for the view to load, and the sound is stepped with the frames (the
+AudioContext suspended between them, plays scheduled at their frame's time). The
 host's `theaterGuests` world setting (`WorldSettings` 0x87) turns the mode off for guests; the host (the loopback
 session or an op) always may, and the server ignores a guest's viewpoint while it is off.
 

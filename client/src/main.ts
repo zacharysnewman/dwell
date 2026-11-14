@@ -161,6 +161,14 @@ import { THEATER } from './theater/config';
 import { TheaterMode } from './theater/mode';
 import type { PathJson } from './theater/keyframes';
 import { PathStore } from './theater/store';
+import {
+  runCinematic,
+  type CinematicHost,
+  type CinematicReport,
+  type CinematicTakeOptions,
+  type ViewState,
+} from './theater/cinematic';
+import { startCinematicAudio } from './theater/cinematicAudio';
 import gamepadData from '../../shared/input/gamepad.json';
 
 type Vec3 = [number, number, number];
@@ -305,6 +313,13 @@ interface DwellDebug {
    * path, `endTake` ends it. `audio: true` adds the game's sound (effects and ambience, no music).
    */
   theaterMode(op: string, args?: Record<string, unknown>): unknown;
+  /**
+   * A cinematic take (THEATER_MODE.md §6.1, the record skill's `render: "cinematic"`): the path
+   * rendered offline, frame-exact — the game stepped 1 / fps a frame, each frame settled, PNG frames
+   * and the stepped sound (`audio.wav`) handed to `window.__dwellRecSink` (the driver's). Resolves
+   * with the take's report (render time, settle waits, capped frames, the sound's alignment).
+   */
+  cinematic(opts: CinematicTakeOptions): Promise<CinematicReport>;
   /**
    * The game's mix as a MediaStream for a recording (the record skill's driver, theater mode's takes):
    * effects and ambience by default, the music and UI buses only if asked (`{ music: true }`), on a
@@ -630,6 +645,8 @@ interface DwellTools {
 declare global {
   interface Window {
     __dwell?: DwellDebug;
+    /** The record skill's driver: receives a cinematic take's files (base64). */
+    __dwellRecSink?: (file: string, base64: string) => Promise<void>;
     __dwellTools?: DwellTools;
     /** The loading screen's stages so far (§6.3; docs/DEV_TOOLS.md): when each began and ended. */
     __dwellStages?: () => StageRun[];
@@ -1090,6 +1107,15 @@ async function start(): Promise<App | null> {
   };
   new ResizeObserver(resize).observe(canvas);
   resize();
+  // A cinematic take (theater/cinematic.ts): the held clock the frame loop draws at, and the
+  // frames it waits for (each resolved right after the draw, its capture run in the same task).
+  const cine: {
+    clockMs: number | null;
+    waiters: {
+      capture: ((c: HTMLCanvasElement) => void) | null;
+      resolve: (drawn: boolean) => void;
+    }[];
+  } = { clockMs: null, waiters: [] };
   loading.setCpuAdapter(client.cpuAdapter());
 
   const app: App = {
@@ -1419,6 +1445,60 @@ async function start(): Promise<App | null> {
   };
   client.flySpeed(loadFlySpeedLevel());
   app.flightSpeed.show(client.flySpeedLevel());
+  const cinematicHost = (): CinematicHost => ({
+    holdClock: (on) => {
+      const ms = client.holdClock(on);
+      cine.clockMs = on ? ms : null;
+      return ms;
+    },
+    stepClockTo: (ms) => {
+      client.stepClockTo(ms);
+      cine.clockMs = ms;
+    },
+    world: app.loopback && {
+      hold: (on) => {
+        app.loopback?.holdClock(on);
+      },
+      step: (ticks) => app.loopback?.step(ticks) ?? Promise.resolve(null),
+    },
+    theaterExact: (on) => {
+      client.theaterExact(on);
+    },
+    theaterAdvance: (dt) => {
+      client.theaterAdvance(dt);
+    },
+    theaterPlay: (json) => {
+      client.theaterPlay(json);
+    },
+    theaterStop: () => {
+      client.theaterStop();
+    },
+    theaterState: () =>
+      client.theaterState() as { time: number; duration: number; finished: boolean } | null,
+    state: () => client.debugState() as ViewState | null,
+    setView: (v) => window.__dwell?.setView(v),
+    setShadows: (q) => window.__dwell?.setShadows(q as ShadowQuality),
+    canvas,
+    canvasSize: (size) => {
+      canvasOverride = size && { width: size[0], height: size[1] };
+      resize();
+    },
+    nextFrame: (capture) =>
+      new Promise((resolve) => {
+        cine.waiters.push({ capture, resolve });
+      }),
+    sink: async (file, bytes) => {
+      const f = window.__dwellRecSink;
+      if (!f)
+        throw new Error('cinematic: no recorder (window.__dwellRecSink; the record skill driver)');
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      await f(file, btoa(bin));
+    },
+    audio: (leadS) => startCinematicAudio(audio(), leadS),
+    wallMs: () => performance.now(),
+  });
   window.__dwell = {
     state: () => client.debugState() as GameDebugState | null,
     press: (code, down) => {
@@ -1475,6 +1555,7 @@ async function start(): Promise<App | null> {
     },
     theater: (op, args) => theaterOp(client, document, op, args),
     theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
+    cinematic: (opts) => runCinematic(cinematicHost(), opts),
     audioTap: (o) => audio().tapStream(o ?? {}),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),
@@ -1631,8 +1712,7 @@ async function start(): Promise<App | null> {
     },
     ecology: () => client.ecology() as EcologyReadout | null,
     impostors: () => client.impostorStatus() as ImpostorStatus,
-    impostorDebug: (mode, ambient, albedo) =>
-      client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1),
+    impostorDebug: (mode, ambient, albedo) => { client.setImpostorDebug(mode, ambient ?? -1, albedo ?? -1); },
     herds: (kind) => client.herds(kind === undefined ? '' : `dwell:${kind}`) as HerdFound[],
     goToHerd: (kind, back) =>
       app.loopback?.lavaDev('goToHerd', [
@@ -1660,7 +1740,7 @@ async function start(): Promise<App | null> {
       Promise.resolve(null),
     spawnNpcs: (n, radius, variant) =>
       app.loopback?.lavaDev('spawnNpcs', [n, radius ?? 3, variant ?? 0]) ?? Promise.resolve(null),
-    cloudExtinction: (extinction) => client.setCloudExtinction(extinction ?? 0),
+    cloudExtinction: (extinction) => { client.setCloudExtinction(extinction ?? 0); },
     plume: (op, args) => {
       const [name, ...nums] = args ?? [];
       return client.plumeDev(op ?? 'list', name ?? '', Float64Array.from(nums));
@@ -1735,7 +1815,9 @@ async function start(): Promise<App | null> {
   const theaterButton =
     gamepadData.buttons.find((b) => b.name === THEATER.gamepadToggle)?.index ?? -1;
   let theaterButtonWas = false;
-  const frame = (now: number): void => {
+  const frame = (rafNow: number): void => {
+    // A cinematic take draws at its held clock, not the animation frame's time.
+    const now = cine.clockMs ?? rafNow;
     const gp = [...navigator.getGamepads()].find((g) => g !== null) ?? null;
     const down = gp?.buttons[theaterButton]?.pressed ?? false;
     if (down && !theaterButtonWas && app.playing && !settings.isOpen) theater.toggle();
@@ -1747,6 +1829,10 @@ async function start(): Promise<App | null> {
     if (!theater.active) pad.poll(now);
     // Only the frames drawn count (one is skipped while the GPU is behind).
     const drawn = client.frame(now);
+    for (const w of cine.waiters.splice(0)) {
+      if (drawn) w.capture?.(canvas);
+      w.resolve(drawn);
+    }
     app.fps.frame(now, drawn);
     theater.afterFrame(drawn);
     handleEvents(app);
