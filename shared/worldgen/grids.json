@@ -90,11 +90,11 @@
       "light": {
         "sunlit": false,
         "bodies": [
-          { "grid": "dwell:home", "albedo": "#7d93a8", "intensity": 0.9, "refDeg": 3.0 },
-          { "grid": "dwell:moon", "albedo": "#a7a7a9", "intensity": 0.35, "refDeg": 1.0 }
+          { "grid": "dwell:home", "albedo": "#7d93a8", "intensity": 6.0, "refDeg": 3.0 },
+          { "grid": "dwell:moon", "albedo": "#a7a7a9", "intensity": 2.0, "refDeg": 1.0 }
         ],
-        "ambient": { "color": "#ff8a4a", "min": 0.06 },
-        "glow": { "color": "#ff5a1e", "intensity": 0.45 }
+        "ambient": { "color": "#ffa476", "min": 1.2 },
+        "glow": { "color": "#ff5a1e", "intensity": 2.5 }
       },
       "capability": "grid.sun",
       "generator": {

@@ -581,6 +581,38 @@ takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs
 `a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
 face +Y, placed on top).
 
+### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13, shot 04c; refinement, owner: "Focus on
+refinement only for now"): at a sun river head (`sunLand {river:true}`) the basalt crust by the lava was nearly black,
+so #145's reflected light from home and the moon barely showed. Cause: tuning. The sun's light rig (grids.json
+`dwell:sun` `light`) gave open ground facing up a luma of 0.076 (an ambient floor 0.06 and the glow 0.45, 0.4 of it
+from the sky), and home and the moon at 0.9 and 0.35. Fix, data only: the floor 1.2 in a softer warm (#ffa476), the
+glow 2.5, home 6.0 and the moon 2.0 (luma 0.88 facing up; the basalt ramp is very dark, #35323a); the lava's own emissive look unchanged. Test:
+`grid_light::the_suns_crust_reads_as_warm_lit_rock_not_black` (both faces; red before at 0.076, green after).
+Shots (before → after, `sunLand {river:true}` on the real GPU): the open crust went from black to dark basalt with its blocks' steps showing, the lava unchanged. **Owner should see:** on the sun, the crust beside the lava reads as dark, warm-lit basalt with
+its blocks' form visible, brighter on the side facing home; the lava as bright as before.
+
+### 160. Theater on a phone in portrait: the flying controls vanish while the bottom sheet is open (fixed after 0.63.10)
+
+Same pass (01b, 390×844): the stick and Up/Down showed in landscape (beside the side sheet) and with the bottom sheet
+collapsed, but a stylesheet rule hid them while it was open, so the camera couldn't be flown while setting keys.
+Fix: they show with the sheet open too, riding just above its top edge (mode.ts `showTouch` sets their `bottom` from
+the sheet's rect, layout.ts `touchBottomOverSheet`, open or collapsed); the sheet's 58 % cap leaves room for the
+stick. Test: panel.test.ts "show above the open sheet at 390×844, their rect clear of it" (red before: the hiding
+rule, no placement). **Owner should see:** on a phone in portrait, theater's stick and Up/Down sit just above the
+open sheet, and flying works while the sheet is open.
+
+### 159. Theater's recording dot is barely visible (fixed after 0.63.10)
+
+Same pass (01d): the REC badge's dot read as a faint pink smudge on a pink pill, and it blinked out (hidden) half of
+every second. Fix (style.css `.tb-rec`): a saturated red dot (#e0201a) ringed in white with a soft red glow, on a
+near-white pill with a red hairline, pulsing gently between 100 % and 60 % opacity (never hidden; no pulse with
+reduced motion). Test: panel.test.ts "shows a saturated red dot that stands out on its pill and never blinks out"
+(the dot's red saturation, ≥ 3:1 contrast on its pill over the glass, its keyframes never hide it or go under 60 %;
+red before). **Owner should see:** while a take records, a clear red dot beside REC and the timer, steady or gently
+pulsing.
+
 ### 158. Villagers' skin reads cold blue-grey with the sun behind them (fixed after 0.63.8)
 
 Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13; refinement, owner: "Focus on refinement only
