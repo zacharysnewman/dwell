@@ -6,6 +6,28 @@ pins it.
 
 ## Open
 
+### 174. On a phone nothing in the inventory answers after opening the bag
+
+Owner, 2026-11-14: "A bug too for mobile, I can't seem to access inventory, after opening bag, nothing is
+intractable." On a touch device the Bag button opens the inventory, but no slot, item or button in it responds to a tap.
+
+**Owner should see:** on a phone, the bag opens the inventory and every slot, item and button in it answers a tap;
+the bag closes it again and the stick, look and buttons work as before.
+
+**Cause:** the touch controls' layer (`#touch-controls`) covers the whole screen (`inset: 0`). While the inventory is
+open its stick and look zones are hidden, but the layer itself was raised over the inventory (`z-index` above
+`--z-widgets`, so the bag button stays on top to close it) and still took every tap: the inventory under it never got
+one. Since the bag button came in (0.52.23). Second, found by the same test: closing the inventory asked for the
+pointer lock (`Panels.lock`, as on a desktop), and where a touch browser grants it (an iPad with a trackpad, Chrome's
+touch emulation) the fingers went to the locked canvas, not the touch controls: no look or stick after closing.
+
+**Fixed:** with the inventory open the layer lets taps through (`pointer-events: none`) but for the bag button
+(`style.css`); and while the touch controls are on screen playing takes no pointer lock (`PanelViews.lockable`).
+Tests: `e2e/touch.spec.ts` "on a phone the bag opens an inventory that answers taps, and closes to working controls"
+(a finger tap at a slot's centre on an iPhone 13 page; red: the slot never selected, the layer took it; with the layer
+fixed, red: no look after closing, the canvas held the lock) and `panels.test.ts` "closing a panel takes no pointer
+lock" (red: a lock request).
+
 ### 173. The dynamite blast looks low framerate: the flung pieces stand still between snapshots
 
 Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "And the dynamite one still looks low framerate,

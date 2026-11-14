@@ -3683,8 +3683,15 @@ body.inventory-open #touch-controls > :not(#touch-bag) {
   display: none;
 }
 
+/* Raised over the inventory for the bag button, the screen-wide layer lets every other tap through to the
+   inventory (BUGS.md #174: it took them all, so nothing in the bag answered on a phone). */
 body.inventory-open #touch-controls {
   z-index: calc(var(--z-widgets) + 1);
+  pointer-events: none;
+}
+
+body.inventory-open #touch-bag {
+  pointer-events: auto;
 }
 
 /* The minimap (ADR 0068; its size from shared/ui/map.json, set as --minimap-size): round, top right, the
