@@ -1031,6 +1031,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
 27. **The moon as a real bifacial world** — **M-7c client built (2026-11-13, branch
+   **Flying to the moon (2026-11-13, BUGS.md #155):** owner: "Also, are you supposed to be able to fly to the moon? I tried
+   for like 8 minutes at max speed and couldn't get there. It didn't seem to get any closer." Fixed on
+   `claude/moon-flight-real`: flight's forward follows the look's pitch, so aiming at the moon and holding W reaches it
+   (~50 s from home's ground, Chrome and natively). Owner should see: aim at the moon, hold W at the top flight speed,
+   arrive in under a minute. Open: 18 server snaps on the browser flight while far flight speeds up.
    `claude/moon-client-m7c-mxftge`):** the game client sets the travel hook (`Game::set_grid_frames`, from the
    session's `grid.frames`), holds only its grid's chunks (dropped at a crossing; the server sends the moon's as
    voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned
@@ -1773,6 +1778,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    own `colours`. Every skin vertex draws the one tone (the neck and jaw had been a ramp darker than the face and
    arms). No eyebrows exist on the Peasant yet (when they do, they take the hair colour). Owner should see: a lineup
    of villagers with natural, consistent skin across face, neck, arms and hands, and hair colours that suit each tone.
+   **Patterns** (owner, 2026-11-13: **"The villagers look good, other than losing the colorful waist of the shirt
+   patterns. I want those back, but cleaner. Also the hat tops have some color artifacts, not just above the brim,
+   those look good. I'm imagining a colorful day of the dead Mexico kind of vibes."**): built on branch
+   `claude/villager-patterns`, see item 43. Owner should see: a festive pattern round each villager's hat and
+   waist, its own per villager, and the clothes chosen to go with it.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2453,6 +2463,20 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the paint vote coloured wood, canvas, brass and leaf). CHARACTERS.md §11.14. Renders before/after at 60 % and
    100 % went to the owner. **Left:** the owner's look at the colours (data in models.json `decor`); at 35 % and
    20 % the waist is long triangles, so the ring is a few facets or none.
+   **Patterns back, cleaner** (owner, 2026-11-13, after the skin tones, #924): **"The villagers look good, other
+   than losing the colorful waist of the shirt patterns. I want those back, but cleaner. Also the hat tops have
+   some color artifacts, not just above the brim, those look good. I'm imagining a colorful day of the dead
+   Mexico kind of vibes."** Cause: the recolour is by part, and the waist ring sat in the shirt part, the band
+   in the hat's, so both took the clothes' colour; the crown above the band kept the pack's brass and bark
+   triangles and the band's tall facets. **Built (branch `claude/villager-patterns`, 2026-11-13):** the rings'
+   places are parts of their own (`pattern_1`..`pattern_4`, decor band `parts`; MAX_REMAP 9), each villager
+   picks a festive pattern by seed from `shared/creatures/patterns.json` (8 Day-of-the-Dead sets of 2-4
+   colours in strict sequence) with clothes bases that pair with it; the crown above the band is filled with
+   the hat's colour (decor `fill`); ordered bands hold whole sequences, no spikes. CHARACTERS.md §11.14.
+   **Owner should see:** villagers with a bright magenta/marigold/turquoise/lime/violet band round the hat
+   and the same pattern round the waist (sides and back), the hat's top one clean colour, the clothes plainer
+   to set the pattern off. **Left:** at 60 % the front of the waist has no short facets, so the ring shows on
+   the sides and back only.
 
 44. **Trees on slopes hang over the edge** (owner 2026-11-12: **"I notice a lot of trees on slopes are hanging out over
    the edge. Perhaps trees should always have flats under them? Don't limit trees to flats, since they might not
