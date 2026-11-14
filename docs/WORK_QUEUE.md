@@ -2084,6 +2084,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    black) and `title` (`scripts/title.mjs` renders the wordmark, the splice fades it in) — tested in `take.test.mjs`;
    the manifest `.claude/skills/record/videos/trailer/` (the draft's shots with their patterns and substitutions in
    each shot's note). Re-take one shot: `take.mjs trailer --only s08`.
+   **v1 recorded (2026-11-13):** ~53 s each cut, 19 parts; the setup, the dynamite place-light-blast, the rise through
+   the clouds to space and the title read well; substitutions (in each shot's note): the hero walk ends high on a
+   slope (no shrine arch), the forest shots moved to the starter's broadleaf slopes (the forest test world drew from
+   the wrong face in the driver), no molten lava (a fresh world's lake is empty: the volcano cone instead), no wolves
+   in frame, the chop, sword, felled log and dynamite chain cut, the montage 5 cuts not 7.
    **Owner should see:** the two cuts (trailer-9x16.mp4, trailer-16x9.mp4) and the shot-by-shot notes; edit the draft
    (or a shot's note in the manifest) where a shot misses, and it re-records alone.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand

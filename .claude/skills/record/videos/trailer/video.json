@@ -123,8 +123,8 @@
    },
    "splice": [
     {
-     "from": 0.4,
-     "to": 5.6
+     "from": 0.2,
+     "to": 3.2
     }
    ]
   },
@@ -450,7 +450,8 @@
     {
      "from": 0.5,
      "to": 1.45,
-     "cut": true
+     "cut": true,
+     "vf": "eq=gamma=1.4"
     }
    ]
   },
@@ -482,65 +483,8 @@
    },
    "splice": [
     {
-     "from": 5.4,
-     "to": 6.4,
-     "cut": true
-    }
-   ]
-  },
-  {
-   "id": "m_chain",
-   "note": "15g. A row of dynamite lit at one end on the meadow: the blasts run along it (the chain reaction; sub: meadow, not a cliff)",
-   "kind": "take",
-   "script": "videos/trailer/trailer_take.js",
-   "args": {
-    "mode": "chain",
-    "start": [
-     10180.5,
-     66,
-     16300.5
-    ],
-    "yaw": 0,
-    "pitch": -35,
-    "timeOfDay": 0.3,
-    "from": [
-     0,
-     0,
-     2
-    ],
-    "to": [
-     0,
-     0,
-     16
-    ],
-    "blastAt": [
-     0,
-     0,
-     9
-    ],
-    "camOff": [
-     20,
-     9,
-     0
-    ],
-    "aimOff": [
-     0,
-     1,
-     0
-    ],
-    "fov": 50,
-    "blastMs": 6000
-   },
-   "setup": {
-    "view": {
-     "clouds": "off",
-     "targetOutline": false
-    }
-   },
-   "splice": [
-    {
-     "from": 4.3,
-     "to": 5.4,
+     "from": 6.0,
+     "to": 7.0,
      "cut": true
     }
    ]
@@ -570,14 +514,15 @@
    "splice": [
     {
      "label": "m_portal_drop",
-     "from": 3.4,
-     "to": 4.3,
-     "cut": true
+     "from": 2.5,
+     "to": 3.4,
+     "cut": true,
+     "vf": "eq=gamma=1.3"
     },
     {
      "label": "m_portal_out",
-     "from": 6.0,
-     "to": 7.0,
+     "from": 5.4,
+     "to": 6.5,
      "cut": true,
      "vf": "eq=gamma=1.5"
     }

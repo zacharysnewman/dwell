@@ -352,3 +352,13 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   track with a limiter (→ −26 dB mean, peaks −0.7 dB). **The target box:** `view: {"targetOutline": false}` in a
   shot's setup (BUGS.md #113 fixed). Timings: the full `take.mjs water` ~4 min; `--only s3` 1 min 52 s; a re-splice
   1 min 15 s.
+- 2026-11-13, the trailer v1 (`videos/trailer/`, 19 parts, ~53 s, two aspects from one square capture; notes per shot in
+  each shot's `note`). **Square 1920×1920 captures** ran 17–59 fps (36 typical) and encoded in 25–60 s a shot; the
+  full first pass of 18 shots took ~25 min, so re-take with `--only`. **Ground heights:** `d.voxel` read 0 everywhere
+  from the driver; `npm run bench -- --warm --spot <spot>` prints each spot's eye and ground ("m over the ground at
+  G") in ~20 s a spot: use it to place cameras. **Wrong-face views:** a camera or player that showed stars below and
+  terrain overhead (the forest test world opened `at=` 18 m over its ground; a teleport into a mesa wall) — open a
+  world above everything and fly down. **Fresh-world lava lakes start empty** (fill with `d.lava('rate', …)` first).
+  **`sunLand` refuses off home** (after `moonLand`): reload between them. **`d.die()`** shows a third-person death
+  camera, then respawns at the nearest shrine's steps (a free shrine shot). The region tool's outline box and a
+  tree in front spoiled the dynamite row: check the line of sight first.
