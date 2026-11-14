@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Dynamite no longer flings tall grass, torches, saplings or ladders as flying pieces: they're simply destroyed, dropping what they would when broken.",
+    "Grass and torches standing on a block that's blown away or falls now go with it instead of floating in the air."
+  ]
+}

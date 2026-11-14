@@ -171,13 +171,26 @@ impl TickChanges {
     /// Sets the cell and records it, with the other cells of a multi-cell block (a torch's upper
     /// part, placed and cleared with it) and what that leaves unsupported (block data
     /// `needsSupport`: tall grass on a broken block goes with it), in the same modification
-    /// (`dwell_world::edit::edit_writes`).
-    fn set_and_unsupport(&mut self, world: &mut VoxelWorld, cell: [i32; 3], material: u16) {
+    /// (`dwell_world::edit::edit_writes`). Returns the attached blocks it removed (block data
+    /// `needsSupport`, [`dwell_world::edit::attached`]), each cell with what was there, for their
+    /// drops.
+    fn set_and_unsupport(
+        &mut self,
+        world: &mut VoxelWorld,
+        cell: [i32; 3],
+        material: u16,
+    ) -> Vec<([i32; 3], u16)> {
         // An air plant never stays flooded (block data `medium`).
         let material = medium_kept(material);
+        let mut removed = Vec::new();
         for (at, m) in edit_writes(world, cell, material) {
+            let was = world.get_voxel(at[0], at[1], at[2]);
+            if was != m && dwell_world::edit::attached(was) {
+                removed.push((at, was));
+            }
             self.set(world, at, m);
         }
+        removed
     }
 
     /// Every changed cell (world cells), in the order they were first changed.
@@ -3522,15 +3535,20 @@ impl Server {
             return;
         }
         let mut collapse = TickChanges::default();
+        // A cell that goes into a piece takes the attached blocks on it (block data
+        // `needsSupport`: tall grass, a torch, a sapling, a ladder): removed, not left floating
+        // (owner, 2026-11-13, BUGS.md #165).
+        let mut removed = Vec::new();
         let new = self.felling.detach(
             &mut self.world,
             &mut self.physics,
             changed,
             settles,
             away_from,
-            &mut |world, cell, m| collapse.set(world, cell, m),
+            &mut |world, cell, m| removed.extend(collapse.set_and_unsupport(world, cell, m)),
         );
         self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
+        self.drop_attached(&removed);
         for i in new {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
@@ -3563,9 +3581,10 @@ impl Server {
         let centre = crate::felling::cell_centre(at);
         let centre_a = centre.to_array();
         // The way out (docs/EXPLOSIVES.md §3): sensed from the cells round it before it clears any.
+        // An attached block (tall grass) is open: the blast removes it.
         let solid_at = |world: &mut VoxelWorld, o: [i32; 3]| {
             let m = world.get_voxel(at[0] + o[0], at[1] + o[1], at[2] + o[2]);
-            m != M.air && !info(m).liquid
+            m != M.air && !info(m).liquid && !dwell_world::edit::attached(m)
         };
         let open = open_dir(e.open_sense_m, |o| solid_at(&mut self.world, o));
         let crack = e.shell == ShellRule::Crack;
@@ -3614,7 +3633,9 @@ impl Server {
         // The cells the core destroys (a cracking shell's roof over them drops).
         let mut destroyed = std::collections::HashSet::new();
         let mut changes = TickChanges::default();
-        changes.set(&mut self.world, at, M.air);
+        // The attached blocks the blast removed (cell, what was there), for their drops.
+        let mut removed = Vec::new();
+        removed.extend(changes.set_and_unsupport(&mut self.world, at, M.air));
         // The shell's breakable cells (cell, state, centre, distance, offset), judged below.
         let mut shell = Vec::new();
         // Out to the loosen radius: past `radius_m` the pieces get no impulse (`fling_speed`'s
@@ -3656,13 +3677,21 @@ impl Server {
             {
                 continue;
             }
+            // An attached block (block data `needsSupport`: tall grass, a torch, a sapling, a
+            // ladder) is never a flung piece: removed, as when broken (owner, 2026-11-13: "It
+            // should just be destroyed if the block under it is moved or destroyed").
+            if dwell_world::edit::attached(m) {
+                let left = if s.flooded { M.water } else { M.air };
+                removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
+                continue;
+            }
             if destroys(&e, d) {
                 let left = if s.flooded && d > e.water_radius_m {
                     M.water
                 } else {
                     M.air
                 };
-                changes.set(&mut self.world, c, left);
+                removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
                 destroyed.insert(c);
             } else {
                 shell.push((c, m, p, d, o));
@@ -3722,11 +3751,13 @@ impl Server {
             } else {
                 M.air
             };
-            changes.set(&mut self.world, c, left);
+            // What stood on it goes, not carried with the piece nor left floating.
+            removed.extend(changes.set_and_unsupport(&mut self.world, c, left));
             flung.push((c, m, p, d, dir));
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
+        self.drop_attached(&removed);
         // The water round it kicked outward (docs/EXPLOSIVES.md §3.5), after the cells it cleared,
         // in the same batch: the grid's own law carries the wave to the banks and back.
         if e.wave_impulse > 0.0 && e.wave_reach_m > 0.0 {
