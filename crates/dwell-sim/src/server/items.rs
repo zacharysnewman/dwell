@@ -66,6 +66,17 @@ impl Server {
         }
     }
 
+    /// The drops of the attached blocks (block data `needsSupport`) a blast or a collapse removed
+    /// with what held them (`cell`, what was there), as if broken, where items are used.
+    pub(super) fn drop_attached(&mut self, removed: &[([i32; 3], StateId)]) {
+        if !self.uses_items() {
+            return;
+        }
+        for &(cell, was) in removed {
+            self.drop_block(was, dwell_world::centre_of_cell(cell));
+        }
+    }
+
     /// A broken leaf of a recorded species tree drops its species' sapling at the species'
     /// `sapling.dropChance` (ADR 0079 S4), rolled with the server's entropy, besides the leaf's own
     /// drops. `cell` is the broken cell (world), `at` where the drop falls from.

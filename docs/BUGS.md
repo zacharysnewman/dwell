@@ -547,6 +547,24 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 157. Dynamite flings tall grass as physics pieces (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Dynamite blows up (physics) tall grass that's wrong. It should just be destroyed if the block
+under it is moved or destroyed."
+
+Cause (`dwell-sim` `Server::blast`): every non-liquid, breakable cell in the shell became a flung one-cell piece,
+tall grass included, and the blast's clears used the plain `TickChanges::set`, so a plant standing on a flung or
+destroyed cell just past the radius was left floating; a collapse's clears (`Server::fell`: sand falling under a
+torch) did the same. Fix, a data rule (docs/EXPLOSIVES.md §3.13): an attached block (`needsSupport`, or `partOf`
+one: tall grass, torches, saplings, ladders; `dwell_world::edit::attached`) is removed in a blast, never a piece,
+and counts as open space; every cell a blast or a collapse clears takes the attached blocks on it
+(`set_and_unsupport`); in adventure they drop as when broken. Tests (both faces, `tests/explosives.rs`): red → green
+`a_blast_over_tall_grass_flings_no_grass_and_removes_it` (68 grass pieces before),
+`attached_blocks_on_flung_blocks_go_and_are_not_carried`, `a_torch_on_sand_that_falls_goes_and_is_not_left_floating`
+(the torch stayed floating before); `tall_grass_on_a_block_broken_by_a_tool_goes_with_it` pins the tool break (it
+already worked). **Owner should see:** dynamite near grass blows away dirt and stone as pieces, while the grass on
+them simply disappears — no flying grass.
+
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you

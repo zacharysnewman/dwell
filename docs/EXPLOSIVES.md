@@ -498,3 +498,20 @@ spread), in the yellow column's the `physics` step with ~900 bodies in flight. T
 chained, no tick spawns more than the budget (red on the unspread code: 119 a tick), the same
 `Explosion` cells and blasts as with no budget, and the same pieces within 2% (a waiting piece a later
 core destroys is judged at its cell, not where it would have flown).
+
+### 3.13 Attached blocks are removed, never flung (2026-11-14)
+
+Owner, 2026-11-13 (BUGS.md #157): "Dynamite blows up (physics) tall grass that's wrong. It should just be
+destroyed if the block under it is moved or destroyed." The rule is block data, not a tall-grass case: an
+**attached block** is one with `needsSupport` (`below`: tall grass and its stages, a torch, the saplings;
+`behind`: a ladder), or a cell `partOf` one (a torch's upper cell) — `dwell_world::edit::attached`. In a
+blast such a block in the radius is removed (no piece), with its parts; the open-side sense and the path test
+count it as open. Every cell a blast clears, destroyed or flung, takes the attached blocks standing on it
+(`TickChanges::set_and_unsupport`, `edit_writes`' rule), so nothing is left floating past the radius over a
+flung cell and no piece carries a plant; so do the cells a collapse moves into a piece (`Server::fell`: sand
+under a torch). Where items are used (adventure) the removed blocks drop what breaking them drops
+(`Server::drop_attached`). Tests (`tests/explosives.rs`, both faces):
+`a_blast_over_tall_grass_flings_no_grass_and_removes_it` (red before: 68 grass pieces),
+`attached_blocks_on_flung_blocks_go_and_are_not_carried` (a dirt deck over the charge with grass, a torch and
+a sapling just past the radius; red before), `tall_grass_on_a_block_broken_by_a_tool_goes_with_it`,
+`a_torch_on_sand_that_falls_goes_and_is_not_left_floating` (red before: the torch stayed in the air).

@@ -42,12 +42,22 @@ impl Scene {
         Self::in_mode(f, players, "adventure")
     }
     fn in_mode(f: FaceFrame, players: usize, mode: &str) -> Self {
-        let fx = Fixture::new(ServerConfig {
+        Self::in_config(f, players, mode, |_| {})
+    }
+    fn in_config(
+        f: FaceFrame,
+        players: usize,
+        mode: &str,
+        tweak: impl FnOnce(&mut ServerConfig),
+    ) -> Self {
+        let mut config = ServerConfig {
             generator_override: Some(empty_generator()),
             spawn: Some(f.point([0.5, m_of_row(BASE), -10.5])),
             mode: mode.into(),
             ..flat()
-        });
+        };
+        tweak(&mut config);
+        let fx = Fixture::new(config);
         let mut s = Self { f, fx, base: BASE };
         // A blast's pieces all spawn on its tick here: these tests read that tick; the spreading
         // over ticks (`limits.piecesPerTick`) is pinned by its own test, which sets it back.
@@ -1568,5 +1578,195 @@ dwell_world::both_faces!(
             spread.pieces,
             whole.pieces
         );
+    }
+);
+
+// Attached blocks in a blast (BUGS.md #81; owner, 2026-11-13: "Dynamite blows up (physics) tall
+// grass that's wrong. It should just be destroyed if the block under it is moved or destroyed."):
+// a block with `needsSupport` (tall grass, a torch, a sapling, a ladder; the rule is the data's, no
+// block is named in the code) is never a flung piece, and goes with the block holding it.
+
+/// Sets off dynamite at face-local `at` now (its fuse a few ticks), every message of the blast kept.
+fn blow(s: &mut Scene, at: [i32; 3]) -> Vec<Message> {
+    s.set(at, require("dwell:lit_dynamite"));
+    let cell = s.cell(at);
+    let i = EXPLOSIVES
+        .iter()
+        .position(|e| e.name == "dwell:dynamite")
+        .expect("dynamite");
+    s.fx.server.light_fuse(cell, i, 0.05);
+    s.run(12)
+}
+
+/// Whether `m` is an attached block, read from its data: `needsSupport`, or a part of one.
+fn attached(m: StateId) -> bool {
+    use dwell_blocks::Support;
+    let s = info(m);
+    s.needs_support != Support::None
+        || s.part_of
+            .and_then(dwell_blocks::state)
+            .is_some_and(|p| info(p).needs_support != Support::None)
+}
+
+/// The blast's pieces that carry an attached block (block data `needsSupport`).
+fn attached_pieces(out: &[Message]) -> usize {
+    spawns(out)
+        .iter()
+        .filter(|p| p.cells.iter().any(|c| attached(c.state)))
+        .count()
+}
+
+fn is(s: &mut Scene, at: [i32; 3], block: &str) -> bool {
+    let m = s.get(at);
+    m != M.air && dwell_blocks::block_of(m).name == block
+}
+
+fn loose_count(s: &Scene, item: &str) -> usize {
+    s.fx.server
+        .loose_items()
+        .iter()
+        .filter(|l| l.stack.item == item)
+        .map(|l| usize::from(l.stack.count))
+        .sum()
+}
+
+dwell_world::both_faces!(
+    fn a_blast_over_tall_grass_flings_no_grass_and_removes_it(f: FaceFrame) {
+        let e = dynamite();
+        let mut s = Scene::new(f, 1);
+        s.put(1, 0.5, -13.5);
+        let (dirt, grass) = (require("dwell:dirt"), require("dwell:tall_grass"));
+        for x in -8..=8 {
+            for z in -8..=8 {
+                s.set([x, -1, z], dirt);
+                s.set([x, 0, z], grass);
+            }
+        }
+        let out = blow(&mut s, [0, 0, 0]);
+        let pieces = spawns(&out);
+        assert!(
+            pieces.len() > 50,
+            "the dirt and stone fly: {}",
+            pieces.len()
+        );
+        assert_eq!(attached_pieces(&out), 0, "no grass flies");
+        for x in -8..=8 {
+            for z in -8..=8 {
+                let d = dist([x, 0, z]);
+                let here = is(&mut s, [x, 0, z], "dwell:tall_grass");
+                if d <= e.radius_m {
+                    assert!(!here, "the grass {d:.2} m out is removed");
+                }
+                if here {
+                    assert!(is(&mut s, [x, -1, z], "dwell:dirt"), "no grass floats");
+                }
+            }
+        }
+        // Removed as if broken: adventure drops its fibre (a full-grown plant's is certain).
+        assert!(loose_count(&s, "dwell:grass_fiber") > 20, "the grass drops");
+    }
+);
+
+dwell_world::both_faces!(
+    fn attached_blocks_on_flung_blocks_go_and_are_not_carried(f: FaceFrame) {
+        let e = dynamite();
+        let mut s = Scene::new(f, 1);
+        s.put(1, 0.5, -13.5);
+        // A dirt deck 4.5 m over the charge: its cells fly (within the radius), what stands on
+        // them lies just past it. A torch (two cells) and a sapling as well as tall grass: the
+        // rule is their `needsSupport` data alone.
+        let dirt = require("dwell:dirt");
+        for x in -2..=2 {
+            for z in -2..=2 {
+                s.set([x, 9, z], dirt);
+                s.set([x, 10, z], require("dwell:tall_grass"));
+            }
+        }
+        s.set([-1, 10, -1], require("dwell:torch"));
+        s.set([-1, 11, -1], require("dwell:torch_upper"));
+        s.set([1, 10, -1], require("dwell:oak_sapling"));
+        assert!(dist([1, 10, 0]) > e.radius_m && dist([1, 9, 0]) <= e.radius_m);
+        let out = blow(&mut s, [0, 0, 0]);
+        assert_eq!(attached_pieces(&out), 0, "nothing attached is carried");
+        let mut beyond = 0;
+        for x in -2..=2 {
+            for z in -2..=2 {
+                let flown = s.get([x, 9, z]) == M.air;
+                if flown && dist([x, 10, z]) > e.radius_m {
+                    beyond += 1;
+                }
+                if flown {
+                    assert_eq!(s.get([x, 10, z]), M.air, "{x},{z}: nothing left floating");
+                    assert_eq!(s.get([x, 11, z]), M.air, "{x},{z}: nor the torch's top");
+                }
+            }
+        }
+        assert!(beyond >= 4, "decks past the radius flew: {beyond}");
+        assert!(
+            s.get([-1, 9, -1]) == M.air && s.get([1, 9, -1]) == M.air,
+            "the torch's and sapling's blocks flew"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn tall_grass_on_a_block_broken_by_a_tool_goes_with_it(f: FaceFrame) {
+        let mut s = Scene::in_config(f, 1, "adventure", |c| c.one_hit_breaks = true);
+        s.set([0, -1, 0], require("dwell:dirt"));
+        s.set([0, 0, 0], require("dwell:tall_grass"));
+        s.put(1, 0.5, -1.5);
+        s.run(2);
+        let cell = s.cell([0, -1, 0]);
+        s.fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell,
+                face: f.cell_face(2) as u8,
+                material: M.air,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        s.run(3);
+        assert_eq!(s.get([0, -1, 0]), M.air, "the dirt broke");
+        assert_eq!(s.get([0, 0, 0]), M.air, "the grass went with it");
+        assert!(loose_count(&s, "dwell:grass_fiber") >= 1, "and dropped");
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_torch_on_sand_that_falls_goes_and_is_not_left_floating(f: FaceFrame) {
+        // A torch on sand over the stone ground; the stone under the sand broken from the side
+        // (a pit dug beside it): the sand falls as a piece and the torch goes, not left floating.
+        let mut s = Scene::in_config(f, 1, "adventure", |c| c.one_hit_breaks = true);
+        s.set([0, 0, 0], require("dwell:sand"));
+        s.set([0, 1, 0], require("dwell:torch"));
+        s.set([0, 2, 0], require("dwell:torch_upper"));
+        s.set([0, -1, -1], M.air);
+        s.put(1, 0.5, -2.5);
+        s.run(2);
+        let cell = s.cell([0, -1, 0]);
+        s.fx.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell,
+                face: f.cell_face(5) as u8,
+                material: M.air,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        let out = s.run(3);
+        assert_eq!(s.get([0, -1, 0]), M.air, "the stone broke");
+        assert_eq!(s.get([0, 0, 0]), M.air, "the sand fell");
+        assert!(!spawns(&out).is_empty(), "as a piece");
+        assert_eq!(attached_pieces(&out), 0, "carrying nothing attached");
+        assert_eq!(s.get([0, 1, 0]), M.air, "the torch went");
+        assert_eq!(s.get([0, 2, 0]), M.air, "and its top");
+        assert!(loose_count(&s, "dwell:torch") >= 1, "dropping it");
     }
 );

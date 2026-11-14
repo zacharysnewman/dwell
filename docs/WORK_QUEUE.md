@@ -16,6 +16,13 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Dynamite and tall grass (owner, 2026-11-13; BUGS.md #157):** "Dynamite blows up (physics) tall grass that's
+  wrong. It should just be destroyed if the block under it is moved or destroyed." Brief: as a data rule, not a
+  tall-grass case — blocks that sit on or attach to another and aren't structural are never flung pieces; in a blast
+  they're removed (their drops in adventure), and whenever the block under them is moved or destroyed by any means
+  they go too. Done on `claude/grass-blast-cdr1im`: the rule is `needsSupport` (and `partOf` such a block),
+  docs/EXPLOSIVES.md §3.13. **Owner should see:** dynamite near grass blows away dirt and stone as pieces, while the
+  grass on them simply disappears — no flying grass.
 - **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
   #146–#150):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
   after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
