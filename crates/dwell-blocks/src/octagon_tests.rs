@@ -352,3 +352,103 @@ fn a_narrow_log_is_a_centred_smaller_octagon_that_joins_nothing() {
         "the narrow log's foot cap is drawn on a wider log"
     );
 }
+
+/// The side lengths (m) of a whole log's end, axis `axis` (0 x, 1 y, 2 z): its cells' caps in
+/// metres (a lying log's two ½ m halves, a standing log's one cell), their outline's corners with
+/// collinear points (the halves' seam) dropped, in order round it.
+fn end_sides_m(axis: usize) -> Vec<f64> {
+    let m = log(["x", "y", "z"][axis]);
+    let (section, _) = section_of(m).expect("octagonal");
+    // A standing log: one cell; a lying one: its lower and upper ½ m halves.
+    let cells: Vec<i32> = if axis == 1 { vec![0] } else { vec![0, 1] };
+    let mut pts: Vec<[f64; 2]> = Vec::new();
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    for &y in &cells {
+        let others = cells
+            .iter()
+            .filter(|&&o| o != y)
+            .map(|&o| ([0, o - y, 0], m));
+        let joined = joined_mask(m, &world(others.collect()));
+        let cap = faces(&section, axis, joined, CELL)
+            .into_iter()
+            .find(|f| f.part == Part::Cap(true))
+            .expect("a cap");
+        for p in cap.pts {
+            let mut q = [
+                p[0] * CELL[0],
+                (p[1] + f64::from(y)) * CELL[1],
+                p[2] * CELL[2],
+            ];
+            q[axis] = 0.0;
+            pts.push([q[u], q[v]]);
+        }
+    }
+    // The convex hull (gift wrap), collinear and repeated points dropped.
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    pts.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9);
+    let cross = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    };
+    let mut hull: Vec<[f64; 2]> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &[f64; 2]>> = if pass == 0 {
+            Box::new(pts.iter())
+        } else {
+            Box::new(pts.iter().rev())
+        };
+        for &p in iter {
+            while hull.len() >= start + 2
+                && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 1e-9
+            {
+                hull.pop();
+            }
+            hull.push(p);
+        }
+        hull.pop();
+    }
+    (0..hull.len())
+        .map(|i| {
+            let (a, b) = (hull[i], hull[(i + 1) % hull.len()]);
+            ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt()
+        })
+        .collect()
+}
+
+/// BUGS.md #167 (owner, 2026-11-13: "sideways logs (after a tree is felled) octagon shape corners
+/// are shorter than when upright, the sides aren't the same length and they should be the same"):
+/// a log's end is the same regular octagon along every axis: eight equal sides, the standing
+/// log's. A lying log is two ½ m cells; its corners were cut by the chamfer of the ½ m cell, half
+/// as deep (sides 0.71 m and 0.15 m).
+#[test]
+fn a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon() {
+    let upright = end_sides_m(1);
+    assert_eq!(upright.len(), 8, "{upright:?}");
+    let side = upright[0];
+    for axis in 0..3 {
+        let sides = end_sides_m(axis);
+        assert_eq!(sides.len(), 8, "axis {axis}: {sides:?}");
+        for s in &sides {
+            assert!(
+                (s - side).abs() < 1e-3,
+                "axis {axis}: sides {sides:?}, upright {side}"
+            );
+        }
+    }
+}
+
+/// The bark ring is as wide on a lying log as on a standing one (in metres; BUGS.md #167).
+#[test]
+fn a_lying_logs_bark_ring_is_the_standing_logs_width() {
+    let m = log("x");
+    let (c, _) = section_of(m).unwrap();
+    let lower = 1 << face_index(1, true);
+    let ring_m = |axis: usize, joined: u8| {
+        let p = cap_pieces(&c, axis, joined, CELL, true);
+        // The −v (z, axis x; x, axis y) band's depth: its heart's lowest v.
+        let heart = p.iter().find(|f| f.part == Part::Cap(true)).unwrap();
+        let v = (axis + 2) % 3;
+        heart.pts.iter().map(|q| q[v]).fold(f64::MAX, f64::min) * CELL[v]
+    };
+    assert!((ring_m(0, lower) - ring_m(1, 0)).abs() < 1e-9);
+}

@@ -204,7 +204,7 @@ pub(crate) struct Piece {
 /// is a leaf and `nb_ex[i]` that neighbour's exposure, cut back by `s` (see the module docs).
 #[cfg(test)]
 pub(crate) fn pieces(ex: [bool; 6], leafy: [bool; 6], nb_ex: [[bool; 6]; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, [false; 6], leafy, nb_ex, s, false)
+    pieces_of(ex, [false; 6], &Holes::default(), leafy, nb_ex, s, false)
 }
 
 /// [`pieces`], with `flush[i]` the faces lying flat against a block beside them (block data
@@ -218,18 +218,85 @@ pub(crate) fn flush_pieces(
     nb_ex: [[bool; 6]; 6],
     s: f64,
 ) -> Vec<Piece> {
-    pieces_of(ex, flush, leafy, nb_ex, s, false)
+    pieces_of(ex, flush, &Holes::default(), leafy, nb_ex, s, false)
+}
+
+/// Per face, the polygons (cell-centred, on that face's plane) of the block beside a flush face that
+/// lie on it: a log's side or cap where it touches the leaf.
+pub(crate) type Holes = [Vec<Vec<V>>; 6];
+
+/// [`flush_pieces`], with each flush face drawn only where the block beside it leaves it uncovered:
+/// less `holes[i]`, the block's own faces lying on it (BUGS.md #166: the leaf's face and the log's
+/// side were coplanar and z-fought). What is left fills the gaps at the octagon's corners, flat
+/// against its chamfers; nothing the leaf draws there is coplanar with the log.
+pub(crate) fn flush_pieces_round(
+    ex: [bool; 6],
+    flush: [bool; 6],
+    holes: &Holes,
+    leafy: [bool; 6],
+    nb_ex: [[bool; 6]; 6],
+    s: f64,
+) -> Vec<Piece> {
+    pieces_of(ex, flush, holes, leafy, nb_ex, s, false)
+}
+
+/// Convex `poly` less the convex `hole` lying on its plane: the disjoint convex pieces outside each
+/// of the hole's edges in turn (each inside the edges before it).
+pub(crate) fn subtract(poly: Vec<V>, hole: &[V]) -> Vec<Vec<V>> {
+    if hole.len() < 3 || poly.len() < 3 {
+        return vec![poly];
+    }
+    let c: V = std::array::from_fn(|i| hole.iter().map(|p| p[i]).sum::<f64>() / hole.len() as f64);
+    let nrm = {
+        let mut s = [0.0; 3];
+        for k in 0..hole.len() {
+            let (a, b) = (hole[k], hole[(k + 1) % hole.len()]);
+            s = std::array::from_fn(|i| s[i] + cross(a, b)[i]);
+        }
+        s
+    };
+    let mut out = Vec::new();
+    let mut rest = poly;
+    for k in 0..hole.len() {
+        if rest.is_empty() {
+            break;
+        }
+        let (a, b) = (hole[k], hole[(k + 1) % hole.len()]);
+        let e: V = std::array::from_fn(|i| b[i] - a[i]);
+        let Some(mut n) = normalise(cross(e, nrm)) else {
+            continue;
+        };
+        if dot(n, c) > dot(n, a) {
+            n = n.map(|x| -x);
+        }
+        let d = dot(n, a);
+        let outside = clip(&rest, n.map(|x| -x), -d);
+        if area(&outside) > EPS {
+            out.push(outside);
+        }
+        rest = clip(&rest, n, d);
+    }
+    out
 }
 
 /// The polygons of an octagonal column (a log cell at LOD) exposed on `ex`: its vertical edges cut
 /// by `s` where both sides are open, its open faces drawn.
 pub(crate) fn column_pieces(ex: [bool; 6], s: f64) -> Vec<Piece> {
-    pieces_of(ex, [false; 6], [false; 6], [[false; 6]; 6], s, true)
+    pieces_of(
+        ex,
+        [false; 6],
+        &Holes::default(),
+        [false; 6],
+        [[false; 6]; 6],
+        s,
+        true,
+    )
 }
 
 fn pieces_of(
     ex: [bool; 6],
     flush: [bool; 6],
+    holes: &Holes,
     leafy: [bool; 6],
     nb_ex: [[bool; 6]; 6],
     s: f64,
@@ -243,12 +310,20 @@ fn pieces_of(
             face = clip(&face, p.n, p.d);
         }
         if ex[i] || flush[i] {
-            if area(&face) > EPS {
-                out.push(Piece {
-                    pts: face,
-                    normal: unit(i),
-                    sides: vec![i],
-                });
+            let mut parts = vec![face];
+            if flush[i] {
+                for hole in &holes[i] {
+                    parts = parts.into_iter().flat_map(|p| subtract(p, hole)).collect();
+                }
+            }
+            for pts in parts {
+                if area(&pts) > EPS {
+                    out.push(Piece {
+                        pts,
+                        normal: unit(i),
+                        sides: vec![i],
+                    });
+                }
             }
             continue;
         }
@@ -457,7 +532,14 @@ pub(super) fn leaf_voxel(
             [false; 6]
         }
     });
-    let list = flush_pieces(ex, flush, leafy, nb_ex, LEAVES.chamfer);
+    let holes: Holes = std::array::from_fn(|i| {
+        if flush[i] {
+            flush_holes(cells, nb(i, cell), i)
+        } else {
+            Vec::new()
+        }
+    });
+    let list = flush_pieces_round(ex, flush, &holes, leafy, nb_ex, LEAVES.chamfer);
     // The tree owning the cell tints it (ADR 0079); a placed leaf keeps its colour.
     let tint = cells.tint(cell);
     let first = b.vertex_count() as usize;
@@ -497,6 +579,43 @@ pub(super) fn leaf_voxel(
         let list = cards(open, world, &LEAVES.cards, at, blocked);
         emit_cards(b, cells, k, cell, &list, tint);
     }
+}
+
+/// The faces of the flush block at chunk-local `log` that lie on the face `i` of the leaf beside it
+/// (the leaf's side toward it), in the leaf cell's centred coordinates: an octagonal log's side or
+/// cap there as it is drawn (its joins read round it), or the whole square for a block of no
+/// cross-section. Cells past the padding read as the log itself (taken as joined, so the hole is
+/// the larger one: a sliver of gap rather than a coplanar overlap).
+fn flush_holes(cells: &Cells<'_>, log: [i32; 3], i: usize) -> Vec<Vec<V>> {
+    use dwell_blocks::octagon::{joined_mask, section_of, state_faces};
+    let m = cells.state(log[0], log[1], log[2]);
+    if section_of(m).is_none() {
+        return vec![square(i)];
+    }
+    let at = |o: [i32; 3]| {
+        let c: [i32; 3] = std::array::from_fn(|a| log[a] + o[a]);
+        if c.iter().all(|&v| (-1..=N).contains(&v)) {
+            cells.state(c[0], c[1], c[2])
+        } else {
+            m
+        }
+    };
+    let joined = joined_mask(m, &at);
+    let (a, s) = FACES[i];
+    // The log's face toward the leaf, in its cell's [0, 1]³: on its −a side if the leaf's face is +a.
+    let plane = if s > 0 { 0.0 } else { 1.0 };
+    state_faces(m, joined, [1.0, CELL_H, 1.0])
+        .into_iter()
+        .filter(|f| f.pts.iter().all(|q| (q[a] - plane).abs() < 1e-9))
+        .map(|f| {
+            f.pts
+                .iter()
+                .map(|q| {
+                    std::array::from_fn(|k| q[k] - 0.5 + if k == a { f64::from(s) } else { 0.0 })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Marks the leaf faces from vertex `first` on as a tree's ([`crate::TREE_LEAF_FADE`] in their

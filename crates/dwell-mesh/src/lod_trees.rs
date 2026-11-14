@@ -261,6 +261,24 @@ mod tests {
     );
 
     dwell_world::both_faces!(
+        /// BUGS.md #166 at a distance: the far tree's trunk draws no side toward a leaf, so its
+        /// leaves, flat against it, lie on none of its bark: no two of the section's faces are
+        /// coplanar and overlap (held before the near fix too; a guard).
+        fn a_far_trees_leaves_lie_on_none_of_its_bark(f: FaceFrame) {
+            let options = MeshSectionOptions {
+                mirror: f.is_b(),
+                ..Default::default()
+            };
+            let m = mesh_section_trees(&tree(), &options, &[], true).expect("cells");
+            let tris =
+                crate::coplanar_tests::triangles(&m.opaque.positions, &m.opaque.indices, &[]);
+            assert!(tris.len() > 50, "{}", tris.len());
+            let hit = crate::coplanar_tests::coplanar_overlap(&tris, 1e-4, 1e-6);
+            assert!(hit.is_none(), "coplanar and overlapping: {hit:?}");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// At the LOD's finest cells a tree has the near tree's silhouette (its bounds, within
         /// 0.05 m: the chamfered crown, the octagon trunk), its leaf normals lean out of the crown,
         /// and its trunk has the octagon's diagonal sides, not a square's.

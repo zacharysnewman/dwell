@@ -580,6 +580,32 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 166. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.63.21)
+
+Owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't be shown and they cause z fighting."
+Cause: since WORK_QUEUE item 48 (0.55) a leaf face against a `leafFlush` log is drawn whole and flat on the cell
+face, so it lay in the same plane as the log's octagon side (or cap) there, and the cutout leaves (drawn from both
+sides) flickered against the bark. Fix: the flush face is drawn less the log's own faces lying on it
+(`mesher/leaves.rs` `flush_holes`, `subtract`): only the corner gaps beside the octagon's chamfers are filled, nothing
+coplanar with bark. The far trees' trunks draw no side toward a leaf, so they had no overlap. Tests (both faces, red →
+green): `no_leaf_face_lies_on_the_bark_it_touches` (a trunk and a lying branch in leaves: no two faces of the chunk
+coplanar and overlapping; red, a leaf square over the bark), `a_leaf_beside_a_log_draws_only_the_octagons_corner_gaps`,
+`leaves_lie_flat_against_a_trunk` (now the square less the bark), the guard `a_far_trees_leaves_lie_on_none_of_its_bark`.
+**Owner should see:** no flickering or z-fighting where leaves meet trunks and branches; the octagon's corner gaps
+still closed by leaf.
+
+### 167. A felled (lying) log's octagon is squashed: short corners, uneven sides (fixed after 0.63.21)
+
+Owner, 2026-11-13: "Also sideways logs (after a tree is felled) octagon shape corners are shorter than when upright,
+the sides aren't the same length and they should be the same." Cause: the corner cut (`crossSection.chamfer`, and
+the bark `ring`) was a fraction of the cell's shorter side in metres; a log lying along x or z is two ½ m cells, so
+its corners were cut by 0.29 × ½ m: sides 0.71 m and chamfers 0.21 m, against the standing log's eight 0.41 m sides.
+Fix: `dwell_blocks::octagon::across_m`, the log's width across: a lying half joined to its other half measures by the
+whole 1 m log (a lone ½ m cell keeps its own). Collision uses the same outline, so a felled log rests on the same
+octagon. Tests (red → green): `a_log_lying_on_either_axis_ends_in_the_standing_logs_regular_octagon` (each axis: 8
+equal sides, the standing log's), `a_lying_logs_bark_ring_is_the_standing_logs_width`. **Owner should see:** a felled
+log's end shows the same even octagon as a standing trunk.
+
 ### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
 
 *Found 2026-11-13 in a GPU screenshot pass on 05925aea (test:forest seed 0, High).* 25 m over the dense stand only

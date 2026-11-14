@@ -40,6 +40,8 @@
 //! 3 −Y, 4 +Z, 5 −Z), shown when the neighbour there is not drawn at the same level.
 
 mod carve;
+#[cfg(test)]
+mod coplanar_tests;
 mod flood;
 #[cfg(test)]
 mod flood_tests;

@@ -162,6 +162,25 @@ pub fn outline_width(
         .collect()
 }
 
+/// The log's width across its axis in metres, which `chamfer` and `ring` are fractions of: the
+/// cell's shorter side across, but for half of a lying log (axis x or z, joined above or below to
+/// its other ½ m half) the whole 1 m log, so a felled log's octagon is the standing trunk's
+/// (BUGS.md #167: it was cut by a fraction of the ½ m cell, half as deep).
+pub fn across_m(axis: usize, joined: u8, size_m: [f64; 3]) -> f64 {
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    let (short, long) = if size_m[u] <= size_m[v] {
+        (u, v)
+    } else {
+        (v, u)
+    };
+    let halved = joined & ((1 << face_index(short, true)) | (1 << face_index(short, false))) != 0;
+    if halved {
+        size_m[long].min(2.0 * size_m[short])
+    } else {
+        size_m[short]
+    }
+}
+
 fn outline_full(
     chamfer: f64,
     axis: usize,
@@ -169,8 +188,8 @@ fn outline_full(
     size_m: [f64; 3],
 ) -> Vec<([f64; 2], Option<usize>)> {
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
-    let c_m = chamfer * size_m[u].min(size_m[v]);
-    let (cu, cv) = (c_m / size_m[u], c_m / size_m[v]);
+    let c_m = chamfer * across_m(axis, joined, size_m);
+    let (cu, cv) = ((c_m / size_m[u]).min(1.0), (c_m / size_m[v]).min(1.0));
     let j = |face: usize| joined & (1 << face) != 0;
     let (pu, nu, pv, nv) = (
         face_index(u, true),
@@ -479,7 +498,7 @@ pub fn cap_pieces(
         }
         pts
     };
-    let width = f64::from(section.ring) * size_m[u].min(size_m[v]);
+    let width = f64::from(section.ring) * across_m(axis, joined, size_m);
     if width <= 0.0 {
         return vec![Face {
             part: Part::Cap(end),

@@ -3173,7 +3173,9 @@ fn crown_round_a_trunk(leaf: u16, log: u16) -> Vec<(i32, i32, i32, u16)> {
 /// log lies flat on the log's face (its inner face the whole 1×1 square there), no chamfer of
 /// those leaves leans toward the trunk, no leaf vertex lies inside a log's cell, and the leaves'
 /// surface is closed (its area vectors sum to zero: no gap or overlap at a seam).
-fn assert_flush_round_the_trunk(m: &ChunkMeshes) {
+/// `bark`: whether the trunk is drawn (a fixture's post is not: the octagon is read from the
+/// built-in registry, where its id is another block); without it the leaf only must not overlap it.
+fn assert_flush_round_the_trunk(m: &ChunkMeshes, bark_drawn: bool) {
     let c = &m.cutout;
     // The leaf faces, not their cards (`bare` 1).
     let tris: Vec<([[f64; 3]; 3], [f64; 3])> = c
@@ -3185,12 +3187,32 @@ fn assert_flush_round_the_trunk(m: &ChunkMeshes) {
             (p, normal_of(&c.positions, t[0], t[1], t[2]))
         })
         .collect();
+    let o = &m.opaque;
+    let log_tris: Vec<([[f64; 3]; 3], [f64; 3])> = o
+        .indices
+        .chunks_exact(3)
+        .map(|t| {
+            let p = [0, 1, 2].map(|k| vertex(&o.positions, t[k]));
+            (p, normal_of(&o.positions, t[0], t[1], t[2]))
+        })
+        .collect();
     let len = |n: [f64; 3]| (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-    // Closed: Σ area · n = 0.
+    // Closed: Σ area · n = 0 over the leaves and the bark they lie against (in their place, the
+    // leaf's missing face: the bark's area, turned toward the trunk).
+    let on_a_side = |p: &[[f64; 3]; 3]| {
+        let flat = |a: usize, v: f64| p.iter().all(|q| (q[a] - v).abs() < 1e-5);
+        let ys = p.iter().all(|q| q[1] > 8.0 - 1e-6 && q[1] < 9.0 + 1e-6);
+        ys && (flat(0, 8.0) || flat(0, 9.0) || flat(2, 8.0) || flat(2, 9.0))
+    };
     let mut sum = [0.0; 3];
     for (_, n) in &tris {
         for a in 0..3 {
             sum[a] += n[a] / 2.0;
+        }
+    }
+    for (_, n) in log_tris.iter().filter(|(p, _)| on_a_side(p)) {
+        for a in 0..3 {
+            sum[a] -= n[a] / 2.0;
         }
     }
     assert!(
@@ -3216,9 +3238,24 @@ fn assert_flush_round_the_trunk(m: &ChunkMeshes) {
             })
             .map(|(_, n)| len(*n) / 2.0)
             .sum();
+        // BUGS.md #166: the leaf draws its face only where the log's side doesn't lie: the two
+        // corner strips the octagon's chamfers leave, so leaf and bark are never coplanar.
+        let bark: f64 = log_tris
+            .iter()
+            .filter(|(p, n)| {
+                mine(p) && p.iter().all(|q| (q[a] - plane).abs() < 1e-5) && n[a] * toward[a] < 0.0
+            })
+            .map(|(_, n)| len(*n) / 2.0)
+            .sum();
+        let ok = if bark_drawn {
+            bark > 0.3 && (flat + bark - 1.0).abs() < 1e-4
+        } else {
+            flat + bark < 1.0 + 1e-4
+        };
         assert!(
-            (flat - 1.0).abs() < 1e-4,
-            "the leaf at ({x}, 8, {z}) lies {flat} m² flat on the log's face, not the whole square"
+            ok,
+            "the leaf at ({x}, 8, {z}) lies {flat} cells² flat on the log's face beside its \
+             {bark} of bark: not the square less the bark"
         );
         for (p, n) in tris.iter().filter(|(p, _)| mine(p)) {
             let along = (n[0] * toward[0] + n[1] * toward[1] + n[2] * toward[2]) / len(*n);
@@ -3239,7 +3276,6 @@ fn assert_flush_round_the_trunk(m: &ChunkMeshes) {
         }
     }
     // The trunk's octagon stays inside its cells (its corners don't poke into the leaves).
-    let o = &m.opaque;
     for i in 0..o.positions.len() / 3 {
         let q = vertex(&o.positions, i as u32);
         assert!(
@@ -3256,7 +3292,7 @@ dwell_world::both_faces!(
     /// `dwell:log` (block data `leafFlush`) lies flat on it with its seams closed.
     fn leaves_lie_flat_against_a_trunk(f: FaceFrame) {
         let cells = crown_round_a_trunk(require("dwell:leaves"), require("dwell:log[axis=y]"));
-        assert_flush_round_the_trunk(&mesh(&cells, f.is_b()));
+        assert_flush_round_the_trunk(&mesh(&cells, f.is_b()), true);
     }
 );
 
@@ -3270,7 +3306,7 @@ dwell_world::both_faces!(
         assert!(STATES[usize::from(id("test:post[axis=y]"))].leaf_flush);
         let cells = crown_round_a_trunk(id("dwell:leaves[flooded=false]"), id("test:post[axis=y]"));
         let m = mesh_chunk_with(&kinds, &voxels(&cells), f.is_b(), [0; 3]).expect("padded");
-        assert_flush_round_the_trunk(&m);
+        assert_flush_round_the_trunk(&m, false);
     }
 );
 
@@ -3373,5 +3409,99 @@ dwell_world::both_faces!(
             "an inner corner"
         );
         assert!(seen.iter().any(|(c, &s)| c.0 >= 8 && s == 0), "open water");
+    }
+);
+
+/// BUGS.md #166's fixture: a standing trunk (8, 4..=9, 8) with leaves round it and on its top,
+/// and a log lying along x through them (its two ½ m halves at y 10 and 11), with leaves on
+/// either side of it, above and below.
+fn trunk_and_branch_in_leaves() -> Vec<(i32, i32, i32, u16)> {
+    let (leaf, up, along) = (
+        require("dwell:leaves"),
+        require("dwell:log[axis=y]"),
+        require("dwell:log[axis=x]"),
+    );
+    let mut cells: Vec<(i32, i32, i32, u16)> = (4..=9).map(|y| (8, y, 8, up)).collect();
+    for x in 9..=12 {
+        cells.push((x, 10, 8, along));
+        cells.push((x, 11, 8, along));
+    }
+    let taken =
+        |c: &[(i32, i32, i32, u16)], x, y, z| c.iter().any(|q| (q.0, q.1, q.2) == (x, y, z));
+    for y in 7..=13 {
+        for z in 6..=10 {
+            for x in 6..=13 {
+                if !taken(&cells, x, y, z) {
+                    cells.push((x, y, z, leaf));
+                }
+            }
+        }
+    }
+    cells
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #166 (owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't
+    /// be shown and they cause z fighting"): round a trunk and a lying branch in a crown, no leaf
+    /// face lies on the bark it touches: no two faces of the chunk (bark, end grain, leaves) are
+    /// coplanar and overlap. Red before the fix: each leaf beside the log drew its whole square
+    /// on the log's side.
+    fn no_leaf_face_lies_on_the_bark_it_touches(f: FaceFrame) {
+        let m = mesh(&trunk_and_branch_in_leaves(), f.is_b());
+        let mut tris =
+            crate::coplanar_tests::triangles(&m.opaque.positions, &m.opaque.indices, &[]);
+        tris.extend(crate::coplanar_tests::triangles(
+            &m.cutout.positions,
+            &m.cutout.indices,
+            &m.cutout.bare,
+        ));
+        assert!(tris.len() > 100, "{}", tris.len());
+        let hit = crate::coplanar_tests::coplanar_overlap(&tris, 1e-5, 1e-6);
+        assert!(hit.is_none(), "coplanar and overlapping: {hit:?}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #166: a leaf cell beside a standing log draws nothing on the bark it shares with
+    /// it: of the leaf's face toward the trunk, only the two corner strips the octagon's chamfers
+    /// leave are drawn (a chamfer's cut wide each), and none of it on the log's side.
+    fn a_leaf_beside_a_log_draws_only_the_octagons_corner_gaps(f: FaceFrame) {
+        let cells = crown_round_a_trunk(require("dwell:leaves"), require("dwell:log[axis=y]"));
+        let m = mesh(&cells, f.is_b());
+        let c = &m.cutout;
+        let tris = crate::coplanar_tests::triangles(&c.positions, &c.indices, &c.bare);
+        // The leaf at (9, 8, 8): its −x face, on x = 9.
+        let face: Vec<_> = tris
+            .iter()
+            .filter(|t| t.iter().all(|q| (q[0] - 9.0).abs() < 1e-5))
+            .collect();
+        let chamfer = f64::from(
+            dwell_blocks::octagon::section_of(require("dwell:log[axis=y]"))
+                .unwrap()
+                .0
+                .chamfer,
+        );
+        let area: f64 = face
+            .iter()
+            .map(|t| {
+                let (a, b) = (
+                    [t[1][1] - t[0][1], t[1][2] - t[0][2]],
+                    [t[2][1] - t[0][1], t[2][2] - t[0][2]],
+                );
+                (a[0] * b[1] - a[1] * b[0]).abs() / 2.0
+            })
+            .sum();
+        assert!(
+            (area - 2.0 * chamfer).abs() < 1e-4,
+            "{area} drawn of the face, not the two strips"
+        );
+        for t in &face {
+            for q in t.iter() {
+                assert!(
+                    q[2] < 8.0 + chamfer + 1e-4 || q[2] > 9.0 - chamfer - 1e-4,
+                    "a leaf point on the bark: {q:?}"
+                );
+            }
+        }
     }
 );
