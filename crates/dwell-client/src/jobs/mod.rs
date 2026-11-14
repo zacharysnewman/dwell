@@ -22,7 +22,7 @@ pub enum Job {
     /// An LOD section's cells and column surfaces.
     Lod { coord: LodCoord },
     /// The same of grid `grid` (its `grids.json` index), not home (`dwell_worldgen::grid_lod`,
-    /// BUGS.md #156): the moon's and the sun's distant terrain.
+    /// BUGS.md #159): the moon's and the sun's distant terrain.
     GridLod { grid: u8, coord: LodCoord },
     /// [`Job::LodBounds`] of grid `grid`.
     GridLodBounds {

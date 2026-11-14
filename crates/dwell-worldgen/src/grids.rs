@@ -79,7 +79,7 @@ pub struct GridDef {
     /// distance instead (MOON_WORLD.md §5, M-6).
     pub sky_disc: bool,
     /// Its terrain past the chunks while on it is drawn by an LOD tree of its own (`lod`,
-    /// BUGS.md #143, #156): home's `LodSystem` with sections from its generator
+    /// BUGS.md #143, #159): home's `LodSystem` with sections from its generator
     /// (`crate::grid_lod`); false draws none past the chunks. Home's own LOD is home's.
     pub lod: bool,
     /// What lights its ground while on it (`light`, BUGS.md #145); `None`: home's keyframes as

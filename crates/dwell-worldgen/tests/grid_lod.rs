@@ -1,4 +1,4 @@
-//! A grid's LOD sections (`dwell_worldgen::grid_lod`, BUGS.md #156): on the moon and the sun,
+//! A grid's LOD sections (`dwell_worldgen::grid_lod`, BUGS.md #159): on the moon and the sun,
 //! both faces, a level-0 section is the grid's chunk (its cells' blocks, ramps aside), coarser
 //! levels keep the ground within a cell of the chunks' and its blocks, and sections past the
 //! rim are empty.
@@ -134,7 +134,7 @@ fn coarser_levels_keep_the_ground(name: &str, src: &dyn GridColumns, f: FaceFram
 }
 
 dwell_world::both_faces!(
-    /// BUGS.md #156: the moon's LOD sections are its chunks at level 0 and its ground coarser.
+    /// BUGS.md #159: the moon's LOD sections are its chunks at level 0 and its ground coarser.
     fn the_moon_s_sections_are_its_ground(f: FaceFrame) {
         let t = CrateredTerrain::for_grid("dwell:moon", 7).unwrap();
         let make = |c, ch: &mut Chunk| t.generate(c, ch);

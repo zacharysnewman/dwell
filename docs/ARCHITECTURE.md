@@ -1122,7 +1122,7 @@ grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easin
 M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
 mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
 drawn frame, a piece the shadows skip, the far disc then hidden. **On a grid [built, 0.63.0; BUGS.md #143–#145]:**
-its distant terrain is drawn by an LOD tree of its own when `grids.json` says `lod: true` (BUGS.md #156): home's
+its distant terrain is drawn by an LOD tree of its own when `grids.json` says `lod: true` (BUGS.md #159): home's
 `LodSystem` (§6.6: pixel-error selection, graded levels, fades, stand-ins) over the grid's disc
 (`WorldBounds::grid`, its rim view scaled to the disc, `LodSystem::set_rim_view`), one instance at a time for the
 grid the view is on, made on its first frame there and dropped at every crossing (`dwell-client` `grid_lod.rs`).

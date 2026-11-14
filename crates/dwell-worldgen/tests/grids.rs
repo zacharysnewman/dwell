@@ -550,7 +550,7 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
     for g in [moon, sun] {
         assert!(g.lod, "{}: its own LOD on the grid", g.name);
     }
-    // BUGS.md #156: a grid's LOD sections come from its generator's columns: none on home's.
+    // BUGS.md #159: a grid's LOD sections come from its generator's columns: none on home's.
     let at = GRIDS_JSON.find("\"name\": \"dwell:home\"").unwrap();
     let homed = format!(
         "{}\"name\": \"dwell:home\", \"lod\": true,{}",

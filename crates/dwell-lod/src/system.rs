@@ -595,7 +595,7 @@ impl LodSystem {
 
     /// How near the rim the other face is drawn past the edge (m; [`RIM_VIEW_M`] by default): a
     /// grid smaller than home scales it to its disc, or a moon 12.5 km across would draw both faces
-    /// from everywhere (BUGS.md #156).
+    /// from everywhere (BUGS.md #159).
     pub fn set_rim_view(&mut self, m: f64) {
         if m != self.rim_view_m {
             self.revision += 1;

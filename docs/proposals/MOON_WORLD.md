@@ -504,7 +504,7 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   - **No moon in the moon's sky:** its halo, glint and moonlight are not packed there either (`DayState::on_moon`);
     the cratered disc the owner saw is most likely the sun (its disc shaded by the sun world's bake, white in space).
   - **Ramps on the moon:** `generator.ramps` (`notched`), home's rule as data (HALF_HEIGHT_GRID.md §10).
-  - **The LOD per grid (BUGS.md #156, 2026-11-14):** the rings (two levels in effect, coloured by the far bake's
+  - **The LOD per grid (BUGS.md #159, 2026-11-14):** the rings (two levels in effect, coloured by the far bake's
     albedo, not the blocks' looks) are replaced by a `LodSystem` per grid (`grids.json` `lod: true`; `dwell-client`
     `grid_lod.rs`): home's selection, levels and fades over the grid's disc, sections from the grid's generator in
     the job workers (`Job::GridLod`, a grid id; `dwell-worldgen` `grid_lod.rs`'s `GridColumns`), meshed and coloured

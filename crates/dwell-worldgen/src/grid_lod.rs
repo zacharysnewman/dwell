@@ -1,4 +1,4 @@
-//! LOD sections of a grid other than home (docs/proposals/MOON_WORLD.md §7.3, BUGS.md #156): the
+//! LOD sections of a grid other than home (docs/proposals/MOON_WORLD.md §7.3, BUGS.md #159): the
 //! moon's and the sun's distant terrain drawn by home's LOD system (`dwell-lod` `LodSystem`, its
 //! graded levels and fades), with sections from the grid's own generator. A grid's generator gives
 //! its columns ([`GridColumns`]: the ground's height at a cell's scale, its block, and a fluid over

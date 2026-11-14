@@ -1,4 +1,4 @@
-//! A grid's own LOD tree (`dwell_client::grid_lod`, BUGS.md #156): on the moon and the sun, both
+//! A grid's own LOD tree (`dwell_client::grid_lod`, BUGS.md #159): on the moon and the sun, both
 //! faces, home's `LodSystem` over the grid's disc with its sections from the grid's generator
 //! (`Job::GridLod`, run here inline by the job runner) selects sections of several levels outward
 //! to the horizon, coarser with distance; the drawn sections neither leave gaps nor overlap where
@@ -359,7 +359,7 @@ fn grid_lod_checks(name: &str, src: &dyn GridColumns, f: FaceFrame, x: f64, z: f
                 };
                 matched.1 += 1;
                 matched.0 += usize::from(close(linear(dwell_mesh::lod_color(top, 0))));
-                // What the rings wrote (BUGS.md #156): the far bake's albedo, the block's `color`,
+                // What the rings wrote (BUGS.md #159): the far bake's albedo, the block's `color`,
                 // in sRGB straight into the linear colour stream.
                 let c = dwell_blocks::info(top).color;
                 let ring = [c >> 16, c >> 8, c].map(|v| f64::from(v & 0xff) / 255.0);
@@ -391,7 +391,7 @@ fn grid_lod_checks(name: &str, src: &dyn GridColumns, f: FaceFrame, x: f64, z: f
 }
 
 dwell_world::both_faces!(
-    /// BUGS.md #156: on the moon its distance steps down in detail gradually to its horizon, in
+    /// BUGS.md #159: on the moon its distance steps down in detail gradually to its horizon, in
     /// its chunks' colours.
     fn the_moon_s_lod_is_graded_gapless_and_in_its_blocks_colours(f: FaceFrame) {
         let t = dwell_worldgen::grids::CrateredTerrain::for_grid("dwell:moon", SEED).unwrap();

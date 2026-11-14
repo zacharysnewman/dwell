@@ -1,5 +1,5 @@
 //! The distant terrain of a grid while standing on it (docs/proposals/MOON_WORLD.md §7.3; BUGS.md
-//! #143, #145, #156): the moon and the sun are drawn past their streamed chunks by an LOD tree of
+//! #143, #145, #159): the moon and the sun are drawn past their streamed chunks by an LOD tree of
 //! their own, home's [`LodSystem`] (its pixel-error selection, graded levels, cross-fades and
 //! stand-ins) over the grid's disc, its sections generated in the job workers from the grid's own
 //! generator (`Job::GridLod`, `dwell_worldgen::grid_lod`) and meshed by the same LOD mesher as

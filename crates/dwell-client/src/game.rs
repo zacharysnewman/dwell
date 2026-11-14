@@ -827,7 +827,7 @@ pub struct Game<S: Scene> {
     /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
     /// M-5), built the first time each is drawn.
     grid_meshes: std::collections::HashSet<u8>,
-    /// The LOD tree of the grid the view is on (`grid_lod.rs`; BUGS.md #143, #145, #156), made
+    /// The LOD tree of the grid the view is on (`grid_lod.rs`; BUGS.md #143, #145, #159), made
     /// on the first frame there and dropped at every crossing, and the epoch of the next one.
     grid_lod: Option<crate::grid_lod::GridLod>,
     grid_lod_epoch: u64,
@@ -1789,7 +1789,7 @@ impl<S: Scene> Game<S> {
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }
-    /// The grid LOD's system, while the view is on a grid with one (BUGS.md #156).
+    /// The grid LOD's system, while the view is on a grid with one (BUGS.md #159).
     pub fn grid_lod(&self) -> Option<&LodSystem> {
         self.grid_lod.as_ref().map(|g| &g.lod)
     }
@@ -1877,7 +1877,7 @@ impl<S: Scene> Game<S> {
         self.chunk_fade(c).is_some()
     }
     /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
-    /// fade.rs), or (None) not at all. On another grid its own LOD tree answers (BUGS.md #156),
+    /// fade.rs), or (None) not at all. On another grid its own LOD tree answers (BUGS.md #159),
     /// in full without one: home's selection is in home's coordinates (BUGS.md #123).
     pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
         if self.grid_drawn != 0 {
@@ -5759,7 +5759,7 @@ impl<S: Scene> Game<S> {
         };
         self.lod_camera = Some(camera);
         // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
-        // home's; the grid's own LOD tree draws its distance, in its frame (BUGS.md #156).
+        // home's; the grid's own LOD tree draws its distance, in its frame (BUGS.md #159).
         if self.grid_drawn != 0 {
             self.update_grid_lod(&camera, now_ms);
             return;

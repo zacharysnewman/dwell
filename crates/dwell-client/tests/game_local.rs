@@ -4519,7 +4519,7 @@ dwell_world::both_faces!(
             "the moon's chunk under the player is drawn"
         );
         // Every moon chunk near the player is drawn (its own LOD shows its farther chunks'
-        // sections instead, BUGS.md #156).
+        // sections instead, BUGS.md #159).
         let scene = rig.scene.borrow();
         let near = |c: &ChunkCoord| (c.x - chunk.x).abs() <= 2 && (c.z - chunk.z).abs() <= 2;
         let hidden = scene
@@ -4543,7 +4543,7 @@ dwell_world::both_faces!(
             (0, 0),
             "no home section uploaded or shown on the moon"
         );
-        // Its distant terrain: its own LOD tree's sections (BUGS.md #156), at several levels,
+        // Its distant terrain: its own LOD tree's sections (BUGS.md #159), at several levels,
         // drawn in its frame under the grid's section ids.
         let graded = |r: &mut Rig| {
             let scene = r.scene.borrow();
