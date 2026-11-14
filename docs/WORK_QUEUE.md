@@ -2099,6 +2099,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lava's own glow and bloom kept. BUGS.md #145.
 ## Done
 
+- **Placing against a ramp's downhill side, and a held Place by the clock (BUGS.md #23, #30; brief 2026-11-13:
+  "aim at the sloped face and the placed block goes into the cell the face points into (by the face's real
+  normal)"; "make it time-based … a rate from data, accumulated per tick, not one per rendered frame"):** a slope's
+  lower half places past its low edge, its upper half on top (`slope_side`, ITEMS.md §3); a held stroke builds a
+  piece every `buildModes.repeatS` (0.05 s) at any frame rate, only a tower waiting for each answer (ITEMS.md §5).
+  Open: the split point on a slope and the rate (20 a second; it was 60 at 60 fps) are for the owner to tune; the
+  `buildDrag.spec` held-Place e2e under the software renderer was not run in the cloud session.
+
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
   underwater sounds should be muffled, high pass filter maybe?"; and "Swimming in the surface is too loud and high
   even then, like a kid learning to swim splashing."):** BUGS.md #104. Strokes by the head's depth (a soft, deep
