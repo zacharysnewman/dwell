@@ -547,6 +547,33 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
+
+Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
+move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
+tree is casting a shadow onto itself."
+
+Causes (render/shadows.rs, render/mod.rs, the cutout shaders): (1) a chunk's whole cutout mesh, its trees' leaves
+included, was a *plant* caster, drawn into the nearest `plantCascades` only (Low: the first of 2, out to ~20 m; High:
+2 of 3, ~44 m), so past them a crown cast nothing at all, on the ground or on itself; (2) the shadow passes used the
+scene's `cutout_vs`, which drops a leaf card the camera is behind (`card_dropped`'s back-cull), so which cards cast —
+the crown's top cards seen from below, its far side's — changed with where the camera stood; (3) the lookup's normal
+offset was 1.5 of each cascade's texels (2 cm in the near cascade, 7–26 cm in the far ones), so the near cascade
+shaded the crown's top with the shadows of its cards standing a few centimetres off it and the far ones couldn't;
+(4) a fragment switched cascade at the box's edge with no blend. Fix: leaves cast into every cascade (plants still
+into the nearest only; `shadows::casts`, a `Part::Leaves` range); the shadow passes' own `shadow_cutout_vs` drops no
+card for the camera's side; a tree's leaves look up at least `bias.leafNormalOffsetM` (0.35 m) out, the same in every
+cascade (`normal_offset_m`); the outer `cascades.blendBand` (15 %) of a cascade's box blends toward the next
+(`pick`, `shadow_cascades`). The choice: **no texel-scale self-shadow on a crown in any cascade** (the owner's
+first look, "only below"): the coarse cascades can't draw a card's shadow on the face under it, and the owner read
+the other look as the odd one; a crown still takes shadows from other trees, cliffs and its own upper crown more
+than 0.35 m above a face, and the ground under it is shaded in every cascade. Tests (render/shadows.rs, a CPU model
+of the maps and the lookup, both faces): `a_crowns_texel_gets_the_same_shadow_whichever_cascade_reads_it` (red
+before: the crown's top 0 under a card in the near cascades, and the ground under the crown lit past
+`plantCascades`), `a_cascades_edge_changes_a_fixed_receivers_shadow_by_the_blend` (red before: a step
+at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest`,
+`a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
+trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
 ### 155. Flying at the moon never got closer (fixed after 0.63.6)
 
 Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and
