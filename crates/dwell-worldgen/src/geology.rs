@@ -193,12 +193,10 @@ impl Blend {
         // A 3-octave fbm's spread is about 0.17: its normal CDF makes `t` near uniform, so each
         // tone covers about its share of the ground (the slope's push aside).
         let mut t = normal_cdf(n(0x6E01_0200, self.wavelength, 3) / FBM3_SD);
-        // The slope pushes toward the later tones but never into the last (a talus is red sand,
-        // never the blend's palest patches): a continuous push, so neighbours stay a tone apart.
-        let below_last: f64 = self.shares[..self.shares.len() - 1].iter().sum();
-        if t < below_last {
-            t = (t + self.slope * slope).min(below_last - 1e-6);
-        }
+        // The slope pushes toward the later tones (red sand on the slopes and washes, 0.69: the
+        // tones follow the relief instead of lying as flat blobs): a continuous push, so
+        // neighbours stay a tone apart.
+        t = (t + self.slope * slope).min(1.0 - 1e-6);
         if self.dither > 0.0 {
             t += self.dither * 2.0 * n(0x6E01_0201, self.dither_wavelength, 1);
         }
@@ -868,6 +866,10 @@ pub struct Erosion {
     pub gully_wavelength: f64,
     /// The rills' depth (m).
     pub gully_depth: f64,
+    /// The drainage lines read at a point warped ± `warp` m at `warp_wavelength` m (0.69; 0: as
+    /// built, the map cells' straight segments: washes and scarps meander instead).
+    pub warp: f64,
+    pub warp_wavelength: f64,
 }
 
 /// Relief on the erosion's mesas (rocks.json `mesaRelief`; owner, 2026-11-13: "mesas are too flat

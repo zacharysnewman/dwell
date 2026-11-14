@@ -245,9 +245,6 @@ pub struct BiomeMap {
     pub trees_sharpen: f64,
     /// The steep rock's slope threshold ± this share of itself by a fine noise (0: a crisp edge).
     pub rock_edge: f64,
-    /// A biome weighing at least this is picked outright (1: never; 0.69, Realistic: no blobs of
-    /// a neighbour's ground inside a biome's core, its border still mingling).
-    pub dominant: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
@@ -1565,7 +1562,8 @@ impl TerrainGenerator {
             .geology
             .rock(st.layers[0].rock)
             .map_or(0.5, |r| geo.geology.rocks[r].hardness);
-        let (dist, line, acc) = field.at(&self.map, x as f64, z as f64);
+        let (wx, wz) = self.drainage_point(x, z);
+        let (dist, line, acc) = field.at(&self.map, wx, wz);
         let period = geo.profiles[stack].period().max(1.0);
         let top = self.biomes.soft_tops[stack];
         let snapped = ((line - top) / period).floor() * period + top;
@@ -1590,7 +1588,7 @@ impl TerrainGenerator {
         if let Some(f) = self.biomes.list[usize::from(mix.chosen)]
             .arches
             .and_then(|a| a.fins)
-            && let Some((d1, d2)) = field.fronts(x as f64, z as f64)
+            && let Some((d1, d2)) = field.fronts(wx, wz)
             && let Some(m) = f.margin(d1, d2, retreat)
         {
             margin = margin.max(m);
@@ -1763,7 +1761,8 @@ impl TerrainGenerator {
         // The floor: rising from its drainage line, low mounds, talus fans, washes.
         let mut low = 0.0;
         if let Some(field) = self.biomes.drainage.as_ref() {
-            let (dist, _, _) = field.at(&self.map, x as f64, z as f64);
+            let (wx, wz) = self.drainage_point(x, z);
+            let (dist, _, _) = field.at(&self.map, wx, wz);
             low += (r.floor_slope * dist).min(r.floor_rise);
         }
         if r.mound_height > 0.0 {
@@ -1829,6 +1828,28 @@ impl TerrainGenerator {
             None,
         )))
         .clamp(-1.0, 1.0)
+    }
+
+    /// Where the drainage lines are read for face-local (x, z): warped by the erosion's `warp`
+    /// (0.69), two octaves, so washes and scarps meander instead of following the map cells.
+    fn drainage_point(&self, x: i64, z: i64) -> (f64, f64) {
+        let e = &self.biomes.geology.geology.erosion;
+        if e.warp <= 0.0 {
+            return (x as f64, z as f64);
+        }
+        let w = |k: u32| {
+            e.warp
+                * 2.0
+                * f64::from(fbm2(
+                    crate::noise::mix32(self.snow_seed ^ 0xD8A1_0690 ^ k),
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    e.warp_wavelength as i32,
+                    2,
+                    None,
+                ))
+        };
+        (x as f64 + w(1), z as f64 + w(2))
     }
 
     /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.

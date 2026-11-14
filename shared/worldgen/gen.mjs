@@ -620,6 +620,9 @@ export function vegetationRust(data) {
   return rs.join("\n");
 }
 
+/** The erosion's optional keys' defaults (0.69): absent, as before. */
+const EROSION_DEFAULTS = { warp: 0, warpWavelength: 200 };
+
 /** The Rust for the validated geology (rocks.json, `validateRocks`; systemic terrain T2). */
 export function rocksRust(data) {
   const rs = [
@@ -695,7 +698,7 @@ export function rocksRust(data) {
   rs.push("    erosion: Erosion {");
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
-    rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
+    rs.push(`        ${snake(k)}: ${rf(data.erosion[k] ?? EROSION_DEFAULTS[k])},`);
   rs.push("    },");
   rs.push("    blends: &[");
   for (const b of data.blends ?? []) {
@@ -1094,7 +1097,6 @@ export function terrainRust({
   rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
   rs.push(`    trees_sharpen: ${rf(bm.treesSharpen ?? 1)},`);
   rs.push(`    rock_edge: ${rf(bm.rockEdge ?? 0)},`);
-  rs.push(`    dominant: ${rf(bm.dominant ?? 1)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);

@@ -158,7 +158,6 @@ export const TERRAIN = {
     ditherWarp: [0, 1000],
     treesSharpen: [1, 16],
     rockEdge: [0, 0.9],
-    dominant: [0.5, 1],
     windDirection: [0, 360],
     windReach: [{ above: 0 }, 1_000_000],
     baseRain: [0, 1],
@@ -797,7 +796,7 @@ export const PLATE_SETTINGS = [
   "default",
 ];
 /** The geology's keys that may be absent (absent: as before 0.69). */
-export const GEOLOGY_OPTIONAL = ["coverRain", "coverNoise", "edgeJitter", "edgeFade"];
+export const GEOLOGY_OPTIONAL = ["coverRain", "coverNoise", "edgeJitter", "edgeFade", "warp", "warpWavelength"];
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
@@ -829,6 +828,8 @@ export const GEOLOGY = {
     outlineWavelength: [16, 100_000, true],
     gullyWavelength: [4, 10_000, true],
     gullyDepth: [0, 100],
+    warp: [0, 1000],
+    warpWavelength: [16, 100_000, true],
   },
   mesaRelief: {
     topAmplitude: [0, 50],

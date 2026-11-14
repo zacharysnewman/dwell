@@ -443,7 +443,36 @@ impl BiomeField {
     /// threshold dithered by a noise and a per-column hash, so a border is a ragged, gradual
     /// mingling, never a line.
     pub fn mix(&self, biomes: &[Biome], x: i64, z: i64, elevation: f64) -> Mix {
-        let g = self.geography(x, z, elevation);
+        // The weights read at a point warped at three scales (`ditherWarp` m at 4 × the dither's
+        // wavelength, a fifth of it at half, a twentieth at an eighth; 0.69): a border wanders and
+        // breaks into fingers by a set distance, however slowly the climate changes across it.
+        let p = &self.params;
+        let (gx, gz) = if p.dither_warp > 0.0 {
+            let l = p.dither_wavelength;
+            let mut d = [0.0f64; 2];
+            for (k, (amp, wl)) in [(1.0, 4 * l), (0.2, l / 2), (0.05, l / 8)]
+                .iter()
+                .enumerate()
+            {
+                for (a, out) in d.iter_mut().enumerate() {
+                    *out += p.dither_warp
+                        * amp
+                        * 2.0
+                        * f64::from(fbm2(
+                            self.dither_seed ^ (0x6A57_0690 + (2 * k + a) as u32),
+                            x,
+                            z,
+                            (*wl).max(4),
+                            1,
+                            None,
+                        ));
+                }
+            }
+            (x + d[0] as i64, z + d[1] as i64)
+        } else {
+            (x, z)
+        };
+        let g = self.geography(gx, gz, elevation);
         let mut ws = fallback_weights(biomes, &g);
         ws.retain(|&(_, w)| w > 0.0);
         ws.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -458,16 +487,6 @@ impl BiomeField {
         mix.len = ws.len() as u8;
         for (k, &(i, w)) in ws.iter().enumerate() {
             mix.weights[k] = (i, (w / total) as f32);
-        }
-        let p = &self.params;
-        // A dominant biome is picked outright (`dominant`; 1, the default: never).
-        if p.dominant < 1.0
-            && let Some(&(i, _)) = mix.weights[..usize::from(mix.len)]
-                .iter()
-                .find(|&&(_, w)| f64::from(w) >= p.dominant)
-        {
-            mix.chosen = i;
-            return mix;
         }
         let hash = f64::from(hash2(self.dither_seed, x as i32, z as i32)) / f64::from(u32::MAX);
         // The noise's sample point warped (`ditherWarp`; 0 in the default world: unchanged).

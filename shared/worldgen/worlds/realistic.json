@@ -8,10 +8,10 @@
   "cliffs": 0,
   "biomeMap": {
     "ditherSpeckle": 0,
-    "ditherWavelength": 48,
-    "ditherWarp": 60,
+    "ditherWavelength": 160,
+    "ditherWarp": 150,
+    "dither": 0.06,
     "treesSharpen": 4,
-    "dominant": 0.6,
     "rockEdge": 0.3
   },
   "geology": {
@@ -23,7 +23,9 @@
       "edgeFade": 0.35
     },
     "erosion": {
-      "strength": 1
+      "strength": 1,
+      "warp": 60,
+      "warpWavelength": 240
     },
     "surfaces": {
       "replace": [{ "block": "dwell:sand", "with": "dwell:dirt", "except": ["dwell:dune_sand"] }]
