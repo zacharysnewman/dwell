@@ -16,6 +16,7 @@
     "view": {
       "distanceM": 352,
       "pixelError": 6,
+      "memoryMb": 768,
       "renderScale": 1,
       "shafts": "high",
       "bloom": "high",

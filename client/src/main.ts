@@ -451,6 +451,8 @@ interface DwellDebug {
     speedEffects?: boolean;
     distanceM?: number;
     pixelError?: number;
+    /** The distant view's memory budget (MB; a cinematic take bounds it). */
+    memoryMb?: number;
     smoke?: boolean;
     flowParticles?: boolean;
     flowRipples?: boolean;
@@ -1601,11 +1603,11 @@ async function start(): Promise<App | null> {
       if (v.clouds !== undefined) client.setClouds(v.clouds);
       if (v.targetOutline !== undefined) client.setTargetOutline(v.targetOutline);
       if (v.speedEffects !== undefined) client.setMotion(v.speedEffects, s.motion.fovBoost);
-      if (v.distanceM !== undefined || v.pixelError !== undefined) {
+      if (v.distanceM !== undefined || v.pixelError !== undefined || v.memoryMb !== undefined) {
         client.setDetail(
           v.distanceM ?? s.detail.distanceM,
           v.pixelError ?? s.detail.pixelError,
-          s.detail.memoryMb,
+          v.memoryMb ?? s.detail.memoryMb,
         );
       }
       if (v.smoke !== undefined) {

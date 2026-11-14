@@ -194,7 +194,14 @@ describe('the take', () => {
     // a stand-in OffscreenCanvas for node
     (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
       getContext() {
-        return { drawImage: () => undefined, globalAlpha: 1 };
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
+      }
+      transferToImageBitmap() {
+        return {};
       }
       convertToBlob() {
         return Promise.resolve(new Blob([new Uint8Array([1])]));

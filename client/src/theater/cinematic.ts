@@ -256,6 +256,9 @@ export function percentile(xs: readonly number[], p: number): number {
   return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? 0;
 }
 
+/** Frames being encoded at once (each a PNG of the output size). */
+const ENCODES = 8;
+
 async function blobBytes(c: OffscreenCanvas, type: string): Promise<Uint8Array> {
   const b = await c.convertToBlob({ type });
   return new Uint8Array(await b.arrayBuffer());
@@ -315,6 +318,8 @@ export async function runCinematic(
     const capped: number[] = [];
     let ticks = 0;
     let lastT = 0;
+    let sunk: Promise<void> = Promise.resolve();
+    const inFlight: Promise<void>[] = [];
     for (let i = 0; i < frames; i++) {
       for (let s = 0; s < S; s++) {
         const t = frameTimeS(i, s, cfg.fps, S);
@@ -343,8 +348,20 @@ export async function runCinematic(
         }
       }
       ctx2d.globalAlpha = 1;
-      await host.sink(frameName(i, cfg.image), await blobBytes(out, cfg.image));
+      // Encoded off the frame loop (a 1080p PNG takes ~1–2 s): the pixels are handed to a new canvas
+      // and encoded while the next frames render, at most ENCODES at once, sunk in order.
+      const pixels = out.transferToImageBitmap();
+      const name = frameName(i, cfg.image);
+      const encoded = (async () => {
+        const c = new OffscreenCanvas(w, h);
+        c.getContext('bitmaprenderer')?.transferFromImageBitmap(pixels);
+        return blobBytes(c, cfg.image);
+      })();
+      sunk = sunk.then(async () => host.sink(name, await encoded));
+      inFlight.push(sunk);
+      if (inFlight.length >= ENCODES) await inFlight.shift();
     }
+    await sunk;
     const seconds = frames / cfg.fps;
     let step: AudioStep | null = null;
     if (audio) {
