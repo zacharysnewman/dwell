@@ -105,8 +105,10 @@ dwell_world::both_faces!(
         );
         // Massive granite: about none, as unshaped (the few are the hill's own steepest ground and
         // the walls of a bedded layer or stack beside it).
+        // Under 1.5 % (1 % before the plate boundaries' true crossings, BUGS.md #164, 0.64, moved
+        // the provinces' edges: face B 133 of 13128, 1.01 %).
         assert!(
-            share(massive) < 0.01,
+            share(massive) < 0.015,
             "massive granite rises unstepped: {massive:?}"
         );
         assert!(
@@ -214,8 +216,10 @@ dwell_world::both_faces!(
             share(old.1, old.2),
         );
         assert!(columns > 2000, "enough bedded ground sampled: {columns}");
+        // Under an eighth (a tenth before every ramp was backed, BUGS.md #163, 0.64: a ramp that
+        // would back onto open air is a full block, its ½ m edge bare; face B 463 of 4530).
         assert!(
-            share(edges, bare) < 0.1,
+            share(edges, bare) < 0.125,
             "bedded slopes ramp, not a field of ½ m stairs: {bare} of {edges} ½ m edges bare"
         );
         assert!(
@@ -295,7 +299,9 @@ dwell_world::both_faces!(
     /// red_rock_mesa.json, now `dwell:red_sand`), red sand on the surface and never plain sand.
     fn the_red_desert_floor_is_red_sand_by_data(f: FaceFrame) {
         let (mut tops, mut red, mut plain) = (0, 0, 0);
-        for seed in [1, 7, SEED] {
+        // Seed 2 too: since the biomes read the rain blurred (BUGS.md #164, 0.64), face B of the
+        // other three holds only 17 mesa samples.
+        for seed in [1, 2, 7, SEED] {
             let seed = face_seed(seed, f.face);
             let g = generator(seed, None);
             let mesa = g

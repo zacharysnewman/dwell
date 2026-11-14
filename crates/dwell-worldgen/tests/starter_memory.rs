@@ -119,8 +119,13 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 ///
 /// Re-pinned 2026-11-14 for the bigger shrines (16 m across, pillars three times as tall; ships on
 /// the 0.64 line): face B's shrine changes shape, face A's hash unchanged.
+///
+/// Re-pinned 2026-11-14 for the 0.64 terrain fixes (WORK_QUEUE item 15): every stored ramp backed
+/// (BUGS.md #163; the starter's shaped rock notches its ramps, and a notched ramp that would back
+/// onto open air is now a full block) and the biomes reading the rain blurred over 4 km
+/// (`rain.blurM`, BUGS.md #164); both faces change.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "2c9c24b8112e13b3"), (Face::B, "ae64b47e98553c61")];
+    [(Face::A, "c0391338f3aefa34"), (Face::B, "5048b8229352e912")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

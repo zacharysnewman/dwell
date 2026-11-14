@@ -734,6 +734,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
+   **Ship the finished terrain fixes now (owner, 2026-11-13, on the seam fix sitting unshipped inside PR #897):**
+   **"Why are you waiting to ship the fix?"** Orchestrator's brief: split the already-verified fixes out of the held
+   Realistic batch (PR #897, `claude/realistic-geography-batch-a-k0fcrg`, held for new map artifacts) and ship them as
+   the 0.64 line; the batch takes 0.65. Taken onto `claude/terrain-fixes-064-5sim68` off main: BUGS.md #164 (the
+   straight seams: plate boundary points as true crossings, `plates.rs` `crossing`; the biomes read rain blurred over
+   4 km, `rain.blurM`), #163 (ramps backing onto open air, `ramps::top_backed_by`, in every world and grid), and the
+   bigger shrines (PR #930, merged in). Not taken: plate pairs, the rim, variety, mesas, deserts. Owner should see: no
+   straight km-long seams between terrain types; no ramp backs standing in open air (no sawtooth spikes in bowls);
+   bigger shrines; all in the next release.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
