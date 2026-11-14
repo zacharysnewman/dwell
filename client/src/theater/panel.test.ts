@@ -276,3 +276,89 @@ describe('frame-exact takes', () => {
     expect(times).toEqual(frames.map((f) => Math.round(f.timestampUs / 1000)));
   });
 });
+
+/** style.css's declarations for exactly `selector` (the first such rule), or ''. */
+function cssRule(css: string, selector: string): string {
+  const at = css.indexOf(`\n${selector} {`);
+  if (at < 0) return '';
+  const open = css.indexOf('{', at);
+  return css.slice(open + 1, css.indexOf('}', open));
+}
+
+/** A `#rrggbb` or `rgb(r g b / a%)` colour's channels (0–255) and alpha. */
+function color(s: string): [number, number, number, number] {
+  const hex = /#([0-9a-f]{6})\b/i.exec(s);
+  if (hex) {
+    const n = parseInt(hex[1] ?? '0', 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+  }
+  const m = /rgb\((\d+) (\d+) (\d+)(?: \/ (\d+)%)?\)/.exec(s);
+  if (!m) throw new Error(`no colour in ${s}`);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? Number(m[4]) / 100 : 1];
+}
+
+function luminance([r, g, b]: number[]): number {
+  const lin = (c: number): number => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r ?? 0) + 0.7152 * lin(g ?? 0) + 0.0722 * lin(b ?? 0);
+}
+
+describe('the recording badge (BUGS.md #159)', () => {
+  it('shows a saturated red dot that stands out on its pill and never blinks out', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(`${process.cwd()}/src/style.css`, 'utf8');
+    const dot = cssRule(css, '.tb-rec .tb-dot');
+    const pill = cssRule(css, '.tb-rec');
+    const bg = /background:\s*([^;]+);/;
+    const [r, g, b] = color(bg.exec(dot)?.[1] ?? '');
+    // Saturated red: red well over green and blue.
+    expect(r).toBeGreaterThan(200);
+    expect(Math.max(g, b)).toBeLessThan(r * 0.25);
+    // The pill over the panel's light glass (white): the dot's contrast on it is at least 3:1.
+    const [pr, pg, pb, pa] = color(bg.exec(pill)?.[1] ?? '');
+    const over = [pr, pg, pb].map((c) => c * pa + 255 * (1 - pa));
+    const [hi, lo] = [luminance(over), luminance([r, g, b])].sort((x, y) => y - x);
+    expect(((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05)).toBeGreaterThanOrEqual(3);
+    // Its animation never hides it and never dims it under 60 %.
+    const anim = /animation:\s*([\w-]+)/.exec(dot)?.[1] ?? '';
+    const frames = new RegExp(`@keyframes ${anim} \\{([\\s\\S]*?)\\n\\}`).exec(css)?.[1] ?? '';
+    expect(frames).not.toMatch(/visibility|display/);
+    const opacities = [...frames.matchAll(/opacity:\s*([\d.]+)/g)].map((m) => Number(m[1]));
+    expect(Math.min(1, ...opacities)).toBeGreaterThanOrEqual(0.6);
+  });
+});
+
+describe('the phone’s flying controls over the bottom sheet (BUGS.md #160)', () => {
+  it('show above the open sheet at 390×844, their rect clear of it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(`${process.cwd()}/src/style.css`, 'utf8');
+    // No rule hides them while the sheet is open.
+    expect(css).not.toMatch(/\.theater-touch\.tb-sheet-bottom\[data-sheet='open'\]/);
+    const { theater } = rig();
+    (theater as unknown as { host: { touchDevice: () => boolean } }).host.touchDevice = () => true;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+    theater.enter();
+    theater.relayout(390, 844);
+    const sheetTop = 480; // the open sheet's top edge (its content's height)
+    theater.bar.getBoundingClientRect = () => new DOMRect(0, sheetTop, 390, 844 - sheetTop);
+    theater.frame(0, null);
+    const pad = document.getElementById('theater-touch');
+    expect(pad?.hidden).toBe(false);
+    expect(pad?.dataset.sheet).toBe('open');
+    const bottom = parseFloat(pad?.style.bottom ?? '');
+    // The controls' bottom edge (844 − bottom) is above the sheet's top; the stick (128 px) fits.
+    expect(844 - bottom).toBeLessThanOrEqual(sheetTop);
+    expect(844 - bottom - 128).toBeGreaterThan(0);
+    // Collapsed: just above the header.
+    theater.bar.getBoundingClientRect = () => new DOMRect(0, 760, 390, 84);
+    theater.frame(16, null);
+    expect(844 - parseFloat(pad?.style.bottom ?? '')).toBeLessThanOrEqual(760);
+    // Landscape's side sheet: back to the stylesheet's place.
+    theater.relayout(844, 390);
+    theater.frame(32, null);
+    expect(pad?.style.bottom).toBe('');
+    theater.exit();
+  });
+});

@@ -23,6 +23,18 @@ export function layoutFor(width: number, height: number): TheaterLayout {
   return height >= width ? 'sheet-bottom' : 'sheet-side';
 }
 
+/** The gap (CSS px) between the bottom sheet's top edge and the phone's flying controls above it. */
+export const TOUCH_GAP_PX = 8;
+
+/**
+ * Where the phone's flying controls sit over a bottom sheet (BUGS.md #160): their CSS `bottom`, px,
+ * in a viewport `viewportH` tall whose sheet's top edge is at `sheetTop` (open or collapsed), so
+ * they ride just above it and the camera can be flown with the sheet open.
+ */
+export function touchBottomOverSheet(viewportH: number, sheetTop: number): number {
+  return Math.max(0, viewportH - sheetTop) + TOUCH_GAP_PX;
+}
+
 /** A take's running time as the recording badge shows it: `0:07`, `1:05`, `12:00`. */
 export function timerText(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

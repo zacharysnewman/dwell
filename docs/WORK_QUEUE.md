@@ -2065,6 +2065,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
    `theaterGuests`, T-5.
 
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the REC
+   badge's dot was a faint pink smudge that blinked out (BUGS.md #159), and on a phone in portrait the stick and
+   Up/Down were hidden while the bottom sheet was open (BUGS.md #160). **Fixed (`claude/visual-small-1`):** a
+   saturated red dot ringed in white on a light pill, pulsing no lower than 60 %; the flying controls ride just above
+   the bottom sheet, open or collapsed. **Owner should see:** a clear red recording dot; on a phone in portrait, the
+   stick and Up/Down above the open sheet, flying the camera while the sheet is open.
+
 42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
    lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a
@@ -2118,6 +2125,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
    direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
    lava's own glow and bloom kept. BUGS.md #145.
+
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the
+   sun's dry crust beside the lava read nearly black, so the reflected light barely showed (BUGS.md #161). **Fixed
+   (`claude/visual-small-1`), data only:** the rig's ambient floor 0.06 → 1.2 (a softer warm), the glow 0.45 → 2.5,
+   home 0.9 → 6.0, the moon 0.35 → 2.0. **Owner should see:** at a sun river head, the crust reads as dark warm-lit
+   basalt with its form visible, brighter toward home; the lava as bright as before.
 ## Done
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
