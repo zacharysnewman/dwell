@@ -428,6 +428,10 @@ pub struct SkinnedRenderer {
     idle_poses: HashMap<(usize, u32), (Option<&'static str>, f32)>,
     draws: Vec<Draw>,
     last_s: Option<f64>,
+    /// Each body's carry joint this frame (`blueprints.json` `carryLook.joint`, relative to the
+    /// eye), in `prepare`'s `bodies` order: where a carried load is stacked (B5). None: not drawn,
+    /// or its model has no such joint.
+    carry_points: Vec<Option<[f32; 3]>>,
     /// The Model detail setting's level (`dwell_models::DETAIL_LEVELS`), every mesh drawn at it.
     level: usize,
     /// Your first-person arms' triangles (the player model's `firstPerson`, over its vertices) and
@@ -811,6 +815,7 @@ impl SkinnedRenderer {
             idle_poses: HashMap::default(),
             draws: Vec::new(),
             last_s: None,
+            carry_points: Vec::new(),
             level,
             arms_index,
             arms: None,
@@ -891,6 +896,8 @@ impl SkinnedRenderer {
         });
         let mut floats: Vec<f32> = Vec::new();
         let mut hands = vec![None; bodies.len()];
+        self.carry_points = vec![None; bodies.len()];
+        let carry_joint = dwell_world::blueprint::SHIPPED.carry_look.joint;
         for (n, d) in bodies.iter().enumerate() {
             let Some(mesh) = keys[n] else {
                 continue;
@@ -934,6 +941,15 @@ impl SkinnedRenderer {
             }
             let globals = anim::globals(model, &local);
             hands[n] = hand_frame(data, model, &globals, &place);
+            self.carry_points[n] = model
+                .nodes
+                .iter()
+                .position(|j| j.name == carry_joint)
+                .and_then(|j| globals.get(j))
+                .map(|g| {
+                    let m = mm::mul(&place, g);
+                    [m[3][0], m[3][1], m[3][2]]
+                });
             let joints: Vec<Mat4> = model
                 .skin
                 .iter()
@@ -1037,6 +1053,12 @@ impl SkinnedRenderer {
     }
 
     /// Where the model holds an item (models.json `hand`).
+    /// Each body's carry joint from the last `prepare` (relative to the eye), in its `bodies`
+    /// order.
+    pub fn carry_points(&self) -> &[Option<[f32; 3]>] {
+        &self.carry_points
+    }
+
     pub fn hand(&self) -> Option<dwell_models::Hand> {
         self.meshes[0].data.hand
     }

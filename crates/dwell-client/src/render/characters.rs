@@ -767,6 +767,57 @@ pub fn creature_draw(
     (draw, held)
 }
 
+/// A carried load's pieces on an NPC's back (B5, docs/BLUEPRINTS.md §9): for each piece (its
+/// block, a client state, in load order) the bones that put the characters item `look.item` (a
+/// cube on its socket's bone) at its place in the stack ([`dwell_world::blueprint::CarryLook::stack`]):
+/// from the model's carry joint `joint` (relative to the eye), turned with the body (`body`, its
+/// place frame: on face B upside down), scaled to the piece's side. Empty: nothing carried, or
+/// the character has no such item.
+pub fn carry_bones(
+    character: &Character,
+    look: &dwell_world::blueprint::CarryLook,
+    carry: &[u16],
+    joint: [f32; 3],
+    body: &Affine,
+) -> Vec<([Affine; MAX_BONES], u16)> {
+    let Some(item) = character.item(look.item) else {
+        return Vec::new();
+    };
+    let (bone, at) = item.socket;
+    if carry.is_empty() || bone >= MAX_BONES {
+        return Vec::new();
+    }
+    // The item's cube is authored this big (characters.json `carried`).
+    let side = item.parts.first().map_or(0.2, |p| p.size[0]).max(1e-3);
+    let names: Vec<&str> = carry
+        .iter()
+        .map(|&b| dwell_blocks::block_of(b).name)
+        .collect();
+    let turn = Affine {
+        m: body.m,
+        t: [0.0; 3],
+    };
+    let base = Affine::translation(joint).then(&turn);
+    look.stack(&names)
+        .into_iter()
+        .zip(carry)
+        .map(|((c, piece), &b)| {
+            let k = piece as f32 / side;
+            let scale = Affine {
+                m: [[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]],
+                t: [0.0; 3],
+            };
+            let frame = base
+                .then(&Affine::translation(c.map(|v| v as f32)))
+                .then(&scale)
+                .then(&Affine::translation(at.map(|v| -v)));
+            let mut bones = [Affine::default(); MAX_BONES];
+            bones[bone] = frame;
+            (bones, b)
+        })
+        .collect()
+}
+
 /// An NPC's rig pose at `t_s` seconds: the characters rig's clip for `role` (its `idle` for a
 /// role the rig has no clip for: an NPC's `look` and `sit`), looped (a one-shot held at its end),
 /// with `item`'s turns on.
@@ -1387,8 +1438,12 @@ impl CharacterRenderer {
         // hand after (docs/CHARACTERS.md §11.11).
         let mut held_at: Vec<usize> = (0..held_items.len()).collect();
         let now_s = crate::render_clock::now_ms() / 1000.0;
+        let mut carried = Vec::new();
         for (c, light) in &self.creatures {
             let (draw, held) = creature_draw(self.character, c, *light, now_s);
+            if !c.carry.is_empty() {
+                carried.push((skinned.len(), c, *light));
+            }
             if held != Held::Empty {
                 let dist = (0..3)
                     .map(|k| (c.feet[k] - eye[k]).powi(2))
@@ -1482,6 +1537,51 @@ impl CharacterRenderer {
                 casts: h.casts,
                 cast_only: h.cast_only,
             });
+        }
+        // The NPCs' carried loads (B5): a cube of each piece's block, stacked on the back from
+        // the skinned body's carry joint, turned with the body.
+        let look = dwell_world::blueprint::SHIPPED.carry_look;
+        for (at, c, light) in carried {
+            let Some(joint) = self.skinned.carry_points().get(at).copied().flatten() else {
+                continue;
+            };
+            let dist = (0..3)
+                .map(|k| (c.feet[k] - eye[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            let mut mask = 0u8;
+            for (i, (near, far)) in passes.iter().enumerate() {
+                if dist + 3.0 >= *near && dist - 3.0 <= *far {
+                    mask |= 1 << i;
+                }
+            }
+            let casts = dist - 3.0 <= cast_m;
+            if mask == 0 && !casts {
+                continue;
+            }
+            let far = dist > OUTLINE_M;
+            let body = place_frame(c.feet, c.yaw, c.face, eye);
+            for (bones, block) in carry_bones(self.character, &look, &c.carry, joint, &body) {
+                let key = MeshKey {
+                    name: look.item,
+                    item: true,
+                    view: View::Body,
+                    far,
+                    own: false,
+                    model: None,
+                };
+                let instance = push(&bones, Held::Block(block), !far, false, 0.0, light);
+                keys.push(key);
+                self.draws.push(Draw {
+                    instance,
+                    body: None,
+                    item: Some(key),
+                    outline: outline_for(far),
+                    passes: mask,
+                    casts,
+                    cast_only: false,
+                });
+            }
         }
         if let (Some(a), Some(frame)) = (arms, arms_frame_now) {
             let held_item = item_shown(self.character, a.held).and_then(|n| self.character.item(n));
@@ -1999,6 +2099,7 @@ mod tests {
                 pose: None,
                 pose_s: 0.0,
                 tint: [0.0; 4],
+                carry: Vec::new(),
             };
             let (a, held) = creature_draw(ch, &view(Some(npc(99))), [1.0, 0.0], 0.0);
             assert_eq!(held, Held::Model { hold: "sword", model: "sword" });
@@ -2891,6 +2992,48 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // B5 (docs/BLUEPRINTS.md §9): a carried load is a cube per piece on the NPC's back, as many as
+    // it carries, rising from the carry joint with the count, behind it and turned with the body,
+    // each its block's own look; on both faces (face B's body upside down, its stack too).
+    dwell_world::both_faces! {
+        fn a_carried_stack_is_a_cube_per_piece_behind_the_back(f: FaceFrame) {
+            let ch = dwell_characters::player();
+            let look = dwell_world::blueprint::SHIPPED.carry_look;
+            let stone = dwell_blocks::require("dwell:stone");
+            let joint = [0.0f32, 0.0, 0.0];
+            let feet = f.point([0.0, 12.0, 0.0]);
+            let body = place_frame(feet, 0.0, f, feet);
+            assert!(carry_bones(ch, &look, &[], joint, &body).is_empty(), "nothing carried");
+            let one = carry_bones(ch, &look, &[stone], joint, &body);
+            let ten = carry_bones(ch, &look, &[stone; 10], joint, &body);
+            assert_eq!((one.len(), ten.len()), (1, 10), "a cube per piece");
+            assert!(ten.iter().all(|p| p.1 == stone), "its block's look");
+            let item = ch.item(look.item).expect("the carried item");
+            let (bone, at) = item.socket;
+            // Where each cube's centre lands (the item's part sits at its socket's point).
+            let centre = |b: &[Affine; MAX_BONES]| b[bone].apply(at);
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let ahead = f.vector([0.0, 0.0, 1.0]);
+            let along = |p: [f32; 3], v: [f64; 3]| -> f64 {
+                (0..3).map(|k| f64::from(p[k]) * v[k]).sum()
+            };
+            let top = |s: &[([Affine; MAX_BONES], u16)]| {
+                s.iter().map(|p| along(centre(&p.0), up)).fold(f64::MIN, f64::max)
+            };
+            assert!(top(&ten) > top(&one) + 0.5, "ten stand higher than one");
+            assert!(
+                ten.iter().all(|p| along(centre(&p.0), ahead) < 0.0),
+                "behind the back"
+            );
+            // The face-local stack matches the data's (through the face's frame).
+            let want = look.stack(&["dwell:stone"; 10]);
+            for (p, w) in ten.iter().zip(&want) {
+                let c = centre(&p.0);
+                assert!((along(c, up) - w.0[1]).abs() < 1e-4, "{c:?} vs {:?}", w.0);
             }
         }
     }

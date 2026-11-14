@@ -1,5 +1,5 @@
 {
-  "$comment": "A fixture: the generator test adds a catalog entry and a builder by data alone.",
+  "$comment": "A fixture: the generator test adds a catalog entry, a builder, a job (B5), a storehouse and a carried look by data alone.",
   "formatVersion": 1,
   "limits": {
     "perWorld": 64
@@ -16,7 +16,36 @@
     "paceS": 0.5,
     "reachM": 4,
     "nearM": 96,
-    "perBlueprint": 1
+    "perBlueprint": 1,
+    "job": "test:mason"
+  },
+  "jobs": [
+    {
+      "name": "test:mason",
+      "kind": "build",
+      "carryMax": 4,
+      "mixedLoads": false,
+      "waitS": 1
+    }
+  ],
+  "storehouse": {
+    "stock": "unlimited",
+    "rangeM": 32,
+    "reachM": 2
+  },
+  "carryLook": {
+    "item": "carried",
+    "joint": "spine.003",
+    "at": [0, 0, -0.1],
+    "pieceM": 0.1,
+    "perLayer": 3,
+    "kinds": [
+      {
+        "block": "dwell:stone",
+        "pieceM": 0.15,
+        "perLayer": 1
+      }
+    ]
   },
   "catalog": ["test:ladder_post"],
   "towns": {
@@ -27,11 +56,18 @@
     "maxSlopeDeg": 12,
     "footprintM": 32,
     "foundM": 128,
+    "clearM": 4,
     "plans": [
       {
         "name": "test:camp",
         "weight": 2,
         "blueprints": [
+          {
+            "structure": "test:ladder_post",
+            "at": [-1, 1],
+            "turn": 0,
+            "role": "storehouse"
+          },
           {
             "structure": "test:ladder_post",
             "at": [1, -1],
