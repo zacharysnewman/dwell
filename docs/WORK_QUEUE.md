@@ -25,6 +25,13 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **Tree mesh bugs (owner, 2026-11-13; BUGS.md #167, #168):** "Tree leaf inside faces touching the tree log
+  shouldn't be shown and they cause z fighting. Also sideways logs (after a tree is felled) octagon shape corners are
+  shorter than when upright, the sides aren't the same length and they should be the same." Brief: cull the leaf face
+  where it touches the log, filling only the octagon's corner gaps (nothing coplanar); a lying log's cross-section
+  the same regular octagon as upright on every axis. Done on `claude/log-leaf-mesh-0dfqyg`. **Owner should see:** no
+  flickering/z-fighting where leaves meet trunks and branches; a felled log's end shows the same even octagon as a
+  standing trunk.
 - **Dynamite and tall grass (owner, 2026-11-13; BUGS.md #165):** "Dynamite blows up (physics) tall grass that's
   wrong. It should just be destroyed if the block under it is moved or destroyed." Brief: as a data rule, not a
   tall-grass case — blocks that sit on or attach to another and aren't structural are never flung pieces; in a blast

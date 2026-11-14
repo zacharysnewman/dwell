@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Leaves no longer flicker where they touch tree trunks and branches",
+    "A felled log's end is the same even octagon as a standing trunk"
+  ]
+}
