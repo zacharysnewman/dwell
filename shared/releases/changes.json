@@ -12,6 +12,14 @@
       ]
     },
     {
+      "version": "0.67.2",
+      "changes": [
+        "Torches are always whole: a flame never floats without its stick, and a stick never stands without its flame.",
+        "Breaking, blasting, filling or flooding either half of a torch now removes the other half too.",
+        "Worlds saved with a lone torch half lose it when they load."
+      ]
+    },
+    {
       "version": "0.67.1",
       "changes": [
         "The axe has one swing, like the pickaxe and shovel: right click no longer switches it to a vertical chop",
