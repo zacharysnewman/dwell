@@ -609,8 +609,20 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         ledge: opt("ledge").unwrap_or(0.0),
         ledge_every: opt("ledgeEvery").unwrap_or(1.0),
         tread_relief: opt("treadRelief").unwrap_or(0.0),
-        notched: opt("notched").is_some_and(|n| n >= 1.0),
+        // A word (rocks.json `shaping.notched`), or an edit stored in 0.59–0.61: 1 all, else none.
+        notched: match v.get("shaping").and_then(|s| s.get("notched")) {
+            Some(Value::String(w)) => match w.as_str() {
+                "none" => crate::geology::Notched::None,
+                "mesaEdges" => crate::geology::Notched::MesaEdges,
+                "all" => crate::geology::Notched::All,
+                other => return Err(format!("geology: shaping.notched: unknown {other}")),
+            },
+            Some(n) if n.as_f64().is_some_and(|n| n >= 1.0) => crate::geology::Notched::All,
+            _ => crate::geology::Notched::None,
+        },
         erosion: erosion_from_json(v.get("erosion"))?,
+        mesa_relief: mesa_relief_from_json(v.get("mesaRelief"))?,
+        blends: blends_from_json(v.get("blends"))?,
         // The tectonic provinces' stacks (T5); absent (an edit stored before T5): the build's.
         volcanic_stack: v
             .get("tectonic")
@@ -695,9 +707,18 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
         let name = text(r, "setting").map_err(at)?;
         let setting = PlateSetting::parse(name)
             .ok_or_else(|| at(format!("rules: {name} is not a setting")))?;
+        // The stacks the setting mixes in (absent: none, as before 0.61).
+        let mut mix = Vec::new();
+        for m in r.get("mix").and_then(Value::as_array).into_iter().flatten() {
+            mix.push(crate::geology::PlateMix {
+                stack: text(m, "stack").map_err(at)?,
+                weight: num(m, "weight").map_err(at)?.max(0.0),
+            });
+        }
         rules.push(PlateRule {
             setting,
             stack: text(r, "stack").map_err(at)?,
+            mix: Box::leak(mix.into_boxed_slice()),
         });
     }
     Ok(PlateProvinces {
@@ -711,12 +732,106 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
             None => 0.0,
             Some(_) => num(v, "edgeFade").map_err(at)?,
         },
+        // Absent (an edit stored before 0.61): one stack per setting, edges at their widths.
+        mixing: match v.get("mixing") {
+            None => crate::geology::Mixing::default(),
+            Some(m) => {
+                let g = |k: &str| num(m, k).map_err(|e| at(format!("mixing.{e}")));
+                crate::geology::Mixing {
+                    wavelength: g("wavelength")?,
+                    warp: g("warp")?,
+                    warp_wavelength: g("warpWavelength")?,
+                    edge_shift: g("edgeShift")?,
+                    edge_wavelength: g("edgeWavelength")?,
+                    fade: match m.get("fade") {
+                        None => 0.0,
+                        Some(_) => g("fade")?,
+                    },
+                }
+            }
+        },
         rules: Box::leak(rules.into_boxed_slice()),
     })
 }
 
 /// The erosion (rocks.json `erosion`, systemic terrain T4); absent (an edit stored before T4):
 /// the build's.
+/// rocks.json `blends`; absent (an edit stored before 0.64): none.
+fn blends_from_json(v: Option<&Value>) -> Result<&'static [crate::geology::Blend], String> {
+    let Some(list) = v.and_then(Value::as_array) else {
+        return Ok(&[]);
+    };
+    let names = |b: &Value, k: &str| -> Result<&'static [&'static str], String> {
+        let l = b
+            .get(k)
+            .and_then(Value::as_array)
+            .ok_or(format!("rocks.json: blends: {k} must be a list"))?;
+        let v: Vec<&'static str> = l.iter().filter_map(Value::as_str).map(leak).collect();
+        Ok(Box::leak(v.into_boxed_slice()))
+    };
+    let mut out = Vec::new();
+    for b in list {
+        let g = |k: &str| num(b, k).map_err(|e| format!("rocks.json: blends.{e}"));
+        let shares: Vec<f64> = b
+            .get("shares")
+            .and_then(Value::as_array)
+            .ok_or("rocks.json: blends: shares must be a list")?
+            .iter()
+            .filter_map(Value::as_f64)
+            .collect();
+        let blocks = names(b, "blocks")?;
+        if shares.len() != blocks.len() || blocks.len() < 2 {
+            return Err("rocks.json: blends: one share per block, two blocks at least".into());
+        }
+        for n in blocks {
+            if dwell_blocks::find_block(n).is_none() {
+                return Err(format!("rocks.json: blends: {n} is not in the registry"));
+            }
+        }
+        out.push(crate::geology::Blend {
+            name: b
+                .get("name")
+                .and_then(Value::as_str)
+                .map(leak)
+                .unwrap_or("blend"),
+            stacks: names(b, "stacks")?,
+            blocks,
+            shares: Box::leak(shares.into_boxed_slice()),
+            wavelength: g("wavelength")?,
+            slope: g("slope")?,
+            dither: g("dither")?,
+            dither_wavelength: g("ditherWavelength")?,
+        });
+    }
+    Ok(Box::leak(out.into_boxed_slice()))
+}
+
+/// rocks.json `mesaRelief`; absent (an edit stored before 0.64): none, flat as before.
+fn mesa_relief_from_json(v: Option<&Value>) -> Result<crate::geology::MesaRelief, String> {
+    let Some(v) = v else {
+        return Ok(crate::geology::MesaRelief::NONE);
+    };
+    let g = |k: &str| num(v, k).map_err(|e| format!("rocks.json: mesaRelief.{e}"));
+    Ok(crate::geology::MesaRelief {
+        top_amplitude: g("topAmplitude")?,
+        top_wavelength: g("topWavelength")?,
+        dip: g("dip")?,
+        dip_wavelength: g("dipWavelength")?,
+        knob_spacing: g("knobSpacing")?,
+        knob_chance: g("knobChance")?,
+        knob_height: g("knobHeight")?,
+        knob_radius: g("knobRadius")?,
+        floor_slope: g("floorSlope")?,
+        floor_rise: g("floorRise")?,
+        mound_height: g("moundHeight")?,
+        mound_wavelength: g("moundWavelength")?,
+        fan_height: g("fanHeight")?,
+        fan_width: g("fanWidth")?,
+        wash_depth: g("washDepth")?,
+        wash_wavelength: g("washWavelength")?,
+    })
+}
+
 fn erosion_from_json(v: Option<&Value>) -> Result<Erosion, String> {
     let Some(v) = v else {
         return Ok(GEOLOGY.erosion);

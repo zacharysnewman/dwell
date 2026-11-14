@@ -511,9 +511,38 @@ test('a plate fixture and new ranges added by data alone are emitted', () => {
   const rs = platesRust(validatePlates(p));
   assert.match(rs, /count_min: 6,/);
   assert.match(rs, /count_max: 9,/);
-  assert.match(rs, /oceanic: KindRule \{ weight: 0\.45, min: 2 \},/);
+  assert.match(rs, /oceanic: KindRule \{ weight: 0\.5, min: 2, interior: 5000\.0 \},/);
   assert.match(rs, /name: "young_ocean_dives_last",/);
   assert.match(rs, /age: 300\.0 \},\n.*age: 10\.0 \},\n {8}\],\n {8}kind: BoundaryKind::Convergent,\n {8}subducts: Some\(0\),/);
+});
+
+test('a pair landform added by data alone is emitted', () => {
+  // Realistic batch A: a back-arc basin behind a continental arc, by data.
+  const p = loadPlates();
+  const pair = p.uplift.pairs.find(
+    (e) => e.boundary === 'convergent' && e.plates.join() === 'continental,oceanic',
+  );
+  pair.landforms.push({ side: 'over', height: -40, width: 3000, distance: 16000 });
+  const rs = platesRust(validatePlates(p));
+  assert.match(
+    rs,
+    /PairForm \{ side: Side::Over, shape: Shape::Bump, height: -40\.0, width: 3000\.0, distance: 16000\.0 \}\], arc: ArcMode::Crest/,
+  );
+  assert.match(rs, /rim: RimRule \{ edge_sea: 2500\.0,/);
+  assert.match(rs, /rift: RiftRule \{ segment_length: \[8000\.0, 15000\.0\],/);
+});
+
+test('the erosion\'s routing and the interior relief are chosen by data alone', () => {
+  const p = loadPlates();
+  p.variety.flow.routing = 'd8';
+  p.variety.relief.swells.height = 140;
+  p.variety.relief.lacunarity = 1.87;
+  const rs = platesRust(validatePlates(p));
+  assert.match(rs, /flow: FlowRouting::D8,/);
+  assert.match(rs, /swell_height: 140\.0,/);
+  assert.match(rs, /lacunarity: 1\.87,/);
+  p.variety.flow = { routing: 'random', exponent: 2 };
+  assert.match(platesRust(validatePlates(p)), /flow: FlowRouting::Random \{ exponent: 2\.0 \},/);
 });
 
 test('bad plate entries fail with the key and the problem', () => {
@@ -521,22 +550,40 @@ test('bad plate entries fail with the key and the problem', () => {
     [(p) => (p.count = [5, 3]), /plates\.json: count must be \[min, max\]/],
     [(p) => (p.count = [0, 3]), /count must be \[min, max\], whole numbers 1–32/],
     [(p) => delete p.reach, /plates\.json: reach is missing/],
-    [(p) => (p.seaMargin = 30000), /seaMargin must be in \[0, 25000\]/],
+    [(p) => (p.seaMargin = 2000), /the file: unknown seaMargin/],
+    [(p) => (p.centres = 1000), /centres must be in \[50000, 200000\]/],
+    [(p) => (p.rim.noise.amplitude = 5000), /rim\.noise\.amplitude must be in \[0, 1000\]/],
+    [(p) => (p.hotspots.within = 49000), /hotspots\.within must leave the rim's edgeSea band clear/],
+    [(p) => (p.kinds.oceanic.interior = -1), /kinds\.oceanic\.interior must be in/],
+    [(p) => p.uplift.pairs.pop(), /uplift\.pairs: no entry for transform:oceanic-oceanic/],
+    [(p) => p.uplift.pairs.push(p.uplift.pairs[0]), /duplicate pair convergent:continental-continental/],
+    [(p) => (p.uplift.pairs[0].plates = ['oceanic', 'continental']), /plates must be two plate kinds, continental first/],
+    [(p) => (p.uplift.pairs[0].landforms[0].side = 'over'), /side over: only on a subducting pair/],
+    [(p) => (p.uplift.pairs[5].landforms[0].side = 'continental'), /side continental: the pair has no continental plate/],
+    [(p) => (p.uplift.pairs[1].landforms[0].shape = 'rift'), /shape rift must be astride/],
+    [(p) => (p.uplift.pairs[3].arc = 'island'), /arc island: only on a subducting pair/],
+    [(p) => (p.uplift.rift.sill = [0.1, 0.9]), /sill's max must be under depth's min/],
+    [(p) => (p.uplift.along.height = 1), /uplift\.along\.height must be in \[0, 0\.9\]/],
     [(p) => (p.kinds.basaltic = { weight: 1, min: 0 }), /kinds: unknown basaltic/],
     [(p) => delete p.kinds.oceanic, /kinds\.oceanic is missing/],
     [(p) => (p.kinds.oceanic.weight = 2), /kinds\.oceanic\.weight must be in \[0, 1\]/],
     [(p) => ((p.kinds.oceanic.weight = 0), (p.kinds.continental.weight = 0)), /kinds: the weights must not all be 0/],
-    [(p) => (p.kinds.oceanic.min = 3), /kinds: the kinds' mins \(4\) exceed the least plate count \(3\)/],
+    [(p) => (p.kinds.oceanic.min = 7), /kinds: the kinds' mins \(8\) exceed the least plate count \(7\)/],
     [(p) => (p.warp.wavelength = 1.5), /warp\.wavelength must be a whole number/],
     [(p) => (p.transformBelow = 1.5), /transformBelow must be in \[0, 1\]/],
     [(p) => (p.hotspots.extra = 1), /hotspots: unknown extra/],
     [(p) => (p.other = 1), /the file: unknown other/],
     [(p) => (p.uplift.cell = 100), /uplift\.cell must be in \[500, 10000\]/],
-    [(p) => delete p.uplift.rift, /uplift\.rift is missing/],
-    [(p) => (p.uplift.range.width = 0), /uplift\.range\.width must be in \[1, 50000\]/],
+    [(p) => delete p.uplift.rift, /uplift\.rift must be an object/],
+    [(p) => (p.uplift.pairs[0].landforms[0].width = 0), /uplift\.pairs\[0\]\.landforms\[0\]\.width must be in \[1, 50000\]/],
     [(p) => (p.uplift.arc.maxCones = 2.5), /uplift\.arc\.maxCones must be a whole number/],
     [(p) => delete p.uplift.hotspot.decay, /uplift\.hotspot\.decay is missing/],
     [(p) => (p.uplift.wobble = 1), /uplift: unknown wobble/],
+    [(p) => (p.variety.flow.routing = 'mfd'), /variety\.flow\.routing must be one of d8, random/],
+    [(p) => (p.variety.relief.lacunarity = 2.0001 - 1), /variety\.relief\.lacunarity must be in \[1\.1, 4\]/],
+    [(p) => (p.variety.relief.hillVary.min = 2), /variety\.relief\.hillVary \[min, max\] must be/],
+    [(p) => (p.variety.relief.swells.octaves = 1.5), /variety\.relief\.swells\.octaves must be a whole number/],
+    [(p) => delete p.variety, /plates\.json: variety is missing/],
     [(p) => (p.fixtures[0].plates[1].kind = 'mantle'), /fixtures\[0\] \(ocean_under_continent\)\.plates\[1\]\.kind must be one of oceanic, continental/],
     [(p) => p.fixtures[0].plates.pop(), /fixtures\[0\] \(ocean_under_continent\)\.plates must be two plates/],
     [(p) => (p.fixtures[0].plates[0].at = [5000, 0]), /plates must not share a centre/],
@@ -700,6 +747,18 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   bad((x) => (x.rocks[1].face = 'dwell:nothing'), /rock dwell:shale: face "dwell:nothing" is not in the registry/);
   bad((x) => (x.stacks[0].layers[0].rock = 'dwell:nothing'), /stack dwell:red_beds: layer rock "dwell:nothing"/);
   bad((x) => (x.shaping.strength = 3), /shaping.strength must be in \[0, 1\]/);
+  // 0.64: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
+  bad((x) => (x.shaping.notched = 'some'), /shaping.notched must be one of none, mesaEdges, all/);
+  bad((x) => (x.mesaRelief.topAmplitude = 99), /mesaRelief.topAmplitude must be in \[0, 50\]/);
+  bad((x) => (x.blends[0].shares = [0.5, 0.5, 0.5]), /shares must sum to 1/);
+  bad((x) => (x.blends[0].blocks[0] = 'dwell:nothing'), /block "dwell:nothing" is not in the registry/);
+  bad((x) => (x.blends[0].stacks = ['dwell:nothing']), /stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.blends[0].dither = 0.2), /dither must be under half the smallest share/);
+  {
+    const x = rocks();
+    x.blends.push({ name: 'test:greys', stacks: ['dwell:granite_core'], blocks: ['dwell:stone', 'dwell:dirt'], shares: [0.5, 0.5], wavelength: 50, slope: 0, dither: 0.1, ditherWavelength: 2 });
+    assert.match(rocksRust(validateRocks(x, blocks)), /Blend \{ name: "test:greys", stacks: &\["dwell:granite_core"\]/);
+  }
   bad((x) => (x.extra = 1), /unknown extra/);
   // The erosion (T4): its knobs by data alone; bad ones named.
   const e = rocks();
@@ -751,11 +810,16 @@ test('R5: plateProvinces map plate settings to stacks by name, by data alone; ba
   for (const n of ['dwell:arc_volcanics', 'dwell:hotspot_shield', 'dwell:collision_core', 'dwell:rift_fill'])
     assert.equal(stacks.get(n).weight, 0, n);
   // A rule swapped and one added by data alone.
-  d.plateProvinces.rules.find((r) => r.setting === 'core').stack = 'dwell:granite_core';
+  const core = d.plateProvinces.rules.find((r) => r.setting === 'core');
+  core.stack = 'dwell:basalt_flows';
+  core.mix = [{ stack: 'dwell:granite_core', weight: 0.5 }];
+  d.plateProvinces.rules = d.plateProvinces.rules.filter((r) => r.setting !== 'default');
   d.plateProvinces.rules.push({ setting: 'default', stack: 'dwell:badland_beds' });
+  d.plateProvinces.mixing.wavelength = 3100;
   const out = rocksRust(validateRocks(d, blocks));
-  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:granite_core" \}/);
-  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds" \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Core, stack: "dwell:basalt_flows", mix: &\[PlateMix \{ stack: "dwell:granite_core", weight: 0\.5 \}\] \}/);
+  assert.match(out, /PlateRule \{ setting: PlateSetting::Default, stack: "dwell:badland_beds", mix: &\[\] \}/);
+  assert.match(out, /mixing: Mixing \{ wavelength: 3100\.0,/);
   const bad = (f, msg) => {
     const x = rocks();
     f(x);
@@ -768,6 +832,13 @@ test('R5: plateProvinces map plate settings to stacks by name, by data alone; ba
   bad((x) => (x.plateProvinces.riftWidth = -1), /plateProvinces: riftWidth must be/);
   bad((x) => (x.plateProvinces.depth = 1), /plateProvinces: unknown depth/);
   bad((x) => (x.plateProvinces.edgeFade = -5), /plateProvinces: edgeFade must be/);
+  // The mixing (WORK_QUEUE item 15, part B).
+  bad((x) => (x.plateProvinces.mixing.wavelength = 10), /plateProvinces: mixing\.wavelength must be in \[100, 100000\]/);
+  bad((x) => (x.plateProvinces.mixing.swirl = 1), /plateProvinces: mixing: unknown swirl/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:nothing'), /rule basin: mix stack "dwell:nothing" is not a stack/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].stack = 'dwell:red_beds'), /rule basin: mix names dwell:red_beds twice/);
+  bad((x) => (x.plateProvinces.rules[5].mix[0].weight = -1), /rule basin: mix dwell:limestone_shelf weight must be/);
+  bad((x) => delete x.plateProvinces.mixing, /rule accreted: mix needs plateProvinces\.mixing/);
 });
 
 test('item 15: the Realistic world steps by its rock, not the global cliffs volume (data)', () => {

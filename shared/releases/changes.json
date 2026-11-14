@@ -2,6 +2,17 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.65.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds, their terrain redrawn from the seed: curving plates and coastlines with gulfs and headlands, rifts as chains of lakes, no sliver plates or thin land strips, ranges with peaks and saddles",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa edges",
+        "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
+        "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
+        "Volcanic islands come in varied sizes and shapes, with islets and gaps along their chains, and volcanoes blend into their ranges without a cliff at the foot",
+        "Active volcanoes are bare dark rock ringed by lava rock and obsidian spilling into the shallows; dormant ones turn green with grass, dirt patches and trees as they age"
+      ]
+    },
+    {
       "version": "0.64.2",
       "changes": [
         "Leaves no longer flicker where they touch tree trunks and branches",

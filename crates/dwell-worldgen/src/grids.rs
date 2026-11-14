@@ -1234,7 +1234,7 @@ impl CrateredTerrain {
                 top(x + c as i64 - 2, z + r as i64 - 2).map_or(i32::MIN / 2, |t| (t + 1) as i32)
             })
         });
-        // Every ramp backed by its neighbour (BUGS.md #153).
+        // Every ramp backed by its neighbour (BUGS.md #163).
         let (facing, steep) = match self.rules.ramps.top_backed(&around, rows_for_m(1.0)) {
             Top::Flat => return &[],
             Top::Gentle(f) => (f, false),
@@ -1307,7 +1307,7 @@ impl CrateredTerrain {
         let local = f.chunk(coord);
         let (x0, z0) = (i64::from(local.x * S), i64::from(local.z * S));
         // The tops of the chunk's columns and two rings round them, for the ramp rule's
-        // neighbours and theirs (every ramp backed, BUGS.md #157).
+        // neighbours and theirs (every ramp backed, BUGS.md #163).
         const RING: i64 = 2;
         let w = (i64::from(S) + 2 * RING) as usize;
         let tops: Vec<Option<i64>> = (0..w * w)

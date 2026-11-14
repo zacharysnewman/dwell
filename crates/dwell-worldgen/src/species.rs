@@ -589,7 +589,8 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
-        // The old-growth species (WORK_QUEUE item 32) and the rainforest's tall broadleaf are wild only: no sapling of their own yet.
+        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf and the mesa's
+        // sagebrush (0.64) are wild only: no sapling of their own yet.
         let wild: Vec<_> = SPECIES
             .iter()
             .filter(|s| s.sapling.is_none())
@@ -597,7 +598,12 @@ mod tests {
             .collect();
         assert_eq!(
             wild,
-            ["dwell:old_oak", "dwell:old_pine", "dwell:tall_broadleaf"]
+            [
+                "dwell:old_oak",
+                "dwell:old_pine",
+                "dwell:sagebrush",
+                "dwell:tall_broadleaf"
+            ]
         );
         for (i, s) in SPECIES.iter().enumerate() {
             let Some(p) = s.sapling else { continue };
@@ -690,8 +696,11 @@ mod tests {
             }
             heights.sort_unstable();
             heights.dedup();
+            // At least four heights, or every step the range holds (a shrub's is short).
+            let (lo, hi) = s.mature_height;
+            let steps = ((hi - lo) / s.height_step).round() as usize + 1;
             assert!(
-                heights.len() >= 4,
+                heights.len() >= 4.min(steps),
                 "{}: seeds vary the height: {heights:?}",
                 s.name
             );
@@ -732,8 +741,12 @@ mod tests {
                 let (young, old) = (grow(s, seed, 1), grow(s, seed, s.stages - 1));
                 assert!(
                     old.height > young.height && old.cells.len() > young.cells.len() * 2,
-                    "{}",
-                    s.name
+                    "{}: young {} m {} cells, old {} m {} cells",
+                    s.name,
+                    young.height,
+                    young.cells.len(),
+                    old.height,
+                    old.cells.len()
                 );
             }
         }

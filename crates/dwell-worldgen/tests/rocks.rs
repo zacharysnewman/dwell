@@ -79,7 +79,7 @@ fn geology(strength: f64) -> Geology {
         strength,
         ledge: 0.0,
         tread_relief: 0.0,
-        notched: false,
+        notched: dwell_worldgen::geology::Notched::None,
         ..GEOLOGY
     }
 }

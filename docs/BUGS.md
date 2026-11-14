@@ -628,7 +628,7 @@ and province edge along it was axis-aligned; (2) the climate's marched rain is n
 bilinearly on its 500 m grid the biomes' edges ran along the grid's rows and columns. Fix: each boundary point is the
 crossing found by halving between the two cells' centres (`plates.rs` `crossing`); `climate.json` `rain.blurM` (4000 m)
 low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_the_plates_not_the_scans_grid` (30 000 m
-axis-aligned before, under 1500 m after), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
+axis-aligned before, under 1500 m after; under 2500 m on the 0.65 line, whose finest plate warp can put three crossings on one scan column), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
 biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
 
 ### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)

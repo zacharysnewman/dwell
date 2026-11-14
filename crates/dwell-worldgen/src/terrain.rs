@@ -513,6 +513,9 @@ pub struct Column {
     pub lip: bool,
     /// In a chute's stream (ADR 0059): running water over its top, no still water.
     pub stream: bool,
+    /// The rock's wall shows at its top (an erosion mesa's scarp, a hard bed's wall): its edge
+    /// takes notched ramps where rocks.json `shaping.notched` is `mesaEdges`.
+    pub wall: bool,
 }
 
 /// A column's bank shaping (a biome's `banks`, or the biomes' blend at a column).
@@ -682,6 +685,15 @@ pub struct BiomeSet {
     rock_palette: Vec<u16>,
     /// Per rock, the palette of its first `capBy` tread (the rest follow in order; BUGS.md #134).
     cap_by_palette: Vec<u16>,
+    /// Per blend (rocks.json `blends`) and palette: the first of that palette's blended variants
+    /// (one per tone, in order), `u16::MAX` where neither its ground nor its under is blended.
+    blend_first: Vec<Vec<u16>>,
+    /// Per stack, the blend whose `stacks` name it.
+    stack_blend: Vec<Option<usize>>,
+    /// The palette each blended variant was made from (variants from `blend_start` on), so a
+    /// variant reads as its band's biome.
+    blend_start: u16,
+    blend_origin: Vec<u16>,
     /// The drainage seen from above (T4), built only where a biome erodes.
     drainage: Option<crate::geology::DrainageField>,
     /// Each stack's lowest soft layer's top (m within its period; T4's base level).
@@ -727,7 +739,12 @@ impl BiomeSet {
                 &self.params,
                 &self.geology,
                 &self.biome_stack,
-                (self.rock_first, &self.rock_palette, &self.cap_by_palette),
+                (
+                    self.rock_first,
+                    &self.rock_palette,
+                    &self.cap_by_palette,
+                    (&self.blend_first, &self.stack_blend, self.blend_start)
+                ),
                 self.drainage.is_some(),
                 &self.soft_tops,
                 (&self.snow, &self.biome_snow),
@@ -756,6 +773,11 @@ impl BiomeSet {
     /// The biome whose band palette `p` is, its soil palettes too (None for the rocks' and the
     /// snow's palettes).
     pub fn biome_of_palette(&self, p: u16) -> Option<usize> {
+        let p = if p >= self.blend_start {
+            *self.blend_origin.get(usize::from(p - self.blend_start))?
+        } else {
+            p
+        };
         if p < self.rock_first {
             return Some(self.first.partition_point(|&f| f <= p) - 1);
         }
@@ -834,18 +856,17 @@ impl BiomeSet {
             });
             palettes.len() as u16 - 2
         };
-        // A rock only in stacks of weight 0 (R5) takes its palettes last (below).
+        // A rock in no stack of weight above 0 (only in weight-0 stacks, R5, or in none, named by
+        // a rule such as plates.json `volcanism`) takes its palettes last (below), so it moves no
+        // other palette.
         let late: Vec<bool> = geology
             .rocks
             .iter()
             .map(|r| {
-                let in_stack = |w: bool| {
-                    geology
-                        .stacks
-                        .iter()
-                        .any(|s| (s.weight > 0.0) == w && s.layers.iter().any(|l| l.rock == r.name))
-                };
-                !in_stack(true) && in_stack(false)
+                !geology
+                    .stacks
+                    .iter()
+                    .any(|s| s.weight > 0.0 && s.layers.iter().any(|l| l.rock == r.name))
             })
             .collect();
         let mut rock_palette = vec![0u16; geology.rocks.len()];
@@ -969,10 +990,55 @@ impl BiomeSet {
                 first
             })
             .collect();
+        // The blends' variants of every palette they reach (0.64), after all those.
+        let blend_start = palettes.len() as u16;
+        let mut blend_origin = Vec::new();
+        let blend_first = geology
+            .blends
+            .iter()
+            .map(|b| {
+                let tones: Vec<StateId> =
+                    b.blocks.iter().map(|n| dwell_blocks::require(n)).collect();
+                let n = palettes.len();
+                (0..n)
+                    .map(|p| {
+                        let base = palettes[p];
+                        let (g, u) = (tones.contains(&base.ground), tones.contains(&base.under));
+                        if !(g || u) {
+                            return u16::MAX;
+                        }
+                        let f = palettes.len() as u16;
+                        for &t in &tones {
+                            blend_origin.push(p as u16);
+                            palettes.push(Bands {
+                                ground: if g { t } else { base.ground },
+                                under: if u { t } else { base.under },
+                                ..base
+                            });
+                        }
+                        f
+                    })
+                    .collect()
+            })
+            .collect();
+        let stack_blend = geology
+            .stacks
+            .iter()
+            .map(|s| {
+                geology
+                    .blends
+                    .iter()
+                    .position(|b| b.stacks.contains(&s.name))
+            })
+            .collect();
         Self {
             list: list.to_vec(),
             palettes,
             first,
+            blend_first,
+            stack_blend,
+            blend_start,
+            blend_origin,
             field,
             params,
             geology: crate::geology::Resolved::new(geology, world_seed)
@@ -1514,7 +1580,12 @@ impl TerrainGenerator {
         };
         let geo = &self.biomes.geology;
         let e = &geo.geology.erosion;
-        let (mut g, cut) = crate::geology::eroded(e, h, floor, margin);
+        // Relief on the mesas (rocks.json `mesaRelief`): the standing ground undulates, tilts and
+        // carries knobs, the floor slopes to its drainage line with mounds, fans and washes; the
+        // wall and the talus between them follow both, so the edge stays a wall.
+        let (top, low) = self.mesa_relief(x, z, margin);
+        let (h_top, floor) = (h + top, (floor + low).min(h + top));
+        let (mut g, cut) = crate::geology::eroded(e, h_top, floor, margin);
         let gullies: f64 = mix
             .iter()
             .map(|(i, w)| w * self.biomes.list[i].gullies)
@@ -1556,6 +1627,122 @@ impl TerrainGenerator {
             Cut::Standing => rock.or(own.map(|r| (r, Part::Tread))),
         };
         (out, rock)
+    }
+
+    /// `palette` with its ground and under blocks taken by the blend of the column's stack (its
+    /// biome's `rockStack`, else the province's), at the tone the blend picks there (`slope` m per
+    /// m, at most 1, adds to it); `palette` unchanged where no blend holds.
+    fn blended(&self, mix: &crate::biomemap::Mix, x: i64, z: i64, palette: u16, slope: f64) -> u16 {
+        let set = &self.biomes;
+        if set.blend_first.is_empty() {
+            return palette;
+        }
+        let stack = match set.biome_stack[usize::from(mix.chosen)] {
+            Some(k) => k,
+            None => set.geology.province(x, z).0,
+        };
+        let Some(b) = set.stack_blend[stack] else {
+            return palette;
+        };
+        let Some(&first) = set.blend_first[b].get(usize::from(palette)) else {
+            return palette;
+        };
+        if first == u16::MAX {
+            return palette;
+        }
+        let blend = &set.geology.geology.blends[b];
+        first + blend.tone(self.world_seed as u32, x, z, slope.min(1.0)) as u16
+    }
+
+    /// The tone index (into its blend's blocks) the column at face-local (x, z) shows, if its
+    /// ground is blended (rocks.json `blends`): for tests and the map's views.
+    pub fn blend_tone_at(&self, x: i32, z: i32) -> Option<(usize, &'static str)> {
+        let col = self.column_at(x, z);
+        let set = &self.biomes;
+        for (b, firsts) in set.blend_first.iter().enumerate() {
+            for (p, &f) in firsts.iter().enumerate() {
+                let n = set.geology.geology.blends[b].blocks.len() as u16;
+                if f != u16::MAX && (f..f + n).contains(&col.palette) {
+                    let _ = p;
+                    let k = usize::from(col.palette - f);
+                    return Some((k, set.geology.geology.blends[b].blocks[k]));
+                }
+            }
+        }
+        None
+    }
+
+    /// The mesa relief at face-local (x, z) whose cut-back margin is `margin` (rocks.json
+    /// `mesaRelief`): (m added to the standing ground, m added to the floor).
+    fn mesa_relief(&self, x: i64, z: i64, margin: f64) -> (f64, f64) {
+        use crate::noise::{fbm2, mix32, seed_word};
+        let r = &self.biomes.geology.geology.mesa_relief;
+        let w = self.world_seed;
+        let noise = |stream: u32, wavelength: f64, octaves: u32| {
+            f64::from(fbm2(
+                seed_word(w, 0x6E01_0100 + stream),
+                x,
+                z,
+                wavelength.max(1.0) as i32,
+                octaves,
+                None,
+            ))
+        };
+        let mut top = 0.0;
+        if r.top_amplitude > 0.0 {
+            top += r.top_amplitude * 2.0 * noise(0, r.top_wavelength, 3);
+        }
+        if r.dip > 0.0 {
+            // A tilt of about `dip` m per m: a long noise whose slope is near the dip.
+            top += r.dip * r.dip_wavelength / std::f64::consts::PI
+                * 2.0
+                * noise(1, r.dip_wavelength, 1);
+        }
+        if r.knob_height > 0.0 && r.knob_chance > 0.0 {
+            let cell = r.knob_spacing.max(1.0);
+            let (cx, cz) = ((x as f64 / cell).floor(), (z as f64 / cell).floor());
+            let mut best = 0.0f64;
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let (i, k) = (cx as i64 + dx, cz as i64 + dz);
+                    let hsh = mix32(seed_word(w, 0x6E01_0110) ^ mix32(i as u32 ^ mix32(k as u32)));
+                    let u = |s: u32| f64::from(mix32(hsh ^ s)) / 4_294_967_296.0;
+                    if u(1) >= r.knob_chance {
+                        continue;
+                    }
+                    let (px, pz) = ((i as f64 + u(2)) * cell, (k as f64 + u(3)) * cell);
+                    let d = (x as f64 - px).hypot(z as f64 - pz) / r.knob_radius.max(1.0);
+                    if d < 1.0 {
+                        // A butte: steep sides, a flat-ish top.
+                        let t = (1.0 - d) / 0.35;
+                        best = best.max(r.knob_height * (0.5 + 0.5 * u(4)) * t.min(1.0).powf(0.7));
+                    }
+                }
+            }
+            top += best;
+        }
+        // The floor: rising from its drainage line, low mounds, talus fans, washes.
+        let mut low = 0.0;
+        if let Some(field) = self.biomes.drainage.as_ref() {
+            let (dist, _, _) = field.at(&self.map, x as f64, z as f64);
+            low += (r.floor_slope * dist).min(r.floor_rise);
+        }
+        if r.mound_height > 0.0 {
+            low += r.mound_height * (2.0 * noise(2, r.mound_wavelength, 2)).max(0.0);
+        }
+        if r.fan_height > 0.0 && r.fan_width > 0.0 {
+            let e = &self.biomes.geology.geology.erosion;
+            let beyond = -margin - e.talus_width;
+            let t = (1.0 - beyond / r.fan_width).clamp(0.0, 1.0);
+            let lobes =
+                0.5 + 0.5 * (2.0 * noise(3, (r.fan_width * 0.8).max(16.0), 1)).clamp(-1.0, 1.0);
+            low += r.fan_height * t * t * lobes;
+        }
+        if r.wash_depth > 0.0 {
+            let v = noise(4, r.wash_wavelength, 2).abs();
+            low -= r.wash_depth * (1.0 - smooth01(v / 0.06));
+        }
+        (top, low)
     }
 
     /// The palette rock `r`'s tread shows at face-local (x, z) over `base` m: its first `capBy`
@@ -2496,6 +2683,7 @@ impl TerrainGenerator {
         }
         // Where the rock shapes the ground, its blocks show: a wall its face, talus its scree, a
         // tread its cap, a massive rock's steep faces its face.
+        let wall = matches!(rock, Some((_, crate::geology::Part::Wall))) && band != Band::Shore;
         if let Some((r, part)) = rock
             && band != Band::Shore
         {
@@ -2526,6 +2714,21 @@ impl TerrainGenerator {
                 palette = p;
             }
         }
+        // The ground's ordered blend by stack (rocks.json `blends`, 0.64): mesa country's red
+        // dirt, red sand and tan in order, no hard bands.
+        if snow != Some(None) {
+            palette = self.blended(&mix, x, z, palette, gx.hypot(gz));
+        }
+        // Active and dormant volcanoes (plates.json `uplift.volcanism`, 0.64): bare lava rock
+        // and an apron in the shallows on an active one, soil and plants by a dormant one's age.
+        if snow.is_none()
+            && band != Band::Rock
+            && let Some((p, b)) = self.volcanic_surface(x, z, h, slope, wet)
+        {
+            // `None` from the cover: the biome's own ground (over the cone's rock).
+            let own = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
+            (palette, band) = (p.unwrap_or(own), b);
+        }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
             shore = shore.min((r.d - r.half).max(0.0) as f32);
@@ -2547,7 +2750,95 @@ impl TerrainGenerator {
             base: height,
             lip: on_lip,
             stream,
+            wall,
         }
+    }
+
+    /// What a volcano's state shows at face-local (x, z) (plates.json `uplift.volcanism`): its
+    /// ground `h` m from sea level (below 0 under water), `slope` rise per run: on a volcano's
+    /// ground the cover by its age (bare lava rock, dirt patches or the biome's own), under the
+    /// shallows by an active one its apron of lava rock and obsidian (a palette and band; no
+    /// palette: the biome's own ground, soil and plants covering the rock); `None` where it
+    /// changes nothing (and in a world without plates).
+    fn volcanic_surface(
+        &self,
+        x: i64,
+        z: i64,
+        h: f64,
+        slope: f64,
+        wet: bool,
+    ) -> Option<(Option<u16>, Band)> {
+        let t = self.plate_tectonics()?;
+        let vo = &t.uplift.volcanism;
+        let (fx, fz) = (x as f64, z as f64);
+        let patch = |k: u32| {
+            let n = fbm2(
+                crate::noise::mix32(self.snow_seed ^ 0x7A1A_0E00 ^ k),
+                x + self.offset_x,
+                z + self.offset_z,
+                vo.patch_wavelength as i32,
+                3,
+                None,
+            );
+            (0.5 + 1.6 * f64::from(n)).clamp(0.0, 1.0)
+        };
+        if wet {
+            let depth = -h;
+            if !(0.0..=vo.apron_depth).contains(&depth) {
+                return None;
+            }
+            let g = t.volcano_ground(fx, fz, vo.apron[1] * (1.0 + vo.apron_noise))?;
+            let s = t.states[g.volcano];
+            if !s.active {
+                return None;
+            }
+            // How far out from the shore: the depth over the ground's slope.
+            let offshore = depth / slope.max(0.02);
+            let reach = s.apron * (1.0 + vo.apron_noise * (2.0 * patch(1) - 1.0));
+            if offshore > reach {
+                return None;
+            }
+            let glass = patch(2) > 1.0 - vo.glass_share;
+            return self
+                .surface_palette(if glass { vo.glass } else { vo.bare })
+                .map(|(p, b)| (Some(p), b));
+        }
+        let g = t.volcano_ground(fx, fz, 0.0)?;
+        let s = t.states[g.volcano];
+        let cover = if s.active {
+            0.0
+        } else {
+            smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64
+        };
+        // Toward the ground's edge everything is the ground's around (no ring).
+        let c = 1.0 - g.weight * (1.0 - cover);
+        let n = patch(0);
+        let dirt = (vo.dirt * 2.0 * (1.0 - c)).min(c);
+        if n < c - dirt {
+            (g.weight > 0.0).then_some((None, Band::Ground))
+        } else {
+            self.surface_palette(if n < c { vo.soil } else { vo.bare })
+                .map(|(p, b)| (Some(p), b))
+        }
+    }
+
+    /// A named rock's part as a palette and band (`volcanism`'s surfaces): its scree and cap
+    /// on the ground, its face as rock.
+    fn surface_palette(&self, s: crate::plate_tectonics::Surface) -> Option<(u16, Band)> {
+        use crate::plate_tectonics::RockPart;
+        let r = self
+            .biomes
+            .geology
+            .geology
+            .rocks
+            .iter()
+            .position(|r| r.name == s.rock)?;
+        let p = self.biomes.rock_palette[r];
+        Some(match s.part {
+            RockPart::Scree => (p, Band::Ground),
+            RockPart::Cap => (p + 1, Band::Ground),
+            RockPart::Face => (p, Band::Rock),
+        })
     }
 
     /// The flow (m³/s) through face-local column (x, z) by the world map (docs/WATER_FLOW.md §2.1):
@@ -3188,8 +3479,17 @@ impl TerrainGenerator {
     }
 
     /// Planter `i`'s density at (x, z) from the biomes' `trees` by their weights (ADR 0074 B5; 1
-    /// where it does not vary).
+    /// where it does not vary), and by the volcanoes' states.
     pub fn tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
+        // The volcanoes' (plates.json `uplift.volcanism`): none on an active cone, more with a
+        // dormant one's age.
+        let volcanic = self
+            .plate_tectonics()
+            .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
+        volcanic * self.biome_tree_density_at(i, x, z)
+    }
+
+    fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
         let (per, varies) = &*self.tree_density;
         if !varies {
             return 1.0;
@@ -3368,6 +3668,13 @@ impl TerrainGenerator {
     /// ask for computed at most once per column of the rectangle and its margin, and only the
     /// columns asked (a species' wide crown makes the margin large and its candidates sparse;
     /// ADR 0079).
+    /// The name of the placement rule a placed tree's `planter` is (`placements.json`).
+    pub fn planter_name(&self, planter: u8) -> Option<&'static str> {
+        self.planters
+            .get(usize::from(planter))
+            .map(|p| p.rule().name)
+    }
+
     pub fn trees_in(&self, (x0, z0): (i32, i32), (x1, z1): (i32, i32)) -> Vec<Tree> {
         if self.planters.is_empty() {
             return Vec::new();
@@ -4131,7 +4438,7 @@ impl TerrainGenerator {
     }
 
     /// The stored ramp topping column (x, z) by the generation rule (HALF_HEIGHT_GRID.md §4),
-    /// every ramp backed (BUGS.md #153), its neighbours' columns from `column`.
+    /// every ramp backed (BUGS.md #163), its neighbours' columns from `column`.
     fn shape_with(
         &self,
         column: &impl Fn(i32, i32) -> Column,
@@ -4139,7 +4446,7 @@ impl TerrainGenerator {
         z: i32,
         col: &Column,
     ) -> Top {
-        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #153), the column
+        // The 5 × 5 window: the column's 3 × 3 and, for the backed rule (BUGS.md #163), the column
         // behind each ramp's high side with its own neighbours.
         let cols: [[Column; 5]; 5] = std::array::from_fn(|r| {
             std::array::from_fn(|c| {
@@ -4162,12 +4469,19 @@ impl TerrainGenerator {
             })
         });
         // Where the rock shapes the ground (rocks.json `shaping`), notched ramps on its diagonal
-        // contours too, so its slopes ramp rather than stair (owner, 2026-11-13). Every column in
-        // the window follows the same rule here; the rule takes the column's offset so a rule
-        // decided per column (the batch's `mesaEdges`) can slot in.
+        // contours too (owner, 2026-11-13): everywhere (`all`, 0.59–0.61), or only at a rock
+        // wall's edge (`mesaEdges`: the column or a neighbour shows a wall; owner, 2026-11-13: "I'd
+        // like the old rule to apply except for mesa edges").
+        // The rule of the column at (dx, dz) (within ±1): its own 3 × 3 decides `mesaEdges`.
         let geo = &self.biomes.geology.geology;
-        let rule = |(_dx, _dz): (i32, i32)| {
-            if geo.notched && geo.strength > 0.0 {
+        let rule = |(dx, dz): (i32, i32)| {
+            let notched = match geo.notched {
+                crate::geology::Notched::None => false,
+                crate::geology::Notched::All => true,
+                crate::geology::Notched::MesaEdges => (dz + 1..=dz + 3)
+                    .any(|r| (dx + 1..=dx + 3).any(|c| cols[r as usize][c as usize].wall)),
+            };
+            if notched && geo.strength > 0.0 {
                 ramps_rule::RampRule::Notched
             } else {
                 ramps_rule::RampRule::Strict

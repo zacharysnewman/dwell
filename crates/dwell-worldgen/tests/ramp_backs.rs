@@ -1,4 +1,4 @@
-//! No ramp backs onto open air (BUGS.md #153; owner, 2026-11-13: "I don't mind slopes with edges
+//! No ramp backs onto open air (BUGS.md #163; owner, 2026-11-13: "I don't mind slopes with edges
 //! exposed but I do mind slopes that back up against open air"). Every stored ramp's high side
 //! meets the column behind it standing at least the ramp's top along their shared edge
 //! (`ramps::top_backed_by`), in the default world and the Realistic world, on seeds 1, 7, 42 and

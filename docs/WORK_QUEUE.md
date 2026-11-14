@@ -741,6 +741,152 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    owner: the 6 °C floor counts the steppe's and cold desert's red rock floors as desert (the reported spot's red
    mesas are steppe at ~8 °C); the mesa's own 12 °C would keep red sand to hot deserts (face B of seeds 1, 7, 42
    then has none).
+   **Realistic batch A: plates and coasts (2026-11-13, the 0.64 line).** Owner, 2026-11-13, on a Realistic world
+   (seed 2741893632, 0.59.3): "What's up with realistic world having an enormous \"river\"? And a separated mountain
+   range from the main continent? It's a very weird geography that doesn't look realistic at all" / "I meant
+   horizontal slices of noise" (large uniform swaths of one terrain type in plan view) / "And noise also seems very
+   uniform at a macro level, where the same terrain almost looks tiled." / "Also are we hardcoding that there's an
+   ocean edge dropoff always around? Or is that just super common?" / after the diagnosis: "Yes make those changes
+   as a realistic batch". Diagnosis (native, seed 2741893632 face A): the "river" a divergent continent–ocean
+   boundary cut as a 256 m rift whose sea-side shoulder closed it into one 45 km lake; the separated range a
+   continental plate centred at the disc's edge, clipped to a 5–7 km sliver of range; plan view one cold desert
+   region of 565 km² and province and biome bands parallel to boundaries; the "tiling" no true periodicity but
+   45°/90° streak hatching at 100–300 m; the rim a circular cap at `reach − seaMargin` for every plate. **Part A
+   built** (this change; docs/proposals/REALISTIC_WORLD.md §6 "Realistic batch A"): landforms by plate pair
+   (`plates.json` `uplift.pairs`), segmented rifts (chains of lakes with sills, gulfs at the sea), no sliver plates
+   (`kinds.*.interior`, plate centres from a disc larger than the reach, spacing 12 km), ranges varied along their
+   line (`uplift.along`) and arcs fitted to narrow plates, and an open rim (`rim`: shelves per sector, coast
+   noise, only the outer 2.5 km always sea). On seed 2741893632 the longest lake 52.7 → 9.2 km, no plate under
+   its interior, land out to 46.8 km of the 50 km radius. **Part B** (variety: the plan-view swaths, the climate
+   on one band and wind, the uniform hatching) is its own branch (`claude/realistic-variety*`) and ships on the
+   same 0.61 line.
+   **Realistic geography batch (owner, 2026-11-13, on a Realistic world, seed 2741893632, 0.59.3):** "What's up with
+   realistic world having an enormous \"river\"? And a separated mountain range from the main continent? It's a very
+   weird geography that doesn't look realistic at all" / "I meant horizontal slices of noise" (large uniform swaths of
+   one terrain type in plan view) / "And noise also seems very uniform at a macro level, where the same terrain almost
+   looks tiled." / "Also are we hardcoding that there's an ocean edge dropoff always around? Or is that just super
+   common?" / after the diagnosis: "Yes make those changes as a realistic batch". Diagnosis (native, that seed's face
+   A): the "river" is a divergent boundary's rift flooded as one 45 km canal; the separated range a continental plate
+   clipped to a sliver at the disc's sea margin; plan view one province (red beds) over ~550 km² and the cold desert
+   on 40.5 % of the land, bands parallel to the boundaries; "tiled": no periodicity, but 45°/90° streak hatching at
+   100–300 m (the erosion's D8 routing); the rim: land capped at reach − seaMargin for every plate. Part A (above, the 0.64 line): the rift, the separated range and the rim. **Part B (branch
+   `claude/realistic-geography-batch-b-3o44zr`, ships with part A): variety and the grid streaks, Realistic only**
+   (the default and starter goldens unchanged; `tests/realistic_variety.rs`, `examples/realistic_variety.rs`, seeds 1,
+   7, 42, 2741893632 on both faces): (1) mixed provinces: rocks.json `plateProvinces.mixing` and each rule's `mix`,
+   2–4 stacks per setting by a warped noise at 3.5 km, every boundary distance shifted ±1.5 km at 6 km, a `default`
+   rule's mix in place of the 12 km noise; largest province region 553 → 128 km² on the owner's face A (all seeds ≤
+   ~210), distinct per 4 km² 1.82 → 3.46 (all 3.1–3.6). (2) Biome variety: climate.json `variety` (rain × e^noise at
+   10 and 2.5 km, a one-sided 0–280 / 0–120 mm wetter-district rain at 9 and 2.2 km, ±3.5 / 1.5 °C at 7 and 1.8 km);
+   owner's face A largest biome 39.7 % (cold desert) → 33 %, its largest region 590 → 291 km², per 4 km² 3.1 → 3.9;
+   a subarctic band (seed 7) is still mostly tundra (84–88 → 69–72 %). Not done: aspect and slope as sub-biome
+   inputs (the geography has no slope yet). (3) Interior relief: plates.json `variety.relief`, a domain warp, hills
+   and bumps × a 13 km regional amplitude (0.35–1.6), octaves turned 37° and 2.13× finer, basins and swells ±150 m at
+   5.5 km kept whole and rising as domes against the erosion. (4) Grid streaks: plates.json `variety.flow` `random`
+   (each erosion step to a slope-weighted random lower neighbour); the eight-fold slope harmonic 0.12–0.29 → 0.01–0.08.
+   **Notched ramps only at mesa edges (2026-11-13, added to the realistic batch, the 0.64 line).** Owner, 2026-11-13: "I
+   feel like a new rule got applied to some terrain with slopes where they're more common now instead of the previous
+   rules where slopes would occur in some instances and not in others. Now it seems like it's only slopes, what
+   happened?" Then: "I was in realistic world. Yes I'd like the old rule to apply except for mesa edges." Cause: #888
+   (0.59) set rocks.json `shaping.notched` 1, so wherever the shaping is on (Realistic strength 1, the starter 0.25)
+   the stored ramps also top diagonal contours, and rolling ground became nearly all slopes. Change: the pre-0.59 ramp
+   rule (straight edges only) everywhere except at mesa edges (the erosion mesas' scarp and wall tops and the hard
+   beds' wall edges), which keep notched ramps; the 0.59 ledges on soft bedded slopes stay (owner-approved). **Owner should see:** rolling Realistic ground mostly flat-topped
+   blocks with ramps only on straight edges, as before 0.59; notched ramps only along mesa and rock-wall edges. Owner, 2026-11-13, also added to the batch: "I also feel like
+   mesas are too flat on the tops and the bottoms, real mesas have height variety." Today the treads keep only
+   `treadRelief` 0.08 of a bed's height and the erosion's floors snap to the drainage line's height (dead flat). Change:
+   mesa tops undulate (a few metres over a few hundred metres by noise), tilt slightly per mesa (a dip range) and carry
+   occasional small buttes or knobs; floors slope gently toward their drainage line with low mounds, talus fans out from
+   the walls and shallow washes; the tread/wall structure, stepping and ledges stay. **Owner should see:** mesa tops with gentle rises, a tilt and the odd
+   knob or small butte; floors sloping to their washes, with low mounds and talus fans under the walls; walls as before. Owner, 2026-11-13, also added to the batch: "Also for mesas aren't we
+   supposed to have a red sand to replace the tan sand since it doesn't really look like a realistic mesa, it just looks
+   like a mess with all the different colors." Today #891 put red sand only on arid red-rock treads (`capBy`); mesas
+   still show plain tan sand from talus, scree and other layers, and many differently coloured beds. Change: in mesa
+   country every sand-type surface (talus, scree, washes, floors, the tops' loose cover) is red sand, plain tan sand
+   only on beaches and non-red areas; the mesa stacks' layers limited to a named red/orange/cream banding (2–3 tones);
+   part B's province mixing must not drop unrelated stacks into a mesa (else mesas take a single-family mix).
+   This shows the red sand of 0.59/0.60 (#891, BUGS.md #134) fell short: it covered only arid red-rock treads.
+   ~~Owner should see: red desert and mesa country: slopes, talus, washes, floors and tops' loose cover are red sand;
+   tan sand only on beaches and non-red areas; mesa layers in 2–3 harmonious red/cream tones.~~ Replaced by the owner's
+   correction (2026-11-13, with a Monument Valley photo): "Why does it say red and cream tones? Isn't cream
+   essentially tan? Real monument valley uses a blend of red, brown and tan, with brown leading to tan, always smooth
+   color changes." No cream band: walls deep red-brown (darker, sheer, vertical streaks); talus aprons and stepped
+   skirts red-brown to red-orange in thin ledges; the valley floor bright red-orange sand with boulders and paler tan
+   patches blending in (dune patches, washes, tracks); low rounded red outcrops with rubble; colours change smoothly
+   red ↔ brown ↔ tan over distance, never in hard bands or a checkerboard. ~~Owner should see: Monument Valley-like
+   country. Dark red-brown buttes with stepped red talus skirts, standing on a red-orange sand floor with paler tan
+   patches blending smoothly, boulders and low rounded red outcrops. No cream bands, no abrupt colour changes.~~
+   Replaced again by the owner (2026-11-13, a dusk Monument Valley photo: red-brown buttes over a flat reddish dirt plain
+   covered in round grey-green sagebrush clumps 1–3 m apart): "Mostly reddish dirt though. Some brush too. Could add
+   some single 'tree' block with brush on top." So the floor is mostly a new natural `dwell:red_dirt` (red sand the
+   patches, washes and dunes, tan the paler blended patches, by the same ordered blend red dirt ↔ red sand ↔ tan), and
+   sagebrush, a small desert shrub in the tree system (a single trunk or stump with a round grey-green brush crown,
+   1–1.5 m), dense on mesa and desert floors (1.5–3 m apart, data), sparser on slopes, none on bare walls.
+   **Owner should see:** a reddish-dirt valley floor dotted with round grey-green sagebrush, with red sand and pale tan
+   patches blending in. Dark red-brown buttes with stepped skirts rise from it. No abrupt colour changes.
+   Owner, 2026-11-13, also added to the batch: "Im not seeing any tan deserts is that not a thing yet?" The biome
+   exists (`preset:sand_desert`, in realistic.json's list, with dunes: ≥ 14 °C, rain ≤ 250 mm, wetness ≤ 0.25), but on
+   seed 2741893632 it did not appear (cold desert 40 %, sand desert ~0 %): the climate's dry ground is too cold. Change:
+   a subtropical dry belt in the climate (warm and dry, as at the tropics' edges and in warm continental interiors in
+   a rain shadow), the biome's thresholds checked against the climate's real ranges, dune seas of tan sand with rock
+   only on steep faces; the red desert and mesas stay red, the tan sand desert a separate biome. **Owner should see:**
+   on a typical Realistic seed, at least one big tan sand desert with dunes, in a warm dry region, separate from the
+   red mesa country.
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #163): "Also we might be in process on slopes or something,
+   but I'm noticing at the corners of bowl areas there's these spiky edges where slopes are up against the side of other
+   slopes. I don't mind slopes with edges exposed but I do mind slopes that back up against open air." The rule, for
+   every world and grid, in the shared stored-ramp placement (V2 and notched): a ramp's high side is backed by solid
+   ground at its top height (steep pairs too); else another facing whose back is solid, else a full block; exposed side
+   edges are fine. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no
+   sawtooth spikes. Ramps meet higher ground at their backs; only their triangular sides may show.
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #164): "This might be part of the realistic fix, but I'm
+   seeing really sharp edges between terrain types like this." (A Realistic world on 0.61.x from high up: a dead-straight,
+   axis-aligned line many km long, snow, ice and glacier ground left, dense forest and grass right.) **Owner should
+   see:** no straight lines across the land between terrain types. Snow, forest, desert and grass meet along natural,
+   wandering edges.
+   **Map check findings (orchestrator, 2026-11-14, before/after maps of the batch against main), fixed in the batch:**
+   (1) arc cones read as smooth discs with sharp circular cliff rims, cutting the range and damming lakes; (2) dead-straight
+   coasts along plate edges (seed 2741893632 face B two triangles joined at a neck, seed 7 face A a straight north–south
+   coast); (3) perfectly round island clusters, a 2×3 grid-like cluster on seed 274005646, six identical round cone islands
+   on seed 42 face A; (4) a land strip ~1 km wide and ~25 km long on seed 7 face A; (5) the sand desert surfacing as grey
+   stone with shrubs (seed 2741893632 face B) and a rectangular grey band up a hillside; (6) mesa country still on typical
+   seeds. **Owner should see:** cones that blend into their range with eroded flanks; coasts with bays and headlands, none
+   straight for more than 1–2 km; islands of varied sizes and shapes, unevenly spaced; no thin land strips; tan sand dune
+   deserts with rock only on steep faces; mesa country on typical seeds.
+   Owner, 2026-11-14, after the 0.64 before/after maps: "Yeah something about the volcano islands are the exact same size,
+   perfectly round, and evenly spaced in a line. I think maybe our tectonic plates are too straight, our continents don't
+   have natural curves inner and outer, with noise variation." So: the plate field itself domain-warped at two or three
+   scales (15–30 km sweeps, 3–6 km wiggles), continents with inner and outer curves, bays and peninsulas from the warped
+   plates and multi-octave coast noise; island chains of varied, irregular islands on curving tracks with uneven spacing,
+   arc islands along the curved trench with gaps; all amplitudes and wavelengths data. **Owner should see:** continents and
+   plates with natural sweeping curves, bays and peninsulas, and volcanic island chains of varied, irregular islands along
+   a curving line. Nothing straight, round or evenly spaced at map scale.
+   Owner, 2026-11-13, added to the 0.64 batch: "Also active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they
+   should slowly gain dirt and grass, and trees." Clarified: "By slowly gain, we can make that a system eventually, but as
+   part of terrain generation." So each placed volcano
+   (the Realistic world's arc cones and hotspot islands) has a state from data, active or dormant: active ones spill a
+   noisy apron of lava stone (basalt, obsidian where it met water) tens to a hundred-plus metres into the shallows, bare
+   dark rock on the cone; dormant ones carry soil, grass and trees by a weathering age (the chain's position), set once at
+   terrain generation (no live growth yet: a later system, docs/FUTURE.md). **Owner should see:** active volcanic islands
+   ringed by dark, ragged lava rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and
+   trees, the oldest mostly forested.
+   **Built (the map check, the curves and the volcanoes, 2026-11-14; awaiting the owner's maps):** (1) the shield's cap
+   fades to the cone's foot (Realistic cones only): `tests/realistic_cones.rs`, every cone's slope break at its foot
+   0.60–0.96 before, −0.31 to 0.26 after; (2, owner's curves) the plate warp at three scales (`warp`, `warp.detail`: 3.5 km
+   at 30 km, 2.2 km at 7 km, 0.6 km at 2 km) and every coast moved by layered noise (`rim.coast`: 4.5 km at 18 km, 0.9 km
+   at 3 km), the rim's too: `tests/realistic_shapes.rs` (seeds 1, 7, 42, 274005646, 2741893632, both faces), plate
+   boundaries' straight 2 km windows 57 % before, at most 3 % after, the coasts' at most 0.9 %; (3) cones and islands
+   varied (`uplift.cones`: sizes, outlines from harmonics 2–7, satellite islets, arc gaps, uneven spacing): islands'
+   radius cv 0.88 / 0.94, spacing cv 0.85 / 0.57, outlines 1.7–3.3 × a disc's irregularity; (4) the strip was an oceanic
+   transform's ridge over the 20 m deep sea: at sea the boundaries' landforms stay 6 m under (`uplift.seaRidges`), the
+   longest thin strip 11.2 → 3.6 km; (5) the sand desert's own stack (`dwell:dune_sands`, the Realistic world's entry):
+   99.7 % tan sand; near and far tops agree, the only grey patch the deep sea floor at the rim; (6) mesa country on every
+   face outside the subarctic (0.9–27 % of the land; seed 7 is subarctic on both faces): `tests/realistic_mesa_presence.rs`;
+   the volcanoes' states (`uplift.volcanism`): `tests/realistic_volcanoes.rs`, lava rock 85 % / 71 % of active shores'
+   shallows against 1–3 % at dormant ones, active ground 100 % bare, dormant cover 0.1 young to 0.9 old, trees 0 to
+   38 / ha. The default and starter worlds' blocks unchanged (the starter's pin moved only by palette indices). Not done:
+   the owner's look at the maps.
+   **Line (orchestrator, 2026-11-14):** #940 shipped the seams (#164), the ramp backs (#163) and the bigger shrines as
+   0.64; this batch takes the 0.65 line, raised at the merge of main.
    **Ship the finished terrain fixes now (owner, 2026-11-13, on the seam fix sitting unshipped inside PR #897):**
    **"Why are you waiting to ship the fix?"** Orchestrator's brief: split the already-verified fixes out of the held
    Realistic batch (PR #897, `claude/realistic-geography-batch-a-k0fcrg`, held for new map artifacts) and ship them as
@@ -2905,7 +3051,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    completed blueprint disappears (the blocks are the record). Builders (`dwell:builder`) come to a blueprint with a
    player near and build it foundation up, unlimited blocks, from outside its box, skipping occupied cells. Left:
    B4 (towns at worldgen sites, a new compatibility line), a placing preview ghost; BLUEPRINTS.md §7.
-   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.61 line):** town sites per face from the
+   **B4 built (2026-11-13, cloud, branch `claude/blueprints-towns`, the 0.64 line):** town sites per face from the
    seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
    `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
    within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.

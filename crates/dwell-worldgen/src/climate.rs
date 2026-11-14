@@ -56,7 +56,7 @@ pub struct RainRules {
     pub base_rain: f64,
     pub uplift_rain: f64,
     pub lee_dry: f64,
-    /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #158: the
+    /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #164: the
     /// march's rain is near all or nothing cell to cell, and read bilinearly the biomes' edges ran
     /// along the grid's rows and columns, km-long straight edges; 0: as marched). The rivers'
     /// discharge reads the march as it is.
@@ -74,12 +74,22 @@ pub struct BiomeRain {
     pub moisture_share: f64,
 }
 
+/// A noise of the climate's variety (`climate.json` `variety`): ±`amplitude` at `wavelength` m.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VarietyNoise {
+    pub amplitude: f64,
+    pub wavelength: f64,
+}
+
 /// The climate's rules (`climate.json`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClimateRules {
     pub bands: &'static [Band],
     /// (latitude, sea-level °C), latitudes ascending.
     pub sea_level: &'static [[f64; 2]],
+    /// (latitude, the rain's factor), latitudes ascending (0.64: the subtropical dry belt under
+    /// the subtropical highs, dry deserts around 20–30°).
+    pub rain_by_latitude: &'static [[f64; 2]],
     /// °C per 1000 m.
     pub lapse_rate: f64,
     pub winds: &'static [WindCell],
@@ -90,6 +100,12 @@ pub struct ClimateRules {
     /// The discharge's rain factor is kept within [min, max].
     pub discharge: [f64; 2],
     pub biomes: BiomeRain,
+    /// The rain's factors e^(amplitude × noise) and the °C offsets (`variety`, WORK_QUEUE item 15):
+    /// regional districts and local patches, so one band cannot fill a face with one biome.
+    pub rain_variety: &'static [VarietyNoise],
+    /// Added mm after the factors: each 0..amplitude by its noise (a wetter district, never drier).
+    pub rain_mm_variety: &'static [VarietyNoise],
+    pub celsius_variety: &'static [VarietyNoise],
 }
 
 mod table {
@@ -101,19 +117,30 @@ impl ClimateRules {
     /// The sea-level temperature (°C) at `latitude` degrees: straight between the curve's points,
     /// held beyond its ends.
     pub fn sea_level_c(&self, latitude: f64) -> f64 {
-        let s = self.sea_level;
-        if latitude <= s[0][0] {
-            return s[0][1];
-        }
-        for w in s.windows(2) {
-            let ([a, ta], [b, tb]) = (w[0], w[1]);
-            if latitude <= b {
-                return ta + (tb - ta) * (latitude - a) / (b - a);
-            }
-        }
-        s[s.len() - 1][1]
+        curve(self.sea_level, latitude)
     }
 
+    /// The rain's factor at `latitude` degrees (`rainByLatitude`), as [`ClimateRules::sea_level_c`].
+    pub fn rain_factor(&self, latitude: f64) -> f64 {
+        curve(self.rain_by_latitude, latitude)
+    }
+}
+
+/// A curve of (latitude, value) points: straight between them, held beyond its ends.
+fn curve(s: &[[f64; 2]], latitude: f64) -> f64 {
+    if latitude <= s[0][0] {
+        return s[0][1];
+    }
+    for w in s.windows(2) {
+        let ([a, ta], [b, tb]) = (w[0], w[1]);
+        if latitude <= b {
+            return ta + (tb - ta) * (latitude - a) / (b - a);
+        }
+    }
+    s[s.len() - 1][1]
+}
+
+impl ClimateRules {
     /// The wind cell covering `latitude` (the last one beyond them all).
     pub fn wind_at(&self, latitude: f64) -> usize {
         self.winds
@@ -151,6 +178,8 @@ pub struct Climate {
     pub wind_from: f64,
     /// The disc's radius (m) the band spans.
     pub radius: f64,
+    /// The variety noises' seed (`rules.rain_variety`, `celsius_variety`).
+    pub variety_seed: u32,
 }
 
 impl Climate {
@@ -195,6 +224,7 @@ impl Climate {
             north,
             wind_from,
             radius: f64::from(dwell_world::WORLD_RADIUS),
+            variety_seed: seed_word(seed, 0xC11A_0004),
         }
     }
 
@@ -234,6 +264,19 @@ impl Climate {
     /// The temperature (°C) at face-local (x, z), `elevation` m above the sea.
     pub fn temperature_c(&self, x: f64, z: f64, elevation: f64) -> f64 {
         self.sea_level_c(x, z) - self.rules.lapse_rate * elevation.max(0.0) / 1000.0
+            + self.variety(self.rules.celsius_variety, 0, x, z)
+    }
+
+    /// The sum of the `list` noises' amplitude × noise (about ±1 each) at (x, z), stream `k`.
+    fn variety(&self, list: &[VarietyNoise], k: u32, x: f64, z: f64) -> f64 {
+        list.iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let seed = mix32(self.variety_seed ^ mix32(k * 16 + i as u32 + 1));
+                let v = crate::noise::fbm2_turned(seed, x, z, n.wavelength, 2, 2.13, 37.0, 0.0);
+                n.amplitude * (2.0 * f64::from(v)).clamp(-1.0, 1.0)
+            })
+            .sum()
     }
 
     /// The rain the wind drops over `g` ([`rainfall`] along the band's wind, `climate.json` `rain`).
@@ -381,7 +424,19 @@ impl Climate {
         if rain.flat <= 1e-12 {
             return 0.0;
         }
-        (self.band().rain_mm * rain.at(x, z) / rain.flat).clamp(0.0, self.rules.biomes.max_rain_mm)
+        let factor = self.variety(self.rules.rain_variety, 1, x, z).exp();
+        // The added rain is one-sided (0..amplitude): a lee's wetter districts, never a drier one.
+        let add = 0.5
+            * (self.variety(self.rules.rain_mm_variety, 2, x, z)
+                + self
+                    .rules
+                    .rain_mm_variety
+                    .iter()
+                    .map(|n| n.amplitude)
+                    .sum::<f64>());
+        let belt = self.rules.rain_factor(self.latitude(x, z));
+        (self.band().rain_mm * belt * factor * rain.at(x, z) / rain.flat + add)
+            .clamp(0.0, self.rules.biomes.max_rain_mm)
     }
 }
 

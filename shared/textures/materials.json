@@ -9,12 +9,14 @@
     "bedrock": "bedrock",
     "sand": "sand",
     "redSand": "red_sand",
+    "redDirt": "red_dirt",
     "water": "water",
     "logSide": "bark",
     "logTop": "log_end",
     "logHeart": "log_heart",
     "logCut": "fresh_wood",
     "leaves": "leaves",
+    "brush": "brush",
     "leafCard": "leaf_clump",
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
@@ -235,6 +237,16 @@
         { "kind": "streak", "count": 6, "colors": ["@shadow"], "width": [1.5, 2.2], "length": [10, 16], "angle": 0, "angleJitter": 7, "bend": [-1.5, 1.5], "opacity": 0.3, "seed": 1 }
       ]
     },
+    "red_dirt": {
+      "$comment": "Red-brown desert dirt (0.64): the soil's dabs and slabs in the red_dirt ramp.",
+      "use": "block", "ramp": "red_dirt", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "dab", "count": 8, "colors": ["@shadow"], "width": [6, 9], "length": [8, 12], "angle": 10, "angleJitter": 30, "opacity": 0.4, "softness": 2.5 },
+        { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 5], "length": [5, 8], "angle": 10, "angleJitter": 20, "opacity": 0.35, "softness": 1.5 },
+        { "kind": "slab", "count": 3, "colors": ["@light"], "width": [2, 2.5], "length": [3, 4], "angle": 15, "angleJitter": 40, "opacity": 0.45, "seed": 5 }
+      ]
+    },
     "red_sand": {
       "$comment": "Red-brown desert sand (0.59.0): sand's wind streaks in the red_sand ramp.",
       "use": "block", "ramp": "red_sand", "overlay": 1,
@@ -296,6 +308,16 @@
         { "kind": "dab", "count": 12, "colors": ["@shadow", "@base"], "width": [8, 10], "length": [10, 13], "angle": 35, "angleJitter": 40, "softness": 1 },
         { "kind": "dab", "count": 9, "colors": ["@base"], "width": [5, 7], "length": [7, 10], "angle": 40, "angleJitter": 30, "opacity": 0.8, "clip": true, "seed": 1 },
         { "kind": "dab", "count": 7, "colors": ["@light"], "width": [3, 4], "length": [5, 7], "angle": 45, "angleJitter": 20, "opacity": 0.75, "clip": true, "seed": 2 }
+      ]
+    },
+    "brush": {
+      "$comment": "Sagebrush's crown (0.64): leaves' clusters with gaps, smaller and denser, in the grey-green sage ramp.",
+      "use": "block", "ramp": "sage", "overlay": 1, "alpha": "strokes",
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "dab", "count": 16, "colors": ["@shadow", "@base"], "width": [5, 7], "length": [6, 9], "angle": 35, "angleJitter": 60, "softness": 1 },
+        { "kind": "dab", "count": 12, "colors": ["@base"], "width": [3, 5], "length": [4, 7], "angle": 40, "angleJitter": 50, "opacity": 0.8, "clip": true, "seed": 1 },
+        { "kind": "dab", "count": 9, "colors": ["@light"], "width": [2, 3], "length": [3, 5], "angle": 45, "angleJitter": 40, "opacity": 0.75, "clip": true, "seed": 2 }
       ]
     },
     "leaf_clump": {

@@ -51,6 +51,27 @@ pub struct KindRule {
     pub weight: f64,
     /// The least number of plates of this kind a layout keeps.
     pub min: u32,
+    /// The least distance (m) some point of a plate of this kind lies from every other plate and
+    /// from the rim inside the land area ([`PlateLayout::interiors`]): no sliver plates.
+    pub interior: f64,
+}
+
+/// The rim (plates.json `rim`): where the world's disc ends.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RimRule {
+    /// The outer band (m) inside the reach that is always sea, at least `edge_coast` m out.
+    pub edge_sea: f64,
+    pub edge_coast: f64,
+    /// A continent reaching the rim ends this far (m) inside the band, drawn per sector.
+    pub shelf: [f64; 2],
+    pub sectors: u32,
+    /// Every coast (the plate edges' and the rim's) moves by the sum of these layers' noise,
+    /// each (amplitude ± m, wavelength m, octaves): peninsulas and gulfs, bays and headlands, no
+    /// coast straight for km and no continent the plate's polygon (the map check, 2026-11-14).
+    pub coast: &'static [(f64, i32, u32)],
+    /// The rim's coast moves by ±this much (m) of noise at this wavelength (m).
+    pub noise_amplitude: f64,
+    pub noise_wavelength: i32,
 }
 
 /// The plate layout's rules (data: `shared/worldgen/plates.json`).
@@ -59,10 +80,10 @@ pub struct PlateRules {
     /// The seed picks a plate count in `count_min ..= count_max`.
     pub count_min: u32,
     pub count_max: u32,
-    /// Plates and hotspots lie within this distance of the disc's centre (m); the layout covers it.
+    /// The disc (m) the layout covers (the world's radius at the default size).
     pub reach: f64,
-    /// The outer metres of the reach are sea whatever the plate.
-    pub sea_margin: f64,
+    /// Plate centres are drawn within this distance (m) of the centre (≥ `reach`).
+    pub centres: f64,
     /// The least distance between two plates' centres (m), tried at up to `attempts` points each.
     pub spacing: f64,
     pub attempts: u32,
@@ -74,6 +95,10 @@ pub struct PlateRules {
     /// The boundaries curve by this much noise (m) at this wavelength (m).
     pub warp_amplitude: f64,
     pub warp_wavelength: i32,
+    /// Finer warps over the first, (amplitude m, wavelength m) each: sweeping arcs with smaller
+    /// bends, not a Voronoi's straight bisectors (owner, 2026-11-14: "our tectonic plates are too
+    /// straight").
+    pub warp_detail: &'static [(f64, i32)],
     /// A boundary is a transform where |closing rate| < this × the relative speed.
     pub transform_below: f64,
     /// The seed picks a hotspot count in `hotspots_min ..= hotspots_max`, each within
@@ -81,6 +106,7 @@ pub struct PlateRules {
     pub hotspots_min: u32,
     pub hotspots_max: u32,
     pub hotspots_within: f64,
+    pub rim: RimRule,
 }
 
 /// A fixture plate (plates.json `fixtures[].plates`).
@@ -102,14 +128,55 @@ pub struct PlateFixture {
     pub subducts: Option<usize>,
 }
 
+/// How the map's erosion routes each cell's water down (plates.json `variety.flow`, a Realistic
+/// world's; WORK_QUEUE item 15).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FlowRouting {
+    /// Every cell to the neighbour it was flooded from (the default world's).
+    D8,
+    /// Each erosion step, every cell to one strictly lower neighbour drawn by its slope to the
+    /// power `exponent` (a randomized single-flow direction: the channels leave the grid's lines).
+    Random { exponent: f64 },
+}
+
+/// The base field's interior relief on a Realistic world's land (plates.json `variety.relief`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InteriorRelief {
+    /// The sample point's domain warp: amplitude (m) and wavelength (m).
+    pub warp_amplitude: f64,
+    pub warp_wavelength: f64,
+    /// Basins and swells: about ±`swell_height` m at `swell_wavelength` m.
+    pub swell_height: f64,
+    pub swell_wavelength: f64,
+    pub swell_octaves: u32,
+    /// The hills' and bumps' amplitude × a regional noise between `hill_min` and `hill_max`, at
+    /// `hill_wavelength` m.
+    pub hill_min: f64,
+    pub hill_max: f64,
+    pub hill_wavelength: f64,
+    /// Each octave turned this far (degrees) from the last, and this much finer.
+    pub rotate: f64,
+    pub lacunarity: f64,
+}
+
+/// The Realistic world's variety (plates.json `variety`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlateVariety {
+    pub flow: FlowRouting,
+    pub relief: InteriorRelief,
+}
+
 mod table {
     include!("plates.gen.rs");
 }
-pub use table::{FIXTURES, PLATES, UPLIFT};
+pub use table::{FIXTURES, PLATES, UPLIFT, VARIETY};
 
 /// The cell of the coarse scan that finds the boundaries (m): ≥ 500 m, so the layout stays a
 /// function of vectors at any map size (REALISTIC_WORLD.md §4).
 pub const SCAN_CELL: f64 = 500.0;
+
+/// The scan (m) that measures each plate's interior ([`PlateLayout::interiors`]).
+pub const INTERIOR_CELL: f64 = 1000.0;
 
 /// The seed streams of the layout (`seed_word` streams; unused elsewhere).
 const STREAM: u32 = 0x504C_0000;
@@ -280,6 +347,9 @@ pub struct PlateLayout {
     pub boundaries: Vec<Boundary>,
     pub hotspots: Vec<Hotspot>,
     warp_seeds: (u32, u32),
+    /// The rim's shelf (m) at each sector's middle, round the disc from +x toward +z.
+    pub rim_shelf: Vec<f64>,
+    rim_seed: u32,
 }
 
 /// A stream of seeded draws in [0, 1).
@@ -342,13 +412,20 @@ impl PlateLayout {
     /// The layout `seed` draws from `rules`.
     pub fn generate(rules: &PlateRules, seed: u64) -> Self {
         let plates = draw_plates(rules, seed);
+        let mut d = Draws::new(seed, 4);
+        let rim_shelf = (0..rules.rim.sectors.max(1))
+            .map(|_| d.between(rules.rim.shelf))
+            .collect();
         let mut layout = Self {
             rules: *rules,
             plates,
             boundaries: Vec::new(),
             hotspots: Vec::new(),
             warp_seeds: (seed_word(seed, STREAM + 10), seed_word(seed, STREAM + 11)),
+            rim_shelf,
+            rim_seed: seed_word(seed, STREAM + 12),
         };
+        layout.settle();
         layout.boundaries = layout.scan_boundaries();
         layout.hotspots = layout.draw_hotspots(seed);
         layout
@@ -358,12 +435,15 @@ impl PlateLayout {
     pub fn of_plates(rules: &PlateRules, plates: Vec<Plate>) -> Self {
         let mut rules = *rules;
         rules.warp_amplitude = 0.0;
+        rules.warp_detail = &[];
         let mut layout = Self {
             rules,
             plates,
             boundaries: Vec::new(),
             hotspots: Vec::new(),
             warp_seeds: (0, 0),
+            rim_shelf: vec![rules.rim.shelf[0]],
+            rim_seed: 0,
         };
         layout.boundaries = layout.scan_boundaries();
         layout
@@ -382,23 +462,31 @@ impl PlateLayout {
         best.1
     }
 
-    /// Whether a face-local point is land: on a continental plate and inside the sea margin.
+    /// Whether a face-local point is land: inside the plates' coast ([`PlateLayout::coast_distance`]
+    /// above 0: a continental plate, its coast moved by the coast noise, inside the rim's coast).
     pub fn is_land(&self, x: f64, z: f64) -> bool {
-        let edge = self.rules.reach - self.rules.sea_margin;
-        if x * x + z * z > edge * edge || self.plates.is_empty() {
-            return false;
-        }
-        self.plates[self.plate_at(x, z)].kind == PlateKind::Continental
+        !self.plates.is_empty() && self.coast_distance(x, z) > 0.0
     }
 
     /// The signed distance (m) to the plates' coast at a face-local point: > 0 on land (a
-    /// continental plate inside the sea margin), < 0 at sea; the land/sea mask's sign
+    /// continental plate inside the rim's coast), < 0 at sea; the land/sea mask's sign
     /// ([`PlateLayout::is_land`]). The distance to a plate's edge is its warped Voronoi bisector's
-    /// with the nearest plate of the other kind, capped by the distance to the sea margin.
+    /// with the nearest plate of the other kind, capped by the distance to the rim's coast
+    /// ([`PlateLayout::land_edge`]); in the rim's outer band at most −`edge_coast` (deep sea).
     pub fn coast_distance(&self, x: f64, z: f64) -> f64 {
-        let edge = self.rules.reach - self.rules.sea_margin - (x * x + z * z).sqrt();
+        let rim = &self.rules.rim;
+        let land = self.land_edge(x, z);
+        // The distance (m) to the outer band: the coasts' noise may not carry land past 0.6 of
+        // it, so a continent never meets the band (no circular cliff at the rim).
+        let band = self.rules.reach - rim.edge_sea - (x * x + z * z).sqrt();
+        let deep = if band < 0.0 {
+            -rim.edge_coast
+        } else {
+            f64::INFINITY
+        };
+        let noise = self.coast_noise(x, z).min(0.6 * band.max(0.0));
         if self.plates.is_empty() {
-            return edge.min(-1.0);
+            return land.min(deep).min(-1.0);
         }
         let (wx, wz) = self.warped(x, z);
         let a = self.plate_at(x, z);
@@ -413,23 +501,157 @@ impl PlateLayout {
             near = near.min((dist2([wx, wz], pb.centre) - da) / (2.0 * gap));
         }
         let near = near.min(1.0e6);
-        match pa.kind {
-            PlateKind::Continental => near.min(edge),
-            PlateKind::Oceanic => (-near).min(edge),
+        let signed = match pa.kind {
+            PlateKind::Continental => near,
+            PlateKind::Oceanic => -near,
+        };
+        (signed.min(land) + noise).min(deep)
+    }
+
+    /// The plate-edge coasts' noise (m, `rim.coast`) at a face-local point.
+    pub fn coast_noise(&self, x: f64, z: f64) -> f64 {
+        let mut sum = 0.0;
+        for (k, &(amplitude, wavelength, octaves)) in self.rules.rim.coast.iter().enumerate() {
+            if amplitude <= 0.0 {
+                continue;
+            }
+            let n = fbm2(
+                mix32(self.rim_seed ^ 0xC0A5_7000 ^ k as u32),
+                x as i64,
+                z as i64,
+                wavelength,
+                octaves,
+                None,
+            );
+            sum += amplitude * 2.0 * f64::from(n);
+        }
+        sum
+    }
+
+    /// The coasts' noise's greatest reach (m): its layers' amplitudes summed.
+    pub fn coast_reach(&self) -> f64 {
+        self.rules.rim.coast.iter().map(|l| l.0).sum()
+    }
+
+    /// Each plate's interior (m): the farthest any of its points inside the land's edge lies from
+    /// every other plate (its warped Voronoi bisectors) and from that edge, on a scan of
+    /// [`INTERIOR_CELL`] m. A plate with no point inside has 0.
+    pub fn interiors(&self) -> Vec<f64> {
+        let mut best = vec![0.0f64; self.plates.len()];
+        let reach = self.rules.reach;
+        let n = (2.0 * reach / INTERIOR_CELL) as i64 + 1;
+        for j in 0..n {
+            for i in 0..n {
+                let (x, z) = (
+                    -reach + (i as f64 + 0.5) * INTERIOR_CELL,
+                    -reach + (j as f64 + 0.5) * INTERIOR_CELL,
+                );
+                let edge = self.land_edge(x, z);
+                if edge <= 0.0 {
+                    continue;
+                }
+                let (wx, wz) = self.warped(x, z);
+                let a = self.plate_at(x, z);
+                let pa = &self.plates[a];
+                let da = dist2([wx, wz], pa.centre);
+                let mut near = edge;
+                for (b, pb) in self.plates.iter().enumerate() {
+                    if b == a {
+                        continue;
+                    }
+                    let gap = dist2(pa.centre, pb.centre).sqrt().max(1.0);
+                    near = near.min((dist2([wx, wz], pb.centre) - da) / (2.0 * gap));
+                }
+                best[a] = best[a].max(near);
+            }
+        }
+        best
+    }
+
+    /// The distance (m) from a face-local point in to the rim's coast (< 0 beyond it): the
+    /// outer band's inner edge less the sector's shelf (cosine-blended round the disc), moved by
+    /// the rim's coast noise (at most ± its amplitude, so the band stays sea).
+    pub fn land_edge(&self, x: f64, z: f64) -> f64 {
+        let rim = &self.rules.rim;
+        let r = (x * x + z * z).sqrt();
+        let k = self.rim_shelf.len().max(1);
+        let a = z.atan2(x).rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU * k as f64;
+        // Sector i's shelf holds at its middle (a = i + 0.5); blend to the next.
+        let u = a - 0.5;
+        let i0 = u.floor();
+        let t = u - i0;
+        let at = |i: f64| self.rim_shelf.get(i.rem_euclid(k as f64) as usize).copied();
+        let shelf = match (at(i0), at(i0 + 1.0)) {
+            (Some(p), Some(q)) => {
+                let w = 0.5 - 0.5 * (std::f64::consts::PI * t).cos();
+                p + (q - p) * w
+            }
+            _ => rim.shelf[0],
+        };
+        let noise = if rim.noise_amplitude > 0.0 {
+            let n = fbm2(
+                self.rim_seed,
+                x as i64,
+                z as i64,
+                rim.noise_wavelength,
+                2,
+                None,
+            );
+            (rim.noise_amplitude * 2.0 * f64::from(n))
+                .clamp(-rim.noise_amplitude, rim.noise_amplitude)
+        } else {
+            0.0
+        };
+        self.rules.reach - rim.edge_sea - shelf + noise - r
+    }
+
+    /// No sliver plates (realistic batch A): while some plate's interior is short of its kind's
+    /// `interior`, the shortest (by share) is removed (its ground goes to its neighbours) where its
+    /// kind keeps its minimum, else moved 30 % nearer the centre (a plate at the rim drawn in).
+    fn settle(&mut self) {
+        let need = |r: &PlateRules, k: PlateKind| match k {
+            PlateKind::Oceanic => (r.oceanic.interior, r.oceanic.min),
+            PlateKind::Continental => (r.continental.interior, r.continental.min),
+        };
+        for _ in 0..4 * self.plates.len() {
+            let inner = self.interiors();
+            let worst = inner
+                .iter()
+                .zip(&self.plates)
+                .enumerate()
+                .map(|(i, (&d, p))| (d / need(&self.rules, p.kind).0.max(1.0), i))
+                .filter(|&(share, _)| share < 1.0)
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            let Some((_, i)) = worst else { break };
+            let kind = self.plates[i].kind;
+            let have = self.plates.iter().filter(|p| p.kind == kind).count() as u32;
+            if self.plates.len() > 2 && have > need(&self.rules, kind).1 {
+                self.plates.remove(i);
+            } else {
+                let c = &mut self.plates[i].centre;
+                *c = [0.7 * c[0], 0.7 * c[1]];
+            }
         }
     }
 
-    fn warped(&self, x: f64, z: f64) -> (f64, f64) {
+    pub(crate) fn warped(&self, x: f64, z: f64) -> (f64, f64) {
         let a = self.rules.warp_amplitude;
         if a <= 0.0 {
             return (x, z);
         }
         let (xi, zi) = (x as i64, z as i64);
         let w = self.rules.warp_wavelength;
-        (
-            x + a * f64::from(fbm2(self.warp_seeds.0, xi, zi, w, 2, None)),
-            z + a * f64::from(fbm2(self.warp_seeds.1, xi, zi, w, 2, None)),
-        )
+        let (mut wx, mut wz) = (
+            x + 2.0 * a * f64::from(fbm2(self.warp_seeds.0, xi, zi, w, 2, None)),
+            z + 2.0 * a * f64::from(fbm2(self.warp_seeds.1, xi, zi, w, 2, None)),
+        );
+        for (k, &(da, dw)) in self.rules.warp_detail.iter().enumerate() {
+            let k = k as u32 + 1;
+            // × 2: the fractal sums rarely leave ±0.5, so each layer moves about ± its amplitude.
+            wx += 2.0 * da * f64::from(fbm2(mix32(self.warp_seeds.0 ^ k), xi, zi, dw, 2, None));
+            wz += 2.0 * da * f64::from(fbm2(mix32(self.warp_seeds.1 ^ k), xi, zi, dw, 2, None));
+        }
+        (wx, wz)
     }
 
     /// The boundaries: scan cells within the reach, each neighbour pair on different plates adds
@@ -467,7 +689,7 @@ impl PlateLayout {
                     usize::MAX
                 };
                 if here != usize::MAX {
-                    // The crossing itself, found between the two cells' centres (BUGS.md #158: a
+                    // The crossing itself, found between the two cells' centres (BUGS.md #164: a
                     // point at the cells' midpoint put every near-vertical or near-horizontal
                     // stretch of boundary on the scan's grid lines, km-long axis-aligned edges).
                     if left != usize::MAX && left != here {
@@ -531,7 +753,7 @@ fn draw_plates(r: &PlateRules, seed: u64) -> Vec<Plate> {
         // The first point at least `spacing` from every centre, else the farthest one tried.
         let mut best = ([0.0, 0.0], f64::NEG_INFINITY);
         for _ in 0..r.attempts.max(1) {
-            let p = d.in_disc(r.reach);
+            let p = d.in_disc(r.centres);
             let near = centres
                 .iter()
                 .map(|&c| dist2(p, c))
@@ -658,8 +880,9 @@ mod tests {
             for seed in SEEDS {
                 let l = PlateLayout::for_face(seed, f.face);
                 assert_eq!(l, PlateLayout::for_face(seed, f.face), "seed {seed}");
+                // The draw's count less the slivers removed.
                 let n = l.plates.len() as u32;
-                assert!((PLATES.count_min..=PLATES.count_max).contains(&n), "{n}");
+                assert!((2..=PLATES.count_max).contains(&n), "{n}");
                 let h = l.hotspots.len() as u32;
                 assert!(
                     (PLATES.hotspots_min..=PLATES.hotspots_max).contains(&h),
@@ -677,7 +900,7 @@ mod tests {
                     let s = (p.motion[0] * p.motion[0] + p.motion[1] * p.motion[1]).sqrt();
                     assert!((PLATES.speed[0] - 1e-9..=PLATES.speed[1] + 1e-9).contains(&s));
                     assert!((PLATES.age[0]..=PLATES.age[1]).contains(&p.age));
-                    assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.reach * PLATES.reach);
+                    assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.centres * PLATES.centres);
                 }
                 assert!(!l.boundaries.is_empty(), "seed {seed}: plates meet");
                 for b in &l.boundaries {
@@ -688,13 +911,31 @@ mod tests {
                 for hs in &l.hotspots {
                     assert_eq!(hs.plate, l.plate_at(hs.at[0], hs.at[1]));
                 }
-                let edge = PLATES.reach - PLATES.sea_margin;
+                let band = PLATES.reach - PLATES.rim.edge_sea;
                 for (x, z) in [(0.0, 0.0), (5000.0, -3000.0), (-12000.0, 9000.0)] {
+                    // The plate's kind, but for the coast's noise near its edge.
                     let kind = l.plates[l.plate_at(x, z)].kind;
-                    assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
+                    let d = l.coast_distance(x, z);
+                    assert_eq!(l.is_land(x, z), d > 0.0, "{x} {z}");
+                    if d.abs() > 2.0 * l.coast_reach() && l.land_edge(x, z) > 0.0 {
+                        assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
+                    }
                 }
-                assert!(!l.is_land(edge + 1.0, 0.0), "the sea margin is sea");
+                for a in 0..72 {
+                    let th = f64::from(a) * std::f64::consts::TAU / 72.0;
+                    let (x, z) = (band * th.cos(), band * th.sin());
+                    assert!(!l.is_land(x, z), "the outer band is sea");
+                    assert!(l.coast_distance(x * 1.01, z * 1.01) <= -PLATES.rim.edge_coast);
+                }
                 assert!(!l.is_land(0.0, -PLATES.reach - 1000.0));
+                // No sliver plates: each plate has its kind's interior.
+                for (d, p) in l.interiors().iter().zip(&l.plates) {
+                    let need = match p.kind {
+                        PlateKind::Oceanic => PLATES.oceanic.interior,
+                        PlateKind::Continental => PLATES.continental.interior,
+                    };
+                    assert!(*d >= need, "seed {seed}: {p:?} interior {d:.0}");
+                }
             }
         }
     );

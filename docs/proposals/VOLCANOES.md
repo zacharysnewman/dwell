@@ -330,3 +330,31 @@ not harden when within a distance of a sourceblock too."
 
 **Next:** the rest of the look (heat per cell); the water grid's columns as the fields' water (and the sea's level taken back where
 lava builds land); eruptions (V3–V5).
+
+### 6.7 Active and dormant volcanoes in terrain generation (2026-11-13, the 0.64 batch; WORK_QUEUE item 15)
+
+Owner, 2026-11-13: "Also active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they
+should slowly gain dirt and grass, and trees." Clarified: "By slowly gain, we can make that a system eventually, but as
+part of terrain generation." Each volcano a Realistic world places (its arc cones and hotspot islands,
+`plates.json` `uplift`) has a state from data: active (an apron of lava stone spilled into the shallows around its shore,
+bare dark rock on the cone) or dormant with a weathering age that sets how far soil, grass and trees cover it (the biome
+and climate still choose the plants). Set once when the terrain is generated; the default world's hand-placed tectonics
+(`terrain.json` `tectonics`) are not changed. **Owner should see:** active volcanic islands ringed by dark, ragged lava
+rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and trees, the oldest mostly
+forested. Later (docs/FUTURE.md): cover spreading over time as a live system.
+
+**Built (2026-11-14, the 0.65 line):** `plates.json` `uplift.volcanism`, `PlateTectonics::states`
+(`VolcanoState`: active, age, apron) and `TerrainGenerator::volcanic_surface`. Which volcanoes: the Realistic world's arc
+cones (active with chance 0.4, else dormant at a drawn age) and hotspot islands (the youngest active, the older ones
+dormant by their place down the chain, ± 0.1), and their satellites (their parent's state); the default and starter
+worlds' hand-placed volcanoes (`terrain.json` `tectonics`) are unchanged. A volcano's ground is its outline out to its
+radius, the edge moved ± 0.2 of it by noise and faded over its last quarter (no ring). On it the cover share by age
+(smoothstep 0.05–0.85; 0 when active) keeps the biome's own ground by a 70 m patch noise, dirt patches at the cover's
+edge (`soil`: the shale's dirt cap), bare `dwell:shield_basalt` (basalt) beyond; steep faces and the crater stay rock.
+Trees × a smoothstep of the age (0.45–0.95). An active one's apron: the sea floor under at most 22 m of water within
+50–180 m of its shore (drawn per volcano, ± half by noise; the distance read as the depth over the slope) is basalt, 30 %
+`dwell:lava_glass` (obsidian, a rock in no stack). No relief is added to the apron yet (material only).
+`tests/realistic_volcanoes.rs` (both faces, five seeds): lava rock 85 % / 71 % of active shores' shallows against 1–3 %
+at dormant ones; active ground 100 % bare; dormant cover 0.08–0.11 (age ≤ 0.3) against 0.92–0.93 (age ≥ 0.6); trees none
+on the young, 10–38 per ha on the old; the bare edge's radius varies round each active cone (cv 0.13–0.60).
+

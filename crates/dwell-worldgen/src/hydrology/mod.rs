@@ -493,7 +493,13 @@ fn tectonic_map(
     base: BaseField,
     plates: Option<&crate::plate_tectonics::PlateTectonics>,
 ) -> HydrologyMap {
-    let (grid, x0, hs) = sample_field(&base, p.cell);
+    let (grid, x0, hs, swells) = sample_field_and_swells(&base, p.cell);
+    // A Realistic world's erosion routing (plates.json `variety.flow`); every other world's D8.
+    let routing = if plates.is_some() {
+        crate::plates::VARIETY.flow
+    } else {
+        crate::plates::FlowRouting::D8
+    };
     // The Realistic world's climate (R3): its rain weights the discharge.
     let climate = h
         .tectonics
@@ -509,6 +515,8 @@ fn tectonic_map(
             p,
             None,
             climate.as_ref(),
+            routing,
+            false,
         );
     }
     // Tectonics (systemic terrain T5): the boundary's landform and the volcanoes on each cell;
@@ -532,8 +540,16 @@ fn tectonic_map(
                 shield[i] = t.shield(&volcanoes, x, z);
             }
             if let Some(pt) = plates {
-                extra[i] += pt.height(x, z);
-                rising[i] += pt.boundary(x, z);
+                // The interior's basins and swells (plates.json `variety.relief`), kept whole;
+                // a swell keeps rising as a range does (a dome), so the erosion leaves it.
+                let swell = swells[i];
+                // At sea the ridges stay under water (plates.json `uplift.seaRidges`).
+                let coast = f64::from(base.coast_at(x as i64, z as i64));
+                let ridge = pt.boundary(x, z);
+                let kept = pt.at_sea(ridge, hs[i], coast);
+                let share = if ridge > 0.0 { kept / ridge } else { 1.0 };
+                extra[i] += pt.height(x, z) - ridge + kept + swell;
+                rising[i] += share * ridge + swell.max(0.0);
                 shield[i] = shield[i].max(pt.shield(x, z));
             }
         }
@@ -547,7 +563,39 @@ fn tectonic_map(
         p,
         Some((&extra, &rising, &shield)),
         climate.as_ref(),
+        routing,
+        plates.is_some(),
     )
+}
+
+/// [`sample_field`] with each cell's basins and swells (`BaseField::swell_at`; 0 without plates),
+/// the warp and the coast computed once per cell.
+fn sample_field_and_swells(g: &BaseField, cell: i32) -> (Grid, f64, Vec<f64>, Vec<f64>) {
+    let (grid, x0) = grid_for_radius(cell, g.world_radius());
+    let n = grid.n;
+    let cell = i64::from(cell);
+    let half = (n as i64 - 1) * cell / 2;
+    let (mut h, mut sw) = (
+        Vec::with_capacity(grid.len()),
+        Vec::with_capacity(grid.len()),
+    );
+    for row in 0..n {
+        if row % 64 == 0 {
+            crate::progress::report(crate::progress::MapStep::Base, row as f64 / n as f64);
+        }
+        for col in 0..n {
+            let x = col as i64 * cell - half;
+            let z = row as i64 * cell - half;
+            let (height, swell) = match g.height_and_swell_lod(x, z, cell) {
+                None => (f64::NEG_INFINITY, 0.0),
+                Some((height, swell)) => (f64::from(height) - SEA_LEVEL_M, swell),
+            };
+            h.push(height);
+            sw.push(swell);
+        }
+    }
+    crate::progress::report(crate::progress::MapStep::Base, 1.0);
+    (grid, x0, h, sw)
 }
 
 /// [`sample_seed`] of a given base field.
@@ -586,7 +634,18 @@ pub fn from_heights(
     seed: u64,
     p: &HydrologyParams,
 ) -> HydrologyMap {
-    from_heights_with(grid, cell, x0, h0, seed, p, None, None)
+    from_heights_with(
+        grid,
+        cell,
+        x0,
+        h0,
+        seed,
+        p,
+        None,
+        None,
+        crate::plates::FlowRouting::D8,
+        false,
+    )
 }
 
 /// [`from_heights`] with the tectonics' landforms (systemic terrain T5, m per cell) added: to the
@@ -607,6 +666,8 @@ pub fn from_heights_with(
     p: &HydrologyParams,
     extra: Option<(&[f64], &[f64], &[f64])>,
     climate: Option<&crate::climate::Climate>,
+    routing: crate::plates::FlowRouting,
+    cap_fade: bool,
 ) -> HydrologyMap {
     assert_eq!(h0.len(), grid.len());
     let lifted: Vec<f64>;
@@ -718,11 +779,28 @@ pub fn from_heights_with(
         (None, Rain::Orographic(o)) => rain::orographic(grid, cell, &h, &sea, seed, o),
     };
     crate::progress::report(crate::progress::MapStep::Uplift, 1.0);
-    erosion::erode(grid, cell, &mut h, &uplift, &erodibility, &rain, &sea, p);
+    erosion::erode(
+        grid,
+        cell,
+        &mut h,
+        &uplift,
+        &erodibility,
+        &rain,
+        &sea,
+        p,
+        routing,
+    );
     if let (Some(s), Some(u)) = (shield, &uneroded) {
+        // With `cap_fade` (a Realistic world's plate cones) the cap fades out toward the cone's
+        // foot (the shield's cube over its most): capped in full only toward the summit, so the
+        // ground the uplift raised around a cone meets its flank instead of standing as a
+        // circular cliff at its foot (the map check, 2026-11-14). Else (the hand-placed cones of
+        // the default and starter worlds, unchanged) capped in full over the shield.
+        let most = s.iter().copied().fold(0.0f64, f64::max).max(1e-9);
         for i in 0..len {
-            if s[i] > 0.0 && !sea[i] {
-                h[i] = h[i].min(u[i]);
+            if s[i] > 0.0 && !sea[i] && h[i] > u[i] {
+                let w = if cap_fade { (s[i] / most).powi(3) } else { 1.0 };
+                h[i] -= w * (h[i] - u[i]);
             }
         }
     }

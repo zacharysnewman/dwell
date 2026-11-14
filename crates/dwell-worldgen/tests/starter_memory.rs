@@ -117,15 +117,21 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// sandstone's treads show red sand where the ground is arid (its `capBy`, rocks.json `arid`), red
 /// sandstone elsewhere.
 ///
-/// Re-pinned 2026-11-14 for the bigger shrines (16 m across, pillars three times as tall; ships on
-/// the 0.64 line): face B's shrine changes shape, face A's hash unchanged.
+/// Re-pinned 2026-11-13 for BUGS.md #166 (the realistic batch's line): the red desert beds'
+/// siltstone, whose floors the erosion cuts down to, shows red sand only where arid (its `capBy`),
+/// red sandstone elsewhere, as the sandstone does.
 ///
-/// Re-pinned 2026-11-14 for the 0.64 terrain fixes (WORK_QUEUE item 15): every stored ramp backed
-/// (BUGS.md #163; the starter's shaped rock notches its ramps, and a notched ramp that would back
-/// onto open air is now a full block) and the biomes reading the rain blurred over 4 km
-/// (`rain.blurM`, BUGS.md #164); both faces change.
+/// Re-pinned 2026-11-13 for the rest of the realistic batch (the 0.65 line; WORK_QUEUE item 15):
+/// notched ramps only at rock walls' edges (rocks.json `shaping.notched` `mesaEdges`), the mesas'
+/// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
+/// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
+/// Face B again for every ramp backed (BUGS.md #163) and the bigger shrines (the same line).
+/// Both faces again for the mesa tops' shorter undulation (160 m) and main's merge (the same line).
+/// Both faces again, 2026-11-14, for new rocks' palettes only (the dune sand and the lava glass, the
+/// Realistic world's): with each column's palette replaced by its top block's name the pin reads the
+/// same before and after (957c5283732e1a24 / e987a3ebc2efcbe1).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "c0391338f3aefa34"), (Face::B, "5048b8229352e912")];
+    [(Face::A, "f311ecf1699d1d4d"), (Face::B, "befc654b6be1cb95")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

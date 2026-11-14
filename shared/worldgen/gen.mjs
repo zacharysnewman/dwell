@@ -621,8 +621,8 @@ export function rocksRust(data) {
     `// ${rocksHeader}`,
     "",
     "use crate::geology::{",
-    "    Arid, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, PlateProvinces, PlateRule,",
-    "    PlateSetting, Rock, Stack,",
+    "    Arid, Blend, CapClimate, CapRule, Erosion, Geology, Jointing, Layer, MesaRelief, Mixing, Notched,",
+    "    PlateMix, PlateProvinces, PlateRule, PlateSetting, Rock, Stack,",
     "};",
     "",
   ];
@@ -678,11 +678,24 @@ export function rocksRust(data) {
   rs.push(`    ledge: ${rf(data.shaping.ledge)},`);
   rs.push(`    ledge_every: ${rf(data.shaping.ledgeEvery)},`);
   rs.push(`    tread_relief: ${rf(data.shaping.treadRelief)},`);
-  rs.push(`    notched: ${data.shaping.notched === 1},`);
+  rs.push(
+    `    notched: Notched::${{ none: "None", mesaEdges: "MesaEdges", all: "All" }[data.shaping.notched]},`,
+  );
   rs.push("    erosion: Erosion {");
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
     rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
+  rs.push("    },");
+  rs.push("    blends: &[");
+  for (const b of data.blends ?? []) {
+    rs.push(
+      `        Blend { name: ${JSON.stringify(b.name)}, stacks: &[${b.stacks.map((s) => JSON.stringify(s)).join(", ")}], blocks: &[${b.blocks.map((s) => JSON.stringify(s)).join(", ")}], shares: &[${b.shares.map(rf).join(", ")}], wavelength: ${rf(b.wavelength)}, slope: ${rf(b.slope)}, dither: ${rf(b.dither)}, dither_wavelength: ${rf(b.ditherWavelength)} },`,
+    );
+  }
+  rs.push("    ],");
+  rs.push("    mesa_relief: MesaRelief {");
+  for (const k of Object.keys(GEOLOGY.mesaRelief))
+    rs.push(`        ${snake(k)}: ${rf(data.mesaRelief[k])},`);
   rs.push("    },");
   rs.push(`    volcanic_stack: ${JSON.stringify(data.tectonic.volcanic)},`);
   rs.push(`    core_stack: ${JSON.stringify(data.tectonic.core)},`);
@@ -704,11 +717,19 @@ export function rocksRust(data) {
   rs.push(`        rift_width: ${rf(pp.riftWidth)},`);
   rs.push(`        basin_distance: ${rf(pp.basinDistance)},`);
   rs.push(`        edge_fade: ${rf(pp.edgeFade ?? 0)},`);
+  const mx = pp.mixing ?? {};
+  rs.push(
+    `        mixing: Mixing { wavelength: ${rf(mx.wavelength ?? 0)}, warp: ${rf(mx.warp ?? 0)}, warp_wavelength: ${rf(mx.warpWavelength ?? 0)}, edge_shift: ${rf(mx.edgeShift ?? 0)}, edge_wavelength: ${rf(mx.edgeWavelength ?? 0)}, fade: ${rf(mx.fade ?? 0)} },`,
+  );
   rs.push("        rules: &[");
-  for (const r of pp.rules)
+  for (const r of pp.rules) {
+    const mix = (r.mix ?? [])
+      .map((m) => `PlateMix { stack: ${JSON.stringify(m.stack)}, weight: ${rf(m.weight)} }`)
+      .join(", ");
     rs.push(
-      `            PlateRule { setting: PlateSetting::${setting(r.setting)}, stack: ${JSON.stringify(r.stack)} },`,
+      `            PlateRule { setting: PlateSetting::${setting(r.setting)}, stack: ${JSON.stringify(r.stack)}, mix: &[${mix}] },`,
     );
+  }
   rs.push("        ],");
   rs.push("    },");
   const arid = data.arid ?? { rain: 0, wetness: 0, celsius: 100 };
@@ -2597,7 +2618,7 @@ const PLATES_TOP = [
   "$comment",
   "count",
   "reach",
-  "seaMargin",
+  "centres",
   "spacing",
   "attempts",
   "kinds",
@@ -2606,13 +2627,21 @@ const PLATES_TOP = [
   "warp",
   "transformBelow",
   "hotspots",
+  "rim",
   "uplift",
+  "variety",
   "fixtures",
 ];
-/** plates.json `uplift`'s landforms (R2, `plate_tectonics.rs`): each a height, half-width, distance. */
-const UPLIFT_LANDFORMS = ["range", "trench", "collision", "rift", "transform"];
+/** plates.json `uplift.pairs`' code vocabulary (`plate_tectonics.rs`): the landforms' sides and
+ * shapes, and the arc's modes. */
+export const PAIR_SIDES = ["over", "under", "astride", "continental", "oceanic"];
+export const PAIR_SHAPES = ["bump", "rift", "shoulder"];
+export const ARC_MODES = ["none", "crest", "island"];
+/** plates.json `variety.flow.routing`: the erosion's routing vocabulary (`hydrology/erosion.rs`). */
+const FLOW_ROUTINGS = ["d8", "random"];
 const UPLIFT_ARC = [
   "distance",
+  "minDistance",
   "spacing",
   "minLength",
   "maxCones",
@@ -2662,7 +2691,7 @@ export function validatePlates(data) {
     if (!(k in data)) fail(`${k} is missing`);
   range("count", data.count, 1, 32, true);
   num("reach", data.reach, 1000, 100_000);
-  num("seaMargin", data.seaMargin, 0, data.reach);
+  num("centres", data.centres, data.reach, 4 * data.reach);
   num("spacing", data.spacing, 0, 2 * data.reach);
   num("attempts", data.attempts, 1, 100_000, true);
   obj("kinds", data.kinds, PLATE_KINDS);
@@ -2671,9 +2700,10 @@ export function validatePlates(data) {
   for (const k of PLATE_KINDS) {
     const e = data.kinds[k];
     if (e === undefined) fail(`kinds.${k} is missing`);
-    obj(`kinds.${k}`, e, ["weight", "min"]);
+    obj(`kinds.${k}`, e, ["weight", "min", "interior"]);
     num(`kinds.${k}.weight`, e.weight, 0, 1);
     num(`kinds.${k}.min`, e.min, 0, 32, true);
+    num(`kinds.${k}.interior`, e.interior, 0, data.reach);
     weight += e.weight;
     mins += e.min;
   }
@@ -2684,42 +2714,133 @@ export function validatePlates(data) {
     );
   range("speed", data.speed, 0, 100);
   range("age", data.age, 0, 4000);
-  obj("warp", data.warp, ["amplitude", "wavelength"]);
+  obj("warp", data.warp, ["amplitude", "wavelength", "detail"]);
   num("warp.amplitude", data.warp.amplitude, 0, data.reach);
   num("warp.wavelength", data.warp.wavelength, 100, 1_000_000, true);
+  // Finer warps over the first (0.64; the owner: "our tectonic plates are too straight"), each
+  // {amplitude, wavelength}, at most four.
+  const detail = data.warp.detail ?? [];
+  if (!(Array.isArray(detail) && detail.length <= 4)) fail("warp.detail must be a list of at most four");
+  detail.forEach((w, i) => {
+    obj(`warp.detail[${i}]`, w, ["amplitude", "wavelength"]);
+    num(`warp.detail[${i}].amplitude`, w.amplitude, 0, data.reach);
+    num(`warp.detail[${i}].wavelength`, w.wavelength, 100, 1_000_000, true);
+  });
   num("transformBelow", data.transformBelow, 0, 1);
   obj("hotspots", data.hotspots, ["count", "within"]);
   range("hotspots.count", data.hotspots.count, 0, 32, true);
   num("hotspots.within", data.hotspots.within, 0, data.reach);
+  const rim = data.rim;
+  obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "coast", "noise"]);
+  if (!Array.isArray(rim.coast) || rim.coast.length > 4) fail("rim.coast must be a list of at most 4 layers");
+  rim.coast.forEach((l, i) => {
+    obj(`rim.coast[${i}]`, l, ["amplitude", "wavelength", "octaves"]);
+    num(`rim.coast[${i}].amplitude`, l.amplitude, 0, 20_000);
+    num(`rim.coast[${i}].wavelength`, l.wavelength, 100, 1_000_000, true);
+    num(`rim.coast[${i}].octaves`, l.octaves, 1, 8, true);
+  });
+  num("rim.edgeSea", rim.edgeSea, 0, data.reach / 4);
+  num("rim.edgeCoast", rim.edgeCoast, 0, 100_000);
+  range("rim.shelf", rim.shelf, 0, data.reach / 2);
+  num("rim.sectors", rim.sectors, 1, 360, true);
+  obj("rim.noise", rim.noise, ["amplitude", "wavelength"]);
+  // The noise may not carry the coast past the shelf: the outer band stays sea.
+  num("rim.noise.amplitude", rim.noise.amplitude, 0, rim.shelf[0]);
+  num("rim.noise.wavelength", rim.noise.wavelength, 100, 1_000_000, true);
+  if (data.hotspots.within > data.reach - rim.edgeSea)
+    fail("hotspots.within must leave the rim's edgeSea band clear");
   const u = data.uplift;
   obj("uplift", u, [
+    "seaRidges",
     "speedRef",
     "speedScale",
     "link",
     "segment",
     "cell",
-    ...UPLIFT_LANDFORMS,
-    "riftShoulder",
+    "pairs",
+    "along",
+    "rift",
     "arc",
+    "cones",
+    "volcanism",
     "hotspot",
   ]);
+  num("uplift.seaRidges", u.seaRidges, 0, 1000);
   num("uplift.speedRef", u.speedRef, 0.01, 100);
   range("uplift.speedScale", u.speedScale, 0, 10);
   num("uplift.link", u.link, 1, 20_000);
   num("uplift.segment", u.segment, 1, 20_000);
   // The landforms sum on a coarse grid: no new 100 m whole-map grid (REALISTIC_WORLD.md §4).
   num("uplift.cell", u.cell, 500, 10_000);
-  for (const k of UPLIFT_LANDFORMS) {
-    if (u[k] === undefined) fail(`uplift.${k} is missing`);
-    obj(`uplift.${k}`, u[k], ["height", "width", "distance"]);
-    num(`uplift.${k}.height`, u[k].height, 0, 5000);
-    num(`uplift.${k}.width`, u[k].width, 1, 50_000);
-    num(`uplift.${k}.distance`, u[k].distance, 0, 50_000);
-  }
-  num("uplift.riftShoulder", u.riftShoulder, 0, 2);
+  // Every boundary kind × plate pair once (the plate kinds sorted as PLATE_KINDS lists them).
+  if (!Array.isArray(u.pairs)) fail("uplift.pairs must be a list");
+  const pairKeys = new Set();
+  u.pairs.forEach((e, i) => {
+    const at = `uplift.pairs[${i}]`;
+    obj(at, e, ["boundary", "plates", "landforms", "arc"]);
+    if (!BOUNDARY_KINDS.includes(e.boundary))
+      fail(`${at}.boundary must be one of ${BOUNDARY_KINDS.join(", ")}`);
+    if (!(
+      Array.isArray(e.plates) &&
+      e.plates.length === 2 &&
+      e.plates.every((k) => PLATE_KINDS.includes(k)) &&
+      PLATE_KINDS.indexOf(e.plates[0]) >= PLATE_KINDS.indexOf(e.plates[1])
+    ))
+      fail(`${at}.plates must be two plate kinds, continental first (${PLATE_KINDS.join(", ")})`);
+    const key = `${e.boundary}:${e.plates.join("-")}`;
+    if (pairKeys.has(key)) fail(`${at}: duplicate pair ${key}`);
+    pairKeys.add(key);
+    // A boundary has an overriding and a diving side only where one plate subducts.
+    const subducts =
+      e.boundary === "convergent" && e.plates.includes("oceanic");
+    if (!Array.isArray(e.landforms)) fail(`${at}.landforms must be a list`);
+    e.landforms.forEach((l, j) => {
+      const la = `${at}.landforms[${j}]`;
+      obj(la, l, ["side", "shape", "height", "width", "distance"]);
+      if (!PAIR_SIDES.includes(l.side))
+        fail(`${la}.side must be one of ${PAIR_SIDES.join(", ")}`);
+      if ((l.side === "over" || l.side === "under") && !subducts)
+        fail(`${la}.side ${l.side}: only on a subducting pair (convergent, an ocean in it)`);
+      if ((l.side === "continental" || l.side === "oceanic") && !e.plates.includes(l.side))
+        fail(`${la}.side ${l.side}: the pair has no ${l.side} plate`);
+      const shape = l.shape ?? "bump";
+      if (!PAIR_SHAPES.includes(shape))
+        fail(`${la}.shape must be one of ${PAIR_SHAPES.join(", ")}`);
+      if (shape !== "bump" && l.side !== "astride")
+        fail(`${la}.shape ${shape} must be astride`);
+      num(`${la}.height`, l.height, -5000, 5000);
+      num(`${la}.width`, l.width, 1, 50_000);
+      num(`${la}.distance`, l.distance, 0, 50_000);
+    });
+    if (!ARC_MODES.includes(e.arc)) fail(`${at}.arc must be one of ${ARC_MODES.join(", ")}`);
+    if (e.arc !== "none" && !subducts)
+      fail(`${at}.arc ${e.arc}: only on a subducting pair`);
+    if (e.arc === "crest" && !e.landforms.some((l) => l.side === "over" && l.height > 0))
+      fail(`${at}.arc crest needs a raised landform on the over side (its crest)`);
+  });
+  for (const b of BOUNDARY_KINDS)
+    for (const [i, a] of PLATE_KINDS.entries())
+      for (const c of PLATE_KINDS.slice(0, i + 1)) {
+        const key = `${b}:${[a, c].sort((x, y) => PLATE_KINDS.indexOf(y) - PLATE_KINDS.indexOf(x)).join("-")}`;
+        if (!pairKeys.has(key)) fail(`uplift.pairs: no entry for ${key}`);
+      }
+  obj("uplift.along", u.along, ["height", "width", "wavelength", "octaves"]);
+  num("uplift.along.height", u.along.height, 0, 0.9);
+  num("uplift.along.width", u.along.width, 0, 0.9);
+  num("uplift.along.wavelength", u.along.wavelength, 100, 1_000_000, true);
+  num("uplift.along.octaves", u.along.octaves, 1, 8, true);
+  obj("uplift.rift", u.rift, ["segmentLength", "depth", "width", "sill", "stepOver"]);
+  range("uplift.rift.segmentLength", u.rift.segmentLength, 1000, 200_000);
+  range("uplift.rift.depth", u.rift.depth, 0, 5);
+  range("uplift.rift.width", u.rift.width, 0.05, 5);
+  range("uplift.rift.sill", u.rift.sill, 0, 1);
+  if (!(u.rift.sill[1] < u.rift.depth[0]))
+    fail("uplift.rift.sill's max must be under depth's min (each basin deeper than its sills)");
+  num("uplift.rift.stepOver", u.rift.stepOver, 0, 50_000);
   obj("uplift.arc", u.arc, UPLIFT_ARC);
   for (const k of UPLIFT_ARC) if (!(k in u.arc)) fail(`uplift.arc.${k} is missing`);
   num("uplift.arc.distance", u.arc.distance, 0, 50_000);
+  num("uplift.arc.minDistance", u.arc.minDistance, 0, u.arc.distance);
   num("uplift.arc.spacing", u.arc.spacing, 1, 100_000);
   num("uplift.arc.minLength", u.arc.minLength, 0, 200_000);
   num("uplift.arc.maxCones", u.arc.maxCones, 0, 32, true);
@@ -2737,6 +2858,94 @@ export function validatePlates(data) {
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
   num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
+  obj("uplift.cones", u.cones, [
+    "radius",
+    "height",
+    "spacing",
+    "offset",
+    "shape",
+    "each",
+    "satellites",
+    "satelliteSize",
+    "satelliteDistance",
+    "skip",
+  ]);
+  num("uplift.cones.skip", u.cones.skip, 0, 0.9);
+  const vo = u.volcanism;
+  obj("uplift.volcanism", vo, [
+    "active",
+    "ageJitter",
+    "footprint",
+    "edge",
+    "edgeWavelength",
+    "fade",
+    "patchWavelength",
+    "cover",
+    "dirt",
+    "trees",
+    "apron",
+    "apronDepth",
+    "apronNoise",
+    "glassShare",
+    "bare",
+    "glass",
+    "soil",
+  ]);
+  num("uplift.volcanism.active", vo.active, 0, 1);
+  num("uplift.volcanism.ageJitter", vo.ageJitter, 0, 0.5);
+  num("uplift.volcanism.footprint", vo.footprint, 0.1, 3);
+  num("uplift.volcanism.edge", vo.edge, 0, 1);
+  num("uplift.volcanism.edgeWavelength", vo.edgeWavelength, 10, 100_000);
+  num("uplift.volcanism.fade", vo.fade, 0, 1);
+  num("uplift.volcanism.patchWavelength", vo.patchWavelength, 4, 10_000);
+  range("uplift.volcanism.cover", vo.cover, 0, 1);
+  num("uplift.volcanism.dirt", vo.dirt, 0, 1);
+  range("uplift.volcanism.trees", vo.trees, 0, 1);
+  range("uplift.volcanism.apron", vo.apron, 0, 2000);
+  num("uplift.volcanism.apronDepth", vo.apronDepth, 0, 500);
+  num("uplift.volcanism.apronNoise", vo.apronNoise, 0, 1);
+  num("uplift.volcanism.glassShare", vo.glassShare, 0, 1);
+  const rockNames = new Set(
+    JSON.parse(readFileSync(join(here, "rocks.json"), "utf8")).rocks.map((r) => r.name),
+  );
+  for (const k of ["bare", "glass", "soil"]) {
+    obj(`uplift.volcanism.${k}`, vo[k], ["rock", "part"]);
+    if (!rockNames.has(vo[k].rock))
+      fail(`uplift.volcanism.${k}.rock: no rock ${vo[k].rock} in rocks.json`);
+    if (!["face", "cap", "scree"].includes(vo[k].part))
+      fail(`uplift.volcanism.${k}.part must be face, cap or scree`);
+  }
+  range("uplift.cones.each", u.cones.each, 0.1, 5);
+  range("uplift.cones.satellites", u.cones.satellites, 0, 6);
+  if (!u.cones.satellites.every(Number.isInteger)) fail("uplift.cones.satellites must be whole numbers");
+  range("uplift.cones.satelliteSize", u.cones.satelliteSize, 0.05, 1);
+  range("uplift.cones.satelliteDistance", u.cones.satelliteDistance, 0, 4);
+  range("uplift.cones.radius", u.cones.radius, 0.1, 5);
+  range("uplift.cones.height", u.cones.height, 0, 5);
+  num("uplift.cones.spacing", u.cones.spacing, 0, 0.9);
+  num("uplift.cones.offset", u.cones.offset, 0, 50_000);
+  num("uplift.cones.shape", u.cones.shape, 0, 0.6);
+  // The Realistic world's variety (WORK_QUEUE item 15, part B): the erosion's routing, the relief.
+  const v = data.variety;
+  obj("variety", v, ["flow", "relief"]);
+  obj("variety.flow", v.flow, ["routing", "exponent"]);
+  if (!FLOW_ROUTINGS.includes(v.flow.routing))
+    fail(`variety.flow.routing must be one of ${FLOW_ROUTINGS.join(", ")}`);
+  num("variety.flow.exponent", v.flow.exponent, 0, 8);
+  const r = v.relief;
+  obj("variety.relief", r, ["warp", "swells", "hillVary", "rotate", "lacunarity"]);
+  obj("variety.relief.warp", r.warp, ["amplitude", "wavelength"]);
+  num("variety.relief.warp.amplitude", r.warp.amplitude, 0, 20_000);
+  num("variety.relief.warp.wavelength", r.warp.wavelength, 100, 100_000);
+  obj("variety.relief.swells", r.swells, ["height", "wavelength", "octaves"]);
+  num("variety.relief.swells.height", r.swells.height, 0, 2000);
+  num("variety.relief.swells.wavelength", r.swells.wavelength, 100, 100_000);
+  num("variety.relief.swells.octaves", r.swells.octaves, 1, 8, true);
+  obj("variety.relief.hillVary", r.hillVary, ["min", "max", "wavelength"]);
+  range("variety.relief.hillVary [min, max]", [r.hillVary.min, r.hillVary.max], 0, 4);
+  num("variety.relief.hillVary.wavelength", r.hillVary.wavelength, 100, 100_000);
+  num("variety.relief.rotate", r.rotate, 0, 180);
+  num("variety.relief.lacunarity", r.lacunarity, 1.1, 4);
   if (!Array.isArray(data.fixtures)) fail("fixtures must be a list");
   const seen = new Set();
   data.fixtures.forEach((f, i) => {
@@ -2774,13 +2983,22 @@ export function validatePlates(data) {
 
 /** The Rust constants for validated plate data. */
 export function platesRust(data) {
+  const part = { face: "Face", cap: "Cap", scree: "Scree" };
+  const surf = (v) => `Surface { rock: ${JSON.stringify(v.rock)}, part: RockPart::${part[v.part]} }`;
   const kind = (k) => (k === "oceanic" ? "PlateKind::Oceanic" : "PlateKind::Continental");
   const bkind = (k) => `BoundaryKind::${k[0].toUpperCase()}${k.slice(1)}`;
   const rs = [
     `// ${platesHeader}`,
     "",
-    "use crate::plate_tectonics::{ArcRule, ChainRule, Landform, PlateUplift};",
-    "use crate::plates::{BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules};",
+    "use crate::plate_tectonics::{",
+    "    AlongRule, ArcMode, ArcRule, ChainRule, ConeVariety, PairForm, PairRule, PlateUplift, RiftRule,",
+    "    RockPart, Surface, Volcanism,",
+    "    Shape, Side,",
+    "};",
+    "use crate::plates::{",
+    "    BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules, RimRule,",
+    "};",
+    "use crate::plates::{FlowRouting, InteriorRelief, PlateVariety};",
     "",
     "/// The plate layout's rules (shared/worldgen/plates.json).",
     "pub const PLATES: PlateRules = PlateRules {",
@@ -2789,47 +3007,76 @@ export function platesRust(data) {
     ["count_min", `${data.count[0]}`],
     ["count_max", `${data.count[1]}`],
     ["reach", rf(data.reach)],
-    ["sea_margin", rf(data.seaMargin)],
+    ["centres", rf(data.centres)],
     ["spacing", rf(data.spacing)],
     ["attempts", `${data.attempts}`],
     [
       "oceanic",
-      `KindRule { weight: ${rf(data.kinds.oceanic.weight)}, min: ${data.kinds.oceanic.min} }`,
+      `KindRule { weight: ${rf(data.kinds.oceanic.weight)}, min: ${data.kinds.oceanic.min}, interior: ${rf(data.kinds.oceanic.interior)} }`,
     ],
     [
       "continental",
-      `KindRule { weight: ${rf(data.kinds.continental.weight)}, min: ${data.kinds.continental.min} }`,
+      `KindRule { weight: ${rf(data.kinds.continental.weight)}, min: ${data.kinds.continental.min}, interior: ${rf(data.kinds.continental.interior)} }`,
     ],
     ["speed", `[${rf(data.speed[0])}, ${rf(data.speed[1])}]`],
     ["age", `[${rf(data.age[0])}, ${rf(data.age[1])}]`],
     ["warp_amplitude", rf(data.warp.amplitude)],
     ["warp_wavelength", `${data.warp.wavelength}`],
+    [
+      "warp_detail",
+      `&[${(data.warp.detail ?? []).map((w) => `(${rf(w.amplitude)}, ${w.wavelength})`).join(", ")}]`,
+    ],
     ["transform_below", rf(data.transformBelow)],
     ["hotspots_min", `${data.hotspots.count[0]}`],
     ["hotspots_max", `${data.hotspots.count[1]}`],
     ["hotspots_within", rf(data.hotspots.within)],
+    [
+      "rim",
+      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, coast: &[${data.rim.coast.map((l) => `(${rf(l.amplitude)}, ${l.wavelength}, ${l.octaves})`).join(", ")}], shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
+    ],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
   rs.push("};");
   rs.push("");
   const u = data.uplift;
-  const landform = (l) =>
-    `Landform { height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const cap = (k) => `${k[0].toUpperCase()}${k.slice(1)}`;
+  const form = (l) =>
+    `PairForm { side: Side::${cap(l.side)}, shape: Shape::${cap(l.shape ?? "bump")}, height: ${rf(l.height)}, width: ${rf(l.width)}, distance: ${rf(l.distance)} }`;
+  const pairs = u.pairs.map(
+    (e) =>
+      `PairRule { boundary: ${bkind(e.boundary)}, plates: [${kind(e.plates[0])}, ${kind(e.plates[1])}], landforms: &[${e.landforms.map(form).join(", ")}], arc: ArcMode::${cap(e.arc)} }`,
+  );
   const a = u.arc;
   const h = u.hotspot;
   rs.push("/// The uplift from the boundaries (plates.json `uplift`, R2).");
   rs.push("pub const UPLIFT: PlateUplift = PlateUplift {");
   for (const [k, v] of [
+    ["sea_ridges", rf(u.seaRidges)],
     ["speed_ref", rf(u.speedRef)],
     ["speed_scale", `[${rf(u.speedScale[0])}, ${rf(u.speedScale[1])}]`],
     ["link", rf(u.link)],
     ["segment", rf(u.segment)],
     ["cell", rf(u.cell)],
-    ...UPLIFT_LANDFORMS.map((k) => [k, landform(u[k])]),
-    ["rift_shoulder", rf(u.riftShoulder)],
+    ["pairs", `&[\n        ${pairs.join(",\n        ")},\n    ]`],
+    [
+      "along",
+      `AlongRule { height: ${rf(u.along.height)}, width: ${rf(u.along.width)}, wavelength: ${u.along.wavelength}, octaves: ${u.along.octaves} }`,
+    ],
+    [
+      "rift",
+      `RiftRule { segment_length: [${rf(u.rift.segmentLength[0])}, ${rf(u.rift.segmentLength[1])}], depth: [${rf(u.rift.depth[0])}, ${rf(u.rift.depth[1])}], width: [${rf(u.rift.width[0])}, ${rf(u.rift.width[1])}], sill: [${rf(u.rift.sill[0])}, ${rf(u.rift.sill[1])}], step_over: ${rf(u.rift.stepOver)} }`,
+    ],
     [
       "arc",
-      `ArcRule { distance: ${rf(a.distance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+      `ArcRule { distance: ${rf(a.distance)}, min_distance: ${rf(a.minDistance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+    ],
+    [
+      "cones",
+      `ConeVariety { radius: [${rf(u.cones.radius[0])}, ${rf(u.cones.radius[1])}], height: [${rf(u.cones.height[0])}, ${rf(u.cones.height[1])}], spacing: ${rf(u.cones.spacing)}, offset: ${rf(u.cones.offset)}, shape: ${rf(u.cones.shape)}, each: [${rf(u.cones.each[0])}, ${rf(u.cones.each[1])}], satellites: [${rf(u.cones.satellites[0])}, ${rf(u.cones.satellites[1])}], satellite_size: [${rf(u.cones.satelliteSize[0])}, ${rf(u.cones.satelliteSize[1])}], satellite_distance: [${rf(u.cones.satelliteDistance[0])}, ${rf(u.cones.satelliteDistance[1])}], skip: ${rf(u.cones.skip)} }`,
+    ],
+    [
+      "volcanism",
+      `Volcanism { active: ${rf(u.volcanism.active)}, age_jitter: ${rf(u.volcanism.ageJitter)}, footprint: ${rf(u.volcanism.footprint)}, edge: ${rf(u.volcanism.edge)}, edge_wavelength: ${rf(u.volcanism.edgeWavelength)}, fade: ${rf(u.volcanism.fade)}, patch_wavelength: ${rf(u.volcanism.patchWavelength)}, cover: [${rf(u.volcanism.cover[0])}, ${rf(u.volcanism.cover[1])}], dirt: ${rf(u.volcanism.dirt)}, trees: [${rf(u.volcanism.trees[0])}, ${rf(u.volcanism.trees[1])}], apron: [${rf(u.volcanism.apron[0])}, ${rf(u.volcanism.apron[1])}], apron_depth: ${rf(u.volcanism.apronDepth)}, apron_noise: ${rf(u.volcanism.apronNoise)}, glass_share: ${rf(u.volcanism.glassShare)}, bare: ${surf(u.volcanism.bare)}, glass: ${surf(u.volcanism.glass)}, soil: ${surf(u.volcanism.soil)} }`,
     ],
     [
       "hotspot",
@@ -2837,6 +3084,32 @@ export function platesRust(data) {
     ],
   ])
     rs.push(`    ${k}: ${v},`);
+  rs.push("};");
+  rs.push("");
+  const v = data.variety;
+  const rr = v.relief;
+  const flow =
+    v.flow.routing === "d8"
+      ? "FlowRouting::D8"
+      : `FlowRouting::Random { exponent: ${rf(v.flow.exponent)} }`;
+  rs.push("/// The Realistic world's variety (plates.json `variety`, WORK_QUEUE item 15).");
+  rs.push("pub const VARIETY: PlateVariety = PlateVariety {");
+  rs.push(`    flow: ${flow},`);
+  rs.push("    relief: InteriorRelief {");
+  for (const [k, val] of [
+    ["warp_amplitude", rf(rr.warp.amplitude)],
+    ["warp_wavelength", rf(rr.warp.wavelength)],
+    ["swell_height", rf(rr.swells.height)],
+    ["swell_wavelength", rf(rr.swells.wavelength)],
+    ["swell_octaves", `${rr.swells.octaves}`],
+    ["hill_min", rf(rr.hillVary.min)],
+    ["hill_max", rf(rr.hillVary.max)],
+    ["hill_wavelength", rf(rr.hillVary.wavelength)],
+    ["rotate", rf(rr.rotate)],
+    ["lacunarity", rf(rr.lacunarity)],
+  ])
+    rs.push(`        ${k}: ${val},`);
+  rs.push("    },");
   rs.push("};");
   rs.push("");
   rs.push("/// Two-plate layouts and the boundary each must give (plates.json `fixtures`).");
@@ -2870,6 +3143,7 @@ const CLIMATE_TOP = [
   "$comment",
   "bands",
   "seaLevel",
+  "rainByLatitude",
   "lapseRate",
   "winds",
   "windJitter",
@@ -2877,6 +3151,7 @@ const CLIMATE_TOP = [
   "maxGridBytes",
   "discharge",
   "biomes",
+  "variety",
 ];
 const CLIMATE_BIOMES = ["maxRainMm", "wetMm", "moistureShare"];
 const CLIMATE_RAIN = [
@@ -2943,6 +3218,17 @@ export function validateClimate(data) {
     if (i > 0 && !(p[0] > data.seaLevel[i - 1][0]))
       fail(`seaLevel[${i}]: latitudes must ascend`);
   }
+  // The rain's factor by latitude (0.64: the subtropical dry belt), as seaLevel's curve.
+  if (!(Array.isArray(data.rainByLatitude) && data.rainByLatitude.length >= 2))
+    fail("rainByLatitude must be at least two [latitude, factor] points");
+  for (const [i, p] of data.rainByLatitude.entries()) {
+    if (!(Array.isArray(p) && p.length === 2 && isNum(p[0]) && isNum(p[1])))
+      fail(`rainByLatitude[${i}] must be [latitude, factor]`);
+    num(`rainByLatitude[${i}] latitude`, p[0], 0, 90);
+    num(`rainByLatitude[${i}] factor`, p[1], 0, 5);
+    if (i > 0 && !(p[0] > data.rainByLatitude[i - 1][0]))
+      fail(`rainByLatitude[${i}]: latitudes must ascend`);
+  }
   num("lapseRate", data.lapseRate, 0, 20);
   if (!(Array.isArray(data.winds) && data.winds.length > 0)) fail("winds must be a non-empty list");
   for (const [i, w] of data.winds.entries()) {
@@ -2978,6 +3264,17 @@ export function validateClimate(data) {
   num("biomes.maxRainMm", data.biomes.maxRainMm, 1, 50_000);
   num("biomes.wetMm", data.biomes.wetMm, 1, 50_000);
   num("biomes.moistureShare", data.biomes.moistureShare, 0, 1);
+  // Regional and local variety (WORK_QUEUE item 15, part B): rain factors and °C offsets by noise.
+  obj("variety", data.variety, ["rain", "rainMm", "celsius"]);
+  for (const k of ["rain", "rainMm", "celsius"]) {
+    const list = data.variety[k];
+    if (!(Array.isArray(list) && list.length <= 4)) fail(`variety.${k} must be a list of at most 4 noises`);
+    for (const [i, n] of list.entries()) {
+      obj(`variety.${k}[${i}]`, n, ["amplitude", "wavelength"]);
+      num(`variety.${k}[${i}].amplitude`, n.amplitude, 0, { rain: 3, rainMm: 5000, celsius: 20 }[k]);
+      num(`variety.${k}[${i}].wavelength`, n.wavelength, 100, 100_000);
+    }
+  }
   return data;
 }
 
@@ -2987,7 +3284,7 @@ export function climateRust(data) {
   const rs = [
     `// ${climateHeader}`,
     "",
-    "use crate::climate::{Band, BiomeRain, ClimateRules, RainRules, WindCell};",
+    "use crate::climate::{Band, BiomeRain, ClimateRules, RainRules, VarietyNoise, WindCell};",
     "",
     "/// The climate's rules (shared/worldgen/climate.json).",
     "pub const CLIMATE: ClimateRules = ClimateRules {",
@@ -2999,6 +3296,9 @@ export function climateRust(data) {
     "    ],",
     "    sea_level: &[",
     ...data.seaLevel.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
+    "    ],",
+    "    rain_by_latitude: &[",
+    ...data.rainByLatitude.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
     "    ],",
     `    lapse_rate: ${rf(data.lapseRate)},`,
     "    winds: &[",
@@ -3025,6 +3325,17 @@ export function climateRust(data) {
     `        wet_mm: ${rf(data.biomes.wetMm)},`,
     `        moisture_share: ${rf(data.biomes.moistureShare)},`,
     "    },",
+    ...[
+      ["rain", "rain"],
+      ["rainMm", "rain_mm"],
+      ["celsius", "celsius"],
+    ].flatMap(([k, rk]) => [
+      `    ${rk}_variety: &[`,
+      ...data.variety[k].map(
+        (n) => `        VarietyNoise { amplitude: ${rf(n.amplitude)}, wavelength: ${rf(n.wavelength)} },`,
+      ),
+      "    ],",
+    ]),
     "};",
     "",
   ];

@@ -375,7 +375,7 @@ dwell_world::both_faces!(
                 .expect("block");
             // Leaves' normals lean out of their crown (shared/look/leaves.json): a side's
             // vertex under the leaf above leans up, under the canopy's own shade. Not open ground.
-            let leaf_tiles: Vec<f32> = ["leaves", "snowyLeavesTop", "snowyLeavesSide"]
+            let leaf_tiles: Vec<f32> = ["leaves", "snowyLeavesTop", "snowyLeavesSide", "brush"]
                 .iter()
                 .map(|t| crate::textures::tile_rect(t).u0 as f32)
                 .collect();

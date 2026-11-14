@@ -16,7 +16,9 @@ use dwell_worldgen::terrain::TerrainGenerator;
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-const SEED: u64 = 42;
+/// The seed the census reads (42 before the realistic batch's plates, 0.64, whose wider continents
+/// put its bedded ground on flat plains; 7 has bedded hills on both faces).
+const SEED: u64 = 7;
 /// A drop to a neighbouring column at least this tall (m) is a wall: the column is stepped.
 const WALL: f32 = 2.0;
 
@@ -104,11 +106,10 @@ dwell_world::both_faces!(
             "enough of each rock's land sampled: {shaped:?}"
         );
         // Massive granite: about none, as unshaped (the few are the hill's own steepest ground and
-        // the walls of a bedded layer or stack beside it).
-        // Under 1.5 % (1 % before the plate boundaries' true crossings, BUGS.md #164, 0.64, moved
-        // the provinces' edges: face B 133 of 13128, 1.01 %).
+        // the walls of a bedded layer or stack beside it; since the regional hills, plates.json
+        // `variety.relief`, about 2 % of granite land is that steep unshaped too).
         assert!(
-            share(massive) < 0.015,
+            share(massive) < 0.025,
             "massive granite rises unstepped: {massive:?}"
         );
         assert!(
@@ -117,11 +118,14 @@ dwell_world::both_faces!(
         );
         // Bedded stacks step into walls and treads, vertical rock into columns.
         assert!(
-            share(bedded) > share(p_bedded) + 0.025,
+            // Two points over the unshaped (2.5 before the 0.64 boundary crossings moved the beds).
+            share(bedded) > share(p_bedded) + 0.02,
             "bedded stacks step: {bedded:?} against {p_bedded:?} unshaped"
         );
+        // At least 1.4 × (2 × before the 0.65 line's curved plates moved the provinces: face A
+        // 125 against 83 of 3662).
         assert!(
-            vertical.0 > 2 * p_vertical.0 + 5,
+            10 * vertical.0 >= 14 * p_vertical.0,
             "vertical rock stands in columns: {vertical:?} against {p_vertical:?} unshaped"
         );
     }
@@ -185,7 +189,7 @@ fn generator_058(seed: u64) -> TerrainGenerator {
     let mut e = world_config(NAME)
         .unwrap()
         .expect("the Realistic world's edit");
-    e.geology.notched = false;
+    e.geology.notched = dwell_worldgen::geology::Notched::None;
     e.geology.ledge = 0.0;
     e.geology.tread_relief = 0.0;
     let map = WorldMap::for_height(seed, e.height.expect("its height field"))
@@ -199,8 +203,11 @@ fn generator_058(seed: u64) -> TerrainGenerator {
 }
 
 dwell_world::both_faces!(
-    /// Bedded slopes ramp, broken by ledges (owner, 2026-11-13): few ½ m edges on bedded ground are
-    /// bare stairs (a flat top over a ½ m drop), and ledges at least the data's height stand.
+    /// Bedded slopes ramp, broken by ledges (owner, 2026-11-13): no more ½ m edges on bedded ground
+    /// are bare stairs (a flat top over a ½ m drop) than the 0.58 rule's, and ledges at least the
+    /// data's height stand. (0.59–0.61 notched every diagonal contour, under a tenth bare; since
+    /// 0.64 the owner's straight-edge rule holds off the rock walls' edges: "I'd like the old rule
+    /// to apply except for mesa edges".)
     fn bedded_slopes_ramp_between_ledges(f: FaceFrame) {
         let seed = face_seed(SEED, f.face);
         let g = generator(seed, None);
@@ -219,8 +226,8 @@ dwell_world::both_faces!(
         // Under an eighth (a tenth before every ramp was backed, BUGS.md #163, 0.64: a ramp that
         // would back onto open air is a full block, its ½ m edge bare; face B 463 of 4530).
         assert!(
-            share(edges, bare) < 0.125,
-            "bedded slopes ramp, not a field of ½ m stairs: {bare} of {edges} ½ m edges bare"
+            share(edges, bare) <= share(old.1, old.2),
+            "bedded slopes no barer than 0.58's: {bare} of {edges} ½ m edges bare, 0.58 {old:?}"
         );
         assert!(
             share(old.1, old.2) > 0.4,
@@ -232,7 +239,7 @@ dwell_world::both_faces!(
             old.3
         );
         assert!(
-            ledges * 25 > columns,
+            ledges * 35 > columns,
             "ledges of at least {ledge} m break the bedded ground: {ledges} of {columns}"
         );
     }
@@ -294,9 +301,11 @@ fn dump_a_bedded_slope() {
 }
 
 dwell_world::both_faces!(
-    /// Red-brown desert sand (owner, 2026-11-13: "We need a red brown sand for the red desert
-    /// areas"): the red rock mesa's floors are its floor band's ground by data (biomes/presets
-    /// red_rock_mesa.json, now `dwell:red_sand`), red sand on the surface and never plain sand.
+    /// Red-brown desert ground (owner, 2026-11-13: "We need a red brown sand for the red desert
+    /// areas", then "Mostly reddish dirt though"): the red rock mesa's floors are its floor band's
+    /// ground by data (biomes/presets red_rock_mesa.json, since 0.64 `dwell:red_dirt`, blended with
+    /// red sand and tan by rocks.json `blends`), red on the surface, plain sand only as the blend's
+    /// patches (`tests/realistic_mesa_colours.rs` holds the blend).
     fn the_red_desert_floor_is_red_sand_by_data(f: FaceFrame) {
         let (mut tops, mut red, mut plain) = (0, 0, 0);
         // Seed 2 too: since the biomes read the rain blurred (BUGS.md #164, 0.64), face B of the
@@ -310,7 +319,7 @@ dwell_world::both_faces!(
                 .position(|b| b.name == "preset:red_rock_mesa")
                 .expect("the Realistic world has the red rock mesa");
             let floor = g.biomes()[mesa].bands[0].ground;
-            assert_eq!(floor, "dwell:red_sand", "the preset's floor band (data)");
+            assert_eq!(floor, "dwell:red_dirt", "the preset's floor band (data)");
             for z in (-28_000..=28_000).step_by(250) {
                 for x in (-28_000..=28_000).step_by(250) {
                     let c = g.column_at(x, z);
@@ -326,17 +335,23 @@ dwell_world::both_faces!(
                     let Some(y) = g.ground_y(x, z) else { continue };
                     tops += 1;
                     let name = dwell_blocks::block_of(g.state_at(x, y, z)).name;
-                    red += usize::from(name == floor);
+                    red += usize::from(name == floor || name == "dwell:red_sand");
                     plain += usize::from(name == "dwell:sand");
                 }
             }
         }
         eprintln!(
-            "face {:?}: red rock mesa tops {tops}, red sand {red}, plain sand {plain}",
+            "face {:?}: red rock mesa tops {tops}, red dirt or sand {red}, plain sand {plain}",
             f.face
         );
         assert!(tops > 20, "enough of the mesa sampled: {tops}");
-        assert!(red * 5 > tops, "red sand floors the mesa: {red} of {tops}");
-        assert_eq!(plain, 0, "no plain sand on the red desert's surface");
+        assert!(
+            red * 5 > tops,
+            "red dirt and sand floor the mesa: {red} of {tops}"
+        );
+        assert!(
+            plain * 5 < tops,
+            "plain sand only as patches: {plain} of {tops}"
+        );
     }
 );

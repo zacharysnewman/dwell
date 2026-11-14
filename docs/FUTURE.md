@@ -138,3 +138,9 @@ per device (STRUCTURES.md §9), moved only by export and import. Later: send a s
 player in the same world, a server's shared library, or a published catalogue. Open questions: who
 may publish, size and rate limits on the wire, moderation, and whether a shared structure is
 pinned to a build's block registry (names, as the format already is) or carried with it.
+
+## Volcanoes greening over time (owner, 2026-11-13)
+
+"By slowly gain, we can make that a system eventually, but as part of terrain generation." Today a dormant volcano's
+soil, grass and trees are set once at terrain generation from its weathering age (docs/proposals/VOLCANOES.md §6.7).
+Later: a live system where cover spreads over the cones as the world's time passes.

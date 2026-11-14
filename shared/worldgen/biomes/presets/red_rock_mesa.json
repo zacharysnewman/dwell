@@ -1,7 +1,7 @@
 {
   "name": "preset:red_rock_mesa",
   "label": "Red-rock canyon / mesa",
-  "description": "Red-brown sand floors under red sandstone mesas, cliff bands on every steep face.",
+  "description": "Red dirt floors with red sand and pale tan patches under dark red sandstone mesas, cliff bands on every steep face.",
   "where": {
     "weight": 1,
     "celsius": {
@@ -51,24 +51,24 @@
   "bands": [
     {
       "name": "canyon_floor",
-      "ground": "dwell:red_sand",
-      "under": "dwell:red_sand",
-      "rock": "dwell:stone",
+      "ground": "dwell:red_dirt",
+      "under": "dwell:red_dirt",
+      "rock": "dwell:red_sandstone",
       "shoreBlock": "dwell:red_sand"
     },
     {
       "name": "mesa",
       "from": 260,
-      "ground": "dwell:stone",
-      "under": "dwell:stone",
-      "rock": "dwell:stone",
+      "ground": "dwell:red_dirt",
+      "under": "dwell:red_dirt",
+      "rock": "dwell:red_sandstone",
       "shoreBlock": "dwell:red_sand"
     }
   ],
   "decorations": [],
-  "placements": ["boulders"],
+  "placements": ["boulders", "sagebrush"],
   "ground": { "dwell:ground_rock": 2.5 },
-  "trees": { "boulders": 1.5 },
+  "trees": { "boulders": 1.5, "sagebrush": 1 },
   "water": "dwell:water",
   "rockStack": "dwell:red_desert_beds",
   "erosion": 1,

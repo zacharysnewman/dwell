@@ -3,7 +3,7 @@
 use crate::placements::{Placement, Variant};
 
 /// The structure placements (shared/worldgen/placements.json), in their file order.
-pub static PLACEMENTS: [Placement; 7] = [
+pub static PLACEMENTS: [Placement; 8] = [
     Placement {
         name: "pine_groves",
         structures: &[("dwell:pine_tree", 55), ("dwell:tall_pine_tree", 45)],
@@ -87,7 +87,7 @@ pub static PLACEMENTS: [Placement; 7] = [
     Placement {
         name: "boulders",
         structures: &[("dwell:proto_rock", 1)],
-        on: &["dwell:sand", "dwell:stone", "dwell:dirt", "dwell:grass"],
+        on: &["dwell:sand", "dwell:stone", "dwell:dirt", "dwell:grass", "dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone"],
         footprint_on: false,
         pad_trunk: false,
         grid: 16,
@@ -141,6 +141,26 @@ pub static PLACEMENTS: [Placement; 7] = [
         rise_low: 0.5,
         max_gradient_sq: 0.7040882,
         spacing: 0,
+        rotations: &[0, 1, 2, 3],
+        variants: &[],
+    },
+    Placement {
+        name: "sagebrush",
+        structures: &[("dwell:sagebrush", 1)],
+        on: &["dwell:red_dirt", "dwell:red_sand", "dwell:sand"],
+        footprint_on: false,
+        pad_trunk: true,
+        grid: 2,
+        density: 0.9,
+        grove_wavelength: 0,
+        grove_coverage: 1.0,
+        grove_outside: 1.0,
+        min_height: 1,
+        max_height: 2500,
+        rise_full: 1,
+        rise_low: 1.0,
+        max_gradient_sq: 0.21744283,
+        spacing: -2,
         rotations: &[0, 1, 2, 3],
         variants: &[],
     },

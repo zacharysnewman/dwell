@@ -801,7 +801,7 @@ export const GEOLOGY = {
     ledge: [0, 50],
     ledgeEvery: [0.05, 1],
     treadRelief: [0, 0.5],
-    notched: [0, 1, true],
+    notched: ["none", "mesaEdges", "all"],
   },
   erosion: {
     strength: [0, 1],
@@ -818,6 +818,24 @@ export const GEOLOGY = {
     outlineWavelength: [16, 100_000, true],
     gullyWavelength: [4, 10_000, true],
     gullyDepth: [0, 100],
+  },
+  mesaRelief: {
+    topAmplitude: [0, 50],
+    topWavelength: [16, 100000, true],
+    dip: [0, 0.2],
+    dipWavelength: [100, 100000, true],
+    knobSpacing: [16, 100000, true],
+    knobChance: [0, 1],
+    knobHeight: [0, 100],
+    knobRadius: [1, 1000],
+    floorSlope: [0, 0.2],
+    floorRise: [0, 100],
+    moundHeight: [0, 20],
+    moundWavelength: [16, 100000, true],
+    fanHeight: [0, 50],
+    fanWidth: [0, 1000],
+    washDepth: [0, 20],
+    washWavelength: [16, 100000, true],
   },
 };
 
@@ -843,6 +861,8 @@ export function validateRocks(data, blocks) {
         "provinces",
         "shaping",
         "erosion",
+        "mesaRelief",
+        "blends",
         "tectonic",
         "plateProvinces",
         "arid",
@@ -951,8 +971,14 @@ export function validateRocks(data, blocks) {
         fail(`${group} must be an object`);
       const ex = Object.keys(v).filter((k) => k !== "$comment" && !(k in keys));
       if (ex.length) fail(`${group}: unknown ${ex.join(", ")}`);
-      for (const [key, [min, max, whole]] of Object.entries(keys)) {
+      for (const [key, spec] of Object.entries(keys)) {
         const x = v[key];
+        if (typeof spec[0] === "string") {
+          // A word of the code's vocabulary.
+          if (!spec.includes(x)) fail(`${group}.${key} must be one of ${spec.join(", ")}`);
+          continue;
+        }
+        const [min, max, whole] = spec;
         if (!(
           isNum(x) &&
           x >= min &&
@@ -967,6 +993,39 @@ export function validateRocks(data, blocks) {
     }
   };
   groups(data);
+  // The ground blocks' ordered blends by stack (0.64, Monument Valley): each its stacks, 2–6 full
+  // blocks in order with their shares (summing to 1), the noise and the dither.
+  if (data.blends !== undefined) {
+    if (!Array.isArray(data.blends)) fail("blends must be a list");
+    const seen = new Set();
+    const stackNames = new Set(data.stacks.map((s) => s.name));
+    data.blends.forEach((b, i) => {
+      const bf = (m) => fail(`blends[${i}]${typeof b?.name === "string" ? ` (${b.name})` : ""}: ${m}`);
+      const keys = ["$comment", "name", "stacks", "blocks", "shares", "wavelength", "slope", "dither", "ditherWavelength"];
+      const ex = Object.keys(b).filter((k) => !keys.includes(k));
+      if (ex.length) bf(`unknown ${ex.join(", ")}`);
+      if (typeof b.name !== "string" || !/^[a-z0-9_]+:[a-z0-9_]+$/.test(b.name)) bf("name must be namespaced");
+      if (seen.has(b.name)) bf("listed twice");
+      seen.add(b.name);
+      if (!Array.isArray(b.stacks) || b.stacks.length === 0) bf("stacks must be a list of stack names");
+      for (const s of b.stacks) if (!stackNames.has(s)) bf(`stack ${JSON.stringify(s)} is not a stack`);
+      if (!Array.isArray(b.blocks) || b.blocks.length < 2 || b.blocks.length > 6) bf("blocks must be 2–6 blocks, in order");
+      for (const n of b.blocks) {
+        const bl = blocks.get(n);
+        if (!bl) bf(`block ${JSON.stringify(n)} is not in the registry`);
+        if (bl.shape !== "full") bf(`block ${n} must be a full block`);
+      }
+      if (!Array.isArray(b.shares) || b.shares.length !== b.blocks.length || !b.shares.every((s) => isNum(s) && s > 0))
+        bf("shares must be one positive share per block");
+      if (Math.abs(b.shares.reduce((a, s) => a + s, 0) - 1) > 1e-6) bf("shares must sum to 1");
+      if (!between(b.wavelength, 4, 100_000)) bf("wavelength must be in [4, 100000] m");
+      if (!between(b.slope, 0, 2)) bf("slope must be in [0, 2]");
+      if (!between(b.dither, 0, 0.5)) bf("dither must be in [0, 0.5]");
+      if (!between(b.ditherWavelength, 1, 1000)) bf("ditherWavelength must be in [1, 1000] m");
+      // Neighbours at most one tone apart: the dither may not span a tone.
+      if (2 * b.dither >= Math.min(...b.shares)) bf("dither must be under half the smallest share");
+    });
+  }
   // The tectonic provinces (systemic terrain T5): the stacks of the volcanoes and the old core.
   const t = data.tectonic;
   if (typeof t !== "object" || t === null) fail("tectonic must be an object");
@@ -991,6 +1050,7 @@ export function validateRocks(data, blocks) {
       "riftWidth",
       "basinDistance",
       "edgeFade",
+      "mixing",
       "rules",
     ];
     const pe = Object.keys(pp).filter((k) => !known.includes(k));
@@ -1001,6 +1061,20 @@ export function validateRocks(data, blocks) {
     // How far inside a setting's edge the shaping fades in (absent: 0, a sharp edge).
     if (pp.edgeFade !== undefined && !between(pp.edgeFade, 0, 10000))
       pf("edgeFade must be in [0, 10000] m");
+    // How a rule's stacks mix and the settings' edges wander (WORK_QUEUE item 15); optional.
+    const mx = pp.mixing;
+    if (mx !== undefined) {
+      const mk = ["$comment", "wavelength", "warp", "warpWavelength", "edgeShift", "edgeWavelength", "fade"];
+      if (typeof mx !== "object" || mx === null) pf("mixing must be an object");
+      const me = Object.keys(mx).filter((k) => !mk.includes(k));
+      if (me.length) pf(`mixing: unknown ${me.join(", ")}`);
+      for (const k of ["wavelength", "warpWavelength", "edgeWavelength"])
+        if (!between(mx[k], 100, 100000)) pf(`mixing.${k} must be in [100, 100000] m`);
+      for (const k of ["warp", "edgeShift"])
+        if (!between(mx[k], 0, 20000)) pf(`mixing.${k} must be in [0, 20000] m`);
+      if (mx.fade !== undefined && !between(mx.fade, 0, 10000))
+        pf("mixing.fade must be in [0, 10000] m");
+    }
     const rc = pp.rangeCore;
     if (
       !Array.isArray(rc) ||
@@ -1020,13 +1094,32 @@ export function validateRocks(data, blocks) {
       if (seen.has(r.setting)) pf(`rule ${r.setting} is listed twice`);
       seen.add(r.setting);
       const re = Object.keys(r).filter(
-        (k) => !["setting", "stack", "$comment"].includes(k),
+        (k) => !["setting", "stack", "mix", "$comment"].includes(k),
       );
       if (re.length) pf(`rule ${r.setting}: unknown ${re.join(", ")}`);
       if (!stacks.has(r.stack))
         pf(
           `rule ${r.setting}: stack ${JSON.stringify(r.stack)} is not a stack of rocks.json`,
         );
+      // The stacks the setting mixes in, each by its weight (the rule's own weighs 1).
+      if (r.mix !== undefined) {
+        if (!Array.isArray(r.mix) || r.mix.length > 7)
+          pf(`rule ${r.setting}: mix must be a list of at most 7 stacks`);
+        if (r.mix.length && pp.mixing === undefined)
+          pf(`rule ${r.setting}: mix needs plateProvinces.mixing`);
+        const named = new Set([r.stack]);
+        for (const m of r.mix) {
+          const mke = Object.keys(m ?? {}).filter((k) => !["stack", "weight"].includes(k));
+          if (mke.length) pf(`rule ${r.setting}: mix: unknown ${mke.join(", ")}`);
+          if (!stacks.has(m?.stack))
+            pf(
+              `rule ${r.setting}: mix stack ${JSON.stringify(m?.stack)} is not a stack of rocks.json`,
+            );
+          if (named.has(m.stack)) pf(`rule ${r.setting}: mix names ${m.stack} twice`);
+          named.add(m.stack);
+          if (!between(m.weight, 0, 10)) pf(`rule ${r.setting}: mix ${m.stack} weight must be in [0, 10]`);
+        }
+      }
     }
   }
   // The snow line's cover (terrain.json tectonics.snowBelowC): a full block.

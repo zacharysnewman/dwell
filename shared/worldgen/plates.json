@@ -1,66 +1,220 @@
 {
-  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: plates and hotspots lie within this many m of the disc's centre, and the layout covers that disc; `seaMargin`: the outer m of it are sea whatever the plate (the disc must end in sea). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m. `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "count": [3, 5],
-  "reach": 25000,
-  "seaMargin": 2000,
-  "spacing": 8000,
+  "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: the disc (m) the layout covers, the world's radius at the default size; `centres`: plate centres are drawn within this many m of the centre (more than the reach, so plates straddle the rim and the visible area holds plate middles, not only their tips). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. No sliver plates (realistic batch A, 0.64): each kind's `interior` is the least distance (m) some point of a plate of that kind must lie from every other plate and from the rim inside the land area (a continent's room beyond its boundary landforms; for an ocean, half the narrowest strait it may make between two continents); a plate short of it is removed while the count stays at least `count`'s min, else turned to the other kind where the kinds' minimums allow. `rim` (owner, 2026-11-13: no circular sea cap): the plates of mixed kinds run out to the rim; where a continent reaches it, the land ends as a passive margin `shelf` [min, max] m inside the outer `edgeSea` m band, the shelf drawn per each of `sectors` sectors round the disc (cosine-blended) with the coast moved ±`noise.amplitude` m by noise at `noise.wavelength` m; the outer `edgeSea` m are always sea at least `edgeCoast` m out to sea (deep), and every landform fades to nothing at that coast. `rim.coast` (the map check, 2026-11-14: no straight coasts, no continent its plate's polygon): every coast, the plate edges' and the rim's, moves by the sum of these layers' noise, each {amplitude ± m, wavelength m, octaves}: broad peninsulas and gulfs, then bays and headlands; never more than 0.6 of the way into the outer band's distance (no land meets the band). `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m, and by each of `detail`'s {amplitude, wavelength} finer warps (0.64; owner, 2026-11-14: \"our tectonic plates are too straight\": sweeping arcs with smaller bends). `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "count": [7, 11],
+  "reach": 50000,
+  "centres": 56000,
+  "spacing": 12000,
   "attempts": 400,
   "kinds": {
     "oceanic": {
-      "weight": 0.45,
-      "min": 1
+      "weight": 0.5,
+      "min": 1,
+      "interior": 5000
     },
     "continental": {
-      "weight": 0.55,
-      "min": 1
+      "weight": 0.5,
+      "min": 1,
+      "interior": 8000
     }
   },
   "speed": [1, 10],
   "age": [5, 200],
   "warp": {
-    "amplitude": 2500,
-    "wavelength": 16000
+    "amplitude": 3500,
+    "wavelength": 30000,
+    "detail": [
+      { "amplitude": 2200, "wavelength": 7000 },
+      { "amplitude": 600, "wavelength": 2000 }
+    ]
   },
   "transformBelow": 0.4,
   "hotspots": {
     "count": [0, 2],
-    "within": 22000
+    "within": 40000
+  },
+  "rim": {
+    "edgeSea": 2500,
+    "edgeCoast": 3000,
+    "shelf": [1000, 8000],
+    "sectors": 10,
+    "coast": [
+      { "amplitude": 4500, "wavelength": 18000, "octaves": 2 },
+      { "amplitude": 900, "wavelength": 3000, "octaves": 3 }
+    ],
+    "noise": {
+      "amplitude": 800,
+      "wavelength": 7000
+    }
   },
   "uplift": {
-    "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary kind's landform by rule: `range` on the overriding side of a subducting boundary (`height` m, `width` m half-wide, centred `distance` m behind the line), `trench` on the diving side (`height` its depth), `collision` astride a convergent boundary of two continents, `rift` along a divergent one (`height` its depth, with shoulders `riftShoulder` of it either side), `transform` a low ridge along a transform. Each is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max]. The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: on a subducting boundary's overriding side, `distance` m behind the line, one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
+    "$comment": "The uplift from the boundaries (phase R2, plate_tectonics.rs; a world reads it with terrain.json tectonics.plates 1). Each boundary's landforms come from `pairs` (realistic batch A, 0.64), keyed by the boundary's kind and its two plates' kinds (all nine pairs, each once): `landforms` lists each landform's `side` (code vocabulary: `over` the overriding plate and `under` the diving one, on a subducting boundary only; `astride` both; `continental` or `oceanic` the plate of that kind), `shape` (`bump`, the default; `rift`, the segmented rift basins below, astride only; `shoulder`, a bump beside the rift's axis that is left out at sea, so a rift reaching the sea opens as a gulf), `height` m (signed: below 0 cuts), `width` m half-wide and `distance` m from the line; `arc` (`none`; `crest`: one dormant cone per `arc.spacing` m on the crest of the pair's `over` landform, a continental arc; `island`: cones `arc.distance` m behind the line, an island arc, its back-arc basin a landform behind it). The default pairs: two continents closing collide in a range astride, an ocean diving under a continent gives a trench and a range with an arc on its crest, two oceans an island arc with a back-arc basin; two continents opening rift, a continent and an ocean opening make a passive margin (a wide shelf on the sea side, a gentle coastal plain on land, no trough), two oceans a low mid-ocean swell; transforms a low ridge. `seaRidges` (the map check, 2026-11-14: a thin land strip along an oceanic transform; the Realistic sea is only tens of m deep): at sea, the boundaries' landforms raise the ground no higher than this many m below sea level, so the oceans' ridges stay under water and islands come only from cones (arcs and hotspots). Each landform is scaled by the boundary's rate (closing, opening or slip, cm/yr) over `speedRef`, clamped to `speedScale` [min, max], and `along` each line by 1-D noise at `wavelength` m (`octaves`): its height by ±`height` and its width by ±`width` (shares), so ranges have saddles and peaks and rifts narrow (a rift's depth is its segments'). `rift`: a rift line cut into segments `segmentLength` [min, max] m long, each a basin `depth` [min, max] × its height deep and `width` [min, max] × its width wide, deepest mid-segment, with a sill between segments `sill` [min, max] of its height deep (shallow at the line's upstream end, deeper toward the end nearer the sea, so the lakes step down a chain with outlets), alternate segments' axes `stepOver` m apart; an end at sea has no sill (a gulf). The polylines join scan points within `link` m and keep vertices `segment` m apart; the landforms are summed on a coarse grid of `cell` m (at least 500: no new 100 m whole-map grid) and read bilinearly. `arc`: `distance` m behind the line for an island arc (a crest arc stands on its range's crest), each brought nearer the line in steps when its site is off the overriding plate (so an arc fits a narrow plate), down to `minDistance` m; one dormant cone per `spacing` m of a polyline at least `minLength` m long (at most `maxCones`), `coneHeight` m (× the rate's scale) and `coneRadius` m with a crater `craterRadius` m wide and `craterDepth` m deep, hardened against the erosion by `hardness` (0..1). `hotspot`: each hotspot's chain of `islands` shields `spacing` m apart along its plate's motion (older that way), the youngest `height` m and `radius` m, each older one `decay` of the last's height and `widen` broader.",
+    "seaRidges": 6,
     "speedRef": 5,
     "speedScale": [0.5, 1.6],
     "link": 1300,
     "segment": 1000,
     "cell": 500,
-    "range": {
-      "height": 700,
-      "width": 3500,
-      "distance": 4000
-    },
-    "trench": {
-      "height": 60,
-      "width": 1500,
-      "distance": 1500
-    },
-    "collision": {
-      "height": 900,
-      "width": 5000,
-      "distance": 0
+    "pairs": [
+      {
+        "boundary": "convergent",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 900,
+            "width": 5000,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "convergent",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "over",
+            "height": 700,
+            "width": 3500,
+            "distance": 4000
+          },
+          {
+            "side": "under",
+            "height": -60,
+            "width": 1500,
+            "distance": 1500
+          }
+        ],
+        "arc": "crest"
+      },
+      {
+        "boundary": "convergent",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "under",
+            "height": -60,
+            "width": 1500,
+            "distance": 1500
+          },
+          {
+            "side": "over",
+            "height": -20,
+            "width": 3500,
+            "distance": 15000
+          }
+        ],
+        "arc": "island"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "shape": "rift",
+            "height": -160,
+            "width": 2500,
+            "distance": 0
+          },
+          {
+            "side": "astride",
+            "shape": "shoulder",
+            "height": 48,
+            "width": 2500,
+            "distance": 3750
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "oceanic",
+            "height": 8,
+            "width": 5000,
+            "distance": 5000
+          },
+          {
+            "side": "continental",
+            "height": -25,
+            "width": 4000,
+            "distance": 4000
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "divergent",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 10,
+            "width": 4000,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["continental", "continental"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 60,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["continental", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 40,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      },
+      {
+        "boundary": "transform",
+        "plates": ["oceanic", "oceanic"],
+        "landforms": [
+          {
+            "side": "astride",
+            "height": 15,
+            "width": 1500,
+            "distance": 0
+          }
+        ],
+        "arc": "none"
+      }
+    ],
+    "along": {
+      "height": 0.4,
+      "width": 0.4,
+      "wavelength": 9000,
+      "octaves": 2
     },
     "rift": {
-      "height": 160,
-      "width": 2500,
-      "distance": 0
-    },
-    "riftShoulder": 0.3,
-    "transform": {
-      "height": 60,
-      "width": 1500,
-      "distance": 0
+      "segmentLength": [8000, 15000],
+      "depth": [0.7, 1.3],
+      "width": [0.7, 1.3],
+      "sill": [0.15, 0.6],
+      "stepOver": 1500
     },
     "arc": {
       "distance": 9000,
+      "minDistance": 2000,
       "spacing": 10000,
       "minLength": 6000,
       "maxCones": 4,
@@ -70,6 +224,35 @@
       "craterDepth": 60,
       "hardness": 0.6
     },
+    "cones": {
+      "$comment": "Each placed cone and hotspot island varied (the map check, 2026-11-14: \"perfectly round island clusters\", \"six identical round cone islands\"): its radius and its height × a draw in `radius` and `height` [min, max]; a chain's spacing ± `spacing` of itself and each island `offset` m off its line either way; an arc's cones ± `spacing` of theirs along it; every cone's outline irregular by ± `shape` of its radius (harmonics 2 to 7 of seeded amplitude and phase); each chain island's own radius × a draw in `each` and its height × one in its square roots'; `satellites` [min, max] smaller cones round each cone, each `satelliteSize` [min, max] of its parent and `satelliteDistance` [min, max] of its radius out (islets off an island, parasitic cones on a flank); an arc's site past its first left empty with chance `skip` (gaps)."
+      ,"radius": [0.6, 1.4], "height": [0.65, 1.3], "spacing": 0.5, "offset": 1800, "shape": 0.3,
+      "each": [0.75, 1.3],
+      "satellites": [0, 3],
+      "satelliteSize": [0.2, 0.45],
+      "satelliteDistance": [0.7, 1.4],
+      "skip": 0.2
+    },
+    "volcanism": {
+      "$comment": "Active and dormant volcanoes (owner, 2026-11-13: \"active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they should slowly gain dirt and grass, and trees.\" Set once at terrain generation from each volcano's state and age; a live system later, docs/FUTURE.md; VOLCANOES.md §6.7). Applies to the Realistic world's placed volcanoes, its arc cones and hotspot islands (with their satellites); the default world's hand-placed tectonics are unchanged. Each arc cone is active with chance `active`, else dormant at a weathering age drawn 0..1; a hotspot chain's youngest island is active and each older one dormant at its place down the chain (0..1, ± `ageJitter`); a satellite takes its parent's. A volcano's ground is its outline out to `footprint` × its radius, the edge moved ± `edge` of it by noise at `edgeWavelength` m and faded into the ground around over the last `fade` of it (no ring). There the surface is by `cover`, the share covered at the age (smoothstep from `cover[0]` to `cover[1]`; 0 on an active cone): a patch noise at `patchWavelength` m over that share keeps the biome's ground, the next `dirt` of it shows `soil`'s blocks (dirt patches), the rest `bare`'s (dark lava rock, no plants); steep faces and the crater stay rock as everywhere. Trees there × a smoothstep of the age from `trees[0]` to `trees[1]` (none on an active cone, the oldest wooded). An active volcano's apron: under water no deeper than `apronDepth` m, within `apron` [min, max] m (drawn per volcano, ± `apronNoise` of it by the patch noise) of its shore (the depth over the ground's slope), the sea floor is `bare`'s, `glass`'s where a second noise passes 1 − `glassShare` (obsidian where the lava met the water). Each surface names a rock (rocks.json `rocks`) and its part: `face`, `cap` or `scree`.",
+      "active": 0.4,
+      "ageJitter": 0.1,
+      "footprint": 1.0,
+      "edge": 0.2,
+      "edgeWavelength": 600,
+      "fade": 0.25,
+      "patchWavelength": 70,
+      "cover": [0.05, 0.85],
+      "dirt": 0.2,
+      "trees": [0.45, 0.95],
+      "apron": [50, 180],
+      "apronDepth": 22,
+      "apronNoise": 0.5,
+      "glassShare": 0.3,
+      "bare": { "rock": "dwell:shield_basalt", "part": "scree" },
+      "glass": { "rock": "dwell:lava_glass", "part": "scree" },
+      "soil": { "rock": "dwell:shale", "part": "cap" }
+    },
     "hotspot": {
       "islands": 4,
       "spacing": 5000,
@@ -77,6 +260,17 @@
       "radius": 2600,
       "decay": 0.65,
       "widen": 0.12
+    }
+  },
+  "variety": {
+    "$comment": "The Realistic world's variety (WORK_QUEUE item 15, the realistic batch part B; owner, 2026-11-13: \"horizontal slices of noise\", \"the same terrain almost looks tiled\"). `flow`: how the map's erosion routes each cell's water down (the code's vocabulary: `d8`, every cell to the one neighbour it was flooded from, which hatches the slopes along the grid's 45° and 90° lines at 100–300 m; `random`, each erosion step to one strictly lower neighbour drawn by its slope to the power `exponent`, so the channels wander off the grid and the hatching averages out). `relief`: the base field's interior on the plates' land: its sample point warped by a noise `warp.amplitude` m at `warp.wavelength` m; `swells`, basins and swells of about ±`height` m at `wavelength` m (`octaves`); the hills' and bumps' amplitude × a regional noise at `hillVary.wavelength` m between `hillVary.min` and `max`; every octave of the hills, bumps and swells `rotate`° turned from the last and `lacunarity` × finer (not 2: no octave's lattice lines up with the last's).",
+    "flow": { "routing": "random", "exponent": 1 },
+    "relief": {
+      "warp": { "amplitude": 1200, "wavelength": 7000 },
+      "swells": { "height": 150, "wavelength": 5500, "octaves": 2 },
+      "hillVary": { "min": 0.35, "max": 1.6, "wavelength": 13000 },
+      "rotate": 37,
+      "lacunarity": 2.13
     }
   },
   "fixtures": [
@@ -165,6 +359,27 @@
       }
     },
     {
+      "name": "continents_part",
+      "plates": [
+        {
+          "kind": "continental",
+          "at": [-5000, 0],
+          "motion": [-3, 0],
+          "age": 100
+        },
+        {
+          "kind": "continental",
+          "at": [5000, 0],
+          "motion": [3, 0.5],
+          "age": 100
+        }
+      ],
+      "expect": {
+        "kind": "divergent",
+        "subducts": null
+      }
+    },
+    {
       "name": "plates_slide_past",
       "plates": [
         {
@@ -183,6 +398,27 @@
       "expect": {
         "kind": "transform",
         "subducts": null
+      }
+    },
+    {
+      "name": "oceans_converge_far",
+      "plates": [
+        {
+          "kind": "oceanic",
+          "at": [-12000, 0],
+          "motion": [3, 0],
+          "age": 150
+        },
+        {
+          "kind": "oceanic",
+          "at": [12000, 0],
+          "motion": [-3, 0],
+          "age": 40
+        }
+      ],
+      "expect": {
+        "kind": "convergent",
+        "subducts": 0
       }
     }
   ]
