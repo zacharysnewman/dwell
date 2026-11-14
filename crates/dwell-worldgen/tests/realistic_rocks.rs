@@ -65,7 +65,7 @@ fn allowed(t: &PlateTectonics, p: [f64; 2]) -> Vec<&'static str> {
 
 /// Points `off` m from each segment's middle of a polyline, on `plate`'s side (either side for
 /// None), inside the disc's land reach.
-fn beside(t: &PlateTectonics, pl: &[[f64; 2]], plate: Option<usize>, off: f64) -> Vec<[f64; 2]> {
+fn beside(t: &PlateTectonics, pl: &[[f64; 2]], plates: &[usize], off: f64) -> Vec<[f64; 2]> {
     let mut out = Vec::new();
     for w in pl.windows(2) {
         let (p, q) = (w[0], w[1]);
@@ -76,7 +76,8 @@ fn beside(t: &PlateTectonics, pl: &[[f64; 2]], plate: Option<usize>, off: f64) -
         let mid = [0.5 * (p[0] + q[0]), 0.5 * (p[1] + q[1])];
         for s in [1.0, -1.0] {
             let c = [mid[0] + s * off * n[0], mid[1] + s * off * n[1]];
-            let on = plate.is_none_or(|i| t.layout.plate_at(c[0], c[1]) == i);
+            // On one of `plates` (beside a junction a point can fall on a third plate's ground).
+            let on = plates.contains(&t.layout.plate_at(c[0], c[1]));
             if on && t.layout.land_edge(c[0], c[1]) > 0.0 {
                 out.push(c);
                 break;
@@ -155,12 +156,13 @@ dwell_world::both_faces!(
                 for pl in &line.polylines {
                     match (line.kind, line.over) {
                         (BoundaryKind::Convergent, None) => {
-                            for p in beside(&t, pl, None, 0.5 * pp.core_width) {
+                            let pair = t.layout.boundaries[line.boundary].plates;
+                            for p in beside(&t, pl, &pair, 0.5 * pp.core_width) {
                                 check(p, PlateSetting::Core, 2);
                             }
                         }
                         (BoundaryKind::Convergent, Some(over)) => {
-                            for p in beside(&t, pl, Some(over), 0.5 * pp.accreted_width) {
+                            for p in beside(&t, pl, &[over], 0.5 * pp.accreted_width) {
                                 check(p, PlateSetting::Accreted, 3);
                             }
                         }

@@ -47,7 +47,7 @@ both_faces!(
             }
             // The longest run of one axis-aligned edge (the same two neighbours apart).
             let (mut seam, mut at) = (0usize, (0, 0));
-            let mut step = 0.0f64;
+            let (mut step, mut step_at) = (0.0f64, (0i64, 0i64, 0.0, 0.0));
             for (a, b, along) in [(1usize, n, 'v'), (n, 1, 'h')] {
                 for line in 0..n - 1 {
                     let mut run = 0;
@@ -63,10 +63,14 @@ both_faces!(
                             at = (line, t);
                         }
                         // A share of the wetter side's rain (a step at 4000 mm matters less than one
-                        // across a desert's edge).
-                        let d = (rain[k] - rain[other]).abs() / rain[k].max(rain[other]).max(100.0);
-                        if d.is_finite() {
-                            step = step.max(d);
+                        // across a desert's edge), at least 150 mm (100 mm before the 0.65 line: seed
+                        // 2741893632 A's rain climbs smoothly 58 → 213 mm over 800 m at a range's
+                        // edge, 18 mm per 50 m, a gradient, not a step).
+                        let d = (rain[k] - rain[other]).abs() / rain[k].max(rain[other]).max(150.0);
+                        if d.is_finite() && d > step {
+                            step = d;
+                            let c = |k: usize| ((k % n) as i64 - r, (k / n) as i64 - r);
+                            step_at = (c(k).0 * STEP, c(k).1 * STEP, rain[k], rain[other]);
                         }
                     }
                 }
@@ -86,7 +90,7 @@ both_faces!(
             );
             assert!(
                 step <= MAX_RAIN_STEP,
-                "seed {world}: the rain steps {:.1} % in {STEP} m",
+                "seed {world}: the rain steps {:.1} % in {STEP} m at {step_at:?}",
                 100.0 * step
             );
         }

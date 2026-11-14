@@ -70,6 +70,9 @@ fn tally(world: u64, f: FaceFrame) -> Tally {
                 if col.outside
                     || col.water != Water::None
                     || usize::from(g.biome_mix(x.into(), z.into()).chosen) != mesa
+                    // A volcano's ground shows its own state (plates.json `uplift.volcanism`).
+                    || g.plate_tectonics()
+                        .is_some_and(|t| t.volcano_ground(f64::from(x), f64::from(z), 0.0).is_some())
                 {
                     last = None;
                     continue;

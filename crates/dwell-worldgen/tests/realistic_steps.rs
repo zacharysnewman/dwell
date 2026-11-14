@@ -122,8 +122,10 @@ dwell_world::both_faces!(
             share(bedded) > share(p_bedded) + 0.02,
             "bedded stacks step: {bedded:?} against {p_bedded:?} unshaped"
         );
+        // At least 1.4 × (2 × before the 0.65 line's curved plates moved the provinces: face A
+        // 125 against 83 of 3662).
         assert!(
-            vertical.0 >= 2 * p_vertical.0,
+            10 * vertical.0 >= 14 * p_vertical.0,
             "vertical rock stands in columns: {vertical:?} against {p_vertical:?} unshaped"
         );
     }

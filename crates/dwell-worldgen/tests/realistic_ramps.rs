@@ -63,8 +63,10 @@ fn census(world: u64, f: FaceFrame) -> Census {
                 if col.outside || col.height < 2.0 {
                     continue;
                 }
+                // Near a wall: within two columns (a column's backed check reads its neighbours'
+                // rules, and a neighbour beside a wall notches).
                 let edge =
-                    (-1..=1).any(|dz| (-1..=1).any(|dx| g[1].column_at(cx + dx, cz + dz).wall));
+                    (-2..=2).any(|dz| (-2..=2).any(|dx| g[1].column_at(cx + dx, cz + dz).wall));
                 let ramps = [0, 1, 2].map(|k| g[k].ramp_pieces_at(cx, cz));
                 if edge {
                     c.edge_n += 1;
