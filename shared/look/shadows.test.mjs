@@ -44,6 +44,8 @@ test('bad entries fail with their path named', () => {
     [(d) => delete d.cascades.lightTurnDeg, /missing entry cascades\.lightTurnDeg/],
     [(d) => delete d.cascades.lightStepDeg, /missing entry cascades\.lightStepDeg/],
     [(d) => (d.cascades.lightStepDeg = 1), /cascades\.lightStepDeg must be at most lightTurnDeg/],
+    [(d) => (d.cascades.blendBand = 0.8), /cascades\.blendBand must be a number in \[0, 0\.5\]/],
+    [(d) => delete d.bias.leafNormalOffsetM, /missing entry bias\.leafNormalOffsetM/],
   ];
   for (const [edit, message] of cases) {
     const d = data();

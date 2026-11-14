@@ -300,10 +300,40 @@ impl Config {
         (slot, h % self.variants)
     }
 
+    /// The one view a tree draws (BUGS.md #157): the corner of [`Config::pick`]'s grid nearest
+    /// `dir` (its azimuth and band each rounded), the same for every pixel of the tree, so a still
+    /// camera sees no stipple between two views; the view changes only as the camera moves round.
+    /// `imp_nearest` (dwell-client `render/impostors.rs`) is its WGSL twin.
+    pub fn nearest(&self, dir: [f32; 3]) -> usize {
+        let (views, ta, tb) = self.corners(dir);
+        views[usize::from(tb >= 0.5)][usize::from(ta >= 0.5)]
+    }
+
     /// The views a camera looking from direction `dir` (toward the camera, face-local) blends,
     /// with weights summing to 1: the two azimuths either side in the two elevation bands either
     /// side (the top standing for every azimuth above the last band). Up to four.
     pub fn pick(&self, dir: [f32; 3]) -> Vec<(usize, f32)> {
+        let (views, ta, tb) = self.corners(dir);
+        let mut out: Vec<(usize, f32)> = Vec::new();
+        let mut add = |i: usize, w: f32| {
+            if w <= 1e-6 {
+                return;
+            }
+            match out.iter_mut().find(|(j, _)| *j == i) {
+                Some(e) => e.1 += w,
+                None => out.push((i, w)),
+            }
+        };
+        for (b, wb) in [(0, 1.0 - tb), (1, tb)] {
+            add(views[b][0], wb * (1.0 - ta));
+            add(views[b][1], wb * ta);
+        }
+        out
+    }
+
+    /// The grid about `dir`: the views at the two bands (rows) and two azimuths (columns) either
+    /// side, and how far `dir` lies from the first azimuth (`ta`) and the first band (`tb`), 0-1.
+    fn corners(&self, dir: [f32; 3]) -> ([[usize; 2]; 2], f32, f32) {
         let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2])
             .sqrt()
             .max(1e-9);
@@ -326,17 +356,7 @@ impl Config {
             Some(b) => b * n + a,
             None => self.elevations.len() * n,
         };
-        let mut out: Vec<(usize, f32)> = Vec::new();
-        let mut add = |i: usize, w: f32| {
-            if w <= 1e-6 {
-                return;
-            }
-            match out.iter_mut().find(|(j, _)| *j == i) {
-                Some(e) => e.1 += w,
-                None => out.push((i, w)),
-            }
-        };
-        let band_pair = if elev <= bands[0].0 {
+        let (b0, b1, tb) = if elev <= bands[0].0 {
             (0, 0, 0.0)
         } else if elev >= bands[bands.len() - 1].0 {
             (bands.len() - 1, bands.len() - 1, 0.0)
@@ -345,12 +365,8 @@ impl Config {
             let t = (elev - bands[b].0) / (bands[b + 1].0 - bands[b].0);
             (b, b + 1, t)
         };
-        let (b0, b1, tb) = band_pair;
-        for (b, wb) in [(b0, 1.0 - tb), (b1, tb)] {
-            add(ring(bands[b].1, a0), wb * (1.0 - ta));
-            add(ring(bands[b].1, a1), wb * ta);
-        }
-        out
+        let row = |b: usize| [ring(bands[b].1, a0), ring(bands[b].1, a1)];
+        ([row(b0), row(b1)], ta, tb)
     }
 }
 
@@ -1443,6 +1459,31 @@ mod tests {
         }
         // On an exact view every pixel draws it.
         assert!((0..10).all(|k| c.dither(c.views[3], k as f32 / 10.0) == 3));
+    }
+
+    #[test]
+    fn a_tree_draws_its_nearest_view_the_corner_with_the_most_weight() {
+        // face-a-only: data only. BUGS.md #157: each tree draws one view, `pick`'s corner nearest
+        // the camera's direction, not a per-pixel dither of up to four (a still camera's stipple).
+        let c = Config::get();
+        for dir in [
+            [0.6, 0.35, 0.25],
+            [0.2, 0.05, -0.9],
+            [-0.7, 0.6, 0.1],
+            [0.3, -0.2, 0.5],
+        ] {
+            let k = c.nearest(dir);
+            let picks = c.pick(dir);
+            let (_, w) = picks
+                .iter()
+                .find(|&&(i, _)| i == k)
+                .expect("one of pick's views");
+            assert!(
+                *w >= 0.25 - 1e-6,
+                "{dir:?}: view {k} weighs {w} of {picks:?}"
+            );
+        }
+        assert!((0..c.views.len()).all(|k| c.nearest(c.views[k]) == k));
     }
 
     #[test]

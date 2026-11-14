@@ -377,14 +377,24 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   levels share the map as they share the screen; a stand-in keeps its clip box. Water casts none.
   Opaque casters draw their faces toward the light, those drawn in full through a depth-only
   vertex stage that reads the position alone (`shadow_terrain_vs`, `shadow_flat_vs`); plants cast
-  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. The
+  from both sides; a caster is drawn into a cascade when its box overlaps the cascade's box. Plants
+  (grass, flowers, ladders: a chunk's cutout before its trees' leaves) cast into the nearest
+  `plantCascades` only; a tree's leaves (their faces and cards) cast into every cascade, and the
+  shadow passes drop no leaf card for the side of the crown the camera is on
+  (`shadow_cutout_vs`): what casts follows the light, never the camera (BUGS.md #156). The
   casters' pipelines take a slope-scaled depth bias (`bias.slopeScale`).
 - **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface; a face turned
   away from both lights skips the lookup, `lit_by_direct`, since nothing multiplies it), the characters'
   key light (a body in shade shows its ramp's middle at most) and the water's glint, sparkle,
   in-scatter and foam. A fragment takes the first cascade that holds it, offsets its lookup along
-  its normal by `normalOffsetTexels` of that cascade's texels, subtracts `depthBiasM`, and filters
-  with a soft PCF: `filterTaps`² hardware 2×2 compares over `filterTexels`, a painterly soft edge.
+  its normal by `normalOffsetTexels` of that cascade's texels (a tree's leaves by at least
+  `leafNormalOffsetM`, 0.35 m, the same in every cascade, so a crown never shades its own top with
+  its cards and leaf texels: the fine near cascade did and the coarse ones couldn't, BUGS.md #156),
+  subtracts `depthBiasM`, and filters with a soft PCF: `filterTaps`² hardware 2×2 compares over
+  `filterTexels`, a painterly soft edge. Over the outer `blendBand` (15 %) of a cascade's box it
+  blends toward the next cascade's lookup, all of it at the edge, so a cascade's edge shows no step
+  in a shadow's softness (render/shadows.rs `pick` is the rule in f64, tested on a CPU model of the
+  maps).
 - **Composition**: the shadow multiplies **only the direct sun and moon term**
   (`lambert_lit`'s `shadow`; a shader-source test pins it); the hemisphere light stays the ambient
   and AO's (§9) and the flood light's. Over the last `edgeFade` (20 %) of the shadow distance, and

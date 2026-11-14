@@ -30,6 +30,9 @@ pub struct CascadeTunables {
     /// The maps see the light in steps of this along its path (degrees; 0: as it is), so the
     /// clock's turning every frame doesn't turn their texel grid every frame.
     pub light_step_deg: f64,
+    /// A fragment in the outer share of its cascade's box (this share of its half-size) blends
+    /// toward the next cascade's lookup, all of it at the box's edge.
+    pub blend_band: f64,
 }
 
 /// Against acne and peter-panning.
@@ -41,6 +44,8 @@ pub struct BiasTunables {
     pub depth_bias_m: f64,
     /// The casters' slope-scaled depth bias (the pipeline's).
     pub slope_scale: f64,
+    /// A tree's leaves look up at least this far out along their normal (m), in every cascade.
+    pub leaf_normal_offset_m: f64,
 }
 
 /// How a light's shadows follow its elevation over the viewer's face.
@@ -72,7 +77,7 @@ pub struct ShadowTier {
     pub refresh_frames: u32,
     /// The most far cascades drawn again in one frame (the nearest is drawn every frame).
     pub far_per_frame: u32,
-    /// How many of the nearest cascades plants cast into.
+    /// How many of the nearest cascades plants cast into (a tree's leaves cast into all).
     pub plant_cascades: u32,
 }
 
