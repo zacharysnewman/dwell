@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Trees no longer vanish as you fly close: a tree keeps its far look until its real one is ready, then fades to it",
-    "A dynamite blast's flung pieces move smoothly on every frame instead of standing still between updates"
-  ]
-}
