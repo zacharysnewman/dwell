@@ -25,6 +25,14 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **Fall damage 5 m safe, 15 m lethal (owner, 2026-11-14):** "Fall damage is a bit too forgiving now, what is the
+  current behavior?" → (asked about real life and Minecraft) → "Let's modify dwell to be about 5m - 15m." Was 10 m
+  safe, 20 m lethal (0.49.22). Done on `claude/fall-5-15-33uqi6`: `damage.impact_safe_height` 5,
+  `impact_lethal_height` 15, the curve exponent kept at 2 (6 m 1, 8 m 9, 10 m 25, 12 m 49, 14 m 81 points; 1.5 would
+  give 3 / 16 / 35 / 59 / 85, kept 2 since 8 m already costs a tenth of health and 1.5 brings back chip damage on
+  6–7 m drops the owner disliked on 2026-11-06); PLAYER_CONTROLLER.md §6.10, `tests/impact.rs`. **Owner should
+  see:** drops under 5 m never hurt; a 10 m drop clearly hurts (a quarter of health); 15 m or more kills from full
+  health.
 - **Tree mesh bugs (owner, 2026-11-13; BUGS.md #167, #168):** "Tree leaf inside faces touching the tree log
   shouldn't be shown and they cause z fighting. Also sideways logs (after a tree is felled) octagon shape corners are
   shorter than when upright, the sides aren't the same length and they should be the same." Brief: cull the leaf face
