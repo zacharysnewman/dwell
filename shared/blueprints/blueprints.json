@@ -32,6 +32,7 @@
     "maxSlopeDeg": 12,
     "footprintM": 32,
     "foundM": 128,
+    "clearM": 4,
     "plans": [
       {
         "name": "dwell:hamlet",

@@ -83,3 +83,55 @@ both_faces!(
         assert!(l[1] > g(near.x, near.z).unwrap(), "over the ground");
     }
 );
+
+both_faces!(
+    /// BUGS.md #169: a founded hamlet's blueprints went up round the generated trees standing on
+    /// its site (a broadleaf between the well and a hut, another before a hut's door). The
+    /// generator places no tree, bush or boulder reaching a planned town's layout box plus
+    /// `towns.clearM`, so every blueprint, door and path between them is founded on clear ground.
+    fn no_tree_bush_or_boulder_stands_on_a_planned_towns_layout(f: FaceFrame) {
+        let rules = SHIPPED.towns;
+        let mut sites = 0;
+        let mut round = 0;
+        for seed in [0u64, 1, 7, 42] {
+            let terrain = dwell_worldgen::bifacial::BifacialTerrain::for_generator_sized(
+                GENERATOR_TERRAIN,
+                seed,
+                WorldSize::DEFAULT,
+            )
+            .expect("a height field");
+            let g = terrain.local(f.face);
+            let ground = |x: i32, z: i32| terrain.town_ground(f.face, x, z);
+            // Round the origin, and seed 0's hamlet the bug was found at (688, 7979 on face A).
+            let mut near = rules.sites_near(seed, f, 0.0, 0.0, 2500.0, &ground);
+            if seed == 0 {
+                near.extend(rules.sites_near(seed, f, 688.0, 7979.0, 64.0, &ground));
+            }
+            for t in near {
+                sites += 1;
+                let [x0, z0, x1, z1] = rules.clear_box(&t);
+                assert!(
+                    x0 < t.x - 9 && x1 > t.x + 9 && z0 < t.z - 11 && z1 > t.z + 10,
+                    "the box covers the hamlet's huts, well, tower and wall: {t:?}"
+                );
+                let pad = 48;
+                for tree in g.trees_in((x0 - pad, z0 - pad), (x1 + pad, z1 + pad)) {
+                    let fp = g.planters()[tree.planter as usize].footprint(&tree);
+                    let on = fp[0] <= x1 && fp[2] >= x0 && fp[1] <= z1 && fp[3] >= z0;
+                    assert!(
+                        !on,
+                        "seed {seed}: a {} at {:?} (footprint {fp:?}) stands on the town {t:?}'s \
+                         clear box {:?}",
+                        g.planter_name(tree.planter).unwrap_or("?"),
+                        tree.anchor,
+                        [x0, z0, x1, z1]
+                    );
+                    round += 1;
+                }
+            }
+        }
+        eprintln!("{sites} sites, {round} trees round them");
+        assert!(sites >= 4, "towns to check ({sites})");
+        assert!(round > 0, "trees grow round the towns, just not on them");
+    }
+);

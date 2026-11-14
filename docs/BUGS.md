@@ -6,15 +6,6 @@ pins it.
 
 ## Open
 
-### 169. A founded town's blueprints go up around the trees standing on its site
-
-Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
-(688, 7979) on face A. Founding places the plan's blueprints on the ground as it is and the builders skip occupied
-cells, so the generated trees inside the footprint stay: a broadleaf stands between the well and a hut, another in
-front of the second hut's door, half hiding it (stills `builders-end.png`). Suspect: `found_towns` (dwell-sim
-`server/blueprints.rs`) never clears the footprint; either the siting avoids trees (`town_ground`), or founding fells
-the trees in each blueprint's box (plus a margin) as edits before placing it. Not yet decided which; data either way.
-
 ### 170. The record tool's settle wait never sees the view idle while builders edit nearby
 
 Found recording the builders (2026-11-14): `take.mjs`'s `viewIdle` (the bench's rule) waited its full 30–45 s and
@@ -596,6 +587,20 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 169. A founded town's blueprints go up around the trees standing on its site (fixed in 0.66.0)
+
+Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
+(688, 7979) on face A. Founding placed the plan's blueprints on the ground as it was and the builders skip occupied
+cells, so the generated trees inside the footprint stayed: a broadleaf between the well and a hut, another in front
+of the second hut's door (stills `builders-end.png`). Fix, at generation (like the shrines' clear ground): each face's
+generator of the server's world (`BifacialTerrain::sized`) sites the towns as the server does (`dwell-worldgen`
+`towns.rs`, `TownRules::site_in` on the same `town_ground`, cached per grid cell) and places no tree, bush or boulder
+whose footprint reaches a site's `TownRules::clear_box`: the box round every blueprint's structure, whichever way it
+is turned, plus `towns.clearM` (4 m, `blueprints.json`, validated by `gen.mjs`), so the doors and the paths between
+the buildings are clear too. Changes the terrain a seed generates: the 0.66 line. Test (both faces, red → green):
+`dwell-worldgen` `tests/towns.rs` `no_tree_bush_or_boulder_stands_on_a_planned_towns_layout` (seeds 0, 1, 7, 42, the
+sites within 2.5 km of the origin and seed 0's hamlet at (688, 7979); red: a pine on seed 0's town box on each face).
 
 ### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 
