@@ -14,7 +14,7 @@
 //!   [`TREE_GAIN`] × the young ones';
 //! - no circular boundary: the outermost bare rock along 48 rays round an active volcano varies,
 //!   its radii's coefficient of variation at least [`EDGE_CV`].
-//! - no black blotches across an old dormant cone's green lowland (0.67, the map check, 2026-11-14):
+//! - no black blotches across an old dormant cone's green lowland (0.68, the map check, 2026-11-14):
 //!   its bare rock keeps to the shore and the vent (`volcanism.bareShore`, `bareVent`).
 
 use std::sync::Arc;
@@ -200,8 +200,8 @@ both_faces!(
             "{:?}: {report}; old cones' lowland bare {} of {}",
             f.face, t.blotches.0, t.blotches.1
         );
-        // No black blotches across an old cone's green lowland (0.67, the map check: bare rock
-        // only near the shore and the vent). 0.65: 6.4 % (B) / 8.8 % (A) of it bare lava; 0.67:
+        // No black blotches across an old cone's green lowland (0.68, the map check: bare rock
+        // only near the shore and the vent). 0.65: 6.4 % (B) / 8.8 % (A) of it bare lava; 0.68:
         // 0.7 % / 1.8 % (the rest not yet traced: a satellite cone's own state, an andesite wall).
         assert!(t.blotches.1 >= 30, "{report}: old lowland sampled");
         assert!(

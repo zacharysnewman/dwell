@@ -648,7 +648,12 @@ one piece every `player.paceMs` (one-cell region fills), and a compact panel sho
 Builder NPCs (`dwell:builder`, the villager without a sword) build them on the server with unlimited
 blocks, foundation up. The rules are data (`shared/blueprints/blueprints.json` → `shared/blueprints/gen.mjs`
 → `dwell-world`'s `blueprints.gen.rs`); the geometry is `dwell_world::blueprint`; the world's list is
-saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
+saved in its optional `blueprints` table and synced behind `blueprints.world`. **[built, the 0.67 line] The
+storehouse and the work loop** (B5, BLUEPRINTS.md §9): a town plan's `storehouse` blueprint is built first and
+holds the town's stock (`unlimited` for now); builders of the blueprints near it carry up to their job's
+`carryMax` (`blueprints.json` `jobs`) from it to the site and back, items moving only through
+`dwell_world::stock::transfer` (the seam for carters and foresters); the storehouses and the builders' loads are
+saved in the `blueprints` record, and the loads are drawn on the villagers' backs (`npcs.carry`). **[built, 0.61] Towns** (B4): town sites per face from the world seed (`blueprints.json` `towns`; `dwell_world::blueprint::TownRules`, the ground from `dwell_worldgen::town_ground_for_sized`), each a plan of blueprints the server places once a player comes near, recorded in the `blueprints` table so it is founded once. **[built, 0.52.3]** A save (every 10 s while cells
 change) hands the store only the cells changed since the last one (`ExploredChanges`,
 `client/src/ui/exploredStore.ts`), and the store merges them into the record in its own worker
 (`exploredWorker.ts`; on the page only when the page is closing or has no workers): the merge reads
@@ -958,7 +963,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   sent, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
-  hand holds something; a break or place swing, or the axe's level or vertical chop when the
+  hand holds something; a break or place swing (a break tool's own `clip` on your arms, `fp_break_<item>`, its head fitted onto
+  the crosshair at its `contactS`; others' bodies the plain `break`), or a tool's level or vertical chop when the
   snapshot carries its kind (`SwingHello`, §8.3), on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
@@ -2499,7 +2505,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `inventories` | **[built, 0.50.33]** Keyed by device public key: the player's inventory record (`Inventory::to_bytes`, version 1: held slot, wallet and money, each non-empty slot's index, item name and count; ADR 0066). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `vitals` | **[built, 0.50.57]** Keyed by device public key: the player's stamina and oxygen (version 1: f32 stamina, f32 seconds of air, u8 exhausted; ADR 0069), rewritten each save. Optional: older builds leave it; a player without one, or with a record this build can't read, starts rested |
 | `markers` | **[built, WORK_QUEUE item 53]** Keyed by device public key: the player's own map markers (`dwell_protocol::markers::Markers::to_bytes`, version 1: each marker's id, icon name, colour, label, face, face-local point and auto kind; [MAP_MARKERS.md](MAP_MARKERS.md)), rewritten each save for every player who has a record. Optional and additive: a world without it has no markers, older builds on the line never open it; an unreadable record reads as none and is replaced only when the player changes their markers |
-| `blueprints` | **[built, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 2: the next id, a count, then each record, then the town sites founded; version 1 had no towns and is still read; BLUEPRINTS.md §2, §6). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
+| `blueprints` | **[built, WORK_QUEUE item 56]** One record (key 0), rewritten on a save after a change: the world's blueprints (`dwell_protocol::blueprints::list_to_bytes`, version 3: the next id, a count, then each record, then the town sites founded, then the villagers' work: the storehouses (box, face, building blueprint, stock) and the builders' carried loads; versions 1 (no towns) and 2 (no work) are still read; BLUEPRINTS.md §2, §6, §9). Optional and additive: older builds leave it; an unreadable record is kept, not overwritten |
 | `loose_items` | **[built, 0.50.33]** One record (key 0), rewritten each save: the loose items lying in the world (version 1: item name, count, point, age each; ADR 0066) |
 | `ground_gone` | **[built, 0.50.68]** One record (key 0), rewritten each save: the ground items gone from the scatter (`dwell_world::ground::GroundGone::to_bytes`, version 1: a count, then each cell as i32×3, sorted; ADR 0071), the scatter's tombstones. Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
@@ -3599,8 +3605,9 @@ axe, so in adventure hands can't break logs; the server refuses the edit; creati
 `shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
 `client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
 per side across the grain, an open notch and a kerf in each of two bands along it: a swing cuts
-`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level, or vertical
-along the look, toggled by Use with the axe held) and the grain, face-locally through `FaceFrame`;
+`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level; vertical
+along the look only for a tool with a second stance, a `heldVertical`: since 2026-11-14 the axe has one
+mode, its level swing, and the server sweeps an older client's vertical ask level) and the grain, face-locally through `FaceFrame`;
 both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
 checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
 `cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
@@ -3668,8 +3675,8 @@ it meets and spending the swing on anything else. A swing that only clears is a 
 client predicts the same sweep for the feel (`chop.rs` `SwingRun`: the arms' clip driven through
 the hit-stop and back, `Animator::drive_action`; the camera's wind-up, sweep and jolt; at the
 impact the chips, the hit's sound by how far the wood is cut (the wood's `sounds`), leaves shaken
-from the tree's leaf blocks (`leaves`), or a clank off stone). The two holds are two characters'
-items (`held`, `heldVertical`). A standing tree cut
+from the tree's leaf blocks (`leaves`), or a clank off stone). A tool's holds are characters' items
+(`held`, and `heldVertical` for a second stance: the sword's). A standing tree cut
 past its `sway.fromFraction` leans toward the notch (`chop.rs` `TreeLean`, the frame uniform's
 `lean_*` vec4s, applied in the terrain and cutout vertex shaders). The reticle draws the swing's
 line through the crosshair. Others see the held tool by name (`HeldTools`).
@@ -4215,7 +4222,7 @@ in the code yet.
 | `movement.ground_stick_speed` (`config.rs`) | 5 m/s | The ground is a floor (owner, 2026-11-05; PLAYER_CONTROLLER.md §6.11): grounded vertical speed is momentum; following the ground may take away at most this much of the rise in a tick, and pull the body down at most this much beyond gravity; more and it leaves the ground (crests, lips, step-ups onto a flat top, downhill edges at speed). Walking, running and momentum; walking and running keep the ground |
 | `movement.slide_stick_rise_speed` / `slide_stick_drop_speed` (`config.rs`) | 0 / ∞ m/s | The same limits for a slide (a sprint slide, a crouched steep slide; owner, 2026-11-06; PLAYER_CONTROLLER.md §6.11): none of its rise is taken, so it flies off a ramp's top at the ramp's angle on its own momentum, and it follows every ramp down (glued) |
 | `movement.acceleration` / `deceleration` / `reverse_deceleration` / `air_control` (`config.rs`) | 50 / 15 / 60 m/s², 0.2 | The walking rule (owner, 2026-11-06, 0.49.18; PLAYER_CONTROLLER.md §6.12): the horizontal layer works on the whole velocity; input adds up to the walking speed and never stacks on momentum; `deceleration` is the ground's friction for any speed above that or with nothing held; in the air the push (`acceleration × air_control`) never slows the body or builds speed past `max(walk speed, |v|)`, only turning a faster body (no strafe-jumping) |
-| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 10 m / 20 m / 2 (landing at 20 / 28.3 m/s) | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; 10 m / 20 m in 0.49.22; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
+| `damage.impact_safe_height` / `impact_lethal_height` / `impact_curve_exponent` (`config.rs`) | 5 m / 15 m / 2 (landing at 14.1 / 24.5 m/s) | Impact damage (owner, 2026-10-21; 2026-11-06, 0.49.18; 10 m / 20 m in 0.49.22; 5 m / 15 m from 2026-11-14; PLAYER_CONTROLLER.md §6.10): a hit's speed into the surface, read as the fall that lands at it (`v² ÷ 2g`), hurts nothing up to the safe height and `MAX_HEALTH × t ^ exponent` past it, lethal at the lethal height |
 | `damage.impact_surfaces` / `impact_measure` (`config.rs`) | `Ground` / `DownwardIntoSurface` | Impacts (PLAYER_CONTROLLER.md §6.10): `Ground` counts a normal no steeper than `probes.max_slope_angle`, floors and ramps (owner, 2026-10-21: "just ground"), walls, steep faces and ceilings never; `All` every contact. `DownwardIntoSurface` hurts by the downward speed × the surface's cos θ, `max(0, −v.y) · n.y` (owner, 2026-11-06: "only … based on Y", and the angle "reduces fall damage too"), so a fast hit into a slope never hurts and a steep ramp softens a fall; `IntoSurface` by `max(0, −v · n)`. Server damage only |
 | `SLIDE_HOLD` / `SLIDE_UPDATE_EVERY` (*client*, `dwell-game` `sound.rs`) | 0.15 s / 50 ms | A slide's sound: a pause shorter than the hold keeps the same voice; speed updates at most this often (AUDIO.md §5) |
 | `IMPACT_HOLD` / `IMPACT_KEEPS` / `IMPACT_PROBE_M` (*client*, `dwell-game` `sound.rs`) | 70 ms / 0.35 / 0.06 m | An impact sound: the speed toward a surface touching the body (within the probe) dropping in a sample to at most `KEEPS` of its fastest in the last `HOLD`; then quiet that long (AUDIO.md §5) |
@@ -4792,7 +4799,11 @@ without it neither is sent and the client's markers last the session. The eleven
 ([BLUEPRINTS.md](BLUEPRINTS.md), WORK_QUEUE item 56): `Blueprints` 0x6D (both ways: S→C `All` once after the
 client's `Capabilities`, then `Added` / `Removed` to every client with it; C→S `Place` / `Remove`, taken only
 where the mode has the `blueprints` ability) carrying `dwell_protocol::blueprints::Blueprint` records (a
-structure's cells as runs, face-local, turned); without it neither is sent.
+structure's cells as runs, face-local, turned); without it neither is sent. **[built, the 0.67 line]**
+`npcs.carry` ([BLUEPRINTS.md](BLUEPRINTS.md) §9, WORK_QUEUE item 57): a `Creatures` message ends, after the
+poses' part (it and the NPCs' part written empty if need be), with the carrying NPCs' loads (`CarryNet`: `u16`
+count, each `u32` id, `u8` kinds ≤ 16, each `str` block state name and `u8` count), drawn as a stack on the back
+(`blueprints.json` `carryLook`); without it the part is left out.
 ```
 S→C  WorldSettings field 0x85 (optional): u8 count (≤ 64), each str name (≤ 48 bytes, no repeat)
 C→S  Capabilities 0x69, control: the same form — the client's capabilities, once after Welcome,
@@ -5094,8 +5105,8 @@ animated from `State` and flags in snapshots.
   fall and a fast hit into a slope does not hurt at all; on the ground only (`damage.impact_surfaces`: a normal no
   steeper than `probes.max_slope_angle`), floors and ramps, never walls, steep faces or ceilings (the wall and ceiling impact
   sounds stay: they are read from motion), once per contact, the largest of a tick's; read as
-  a fall height, nothing up to `damage.impact_safe_height` 10 m (20 m/s), then `MAX_HEALTH × t ^
-  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 20 m (28.3 m/s); flight,
+  a fall height, nothing up to `damage.impact_safe_height` 5 m (14.1 m/s), then `MAX_HEALTH × t ^
+  impact_curve_exponent` (2) to lethal at `impact_lethal_height` 15 m (24.5 m/s); flight,
   swimming and climbing exempt; sent with cause `Fall`; PLAYER_CONTROLLER.md §6.10; and falling out
   of the world), crush
   (Phase 20), explosion (Phase 21). `Damage`, `Death`, and `Respawn` are `PlayerEvent`s to every

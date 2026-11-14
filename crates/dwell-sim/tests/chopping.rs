@@ -786,11 +786,12 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn chop2_along_the_grain_takes_about_twice_as_many(f: FaceFrame) {
-        // Creative: more chops than a stone axe's wear and a full stamina bar allow.
+    fn chop2_an_axe_asked_for_a_vertical_chop_cuts_across_the_grain(f: FaceFrame) {
+        // Owner, 2026-11-14: the axe has one mode, like the pickaxe and shovel. An older client's
+        // vertical chop (along the grain: 22–26 before) is swung level, across it: 11–13.
         let mut fx = scene2_in(f, "creative");
         let n = swings_to_fell(&mut fx, f, true, 40, |_| 0).expect("felled");
-        assert!((22..=26).contains(&n), "{n} vertical chops");
+        assert!((11..=13).contains(&n), "{n} chops asked vertical");
     }
 );
 
@@ -1013,7 +1014,8 @@ dwell_world::both_faces!(
         assert!(before[&2].swing_kinds && !before[&3].swing_kinds);
         for (i, (vertical, want)) in [
             (false, SwingKind::ChopLevel),
-            (true, SwingKind::ChopVertical),
+            // One mode (owner, 2026-11-14): an axe asked vertical swings level, and says so.
+            (true, SwingKind::ChopLevel),
         ]
         .into_iter()
         .enumerate()

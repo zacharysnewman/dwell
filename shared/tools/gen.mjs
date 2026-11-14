@@ -293,7 +293,7 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     const c2 = { bite: 0.045, ...(t.chop2 ?? {}) };
     known(t.chop2 ?? {}, CHOP2_TOOL_FIELDS, `${at}.chop2`);
     inRange(c2, 'bite', 0, 1, `${at}.chop2`, true);
-    return { ...t, held: t.held ?? null, heldVertical: t.heldVertical ?? t.held ?? null, clips, swing: sw, clears, chop2: c2, weapon };
+    return { ...t, held: t.held ?? null, heldVertical: t.heldVertical ?? null, clips, swing: sw, clears, chop2: c2, weapon };
   });
   if (!Array.isArray(data.woods)) fail('woods must be a list');
   const woodNames = new Set();
@@ -602,7 +602,7 @@ export function validateBreaking(b, items, blocks) {
   const seen = new Set();
   const tools = b.tools.map((t, i) => {
     const at = `breaking.tools[${i}]`;
-    known(t, ['item', 'class', 'tier', 'contactS', 'repeatOnHold', 'repeatS'], at);
+    known(t, ['item', 'class', 'tier', 'contactS', 'repeatOnHold', 'repeatS', 'clip'], at);
     if (!items.has(t.item)) fail(`${at}: no item ${JSON.stringify(t.item)} (shared/inventory or a block)`);
     if (seen.has(t.item)) fail(`${at}: ${t.item} is listed twice`);
     seen.add(t.item);
@@ -618,7 +618,13 @@ export function validateBreaking(b, items, blocks) {
     if (!repeatOnHold && t.repeatS !== undefined) fail(`${at}: repeatS without repeatOnHold`);
     const repeatS = repeatOnHold ? (t.repeatS ?? 0.5) : null;
     if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= Math.max(contactS, 0.1) && repeatS <= 5))) fail(`${at}: repeatS is seconds in [max(contactS, 0.1), 5]`);
-    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS };
+    // The arms' and body's role its break swing plays (owner, 2026-11-14: each tool's swing comes
+    // in from the right so its head strikes at the crosshair at `contactS`; heads sit at different
+    // lengths, so each is fitted with clip_probe --fit). A character without that role plays its
+    // `break` (a dwell-client test checks every role on the player's arms).
+    const clip = t.clip ?? 'break';
+    if (typeof clip !== 'string' || !/^[a-z][a-z0-9_]*$/.test(clip)) fail(`${at}: clip must be a role name (lowercase: the player's firstPerson.clips, shared/characters)`);
+    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS, clip };
   });
   return { classes, tools, hand: validateHand(b.hand) };
 }
@@ -657,19 +663,23 @@ export function loadTiles() {
   return new Set(Object.keys(m.tiles ?? {}));
 }
 
-/** The on-screen hint per tool kind (`hints`): `{ <kind>: { level, vertical } }`, the line shown
- * while a tool of that kind is held in each stance. Every kind a tool uses needs one. */
+/** The on-screen hint per tool kind (`hints`): `{ <kind>: { level, vertical? } }`, the line shown
+ * while a tool of that kind is held in each stance. Every kind a tool uses needs one; `vertical`
+ * only where a tool of the kind has a second stance (a `heldVertical`; owner, 2026-11-14: the axe
+ * has one mode, "like the shovel and pick"), else the level line stands for both. */
 export function validateHints(h, tools) {
   if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('hints must be an object of tool kind → { level, vertical }');
   for (const k of Object.keys(h)) if (!KINDS.includes(k)) fail(`hints.${k}: no tool kind of that name (${KINDS.join(', ')})`);
   for (const t of tools) if (h[t.kind] === undefined) fail(`hints.${t.kind} is required (the tool ${t.name} is a ${t.kind})`);
   return Object.entries(h).map(([kind, v]) => {
     known(v, ['level', 'vertical'], `hints.${kind}`);
-    for (const s of ['level', 'vertical']) {
+    const two = tools.some((t) => t.kind === kind && t.heldVertical !== null);
+    if (two && v.vertical === undefined) fail(`hints.${kind}.vertical is required (a ${kind} has a vertical stance)`);
+    for (const s of v.vertical === undefined ? ['level'] : ['level', 'vertical']) {
       if (typeof v[s] !== 'string' || v[s].length === 0 || v[s].length > 80) fail(`hints.${kind}.${s} must be a line of 1 to 80 characters`);
       if (/["\\\n]/.test(v[s])) fail(`hints.${kind}.${s}: no quotes, backslashes or line breaks`);
     }
-    return { kind, level: v.level, vertical: v.vertical };
+    return { kind, level: v.level, vertical: v.vertical ?? v.level };
   });
 }
 
@@ -760,7 +770,7 @@ export function toolsRust(d) {
   rs.push('');
   rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`} },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`}, clip: "${t.clip}" },`);
   rs.push('];');
   rs.push("/// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server");
   rs.push('/// takes damage hits by hand no faster; none: one per press.');

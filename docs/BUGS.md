@@ -597,7 +597,7 @@ like roads; straight grey stone strips, and straight green grass strips along so
 tan/brown/cream noise (the palette dither) with hard straight edges; rivers with straight channel edges and a stepped,
 pixelated blue fringe. Suspects (orchestrator): erosion drainage lines or washes carved as straight segments; the mesa
 palette's ordered blend; province or plate edges straight at this scale; biome bands following map cells. Top priority
-of the 0.67 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
+of the 0.68 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
 natural, irregular, blended edges; no straight strips, lines or lattices of dirt, stone or grass. **Fixed in 0.65.0** (the owner, 2026-11-14: "I think
 that 65 does fix that issue"): reproduced natively at the owner's spot (seed 4065579781, face A, x 10472, z −3091) on
 0.64.2: the lattice was the plate provinces (rocks.json `plateProvinces`), each setting a band of one stack at a fixed
@@ -620,6 +620,9 @@ is turned, plus `towns.clearM` (4 m, `blueprints.json`, validated by `gen.mjs`),
 the buildings are clear too. Changes the terrain a seed generates: the 0.66 line. Test (both faces, red → green):
 `dwell-worldgen` `tests/towns.rs` `no_tree_bush_or_boulder_stands_on_a_planned_towns_layout` (seeds 0, 1, 7, 42, the
 sites within 2.5 km of the origin and seed 0's hamlet at (688, 7979); red: a pine on seed 0's town box on each face).
+Owner, 2026-11-14 (asked whether "town plans will clear trees" means villagers clear them): clearing a town's ground
+stays instant, at generation, for now; villagers felling the trees on a town's footprint comes later, with harvesting
+(WORK_QUEUE item 57's later phases, docs/BLUEPRINTS.md §9).
 
 ### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 

@@ -504,7 +504,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         wet_reach: n("wetReach")?,
         dither_wavelength: n("ditherWavelength")? as i32,
         dither: n("dither")?,
-        // Absent (an edit stored before 0.67): the speckle as before, no warp.
+        // Absent (an edit stored before 0.68): the speckle as before, no warp.
         dither_speckle: v
             .get("ditherSpeckle")
             .and_then(Value::as_f64)
@@ -569,7 +569,7 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         }
         rocks.push(rock);
     }
-    // A world's replaced blocks (rocks.json `surfaces.replace`; WORK_QUEUE item 15, 0.67): each
+    // A world's replaced blocks (rocks.json `surfaces.replace`; WORK_QUEUE item 15, 0.68): each
     // rule's block, wherever a rock shows it, becomes its `with`, except on the rocks it names.
     if let Some(rules) = v
         .get("surfaces")

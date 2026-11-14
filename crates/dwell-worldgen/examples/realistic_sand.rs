@@ -1,4 +1,4 @@
-//! Where a Realistic world's top blocks are tan sand (WORK_QUEUE item 15, 0.67: "tan sand only where
+//! Where a Realistic world's top blocks are tan sand (WORK_QUEUE item 15, 0.68: "tan sand only where
 //! it belongs"): sampled land columns whose top is `dwell:sand`, by what put it there (a water bed,
 //! the shore band, the sand desert, a rock's palette, a biome's band).
 //!

@@ -13,7 +13,7 @@
 //! (the owner's view), the same over the rock provinces at 64 m, a run straight within 40 m over
 //! 1.3 km: 0.64.2 28.3 % (A) / 15.5 % (B), the owner's spot 41.9 %; 0.65 0.07 % / 0.12 %.
 //!
-//! And no speckle (WORK_QUEUE item 15, 0.67; owner, 2026-11-14: "speckled terrain looks gross"):
+//! And no speckle (WORK_QUEUE item 15, 0.68; owner, 2026-11-14: "speckled terrain looks gross"):
 //! at biome borders, 1 m windows of the top blocks hold few lone cells and big patches.
 
 use std::sync::Arc;
@@ -40,7 +40,7 @@ const STEP: i32 = 2;
 /// `N` × `N` samples `COARSE` m apart, a run straight within 40 m over 1.3 km.
 const COARSE: i32 = 64;
 /// At most this share of the fine windows' boundary cells on a straight run (over all windows of a
-/// face). Measured 2026-11-14 with the 0.67 surface changes: 3.3 % (A) / 0.8 % (B), nearly all of it
+/// face). Measured 2026-11-14 with the 0.68 surface changes: 3.3 % (A) / 0.8 % (B), nearly all of it
 /// smooth, crisp rock-wall edges (stone or red sandstone against grass), not straight strips: the
 /// soft edges (fingers over a few metres) are still to come (WORK_QUEUE item 15, 0b iii).
 const STRAIGHT: f64 = 0.05;
@@ -224,12 +224,12 @@ both_faces!(
 const S: usize = 96;
 /// At most this share of the columns lone cells (their four neighbours all another block): over
 /// the face's border windows, and in any one window. 0.65 (the border's per-column hash, the mesa
-/// blend's 3 m dither): 0.47 % (A) / 0.91 % (B), up to 4.3 % in a window; 0.67: 0.02 % / 0.05 %,
+/// blend's 3 m dither): 0.47 % (A) / 0.91 % (B), up to 4.3 % in a window; 0.68: 0.02 % / 0.05 %,
 /// at most 0.97 %.
 const ISOLATED: f64 = 0.0025;
 const ISOLATED_WINDOW: f64 = 0.015;
 /// Every window's area-weighted mean patch (4-connected columns of one top block) at least this
-/// (m²; 0.65: 846, 0.67: 1659).
+/// (m²; 0.65: 846, 0.68: 1659).
 const PATCH: f64 = 1500.0;
 
 /// Up to four window centres on a face's dry land where two biomes mix (each weighing over a
@@ -310,7 +310,7 @@ fn speckle(g: &TerrainGenerator, cx: i32, cz: i32) -> (f64, f64) {
 
 both_faces!(
     fn ground_types_form_big_patches_without_speckle(f: FaceFrame) {
-        // WORK_QUEUE item 15, 0.67 (owner, 2026-11-14): "speckled terrain looks gross" … patches
+        // WORK_QUEUE item 15, 0.68 (owner, 2026-11-14): "speckled terrain looks gross" … patches
         // "big.": few lone cells, and the ground in patches tens of metres across.
         let (mut lone, mut patch, mut n) = (0.0, 0.0, 0);
         let (mut worst, mut smallest) = (0.0f64, f64::MAX);

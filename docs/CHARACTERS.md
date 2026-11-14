@@ -266,8 +266,12 @@ and chain; the rigid parts below are drawn only with the dev switch `?fparms=rig
   `biped_chop_vertical` as the count steps (`bodies.rs` `swing_of`); an older client, or any
   client of an older server, plays the body's `break`. The held axe is the `stone_axe` item (a stick handle, a knapped
   flint head across its tip, its edge `axe_blade`, a leather lashing), named by the tool's `held` in
-  `shared/tools/tools.json`; the vertical swing's hold is `stone_axe_vertical` (`heldVertical`: the
-  same parts, another `pose`), so toggling the swing changes the grip (0.50.39). The blade faces away
+  `shared/tools/tools.json`; the vertical swing's hold was `stone_axe_vertical` (`heldVertical`: the
+  same parts, another `pose`; 0.50.39). **One mode since 2026-11-14** (owner: "Let's simplify the axe to
+  be like the shovel and pick, without the multiple modes"): the axe names no `heldVertical`, so it has
+  only its level swing (`ToolDef::stance`), Use does nothing with it, and an older peer's vertical chop
+  plays and sweeps level; `fp_chop_vertical`, `biped_chop_vertical` and the `stone_axe_vertical` item
+  stay as the default vertical role and hold a two-stance tool's data could name. The blade faces away
   from the eye in both holds and leads the head through each swing (`tests/axe.rs`; it was held
   backwards before). The clips are timed to a miss (0.62 s: wind-up, arc, follow-through,
   recovery); a hit drives them (`Animator::drive_action_weighted`): held at contact through the
@@ -275,6 +279,25 @@ and chain; the rigid parts below are drawn only with the dev switch `?fparms=rig
   stopped at the swing's end (`Animator::stop_action`). Before 0.54.x a hit played the clip backwards
   to its start (a vertical swing's head back up over the shoulder and down again) and let it run on
   from there, a second swing (BUGS.md #93; `clip_probe` `one_swing_draws_one_stroke_hit_or_miss`).
+
+- **Each tool's swing onto the crosshair** (owner, 2026-11-14: "each tool should be rotated slightly
+  around the Y(?) in your hand so you can see the head of it. Also, when it swings it should swing
+  toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair.
+  Ensure the hit happens when it 'hits' your crosshair."). Each held tool is turned about its handle
+  by its prop's `hold.yaw` (props.json; ITEMS.md §1a) so its head's flank shows at rest, first and
+  third person alike. Each break tool names its own arms clip (`breaking.tools[].clip`:
+  `fp_break_stone_pickaxe`, `fp_break_metal_pickaxe`, `fp_break_wooden_shovel`,
+  `fp_break_metal_shovel`; their heads sit at different lengths, so one shared `fp_break` could not
+  put them all on the crosshair): drawn back out to the screen's right by 0.14 s, swung in to the left
+  and forward, the head on the crosshair's ray at the tool's `contactS` (0.26 s), when the hit lands
+  on what the crosshair holds then (`hits.at_contact`, BLOCK_DAMAGE.md §11), then back to rest; keys
+  fitted with `clip_probe break_<item> --item dwell:<item> --fit`. Others see the body's `break`
+  (`swing_as` falls back to it). The axe's level chop already crosses the crosshair at its contact
+  (0.355 s). `clip_probe` `tool_swing_tests` pins, for every tool: the head within 0.12 of the
+  crosshair on screen and 8 cm of its ray in the world at contact (both faces), nearest the crosshair
+  then, a clip key at a break tool's contact, the swing coming in from the right, and the head on
+  screen and clear of the hand at rest, turned to show more of it (`clip_probe::head_view`). Probe
+  sheets: `docs/clip_probe/tool-swings/`.
 
 **The sword (WORK_QUEUE item 35).** A `weapon` tool swings through the same arms clips as the axe
 (`chop_level` right to left, `chop_vertical` top to bottom, fitted with `clip_probe --fit`), so its

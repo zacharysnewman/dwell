@@ -25,6 +25,14 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **Fall damage 5 m safe, 15 m lethal (owner, 2026-11-14):** "Fall damage is a bit too forgiving now, what is the
+  current behavior?" → (asked about real life and Minecraft) → "Let's modify dwell to be about 5m - 15m." Was 10 m
+  safe, 20 m lethal (0.49.22). Done on `claude/fall-5-15-33uqi6`: `damage.impact_safe_height` 5,
+  `impact_lethal_height` 15, the curve exponent kept at 2 (6 m 1, 8 m 9, 10 m 25, 12 m 49, 14 m 81 points; 1.5 would
+  give 3 / 16 / 35 / 59 / 85, kept 2 since 8 m already costs a tenth of health and 1.5 brings back chip damage on
+  6–7 m drops the owner disliked on 2026-11-06); PLAYER_CONTROLLER.md §6.10, `tests/impact.rs`. **Owner should
+  see:** drops under 5 m never hurt; a 10 m drop clearly hurts (a quarter of health); 15 m or more kills from full
+  health.
 - **Tree mesh bugs (owner, 2026-11-13; BUGS.md #167, #168):** "Tree leaf inside faces touching the tree log
   shouldn't be shown and they cause z fighting. Also sideways logs (after a tree is felled) octagon shape corners are
   shorter than when upright, the sides aren't the same length and they should be the same." Brief: cull the leaf face
@@ -902,7 +910,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bigger shrines; all in the next release.
    **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
    back to C."**
-   **The 0.67 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
+   **The 0.68 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
    branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
    both faces) found these still wrong; each gets a test on both faces over those seeds:
    (0, top priority) **Straight strips from the air** (BUGS.md #171; owner, 2026-11-14 00:05, iPhone, flying high over
@@ -943,7 +951,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that tops the ground with snow or snowy grass) takes snowy leaves (`snowy_leaves`, a data mapping from leaf to
    snowy variant) with a small noisy band round the line. **Owner should see:** forests, scrub and rocks fading
    raggedly into neighbouring terrain instead of stopping at a line; snow-dusted leaves on trees up at the snow line.
-   **Built on `claude/realistic-066` (the 0.67 line: main took 0.66 for the town trees; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
+   **Built on `claude/realistic-066` (the 0.68 line: main took 0.66 for the town trees and 0.67 for the storehouse; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
    look); `tests/realistic_bands.rs` pins it: the rock provinces' boundary cells on straight 1.3 km runs from high up,
    0.64.2 28.3 % (A) / 15.5 % (B) and 41.9 % at the owner's spot (seed 4065579781), 0.65+ 0.07 % / 0.12 %. (0b, part)
    no speckle at biome borders (Realistic `biomeMap` `ditherSpeckle` 0, warped 48 m noise): lone cells 0.47 % / 0.91 %
@@ -1101,6 +1109,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it refused, dirt broken after its hand hits; both faces, red → green), `dwell-client` `game_local`
    `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go` (red → green), `held_use.rs`,
    `gen.test.mjs`. Left: the feel in game (no GPU in the cloud).
+   Owner, 2026-11-14: **"Let's simplify the axe to be like the shovel and pick, without the multiple modes. Also
+   each tool should be rotated slightly around the Y(?) in your hand so you can see the head of it. Also, when it
+   swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your
+   cross hair. Ensure the hit happens when it 'hits' your crosshair."** (Item 26's axe work; the axe's modes since
+   ADR 0067.)
+   **Owner should see:** holding any tool you can see its head; every swing sweeps in from the right and the head
+   strikes exactly at the crosshair, and that's the moment the block takes the hit; the axe works like the pick and
+   shovel (one swing, right click does nothing with it).
+   **Status (tool-swings):** built, waiting on the owner's look in game (no GPU in the cloud): the axe has one mode
+   (a tool has a vertical stance only with a `heldVertical`, the sword's; `ToolDef::stance`; Use does nothing with
+   the axe, its hint one line, the server sweeping an older client's vertical ask level and reporting it as
+   `chop_level`; felling unchanged, by the level swing's block damage); each tool turned about its handle so its head
+   shows (props.json `hold.yaw`: axes and the stone pickaxe −25°, the metal pickaxe 30°, the shovels 5°; 1.3–1.8×
+   the head on screen for the axes and the stone pickaxe); each break tool its own arms clip
+   (`breaking.tools[].clip`, `fp_break_<item>`, fitted with `clip_probe --fit`): out to the right, in to the left
+   and forward, the head on the crosshair at `contactS` (0.26 s), when the hit lands on what the crosshair holds
+   (`hits.at_contact`); the axe's level chop already on it at 0.355 s. Tests: `clip_probe` `tool_swing_tests`
+   (every tool's head within 0.12 of the crosshair and 8 cm of its ray at contact on both faces, nearest it then,
+   a clip key at contact, in from the right, the head shown at rest; the crosshair test red on the shared
+   `fp_break` → green), `dwell-protocol` `the_axe_has_one_mode_and_the_sword_two`, `chop.rs`
+   `the_axe_swings_level_whatever_the_stance`, `dwell-sim` chopping's swing-kind and chop2 tests (an axe asked
+   vertical swings level; red on the old server → green). Probe sheets `docs/clip_probe/tool-swings/`
+   (CHARACTERS.md §5). Not changed: the sword's two stances and slashes; others see the body's plain `break`.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -3197,6 +3228,43 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (see item 40). **Owner should see:** open the big map (M) in a world you have explored: a town icon where each
    town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
    the `spawn=town` link and watch the builders put up the hamlet in front of you.
+
+57. **Villagers fetch materials from a storehouse (an Age of Empires-style work loop)** (owner 2026-11-14, after asking
+   whether "town plans will clear trees" means villagers clear them: **"Ideally long term, I'd like this to work a lot
+   like age of empires for NPCs, they gather materials drop them at a storehouse, perhaps each villager drops their
+   materials in a storehouse. They should have a storehouse (probably needs something for that) for holding materials.
+   It would be fun if they displayed their inventory like this (screenshot). For now we can make the store house hold
+   unlimited resources until the villagers actually harvest and drop the resources. Villagers can only hold 10
+   resources items at a time. The villagers would know what building they're working on, what resources it needs,
+   when grabbing resources would take what they need next, walk to the building they're working on, build it, go back
+   to the storehouse, rinse and repeat."** The screenshot, from the owner's earlier game: a top-down villager carrying
+   a tall stack of logs on their back, the carried items shown as a visible stack on the character.) Then, the same
+   day: **"Ours will eventually use an even more in depth system where villagers have to plant trees, cut them down,
+   other NPCs will cart them away, to town store house, and there other NPCs use those materials to build. Make
+   sense."** Direction from the brief: villagers have roles or jobs (forester: plant and fell; carter: haul to the
+   storehouse; builder: take from the storehouse and build), as data; the storehouse is the hand-off point; items move
+   between NPCs' inventories, carts and the storehouse through one transfer API; today's builder loop is the `builder`
+   job; the other jobs are not built now, only their seams. Design in docs/BLUEPRINTS.md §9 (B5).
+   **B5 first slice** (branch `claude/storehouse`): a storehouse building in the town plan, built first in a new town,
+   with a stock that is `"unlimited"` for now (data; a counted stock slots in when harvesting deposits), saved with the
+   world; builders carry up to `carryMax` 10 items: they take what their blueprint needs next (the next cells in build
+   order, mixed blocks allowed) at the storehouse, walk to the site, place one per cell, walk back when empty or
+   blocked, and move on to the town's next blueprint when one completes; the carried items show as a stack on their
+   back. Later phases (not now): harvesting (felling trees, clearing a town's footprint, mining), depositing what is
+   harvested, a real limited stock, carts and carters, foresters, villagers choosing jobs.
+   **Owner should see:** villagers walking from a storehouse to the building site carrying a visible stack of blocks on
+   their back, building, and walking back for more.
+   **Owner should see (the storehouse):** in a new town (`?local=1&seed=0&fresh=1&spawn=town`), the storehouse goes up
+   first, then the builders start on the huts, well, watchtower and wall, fetching from it.
+   **B5 first slice built 2026-11-14** (cloud, branch `claude/storehouse`, **the 0.67 line**: the storehouse in the
+   hamlet's plan widens its clear ground, so a seed's trees near towns change): the storehouse blueprint
+   (`dwell:bp_storehouse`, role `storehouse`, the plan's first) built first while the town's other blueprints wait;
+   its stock `unlimited` (data; a counted stock is in the API and the save); jobs as data (`jobs`: the `build` kind,
+   `carryMax` 10, mixed loads; `haul`/`fell`/`plant` named as later phases); one transfer API
+   (`dwell_world::stock`); the builders' trips (take the next cells' blocks, place only what they carry, back when
+   empty or blocked, on to the town's next blueprint when one completes); the storehouses and loads saved (the
+   blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
+   seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
 
 ## Future (needs owner answers)
 

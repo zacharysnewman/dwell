@@ -135,13 +135,18 @@ impl Server {
     /// tool's `swing` data: `windupS` and the arc's time to the hit, from a sweep now), never
     /// before the client's. A swing too soon after the last is refused. What it meets is found
     /// again, and checked, at the contact ([`Self::land_swings`]).
-    fn start_swing(&mut self, id: SessionId, a: ChopAction) {
+    fn start_swing(&mut self, id: SessionId, mut a: ChopAction) {
         let (ChopAction::Swing { tool, .. } | ChopAction::Sweep { tool, .. }) = &a else {
             return;
         };
         let Some(t) = chop::tool(tool) else {
             return;
         };
+        // A tool with one mode (the axe; owner, 2026-11-14: "like the shovel and pick, without
+        // the multiple modes") swings level whatever an older client asks.
+        if let ChopAction::Swing { vertical, .. } | ChopAction::Sweep { vertical, .. } = &mut a {
+            *vertical = t.stance(*vertical);
+        }
         let s = &self.sessions[&id];
         let Some(h) = s.handle else {
             return;

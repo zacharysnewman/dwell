@@ -323,7 +323,8 @@ pub fn swayed_view(
 }
 
 impl Chopping {
-    /// Use with the axe held: the swing turns between level and vertical.
+    /// A tap of Use with the sword held: its stance turns between level and vertical (a tool
+    /// with one mode, the axe, never asks).
     pub fn toggle(&mut self) -> bool {
         self.vertical = !self.vertical;
         self.vertical
@@ -352,12 +353,14 @@ impl Chopping {
             return None;
         }
         self.last_ms = Some(now_ms);
-        self.run = Some(SwingRun::new(tool, self.vertical, now_ms, hit));
+        // A tool with one mode (the axe) swings level whatever the stance last held (a sword's).
+        let vertical = tool.stance(self.vertical);
+        self.run = Some(SwingRun::new(tool, vertical, now_ms, hit));
         Some(if self.sweep {
             Some(ChopAction::Sweep {
                 tool: tool.name.to_owned(),
                 look: look.map(|v| v as f32),
-                vertical: self.vertical,
+                vertical,
             })
         } else {
             hit.filter(|h| h.wood).map(|h| ChopAction::Swing {
@@ -365,7 +368,7 @@ impl Chopping {
                 cell: h.cell,
                 face: h.face,
                 point: h.point.map(|v| v as f32),
-                vertical: self.vertical,
+                vertical,
             })
         })
     }
@@ -386,9 +389,9 @@ impl Chopping {
         self.cuts.extend(m.cuts);
     }
 
-    /// The hint shown while a tool of `kind` is held, in the current stance (the kind's `hints`).
-    pub fn hint(&self, kind: dwell_protocol::chopping::ToolKind) -> Option<&'static str> {
-        dwell_protocol::chopping::hint(kind, self.vertical)
+    /// The hint shown while `tool` is held, in the current stance (its kind's `hints`).
+    pub fn hint(&self, tool: &ToolDef) -> Option<&'static str> {
+        dwell_protocol::chopping::hint(tool.kind, tool.stance(self.vertical))
     }
 }
 
@@ -674,18 +677,43 @@ mod tests {
 
     #[test]
     fn the_swing_carries_its_plane() {
+        let sword = dwell_protocol::chopping::tool("dwell:sword").unwrap();
         let mut c = Chopping {
             on: true,
             sweep: true,
             ..Default::default()
         };
         assert!(c.toggle());
-        let m = c.start(axe(), [1.0, 0.0, 0.0], None, 0.0);
+        let m = c.start(sword, [1.0, 0.0, 0.0], None, 0.0);
         assert!(matches!(
             m,
             Some(Some(ChopAction::Sweep { vertical: true, .. }))
         ));
         assert!(c.run.unwrap().vertical);
+    }
+
+    // Owner, 2026-11-14: "Let's simplify the axe to be like the shovel and pick, without the
+    // multiple modes." Whatever stance was left from a sword, the axe swings level, says so to the
+    // server and shows one hint.
+    #[test]
+    fn the_axe_swings_level_whatever_the_stance() {
+        let mut c = Chopping {
+            on: true,
+            sweep: true,
+            vertical: true,
+            ..Default::default()
+        };
+        let m = c.start(axe(), [1.0, 0.0, 0.0], None, 0.0);
+        assert!(matches!(
+            m,
+            Some(Some(ChopAction::Sweep {
+                vertical: false,
+                ..
+            }))
+        ));
+        assert!(!c.run.unwrap().vertical);
+        let level = Chopping::default().hint(axe());
+        assert_eq!(c.hint(axe()), level);
     }
 
     #[test]
@@ -759,7 +787,11 @@ mod sway_tests {
 
     #[test]
     fn the_sway_is_zero_at_rest_moves_during_the_swing_and_is_back_to_zero_after() {
-        for run in runs() {
+        // The swings a tool has (the axe's one, level; owner 2026-11-14).
+        for run in runs()
+            .into_iter()
+            .filter(|r| r.tool.stance(r.vertical) == r.vertical)
+        {
             let len = run.length();
             for t in [-0.2, 0.0, len, len + 0.01, len + 2.0] {
                 assert_eq!(run.camera(t), CameraOffset::ZERO, "{run:?} at {t}");
@@ -806,9 +838,11 @@ mod sway_tests {
 
     #[test]
     fn the_vertical_chop_pitches_up_on_the_wind_up_and_dips_at_contact() {
-        let s = axe().swing;
+        // The sword's vertical stance (the axe has one mode, its level swing).
+        let sword = dwell_protocol::chopping::tool("dwell:sword").unwrap();
+        let s = sword.swing;
         let mid = s.samples / 2;
-        let hit = SwingRun::new(axe(), true, 0.0, Some(hit_at(mid, true)));
+        let hit = SwingRun::new(sword, true, 0.0, Some(hit_at(mid, true)));
         let at = hit.impact_s().unwrap();
         assert!(hit.camera(s.windup_s).pitch > 1.0);
         let before = hit.camera(at - 1e-3).pitch;
@@ -824,7 +858,9 @@ mod sway_tests {
     fn a_hit_kicks_harder_than_a_miss_and_a_bounce_harder_than_wood() {
         let s = axe().swing;
         let mid = s.samples / 2;
-        for vertical in [false, true] {
+        // The axe's one swing (level).
+        {
+            let vertical = false;
             // The kick's jump across the contact moment.
             let jump = |run: SwingRun, at: f64| {
                 let a = run.camera(at - 1e-4);

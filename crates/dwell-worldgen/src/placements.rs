@@ -58,7 +58,7 @@ pub struct Placement {
     pub variants: &'static [Variant],
     /// The density × this where the erosion leaves the ground standing (a mesa's or butte's top,
     /// `TerrainGenerator::erosion_at`'s margin above 0; 1: no matter). Sagebrush mostly on the
-    /// floors (WORK_QUEUE item 15, 0.67: "tops read green under thick sagebrush").
+    /// floors (WORK_QUEUE item 15, 0.68: "tops read green under thick sagebrush").
     pub tops: f32,
 }
 

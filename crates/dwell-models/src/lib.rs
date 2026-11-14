@@ -354,6 +354,9 @@ pub struct PropHold {
     pub scale: f32,
     /// Degrees about the handle, from the prop's +x side facing the hand's `edge`.
     pub roll: f32,
+    /// Degrees more about the handle (the hand's upright axis at rest) turning the head's flank
+    /// toward the eye so it shows (owner, 2026-11-14): the show, where `roll` is the edge's aim.
+    pub yaw: f32,
 }
 
 impl PropHold {
@@ -361,6 +364,7 @@ impl PropHold {
     pub const DEFAULT: PropHold = PropHold {
         scale: 1.0,
         roll: 0.0,
+        yaw: 0.0,
     };
 }
 
@@ -398,7 +402,7 @@ fn unit(a: [f32; 3]) -> [f32; 3] {
 impl PropData {
     /// A point `p` of its GLB (m) in the hand's bone frame held by `hand`: its grip at the fist,
     /// its handle's axis along the hand's grip axis, its +x side (square to the handle) toward
-    /// the hand's edge turned by its `roll` about the handle, scaled about the grip.
+    /// the hand's edge turned by its `roll` and `yaw` about the handle, scaled about the grip.
     pub fn in_hand(&self, hand: &HandGrip, p: [f32; 3]) -> [f32; 3] {
         let a = unit(self.axis);
         // The prop's frame: its handle, its +x side square to it, and the third way.
@@ -409,7 +413,7 @@ impl PropData {
         let ax = unit(hand.axis);
         let e = unit(hand.edge);
         let f = cross(ax, e);
-        let (s, c) = self.hold.roll.to_radians().sin_cos();
+        let (s, c) = (self.hold.roll + self.hold.yaw).to_radians().sin_cos();
         let e = [0, 1, 2].map(|k| e[k] * c + f[k] * s);
         let f = cross(ax, e);
         let q = [0, 1, 2].map(|k| (p[k] - self.grip[k]) * self.hold.scale);
@@ -650,7 +654,8 @@ mod props_tests {
             data.hold,
             PropHold {
                 scale: 0.5,
-                roll: 90.0
+                roll: 90.0,
+                yaw: 0.0
             }
         );
         let hand = fixture::HAND_GRIP;
@@ -683,6 +688,7 @@ mod props_tests {
             hold: PropHold {
                 scale: 1.0,
                 roll: 30.0,
+                yaw: 0.0,
             },
         };
         let hand = HAND_GRIP;

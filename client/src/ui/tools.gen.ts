@@ -41,6 +41,8 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:moon_dust_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:moon_mare_dust_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:red_sand_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_dirt', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:red_dirt_ramp', default: 11, tools: { shovel: 7 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

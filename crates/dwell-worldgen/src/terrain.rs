@@ -236,7 +236,7 @@ pub struct BiomeMap {
     pub dither: f64,
     /// The share of the border dither that is a per-column hash (1: the default world's ragged
     /// speckle; 0: none, the noise alone, so biomes meet in clumps and fingers; WORK_QUEUE item 15,
-    /// 0.67: "speckled terrain looks gross").
+    /// 0.68: "speckled terrain looks gross").
     pub dither_speckle: f64,
     /// The border noise's sample point warped by about ± this (m) at 4 × its wavelength (0: none),
     /// so a border wanders in organic fingers rather than following the weights' contours.
@@ -3522,7 +3522,7 @@ impl TerrainGenerator {
         let volcanic = self
             .plate_tectonics()
             .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
-        // A rule sparse on the erosion's standing tops (`tops`, 0.67: sagebrush on the floors).
+        // A rule sparse on the erosion's standing tops (`tops`, 0.68: sagebrush on the floors).
         let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
         let on_top = tops < 1.0
             && self
@@ -3547,7 +3547,7 @@ impl TerrainGenerator {
         if k == 1.0 {
             return mix.iter().map(|(b, w)| d[b] * w as f32).sum();
         }
-        // The weights to the power `treesSharpen` (0.67, Realistic: a neighbour's dense shrubs
+        // The weights to the power `treesSharpen` (0.68, Realistic: a neighbour's dense shrubs
         // don't spill far across a wide border; WORK_QUEUE item 15).
         let (sum, total) = mix.iter().fold((0.0f64, 0.0f64), |(s, t), (b, w)| {
             let w = w.powf(k);

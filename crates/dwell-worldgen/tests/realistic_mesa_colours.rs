@@ -4,7 +4,7 @@
 //! `blends` `dwell:mesa_country`: on the red desert beds (the red rock mesa's own stack) every
 //! ground and under block of the family takes the blend's tone, red dirt ↔ red sand in order by a
 //! low-frequency noise and the slope, dithered; the walls are the darker red sandstone. No tan sand
-//! (0.67; owner, 2026-11-14: "I don't want to see tan sand in red mesa desert, it looks too much
+//! (0.68; owner, 2026-11-14: "I don't want to see tan sand in red mesa desert, it looks too much
 //! like stripes everywhere").
 //! On seeds 1, 7, 42 and the owner's 2741893632, both faces, over the red rock mesa's columns:
 //!
