@@ -1,4 +1,4 @@
-//! Tan sand only where it belongs in the Realistic world (WORK_QUEUE item 15, 0.66; owner,
+//! Tan sand only where it belongs in the Realistic world (WORK_QUEUE item 15, 0.67; owner,
 //! 2026-11-14: "I think we're using tan sand where we shouldn't" and "I don't want to see tan sand
 //! in red mesa desert, it looks too much like stripes everywhere"): beaches and shores, river and
 //! lake beds, the sand desert and its dunes. Elsewhere bare ground is dirt or rock: rocks.json

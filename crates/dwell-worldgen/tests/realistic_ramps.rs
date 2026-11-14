@@ -1,5 +1,5 @@
 //! The original straight-edge ramp rule everywhere in the Realistic world, mesa edges included
-//! (WORK_QUEUE item 15, 0.66; owner, 2026-11-14: 'Im not sure I want to "fix" the step look yet.
+//! (WORK_QUEUE item 15, 0.67; owner, 2026-11-14: 'Im not sure I want to "fix" the step look yet.
 //! Isn't that the original rule showing?' then "Let's put it back in for everything not excluding
 //! mesa edges"). 0.59–0.61 notched every diagonal contour where the rock shapes the ground (`all`),
 //! 0.62–0.65 only at a rock wall's edge (`mesaEdges`); now rocks.json `shaping.notched` is `none`,

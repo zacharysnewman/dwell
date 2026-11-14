@@ -46,12 +46,20 @@ impl BifacialTerrain {
     /// build volumes and base fields the size's. At today's size, [`BifacialTerrain::new`].
     pub fn sized(world_seed: u64, size: WorldSize) -> Self {
         let t = Self::with_portal_rules_sized(world_seed, MIDPLANE.portals, size);
-        match crate::volume::terrain_volume() {
+        let t = match crate::volume::terrain_volume() {
             Some(def) => Self {
                 a: t.a.with_volume(def),
                 b: t.b.with_volume(def),
             },
             None => t,
+        };
+        // The server founds towns on this world (`town_ground_for_sized`): its generators keep
+        // the planned towns clear of trees, bushes and boulders (BUGS.md #169).
+        Self {
+            a: t.a
+                .with_towns(crate::towns::Towns::new(world_seed, Face::A)),
+            b: t.b
+                .with_towns(crate::towns::Towns::new(world_seed, Face::B)),
         }
     }
 
@@ -186,21 +194,7 @@ impl BifacialTerrain {
     /// lake, river or stream, inside the world) within `towns.heightM` above sea level, clear of the
     /// shrines and the portals, else None.
     pub fn town_ground(&self, face: Face, x: i32, z: i32) -> Option<f64> {
-        let [lo, hi] = dwell_world::blueprint::SHIPPED.towns.height_m;
-        let sea = dwell_world::SEA_LEVEL_M;
-        let g = self.local(face);
-        let c = g.column_at(x, z);
-        let h = f64::from(c.height);
-        let dry = !c.outside
-            && c.water == crate::terrain::Water::None
-            && !c.stream
-            && h >= sea + lo
-            && h <= sea + hi;
-        // Clear of the resurrection shrines (their clear ground, and a margin) and the portals.
-        (dry && !g
-            .shrines()
-            .is_some_and(|sh| sh.crowds(g, x, z, crate::TOWN_SHRINE_MARGIN_M)))
-        .then_some(h)
+        crate::towns::town_ground(self.local(face), x, z)
     }
 
     /// The town sites on `face` in the town grid cells within `cells` of face-local column

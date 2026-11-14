@@ -902,7 +902,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bigger shrines; all in the next release.
    **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
    back to C."**
-   **The 0.66 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
+   **The 0.67 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
    branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
    both faces) found these still wrong; each gets a test on both faces over those seeds:
    (0, top priority) **Straight strips from the air** (BUGS.md #171; owner, 2026-11-14 00:05, iPhone, flying high over
@@ -943,7 +943,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    that tops the ground with snow or snowy grass) takes snowy leaves (`snowy_leaves`, a data mapping from leaf to
    snowy variant) with a small noisy band round the line. **Owner should see:** forests, scrub and rocks fading
    raggedly into neighbouring terrain instead of stopping at a line; snow-dusted leaves on trees up at the snow line.
-   **Built on `claude/realistic-066` (the 0.66 line; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
+   **Built on `claude/realistic-066` (the 0.67 line: main took 0.66 for the town trees; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
    look); `tests/realistic_bands.rs` pins it: the rock provinces' boundary cells on straight 1.3 km runs from high up,
    0.64.2 28.3 % (A) / 15.5 % (B) and 41.9 % at the owner's spot (seed 4065579781), 0.65+ 0.07 % / 0.12 %. (0b, part)
    no speckle at biome borders (Realistic `biomeMap` `ditherSpeckle` 0, warped 48 m noise): lone cells 0.47 % / 0.91 %
@@ -2614,6 +2614,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **Hamlets on clear ground (BUGS.md #169, 2026-11-14, `claude/town-trees`), built; owner to look.** From the builders'
+  recording (not reported by the owner): a founded hamlet's blueprints went up round the generated trees on its site.
+  Brief: "town plans clear trees (and bushes/boulders) from their whole layout footprint plus a margin (data) —
+  preferably at generation like the shrine". Done at generation: the generator sites each face's towns as the server
+  does and places no tree, bush or boulder reaching a site's layout box (every blueprint's structure, any turn) plus
+  `blueprints.json` `towns.clearM` (4 m). Changes the terrain a seed generates: the 0.66 line. Owner should see:
+  hamlets built on clear ground, with no trees growing through the huts, well or doorways (`?local=1&seed=0&fresh=1&spawn=town`).
 
 - **Sliding and the out-of-stamina breath quieter (2026-11-13, `claude/quieter-slide-breath`), done.** Owner:
   "Sliding and stamina breath expire should be 75% of their current volume." Every gain of those sounds is 0.75 × what it

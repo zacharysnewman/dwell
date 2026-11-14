@@ -81,6 +81,7 @@ The data (`blueprints.json` `towns`):
 | `spacingM`, `jitter`, `attempts` | 1200 m, 0.6, 8 | One site at most per grid cell, at a seeded point within `jitter` × half a cell of its centre; points tried in order, the first that suits is the site |
 | `heightM`, `maxSlopeDeg`, `footprintM` | [2, 600] m, 12°, 32 m | Its footprint's centre and four corners (±`footprintM`) dry land (no sea, lake, river or stream) that high above sea level, rising at most `maxSlopeDeg` across it |
 | `foundM` | 128 m | A living player this near (on its face) founds it |
+| `clearM` | 4 m | The clear ground round the layout: no tree, bush or boulder is generated reaching the box round its blueprints (any turn) plus this (0.66, BUGS.md #169) |
 | `plans` | `dwell:hamlet` | Picked per site by `weight`: blueprints (a structure, its anchor's offset `at` [x, z] m from the site, its `turn`); the hamlet is a well, two huts, a watchtower and a wall |
 
 **Siting** (`dwell_world::blueprint::TownRules::site_in`, `sites_near`, `layout`) is a pure function of the
@@ -89,6 +90,14 @@ agree in any order. The ground is `dwell_worldgen::town_ground_for_sized`: the f
 where it is dry land in the band, and clear of the shrines' clear ground by 8 m and of the portals by the
 shrines' `portalClear` (`Shrines::crowds`). A world without a height field (the flat world, the sandbox, a
 test generator) has no towns.
+
+**Clear ground** (0.66, BUGS.md #169): the server's world's generators (`BifacialTerrain::sized`) site the
+towns too (`dwell_worldgen::towns::Towns`, the same `site_in` on the same ground, cached per grid cell) and
+place no tree, bush or boulder whose footprint reaches a site's `TownRules::clear_box` (each blueprint's
+structure's furthest column from its anchor, so any turn, plus `clearM`), as the trees keep off the shrines'
+clear ground. A town is founded on clear ground, its doors and the paths between its buildings included.
+The spawn search's own tree check asks without the towns (`trees_in_keeping`): the towns' ground keeps off
+the spawn's shrine, which that search is resolving, and a patch clear of every tree is clear of theirs too.
 
 **Founding** (the server, every 2 s): each site within `foundM` of a living player not yet founded is founded
 once every blueprint of its plan finds the world's ground under its anchor (within 12 rows of the height field's;

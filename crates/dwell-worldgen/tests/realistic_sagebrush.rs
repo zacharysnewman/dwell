@@ -130,7 +130,7 @@ fn realistic(world: u64, f: FaceFrame) -> TerrainGenerator {
 
 both_faces!(
     fn sagebrush_is_sparse_on_the_mesa_tops(f: FaceFrame) {
-        // The map check, 2026-11-14 (WORK_QUEUE item 15, 0.66): "tops read green under thick
+        // The map check, 2026-11-14 (WORK_QUEUE item 15, 0.67): "tops read green under thick
         // sagebrush". Shrubs per m² on the erosion's standing tops against the floors': before,
         // the rule knew no difference (about 1×); now `tops` (0.12) of it.
         let (mut top, mut top_a, mut floor, mut floor_a) = (0usize, 0usize, 0usize, 0usize);
@@ -209,11 +209,11 @@ both_faces!(
 
 both_faces!(
     fn the_sand_desert_is_open_with_sparse_plants(f: FaceFrame) {
-        // The map check, 2026-11-14 (WORK_QUEUE item 15, 0.66): the sand desert's shrubs "so dense
+        // The map check, 2026-11-14 (WORK_QUEUE item 15, 0.67): the sand desert's shrubs "so dense
         // it reads as scrubland". Every placement (sagebrush, boulders) per hectare of the sand
         // desert's dry ground: open dune desert (the Realistic world's `trees` for it, and its
         // `treesSharpen` so the red rock mesa's dense sagebrush doesn't spill far across the
-        // border). Before (0.65): 474 (A) / 615 (B) per ha; 0.66: 55 / 67, about one per 13 m.
+        // border). Before (0.65): 474 (A) / 615 (B) per ha; 0.67: 55 / 67, about one per 13 m.
         let (mut n, mut area) = (0usize, 0usize);
         let mut by = std::collections::BTreeMap::<&str, usize>::new();
         for world in SEEDS {

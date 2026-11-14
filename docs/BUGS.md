@@ -6,15 +6,6 @@ pins it.
 
 ## Open
 
-### 169. A founded town's blueprints go up around the trees standing on its site
-
-Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
-(688, 7979) on face A. Founding places the plan's blueprints on the ground as it is and the builders skip occupied
-cells, so the generated trees inside the footprint stay: a broadleaf stands between the well and a hut, another in
-front of the second hut's door, half hiding it (stills `builders-end.png`). Suspect: `found_towns` (dwell-sim
-`server/blueprints.rs`) never clears the footprint; either the siting avoids trees (`town_ground`), or founding fells
-the trees in each blueprint's box (plus a margin) as edits before placing it. Not yet decided which; data either way.
-
 ### 170. The record tool's settle wait never sees the view idle while builders edit nearby
 
 Found recording the builders (2026-11-14): `take.mjs`'s `viewIdle` (the bench's rule) waited its full 30–45 s and
@@ -606,7 +597,7 @@ like roads; straight grey stone strips, and straight green grass strips along so
 tan/brown/cream noise (the palette dither) with hard straight edges; rivers with straight channel edges and a stepped,
 pixelated blue fringe. Suspects (orchestrator): erosion drainage lines or washes carved as straight segments; the mesa
 palette's ordered blend; province or plate edges straight at this scale; biome bands following map cells. Top priority
-of the 0.66 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
+of the 0.67 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
 natural, irregular, blended edges; no straight strips, lines or lattices of dirt, stone or grass. **Fixed in 0.65.0** (the owner, 2026-11-14: "I think
 that 65 does fix that issue"): reproduced natively at the owner's spot (seed 4065579781, face A, x 10472, z −3091) on
 0.64.2: the lattice was the plate provinces (rocks.json `plateProvinces`), each setting a band of one stack at a fixed
@@ -615,6 +606,20 @@ settings' edges wander and mixed stacks inside them. Regression test `tests/real
 7, 42, 274005646, 2741893632, 4065579781): the provinces' boundary cells on straight 1.3 km runs, 0.64.2 28.3 % (A) /
 15.5 % (B), 41.9 % at the owner's spot; 0.65 0.07 % / 0.12 %. The speckle and blended edges the owner asked for next
 are WORK_QUEUE item 15 (0b).
+
+### 169. A founded town's blueprints go up around the trees standing on its site (fixed in 0.66.0)
+
+Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
+(688, 7979) on face A. Founding placed the plan's blueprints on the ground as it was and the builders skip occupied
+cells, so the generated trees inside the footprint stayed: a broadleaf between the well and a hut, another in front
+of the second hut's door (stills `builders-end.png`). Fix, at generation (like the shrines' clear ground): each face's
+generator of the server's world (`BifacialTerrain::sized`) sites the towns as the server does (`dwell-worldgen`
+`towns.rs`, `TownRules::site_in` on the same `town_ground`, cached per grid cell) and places no tree, bush or boulder
+whose footprint reaches a site's `TownRules::clear_box`: the box round every blueprint's structure, whichever way it
+is turned, plus `towns.clearM` (4 m, `blueprints.json`, validated by `gen.mjs`), so the doors and the paths between
+the buildings are clear too. Changes the terrain a seed generates: the 0.66 line. Test (both faces, red → green):
+`dwell-worldgen` `tests/towns.rs` `no_tree_bush_or_boulder_stands_on_a_planned_towns_layout` (seeds 0, 1, 7, 42, the
+sites within 2.5 km of the origin and seed 0's hamlet at (688, 7979); red: a pine on seed 0's town box on each face).
 
 ### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 
