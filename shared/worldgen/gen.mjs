@@ -2887,6 +2887,7 @@ const CLIMATE_RAIN = [
   "baseRain",
   "upliftRain",
   "leeDry",
+  "blurM",
 ];
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
 
@@ -2964,6 +2965,7 @@ export function validateClimate(data) {
   num("rain.baseRain", data.rain.baseRain, 0, 1);
   num("rain.upliftRain", data.rain.upliftRain, 0, 100);
   num("rain.leeDry", data.rain.leeDry, 0, 100);
+  num("rain.blurM", data.rain.blurM, 0, 50_000);
   num("maxGridBytes", data.maxGridBytes, 1024, 64 * 1024 * 1024, true);
   if (data.rain.maxCells ** 2 * 4 > data.maxGridBytes)
     fail(`rain.maxCells ${data.rain.maxCells} a side needs more than maxGridBytes (${data.maxGridBytes})`);
@@ -3014,6 +3016,7 @@ export function climateRust(data) {
     `        base_rain: ${rf(r.baseRain)},`,
     `        uplift_rain: ${rf(r.upliftRain)},`,
     `        lee_dry: ${rf(r.leeDry)},`,
+    `        blur_m: ${rf(r.blurM)},`,
     "    },",
     `    max_grid_bytes: ${data.maxGridBytes},`,
     `    discharge: [${rf(data.discharge.min)}, ${rf(data.discharge.max)}],`,

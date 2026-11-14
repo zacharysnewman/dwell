@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use dwell_world::{FaceFrame, both_faces};
+use dwell_world::both_faces;
 use dwell_worldgen::bifacial::{BifacialTerrain, face_seed};
 use dwell_worldgen::config::world_config;
 use dwell_worldgen::ramps::{Top, edge_height};

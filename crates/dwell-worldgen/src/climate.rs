@@ -56,6 +56,10 @@ pub struct RainRules {
     pub base_rain: f64,
     pub uplift_rain: f64,
     pub lee_dry: f64,
+    /// The marched rain low-passed over about this many m (BUGS.md #158: the march's rain is near
+    /// all or nothing cell to cell, and read bilinearly its edges ran along the grid's rows and
+    /// columns, km-long straight biome edges; 0: as marched).
+    pub blur_m: f64,
 }
 
 /// How the biomes read the rain (`climate.json` `biomes`, R4).
@@ -242,6 +246,7 @@ impl Climate {
         params.lee_dry = r.lee_dry;
         params.wind_smooth_m = r.smooth_m;
         let rain = rainfall(g.n, g.cell, &g.height, &g.sea, &params).rain;
+        let rain = crate::biomemap::smooth_ground(g.n, g.cell, &rain, r.blur_m);
         let land: Vec<f64> = (0..rain.len())
             .filter(|&c| !g.sea[c])
             .map(|c| f64::from(rain[c]))
