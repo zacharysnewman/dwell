@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
 import { alignFilter, audioAlignment, audioStartExpr, encodeArgs, partAudio } from './audio.mjs';
-import { encodeClip, fetchRetrying, settleScript, viewIdle } from './take.mjs';
+import { encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
 const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -399,6 +399,14 @@ test('a shot waits until the chunks and the LOD settle (WORK_QUEUE item 40: half
     assert.ok(calls >= 6, `polled until quiet (${calls})`);
     globalThis.d = { state: () => ({ ...idle, lod: { ...idle.lod, generating: 1 } }) };
     assert.match(await eval(settleScript(100, 0.3)), /^NOT settled /);
+    // Builders editing nearby: the LOD keeps asking and meshing, but nothing waits in view: loaded.
+    let n = 0;
+    const churn = { ...idle, lod: { ...idle.lod, asking: 1, meshing: 2 } };
+    assert.equal(viewIdle(churn), false);
+    assert.equal(viewLoaded(churn), true);
+    globalThis.d = { state: () => (++n % 3 ? churn : idle) };
+    assert.match(await eval(settleScript(1000, 5, 200)), /^loaded /);
+    assert.equal(viewLoaded({ ...idle, lod: { ...idle.lod, waitingInView: 2 } }), false);
   } finally {
     delete globalThis.d;
   }
