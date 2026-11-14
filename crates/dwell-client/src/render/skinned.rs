@@ -307,7 +307,7 @@ fn skin_key(frag_y: f32, l: TerrainLight) -> Key2 {
     let d = frame.day;
     var k: Key2;
     k.dir = select(d.moon.xyz, d.sun.xyz, own(d.sun.xyz, face) > 0.01);
-    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l);
+    k.level = lambert_lit(vec3f(1.0), face_up(face), frag_y, l) + body_bounce(frag_y, l);
     return k;
 }
 struct Key2 {
@@ -1692,6 +1692,27 @@ mod villager_colour_tests {
         )
         .validate(&module)
         .expect("WGSL validates");
+    }
+
+    #[test]
+    fn a_bodys_light_carries_the_grounds_warm_bounce() {
+        // face-a-only: shader text and data. BUGS.md #158: with the sun behind a villager its
+        // face and arms took the blue sky alone and read cold blue-grey. Every body's light (the
+        // skinned bodies and the rigid characters) adds the sunlit ground's bounce, a warm colour
+        // by data (shared/look/light.json `characters.bounce`).
+        let l = dwell_world::light::LIGHT;
+        let [r, g, b] = l.character_bounce_color;
+        assert!(
+            l.character_bounce_strength > 0.0 && r > g && g > b,
+            "warm: {r} {g} {b}"
+        );
+        let skinned = source();
+        let key = &skinned[skinned.find("fn skin_key(").expect("skin_key")..];
+        assert!(key[..key.find("\n}\n").unwrap()].contains("+ body_bounce(frag_y, l)"));
+        let rigid = crate::render::characters::source();
+        let key = &rigid[rigid.find("fn key_light(").expect("key_light")..];
+        assert!(key[..key.find("\n}\n").unwrap()].contains("+ body_bounce(frag_y, l)"));
+        assert!(skinned.contains("const BODY_BOUNCE: vec3f"));
     }
 
     // WORK_QUEUE item 35, round 2: the hurt flash's tint survives its packing into one float.
