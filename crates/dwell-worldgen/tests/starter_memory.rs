@@ -126,8 +126,9 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// relief (`mesaRelief`), mesa country's blended red dirt, red sand and tan (`blends`), the red rock
 /// mesa's red dirt bands and its sagebrush, and the boulders on red ground.
 /// Face B again for every ramp backed (BUGS.md #163) and the bigger shrines (the same line).
+/// Both faces again for the mesa tops' shorter undulation (160 m) and main's merge (the same line).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "6f73f8b3cbaec507"), (Face::B, "912d53ac7e44284c")];
+    [(Face::A, "ced63fe12493bd1d"), (Face::B, "299f3619d537c18b")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {
