@@ -844,6 +844,35 @@ impl LocalCore {
         Ok(())
     }
 
+    /// The camera clearance check (THEATER_MODE.md §6.2, `camera_clearance`) against this world's
+    /// voxels, its chunks loaded or generated as needed: per eye (`[x, y, z, …]`, m) its code (1 within
+    /// `radius_m` of a solid, 0 clear) and, for a solid one, the rise (m, along its face's up, in
+    /// `lift_step_m` steps up to `lift_max_m`) that clears it, NaN otherwise or when none does.
+    pub fn camera_clearance(
+        &mut self,
+        eyes: &[f64],
+        radius_m: f64,
+        lift_step_m: f64,
+        lift_max_m: f64,
+    ) -> (Vec<i8>, Vec<f64>) {
+        use crate::camera_clearance::{Clearance, lift, probe};
+        let world = self.server.world();
+        let mut read = |c: [i32; 3]| Some(world.get_voxel(c[0], c[1], c[2]));
+        let mut codes = Vec::with_capacity(eyes.len() / 3);
+        let mut lifts = Vec::with_capacity(eyes.len() / 3);
+        for p in eyes.chunks_exact(3) {
+            let p = [p[0], p[1], p[2]];
+            let c = probe(&mut read, p, radius_m);
+            codes.push(c.code());
+            lifts.push(if c == Clearance::Solid {
+                lift(&mut read, p, radius_m, lift_step_m, lift_max_m).unwrap_or(f64::NAN)
+            } else {
+                f64::NAN
+            });
+        }
+        (codes, lifts)
+    }
+
     /// The nearest water of `kind` (`water` any, `sea`, `river`, `lake`) on the world map (the
     /// generator's columns, loaded or not) from world point `from` (m), within `radius_m`, on
     /// `face` (None: `from`'s), at least `min_depth_m` deep (the map's level over its ground; a

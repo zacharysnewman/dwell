@@ -1520,6 +1520,29 @@ impl<S: Scene> Game<S> {
             .as_ref()
             .map(|p| (p.time, p.path.duration(), p.finished()))
     }
+    /// A camera path's eye sampled every `step_s` seconds of real time from its start (the clearance
+    /// check, THEATER_MODE.md §6.2): (take seconds, path seconds, eye), played by a fresh player
+    /// against the targets where they are now; at most `max` samples.
+    pub fn theater_samples(
+        &self,
+        path: dwell_theater::Path,
+        step_s: f64,
+        max: usize,
+    ) -> Vec<(f64, f64, [f64; 3])> {
+        let step = step_s.clamp(1e-3, 1.0);
+        let targets = self.theater_targets();
+        let mut player = dwell_theater::Player::new(path);
+        let mut out = Vec::new();
+        let mut t = 0.0;
+        let pose = player.step(0.0, &targets);
+        out.push((t, player.time, pose.position));
+        while !player.finished() && out.len() < max {
+            let pose = player.step(step, &targets);
+            t += step;
+            out.push((t, player.time, pose.position));
+        }
+        out
+    }
     /// Pauses or resumes the path.
     pub fn pause_theater(&mut self, paused: bool) {
         if let Some(p) = &mut self.theater {

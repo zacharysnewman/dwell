@@ -2477,6 +2477,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** flying close over a forest, every tree stays drawn (its far look until its real one is
    ready, then a short fade to it); the dynamite's flung pieces moving on every frame, smooth in the air, in the
    cinematic clip and in play.
+   **The camera through a wall (owner, 2026-11-14):** "That flyover video goes straight through a wall. Not a big deal
+   since you're just showing something but that shouldn't be included in most recordings." The forest fly-over's path
+   ends inside a hill (8.35–10 s). Built: a camera clearance check (THEATER_MODE.md §6.2, the record skill's §0f):
+   every path shot's eye sampled every 0.05 s and probed against the world's solid blocks within 0.3 m (the local
+   world's own voxels, generated as needed; data in `shared/theater/cinematic.json` `clearance`); a path through
+   solid ground fails the take with the times, positions and the lift that clears it, unless the shot sets
+   `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
+   four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
+   unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

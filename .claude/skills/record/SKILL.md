@@ -120,6 +120,26 @@ once; five builders put it up in about 2.5 min (well, two huts, watchtower, wall
 the sound time-stretched) to 16:9 and 9:16. Start the shot right after `terrainReady` (the settle wait costs a third
 of the build); a tree stands inside the hamlet (BUGS.md #169). By hand in the driver: `curl -s localhost:4999/eval -d "$(node -e "import('./.claude/skills/record/scripts/take.mjs').then(m => console.log(m.settleScript()))")"`.
 
+## 0f. Camera paths never pass through terrain (the clearance check)
+
+Owner, 2026-11-14 (WORK_QUEUE item 41): "That flyover video goes straight through a wall. Not a big deal since you're
+just showing something but that shouldn't be included in most recordings." **Rule: a camera path never passes through
+terrain (or trees, or builds) unless the shot says so.** Every path shot is checked before it records
+(docs/THEATER_MODE.md §6.2): its eye sampled every 0.05 s of take time and probed against the world's solid blocks
+within 0.3 m (`shared/theater/cinematic.json` `clearance`). On a local world the probe reads the world itself (its
+chunks generated as needed: ~0.3 s for a 10 s shot); on a remote one only the loaded chunks, flown once in 1 s steps
+first. A clip **fails the shot** with each stretch's times (take and path), the eye, the keyframes it lies between and
+the lift that clears it:
+
+```
+the camera path passes through solid ground (within 0.30 m) in 1 place:
+  8.35–10.00 s (path 8.35–10.00 s, keyframes 0–1) at (22300.5, 136.7, 334.5): no lift up to 30 m clears it: move the keys
+```
+
+Raise or move those keyframes (or end the shot before it). A deliberate shot through the ground (a cut-away, a
+reveal from inside a hill) sets **`"allowClipping": true`** on the shot: the log still lists the clips. Check a path
+by hand without recording: `await __dwell.clearance(path)` (resolves with `clipping`, `unchecked` and `message`).
+
 ## 0e. Cinematic shots: rendered offline, frame-exact
 
 Owner, 2026-11-14 (WORK_QUEUE item 41): "take more time to render it so it looks at its prettiest? Without seeing LODs
@@ -215,7 +235,7 @@ blocks injected `<style>` (the T-1 rule never applied for that reason).
 
 - **Dolly in:** the `dolly` preset (`fromM` → `toM`, `heightM` 1–3 m). Low and slow reads best.
 - **Orbit:** the `orbit` preset. Keep it **high or on open ground**: close orbits on hills pass through terrain
-  and trees (trim, or raise `heightM`).
+  and trees (trim, or raise `heightM`); the clearance check (§0f) now fails such a shot before it records.
 - **Track / follow:** the `track` preset on the subject (`distanceM` 4–8, `smoothingS` ~0.6): it stays centred,
   and the lag is exponential, the same at any frame rate.
 - **Drone rise:** the `rise` preset (`fromM` 5 → `toM` 60–150, `backM`): it looks at the subject as it climbs.
