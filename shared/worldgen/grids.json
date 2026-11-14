@@ -33,7 +33,7 @@
       "surfaceM": 200,
       "atmosphere": false,
       "nearMesh": { "cells": 96, "sinkM": 8 },
-      "lod": { "levels": 9, "cells": 48, "cellM": 4, "sinkM": 1.5, "sinkPerCell": 0.02 },
+      "lod": true,
       "light": {
         "sunlit": true,
         "bodies": [{ "grid": "dwell:home", "albedo": "#7d93a8", "intensity": 0.05, "refDeg": 4.8 }],
@@ -86,7 +86,7 @@
       "farM": 300000,
       "surfaceM": 420,
       "atmosphere": false,
-      "lod": { "levels": 10, "cells": 48, "cellM": 4, "sinkM": 1.5, "sinkPerCell": 0.02 },
+      "lod": true,
       "light": {
         "sunlit": false,
         "bodies": [
