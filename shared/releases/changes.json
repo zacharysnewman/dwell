@@ -4,12 +4,12 @@
     {
       "version": "0.64.0",
       "changes": [
-        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed (older Realistic worlds open in their own version)",
-        "Realistic plates and coasts: rifts are chains of lakes, coasts end in shelves, no sliver plates, ranges rise and dip, continents run out toward the world's edge",
+        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed: rifts as chains of lakes, coasts ending in shelves, no sliver plates, ranges with peaks and saddles, continents out toward the edge",
         "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, notched ramps only along mesa and rock-wall edges",
         "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
         "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
-        "Theater mode: a redone panel (close button, Esc, phone sheets, recording timer, controller), phone flying controls, following a creature, frame-exact recording, hosts can turn it off for guests"
+        "Slopes no longer show tall ramp backs standing in open air at bowl corners and along diagonal slopes",
+        "Resurrection shrines are bigger: 16 m across, pillars up to 10.5 m under a high arch, more steps and a wider ring of torches that glows from a distance"
       ]
     },
     {
