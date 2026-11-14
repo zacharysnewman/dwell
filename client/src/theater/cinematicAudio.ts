@@ -3,9 +3,9 @@
 // ambience, never music: the mixer's tap) is rendered by the page's AudioContext, but the context is
 // stepped with the frames: suspended between them, resumed until its clock reaches the next frame's
 // time. While the take holds the engine's clock (`AudioEngine.holdClock`), every sound is scheduled
-// at its frame's time on the context's timeline (`C(t) = base + t`, plus `leadS` so a step that
-// overshoots by a hardware buffer is never late), so Web Audio's sample-accurate scheduling puts it
-// on its frame however long the frame took to render. A recorder (a ScriptProcessor) keeps every
+// at its frame's time on the context's timeline (`C(t) = base + t`, plus `leadS`; a step that
+// overshoots past it moves the timeline on, `TakeTimeline`, so a sound is never late), so Web Audio's
+// sample-accurate scheduling puts it on its frame however long the frame took to render. A recorder (a ScriptProcessor) keeps every
 // rendered sample with its time; a third channel carries an impulse scheduled like a sound at every
 // frame, which calibrates the recorder's latency and measures the alignment. Live play is unchanged:
 // only a take holds the clock.
@@ -28,8 +28,10 @@ export interface AudioStep {
   maxErrorMs: number;
   /** How far the recorder had slipped a frame's mark before the re-timing (ms). */
   rawMaxSlipMs: number;
-  /** Steps whose context ran past the next sound's scheduled time (a sound would have been late). */
+  /** Steps whose context ran past the next sound's scheduled time (a sound late): 0 since the re-basing. */
   late: number;
+  /** Steps that overshot the lead and moved the timeline on (`TakeTimeline`), each frame-exact still. */
+  rebased: number;
   wav: Uint8Array;
 }
 
@@ -185,6 +187,45 @@ export function wavBytes(channels: readonly Float32Array[], sr: number): Uint8Ar
   return new Uint8Array(buf);
 }
 
+/**
+ * Where a take's frames sit on the stepped context's timeline: take time `t` at context time
+ * `base + shift + t`, its sounds scheduled `leadS` after that. A step that overshoots past where its
+ * frame's sounds go (a hardware buffer longer than the lead: 3–16 frames a clip were late at 50 ms,
+ * #955) moves the timeline on by the overshoot plus `marginS`, so they are scheduled ahead of the
+ * suspended context's clock, frame-exact however far the step ran. The frame's mark moves with them,
+ * so the re-timing on the marks (`realign`) takes the extra audio out of the track.
+ */
+export class TakeTimeline {
+  /** How far the timeline has been moved on (s). */
+  shift = 0;
+  /** Steps that moved it. */
+  rebased = 0;
+  constructor(
+    readonly base: number,
+    readonly leadS: number,
+    readonly marginS: number,
+  ) {}
+
+  /** The context time the step to take time `tS` runs the context to. */
+  runTarget(tS: number): number {
+    return this.base + this.shift + tS;
+  }
+
+  /** The context time a sound triggered at take time `tS` is scheduled at. */
+  at(tS: number): number {
+    return this.base + this.shift + tS + this.leadS;
+  }
+
+  /** The step to take time `tS` stopped the context's clock at `ctxNow`. */
+  stepped(tS: number, ctxNow: number): void {
+    const over = ctxNow + this.marginS - this.at(tS);
+    if (over > 0) {
+      this.shift += over;
+      this.rebased++;
+    }
+  }
+}
+
 /** The engine's own lead on a play (engine.ts `now + 0.005`). */
 const PLAY_LEAD_S = 0.005;
 
@@ -205,9 +246,9 @@ export async function startCinematicAudio(
   engine: TakeAudioEngine,
   leadS: number,
 ): Promise<CinematicAudio | null> {
-  let base = 0;
+  let tl = new TakeTimeline(0, leadS, 0);
   let now = 0;
-  const ctx = engine.holdClock(() => base + now + leadS);
+  const ctx = engine.holdClock(() => tl.at(now));
   if (!ctx || typeof ctx.createScriptProcessor !== 'function') {
     engine.holdClock(null);
     return null;
@@ -239,9 +280,11 @@ export async function startCinematicAudio(
     s.start(when);
   };
   await ctx.resume();
-  base = ctx.currentTime + 0.1;
+  // Sounds go a render quantum past the suspended clock at least.
+  tl = new TakeTimeline(ctx.currentTime + 0.1, leadS, 128 / sr);
   const times: number[] = [0];
-  impulse(base + leadS + PLAY_LEAD_S);
+  const shifts: number[] = [0];
+  impulse(tl.at(0) + PLAY_LEAD_S);
   let late = 0;
   const run = async (target: number): Promise<void> => {
     if (ctx.currentTime < target) {
@@ -250,7 +293,7 @@ export async function startCinematicAudio(
     }
     await ctx.suspend();
   };
-  await run(base);
+  await run(tl.base);
   const closeAll = (): void => {
     tap?.close();
     for (const n of [tapIn, split, merge, rec]) n.disconnect();
@@ -259,17 +302,19 @@ export async function startCinematicAudio(
   };
   return {
     async runTo(tS) {
-      await run(base + tS);
-      // A sound now is scheduled at base + tS + leadS: late if the context already passed it.
-      if (ctx.currentTime > base + tS + leadS) late++;
+      await run(tl.runTarget(tS));
+      tl.stepped(tS, ctx.currentTime);
+      // A sound now is scheduled at tl.at(tS): late if the context already passed it (never, once
+      // the step re-based the timeline).
+      if (ctx.currentTime > tl.at(tS)) late++;
       now = tS;
       times.push(tS);
-      impulse(base + tS + leadS + PLAY_LEAD_S);
+      shifts.push(tl.shift);
+      impulse(tl.at(tS) + PLAY_LEAD_S);
     },
     async finish(seconds) {
-      const origin = base + leadS + PLAY_LEAD_S;
       // Past the end by the recorder's buffer twice over, so its last blocks arrive.
-      await run(origin + seconds + (3 * 1024) / sr + 0.05);
+      await run(tl.at(seconds) + PLAY_LEAD_S + (3 * 1024) / sr + 0.05);
       await ctx.resume();
       const flushUntil = performance.now() + 300;
       while (performance.now() < flushUntil) await yieldTask();
@@ -278,11 +323,13 @@ export async function startCinematicAudio(
       // The stream from frame 0's mark (scheduled at the origin): the recorder's latency drops out.
       const whole = joinChunks(chunks, 3, 0, chunkSamples(chunks));
       const start = Math.max(0, firstAbove(whole[2] ?? new Float32Array(0), 0));
-      const raw = joinChunks(chunks, 3, start, n + sr);
+      const raw = joinChunks(chunks, 3, start, n + Math.ceil(tl.shift * sr) + sr);
       const expected = times.map((t) => Math.round(t * sr)).filter((e) => e < n);
+      // Where each frame's mark was scheduled in the raw stream (moved on by the re-basings).
+      const scheduled = expected.map((e, i) => e + Math.round((shifts[i] ?? 0) * sr));
       // Where each frame's mark landed in the raw stream (the recorder's slips), then re-timed on them.
-      const marks = findMarks(raw[2] ?? new Float32Array(0), expected);
-      const slips = marks.map((m, i) => ((m - (expected[i] ?? 0)) / sr) * 1000);
+      const marks = findMarks(raw[2] ?? new Float32Array(0), scheduled);
+      const slips = marks.map((m, i) => ((m - (scheduled[i] ?? 0)) / sr) * 1000);
       const track = realign(raw, marks, expected, n);
       const errs = impulseErrors(track[2] ?? new Float32Array(0), expected, sr);
       const ok = errs.filter((e) => !Number.isNaN(e));
@@ -296,6 +343,7 @@ export async function startCinematicAudio(
         maxErrorMs: Math.max(0, ...ok.map(Math.abs)),
         rawMaxSlipMs: Math.max(0, ...slips.map(Math.abs)),
         late,
+        rebased: tl.rebased,
         wav: wavBytes([track[0] ?? new Float32Array(n), track[1] ?? new Float32Array(n)], sr),
       };
     },

@@ -217,7 +217,7 @@ async function recordCinematic(m, shot, size, s) {
   const a = r.audio;
   console.log(`  ${shot.id}: ${r.frames} frames (${r.seconds.toFixed(2)} s at ${r.fps} fps) in ${r.wallS.toFixed(0)} s (pre-roll ${r.prerollS.toFixed(0)} s);`
     + ` settle mean ${r.settle.meanMs.toFixed(0)} ms, p95 ${r.settle.p95Ms.toFixed(0)}, max ${r.settle.maxMs.toFixed(0)}, capped ${r.settle.capped.length ? r.settle.capped.join(',') : 'none'};`
-    + ` ${r.ticks} ticks` + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}` : '; silent'));
+    + ` ${r.ticks} ticks` + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}, re-based ${a.rebased ?? 0}` : '; silent'));
   const dir = /^"?cinematic (\S+?)"?$/.exec(started.trim())?.[1] ?? null;
   return { stats: { frames: r.frames, seconds: r.seconds, fps: r.fps }, log: r, frames: dir, cinematic: { fps: r.fps } };
 }

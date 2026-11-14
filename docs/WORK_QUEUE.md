@@ -2477,6 +2477,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** flying close over a forest, every tree stays drawn (its far look until its real one is
    ready, then a short fade to it); the dynamite's flung pieces moving on every frame, smooth in the air, in the
    cinematic clip and in play.
+   **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
+   snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
+   same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #174 (remotes) and #175 (late
+   sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
+   delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
+   ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
+   take's sound timeline moves on by a step's overshoot past the lead (`TakeTimeline`), so no sound is late.
+   **Owner should see:** in a world with a friend, after a hitch (the host's world busy loading), the friend keeps
+   moving smoothly on every frame instead of stepping a few times a second; a cinematic take's log reads `late 0`
+   (a `re-based N` count for steps that overshot), every sound on its frame.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

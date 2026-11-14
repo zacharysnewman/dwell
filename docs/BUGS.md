@@ -6,6 +6,38 @@ pins it.
 
 ## Open
 
+### 175. A cinematic take's sounds late on a few frames a clip
+
+Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
+scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
+clip. The AudioContext is stepped to each frame's time and suspended; each frame's sounds go `audio.leadS` (50 ms)
+after it. A step's resume–suspend round trip overshoots by a hardware buffer, sometimes past the lead, and then that
+frame's sounds were scheduled before the context's clock and played late, by up to the overshoot.
+
+**Owner should see:** a cinematic take's log reading `late 0`, every sound on its frame.
+
+**Fixed:** the take's timeline (`TakeTimeline`, `client/src/theater/cinematicAudio.ts`) moves on by a step's
+overshoot past the lead plus a render quantum, so the frame's sounds and its mark are scheduled ahead of the
+suspended clock whatever the overshoot; the re-timing on the frame marks (`realign`) takes the extra audio out. The
+report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
+…"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
+
+### 174. Remote players step after the server drops time
+
+Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
+(dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
+server's clock, the least delay seen drifting up 1 ms a second: after the server dropped time (a local world's
+worker busy past its catch-up cap) a remote was drawn past its newest snapshot for minutes, held there and moving
+only on frames a snapshot came (one in three at 30 fps), a step of three frames' motion each.
+
+**Owner should see:** a friend in your world moving smoothly on every frame after a hitch, not stepping.
+
+**Fixed:** one estimator, `dwell_game::server_clock::ServerClock` (the least delay within the last second, slewed
+3 %, snapped past 250 ms), shared by the remote players and the pieces (bodies are pieces). Creatures and NPCs ease
+toward their latest state by frame time and dropped items aren't moved by snapshots, so neither has a server clock
+to fix. Test (both faces): `remotes::tests::a_remote_drawn_after_the_server_dropped_time_moves_every_frame`, a
+remote at 6 m/s after a ½ s stall, 30 fps frames: red before (frames drawn still, deviation 1.00), within 3 % after.
+
 ### 173. The dynamite blast looks low framerate: the flung pieces stand still between snapshots
 
 Owner, 2026-11-14, on the cinematic clips (WORK_QUEUE item 41): "And the dynamite one still looks low framerate,
@@ -30,7 +62,7 @@ session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOP
 Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
 `game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
 frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
-frame, peaking every third). Remote players (`dwell_game::remotes`) keep the old drifting estimate.
+frame, peaking every third). Remote players share the estimator since #174.
 
 ### 172. Trees disappear when the camera gets close
 
