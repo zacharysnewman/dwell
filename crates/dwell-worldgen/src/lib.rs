@@ -13,6 +13,7 @@ pub mod decorations;
 pub mod geology;
 pub mod grass;
 pub mod grid;
+pub mod grid_lod;
 pub mod grids;
 pub mod growth;
 pub mod home_far;

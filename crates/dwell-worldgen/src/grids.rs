@@ -1414,3 +1414,33 @@ impl FarSource for CrateredTerrain {
         std::array::from_fn(|i| high[i] + (mare[i] - high[i]) * w)
     }
 }
+
+impl crate::grid_lod::GridColumns for CrateredTerrain {
+    fn radius_m(&self) -> f64 {
+        self.radius
+    }
+    /// The ground with every crater at least half a cell wide, and the block the chunks give a
+    /// column there: the maria's where the point is at least half in a mare, else the grid's.
+    fn lod_column(
+        &self,
+        face: Face,
+        x: f64,
+        z: f64,
+        cell_m: f64,
+    ) -> Option<crate::grid_lod::GridColumn> {
+        if !self.inside(x, z) {
+            return None;
+        }
+        let ground = if self.mare_weight(face, x, z) >= 0.5 {
+            self.mare_block
+        } else {
+            self.block
+        };
+        Some(crate::grid_lod::GridColumn {
+            ground_m: self.height_at_scale(face, x, z, cell_m / 2.0),
+            ground,
+            fluid_m: f64::NEG_INFINITY,
+            fluid: M.air,
+        })
+    }
+}

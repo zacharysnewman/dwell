@@ -36,6 +36,17 @@ impl WorldBounds {
         }
     }
 
+    /// A grid's disc (docs/proposals/MOON_WORLD.md): radius `radius_m` round its own origin, the
+    /// build's volume (a grid's chunks use the same rows as home's). The moon's and the sun's LOD
+    /// select their sections in it (`dwell_worldgen::grid_lod`).
+    pub const fn grid(radius_m: i64) -> Self {
+        Self {
+            size: WorldSize::DEFAULT,
+            radius: radius_m,
+            volume: BUILD_VOLUME,
+        }
+    }
+
     /// The disc's radius (m).
     pub const fn radius(&self) -> i64 {
         self.radius
