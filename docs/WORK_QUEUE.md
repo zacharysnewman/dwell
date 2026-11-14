@@ -898,6 +898,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bigger shrines; all in the next release.
    **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
    back to C."**
+   **The 0.66 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
+   branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
+   both faces) found these still wrong; each gets a test on both faces over those seeds:
+   (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
+   that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
+   everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
+   included: rocks.json `shaping.notched` `none`, the ramp-backing rule (#163) kept. **Owner should see:** no notched
+   (diagonal-corner) ramps anywhere, mesa edges included; straight edges ramped as in the default world. Open option
+   (owner): **"I may want to use the slope one we talked about for sand only (without the spikes), but I'm not sure
+   yet."** (the notched rule per surface material by data, off everywhere for now).
+   (2) **Islands:** seed 42 face A's seven cone islands still similar round cones on a loose grid; seed 1 face A's west
+   group clumps; a ~5 km sliver island off seed 1 A's southwest tip. **Owner should see:** volcanic islands of very
+   different sizes (a few large, many small), irregular outlines, uneven curving spacing, no grid, no clumps, no
+   sliver islands.
+   (3) **Sand deserts:** shrubs so dense it reads as scrubland. **Owner should see:** open dune desert, sparse plants.
+   (4) **Mesas:** tops green under thick sagebrush; thin wall fins like fences; a grey stone band edging a lake in mesa
+   country; mesa country missing on 4 of 10 faces (seed 7 both faces, 2741893632 A). **Owner should see:** red tops
+   with sagebrush mostly on the floors, no fence-thin fins, lake shores in the mesa palette, mesa country on most seeds.
+   (5) **Dormant islands:** black blotches across the green lowland and a straight red cliff strip midground. **Owner
+   should see:** dormant islands green, lava stone only near the shore and young flows, no straight strip.
+   (6) **Smaller:** a crisp circular rim round a summit crater lake (2741893632 B); a pale-blue lake fringe along
+   2741893632 A's east coast; speckled river pixels in seed 1 B's southern lake; 274005646 B's continent fairly round.
+   **Owner should see:** crater lakes without a ring, no pale fringe, clean lakes, a continent with an irregular outline.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
