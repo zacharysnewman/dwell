@@ -65,11 +65,10 @@ pub struct RimRule {
     /// A continent reaching the rim ends this far (m) inside the band, drawn per sector.
     pub shelf: [f64; 2],
     pub sectors: u32,
-    /// Every plate-edge coast moves by ±`coast_amplitude` m of noise at `coast_wavelength` m
-    /// (`coast_octaves`): bays and headlands, no coast straight for km (the map check, 2026-11-14).
-    pub coast_amplitude: f64,
-    pub coast_wavelength: i32,
-    pub coast_octaves: u32,
+    /// Every coast (the plate edges' and the rim's) moves by the sum of these layers' noise,
+    /// each (amplitude ± m, wavelength m, octaves): peninsulas and gulfs, bays and headlands, no
+    /// coast straight for km and no continent the plate's polygon (the map check, 2026-11-14).
+    pub coast: &'static [(f64, i32, u32)],
     /// The rim's coast moves by ±this much (m) of noise at this wavelength (m).
     pub noise_amplitude: f64,
     pub noise_wavelength: i32,
@@ -475,13 +474,19 @@ impl PlateLayout {
     /// with the nearest plate of the other kind, capped by the distance to the rim's coast
     /// ([`PlateLayout::land_edge`]); in the rim's outer band at most −`edge_coast` (deep sea).
     pub fn coast_distance(&self, x: f64, z: f64) -> f64 {
-        let mut edge = self.land_edge(x, z);
         let rim = &self.rules.rim;
-        if (x * x + z * z).sqrt() > self.rules.reach - rim.edge_sea {
-            edge = edge.min(-rim.edge_coast);
-        }
+        let land = self.land_edge(x, z);
+        // The distance (m) to the outer band: the coasts' noise may not carry land past 0.6 of
+        // it, so a continent never meets the band (no circular cliff at the rim).
+        let band = self.rules.reach - rim.edge_sea - (x * x + z * z).sqrt();
+        let deep = if band < 0.0 {
+            -rim.edge_coast
+        } else {
+            f64::INFINITY
+        };
+        let noise = self.coast_noise(x, z).min(0.6 * band.max(0.0));
         if self.plates.is_empty() {
-            return edge.min(-1.0);
+            return land.min(deep).min(-1.0);
         }
         let (wx, wz) = self.warped(x, z);
         let a = self.plate_at(x, z);
@@ -500,24 +505,32 @@ impl PlateLayout {
             PlateKind::Continental => near,
             PlateKind::Oceanic => -near,
         };
-        (signed + self.coast_noise(x, z)).min(edge)
+        (signed.min(land) + noise).min(deep)
     }
 
     /// The plate-edge coasts' noise (m, `rim.coast`) at a face-local point.
     pub fn coast_noise(&self, x: f64, z: f64) -> f64 {
-        let r = &self.rules.rim;
-        if r.coast_amplitude <= 0.0 {
-            return 0.0;
+        let mut sum = 0.0;
+        for (k, &(amplitude, wavelength, octaves)) in self.rules.rim.coast.iter().enumerate() {
+            if amplitude <= 0.0 {
+                continue;
+            }
+            let n = fbm2(
+                mix32(self.rim_seed ^ 0xC0A5_7000 ^ k as u32),
+                x as i64,
+                z as i64,
+                wavelength,
+                octaves,
+                None,
+            );
+            sum += amplitude * 2.0 * f64::from(n);
         }
-        let n = fbm2(
-            mix32(self.rim_seed ^ 0xC0A5_7000),
-            x as i64,
-            z as i64,
-            r.coast_wavelength,
-            r.coast_octaves,
-            None,
-        );
-        r.coast_amplitude * 2.0 * f64::from(n)
+        sum
+    }
+
+    /// The coasts' noise's greatest reach (m): its layers' amplitudes summed.
+    pub fn coast_reach(&self) -> f64 {
+        self.rules.rim.coast.iter().map(|l| l.0).sum()
     }
 
     /// Each plate's interior (m): the farthest any of its points inside the land's edge lies from
@@ -629,13 +642,14 @@ impl PlateLayout {
         let (xi, zi) = (x as i64, z as i64);
         let w = self.rules.warp_wavelength;
         let (mut wx, mut wz) = (
-            x + a * f64::from(fbm2(self.warp_seeds.0, xi, zi, w, 2, None)),
-            z + a * f64::from(fbm2(self.warp_seeds.1, xi, zi, w, 2, None)),
+            x + 2.0 * a * f64::from(fbm2(self.warp_seeds.0, xi, zi, w, 2, None)),
+            z + 2.0 * a * f64::from(fbm2(self.warp_seeds.1, xi, zi, w, 2, None)),
         );
         for (k, &(da, dw)) in self.rules.warp_detail.iter().enumerate() {
             let k = k as u32 + 1;
-            wx += da * f64::from(fbm2(mix32(self.warp_seeds.0 ^ k), xi, zi, dw, 2, None));
-            wz += da * f64::from(fbm2(mix32(self.warp_seeds.1 ^ k), xi, zi, dw, 2, None));
+            // × 2: the fractal sums rarely leave ±0.5, so each layer moves about ± its amplitude.
+            wx += 2.0 * da * f64::from(fbm2(mix32(self.warp_seeds.0 ^ k), xi, zi, dw, 2, None));
+            wz += 2.0 * da * f64::from(fbm2(mix32(self.warp_seeds.1 ^ k), xi, zi, dw, 2, None));
         }
         (wx, wz)
     }
@@ -903,7 +917,7 @@ mod tests {
                     let kind = l.plates[l.plate_at(x, z)].kind;
                     let d = l.coast_distance(x, z);
                     assert_eq!(l.is_land(x, z), d > 0.0, "{x} {z}");
-                    if d.abs() > 2.0 * PLATES.rim.coast_amplitude && l.land_edge(x, z) > 0.0 {
+                    if d.abs() > 2.0 * l.coast_reach() && l.land_edge(x, z) > 0.0 {
                         assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
                     }
                 }

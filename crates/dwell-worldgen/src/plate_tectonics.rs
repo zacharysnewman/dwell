@@ -149,6 +149,9 @@ pub struct ChainRule {
 /// The uplift's rules (data: plates.json `uplift`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlateUplift {
+    /// At sea the boundaries' landforms raise the ground no higher than this many m below sea
+    /// level: the oceans' ridges stay under water (the map check, 2026-11-14).
+    pub sea_ridges: f64,
     /// The rate (cm/yr) at which a landform has its data's size, and the clamp on that scale.
     pub speed_ref: f64,
     pub speed_scale: [f64; 2],
@@ -177,20 +180,35 @@ pub struct ConeVariety {
     pub spacing: f64,
     pub offset: f64,
     pub shape: f64,
+    /// Each chain island's own size: its radius × a draw in this range, its height × one in its
+    /// square roots' (so an older island stays the lower).
+    pub each: [f64; 2],
+    /// Satellite cones round each placed cone: `count` [min, max] of them, each `size` [min, max]
+    /// of its parent's radius and height, its centre `distance` [min, max] of the parent's radius
+    /// out at a seeded angle (islets off an island, parasitic cones on a volcano's flank).
+    pub satellites: [f64; 2],
+    pub satellite_size: [f64; 2],
+    pub satellite_distance: [f64; 2],
+    /// The chance an arc's site past its first is left empty (gaps along an arc).
+    pub skip: f64,
 }
 
-/// A cone's outline factor at the angle `theta` (radians) round it: 1 ± `shape`, three lobes of
-/// phases hashed from its centre, so no two cones share an outline and none is a circle.
+/// A cone's outline factor at the angle `theta` (radians) round it: 1 ± `shape`, the sum of the
+/// harmonics 2 to 7 with amplitudes and phases hashed from its centre (summing to 1), so no two
+/// cones share an outline and none is a circle or a regular lobed shape.
 pub fn outline(v: &Volcano, shape: f64, theta: f64) -> f64 {
     if shape <= 0.0 {
         return 1.0;
     }
     let key = mix32((v.x as i64 as u32) ^ mix32((v.z as i64 as u32) ^ 0x0C0E_0001));
-    let ph = |k: u32| f64::from(mix32(key ^ k)) / 4_294_967_296.0 * std::f64::consts::TAU;
-    let wave = 0.5 * (2.0 * theta + ph(1)).sin()
-        + 0.3 * (3.0 * theta + ph(2)).sin()
-        + 0.2 * (5.0 * theta + ph(3)).sin();
-    1.0 + shape * wave
+    let (mut wave, mut sum) = (0.0, 0.0);
+    for k in 2..=7u32 {
+        let a = draw(key, 2 * k, [0.0, 1.0]) / f64::from(k).powf(0.6);
+        wave +=
+            a * (f64::from(k) * theta + draw(key, 2 * k + 1, [0.0, std::f64::consts::TAU])).sin();
+        sum += a;
+    }
+    1.0 + shape * wave / sum.max(1e-9)
 }
 
 impl PlateUplift {
@@ -400,6 +418,8 @@ impl PlateTectonics {
         };
         t.volcanoes = t.place_arcs();
         t.volcanoes.extend(t.place_chains());
+        let satellites = t.satellites();
+        t.volcanoes.extend(satellites);
         t.fill_field();
         t
     }
@@ -638,6 +658,16 @@ impl PlateTectonics {
     }
 
     /// Everything the layer adds at (x, z) (m): the boundaries' landform and the tallest cone.
+    /// A boundary landform's `rise` (m) over ground `ground` m from sea level at a point the
+    /// plates' coast puts `coast` m from it (< 0 at sea): at sea a rise stops `sea_ridges` m
+    /// below the surface (a ridge already above, or a cut, is kept as it is).
+    pub fn at_sea(&self, rise: f64, ground: f64, coast: f64) -> f64 {
+        if coast >= 0.0 || rise <= 0.0 {
+            return rise;
+        }
+        rise.min((-self.uplift.sea_ridges - ground).max(0.0))
+    }
+
     pub fn height(&self, x: f64, z: f64) -> f64 {
         let cones = self
             .volcanoes
@@ -710,6 +740,10 @@ impl PlateTectonics {
                 let cv = &self.uplift.cones;
                 let key = mix32(line.seed ^ (pl.len() as u32).wrapping_mul(0x27D4_EB2F));
                 for k in 0..count {
+                    // A gap in the arc: a site left empty (`cones.skip`), never the first.
+                    if k > 0 && draw(key, 4 * k + 3, [0.0, 1.0]) < cv.skip {
+                        continue;
+                    }
                     // Each cone's place along the line ± `cones.spacing` of the gap between them.
                     let slot = total / f64::from(count);
                     let jitter = cv.spacing * (draw(key, 4 * k, [-0.5, 0.5])) * slot;
@@ -774,6 +808,7 @@ impl PlateTectonics {
             // The chain's own size (its islands older down it, lower and broader, as before).
             let (hf, rf) = (draw(key, 1, cv.height), draw(key, 2, cv.radius));
             let mut d = 0.0;
+            let root = |[lo, hi]: [f64; 2]| [lo.sqrt(), hi.sqrt()];
             for k in 0..if still { c.islands.min(1) } else { c.islands } {
                 let age = f64::from(k);
                 if k > 0 {
@@ -789,11 +824,38 @@ impl PlateTectonics {
                 out.push(Volcano {
                     x,
                     z,
-                    height: c.height * hf * c.decay.powf(age),
-                    radius: c.radius * rf * (1.0 + c.widen * age),
+                    height: c.height * hf * c.decay.powf(age) * draw(key, 8 * k + 2, root(cv.each)),
+                    radius: c.radius * rf * (1.0 + c.widen * age) * draw(key, 8 * k + 3, cv.each),
                     crater_radius: 0.0,
                     crater_depth: 0.0,
                     chain: k + 1,
+                });
+            }
+        }
+        out
+    }
+
+    /// Every placed cone's satellites (`cones.satellites`), after all the cones (so a chain's
+    /// islands stay together in `volcanoes`): each at a seeded angle and distance from its parent,
+    /// smaller by a draw, of the parent's chain (its age and its rock).
+    fn satellites(&self) -> Vec<Volcano> {
+        let cv = &self.uplift.cones;
+        let mut out = Vec::new();
+        for v in &self.volcanoes {
+            let key = mix32((v.x as i64 as u32) ^ mix32((v.z as i64 as u32) ^ 0x5A7E_0011));
+            let n = draw(key, 1, [cv.satellites[0], cv.satellites[1] + 1.0]).floor() as u32;
+            for k in 0..n {
+                let th = draw(key, 8 * k + 2, [0.0, std::f64::consts::TAU]);
+                let d = v.radius * draw(key, 8 * k + 3, cv.satellite_distance);
+                let size = draw(key, 8 * k + 4, cv.satellite_size);
+                out.push(Volcano {
+                    x: v.x + d * th.cos(),
+                    z: v.z + d * th.sin(),
+                    height: v.height * size * draw(key, 8 * k + 5, [0.8, 1.2]),
+                    radius: v.radius * size,
+                    crater_radius: 0.0,
+                    crater_depth: 0.0,
+                    chain: v.chain,
                 });
             }
         }
@@ -906,7 +968,11 @@ mod tests {
         assert!(!arc.is_empty(), "an arc");
         for v in &arc {
             assert!(v.x > 0.0, "on the overriding side: {v:?}");
-            assert!((v.x - range.distance).abs() < 600.0, "on the crest: {v:?}");
+            // On the crest, but for a cone the rim's coast brought nearer the line (and the
+            // satellites, craterless, round each).
+            if v.x.hypot(v.z) < 38_000.0 && v.crater_radius > 0.0 {
+                assert!((v.x - range.distance).abs() < 600.0, "on the crest: {v:?}");
+            }
         }
         // Collision: a range astride the line, no arc.
         let t = fixture("continents_collide");
@@ -973,8 +1039,10 @@ mod tests {
                 }
             }
         }
+        // The bug's stretches ran up to 30 km; a boundary wiggling across one scan column (the
+        // warp's finest layer) can put three vertices on it, a run of two segments.
         assert!(
-            longest < 1500.0,
+            longest < 2500.0,
             "an axis-aligned boundary stretch {longest:.0} m long"
         );
     }
@@ -1084,7 +1152,8 @@ mod tests {
                 seen += 1;
                 for w in chain.windows(2) {
                     let (a, b) = (w[0], w[1]);
-                    assert!(b.chain > a.chain && b.height < a.height && b.radius > a.radius);
+                    // Older is lower; each island's own size draw (`cones.each`) varies the radius.
+                    assert!(b.chain > a.chain && b.height < a.height);
                     // The older island lies farther along the plate's motion.
                     let along = |v: &Volcano| v.x * m[0] + v.z * m[1];
                     assert!(along(b) > along(a), "seed {seed}");

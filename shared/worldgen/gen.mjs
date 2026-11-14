@@ -2732,10 +2732,13 @@ export function validatePlates(data) {
   num("hotspots.within", data.hotspots.within, 0, data.reach);
   const rim = data.rim;
   obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "coast", "noise"]);
-  obj("rim.coast", rim.coast, ["amplitude", "wavelength", "octaves"]);
-  num("rim.coast.amplitude", rim.coast.amplitude, 0, 20_000);
-  num("rim.coast.wavelength", rim.coast.wavelength, 100, 1_000_000, true);
-  num("rim.coast.octaves", rim.coast.octaves, 1, 8, true);
+  if (!Array.isArray(rim.coast) || rim.coast.length > 4) fail("rim.coast must be a list of at most 4 layers");
+  rim.coast.forEach((l, i) => {
+    obj(`rim.coast[${i}]`, l, ["amplitude", "wavelength", "octaves"]);
+    num(`rim.coast[${i}].amplitude`, l.amplitude, 0, 20_000);
+    num(`rim.coast[${i}].wavelength`, l.wavelength, 100, 1_000_000, true);
+    num(`rim.coast[${i}].octaves`, l.octaves, 1, 8, true);
+  });
   num("rim.edgeSea", rim.edgeSea, 0, data.reach / 4);
   num("rim.edgeCoast", rim.edgeCoast, 0, 100_000);
   range("rim.shelf", rim.shelf, 0, data.reach / 2);
@@ -2748,6 +2751,7 @@ export function validatePlates(data) {
     fail("hotspots.within must leave the rim's edgeSea band clear");
   const u = data.uplift;
   obj("uplift", u, [
+    "seaRidges",
     "speedRef",
     "speedScale",
     "link",
@@ -2760,6 +2764,7 @@ export function validatePlates(data) {
     "cones",
     "hotspot",
   ]);
+  num("uplift.seaRidges", u.seaRidges, 0, 1000);
   num("uplift.speedRef", u.speedRef, 0.01, 100);
   range("uplift.speedScale", u.speedScale, 0, 10);
   num("uplift.link", u.link, 1, 20_000);
@@ -2852,7 +2857,24 @@ export function validatePlates(data) {
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
   num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
-  obj("uplift.cones", u.cones, ["radius", "height", "spacing", "offset", "shape"]);
+  obj("uplift.cones", u.cones, [
+    "radius",
+    "height",
+    "spacing",
+    "offset",
+    "shape",
+    "each",
+    "satellites",
+    "satelliteSize",
+    "satelliteDistance",
+    "skip",
+  ]);
+  num("uplift.cones.skip", u.cones.skip, 0, 0.9);
+  range("uplift.cones.each", u.cones.each, 0.1, 5);
+  range("uplift.cones.satellites", u.cones.satellites, 0, 6);
+  if (!u.cones.satellites.every(Number.isInteger)) fail("uplift.cones.satellites must be whole numbers");
+  range("uplift.cones.satelliteSize", u.cones.satelliteSize, 0.05, 1);
+  range("uplift.cones.satelliteDistance", u.cones.satelliteDistance, 0, 4);
   range("uplift.cones.radius", u.cones.radius, 0.1, 5);
   range("uplift.cones.height", u.cones.height, 0, 5);
   num("uplift.cones.spacing", u.cones.spacing, 0, 0.9);
@@ -2962,7 +2984,7 @@ export function platesRust(data) {
     ["hotspots_within", rf(data.hotspots.within)],
     [
       "rim",
-      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, coast_amplitude: ${rf(data.rim.coast.amplitude)}, coast_wavelength: ${data.rim.coast.wavelength}, coast_octaves: ${data.rim.coast.octaves}, shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
+      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, coast: &[${data.rim.coast.map((l) => `(${rf(l.amplitude)}, ${l.wavelength}, ${l.octaves})`).join(", ")}], shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
     ],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
@@ -2981,6 +3003,7 @@ export function platesRust(data) {
   rs.push("/// The uplift from the boundaries (plates.json `uplift`, R2).");
   rs.push("pub const UPLIFT: PlateUplift = PlateUplift {");
   for (const [k, v] of [
+    ["sea_ridges", rf(u.seaRidges)],
     ["speed_ref", rf(u.speedRef)],
     ["speed_scale", `[${rf(u.speedScale[0])}, ${rf(u.speedScale[1])}]`],
     ["link", rf(u.link)],
@@ -3001,7 +3024,7 @@ export function platesRust(data) {
     ],
     [
       "cones",
-      `ConeVariety { radius: [${rf(u.cones.radius[0])}, ${rf(u.cones.radius[1])}], height: [${rf(u.cones.height[0])}, ${rf(u.cones.height[1])}], spacing: ${rf(u.cones.spacing)}, offset: ${rf(u.cones.offset)}, shape: ${rf(u.cones.shape)} }`,
+      `ConeVariety { radius: [${rf(u.cones.radius[0])}, ${rf(u.cones.radius[1])}], height: [${rf(u.cones.height[0])}, ${rf(u.cones.height[1])}], spacing: ${rf(u.cones.spacing)}, offset: ${rf(u.cones.offset)}, shape: ${rf(u.cones.shape)}, each: [${rf(u.cones.each[0])}, ${rf(u.cones.each[1])}], satellites: [${rf(u.cones.satellites[0])}, ${rf(u.cones.satellites[1])}], satellite_size: [${rf(u.cones.satelliteSize[0])}, ${rf(u.cones.satelliteSize[1])}], satellite_distance: [${rf(u.cones.satelliteDistance[0])}, ${rf(u.cones.satelliteDistance[1])}], skip: ${rf(u.cones.skip)} }`,
     ],
     [
       "hotspot",

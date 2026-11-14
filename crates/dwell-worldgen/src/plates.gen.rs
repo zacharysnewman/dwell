@@ -21,18 +21,19 @@ pub const PLATES: PlateRules = PlateRules {
     continental: KindRule { weight: 0.5, min: 1, interior: 8000.0 },
     speed: [1.0, 10.0],
     age: [5.0, 200.0],
-    warp_amplitude: 5000.0,
-    warp_wavelength: 26000,
-    warp_detail: &[(1800.0, 6000), (500.0, 2000)],
+    warp_amplitude: 3500.0,
+    warp_wavelength: 30000,
+    warp_detail: &[(2200.0, 7000), (600.0, 2000)],
     transform_below: 0.4,
     hotspots_min: 0,
     hotspots_max: 2,
     hotspots_within: 40000.0,
-    rim: RimRule { edge_sea: 2500.0, edge_coast: 3000.0, coast_amplitude: 900.0, coast_wavelength: 3000, coast_octaves: 3, shelf: [1000.0, 8000.0], sectors: 10, noise_amplitude: 800.0, noise_wavelength: 7000 },
+    rim: RimRule { edge_sea: 2500.0, edge_coast: 3000.0, coast: &[(4500.0, 18000, 2), (900.0, 3000, 3)], shelf: [1000.0, 8000.0], sectors: 10, noise_amplitude: 800.0, noise_wavelength: 7000 },
 };
 
 /// The uplift from the boundaries (plates.json `uplift`, R2).
 pub const UPLIFT: PlateUplift = PlateUplift {
+    sea_ridges: 6.0,
     speed_ref: 5.0,
     speed_scale: [0.5, 1.6],
     link: 1300.0,
@@ -52,7 +53,7 @@ pub const UPLIFT: PlateUplift = PlateUplift {
     along: AlongRule { height: 0.4, width: 0.4, wavelength: 9000, octaves: 2 },
     rift: RiftRule { segment_length: [8000.0, 15000.0], depth: [0.7, 1.3], width: [0.7, 1.3], sill: [0.15, 0.6], step_over: 1500.0 },
     arc: ArcRule { distance: 9000.0, min_distance: 2000.0, spacing: 10000.0, min_length: 6000.0, max_cones: 4, cone_height: 900.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hardness: 0.6 },
-    cones: ConeVariety { radius: [0.6, 1.4], height: [0.65, 1.3], spacing: 0.35, offset: 1800.0, shape: 0.3 },
+    cones: ConeVariety { radius: [0.6, 1.4], height: [0.65, 1.3], spacing: 0.5, offset: 1800.0, shape: 0.3, each: [0.75, 1.3], satellites: [0.0, 3.0], satellite_size: [0.2, 0.45], satellite_distance: [0.7, 1.4], skip: 0.2 },
     hotspot: ChainRule { islands: 4, spacing: 5000.0, height: 420.0, radius: 2600.0, decay: 0.65, widen: 0.12 },
 };
 
