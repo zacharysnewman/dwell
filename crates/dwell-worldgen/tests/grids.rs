@@ -545,13 +545,21 @@ fn the_moon_is_airless_and_has_a_near_mesh() {
     let list = parse_grids(GRIDS_JSON).unwrap();
     let home = list.iter().find(|g| g.name == "dwell:home").unwrap();
     let moon = list.iter().find(|g| g.name == "dwell:moon").unwrap();
-    assert!(home.atmosphere && !home.sky_disc && home.near_mesh.is_some() && home.lod.is_none());
+    assert!(home.atmosphere && !home.sky_disc && home.near_mesh.is_some() && !home.lod);
     assert!(!moon.atmosphere && moon.sky_disc);
     let sun = list.iter().find(|g| g.name == "dwell:sun").unwrap();
     for g in [moon, sun] {
-        let lod = g.lod.expect("a LOD on the grid");
-        assert!(lod.reach_m() >= g.radius_m.unwrap(), "{}: {lod:?}", g.name);
+        assert!(g.lod, "{}: its own LOD on the grid", g.name);
     }
+    // BUGS.md #156: a grid's LOD sections come from its generator's columns: none on home's.
+    let at = GRIDS_JSON.find("\"name\": \"dwell:home\"").unwrap();
+    let homed = format!(
+        "{}\"name\": \"dwell:home\", \"lod\": true,{}",
+        &GRIDS_JSON[..at],
+        &GRIDS_JSON[at + "\"name\": \"dwell:home\",".len()..]
+    );
+    let e = parse_grids(&homed).unwrap_err();
+    assert!(e.contains("`lod` needs"), "{e}");
     let near = moon.near_mesh.expect("the moon's near mesh");
     assert!(near.cells >= 64 && near.sink_m > 0.0, "{near:?}");
     // A grid that declares no atmosphere has none (the sun's, by data alone).

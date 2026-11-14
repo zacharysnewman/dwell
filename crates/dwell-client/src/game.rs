@@ -637,10 +637,6 @@ impl HudVitals {
 /// few rings of chunks round a capture.
 const OTHER_GRID_CHUNKS_MAX: usize = 4096;
 
-/// The distant terrain's rings rebuilt a frame at most on another grid (`grid_lod.rs`): a ring is
-/// ~2.5k samples of its generator (a few ms in the page), the coarsest first after a crossing.
-const GRID_LOD_RINGS_PER_FRAME: usize = 2;
-
 /// A camera a tool places (tests, the views runner, ARCHITECTURE.md §6.6): the renderer and the
 /// LOD view from it while the player stays where it is. Full-detail chunks still stream around the
 /// player only, so away from the player the view is the LOD's.
@@ -831,13 +827,13 @@ pub struct Game<S: Scene> {
     /// The grids whose coarse surface mesh the scene holds (`grid_bodies.rs`, MOON_WORLD.md §5
     /// M-5), built the first time each is drawn.
     grid_meshes: std::collections::HashSet<u8>,
-    /// The distant terrain's rings of the grid the view is on (`grid_lod.rs`; BUGS.md #143,
-    /// #145), and that grid's far source.
-    grid_lod: crate::grid_lod::GridLod,
-    grid_lod_src: Option<(
-        u8,
-        std::sync::Arc<dyn dwell_worldgen::grids::FarSource + std::marker::Send + Sync>,
-    )>,
+    /// The LOD tree of the grid the view is on (`grid_lod.rs`; BUGS.md #143, #145, #156), made
+    /// on the first frame there and dropped at every crossing, and the epoch of the next one.
+    grid_lod: Option<crate::grid_lod::GridLod>,
+    grid_lod_epoch: u64,
+    /// The options and full-detail distance home's LOD was made with (the grids' are the same),
+    /// kept up to date by the Detail settings ([`Game::set_lod_detail`]).
+    lod_options: Option<(dwell_lod::LodOptions, Option<f64>)>,
     /// A crossing onto another grid a snapshot's replay made (from, to, the face before): the
     /// next input tick carries the look across and eases the view upright.
     pending_cross: Option<(u8, u8, FaceFrame)>,
@@ -1358,8 +1354,9 @@ impl<S: Scene> Game<S> {
             remote_contacts: Default::default(),
             world_seed: 0,
             grid_meshes: Default::default(),
-            grid_lod: Default::default(),
-            grid_lod_src: None,
+            grid_lod: None,
+            grid_lod_epoch: 0,
+            lod_options: None,
             pending_cross: None,
             grid_frames: false,
             grid_capabilities: None,
@@ -1682,6 +1679,7 @@ impl<S: Scene> Game<S> {
         lod.set_full_mode(s.full_mode || hash == 0);
         lod.set_detail_distance(s.detail_distance_m);
         lod.set_world(self.world_bounds);
+        self.lod_options = Some((options, s.detail_distance_m));
         self.lod = Some(lod);
         self.pending_lod = None;
     }
@@ -1787,6 +1785,34 @@ impl<S: Scene> Game<S> {
     pub fn lod(&mut self) -> Option<&mut LodSystem> {
         self.lod.as_mut()
     }
+    /// The grid LOD's system, while the view is on a grid with one (BUGS.md #156).
+    pub fn grid_lod(&self) -> Option<&LodSystem> {
+        self.grid_lod.as_ref().map(|g| &g.lod)
+    }
+    /// The Detail settings (§6.6): the full-detail distance, pixel error and cache budget, for
+    /// home's LOD and a grid's, now and made later.
+    pub fn set_lod_detail(
+        &mut self,
+        distance_m: Option<f64>,
+        pixel_error: f64,
+        cache_bytes: usize,
+    ) {
+        for lod in [
+            self.lod.as_mut(),
+            self.grid_lod.as_mut().map(|g| &mut g.lod),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            lod.set_detail_distance(distance_m);
+            lod.set_quality(pixel_error, cache_bytes);
+        }
+        if let Some((o, d)) = &mut self.lod_options {
+            o.pixel_error = pixel_error;
+            o.cache_bytes = cache_bytes;
+            *d = distance_m;
+        }
+    }
     /// How a chunk is drawn, for the streaming probe: 0 as a chunk, 1 loaded but not drawn as one
     /// (waiting for its light or mesh, or the LOD shows its section), 2 not loaded.
     pub fn chunk_detail(&self, c: ChunkCoord) -> u8 {
@@ -1847,12 +1873,14 @@ impl<S: Scene> Game<S> {
         self.chunk_fade(c).is_some()
     }
     /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
-    /// fade.rs), or (None) not at all. On another grid every chunk held is drawn in full: the LOD
-    /// is home's, its selection in home's coordinates, not the grid's (BUGS.md #123; that grid's
-    /// own LOD is M-5).
+    /// fade.rs), or (None) not at all. On another grid its own LOD tree answers (BUGS.md #156),
+    /// in full without one: home's selection is in home's coordinates (BUGS.md #123).
     pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
         if self.grid_drawn != 0 {
-            return Some(Fade::Full);
+            return self
+                .grid_lod
+                .as_ref()
+                .map_or(Some(Fade::Full), |g| g.lod.chunk_fade(c));
         }
         self.lod
             .as_ref()
@@ -2497,6 +2525,50 @@ impl<S: Scene> Game<S> {
                             _ => None,
                         };
                         lod.on_generated(token, section);
+                    }
+                }
+                (Purpose::GridBounds(epoch, level, i, k), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        let b = if let Output::Bounds(b) = out {
+                            Some(b)
+                        } else {
+                            None
+                        };
+                        g.lod.on_lod_bounds(level, i, k, b);
+                    }
+                }
+                (Purpose::GridSection(epoch, token), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        let section = match out {
+                            Output::Lod {
+                                cells,
+                                surface,
+                                surface_b,
+                                tints,
+                            } => Some(dwell_lod::GeneratedSection {
+                                cells,
+                                surface,
+                                surface_b,
+                                tints,
+                            }),
+                            _ => None,
+                        };
+                        g.lod.on_generated(token, section);
+                    }
+                }
+                (Purpose::GridSectionMesh(epoch, token), out) => {
+                    if let Some(g) = self.grid_lod.as_mut().filter(|g| g.epoch() == epoch) {
+                        match out {
+                            Output::SectionMesh(m) => {
+                                let mut view = View(self.scene.clone());
+                                g.lod.on_meshed(
+                                    token,
+                                    *m,
+                                    &mut crate::grid_lod::GridView(&mut view),
+                                )
+                            }
+                            _ => g.lod.on_mesh_failed(token),
+                        }
                     }
                 }
                 (Purpose::SectionMesh(token), out) => {
@@ -3438,8 +3510,7 @@ impl<S: Scene> Game<S> {
         )
     }
 
-    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time,
-    /// and the rings of the grid the view is on (`grid_lod.rs`), at the identity.
+    /// The grids' meshes' poses for the pieces drawn this frame, each mesh built the first time.
     fn grid_body_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
         // By the player's place, not the eye's (which eases after a dev move).
         let shown = self.grid_bodies_at(self.travel_s(), self.current.position);
@@ -3471,46 +3542,7 @@ impl<S: Scene> Game<S> {
             }
             out.push((crate::grid_bodies::id(g), origin, q));
         }
-        out.extend(self.grid_lod_poses());
         out
-    }
-
-    /// The rings of the grid the view is on, rebuilt as the player moves (a few a frame), and
-    /// their poses (the identity: they are in its frame).
-    fn grid_lod_poses(&mut self) -> Vec<(u32, [f64; 3], [f32; 4])> {
-        let g = self.grid_drawn;
-        let def = dwell_worldgen::grids::grids()
-            .get(usize::from(g))
-            .filter(|d| g != 0 && d.lod.is_some());
-        if self.grid_lod_src.as_ref().map(|s| s.0) != def.map(|_| g) {
-            self.grid_lod_src =
-                def.and_then(|d| Some((g, dwell_worldgen::grids::far_source(d, self.world_seed)?)));
-        }
-        let p = self.current.position;
-        let face = FaceFrame::at_height(p[1]).face;
-        let on = match (def, &self.grid_lod_src) {
-            (Some(d), Some((_, src))) => Some((g, face, d.lod.as_ref().unwrap(), src.as_ref())),
-            _ => None,
-        };
-        let on =
-            on.map(|(g, f, r, s)| (g, f, r, s as &(dyn dwell_worldgen::grids::FarSource + Sync)));
-        let changes = self
-            .grid_lod
-            .update(on, p[0], p[2], GRID_LOD_RINGS_PER_FRAME);
-        for (k, mesh) in changes {
-            let id = crate::grid_lod::id(k);
-            match mesh {
-                Some((m, radius)) => self
-                    .scene
-                    .borrow_mut()
-                    .set_piece(id, Some((std::slice::from_ref(&m), radius))),
-                None => self.scene.borrow_mut().set_piece(id, None),
-            }
-        }
-        self.grid_lod
-            .held()
-            .map(|k| (crate::grid_lod::id(k), [0.0; 3], [0.0, 0.0, 0.0, 1.0]))
-            .collect()
     }
 
     /// The moon from the player (`__dwell.moon()`, docs/DEV_TOOLS.md "The moon"): its world
@@ -3572,6 +3604,13 @@ impl<S: Scene> Game<S> {
         // builds again from the root on the way back.
         if let Some(lod) = &mut self.lod {
             lod.drop_all::<SectionMeshes>(&mut View(self.scene.clone()));
+        }
+        // The grid left's own LOD tree goes too (#879's rule); the new grid's is made on its first
+        // frame there.
+        if let Some(mut g) = self.grid_lod.take() {
+            let mut view = View(self.scene.clone());
+            g.lod
+                .drop_all::<SectionMeshes>(&mut crate::grid_lod::GridView(&mut view));
         }
         self.prediction = EditPredictor::new();
         self.grid_drawn = to;
@@ -5668,14 +5707,6 @@ impl<S: Scene> Game<S> {
         if !(c.active || self.dead) || self.lod.is_none() {
             return;
         }
-        // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
-        // home's, and the view is in the other grid's frame (that grid's LOD is M-5).
-        if self.grid_drawn != 0 {
-            let mut view = View(self.scene.clone());
-            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
-            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
-            return;
-        }
         let second = self.respawn_preload().map(|s| {
             let at = ChunkCoord::from_array(s.at);
             let r = s.radius;
@@ -5718,6 +5749,12 @@ impl<S: Scene> Game<S> {
             detail_magnification: self.spyglass_view.detail,
         };
         self.lod_camera = Some(camera);
+        // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
+        // home's; the grid's own LOD tree draws its distance, in its frame (BUGS.md #156).
+        if self.grid_drawn != 0 {
+            self.update_grid_lod(&camera, now_ms);
+            return;
+        }
         let mut host = LodHost {
             pool_gen: ChunkJobs(self.pool.clone()),
             pool_mesh: MeshJobs(self.pool.clone()),
@@ -5736,6 +5773,46 @@ impl<S: Scene> Game<S> {
         self.update_lod_map(position);
         self.update_cloud_noise();
         self.update_far_trees(position);
+    }
+
+    /// The grid the view is on's LOD tree (`grid_lod.rs`): made on its first frame there with
+    /// home's options, updated around the camera (in the grid's frame), drawing its sections in
+    /// the renderer's section store; with none (a grid without `lod`) no sections are drawn.
+    fn update_grid_lod(&mut self, camera: &LodCamera, now_ms: f64) {
+        let g = self.grid_drawn;
+        if self.grid_lod.as_ref().is_some_and(|l| l.grid() != g) {
+            let mut old = self.grid_lod.take().unwrap();
+            let mut view = View(self.scene.clone());
+            old.lod
+                .drop_all::<SectionMeshes>(&mut crate::grid_lod::GridView(&mut view));
+        }
+        if self.grid_lod.is_none()
+            && let Some((options, detail)) = self.lod_options
+        {
+            self.grid_lod_epoch += 1;
+            self.grid_lod =
+                crate::grid_lod::GridLod::for_grid(g, self.grid_lod_epoch, options, detail);
+        }
+        let mut view = View(self.scene.clone());
+        let Some(lod) = &mut self.grid_lod else {
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
+            return;
+        };
+        let mut jobs = crate::pool::GridPool(self.pool.clone());
+        let chunks = StreamerChunks(&self.streamer);
+        let mut host = crate::grid_lod::Host {
+            grid: g,
+            epoch: lod.epoch(),
+            jobs: &mut jobs,
+            view: crate::grid_lod::GridView(&mut view),
+            chunks: &chunks,
+        };
+        lod.lod.update(camera, now_ms, &mut host);
+        if !self.lod_drawn {
+            LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
+            LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
+        }
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
@@ -6475,6 +6552,21 @@ impl<S: Scene> dwell_lod::ChunkReadiness for LodHost<'_, S> {
         Some(self.streamer.drawable_revision())
     }
 }
+/// The streamed chunks' readiness (a grid LOD's level 0: the grid's chunks the streamer holds).
+struct StreamerChunks<'a, S: Scene>(&'a Streamer<S>);
+
+impl<S: Scene> dwell_lod::ChunkReadiness for StreamerChunks<'_, S> {
+    fn chunk_drawable(&self, coord: ChunkCoord) -> bool {
+        self.0.drawable([coord.x, coord.y, coord.z])
+    }
+    fn chunk_loaded(&self, coord: ChunkCoord) -> bool {
+        self.0.is_loaded([coord.x, coord.y, coord.z])
+    }
+    fn drawable_revision(&self) -> Option<u64> {
+        Some(self.0.drawable_revision())
+    }
+}
+
 impl<S: Scene> dwell_lod::LodNetwork for LodHost<'_, S> {
     fn request_sections(&mut self, sections: Vec<dwell_protocol::LodSectionRequest>) {
         self.outbox

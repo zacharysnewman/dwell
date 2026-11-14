@@ -21,6 +21,16 @@ pub enum Job {
     LodBounds { level: i32, i: i32, k: i32 },
     /// An LOD section's cells and column surfaces.
     Lod { coord: LodCoord },
+    /// The same of grid `grid` (its `grids.json` index), not home (`dwell_worldgen::grid_lod`,
+    /// BUGS.md #156): the moon's and the sun's distant terrain.
+    GridLod { grid: u8, coord: LodCoord },
+    /// [`Job::LodBounds`] of grid `grid`.
+    GridLodBounds {
+        grid: u8,
+        level: i32,
+        i: i32,
+        k: i32,
+    },
     /// The F4 map: n × n samples of each column's height from (x0, z0), `step` apart; or, with
     /// `layer` above 0, the big map's debug layer of field `layer − 1`
     /// (`dwell_worldgen::map_layers`, REALISTIC_WORLD.md R6), its `LayerGrid::encode` bytes.
@@ -116,6 +126,8 @@ impl Job {
             Job::Generate { coord } => Some((-1, coord.x, coord.z)),
             Job::Lod { coord } => Some((coord.level, coord.i, coord.k)),
             Job::LodBounds { level, i, k } => Some((level, i, k)),
+            Job::GridLod { coord, .. } => Some((coord.level, coord.i, coord.k)),
+            Job::GridLodBounds { level, i, k, .. } => Some((level, i, k)),
             _ => None,
         }
     }
@@ -170,7 +182,16 @@ pub struct Runner {
     bounds: Option<lod::LodBoundsFn>,
     /// The world's disc and build volume (BIG_MAP.md M2b: its size), for the LOD's in-world test.
     world: dwell_world::WorldBounds,
+    /// The world's seed (the grids' generators derive theirs from it), `None` for a mesher.
+    seed: Option<u64>,
+    /// The other grids' generators, built at their first job.
+    grids: std::sync::Mutex<GridGenerators>,
 }
+
+type GridGenerators = dwell_world::hash::HashMap<
+    u8,
+    Option<std::sync::Arc<dyn dwell_worldgen::grid_lod::GridColumns>>,
+>;
 
 impl Runner {
     /// A runner for meshing only.
@@ -181,6 +202,8 @@ impl Runner {
             lod: None,
             bounds: None,
             world: dwell_world::WorldBounds::DEFAULT,
+            seed: None,
+            grids: Default::default(),
         }
     }
 
@@ -235,6 +258,8 @@ impl Runner {
             )),
             bounds: Some(bounds),
             world: dwell_world::WorldBounds::of(size),
+            seed: Some(world_seed),
+            grids: Default::default(),
         }
     }
 
@@ -260,6 +285,13 @@ impl Runner {
                 None => no_world(),
             },
             Job::Lod { coord } => self.lod(coord),
+            Job::GridLod { grid, coord } => self.grid_lod(grid, coord),
+            Job::GridLodBounds { grid, level, i, k } => match self.grid(grid) {
+                Some(g) => {
+                    Output::Bounds(dwell_worldgen::grid_lod::grid_lod_bounds(&*g, level, i, k))
+                }
+                None => no_world(),
+            },
             Job::Map {
                 x0,
                 z0,
@@ -475,6 +507,47 @@ impl Runner {
                 ))
             }
             _ => Vec::new(),
+        }
+    }
+
+    /// Grid `grid`'s generator (`None` for home, a grid without columns or a mesher).
+    fn grid(&self, grid: u8) -> Option<std::sync::Arc<dyn dwell_worldgen::grid_lod::GridColumns>> {
+        let seed = self.seed?;
+        let mut held = self.grids.lock().unwrap_or_else(|e| e.into_inner());
+        held.entry(grid)
+            .or_insert_with(|| {
+                let def = dwell_worldgen::grids::grids().get(usize::from(grid))?;
+                dwell_worldgen::grid_lod::grid_columns(def, seed)
+            })
+            .clone()
+    }
+
+    /// A section of grid `grid` (`Job::GridLod`): its cells and both faces' column surfaces.
+    fn grid_lod(&self, grid: u8, c: LodCoord) -> Output {
+        let Some(g) = self.grid(grid) else {
+            return no_world();
+        };
+        let world = dwell_worldgen::grid_lod::grid_world(&*g);
+        let mut cells = Vec::new();
+        let (mut a, mut b) = (LodSurfaces::new(), LodSurfaces::new());
+        dwell_worldgen::grid_lod::generate_grid_lod(
+            &*g,
+            &world,
+            c,
+            &mut cells,
+            Some(&mut a),
+            Some(&mut b),
+        );
+        let first = lod::first_face_a_row(c);
+        let in_world = lod::in_world_of(c, &world);
+        let pack = |s: &LodSurfaces, ran: bool| {
+            (ran && in_world && !s.is_empty()).then(|| surface_floats(s))
+        };
+        Output::Lod {
+            surface: pack(&a, first <= lod::SECTION_CELLS),
+            surface_b: pack(&b, first >= 0),
+            cells,
+            tints: Vec::new(),
         }
     }
 

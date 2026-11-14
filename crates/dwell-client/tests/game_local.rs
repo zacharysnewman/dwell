@@ -4300,27 +4300,7 @@ dwell_world::both_faces!(
         let scene = rig.scene.borrow();
         assert!(
             !scene.poses.iter().any(|p| p.0 == moon_id),
-            "on the moon its coarse mesh gives way to its rings (BUGS.md #143)"
-        );
-        // Its distant terrain: every ring of its `lod` held and drawn in its own frame.
-        let rule = dwell_worldgen::grids::grid("dwell:moon")
-            .unwrap()
-            .lod
-            .unwrap();
-        let rings: Vec<_> = (0..rule.levels)
-            .map(dwell_client::grid_lod::id)
-            .filter(|id| {
-                scene.pieces.contains(id)
-                    && scene
-                        .poses
-                        .iter()
-                        .any(|p| p.0 == *id && p.1 == [0.0; 3] && p.2 == [0.0, 0.0, 0.0, 1.0])
-            })
-            .collect();
-        assert_eq!(
-            rings.len(),
-            rule.levels,
-            "every ring drawn out to the horizon"
+            "on the moon its coarse mesh gives way to its chunks and its own LOD (BUGS.md #143)"
         );
         assert!(!scene.day.unwrap().moon_shown);
         // Home in the moon's sky at its true place: its mesh at home's origin in the moon's frame.
@@ -4399,7 +4379,15 @@ dwell_world::both_faces!(
             rig.run_until(120, |r| r.game.as_ref().unwrap().grid() == 1),
             "captured"
         );
-        let held_at_capture = rig.scene.borrow().held.len();
+        let home_ids = |r: &Rig| {
+            let scene = r.scene.borrow();
+            let home = |id: &i64| id & dwell_client::grid_lod::ID_BIT == 0;
+            (
+                scene.held.keys().filter(|id| home(id)).count(),
+                scene.shown.iter().filter(|id| home(id)).count(),
+            )
+        };
+        let held_at_capture = home_ids(&rig).0;
 
         // The moon's chunk under the player meshed and drawn.
         let cell = dwell_world::GridFrame::HOME.cell_of(moon_ground(
@@ -4419,28 +4407,52 @@ dwell_world::both_faces!(
             g.chunk_fade(chunk).is_some(),
             "the moon's chunk under the player is drawn"
         );
+        // Every moon chunk near the player is drawn (its own LOD shows its farther chunks'
+        // sections instead, BUGS.md #156).
         let scene = rig.scene.borrow();
+        let near = |c: &ChunkCoord| (c.x - chunk.x).abs() <= 2 && (c.z - chunk.z).abs() <= 2;
         let hidden = scene
             .chunks
             .iter()
-            .filter(|&&c| g.chunk_fade(c).is_none())
+            .filter(|c| near(c) && g.chunk_fade(**c).is_none())
             .count();
         assert_eq!(
             hidden,
             0,
-            "every moon chunk meshed is drawn ({} meshed)",
+            "every moon chunk meshed near the player is drawn ({} meshed)",
             scene.chunks.len()
         );
+        drop(scene);
         assert_eq!(
             held_at_capture, 0,
             "home's LOD meshes dropped at the capture"
         );
-        assert!(
-            scene.held.is_empty(),
-            "no home section uploaded on the moon"
+        assert_eq!(
+            home_ids(&rig),
+            (0, 0),
+            "no home section uploaded or shown on the moon"
         );
-        assert!(scene.shown.is_empty(), "no home section shown on the moon");
-        drop(scene);
+        // Its distant terrain: its own LOD tree's sections (BUGS.md #156), at several levels,
+        // drawn in its frame under the grid's section ids.
+        let graded = |r: &mut Rig| {
+            let scene = r.scene.borrow();
+            let levels: std::collections::HashSet<i64> = scene
+                .shown
+                .iter()
+                .filter_map(|id| scene.held.get(id))
+                .map(|(_, cell)| cell.log2().round() as i64)
+                .collect();
+            levels.len() >= 4
+        };
+        assert!(
+            rig.run_until(60 * 30, graded),
+            "the moon's own LOD draws sections of several levels: {:?}",
+            rig.game
+                .as_ref()
+                .unwrap()
+                .grid_lod()
+                .map(|l| l.debug_stats())
+        );
 
         // Home again (out past the release sphere, then a dev move to the spawn): its LOD builds
         // again from nothing.
@@ -4463,6 +4475,14 @@ dwell_world::both_faces!(
                 && !r.scene.borrow().shown.is_empty()),
             "home's LOD sections meshed and shown again: {:?}",
             rig.game.as_ref().unwrap().debug_state().lod
+        );
+        // The moon's LOD went at the release (#879's rule): none of its sections held or shown.
+        assert!(rig.game.as_ref().unwrap().grid_lod().is_none());
+        let scene = rig.scene.borrow();
+        let grid = |id: &i64| id & dwell_client::grid_lod::ID_BIT != 0;
+        assert!(
+            !scene.held.keys().any(grid) && !scene.shown.iter().any(grid),
+            "the moon's sections dropped at home"
         );
     }
 );

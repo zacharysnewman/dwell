@@ -71,7 +71,9 @@ pub fn grid_world(src: &(impl GridColumns + ?Sized)) -> WorldBounds {
 }
 
 /// The padded columns of a section from origin `o` at `level` on `face`, sampled at each cell's
-/// centre at the cell's scale.
+/// centre at the cell's scale; a cell whose centre is off the disc but which reaches onto it at
+/// its point nearest the disc's centre (a coarse cell over the rim: a small grid's coarsest
+/// sections are wider than its disc).
 fn columns(
     src: &(impl GridColumns + ?Sized),
     face: Face,
@@ -80,12 +82,33 @@ fn columns(
 ) -> Vec<Option<GridColumn>> {
     let cell = lod::cell_size(level);
     let half = cell as f64 / 2.0;
+    let r = src.radius_m();
     let mut out = Vec::with_capacity((lod::PAD * lod::PAD) as usize);
     for z in -1..=lod::SECTION_CELLS {
         for x in -1..=lod::SECTION_CELLS {
-            let wx = (o.x + i64::from(x) * cell) as f64 + half;
-            let wz = (o.z + i64::from(z) * cell) as f64 + half;
-            out.push(src.lod_column(face, wx, wz, cell as f64));
+            let x0 = (o.x + i64::from(x) * cell) as f64;
+            let z0 = (o.z + i64::from(z) * cell) as f64;
+            let (wx, wz) = (x0 + half, z0 + half);
+            let near = |lo: f64| 0.0f64.clamp(lo, lo + cell as f64);
+            let (nx, nz) = (near(x0), near(z0));
+            let (px, pz) = if wx.hypot(wz) <= r || nx.hypot(nz) > r {
+                (wx, wz)
+            } else {
+                // Just inside the rim along the way to the centre.
+                let d = wx.hypot(wz);
+                let k = (r - 0.5).max(0.0) / d;
+                let (rx, rz) = (wx * k, wz * k);
+                let (cx, cz) = (
+                    rx.clamp(x0, x0 + cell as f64),
+                    rz.clamp(z0, z0 + cell as f64),
+                );
+                if cx.hypot(cz) <= r {
+                    (cx, cz)
+                } else {
+                    (nx, nz)
+                }
+            };
+            out.push(src.lod_column(face, px, pz, cell as f64));
         }
     }
     out
