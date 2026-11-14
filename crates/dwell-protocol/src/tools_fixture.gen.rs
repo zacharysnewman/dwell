@@ -17,7 +17,7 @@ pub static WOODS: &[WoodDef] = &[
 
 /// The on-screen hint per tool kind (`hints`): (kind, level stance, vertical stance).
 pub static HINTS: &[(ToolKind, &str, &str)] = &[
-    (ToolKind::Axe, "Axe: level swing (right click: vertical)", "Axe: vertical swing (right click: level)"),
+    (ToolKind::Axe, "Axe: hold to keep chopping", "Axe: hold to keep chopping"),
     (ToolKind::Weapon, "Sword: level stance (tap right click: vertical, hold: block)", "Sword: vertical stance (tap right click: level, hold: block)"),
 ];
 
@@ -73,6 +73,8 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:moon_dust_ramp", volume: 0.5, default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [111, 109, 120], crack: [74, 72, 80], depth: 0.12, rim: 0.012, parallax: 6, darken: 0.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: Some(Cracks { tiles: &["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"], stages: &[0.2, 0.45, 0.65, 0.85], strength: 0.6, span: 1.5 }) }), chips: Some(Chips { count: 6, shards: 0, piece: "dwell:rock_shard", color: [138, 136, 144], speed: 1.6, size: 0.04 }) },
     BlockDamageDef { block: "dwell:moon_mare_dust_ramp", volume: 0.5, default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [58, 57, 64], crack: [39, 38, 44], depth: 0.12, rim: 0.012, parallax: 6, darken: 0.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: Some(Cracks { tiles: &["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"], stages: &[0.2, 0.45, 0.65, 0.85], strength: 0.6, span: 1.5 }) }), chips: Some(Chips { count: 6, shards: 0, piece: "dwell:rock_shard", color: [74, 73, 80], speed: 1.6, size: 0.04 }) },
     BlockDamageDef { block: "dwell:red_sand_ramp", volume: 0.5, default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [154, 84, 52], crack: [94, 48, 32], depth: 0.12, rim: 0.012, parallax: 6, darken: 0.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: Some(Cracks { tiles: &["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"], stages: &[0.2, 0.45, 0.65, 0.85], strength: 0.6, span: 1.5 }) }), chips: Some(Chips { count: 6, shards: 3, piece: "dwell:dirt_clump", color: [194, 122, 78], speed: 1.6, size: 0.04 }) },
+    BlockDamageDef { block: "dwell:red_dirt", volume: 1.0, default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [110, 51, 34], crack: [74, 36, 24], depth: 0.14, rim: 0.012, parallax: 6, darken: 0.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: Some(Cracks { tiles: &["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"], stages: &[0.2, 0.45, 0.65, 0.85], strength: 0.6, span: 1.5 }) }), chips: Some(Chips { count: 6, shards: 3, piece: "dwell:dirt_clump", color: [138, 74, 48], speed: 1.8, size: 0.06 }) },
+    BlockDamageDef { block: "dwell:red_dirt_ramp", volume: 0.5, default: Some(11), tools: &[("shovel", 7)], look: Some(DamageLook { kind: DamageLookKind::Scoops, size: 0.38, color: [110, 51, 34], crack: [74, 36, 24], depth: 0.14, rim: 0.012, parallax: 6, darken: 0.35, profile: CarveProfile::Bowl, facets: 5, flakes: 2, grid: 8, triangles: 256, cracks: Some(Cracks { tiles: &["crackSoil1", "crackSoil2", "crackSoil3", "crackSoil4"], stages: &[0.2, 0.45, 0.65, 0.85], strength: 0.6, span: 1.5 }) }), chips: Some(Chips { count: 6, shards: 3, piece: "dwell:dirt_clump", color: [138, 74, 48], speed: 1.8, size: 0.06 }) },
 ];
 
 /// Tools that wear (`durability.items`): (item, hits it survives).
@@ -84,12 +86,12 @@ pub const WEAR_BREAK_SOUND: Option<&str> = Some("stick_snap");
 
 /// Each tool item's class, tier and that tier's break speed (`breaking.tools`).
 pub static BREAK_TOOLS: &[BreakTool] = &[
-    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5, contact_s: 0.0, repeat_s: None },
-    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 3.0, contact_s: 0.0, repeat_s: None },
-    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5, contact_s: 0.26, repeat_s: Some(0.5) },
-    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 3.0, contact_s: 0.26, repeat_s: Some(0.5) },
-    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, contact_s: 0.26, repeat_s: Some(0.5) },
-    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3.0, contact_s: 0.26, repeat_s: Some(0.5) },
+    BreakTool { item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1.5, contact_s: 0.0, repeat_s: None, clip: "break" },
+    BreakTool { item: "dwell:metal_axe", class: "axe", tier: "metal", speed: 3.0, contact_s: 0.0, repeat_s: None, clip: "break" },
+    BreakTool { item: "dwell:stone_pickaxe", class: "pickaxe", tier: "stone", speed: 1.5, contact_s: 0.26, repeat_s: Some(0.5), clip: "break_stone_pickaxe" },
+    BreakTool { item: "dwell:metal_pickaxe", class: "pickaxe", tier: "metal", speed: 3.0, contact_s: 0.26, repeat_s: Some(0.5), clip: "break_metal_pickaxe" },
+    BreakTool { item: "dwell:wooden_shovel", class: "shovel", tier: "stone", speed: 1.5, contact_s: 0.26, repeat_s: Some(0.5), clip: "break_wooden_shovel" },
+    BreakTool { item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3.0, contact_s: 0.26, repeat_s: Some(0.5), clip: "break_metal_shovel" },
 ];
 /// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server
 /// takes damage hits by hand no faster; none: one per press.

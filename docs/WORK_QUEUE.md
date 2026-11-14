@@ -1020,6 +1020,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    it refused, dirt broken after its hand hits; both faces, red → green), `dwell-client` `game_local`
    `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go` (red → green), `held_use.rs`,
    `gen.test.mjs`. Left: the feel in game (no GPU in the cloud).
+   Owner, 2026-11-14: **"Let's simplify the axe to be like the shovel and pick, without the multiple modes. Also
+   each tool should be rotated slightly around the Y(?) in your hand so you can see the head of it. Also, when it
+   swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your
+   cross hair. Ensure the hit happens when it 'hits' your crosshair."** (Item 26's axe work; the axe's modes since
+   ADR 0067.)
+   **Owner should see:** holding any tool you can see its head; every swing sweeps in from the right and the head
+   strikes exactly at the crosshair, and that's the moment the block takes the hit; the axe works like the pick and
+   shovel (one swing, right click does nothing with it).
+   **Status (tool-swings):** built, waiting on the owner's look in game (no GPU in the cloud): the axe has one mode
+   (a tool has a vertical stance only with a `heldVertical`, the sword's; `ToolDef::stance`; Use does nothing with
+   the axe, its hint one line, the server sweeping an older client's vertical ask level and reporting it as
+   `chop_level`; felling unchanged, by the level swing's block damage); each tool turned about its handle so its head
+   shows (props.json `hold.yaw`: axes and the stone pickaxe −25°, the metal pickaxe 30°, the shovels 5°; 1.3–1.8×
+   the head on screen for the axes and the stone pickaxe); each break tool its own arms clip
+   (`breaking.tools[].clip`, `fp_break_<item>`, fitted with `clip_probe --fit`): out to the right, in to the left
+   and forward, the head on the crosshair at `contactS` (0.26 s), when the hit lands on what the crosshair holds
+   (`hits.at_contact`); the axe's level chop already on it at 0.355 s. Tests: `clip_probe` `tool_swing_tests`
+   (every tool's head within 0.12 of the crosshair and 8 cm of its ray at contact on both faces, nearest it then,
+   a clip key at contact, in from the right, the head shown at rest; the crosshair test red on the shared
+   `fp_break` → green), `dwell-protocol` `the_axe_has_one_mode_and_the_sword_two`, `chop.rs`
+   `the_axe_swings_level_whatever_the_stance`, `dwell-sim` chopping's swing-kind and chop2 tests (an axe asked
+   vertical swings level; red on the old server → green). Probe sheets `docs/clip_probe/tool-swings/`
+   (CHARACTERS.md §5). Not changed: the sword's two stances and slashes; others see the body's plain `break`.
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was

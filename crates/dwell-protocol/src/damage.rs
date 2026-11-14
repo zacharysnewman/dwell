@@ -624,6 +624,7 @@ mod tests {
                 speed: 2.0,
                 contact_s: 0.0,
                 repeat_s: None,
+                clip: "break",
             },
             BreakTool {
                 item: "test:golden_trowel",
@@ -632,6 +633,7 @@ mod tests {
                 speed: 2.5,
                 contact_s: 0.0,
                 repeat_s: None,
+                clip: "break",
             },
         ];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
@@ -749,6 +751,7 @@ mod tests {
             speed,
             contact_s: 0.0,
             repeat_s: None,
+            clip: "break",
         };
         let tools = [trowel("test:wood", 1.0), trowel("test:metal", 2.0)];
         let b = |held| bite_m3_in(&damage, &tools, "test:clay", held);

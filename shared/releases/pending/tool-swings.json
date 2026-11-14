@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "The axe has one swing, like the pickaxe and shovel: right click no longer switches it to a vertical chop",
+    "Every tool is held turned a little so you can see its head",
+    "Pickaxe and shovel swings come in from the right and the head strikes right at the crosshair, the moment the block takes the hit"
+  ]
+}

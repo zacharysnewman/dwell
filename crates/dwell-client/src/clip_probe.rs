@@ -264,6 +264,8 @@ fn swing_of(role: &str) -> Option<Swing> {
         "chop_vertical" => Some(Swing::ChopVertical),
         "break" => Some(Swing::Break),
         "place" => Some(Swing::Place),
+        // A break tool's own break clip (`breaking.tools[].clip`: `break_stone_pickaxe`).
+        _ if break_tool_of_role(role).is_some() => Some(Swing::Break),
         _ => tool_of_role(role).map(|(_, vertical)| {
             if vertical {
                 Swing::ChopVertical
@@ -284,6 +286,13 @@ fn tool_of_role(role: &str) -> Option<(&'static dwell_protocol::chopping::ToolDe
     })
 }
 
+/// The first break tool whose break swing plays `role` (its `clip`, not the plain `break`).
+fn break_tool_of_role(role: &str) -> Option<&'static dwell_protocol::chopping::BreakTool> {
+    dwell_protocol::chopping::BREAK_TOOLS
+        .iter()
+        .find(|b| b.clip == role && role != "break")
+}
+
 /// Starts swing `role` on `a` (a tool's clip role plays its own clip).
 fn start_swing(a: &mut Animator, role: &str) -> bool {
     let Some(s) = swing_of(role) else {
@@ -292,6 +301,7 @@ fn start_swing(a: &mut Animator, role: &str) -> bool {
     let named = [s.role()]
         .into_iter()
         .chain(tool_of_role(role).map(|(t, v)| t.swing_role(v)))
+        .chain(break_tool_of_role(role).map(|b| b.clip))
         .find(|r| *r == role)
         .unwrap_or(s.role());
     a.swing_as(s, named);
@@ -396,6 +406,68 @@ pub fn held_for(item: Option<&'static str>, role: &str) -> Held {
         }
     });
     held_item(item, hold)
+}
+
+/// How a held tool's head shows in first person `t` s into `role` (16:9): its centre and the
+/// grip's on screen (NDC x, y and the depth ahead, m), and the head's size on screen (its
+/// silhouette's area, NDC²), the tool turned `extra_yaw` degrees more about its
+/// handle than its data says (0: as held; owner, 2026-11-14: "each tool should be rotated slightly
+/// around the Y(?) in your hand so you can see the head of it").
+#[derive(Clone, Copy, Debug)]
+pub struct HeadView {
+    pub head: [f32; 3],
+    pub grip: [f32; 3],
+    pub size: f32,
+}
+
+pub fn head_view(item: &'static str, role: &str, t: f32, extra_yaw: f32) -> Option<HeadView> {
+    let held = held_for(Some(item), role);
+    let (bone, verts) = held_vertices(held)?;
+    let g = dwell_models::HAND_GRIP;
+    let along = |v: &[f32; 3]| (0..3).map(|k| (v[k] - g.at[k]) * g.axis[k]).sum::<f32>();
+    let max = verts.iter().map(along).fold(f32::MIN, f32::max);
+    let min = verts.iter().map(along).fold(f32::MAX, f32::min);
+    let cut = max - 0.2 * (max - min);
+    // The extra turn about the handle (the hand's grip axis through the fist).
+    let (sn, cs) = extra_yaw.to_radians().sin_cos();
+    let ax = g.axis;
+    let turn = |v: [f32; 3]| {
+        let q = [0, 1, 2].map(|k| v[k] - g.at[k]);
+        let a = dot3(q, ax);
+        let par = ax.map(|x| x * a);
+        let perp = [0, 1, 2].map(|k| q[k] - par[k]);
+        let c = cross3(ax, perp);
+        [0, 1, 2].map(|k| g.at[k] + par[k] + perp[k] * cs + c[k] * sn)
+    };
+    let ch = player();
+    let fp = ch.first_person?;
+    let tan = (fp.fov.to_radians() / 2.0).tan();
+    let aspect = 16.0 / 9.0;
+    let (role, _) = resolve(role).ok()?;
+    let arms = arms_bones(role, held, t);
+    let screen = |b: usize, q: [f32; 3]| {
+        let v = arms[b].apply(q);
+        let z = v[2].max(1e-3);
+        [-v[0] / (z * tan * aspect), v[1] / (z * tan), v[2]]
+    };
+    // The head's triangles (the mesh's vertices go three to a triangle) on screen: half their
+    // summed area is about the head's silhouette (a closed mesh shows each place twice).
+    let mut head = Vec::new();
+    let mut area = 0.0f32;
+    for tri in verts.chunks_exact(3) {
+        if !tri.iter().all(|v| along(v) >= cut) {
+            continue;
+        }
+        let [a, b, c] = [tri[0], tri[1], tri[2]].map(|v| screen(bone, turn(v)));
+        area += ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])).abs() / 2.0;
+        head.extend([a, b, c]);
+    }
+    let (gb, gp) = local_point(held, Point::Grip)?;
+    Some(HeadView {
+        head: centroid(head.iter()),
+        grip: screen(gb, gp),
+        size: area / 2.0,
+    })
 }
 
 /// Point `p`'s place in its bone's frame, and that bone; None: the held thing has no such point.
@@ -895,7 +967,19 @@ pub fn probe(p: &Probe) -> Result<Report, String> {
         phases: Vec::new(),
         peak_speed,
         peak_t,
-        contact_t: swing.map(|s| s.centre_s() as f32),
+        // A chop's contact is its arc's middle; a break tool's its `contactS` (the head on the
+        // crosshair then, owner 2026-11-14), the item's or the role's tool's.
+        contact_t: swing.map(|s| s.centre_s() as f32).or_else(|| {
+            p.item
+                .and_then(|i| {
+                    dwell_protocol::chopping::BREAK_TOOLS
+                        .iter()
+                        .find(|b| b.item == i && b.clip == role)
+                })
+                .or_else(|| break_tool_of_role(role))
+                .filter(|b| b.contact_s > 0.0)
+                .map(|b| b.contact_s as f32)
+        }),
         skeleton: Vec::new(),
     };
     // The phases' travel, from exact samples at their ends (not the table's nearest).
@@ -1588,8 +1672,11 @@ mod chop_swing_tests {
 
     #[test]
     fn the_head_meets_the_crosshair_at_contact_in_both_swings() {
-        // face-a-only: view space.
-        for role in ["chop_level", "chop_vertical"] {
+        // face-a-only: view space. The axe has one swing since 2026-11-14 (owner: "like the shovel
+        // and pick, without the multiple modes"): `chop_vertical` is no tool's swing now (the
+        // default vertical role a two-stance tool's data could name), so its level one.
+        {
+            let role = "chop_level";
             let r = run(role);
             let c = r.contact_t.expect("a chop has a contact time");
             let a = r.at(0, c);
@@ -1672,7 +1759,9 @@ mod chop_swing_tests {
     fn the_edge_faces_its_motion_through_the_strike() {
         // face-a-only: view space. Owner, 2026-11-11: "Ensure your tooling helps you tell
         // rotation too": the blade turned the wrong way is a rotation the head's path can't show.
-        for role in ["chop_level", "chop_vertical"] {
+        // The axe's one swing (owner, 2026-11-14).
+        {
+            let role = "chop_level";
             let mut p = Probe::new(role);
             p.samples = 121;
             let r = probe(&p).expect("probe");
@@ -2362,4 +2451,208 @@ mod defeat_tests {
             );
         }
     );
+}
+
+#[cfg(test)]
+mod tool_swing_tests {
+    //! Owner, 2026-11-14: "each tool should be rotated slightly around the Y(?) in your hand so you
+    //! can see the head of it. Also, when it swings it should swing toward your crosshair, so kind
+    //! of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens
+    //! when it 'hits' your crosshair."
+    use super::*;
+    use dwell_protocol::chopping::{BREAK_TOOLS, TOOLS};
+    use dwell_world::FaceFrame;
+
+    /// Every held tool's item and the role its (one, level) swing plays: the axes' and the sword's
+    /// `clips`, the break tools' `clip`.
+    fn swings() -> Vec<(&'static str, &'static str)> {
+        let mut v: Vec<_> = TOOLS
+            .iter()
+            .map(|t| (t.name, t.swing_role(false)))
+            .collect();
+        v.extend(
+            BREAK_TOOLS
+                .iter()
+                .filter(|b| b.contact_s > 0.0)
+                .map(|b| (b.item, b.clip)),
+        );
+        v
+    }
+
+    fn swing_report(item: &'static str, role: &str, f: FaceFrame, samples: usize) -> Report {
+        let mut p = Probe::new(role);
+        p.item = Some(item);
+        p.points = vec![Point::ToolHead];
+        p.samples = samples;
+        p.face = f;
+        p.yaw = 30.0;
+        p.pitch = -15.0;
+        probe(&p).expect("probe")
+    }
+
+    // The head reaches the crosshair at the tool's contact: within 0.12 of the screen's half
+    // height of it, and within 8 cm of the crosshair's ray in the world (eye-relative), on both
+    // faces through the frame.
+    dwell_world::both_faces!(
+        fn every_tools_head_meets_the_crosshair_at_its_contact(f: FaceFrame) {
+            let basis = aim(30.0, -15.0, f, 0.0);
+            let fwd = basis.forward();
+            for (item, role) in swings() {
+                let r = swing_report(item, role, f, 241);
+                let c = r
+                    .contact_t
+                    .unwrap_or_else(|| panic!("{item}: a contact time"));
+                let a = r.at(0, c);
+                assert!(
+                    a.screen[0].hypot(a.screen[1]) < 0.12 && a.screen[2] > 0.3,
+                    "{item} ({role}): at contact ({c:.3} s) the head is on the crosshair: {:?}",
+                    a.screen
+                );
+                let along: f64 = (0..3).map(|k| a.world[k] * fwd[k]).sum();
+                let off: f64 = (0..3)
+                    .map(|k| (a.world[k] - fwd[k] * along).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                assert!(
+                    along > 0.3 && off < 0.08,
+                    "{item} ({role}): the head {off:.3} m off the crosshair's ray, {along:.2} m out"
+                );
+            }
+        }
+    );
+
+    // The contact is the moment the head reaches the crosshair: the head is nearest it then (to a
+    // sampling step), and a break tool's clip keys its strike at its `contactS`, so the hit (landed
+    // at `contactS`, docs/BLOCK_DAMAGE.md §8) and the animation agree.
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn the_contact_is_when_the_head_reaches_the_crosshair() {
+        for (item, role) in swings() {
+            let r = swing_report(item, role, FaceFrame::A, 121);
+            let c = r.contact_t.expect("contact");
+            let step = r.duration / 120.0;
+            let nearest = r
+                .samples
+                .iter()
+                .min_by(|a, b| {
+                    let d = |s: &Sample| s.at[0].screen[0].hypot(s.at[0].screen[1]);
+                    d(a).total_cmp(&d(b))
+                })
+                .unwrap();
+            let best = nearest.at[0].screen[0].hypot(nearest.at[0].screen[1]);
+            let at = r.at(0, c);
+            let then = at.screen[0].hypot(at.screen[1]);
+            assert!(
+                (nearest.t - c).abs() <= 0.05 + step || then - best < 0.05,
+                "{item} ({role}): nearest the crosshair at {:.3} s ({best:.3}), the contact at {c:.3} s ({then:.3})",
+                nearest.t
+            );
+        }
+        for b in BREAK_TOOLS.iter().filter(|b| b.contact_s > 0.0) {
+            let (_, clip) = resolve(b.clip).expect("the clip");
+            assert!(
+                clip.channels
+                    .iter()
+                    .flat_map(|c| c.keys)
+                    .any(|k| (f64::from(k.t) - b.contact_s).abs() < 1e-4),
+                "{}: {} keys its strike at the contact ({} s)",
+                b.item,
+                clip.name,
+                b.contact_s
+            );
+        }
+    }
+
+    // The swing comes in from the right toward the crosshair: through the half before contact the
+    // head starts right of it and travels left (and, for the break tools, forward: deeper).
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn every_swing_comes_in_from_the_right() {
+        for (item, role) in swings() {
+            let r = swing_report(item, role, FaceFrame::A, 121);
+            let c = r.contact_t.expect("contact");
+            let before = r.at(0, (c - 0.1).max(0.0));
+            let at = r.at(0, c);
+            assert!(
+                before.screen[0] > at.screen[0] + 0.25,
+                "{item} ({role}): from the right: {:?} then {:?}",
+                before.screen,
+                at.screen
+            );
+            if role.starts_with("break_") {
+                assert!(
+                    before.screen[2] < at.screen[2],
+                    "{item}: forward into the crosshair: {:?} then {:?}",
+                    before.screen,
+                    at.screen
+                );
+            }
+        }
+    }
+
+    // Each break tool plays its own clip (its head's length differs), and a character without it
+    // plays the plain break: the player's arms have every break tool's clip.
+    #[test]
+    fn every_break_tools_clip_is_a_role_of_the_arms() {
+        let ch = player();
+        for b in BREAK_TOOLS {
+            assert!(
+                ch.arms_clip(b.clip).is_some(),
+                "{}: the arms play {}",
+                b.item,
+                b.clip
+            );
+            assert_eq!(
+                crate::bodies::swing_role(dwell_characters::animator::Swing::Break, Some(b.item)),
+                b.clip
+            );
+        }
+        assert_eq!(
+            crate::bodies::swing_role(dwell_characters::animator::Swing::Break, None),
+            "break"
+        );
+    }
+
+    // The head shows at rest: its centre on screen, clear of the hand (not behind the fist), and
+    // the tool's turn about its handle (props.json `hold.yaw`) shows more of it than none: the axes'
+    // and the stone pickaxe's heads, end-on before, a good deal more.
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn every_tools_head_shows_at_rest() {
+        // The sword's long blade runs off the screen's top at rest by design (a weapon's stances
+        // and slashes stay their own): the tools' heads.
+        let items: Vec<&str> = swings()
+            .into_iter()
+            .map(|(i, _)| i)
+            .filter(|i| dwell_protocol::chopping::tool(i).is_none_or(|t| !t.is_weapon()))
+            .collect();
+        for item in items {
+            let look = dwell_protocol::inventory::item(item).and_then(|d| d.look);
+            let yaw = look
+                .and_then(|l| dwell_models::prop(l.model))
+                .map_or(0.0, |(d, _)| d.hold.yaw);
+            let v = head_view(item, "idle", 0.0, 0.0).expect("a head");
+            let unturned = head_view(item, "idle", 0.0, -yaw).expect("a head");
+            assert!(
+                v.head[0].abs() < 0.9 && v.head[1].abs() < 0.9 && v.head[2] > 0.2,
+                "{item}: the head on screen: {v:?}"
+            );
+            let apart = (v.head[0] - v.grip[0]).hypot(v.head[1] - v.grip[1]);
+            assert!(apart > 0.3, "{item}: the head clear of the hand: {v:?}");
+            assert!(
+                v.size >= unturned.size,
+                "{item}: the turn shows no less head: {} vs {}",
+                v.size,
+                unturned.size
+            );
+            if item.ends_with("_axe") || item == "dwell:stone_pickaxe" {
+                assert!(
+                    v.size > 1.3 * unturned.size,
+                    "{item}: turned {yaw}°, its head shows: {} vs {} unturned",
+                    v.size,
+                    unturned.size
+                );
+            }
+        }
+    }
 }

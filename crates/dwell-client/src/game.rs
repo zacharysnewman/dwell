@@ -2766,6 +2766,8 @@ impl<S: Scene> Game<S> {
                 breaks: false,
                 aimed: true,
             });
+            // The tool's own break swing (its head onto the crosshair at the contact).
+            self.bodies.own_tool = tool_item;
             self.bodies
                 .swing_arms(dwell_characters::animator::Swing::Break);
             return true;
@@ -2842,6 +2844,7 @@ impl<S: Scene> Game<S> {
                     }
                     (EditAction::Place, None) => {}
                 }
+                self.bodies.own_tool = tool_item;
                 self.bodies.swing_arms(match action {
                     EditAction::Break => dwell_characters::animator::Swing::Break,
                     EditAction::Place => dwell_characters::animator::Swing::Place,
@@ -2905,6 +2908,7 @@ impl<S: Scene> Game<S> {
             self.edit_sounds
                 .local_break(cell, block, now_ms, &mut self.sounds);
         }
+        self.bodies.own_tool = self.held_break_item();
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.outbox
@@ -6238,14 +6242,14 @@ impl<S: Scene> Game<S> {
 
     /// The swing hint while a tool is held (its kind's, shared/tools `hints`).
     pub fn chop_hint(&self) -> Option<&'static str> {
-        self.held_tool().and_then(|t| self.chop.hint(t.kind))
+        self.held_tool().and_then(|t| self.chop.hint(t))
     }
 
     /// The swing line the reticle shows while a tool is held: where its path will pass through
     /// the crosshair, `level` or `vertical`.
     pub fn swing_line(&self) -> Option<&'static str> {
-        self.held_tool().map(|_| {
-            if self.chop.vertical {
+        self.held_tool().map(|t| {
+            if t.stance(self.chop.vertical) {
                 "vertical"
             } else {
                 "level"
@@ -6265,6 +6269,11 @@ impl<S: Scene> Game<S> {
             if tool.is_weapon() && self.swordplay {
                 self.guard_input.press(now_ms);
                 return true;
+            }
+            // A tool with two stances turns between them; one with one mode (the axe; owner,
+            // 2026-11-14: "like the shovel and pick, without the multiple modes") does nothing.
+            if !tool.has_vertical() {
+                return false;
             }
             self.chop.toggle();
             return true;
@@ -6288,7 +6297,9 @@ impl<S: Scene> Game<S> {
         let look = self.view_dir;
         let arc = dwell_world::swing::Arc::of(tool);
         let store = self.streamer.store_mut();
-        let swept = dwell_world::swing::sweep(store, eye, look, self.chop.vertical, &arc);
+        // The stance the tool takes: one mode (the axe) is always level.
+        let vertical = tool.stance(self.chop.vertical);
+        let swept = dwell_world::swing::sweep(store, eye, look, vertical, &arc);
         // The chopping prototype (`?chop=v2`): the bite lands at the crosshair.
         let aimed = crate::chop::crosshair_aim()
             .then(|| crate::chop::crosshair_impact(store, tool, eye, look))
@@ -6313,7 +6324,7 @@ impl<S: Scene> Game<S> {
         };
         self.chop.set_cleared(&swept.cleared);
         self.bodies.own_tool = Some(tool.name);
-        self.bodies.swing_arms(if self.chop.vertical {
+        self.bodies.swing_arms(if vertical {
             dwell_characters::animator::Swing::ChopVertical
         } else {
             dwell_characters::animator::Swing::ChopLevel
@@ -6480,6 +6491,7 @@ impl<S: Scene> Game<S> {
             .push(Send::Control(Message::InventoryAction(
                 dwell_protocol::InventoryAction::Pick { cell: it.cell },
             )));
+        self.bodies.own_tool = self.held_break_item();
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Break);
         self.sound(dwell_game::sound::SoundKind::Tool);
