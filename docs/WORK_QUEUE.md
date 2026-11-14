@@ -921,6 +921,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (4) **Mesas:** tops green under thick sagebrush; thin wall fins like fences; a grey stone band edging a lake in mesa
    country; mesa country missing on 4 of 10 faces (seed 7 both faces, 2741893632 A). **Owner should see:** red tops
    with sagebrush mostly on the floors, no fence-thin fins, lake shores in the mesa palette, mesa country on most seeds.
+   Owner, 2026-11-14, adding to (4): **"Also I don't want to see tan sand in red mesa desert, it looks too much like
+   stripes everywhere."** So tan sand leaves the mesa-country palette (`dwell:mesa_country`: red dirt and red sand only,
+   with the red-brown walls); tan sand stays in tan sand deserts and on beaches. **Owner should see:** mesa country in
+   red dirt, red sand and red-brown rock, no tan sand stripes.
    (5) **Dormant islands:** black blotches across the green lowland and a straight red cliff strip midground. **Owner
    should see:** dormant islands green, lava stone only near the shore and young flows, no straight strip.
    (6) **Smaller:** a crisp circular rim round a summit crater lake (2741893632 B); a pale-blue lake fringe along
