@@ -657,7 +657,6 @@ impl PlateTectonics {
         top * (1.0 - tz) + bottom * tz
     }
 
-    /// Everything the layer adds at (x, z) (m): the boundaries' landform and the tallest cone.
     /// A boundary landform's `rise` (m) over ground `ground` m from sea level at a point the
     /// plates' coast puts `coast` m from it (< 0 at sea): at sea a rise stops `sea_ridges` m
     /// below the surface (a ridge already above, or a cut, is kept as it is).
@@ -668,6 +667,7 @@ impl PlateTectonics {
         rise.min((-self.uplift.sea_ridges - ground).max(0.0))
     }
 
+    /// Everything the layer adds at (x, z) (m): the boundaries' landform and the tallest cone.
     pub fn height(&self, x: f64, z: f64) -> f64 {
         let cones = self
             .volcanoes
