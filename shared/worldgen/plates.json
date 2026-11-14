@@ -233,6 +233,26 @@
       "satelliteDistance": [0.7, 1.4],
       "skip": 0.2
     },
+    "volcanism": {
+      "$comment": "Active and dormant volcanoes (owner, 2026-11-13: \"active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they should slowly gain dirt and grass, and trees.\" Set once at terrain generation from each volcano's state and age; a live system later, docs/FUTURE.md; VOLCANOES.md §6.7). Applies to the Realistic world's placed volcanoes, its arc cones and hotspot islands (with their satellites); the default world's hand-placed tectonics are unchanged. Each arc cone is active with chance `active`, else dormant at a weathering age drawn 0..1; a hotspot chain's youngest island is active and each older one dormant at its place down the chain (0..1, ± `ageJitter`); a satellite takes its parent's. A volcano's ground is its outline out to `footprint` × its radius, the edge moved ± `edge` of it by noise at `edgeWavelength` m and faded into the ground around over the last `fade` of it (no ring). There the surface is by `cover`, the share covered at the age (smoothstep from `cover[0]` to `cover[1]`; 0 on an active cone): a patch noise at `patchWavelength` m over that share keeps the biome's ground, the next `dirt` of it shows `soil`'s blocks (dirt patches), the rest `bare`'s (dark lava rock, no plants); steep faces and the crater stay rock as everywhere. Trees there × a smoothstep of the age from `trees[0]` to `trees[1]` (none on an active cone, the oldest wooded). An active volcano's apron: under water no deeper than `apronDepth` m, within `apron` [min, max] m (drawn per volcano, ± `apronNoise` of it by the patch noise) of its shore (the depth over the ground's slope), the sea floor is `bare`'s, `glass`'s where a second noise passes 1 − `glassShare` (obsidian where the lava met the water). Each surface names a rock (rocks.json `rocks`) and its part: `face`, `cap` or `scree`.",
+      "active": 0.4,
+      "ageJitter": 0.1,
+      "footprint": 1.0,
+      "edge": 0.2,
+      "edgeWavelength": 600,
+      "fade": 0.25,
+      "patchWavelength": 70,
+      "cover": [0.05, 0.85],
+      "dirt": 0.2,
+      "trees": [0.45, 0.95],
+      "apron": [50, 180],
+      "apronDepth": 22,
+      "apronNoise": 0.5,
+      "glassShare": 0.3,
+      "bare": { "rock": "dwell:shield_basalt", "part": "scree" },
+      "glass": { "rock": "dwell:lava_glass", "part": "scree" },
+      "soil": { "rock": "dwell:shale", "part": "cap" }
+    },
     "hotspot": {
       "islands": 4,
       "spacing": 5000,

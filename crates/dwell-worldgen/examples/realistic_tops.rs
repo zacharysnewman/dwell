@@ -39,6 +39,8 @@ fn colour(name: &str) -> [u8; 3] {
         "dwell:grass" | "dwell:grass_block" => [90, 160, 70],
         "dwell:dirt" => [120, 85, 55],
         "dwell:snow" => [245, 245, 250],
+        "dwell:basalt" => [50, 46, 56],
+        "dwell:obsidian" => [150, 40, 190],
         _ => {
             let mut h: u32 = 2166136261;
             for b in base.bytes() {
@@ -78,6 +80,16 @@ fn main() {
     let g = TerrainGenerator::with_map(seed, map)
         .with_biomes_and_geology(&e.biomes, e.map, e.geology)
         .with_vegetation(e.vegetation);
+    if args.iter().any(|a| a == "--volcanoes") {
+        let t = g.plate_tectonics().expect("plates");
+        for (v, st) in t.volcanoes.iter().zip(&t.states) {
+            println!(
+                "({:.0}, {:.0}) r {:.0} h {:.0} chain {} active {} age {:.2} apron {:.0}",
+                v.x, v.z, v.radius, v.height, v.chain, st.active, st.age, st.apron
+            );
+        }
+        return;
+    }
     let probe = arg(&args, "--probe", "");
     if !probe.is_empty() {
         let v: Vec<i32> = probe

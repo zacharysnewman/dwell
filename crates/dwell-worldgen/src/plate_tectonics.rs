@@ -167,6 +167,7 @@ pub struct PlateUplift {
     pub arc: ArcRule,
     pub hotspot: ChainRule,
     pub cones: ConeVariety,
+    pub volcanism: Volcanism,
 }
 
 /// Each placed cone and island varied (plates.json `uplift.cones`; the map check, 2026-11-14:
@@ -191,6 +192,74 @@ pub struct ConeVariety {
     pub satellite_distance: [f64; 2],
     /// The chance an arc's site past its first is left empty (gaps along an arc).
     pub skip: f64,
+}
+
+/// Active and dormant volcanoes (plates.json `uplift.volcanism`; owner, 2026-11-13): each placed
+/// volcano's state and weathering age, and what its ground and its apron show by them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Volcanism {
+    /// The chance an arc cone is active (a chain's youngest island always is).
+    pub active: f64,
+    /// A chain island's age ± this (its place down the chain, 0..1).
+    pub age_jitter: f64,
+    /// A volcano's ground: its outline out to `footprint` × its radius, the edge moved ± `edge`
+    /// of it by noise at `edge_wavelength` m, faded into the ground around over the last `fade`.
+    pub footprint: f64,
+    pub edge: f64,
+    pub edge_wavelength: f64,
+    pub fade: f64,
+    /// The cover's patch noise (m) and the share covered by age (smoothstep between the two).
+    pub patch_wavelength: f64,
+    pub cover: [f64; 2],
+    /// The share of the cover's edge showing `soil` (dirt patches).
+    pub dirt: f64,
+    /// Trees × a smoothstep of the age between the two.
+    pub trees: [f64; 2],
+    /// An active volcano's apron: m from its shore [min, max] (drawn per volcano), at most
+    /// `apron_depth` m under water, ± `apron_noise` of itself by the patch noise; `glass_share` of
+    /// it `glass`.
+    pub apron: [f64; 2],
+    pub apron_depth: f64,
+    pub apron_noise: f64,
+    pub glass_share: f64,
+    pub bare: Surface,
+    pub glass: Surface,
+    pub soil: Surface,
+}
+
+/// A surface named by a rock (rocks.json) and the part of it that shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Surface {
+    pub rock: &'static str,
+    pub part: RockPart,
+}
+
+/// A rock's part: its walls' `face`, its treads' `cap`, its talus' `scree`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RockPart {
+    Face,
+    Cap,
+    Scree,
+}
+
+/// A placed volcano's state (`volcanism`): active, or dormant at a weathering age 0..1 (1 the
+/// oldest); `apron` m, its apron's reach if active.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolcanoState {
+    pub active: bool,
+    pub age: f64,
+    pub apron: f64,
+}
+
+/// Where a point lies on a volcano's ground (`PlateTectonics::volcano_ground`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolcanoGround {
+    /// Index into `volcanoes` and `states`.
+    pub volcano: usize,
+    /// 0..1: 1 well inside its ground, falling to 0 over its edge's fade.
+    pub weight: f64,
+    /// The distance from its centre over its radius (by its outline).
+    pub reach: f64,
 }
 
 /// A cone's outline factor at the angle `theta` (radians) round it: 1 ± `shape`, the sum of the
@@ -386,6 +455,8 @@ pub struct PlateTectonics {
     /// The arcs' cones (`chain` 0), then each hotspot's chain youngest first (`chain` k + 1 for
     /// the k-th island down it; hotspot `h`'s islands follow hotspot `h − 1`'s).
     pub volcanoes: Vec<Volcano>,
+    /// Each volcano's state (`uplift.volcanism`), as `volcanoes`.
+    pub states: Vec<VolcanoState>,
     /// The boundaries' summed landform (m) on the coarse grid: `n` × `n` nodes from `x0`.
     field: Vec<f32>,
     n: usize,
@@ -412,14 +483,19 @@ impl PlateTectonics {
             uplift: u,
             lines,
             volcanoes: Vec::new(),
+            states: Vec::new(),
             field: Vec::new(),
             n: 0,
             x0: 0.0,
         };
         t.volcanoes = t.place_arcs();
         t.volcanoes.extend(t.place_chains());
-        let satellites = t.satellites();
-        t.volcanoes.extend(satellites);
+        t.states = t.volcanoes.iter().map(|v| t.state_of(v)).collect();
+        for (parent, v) in t.satellites() {
+            t.volcanoes.push(v);
+            let s = t.states[parent];
+            t.states.push(s);
+        }
         t.fill_field();
         t
     }
@@ -835,28 +911,118 @@ impl PlateTectonics {
         out
     }
 
+    /// A placed volcano's state (`volcanism`): an arc cone active by chance, else dormant at a
+    /// drawn age; a chain's youngest island active, each older one dormant by its place down the
+    /// chain (± `age_jitter`).
+    fn state_of(&self, v: &Volcano) -> VolcanoState {
+        let vo = &self.uplift.volcanism;
+        let key = mix32((v.x as i64 as u32) ^ mix32((v.z as i64 as u32) ^ 0xAC71_0E00));
+        let apron = draw(key, 3, vo.apron);
+        let (active, age) = if v.chain == 0 {
+            let active = draw(key, 1, [0.0, 1.0]) < vo.active;
+            (
+                active,
+                if active {
+                    0.0
+                } else {
+                    draw(key, 2, [0.0, 1.0])
+                },
+            )
+        } else if v.chain == 1 {
+            (true, 0.0)
+        } else {
+            let last = f64::from(self.uplift.hotspot.islands.max(2) - 1);
+            let place = f64::from(v.chain - 1) / last;
+            let jitter = draw(key, 2, [-vo.age_jitter, vo.age_jitter]);
+            (false, (place + jitter).clamp(0.0, 1.0))
+        };
+        VolcanoState { active, age, apron }
+    }
+
+    /// The volcano whose ground holds (x, z), nearest by its outline, with `extra` m added to
+    /// every reach (an apron's search): its index, its weight (1 inside, fading to 0 over the
+    /// edge's `fade`) and its reach; `None` off every volcano's ground.
+    pub fn volcano_ground(&self, x: f64, z: f64, extra: f64) -> Option<VolcanoGround> {
+        let vo = &self.uplift.volcanism;
+        let grow = (1.0 + self.uplift.cones.shape) * (vo.footprint + vo.edge);
+        let mut best: Option<VolcanoGround> = None;
+        for (i, v) in self.volcanoes.iter().enumerate() {
+            let far = v.radius * grow + extra;
+            let (dx, dz) = (x - v.x, z - v.z);
+            if dx * dx + dz * dz > far * far {
+                continue;
+            }
+            let edge = vo.edge
+                * 2.0
+                * f64::from(fbm2(
+                    mix32(0xED6E_0011 ^ i as u32),
+                    x as i64,
+                    z as i64,
+                    vo.edge_wavelength as i32,
+                    2,
+                    None,
+                ));
+            let reach = self.cone_distance(v, x, z) / v.radius.max(1.0);
+            let limit = vo.footprint + edge + extra / v.radius.max(1.0);
+            if reach >= limit {
+                continue;
+            }
+            let fade = (vo.fade * vo.footprint).max(1e-6);
+            let t = ((limit - reach) / fade).clamp(0.0, 1.0);
+            let weight = t * t * (3.0 - 2.0 * t);
+            if best.is_none_or(|b| reach < b.reach) {
+                best = Some(VolcanoGround {
+                    volcano: i,
+                    weight,
+                    reach,
+                });
+            }
+        }
+        best
+    }
+
+    /// The trees' factor at (x, z) by the volcanoes (`volcanism.trees`): none on an active cone,
+    /// rising with a dormant one's age, 1 off their ground.
+    pub fn volcano_trees(&self, x: f64, z: f64) -> f64 {
+        let Some(g) = self.volcano_ground(x, z, 0.0) else {
+            return 1.0;
+        };
+        let s = self.states[g.volcano];
+        let [a, b] = self.uplift.volcanism.trees;
+        let f = if s.active {
+            0.0
+        } else {
+            let t = ((s.age - a) / (b - a).max(1e-6)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        1.0 - g.weight * (1.0 - f)
+    }
+
     /// Every placed cone's satellites (`cones.satellites`), after all the cones (so a chain's
     /// islands stay together in `volcanoes`): each at a seeded angle and distance from its parent,
     /// smaller by a draw, of the parent's chain (its age and its rock).
-    fn satellites(&self) -> Vec<Volcano> {
+    fn satellites(&self) -> Vec<(usize, Volcano)> {
         let cv = &self.uplift.cones;
         let mut out = Vec::new();
-        for v in &self.volcanoes {
+        for (parent, v) in self.volcanoes.iter().enumerate() {
             let key = mix32((v.x as i64 as u32) ^ mix32((v.z as i64 as u32) ^ 0x5A7E_0011));
             let n = draw(key, 1, [cv.satellites[0], cv.satellites[1] + 1.0]).floor() as u32;
             for k in 0..n {
                 let th = draw(key, 8 * k + 2, [0.0, std::f64::consts::TAU]);
                 let d = v.radius * draw(key, 8 * k + 3, cv.satellite_distance);
                 let size = draw(key, 8 * k + 4, cv.satellite_size);
-                out.push(Volcano {
-                    x: v.x + d * th.cos(),
-                    z: v.z + d * th.sin(),
-                    height: v.height * size * draw(key, 8 * k + 5, [0.8, 1.2]),
-                    radius: v.radius * size,
-                    crater_radius: 0.0,
-                    crater_depth: 0.0,
-                    chain: v.chain,
-                });
+                out.push((
+                    parent,
+                    Volcano {
+                        x: v.x + d * th.cos(),
+                        z: v.z + d * th.sin(),
+                        height: v.height * size * draw(key, 8 * k + 5, [0.8, 1.2]),
+                        radius: v.radius * size,
+                        crater_radius: 0.0,
+                        crater_depth: 0.0,
+                        chain: v.chain,
+                    },
+                ));
             }
         }
         out

@@ -2762,6 +2762,7 @@ export function validatePlates(data) {
     "rift",
     "arc",
     "cones",
+    "volcanism",
     "hotspot",
   ]);
   num("uplift.seaRidges", u.seaRidges, 0, 1000);
@@ -2870,6 +2871,50 @@ export function validatePlates(data) {
     "skip",
   ]);
   num("uplift.cones.skip", u.cones.skip, 0, 0.9);
+  const vo = u.volcanism;
+  obj("uplift.volcanism", vo, [
+    "active",
+    "ageJitter",
+    "footprint",
+    "edge",
+    "edgeWavelength",
+    "fade",
+    "patchWavelength",
+    "cover",
+    "dirt",
+    "trees",
+    "apron",
+    "apronDepth",
+    "apronNoise",
+    "glassShare",
+    "bare",
+    "glass",
+    "soil",
+  ]);
+  num("uplift.volcanism.active", vo.active, 0, 1);
+  num("uplift.volcanism.ageJitter", vo.ageJitter, 0, 0.5);
+  num("uplift.volcanism.footprint", vo.footprint, 0.1, 3);
+  num("uplift.volcanism.edge", vo.edge, 0, 1);
+  num("uplift.volcanism.edgeWavelength", vo.edgeWavelength, 10, 100_000);
+  num("uplift.volcanism.fade", vo.fade, 0, 1);
+  num("uplift.volcanism.patchWavelength", vo.patchWavelength, 4, 10_000);
+  range("uplift.volcanism.cover", vo.cover, 0, 1);
+  num("uplift.volcanism.dirt", vo.dirt, 0, 1);
+  range("uplift.volcanism.trees", vo.trees, 0, 1);
+  range("uplift.volcanism.apron", vo.apron, 0, 2000);
+  num("uplift.volcanism.apronDepth", vo.apronDepth, 0, 500);
+  num("uplift.volcanism.apronNoise", vo.apronNoise, 0, 1);
+  num("uplift.volcanism.glassShare", vo.glassShare, 0, 1);
+  const rockNames = new Set(
+    JSON.parse(readFileSync(join(here, "rocks.json"), "utf8")).rocks.map((r) => r.name),
+  );
+  for (const k of ["bare", "glass", "soil"]) {
+    obj(`uplift.volcanism.${k}`, vo[k], ["rock", "part"]);
+    if (!rockNames.has(vo[k].rock))
+      fail(`uplift.volcanism.${k}.rock: no rock ${vo[k].rock} in rocks.json`);
+    if (!["face", "cap", "scree"].includes(vo[k].part))
+      fail(`uplift.volcanism.${k}.part must be face, cap or scree`);
+  }
   range("uplift.cones.each", u.cones.each, 0.1, 5);
   range("uplift.cones.satellites", u.cones.satellites, 0, 6);
   if (!u.cones.satellites.every(Number.isInteger)) fail("uplift.cones.satellites must be whole numbers");
@@ -2938,6 +2983,8 @@ export function validatePlates(data) {
 
 /** The Rust constants for validated plate data. */
 export function platesRust(data) {
+  const part = { face: "Face", cap: "Cap", scree: "Scree" };
+  const surf = (v) => `Surface { rock: ${JSON.stringify(v.rock)}, part: RockPart::${part[v.part]} }`;
   const kind = (k) => (k === "oceanic" ? "PlateKind::Oceanic" : "PlateKind::Continental");
   const bkind = (k) => `BoundaryKind::${k[0].toUpperCase()}${k.slice(1)}`;
   const rs = [
@@ -2945,6 +2992,7 @@ export function platesRust(data) {
     "",
     "use crate::plate_tectonics::{",
     "    AlongRule, ArcMode, ArcRule, ChainRule, ConeVariety, PairForm, PairRule, PlateUplift, RiftRule,",
+    "    RockPart, Surface, Volcanism,",
     "    Shape, Side,",
     "};",
     "use crate::plates::{",
@@ -3025,6 +3073,10 @@ export function platesRust(data) {
     [
       "cones",
       `ConeVariety { radius: [${rf(u.cones.radius[0])}, ${rf(u.cones.radius[1])}], height: [${rf(u.cones.height[0])}, ${rf(u.cones.height[1])}], spacing: ${rf(u.cones.spacing)}, offset: ${rf(u.cones.offset)}, shape: ${rf(u.cones.shape)}, each: [${rf(u.cones.each[0])}, ${rf(u.cones.each[1])}], satellites: [${rf(u.cones.satellites[0])}, ${rf(u.cones.satellites[1])}], satellite_size: [${rf(u.cones.satelliteSize[0])}, ${rf(u.cones.satelliteSize[1])}], satellite_distance: [${rf(u.cones.satelliteDistance[0])}, ${rf(u.cones.satelliteDistance[1])}], skip: ${rf(u.cones.skip)} }`,
+    ],
+    [
+      "volcanism",
+      `Volcanism { active: ${rf(u.volcanism.active)}, age_jitter: ${rf(u.volcanism.ageJitter)}, footprint: ${rf(u.volcanism.footprint)}, edge: ${rf(u.volcanism.edge)}, edge_wavelength: ${rf(u.volcanism.edgeWavelength)}, fade: ${rf(u.volcanism.fade)}, patch_wavelength: ${rf(u.volcanism.patchWavelength)}, cover: [${rf(u.volcanism.cover[0])}, ${rf(u.volcanism.cover[1])}], dirt: ${rf(u.volcanism.dirt)}, trees: [${rf(u.volcanism.trees[0])}, ${rf(u.volcanism.trees[1])}], apron: [${rf(u.volcanism.apron[0])}, ${rf(u.volcanism.apron[1])}], apron_depth: ${rf(u.volcanism.apronDepth)}, apron_noise: ${rf(u.volcanism.apronNoise)}, glass_share: ${rf(u.volcanism.glassShare)}, bare: ${surf(u.volcanism.bare)}, glass: ${surf(u.volcanism.glass)}, soil: ${surf(u.volcanism.soil)} }`,
     ],
     [
       "hotspot",

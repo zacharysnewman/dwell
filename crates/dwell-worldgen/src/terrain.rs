@@ -2720,6 +2720,16 @@ impl TerrainGenerator {
         if snow != Some(None) {
             palette = self.blended(&mix, x, z, palette, gx.hypot(gz));
         }
+        // Active and dormant volcanoes (plates.json `uplift.volcanism`, 0.64): bare lava rock
+        // and an apron in the shallows on an active one, soil and plants by a dormant one's age.
+        if snow.is_none()
+            && band != Band::Rock
+            && let Some((p, b)) = self.volcanic_surface(x, z, h, slope, wet)
+        {
+            // `None` from the cover: the biome's own ground (over the cone's rock).
+            let own = self.biomes.first[usize::from(mix.chosen)] + level_band as u16;
+            (palette, band) = (p.unwrap_or(own), b);
+        }
         let mut shore = FAR_WATER;
         if let Some(r) = &river {
             shore = shore.min((r.d - r.half).max(0.0) as f32);
@@ -2743,6 +2753,93 @@ impl TerrainGenerator {
             stream,
             wall,
         }
+    }
+
+    /// What a volcano's state shows at face-local (x, z) (plates.json `uplift.volcanism`): its
+    /// ground `h` m from sea level (below 0 under water), `slope` rise per run: on a volcano's
+    /// ground the cover by its age (bare lava rock, dirt patches or the biome's own), under the
+    /// shallows by an active one its apron of lava rock and obsidian (a palette and band; no
+    /// palette: the biome's own ground, soil and plants covering the rock); `None` where it
+    /// changes nothing (and in a world without plates).
+    fn volcanic_surface(
+        &self,
+        x: i64,
+        z: i64,
+        h: f64,
+        slope: f64,
+        wet: bool,
+    ) -> Option<(Option<u16>, Band)> {
+        let t = self.plate_tectonics()?;
+        let vo = &t.uplift.volcanism;
+        let (fx, fz) = (x as f64, z as f64);
+        let patch = |k: u32| {
+            let n = fbm2(
+                crate::noise::mix32(self.snow_seed ^ 0x7A1A_0E00 ^ k),
+                x + self.offset_x,
+                z + self.offset_z,
+                vo.patch_wavelength as i32,
+                3,
+                None,
+            );
+            (0.5 + 1.6 * f64::from(n)).clamp(0.0, 1.0)
+        };
+        if wet {
+            let depth = -h;
+            if !(0.0..=vo.apron_depth).contains(&depth) {
+                return None;
+            }
+            let g = t.volcano_ground(fx, fz, vo.apron[1] * (1.0 + vo.apron_noise))?;
+            let s = t.states[g.volcano];
+            if !s.active {
+                return None;
+            }
+            // How far out from the shore: the depth over the ground's slope.
+            let offshore = depth / slope.max(0.02);
+            let reach = s.apron * (1.0 + vo.apron_noise * (2.0 * patch(1) - 1.0));
+            if offshore > reach {
+                return None;
+            }
+            let glass = patch(2) > 1.0 - vo.glass_share;
+            return self
+                .surface_palette(if glass { vo.glass } else { vo.bare })
+                .map(|(p, b)| (Some(p), b));
+        }
+        let g = t.volcano_ground(fx, fz, 0.0)?;
+        let s = t.states[g.volcano];
+        let cover = if s.active {
+            0.0
+        } else {
+            smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64
+        };
+        // Toward the ground's edge everything is the ground's around (no ring).
+        let c = 1.0 - g.weight * (1.0 - cover);
+        let n = patch(0);
+        let dirt = (vo.dirt * 2.0 * (1.0 - c)).min(c);
+        if n < c - dirt {
+            (g.weight > 0.0).then_some((None, Band::Ground))
+        } else {
+            self.surface_palette(if n < c { vo.soil } else { vo.bare })
+                .map(|(p, b)| (Some(p), b))
+        }
+    }
+
+    /// A named rock's part as a palette and band (`volcanism`'s surfaces): its scree and cap
+    /// on the ground, its face as rock.
+    fn surface_palette(&self, s: crate::plate_tectonics::Surface) -> Option<(u16, Band)> {
+        use crate::plate_tectonics::RockPart;
+        let r = self
+            .biomes
+            .geology
+            .geology
+            .rocks
+            .iter()
+            .position(|r| r.name == s.rock)?;
+        let p = self.biomes.rock_palette[r];
+        Some(match s.part {
+            RockPart::Scree => (p, Band::Ground),
+            RockPart::Cap => (p + 1, Band::Ground),
+            RockPart::Face => (p, Band::Rock),
+        })
     }
 
     /// The flow (m³/s) through face-local column (x, z) by the world map (docs/WATER_FLOW.md §2.1):
@@ -3383,8 +3480,17 @@ impl TerrainGenerator {
     }
 
     /// Planter `i`'s density at (x, z) from the biomes' `trees` by their weights (ADR 0074 B5; 1
-    /// where it does not vary).
+    /// where it does not vary), and by the volcanoes' states.
     pub fn tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
+        // The volcanoes' (plates.json `uplift.volcanism`): none on an active cone, more with a
+        // dormant one's age.
+        let volcanic = self
+            .plate_tectonics()
+            .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
+        volcanic * self.biome_tree_density_at(i, x, z)
+    }
+
+    fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
         let (per, varies) = &*self.tree_density;
         if !varies {
             return 1.0;

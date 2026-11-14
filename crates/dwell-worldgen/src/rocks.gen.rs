@@ -127,6 +127,18 @@ pub const ROCKS: &[Rock] = &[
         scree: "dwell:sand",
         color: 0xe0c890,
     },
+    Rock {
+        name: "dwell:lava_glass",
+        hardness: 0.9,
+        jointing: Jointing::Massive,
+        bed: 8.0,
+        solubility: 0.0,
+        face: "dwell:obsidian",
+        cap: "dwell:obsidian",
+        cap_by: &[],
+        scree: "dwell:obsidian",
+        color: 0x16121e,
+    },
 ];
 
 /// The strata stacks (rocks.json `stacks`), layers top to bottom.
