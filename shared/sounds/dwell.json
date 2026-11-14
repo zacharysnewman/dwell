@@ -2220,8 +2220,8 @@
       ]
     },
     "breath_heavy": {
-      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack has no BREATH category, so its one unvoiced in-and-out breath (VOICE_MALE_Sigh_1) and the two breathy exhales of the gasp's and the strain's voice (GRUNT_Male_Quick, _Quick_Deep). The layers (two puffs of noise) play until they decode.",
-      "samples": {"files": ["breath-heavy-1.m4a", "breath-heavy-2.m4a", "breath-heavy-3.m4a"], "from": ["VOICE_MALE_Sigh_1", "GRUNT_Male_Quick", "GRUNT_Male_Quick_Deep"], "gain": 0.5, "pitch": 0.5},
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
+      "samples": {"files": ["breath-heavy-1.m4a"], "from": ["VOICE_MALE_Sigh_1"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.4, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
