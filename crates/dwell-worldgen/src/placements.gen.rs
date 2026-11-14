@@ -26,6 +26,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 50.0,
     },
     Placement {
         name: "broadleaf_groves",
@@ -49,6 +50,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 50.0,
     },
     Placement {
         name: "conifer_groves",
@@ -72,6 +74,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 0.0,
     },
     Placement {
         name: "palm_coasts",
@@ -95,6 +98,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 0.0,
     },
     Placement {
         name: "boulders",
@@ -118,6 +122,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 30.0,
     },
     Placement {
         name: "old_growth",
@@ -141,6 +146,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 0.0,
     },
     Placement {
         name: "rainforest_groves",
@@ -164,6 +170,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 0.0,
     },
     Placement {
         name: "sagebrush",
@@ -187,6 +194,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 0.12,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 30.0,
     },
     Placement {
         name: "talus",
@@ -210,6 +218,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 12.0,
         wet: true,
+        bleed: 0.0,
     },
     Placement {
         name: "bushes",
@@ -233,6 +242,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 40.0,
     },
     Placement {
         name: "cold_shrubs",
@@ -256,6 +266,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 30.0,
     },
     Placement {
         name: "scrub",
@@ -279,5 +290,6 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 1.0,
         cliff_reach: 0.0,
         wet: false,
+        bleed: 40.0,
     },
 ];

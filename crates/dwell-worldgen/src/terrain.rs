@@ -3707,7 +3707,30 @@ impl TerrainGenerator {
         } else {
             1.0
         };
-        cliff * tops * volcanic * self.biome_tree_density_at(i, x, z)
+        // Bleed across borders (`bleed`, 0.69): the biomes' density read at a point moved by a
+        // fine noise, so each side's plants reach raggedly into the other.
+        let bleed = self
+            .planters
+            .get(i)
+            .map_or(0.0, |p| f64::from(p.rule().bleed));
+        let (bx, bz) = if bleed > 0.0 {
+            let w = |k: u32| {
+                (bleed
+                    * 2.0
+                    * f64::from(fbm2(
+                        crate::noise::mix32(self.snow_seed ^ 0xB1EE_0690 ^ k),
+                        x + self.offset_x,
+                        z + self.offset_z,
+                        (bleed * 0.8).max(8.0) as i32,
+                        2,
+                        None,
+                    ))) as i64
+            };
+            (x + w(1), z + w(2))
+        } else {
+            (x, z)
+        };
+        cliff * tops * volcanic * self.biome_tree_density_at(i, bx, bz)
     }
 
     fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
