@@ -423,6 +423,18 @@ fn terrain_light(light: f32, flood: vec2f) -> TerrainLight {
     );
 }
 
+// The warm light the sunlit ground throws back onto a body (shared/look/light.json
+// `characters.bounce`, BUGS.md #158), as `lambert_lit` gives a white top face (/ π): the sun's
+// light on the open ground (its height over the face's horizon), as open to the sky as the body
+// is. Without it a body's side away from the sun took the blue sky alone and its skin read cold.
+fn body_bounce(frag_y: f32, l: TerrainLight) -> vec3f {
+    let face = face_at(frag_y);
+    let d = frame.day;
+    let sun = select(d.sun_b.rgb, d.sun_a.rgb, face > 0.0);
+    let ground = max(dot(face_up(face), d.sun.xyz), 0.0) * own(d.sun.xyz, face);
+    return BODY_BOUNCE * sun * ground * l.ambient / PI;
+}
+
 // `lambert` lit by `l` (`terrain_light`; `open_light()` for surfaces with no baked light): the
 // hemisphere light by `l.ambient`, the sun and moon by `l.direct`, the block light's warm glow and
 // the dynamic lights (`l.points`).
@@ -910,6 +922,9 @@ struct CutoutOut {
     @location(7) @interpolate(flat) bare: f32,
     @location(8) light: f32,
     @location(9) flood: vec2f,
+    // 1 for a tree's leaves (their faces and cards): their shadow lookup's normal offset is at
+    // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #156).
+    @location(10) @interpolate(flat) leaf: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -969,16 +984,25 @@ fn card_normal(packed: f32) -> vec3f {
 // (2 m: every corner is then past the end, so it goes whole): the forest's edge drew every blade
 // out to the full-detail distance, all discarded in the fragment stage (WORK_QUEUE item 32, the
 // edge's 14 ms of cutout). `rel` the corner before the wind's sway, `n` the card's normal in the
-// world.
-fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f) -> bool {
-    if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
+// world. `back_cull` false in the shadow passes: what casts follows the light, not the side of
+// the crown the camera is on (BUGS.md #156: the cards on the crown's far side and on its top, seen
+// from below, cast nothing, and the crown's shadow on itself came and went as the camera moved).
+fn card_dropped(rel: vec3f, n: vec3f, plant: vec4f, back_cull: bool) -> bool {
+    // A tree's leaf card (`plant.y` < 0) while the far trees' map is on switches with its tree in
+    // time (`tree_cards_share`, BUGS.md #157): dropped past the farthest a drawn one reaches.
+    let tree_card = plant.y < 0.0 && plant.w > 0.0 && frame.far_trees.w > 0.5;
+    if (tree_card) {
+        if (length(rel) > TREE_CARDS_REACH + 2.0) {
+            return true;
+        }
+    } else if (plant.w > 0.0 && length(rel) > plant.w + 2.0) {
         return true;
     }
     // A tree's leaf face (`TREE_LEAF_FADE`) past the near leaves' reach: the impostors' alone.
     if (plant.w < 0.0 && frame.far_trees.w > 0.5 && length(rel) > frame.far_trees.z + 2.0) {
         return true;
     }
-    if (plant.y >= 0.0) {
+    if (plant.y >= 0.0 || !back_cull) {
         return false;
     }
     return CARD_BACK_CULL_M > 0.0 && dot(n, rel) > CARD_BACK_CULL_M;
@@ -1003,13 +1027,24 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
 
 @vertex
 fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    return cutout_vertex(v, k, true);
+}
+
+// The shadow passes' cutout vertices: as the scene's, but no card is dropped for the side of it
+// the camera is on (`card_dropped`'s `back_cull`).
+@vertex
+fn shadow_cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
+    return cutout_vertex(v, k, false);
+}
+
+fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
     let still = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
     o.rel = sway(still, v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
-    if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant)) {
+    if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant, back_cull)) {
         // Outside the clip volume, the same point for every corner: a card dropped whole draws
         // nothing (one past the fade's margin only where all of it is faded out anyway).
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
@@ -1022,6 +1057,7 @@ fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
     o.bare = v.lit.w;
     o.light = v.lit.x;
     o.flood = v.lit.yz;
+    o.leaf = select(0.0, 1.0, v.plant.y < 0.0 || v.plant.w < 0.0);
     return o;
 }
 
@@ -1072,7 +1108,14 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     var cover = clamp((alpha - 0.5) / edge + 0.5, 0.0, 1.0);
     var fade = 1.0;
     if (i.fade.y > 0.0) {
-        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        // A tree's leaf card (BUGS.md #157): on or off with its tree, faded in time, so a still
+        // eye sees no card half dissolved; other plants (and cards with no far trees' map) by
+        // distance.
+        if (i.leaf > 0.5 && frame.far_trees.w > 0.5) {
+            fade = tree_cards_share(i.rel);
+        } else {
+            fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        }
         cover *= fade;
     }
     // A tree's leaf face hands over to the far trees' impostors by its tree's state, cross-faded
@@ -1111,6 +1154,7 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
     }
     let n = select(vec3f(-i.normal.x, i.normal.y, -i.normal.z), i.normal, front);
     let albedo = i.color * texel.rgb * draw.tint.rgb;
+    shadow_leaf_m = select(0.0, shadows.pcf.w, i.leaf > 0.5);
     let lit = scene_out(albedo, normalize(n), i.rel, 1.0, terrain_light(i.light, i.flood));
     var o: CutoutSceneOut;
     // A glowing tile (a torch's flame) is self-lit: its colour whatever the light.
@@ -3794,8 +3838,14 @@ pub fn source(samples: u32) -> String {
 fn light_wgsl() -> String {
     let l = dwell_world::light::LIGHT;
     let c = l.block_color.map(|v| dwell_look::srgb_to_linear(v) as f32);
+    let b = l
+        .character_bounce_color
+        .map(|v| (dwell_look::srgb_to_linear(v) * l.character_bounce_strength) as f32);
     format!(
-        "const SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        "const BODY_BOUNCE: vec3f = vec3f({:?}, {:?}, {:?});\nconst SKY_CURVE: f32 = {:?};\nconst DIRECT_FROM: f32 = {:?};\nconst DIRECT_FULL: f32 = {:?};\nconst BLOCK_CURVE: f32 = {:?};\nconst BLOCK_STRENGTH: f32 = {:?};\nconst BLOCK_LIGHT: vec3f = vec3f({:?}, {:?}, {:?});\n",
+        b[0],
+        b[1],
+        b[2],
         l.sky_curve as f32,
         f32::from(l.direct_from),
         f32::from(l.direct_full),
@@ -3886,7 +3936,7 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        for stage in ["terrain_vs", "cutout_vs", "line_vs"] {
+        for stage in ["terrain_vs", "cutout_vertex", "line_vs"] {
             assert!(
                 body(stage).contains("qrot(draw.quat, v.position * draw.offset.w)"),
                 "{stage} turns by the draw's rotation"
@@ -4026,6 +4076,7 @@ mod tests {
                 "shadow_terrain_fs",
                 "shadow_flat_fs",
                 "shadow_cutout_fs",
+                "shadow_cutout_vs",
             ] {
                 assert!(
                     module.entry_points.iter().any(|e| e.name == entry),
@@ -4130,7 +4181,7 @@ mod tests {
         // the stand-in, which the first layer's sky light replaces.
         let look = body("shadow_light");
         assert!(look.contains(
-            "let inside = mix(stand_in, shadow_pcf(c, p) * lod_shadow(rel), shadows.cfg.y);"
+            "let inside = mix(stand_in, shadow_cascades(c, rel, n) * lod_shadow(rel), shadows.cfg.y);"
         ));
         assert!(look.contains("return stand_in * cloud_shadow(rel);"));
         // Past the cascades, the stand-in shaded by the distant terrain (the third layer), and a
@@ -4552,7 +4603,7 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        assert!(body("cutout_vs").contains("o.bare = v.lit.w;"));
+        assert!(body("cutout_vertex").contains("o.bare = v.lit.w;"));
         assert!(
             body("cutout_fs").contains("frame_depth(lit.depth, i.bare < 0.5 && fade_inked(draw))")
         );

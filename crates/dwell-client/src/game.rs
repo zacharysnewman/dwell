@@ -945,6 +945,9 @@ pub struct Game<S: Scene> {
     view_dir: [f64; 3],
     /// Drag fills sent and not yet answered (prediction id → the fill and its tries so far).
     drag_sent: std::collections::HashMap<u32, (dwell_protocol::RegionEdit, u8)>,
+    /// Drag fills sent this frame: a frame's messages reach the server in one tick, whose region
+    /// queue takes `region_edit::MAX_QUEUED` (docs/BUGS.md #30).
+    drag_frame_fills: usize,
     /// When each water chunk's currents last came (docs/WATER_SURFACE_GRID.md §2c): forgotten
     /// `CURRENTS_KEEP_MS` after.
     currents_seen: dwell_world::hash::HashMap<dwell_world::currents::CurrentKey, f64>,
@@ -1234,6 +1237,7 @@ impl<S: Scene> Game<S> {
             drag: dwell_game::build_drag::BuildDrag::new(),
             view_dir: [0.0, 0.0, 1.0],
             drag_sent: std::collections::HashMap::new(),
+            drag_frame_fills: 0,
             currents_seen: Default::default(),
             flow_sent: None,
             flow_particles: true,
@@ -2975,17 +2979,17 @@ impl<S: Scene> Game<S> {
             let m = Message::BlockEditRequest(dwell_protocol::BlockEditRequest {
                 action: dwell_protocol::BlockEditAction::Place,
                 cell: t.cell,
-                face: t.face,
+                face: t.place_face(),
                 material,
                 rows,
-                down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+                down: t.place_down(rows),
                 point: None,
             });
             let cells: Option<Vec<[i32; 3]>> = self
                 .predicted_changes(&m)
                 .map(|c| c.iter().map(|(c, _)| *c).collect());
             let dir = dwell_world::edit::FACE_DIRS
-                .get(usize::from(t.face))
+                .get(usize::from(t.place_face()))
                 .copied()?;
             Some((m, cells, dir, material))
         });
@@ -3376,14 +3380,18 @@ impl<S: Scene> Game<S> {
                 me,
                 settled,
             };
-            self.drag.aim(
+            // Paced by the clock (`buildModes.repeatS`, docs/BUGS.md #30), at each predicted tick.
+            self.drag.aim_at(
                 eye,
                 dir,
                 f64::from(dwell_protocol::players::REACH_DISTANCE),
                 &mut world,
+                now_ms,
             );
         }
-        for (fill, tries) in self.drag.pump_tries(now_ms) {
+        let share = dwell_protocol::region_edit::MAX_QUEUED.saturating_sub(self.drag_frame_fills);
+        for (fill, tries) in self.drag.pump_capped(now_ms, share) {
+            self.drag_frame_fills += 1;
             let at = fill.min;
             let material = fill.material;
             // A retry sounds no second time.
@@ -4715,6 +4723,7 @@ impl<S: Scene> Game<S> {
         self.update_loading(now_ms);
         let elapsed = self.last_frame_ms.map_or(0.0, |l| now_ms - l);
         self.last_frame_ms = Some(now_ms);
+        self.drag_frame_fills = 0;
         self.accumulator =
             (self.accumulator + elapsed * self.tick_rate).min(MAX_TICKS_PER_FRAME * TICK_MS);
         let (cells, ahead) = {
@@ -7197,6 +7206,10 @@ impl dwell_game::build_drag::DragWorld for DragCells<'_> {
     }
     fn settled(&mut self) -> bool {
         self.settled
+    }
+    fn placed(&mut self, [x, y, z]: [i32; 3], material: StateId) -> bool {
+        let dry = |m: StateId| dwell_world::edit::flooded_for(m, dwell_world::M.air);
+        dry(self.world.get_voxel(x, y, z)) == dry(material)
     }
 
     fn free(&mut self, [x, y, z]: [i32; 3], material: StateId) -> bool {
