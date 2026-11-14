@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Recordings: a camera path that passes through the ground now fails before it records, naming where and how far to lift it (a deliberate shot can allow it)."
+  ]
+}

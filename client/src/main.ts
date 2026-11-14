@@ -162,6 +162,7 @@ import { TheaterMode } from './theater/mode';
 import type { PathJson } from './theater/keyframes';
 import { PathStore } from './theater/store';
 import {
+  CINEMATIC,
   runCinematic,
   type CinematicHost,
   type CinematicReport,
@@ -169,6 +170,7 @@ import {
   type ViewState,
 } from './theater/cinematic';
 import { startCinematicAudio } from './theater/cinematicAudio';
+import { runClearancePass, type ClearanceConfig, type ClearanceResult } from './theater/clearance';
 import gamepadData from '../../shared/input/gamepad.json';
 
 type Vec3 = [number, number, number];
@@ -320,6 +322,13 @@ interface DwellDebug {
    * with the take's report (render time, settle waits, capped frames, the sound's alignment).
    */
   cinematic(opts: CinematicTakeOptions): Promise<CinematicReport>;
+  /**
+   * The camera clearance check (THEATER_MODE.md §6.2) for a real-time take: the path flown once in
+   * coarse frame-exact steps, its eye sampled finely and probed against the loaded world's solid
+   * blocks. `settings` overrides `shared/theater/cinematic.json`'s `clearance`. Resolves with the clips
+   * (times, positions, the lift that clears each) and a message; it never fails by itself.
+   */
+  clearance(path: unknown, settings?: Partial<ClearanceConfig>): Promise<ClearanceResult>;
   /**
    * The game's mix as a MediaStream for a recording (the record skill's driver, theater mode's takes):
    * effects and ambience by default, the music and UI buses only if asked (`{ music: true }`), on a
@@ -1500,6 +1509,35 @@ async function start(): Promise<App | null> {
     },
     audio: (leadS) => startCinematicAudio(audio(), leadS),
     wallMs: () => performance.now(),
+    clearance: {
+      samples: (json, stepS, max) => client.theaterSamples(json, stepS, max),
+      // The local world's server knows every eye (its chunks generated as needed); a remote
+      // world's client only its loaded chunks.
+      probe: async (eyes, radiusM, liftStepM, liftMaxM) => {
+        const n = eyes.length / 3;
+        const local = await app.loopback?.cameraClearance(
+          Array.from(eyes),
+          radiusM,
+          liftStepM,
+          liftMaxM,
+        );
+        if (local) return { codes: local.slice(0, n), lifts: local.slice(n) };
+        const codes = client.cameraClearance(eyes, radiusM);
+        const lifts = Array.from(codes, (c, i) =>
+          c === 1
+            ? client.cameraLift(
+                eyes[i * 3] ?? 0,
+                eyes[i * 3 + 1] ?? 0,
+                eyes[i * 3 + 2] ?? 0,
+                radiusM,
+                liftStepM,
+                liftMaxM,
+              )
+            : NaN,
+        );
+        return { codes, lifts };
+      },
+    },
   });
   window.__dwell = {
     state: () => client.debugState() as GameDebugState | null,
@@ -1558,6 +1596,14 @@ async function start(): Promise<App | null> {
     theater: (op, args) => theaterOp(client, document, op, args),
     theaterMode: (op, args = {}) => theaterModeOp(app, op, args),
     cinematic: (opts) => runCinematic(cinematicHost(), opts),
+    clearance: (path, settings) => {
+      const host = cinematicHost();
+      if (!host.clearance) throw new Error('clearance: no world');
+      return runClearancePass({ ...host, clearance: host.clearance }, path, {
+        ...CINEMATIC.clearance,
+        ...settings,
+      });
+    },
     audioTap: (o) => audio().tapStream(o ?? {}),
     camera: () => client.camera() as Camera | null,
     find: (query, options) => findPlace(findHost(app), query, options),

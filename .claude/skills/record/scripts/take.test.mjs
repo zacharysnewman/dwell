@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
 import { alignFilter, audioAlignment, audioStartExpr, cinematicEncodeArgs, encodeArgs, partAudio } from './audio.mjs';
-import { encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
+import { clearanceScript, clearanceVerdict, encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
 const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -444,4 +444,19 @@ test('a cinematic folder encodes at its exact rate with its stepped sound muxed 
   assert.ok(!a.join(' ').includes('adelay') && !a.join(' ').includes('atrim'), 'no alignment: the take stepped it');
   const silent = cinematicEncodeArgs({ frames: '/x/a', fps: 24, out: '/x/a.mp4' });
   assert.ok(silent.includes('-an') && silent.includes('24'));
+});
+
+test('a path through solid ground fails the shot unless it sets allowClipping (owner 2026-11-14: "goes straight through a wall")', () => {
+  const clear = { samples: 401, unchecked: 0, radiusM: 0.3, clipping: [], message: '' };
+  assert.match(clearanceVerdict({ id: 's1' }, clear), /^clear: 401 samples within 0.3 m$/);
+  const clip = { ...clear, unchecked: 3, clipping: [{ fromS: 4, toS: 5 }], message: 'the camera path passes through solid ground …' };
+  assert.throws(() => clearanceVerdict({ id: 's1' }, clip), /^Error: s1: the camera path passes through solid ground/);
+  assert.match(clearanceVerdict({ id: 's1', allowClipping: true }, clip), /clips in 1 place\(s\), allowed \(allowClipping\), 3 unchecked/);
+  // the page script asks __dwell.clearance with the path
+  assert.match(clearanceScript({ formatVersion: 1, keyframes: [] }), /await d\.clearance\(\{"formatVersion":1,"keyframes":\[\]\}\)/);
+  // the manifest option: a boolean on a path shot
+  const m = bifacial();
+  let b = copy(m); b.shots[0].allowClipping = true; assert.equal(validate(b).shots[0].allowClipping, true);
+  b = copy(m); b.shots[0].allowClipping = 'yes'; fails(b, /allowClipping: true or false, on a "path" shot only/);
+  b = copy(m); b.shots[2].allowClipping = true; fails(b, /allowClipping: true or false, on a "path" shot only/);
 });

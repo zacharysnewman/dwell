@@ -1,6 +1,6 @@
 {
   "changes": [
-    "Recordings: a cinematic take renders a camera path offline, one exact frame at a time: the world, the creatures, the water and the camera move exactly one frame's time per frame however long it takes to draw, and each frame waits for the view to finish loading.",
+    "Recordings: a cinematic take renders a camera path offline, one exact frame at a time: the world and the camera move exactly one frame's time per frame however long it takes to draw, and each frame waits for the view to finish loading.",
     "Cinematic takes fly the path once first to load what they will see, draw at a higher quality, and step the game's sound with the frames so every sound lands on its frame."
   ]
 }

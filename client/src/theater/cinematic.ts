@@ -14,6 +14,12 @@
 import data from '../../../shared/theater/cinematic.json';
 import { SIM_HZ } from '../protocol/constants.gen';
 import type { AudioStep, CinematicAudio } from './cinematicAudio';
+import {
+  ClearanceCheck,
+  type ClearanceConfig,
+  type ClearanceResult,
+  type ClearanceWorld,
+} from './clearance';
 
 export interface CinematicConfig {
   fps: number;
@@ -22,6 +28,7 @@ export interface CinematicConfig {
   settle: { minFrames: number; maxWaiting: number; capMs: number; firstCapMs: number };
   preroll: { stepS: number; capMs: number };
   quality: { shadows?: string; view: Record<string, unknown> };
+  clearance: ClearanceConfig;
   audio: { on: boolean; leadS: number };
   image: string;
 }
@@ -56,6 +63,7 @@ const KEYS = [
   'settle',
   'preroll',
   'quality',
+  'clearance',
   'audio',
   'image',
 ];
@@ -73,8 +81,9 @@ export function parseCinematic(raw: unknown): CinematicConfig {
   const preroll = raw.preroll;
   const quality = raw.quality;
   const audio = raw.audio;
-  if (!isObj(settle) || !isObj(preroll) || !isObj(quality) || !isObj(audio))
-    throw new Error('cinematic: settle, preroll, quality and audio must be objects');
+  const clear = raw.clearance;
+  if (!isObj(settle) || !isObj(preroll) || !isObj(quality) || !isObj(audio) || !isObj(clear))
+    throw new Error('cinematic: settle, preroll, quality, clearance and audio must be objects');
   if (!isObj(quality.view)) throw new Error('cinematic: quality.view must be an object');
   const shadows = quality.shadows;
   if (
@@ -106,6 +115,14 @@ export function parseCinematic(raw: unknown): CinematicConfig {
     quality: {
       ...(typeof shadows === 'string' ? { shadows } : {}),
       view: quality.view,
+    },
+    clearance: {
+      radiusM: num(clear, 'radiusM', 'clearance.', 0, 5),
+      stepS: num(clear, 'stepS', 'clearance.', 0.001, 10),
+      passStepS: num(clear, 'passStepS', 'clearance.', 0.01, 60),
+      capMs: num(clear, 'capMs', 'clearance.', 0, 600_000),
+      liftStepM: num(clear, 'liftStepM', 'clearance.', 0.05, 100),
+      liftMaxM: num(clear, 'liftMaxM', 'clearance.', 0, 1000),
     },
     audio: { on: audio.on, leadS: num(audio, 'leadS', 'audio.', 0, 1) },
     image: raw.image,
@@ -225,6 +242,8 @@ export interface CinematicHost {
   /** The sound stepped with the frames, or null (no audio). */
   audio(leadS: number): Promise<CinematicAudio | null>;
   wallMs(): number;
+  /** The camera clearance check's world (clearance.ts), or null (no check). */
+  clearance: ClearanceWorld | null;
 }
 
 export interface CinematicTakeOptions {
@@ -235,6 +254,8 @@ export interface CinematicTakeOptions {
   settings?: unknown;
   /** Stop after this many frames (default: the path's length × fps). */
   frames?: number;
+  /** A deliberate shot through solid ground: the clearance check reports it but doesn't fail the take. */
+  allowClipping?: boolean;
 }
 
 export interface CinematicReport {
@@ -247,6 +268,8 @@ export interface CinematicReport {
   settle: { meanMs: number; p95Ms: number; maxMs: number; capped: number[] };
   ticks: number;
   audio: AudioStep | null;
+  /** The camera clearance check (null without one): its samples, unchecked ones and clips. */
+  clearance: Omit<ClearanceResult, 'message'> | null;
 }
 
 /** The p-th percentile of `xs` (0–1). */
@@ -301,15 +324,29 @@ export async function runCinematic(
     // The pre-roll: the path flown once, the world held, each step settled; nothing captured.
     host.theaterPlay(json);
     const duration = host.theaterState()?.duration ?? 0;
+    // The clearance check (§6.2): every eye probed now (a local world knows them all: a clip fails
+    // the take before its pre-roll), the rest in the pre-roll, each step's once it has settled.
+    const check = host.clearance && new ClearanceCheck(host.clearance, json, cfg.clearance);
+    const verdict = (): ClearanceResult | null => {
+      const r = check?.result() ?? null;
+      if (r?.clipping.length && !o.allowClipping) throw new Error(`cinematic: ${r.message}`);
+      return r;
+    };
+    const unknown = check ? await check.probeUpTo(Infinity) : 0;
+    if (!unknown) verdict();
     if (cfg.preroll.stepS > 0) {
       await settle(cfg.settle.firstCapMs);
+      if (unknown && check) await check.probeUpTo(0);
       for (let t = cfg.preroll.stepS; t < duration + cfg.preroll.stepS; t += cfg.preroll.stepS) {
         host.theaterAdvance(cfg.preroll.stepS);
         await settle(cfg.preroll.capMs);
+        if (unknown && check) await check.probeUpTo(t);
       }
       host.theaterStop();
       host.theaterPlay(json);
     }
+    if (unknown && check) await check.probeUpTo(Infinity);
+    const clear = verdict();
     const prerollS = (host.wallMs() - t0) / 1000;
     const frames = o.frames ?? Math.max(1, Math.round(duration * cfg.fps) + 1);
     const S = cfg.subframes;
@@ -382,6 +419,12 @@ export async function runCinematic(
       },
       ticks,
       audio: step && { ...step, wav: new Uint8Array(0) },
+      clearance: clear && {
+        samples: clear.samples,
+        unchecked: clear.unchecked,
+        radiusM: clear.radiusM,
+        clipping: clear.clipping,
+      },
     };
   } finally {
     audio?.close();

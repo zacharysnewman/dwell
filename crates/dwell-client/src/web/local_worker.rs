@@ -359,6 +359,22 @@ impl LocalWorld {
         self.core
             .find_on_map(kind, [x, y, z], radius, face, min_depth)
     }
+    /// The camera clearance check against this world (`LocalCore::camera_clearance`): per eye
+    /// (`[x, y, z, …]`) its code (1 solid, 0 clear) then, after all the codes, each eye's lift (m,
+    /// NaN unless solid and cleared within `lift_max` m).
+    #[wasm_bindgen(js_name = cameraClearance)]
+    pub fn camera_clearance(
+        &mut self,
+        eyes: &[f64],
+        radius: f64,
+        lift_step: f64,
+        lift_max: f64,
+    ) -> Vec<f64> {
+        let (codes, lifts) = self
+            .core
+            .camera_clearance(eyes, radius, lift_step, lift_max);
+        codes.into_iter().map(f64::from).chain(lifts).collect()
+    }
     /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic);
     /// undefined while the water worker's is on its way (`takeWaterReport`).
     #[wasm_bindgen(js_name = waterReport)]

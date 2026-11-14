@@ -1426,6 +1426,43 @@ impl Client {
         set(&o, "finished", finished);
         o.into()
     }
+    /// A camera path's eye sampled every `step_s` seconds of take time (the clearance check,
+    /// THEATER_MODE.md §6.2): `[takeS, pathS, x, y, z, …]`, at most `max` samples; fails with the
+    /// path's message.
+    #[wasm_bindgen(js_name = theaterSamples)]
+    pub fn theater_samples(&self, json: &str, step_s: f64, max: u32) -> Result<Vec<f64>, JsValue> {
+        let path = dwell_theater::Path::parse_str(json).map_err(|e| JsValue::from_str(&e))?;
+        let s = self.inner.borrow();
+        let g = s.game.as_ref().ok_or("no game yet")?;
+        Ok(g.theater_samples(path, step_s, max as usize)
+            .into_iter()
+            .flat_map(|(t, pt, [x, y, z])| [t, pt, x, y, z])
+            .collect())
+    }
+    /// Probes camera eyes (`[x, y, z, …]`, m) against the loaded world's solid blocks within
+    /// `radius` m (`camera_clearance::probe`): one code an eye, 1 solid, 0 clear, -1 not loaded.
+    #[wasm_bindgen(js_name = cameraClearance)]
+    pub fn camera_clearance(&self, eyes: &[f64], radius: f64) -> Vec<i8> {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return vec![-1; eyes.len() / 3];
+        };
+        let mut read = crate::camera_clearance::held(g.world());
+        eyes.chunks_exact(3)
+            .map(|p| crate::camera_clearance::probe(&mut read, [p[0], p[1], p[2]], radius).code())
+            .collect()
+    }
+    /// How far (m) the eye at (x, y, z) must rise along its face's up to clear the solid blocks
+    /// within `radius` m, in `step` m steps up to `max` m; NaN when it doesn't (or isn't loaded).
+    #[wasm_bindgen(js_name = cameraLift)]
+    pub fn camera_lift(&self, x: f64, y: f64, z: f64, radius: f64, step: f64, max: f64) -> f64 {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return f64::NAN;
+        };
+        let mut read = crate::camera_clearance::held(g.world());
+        crate::camera_clearance::lift(&mut read, [x, y, z], radius, step, max).unwrap_or(f64::NAN)
+    }
     /// The presets file (`shared/theater/presets.json`) as the build has it.
     /// Whether the world lets guests use theater mode (THEATER_MODE.md §7; the host always may):
     /// true before joining and on a server that never sets it.

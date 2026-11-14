@@ -23,6 +23,7 @@ import {
   realign,
   wavBytes,
 } from './cinematicAudio';
+import type { ClearanceWorld } from './clearance';
 
 const loaded: ViewState = { lod: { waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
 const loading: ViewState = { lod: { waitingInView: 300 }, terrain: { dirty: 0, meshing: 0 } };
@@ -133,62 +134,63 @@ it('frame names and percentiles', () => {
   expect(percentile([], 0.5)).toBe(0);
 });
 
+/** A fake page: the view loads `loadFrames` frames after each step; the canvas is a stand-in. */
+function fakeHost(loadFrames: number, capAt: number[] = []) {
+  let wall = 0;
+  let clock = 1000;
+  let sinceStep = 0;
+  let frame = 0;
+  const log = {
+    steps: [] as number[],
+    clocks: [] as number[],
+    advances: [] as number[],
+    files: [] as string[],
+    captures: 0,
+  };
+  const host: CinematicHost = {
+    holdClock: () => clock,
+    stepClockTo: (ms) => {
+      clock = ms;
+      log.clocks.push(ms);
+    },
+    world: {
+      hold: () => undefined,
+      step: (n) => {
+        log.steps.push(n);
+        sinceStep = 0;
+        frame++;
+        return Promise.resolve(0);
+      },
+    },
+    theaterExact: () => undefined,
+    theaterAdvance: (dt) => {
+      log.advances.push(dt);
+    },
+    theaterPlay: () => undefined,
+    theaterStop: () => undefined,
+    theaterState: () => ({ time: 0, duration: 1, finished: false }),
+    state: () => (sinceStep >= loadFrames && !capAt.includes(frame) ? loaded : loading),
+    setView: () => undefined,
+    setShadows: () => undefined,
+    canvas: {} as HTMLCanvasElement,
+    canvasSize: () => undefined,
+    nextFrame: (capture) => {
+      wall += 50;
+      sinceStep++;
+      if (capture) log.captures++;
+      return Promise.resolve(true);
+    },
+    sink: (file) => {
+      log.files.push(file);
+      return Promise.resolve();
+    },
+    audio: () => Promise.resolve(null),
+    wallMs: () => wall,
+    clearance: null,
+  };
+  return { host, log };
+}
 describe('the take', () => {
-  /** A fake page: the view loads `loadFrames` frames after each step; the canvas is a stand-in. */
-  function fakeHost(loadFrames: number, capAt: number[] = []) {
-    let wall = 0;
-    let clock = 1000;
-    let sinceStep = 0;
-    let frame = 0;
-    const log = {
-      steps: [] as number[],
-      clocks: [] as number[],
-      advances: [] as number[],
-      files: [] as string[],
-      captures: 0,
-    };
-    const host: CinematicHost = {
-      holdClock: () => clock,
-      stepClockTo: (ms) => {
-        clock = ms;
-        log.clocks.push(ms);
-      },
-      world: {
-        hold: () => undefined,
-        step: (n) => {
-          log.steps.push(n);
-          sinceStep = 0;
-          frame++;
-          return Promise.resolve(0);
-        },
-      },
-      theaterExact: () => undefined,
-      theaterAdvance: (dt) => {
-        log.advances.push(dt);
-      },
-      theaterPlay: () => undefined,
-      theaterStop: () => undefined,
-      theaterState: () => ({ time: 0, duration: 1, finished: false }),
-      state: () => (sinceStep >= loadFrames && !capAt.includes(frame) ? loaded : loading),
-      setView: () => undefined,
-      setShadows: () => undefined,
-      canvas: {} as HTMLCanvasElement,
-      canvasSize: () => undefined,
-      nextFrame: (capture) => {
-        wall += 50;
-        sinceStep++;
-        if (capture) log.captures++;
-        return Promise.resolve(true);
-      },
-      sink: (file) => {
-        log.files.push(file);
-        return Promise.resolve();
-      },
-      audio: () => Promise.resolve(null),
-      wallMs: () => wall,
-    };
-    return { host, log };
-  }
   const offscreen = globalThis.OffscreenCanvas;
   it('steps the world and the clock exactly per frame, settles each, captures each once', async () => {
     // a stand-in OffscreenCanvas for node
@@ -224,6 +226,62 @@ describe('the take', () => {
       expect(log.captures).toBe(31);
       // frame 4 never loaded: captured at the cap, and reported
       expect(r.settle.capped).toEqual([4]);
+    } finally {
+      (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
+    }
+  });
+});
+
+describe("the take's camera clearance (§6.2)", () => {
+  const offscreen = globalThis.OffscreenCanvas;
+  /** A world where every eye is in solid ground (the lift that clears it 2 m). */
+  const walled: ClearanceWorld = {
+    samples: (_json, stepS) => {
+      const out: number[] = [];
+      for (let t = 0; t <= 1 + 1e-9; t += stepS) out.push(t, t, t, 5, 0);
+      return out;
+    },
+    probe: (eyes) => {
+      const n = eyes.length / 3;
+      return Promise.resolve({ codes: Array(n).fill(1), lifts: Array(n).fill(2) });
+    },
+  };
+  it('a path through solid ground fails before the pre-roll; allowClipping takes it and reports the clip', async () => {
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
+      getContext() {
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
+      }
+      transferToImageBitmap() {
+        return {};
+      }
+      convertToBlob() {
+        return Promise.resolve(new Blob([new Uint8Array([1])]));
+      }
+    };
+    try {
+      const settings = { audio: { on: false }, preroll: { stepS: 0.5 } };
+      const a = fakeHost(0);
+      a.host.clearance = walled;
+      await expect(runCinematic(a.host, { path: {}, size: [16, 9], settings })).rejects.toThrow(
+        /cinematic: the camera path passes through solid ground .*\n.*lift the camera ≥ 2\.0 m/,
+      );
+      expect(a.log.advances).toEqual([]); // nothing flown
+      expect(a.log.files).toEqual([]);
+      const b = fakeHost(0);
+      b.host.clearance = walled;
+      const r = await runCinematic(b.host, {
+        path: {},
+        size: [16, 9],
+        settings,
+        allowClipping: true,
+      });
+      expect(r.clearance?.clipping).toHaveLength(1);
+      expect(r.clearance?.unchecked).toBe(0);
+      expect(b.log.files).toHaveLength(31);
     } finally {
       (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
     }
