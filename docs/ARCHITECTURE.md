@@ -1122,9 +1122,17 @@ grid having no air: `grids.json` `atmosphere`, DAY_NIGHT.md §15; the view easin
 M-5, 2026-11-13]:** a grid with a `nearMesh` (`grids.json`) is drawn nearer than its `farM` as a coarse
 mesh of its surface (`dwell-client` `grid_bodies.rs`, from its `FarSource`, both faces) at its pose in the
 drawn frame, a piece the shadows skip, the far disc then hidden. **On a grid [built, 0.63.0; BUGS.md #143–#145]:**
-its distant terrain is its `lod` (`grids.json`): square rings of its surface from its `FarSource` centred on the
-viewer, quads doubling per level, past its disc's rim, sunk so the chunks cover them, recentred a few a frame
-(`dwell-client` `grid_lod.rs`; home keeps its own LOD tree). Home has no sky disc (`skyDisc` false): from the moon
+its distant terrain is drawn by an LOD tree of its own when `grids.json` says `lod: true` (BUGS.md #159): home's
+`LodSystem` (§6.6: pixel-error selection, graded levels, fades, stand-ins) over the grid's disc
+(`WorldBounds::grid`, its rim view scaled to the disc, `LodSystem::set_rim_view`), one instance at a time for the
+grid the view is on, made on its first frame there and dropped at every crossing (`dwell-client` `grid_lod.rs`).
+Its sections are generated in the job workers (`Job::GridLod`, `Job::GridLodBounds`, the grid's `grids.json`
+index; each result carries the instance's epoch) by one builder over the grid generator's columns
+(`dwell-worldgen` `grid_lod.rs`: the `GridColumns` trait, ground at a cell's scale, its block, a fluid over it;
+the `cratered` and `volcanic` kinds implement it), meshed by home's LOD mesher, so they take the block looks'
+LOD colours as home's far terrain does. A grid has no LOD index and asks the server for nothing; its section
+ids in the renderer carry `grid_lod::ID_BIT`, apart from home's (dropped while away); on it `Game::chunk_fade`
+asks its tree. Home has no sky disc (`skyDisc` false): from the moon
 its `nearMesh`, made from its world maps (`HomeFar`), is drawn at its place at every distance (M-6). A grid's
 `light` rig lights it (`grid_light.rs`): the sun kept or not (`sunlit`), up to two bodies by the sunlight they
 reflect (albedo × phase × apparent size², toward them; the `DaySky` uniform's `rig0`/`rig1`, added in

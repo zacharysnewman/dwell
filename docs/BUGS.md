@@ -6,7 +6,7 @@ pins it.
 
 ## Open
 
-### 159. The first-person vertical block leans the blade back toward the eye
+### 165. The first-person vertical block leans the blade back toward the eye
 
 Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's
 `fp_guard_vertical` (the sheet's top, side and front panels, `docs/clip_probe/guard_vertical_after.svg`) with the grip
@@ -14,6 +14,22 @@ Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item d
 the third-person pose (fixed in #87) stands it upright. Not judged on a GPU yet; it may read fine from first
 person (the blade off screen above), so the owner's call. Fix if wanted: fit `fp_guard_vertical` with `clip_probe
 --fit` (no `--body`) to an upright blade ahead of the view. Open.
+
+### 159. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
+
+Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
+unlike home world. The LOD colors don't match either." Cause: since #143/#145 a grid's distance is `grid_lod.rs`'s
+rings of its far source's heights (coarse quads, recentred) right past the full-detail chunks: two levels, no graded
+steps or fades between, and the rings' colour is the far source's albedo (`FarSource::far_albedo`, the blocks'
+`color`), not the block looks the chunks are drawn with. Fix (WORK_QUEUE item 27, branch `claude/grid-lod`): a
+`LodSystem` per grid with sections from the grid's generator, meshed and coloured as home's. **Owner should see:**
+on the moon (and sun), distant terrain steps down in detail gradually like at home, with matching colours from near
+to far, no jump from full detail to a blurry low-detail mesh. **Fixed natively (2026-11-14), the browser look
+outstanding:** the rings are gone; the moon's and the sun's distance is home's LOD over their discs, graded levels
+with fades, tops in the chunks' block looks (the rings wrote the far albedo's sRGB into the linear colour stream:
+0% of tops matched, 100% now). Tests: `dwell-client/tests/grid_lod.rs`, `dwell-worldgen/tests/grid_lod.rs`, the
+`game_local` moon trip. Also found: home's 16 km rim view spans the moon, so it drew both faces from anywhere
+(`LodSystem::set_rim_view`, scaled per grid).
 
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
@@ -564,6 +580,26 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
+
+*Found 2026-11-13 in a GPU screenshot pass on 05925aea (test:forest seed 0, High).* 25 m over the dense stand only
+flat-topped trunks were drawn under the camera; at 40 m a hole of bare trunk stubs sat below with crowns at the
+frame's edges; at 80 m the canopy was whole. Confirmed in a real flight (flying up from the forest floor looking
+down). Not the impostor hand-over (#927, already the eye's 3D distance): the LOD walk. A coarse LOD section's kind
+comes from the terrain alone, so the level-2 section over the forest floor (only the trees' upper parts in it) was
+"empty", and the walk stopped there: the streamed chunks inside it (loaded, meshed, drawable) were never shown, and the
+trees there were near, so no impostor drew either. The trunks were cut at that section's floor (y 320 there). Now an
+empty section on the way to the chunks around the camera (`find_covered`) is walked through to them, as a buried one
+already was (`dwell-lod` `visit`). `system::tests::draws_the_streamed_chunks_inside_a_section_the_coarse_levels_call_empty`
+(red on the unfixed walk: the chunks 64-80 m up not shown). The streaming report (F8) now names where the walk stopped
+above a chunk (`lod.stoppedAt`), which found this.
+
+The same pass saw the crowns cast almost no shadow on the forest floor: the missing crowns were most of that (with
+them drawn, the canopy's shadow lies on the floor in the after shot); a check from the ground is still worth a look.
+
+Owner should see: flying up over a forest and looking down, the canopy stays whole at every height (no hole of trunk
+stubs below), and the canopy's shadow on the floor.
+
 ### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
@@ -592,6 +628,38 @@ the blade upright ahead of the face), and the sword's `guard.stances.vertical.bl
 sparks stay on the drawn blade. Test (`clip_probe` `the_vertical_block_stands_upright_ahead_of_the_face`): red on
 the old clip ("66° off upright"), green on the new; `the_raised_blades_data_is_where_the_raised_poses_draw_it`
 holds the data to it. Sheets: `docs/clip_probe/guard_vertical_before.svg`, `_after.svg` (the third-person panel).
+
+### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13, shot 04c; refinement, owner: "Focus on
+refinement only for now"): at a sun river head (`sunLand {river:true}`) the basalt crust by the lava was nearly black,
+so #145's reflected light from home and the moon barely showed. Cause: tuning. The sun's light rig (grids.json
+`dwell:sun` `light`) gave open ground facing up a luma of 0.076 (an ambient floor 0.06 and the glow 0.45, 0.4 of it
+from the sky), and home and the moon at 0.9 and 0.35. Fix, data only: the floor 1.2 in a softer warm (#ffa476), the
+glow 2.5, home 6.0 and the moon 2.0 (luma 0.88 facing up; the basalt ramp is very dark, #35323a); the lava's own emissive look unchanged. Test:
+`grid_light::the_suns_crust_reads_as_warm_lit_rock_not_black` (both faces; red before at 0.076, green after).
+Shots (before → after, `sunLand {river:true}` on the real GPU): the open crust went from black to dark basalt with its blocks' steps showing, the lava unchanged. **Owner should see:** on the sun, the crust beside the lava reads as dark, warm-lit basalt with
+its blocks' form visible, brighter on the side facing home; the lava as bright as before.
+
+### 160. Theater on a phone in portrait: the flying controls vanish while the bottom sheet is open (fixed after 0.63.10)
+
+Same pass (01b, 390×844): the stick and Up/Down showed in landscape (beside the side sheet) and with the bottom sheet
+collapsed, but a stylesheet rule hid them while it was open, so the camera couldn't be flown while setting keys.
+Fix: they show with the sheet open too, riding just above its top edge (mode.ts `showTouch` sets their `bottom` from
+the sheet's rect, layout.ts `touchBottomOverSheet`, open or collapsed); the sheet's 58 % cap leaves room for the
+stick. Test: panel.test.ts "show above the open sheet at 390×844, their rect clear of it" (red before: the hiding
+rule, no placement). **Owner should see:** on a phone in portrait, theater's stick and Up/Down sit just above the
+open sheet, and flying works while the sheet is open.
+
+### 159. Theater's recording dot is barely visible (fixed after 0.63.10)
+
+Same pass (01d): the REC badge's dot read as a faint pink smudge on a pink pill, and it blinked out (hidden) half of
+every second. Fix (style.css `.tb-rec`): a saturated red dot (#e0201a) ringed in white with a soft red glow, on a
+near-white pill with a red hairline, pulsing gently between 100 % and 60 % opacity (never hidden; no pulse with
+reduced motion). Test: panel.test.ts "shows a saturated red dot that stands out on its pill and never blinks out"
+(the dot's red saturation, ≥ 3:1 contrast on its pill over the glass, its keyframes never hide it or go under 60 %;
+red before). **Owner should see:** while a take records, a clear red dot beside REC and the timer, steady or gently
+pulsing.
 
 ### 158. Villagers' skin reads cold blue-grey with the sun behind them (fixed after 0.63.8)
 
@@ -627,6 +695,38 @@ crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier
 `tree_fade::a_still_eye_sees_every_trees_cards_whole_or_gone` and `a_trees_cards_fade_once_in_time_…` (both faces).
 **Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
 as solid painted shapes.
+
+### 159. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
+pitch problem or if it's the wrong sound effect, happens when you run out of stamina and maybe other related player
+effects." Cause: the wrong sound effect, not the pitch. `exhausted` plays `breath_heavy`, whose samples were the pack's
+`MONSTER_Exhausted_05` and `_07` (0.52.20's pick by filename, unheard): analysed, they are voiced throughout (a pitch in
+30 of 39 loud frames, ~110–180 Hz) with a low spectral centroid (840–970 Hz), a creature's growling exhale, where a
+person's heavy breath is mostly unvoiced noise. The pitch math was right: a sample's `pitch` is ± semitones
+(`2^(s/12)`), and every player vocal sound draws ±0.5 semitone (rate 0.97–1.03). The other player vocals are the pack's
+human male takes (`hurt` `GRUNT_Male_B_Hurt_Short_01–04`, `death` `GROAN_Male_Hurt_Long`, `gasp`
+`GRUNT_Male_Hurt_With_Cough`, `strain` `GRUNT_Male_Subtle_Hurt`; f0 ~245–510 Hz, centroid 1.1–2.3 kHz) and stay. Fix:
+the monster files are removed and the breath plays its procedural layers (two breathy noise puffs) until a human breath
+is picked from the pack; a sound's samples now name their pack files (`samples.from`), whose category the test checks.
+Tests: `client/src/audio/playerVoice.test.ts` (red: `dwell:breath_heavy plays MONSTER_Exhausted_05`; green after), each
+player vocal event a human category and every play's rate within 0.9–1.1, and the semitones → rate math.
+
+**Owner should hear:** when you run out of stamina (and on other player effort/hurt sounds), a human breath/grunt at a
+natural pitch, not a growl. Follow-up (2026-11-13, `claude/human-breath`): the breath plays recorded human takes again,
+picked by analysis (the pack has no `BREATH` category): `VOICE_MALE_Sigh_1` (unvoiced, 0.74 s, centroid ~3.7 kHz),
+`GRUNT_Male_Quick` and `GRUNT_Male_Quick_Deep` (the gasp's and the strain's voice, breathy exhales, 20–36 % voiced,
+centroid 2.3–2.6 kHz), ±0.5 semitone; the noise puffs stay as the fallback before they decode. Test: `playerVoice.test.ts`
+"the out-of-stamina breath is a man's recorded breath" (red: `breath_heavy plays recorded samples, not only noise`;
+green after). Unheard by a person yet: the owner should hear it.
+
+Follow-up (2026-11-13, `claude/breath-sigh`): the owner heard the three previews and chose the sigh. Owner: "1, sigh is
+my choice". `breath_heavy` plays only `breath-heavy-1.m4a` (`VOICE_MALE_Sigh_1`), ±0.5 semitone, same gain;
+`breath-heavy-2/-3.m4a` (`GRUNT_Male_Quick`, `_Quick_Deep`) are deleted. The noise puffs stay only as the fallback
+until the sigh decodes. Test: `playerVoice.test.ts` "the out-of-stamina breath is the owner's pick, the sigh alone"
+(red on the three takes: `breath_heavy plays only the sigh`; green after).
+
+**Owner should hear:** run out of stamina: one human sigh every time (a little pitch spread), never a short grunt.
 
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 

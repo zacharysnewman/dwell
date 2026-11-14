@@ -107,6 +107,11 @@ export interface SoundDef {
 export interface SamplesDef {
   /** Published names under the site's `media/` (`stone-step-1-<hash>.m4a`). */
   files: string[];
+  /**
+   * The pack's own name of each file, in order (`GRUNT_Male_B_Hurt_Short_01`): its category is the
+   * first word. A player's voice must be a human one (BUGS.md #159).
+   */
+  from?: string[];
   /** Level (default 1), times the play's gain. */
   gain?: number;
   /** ± semitones per play. */

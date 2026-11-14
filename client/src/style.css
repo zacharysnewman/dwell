@@ -3926,8 +3926,8 @@ body.theater-take > #theater-touch {
 }
 
 /* Theater mode's flying controls on a phone (src/theater/touch.ts): the stick at the bottom left, Up
-   and Down beside it; above the bottom sheet's header when it is collapsed, under it when open (the
-   sheet's controls come first), beside the side sheet in landscape. */
+   and Down beside it; just above the bottom sheet's top edge, open or collapsed (mode.ts `showTouch`
+   sets `bottom` from the sheet's rect; BUGS.md #160), beside the side sheet in landscape. */
 .theater-touch {
   position: fixed;
   left: var(--safe-left);
@@ -3940,8 +3940,7 @@ body.theater-take > #theater-touch {
   user-select: none;
 }
 
-.theater-touch[hidden],
-.theater-touch.tb-sheet-bottom[data-sheet='open'] {
+.theater-touch[hidden] {
   display: none;
 }
 
@@ -4435,19 +4434,29 @@ body.theater-take > #theater-touch {
   background: var(--mm-mode-creative);
 }
 
+/* Recording (BUGS.md #159): a saturated red dot ringed in white on a light pill, so it reads on the
+   glass; a gentle pulse that never falls under 60 % (it never blinks out). */
 .tb-rec {
-  background: rgb(200 68 58 / 14%);
-  color: #8f241c;
+  background: rgb(255 255 255 / 85%);
+  box-shadow: inset 0 0 0 1px rgb(214 32 24 / 45%);
+  color: #a3160f;
 }
 
 .tb-rec .tb-dot {
-  background: var(--danger);
-  animation: tb-blink 1s steps(2, start) infinite;
+  background: #e0201a;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 6px 1px rgb(224 32 26 / 70%);
+  animation: tb-rec-pulse 1.2s ease-in-out infinite alternate;
 }
 
-@keyframes tb-blink {
+@keyframes tb-rec-pulse {
+  from {
+    opacity: 1;
+  }
+
   to {
-    visibility: hidden;
+    opacity: 0.6;
   }
 }
 

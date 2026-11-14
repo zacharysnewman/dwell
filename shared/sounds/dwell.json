@@ -2220,7 +2220,8 @@
       ]
     },
     "breath_heavy": {
-      "samples": {"files": ["breath-heavy-1.m4a", "breath-heavy-2.m4a"], "gain": 0.35, "pitch": 0.5},
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
+      "samples": {"files": ["breath-heavy-1.m4a"], "from": ["VOICE_MALE_Sigh_1"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.4, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2229,7 +2230,7 @@
       ]
     },
     "gasp": {
-      "samples": {"files": ["gasp-1.m4a"], "gain": 0.45, "pitch": 0.5},
+      "samples": {"files": ["gasp-1.m4a"], "from": ["GRUNT_Male_Hurt_With_Cough"], "gain": 0.45, "pitch": 0.5},
       "gain": 0.5, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2237,7 +2238,7 @@
       ]
     },
     "strain": {
-      "samples": {"files": ["strain-1.m4a"], "gain": 0.4, "pitch": 0.5},
+      "samples": {"files": ["strain-1.m4a"], "from": ["GRUNT_Male_Subtle_Hurt"], "gain": 0.4, "pitch": 0.5},
       "gain": 0.4, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2261,7 +2262,7 @@
       ]
     },
     "wolf_howl": {
-      "samples": {"files": ["wolf-howl-1.m4a", "wolf-howl-2.m4a"], "gain": 0.4, "pitch": 1, "reverb": 0.1},
+      "samples": {"files": ["wolf-howl-1.m4a", "wolf-howl-2.m4a"], "from": ["ANIMAL_Wolf_Howl_01", "ANIMAL_Wolf_Howl_02"], "gain": 0.4, "pitch": 1, "reverb": 0.1},
       "gain": 0.4, "reverb": 0.3,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2269,7 +2270,7 @@
       ]
     },
     "wolf_growl": {
-      "samples": {"files": ["wolf-growl-1.m4a", "wolf-growl-2.m4a"], "gain": 0.45, "pitch": 1},
+      "samples": {"files": ["wolf-growl-1.m4a", "wolf-growl-2.m4a"], "from": ["ANIMAL_Dog_Growl_01_RR01", "ANIMAL_Dog_Growl_01_RR02"], "gain": 0.45, "pitch": 1},
       "gain": 0.45, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2277,7 +2278,7 @@
       ]
     },
     "deer_snort": {
-      "samples": {"files": ["deer-snort-1.m4a", "deer-snort-2.m4a"], "gain": 0.45, "pitch": 1},
+      "samples": {"files": ["deer-snort-1.m4a", "deer-snort-2.m4a"], "from": ["ANIMAL_Horse_Snort_01_Dry", "ANIMAL_Horse_Snort_02_Dry"], "gain": 0.45, "pitch": 1},
       "gain": 0.45, "reverb": 0.05,
       "variation": {"pitch": 1, "gain": 1, "cutoff": 0.1, "time": 0.1},
       "layers": [
@@ -2285,7 +2286,7 @@
       ]
     },
     "hurt": {
-      "samples": {"files": ["hurt-1.m4a", "hurt-2.m4a", "hurt-3.m4a", "hurt-4.m4a"], "gain": 0.5, "pitch": 0.5},
+      "samples": {"files": ["hurt-1.m4a", "hurt-2.m4a", "hurt-3.m4a", "hurt-4.m4a"], "from": ["GRUNT_Male_B_Hurt_Short_01", "GRUNT_Male_B_Hurt_Short_02", "GRUNT_Male_B_Hurt_Short_03", "GRUNT_Male_B_Hurt_Short_04"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.06,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.08, "time": 0.08},
       "intensity": {"gain": [0.55, 1], "cutoff": [0.7, 1], "time": [0.85, 1.15]},
@@ -2296,7 +2297,7 @@
       ]
     },
     "death": {
-      "samples": {"files": ["death-1.m4a"], "gain": 0.5, "pitch": 0.5},
+      "samples": {"files": ["death-1.m4a"], "from": ["GROAN_Male_Hurt_Long"], "gain": 0.5, "pitch": 0.5},
       "gain": 0.8, "reverb": 0.2,
       "variation": {"pitch": 0.5, "gain": 0.5},
       "layers": [

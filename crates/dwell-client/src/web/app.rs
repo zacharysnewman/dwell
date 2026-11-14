@@ -2580,9 +2580,8 @@ impl Client {
         s.lod_settings.detail_distance_m = distance;
         s.lod_settings.pixel_error = pixel_error;
         s.lod_settings.cache_bytes = (memory_mb * 1_048_576.0) as usize;
-        if let Some(lod) = s.game.as_mut().and_then(|g| g.lod()) {
-            lod.set_detail_distance(distance);
-            lod.set_quality(pixel_error, (memory_mb * 1_048_576.0) as usize);
+        if let Some(g) = s.game.as_mut() {
+            g.set_lod_detail(distance, pixel_error, (memory_mb * 1_048_576.0) as usize);
         }
     }
     #[wasm_bindgen(js_name = setDebugVisible)]

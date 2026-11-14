@@ -6,7 +6,14 @@
 import { type Aspect, THEATER, type TheaterConfig } from './config';
 import { setHud } from './hud';
 import { KeyframeEditor, type PathJson, UPS, type Up, type Vec3 } from './keyframes';
-import { LAYOUT_CLASS, PadNav, type TheaterLayout, layoutFor, timerText } from './layout';
+import {
+  LAYOUT_CLASS,
+  PadNav,
+  type TheaterLayout,
+  layoutFor,
+  timerText,
+  touchBottomOverSheet,
+} from './layout';
 import {
   ExactTake,
   download,
@@ -527,6 +534,12 @@ export class TheaterMode {
     const pad = this.touchPad.element;
     for (const [k, c] of Object.entries(LAYOUT_CLASS)) pad.classList.toggle(c, k === this.layout);
     pad.dataset.sheet = this.body.hidden ? 'collapsed' : 'open';
+    // Over a bottom sheet (open or collapsed) the controls ride just above its top edge.
+    const win = this.bar.ownerDocument.defaultView;
+    if (shown && this.layout === 'sheet-bottom' && !this.bar.hidden && win) {
+      const bottom = `${String(touchBottomOverSheet(win.innerHeight, this.bar.getBoundingClientRect().top))}px`;
+      if (pad.style.bottom !== bottom) pad.style.bottom = bottom;
+    } else if (pad.style.bottom) pad.style.bottom = '';
   }
 
   /** The camera now, as `theaterFly` reports it. */
