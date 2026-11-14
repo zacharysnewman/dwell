@@ -808,9 +808,13 @@ impl VoxelWorld {
         if !self.chunks.contains_key(&coord) {
             let mut chunk = None;
             if self.saved_has(coord)
-                && let Some(c) = self.saved.as_mut().and_then(|s| s.load(coord))
+                && let Some(mut c) = self.saved.as_mut().and_then(|s| s.load(coord))
             {
                 self.loaded_saved += 1;
+                // A multi-cell block saved without one of its cells (a torch's lone flame or
+                // stick) is removed (BUGS.md #171, crate::parts); a partner in a chunk not held
+                // is left alone.
+                crate::parts::repair_chunk(&mut c, coord, |p| self.voxel_if_held(p));
                 chunk = Some(c);
             }
             let chunk = chunk.unwrap_or_else(|| {

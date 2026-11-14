@@ -19,6 +19,7 @@ pub mod ground;
 pub mod hash;
 pub mod light;
 pub mod lod;
+pub mod parts;
 pub mod portal_shafts;
 pub mod ramps;
 pub mod region;

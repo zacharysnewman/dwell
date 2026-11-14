@@ -4358,6 +4358,34 @@ impl TerrainGenerator {
         }
     }
 
+    /// Whether a structure's cell `p` (face-local) may be stamped, for keeping a multi-cell block
+    /// whole (BUGS.md #171, `Placed::cells_whole`): in the face and the build volume, over the
+    /// column's ground and water (`column_at`, so a chunk and the one beside it agree on a pair
+    /// split between them), and, in this chunk, over air or a replaceable block as stamped so far.
+    fn stamp_free(&self, coord: ChunkCoord, chunk: &Chunk, volume: Overlap, p: [i32; 3]) -> bool {
+        const S: i32 = CHUNK_SIZE;
+        if !(FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
+            || (volume == Overlap::Partial
+                && !self.world().volume().contains_voxel(
+                    i64::from(p[0]),
+                    i64::from(p[1]),
+                    i64::from(p[2]),
+                ))
+        {
+            return false;
+        }
+        let col = self.column_at(p[0], p[2]);
+        if col.outside || p[1] <= top_voxel(col.height) || p[1] < col.water_row() {
+            return false;
+        }
+        let (lx, ly, lz) = (p[0] - coord.x * S, p[1] - coord.y * S, p[2] - coord.z * S);
+        if (0..S).contains(&lx) && (0..S).contains(&ly) && (0..S).contains(&lz) {
+            let v = chunk.voxels()[local_index(lx, ly, lz)];
+            return v == M.air || dwell_blocks::info(v).replaceable;
+        }
+        true
+    }
+
     /// Stands the portals' monuments reaching this chunk in it, over air and replaceable cells
     /// only (the ground they stand on stays; a higher ground under a pillar holds it).
     fn stamp_monuments(&self, coord: ChunkCoord, volume: Overlap, chunk: &mut Chunk) {
@@ -4367,9 +4395,11 @@ impl TerrainGenerator {
         if monuments.is_empty() {
             return;
         }
-        let voxels = chunk.voxels_mut();
         for m in monuments.iter().filter(|m| !m.misses(coord)) {
-            for (p, state) in m.cells() {
+            // A multi-cell block (a shrine's torch) is stamped whole or not at all (BUGS.md #171).
+            let cells = m.cells_whole(|p| self.stamp_free(coord, chunk, volume, p));
+            let voxels = chunk.voxels_mut();
+            for (p, state) in cells {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
                 let inside = (0..S).contains(&lx)
                     && (0..S).contains(&ly)
@@ -4418,13 +4448,15 @@ impl TerrainGenerator {
     fn stamp_trees(&self, coord: ChunkCoord, trees: &[Tree], volume: Overlap, chunk: &mut Chunk) {
         const S: i32 = CHUNK_SIZE;
         let (x0, y0, z0) = (coord.x * S, coord.y * S, coord.z * S);
-        let voxels = chunk.voxels_mut();
         for t in trees {
             let placed = self.planters[t.planter as usize].place(t);
             if placed.misses(coord) {
                 continue;
             }
-            for (p, state) in placed.cells() {
+            // A multi-cell block is stamped whole or not at all (BUGS.md #171).
+            let cells = placed.cells_whole(|p| self.stamp_free(coord, chunk, volume, p));
+            let voxels = chunk.voxels_mut();
+            for (p, state) in cells {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
                 let inside = (0..S).contains(&lx)
                     && (0..S).contains(&ly)

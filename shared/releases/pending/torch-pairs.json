@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Torches are always whole: a flame never floats without its stick, and a stick never stands without its flame.",
+    "Breaking, blasting, filling or flooding either half of a torch now removes the other half too.",
+    "Worlds saved with a lone torch half lose it when they load."
+  ]
+}

@@ -7,6 +7,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { partsFromNamespaces } from '../blocks/parts.mjs';
 import { canonicalText, registryFromVector, structureHash, validate } from './format.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -29,11 +30,24 @@ export {
 
 // ---- Loading a directory and emitting Rust -------------------------------------------------------
 
+/**
+ * The registry's multi-cell blocks (shared/blocks/*.json `extends`, `partOf`), for checking that a
+ * structure's torches are whole (format.mjs `checkWhole`, BUGS.md #171).
+ */
+export function registryParts() {
+  const dir = join(root, 'shared/blocks');
+  const namespaces = readdirSync(dir)
+    .filter((f) => f.endsWith('.json') && f !== 'playground-export.json')
+    .map((f) => JSON.parse(readFileSync(join(dir, f), 'utf8')))
+    .filter((ns) => typeof ns.namespace === 'string');
+  return partsFromNamespaces(namespaces);
+}
+
 /** Validates every `*.json` in `dir`; `namespace` checks (`"test"` only, or anything but). */
 /** Data files kept beside the structures that are not structures. */
 const NOT_STRUCTURES = new Set(['library.json']);
 
-export function loadDir(dir, registry, { test }) {
+export function loadDir(dir, registry, { test, parts = registryParts() }) {
   const out = [];
   // `library.json` is the players' structure library's limits (docs/STRUCTURES.md §9), not a structure.
   for (const f of readdirSync(dir).filter((n) => n.endsWith('.json') && !NOT_STRUCTURES.has(n)).sort()) {
@@ -44,7 +58,7 @@ export function loadDir(dir, registry, { test }) {
     } catch (e) {
       throw new Error(`${file}: (file): ${e.message}`);
     }
-    const s = validate(json, file, registry);
+    const s = validate(json, file, registry, parts);
     const [ns, local] = s.name.split(':');
     if (local !== basename(f, '.json')) throw new Error(`${file}: name: "${s.name}" must match the file name (${local}.json)`);
     if (test !== (ns === 'test')) {

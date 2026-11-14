@@ -3423,7 +3423,14 @@ impl Server {
 
     /// Sends a tick's voxel changes (`reason`) to every client streaming their chunks, one revision
     /// per chunk, and marks the chunks dirty for saving and the LOD.
-    fn broadcast_changes(&mut self, changes: TickChanges, reason: VoxelModificationReason) {
+    fn broadcast_changes(&mut self, mut changes: TickChanges, reason: VoxelModificationReason) {
+        // A multi-cell block is whole or gone (BUGS.md #171, dwell_world::parts): whatever took or
+        // replaced one of its cells this tick (a break, a blast, a fill, a falling piece, water),
+        // its other cells go too, in the same modification.
+        let lone = dwell_world::parts::lone_parts(&self.world, &changes.cells());
+        for (c, m) in lone {
+            changes.set(&mut self.world, c, m);
+        }
         let TickChanges {
             chunks: mut changed,
             before,
