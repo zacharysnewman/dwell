@@ -896,6 +896,37 @@ mod tests {
     }
 
     #[test]
+    fn boundaries_follow_the_plates_not_the_scans_grid() {
+        // BUGS.md #158: a boundary point at the scan cells' midpoint put a near-vertical or
+        // near-horizontal stretch on one grid line (an axis-aligned polyline km long, and every
+        // landform and province edge along it). The crossing between the cells is found instead.
+        // face-a-only: plate layouts are face-seeded draws; the seeds stand for both faces'.
+        let mut longest = 0.0f64;
+        for seed in 0..20 {
+            let t = PlateTectonics::for_seed(seed);
+            for line in &t.lines {
+                for pl in &line.polylines {
+                    for axis in [0, 1] {
+                        let mut run = 0.0;
+                        for w in pl.windows(2) {
+                            if (w[0][axis] - w[1][axis]).abs() < 1e-6 {
+                                run += (w[1][1 - axis] - w[0][1 - axis]).abs();
+                                longest = longest.max(run);
+                            } else {
+                                run = 0.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            longest < 1500.0,
+            "an axis-aligned boundary stretch {longest:.0} m long"
+        );
+    }
+
+    #[test]
     fn a_rift_is_cut_into_basins_with_sills_and_steps() {
         let r = &UPLIFT.rift;
         let t = fixture("continents_part");
