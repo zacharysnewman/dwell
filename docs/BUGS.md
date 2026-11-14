@@ -616,7 +616,7 @@ crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier
 **Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
 as solid painted shapes.
 
-### 157. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
+### 159. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
 
 Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
 pitch problem or if it's the wrong sound effect, happens when you run out of stamina and maybe other related player

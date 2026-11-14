@@ -6199,7 +6199,7 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
-      "$comment": "Out of stamina: a person's heavy breath, two breathy puffs of noise (BUGS.md #157). Its samples were the pack's MONSTER_Exhausted_05/_07, a voiced growl that sounded like a bear; procedural until a human breath is picked (samples with `from`, a human category).",
+      "$comment": "Out of stamina: a person's heavy breath, two breathy puffs of noise (BUGS.md #159). Its samples were the pack's MONSTER_Exhausted_05/_07, a voiced growl that sounded like a bear; procedural until a human breath is picked (samples with `from`, a human category).",
       "gain": 0.4,
       "reverb": 0.05,
       "variation": {

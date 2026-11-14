@@ -2265,7 +2265,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 ## Smaller items, after the queue
 
-- **The player's voice sounded like a bear (BUGS.md #157, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
+- **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
   bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
   the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:
   the out-of-stamina breath played the pack's `MONSTER_Exhausted_05/_07`; it is procedural now, and every player vocal

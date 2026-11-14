@@ -1,4 +1,4 @@
-// The player's own voice (BUGS.md #157): running out of stamina sounded like a bear. The breath's
+// The player's own voice (BUGS.md #159): running out of stamina sounded like a bear. The breath's
 // samples were the pack's `MONSTER_Exhausted_05`/`_07` (a voiced growl, ~110–180 Hz), not a person.
 // These pin that every vocal event of the player plays a human voice, at a natural pitch.
 import { describe, expect, it } from 'vitest';
@@ -21,7 +21,7 @@ const soundOf = (event: string): [string, SoundDef] => {
   return [id, s];
 };
 
-describe("the player's voice (BUGS.md #157)", () => {
+describe("the player's voice (BUGS.md #159)", () => {
   it('turns semitones into a playback rate', () => {
     expect(semitonesToRate(0)).toBe(1);
     expect(semitonesToRate(12)).toBeCloseTo(2, 12);

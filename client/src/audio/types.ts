@@ -109,7 +109,7 @@ export interface SamplesDef {
   files: string[];
   /**
    * The pack's own name of each file, in order (`GRUNT_Male_B_Hurt_Short_01`): its category is the
-   * first word. A player's voice must be a human one (BUGS.md #157).
+   * first word. A player's voice must be a human one (BUGS.md #159).
    */
   from?: string[];
   /** Level (default 1), times the play's gain. */
