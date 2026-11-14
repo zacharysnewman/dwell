@@ -56,6 +56,10 @@ pub struct Placement {
     pub rotations: &'static [u8],
     /// Block swaps by the anchor's height (the snowy leaves of pines high up).
     pub variants: &'static [Variant],
+    /// The density × this where the erosion leaves the ground standing (a mesa's or butte's top,
+    /// `TerrainGenerator::erosion_at`'s margin above 0; 1: no matter). Sagebrush mostly on the
+    /// floors (WORK_QUEUE item 15, 0.66: "tops read green under thick sagebrush").
+    pub tops: f32,
 }
 
 /// A swap of a placed structure's blocks by its anchor's height (m above sea level): none at
@@ -830,6 +834,7 @@ mod tests {
             spacing: 0,
             rotations: &[0, 1, 2, 3],
             variants: &[],
+            tops: 1.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let oak = crate::species::find("dwell:oak").unwrap();
@@ -874,6 +879,7 @@ mod tests {
             spacing: 0,
             rotations: &[0],
             variants: &[],
+            tops: 1.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let dirt = flat("dwell:dirt");

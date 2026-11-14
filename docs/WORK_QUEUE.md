@@ -557,6 +557,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the patch's median noon base 0.44 → 0.77 of the sunlit white, cumulus top ≥ 1.0 / base 0.57, cumulonimbus
    base 0.23. Not done: distance-adaptive steps with HZD's cheap/full switch. Next (local): the in-game look at
    noon, low sun, from above and through the layer, `?cloudExtinction=` 0.01–0.03, and `gpu.clouds`.
+   **Queued for after the Realistic refinements (owner, 2026-11-14):** **"Queue up for after all this, the clouds look
+   too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
+   height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
+   coverage, height and type across the world and change over time with the weather, with no repeating pattern.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -898,6 +902,91 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bigger shrines; all in the next release.
    **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
    back to C."**
+   **The 0.66 follow-up (owner, 2026-11-13, approving 0.65 with the remaining issues as a follow-up: "Yes merge now.";
+   branch `claude/realistic-066`).** A GPU before/after check of 0.65 (maps of seeds 2741893632, 1, 7, 42, 274005646,
+   both faces) found these still wrong; each gets a test on both faces over those seeds:
+   (0, top priority) **Straight strips from the air** (BUGS.md #171; owner, 2026-11-14 00:05, iPhone, flying high over
+   a Realistic world): **"Still seeing harsh bands of terrain types, strips, lines, etc"** (straight dark-brown strips in
+   a lattice like roads, straight grey stone and green grass strips, hard-edged patches of the palette dither, rivers
+   with straight edges and a stepped fringe). **Owner should see:** from the air, Realistic terrain types meet along
+   natural, irregular, blended edges. No straight strips, lines or lattices of dirt, stone or grass.
+   Owner, 2026-11-14, after a high screenshot of 0.65 Realistic: **"I think that 65 does fix that issue"** (the
+   straight strips: the 0.64 plate provinces' fixed-width bands along straight boundaries; 0.65 curved the boundaries
+   and mixed the provinces). Kept as a regression test (`tests/realistic_bands.rs`, the owner's seed 4065579781 too).
+   (0b) **Speckle, tan sand and hard edges.** Owner, 2026-11-14: **"Something I'd like to discuss is that speckled
+   terrain looks gross: I think we're using tan sand where we shouldn't. And we should be blending edges. We still have
+   hard lines between vertical and horizontal changes in terrain types."** Patches: **"big."** Scope: **"realistic
+   only. We're hoping to replace default eventually with realistic once it's looking really good."** (a goal: the
+   Realistic world replaces the default world once it looks really good; REALISTIC_WORLD.md §1). So, Realistic only,
+   as data: (i) no speckle: surface variety (grass, dirt, stone, gravel, red dirt …) from smooth, low-frequency,
+   domain-warped noise in big coherent patches ~20–60 m across (data per type), single scattered cells only as a rare
+   accent share (data, ≤ 2 %); (ii) tan sand only on beaches, river and lake beds, dunes and sand deserts; elsewhere
+   bare ground is dirt, gravel or stone by rock and climate; (iii) soft edges: boundaries between surface types follow
+   warped noise, never straight along the grid axes, and across a blend zone of a few metres (data) the two types
+   interleave in organic fingers and clumps, not single-cell dither. **Owner should see:** from the air and on the
+   ground, big coherent patches of each ground type with wandering, blended edges; no salt-and-pepper speckle; tan sand
+   only on beaches, river and lake beds, dunes and sand deserts; no straight lines between terrain types.
+   (0c) **Shrubs and talus.** Owner, 2026-11-14: **"We also need more shrubbery/bushes etc. Stone cliff regions should
+   get rocks and boulders at the base of cliffs. Including in the water."** Realistic only, as data on the
+   vegetation/placement system: (i) bush and shrub species (low leafy clumps 0.5–2 m, a few shapes, by climate and
+   biome: temperate bushes, Mediterranean scrub, boreal shrubs, tropical undergrowth), density by biome and wetness,
+   clustered along forest edges, streams and slopes; deserts stay sparse; (ii) talus at cliff bases: rocks and
+   boulders of the cliff's own rock below cliffs and steep stone faces, density falling with distance from the
+   wall's foot, single blocks to multi-block boulders by data; (iii) where a cliff meets a lake, river or the sea,
+   the boulders continue into the shallows. **Owner should see:** bushy undergrowth and shrub clumps through
+   Realistic land; rock-strewn talus at the foot of every stone cliff, spilling into the water where cliffs meet it.
+   (0d) **Placements bleed across borders; snowy leaves at the snow line.** Owner, 2026-11-14: **"Bushes, shrubs,
+   rocks, trees, should bleed into the edge of the neighboring terrain to help with blending. Also, trees at snow level
+   should use snow leaves."** So: each placement kind extends past its region's edge into the neighbour, its density
+   falling over a bleed distance (data per kind, ~20–60 m) and noise-modulated (ragged, patchy), both sides
+   interpenetrating, on the same boundary field as the surface blend; and a tree at or above the snow line (the rule
+   that tops the ground with snow or snowy grass) takes snowy leaves (`snowy_leaves`, a data mapping from leaf to
+   snowy variant) with a small noisy band round the line. **Owner should see:** forests, scrub and rocks fading
+   raggedly into neighbouring terrain instead of stopping at a line; snow-dusted leaves on trees up at the snow line.
+   **Built on `claude/realistic-066` (the 0.66 line; awaiting the maps):** (0) the strips: 0.65 fixed them (the owner's
+   look); `tests/realistic_bands.rs` pins it: the rock provinces' boundary cells on straight 1.3 km runs from high up,
+   0.64.2 28.3 % (A) / 15.5 % (B) and 41.9 % at the owner's spot (seed 4065579781), 0.65+ 0.07 % / 0.12 %. (0b, part)
+   no speckle at biome borders (Realistic `biomeMap` `ditherSpeckle` 0, warped 48 m noise): lone cells 0.47 % / 0.91 %
+   → 0.02 % / 0.05 %, the worst window 4.3 % → 0.97 %, the smallest mean patch 846 → 1659 m²; tan sand only on shores,
+   beds, the sand desert and its dunes (`rocks.json` `surfaces.replace`, the Realistic world's: shale's talus shows
+   dirt): stray tan sand 13 % / 12 % of land → 0 (`tests/realistic_tan_sand.rs`); mesa country without tan (the
+   `dwell:mesa_country` blend: red dirt and red sand, its dither at 12 m): 1687 / 3448 sampled columns → 0. Not yet:
+   the soft edges' fingers over a few metres (crisp rock-wall edges remain: 3.3 % / 0.8 % of fine boundary cells on
+   80 m runs that are smooth curves, not strips) and the axis-run measure. (1) `shaping.notched` `none`: at the walls'
+   edges 0.65 ramped 47–54 % of columns, now 23–30 % (the straight-edge rule), off them 7–15 % unchanged
+   (`tests/realistic_ramps.rs`); the per-material notched option not built (open). (3) the sand desert open: 474 / 615
+   plants and rocks per ha → 55 / 67 (its `trees`, and `biomeMap` `treesSharpen` 4 so the mesa's sagebrush doesn't
+   spill across the border). (4, part) sagebrush on the mesa tops: as dense as the floors (0.065 / m²) → 0.008 (the
+   placements' `tops`, sagebrush 0.12); thin fins, the lake's grey band and mesa presence not yet (mesa presence
+   waits on the realism audit's climate scale). (5, part) dormant islands: a mostly green cone (cover ≥ `coverFull`)
+   shows bare rock only near its shore and its vent (`volcanism.bareShore`, `bareVent`, `coverFull`): old cones'
+   lowland bare lava 6.4 % / 8.8 % → 0.7 % / 1.8 % (`tests/realistic_volcanoes.rs`); the straight red strip not
+   yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
+   and talus, (0d) placement bleed and snowy leaves, (6).
+   (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
+   that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
+   everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
+   included: rocks.json `shaping.notched` `none`, the ramp-backing rule (#163) kept. **Owner should see:** no notched
+   (diagonal-corner) ramps anywhere, mesa edges included; straight edges ramped as in the default world. Open option
+   (owner): **"I may want to use the slope one we talked about for sand only (without the spikes), but I'm not sure
+   yet."** (the notched rule per surface material by data, off everywhere for now).
+   (2) **Islands:** seed 42 face A's seven cone islands still similar round cones on a loose grid; seed 1 face A's west
+   group clumps; a ~5 km sliver island off seed 1 A's southwest tip. **Owner should see:** volcanic islands of very
+   different sizes (a few large, many small), irregular outlines, uneven curving spacing, no grid, no clumps, no
+   sliver islands.
+   (3) **Sand deserts:** shrubs so dense it reads as scrubland. **Owner should see:** open dune desert, sparse plants.
+   (4) **Mesas:** tops green under thick sagebrush; thin wall fins like fences; a grey stone band edging a lake in mesa
+   country; mesa country missing on 4 of 10 faces (seed 7 both faces, 2741893632 A). **Owner should see:** red tops
+   with sagebrush mostly on the floors, no fence-thin fins, lake shores in the mesa palette, mesa country on most seeds.
+   Owner, 2026-11-14, adding to (4): **"Also I don't want to see tan sand in red mesa desert, it looks too much like
+   stripes everywhere."** So tan sand leaves the mesa-country palette (`dwell:mesa_country`: red dirt and red sand only,
+   with the red-brown walls); tan sand stays in tan sand deserts and on beaches. **Owner should see:** mesa country in
+   red dirt, red sand and red-brown rock, no tan sand stripes.
+   (5) **Dormant islands:** black blotches across the green lowland and a straight red cliff strip midground. **Owner
+   should see:** dormant islands green, lava stone only near the shore and young flows, no straight strip.
+   (6) **Smaller:** a crisp circular rim round a summit crater lake (2741893632 B); a pale-blue lake fringe along
+   2741893632 A's east coast; speckled river pixels in seed 1 B's southern lake; 274005646 B's continent fairly round.
+   **Owner should see:** crater lakes without a ring, no pale fringe, clean lakes, a continent with an irregular outline.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying

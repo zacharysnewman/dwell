@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.66.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds: their ground redrawn from the seed",
+        "Realistic ground is in big patches with no speckle, and tan sand only on beaches, beds, dunes and sand deserts",
+        "Mesa country is red dirt, red sand and red rock, with no tan stripes; sagebrush grows mostly on the floors",
+        "Sand deserts are open dunes with sparse plants",
+        "Ramps follow the original straight-edge rule everywhere, mesa edges included"
+      ]
+    },
+    {
       "version": "0.65.4",
       "changes": [
         "Villagers' eyes sit where they should"

@@ -130,8 +130,14 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Both faces again, 2026-11-14, for new rocks' palettes only (the dune sand and the lava glass, the
 /// Realistic world's): with each column's palette replaced by its top block's name the pin reads the
 /// same before and after (957c5283732e1a24 / e987a3ebc2efcbe1).
+///
+/// Re-pinned 2026-11-14 for the 0.66 line (WORK_QUEUE item 15, the owner's requests): the
+/// straight-edge ramps everywhere (rocks.json `shaping.notched` `none`; the starter's rock shapes
+/// its ground), mesa country without tan sand (the `dwell:mesa_country` blend, its dither at 12 m)
+/// and sagebrush sparse on the erosion's standing tops (placements.json `tops`). Each alone moves
+/// face A's hash (with the first two undone it still moves, by the sagebrush).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "f311ecf1699d1d4d"), (Face::B, "befc654b6be1cb95")];
+    [(Face::A, "aca376b226a9b407"), (Face::B, "651d111b005fa437")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

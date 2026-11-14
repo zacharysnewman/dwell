@@ -2,12 +2,14 @@
 //! all the different colors" … "Real monument valley uses a blend of red, brown and tan, with brown
 //! leading to tan, always smooth color changes" … "Mostly reddish dirt though"). rocks.json
 //! `blends` `dwell:mesa_country`: on the red desert beds (the red rock mesa's own stack) every
-//! ground and under block of the family takes the blend's tone, red dirt ↔ red sand ↔ tan sand in
-//! order by a low-frequency noise and the slope, dithered; the walls are the darker red sandstone.
+//! ground and under block of the family takes the blend's tone, red dirt ↔ red sand in order by a
+//! low-frequency noise and the slope, dithered; the walls are the darker red sandstone. No tan sand
+//! (0.66; owner, 2026-11-14: "I don't want to see tan sand in red mesa desert, it looks too much
+//! like stripes everywhere").
 //! On seeds 1, 7, 42 and the owner's 2741893632, both faces, over the red rock mesa's columns:
 //!
 //! - the surface blocks are the blend's and the wall rock's (at most [`EXTRA`] others in 100);
-//! - plain sand only as the blend's tan patches, at most twice its share;
+//! - no tan sand (`tests/realistic_tan_sand.rs` checks it off the shores and beds too);
 //! - neighbouring blended columns are at most one tone apart;
 //! - the floors are mostly red dirt.
 
@@ -117,11 +119,10 @@ both_faces!(
             .expect("rocks.json blends dwell:mesa_country");
         let mut family: Vec<&str> = blend.blocks.to_vec();
         family.push("dwell:red_sandstone");
-        let sand_share = blend.shares[blend
-            .blocks
-            .iter()
-            .position(|&b| b == "dwell:sand")
-            .unwrap()];
+        assert!(
+            !blend.blocks.contains(&"dwell:sand"),
+            "no tan sand in mesa country's blend"
+        );
         let mut seen = 0;
         for world in SEEDS {
             let t = tally(world, f);
@@ -159,8 +160,7 @@ both_faces!(
                 t.sand_unblended
             );
             assert!(
-                // Patches: at most twice its share (a face holds only a few of its 90 m patches).
-                (t.sand as f64) <= (2.0 * sand_share).max(sand_share + 0.06) * t.columns as f64,
+                t.sand * 1000 <= t.columns,
                 "seed {world}: tan sand on {} of {}",
                 t.sand,
                 t.columns

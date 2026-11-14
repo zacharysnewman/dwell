@@ -234,6 +234,15 @@ pub struct BiomeMap {
     pub wet_reach: f64,
     pub dither_wavelength: i32,
     pub dither: f64,
+    /// The share of the border dither that is a per-column hash (1: the default world's ragged
+    /// speckle; 0: none, the noise alone, so biomes meet in clumps and fingers; WORK_QUEUE item 15,
+    /// 0.66: "speckled terrain looks gross").
+    pub dither_speckle: f64,
+    /// The border noise's sample point warped by about ± this (m) at 4 × its wavelength (0: none),
+    /// so a border wanders in organic fingers rather than following the weights' contours.
+    pub dither_warp: f64,
+    /// The biomes' tree densities blend by their weights to this power (1: as they are).
+    pub trees_sharpen: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
@@ -2808,10 +2817,21 @@ impl TerrainGenerator {
         let cover = if s.active {
             0.0
         } else {
-            smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64
+            let c = smooth_step(vo.cover[0] as f32, vo.cover[1] as f32, s.age as f32) as f64;
+            // A mostly green cone's bare rock only near its shore and its vent (`bareShore`,
+            // `bareVent`, from `coverFull`): no black blotches across its lowland.
+            if c >= vo.cover_full && h >= vo.bare_shore && g.reach >= vo.bare_vent {
+                1.0
+            } else {
+                c
+            }
         };
         // Toward the ground's edge everything is the ground's around (no ring).
         let c = 1.0 - g.weight * (1.0 - cover);
+        if c >= 1.0 {
+            // Fully covered (the patch noise reaches 1 itself: no bare rock left at full cover).
+            return (g.weight > 0.0).then_some((None, Band::Ground));
+        }
         let n = patch(0);
         let dirt = (vo.dirt * 2.0 * (1.0 - c)).min(c);
         if n < c - dirt {
@@ -3486,7 +3506,14 @@ impl TerrainGenerator {
         let volcanic = self
             .plate_tectonics()
             .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
-        volcanic * self.biome_tree_density_at(i, x, z)
+        // A rule sparse on the erosion's standing tops (`tops`, 0.66: sagebrush on the floors).
+        let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
+        let on_top = tops < 1.0
+            && self
+                .erosion_at(x, z)
+                .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
+        let tops = if on_top { tops } else { 1.0 };
+        tops * volcanic * self.biome_tree_density_at(i, x, z)
     }
 
     fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
@@ -3499,11 +3526,18 @@ impl TerrainGenerator {
             return d[0];
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
-        self.biomes
-            .mix(x, z, base)
-            .iter()
-            .map(|(b, w)| d[b] * w as f32)
-            .sum()
+        let mix = self.biomes.mix(x, z, base);
+        let k = self.biomes.params.trees_sharpen;
+        if k == 1.0 {
+            return mix.iter().map(|(b, w)| d[b] * w as f32).sum();
+        }
+        // The weights to the power `treesSharpen` (0.66, Realistic: a neighbour's dense shrubs
+        // don't spill far across a wide border; WORK_QUEUE item 15).
+        let (sum, total) = mix.iter().fold((0.0f64, 0.0f64), |(s, t), (b, w)| {
+            let w = w.powf(k);
+            (s + f64::from(d[b]) * w, t + w)
+        });
+        (sum / total.max(1e-12)) as f32
     }
 
     /// Whether the biomes' `ground` varies the ground items (ADR 0074 B5; else they ask nothing of

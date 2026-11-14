@@ -222,6 +222,13 @@ pub struct Volcanism {
     pub apron_depth: f64,
     pub apron_noise: f64,
     pub glass_share: f64,
+    /// A dormant volcano's bare lava rock only near its shore (under `bare_shore` m over the sea)
+    /// and its vent (within `bare_vent` of its radius): its young flows; the cover elsewhere
+    /// (0.66, the map check: "black blotches across the green lowland").
+    pub bare_shore: f64,
+    pub bare_vent: f64,
+    /// From this cover on (a mostly green cone) the bare rock keeps to the shore and the vent.
+    pub cover_full: f64,
     pub bare: Surface,
     pub glass: Surface,
     pub soil: Surface,

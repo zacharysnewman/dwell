@@ -597,6 +597,25 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 171. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types (fixed in 0.65.0)
+
+Owner, 2026-11-14 00:05, iPhone, the live site (0.64.x or 0.65.0), a Realistic world seen flying high: **"Still seeing
+harsh bands of terrain types, strips, lines, etc"**. The screenshot, looking down: long, perfectly straight dark-brown
+strips (dirt / red-dirt colour) a few blocks wide crossing the land in a lattice of straight lines at a few angles,
+like roads; straight grey stone strips, and straight green grass strips along some of them; large patches of speckled
+tan/brown/cream noise (the palette dither) with hard straight edges; rivers with straight channel edges and a stepped,
+pixelated blue fringe. Suspects (orchestrator): erosion drainage lines or washes carved as straight segments; the mesa
+palette's ordered blend; province or plate edges straight at this scale; biome bands following map cells. Top priority
+of the 0.66 follow-up (WORK_QUEUE item 15). **Owner should see:** from the air, Realistic terrain types meet along
+natural, irregular, blended edges; no straight strips, lines or lattices of dirt, stone or grass. **Fixed in 0.65.0** (the owner, 2026-11-14: "I think
+that 65 does fix that issue"): reproduced natively at the owner's spot (seed 4065579781, face A, x 10472, z −3091) on
+0.64.2: the lattice was the plate provinces (rocks.json `plateProvinces`), each setting a band of one stack at a fixed
+width along straight plate boundaries (`rift` → `dwell:rift_fill`'s loamy dirt); 0.65 curved the boundaries, made the
+settings' edges wander and mixed stacks inside them. Regression test `tests/realistic_bands.rs` (both faces, seeds 1,
+7, 42, 274005646, 2741893632, 4065579781): the provinces' boundary cells on straight 1.3 km runs, 0.64.2 28.3 % (A) /
+15.5 % (B), 41.9 % at the owner's spot; 0.65 0.07 % / 0.12 %. The speckle and blended edges the owner asked for next
+are WORK_QUEUE item 15 (0b).
+
 ### 167. Leaf faces touching a log are drawn on its bark and z-fight (fixed after 0.64.1)
 
 Owner, 2026-11-13: "Tree leaf inside faces touching the tree log shouldn't be shown and they cause z fighting."
