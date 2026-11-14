@@ -12,6 +12,18 @@
       ]
     },
     {
+      "version": "0.63.21",
+      "changes": [
+        "Sliding and the out-of-stamina breath are a little quieter"
+      ]
+    },
+    {
+      "version": "0.63.20",
+      "changes": [
+        "Behind the scenes: new performance checks of the forest seen from above, the groundwork for smoother flying over forests."
+      ]
+    },
+    {
       "version": "0.63.19",
       "changes": [
         "Dynamite no longer flings tall grass, torches, saplings or ladders as flying pieces: they're simply destroyed, dropping what they would when broken.",

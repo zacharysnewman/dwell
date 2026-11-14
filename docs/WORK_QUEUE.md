@@ -743,6 +743,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    bigger shrines (PR #930, merged in). Not taken: plate pairs, the rim, variety, mesas, deserts. Owner should see: no
    straight km-long seams between terrain types; no ramp backs standing in open air (no sawtooth spikes in bowls);
    bigger shrines; all in the next release.
+   **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
+   back to C."**
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -1598,6 +1600,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    12.2 / 12.7 (noise). The edge is still **~2.2 ms over** at p95; what is left there is the near pass's ~4 M leaf
    triangles themselves. Next levers: fewer leaf triangles past the cards' fade (merged faces, no chamfer), or the
    terrain's colour packed too (its lava code needs a byte of its own).
+   **Round 5, overhead (2026-11-13, local, `claude/forest-overhead-perf`):** after BUGS.md #162's fix drew the
+   treetops under the camera, the owner's overhead frame over the forest rose (~15–18 → 34–41 ms GPU at 25–40 m).
+   New spots `forest:over25`, `forest:over40`, `forest:over80` (straight down over the densest stand) in
+   `forest-perf`, and the scenario `forest-overhead` (25 and 40 m) for `--compare`; test
+   `a_tree_straight_below_is_always_drawn` pins the canopy whole from above (real leaves with the chunk's cutout
+   drawn, or the impostor). Measured (M1 Air, High, `--unthrottled`, another agent's build loading the machine,
+   so every spot ~2–8 ms over round 4's numbers): `gpu.frame` p50 inside 20.7, edge 22.4, **over25 25.3, over40
+   27.4**, over80 18.2, above 19.1; drawn triangles edge 4.1 M, over25 5.6 M, over40 5.3 M. Overhead is ~1.2×
+   the edge, not 2×. No double draw: the #162 walk pushes each covered chunk once and draws no section over it.
+   **Tried, not adopted:** a crown below the eye counting its drop twice in the near/impostor switch
+   (`belowScale` 2, data): every crown in the 40 m view turned into its impostor (64 px views read as flat blocks
+   from above, a large look change) and `gpu.frame` did not move (over40 27.4 → 26.4, over25 25.3 → 25.3): the
+   leaves the shader drops still cost their vertices, so the overhead frame is bound by the leaf vertices
+   submitted, not the leaf pixels. Ablation (`--compare forest-overhead`, `gpu.frame` p95 ms, over25 / over40):
+   base 24.4 / 29.3, `cards-off` 22.9 / 28.4, `grass-off` 23.4 / 28.3, **`shadows-off` 20.8 / 25.0** (−3.6 /
+   −4.3: `gpu.near` −1.5 / −3.8, so mostly the near pass's shadow lookups on a screen full of leaves, plus the
+   casters). Also seen: the overhead views split the near pass for water (`gpu.near.water` 5–11 ms p95 timed,
+   none visible in the shots; at the edge there is no split): a hidden water draw may be forcing the split.
+   Next levers: the near pass's shadow lookup cost on leaves (fewer PCF taps for cutout leaves, or the leaves
+   receiving from a cheaper cascade), why the overhead near pass splits for water nobody sees, and fewer leaf
+   vertices submitted (a plainer leaf mesh past the cards' fade).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -2322,6 +2345,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **Sliding and the out-of-stamina breath quieter (2026-11-13, `claude/quieter-slide-breath`), done.** Owner:
+  "Sliding and stamina breath expire should be 75% of their current volume." Every gain of those sounds is 0.75 × what it
+  was: the four ground slide loops (`*_slide`, 0.8 → 0.6) and their stops (`*_slide_stop`, 0.7 → 0.525, so the end of a
+  slide stays level with it), and `breath_heavy` played by `exhausted` (the sigh's `samples.gain` 0.5 → 0.375, which the
+  sound's own `gain` does not scale, and the fallback layers' `gain` 0.4 → 0.3); no other sound changed
+  (`quieterSounds.test.ts`). Owner should hear: slide on any ground and run out of stamina; both a quarter quieter than before.
 
 - **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
   bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
