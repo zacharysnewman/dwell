@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.6",
+      "changes": [
+        "Far trees no longer show as doubled, half-faded copies: each tree is either its full-detail self or its distant stand-in, swapping with a short fade as you cross the hand-over distance",
+        "Distant trees stay lined up with the real ones as you fly up and down (more viewing angles baked)"
+      ]
+    },
+    {
       "version": "0.63.5",
       "changes": [
         "A portal's map marker now sits on the portal's rim, even when you first see it while flying high; old floating ones drop back onto the rim when you come near.",

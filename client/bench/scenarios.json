@@ -9315,7 +9315,7 @@
     },
     {
       "name": "moon-fly",
-      "notes": "A player's flight to the moon from home's ground (BUGS.md #154): flight at the top level, W held as a key, the look kept on the moon in the sky every ½ s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
+      "notes": "A player's flight to the moon from home's ground (BUGS.md #155): flight at the top level, W held as a key, the look kept on the moon in the sky every ½ s, until captured; logs the distance, closing speed, rise and snaps, shots every 8 s. Face B: at the bench's clock the moon is over face B.",
       "face": "b",
       "steps": [
         { "do": "settle", "maxS": 60 },

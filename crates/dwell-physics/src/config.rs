@@ -129,7 +129,7 @@ pub struct Fly {
     /// m/s at the slider's level 0, walking (the same at every height).
     pub speed: f32,
     pub run_factor: f32,
-    /// Forward follows the look's pitch (fly where you look; BUGS.md #154: a player aiming at the
+    /// Forward follows the look's pitch (fly where you look; BUGS.md #155: a player aiming at the
     /// moon and holding forward flew level under it). Off, forward is level along the yaw.
     pub follow_pitch: bool,
     /// 1/s: how quickly velocity follows the wish.

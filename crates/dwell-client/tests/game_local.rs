@@ -5020,7 +5020,7 @@ fn a_teleport_past_the_rim_fails_with_a_message() {
     );
 }
 
-/// BUGS.md #154 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? I tried
+/// BUGS.md #155 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? I tried
 /// for like 8 minutes at max speed and couldn't get there"): a player on home's ground, flying
 /// at the slider's top level, aiming at the moon in the sky and holding only forward (W, as a
 /// player does; no Space or crouch), reaches its capture in about a minute, with no server

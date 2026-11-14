@@ -200,7 +200,7 @@ fn diving_at_the_bands_top_speed_stops_on_the_ground() {
 
 #[test]
 fn forward_flies_where_the_camera_looks() {
-    // BUGS.md #154 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? … It didn't
+    // BUGS.md #155 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? … It didn't
     // seem to get any closer"): forward was level along the yaw, so aiming at the moon in the sky
     // and holding forward flew under it. Now forward follows the pitch, at the same speed; Space
     // and crouch still rise and sink.

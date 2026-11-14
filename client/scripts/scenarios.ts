@@ -189,7 +189,7 @@ export type Step =
       maxS?: number;
     }
   /**
-   * A player's flight to the moon (BUGS.md #154): flight on at the top level, Forward (W) held as
+   * A player's flight to the moon (BUGS.md #155): flight on at the top level, Forward (W) held as
    * a key, and every ½ s the look turned onto the moon in the sky (`__dwell.moon().look`, as a
    * player's mouse keeps it there), until captured or `maxS` (120); logs the distance, height,
    * speed and snaps, a screenshot `<name>-NN.png` every `shotEveryS` (10). Saved in `trips`.

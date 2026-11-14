@@ -435,7 +435,7 @@ pub fn move_direction(input: &Input) -> Vec3 {
 
 /// Creative flight's wish direction (face-local, length ≤ 1; PLAYER_CONTROLLER.md §6.7): with
 /// `follow_pitch` forward goes where the camera looks, up or down with its pitch, so a player
-/// aiming at the moon and holding forward flies at it (BUGS.md #154); without, forward is level
+/// aiming at the moon and holding forward flies at it (BUGS.md #155); without, forward is level
 /// along the yaw. Jump rises and crouch sinks on top, the vertical held to the speed.
 pub fn fly_direction(input: &Input, follow_pitch: bool) -> Vec3 {
     let mut d = move_direction(input);

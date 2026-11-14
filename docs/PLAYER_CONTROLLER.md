@@ -577,7 +577,7 @@ layer — so a player can rise from the ground to see the whole world (ARCHITECT
   crouched player up (the exclusive rule of `step_crouch`). While flying there is no gravity: the
   body's velocity is eased towards the wish with exponential `fly.drag` — from the move input where
   the camera looks (forward tilted by the look's pitch with `fly.follow_pitch`, on: fly where you look,
-  BUGS.md #154; `controller::fly_direction`), up with jump, down with crouch on top — at
+  BUGS.md #155; `controller::fly_direction`), up with jump, down with crouch on top — at
   `fly.speed × run × fly_speed_factor(input.fly_speed)` (run = `fly.run_factor` while running,
   else 1), the same at every height (owner, 2026-10-26: the speed-up with height was removed).
   `input.fly_speed` is the **speed slider's level** (0–`FLY_SPEED_MAX_LEVEL` = 11, carried in bits

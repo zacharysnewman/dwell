@@ -918,7 +918,7 @@ async function step(run: Run, s: Step): Promise<void> {
       return;
     }
     case 'flyAtMoon': {
-      // As a player flies there (BUGS.md #154): real held keys, the look kept on the moon.
+      // As a player flies there (BUGS.md #155): real held keys, the look kept on the moon.
       type M = {
         grid: string;
         distance: number;
