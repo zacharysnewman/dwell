@@ -19,7 +19,7 @@ const KEYS = {
   capture: ['size', 'fps'],
   splice: ['fade', 'fadeIn', 'crf', 'gainDb'],
   shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice'],
-  setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'eval'],
+  setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'settleS', 'eval'],
   part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio', 'crop'],
 };
 const KINDS = { path: 'path', take: 'script' };
@@ -99,6 +99,7 @@ export function validate(m, base = SKILL) {
       if (u.view !== undefined && !obj(u.view)) errs.push(`${at}.setup.view: expected d.setView's object`);
       if (u.hud !== undefined && typeof u.hud !== 'boolean') errs.push(`${at}.setup.hud: expected true or false`);
       if (u.warmS !== undefined) num(u.warmS, `${at}.setup.warmS`);
+      if (u.settleS !== undefined) num(u.settleS, `${at}.setup.settleS`);
       if (u.eval !== undefined && typeof u.eval !== 'string') errs.push(`${at}.setup.eval: expected a JS expression`);
     }
     if (s.capture !== undefined && keys(s.capture, 'capture', `${at}.capture`)) {

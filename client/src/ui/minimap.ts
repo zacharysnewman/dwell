@@ -32,12 +32,21 @@ import {
   browserStorage,
   ShrineSites,
   shrineIcons,
+  clusterShrines,
   filterLayers,
   markerLayer,
   parseShrines,
   shrineCellsIn,
   visibleShrines,
 } from './mapShrines';
+import {
+  TOWN_LAYER,
+  TOWN_MAP,
+  TOWN_SPACING,
+  type MapTown,
+  parseTowns,
+  townColor,
+} from './mapTowns';
 import {
   MarkerList,
   type MapMarker,
@@ -1059,6 +1068,11 @@ export interface MapClient extends RevealClient, LiveClient, MinimapFeed {
    */
   mapShrines?(face: number, x: number, z: number, cells: number): Float64Array;
   /**
+   * The town sites on face `face` in the town grid cells within `cells` of face-local (x, z)'s
+   * (docs/BLUEPRINTS.md §6): [x, z, state (1 being built)]* face-local m.
+   */
+  mapTowns?(face: number, x: number, z: number, cells: number): Float64Array;
+  /**
    * Map markers (docs/MAP_MARKERS.md): the player's feet, face-local [face, x, y, z, dead, then
    * while dead the death's face, x, y, z].
    */
@@ -1413,6 +1427,8 @@ export class MapUi {
   private bigStale = false;
   /** The big map's shrine cells: explored ones, sited ones (BUGS.md, the whole view's shrines). */
   private readonly shrineSites = new ShrineSites();
+  /** The same for the town sites (their own grid, mapTowns.ts). */
+  private readonly townSites = new ShrineSites(TOWN_SPACING);
   /** The spot the picker is open to place a marker at (the pending pin), if it is. */
   private pending: { face: number; x: number; z: number } | null = null;
   /** The debug layer shown (an index into `MAP_LAYERS.layers`; −1 none) and its button. */
@@ -1872,6 +1888,42 @@ export class MapUi {
     return visibleShrines(shrines, true, explored, this.client.mapRevealed());
   }
 
+  /**
+   * The town sites the big map shows in view `v` (the "Towns" filter, `towns.map`'s reveal rule),
+   * as the shrines (`shownShrines`): the town grid's cells with explored ground, sited within a
+   * budget a draw.
+   */
+  shownTowns(v: BigView, w: number, h: number): MapTown[] {
+    if (!this.client.mapTowns || !this.filters.shows(TOWN_LAYER)) return [];
+    const [ax, az] = toWorld(v, -w / 2, -h / 2);
+    const [bx, bz] = toWorld(v, w / 2, h / 2);
+    const margin = TOWN_MAP.iconPx / v.pxPerM;
+    const bounds = {
+      x0: Math.min(ax, bx) - margin,
+      z0: Math.min(az, bz) - margin,
+      x1: Math.max(ax, bx) + margin,
+      z1: Math.max(az, bz) + margin,
+    };
+    const revealed = this.client.mapRevealed() || TOWN_MAP.reveal === 'all';
+    const cells = shrineCellsIn(bounds, worldRadiusM(), TOWN_SPACING).filter(
+      ([i, k]) => revealed || this.townSites.hasExplored(v.face, i, k),
+    );
+    const sites = this.client.mapTowns.bind(this.client);
+    const t0 = performance.now();
+    const { shrines: towns, pending } = this.townSites.gather(
+      v.face,
+      cells,
+      (x, z) => sites(v.face, x, z, 0),
+      () => performance.now() - t0 > TOWN_MAP.siteMsPerDraw,
+      parseTowns,
+    );
+    if (pending > 0) this.bigStale = true;
+    const cell = MAP.explored.cellM;
+    const explored = (x: number, z: number) =>
+      this.cells.has(cellKey(v.face, Math.floor(x / cell), Math.floor(z / cell)));
+    return visibleShrines(towns, true, explored, this.client.mapRevealed(), TOWN_MAP);
+  }
+
   stepLayer(): void {
     this.layer = nextLayer(this.layer);
     this.showLayerLabel();
@@ -1951,6 +2003,7 @@ export class MapUi {
       const [face = 0, i = 0, k = 0] = key.split(',').map(Number);
       const e = MAP.explored.cellM;
       this.shrineSites.noteExplored(face, (i + 0.5) * e, (k + 0.5) * e);
+      this.townSites.noteExplored(face, (i + 0.5) * e, (k + 0.5) * e);
     }
     const n = this.reveal.tileCells;
     for (const { cellM } of LEVELS) {
@@ -2134,6 +2187,28 @@ export class MapUi {
           half - up * perM,
           iconPx,
         );
+      }
+    }
+    // The town sites on the disc (docs/BLUEPRINTS.md §6), as the shrines.
+    if (this.client.mapTowns && this.filters.shows(TOWN_LAYER)) {
+      const towns = parseTowns(this.client.mapTowns(face, x, z, 1));
+      const near = towns.map((t) => ({
+        id: 0,
+        icon: TOWN_MAP.icon,
+        rgb: townColor(t),
+        label: '',
+        face,
+        x: t.x,
+        y: 0,
+        z: t.z,
+        auto: TOWN_LAYER,
+      }));
+      for (const { marker, right, up } of markersInRange(
+        near,
+        { face, x, z, yaw },
+        MAP.minimap.radiusM,
+      )) {
+        drawIcon(ctx, TOWN_MAP.icon, marker.rgb, half + right * perM, half - up * perM, iconPx);
       }
     }
     dot(half, half, MAP.minimap.playerColor);
@@ -2444,6 +2519,39 @@ export class MapUi {
         ctx.fillStyle = SHRINE_MAP.color;
         ctx.fillText(String(c.count), tx, ty);
         ctx.restore();
+      }
+    }
+    // The town sites (docs/BLUEPRINTS.md §6): the town icon, a town being built in its own colour,
+    // each kind merged into clusters with counts as the shrines.
+    const towns = this.shownTowns(v, w, h);
+    for (const building of [false, true]) {
+      const color = townColor({ building });
+      const px = towns
+        .filter((t) => t.building === building)
+        .map((t) => {
+          const [sx, sy] = toScreen(v, t.x, t.z);
+          return { x: w / 2 + sx, y: h / 2 + sy };
+        });
+      for (const c of clusterShrines(px, TOWN_MAP.clusterPx)) {
+        ctx.save();
+        ctx.shadowColor = color;
+        ctx.shadowBlur = TOWN_MAP.iconPx / 2;
+        drawIcon(ctx, TOWN_MAP.icon, color, c.x, c.y, TOWN_MAP.iconPx);
+        ctx.restore();
+        if (c.count > 1) {
+          ctx.save();
+          ctx.font = `bold ${String(Math.round(TOWN_MAP.iconPx * 0.6))}px sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = MAP.bigMap.fogColor;
+          const tx = c.x + TOWN_MAP.iconPx * 0.35;
+          const ty = c.y + TOWN_MAP.iconPx * 0.2;
+          ctx.strokeText(String(c.count), tx, ty);
+          ctx.fillStyle = color;
+          ctx.fillText(String(c.count), tx, ty);
+          ctx.restore();
+        }
       }
     }
     this.updateControls();

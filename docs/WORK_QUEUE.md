@@ -2244,6 +2244,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    in frame, the chop, sword, felled log and dynamite chain cut, the montage 5 cuts not 7.
    **Owner should see:** the two cuts (trailer-9x16.mp4, trailer-16x9.mp4) and the shot-by-shot notes; edit the draft
    (or a shot's note in the manifest) where a shot misses, and it re-records alone.
+   **The trailer's terrain (owner, 2026-11-14):** **"The trailers really bad right now because the terrain looks bad and
+   half of it isn't loaded in. We'll leave it alone for now."** Left alone, as asked; one tool fix so it doesn't happen
+   again: every take now waits until the chunks and the LOD settle before it records (`take.mjs` `viewIdle`, the
+   bench's placed-shot rule; a shot's `setup.settleS` caps the wait, 0 skips it; tested in `take.test.mjs`).
+   **Builders at work (owner, 2026-11-14, item 56: "a recording of builders"):** a time-lapse of a builder putting up
+   the hamlet from its founding, 16:9 and 9:16, game sound, no music, HUD hidden, clouds off, midday. **Owner should
+   see:** the clips (builders-16x9.mp4, builders-9x16.mp4) and their stills.
 41. **Theater mode** (owner 2026-11-12: "We should use full camera tools to do the things you were doing and expand
    this tool set as you go, we could call it theater mode. Even make it available ingame as a feature that could be
    toggled on for any world type."). Answers: **both** presets (pick a target and a move: orbit, dolly, track,
@@ -3072,6 +3079,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    seed (a 1200 m grid, dry land in a height band, gentle slope, clear of shrines and portals; `blueprints.json`
    `towns`), each a plan of blueprints (the hamlet: a well, two huts, a watchtower, a wall) founded once a player is
    within 128 m and its ground is loaded, saved so it is founded once; builders then build it. BLUEPRINTS.md §6.
+   **Watching the builders (owner, 2026-11-14):** **"Is there a way for me to watch the NPC's build a house?"** →
+   offered options (town markers on the map, a link that drops you by a town, a recording) → **"Yes let's get town
+   markers and a recording of builders."** Built 2026-11-14 (branch `claude/town-markers`): the town sites on the big
+   map and the minimap as a derived layer like the shrines (item 53's filters: "Towns"), the vector `town` icon at
+   each site in explored ground (creative's revealed map: all), a founded town still being built in its own colour;
+   the dev link `?local=1&seed=0&fresh=1&spawn=town` (`town-b` for face B) stands you 24 m south of the town site
+   nearest the spawn, so it founds and the builders come (docs/DEV_TOOLS.md); a recording of a builder at work
+   (see item 40). **Owner should see:** open the big map (M) in a world you have explored: a town icon where each
+   town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
+   the `spawn=town` link and watch the builders put up the hamlet in front of you.
 
 ## Future (needs owner answers)
 
