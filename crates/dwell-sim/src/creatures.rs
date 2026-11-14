@@ -119,6 +119,55 @@ pub struct Idle {
     pub pose: Pose,
     pub weight: f64,
     pub seconds: [f64; 2],
+    /// Where a `sit` idle sits (none: anywhere it stands).
+    pub seat: Option<Seat>,
+}
+
+/// A sit idle's seat (shared/creatures `seat`; WORK_QUEUE item 38): sitting on the ground where it
+/// stands, where the ground within `level_m` round it is level with its feet; else it stands for
+/// that idle instead (and stands up if the ground beside it goes).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Seat {
+    pub on: SeatOn,
+    pub level_m: f64,
+}
+
+/// The kinds of seat (a fixed vocabulary; a block's edge is a later one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeatOn {
+    /// On the ground, legs out before it.
+    Ground,
+}
+
+impl Seat {
+    /// Whether a body of `def` with its feet at face-local `local` has its seat there: the columns
+    /// `level_m` round it (and under it) stand at its feet's row, no step or drop.
+    pub fn holds(&self, get: Get, f: FaceFrame, def: &CreatureDef, local: [f64; 3]) -> bool {
+        let row = cell_of_pos(local)[1];
+        let r = self.level_m;
+        let d = r * std::f64::consts::FRAC_1_SQRT_2;
+        match self.on {
+            SeatOn::Ground => [
+                (0.0, 0.0),
+                (r, 0.0),
+                (-r, 0.0),
+                (0.0, r),
+                (0.0, -r),
+                (d, d),
+                (d, -d),
+                (-d, d),
+                (-d, -d),
+            ]
+            .iter()
+            .all(|(dx, dz)| {
+                let col = [
+                    (local[0] + dx).floor() as i32,
+                    (local[2] + dz).floor() as i32,
+                ];
+                feet_row(get, f, col, row, 0, 0, def.rows) == Some(row)
+            }),
+        }
+    }
 }
 
 /// A colour part of an NPC: its model's palette ramp `from` is drawn as one of `to`.
@@ -475,9 +524,6 @@ pub struct Creature {
     pub variant: u32,
     /// An NPC walking aside from a bump.
     pub sidestepping: bool,
-    /// An NPC's heading when its idle began (looking around sweeps about it) and that idle's ticks.
-    look_base: f64,
-    idle_len: u32,
     /// An NPC turned on its attacker (`Combat::FightBack`): where it is and ticks left.
     pub foe: Option<[f64; 3]>,
     foe_ticks: u32,
@@ -762,8 +808,6 @@ impl Creature {
         let [lo, hi] = pick.seconds;
         self.pose = pick.pose;
         self.idle = (((lo + (hi - lo) * self.roll()) * f64::from(SIM_HZ)) as u32).max(1);
-        self.idle_len = self.idle;
-        self.look_base = self.yaw;
     }
 
     /// Turns its heading toward `to` (degrees) by at most `max` degrees.
@@ -773,9 +817,6 @@ impl Creature {
     }
 }
 
-/// How far (degrees) an NPC looking around turns either way, and the sweep's period (s).
-const LOOK_SWEEP_DEG: f64 = 60.0;
-const LOOK_PERIOD_S: f64 = 4.0;
 /// An NPC's eye above its feet, as a share of its height (`rows`): where its strikes come from.
 const NPC_EYE_SHARE: f64 = 0.9;
 /// Passes of [`Creatures::separate`] a tick: a crowd's overlaps settle in a few.
@@ -856,8 +897,6 @@ impl Creatures {
             pose: Pose::Stand,
             variant: 0,
             sidestepping: false,
-            look_base: yaw,
-            idle_len: 0,
             foe: None,
             foe_ticks: 0,
             foe_player: None,
@@ -1017,8 +1056,6 @@ impl Creatures {
                     pose: Pose::Stand,
                     variant: mix(seed, [x + dx, yy, z + dz], 0x6e70_6373) as u32,
                     sidestepping: false,
-                    look_base: 0.0,
-                    idle_len: 0,
                     foe: None,
                     foe_ticks: 0,
                     foe_player: None,
@@ -1030,7 +1067,6 @@ impl Creatures {
                     chase_to: None,
                     rng: mix(seed, [x + dx, yy, z + dz], 99),
                 };
-                c.look_base = c.yaw;
                 if def.npc.is_some() {
                     c.start_idle(&def);
                 } else {
@@ -1352,6 +1388,17 @@ impl Creatures {
                     c.pose = Pose::Stand;
                     c.sidestepping = true;
                 }
+                // Sitting where its idle's seat holds, else standing (WORK_QUEUE item 38).
+                if c.pose == Pose::Sit
+                    && let Some(seat) = n
+                        .idles
+                        .iter()
+                        .find(|i| i.pose == Pose::Sit)
+                        .and_then(|i| i.seat)
+                    && !seat.holds(get, f, &def, local)
+                {
+                    c.pose = Pose::Stand;
+                }
                 if c.idle > 0 {
                     // Idle: face the nearest player within `look_at_m`, else look around.
                     let watch = players
@@ -1359,13 +1406,10 @@ impl Creatures {
                         .filter_map(near)
                         .filter(|&(_, _, d)| d <= n.look_at_m && d > 1e-6)
                         .min_by(|a, b| a.2.total_cmp(&b.2));
+                    // Looking around holds its heading: the `look` clip turns its head and
+                    // chest in a slow scan (before, the whole body swept ±60°, sliding on its feet).
                     if let Some((dx, dz, _)) = watch {
                         c.turn_toward(dx.atan2(dz).to_degrees(), max_turn);
-                    } else if c.pose == Pose::Look {
-                        let t = f64::from(c.idle_len - c.idle) / f64::from(SIM_HZ);
-                        let to = c.look_base
-                            + LOOK_SWEEP_DEG * (t * std::f64::consts::TAU / LOOK_PERIOD_S).sin();
-                        c.turn_toward(to, max_turn);
                     }
                 }
             }
@@ -2177,7 +2221,6 @@ mod tests {
         c.position = f.point([x, m_of_row(10), z]);
         c.target = None;
         c.idle = 60 * 60;
-        c.idle_len = c.idle;
         c.pose = Pose::Stand;
         c.yaw = 0.0;
         cs
@@ -2266,8 +2309,41 @@ mod tests {
                 }
             }
             assert!(walked > 20.0, "they wander ({walked} m)");
-            // The fixture's idles by data: looking around and sitting.
-            assert_eq!(poses, HashSet::from([Pose::Look, Pose::Sit]));
+            // The fixture's idles by data: looking around and sitting (standing for a sit whose
+            // seat isn't level: by the wall or the water).
+            assert!(
+                poses.contains(&Pose::Look) && poses.contains(&Pose::Sit),
+                "{poses:?}"
+            );
+            assert!(poses.is_subset(&HashSet::from([Pose::Look, Pose::Sit, Pose::Stand])));
+        }
+    );
+
+    both_faces!(
+        // WORK_QUEUE item 38: a sit idle sits only where its seat (by data: on the ground, level
+        // `levelM` round it) holds; at the wall's foot or its top's edge it stands instead.
+        fn an_npc_sits_only_where_its_seat_is_level(f: FaceFrame) {
+            let g = world(f);
+            let seat = Table::NPC_FIXTURE
+                .npc("test:person")
+                .and_then(|n| n.idles.iter().find(|i| i.pose == Pose::Sit))
+                .and_then(|i| i.seat)
+                .expect("the fixture's sit has a seat");
+            assert_eq!(seat.on, SeatOn::Ground);
+            for (x, y, sits) in [
+                (0.5, 10, true),
+                (-4.5, 10, false),
+                (-5.5, 16, false),
+                (-10.5, 16, true),
+            ] {
+                let mut cs = one_npc(f, [x, 0.5]);
+                let c = &mut cs.list[0];
+                c.position = f.point([x, m_of_row(y), 0.5]);
+                c.pose = Pose::Sit;
+                cs.step_near(&g, &[]);
+                let want = if sits { Pose::Sit } else { Pose::Stand };
+                assert_eq!(cs.list[0].pose, want, "at x {x}, row {y}");
+            }
         }
     );
 

@@ -440,7 +440,7 @@ test('a bad weapon fails naming it and the problem', () => {
 
 test('each stance’s raised blade is emitted, a weapon naming none taking the defaults (BUGS.md #86)', () => {
   const rs = toolsRust(validateTools(...fresh()));
-  assert.match(rs, /name: "dwell:sword"[^\n]*level_blade: RaisedBlade \{ grip: \[0\.06, 1\.3, 0\.44\], tip: \[-0\.72, 1\.38, 0\.53\] \}, vertical_blade: RaisedBlade \{ grip: \[0\.5, 1\.38, 0\.33\]/);
+  assert.match(rs, /name: "dwell:sword"[^\n]*level_blade: RaisedBlade \{ grip: \[0\.06, 1\.3, 0\.44\], tip: \[-0\.72, 1\.38, 0\.53\] \}, vertical_blade: RaisedBlade \{ grip: \[0\.12, 1\.19, 0\.43\]/);
   const [data, items, blocks] = fresh();
   items.add('test:club');
   data.tools.push({ name: 'test:club', kind: 'weapon', swingSeconds: 0.4, weapon: { damage: 3, knockbackM: 0.2, guard: { stances: { vertical: { rollDeg: 90, blade: { grip: [0, 1, 0.5], tip: [0, 2, 0.5] } } } } } });

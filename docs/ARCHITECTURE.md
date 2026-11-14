@@ -3527,7 +3527,9 @@ health taken). Players never strike players. Not yet: slash clips of its own
 **NPCs [in progress: data, server and client logic built; the colours and held item in the renderer to
 follow]** (WORK_QUEUE item 38, CHARACTERS.md §11.11). Wandering people are creatures with an `npc` block
 in `creatures.json` (the villager: the Peasant model): idles picked by weight from a fixed vocabulary of
-poses (stand, look around, sit) for their `seconds`; turning (`turnDegPerS`) to face the nearest player
+poses (stand, look around, sit) for their `seconds` (a sit idle's `seat`, `on: ground` with `levelM`, sits
+only where the ground round it is level, else it stands; looking around holds the heading, the `look` clip
+scans the head and chest), each drawn by its role's clip (`sit`, `look`); turning (`turnDegPerS`) to face the nearest player
 within `lookAtM` while idling; stepping `sidestepM` away from a player or another NPC within `bumpM`;
 a held item, a disposition (`neutral`) and a combat hook (`fightBack`: `Creatures::attacked` stops it and
 turns it on its attacker; the sword stances come with WORK_QUEUE item 35); per part colours (the

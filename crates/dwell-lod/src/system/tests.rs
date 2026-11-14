@@ -611,6 +611,30 @@ fn fills_the_holes_of_the_forced_path_with_clipped_ancestors_no_mountain_is_cut_
 }
 
 #[test]
+fn draws_the_streamed_chunks_inside_a_section_the_coarse_levels_call_empty() {
+    // face-a-only: the flat test world's LOD has one face; the walk is face-agnostic.
+    // Regression (BUGS.md #162, 2026-11-13): 25-40 m over a forest the treetops and the trunks'
+    // tops were missing below the camera. A coarse section's kind comes from the terrain alone, so
+    // one holding only the trees' upper parts is "empty", and the walk stopped there: the streamed
+    // chunks inside it (loaded, meshed, drawable) were never shown. Up close the streamed chunks
+    // are the truth, as in a buried section. In the flat world everything above y = 0 is empty.
+    let at = cc(0, 4, 0); // 64-80 m up
+    let mut host = Host::with_chunks(move |c| chebyshev(c, at) <= 3);
+    let mut lod = system(4.0, 64, 16, 8);
+    let cam = camera([16.5, 70.0, 16.5], 0.0, -70.0);
+    for frame in 1..=80 {
+        lod.update(&cam, f64::from(frame) * 50.0, &mut host);
+        finish(&mut lod, &mut host, &mut zero, 1.0);
+    }
+    assert!(lod.active);
+    for c in [at, cc(0, 3, 0), cc(1, 5, -2)] {
+        assert!(lod.chunk_visible(c), "{c:?}");
+    }
+    // Far from the camera empty sky stays empty.
+    assert!(!lod.chunk_visible(cc(0, 40, 0)));
+}
+
+#[test]
 fn draws_the_streamed_chunks_inside_buried_sections_caves_deep_underground() {
     // Regression (phone playtest): the LOD treats rock well below the surface as buried and the
     // walk stopped there, so the streamed chunks of a cave inside it were never drawn. In the flat

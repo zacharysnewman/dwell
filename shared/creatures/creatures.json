@@ -33,7 +33,7 @@
         "idles": [
           { "pose": "stand", "weight": 3, "seconds": [3, 8] },
           { "pose": "look", "weight": 2, "seconds": [4, 8] },
-          { "pose": "sit", "weight": 1, "seconds": [10, 25] }
+          { "pose": "sit", "weight": 1, "seconds": [10, 25], "seat": { "on": "ground", "levelM": 0.6 } }
         ],
         "appearance": { "set": "villagers", "skin": { "part": "skin", "from": "skin_fair" }, "hair": { "part": "hair", "from": "hair_brown" } },
         "pattern": { "set": "fiesta", "places": [{ "part": "pattern_1", "from": "wool_red" }, { "part": "pattern_2", "from": "brass" }, { "part": "pattern_3", "from": "wool_blue" }, { "part": "pattern_4", "from": "wool_green" }] },

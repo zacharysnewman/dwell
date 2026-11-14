@@ -1199,10 +1199,13 @@ so before and after compare the same stand. Its spots (`bench/spots.json`):
 | --- | --- |
 | `forest:inside` | standing in the densest stand (49 trees in a 40 m square, at 40, −40), eye at a player's height along the trunks |
 | `forest:edge` | 32 m over the highest ground 440 m south, just over the crowns, looking north across the canopy |
+| `forest:over25`, `forest:over40`, `forest:over80` | 25, 40 and 80 m over the densest stand, looking straight down at the crowns (the overhead view, BUGS.md #162) |
 | `forest:above` | flying 150 m over the stand, looking north and down to the horizon (every LOD tree level) |
 
 The scenario `forest-perf` opens it at `?preset=high` (1280 × 720 by default) and, at each spot, shoots it
-(`inside.png`, `edge.png`, `above.png`), then records 8 s (`inside`, `edge`, `above`): `frame.cpu`,
+(`inside.png`, `edge.png`, `over25.png`, `over40.png`, `over80.png`, `above.png`), then records 8 s at each
+(`inside`, `edge`, `over25`, `over40`, `over80`, `above`); `forest-overhead` records the 25 and 40 m spots alone
+for quick A/Bs: `frame.cpu`,
 `gpu.frame` and every pass. Its budget is a 16.7 ms frame (`frame.cpu.p95`, `gpu.frame.p95`), **report
 only** until item 30 lands: a record over it prints `OVER BUDGET (report only)` and the run goes on; make it
 failing (drop `reportOnly`) once High holds 60 fps there. On the M1 Air, before and after a change:

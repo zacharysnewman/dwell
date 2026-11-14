@@ -352,6 +352,20 @@ dwell_world::both_faces!(
                 }
             }
         }
+        // The shrines standing in the window are built, not open terrain: their pillars and lintel
+        // shade the dais under them (seed 7's face B builds the spawn's shrine at this very point,
+        // and the 16 m shrine reaches the meshed chunk), so their footprints are left out.
+        let t = terrain.local(f.face);
+        let sh = t.shrines().expect("shrines");
+        let (x0, z0) = ((local.x - 1) * N, (local.z - 1) * N);
+        let shrines = sh.near(t, (x0, z0), (x0 + 3 * N - 1, z0 + 3 * N - 1));
+        let reach = sh.reach() + 1;
+        let built = |x: f32, z: f32| {
+            shrines.iter().any(|s| {
+                (x - s.x as f32 - 0.5).abs() <= reach as f32
+                    && (z - s.z as f32 - 0.5).abs() <= reach as f32
+            })
+        };
         let (mut checked, mut dark) = (0, 0);
         for dy in -1..=1 {
             let c = at(0, dy, 0);
@@ -370,7 +384,11 @@ dwell_world::both_faces!(
                     let up = f64::from(mesh.normals[i * 3 + 1]) * f.sign_f64();
                     let leaf =
                         std::ptr::eq(mesh, &m.cutout) && leaf_tiles.contains(&mesh.tiles[i * 4]);
-                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf {
+                    let (wx, wz) = (
+                        (c.x * N) as f32 + mesh.positions[i * 3],
+                        (c.z * N) as f32 + mesh.positions[i * 3 + 2],
+                    );
+                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf && !built(wx, wz) {
                         checked += 1;
                         dark += usize::from(mesh.flood[i * 2] < 0.9);
                     }

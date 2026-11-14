@@ -2,14 +2,57 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
-      "version": "0.64.0",
+      "version": "0.65.0",
       "changes": [
-        "Realistic worlds: a new compatibility line, their terrain redrawn from the seed: rifts as chains of lakes, coasts ending in shelves, no sliver plates, ranges with peaks and saddles, continents out toward the edge",
-        "Realistic interiors mix rock provinces and vary rain and temperature by district, with no straight seams between terrain types; rolling ground is flat-topped again, notched ramps only along mesa edges",
+        "A new compatibility line for Realistic worlds, their terrain redrawn from the seed: curving plates and coastlines with gulfs and headlands, rifts as chains of lakes, no sliver plates or thin land strips, ranges with peaks and saddles",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, with notched ramps only along mesa edges",
         "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
         "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
-        "Slopes no longer show tall ramp backs in open air at bowl corners; resurrection shrines are bigger, 16 m across with pillars up to 10.5 m and a wider ring of torches",
-        "On the moon and the sun, distant terrain steps down in detail gradually out to the horizon, in the same colours as the ground near you"
+        "Volcanic islands come in varied sizes and shapes, with islets and gaps along their chains, and volcanoes blend into their ranges without a cliff at the foot",
+        "Active volcanoes are bare dark rock ringed by lava rock and obsidian spilling into the shallows; dormant ones turn green with grass, dirt patches and trees as they age"
+      ]
+    },
+    {
+      "version": "0.64.0",
+      "changes": [
+        "A new compatibility line: worlds generate a little differently from 0.63, so 0.63 worlds stay on 0.63",
+        "No more dead-straight, km-long seams between terrain types in Realistic worlds: snow, forest, desert and grass meet along natural, wandering edges",
+        "Slopes no longer show tall ramp backs standing in open air, so bowls and diagonal slopes have no sawtooth spikes",
+        "Resurrection shrines are bigger: 16 m across, with pillars up to 10.5 m tall under a high arch",
+        "The shrine's dais has more steps and a wider ring of torches, so its glow reads from a distance"
+      ]
+    },
+    {
+      "version": "0.63.21",
+      "changes": [
+        "Sliding and the out-of-stamina breath are a little quieter"
+      ]
+    },
+    {
+      "version": "0.63.20",
+      "changes": [
+        "Behind the scenes: new performance checks of the forest seen from above, the groundwork for smoother flying over forests."
+      ]
+    },
+    {
+      "version": "0.63.19",
+      "changes": [
+        "Dynamite no longer flings tall grass, torches, saplings or ladders as flying pieces: they're simply destroyed, dropping what they would when broken.",
+        "Grass and torches standing on a block that's blown away or falls now go with it instead of floating in the air."
+      ]
+    },
+    {
+      "version": "0.63.18",
+      "changes": [
+        "Villagers now sit down on level ground, legs out and the sword across a raised knee, instead of standing.",
+        "Villagers look around by turning their head and shoulders in a slow scan, instead of spinning in place.",
+        "A villager's raised vertical block now holds the sword upright in front of its face, and clashes spark on the drawn blade."
+      ]
+    },
+    {
+      "version": "0.63.17",
+      "changes": [
+        "Flying low over a forest, the treetops straight below no longer vanish (only trunk stubs were drawn 25-40 m up)."
       ]
     },
     {

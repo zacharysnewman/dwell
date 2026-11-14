@@ -358,6 +358,22 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
     s.needs_support != Support::Below || info(under).solid
 }
 
+/// Whether `m` is an attached block: one that stands on or hangs from another (block data
+/// `needsSupport`: tall grass, a torch, a sapling, a ladder) and holds nothing up. A blast removes
+/// it rather than flinging it, and it goes whenever the block holding it is destroyed or moves into
+/// a piece (docs/EXPLOSIVES.md §3; owner, 2026-11-13).
+/// A multi-cell block's other cells (`partOf`: a torch's upper cell) are attached as their block is.
+pub fn attached(m: StateId) -> bool {
+    if usize::from(m) >= dwell_blocks::STATES.len() {
+        return false;
+    }
+    let s = info(m);
+    s.needs_support != Support::None
+        || s.part_of
+            .and_then(dwell_blocks::state)
+            .is_some_and(|p| info(p).needs_support != Support::None)
+}
+
 /// Whether placing `material` onto `there` replaces it: `there` a slope (a stored ramp) of the
 /// placed block's own moldable group (block data `moldable`: dirt, grass and snowy grass are dirt;
 /// sand), molded into the block (docs/ITEMS.md §3).

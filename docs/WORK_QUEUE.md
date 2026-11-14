@@ -25,6 +25,13 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **Dynamite and tall grass (owner, 2026-11-13; BUGS.md #165):** "Dynamite blows up (physics) tall grass that's
+  wrong. It should just be destroyed if the block under it is moved or destroyed." Brief: as a data rule, not a
+  tall-grass case — blocks that sit on or attach to another and aren't structural are never flung pieces; in a blast
+  they're removed (their drops in adventure), and whenever the block under them is moved or destroyed by any means
+  they go too. Done on `claude/grass-blast-cdr1im`: the rule is `needsSupport` (and `partOf` such a block),
+  docs/EXPLOSIVES.md §3.13. **Owner should see:** dynamite near grass blows away dirt and stone as pieces, while the
+  grass on them simply disappears — no flying grass.
 - **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
   #146–#150):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
   after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
@@ -855,6 +862,35 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    terrain generation (no live growth yet: a later system, docs/FUTURE.md). **Owner should see:** active volcanic islands
    ringed by dark, ragged lava rock spilling into the sea, and older dormant ones turning green with grass, dirt patches and
    trees, the oldest mostly forested.
+   **Built (the map check, the curves and the volcanoes, 2026-11-14; awaiting the owner's maps):** (1) the shield's cap
+   fades to the cone's foot (Realistic cones only): `tests/realistic_cones.rs`, every cone's slope break at its foot
+   0.60–0.96 before, −0.31 to 0.26 after; (2, owner's curves) the plate warp at three scales (`warp`, `warp.detail`: 3.5 km
+   at 30 km, 2.2 km at 7 km, 0.6 km at 2 km) and every coast moved by layered noise (`rim.coast`: 4.5 km at 18 km, 0.9 km
+   at 3 km), the rim's too: `tests/realistic_shapes.rs` (seeds 1, 7, 42, 274005646, 2741893632, both faces), plate
+   boundaries' straight 2 km windows 57 % before, at most 3 % after, the coasts' at most 0.9 %; (3) cones and islands
+   varied (`uplift.cones`: sizes, outlines from harmonics 2–7, satellite islets, arc gaps, uneven spacing): islands'
+   radius cv 0.88 / 0.94, spacing cv 0.85 / 0.57, outlines 1.7–3.3 × a disc's irregularity; (4) the strip was an oceanic
+   transform's ridge over the 20 m deep sea: at sea the boundaries' landforms stay 6 m under (`uplift.seaRidges`), the
+   longest thin strip 11.2 → 3.6 km; (5) the sand desert's own stack (`dwell:dune_sands`, the Realistic world's entry):
+   99.7 % tan sand; near and far tops agree, the only grey patch the deep sea floor at the rim; (6) mesa country on every
+   face outside the subarctic (0.9–27 % of the land; seed 7 is subarctic on both faces): `tests/realistic_mesa_presence.rs`;
+   the volcanoes' states (`uplift.volcanism`): `tests/realistic_volcanoes.rs`, lava rock 85 % / 71 % of active shores'
+   shallows against 1–3 % at dormant ones, active ground 100 % bare, dormant cover 0.1 young to 0.9 old, trees 0 to
+   38 / ha. The default and starter worlds' blocks unchanged (the starter's pin moved only by palette indices). Not done:
+   the owner's look at the maps.
+   **Line (orchestrator, 2026-11-14):** #940 shipped the seams (#164), the ramp backs (#163) and the bigger shrines as
+   0.64; this batch takes the 0.65 line, raised at the merge of main.
+   **Ship the finished terrain fixes now (owner, 2026-11-13, on the seam fix sitting unshipped inside PR #897):**
+   **"Why are you waiting to ship the fix?"** Orchestrator's brief: split the already-verified fixes out of the held
+   Realistic batch (PR #897, `claude/realistic-geography-batch-a-k0fcrg`, held for new map artifacts) and ship them as
+   the 0.64 line; the batch takes 0.65. Taken onto `claude/terrain-fixes-064-5sim68` off main: BUGS.md #164 (the
+   straight seams: plate boundary points as true crossings, `plates.rs` `crossing`; the biomes read rain blurred over
+   4 km, `rain.blurM`), #163 (ramps backing onto open air, `ramps::top_backed_by`, in every world and grid), and the
+   bigger shrines (PR #930, merged in). Not taken: plate pairs, the rim, variety, mesas, deserts. Owner should see: no
+   straight km-long seams between terrain types; no ramp backs standing in open air (no sawtooth spikes in bowls);
+   bigger shrines; all in the next release.
+   **Owner, 2026-11-14, on shipping PR #940 as is (option B):** **"Ship B for now. I'll try it and see if we should go
+   back to C."**
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
@@ -1710,6 +1746,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    12.2 / 12.7 (noise). The edge is still **~2.2 ms over** at p95; what is left there is the near pass's ~4 M leaf
    triangles themselves. Next levers: fewer leaf triangles past the cards' fade (merged faces, no chamfer), or the
    terrain's colour packed too (its lava code needs a byte of its own).
+   **Round 5, overhead (2026-11-13, local, `claude/forest-overhead-perf`):** after BUGS.md #162's fix drew the
+   treetops under the camera, the owner's overhead frame over the forest rose (~15–18 → 34–41 ms GPU at 25–40 m).
+   New spots `forest:over25`, `forest:over40`, `forest:over80` (straight down over the densest stand) in
+   `forest-perf`, and the scenario `forest-overhead` (25 and 40 m) for `--compare`; test
+   `a_tree_straight_below_is_always_drawn` pins the canopy whole from above (real leaves with the chunk's cutout
+   drawn, or the impostor). Measured (M1 Air, High, `--unthrottled`, another agent's build loading the machine,
+   so every spot ~2–8 ms over round 4's numbers): `gpu.frame` p50 inside 20.7, edge 22.4, **over25 25.3, over40
+   27.4**, over80 18.2, above 19.1; drawn triangles edge 4.1 M, over25 5.6 M, over40 5.3 M. Overhead is ~1.2×
+   the edge, not 2×. No double draw: the #162 walk pushes each covered chunk once and draws no section over it.
+   **Tried, not adopted:** a crown below the eye counting its drop twice in the near/impostor switch
+   (`belowScale` 2, data): every crown in the 40 m view turned into its impostor (64 px views read as flat blocks
+   from above, a large look change) and `gpu.frame` did not move (over40 27.4 → 26.4, over25 25.3 → 25.3): the
+   leaves the shader drops still cost their vertices, so the overhead frame is bound by the leaf vertices
+   submitted, not the leaf pixels. Ablation (`--compare forest-overhead`, `gpu.frame` p95 ms, over25 / over40):
+   base 24.4 / 29.3, `cards-off` 22.9 / 28.4, `grass-off` 23.4 / 28.3, **`shadows-off` 20.8 / 25.0** (−3.6 /
+   −4.3: `gpu.near` −1.5 / −3.8, so mostly the near pass's shadow lookups on a screen full of leaves, plus the
+   casters). Also seen: the overhead views split the near pass for water (`gpu.near.water` 5–11 ms p95 timed,
+   none visible in the shots; at the edge there is no split): a hidden water draw may be forcing the split.
+   Next levers: the near pass's shadow lookup cost on leaves (fewer PCF taps for cutout leaves, or the leaves
+   receiving from a cheaper cascade), why the overhead near pass splits for water nobody sees, and fewer leaf
+   vertices submitted (a plainer leaf mesh past the cards' fade).
 33. **Licensed music replaces the generated music** (owner 2026-11-12: "I downloaded a big music set as a Unity
    asset, I'd like the casual game music setup in a prototype and make it play randomly in the game. Probably
    needs compression. It'll replace the current music which is AI generated."). The pack: *Andrew Sitkov Music*
@@ -1953,6 +2010,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    those look good. I'm imagining a colorful day of the dead Mexico kind of vibes."**): built on branch
    `claude/villager-patterns`, see item 43. Owner should see: a festive pattern round each villager's hat and
    waist, its own per villager, and the clothes chosen to go with it.
+   Owner's brief, 2026-11-13: **"villagers' sit and look-around clips, and BUGS.md #87 (an NPC's held vertical block
+   leans back)… Do: a `sit` clip (sitting on the ground or a block edge — say which; the NPC chooses a seat by data)
+   and a `look_around` clip (head and torso turn, a slow scan), fitted and checked with clip_probe (SVG sheets in the
+   PR), used by the NPC behaviour where it now plays idle; fix #87 with red→green. Tests both faces."** **Built
+   (cloud, 2026-11-13; CHARACTERS.md §11.11):** sitting **on the ground** (`biped_sit`, role `sit`), the seat by
+   data (the sit idle's `seat`: `on: ground`, `levelM` 0.6 for the villager: it sits only where the ground round it
+   is level, else stands); looking around (`biped_look`, role `look`: the head ±55° and chest ±20° in a 10 s scan,
+   the body holding its heading, no longer swept by the server); the probe poses NPC roles and follows
+   `<bone>_ahead`; sheets in `docs/clip_probe/` (`npc_sit`, `npc_look`, `guard_vertical_before`/`_after`). #87
+   fixed (the third-person vertical block fitted upright; the sword's vertical `blade` data with it). Found:
+   #165 (the first-person vertical block leans back; open). Not yet: sitting on a block's edge, a sit-down
+   transition.
 39. **Livelier animals** (owner 2026-11-12, after the video had no chase or fleeing — on day one every pack is
    kilometres from any herd and players can't scare deer): chose **deer flee from players** (they notice a player
    within a distance by data, closer when crouching, and run off; wolves keep their distance unless hungry),
@@ -2282,6 +2351,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    basalt with its form visible, brighter toward home; the lava as bright as before.
 ## Done
 
+- **Treetops missing below the camera 25-40 m over a forest (BUGS.md #162; brief 2026-11-13: "first confirm with a
+  real flight"; "a tree straight below at 25-80 m is always drawn"; also "add to `__dwell.state()` the current grid's
+  LOD stats (not home's) when on another grid"):** the LOD walk stopped at a coarse section the terrain calls empty
+  but the trees reach into; it now walks through to the streamed chunks around the camera. `__dwell.state().lod` is
+  the grid's LOD's on another grid. The crowns' missing floor shadow was mostly the same missing crowns.
+
 - **Placing against a ramp's downhill side, and a held Place by the clock (BUGS.md #23, #30; brief 2026-11-13:
   "aim at the sloped face and the placed block goes into the cell the face points into (by the face's real
   normal)"; "make it time-based … a rate from data, accumulated per tick, not one per rendered frame"):** a slope's
@@ -2416,6 +2491,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **Sliding and the out-of-stamina breath quieter (2026-11-13, `claude/quieter-slide-breath`), done.** Owner:
+  "Sliding and stamina breath expire should be 75% of their current volume." Every gain of those sounds is 0.75 × what it
+  was: the four ground slide loops (`*_slide`, 0.8 → 0.6) and their stops (`*_slide_stop`, 0.7 → 0.525, so the end of a
+  slide stays level with it), and `breath_heavy` played by `exhausted` (the sigh's `samples.gain` 0.5 → 0.375, which the
+  sound's own `gain` does not scale, and the fallback layers' `gain` 0.4 → 0.3); no other sound changed
+  (`quieterSounds.test.ts`). Owner should hear: slide on any ground and run out of stamina; both a quarter quieter than before.
 
 - **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
   bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
@@ -2897,7 +2979,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `width` deep, not one column), 8 m or more of air under it; torches over a 2 m radius (12 of them) on the dais's
    top; `stand` moved from [0, 2] to [0, 5] (the front tread, out of the torch disc). Siting needed no new values: the footprint (`reach` 8) and the slope test (its rise across 17 m at 8°, so up to
    2.4 m, under the 3 m dais) derive from the structure; the portal clearance (250 m), `clear` (3 m) and `spawnWithin`
-   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Changes the terrain
+   kept; seeds 0, 1, 7, 42 still site ≥ 20 a face ~2 km apart (`shrines.rs` tests, both faces). Siting the 4× larger
+   footprint took 4–6 ms a cell (over `stream_cost`'s bar); it now samples the footprint sparsely first and stops at the
+   first column out of range: 0.5–0.7 ms a cell, the same sites. Changes the terrain
    seeds generate: ships with the Realistic batch's 0.64 line (branch `claude/realistic-geography-batch-a-k0fcrg`).
 
 55. **The defeat kneel and the stand: humans don't die** (owner 2026-11-13: **"Can you setup a kneeling animation for

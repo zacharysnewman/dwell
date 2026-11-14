@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 165. The first-person vertical block leans the blade back toward the eye
+
+Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's
+`fp_guard_vertical` (the sheet's top, side and front panels, `docs/clip_probe/guard_vertical_after.svg`) with the grip
+0.75 m ahead of the eye and the tip at 0.29 m, above the screen's top: the blade leans back over the view, where
+the third-person pose (fixed in #87) stands it upright. Not judged on a GPU yet; it may read fine from first
+person (the blade off screen above), so the owner's call. Fix if wanted: fit `fp_guard_vertical` with `clip_probe
+--fit` (no `--body`) to an upright blade ahead of the view. Open.
+
 ### 159. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
 
 Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
@@ -226,15 +235,6 @@ shadows ~2 ms more. Speed effects' motion pass costs ~0.5 ms; bloom and shafts n
 Outstanding: no cut yet (45-minute box). The levers: a Tall grass setting (a mesher flag, #78's outstanding item),
 the far trees as impostors (WORK_QUEUE item 31), and High's sun shadows over forest; a vsync run of `high-fly` for
 the dropped-frame count and a faster flight (level 6+) for the streaming at speed.
-### 87. An NPC's raised vertical block leans the blade back over its shoulder
-
-Found fixing #86 (2026-11-12), not reported: `clip_probe` puts the third-person `guard_vertical` pose's
-sword grip at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead):
-the blade ~66° off upright, its tip behind the body, where `biped_guard_vertical`'s comment means "the
-blade upright ahead of the face" (a first guess, never fitted). The sword's `guard.stances.vertical.blade`
-follows what is drawn, so a clash's sparks land on the drawn blade. Fix: fit the clip with
-`clip_probe --fit` (as the level block was), then refit the data (the probe test fails until they agree).
-
 ### 85. A dev `look` with an object kicks the player: "refused the connection: Malformed message"
 
 Found 2026-11-12 filming the sword duel. `__dwell.look({yaw: 0, pitch: -5})` (the signature is
@@ -580,6 +580,71 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 166. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
+
+Found 2026-11-14 by the 0.64 terrain fixes (the realistic batch's BUGS.md #162, its commit b9c0379): with the biomes
+reading the blurred rain, seed 1 face A showed red sand on 2 red rock mesa floors where the climate is not arid
+(e.g. (−17500, 10750)), against #134's rule. Cause: the erosion snaps a floor down to the stack's soft layer
+(`Cut::Floor`), the red desert beds' siltstone, whose `cap` was `dwell:red_sand` with no `capBy`, so its treads were
+red sand in any climate; latent on main, the blur moved the mesa's edge over such floors. Fix (data, `rocks.json`): the
+siltstone's cap is red sandstone with `capBy` arid red sand, as the sandstone's. Test:
+`tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand` (red with the seam fixes, green after).
+
+### 164. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+
+Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
+this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
+and glacier blue-white ground with lakes on the left, dense green forest and grass on the right: a data or render seam,
+not a natural biome edge. **Owner should see:** no straight lines across the land between terrain types. Snow, forest,
+desert and grass meet along natural, wandering edges. Causes: (1) the plate boundaries' points sat on the 500 m scan's grid lines (the cells' midpoint), so a
+near-vertical or near-horizontal boundary became a polyline exactly along one grid line, up to 30 km, and every landform
+and province edge along it was axis-aligned; (2) the climate's marched rain is near all or nothing cell to cell, and read
+bilinearly on its 500 m grid the biomes' edges ran along the grid's rows and columns. Fix: each boundary point is the
+crossing found by halving between the two cells' centres (`plates.rs` `crossing`); `climate.json` `rain.blurM` (4000 m)
+low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_the_plates_not_the_scans_grid` (30 000 m
+axis-aligned before, under 1500 m after; under 2500 m on the 0.65 line, whose finest plate warp can put three crossings on one scan column), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
+biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
+
+### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
+
+Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas
+there's these spiky edges where slopes are up against the side of other slopes. I don't mind slopes with edges exposed but
+I do mind slopes that back up against open air." Seen on 0.61.7, seed 274005646, around (−11859, 263, −1617), stone: in
+the dump, stone_ramp cells (facing east/north, shapes ramp/steep_lower/steep_upper) sit on diagonal contours, their high
+(back) side facing air, so each shows a tall vertical back face in open air, a sawtooth along bowl corners and diagonal
+slopes. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no sawtooth
+spikes. Ramps meet higher ground at their backs; only their triangular sides may show. Cause: the notched rule (0.59–0.61 wherever the rock shaped the ground) let a ramp back onto
+a column that was itself a ramp descending toward it or along it, so the ramp's high side stood over lower ground. Fix:
+`ramps::top_backed_by` (`RampRule::top_backed`): a ramp keeps its facing only where the column behind its high side stands
+at least its top along their shared edge (that column as its own rule shapes it, `ramps::edge_height`), else the column
+is a full block; a column ends as its unchecked top or flat, and flat stands at least as high on every edge, so the check
+holds whatever the neighbour becomes; steep pairs alike; the triangular sides may show. Terrain (each column's own strict
+or notched rule) and the grid worlds use it, in every world. Deviation: another facing is not tried (it could expose a neighbour's back);
+the column is a full block. Tests: `ramps::tests::a_bowls_corners_back_no_ramp_onto_open_air` (the notched rule: 52 of 600
+bowl ramps exposed unchecked, 0 backed), `straight_slopes_keep_their_ramps`, `tests/ramp_backs.rs` (seeds 1, 7, 42,
+274005646, both faces, the default and the Realistic world: 134 and 194 exposed ramps on seed 274005646's Realistic faces
+unchecked, 0 after). The default world's goldens are unchanged (its strict rule never backed a ramp onto air).
+
+### 162. Treetops missing straight below the camera 25-40 m over a forest (fixed after 0.63.16)
+
+*Found 2026-11-13 in a GPU screenshot pass on 05925aea (test:forest seed 0, High).* 25 m over the dense stand only
+flat-topped trunks were drawn under the camera; at 40 m a hole of bare trunk stubs sat below with crowns at the
+frame's edges; at 80 m the canopy was whole. Confirmed in a real flight (flying up from the forest floor looking
+down). Not the impostor hand-over (#927, already the eye's 3D distance): the LOD walk. A coarse LOD section's kind
+comes from the terrain alone, so the level-2 section over the forest floor (only the trees' upper parts in it) was
+"empty", and the walk stopped there: the streamed chunks inside it (loaded, meshed, drawable) were never shown, and the
+trees there were near, so no impostor drew either. The trunks were cut at that section's floor (y 320 there). Now an
+empty section on the way to the chunks around the camera (`find_covered`) is walked through to them, as a buried one
+already was (`dwell-lod` `visit`). `system::tests::draws_the_streamed_chunks_inside_a_section_the_coarse_levels_call_empty`
+(red on the unfixed walk: the chunks 64-80 m up not shown). The streaming report (F8) now names where the walk stopped
+above a chunk (`lod.stoppedAt`), which found this.
+
+The same pass saw the crowns cast almost no shadow on the forest floor: the missing crowns were most of that (with
+them drawn, the canopy's shadow lies on the floor in the after shot); a check from the ground is still worth a look.
+
+Owner should see: flying up over a forest and looking down, the canopy stays whole at every height (no hole of trunk
+stubs below), and the canopy's shadow on the floor.
+
 ### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
@@ -597,50 +662,18 @@ takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs
 `a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
 face +Y, placed on top).
 
-### 164. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+### 87. An NPC's raised vertical block leaned the blade back over its shoulder (fixed after 0.61.1)
 
-Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
-this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
-and glacier blue-white ground with lakes on the left, dense green forest and grass on the right: a data or render seam,
-not a natural biome edge. **Owner should see:** no straight lines across the land between terrain types. Snow, forest,
-desert and grass meet along natural, wandering edges. Causes: (1) the plate boundaries' points sat on the 500 m scan's grid lines (the cells' midpoint), so a
-near-vertical or near-horizontal boundary became a polyline exactly along one grid line, up to 30 km, and every landform
-and province edge along it was axis-aligned; (2) the climate's marched rain is near all or nothing cell to cell, and read
-bilinearly on its 500 m grid the biomes' edges ran along the grid's rows and columns. Fix: each boundary point is the
-crossing found by halving between the two cells' centres (`plates.rs` `crossing`); `climate.json` `rain.blurM` (4000 m)
-low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_the_plates_not_the_scans_grid` (30 000 m
-axis-aligned before, under 1500 m after), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
-biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
+Found fixing #86 (2026-11-12), not reported: `clip_probe` put the third-person `guard_vertical` pose's sword grip
+at (0.50, 1.38, 0.33) and its tip at (0.38, 1.73, -0.45) m from the feet (right, up, ahead): the blade ~66° off
+upright, its tip behind the body, where `biped_guard_vertical` meant "the blade upright ahead of the face" (a
+first guess, never fitted). Fixed: the clip fitted with `clip_probe guard_vertical --item dwell:sword --body --fit
+0/0.12,1.2,0.42/0.1,1.97,0.48` (grip now (0.12, 1.19, 0.43), tip (0.13, 2.04, 0.47): the fist before the chest,
+the blade upright ahead of the face), and the sword's `guard.stances.vertical.blade` refitted to it, so a clash's
+sparks stay on the drawn blade. Test (`clip_probe` `the_vertical_block_stands_upright_ahead_of_the_face`): red on
+the old clip ("66° off upright"), green on the new; `the_raised_blades_data_is_where_the_raised_poses_draw_it`
+holds the data to it. Sheets: `docs/clip_probe/guard_vertical_before.svg`, `_after.svg` (the third-person panel).
 
-### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
-
-Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas
-there's these spiky edges where slopes are up against the side of other slopes. I don't mind slopes with edges exposed but
-I do mind slopes that back up against open air." Seen on 0.61.7, seed 274005646, around (−11859, 263, −1617), stone: in
-the dump, stone_ramp cells (facing east/north, shapes ramp/steep_lower/steep_upper) sit on diagonal contours, their high
-(back) side facing air, so each shows a tall vertical back face in open air, a sawtooth along bowl corners and diagonal
-slopes. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no sawtooth
-spikes. Ramps meet higher ground at their backs; only their triangular sides may show. Cause: the notched rule (0.59–0.61 wherever the rock shaped the ground) let a ramp back onto
-a column that was itself a ramp descending toward it or along it, so the ramp's high side stood over lower ground. Fix:
-`ramps::top_backed_by` (`RampRule::top_backed`): a ramp keeps its facing only where the column behind its high side stands
-at least its top along their shared edge (that column as its own rule shapes it, `ramps::edge_height`), else the column
-is a full block; a column ends as its unchecked top or flat, and flat stands at least as high on every edge, so the check
-holds whatever the neighbour becomes; steep pairs alike; the triangular sides may show. Terrain (each column's own strict
-or notched rule) and the grid worlds use it. Deviation: another facing is not tried (it could expose a neighbour's back);
-the column is a full block. Tests: `ramps::tests::a_bowls_corners_back_no_ramp_onto_open_air` (the notched rule: 52 of 600
-bowl ramps exposed unchecked, 0 backed), `straight_slopes_keep_their_ramps`, `tests/ramp_backs.rs` (seeds 1, 7, 42,
-274005646, both faces, the default and the Realistic world: 134 and 194 exposed ramps on seed 274005646's Realistic faces
-unchecked, 0 after). The default world's goldens are unchanged (its strict rule never backed a ramp onto air).
-
-### 162. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
-
-Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
-mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
-erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red desert beds' siltstone, whose `cap` was
-`dwell:red_sand` with no `capBy`, so its treads were red sand in any climate. Fix (data, `rocks.json`): the siltstone's
-cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's (then, the same line, the mesa country palette made its floors red dirt: WORK_QUEUE item 15). Test:
-`tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
-the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
 ### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
 
 Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13, shot 04c; refinement, owner: "Focus on
@@ -708,6 +741,24 @@ crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier
 **Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
 as solid painted shapes.
 
+### 165. Dynamite flings tall grass as physics pieces (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Dynamite blows up (physics) tall grass that's wrong. It should just be destroyed if the block
+under it is moved or destroyed."
+
+Cause (`dwell-sim` `Server::blast`): every non-liquid, breakable cell in the shell became a flung one-cell piece,
+tall grass included, and the blast's clears used the plain `TickChanges::set`, so a plant standing on a flung or
+destroyed cell just past the radius was left floating; a collapse's clears (`Server::fell`: sand falling under a
+torch) did the same. Fix, a data rule (docs/EXPLOSIVES.md §3.13): an attached block (`needsSupport`, or `partOf`
+one: tall grass, torches, saplings, ladders; `dwell_world::edit::attached`) is removed in a blast, never a piece,
+and counts as open space; every cell a blast or a collapse clears takes the attached blocks on it
+(`set_and_unsupport`); in adventure they drop as when broken. Tests (both faces, `tests/explosives.rs`): red → green
+`a_blast_over_tall_grass_flings_no_grass_and_removes_it` (68 grass pieces before),
+`attached_blocks_on_flung_blocks_go_and_are_not_carried`, `a_torch_on_sand_that_falls_goes_and_is_not_left_floating`
+(the torch stayed floating before); `tall_grass_on_a_block_broken_by_a_tool_goes_with_it` pins the tool break (it
+already worked). **Owner should see:** dynamite near grass blows away dirt and stone as pieces, while the grass on
+them simply disappears — no flying grass.
+
 ### 159. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
 
 Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
@@ -739,6 +790,7 @@ until the sigh decodes. Test: `playerVoice.test.ts` "the out-of-stamina breath i
 (red on the three takes: `breath_heavy plays only the sigh`; green after).
 
 **Owner should hear:** run out of stamina: one human sigh every time (a little pitch spread), never a short grunt.
+
 
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 

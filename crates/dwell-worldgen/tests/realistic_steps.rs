@@ -221,6 +221,8 @@ dwell_world::both_faces!(
             share(old.1, old.2),
         );
         assert!(columns > 2000, "enough bedded ground sampled: {columns}");
+        // Under an eighth (a tenth before every ramp was backed, BUGS.md #163, 0.64: a ramp that
+        // would back onto open air is a full block, its ½ m edge bare; face B 463 of 4530).
         assert!(
             share(edges, bare) <= share(old.1, old.2),
             "bedded slopes no barer than 0.58's: {bare} of {edges} ½ m edges bare, 0.58 {old:?}"
@@ -304,7 +306,9 @@ dwell_world::both_faces!(
     /// patches (`tests/realistic_mesa_colours.rs` holds the blend).
     fn the_red_desert_floor_is_red_sand_by_data(f: FaceFrame) {
         let (mut tops, mut red, mut plain) = (0, 0, 0);
-        for seed in [1, 7, SEED] {
+        // Seed 2 too: since the biomes read the rain blurred (BUGS.md #164, 0.64), face B of the
+        // other three holds only 17 mesa samples.
+        for seed in [1, 2, 7, SEED] {
             let seed = face_seed(seed, f.face);
             let g = generator(seed, None);
             let mesa = g
