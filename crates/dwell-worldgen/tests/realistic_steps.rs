@@ -118,7 +118,8 @@ dwell_world::both_faces!(
         );
         // Bedded stacks step into walls and treads, vertical rock into columns.
         assert!(
-            share(bedded) > share(p_bedded) + 0.025,
+            // Two points over the unshaped (2.5 before the 0.64 boundary crossings moved the beds).
+            share(bedded) > share(p_bedded) + 0.02,
             "bedded stacks step: {bedded:?} against {p_bedded:?} unshaped"
         );
         assert!(
