@@ -6,6 +6,23 @@ pins it.
 
 ## Open
 
+### 169. A founded town's blueprints go up around the trees standing on its site
+
+Found recording the builders (2026-11-14), not reported: `?local=1&seed=0&fresh=1&spawn=town`, the hamlet at
+(688, 7979) on face A. Founding places the plan's blueprints on the ground as it is and the builders skip occupied
+cells, so the generated trees inside the footprint stay: a broadleaf stands between the well and a hut, another in
+front of the second hut's door, half hiding it (stills `builders-end.png`). Suspect: `found_towns` (dwell-sim
+`server/blueprints.rs`) never clears the footprint; either the siting avoids trees (`town_ground`), or founding fells
+the trees in each blueprint's box (plus a margin) as edits before placing it. Not yet decided which; data either way.
+
+### 170. The record tool's settle wait never sees the view idle while builders edit nearby
+
+Found recording the builders (2026-11-14): `take.mjs`'s `viewIdle` (the bench's rule) waited its full 30–45 s and
+reported "NOT settled": each builder piece is an edit, and the LOD regenerates and re-asks for the sections it
+touches every second or two (`lod.generating` 8, `asking` 5 for a moment). Fixed in the tool: a view whose in-view
+work is done (`viewLoaded`: nothing `waitingInView`, the chunks meshed) for 3 s counts as settled too (tested in
+`take.test.mjs`). The LOD rebuilding a section per builder edit may be worth a look for cost (not measured).
+
 ### 165. The first-person vertical block leans the blade back toward the eye
 
 Found fixing #87 (2026-11-13), not reported: `clip_probe guard_vertical --item dwell:sword` draws the arms view's

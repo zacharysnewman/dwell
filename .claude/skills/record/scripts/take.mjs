@@ -112,14 +112,29 @@ export function viewIdle(st) {
 }
 
 /**
- * The page script that waits until the view has been idle (`viewIdle`) for `quietMs`, at most
- * `maxS` seconds; it returns "settled <s>" or "NOT settled <s>" (the take goes on either way).
+ * The view is loaded, if not idle: nothing waiting in view and the full-detail chunks meshed. Edits
+ * near the camera (builders at work, a blast) keep the LOD re-asking for the sections they touch, so
+ * the view is never idle for long there; loaded for `loadedMs` counts as settled too.
  */
-export function settleScript(quietMs = 1000, maxS = 60) {
-  return `(async () => { const idle = ${viewIdle.toString()}; const t0 = Date.now(); let quiet = null;
-    while (Date.now() - t0 < ${maxS * 1000}) { const now = Date.now();
-      quiet = idle(d.state()) ? (quiet ?? now) : null;
+export function viewLoaded(st) {
+  const lod = st?.lod;
+  const t = st?.terrain;
+  return !!lod && lod.waitingInView === 0 && (!t || t.dirty + t.meshing === 0);
+}
+
+/**
+ * The page script that waits until the view has been idle (`viewIdle`) for `quietMs`, or loaded
+ * (`viewLoaded`) for `loadedMs`, at most `maxS` seconds; it returns "settled <s>", "loaded <s>" or
+ * "NOT settled <s>" (the take goes on either way).
+ */
+export function settleScript(quietMs = 1000, maxS = 60, loadedMs = 3000) {
+  return `(async () => { const idle = ${viewIdle.toString()}; const loaded = ${viewLoaded.toString()};
+    const t0 = Date.now(); let quiet = null; let full = null;
+    while (Date.now() - t0 < ${maxS * 1000}) { const now = Date.now(); const st = d.state();
+      quiet = idle(st) ? (quiet ?? now) : null;
+      full = loaded(st) ? (full ?? now) : null;
       if (quiet !== null && now - quiet >= ${quietMs}) return 'settled ' + ((now - t0) / 1000).toFixed(1);
+      if (full !== null && now - full >= ${loadedMs}) return 'loaded ' + ((now - t0) / 1000).toFixed(1);
       await new Promise((r) => setTimeout(r, 100)); }
     return 'NOT settled ' + ((Date.now() - t0) / 1000).toFixed(1); })()`;
 }
