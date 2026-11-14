@@ -543,11 +543,7 @@ impl Ghost {
         mixed: bool,
     ) -> Vec<(StateId, u32)> {
         let mut out: Vec<(StateId, u32)> = Vec::new();
-        let mut n = 0;
-        for c in self.builder_order(get, near) {
-            if n >= max {
-                break;
-            }
+        for c in self.builder_order(get, near).into_iter().take(max as usize) {
             if !mixed && out.first().is_some_and(|f| f.0 != c.state) {
                 break; // the run of the first block only: never past a cell it can't fill
             }
@@ -555,7 +551,6 @@ impl Ghost {
                 Some(s) => s.1 += 1,
                 None => out.push((c.state, 1)),
             }
-            n += 1;
         }
         out
     }
