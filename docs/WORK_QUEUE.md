@@ -829,6 +829,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    axis-aligned line many km long, snow, ice and glacier ground left, dense forest and grass right.) **Owner should
    see:** no straight lines across the land between terrain types. Snow, forest, desert and grass meet along natural,
    wandering edges.
+   **Map check findings (orchestrator, 2026-11-14, before/after maps of the batch against main), fixed in the batch:**
+   (1) arc cones read as smooth discs with sharp circular cliff rims, cutting the range and damming lakes; (2) dead-straight
+   coasts along plate edges (seed 2741893632 face B two triangles joined at a neck, seed 7 face A a straight north–south
+   coast); (3) perfectly round island clusters, a 2×3 grid-like cluster on seed 274005646, six identical round cone islands
+   on seed 42 face A; (4) a land strip ~1 km wide and ~25 km long on seed 7 face A; (5) the sand desert surfacing as grey
+   stone with shrubs (seed 2741893632 face B) and a rectangular grey band up a hillside; (6) mesa country still on typical
+   seeds. **Owner should see:** cones that blend into their range with eroded flanks; coasts with bays and headlands, none
+   straight for more than 1–2 km; islands of varied sizes and shapes, unevenly spaced; no thin land strips; tan sand dune
+   deserts with rock only on steep faces; mesa country on typical seeds.
 16. **Phone frame rate (P0)** (owner 2026-11-11, iPhone 17, Safari, setting Low: "I'm only getting ~23 fps on
    mobile, seeing lots of z-fighting on tree trunks with the leaf cards. What might be dropping frames since the
    last while. Used to get 60 fps"). Suspect: leaf cards are on in every tier but CPU, Low included; cards lying
