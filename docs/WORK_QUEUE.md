@@ -979,6 +979,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lowland bare lava 6.4 % / 8.8 % → 0.7 % / 1.8 % (`tests/realistic_volcanoes.rs`); the straight red strip not
    yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
    and talus, (0d) placement bleed and snowy leaves, (6).
+   **0.69 follow-up (orchestrator, 2026-11-14, after the owner approved merging 0.68: "Go ahead and just merge away. No
+   need to wait."; branch `claude/realistic-069`):** everything not built in 0.68, and from the map check: soft fingered
+   edges (no straight or smooth-curved hard edges; "the long straight dirt→grass line"), "brown contour stripes on stone
+   hills" (bedded steps reading as stripes), shrub and bush species, cliff talus including underwater, placement bleed
+   across edges, snowy leaves at the snow line, mesa wall fins and the grey lake band, the straight red strip on dormant
+   islands, "pasted-looking red-dirt/stone blobs on the sand desert", "mesa patches reading as flat blobs". **Owner
+   should see:** each as its item above says; stone hills without brown contour stripes; the sand desert without pasted
+   blobs of red dirt or stone; mesa country reading as relief, not flat blobs.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
