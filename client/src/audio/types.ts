@@ -266,6 +266,8 @@ export interface SoundData {
   };
   /** Brushing through foliage (AUDIO.md §5 `brush`): the Rust game's rate; here for the checks. */
   brush: { everyM: number; minS: number };
+  /** Picking up a ground item (AUDIO.md §5 `pickup`): the Rust game's window and rate; here for the checks. */
+  pickup: { windowS: number; reachM: number; minS: number };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];

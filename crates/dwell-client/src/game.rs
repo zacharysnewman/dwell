@@ -1077,6 +1077,8 @@ pub struct Game<S: Scene> {
     fire_sounds: FireSounds,
     /// The body's breathing, gasps and strain from the vitals (docs/AUDIO.md §5).
     vital_sounds: dwell_game::sound::VitalSounds,
+    /// Picking up a ground item: its pop (owner, 2026-11-14).
+    pickup_sounds: dwell_game::sound::PickupSounds,
     /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
     creature_sounds: dwell_game::sound::CreatureSounds,
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
@@ -1298,6 +1300,7 @@ impl<S: Scene> Game<S> {
             lean_at: None,
             fire_sounds: FireSounds::new(),
             vital_sounds: dwell_game::sound::VitalSounds::new(),
+            pickup_sounds: dwell_game::sound::PickupSounds::new(),
             creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
             ambience: dwell_game::ambience::Listening {
                 fire_m: dwell_game::ambience::FAR_M,
@@ -2343,6 +2346,19 @@ impl<S: Scene> Game<S> {
                 {
                     self.sounds.push(SoundEvent::new(ev, 0, 1.0, None));
                 }
+                let count = |inv: &dwell_protocol::inventory::Inventory| -> u32 {
+                    inv.slots
+                        .iter()
+                        .flatten()
+                        .map(|st| u32::from(st.count))
+                        .sum()
+                };
+                self.pickup_sounds.inventory(
+                    self.loose.inventory.as_ref().map(|(_, old)| count(old)),
+                    count(&i.inventory),
+                    now_ms,
+                );
+                self.pickup_sounds.update(now_ms, &mut self.sounds);
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
@@ -2357,6 +2373,27 @@ impl<S: Scene> Game<S> {
                 self.streamer.ground_gone(&cells);
             }
             Message::ItemDrops(d) => {
+                // Loose items that went or shrank near the local player: half of a pickup's pop.
+                let me = self.predictor.position();
+                let near = |it: &dwell_protocol::ItemDropNet| {
+                    me.distance(DVec3::from(it.position.map(f64::from)))
+                };
+                let taken = d
+                    .gone
+                    .iter()
+                    .filter_map(|id| self.loose.items.get(id))
+                    .chain(d.items.iter().filter(|it| {
+                        self.loose
+                            .items
+                            .get(&it.id)
+                            .is_some_and(|o| o.count > it.count)
+                    }))
+                    .map(near)
+                    .fold(f64::INFINITY, f64::min);
+                if taken.is_finite() {
+                    self.pickup_sounds.drops_taken(taken, now_ms);
+                    self.pickup_sounds.update(now_ms, &mut self.sounds);
+                }
                 let changed = self.loose.apply(d);
                 let mut scene = self.scene.borrow_mut();
                 for id in changed.removed {

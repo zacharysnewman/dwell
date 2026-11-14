@@ -126,6 +126,14 @@ rs.push(`    pub const EVERY_M: f64 = ${rf(data.brush.everyM)};`);
 rs.push(`    pub const MIN_S: f64 = ${rf(data.brush.minS)};`);
 rs.push("}");
 rs.push("");
+rs.push("/// Picking up a ground item (shared/sounds `pickup`; AUDIO.md §5): an inventory gain within `WINDOW_S`");
+rs.push("/// of a loose item within `REACH_M` going or shrinking pops once; never closer than `MIN_S`.");
+rs.push("pub mod pickup_sounds {");
+rs.push(`    pub const WINDOW_S: f64 = ${rf(data.pickup.windowS)};`);
+rs.push(`    pub const REACH_M: f64 = ${rf(data.pickup.reachM)};`);
+rs.push(`    pub const MIN_S: f64 = ${rf(data.pickup.minS)};`);
+rs.push("}");
+rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));
 console.log(
   `sounds: ${Object.keys(data.sounds).length} sounds, ${Object.keys(data.sets).length} sets, ${data.events.length} events`,

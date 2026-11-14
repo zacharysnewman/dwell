@@ -44,21 +44,22 @@ pub enum SoundKind {
     AxeSwish = 37,
     AxeRustle = 38,
     Exhausted = 39,
-    Gasp = 40,
-    Strain = 41,
-    CreatureStep = 42,
-    CreatureStartle = 43,
-    CreatureCall = 44,
-    FellLand = 45,
-    Brush = 46,
-    StickSnap = 47,
-    SteamHiss = 48,
-    Sizzle = 49,
-    SwimUnder = 50,
+    ItemPickup = 40,
+    Gasp = 41,
+    Strain = 42,
+    CreatureStep = 43,
+    CreatureStartle = 44,
+    CreatureCall = 45,
+    FellLand = 46,
+    Brush = 47,
+    StickSnap = 48,
+    SteamHiss = 49,
+    Sizzle = 50,
+    SwimUnder = 51,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 51] = [
+    pub const ALL: [SoundKind; 52] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -99,6 +100,7 @@ impl SoundKind {
         SoundKind::AxeSwish,
         SoundKind::AxeRustle,
         SoundKind::Exhausted,
+        SoundKind::ItemPickup,
         SoundKind::Gasp,
         SoundKind::Strain,
         SoundKind::CreatureStep,
@@ -155,6 +157,7 @@ impl SoundKind {
             SoundKind::AxeSwish => "axe_swish",
             SoundKind::AxeRustle => "axe_rustle",
             SoundKind::Exhausted => "exhausted",
+            SoundKind::ItemPickup => "item_pickup",
             SoundKind::Gasp => "gasp",
             SoundKind::Strain => "strain",
             SoundKind::CreatureStep => "creature_step",
@@ -212,6 +215,7 @@ impl SoundKind {
             SoundKind::AxeSwish => None,
             SoundKind::AxeRustle => None,
             SoundKind::Exhausted => None,
+            SoundKind::ItemPickup => None,
             SoundKind::Gasp => None,
             SoundKind::Strain => None,
             SoundKind::CreatureStep => None,
@@ -287,4 +291,12 @@ pub mod creature_sounds {
 pub mod brush_sounds {
     pub const EVERY_M: f64 = 2.5;
     pub const MIN_S: f64 = 0.3;
+}
+
+/// Picking up a ground item (shared/sounds `pickup`; AUDIO.md §5): an inventory gain within `WINDOW_S`
+/// of a loose item within `REACH_M` going or shrinking pops once; never closer than `MIN_S`.
+pub mod pickup_sounds {
+    pub const WINDOW_S: f64 = 0.5;
+    pub const REACH_M: f64 = 3.0;
+    pub const MIN_S: f64 = 0.09;
 }

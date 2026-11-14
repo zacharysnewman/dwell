@@ -66,6 +66,28 @@ describe('variation', () => {
     }
   });
 
+  it("picks a ground item's pop among its variants by the seeded draw, jittered", () => {
+    // Owner, 2026-11-14: "with some random variety. Maybe a light popping sound."
+    const s = sound('dwell:item_pickup');
+    const alts = s.layers[0]?.alts?.length ?? 0;
+    expect(alts).toBeGreaterThanOrEqual(3);
+    const run = (seed: number) => {
+      const v = new Variation(seed);
+      return Array.from({ length: 40 }, () => v.draw('dwell:item_pickup', s));
+    };
+    const a = run(11);
+    expect(run(11)).toEqual(a);
+    expect(run(12)).not.toEqual(a);
+    const picked = new Set(a.map((p) => p.layers[0]?.alt));
+    expect(picked.size).toBe(alts);
+    const r = s.variation === 'none' ? {} : s.variation;
+    expect(new Set(a.map((p) => p.pitch)).size).toBeGreaterThan(30);
+    for (const p of a) {
+      expect(Math.abs(p.pitch)).toBeLessThanOrEqual(r.pitch ?? 0);
+      expect(Math.abs(p.gainDb)).toBeLessThanOrEqual(r.gain ?? 0);
+    }
+  });
+
   it('draws UI sounds identically every time', () => {
     const v = new Variation(9);
     for (const id of Object.values(SOUND_DATA.ui)) {

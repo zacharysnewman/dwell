@@ -285,6 +285,11 @@ export const SOUND_DATA: SoundData = {
       "sound": "dwell:breath_heavy"
     },
     {
+      "name": "item_pickup",
+      "sound": "dwell:item_pickup",
+      "self": "body"
+    },
+    {
       "name": "gasp",
       "sound": "dwell:gasp"
     },
@@ -870,6 +875,11 @@ export const SOUND_DATA: SoundData = {
   "brush": {
     "everyM": 2.5,
     "minS": 0.3
+  },
+  "pickup": {
+    "windowS": 0.5,
+    "reachM": 3,
+    "minS": 0.09
   },
   "sounds": {
     "dwell:stone_step": {
@@ -6781,6 +6791,94 @@ export const SOUND_DATA: SoundData = {
           "env": {
             "attack": 0.25,
             "decay": 0.45
+          }
+        }
+      ]
+    },
+    "dwell:item_pickup": {
+      "gain": 0.45,
+      "reverb": 0.03,
+      "variation": {
+        "pitch": 1.2,
+        "gain": 1.5,
+        "cutoff": 0.1,
+        "time": 0.12
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 520,
+          "to": 980,
+          "gain": 0.3,
+          "env": {
+            "attack": 0.002,
+            "decay": 0.055
+          },
+          "alts": [
+            {
+              "freq": 470,
+              "to": 900
+            },
+            {
+              "freq": 580,
+              "to": 1080
+            },
+            {
+              "freq": 540,
+              "to": 860
+            },
+            {
+              "freq": 500,
+              "to": 1040
+            }
+          ]
+        },
+        {
+          "source": "modal",
+          "freq": 1400,
+          "gain": 0.08,
+          "partials": [
+            [
+              1,
+              1,
+              0.03
+            ],
+            [
+              2.3,
+              0.35,
+              0.015
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 1320
+            },
+            {
+              "freq": 1520
+            },
+            {
+              "freq": 1450
+            },
+            {
+              "freq": 1260
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.07,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 1.2
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.012
           }
         }
       ]
