@@ -750,7 +750,7 @@ test('the checked-in rocks are valid, generate the checked-in Rust, and take a r
   // 0.64: notched ramps by a word, the mesa relief, the ground blends (a blend added by data alone).
   bad((x) => (x.shaping.notched = 'some'), /shaping.notched must be one of none, mesaEdges, all/);
   bad((x) => (x.mesaRelief.topAmplitude = 99), /mesaRelief.topAmplitude must be in \[0, 50\]/);
-  bad((x) => (x.blends[0].shares = [0.5, 0.5, 0.5]), /shares must sum to 1/);
+  bad((x) => (x.blends[0].shares = [0.7, 0.7]), /shares must sum to 1/);
   bad((x) => (x.blends[0].blocks[0] = 'dwell:nothing'), /block "dwell:nothing" is not in the registry/);
   bad((x) => (x.blends[0].stacks = ['dwell:nothing']), /stack "dwell:nothing" is not a stack/);
   bad((x) => (x.blends[0].dither = 0.2), /dither must be under half the smallest share/);

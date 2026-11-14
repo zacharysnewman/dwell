@@ -416,6 +416,7 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         spacing: 0,
         rotations: &[0],
         variants: &[],
+        tops: 1.0,
     };
     // The world's biome lists it (ADR 0074 B5: a placement no biome lists stands nowhere).
     let biome = Biome {

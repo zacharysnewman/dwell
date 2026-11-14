@@ -240,7 +240,7 @@ pub const GEOLOGY: Geology = Geology {
     ledge: 2.0,
     ledge_every: 1.0,
     tread_relief: 0.08,
-    notched: Notched::MesaEdges,
+    notched: Notched::None,
     erosion: Erosion {
         strength: 1.0,
         reach: 450.0,
@@ -258,7 +258,7 @@ pub const GEOLOGY: Geology = Geology {
         gully_depth: 5.0,
     },
     blends: &[
-        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand", "dwell:sand"], shares: &[0.69, 0.24, 0.07], wavelength: 90.0, slope: 0.3, dither: 0.03, dither_wavelength: 3.0 },
+        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand"], shares: &[0.72, 0.28], wavelength: 90.0, slope: 0.3, dither: 0.03, dither_wavelength: 12.0 },
     ],
     mesa_relief: MesaRelief {
         top_amplitude: 3.5,

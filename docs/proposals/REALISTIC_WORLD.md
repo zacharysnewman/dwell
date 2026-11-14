@@ -43,6 +43,10 @@ The idea in one line: the starter world shows that the systemic layers (ADR 0075
 convincing place when a person places every part. Realistic is the same layers with the seed doing the
 placing, so the parts follow from each other instead of from a JSON file.
 
+**Goal (owner, 2026-11-14):** "realistic only. We're hoping to replace default eventually with realistic once it's
+looking really good." The Realistic world is to replace the default world once it looks really good; until then its
+look changes are Realistic-only (WORK_QUEUE item 15).
+
 ## 2. What exists today: hand-placed or seed-derived
 
 "Hand-placed" means a number in a world file says where or what; "seed-derived" means the seed draws it;
