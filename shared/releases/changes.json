@@ -13,6 +13,25 @@
       ]
     },
     {
+      "version": "0.63.16",
+      "changes": [
+        "Running out of stamina plays a single human sigh"
+      ]
+    },
+    {
+      "version": "0.63.15",
+      "changes": [
+        "Running out of stamina plays a person's heavy breath, recorded, instead of a growl or plain noise."
+      ]
+    },
+    {
+      "version": "0.63.14",
+      "changes": [
+        "On the moon and the sun, distant terrain now steps down in detail gradually out to the horizon, like at home, instead of jumping from full detail to a blurry mesh",
+        "Far terrain on the moon and the sun now has the same colours as the ground near you"
+      ]
+    },
+    {
       "version": "0.63.13",
       "changes": [
         "Theater mode's recording dot is a clear red that no longer blinks out.",

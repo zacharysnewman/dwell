@@ -80,6 +80,29 @@ describe("the player's voice (BUGS.md #159)", () => {
       }
     });
 
+  it("the out-of-stamina breath is the owner's pick, the sigh alone, within ±0.5 semitone", () => {
+    const [id, s] = soundOf('exhausted');
+    expect(id).toBe('dwell:breath_heavy');
+    expect(usesSamples(s), 'breath_heavy plays recorded samples, not only noise').toBe(true);
+    const from = s.samples?.from ?? [];
+    // Owner, 2026-11-13, of the three picks: "1, sigh is my choice".
+    expect(from, 'breath_heavy plays only the sigh').toEqual(['VOICE_MALE_Sigh_1']);
+    const files = s.samples?.files ?? [];
+    expect(files).toHaveLength(1);
+    expect(files[0], 'breath-heavy-1.m4a, the sigh (names carry a content hash)').toMatch(/^breath-heavy-1(-[0-9a-f]+)?\.m4a$/);
+    for (const name of from) {
+      expect(['GRUNT', 'BREATH', 'VOICE'], name).toContain(name.split('_')[0]);
+      expect(name, 'a male voice, like the gasp and the strain').toMatch(/_Male_/i);
+    }
+    const bank = new SampleBank<{ duration: number }>(mulberry32(5));
+    for (const f of s.samples?.files ?? []) bank.set(f, { duration: 1 });
+    for (let i = 0; i < 300; i++) {
+      const r = bank.pick(id, s)?.rate ?? NaN;
+      expect(r).toBeGreaterThanOrEqual(semitonesToRate(-0.5) - 1e-9);
+      expect(r).toBeLessThanOrEqual(semitonesToRate(0.5) + 1e-9);
+    }
+  });
+
   it("the creatures' voices are named by the pack too (an animal's, not a person's)", () => {
     for (const [id, s] of Object.entries(SOUND_DATA.sounds))
       for (const name of s.samples?.from ?? [])

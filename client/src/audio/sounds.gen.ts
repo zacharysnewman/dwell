@@ -6199,7 +6199,17 @@ export const SOUND_DATA: SoundData = {
       ]
     },
     "dwell:breath_heavy": {
-      "$comment": "Out of stamina: a person's heavy breath, two breathy puffs of noise (BUGS.md #159). Its samples were the pack's MONSTER_Exhausted_05/_07, a voiced growl that sounded like a bear; procedural until a human breath is picked (samples with `from`, a human category).",
+      "$comment": "Out of stamina: a person's heavy breath (BUGS.md #159). The pack's MONSTER_Exhausted_05/_07 (a voiced growl that sounded like a bear) were replaced by a man's breath: the pack's one unvoiced in-and-out breath, VOICE_MALE_Sigh_1, the owner's pick of three (2026-11-13, \"1, sigh is my choice\"; GRUNT_Male_Quick and _Quick_Deep were dropped). The layers (two puffs of noise) are only the fallback: they play until the sigh decodes.",
+      "samples": {
+        "files": [
+          "breath-heavy-1-13f5fdde.m4a"
+        ],
+        "from": [
+          "VOICE_MALE_Sigh_1"
+        ],
+        "gain": 0.5,
+        "pitch": 0.5
+      },
       "gain": 0.4,
       "reverb": 0.05,
       "variation": {
@@ -7964,6 +7974,10 @@ export const SOUND_DATA: SoundData = {
       "source": "body-thud-3.m4a"
     },
     {
+      "file": "breath-heavy-1-13f5fdde.m4a",
+      "source": "breath-heavy-1.m4a"
+    },
+    {
       "file": "gasp-1-7f7bc6f6.m4a",
       "source": "gasp-1.m4a"
     },
@@ -8028,7 +8042,7 @@ export const SOUND_DATA: SoundData = {
       "source": "dynamite-boom-3.m4a"
     }
   ],
-  "sampleBytes": 1498514,
+  "sampleBytes": 1505733,
   "gaitOrder": [
     "walk",
     "run",

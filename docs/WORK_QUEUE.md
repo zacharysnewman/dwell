@@ -2396,8 +2396,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:
   the out-of-stamina breath played the pack's `MONSTER_Exhausted_05/_07`; it is procedural now, and every player vocal
   sound is checked to be a human take (`samples.from`) at a rate within 0.9–1.1. Owner should hear: when you run out of
-  stamina (and on other player effort/hurt sounds), a human breath/grunt at a natural pitch, not a growl. Next: pick a
-  recorded human breath from the pack.
+  stamina (and on other player effort/hurt sounds), a human breath/grunt at a natural pitch, not a growl. Then
+  (`claude/human-breath`, done): the breath plays the pack's `VOICE_MALE_Sigh_1`, `GRUNT_Male_Quick`,
+  `GRUNT_Male_Quick_Deep` (a man's breath and two breathy exhales, picked by analysis; the pack has no `BREATH` category).
+  Owner to hear: run out of stamina. Then (2026-11-13, `claude/breath-sigh`, done), after hearing the three previews
+  (1 `VOICE_MALE_Sigh_1`, 2 `GRUNT_Male_Quick`, 3 `GRUNT_Male_Quick_Deep`), owner: "1, sigh is my choice". The breath
+  plays only the sigh (±0.5 semitone); the two grunts' files are deleted; the noise puffs are only the fallback until
+  it decodes. Owner should hear: run out of stamina, one human sigh every time.
 
 - **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
   your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your

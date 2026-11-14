@@ -725,7 +725,20 @@ Tests: `client/src/audio/playerVoice.test.ts` (red: `dwell:breath_heavy plays MO
 player vocal event a human category and every play's rate within 0.9–1.1, and the semitones → rate math.
 
 **Owner should hear:** when you run out of stamina (and on other player effort/hurt sounds), a human breath/grunt at a
-natural pitch, not a growl. Outstanding: picking a recorded human breath for it (the pack's own; add it with `from`).
+natural pitch, not a growl. Follow-up (2026-11-13, `claude/human-breath`): the breath plays recorded human takes again,
+picked by analysis (the pack has no `BREATH` category): `VOICE_MALE_Sigh_1` (unvoiced, 0.74 s, centroid ~3.7 kHz),
+`GRUNT_Male_Quick` and `GRUNT_Male_Quick_Deep` (the gasp's and the strain's voice, breathy exhales, 20–36 % voiced,
+centroid 2.3–2.6 kHz), ±0.5 semitone; the noise puffs stay as the fallback before they decode. Test: `playerVoice.test.ts`
+"the out-of-stamina breath is a man's recorded breath" (red: `breath_heavy plays recorded samples, not only noise`;
+green after). Unheard by a person yet: the owner should hear it.
+
+Follow-up (2026-11-13, `claude/breath-sigh`): the owner heard the three previews and chose the sigh. Owner: "1, sigh is
+my choice". `breath_heavy` plays only `breath-heavy-1.m4a` (`VOICE_MALE_Sigh_1`), ±0.5 semitone, same gain;
+`breath-heavy-2/-3.m4a` (`GRUNT_Male_Quick`, `_Quick_Deep`) are deleted. The noise puffs stay only as the fallback
+until the sigh decodes. Test: `playerVoice.test.ts` "the out-of-stamina breath is the owner's pick, the sigh alone"
+(red on the three takes: `breath_heavy plays only the sigh`; green after).
+
+**Owner should hear:** run out of stamina: one human sigh every time (a little pitch spread), never a short grunt.
 
 ### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 
