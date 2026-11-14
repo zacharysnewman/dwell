@@ -104,7 +104,14 @@ export type ToWorker =
       minDepth: number;
     }
   /** The lava's dev tools (local.rs `lava_dev`); answered with `lavaDev`. */
-  | { t: 'lavaDev'; op: string; args: number[] };
+  | { t: 'lavaDev'; op: string; args: number[] }
+  /**
+   * A cinematic take (THEATER_MODE.md §6.1): `manual` stops the real-time clock (the world moves only
+   * by `step`), off resumes it from now with no catch-up.
+   */
+  | { t: 'clock'; manual: boolean }
+  /** Steps exactly `ticks` server ticks (a cinematic take's frame); answered with `stepped`. */
+  | { t: 'step'; ticks: number };
 
 export type FromWorker =
   /** `persisted`: the world is saved in the browser (OPFS, §6.4). */
@@ -135,6 +142,8 @@ export type FromWorker =
   | { t: 'findOnMap'; result: string }
   /** The lava's dev tools' answer as JSON (in reply to `lavaDev`). */
   | { t: 'lavaDev'; result: string }
+  /** The server's tick after a `step`, its outbox flushed first. */
+  | { t: 'stepped'; tick: number }
   /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */
   | { t: 'stats'; stats: ServerStats };
 

@@ -4,6 +4,7 @@
 // $RECORD_STORAGE: a JSON {localStorage key: value} set before every load (take.mjs passes a video's world.storage).
 // /rec/start?name=&audio=1 also records the game's sound (__dwell.audioTap: effects and ambience, never music) and
 // /rec/stop saves it beside the frames as OUT_DIR/<name>.webm with <name>.audio.json (its epoch start, the frames' clock).
+// /cine/start?name= points the page's `__dwellRecSink` (a cinematic take's PNG frames and audio.wav) at OUT_DIR/<name>/.
 import { createRequire } from 'node:module';
 import http from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -28,6 +29,12 @@ await page.goto(url);
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+// A cinematic take (__dwell.cinematic) hands each lossless frame and its stepped sound to this sink.
+let cineDir = null;
+await page.exposeFunction('__dwellRecSink', (file, b64) => {
+  if (!cineDir) throw new Error('no cinematic take started (/cine/start?name=)');
+  writeFileSync(join(cineDir, file), Buffer.from(b64, 'base64'));
+});
 let cdp = await context.newCDPSession(page);
 let rec = null;
 cdp.on('Page.screencastFrame', async (f) => {
@@ -46,7 +53,9 @@ http.createServer(async (req, res) => {
     let out;
     if (u.pathname === '/goto') { await page.goto(body); out = 'ok'; }
     else if (u.pathname === '/eval') out = await ev(body);
-    else if (u.pathname === '/rec/start') {
+    else if (u.pathname === '/cine/start') {
+      cineDir = join(OUT, u.searchParams.get('name')); mkdirSync(cineDir, { recursive: true }); out = 'cinematic ' + cineDir;
+    } else if (u.pathname === '/rec/start') {
       const dir = join(OUT, u.searchParams.get('name')); mkdirSync(dir, { recursive: true });
       rec = { dir, name: u.searchParams.get('name'), n: 0, times: [], audio: null };
       if (u.searchParams.get('audio') === '1') rec.audio = await page.evaluate(audioStartExpr());

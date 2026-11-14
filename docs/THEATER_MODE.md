@@ -259,6 +259,46 @@ A new preset is a data entry (a test adds one from a fixture file no code names)
   water) still runs in real time, and the take is silent (the sound runs in real time). Needs WebCodecs (Chrome,
   Edge, Safari 16.4+).
 
+### 6.1 Cinematic takes (offline, frame-exact) [built]
+
+Owner, 2026-11-14: "For our video recordings, is there a way to sort of 'pre render' like real 3D animation or physics
+simulations sometimes do? … take more time to render it so it looks at its prettiest? Without seeing LODs load in,
+physics stutters, etc?"; then "If we can, let's update sound to align with frame exact time, at least in recording
+mode." A cinematic take renders a path offline: **the game's time is the frame count**, not the wall clock.
+`__dwell.cinematic({ path, size, settings })` (`src/theater/cinematic.ts`; the record skill's `render: "cinematic"`
+shots) runs it; the settings are data, `shared/theater/cinematic.json` (validated, a take overrides any field):
+
+- **Decoupled time.** The local world's worker stops its real-time clock (`{t: 'clock', manual}`) and steps exactly
+  the server ticks of each frame (`{t: 'step', ticks}` → `LocalCore::step_ticks`, answered `stepped` once its output
+  is flushed): 2 a frame at 30 fps, the count computed from the frame number (`ticksDue(frameTimeS(i))`), so a long
+  take never drifts. The client's clock is held (`Client.holdClock`, `stepClockTo`; `dwell-client` `step_clock`
+  behind `telemetry::now_ms`, so the frame loop, the render clock, every animation, the day clock and the
+  interpolation all read it) and set to the frame's time; the camera path is stepped by the same amount
+  (`theaterAdvance`). However long a frame takes to draw, the world, the creatures, the water, the bodies and the
+  camera move exactly 1/fps. Live play never holds either clock.
+- **The settle gate.** After each step the frame is drawn until the view is loaded (at most `settle.maxWaiting` LOD
+  sections waiting in view and the chunks meshed) on `minFrames` drawn frames, at most `capMs` (frame 0
+  `firstCapMs`); a frame that hits the cap is captured anyway and listed in the report.
+- **The pre-roll.** Before frame 0 the path is flown once with the world held, `preroll.stepS` of path time a
+  step, each step settled (at most `preroll.capMs`), uncaptured: the view streams and meshes what it will see.
+- **Quality.** `quality.view` (`__dwell.setView`'s settings: the detail distance and pixel error, the render scale,
+  shafts, bloom, torch shadows) and `quality.shadows` for the take; the canvas is drawn at `supersample` × the
+  output size and scaled down into the frame; `subframes` > 1 averages that many sub-frames, each 1/(fps ×
+  subframes) of game time, into one frame (motion blur).
+- **Lossless frames.** Each frame is PNG (or WebP) at the output size, handed to `window.__dwellRecSink` (the record
+  driver writes it); the skill encodes them afterwards at exactly the take's rate.
+- **Frame-exact sound** (`src/theater/cinematicAudio.ts`). The page's AudioContext is suspended between frames and
+  resumed until its clock reaches the next frame's time. While a take holds the engine's clock
+  (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`,
+  so a step that overshoots by a hardware buffer is never late), and Web Audio's sample-accurate scheduling puts it on
+  its frame. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
+  its time; a third channel carries an impulse scheduled like a sound at every frame, which calibrates the
+  recorder's latency and measures the alignment (the report's error and `late` count). The track is exactly
+  frames / fps long (`audio.wav`, 16-bit at the context's rate).
+
+A cinematic take is for a **local world** (the page hosts the world it steps); on a remote server the world keeps
+its own time and only the client's clock and the camera are stepped.
+
 ## 7. Multiplayer, permissions and the simulation viewpoint
 
 - **Local only:** the camera, the time of day and the time-lapse are this viewer's; nothing goes on the wire. The

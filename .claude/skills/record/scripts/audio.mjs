@@ -90,3 +90,15 @@ export function partAudio(mode = 'auto', speed = 1) {
   if (speed === 1) return 'keep';
   return speed >= 0.25 && speed <= 2 ? 'stretch' : 'mute';
 }
+
+/**
+ * A cinematic take's folder (f00000.png … at exactly `fps`, and the stepped sound `audio.wav` when it was
+ * recorded, already frame-exact: no alignment, only padded or cut to the frames' length) → an h264 mp4.
+ */
+export function cinematicEncodeArgs({ frames, fps, out, crf = 14, preset = 'medium', wav = null, image = 'png' }) {
+  const a = ['-v', 'error', '-y', '-framerate', String(fps), '-i', `${frames}/f%05d.${image}`];
+  if (wav) a.push('-i', wav, '-map', '0:v', '-map', '1:a', '-af', 'apad', '-shortest');
+  a.push('-c:v', 'libx264', '-crf', String(crf), '-preset', preset, '-pix_fmt', 'yuv420p', '-r', String(fps));
+  a.push(...(wav ? AUDIO_CODEC : ['-an']), out);
+  return a;
+}

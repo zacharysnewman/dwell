@@ -447,6 +447,12 @@ impl LocalWorld {
     pub fn advance(&mut self, elapsed_seconds: f64) -> u32 {
         self.core.advance(elapsed_seconds)
     }
+    /// Steps exactly `ticks` server ticks (a cinematic take: the game moves by the frame clock,
+    /// not the wall clock; `LocalCore::step_ticks`).
+    #[wasm_bindgen(js_name = stepTicks)]
+    pub fn step_ticks(&mut self, ticks: u32) -> u32 {
+        self.core.step_ticks(ticks)
+    }
     /// Each tick phase's time (ms) summed since the last call, in `TICK_PHASES` order
     /// (`tickPhaseNames`).
     #[wasm_bindgen(js_name = tickPhases)]

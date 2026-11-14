@@ -5731,7 +5731,7 @@ impl<S: Scene> Game<S> {
     }
 
     /// The whole-world view around the camera.
-    fn update_lod(&mut self, c: &ClientState, now_ms: f64, input: &KeyboardMouseInput) {
+    fn update_lod(&mut self, c: &ClientState, _frame_ms: f64, input: &KeyboardMouseInput) {
         // Dead, the view around the body keeps loading, and the respawn's ring is readied.
         if !(c.active || self.dead) || self.lod.is_none() {
             return;
@@ -5781,7 +5781,7 @@ impl<S: Scene> Game<S> {
         // On another grid (MOON_WORLD.md §7.3) home's far terrain isn't drawn: its sections are
         // home's; the grid's own LOD tree draws its distance, in its frame (BUGS.md #159).
         if self.grid_drawn != 0 {
-            self.update_grid_lod(&camera, now_ms);
+            self.update_grid_lod(&camera);
             return;
         }
         let mut host = LodHost {
@@ -5791,8 +5791,11 @@ impl<S: Scene> Game<S> {
             streamer: &self.streamer,
             outbox: &self.outbox,
         };
+        // The LOD streams on the wall clock: its request rates, fades and memory adaptation are
+        // loading, not game time, and must run while a cinematic take holds the clock (held, its
+        // cache never coarsened and passed 3.5 GB). `now_ms` is the wall clock in live play.
         if let Some(lod) = &mut self.lod {
-            lod.update(&camera, now_ms, &mut host);
+            lod.update(&camera, crate::telemetry::wall_ms(), &mut host);
         }
         if !self.lod_drawn {
             let mut view = View(self.scene.clone());
@@ -5807,7 +5810,7 @@ impl<S: Scene> Game<S> {
     /// The grid the view is on's LOD tree (`grid_lod.rs`): made on its first frame there with
     /// home's options, updated around the camera (in the grid's frame), drawing its sections in
     /// the renderer's section store; with none (a grid without `lod`) no sections are drawn.
-    fn update_grid_lod(&mut self, camera: &LodCamera, now_ms: f64) {
+    fn update_grid_lod(&mut self, camera: &LodCamera) {
         let g = self.grid_drawn;
         if self.grid_lod.as_ref().is_some_and(|l| l.grid() != g) {
             let mut old = self.grid_lod.take().unwrap();
@@ -5837,7 +5840,9 @@ impl<S: Scene> Game<S> {
             view: crate::grid_lod::GridView(&mut view),
             chunks: &chunks,
         };
-        lod.lod.update(camera, now_ms, &mut host);
+        // On the wall clock, as the LOD above (a cinematic take holds the frame clock).
+        lod.lod
+            .update(camera, crate::telemetry::wall_ms(), &mut host);
         if !self.lod_drawn {
             LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);

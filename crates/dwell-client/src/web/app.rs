@@ -1379,6 +1379,17 @@ impl Client {
             g.stop_theater();
         }
     }
+    /// Holds (true) or releases the client's clock for a cinematic take (THEATER_MODE.md §6.1,
+    /// `step_clock`): held, it moves only by `stepClockTo`. Returns the clock (ms).
+    #[wasm_bindgen(js_name = holdClock)]
+    pub fn hold_clock(&self, on: bool) -> f64 {
+        crate::step_clock::set_held(on, telemetry::wall_ms())
+    }
+    /// Sets the held clock (ms; the take computes it from its frame count).
+    #[wasm_bindgen(js_name = stepClockTo)]
+    pub fn step_clock_to(&self, ms: f64) {
+        crate::step_clock::set(ms);
+    }
     /// Frame-exact recording on or off (THEATER_MODE.md §6): on, the path moves only by
     /// `theaterAdvance`'s steps, one a drawn frame.
     #[wasm_bindgen(js_name = theaterExact)]
@@ -3685,10 +3696,9 @@ impl Client {
 }
 
 /// Milliseconds on `performance.now()`'s timeline, which `frame`'s timestamps are on.
+/// The client's clock: `performance.now()`, or the stepped clock while a cinematic take holds it.
 fn perf_now() -> f64 {
-    web_sys::window()
-        .and_then(|w| w.performance())
-        .map_or(0.0, |p| p.now())
+    telemetry::now_ms()
 }
 
 fn touch_button(name: &str) -> Option<TouchButton> {

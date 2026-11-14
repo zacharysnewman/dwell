@@ -1,0 +1,40 @@
+{
+ "formatVersion": 1,
+ "name": "cinematic e: the seed-0 hamlet's builders at work (creatures, edits)",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    716,
+    390,
+    7952
+   ],
+   "target": [
+    687,
+    375,
+    7979
+   ],
+   "fov": 50,
+   "timeOfDay": 0.5
+  },
+  {
+   "t": 10,
+   "position": [
+    700,
+    388,
+    7950
+   ],
+   "target": [
+    687,
+    375,
+    7979
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inOutSine"
+  }
+ ]
+}
