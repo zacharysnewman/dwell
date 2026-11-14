@@ -6,7 +6,7 @@ pins it.
 
 ## Open
 
-### 175. A cinematic take's sounds late on a few frames a clip
+### 176. A cinematic take's sounds late on a few frames a clip
 
 Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
 scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
@@ -22,7 +22,7 @@ suspended clock whatever the overshoot; the re-timing on the frame marks (`reali
 report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
 …"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
 
-### 174. Remote players step after the server drops time
+### 175. Remote players step after the server drops time
 
 Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
 (dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
@@ -62,7 +62,7 @@ session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOP
 Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
 `game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
 frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
-frame, peaking every third). Remote players share the estimator since #174.
+frame, peaking every third). Remote players share the estimator since #175.
 
 ### 172. Trees disappear when the camera gets close
 

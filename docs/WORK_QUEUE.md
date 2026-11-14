@@ -2480,7 +2480,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
    snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
    same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
-   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #174 (remotes) and #175 (late
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #175 (remotes) and #176 (late
    sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
    delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
    ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A

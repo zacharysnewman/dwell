@@ -291,7 +291,7 @@ shots) runs it; the settings are data, `shared/theater/cinematic.json` (validate
   resumed until its clock reaches the next frame's time. While a take holds the engine's clock
   (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`),
   and Web Audio's sample-accurate scheduling puts it on its frame. A step that overshoots past the lead (a hardware
-  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #175) moves the timeline on by the overshoot
+  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #176) moves the timeline on by the overshoot
   (`TakeTimeline`), so the frame's sounds and mark are still scheduled ahead of the suspended clock; the re-timing on
   the marks takes the extra audio out. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
   its time; a third channel carries an impulse scheduled like a sound at every frame, which calibrates the
