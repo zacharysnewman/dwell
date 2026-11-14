@@ -23,7 +23,14 @@ describe('saved spots', () => {
     }
     // The tree performance reference (WORK_QUEUE item 32): the forest world's three spots.
     const forest = spots.filter((x) => x.name.startsWith('forest:')).map((x) => x.name);
-    expect(forest).toEqual(['forest:inside', 'forest:edge', 'forest:above']);
+    expect(forest).toEqual([
+      'forest:inside',
+      'forest:edge',
+      'forest:over25',
+      'forest:over40',
+      'forest:over80',
+      'forest:above',
+    ]);
     for (const s of spots.filter((x) => x.name.startsWith('forest:'))) {
       expect(s.world).toBe('test:forest');
     }
