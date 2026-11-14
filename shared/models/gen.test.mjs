@@ -286,13 +286,14 @@ test("a prop is added by data alone: the fixture validates and lands in the tabl
   // Its hold pose by data alone; a prop naming none is held as modelled.
   assert.match(
     rs,
-    /axis: \[0\.0, 1\.0, 0\.0\], hold: PropHold \{ scale: 0\.5, roll: 90\.0 \}/,
+    /axis: \[0\.0, 1\.0, 0\.0\], hold: PropHold \{ scale: 0\.5, roll: 90\.0, yaw: 0\.0 \}/,
   );
   const plain = fixtureProps();
   delete plain.props.plate.hold;
   assert.deepEqual(validateProps(plain, fixtures).plate.hold, {
     scale: 1,
     roll: 0,
+    yaw: 0,
   });
   // The hand that holds it, by data alone.
   assert.match(
@@ -316,7 +317,7 @@ test("bad props fail naming the entry and the problem", () => {
   bad((p) => (p.length = 2), /length 2 m is outside dishes's/);
   bad((p) => (p.length = 0.4), /is 0\.250 m long, not its length 0\.4 m/);
   bad((p) => (p.grip = [0, 1]), /grip is \[x, y, z\]/);
-  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll \}/);
+  bad((p) => (p.hold = [1]), /prop plate: hold is \{ scale, roll, yaw \}/);
   bad((p) => (p.hold = { size: 1 }), /prop plate: hold has unknown field size/);
   bad(
     (p) => (p.hold = { scale: 0 }),
@@ -324,11 +325,15 @@ test("bad props fail naming the entry and the problem", () => {
   );
   bad(
     (p) => (p.hold = { rotation: [0, 90, 0] }),
-    /prop plate: hold has unknown field rotation \(scale, roll\)/,
+    /prop plate: hold has unknown field rotation \(scale, roll, yaw\)/,
   );
   bad(
     (p) => (p.hold = { roll: 270 }),
     /prop plate: hold\.roll 270 is outside ±180 degrees/,
+  );
+  bad(
+    (p) => (p.hold = { yaw: 60 }),
+    /prop plate: hold\.yaw 60 is outside ±45 degrees/,
   );
   bad(
     (p) => (p.handle = [0, 0.01]),

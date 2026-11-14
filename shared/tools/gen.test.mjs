@@ -59,10 +59,13 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
 });
 
-test("a tool's swing, its two holds and a wood's leaves, sway and sounds are data", () => {
+test("a tool's swing, its holds and a wood's leaves, sway and sounds are data", () => {
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
-  assert.match(rs, /held_vertical: Some\("stone_axe_vertical"\), swing: SwingDef \{ windup_s: 0\.3, active_s: 0\.12, hit_stop_s: 0\.08/);
+  // Owner, 2026-11-14: the axe has one mode, like the pickaxe and shovel: no second hold. The
+  // sword keeps its two stances.
+  assert.match(rs, /name: "dwell:stone_axe", [^\n]*held_vertical: None, swing: SwingDef \{ windup_s: 0\.3, active_s: 0\.12, hit_stop_s: 0\.08/);
+  assert.match(rs, /name: "dwell:sword", [^\n]*held_vertical: Some\("sword_vertical"\)/);
   assert.match(rs, /stamina_cost: 8\.0, swish: Some\("axe_swish"\), bounce: Some\("axe_clank"\)/);
   assert.match(rs, /leaves: Leaves \{ block: Some\("dwell:leaves"\), count: 6/);
   assert.match(rs, /sway: Sway \{ from_fraction: 0\.4, max_deg: 3\.5 \}, sounds: &\[\(0\.0, "chop_bark"\), \(0\.2, "chop_wood"\), \(0\.4, "chop_creak"\)\]/);
@@ -120,7 +123,7 @@ test('breaking: the right tool class per material and a speed per tier reach the
   }
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
-  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\) \}/);
+  assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\), clip: "break_metal_shovel" \}/);
 });
 
 test('breaking: a fixture tool class and tier by data alone, and bad entries fail naming them', () => {
@@ -130,10 +133,10 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   data.breaking.tiers.bronze = 2;
   data.breaking.classes.trowel = ['test:clay'];
   data.breaking.tools.push({ item: 'test:trowel', class: 'trowel', tier: 'bronze', contactS: 0.4 });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /BreakTool \{ item: "test:trowel", class: "trowel", tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None, clip: "break" \}/);
   // A tier's speed by data alone (the object form); a hit's piece size is the bite rule's, not a tier's.
   data.breaking.tiers.bronze = { speed: 2 };
-  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None \}/);
+  assert.match(toolsRust(validateTools(data, items, blocks)), /tier: "bronze", speed: 2\.0, contact_s: 0\.4, repeat_s: None, clip: "break" \}/);
   const bad = (edit, re) => {
     const [d, i, b] = fresh();
     edit(d.breaking);
@@ -364,7 +367,8 @@ test("a swing's camera sway (CHARACTERS.md §5.2): the axe's per kind, a fixture
   const rs = toolsRust(d);
   // The stone axe's level sway leans right into the wind-up and turns left through the strike.
   assert.match(rs, /name: "dwell:stone_axe".*camera_level: SwingCamera \{ keys: &\[CameraKey \{ t: 0\.0, yaw: 0\.0, .*CameraKey \{ t: 1\.0, yaw: 1\.8, pitch: 0\.5, roll: 1\.4/);
-  assert.match(rs, /camera_vertical: SwingCamera \{ keys: &\[.*CameraKey \{ t: 1\.0, yaw: 0\.3, pitch: 2\.2/);
+  // One mode: the axe has no vertical sway.
+  assert.match(rs, /name: "dwell:stone_axe"[^\n]*camera_vertical: SwingCamera \{ keys: &\[\],/);
   // A fixture tool with its own sway by data alone; one without has none (no keys, no kick).
   const [data, items, blocks] = fresh();
   items.add('test:maul');
@@ -377,7 +381,9 @@ test("a swing's camera sway (CHARACTERS.md §5.2): the axe's per kind, a fixture
   assert.match(out, /name: "test:club".*camera_level: SwingCamera \{ keys: &\[\], .*camera_vertical: SwingCamera \{ keys: &\[\],/);
   const bad = (edit, re) => {
     const [x, i, b] = fresh();
-    edit(x.tools[0].swing.camera);
+    const c = x.tools[0].swing.camera;
+    c.vertical = structuredClone(c.level);
+    edit(c);
     assert.throws(() => validateTools(x, i, b), re);
   };
   bad((c) => (c.sideways = {}), /swing\.camera: unknown field sideways/);
@@ -463,7 +469,12 @@ test('each tool kind has its own hint, as data; a kind without one fails', () =>
   const [data, items, blocks] = fresh();
   const rs = toolsRust(validateTools(data, items, blocks));
   assert.match(rs, /\(ToolKind::Weapon, "Sword: level stance/);
-  assert.match(rs, /\(ToolKind::Axe, "Axe: level swing/);
+  // One mode (owner, 2026-11-14): the axe's level line stands for both.
+  assert.match(rs, /\(ToolKind::Axe, "Axe: hold to keep chopping", "Axe: hold to keep chopping"\)/);
+  // A kind with a second stance needs its vertical line.
+  const [d2, i2, b2] = fresh();
+  delete d2.hints.weapon.vertical;
+  assert.throws(() => validateTools(d2, i2, b2), /hints\.weapon\.vertical is required/);
   delete data.hints.weapon;
   assert.throws(() => validateTools(data, items, blocks), /hints\.weapon is required/);
 });
@@ -472,18 +483,18 @@ test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and 
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   for (const n of ['dwell:stone_axe', 'dwell:metal_axe', 'dwell:sword']) assert.match(rs, new RegExp(`name: "${n}", kind: ToolKind::\\w+, .*repeat_on_hold: true, clip_level`));
-  for (const n of ['dwell:stone_pickaxe', 'dwell:metal_pickaxe', 'dwell:wooden_shovel', 'dwell:metal_shovel']) assert.match(rs, new RegExp(`item: "${n}", .*contact_s: 0\\.26, repeat_s: Some\\(0\\.5\\) \\}`));
+  for (const n of ['dwell:stone_pickaxe', 'dwell:metal_pickaxe', 'dwell:wooden_shovel', 'dwell:metal_shovel']) assert.match(rs, new RegExp(`item: "${n}", .*contact_s: 0\\.26, repeat_s: Some\\(0\\.5\\), clip: "break_`));
   // A chopping tool's break-table entry never repeats as a break (its swing does).
-  assert.match(rs, /item: "dwell:stone_axe", .*repeat_s: None \}/);
+  assert.match(rs, /item: "dwell:stone_axe", .*repeat_s: None, clip: "break" \}/);
   // By data alone: a tool that does not repeat, and a break tool with its own period.
   const [data, items, blocks] = fresh();
   items.add('test:flint_axe');
   items.add('test:trowel');
   data.tools.push({ name: 'test:flint_axe', kind: 'axe', swingSeconds: 0.3, biteM: 0.2, bindM: 0.1, across: 1, along: 0.3, sharpness: 1 });
-  data.breaking.tools.push({ item: 'test:trowel', class: 'shovel', tier: 'stone', contactS: 0.2, repeatOnHold: true, repeatS: 0.7 });
+  data.breaking.tools.push({ item: 'test:trowel', class: 'shovel', tier: 'stone', contactS: 0.2, repeatOnHold: true, repeatS: 0.7, clip: 'break_trowel' });
   const fx = toolsRust(validateTools(data, items, blocks));
   assert.match(fx, /name: "test:flint_axe", kind: ToolKind::Axe, .*repeat_on_hold: false, clip_level/);
-  assert.match(fx, /item: "test:trowel", .*contact_s: 0\.2, repeat_s: Some\(0\.7\) \}/);
+  assert.match(fx, /item: "test:trowel", .*contact_s: 0\.2, repeat_s: Some\(0\.7\), clip: "break_trowel" \}/);
   const bad = (edit, re) => {
     const [d2, i2, b2] = fresh();
     edit(d2);
@@ -492,6 +503,7 @@ test('hold to keep swinging (WORK_QUEUE item 17): the axes, sword, pickaxes and 
   bad((d2) => (d2.tools[0].repeatOnHold = 'yes'), /tools\.dwell:stone_axe\.repeatOnHold must be true or false/);
   bad((d2) => (d2.breaking.tools[2].repeatS = 0.1), /breaking\.tools\[2\]: repeatS is seconds in \[max\(contactS, 0\.1\), 5\]/);
   bad((d2) => (delete d2.breaking.tools[2].repeatOnHold), /breaking\.tools\[2\]: repeatS without repeatOnHold/);
+  bad((d2) => (d2.breaking.tools[2].clip = 'Break Pick'), /breaking\.tools\[2\]: clip must be a role name/);
   bad((d2) => (d2.breaking.tools[0].repeatOnHold = true), /breaking\.tools: dwell:stone_axe swings as a tool \(tools\.dwell:stone_axe\); its repeatOnHold goes there/);
 });
 

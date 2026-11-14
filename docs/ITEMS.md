@@ -59,8 +59,10 @@ An item may be a **`tool`** (an item of `shared/tools/tools.json` by name) inste
 it places nothing, so it takes none of `rows`, `drag`, `state`, `facing` or `upper` (each fails
 naming the entry, as does an unknown tool or giving both). The generator emits `ItemDef.tool`; the
 palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
-axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it and right click
-toggles level and vertical swings, as the inventory's axe does in adventure. Owner, 2026-11-08.
+axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it, as the inventory's
+axe does in adventure. Owner, 2026-11-08. Since 2026-11-14 the axe has **one mode** (owner: "Let's simplify
+the axe to be like the shovel and pick, without the multiple modes"): its level swing; right click does
+nothing with it (a tool has a second stance only with a `heldVertical`: the sword's).
 
 The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
 follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.1), the
@@ -98,9 +100,13 @@ and 0.52.22's per-tool turn tilted each off the hand. Now the grip is data on bo
 - **The pose**: `dwell_models::PropData::in_hand` puts the grip at the fist and the handle along the
   grip axis, then turns the tool about its handle by `hold.roll` (degrees, from its +x side facing the
   hand's `edge`: the axes' edges and the picks' points away from the eye, the shovels' faces turned
-  90° to face ahead), at `hold.scale` (1: full size). The lean toward the crosshair is the hand's:
+  90° to face ahead) and `hold.yaw` more (±45°; owner, 2026-11-14: "each tool should be rotated
+  slightly around the Y(?) in your hand so you can see the head of it": the axes and the stone pickaxe
+  −25°, the metal pickaxe 30°, the shovels 5°, each the most head on screen clear of the crosshair,
+  measured with `dwell_client::clip_probe::head_view`; first and third person alike), at `hold.scale`
+  (1: full size). The lean toward the crosshair is the hand's:
   the hold item's pose (`shared/characters/characters.json` `tool`, the pickaxes' and shovels' hold,
-  `MODEL_HOLD`; the axes keep `stone_axe` and `stone_axe_vertical`), not a turn of the tool off the
+  `MODEL_HOLD`; the axes keep `stone_axe`), not a turn of the tool off the
   hand. The first-person hand is a closed mitten fist; it has no fingers to curl.
 
 Tests: `every_tool_is_held_as_its_model_its_handle_through_the_fist` measures the drawn mesh (the
@@ -148,7 +154,7 @@ Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got
 weapons." The sword (`dwell:sword`, shared/inventory, a model look `sword` from the same
 *3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
 and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
-adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical,
+adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical: the sword keeps two stances,
 its `held`/`heldVertical` holds `sword` and `sword_vertical` in shared/characters), and its swing
 strikes the animals its arc crosses at contact (never a player): damage, knockback, the most creatures
 a swing hits and its durability are its `weapon` data, its swordplay (blocking by blade angle) its

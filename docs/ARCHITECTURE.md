@@ -958,7 +958,8 @@ tests only); CI fails on stale output. Code names characters, looks, items and r
   sent, still plays it, then the fall or the landing), a landing
   one-shot under 1.5 m/s, slide, sprint, walk, crouch and crouch-walk by speed), each switch
   cross-faded by the new clip's `blend`; gaits play at speed / `cycle`; the `hold` layer while the
-  hand holds something; a break or place swing, or the axe's level or vertical chop when the
+  hand holds something; a break or place swing (a break tool's own `clip` on your arms, `fp_break_<item>`, its head fitted onto
+  the crosshair at its `contactS`; others' bodies the plain `break`), or a tool's level or vertical chop when the
   snapshot carries its kind (`SwingHello`, §8.3), on the `action` layer when the snapshot's swing
   count steps; the head (60 %), chest (15 %) and held arm (50 %) follow the look's pitch. Your arms
   run the same machine on the arms' roles from the prediction, swinging when an edit is sent.
@@ -3599,8 +3600,9 @@ axe, so in adventure hands can't break logs; the server refuses the edit; creati
 `shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
 `client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
 per side across the grain, an open notch and a kerf in each of two bands along it: a swing cuts
-`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level, or vertical
-along the look, toggled by Use with the axe held) and the grain, face-locally through `FaceFrame`;
+`bite × share / (1 + kerf / bind)`, its share from the angle between its plane (level; vertical
+along the look only for a tool with a second stance, a `heldVertical`: since 2026-11-14 the axe has one
+mode, its level swing, and the server sweeps an older client's vertical ask level) and the grain, face-locally through `FaceFrame`;
 both bands cut past the notch take the chunk out. The server (`dwell-sim` `server/chopping.rs`)
 checks the aimed hit (the client's ray into the cell: the face and point), keeps the cuts (saved in
 `cuts`), fells a standing wood cut past its fell fraction (its cell goes and FELLING's integrity
@@ -3668,8 +3670,8 @@ it meets and spending the swing on anything else. A swing that only clears is a 
 client predicts the same sweep for the feel (`chop.rs` `SwingRun`: the arms' clip driven through
 the hit-stop and back, `Animator::drive_action`; the camera's wind-up, sweep and jolt; at the
 impact the chips, the hit's sound by how far the wood is cut (the wood's `sounds`), leaves shaken
-from the tree's leaf blocks (`leaves`), or a clank off stone). The two holds are two characters'
-items (`held`, `heldVertical`). A standing tree cut
+from the tree's leaf blocks (`leaves`), or a clank off stone). A tool's holds are characters' items
+(`held`, and `heldVertical` for a second stance: the sword's). A standing tree cut
 past its `sway.fromFraction` leans toward the notch (`chop.rs` `TreeLean`, the frame uniform's
 `lean_*` vec4s, applied in the terrain and cutout vertex shaders). The reticle draws the swing's
 line through the crosshair. Others see the held tool by name (`HeldTools`).

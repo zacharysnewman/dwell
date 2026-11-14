@@ -64,7 +64,10 @@ felling (FELLING.md). Scope: tools and woods are per build; cuts are per world, 
    takes the band from the point and the swing plane from the eye-to-point direction, all
    face-locally through `FaceFrame` (+y up on both faces): a level swing's normal is up, a vertical
    swing's is level and square to the look's heading.
-4. **The swing direction** is the client's: **Use (right click) with the axe held toggles** level
+4. *(Amended 2026-11-14, WORK_QUEUE item 17: the axe has one mode, its level swing — owner: "Let's
+   simplify the axe to be like the shovel and pick, without the multiple modes". A tool toggles only
+   with a `heldVertical`, the sword's; the server sweeps an axe's vertical ask level.)*
+   **The swing direction** is the client's: **Use (right click) with the axe held toggles** level
    and vertical, sent with each swing; the HUD shows it ("Axe: level swing (right click:
    vertical)") in the hotbar's status line. Break (left click) swings, at most every
    `swingSeconds` (the server holds the same wait per player).

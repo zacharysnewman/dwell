@@ -2267,11 +2267,14 @@ mod tests {
                     ));
                 }
             }
-            for (hold, clip) in [
-                (None, "fp_break"),
-                (Some("stone_axe"), "fp_chop_level"),
-                (Some("stone_axe_vertical"), "fp_chop_vertical"),
-            ] {
+            // Its own break swing (owner, 2026-11-14: the head onto the crosshair at contact) and
+            // the axe's one swing.
+            let own =
+                crate::bodies::swing_role(dwell_characters::animator::Swing::Break, Some(t.item));
+            let own = dwell_characters::player()
+                .arms_clip(own)
+                .map_or("fp_break", |i| TABLES.clip(i).name);
+            for (hold, clip) in [(None, own), (Some("stone_axe"), "fp_chop_level")] {
                 let c = TABLES.clips.iter().find(|c| c.name == clip).expect(clip);
                 let near = (0..=40)
                     .map(|i| {

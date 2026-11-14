@@ -489,9 +489,19 @@ pub struct ToolDef {
 }
 
 impl ToolDef {
+    /// Whether it has a second, vertical stance (a `heldVertical`: the sword's). A tool without one
+    /// has one mode, its level swing (owner, 2026-11-14: "Let's simplify the axe to be like the
+    /// shovel and pick, without the multiple modes").
+    pub fn has_vertical(&self) -> bool {
+        self.held_vertical.is_some()
+    }
+    /// The stance a swing asked as `vertical` takes: vertical only for a tool that has one.
+    pub fn stance(&self, vertical: bool) -> bool {
+        vertical && self.has_vertical()
+    }
     /// The character role a swing of this tool plays (`clips`), level or vertical.
     pub fn swing_role(&self, vertical: bool) -> &'static str {
-        if vertical {
+        if self.stance(vertical) {
             self.clip_vertical
         } else {
             self.clip_level
@@ -507,7 +517,7 @@ impl ToolDef {
     }
     /// The held item for the swing's plane.
     pub fn held_for(&self, vertical: bool) -> Option<&'static str> {
-        if vertical {
+        if self.stance(vertical) {
             self.held_vertical.or(self.held)
         } else {
             self.held
@@ -647,6 +657,9 @@ pub struct BreakTool {
     pub contact_s: f64,
     /// Held, the break repeats this often (s; `repeatOnHold` and `repeatS`); none: one per press.
     pub repeat_s: Option<f64>,
+    /// The arms' role its break swing plays (`clip`; default `break`): each fitted so its head
+    /// comes in from the right and reaches the crosshair at `contact_s` (owner, 2026-11-14).
+    pub clip: &'static str,
 }
 
 /// When a break made holding `held` lands (s after the click), in `tools`: its `contact_s`, else at
@@ -1262,6 +1275,26 @@ impl Cuts {
 mod weapon_tests {
     use super::*;
 
+    // Owner, 2026-11-14: "Let's simplify the axe to be like the shovel and pick, without the
+    // multiple modes." Every axe has one stance and one swing clip; the sword keeps its two.
+    #[test]
+    fn the_axe_has_one_mode_and_the_sword_two() {
+        for t in TOOLS.iter().filter(|t| t.kind == ToolKind::Axe) {
+            assert!(!t.has_vertical(), "{}: one mode", t.name);
+            assert!(!t.stance(true), "{}: a vertical ask swings level", t.name);
+            assert_eq!(
+                t.swing_role(true),
+                t.swing_role(false),
+                "{}: one clip",
+                t.name
+            );
+            assert_eq!(t.held_for(true), t.held_for(false), "{}: one hold", t.name);
+        }
+        let sword = tool("dwell:sword").expect("the sword");
+        assert!(sword.stance(true));
+        assert_ne!(sword.swing_role(true), sword.swing_role(false));
+    }
+
     // BUGS.md: the sword showed the axe's hint ("Axe: level swing …"); the hint is the kind's data.
     #[test]
     fn each_tool_shows_its_own_kinds_hint() {
@@ -1270,8 +1303,9 @@ mod weapon_tests {
         let s = hint(sword.kind, false).expect("a weapon hint");
         assert!(s.starts_with("Sword"), "{s}");
         assert!(hint(sword.kind, true).unwrap().contains("vertical stance"));
-        assert!(hint(axe.kind, false).unwrap().starts_with("Axe: level"));
-        assert!(hint(axe.kind, true).unwrap().starts_with("Axe: vertical"));
+        // One mode (owner, 2026-11-14): the axe's hint is the same either way.
+        assert!(hint(axe.kind, false).unwrap().starts_with("Axe"));
+        assert_eq!(hint(axe.kind, true), hint(axe.kind, false));
         // Every tool in the data, the fixture's too, has its kind's hint.
         for t in TOOLS.iter().chain(fixture::TOOLS) {
             assert!(
@@ -1393,6 +1427,7 @@ mod tests {
             speed: 2.0,
             contact_s: 0.4,
             repeat_s: None,
+            clip: "break",
         }];
         assert_eq!(
             break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")),
@@ -1415,6 +1450,7 @@ mod tests {
             speed: 2.0,
             contact_s: 0.4,
             repeat_s: None,
+            clip: "break",
         }];
         assert_eq!(break_contact_s_in(&tools, Some("test:trowel")), 0.4);
         assert_eq!(break_contact_s_in(&tools, None), 0.0);
