@@ -1424,10 +1424,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    log wall, which would vanish past 48 m with no impostor: needs an owner call); I-4 (`lod_trees.rs` still draws
    the far trees until the impostors are ready, BUGS.md #106's gate, and for `?impostors=0` / the bench's
    `impostors-off`); I-5 shadows (GPU work, local).
+   **Doubled, half-faded impostors (owner, 2026-11-13, with two screenshots; BUGS.md #154):** "There seems to be
+   doubled partially faded imposters, they can't fade slowly based on distance alone because they are obviously
+   faded. Not sure why there's 2 and they seem to split and combine as you fly up and down in front of them. It can
+   be a fade transition but it shouldn't ever be partial transitions over distance, but over time. Does that make
+   sense?" Owner should see: flying toward and away from a forest, trees swap between near and far with a brief
+   fade, never a steady half-faded or doubled tree, and no copies sliding apart as you fly up and down.
+   **Built (2026-11-13, cloud, `claude/impostor-fade-time-biapw1`):** the hand-over is per tree and in time: near or
+   impostor by distance with hysteresis (`far.tiers.on` `inM` 54 / `outM` 58, replacing `fromM`/`fadeM`), each switch
+   a `fadeS` 0.3 s cross-fade (`render/tree_fade.rs`: a byte map of each tree's near share about the eye, group 0
+   binding 21, read by the leaves per fragment and by the impostor at its foot); the views 6 azimuths × 0/20/40/60°
+   + top (was 8 × 0/40°), the crown's silhouette within 0.27 m of the real one's from any height (was 0.55 m).
+   **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
+   no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
+   and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
 
    Owner, 2026-11-13: **"Also for trees the shadows seem to flip flop between two shadow types even on close trees as
    you move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree.
-   Like the tree is casting a shadow onto itself."** (BUGS.md #153.) **Fixed (2026-11-13, cloud,
+   Like the tree is casting a shadow onto itself."** (BUGS.md #155.) **Fixed (2026-11-13, cloud,
    `claude/tree-shadow-flip`):** a tree's leaves cast into every cascade (they were plants, in the nearest
    `plantCascades` only); the shadow passes drop no leaf card for the camera's side of the crown; a tree's leaves look
    up 0.35 m out in every cascade (`bias.leafNormalOffsetM`), so no cascade shades a crown's top with its own cards;
@@ -2600,6 +2614,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    [MAP_MARKERS.md](MAP_MARKERS.md) — the icon set, palette and auto kinds as data (`shared/ui/markers.json` →
    `markers.gen.ts`), a player's markers as one record per device key in the world's optional `markers` table,
    synced to that player only behind the `markers.private` capability.
+   **Bug, owner 2026-11-13:** **"Another bug, Im not sure if it's because I was flying high at the time, but the
+   portal indicator showed up several hundred meters in the air over the portal."** Fixed after 0.63.3 (BUGS.md
+   #153): a seen portal's marker stands at its opening's height from the generator (the portal shafts), never the
+   player's; a marker placed over unloaded ground is put back on it when its column loads, and a saved one far above
+   its ground (or a portal's above its opening) is corrected once seen. **Owner should see:** fly a few hundred
+   metres up over a portal you have not seen yet: its marker appears on the rim, not at your height; an old floating
+   portal marker drops onto its rim when you come back within the render radius.
 
 54. **Resurrection shrines** (owner 2026-11-12: **"And then we want to add 'resurrection shrines' these should work like
    Guild Wars. You respawn at the nearest shrine when you die."** / **"We'll have to spread these pretty thick across

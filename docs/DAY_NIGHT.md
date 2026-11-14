@@ -381,7 +381,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   (grass, flowers, ladders: a chunk's cutout before its trees' leaves) cast into the nearest
   `plantCascades` only; a tree's leaves (their faces and cards) cast into every cascade, and the
   shadow passes drop no leaf card for the side of the crown the camera is on
-  (`shadow_cutout_vs`): what casts follows the light, never the camera (BUGS.md #153). The
+  (`shadow_cutout_vs`): what casts follows the light, never the camera (BUGS.md #155). The
   casters' pipelines take a slope-scaled depth bias (`bias.slopeScale`).
 - **Receiving**: `scene_out` (terrain, plants, LOD, every opaque scene surface; a face turned
   away from both lights skips the lookup, `lit_by_direct`, since nothing multiplies it), the characters'
@@ -389,7 +389,7 @@ maps, `SHADOW_WGSL`), `dwell-look` `shadows.rs` (the setting, the light that cas
   in-scatter and foam. A fragment takes the first cascade that holds it, offsets its lookup along
   its normal by `normalOffsetTexels` of that cascade's texels (a tree's leaves by at least
   `leafNormalOffsetM`, 0.35 m, the same in every cascade, so a crown never shades its own top with
-  its cards and leaf texels: the fine near cascade did and the coarse ones couldn't, BUGS.md #153),
+  its cards and leaf texels: the fine near cascade did and the coarse ones couldn't, BUGS.md #155),
   subtracts `depthBiasM`, and filters with a soft PCF: `filterTaps`² hardware 2×2 compares over
   `filterTexels`, a painterly soft edge. Over the outer `blendBand` (15 %) of a cascade's box it
   blends toward the next cascade's lookup, all of it at the edge, so a cascade's edge shows no step
