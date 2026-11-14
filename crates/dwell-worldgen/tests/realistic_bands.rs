@@ -214,3 +214,119 @@ both_faces!(
         );
     }
 );
+
+/// Speckle windows: `S` × `S` columns at 1 m.
+const S: usize = 96;
+/// At most this share of the columns a lone cell (its four neighbours all another block).
+const ISOLATED: f64 = 0.02;
+/// The area-weighted mean patch (4-connected columns of one top block) at least this (m²).
+const PATCH: f64 = 400.0;
+
+/// Up to four window centres on a face's dry land where two biomes mix (each weighing over a
+/// quarter): where a border's dither shows.
+fn borders(g: &TerrainGenerator, map: &WorldMap) -> Vec<(i32, i32)> {
+    let mut out = Vec::new();
+    for c in (0..map.height.len()).step_by(97) {
+        let (x, z) = map.centre(c);
+        if map.is_sea(c) || x.hypot(z) > 40_000.0 || out.len() >= 4 {
+            continue;
+        }
+        let (x, z) = (x as i64, z as i64);
+        let mixed = g.biome_mix(x, z).iter().filter(|(_, w)| *w > 0.25).count() >= 2;
+        if mixed && g.column_at(x as i32, z as i32).water == dwell_worldgen::terrain::Water::None {
+            out.push((x as i32, z as i32));
+        }
+    }
+    out
+}
+
+/// A 1 m window's lone-cell share and its area-weighted mean patch (m²).
+fn speckle(g: &TerrainGenerator, cx: i32, cz: i32) -> (f64, f64) {
+    let names: Vec<&str> = (0..S * S)
+        .map(|c| {
+            let (i, j) = ((c % S) as i32, (c / S) as i32);
+            top(g, cx + i - S as i32 / 2, cz + j - S as i32 / 2)
+        })
+        .collect();
+    let at = |i: i32, j: i32| -> Option<&str> {
+        ((0..S as i32).contains(&i) && (0..S as i32).contains(&j))
+            .then(|| names[j as usize * S + i as usize])
+    };
+    let mut lone = 0;
+    for j in 1..S as i32 - 1 {
+        for i in 1..S as i32 - 1 {
+            let me = at(i, j);
+            lone += usize::from(
+                [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .all(|(di, dj)| at(i + di, j + dj) != me),
+            );
+        }
+    }
+    let mut seen = vec![false; S * S];
+    let (mut sq, mut total) = (0.0f64, 0.0f64);
+    for start in 0..S * S {
+        if seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut stack = vec![start];
+        let mut area = 0.0;
+        while let Some(c) = stack.pop() {
+            area += 1.0;
+            let (i, j) = ((c % S) as i32, (c / S) as i32);
+            for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let (a, b) = (i + di, j + dj);
+                if let Some(n) = at(a, b) {
+                    let k = b as usize * S + a as usize;
+                    if !seen[k] && n == names[c] {
+                        seen[k] = true;
+                        stack.push(k);
+                    }
+                }
+            }
+        }
+        sq += area * area;
+        total += area;
+    }
+    (
+        lone as f64 / ((S - 2) * (S - 2)) as f64,
+        sq / total.max(1.0),
+    )
+}
+
+both_faces!(
+    fn ground_types_form_big_patches_without_speckle(f: FaceFrame) {
+        // WORK_QUEUE item 15, 0.66 (owner, 2026-11-14): "speckled terrain looks gross" … patches
+        // "big.": few lone cells, and the ground in patches tens of metres across.
+        let (mut lone, mut patch, mut n) = (0.0, 0.0, 0);
+        for world in SEEDS {
+            let (g, map) = generator(face_seed(world, f.face));
+            for (x, z) in borders(&g, &map) {
+                let (l, p) = speckle(&g, x, z);
+                eprintln!(
+                    "seed {world} {:?} ({x}, {z}): {:.2} % lone cells, mean patch {p:.0} m²",
+                    f.face,
+                    100.0 * l
+                );
+                lone += l;
+                patch += p;
+                n += 1;
+            }
+        }
+        let (lone, patch) = (lone / f64::from(n), patch / f64::from(n));
+        eprintln!(
+            "{:?}: {:.2} % lone cells, mean patch {patch:.0} m² over {n} windows",
+            f.face,
+            100.0 * lone
+        );
+        assert!(
+            lone <= ISOLATED,
+            "{:?}: {:.2} % lone cells (bar {:.0} %)",
+            f.face,
+            100.0 * lone,
+            100.0 * ISOLATED
+        );
+        assert!(patch >= PATCH, "{:?}: mean patch {patch:.0} m²", f.face);
+    }
+);

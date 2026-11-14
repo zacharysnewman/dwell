@@ -922,6 +922,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    interleave in organic fingers and clumps, not single-cell dither. **Owner should see:** from the air and on the
    ground, big coherent patches of each ground type with wandering, blended edges; no salt-and-pepper speckle; tan sand
    only on beaches, river and lake beds, dunes and sand deserts; no straight lines between terrain types.
+   (0c) **Shrubs and talus.** Owner, 2026-11-14: **"We also need more shrubbery/bushes etc. Stone cliff regions should
+   get rocks and boulders at the base of cliffs. Including in the water."** Realistic only, as data on the
+   vegetation/placement system: (i) bush and shrub species (low leafy clumps 0.5–2 m, a few shapes, by climate and
+   biome: temperate bushes, Mediterranean scrub, boreal shrubs, tropical undergrowth), density by biome and wetness,
+   clustered along forest edges, streams and slopes; deserts stay sparse; (ii) talus at cliff bases: rocks and
+   boulders of the cliff's own rock below cliffs and steep stone faces, density falling with distance from the
+   wall's foot, single blocks to multi-block boulders by data; (iii) where a cliff meets a lake, river or the sea,
+   the boulders continue into the shallows. **Owner should see:** bushy undergrowth and shrub clumps through
+   Realistic land; rock-strewn talus at the foot of every stone cliff, spilling into the water where cliffs meet it.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
