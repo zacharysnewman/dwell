@@ -538,6 +538,9 @@ pub struct LodSystem {
     /// The face the camera is on (1: A, −1: B), and whether it is near the rim (see culled).
     view_face: i32,
     near_rim: bool,
+    /// How near the rim the other face shows past the edge (m; `RIM_VIEW_M` for home, a grid's
+    /// scaled to its disc: `set_rim_view`).
+    rim_view_m: f64,
     /// The world's disc and volume (its size's, BIG_MAP.md M2; `set_world`).
     world: dwell_world::WorldBounds,
     position: Vec3,
@@ -590,6 +593,16 @@ impl LodSystem {
         self.world = world;
     }
 
+    /// How near the rim the other face is drawn past the edge (m; [`RIM_VIEW_M`] by default): a
+    /// grid smaller than home scales it to its disc, or a moon 12.5 km across would draw both faces
+    /// from everywhere (BUGS.md #156).
+    pub fn set_rim_view(&mut self, m: f64) {
+        if m != self.rim_view_m {
+            self.revision += 1;
+        }
+        self.rim_view_m = m;
+    }
+
     pub fn new(options: LodOptions) -> Self {
         let mut s = Self {
             nodes: HashMap::default(),
@@ -621,6 +634,7 @@ impl LodSystem {
             detail_m: None,
             view_face: 1,
             near_rim: false,
+            rim_view_m: RIM_VIEW_M,
             world: dwell_world::WorldBounds::DEFAULT,
             position: [0.0; 3],
             camera_chunk: ChunkCoord::default(),
@@ -901,7 +915,7 @@ impl LodSystem {
             self.face_changed();
         }
         self.view_face = view_face;
-        self.near_rim = p[0].hypot(p[2]) > self.world.radius() as f64 - RIM_VIEW_M;
+        self.near_rim = p[0].hypot(p[2]) > self.world.radius() as f64 - self.rim_view_m;
         self.position = p;
         let frustum = Frustum::new(*camera);
         self.camera_chunk = chunk_of_pos(p);

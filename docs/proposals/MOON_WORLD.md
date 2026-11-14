@@ -504,10 +504,14 @@ the moon's unedited chunks never evicted, tier 1 bodies in the moon's space (non
   - **No moon in the moon's sky:** its halo, glint and moonlight are not packed there either (`DayState::on_moon`);
     the cratered disc the owner saw is most likely the sun (its disc shaded by the sun world's bake, white in space).
   - **Ramps on the moon:** `generator.ramps` (`notched`), home's rule as data (HALF_HEIGHT_GRID.md §10).
-  - **The LOD per grid (M-5 extended):** `grids.json` `lod`: rings of the grid's surface round the viewer to its rim,
-    from its `FarSource` (`grid_lod.rs`), on the moon and the sun; on the grid they replace M-5's identity mesh.
-    Chosen over a `LodSystem` per grid: home's octree takes its sections from the worldgen workers, its index from
-    the server and its tree from home's bounds; the rings need only the grid's generator, ~2.5k samples a ring.
+  - **The LOD per grid (BUGS.md #156, 2026-11-14):** the rings (two levels in effect, coloured by the far bake's
+    albedo, not the blocks' looks) are replaced by a `LodSystem` per grid (`grids.json` `lod: true`; `dwell-client`
+    `grid_lod.rs`): home's selection, levels and fades over the grid's disc, sections from the grid's generator in
+    the job workers (`Job::GridLod`, a grid id; `dwell-worldgen` `grid_lod.rs`'s `GridColumns`), meshed and coloured
+    as home's. Home's ties were answered: the sections come from a worker job naming the grid, a grid has no index
+    (every section generated), and the tree's bounds are the grid's (`WorldBounds::grid`). Dropped and made again
+    at each crossing. Tests: `dwell-worldgen/tests/grid_lod.rs`, `dwell-client/tests/grid_lod.rs` (both faces, moon
+    and sun: graded levels to the horizon, no gaps or overlaps, tops in the block look, the High budget).
   - **Home from the moon (M-6's drawing):** home's `nearMesh` (64 cells) from its world maps (`HomeFar`, the
     shell's `far_terrain`), its seas in the water block's colour, drawn at home's place in the moon's frame at every
     distance (`skyDisc` false), lit by the sun turned into the moon's frame (so in its phase).

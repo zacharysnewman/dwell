@@ -47,7 +47,10 @@ impl GridLod {
         options.request_chunks = false;
         let mut lod = LodSystem::new(options);
         lod.set_detail_distance(detail_m);
-        lod.set_world(WorldBounds::grid(def.radius_m?.ceil() as i64));
+        let radius = def.radius_m?;
+        lod.set_world(WorldBounds::grid(radius.ceil() as i64));
+        // Home's reach past the rim, scaled to the grid's disc.
+        lod.set_rim_view(dwell_lod::RIM_VIEW_M * radius / WorldBounds::DEFAULT.radius() as f64);
         Some(Self { grid, epoch, lod })
     }
 
