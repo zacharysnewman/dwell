@@ -3140,6 +3140,43 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
    the `spawn=town` link and watch the builders put up the hamlet in front of you.
 
+57. **Villagers fetch materials from a storehouse (an Age of Empires-style work loop)** (owner 2026-11-14, after asking
+   whether "town plans will clear trees" means villagers clear them: **"Ideally long term, I'd like this to work a lot
+   like age of empires for NPCs, they gather materials drop them at a storehouse, perhaps each villager drops their
+   materials in a storehouse. They should have a storehouse (probably needs something for that) for holding materials.
+   It would be fun if they displayed their inventory like this (screenshot). For now we can make the store house hold
+   unlimited resources until the villagers actually harvest and drop the resources. Villagers can only hold 10
+   resources items at a time. The villagers would know what building they're working on, what resources it needs,
+   when grabbing resources would take what they need next, walk to the building they're working on, build it, go back
+   to the storehouse, rinse and repeat."** The screenshot, from the owner's earlier game: a top-down villager carrying
+   a tall stack of logs on their back, the carried items shown as a visible stack on the character.) Then, the same
+   day: **"Ours will eventually use an even more in depth system where villagers have to plant trees, cut them down,
+   other NPCs will cart them away, to town store house, and there other NPCs use those materials to build. Make
+   sense."** Direction from the brief: villagers have roles or jobs (forester: plant and fell; carter: haul to the
+   storehouse; builder: take from the storehouse and build), as data; the storehouse is the hand-off point; items move
+   between NPCs' inventories, carts and the storehouse through one transfer API; today's builder loop is the `builder`
+   job; the other jobs are not built now, only their seams. Design in docs/BLUEPRINTS.md §9 (B5).
+   **B5 first slice** (branch `claude/storehouse`): a storehouse building in the town plan, built first in a new town,
+   with a stock that is `"unlimited"` for now (data; a counted stock slots in when harvesting deposits), saved with the
+   world; builders carry up to `carryMax` 10 items: they take what their blueprint needs next (the next cells in build
+   order, mixed blocks allowed) at the storehouse, walk to the site, place one per cell, walk back when empty or
+   blocked, and move on to the town's next blueprint when one completes; the carried items show as a stack on their
+   back. Later phases (not now): harvesting (felling trees, clearing a town's footprint, mining), depositing what is
+   harvested, a real limited stock, carts and carters, foresters, villagers choosing jobs.
+   **Owner should see:** villagers walking from a storehouse to the building site carrying a visible stack of blocks on
+   their back, building, and walking back for more.
+   **Owner should see (the storehouse):** in a new town (`?local=1&seed=0&fresh=1&spawn=town`), the storehouse goes up
+   first, then the builders start on the huts, well, watchtower and wall, fetching from it.
+   **B5 first slice built 2026-11-14** (cloud, branch `claude/storehouse`, **the 0.67 line**: the storehouse in the
+   hamlet's plan widens its clear ground, so a seed's trees near towns change): the storehouse blueprint
+   (`dwell:bp_storehouse`, role `storehouse`, the plan's first) built first while the town's other blueprints wait;
+   its stock `unlimited` (data; a counted stock is in the API and the save); jobs as data (`jobs`: the `build` kind,
+   `carryMax` 10, mixed loads; `haul`/`fell`/`plant` named as later phases); one transfer API
+   (`dwell_world::stock`); the builders' trips (take the next cells' blocks, place only what they carry, back when
+   empty or blocked, on to the town's next blueprint when one completes); the storehouses and loads saved (the
+   blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
+   seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little

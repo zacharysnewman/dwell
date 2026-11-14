@@ -480,6 +480,13 @@
         { "id": "held_block", "on": "grip_r", "kind": "box", "size": [0.2, 0.1, 0.2], "at": [0.1, 0.03, 0], "rot": [0, 0, -90], "sideV": [0.5, 1], "material": "$block" }
       ]
     },
+    "carried": {
+      "label": "One piece of a load carried on the back (docs/BLUEPRINTS.md §9, WORK_QUEUE item 57): a 0.2 m cube of its block's own tile, drawn once per carried piece and stacked by the client at the NPC's chest joint (blueprints.json carryLook), not held in a hand",
+      "on": "back",
+      "parts": [
+        { "id": "carried_block", "on": "back", "kind": "box", "size": [0.2, 0.2, 0.2], "at": [0, 0, 0], "material": "$block" }
+      ]
+    },
     "card": {
       "label": "A flat item of its block's tile (owner, 2026-10-28: a ladder held as an item, not a block with its texture on it): a block whose registry entry says held: card. One sheet seen from both sides, no edges (owner, 2026-11-09: it was a thin box with its texture on every side)",
       "on": "grip_r",

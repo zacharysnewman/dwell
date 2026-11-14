@@ -215,13 +215,78 @@ impl BlueprintsMessage {
     }
 }
 
-/// The saved list's format version: 2 adds the towns founded (1 had none).
-pub const LIST_VERSION: u8 = 2;
+/// The saved list's format version: 2 adds the towns founded (1 had none); 3 the villagers' work
+/// (B5: the storehouses and the builders' carried loads).
+pub const LIST_VERSION: u8 = 3;
 
-/// The world's blueprints as saved (the `blueprints` table): `u8 version` (2), `u32 next id`,
+/// The longest block state name a saved load or stock names.
+pub const MAX_STATE_NAME: usize = 128;
+/// The most storehouses, loads, or kinds in one stock or load a saved record holds.
+pub const MAX_WORK_ENTRIES: usize = 4096;
+
+/// A storehouse as saved (B5, docs/BLUEPRINTS.md §9): its id, face, box (world cells, both
+/// corners in), the blueprint still building it (0: built, open), and its stock: None unlimited,
+/// else the counted items by block state name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedStorehouse {
+    pub id: u32,
+    pub face: u8,
+    pub min: [i32; 3],
+    pub max: [i32; 3],
+    pub blueprint: u32,
+    pub counted: Option<Vec<(String, u32)>>,
+}
+
+/// A builder's carried load as saved: the blueprint it works, its items by block state name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedLoad {
+    pub blueprint: u32,
+    pub items: Vec<(String, u32)>,
+}
+
+/// The villagers' work as saved (format 3; empty in older ones).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SavedWork {
+    pub next_storehouse: u32,
+    pub storehouses: Vec<SavedStorehouse>,
+    pub loads: Vec<SavedLoad>,
+}
+
+fn write_items(w: &mut ByteWriter, items: &[(String, u32)]) {
+    let n = items.len().min(MAX_WORK_ENTRIES);
+    w.u16(n as u16);
+    for (name, count) in &items[..n] {
+        w.str(crate::bytes::clamp_str(name, MAX_STATE_NAME));
+        w.u32(*count);
+    }
+}
+
+fn read_items(r: &mut ByteReader) -> Vec<(String, u32)> {
+    let n = usize::from(r.u16());
+    r.check(n <= MAX_WORK_ENTRIES);
+    let mut out = Vec::new();
+    for _ in 0..n {
+        if !r.ok() {
+            break;
+        }
+        out.push((r.str(MAX_STATE_NAME), r.u32()));
+    }
+    out
+}
+
+/// The world's blueprints as saved (the `blueprints` table): `u8 version` (3), `u32 next id`,
 /// `u16 count`, each a record; then `u32 count` towns founded, each `u8 face`, `i32 i, k` (its
-/// grid cell). Version 1 ends after the records.
-pub fn list_to_bytes(next_id: u32, list: &[Blueprint], towns: &[(u8, i32, i32)]) -> Vec<u8> {
+/// grid cell); then the work (version 3): `u32 next storehouse id`, `u16 count` storehouses (each
+/// `u32 id`, `u8 face`, `i32 × 3` min, `i32 × 3` max, `u32 blueprint`, `u8 stock` 0 unlimited or 1
+/// counted followed by its items), `u16 count` loads (each `u32 blueprint` and its items); items
+/// are `u16 count`, each `str state name`, `u32 count`. Version 1 ends after the records, 2 after
+/// the towns.
+pub fn list_to_bytes(
+    next_id: u32,
+    list: &[Blueprint],
+    towns: &[(u8, i32, i32)],
+    work: &SavedWork,
+) -> Vec<u8> {
     let mut out = Vec::new();
     let mut w = ByteWriter::new(&mut out);
     w.u8(LIST_VERSION);
@@ -236,17 +301,41 @@ pub fn list_to_bytes(next_id: u32, list: &[Blueprint], towns: &[(u8, i32, i32)])
         w.i32(i);
         w.i32(k);
     }
+    w.u32(work.next_storehouse);
+    let n = work.storehouses.len().min(MAX_WORK_ENTRIES);
+    w.u16(n as u16);
+    for s in &work.storehouses[..n] {
+        w.u32(s.id);
+        w.u8(s.face);
+        for v in s.min.iter().chain(&s.max) {
+            w.i32(*v);
+        }
+        w.u32(s.blueprint);
+        match &s.counted {
+            None => w.u8(0),
+            Some(items) => {
+                w.u8(1);
+                write_items(&mut w, items);
+            }
+        }
+    }
+    let n = work.loads.len().min(MAX_WORK_ENTRIES);
+    w.u16(n as u16);
+    for l in &work.loads[..n] {
+        w.u32(l.blueprint);
+        write_items(&mut w, &l.items);
+    }
     out
 }
 
-/// What a saved list holds: the next id, the blueprints, the towns founded.
-pub type SavedList = (u32, Vec<Blueprint>, Vec<(u8, i32, i32)>);
+/// What a saved list holds: the next id, the blueprints, the towns founded, the work.
+pub type SavedList = (u32, Vec<Blueprint>, Vec<(u8, i32, i32)>, SavedWork);
 
-/// A saved list (version 1 or 2), or None for a damaged one or a later version.
+/// A saved list (version 1, 2 or 3), or None for a damaged one or a later version.
 pub fn list_from_bytes(bytes: &[u8]) -> Option<SavedList> {
     let mut r = ByteReader::new(bytes);
     let version = r.u8();
-    r.check(version == 1 || version == 2);
+    r.check((1..=3).contains(&version));
     let next = r.u32();
     let n = usize::from(r.u16());
     let mut list = Vec::new();
@@ -267,7 +356,45 @@ pub fn list_from_bytes(bytes: &[u8]) -> Option<SavedList> {
             towns.push((r.u8(), r.i32(), r.i32()));
         }
     }
-    (r.ok() && r.at_end()).then_some((next, list, towns))
+    let mut work = SavedWork::default();
+    if version >= 3 {
+        work.next_storehouse = r.u32();
+        let n = usize::from(r.u16());
+        r.check(n <= MAX_WORK_ENTRIES);
+        for _ in 0..n {
+            if !r.ok() {
+                break;
+            }
+            let (id, face) = (r.u32(), r.u8());
+            let min = [r.i32(), r.i32(), r.i32()];
+            let max = [r.i32(), r.i32(), r.i32()];
+            let blueprint = r.u32();
+            let mode = r.u8();
+            r.check(mode <= 1);
+            let counted = (mode == 1).then(|| read_items(&mut r));
+            work.storehouses.push(SavedStorehouse {
+                id,
+                face,
+                min,
+                max,
+                blueprint,
+                counted,
+            });
+        }
+        let n = usize::from(r.u16());
+        r.check(n <= MAX_WORK_ENTRIES);
+        for _ in 0..n {
+            if !r.ok() {
+                break;
+            }
+            let blueprint = r.u32();
+            work.loads.push(SavedLoad {
+                blueprint,
+                items: read_items(&mut r),
+            });
+        }
+    }
+    (r.ok() && r.at_end()).then_some((next, list, towns, work))
 }
 
 #[cfg(test)]
@@ -314,16 +441,50 @@ mod tests {
     fn the_saved_list_round_trips() {
         let list = vec![sample(), Blueprint { id: 9, ..sample() }];
         let towns = vec![(0, 3, -4), (1, -1, 2)];
+        let work = SavedWork {
+            next_storehouse: 3,
+            storehouses: vec![
+                SavedStorehouse {
+                    id: 1,
+                    face: 1,
+                    min: [-3, 70, 4],
+                    max: [1, 74, 7],
+                    blueprint: 0,
+                    counted: None,
+                },
+                SavedStorehouse {
+                    id: 2,
+                    face: 0,
+                    min: [0, 0, 0],
+                    max: [4, 4, 3],
+                    blueprint: 7,
+                    counted: Some(vec![("dwell:log[axis=y]".into(), 40)]),
+                },
+            ],
+            loads: vec![SavedLoad {
+                blueprint: 9,
+                items: vec![("dwell:stone".into(), 6), ("dwell:log".into(), 4)],
+            }],
+        };
         assert_eq!(
-            list_from_bytes(&list_to_bytes(10, &list, &towns)),
-            Some((10, list.clone(), towns))
+            list_from_bytes(&list_to_bytes(10, &list, &towns, &work)),
+            Some((10, list.clone(), towns.clone(), work))
+        );
+        // Version 2 (B4's): no work after the towns.
+        let empty = SavedWork::default();
+        let mut v2 = list_to_bytes(10, &list, &towns, &empty);
+        v2.truncate(v2.len() - 8);
+        v2[0] = 2;
+        assert_eq!(
+            list_from_bytes(&v2),
+            Some((10, list.clone(), towns, empty.clone()))
         );
         // Version 1 (B1–B3's): no towns after the records.
-        let mut v1 = list_to_bytes(10, &list, &[]);
-        v1.truncate(v1.len() - 4);
+        let mut v1 = list_to_bytes(10, &list, &[], &empty);
+        v1.truncate(v1.len() - 12);
         v1[0] = 1;
-        assert_eq!(list_from_bytes(&v1), Some((10, list, vec![])));
-        assert_eq!(list_from_bytes(&[3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None);
+        assert_eq!(list_from_bytes(&v1), Some((10, list, vec![], empty)));
+        assert_eq!(list_from_bytes(&[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None);
     }
 
     #[test]

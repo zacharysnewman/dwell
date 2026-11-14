@@ -1,0 +1,53 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test storehouse for the towns' builders (docs/BLUEPRINTS.md \u00a79, WORK_QUEUE item 57). Not Dwell's building design. A 5 \u00d7 4 m open-fronted shed: a stone floor, log walls 3 m tall, a stone roof; its blueprint's role in a town plan is `storehouse` (blueprints.json), built first, the builders' hand-off point.",
+  "format": 1,
+  "name": "dwell:bp_storehouse",
+  "kind": "voxels",
+  "size": [
+    5,
+    5,
+    4
+  ],
+  "anchor": [
+    2,
+    0,
+    1
+  ],
+  "palette": {
+    ".": null,
+    "s": "dwell:stone",
+    "l": "dwell:log"
+  },
+  "layers": [
+    [
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "l...l"
+    ],
+    [
+      "lllll",
+      "l...l",
+      "l...l",
+      "lllll"
+    ],
+    [
+      "sssss",
+      "sssss",
+      "sssss",
+      "sssss"
+    ]
+  ]
+}

@@ -28,6 +28,112 @@ pub struct BuilderRules {
     pub near_m: f64,
     /// Builders a blueprint gets.
     pub per_blueprint: u32,
+    /// The job its builders do (`jobs`, B5).
+    pub job: &'static str,
+}
+
+/// What a job does (B5, docs/BLUEPRINTS.md §9): a small fixed vocabulary; the carters' `haul` and
+/// the foresters' `fell` are later phases.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobKind {
+    /// Take what its blueprint needs next from the town's storehouse, carry it to the site, place
+    /// it one piece a cell, walk back for more.
+    Build,
+}
+
+/// A villager's job (`blueprints.json` `jobs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JobRules {
+    pub name: &'static str,
+    pub kind: JobKind,
+    /// The most items one carries.
+    pub carry_max: u32,
+    /// Whether one load may hold several blocks (the next cells' blocks, in build order).
+    pub mixed_loads: bool,
+    /// Seconds one waits at a storehouse lacking what it needs before looking again.
+    pub wait_s: f64,
+}
+
+/// A storehouse's stock mode (`storehouse.stock`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StockMode {
+    /// Gives whatever is asked, keeps whatever is put (until harvesting deposits real stock).
+    Unlimited,
+}
+
+/// The storehouses' rules (`blueprints.json` `storehouse`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StorehouseRules {
+    pub stock: StockMode,
+    /// Blueprints within this many m of a storehouse (its box's centre, same face) fetch from it.
+    pub range_m: f64,
+    /// A villager within this many m of its box (flat) takes or puts.
+    pub reach_m: f64,
+}
+
+/// A block's own carried look (`carryLook.kinds`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CarryKind {
+    pub block: &'static str,
+    pub piece_m: f64,
+    pub per_layer: u32,
+}
+
+/// How a carried load shows on an NPC's back (`blueprints.json` `carryLook`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CarryLook {
+    /// The characters item drawn per piece (shared/characters `items`).
+    pub item: &'static str,
+    /// The model's joint the stack rides on.
+    pub joint: &'static str,
+    /// From the joint, in the body's frame (m; +z ahead, +y up).
+    pub at: [f64; 3],
+    pub piece_m: f64,
+    pub per_layer: u32,
+    pub kinds: &'static [CarryKind],
+}
+
+impl CarryLook {
+    /// Each piece's centre (body frame, m from the joint plus `at`) and side (m) for a load of
+    /// `pieces` (each piece's block name, in load order): layers of `per_layer` side by side,
+    /// rising from `at` with the count, a layer as tall as its biggest piece. Empty: nothing.
+    pub fn stack(&self, pieces: &[&str]) -> Vec<([f64; 3], f64)> {
+        let mut out = Vec::with_capacity(pieces.len());
+        let mut y = self.at[1];
+        let mut i = 0;
+        while i < pieces.len() {
+            let kind = |n: &str| self.kinds.iter().find(|k| k.block == n);
+            let per = kind(pieces[i])
+                .map_or(self.per_layer, |k| k.per_layer)
+                .max(1) as usize;
+            let layer = &pieces[i..(i + per).min(pieces.len())];
+            let sides: Vec<f64> = layer
+                .iter()
+                .map(|n| kind(n).map_or(self.piece_m, |k| k.piece_m))
+                .collect();
+            let tall = sides.iter().copied().fold(0.0, f64::max);
+            let wide: f64 = sides.iter().sum();
+            let mut x = self.at[0] - wide / 2.0;
+            for &side in &sides {
+                out.push((
+                    [x + side / 2.0, y + side / 2.0, self.at[2] - side / 2.0],
+                    side,
+                ));
+                x += side;
+            }
+            y += tall;
+            i += layer.len();
+        }
+        out
+    }
+}
+
+/// A town plan blueprint's role (`role`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Building,
+    /// The town's storehouse: built first, then the builders' hand-off point.
+    Storehouse,
 }
 
 /// The blueprints' rules (`shared/blueprints/blueprints.json`).
@@ -42,6 +148,10 @@ pub struct Rules {
     /// The most ghost faces drawn per blueprint.
     pub ghost_face_cap: usize,
     pub builder: BuilderRules,
+    /// The villagers' jobs (B5).
+    pub jobs: &'static [JobRules],
+    pub storehouse: StorehouseRules,
+    pub carry_look: CarryLook,
     /// The repository's blueprints offered in the Blueprints list.
     pub catalog: &'static [&'static str],
     /// Town sites from the world seed (B4).
@@ -55,6 +165,7 @@ pub struct PlanBlueprint {
     pub structure: &'static str,
     pub at: [i32; 2],
     pub turn: u8,
+    pub role: Role,
 }
 
 /// A town plan: its blueprints, laid out about the site.
@@ -90,10 +201,23 @@ pub struct TownRules {
 
 #[rustfmt::skip]
 mod generated {
-    use super::{BuilderRules, PlanBlueprint, Rules, TownPlan, TownRules};
+    use super::{
+        BuilderRules, CarryKind, CarryLook, JobKind, JobRules, PlanBlueprint, Role, Rules,
+        StockMode, StorehouseRules, TownPlan, TownRules,
+    };
     include!("blueprints.gen.rs");
 }
 pub use generated::SHIPPED;
+
+impl Rules {
+    /// The job the builders do (`builder.job`; the generator checks it is listed).
+    pub fn builder_job(&self) -> &JobRules {
+        self.jobs
+            .iter()
+            .find(|j| j.name == self.builder.job)
+            .unwrap_or(&self.jobs[0])
+    }
+}
 
 /// The face a record names.
 pub fn face_of(b: &Blueprint) -> FaceFrame {
@@ -359,11 +483,36 @@ impl Ghost {
         get: &dyn Fn([i32; 3]) -> Option<StateId>,
         near: Option<[f64; 3]>,
     ) -> Option<GhostCell> {
+        self.builder_next_of(get, near, &|_| true)
+    }
+
+    /// [`Ghost::builder_next_near`] among the cells whose block `carried` says the builder holds
+    /// (B5: a builder places only what it carried).
+    pub fn builder_next_of(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        near: Option<[f64; 3]>,
+        carried: &dyn Fn(StateId) -> bool,
+    ) -> Option<GhostCell> {
+        self.builder_order(get, near)
+            .into_iter()
+            .find(|c| carried(c.state))
+    }
+
+    /// The cells a builder can put now (free and left to build), in its order: the lowest
+    /// face-local row first, within a row those resting on something solid, then those beside
+    /// something, then nearest `near`, then the structure's order.
+    pub fn builder_order(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        near: Option<[f64; 3]>,
+    ) -> Vec<GhostCell> {
         let f = self.face;
-        self.remaining(get)
+        let mut cells: Vec<_> = self
+            .remaining(get)
             .filter(|c| get(c.world).is_some_and(free))
             .enumerate()
-            .min_by_key(|(i, c)| {
+            .map(|(i, c)| {
                 let down = f.cell([c.local[0], c.local[1] - 1, c.local[2]]);
                 let resting = get(down).is_some_and(|m| !free(m));
                 let d = near.map_or(0, |p| {
@@ -373,9 +522,37 @@ impl Ghost {
                     );
                     (dx.hypot(dz) * 4.0) as i64
                 });
-                (c.local[1], !resting, !self.supported(c.world, get), d, *i)
+                (
+                    (c.local[1], !resting, !self.supported(c.world, get), d, i),
+                    *c,
+                )
             })
-            .map(|(_, c)| *c)
+            .collect();
+        cells.sort_by_key(|(k, _)| *k);
+        cells.into_iter().map(|(_, c)| c).collect()
+    }
+
+    /// A builder's next load (B5): the next `max` cells in its order from `near` (none: the
+    /// structure's), as (block state, how many) in the order first needed; `mixed` false keeps
+    /// only the run of the first cell's block. Empty: nothing left it can put.
+    pub fn next_load(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        near: Option<[f64; 3]>,
+        max: u32,
+        mixed: bool,
+    ) -> Vec<(StateId, u32)> {
+        let mut out: Vec<(StateId, u32)> = Vec::new();
+        for c in self.builder_order(get, near).into_iter().take(max as usize) {
+            if !mixed && out.first().is_some_and(|f| f.0 != c.state) {
+                break; // the run of the first block only: never past a cell it can't fill
+            }
+            match out.iter_mut().find(|s| s.0 == c.state) {
+                Some(s) => s.1 += 1,
+                None => out.push((c.state, 1)),
+            }
+        }
+        out
     }
 
     /// [`Ghost::builder_next_near`] in the structure's order.
@@ -550,6 +727,15 @@ impl TownRules {
             .blueprints
             .iter()
             .map(|b| (b.structure, [t.x + b.at[0], t.z + b.at[1]], b.turn))
+            .collect()
+    }
+
+    /// [`Self::layout`] with each blueprint's role (the storehouse first, B5).
+    pub fn layout_roles(&self, t: &TownSite) -> Vec<(&'static str, [i32; 2], u8, Role)> {
+        self.plans[t.plan]
+            .blueprints
+            .iter()
+            .map(|b| (b.structure, [t.x + b.at[0], t.z + b.at[1]], b.turn, b.role))
             .collect()
     }
 }
@@ -747,7 +933,8 @@ mod tests {
             // A site's layout: the plan's blueprints about its centre.
             let l = rules.layout(&a[0]);
             assert_eq!(l.len(), rules.plans[a[0].plan].blueprints.len());
-            assert_eq!(l[0].1, [a[0].x, a[0].z]);
+            let at = rules.plans[a[0].plan].blueprints[1].at;
+            assert_eq!(l[1].1, [a[0].x + at[0], a[0].z + at[1]]);
         }
     );
 
@@ -790,4 +977,76 @@ mod tests {
             assert_eq!(g.complete(&get), Some(true));
         }
     );
+
+    both_faces!(
+        fn a_load_is_the_next_cells_in_build_order_at_most_carry_max(f: FaceFrame) {
+            let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
+            let set = HashMap::new();
+            let get = world(f, 64, &set);
+            // The floor first: 25 stone, so a load of 10 is all stone.
+            let load = g.next_load(&get, None, 10, true);
+            assert_eq!(load, vec![(f.state(M.stone), 10)]);
+            // The floor built but three cells: a mixed load is those three stone, then logs.
+            let mut set = HashMap::new();
+            for c in g.cells.iter().filter(|c| c.local[1] == 64).skip(3) {
+                set.insert(c.world, c.state);
+            }
+            let get = world(f, 64, &set);
+            let load = g.next_load(&get, None, 10, true);
+            assert_eq!(load[0], (f.state(M.stone), 3));
+            assert_eq!(load.iter().map(|l| l.1).sum::<u32>(), 10);
+            assert!(
+                load[1..]
+                    .iter()
+                    .all(|l| block_of(l.0).name.ends_with("log"))
+            );
+            // Unmixed: only the stone.
+            assert_eq!(
+                g.next_load(&get, None, 10, false),
+                vec![(f.state(M.stone), 3)]
+            );
+            // A builder carrying only logs is given only log cells.
+            let log = load[1].0;
+            let next = g.builder_next_of(&get, None, &|s| s == log).unwrap();
+            assert_eq!(next.state, log);
+        }
+    );
+
+    #[test]
+    fn a_carried_stack_rises_in_layers_with_the_count() {
+        // face-a-only: the stack is in the body's frame, which the client places through the face.
+        let look = SHIPPED.carry_look;
+        assert!(look.stack(&[]).is_empty(), "empty: nothing");
+        let stone = vec!["dwell:stone"; 5];
+        let s = look.stack(&stone);
+        assert_eq!(s.len(), 5);
+        let per = look.per_layer as usize;
+        let top = s.last().unwrap().0[1];
+        let layers = 5usize.div_ceil(per);
+        assert!((top - (look.at[1] + look.piece_m * (layers as f64 - 0.5))).abs() < 1e-9);
+        // Behind the joint, never in front.
+        assert!(s.iter().all(|p| p.0[2] < look.at[2] + 1e-9));
+        // Logs carried bigger (their kind's own size).
+        let logs = look.stack(&["dwell:log"; 10]);
+        let log = look.kinds.iter().find(|k| k.block == "dwell:log").unwrap();
+        assert!(logs.iter().all(|p| (p.1 - log.piece_m).abs() < 1e-9));
+        assert!(
+            logs.last().unwrap().0[1] > s.last().unwrap().0[1],
+            "ten rise higher than five"
+        );
+    }
+
+    #[test]
+    fn the_hamlet_s_storehouse_is_its_first_blueprint() {
+        // face-a-only: the plan's data, no geometry.
+        let plan = &SHIPPED.towns.plans[0];
+        assert_eq!(plan.blueprints[0].role, Role::Storehouse);
+        assert!(
+            plan.blueprints[1..]
+                .iter()
+                .all(|b| b.role == Role::Building)
+        );
+        assert_eq!(SHIPPED.builder_job().kind, JobKind::Build);
+        assert_eq!(SHIPPED.builder_job().carry_max, 10);
+    }
 }

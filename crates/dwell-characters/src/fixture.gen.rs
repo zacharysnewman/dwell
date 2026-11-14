@@ -1392,6 +1392,9 @@ pub static CHARACTERS: &[Character] = &[
             Item { name: "block", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[(8, [-12.0, 0.0, 0.0]), (9, [0.0, -90.0, 0.0])], parts: &[
                 Part { id: "held_block", bone: 9, kind: Kind::Box, size: [0.2, 0.1, 0.2], at: [0.1, -0.07, 0.02], rot: [0.0, 0.0, -90.0], round: 0.0, tip: 0.0, side_v: [0.5, 1.0], view: View::Both, material: 65535 },
             ] },
+            Item { name: "carried", light: None, socket: (2, [0.0, 0.2, -0.13]), pose: &[], parts: &[
+                Part { id: "carried_block", bone: 2, kind: Kind::Box, size: [0.2, 0.2, 0.2], at: [0.0, 0.2, -0.13], rot: [0.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
+            ] },
             Item { name: "card", light: None, socket: (9, [0.0, -0.1, 0.02]), pose: &[], parts: &[
                 Part { id: "held_card", bone: 9, kind: Kind::Plane, size: [0.24, 0.24, 0.006], at: [0.0, -0.08, 0.19], rot: [90.0, 0.0, 0.0], round: 0.0, tip: 0.0, side_v: [0.0, 1.0], view: View::Both, material: 65535 },
             ] },

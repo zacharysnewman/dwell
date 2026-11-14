@@ -796,7 +796,26 @@ pub struct CreaturesMessage {
     /// the `creatures.poses` capability (which has `creatures.npcs` too: the NPCs' part, empty if
     /// need be, is written first); `None` writes nothing.
     pub poses: Option<Vec<CreaturePoseNet>>,
+    /// The NPCs' carried loads (B5, docs/BLUEPRINTS.md §9), after the poses: only to a client with
+    /// the `npcs.carry` capability (which has `creatures.poses` too: the NPCs' part and the poses,
+    /// empty if need be, are written first); `None` writes nothing. An NPC carrying nothing is left
+    /// out.
+    pub carries: Option<Vec<CarryNet>>,
 }
+
+/// An NPC's carried load (`CreaturesMessage::carries`): its creature's id and its items, each a
+/// block state name (the server's registry's; the client maps it by name) and how many, in load
+/// order (the stack drawn on its back, bottom first).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CarryNet {
+    pub id: u32,
+    pub items: Vec<(String, u8)>,
+}
+
+/// The most kinds one carried load sends.
+pub const MAX_CARRY_KINDS: usize = 16;
+/// The longest block state name a carried load sends.
+pub const MAX_CARRY_NAME: usize = 128;
 
 /// A creature's idle pose (`CreaturesMessage::poses`): its id and the pose, by [`CREATURE_POSES`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1875,7 +1894,8 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                 w.u32(id);
             }
             let no_npcs = Vec::new();
-            if let Some(npcs) = m.npcs.as_ref().or(m.poses.as_ref().map(|_| &no_npcs)) {
+            let later = m.poses.is_some() || m.carries.is_some();
+            if let Some(npcs) = m.npcs.as_ref().or(later.then_some(&no_npcs)) {
                 let n = npcs.len().min(MAX_CREATURES_PER_MESSAGE);
                 w.u16(n as u16);
                 for c in &npcs[..n] {
@@ -1885,12 +1905,26 @@ fn write_body(w: &mut ByteWriter, m: &Message) {
                     w.u32(c.variant);
                 }
             }
-            if let Some(poses) = &m.poses {
+            let no_poses = Vec::new();
+            if let Some(poses) = m.poses.as_ref().or(m.carries.as_ref().map(|_| &no_poses)) {
                 let n = poses.len().min(MAX_CREATURES_PER_MESSAGE);
                 w.u16(n as u16);
                 for c in &poses[..n] {
                     w.u32(c.id);
                     w.u8(c.pose);
+                }
+            }
+            if let Some(carries) = &m.carries {
+                let n = carries.len().min(MAX_CREATURES_PER_MESSAGE);
+                w.u16(n as u16);
+                for c in &carries[..n] {
+                    w.u32(c.id);
+                    let k = c.items.len().min(MAX_CARRY_KINDS);
+                    w.u8(k as u8);
+                    for (name, count) in &c.items[..k] {
+                        w.str(crate::bytes::clamp_str(name, MAX_CARRY_NAME));
+                        w.u8(*count);
+                    }
                 }
             }
         }
@@ -2599,11 +2633,34 @@ fn read_body(r: &mut ByteReader, t: MessageType) -> Option<Message> {
                 }
                 poses
             });
+            let carries = (!r.at_end()).then(|| {
+                let n = usize::from(r.u16());
+                r.check(n <= MAX_CREATURES_PER_MESSAGE);
+                let mut carries = Vec::new();
+                for _ in 0..n {
+                    if !r.ok() {
+                        break;
+                    }
+                    let id = r.u32();
+                    let k = usize::from(r.u8());
+                    r.check(k <= MAX_CARRY_KINDS);
+                    let mut items = Vec::new();
+                    for _ in 0..k {
+                        if !r.ok() {
+                            break;
+                        }
+                        items.push((r.str(MAX_CARRY_NAME), r.u8()));
+                    }
+                    carries.push(CarryNet { id, items });
+                }
+                carries
+            });
             M::Creatures(CreaturesMessage {
                 creatures,
                 gone,
                 npcs,
                 poses,
+                carries,
             })
         }
         T::Vitals => {
@@ -2952,6 +3009,7 @@ mod creature_tests {
             gone: vec![2, 5],
             npcs: None,
             poses: None,
+            carries: None,
         });
         let b = m.encode();
         assert_eq!(Message::decode(&b), Some(m.clone()));
@@ -2976,6 +3034,7 @@ mod creature_tests {
             gone: vec![3],
             npcs: None,
             poses: Some(vec![CreaturePoseNet { id: 9, pose: 5 }]),
+            carries: None,
         };
         let bytes = Message::Creatures(m.clone()).encode();
         let back = Message::decode(&bytes).unwrap();
@@ -2993,11 +3052,45 @@ mod creature_tests {
         // Without it: the bytes end after the NPCs' part (or after `gone`).
         let plain = Message::Creatures(CreaturesMessage {
             poses: None,
+            carries: None,
             npcs: None,
             ..m
         })
         .encode();
         assert!(plain.len() < bytes.len());
+    }
+
+    #[test]
+    fn the_carried_loads_follow_the_poses_and_are_checked() {
+        // B5 (docs/BLUEPRINTS.md §9): the NPCs' loads ride after the poses (the NPCs' part and the
+        // poses written empty when there are none), only for a client with `npcs.carry`.
+        let m = CreaturesMessage {
+            creatures: Vec::new(),
+            gone: vec![3],
+            npcs: None,
+            poses: None,
+            carries: Some(vec![CarryNet {
+                id: 7,
+                items: vec![("dwell:stone".into(), 4), ("dwell:log[axis=y]".into(), 6)],
+            }]),
+        };
+        let bytes = Message::Creatures(m.clone()).encode();
+        assert_eq!(
+            Message::decode(&bytes),
+            Some(Message::Creatures(CreaturesMessage {
+                npcs: Some(Vec::new()),
+                poses: Some(Vec::new()),
+                ..m.clone()
+            }))
+        );
+        // Too many kinds fails the message.
+        let mut bad = bytes.clone();
+        let at = bytes.len() - (2 + 11 + 1) - (2 + 17 + 1) - 1;
+        bad[at] = (MAX_CARRY_KINDS + 1) as u8;
+        assert_eq!(Message::decode(&bad), None);
+        // A client without it gets the poses' bytes: the part left out.
+        let without = Message::Creatures(CreaturesMessage { carries: None, ..m }).encode();
+        assert!(without.len() < bytes.len());
     }
 
     #[test]
@@ -3013,6 +3106,7 @@ mod creature_tests {
             gone: vec![],
             npcs: None,
             poses: None,
+            carries: None,
         };
         let with = CreaturesMessage {
             npcs: Some(vec![NpcNet {
