@@ -906,6 +906,22 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    a lattice like roads, straight grey stone and green grass strips, hard-edged patches of the palette dither, rivers
    with straight edges and a stepped fringe). **Owner should see:** from the air, Realistic terrain types meet along
    natural, irregular, blended edges. No straight strips, lines or lattices of dirt, stone or grass.
+   Owner, 2026-11-14, after a high screenshot of 0.65 Realistic: **"I think that 65 does fix that issue"** (the
+   straight strips: the 0.64 plate provinces' fixed-width bands along straight boundaries; 0.65 curved the boundaries
+   and mixed the provinces). Kept as a regression test (`tests/realistic_bands.rs`, the owner's seed 4065579781 too).
+   (0b) **Speckle, tan sand and hard edges.** Owner, 2026-11-14: **"Something I'd like to discuss is that speckled
+   terrain looks gross: I think we're using tan sand where we shouldn't. And we should be blending edges. We still have
+   hard lines between vertical and horizontal changes in terrain types."** Patches: **"big."** Scope: **"realistic
+   only. We're hoping to replace default eventually with realistic once it's looking really good."** (a goal: the
+   Realistic world replaces the default world once it looks really good; REALISTIC_WORLD.md §1). So, Realistic only,
+   as data: (i) no speckle: surface variety (grass, dirt, stone, gravel, red dirt …) from smooth, low-frequency,
+   domain-warped noise in big coherent patches ~20–60 m across (data per type), single scattered cells only as a rare
+   accent share (data, ≤ 2 %); (ii) tan sand only on beaches, river and lake beds, dunes and sand deserts; elsewhere
+   bare ground is dirt, gravel or stone by rock and climate; (iii) soft edges: boundaries between surface types follow
+   warped noise, never straight along the grid axes, and across a blend zone of a few metres (data) the two types
+   interleave in organic fingers and clumps, not single-cell dither. **Owner should see:** from the air and on the
+   ground, big coherent patches of each ground type with wandering, blended edges; no salt-and-pepper speckle; tan sand
+   only on beaches, river and lake beds, dunes and sand deserts; no straight lines between terrain types.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

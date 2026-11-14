@@ -41,6 +41,10 @@ fn colour(name: &str) -> [u8; 3] {
         "dwell:snow" => [245, 245, 250],
         "dwell:basalt" => [50, 46, 56],
         "dwell:obsidian" => [150, 40, 190],
+        "dwell:red_sandstone" => [170, 70, 45],
+        "dwell:sandstone" => [200, 180, 120],
+        "dwell:gravel" => [150, 140, 135],
+        "dwell:clay" => [170, 120, 100],
         _ => {
             let mut h: u32 = 2166136261;
             for b in base.bytes() {
