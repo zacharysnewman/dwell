@@ -243,6 +243,8 @@ pub struct BiomeMap {
     pub dither_warp: f64,
     /// The biomes' tree densities blend by their weights to this power (1: as they are).
     pub trees_sharpen: f64,
+    /// The steep rock's slope threshold ± this share of itself by a fine noise (0: a crisp edge).
+    pub rock_edge: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
@@ -1502,7 +1504,28 @@ impl TerrainGenerator {
             };
             let (v, rock, part) = geo.profiles[stack].map(h);
             dh += w * f * (v - h);
-            if i == usize::from(mix.chosen) && reach * f >= 0.5 {
+            // The rock's blocks show from half strength, ± `shaping.edgeFade` by the edge noise
+            // (0.69): a province's edge breaks into fingers, not one smooth line.
+            let half = if geo.geology.edge_fade > 0.0 {
+                0.5 + geo.geology.edge_fade * self.edge_noise(x, z, 3)
+            } else {
+                0.5
+            };
+            if i == usize::from(mix.chosen) && reach * f >= half {
+                // The part shown, read at a height jittered by a fine warped noise
+                // (`shaping.edgeJitter`, 0.69): a tread, its talus and the plain ground meet in
+                // fingers, not along a crisp contour; a wall keeps its own.
+                let part = match geo.geology.edge_jitter {
+                    j if j > 0.0 && part != crate::geology::Part::Wall => {
+                        let (_, r2, p2) = geo.profiles[stack].map(h + j * self.edge_noise(x, z, 1));
+                        if p2 == crate::geology::Part::Wall || r2 != rock {
+                            part
+                        } else {
+                            p2
+                        }
+                    }
+                    _ => part,
+                };
                 chosen = Some((rock, part));
             }
         }
@@ -1778,6 +1801,33 @@ impl TerrainGenerator {
             .map_or(cap, |k| set.cap_by_palette[r] + k as u16)
     }
 
+    /// A fine, warped noise in about −1..1 at face-local (x, z) for the soft edges (0.69): 14 m
+    /// detail, its sample point warped ± 10 m at 40 m, so an edge breaks into fingers and clumps.
+    fn edge_noise(&self, x: i64, z: i64, k: u32) -> f64 {
+        let seed = crate::noise::mix32(self.snow_seed ^ 0xED6E_0690 ^ k);
+        let w = |j: u32| {
+            (20.0
+                * f64::from(fbm2(
+                    crate::noise::mix32(seed ^ j),
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    40,
+                    2,
+                    None,
+                ))) as i64
+        };
+        let (wx, wz) = (x + w(1), z + w(2));
+        (2.0 * f64::from(fbm2(
+            seed,
+            wx + self.offset_x,
+            wz + self.offset_z,
+            14,
+            1,
+            None,
+        )))
+        .clamp(-1.0, 1.0)
+    }
+
     /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.
     pub fn rain_at(&self, x: i64, z: i64) -> Option<f64> {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
@@ -1801,7 +1851,7 @@ impl TerrainGenerator {
                     x + self.offset_x,
                     z + self.offset_z,
                     48,
-                    3,
+                    1,
                     None,
                 ))
         } else {
@@ -2244,6 +2294,14 @@ impl TerrainGenerator {
         let slope = hx.hypot(hz) / (2.0 * w);
         let t = (h / s.rock_high).clamp(0.0, 1.0);
         let threshold = s.rock_slope + (s.rock_slope_high - s.rock_slope) * t * t * (3.0 - 2.0 * t);
+        // The threshold ± `rockEdge` of itself by a fine warped noise (0.69, Realistic): the steep
+        // rock and the ground meet in fingers, not along a smooth contour of the slope.
+        let edge = self.biomes.params.rock_edge;
+        let threshold = if edge > 0.0 {
+            threshold * (1.0 + edge * self.edge_noise(x as i64, z as i64, 2))
+        } else {
+            threshold
+        };
         slope >= threshold
     }
 
@@ -2748,10 +2806,10 @@ impl TerrainGenerator {
             let scree = self.biomes.rock_palette[r];
             // Treads and talus under the biome's own ground where it rains enough (rocks.json
             // `shaping.coverRain`, 0.69): grassy steps with rock risers, not contour stripes.
-            // A rock whose treads follow the climate itself (`capBy`: the red desert's beds) keeps
-            // its own.
+            // A biome's own stack (its `rockStack`: mesa country's red beds, the dunes) keeps
+            // its rock; the provinces' rock under a wet biome is covered.
             let covered = matches!(part, Part::Talus | Part::Tread)
-                && self.biomes.geology.geology.rocks[r].cap_by.is_empty()
+                && self.biomes.biome_stack[usize::from(mix.chosen)].is_none()
                 && self.covered(x, z, base);
             match part {
                 _ if covered => {}

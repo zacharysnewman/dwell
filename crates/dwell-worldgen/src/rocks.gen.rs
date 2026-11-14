@@ -242,6 +242,8 @@ pub const GEOLOGY: Geology = Geology {
     tread_relief: 0.08,
     cover_rain: f64::INFINITY,
     cover_noise: 0.0,
+    edge_jitter: 0.0,
+    edge_fade: 0.0,
     notched: Notched::None,
     erosion: Erosion {
         strength: 1.0,

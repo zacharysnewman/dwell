@@ -511,6 +511,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
             .unwrap_or(1.0),
         dither_warp: v.get("ditherWarp").and_then(Value::as_f64).unwrap_or(0.0),
         trees_sharpen: v.get("treesSharpen").and_then(Value::as_f64).unwrap_or(1.0),
+        rock_edge: v.get("rockEdge").and_then(Value::as_f64).unwrap_or(0.0),
         wind_direction: n("windDirection")?,
         wind_reach: n("windReach")?,
         base_rain: n("baseRain")?,
@@ -658,6 +659,8 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         tread_relief: opt("treadRelief").unwrap_or(0.0),
         cover_rain: opt("coverRain").unwrap_or(f64::INFINITY),
         cover_noise: opt("coverNoise").unwrap_or(0.0),
+        edge_jitter: opt("edgeJitter").unwrap_or(0.0),
+        edge_fade: opt("edgeFade").unwrap_or(0.0),
         // A word (rocks.json `shaping.notched`), or an edit stored in 0.59–0.61: 1 all, else none.
         notched: match v.get("shaping").and_then(|s| s.get("notched")) {
             Some(Value::String(w)) => match w.as_str() {

@@ -130,6 +130,12 @@ pub struct Geology {
     /// rock's blocks everywhere it shapes the ground, as before).
     pub cover_rain: f64,
     pub cover_noise: f64,
+    /// The height a column's part (tread, talus, plain) is read at, jittered ± this (m) by a fine
+    /// noise (0.69; 0: a crisp contour).
+    pub edge_jitter: f64,
+    /// The shaping's half-strength line (where the rock's blocks start) ± this share by the same
+    /// noise (0.69; 0: one smooth line along a province's fade).
+    pub edge_fade: f64,
     /// Where the rock shapes the ground (`strength` > 0), where the stored ramps also top a column
     /// on a diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
     pub notched: Notched,

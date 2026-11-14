@@ -10,13 +10,16 @@
     "ditherSpeckle": 0,
     "ditherWavelength": 48,
     "ditherWarp": 60,
-    "treesSharpen": 4
+    "treesSharpen": 4,
+    "rockEdge": 0.3
   },
   "geology": {
     "shaping": {
       "strength": 1,
       "coverRain": 260,
-      "coverNoise": 60
+      "coverNoise": 60,
+      "edgeJitter": 3,
+      "edgeFade": 0.35
     },
     "erosion": {
       "strength": 1

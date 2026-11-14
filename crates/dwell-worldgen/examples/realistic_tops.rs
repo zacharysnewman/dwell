@@ -108,7 +108,12 @@ fn main() {
                 .map(|y| dwell_blocks::info(g.state_at(x, y, z)).name);
             let b = &e.biomes[usize::from(g.biome_mix(x.into(), z.into()).chosen)].name;
             println!(
-                "({x}, {z}): rain {:?} h {:.1} band {:?} water {:?} level {:.1} palette {} biome {b} top {top:?}",
+                "({x}, {z}): wall {} rock {:?} rain {:?} h {:.1} band {:?} water {:?} level {:.1} palette {} biome {b} top {top:?}",
+                c.wall,
+                {
+                    let (r, p) = g.rock_at_surface(x.into(), z.into());
+                    (r.name, p)
+                },
                 g.rain_at(x.into(), z.into()).map(|r| r.round()),
                 c.height - dwell_world::SEA_LEVEL_M as f32,
                 c.band,

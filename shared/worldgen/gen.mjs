@@ -686,6 +686,8 @@ export function rocksRust(data) {
     `    cover_rain: ${data.shaping.coverRain === undefined ? "f64::INFINITY" : rf(data.shaping.coverRain)},`,
   );
   rs.push(`    cover_noise: ${rf(data.shaping.coverNoise ?? 0)},`);
+  rs.push(`    edge_jitter: ${rf(data.shaping.edgeJitter ?? 0)},`);
+  rs.push(`    edge_fade: ${rf(data.shaping.edgeFade ?? 0)},`);
   rs.push(
     `    notched: Notched::${{ none: "None", mesaEdges: "MesaEdges", all: "All" }[data.shaping.notched]},`,
   );
@@ -1090,6 +1092,7 @@ export function terrainRust({
   rs.push(`    dither_speckle: ${rf(bm.ditherSpeckle ?? 1)},`);
   rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
   rs.push(`    trees_sharpen: ${rf(bm.treesSharpen ?? 1)},`);
+  rs.push(`    rock_edge: ${rf(bm.rockEdge ?? 0)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);
