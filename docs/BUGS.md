@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 159. The moon's (and sun's) distant terrain jumps from full detail to a blurry mesh, in other colours
+
+Owner, 2026-11-13: "The moon looks really bad. The LODs look like it's either high detail or super duper low detail,
+unlike home world. The LOD colors don't match either." Cause: since #143/#145 a grid's distance is `grid_lod.rs`'s
+rings of its far source's heights (coarse quads, recentred) right past the full-detail chunks: two levels, no graded
+steps or fades between, and the rings' colour is the far source's albedo (`FarSource::far_albedo`, the blocks'
+`color`), not the block looks the chunks are drawn with. Fix (WORK_QUEUE item 27, branch `claude/grid-lod`): a
+`LodSystem` per grid with sections from the grid's generator, meshed and coloured as home's. **Owner should see:**
+on the moon (and sun), distant terrain steps down in detail gradually like at home, with matching colours from near
+to far, no jump from full detail to a blurry low-detail mesh. **Fixed natively (2026-11-14), the browser look
+outstanding:** the rings are gone; the moon's and the sun's distance is home's LOD over their discs, graded levels
+with fades, tops in the chunks' block looks (the rings wrote the far albedo's sRGB into the linear colour stream:
+0% of tops matched, 100% now). Tests: `dwell-client/tests/grid_lod.rs`, `dwell-worldgen/tests/grid_lod.rs`, the
+`game_local` moon trip. Also found: home's 16 km rim view spans the moon, so it drew both faces from anywhere
+(`LodSystem::set_rim_view`, scaled per grid).
+
 ### 135. Flat ground on a plateau can show a sandstone wall's face (red sandstone) instead of a tread
 
 Found 2026-11-13 while fixing #134 (Realistic, seed 42 face A, e.g. (−6000, −3500) and (−4250, 0)): a few wide, flat
@@ -514,7 +530,7 @@ with #338 reverted, and main with #340 reverted (both of those include #339). Cu
 currents' datagrams to a quarter didn't help, and there is no water near the native server's spawn
 (seed 0, (2128, 7544)). Next: re-run main at #340 and bisect #338's pieces on a branch from #336.
 
-### 30. A held Place builds too little at a few frames a second (partly fixed in 0.49.2)
+### 30. A held Place builds too little at a few frames a second (the pace fixed after 0.63.6; towers still short)
 
 *Found 2026-11-05 (0.48.2), from CI.* Under the e2e suite's software renderer (CI ~5 fps, a Mac's
 SwiftShader ~3 fps) a held-Place build in `e2e/buildDrag.spec.ts` built its first piece and no more
@@ -539,15 +555,49 @@ towering, both bridging tests (a tower first) and the held ladder still fall a p
 35.5 m of 36; the ladder's first piece missing). Main's shard 1 failed six of these before. Next:
 the tick trace on CI (it builds a metre a jump locally at 3 fps).
 
-### 23. A block can't be placed against the downhill side of a ramp
+**Fixed after 0.63.6** (brief, 2026-11-13: "the held Place's repeat is frame-bound: make it time-based … a rate
+from data, accumulated per tick, not one per rendered frame, so a slow page still builds at the data rate"). The
+rest was the pace: a stroke built at most one piece a frame, and a line waited for the server's answer to each piece
+before the next, read once a frame, so a page built a piece a frame (natively: 5 a second at 5 fps, 60 at 60 fps).
+Now a piece every `buildModes.repeatS` (0.05 s, `shared/items/items.json`) by the clock, counted at each predicted
+tick (`BuildDrag::aim_at`); only a tower still waits for each answer (its crouch-jump regression); another line
+builds on unanswered, goes back to a piece the server refused and steps over the ones it built after it; a frame
+sends at most the server's region queue (`region_edit::MAX_QUEUED`, 4: a frame's fills reach it in one tick), which
+under ~5 fps sets the rate instead (3 fps: ~12 a second). `game_local.rs`
+`a_held_place_builds_at_the_datas_rate_at_sixty_five_and_three_frames_a_second` (red before: 3 pieces at 233 ms at
+60 fps with 1 due; 7 of 12 after 1.2 s at 5 fps), `build_drag.rs`
+`a_held_stroke_builds_a_piece_every_repeat_s_by_the_clock`, `a_line_builds_on_unanswered_and_goes_back_to_a_refused_piece`.
+At 60 fps a held line now builds 20 a second, not 60.
+
+**The spec under the software renderer (cloud session, SwiftShader, after the fix):** the line up, Flat, walking
+back in Line mode, the crouch-jump tower, the edge click and the held ladder pass; towering and both bridging tests
+(each a tower first) still fall short, 34–35 m of 36, **the same on main's build** (34.5–35 m): the tower part, still
+open (a tower still waits for each answer and builds a jump at a time; untouched here). The held ladder failed 2 of
+3 on this branch and 1 of 3 on main: a race in the test, fixed in the spec — after the step back the crosshair still
+met the pillar's −Z face, but higher up, until a frame took the new look, and the test waited for the face only, so
+the first ladder went there (it now waits for the cell).
+
+
+## Fixed
+
+### 23. A block can't be placed against the downhill side of a ramp (fixed after 0.63.6)
 
 *Reported 2026-11-03 (0.44.2).* "I can't place a block against the outer edge of (downhill) side of a
 shallow ramp, maybe same problem with steep ramps too?" Not investigated yet: targeting a ramp's low
 face, or the placement check against its shape.
 
-## Fixed
+**Fixed after 0.63.6.** A ramp's slope was always aimed at through its top (its normal is mostly up; a 45° one's
+tie goes up too), so a place went on top of the ramp, never past its low edge, and a side face would have been
+refused by the server's line of sight (a ramp has no polygon facing its low side). Now the hit also gives the side a
+slope faces out through at the point met (`dwell_world::edit::slope_side`, along its normal in cell space: a ½ m
+ramp's lower half faces out its low side, its upper half its top), the client places through it
+(`BlockTarget::place_face`; a 1 m piece stands up from there) and breaks through the top as before, and the server
+takes the slope as seen from that side (`check_block_edit`). `tests/placement.rs`
+`a_place_aimed_at_a_ramps_lower_half_goes_off_its_downhill_side` and `block_interaction.rs`
+`a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side` (both faces; the red was a probe on the unfixed raycast:
+face +Y, placed on top).
 
-### 158. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
+### 164. A dead-straight, axis-aligned edge between snow and forest in a Realistic world (fixed in 0.64.0)
 
 Owner, 2026-11-13: "This might be part of the realistic fix, but I'm seeing really sharp edges between terrain types like
 this." The photo, from high up in a Realistic world on 0.61.x: a perfectly straight vertical line many km long, snow, ice
@@ -562,7 +612,7 @@ low-passes the marched rain. Tests: `plate_tectonics::tests::boundaries_follow_t
 axis-aligned before, under 1500 m after), `tests/realistic_seams.rs` (seeds 1, 7, 42, 2741893632, both faces: a straight
 biome edge 2800 m and rain steps up to 57 % per 50 m before; at most 1400 m and 11.6 % after).
 
-### 157. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
+### 163. Ramps back onto open air at bowl corners: sawtooth spikes (fixed in 0.64.0)
 
 Owner, 2026-11-13: "Also we might be in process on slopes or something, but I'm noticing at the corners of bowl areas
 there's these spiky edges where slopes are up against the side of other slopes. I don't mind slopes with edges exposed but
@@ -582,7 +632,7 @@ bowl ramps exposed unchecked, 0 backed), `straight_slopes_keep_their_ramps`, `te
 274005646, both faces, the default and the Realistic world: 134 and 194 exposed ramps on seed 274005646's Realistic faces
 unchecked, 0 after). The default world's goldens are unchanged (its strict rule never backed a ramp onto air).
 
-### 156. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
+### 162. Red sand on humid red-desert floors cut down to the siltstone (fixed in 0.64.0)
 
 Found 2026-11-13 by the realistic batch (parts A and B together, seed 1 face A, e.g. (−7750, −8500) in the red rock
 mesa): 14 of 2137 sandstone floors were red sand where the climate is not arid, against #134's rule. Cause: the
@@ -591,6 +641,119 @@ erosion snaps a floor down to the stack's soft layer (`Cut::Floor`), the red des
 cap is `dwell:red_sandstone` with `capBy` `[{"arid": "dwell:red_sand"}]`, as the sandstone's (then, the same line, the mesa country palette made its floors red dirt: WORK_QUEUE item 15). Test:
 `tests/realistic_rocks.rs` `the_red_desert_floors_are_red_sand`, red at 14 of 2137 (over its 1 in 200), green after;
 the default's goldens unchanged; the starter's red rock mesa has the same stack, so its terrain pin (`tests/starter_memory.rs`) is re-pinned on this line.
+### 161. The sun's dry crust beside the lava reads nearly black (fixed after 0.63.10)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13, shot 04c; refinement, owner: "Focus on
+refinement only for now"): at a sun river head (`sunLand {river:true}`) the basalt crust by the lava was nearly black,
+so #145's reflected light from home and the moon barely showed. Cause: tuning. The sun's light rig (grids.json
+`dwell:sun` `light`) gave open ground facing up a luma of 0.076 (an ambient floor 0.06 and the glow 0.45, 0.4 of it
+from the sky), and home and the moon at 0.9 and 0.35. Fix, data only: the floor 1.2 in a softer warm (#ffa476), the
+glow 2.5, home 6.0 and the moon 2.0 (luma 0.88 facing up; the basalt ramp is very dark, #35323a); the lava's own emissive look unchanged. Test:
+`grid_light::the_suns_crust_reads_as_warm_lit_rock_not_black` (both faces; red before at 0.076, green after).
+Shots (before → after, `sunLand {river:true}` on the real GPU): the open crust went from black to dark basalt with its blocks' steps showing, the lava unchanged. **Owner should see:** on the sun, the crust beside the lava reads as dark, warm-lit basalt with
+its blocks' form visible, brighter on the side facing home; the lava as bright as before.
+
+### 160. Theater on a phone in portrait: the flying controls vanish while the bottom sheet is open (fixed after 0.63.10)
+
+Same pass (01b, 390×844): the stick and Up/Down showed in landscape (beside the side sheet) and with the bottom sheet
+collapsed, but a stylesheet rule hid them while it was open, so the camera couldn't be flown while setting keys.
+Fix: they show with the sheet open too, riding just above its top edge (mode.ts `showTouch` sets their `bottom` from
+the sheet's rect, layout.ts `touchBottomOverSheet`, open or collapsed); the sheet's 58 % cap leaves room for the
+stick. Test: panel.test.ts "show above the open sheet at 390×844, their rect clear of it" (red before: the hiding
+rule, no placement). **Owner should see:** on a phone in portrait, theater's stick and Up/Down sit just above the
+open sheet, and flying works while the sheet is open.
+
+### 159. Theater's recording dot is barely visible (fixed after 0.63.10)
+
+Same pass (01d): the REC badge's dot read as a faint pink smudge on a pink pill, and it blinked out (hidden) half of
+every second. Fix (style.css `.tb-rec`): a saturated red dot (#e0201a) ringed in white with a soft red glow, on a
+near-white pill with a red hairline, pulsing gently between 100 % and 60 % opacity (never hidden; no pulse with
+reduced motion). Test: panel.test.ts "shows a saturated red dot that stands out on its pill and never blinks out"
+(the dot's red saturation, ≥ 3:1 contrast on its pill over the glass, its keyframes never hide it or go under 60 %;
+red before). **Owner should see:** while a take records, a clear red dot beside REC and the timer, steady or gently
+pulsing.
+
+### 158. Villagers' skin reads cold blue-grey with the sun behind them (fixed after 0.63.8)
+
+Found in the orchestrator's GPU screenshot pass on 0.63.8 (2026-11-13; refinement, owner: "Focus on refinement only
+for now"): on a flat world at time 0.45, villagers facing the camera with the sun behind them had grey-blue faces and
+arms ((160, 174, 188) on a porcelain face, #f5d7c4), though every skin tone is warm. Not the recolour (the skin
+mapping is right; the same villager from behind, sunlit, is right). Cause: a body's light (`skin_key`, and the rigid
+characters' `key_light`) is the light on a face looking up, its direct share shadowed at the fragment: on the side
+away from the sun that left only the blue sky's hemisphere, through the ramp's cool shade (0.55, 0.58, 0.78), with no
+light thrown back off the sunlit ground. Applies to every body (the player's too). Fix: a warm ground bounce for
+bodies by data, shared/look/light.json `characters.bounce` (`color` #e8a878, `strength` 0.6), times the sun's light
+on the open ground and the body's sky openness, added to the skinned bodies' and the rigid characters' light
+(`body_bounce`). Test: `skinned::a_bodys_light_carries_the_grounds_warm_bounce` (red before: no bounce in either
+body's light), and light.test.mjs's data checks. The same face now reads (211, 194, 195); a side-lit one (134, 132,
+113) → (197, 158, 126). **Owner should see:** villagers (and your own body) facing you with the sun behind them keep
+warm skin on the shaded side, not grey-blue.
+
+### 157. Trees stay stippled with the camera still (fixed after 0.63.8)
+
+Found in the same GPU pass (02a, 02b): standing still at 8 m and 32 m over `test:forest`, trees about 15–60 m off
+were dithered after 3 s or more, though #154 made each tree fully near or fully its impostor once its 0.3 s fade
+ends. Two distance dithers were left: (1) the impostor picked each pixel's view by the screen noise among up to four
+baked views (`imp_pick`, `Config::dither`), so a tree seen between two views showed both, stippled where their
+silhouettes differ, the trunk's red dotted through (the main one: it stayed with `?cards=0`); (2) the leaf cards
+dissolved by distance over 24–40 m (`fadeStartM`–`fadeEndM`). Fix: (1) each impostor draws its nearest view
+(`Config::nearest`, WGSL `imp_nearest`: azimuth and band each rounded), the same for every pixel; the view changes
+only as the camera moves round the tree; (2) a tree's cards switch on and off with the tree in time, as its leaves
+do: on nearer than `fadeStartM`, off past the middle of `fadeStartM`–`fadeEndM` (32 m) from its crown, each switch
+faded over the tier's `fadeS` (render/tree_fade.rs, the map's second plane, `tree_cards_share`), dropped whole past
+32 + 10 m. Left by distance on purpose: the near-eye dissolve of a leaf face within a few metres (the camera inside a
+crown), and the cards with no far trees' map (`?impostors=0`, the Far trees tier `off`). Tests:
+`impostors::a_tree_draws_one_view_with_no_per_pixel_dither` (red before), `impostor::a_tree_draws_its_nearest_view_…`,
+`tree_fade::a_still_eye_sees_every_trees_cards_whole_or_gone` and `a_trees_cards_fade_once_in_time_…` (both faces).
+**Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved; far trees read
+as solid painted shapes.
+
+### 159. The player's out-of-stamina breath sounded like a bear (fixed after 0.63.9)
+
+Owner, 2026-11-13: "Another bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a
+pitch problem or if it's the wrong sound effect, happens when you run out of stamina and maybe other related player
+effects." Cause: the wrong sound effect, not the pitch. `exhausted` plays `breath_heavy`, whose samples were the pack's
+`MONSTER_Exhausted_05` and `_07` (0.52.20's pick by filename, unheard): analysed, they are voiced throughout (a pitch in
+30 of 39 loud frames, ~110–180 Hz) with a low spectral centroid (840–970 Hz), a creature's growling exhale, where a
+person's heavy breath is mostly unvoiced noise. The pitch math was right: a sample's `pitch` is ± semitones
+(`2^(s/12)`), and every player vocal sound draws ±0.5 semitone (rate 0.97–1.03). The other player vocals are the pack's
+human male takes (`hurt` `GRUNT_Male_B_Hurt_Short_01–04`, `death` `GROAN_Male_Hurt_Long`, `gasp`
+`GRUNT_Male_Hurt_With_Cough`, `strain` `GRUNT_Male_Subtle_Hurt`; f0 ~245–510 Hz, centroid 1.1–2.3 kHz) and stay. Fix:
+the monster files are removed and the breath plays its procedural layers (two breathy noise puffs) until a human breath
+is picked from the pack; a sound's samples now name their pack files (`samples.from`), whose category the test checks.
+Tests: `client/src/audio/playerVoice.test.ts` (red: `dwell:breath_heavy plays MONSTER_Exhausted_05`; green after), each
+player vocal event a human category and every play's rate within 0.9–1.1, and the semitones → rate math.
+
+**Owner should hear:** when you run out of stamina (and on other player effort/hurt sounds), a human breath/grunt at a
+natural pitch, not a growl. Outstanding: picking a recorded human breath for it (the pack's own; add it with `from`).
+
+### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
+
+Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
+move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
+tree is casting a shadow onto itself."
+
+Causes (render/shadows.rs, render/mod.rs, the cutout shaders): (1) a chunk's whole cutout mesh, its trees' leaves
+included, was a *plant* caster, drawn into the nearest `plantCascades` only (Low: the first of 2, out to ~20 m; High:
+2 of 3, ~44 m), so past them a crown cast nothing at all, on the ground or on itself; (2) the shadow passes used the
+scene's `cutout_vs`, which drops a leaf card the camera is behind (`card_dropped`'s back-cull), so which cards cast —
+the crown's top cards seen from below, its far side's — changed with where the camera stood; (3) the lookup's normal
+offset was 1.5 of each cascade's texels (2 cm in the near cascade, 7–26 cm in the far ones), so the near cascade
+shaded the crown's top with the shadows of its cards standing a few centimetres off it and the far ones couldn't;
+(4) a fragment switched cascade at the box's edge with no blend. Fix: leaves cast into every cascade (plants still
+into the nearest only; `shadows::casts`, a `Part::Leaves` range); the shadow passes' own `shadow_cutout_vs` drops no
+card for the camera's side; a tree's leaves look up at least `bias.leafNormalOffsetM` (0.35 m) out, the same in every
+cascade (`normal_offset_m`); the outer `cascades.blendBand` (15 %) of a cascade's box blends toward the next
+(`pick`, `shadow_cascades`). The choice: **no texel-scale self-shadow on a crown in any cascade** (the owner's
+first look, "only below"): the coarse cascades can't draw a card's shadow on the face under it, and the owner read
+the other look as the odd one; a crown still takes shadows from other trees, cliffs and its own upper crown more
+than 0.35 m above a face, and the ground under it is shaded in every cascade. Tests (render/shadows.rs, a CPU model
+of the maps and the lookup, both faces): `a_crowns_texel_gets_the_same_shadow_whichever_cascade_reads_it` (red
+before: the crown's top 0 under a card in the near cascades, and the ground under the crown lit past
+`plantCascades`), `a_cascades_edge_changes_a_fixed_receivers_shadow_by_the_blend` (red before: a step
+at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest`,
+`a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
+trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
 ### 155. Flying at the moon never got closer (fixed after 0.63.6)
 
 Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and

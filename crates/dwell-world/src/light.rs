@@ -43,6 +43,9 @@ pub struct LightTunables {
     pub block_strength: f64,
     /// How fast a character's light follows the cell it is in (s, the ease's time constant).
     pub character_ease_s: f64,
+    /// The sunlit ground's warm bounce onto a body (sRGB 0–1, and its strength): BUGS.md #158.
+    pub character_bounce_color: [f64; 3],
+    pub character_bounce_strength: f64,
 }
 
 impl LightTunables {

@@ -1,4 +1,4 @@
-//! Long straight seams in a Realistic world's climate fields (BUGS.md #158): the °C and the rain
+//! Long straight seams in a Realistic world's climate fields (BUGS.md #164): the °C and the rain
 //! each texel of 50 m reads, the largest neighbour jumps lined up along one axis.
 use dwell_world::Face;
 use dwell_worldgen::bifacial::face_seed;

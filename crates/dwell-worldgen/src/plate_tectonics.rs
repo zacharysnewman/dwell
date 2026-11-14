@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn boundaries_follow_the_plates_not_the_scans_grid() {
-        // BUGS.md #158: a boundary point at the scan cells' midpoint put a near-vertical or
+        // BUGS.md #164: a boundary point at the scan cells' midpoint put a near-vertical or
         // near-horizontal stretch on one grid line (an axis-aligned polyline km long, and every
         // landform and province edge along it). The crossing between the cells is found instead.
         // face-a-only: plate layouts are face-seeded draws; the seeds stand for both faces'.

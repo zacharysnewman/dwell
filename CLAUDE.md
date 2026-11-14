@@ -361,9 +361,10 @@ Check these before chasing an e2e failure:
   the slide and leaves 1.5 m up held it crouched (a crouched body's arms read `idle`). Fixed
   2026-10-20: the spec runs its own flat-world server (`--generator 0`). A test that moves a player
   far should not depend on the suite world's terrain.
-- `e2e/buildDrag.spec.ts`'s held-Place tests (shards 1 and 4) fail under the software renderer: a
-  held Place builds one piece and no more at a few frames a second (BUGS.md #30, open). They pass on a
-  real GPU; not caused by other work.
+- `e2e/buildDrag.spec.ts`'s tower tests (towering and both bridging tests, which tower first; shards 1
+  and 4) fall a piece or two short (34–35 m of 36) under the software renderer (BUGS.md #30, open: the
+  tower part). The rest of the spec passes there since the held Place's pace went by the clock; they
+  pass on a real GPU; not caused by other work.
 - `e2e/play.spec.ts`'s "two clients on a native server see each other move" (shard 3) times out
   waiting for page B's terrain on CI since 0.49.4 (BUGS.md #34, open); it passes locally on a GPU.
 - On the software renderer the page draws nothing for 3–5 s just after `terrainReady` (BUGS.md #49):

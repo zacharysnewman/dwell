@@ -5,11 +5,47 @@
       "version": "0.64.0",
       "changes": [
         "Realistic worlds: a new compatibility line, their terrain redrawn from the seed: rifts as chains of lakes, coasts ending in shelves, no sliver plates, ranges with peaks and saddles, continents out toward the edge",
-        "Realistic interiors mix rock provinces and vary rain and temperature by district; rolling ground is flat-topped again, notched ramps only along mesa and rock-wall edges",
+        "Realistic interiors mix rock provinces and vary rain and temperature by district, with no straight seams between terrain types; rolling ground is flat-topped again, notched ramps only along mesa edges",
         "Mesa country reads like Monument Valley: dark red-brown walls over red dirt with red sand and pale tan blending, rising tops with knobs, washes and talus fans, sagebrush",
         "Hot tan sand deserts with dunes fill the warm dry lowlands of subtropical faces, separate from the red mesa country",
-        "Slopes no longer show tall ramp backs standing in open air at bowl corners and along diagonal slopes",
-        "Resurrection shrines are bigger: 16 m across, pillars up to 10.5 m under a high arch, more steps and a wider ring of torches that glows from a distance"
+        "Slopes no longer show tall ramp backs in open air at bowl corners; resurrection shrines are bigger, 16 m across with pillars up to 10.5 m and a wider ring of torches",
+        "On the moon and the sun, distant terrain steps down in detail gradually out to the horizon, in the same colours as the ground near you"
+      ]
+    },
+    {
+      "version": "0.63.13",
+      "changes": [
+        "Theater mode's recording dot is a clear red that no longer blinks out.",
+        "On a phone in portrait, theater's fly stick and Up/Down stay above the open panel, so you can fly the camera while editing.",
+        "On the sun, the rock beside the lava is lit warm by the lava and by home and the moon instead of reading black."
+      ]
+    },
+    {
+      "version": "0.63.12",
+      "changes": [
+        "Running out of stamina now sounds like a person catching their breath, not a growling bear."
+      ]
+    },
+    {
+      "version": "0.63.11",
+      "changes": [
+        "Aiming low on a ramp's slope now places a block against its downhill side, instead of on top of the ramp.",
+        "Holding Place builds at a steady rate even when the frame rate drops: a slow device builds as fast as a smooth one."
+      ]
+    },
+    {
+      "version": "0.63.10",
+      "changes": [
+        "Trees no longer look dotted or half dissolved while you stand still: far trees draw one clean view, and leaf clumps switch on and off with a short fade instead of dissolving with distance.",
+        "Villagers and your own body keep warm skin on the side away from the sun, instead of turning grey-blue."
+      ]
+    },
+    {
+      "version": "0.63.9",
+      "changes": [
+        "Trees' shadows no longer flip between two looks as you move: a crown no longer shades its own top up close",
+        "Trees cast their leaves' shadows at every distance shadows are drawn, not only up close",
+        "No visible step where the shadows' detail changes with distance"
       ]
     },
     {

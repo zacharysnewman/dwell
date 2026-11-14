@@ -56,7 +56,7 @@ pub struct RainRules {
     pub base_rain: f64,
     pub uplift_rain: f64,
     pub lee_dry: f64,
-    /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #158: the
+    /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #164: the
     /// march's rain is near all or nothing cell to cell, and read bilinearly the biomes' edges ran
     /// along the grid's rows and columns, km-long straight edges; 0: as marched). The rivers'
     /// discharge reads the march as it is.

@@ -196,6 +196,9 @@ same thing under the name the data already had).
 - `files`: 1–16 lower-case `.m4a` (AAC; every browser decodes it) or `.mp3` names in
   `shared/sounds/samples/`; a missing file fails the generator with the sound's name. All the files
   together may be at most **5,000,000 bytes** (`SAMPLES_MAX_BYTES`, validated).
+- `from` (optional): the pack's own name of each file, in order (`GRUNT_Male_B_Hurt_Short_01`); its
+  first word is the pack's category. The player's own voice (`exhausted`, `gasp`, `strain`, `hurt`,
+  `death`) must be a human category (`GRUNT`, `GROAN`, `BREATH`, `VOICE`; `playerVoice.test.ts`, BUGS.md #159).
 - `gain` (0–4, default 1): the samples' level, times the event's (a gait's) and the sound's
   `intensity.gain` range (a landing's impact); `pitch` (± semitones, default 0) drawn per play.
 - `play`: `"samples"` (default) or `"procedural"` (keep the layers; the samples stay listed).
@@ -296,8 +299,9 @@ can be added by data.
   `call` `ANIMAL_Wolf_Howl_01–02` (every 50–140 s); deer and doe — `step` the dirt footsteps, quiet
   (the pack's `ANIMAL_Horse_Walk` is a whole walk, not single hooves); `startle`
   `ANIMAL_Horse_Snort_01–02_Dry`.
-- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` (`MONSTER_Exhausted_05`, `_07`) once
-  stamina runs out; `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
+- **The body** (`VitalSounds`): `exhausted` → `breath_heavy` once stamina runs out, procedural (two
+  breathy puffs) since BUGS.md #159: its samples were `MONSTER_Exhausted_05`, `_07`, a voiced growl that
+  sounded like a bear, removed until a human breath is picked; `gasp` (`GRUNT_Male_Hurt_With_Cough`) when the air rises again after falling
   under 0.7 (surfacing from a long dive); `strain` (`GRUNT_Male_Subtle_Hurt`) as the air crosses 0.25.
 - **Felling**: `fell_crack` now plays `TREE_Falling_Tree_Crack_Then_Impact_02`, `_08`.
 

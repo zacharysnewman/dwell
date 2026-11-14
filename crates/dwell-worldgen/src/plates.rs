@@ -643,7 +643,7 @@ impl PlateLayout {
                     usize::MAX
                 };
                 if here != usize::MAX {
-                    // The crossing itself, found between the two cells' centres (BUGS.md #158: a
+                    // The crossing itself, found between the two cells' centres (BUGS.md #164: a
                     // point at the cells' midpoint put every near-vertical or near-horizontal
                     // stretch of boundary on the scan's grid lines, km-long axis-aligned edges).
                     if left != usize::MAX && left != here {

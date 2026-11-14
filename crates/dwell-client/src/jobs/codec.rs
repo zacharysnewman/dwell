@@ -354,6 +354,18 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(*face);
             [*x0, *z0, *size].into_iter().for_each(|v| w.i32(v));
         }
+        Job::GridLod { grid, coord } => {
+            w.u8(11);
+            w.u8(*grid);
+            [coord.level, coord.i, coord.j, coord.k]
+                .into_iter()
+                .for_each(|v| w.i32(v));
+        }
+        Job::GridLodBounds { grid, level, i, k } => {
+            w.u8(12);
+            w.u8(*grid);
+            [*level, *i, *k].into_iter().for_each(|v| w.i32(v));
+        }
         Job::LodMap {
             face,
             heights,
@@ -508,6 +520,16 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             x0: r.i32()?,
             z0: r.i32()?,
             size: r.i32()?,
+        },
+        11 => Job::GridLod {
+            grid: r.u8()?,
+            coord: LodCoord::new(r.i32()?, r.i32()?, r.i32()?, r.i32()?),
+        },
+        12 => Job::GridLodBounds {
+            grid: r.u8()?,
+            level: r.i32()?,
+            i: r.i32()?,
+            k: r.i32()?,
         },
         _ => return Err(DecodeError),
     };
@@ -813,6 +835,16 @@ mod tests {
                 x0: -128,
                 z0: 64,
                 size: 64,
+            },
+            Job::GridLod {
+                grid: 1,
+                coord: dwell_lod::grid::section_at(5, [100.0, 0.0, -40.0]),
+            },
+            Job::GridLodBounds {
+                grid: 2,
+                level: 6,
+                i: 1,
+                k: -3,
             },
         ];
         let mut jobs = jobs.to_vec();

@@ -21,6 +21,25 @@ pub struct BlockTarget {
     /// piece placed against a side goes down from the placed cell when it is under ½, so the piece
     /// is centred on the aim (docs/ITEMS.md).
     pub aim_up: f32,
+    /// Aimed at a slope where it faces out through a side (its lower half, out past its low
+    /// edge): the face a place goes through (`dwell_world::edit::slope_side`, docs/BUGS.md #23).
+    pub slope_side: Option<u8>,
+}
+
+impl BlockTarget {
+    /// The face a place goes against: a slope's side where the aim is on its lower half, else
+    /// the face aimed at.
+    pub fn place_face(&self) -> u8 {
+        self.slope_side.unwrap_or(self.face)
+    }
+
+    /// A `rows`-tall piece placed against [`place_face`](Self::place_face) goes down from the
+    /// placed cell: against a side with the aim in the cell's lower half, so it is centred on the
+    /// aim. Out past a slope's low edge it goes up, standing on what the slope does.
+    pub fn place_down(&self, rows: u8) -> bool {
+        let f = self.place_face();
+        rows > 1 && f != 2 && f != 3 && self.slope_side.is_none() && self.aim_up < 0.5
+    }
 }
 
 /// What the interaction needs from the client sim: the block along a view ray (unit `dir`).
@@ -68,6 +87,7 @@ pub fn target_hit(
                 cell: h.cell,
                 face: h.face,
                 aim_up: up.clamp(0.0, 1.0) as f32,
+                slope_side: h.slope_side,
             },
             h.distance,
         )
@@ -318,7 +338,7 @@ impl BlockInteraction {
         let t = self.current?;
         let slot = self.palette.get(self.selected)?;
         let dir = FACE_DIRS
-            .get(usize::from(t.face))
+            .get(usize::from(t.place_face()))
             .copied()
             .unwrap_or([0; 3]);
         // As the server places (dwell_world::edit::check_block_edit): into a replaceable target.
@@ -334,7 +354,7 @@ impl BlockInteraction {
                 Some(s) if s.look == LOOK_LADDER && (t.face == 2 || t.face == 3) => {
                     ladder_face(s.facing).unwrap_or(t.face)
                 }
-                _ => t.face,
+                _ => t.place_face(),
             };
             return Some((cell, ladder_for(face, self.yaw)));
         }
@@ -438,14 +458,15 @@ impl BlockInteraction {
                 .get(self.selected)
                 .map_or(1, |s| if s.upper.is_empty() { s.rows } else { 1 }),
         };
+        let place = action == BlockEditAction::Place;
         Some(Message::BlockEditRequest(BlockEditRequest {
             action,
             cell: t.cell,
-            face: t.face,
+            face: if place { t.place_face() } else { t.face },
             material,
             rows,
             // Against a side, centred on the aim: down when it is in the cell's lower half.
-            down: rows > 1 && t.face != 2 && t.face != 3 && t.aim_up < 0.5,
+            down: place && t.place_down(rows),
             point: None,
         }))
     }
@@ -540,6 +561,7 @@ mod tests {
                 cell: [3, 0, 4],
                 face: 5,
                 aim_up: 0.5,
+                slope_side: None,
             })
         }
     }
@@ -682,6 +704,40 @@ mod tests {
         let at = i.palette().iter().position(|s| s.item == item).expect(item);
         i.select(at as i64);
     }
+
+    dwell_world::both_faces!(
+        /// docs/BUGS.md #23: aimed at a ramp's slope low down from its downhill side, the place
+        /// goes off its low edge (the slope's side face), a 1 m piece standing up from there;
+        /// a break still takes the ramp through its top. Red before: the place went on top.
+        fn a_place_aimed_low_on_a_ramp_goes_off_its_downhill_side(f: FaceFrame) {
+            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+            for x in -2..=4 {
+                for z in -2..=6 {
+                    let [cx, cy, cz] = f.cell([x, -1, z]);
+                    world.set_voxel(cx, cy, cz, f.state(require("dwell:stone")));
+                }
+            }
+            let ramp = "dwell:stone_ramp[facing=north,flooded=false,half=bottom,shape=ramp]";
+            let [cx, cy, cz] = f.cell([1, 0, 2]);
+            world.set_voxel(cx, cy, cz, f.state(require(ramp)));
+            let mut i = BlockInteraction::new();
+            select_item(&mut i, "dwell:stone");
+            // From z 0 at eye height, at the slope's lower half (z 2.2, 0.1 m up).
+            let (eye, at): ([f64; 3], [f64; 3]) = ([1.5, 1.62, 0.0], [1.5, 0.1, 2.2]);
+            let pitch = (at[1] - eye[1]).atan2(at[2] - eye[2]).to_degrees();
+            let t = i
+                .update(&mut world, Some(f.point(eye)), 0.0, pitch, f)
+                .unwrap();
+            assert_eq!(t.cell, f.cell([1, 0, 2]));
+            let side = f.cell_face(5) as u8;
+            assert_eq!(t.place_face(), side);
+            assert_eq!(i.placement().unwrap().0, f.cell([1, 0, 1]));
+            let m = i.act(EditAction::Place, 0.0).unwrap();
+            assert_eq!((request(&m).face, request(&m).down), (side, false));
+            let m = i.act(EditAction::Break, 1000.0).unwrap();
+            assert_eq!(request(&m).face, f.cell_face(2) as u8, "a break: its top");
+        }
+    );
 
     #[test]
     fn a_slope_is_placed_uphill_along_the_look() {
@@ -844,6 +900,7 @@ mod tests {
                 cell: [3, 0, 4],
                 face: 5,
                 aim_up: 0.5,
+                slope_side: None,
             })
         );
     }

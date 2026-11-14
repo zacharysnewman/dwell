@@ -4,7 +4,14 @@
 // stopped, moved by intensity. Works on any BaseAudioContext, so the offline renders
 // (OfflineAudioContext) use the same code as the game. A library could replace this file behind the
 // same data.
-import { hashSeed, intensityFactor, layerAt, mulberry32, type PlayParams } from './variation';
+import {
+  hashSeed,
+  intensityFactor,
+  layerAt,
+  mulberry32,
+  semitonesToRate,
+  type PlayParams,
+} from './variation';
 import type { EnvDef, FilterDef, LayerDef, NoiseColor, SoundDef } from './types';
 
 /** Seconds of each noise buffer. */
@@ -104,7 +111,7 @@ export function playLength(sound: SoundDef, p: PlayParams): number {
   return end;
 }
 
-const semis = (s: number): number => Math.pow(2, s / 12);
+const semis = semitonesToRate;
 
 function clampFreq(ctx: BaseAudioContext, f: number): number {
   return Math.min(ctx.sampleRate * 0.45, Math.max(20, f));

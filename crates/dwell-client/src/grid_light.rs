@@ -227,6 +227,21 @@ mod tests {
     );
 
     dwell_world::both_faces!(
+        /// The sun's dry crust is not black (BUGS.md #161): with home and the moon both below the
+        /// horizon, open ground facing up still gets the floor and the glow's share of the sky at
+        /// a luma of at least 0.5 (0.076 before the tuning, which drew the basalt nearly black),
+        /// and stays warm (red over blue).
+        fn the_suns_crust_reads_as_warm_lit_rock_not_black(f: FaceFrame) {
+            let sun = grid("dwell:sun").unwrap().light.clone().unwrap();
+            let mut day = DAY_NIGHT.state(0.0, Some(0.0), None);
+            apply(&mut day, &sun, [RigLight::default(); 2]);
+            let up = rig_irradiance(&day, f, [0.0, 1.0, 0.0]);
+            assert!(luma(up) >= 0.5, "the crust lit: {up:?} luma {}", luma(up));
+            assert!(up[0] > 2.0 * up[2], "warm: {up:?}");
+        }
+    );
+
+    dwell_world::both_faces!(
         /// Home's lighting is unchanged (BUGS.md #145): its day packs every old slot as before,
         /// the rig's lights zero, at every hour.
         fn homes_lighting_is_unchanged(f: FaceFrame) {

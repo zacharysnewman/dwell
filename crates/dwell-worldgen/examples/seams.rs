@@ -1,4 +1,4 @@
-//! Long straight axis-aligned seams in a Realistic world's biome and surface fields (BUGS.md #158):
+//! Long straight axis-aligned seams in a Realistic world's biome and surface fields (BUGS.md #164):
 //! `cargo run --release -p dwell-worldgen --example seams -- 1 7`.
 use dwell_world::Face;
 use dwell_worldgen::bifacial::face_seed;

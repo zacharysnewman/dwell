@@ -16,6 +16,15 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Current priority: refinement only (owner, 2026-11-13 evening):** "Refocus priorities on bug fixes, visual
+  cleanups, and refinements we have instead of new features. Something like properly showing LODs is a refinement
+  and visual cleanup. Tree billboards, terrain slope generation, those kind of things. We have lots of unrefined
+  features. Focus on refinement only for now." **Deferred until the owner lifts this** (new features): seasons
+  (orbits O3–O5, item 15's sky phases); big worlds step 2 (item 9, BIG_MAP.md's next step); the in-game Chisel
+  extras (item 34); the sun's further features (item 42); the next showcase videos (items 36, 40). Bugs, visual
+  cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
+  come first.
+
 - **Space travel bugs from a browser check (brief, 2026-11-13, on 0.60.16, seed 7, local world, M1; BUGS.md
   #146–#150):** "No lava flowing on the sun: after sunLand on face A, `d.lava('report')` gives `fields: []` … Travel stuck
   after the spyglass … Teleporting to a point far outside the disc fails silently: make it either work or fail with a
@@ -129,10 +138,11 @@ The running order across the items below; each line names its item, where the ow
 6. **The moon, client side (item 27, M-7c)** — the client follows a player onto the moon (its chunks in the moon's
    frame, the view rolled to its down, `grid.frames` turned on); then M-5 (LOD per grid), M-8 (moon spawns A/B),
    the bake in a worker + cached, `MOON_PHASE` wired, the disc oriented by `moon_axes`.
-7. **Orbits O1–O3 (item 15)** — in the cloud now; then O4–O5 (seasons).
+7. **Orbits O1–O3 (item 15)** — in the cloud now; then O4–O5 (seasons). **Deferred (owner, 2026-11-13: refinement
+   only): O3–O5.**
 8. **Chopping follow-ups (items 24, 26)** — see bites round 2 and the kept gash in game; stone chips that break the
    cell's outline (item 18 lever 3); half the hit shards on phones (the flag nothing sets yet).
-9. **Big worlds (BIG_MAP.md)** — BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
+9. **Big worlds (BIG_MAP.md)** — **Step 2 deferred (owner, 2026-11-13: refinement only); its bugs stay.** BUGS.md #76 (browser memory grows with world size) before 8×/10×; #77 (bigger
    islands lose their ranges, speckled lakes: an owner look question); region maps built ahead with no hitches.
    **10× world creation (BUGS.md #91, owner 2026-11-12):** "I tried to start a 10x world … up to 3 minutes so far
    on 'Shaping the world map...' 0/2. Doesn't indicate well what it's doing."; then "started the server 200+
@@ -807,14 +817,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    only on steep faces; the red desert and mesas stay red, the tan sand desert a separate biome. **Owner should see:**
    on a typical Realistic seed, at least one big tan sand desert with dunes, in a warm dry region, separate from the
    red mesa country.
-   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #157): "Also we might be in process on slopes or something,
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #163): "Also we might be in process on slopes or something,
    but I'm noticing at the corners of bowl areas there's these spiky edges where slopes are up against the side of other
    slopes. I don't mind slopes with edges exposed but I do mind slopes that back up against open air." The rule, for
    every world and grid, in the shared stored-ramp placement (V2 and notched): a ramp's high side is backed by solid
    ground at its top height (steep pairs too); else another facing whose back is solid, else a full block; exposed side
    edges are fine. **Owner should see:** bowls and diagonal slopes with no tall ramp backs standing in open air, so no
    sawtooth spikes. Ramps meet higher ground at their backs; only their triangular sides may show.
-   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #158): "This might be part of the realistic fix, but I'm
+   Owner, 2026-11-13, also added to the 0.64 batch (BUGS.md #164): "This might be part of the realistic fix, but I'm
    seeing really sharp edges between terrain types like this." (A Realistic world on 0.61.x from high up: a dead-straight,
    axis-aligned line many km long, snow, ice and glacier ground left, dense forest and grass right.) **Owner should
    see:** no straight lines across the land between terrain types. Snow, forest, desert and grass meet along natural,
@@ -1335,6 +1345,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `claude/moon-fixes-3-l0zjdx`.
    **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
    browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
+   **Real LOD on the moon and the sun (owner, 2026-11-13):** "The moon looks really bad. The LODs look like it's either
+   high detail or super duper low detail, unlike home world. The LOD colors don't match either." (BUGS.md #159.) Brief:
+   a per-grid LOD instance (home's `LodSystem`, graded levels and fades) whose sections come from the grid's own
+   generator, coloured by the same block-look path as home's LOD, dropped and rebuilt at crossings (#879's rule),
+   replacing `grid_lod.rs`'s rings on the grid (the far-body bake kept for seeing the grid from outside). Branch
+   `claude/grid-lod`. **Owner should see:** on the moon (and sun), distant terrain steps down in detail gradually like
+   at home, with matching colours from near to far, no jump from full detail to a blurry low-detail mesh.
+   **Built natively (2026-11-14):** a `LodSystem` per grid (`dwell-client` `grid_lod.rs`), its sections from the
+   grid's generator in the job workers (`Job::GridLod`; `dwell-worldgen` `grid_lod.rs`), meshed and coloured as
+   home's; `grids.json` `lod: true`; the rim view scaled per grid (the moon drew both faces). Tests both faces, moon
+   and sun (BUGS.md #159). **Left:** the owner's look on a GPU (screenshots on the moon and the sun, near to far).
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
@@ -1545,6 +1566,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **For the orchestrator (local GPU):** fly toward, away from and up and down in front of `forest:edge`; expected:
    no steady half-faded tree at any distance, a ~0.3 s swap as a tree crosses ~56 m, no copy sliding up and down;
    and a `forest-perf` run (the map adds one storage lookup per leaf fragment and impostor; the atlas 1.25×).
+
+   Owner, 2026-11-13: **"Also for trees the shadows seem to flip flop between two shadow types even on close trees as
+   you move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree.
+   Like the tree is casting a shadow onto itself."** (BUGS.md #156.) **Fixed (2026-11-13, cloud,
+   `claude/tree-shadow-flip`):** a tree's leaves cast into every cascade (they were plants, in the nearest
+   `plantCascades` only); the shadow passes drop no leaf card for the camera's side of the crown; a tree's leaves look
+   up 0.35 m out in every cascade (`bias.leafNormalOffsetM`), so no cascade shades a crown's top with its own cards;
+   cascades blend over their boxes' outer 15 % (`cascades.blendBand`). Chosen: no card-scale self-shadow on a crown in
+   any cascade (the owner's "only below" look). Cost: the far cascades now draw the near trees' leaves (kept maps,
+   drawn again rarely). **Owner should see:** walking and flying around trees, their shadows (on the ground and
+   within the canopy) stay the same, with no flip between two looks. Left (local GPU): the same-spot before/after
+   at `starter:broadleaf` walking 10→60 m from a tree and flying over it, Low and High.
+
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** trees
+   still stippled with the camera still at 15–60 m (BUGS.md #157): the impostor dithered between its baked views per
+   pixel, and the leaf cards dissolved by distance over 24–40 m. **Fixed (`claude/still-stipple-skin`):** one view a
+   tree (the nearest), and each tree's cards switched in time with it (on inside 24 m, off past 32 m, 0.3 s fade).
+   **Owner should see:** standing still anywhere over or in a forest, no tree dotted or half dissolved. Same pass:
+   villagers' skin read cold blue-grey with the sun behind them (BUGS.md #158); fixed with a warm ground bounce on
+   every body's light by data (light.json `characters.bounce`). **Owner should see:** villagers facing you with the
+   sun behind them keep warm skin on the shaded side.
 32. **A tall dense forest for performance reference** (owner 2026-11-12: "We should have a tall dense forest
    biome/climate for performance reference on trees."). A biome preset (tall, closely spaced mature trees — an
    old-growth temperate rainforest of tall pines and broadleaf, thick undergrowth) placed by climate (cool and very
@@ -1678,7 +1720,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    2 Theme #5* and *Sentimental Moment* (Sentimental and Romantic) for day and night, and *Lyric & Peaceful Space
    Theme #2* for nights only (`times: ["night"]`), encoded as before (1.0–1.7 MB each).
 
-34. **The in-game Chisel editor and the Textures tab extras** (owner 2026-11-12: "these all seem solid yes"): open
+34. **The in-game Chisel editor and the Textures tab extras** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "these all seem solid yes"): open
    Chisel's biome sliders inside a running world with the terrain around the player regenerating as they tune
    (Phase 56 B7); the Textures tab adding new materials and blocks by data, editing water and sky colours, and
    painting item and model textures (B6's rest). Queued.
@@ -1786,7 +1828,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `creatures.rs`). The sword's own clips as data: a tool's `clips` (shared/tools) names the role each swing kind plays; the sword plays `slash_level` (a straight-armed sweep right to left) and `slash_overhead` (raised high, cut straight down), arms and body fitted with `clip_probe --fit` to the 1 m blade and timed to its swing (contact 0.355 s on a key), played on your arms, others (from `HeldTools`) and NPCs; clip_probe tests pin direction, contact on the crosshair and the world on both faces; sheets `docs/clip_probe/sword_*.svg`.
    **Outstanding:** a thrust; an edge check for the sword model; a wolf bite pose/clip on the clients (the bite shows as the player's damage and push only);
    seen in game (local, a GPU).
-36. **A showcase video of the deer and wolves** (owner 2026-11-12: "have you observed the animals simulation? Make
+36. **A showcase video of the deer and wolves** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "have you observed the animals simulation? Make
    some clips of the deer/wolves behavior, really showcase it and try to get good angles. Keep it under 2 minutes
    of video. Splice it together into a single video."). Queued (local, after item 30).
 
@@ -1922,7 +1964,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Owner on the first video: **"The recording was a really good start. I'd like to record at 9:16 1080/1920."** —
    the next video (after this item lands) is portrait 1080×1920, framed for portrait, with a chase and fleeing.
 
-40. **Showcase recordings** (owner 2026-11-12: "We have a lot of visual features, list features that we could
+40. **Showcase recordings** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "We have a lot of visual features, list features that we could
    showcase with recordings. Ideally recordings are 1 minute or less. Don't include any text or anything in the
    video."). Made with the `record` skill (`.claude/skills/record/`): 9:16 at 1080×1920, h264 30 fps, a minute or
    less, no text of any kind, no music, clouds off unless the shot is about clouds, footage deleted after sending.
@@ -2146,7 +2188,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
    `theaterGuests`, T-5.
 
-42. **The sun as a real world** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the REC
+   badge's dot was a faint pink smudge that blinked out (BUGS.md #159), and on a phone in portrait the stick and
+   Up/Down were hidden while the bottom sheet was open (BUGS.md #160). **Fixed (`claude/visual-small-1`):** a
+   saturated red dot ringed in white on a light pill, pulsing no lower than 60 %; the flying controls ride just above
+   the bottom sheet, open or collapsed. **Owner should see:** a clear red recording dot; on a phone in portrait, the
+   stick and Up/Down above the open sheet, flying the camera while the sheet is open.
+
+42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
    lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a
    generator (volcanic: cones and rifts, lava oceans and rivers always flowing — the lava fields of VOLCANOES.md
@@ -2199,7 +2248,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
    direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
    lava's own glow and bloom kept. BUGS.md #145.
+
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the
+   sun's dry crust beside the lava read nearly black, so the reflected light barely showed (BUGS.md #161). **Fixed
+   (`claude/visual-small-1`), data only:** the rig's ambient floor 0.06 → 1.2 (a softer warm), the glow 0.45 → 2.5,
+   home 0.9 → 6.0, the moon 0.35 → 2.0. **Owner should see:** at a sun river head, the crust reads as dark warm-lit
+   basalt with its form visible, brighter toward home; the lava as bright as before.
 ## Done
+
+- **Placing against a ramp's downhill side, and a held Place by the clock (BUGS.md #23, #30; brief 2026-11-13:
+  "aim at the sloped face and the placed block goes into the cell the face points into (by the face's real
+  normal)"; "make it time-based … a rate from data, accumulated per tick, not one per rendered frame"):** a slope's
+  lower half places past its low edge, its upper half on top (`slope_side`, ITEMS.md §3); a held stroke builds a
+  piece every `buildModes.repeatS` (0.05 s) at any frame rate, only a tower waiting for each answer (ITEMS.md §5).
+  Open: the split point on a slope and the rate (20 a second; it was 60 at 60 fps) are for the owner to tune; under
+  the software renderer the spec's tower tests still fall a piece short, as on main (BUGS.md #30, the tower part).
 
 - **Underwater audio (owner 2026-11-12: "swimming underwater sounds like swimming on the water surface, when
   underwater sounds should be muffled, high pass filter maybe?"; and "Swimming in the surface is too loud and high
@@ -2327,6 +2390,14 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
+  bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
+  the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:
+  the out-of-stamina breath played the pack's `MONSTER_Exhausted_05/_07`; it is procedural now, and every player vocal
+  sound is checked to be a human take (`samples.from`) at a rate within 0.9–1.1. Owner should hear: when you run out of
+  stamina (and on other player effort/hurt sounds), a human breath/grunt at a natural pitch, not a growl. Next: pick a
+  recorded human breath from the pack.
 
 - **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
   your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your

@@ -1,4 +1,4 @@
-//! No straight seams between terrain types (BUGS.md #158; owner, 2026-11-13: "I'm seeing really
+//! No straight seams between terrain types (BUGS.md #164; owner, 2026-11-13: "I'm seeing really
 //! sharp edges between terrain types like this": a dead-straight, axis-aligned line many km long
 //! between snow and forest). On seeds 1, 7, 42 and 2741893632, both faces, over the land every
 //! [`STEP`] m: no biome edge runs straight along one axis for more than [`MAX_SEAM`] m, and the
