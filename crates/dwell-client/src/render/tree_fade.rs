@@ -1,7 +1,8 @@
 //! The far trees' hand-over in time, not distance (BUGS.md #154, owner 2026-11-13: "it shouldn't
 //! ever be partial transitions over distance, but over time"). Each tree about the eye is in one
 //! state, its real leaves or its impostor, switched by its crown's distance with hysteresis
-//! (`impostors.json` `far.tiers` `inM`/`outM`, `Far::near_after`); a switch cross-fades over
+//! (`impostors.json` `far.tiers` `inM`/`outM`, `Far::near_after`) and only to its real leaves
+//! once its chunk's mesh draws (BUGS.md #172); a switch cross-fades over
 //! `fadeS` seconds, then the tree is fully the one or the other, so a still eye sees no half-faded
 //! tree at any distance.
 //!
@@ -121,6 +122,14 @@ pub struct Tree {
     pub baked: bool,
 }
 
+/// The chunk whose mesh holds a tree's real foot: the ground cell under its trunk (face-local, a
+/// quarter metre under the foot, into the world through `face`). The renderer draws the tree's
+/// real leaves only once that chunk's mesh draws (BUGS.md #172); the ground there always has faces.
+pub fn ground_chunk(face: FaceFrame, t: &Tree) -> dwell_world::ChunkCoord {
+    let [x, y, z] = t.foot.map(f64::from);
+    dwell_world::chunk_of_pos(face.point([x, y - 0.25, z]))
+}
+
 /// The states of the eye's face's trees within the map, the map's ownership and its texels.
 pub struct TreeFades {
     n: u32,
@@ -203,7 +212,8 @@ impl TreeFades {
     }
 
     /// This frame's states and map at `now` (s) for the eye at `eye` (world) on `face`; `trees`
-    /// (face-local) read only when [`TreeFades::touch`]ed or the map moved. Returns whether the
+    /// (face-local) read only when [`TreeFades::touch`]ed or the map moved; `drawn` whether a
+    /// tree's real mesh draws now (a tree stays its impostor until it does). Returns whether the
     /// texels changed (the GPU's copy needs writing).
     pub fn update<'a>(
         &mut self,
@@ -212,6 +222,7 @@ impl TreeFades {
         eye: [f64; 3],
         far: &Far,
         trees: impl FnOnce() -> Box<dyn Iterator<Item = Tree> + 'a>,
+        drawn: impl Fn(&Tree) -> bool,
     ) -> bool {
         let e = face.point(eye);
         let half = f64::from(self.n / 2);
@@ -252,11 +263,13 @@ impl TreeFades {
                 + (f64::from(c[1]) - e[1]).powi(2)
                 + (f64::from(c[2]) - e[2]).powi(2))
             .sqrt() as f32;
-            let s = self
-                .states
-                .entry(t.key)
-                .or_insert_with(|| State::settled(!t.baked || d <= (far.in_m + far.out_m) * 0.5));
-            let want = !t.baked || far.near_after(s.near, d);
+            // Near only where its real mesh draws (BUGS.md #172: the impostor faded out over a
+            // chunk not streamed yet, or the LOD's ground, which holds no trees while impostors
+            // draw); asked only of the trees its distance would make near.
+            let s = self.states.entry(t.key).or_insert_with(|| {
+                State::settled(!t.baked || (d <= (far.in_m + far.out_m) * 0.5 && drawn(t)))
+            });
+            let want = !t.baked || (far.near_after(s.near, d) && drawn(t));
             s.switch(want, now, far.fade_s);
             shares.push((s.near_share(now, far.fade_s) * 255.0).round() as u8);
             // Its cards: on nearer than `cards_in`, off farther than `cards_out`, faded in time.
@@ -456,9 +469,94 @@ mod tests {
     }
 
     fn step(f: &mut TreeFades, now: f64, face: FaceFrame, eye: [f64; 3], trees: &[Tree]) -> bool {
+        step_drawn(f, now, face, eye, trees, |_| true)
+    }
+
+    fn step_drawn(
+        f: &mut TreeFades,
+        now: f64,
+        face: FaceFrame,
+        eye: [f64; 3],
+        trees: &[Tree],
+        drawn: impl Fn(&Tree) -> bool,
+    ) -> bool {
         let far = far();
         let list = trees.to_vec();
-        f.update(now, face, eye, &far, move || Box::new(list.into_iter()))
+        f.update(
+            now,
+            face,
+            eye,
+            &far,
+            move || Box::new(list.into_iter()),
+            drawn,
+        )
+    }
+
+    dwell_world::both_faces! {
+        /// A tree's mesh is asked of the chunk holding the ground cell under its trunk.
+        fn a_trees_ground_chunk_holds_the_cell_under_its_foot(face: FaceFrame) {
+            for (foot_y, row) in [(10.0f32, 19), (16.0, 31), (15.5, 30)] {
+                let t = Tree {
+                    key: [3, row + 1, -40],
+                    foot: [3.5, foot_y, -39.5],
+                    centre_y: 5.0,
+                    radius: 2.0,
+                    baked: true,
+                };
+                let under = face.cell([3, row, -40]);
+                assert_eq!(
+                    ground_chunk(face, &t),
+                    dwell_world::chunk_of(under[0], under[1], under[2]),
+                    "foot at {foot_y} m"
+                );
+            }
+        }
+    }
+
+    dwell_world::both_faces! {
+        /// Trees vanished as the camera came close (owner, 2026-11-14: "Trees were disappearing
+        /// when getting close"; BUGS.md #172): a tree switched to its real leaves
+        /// by distance alone, so where its chunk's mesh wasn't drawn (not streamed yet, a theater
+        /// camera far from the body, the LOD drawing there) its impostor faded out over nothing.
+        /// A tree stays its impostor until its mesh is drawn, then fades to it in time.
+        fn a_near_tree_stays_its_impostor_until_its_mesh_is_drawn(face: FaceFrame) {
+            let far = far();
+            let tree = Tree {
+                key: [0, 0, 0],
+                foot: [0.5, 10.0, 0.5],
+                centre_y: 5.0,
+                radius: 2.0,
+                baked: true,
+            };
+            let trees = [tree];
+            let mut f = TreeFades::new(window());
+            let eye = eye_at(face, [0.5 - f64::from(far.in_m) * 0.5, 15.0, 0.5]);
+            // First seen near with no mesh, and for a while: the impostor, whole.
+            let mut now = 0.0;
+            while now < 1.0 {
+                step_drawn(&mut f, now, face, eye, &trees, |_| false);
+                assert_eq!(f.share_at(0.5, 0.5), 0.0, "at {now} s: no mesh, the impostor");
+                now += 0.05;
+            }
+            // Its mesh arrives: one fade to the real tree, done in fadeS.
+            let at = now;
+            let mut last = 0.0;
+            while now < at + f64::from(far.fade_s) + 0.05 {
+                step_drawn(&mut f, now, face, eye, &trees, |_| true);
+                let s = f.share_at(0.5, 0.5);
+                assert!(s >= last, "fading in: {s} after {last}");
+                last = s;
+                now += 0.02;
+            }
+            assert_eq!(f.share_at(0.5, 0.5), 1.0, "the real tree once its mesh draws");
+            // Its mesh goes (the chunk unloaded, the LOD draws there again): back to the impostor.
+            let at = now;
+            while now < at + f64::from(far.fade_s) + 0.05 {
+                step_drawn(&mut f, now, face, eye, &trees, |_| false);
+                now += 0.02;
+            }
+            assert_eq!(f.share_at(0.5, 0.5), 0.0, "the impostor again");
+        }
     }
 
     dwell_world::both_faces! {

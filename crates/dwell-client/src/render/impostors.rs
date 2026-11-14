@@ -1031,31 +1031,47 @@ impl Impostors {
 
     /// This frame's tree states at `now` (s) about `eye` (world) on `face` (render/tree_fade.rs):
     /// whether the map changed.
-    pub fn update_fades(&mut self, now: f64, face: FaceFrame, eye: [f64; 3], far: &Far) -> bool {
+    /// `drawn` says whether a tree's real mesh (its chunk's) is drawn now: until it is, the tree
+    /// stays its impostor (BUGS.md #172).
+    pub fn update_fades(
+        &mut self,
+        now: f64,
+        face: FaceFrame,
+        eye: [f64; 3],
+        far: &Far,
+        drawn: impl Fn(&tree_fade::Tree) -> bool,
+    ) -> bool {
         let bit = u8::from(face.is_b());
         let (placed, layers) = (&self.placed, &self.layers);
-        self.fades.update(now, face, eye, far, move || {
-            Box::new(
-                placed
-                    .iter()
-                    .filter(move |(k, _)| k.0 == bit)
-                    .flat_map(|(_, v)| v.iter())
-                    .map(move |inst| {
-                        let l = layers.get(inst.layer as usize).copied().unwrap_or_default();
-                        tree_fade::Tree {
-                            key: [
-                                inst.foot[0].floor() as i32,
-                                (inst.foot[1] / dwell_world::CELL_H as f32).round() as i32,
-                                inst.foot[2].floor() as i32,
-                            ],
-                            foot: inst.foot,
-                            centre_y: l[0],
-                            radius: l[1],
-                            baked: l[2] > 0.5,
-                        }
-                    }),
-            )
-        })
+        self.fades.update(
+            now,
+            face,
+            eye,
+            far,
+            move || {
+                Box::new(
+                    placed
+                        .iter()
+                        .filter(move |(k, _)| k.0 == bit)
+                        .flat_map(|(_, v)| v.iter())
+                        .map(move |inst| {
+                            let l = layers.get(inst.layer as usize).copied().unwrap_or_default();
+                            tree_fade::Tree {
+                                key: [
+                                    inst.foot[0].floor() as i32,
+                                    (inst.foot[1] / dwell_world::CELL_H as f32).round() as i32,
+                                    inst.foot[2].floor() as i32,
+                                ],
+                                foot: inst.foot,
+                                centre_y: l[0],
+                                radius: l[1],
+                                baked: l[2] > 0.5,
+                            }
+                        }),
+                )
+            },
+            drawn,
+        )
     }
 
     /// The instances drawn.

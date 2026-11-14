@@ -3348,14 +3348,20 @@ impl Renderer {
         }
     }
     /// This frame's tree states (render/tree_fade.rs) at `now` (s), and the GPU's map when they
-    /// changed.
-    fn update_tree_fades(&mut self, now: f64) {
+    /// changed. A tree is its real leaves only where its chunk's mesh is held and drawn
+    /// (`chunk_fade`; BUGS.md #172), its impostor until then.
+    fn update_tree_fades(&mut self, now: f64, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) {
         let Some(far) = self.far_drawn() else {
             return;
         };
         let (face, eye) = (self.face, self.eye);
+        let chunks = &self.terrain.chunks;
+        let drawn = |t: &tree_fade::Tree| {
+            let c = tree_fade::ground_chunk(face, t);
+            chunks.contains_key(&c) && chunk_fade(c).is_some()
+        };
         if let Some(i) = self.impostors.as_mut()
-            && i.update_fades(now, face, eye, &far)
+            && i.update_fades(now, face, eye, &far, drawn)
         {
             self.frame_bindings
                 .tree_fade
@@ -4552,7 +4558,7 @@ impl Renderer {
             timer.begin();
         }
         let collect_start = crate::telemetry::now_ms();
-        self.update_tree_fades(collect_start / 1000.0);
+        self.update_tree_fades(collect_start / 1000.0, chunk_fade);
         let basis = aim(self.yaw, self.pitch, self.face, self.roll);
         // Two passes (§6.6): the far one beyond the split (its near plane pushed out with altitude,
         // where nothing is closer), then a depth clear and the near one. Heights are face-local.
