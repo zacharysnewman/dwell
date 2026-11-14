@@ -124,6 +124,12 @@ pub struct Geology {
     /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
     /// little of the ground's relief.
     pub tread_relief: f64,
+    /// Treads and talus covered by the biome's own ground where the rain (mm) is at least this,
+    /// ± `cover_noise` mm by a noise (0.69, Realistic: bedded hills in a wet climate are grassy
+    /// steps with rock risers, not contour stripes of bare cap and talus). Infinite: never (the
+    /// rock's blocks everywhere it shapes the ground, as before).
+    pub cover_rain: f64,
+    pub cover_noise: f64,
     /// Where the rock shapes the ground (`strength` > 0), where the stored ramps also top a column
     /// on a diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
     pub notched: Notched,

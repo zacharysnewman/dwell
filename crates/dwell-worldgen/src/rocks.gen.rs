@@ -240,6 +240,8 @@ pub const GEOLOGY: Geology = Geology {
     ledge: 2.0,
     ledge_every: 1.0,
     tread_relief: 0.08,
+    cover_rain: f64::INFINITY,
+    cover_noise: 0.0,
     notched: Notched::None,
     erosion: Erosion {
         strength: 1.0,

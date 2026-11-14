@@ -1778,6 +1778,38 @@ impl TerrainGenerator {
             .map_or(cap, |k| set.cap_by_palette[r] + k as u16)
     }
 
+    /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.
+    pub fn rain_at(&self, x: i64, z: i64) -> Option<f64> {
+        let (base, _, _) = self.map.height_at(x as f64, z as f64);
+        self.biomes.geography(x, z, base)?.rain
+    }
+
+    /// Whether the rock's treads and talus at face-local (x, z) are under the biome's ground
+    /// (rocks.json `shaping.coverRain` ± `coverNoise` by a noise at 48 m: the edge wanders).
+    fn covered(&self, x: i64, z: i64, base: f64) -> bool {
+        let g = &self.biomes.geology.geology;
+        if !g.cover_rain.is_finite() {
+            return false;
+        }
+        let Some(rain) = self.biomes.geography(x, z, base).and_then(|geo| geo.rain) else {
+            return false;
+        };
+        let noise = if g.cover_noise > 0.0 {
+            2.0 * g.cover_noise
+                * f64::from(fbm2(
+                    crate::noise::mix32(self.snow_seed ^ 0xC0FE_0069),
+                    x + self.offset_x,
+                    z + self.offset_z,
+                    48,
+                    3,
+                    None,
+                ))
+        } else {
+            0.0
+        };
+        rain + noise >= g.cover_rain
+    }
+
     /// Whether ground at face-local (x, z) is arid by the geology's `arid` (rocks.json; BUGS.md
     /// #134): None in a world with one biome (no geography).
     pub fn arid_at(&self, x: i64, z: i64) -> Option<bool> {
@@ -2714,7 +2746,15 @@ impl TerrainGenerator {
         {
             use crate::geology::Part;
             let scree = self.biomes.rock_palette[r];
+            // Treads and talus under the biome's own ground where it rains enough (rocks.json
+            // `shaping.coverRain`, 0.69): grassy steps with rock risers, not contour stripes.
+            // A rock whose treads follow the climate itself (`capBy`: the red desert's beds) keeps
+            // its own.
+            let covered = matches!(part, Part::Talus | Part::Tread)
+                && self.biomes.geology.geology.rocks[r].cap_by.is_empty()
+                && self.covered(x, z, base);
             match part {
+                _ if covered => {}
                 Part::Wall => (palette, band) = (scree, Band::Rock),
                 Part::Talus => (palette, band) = (scree, Band::Ground),
                 Part::Tread => (palette, band) = (self.tread_palette(r, x, z, base), Band::Ground),

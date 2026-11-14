@@ -14,7 +14,9 @@
   },
   "geology": {
     "shaping": {
-      "strength": 1
+      "strength": 1,
+      "coverRain": 260,
+      "coverNoise": 60
     },
     "erosion": {
       "strength": 1

@@ -656,6 +656,8 @@ pub fn geology_from_json(v: &Value) -> Result<Geology, String> {
         ledge: opt("ledge").unwrap_or(0.0),
         ledge_every: opt("ledgeEvery").unwrap_or(1.0),
         tread_relief: opt("treadRelief").unwrap_or(0.0),
+        cover_rain: opt("coverRain").unwrap_or(f64::INFINITY),
+        cover_noise: opt("coverNoise").unwrap_or(0.0),
         // A word (rocks.json `shaping.notched`), or an edit stored in 0.59–0.61: 1 all, else none.
         notched: match v.get("shaping").and_then(|s| s.get("notched")) {
             Some(Value::String(w)) => match w.as_str() {

@@ -683,6 +683,10 @@ export function rocksRust(data) {
   rs.push(`    ledge_every: ${rf(data.shaping.ledgeEvery)},`);
   rs.push(`    tread_relief: ${rf(data.shaping.treadRelief)},`);
   rs.push(
+    `    cover_rain: ${data.shaping.coverRain === undefined ? "f64::INFINITY" : rf(data.shaping.coverRain)},`,
+  );
+  rs.push(`    cover_noise: ${rf(data.shaping.coverNoise ?? 0)},`);
+  rs.push(
     `    notched: Notched::${{ none: "None", mesaEdges: "MesaEdges", all: "All" }[data.shaping.notched]},`,
   );
   rs.push("    erosion: Erosion {");

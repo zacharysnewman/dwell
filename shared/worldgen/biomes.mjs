@@ -794,6 +794,8 @@ export const PLATE_SETTINGS = [
   "basin",
   "default",
 ];
+/** The geology's keys that may be absent (absent: as before 0.69). */
+export const GEOLOGY_OPTIONAL = ["coverRain", "coverNoise"];
 /** The geology's groups' ranges (rocks.json `provinces`, `shaping`), as `TERRAIN`'s. */
 export const GEOLOGY = {
   provinces: { wavelength: [256, 1_000_000, true] },
@@ -804,6 +806,8 @@ export const GEOLOGY = {
     ledge: [0, 50],
     ledgeEvery: [0.05, 1],
     treadRelief: [0, 0.5],
+    coverRain: [0, 20_000],
+    coverNoise: [0, 5_000],
     notched: ["none", "mesaEdges", "all"],
   },
   erosion: {
@@ -992,6 +996,8 @@ export function validateRocks(data, blocks) {
       if (ex.length) fail(`${group}: unknown ${ex.join(", ")}`);
       for (const [key, spec] of Object.entries(keys)) {
         const x = v[key];
+        // Optional keys (0.69): absent is the old behaviour.
+        if (x === undefined && GEOLOGY_OPTIONAL.includes(key)) continue;
         if (typeof spec[0] === "string") {
           // A word of the code's vocabulary.
           if (!spec.includes(x)) fail(`${group}.${key} must be one of ${spec.join(", ")}`);
