@@ -40,7 +40,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 
 /** The most parts a model may have (the skinned shader's remap rows: dwell_models::MAX_REMAP). */
-export const MAX_PARTS = 6;
+export const MAX_PARTS = 9;
 /** Characters a row of `vertices`. */
 export const ROW = 100;
 const RULE_KEYS = new Set(["part", "near", "ramps", "joints", "weight", "y", "$comment"]);
@@ -262,6 +262,10 @@ export const PART_COLOURS = [
   [60, 170, 70],
   [70, 110, 220],
   [210, 60, 160],
+  [240, 130, 30],
+  [40, 190, 190],
+  [150, 80, 210],
+  [230, 230, 60],
 ];
 
 /** A PNG of `w`×`h` RGB bytes. */

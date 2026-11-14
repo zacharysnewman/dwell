@@ -75,7 +75,7 @@ fn npc_armed(l: &NpcLook) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct NpcLook {
     pub kind: String,
-    pub colours: Vec<(&'static str, &'static str, &'static str)>,
+    pub colours: Vec<dwell_sim::creatures::NpcColour>,
     pub held: Option<&'static str>,
     /// Its raised block's role (`guard_level`, `guard_vertical`) while the server says it guards
     /// (`Swordplay`'s guards; WORK_QUEUE item 35), set by the game each frame; None lowered.
@@ -512,8 +512,9 @@ mod tests {
             let look = v[0].npc.clone().expect("its looks");
             let def = Table::SHIPPED.npc("dwell:villager").unwrap();
             assert_eq!(look.colours, npc_colours(def, 99));
-            // Shirt, trousers, skin, hair and hat (the hat its own since 8a5f8a1).
-            assert_eq!(look.colours.len(), 5);
+            // Shirt, trousers, skin, hair and hat (the hat its own since 8a5f8a1), and the four
+            // places of its rings' pattern (WORK_QUEUE item 43).
+            assert_eq!(look.colours.len(), 9);
             c.apply(msg(1.1, Some(vec![part(2, 99)])));
             assert_eq!(
                 c.advance(0.016)[0].role,

@@ -1,6 +1,6 @@
 //! Inventories and block drops through the server (docs/adr/0066-inventory-and-drops.md): in
 //! adventure breaking drops the block's items, which fall and rest on the ground (both faces) and
-//! go to a player who walks near; placing uses an item up; death drops everything; creative is
+//! go to a player who walks near; placing uses an item up; a defeat keeps everything; creative is
 //! unlimited and drops nothing; inventories and loose items are saved with the world.
 
 mod common;
@@ -190,28 +190,40 @@ fn a_full_inventory_leaves_the_item_on_the_ground_and_currency_still_goes_to_the
 }
 
 dwell_world::both_faces!(
-    fn dying_in_adventure_drops_everything_where_the_player_died(f: FaceFrame) {
+    fn a_defeat_in_adventure_keeps_everything_and_drops_nothing(f: FaceFrame) {
+        // Owner, 2026-11-13: "Keep everything" (WORK_QUEUE item 55): before, the hotbar and the
+        // inventory dropped where the player knelt when it stood up at the shrine.
         let mut fx = scene(f, "adventure");
         fx.server.give(1, "dwell:dirt", 70);
         fx.server.give(1, "dwell:stick", 3);
         fx.server.give(1, "dwell:gem", 7);
+        fx.send(
+            1,
+            Message::InventoryAction(InventoryAction::Select { slot: 1 }),
+        );
+        step(&mut fx, 1);
+        let before = fx.server.inventory_of(1).unwrap().clone();
+        assert!(
+            before.count_of("dwell:dirt") == 70 && before.held == 1,
+            "{before:?}"
+        );
         let feet = fx.server.feet_of(1).unwrap();
+        let shrine = fx.server.respawn_point_after(1, feet);
         fx.server.kill_player(1);
-        let loose = fx.server.loose_items().to_vec();
-        // The starting axe, two stacks of dirt and the sticks (the gems stay in the wallet).
-        assert_eq!(loose.len(), 4, "a stack a slot: {loose:?}");
-        let total: u32 = loose.iter().map(|it| u32::from(it.stack.count)).sum();
-        assert_eq!(total, 74);
-        step(&mut fx, 60);
-        for it in fx.server.loose_items() {
-            let (a, b) = (f.point(it.position), f.point(feet));
-            assert!(it.resting);
-            assert!((a[1] - b[1]).abs() < 1e-9, "on the ground: {a:?} {b:?}");
-            assert!(((a[0] - b[0]).powi(2) + (a[2] - b[2]).powi(2)).sqrt() < 0.5);
-        }
-        let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:dirt") + inv.count_of("dwell:stick"), 0);
-        assert_eq!(inv.money, 7, "the wallet is kept");
+        assert_eq!(fx.server.health_of(1), 0, "defeated");
+        let down = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER);
+        step(&mut fx, down + 60);
+        assert!(fx.server.health_of(1) > 0, "stood up");
+        let stood = f.point(fx.server.feet_of(1).unwrap());
+        let at = f.point(shrine);
+        let off = ((stood[0] - at[0]).powi(2) + (stood[2] - at[2]).powi(2)).sqrt();
+        assert!(off < 1.0, "at the shrine: {stood:?} {at:?}");
+        assert!(
+            fx.server.loose_items().is_empty(),
+            "nothing drops: {:?}",
+            fx.server.loose_items()
+        );
+        assert_eq!(fx.server.inventory_of(1).unwrap(), &before, "kept exactly");
     }
 );
 

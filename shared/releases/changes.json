@@ -2,6 +2,68 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.63.8",
+      "changes": [
+        "Villagers wear festive patterns again: a bright band round the hat and the waist, each villager its own",
+        "Villagers' clothes are picked to go with their pattern",
+        "The tops of villagers' hats are one clean colour"
+      ]
+    },
+    {
+      "version": "0.63.7",
+      "changes": [
+        "Creative flight goes where you look: aim at the moon, hold forward, and you get there in under a minute",
+        "Looking up or down while flying forward now climbs or dives; Space and crouch still rise and sink"
+      ]
+    },
+    {
+      "version": "0.63.6",
+      "changes": [
+        "Far trees no longer show as doubled, half-faded copies: each tree is either its full-detail self or its distant stand-in, swapping with a short fade as you cross the hand-over distance",
+        "Distant trees stay lined up with the real ones as you fly up and down (more viewing angles baked)"
+      ]
+    },
+    {
+      "version": "0.63.5",
+      "changes": [
+        "A portal's map marker now sits on the portal's rim, even when you first see it while flying high; old floating ones drop back onto the rim when you come near.",
+        "A marker placed on the map over ground that wasn't loaded yet now settles onto the ground once it loads."
+      ]
+    },
+    {
+      "version": "0.63.4",
+      "changes": [
+        "Villagers now have natural skin tones, from light to deep, with hair colours that suit them.",
+        "A villager's face, neck, arms and hands are always the same skin colour."
+      ]
+    },
+    {
+      "version": "0.63.3",
+      "changes": [
+        "Being defeated no longer drops your things: you stand up at the shrine with your hotbar and inventory exactly as before"
+      ]
+    },
+    {
+      "version": "0.63.2",
+      "changes": [
+        "The moon draws as you fly near it from home, no longer cut away",
+        "Dev tools: teleporting onto the moon or the sun lands from a fresh spawn, and the trip home works after a failed one",
+        "Dev tools: the lava report lists the sun's rivers, and sunLand can land beside a flowing river",
+        "Dev tools: a teleport past the world's rim or onto the other face says why it can't",
+        "Dev tools: the bench's flyTo step takes marginM"
+      ]
+    },
+    {
+      "version": "0.63.1",
+      "changes": [
+        "Theater mode's panel is redone: a proper close button, Esc to close, a docked panel on desktop and a bottom or side sheet on phones, grouped sections with an Advanced fold, a recording timer and a pause button, and controller navigation.",
+        "Theater mode can follow a creature or NPC: pick it from a list or under the crosshair, and the camera orbits, tracks or watches it smoothly as it moves.",
+        "Frame-exact recording: a camera path can be recorded frame by frame, so the video plays smoothly even on a slow machine.",
+        "Phones get theater flying controls: a stick and Up and Down buttons, and a drag to look.",
+        "Hosts can turn theater mode off for guests (Host… → Theater for guests); the host can always use it."
+      ]
+    },
+    {
       "version": "0.63.0",
       "changes": [
         "On the moon and the sun, the ground is drawn out to the horizon, not only near you",

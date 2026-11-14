@@ -546,42 +546,44 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    fn a_worn_tool_dropped_at_death_and_picked_up_keeps_its_wear(f: FaceFrame) {
-        // A dead player's axe fell as a loose item with no wear: picked back up it was a fresh
-        // 32-hit axe. The loose item carries the slot's wear.
+    fn a_worn_tool_keeps_its_wear_through_a_defeat_and_as_a_loose_item(f: FaceFrame) {
+        // A defeated player keeps its things (owner, 2026-11-13: "Keep everything"), the axe's
+        // wear with them. Once a dead player's axe fell as a loose item with no wear, picked back
+        // up a fresh 32-hit axe: a loose item carries its stack's wear.
         let mut fx = scene_with(f, config(f, "adventure"));
         assert_eq!(hits_to_break(&mut fx, f, DIRT), 11);
-        fx.server.kill_player(1);
-        // Defeated, it keeps its things while it kneels (CHARACTERS.md §11.13) and leaves them
-        // where it knelt when it stands up at the shrine (here the spawn).
-        let loose_axes = |fx: &Fixture| -> Vec<u16> {
-            fx.server
-                .loose_items()
+        let worn = |fx: &Fixture| -> Vec<u16> {
+            let inv = fx.server.inventory_of(1).expect("joined");
+            inv.slots
                 .iter()
-                .filter(|it| it.stack.item == "dwell:stone_axe")
-                .map(|it| it.stack.wear)
+                .flatten()
+                .filter(|s| s.item == "dwell:stone_axe")
+                .map(|s| s.wear)
                 .collect()
         };
-        assert!(loose_axes(&fx).is_empty(), "nothing dropped while kneeling");
+        fx.server.kill_player(1);
         let ticks = dwell_sim::server::defeat_ticks(dwell_protocol::defeat::PLAYER) + SIM_HZ;
         for _ in 0..ticks {
             fx.server.step();
         }
-        assert_eq!(loose_axes(&fx), [11], "the dropped axe keeps its wear");
-        // The player stands up where it knelt (the spawn) and walks over its drops.
+        assert!(
+            fx.server
+                .loose_items()
+                .iter()
+                .all(|it| it.stack.item != "dwell:stone_axe"),
+            "the axe wasn't dropped"
+        );
+        assert_eq!(worn(&fx), [11], "kept with 21 hits left");
+        // A worn axe on the ground, walked over: picked up with its wear.
         fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
+        let feet = fx.server.feet_of(1).expect("stood up");
+        let mut axe = dwell_protocol::inventory::Stack::new("dwell:stone_axe", 1);
+        axe.wear = 7;
+        fx.server.drop_item(axe, feet);
         for _ in 0..60 {
             fx.server.step();
         }
-        let inv = fx.server.inventory_of(1).expect("respawned");
-        let worn: Vec<_> = inv
-            .slots
-            .iter()
-            .flatten()
-            .filter(|s| s.item == "dwell:stone_axe")
-            .map(|s| s.wear)
-            .collect();
-        assert_eq!(worn, [11], "picked up with 21 hits left, not a fresh axe");
+        assert_eq!(worn(&fx), [11, 7], "not a fresh axe");
     }
 );
 

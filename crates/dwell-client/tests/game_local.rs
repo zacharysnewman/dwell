@@ -4872,3 +4872,233 @@ dwell_world::both_faces!(
         assert_eq!(snaps(&rig), before, "no snap through the release");
     }
 );
+
+dwell_world::both_faces!(
+    /// BUGS.md #147: from a fresh spawn (never flown) after the spyglass zoomed in and out, the
+    /// dev teleport onto the moon (`moon_land`) put the player inside the capture sphere but the
+    /// server captures only fliers, so it stayed on the home grid out in space, its ground never
+    /// held (the browser's `moonLand` timed out "grid home, chunk held false"). The teleport
+    /// captures by itself: the next ticks find the player on the moon, client and server alike,
+    /// standing on its ground with the chunk under it held.
+    fn moon_land_from_a_fresh_spawn_after_the_spyglass_lands_on_the_moon(f: FaceFrame) {
+        use dwell_look::spyglass::SPYGLASS;
+        let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        rig.game.as_mut().unwrap().spyglass.set(true, 3, &SPYGLASS);
+        rig.run_until(60, |_| false);
+        rig.game.as_mut().unwrap().spyglass.set(false, 0, &SPYGLASS);
+        rig.run_until(60, |_| false);
+        let id = my_id(&rig);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.moon_land(face);
+        assert!(!r.contains("error"), "{r}");
+        let landed = rig.run_until(60 * 20, |r| {
+            r.game.as_ref().unwrap().grid() == 1
+                && r.core.server().grid_state_of(id).is_some_and(|g| g.0 == 1)
+        });
+        assert!(
+            landed,
+            "captured onto the moon (client grid {}, server {:?})",
+            rig.game.as_ref().unwrap().grid(),
+            rig.core.server().grid_state_of(id).map(|g| g.0)
+        );
+        let cell = dwell_world::GridFrame::HOME.cell_of(moon_ground(
+            rig.seed,
+            f,
+            -0.5 * dwell_world::CELL_H,
+        ));
+        let chunk = dwell_world::chunk_of(cell[0], cell[1], cell[2]);
+        assert!(
+            rig.run_until(60 * 30, |r| r
+                .game
+                .as_ref()
+                .unwrap()
+                .chunk_revision(chunk.to_array())
+                .is_some()),
+            "the moon's chunk under the player held"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #146: on the sun, `__dwell.lava('report')` read `fields: []` and its lava looked
+    /// still. The report listed home's fields only, and the sun's stand point (`sunLand`) is out
+    /// of every river head's reach (390 m from the nearest on seed 7, `flow.nearM` 384 m). Landed
+    /// beside a river head (`sunLand` with `river`), the head's field is placed and runs: the
+    /// report lists it as the sun's, and its lava moves on (more molten columns).
+    fn by_a_sun_river_head_the_report_lists_a_running_field(f: FaceFrame) {
+        let mut rig = Rig::with_seed(GENERATOR_SANDBOX, 7);
+        assert!(rig.run_until(60 * 20, |r| {
+            r.game
+                .as_ref()
+                .is_some_and(|g| g.debug_state().terrain_ready)
+        }));
+        let id = my_id(&rig);
+        let face = if f == dwell_world::FaceFrame::A {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = rig.core.lava_dev("sunLand", &[face, 1.0]);
+        assert!(!r.contains("error"), "{r}");
+        let sun = dwell_worldgen::grids::grids()
+            .iter()
+            .position(|g| g.name == "dwell:sun")
+            .unwrap() as u8;
+        assert!(
+            rig.run_until(120, |r| r
+                .core
+                .server()
+                .grid_state_of(id)
+                .is_some_and(|g| g.0 == sun)),
+            "on the sun"
+        );
+        let molten = |rig: &mut Rig| -> Option<u64> {
+            let r = rig.core.lava_dev("report", &[]);
+            let j: serde_json::Value = serde_json::from_str(&r).unwrap();
+            j["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["grid"] == "dwell:sun")
+                .map(|p| p["molten"].as_u64().unwrap())
+                .max()
+        };
+        rig.run_until(60 * 5, |_| false);
+        let before = molten(&mut rig).expect("a sun field in the lava report");
+        rig.run_until(60 * 20, |_| false);
+        let after = molten(&mut rig).unwrap();
+        assert!(
+            after > before,
+            "the sun's river runs on from its head: {before} → {after} molten columns"
+        );
+    }
+);
+
+#[test]
+fn a_teleport_past_the_rim_fails_with_a_message() {
+    // face-a-only: the rim is the same on both faces; the face check is the other refusal.
+    // BUGS.md #148: the dev tools' teleport took a point far outside the disc, the player left
+    // past the rim where no world streams (server and client stood on different ground), and
+    // nothing said why. Now refused with a message, the player left where it was; inside the rim
+    // it moves as before.
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 20, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let id = my_id(&rig);
+    let rim = dwell_world::WorldBounds::of(rig.core.server().config().world_size).radius() as f64;
+    let before = rig.core.server().feet_of(id).unwrap();
+    for far in [[rim + 5000.0, 100.0, 0.0], [1.0e6, 100.0, 0.0]] {
+        assert!(!rig.core.teleport_local_player(far), "refused: {far:?}");
+        let r = rig.core.lava_dev("teleport", &far);
+        assert!(r.contains("past its rim"), "{r}");
+        rig.run_until(10, |_| false);
+        let now = rig.core.server().feet_of(id).unwrap();
+        assert!((now[0] - before[0]).abs() < 1.0, "not moved: {now:?}");
+    }
+    let other = rig.core.lava_dev("teleport", &[10.0, -100.0, 10.0]);
+    assert!(other.contains("keeps the face"), "{other}");
+    let inside = [rim - 500.0, 100.0, 0.0];
+    let r = rig.core.lava_dev("teleport", &inside);
+    assert!(!r.contains("error"), "{r}");
+    rig.run_until(10, |_| false);
+    let now = rig.core.server().feet_of(id).unwrap();
+    assert!(
+        (now[0] - inside[0]).abs() < 1.0,
+        "moved inside the rim: {now:?}"
+    );
+}
+
+/// BUGS.md #155 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? I tried
+/// for like 8 minutes at max speed and couldn't get there"): a player on home's ground, flying
+/// at the slider's top level, aiming at the moon in the sky and holding only forward (W, as a
+/// player does; no Space or crouch), reaches its capture in about a minute, with no server
+/// correction on the way.
+// both-faces: it flies from whichever face the moon is over at the rig's clock (from the other
+// it is under the ground); the flight's face-local wish is checked on both faces in
+// dwell-physics' flight.rs (and its mirror suite).
+#[test]
+fn holding_forward_at_the_moon_from_home_reaches_it() {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 20, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.input.flight.set_allowed(true);
+    rig.input.flight.set(true);
+    rig.input.flight.set_speed_level(11.0);
+    rig.run_until(30, |_| false);
+    let mut m0 = rig.game.as_ref().unwrap().moon_report().expect("a moon");
+    if m0.look.1 < 0.0 {
+        // Under this face's horizon: onto the other face's ground, under the spawn.
+        let id = my_id(&rig);
+        let p = rig.core.server().feet_of(id).unwrap();
+        let here = dwell_world::FaceFrame::at_height(p[1]);
+        let there = if here == dwell_world::FaceFrame::A {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let q = there.point([p[0], here.y(p[1]) + 2.0, p[2]]);
+        assert!(rig.core.server().place_on_grid(id, q, [0.0; 3]));
+        rig.run_until(120, |_| false);
+        m0 = rig.game.as_ref().unwrap().moon_report().unwrap();
+    }
+    eprintln!(
+        "from {:?}: the moon at pitch {:.1}°",
+        rig.scene.borrow().camera_face,
+        m0.look.1
+    );
+    assert!(m0.look.1 > 0.0, "the moon is in this face's sky");
+    assert_eq!(m0.grid, "home");
+    let snaps0 = rig.game.as_ref().unwrap().debug_state().stats.snaps;
+    let mut captured_s = None;
+    let start_d = m0.distance;
+    let mut d_min = start_d;
+    for step in 0..10 * 90 {
+        let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+        if m.grid == "moon" {
+            captured_s = Some(step as f64 * 0.1);
+            break;
+        }
+        d_min = d_min.min(m.distance);
+        if step % 50 == 0 {
+            eprintln!(
+                "t {:5.1} s  d {:9.0} m  look ({:6.1}, {:5.1})  up {:8.1} m/s",
+                step as f64 * 0.1,
+                m.distance,
+                m.look.0,
+                m.look.1,
+                m.up_mps
+            );
+        }
+        let (yaw, pitch) = m.look;
+        rig.input.look.yaw = yaw;
+        rig.input.look.pitch = pitch;
+        rig.input.set_key("KeyW", true);
+        rig.run_until(6, |_| false);
+    }
+    rig.input.set_key("KeyW", false);
+    let t = captured_s.unwrap_or_else(|| {
+        panic!("not captured in 90 s: from {start_d:.0} m, nearest {d_min:.0} m")
+    });
+    eprintln!("captured after {t:.1} s");
+    assert!(t < 75.0, "captured after {t:.1} s");
+    assert_eq!(
+        rig.game.as_ref().unwrap().debug_state().stats.snaps,
+        snaps0,
+        "no server correction on the way"
+    );
+}
