@@ -158,6 +158,7 @@ export const TERRAIN = {
     ditherWarp: [0, 1000],
     treesSharpen: [1, 16],
     rockEdge: [0, 0.9],
+    dominant: [0.5, 1],
     windDirection: [0, 360],
     windReach: [{ above: 0 }, 1_000_000],
     baseRain: [0, 1],

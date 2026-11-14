@@ -305,8 +305,10 @@ dwell_world::both_faces!(
             "{:?}: arid {arid}, humid {humid}, forest {forests} floors",
             f.face
         );
+        // Forests (wet) mostly cover the provinces' treads with their own ground since 0.69
+        // (`shaping.coverRain`): 9 bare sandstone floors a face are left to sample.
         assert!(
-            arid >= 50 && humid >= 50 && forests >= 10,
+            arid >= 50 && humid >= 50 && forests >= 5,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }

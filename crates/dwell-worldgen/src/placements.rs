@@ -71,6 +71,10 @@ pub struct Variant {
     pub replace: &'static [(&'static str, &'static str)],
     pub from: i32,
     pub full: i32,
+    /// The variant also takes every structure standing on one of these blocks (by name; the snow
+    /// line's snow and snowy grass: 0.69; owner, 2026-11-14: "trees at snow level should use snow
+    /// leaves"), whatever its height.
+    pub on: &'static [&'static str],
 }
 
 mod table {
@@ -477,7 +481,7 @@ impl Planter {
             shape: shape as u8,
             quarter_turns,
             priority: self.h(gx, gz, 5),
-            variant: self.variant_at(g.above_sea, self.h(gx, gz, 6)),
+            variant: self.variant_at(&g, self.h(gx, gz, 6)),
         };
         if !self.slope_ok(x, z, ground) {
             return None;
@@ -536,9 +540,18 @@ impl Planter {
 
     /// The variant (index + 1) a structure anchored `above_sea` m above sea level takes by its
     /// hash `h`: the first whose band takes it.
-    fn variant_at(&self, above_sea: i32, h: u32) -> u8 {
+    fn variant_at(&self, g: &Ground, h: u32) -> u8 {
+        let above_sea = g.above_sea;
         let roll = unit(h);
         for (i, v) in self.rule.variants.iter().enumerate() {
+            if !v.on.is_empty() {
+                let name = dwell_blocks::info(g.block).name;
+                let base = name.split('[').next().unwrap_or(name);
+                let base = base.strip_suffix("_ramp").unwrap_or(base);
+                if v.on.contains(&base) {
+                    return (i + 1) as u8;
+                }
+            }
             let share = if v.full <= v.from {
                 f32::from(u8::from(above_sea >= v.from))
             } else {

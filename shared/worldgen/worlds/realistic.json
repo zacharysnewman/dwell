@@ -11,7 +11,7 @@
     "ditherWavelength": 48,
     "ditherWarp": 60,
     "treesSharpen": 4,
-    "sharpen": 3,
+    "dominant": 0.6,
     "rockEdge": 0.3
   },
   "geology": {

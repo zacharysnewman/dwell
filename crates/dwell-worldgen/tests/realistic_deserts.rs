@@ -150,7 +150,7 @@ both_faces!(
         // WORK_QUEUE item 15, the 0.69 follow-up (the map check: "pasted-looking red-dirt/stone
         // blobs on the sand desert"): the red rock mesa's ground picked in patches across a
         // km-wide mixing zone, and the dune rock's walls and the desert's steep faces grey stone.
-        // Now the Realistic biome pick is sharper (`biomeMap.sharpen` 3) and its dunes are sand
+        // Now a biome weighing 0.6 or more is picked outright (`biomeMap.dominant`) and its dunes are sand
         // throughout.
         use dwell_worldgen::terrain::{TerrainGenerator, Water};
         let (mut n, mut other) = (0usize, 0usize);

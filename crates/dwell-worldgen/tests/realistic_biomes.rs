@@ -112,6 +112,11 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
             want.trees = &[("boulders", 0.25), ("sagebrush", 0.012)];
+            // 0.69: sand on its steep faces too (no grey stone blobs on the dunes).
+            want.bands = Box::leak(Box::new([dwell_worldgen::terrain::ElevationBand {
+                rock: "dwell:sand",
+                ..p.bands[0]
+            }]));
         }
         assert_eq!(b, Some(&want), "{}: listed, unchanged", p.name);
     }

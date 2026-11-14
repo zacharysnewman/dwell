@@ -456,13 +456,14 @@ export function validatePlacements(
     for (const v of p.variants ?? []) {
       const vat = `${at}: variant ${v?.name ?? "(unnamed)"}`;
       const vk = Object.keys(v ?? {}).filter(
-        (k) => !["name", "replace", "height", "$comment"].includes(k),
+        (k) => !["name", "replace", "height", "on", "$comment"].includes(k),
       );
       if (vk.length) fail(`${vat}: unknown ${vk.join(", ")}`);
       if (!(typeof v.name === "string" && NAME.test(v.name)))
         fail(`${vat}: name must be [a-z0-9_]+`);
       const pairs = Object.entries(v.replace ?? {});
       if (!pairs.length) fail(`${vat}: replace must map blocks to blocks`);
+      for (const b of v.on ?? []) if (!blocks.get(b)) fail(`${vat}: on names unknown block ${b}`);
       for (const [from, to] of pairs) {
         if (!blocks.get(from))
           fail(`${vat}: replace names unknown block ${from}`);
@@ -535,7 +536,7 @@ export function placementsRust(data, species = registrySpecies()) {
       const pairs = Object.entries(v.replace).map(
         ([a, b]) => `(${JSON.stringify(a)}, ${JSON.stringify(b)})`,
       );
-      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(", ")}], from: ${v.height[0]}, full: ${v.height[1]} }`;
+      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(", ")}], from: ${v.height[0]}, full: ${v.height[1]}, on: &[${(v.on ?? []).map((b) => JSON.stringify(b)).join(", ")}] }`;
     });
     rs.push(`        variants: &[${vs.join(", ")}],`);
     rs.push(`        tops: ${rf(p.tops ?? 1)},`);
@@ -1093,6 +1094,7 @@ export function terrainRust({
   rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
   rs.push(`    trees_sharpen: ${rf(bm.treesSharpen ?? 1)},`);
   rs.push(`    rock_edge: ${rf(bm.rockEdge ?? 0)},`);
+  rs.push(`    dominant: ${rf(bm.dominant ?? 1)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);

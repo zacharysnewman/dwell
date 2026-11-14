@@ -460,6 +460,15 @@ impl BiomeField {
             mix.weights[k] = (i, (w / total) as f32);
         }
         let p = &self.params;
+        // A dominant biome is picked outright (`dominant`; 1, the default: never).
+        if p.dominant < 1.0
+            && let Some(&(i, _)) = mix.weights[..usize::from(mix.len)]
+                .iter()
+                .find(|&&(_, w)| f64::from(w) >= p.dominant)
+        {
+            mix.chosen = i;
+            return mix;
+        }
         let hash = f64::from(hash2(self.dither_seed, x as i32, z as i32)) / f64::from(u32::MAX);
         // The noise's sample point warped (`ditherWarp`; 0 in the default world: unchanged).
         let (wx, wz) = if p.dither_warp > 0.0 {

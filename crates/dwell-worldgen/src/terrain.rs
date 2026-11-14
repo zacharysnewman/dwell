@@ -245,6 +245,9 @@ pub struct BiomeMap {
     pub trees_sharpen: f64,
     /// The steep rock's slope threshold ± this share of itself by a fine noise (0: a crisp edge).
     pub rock_edge: f64,
+    /// A biome weighing at least this is picked outright (1: never; 0.69, Realistic: no blobs of
+    /// a neighbour's ground inside a biome's core, its border still mingling).
+    pub dominant: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
