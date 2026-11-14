@@ -1,0 +1,37 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s12: canopy push",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    22300.5,
+    135,
+    -10
+   ],
+   "look": [
+    0,
+    -16
+   ],
+   "fov": 50,
+   "timeOfDay": 0.33
+  },
+  {
+   "t": 5,
+   "position": [
+    22300.5,
+    132,
+    80
+   ],
+   "look": [
+    0,
+    -14
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "linear"
+  }
+ ]
+}

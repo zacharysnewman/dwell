@@ -14,7 +14,7 @@ const copy = (v) => JSON.parse(JSON.stringify(v));
 const fails = (m, re) => assert.throws(() => validate(m), re);
 
 test('every committed video manifest validates', () => {
-  for (const name of ['bifacial']) assert.equal(loadVideo(name).name, name);
+  for (const name of ['bifacial', 'water', 'trailer']) assert.equal(loadVideo(name).name, name);
   assert.ok(existsSync(join(VIDEOS, 'bifacial', 'video.json')));
 });
 
@@ -296,3 +296,88 @@ test('end to end: a frame folder and its sound → a clip with aligned audio →
     assert.ok(Math.abs(v - 3.2) < 0.1, `video ${v}`); // (1 + 1 cut) + 0.5 + 1.5 − 2 × 0.4
     assert.ok(Math.abs(s - v) < 0.08, `audio ${s} vs video ${v}`);
   });
+
+// The trailer's tools (owner, 2026-11-13: "Let's do vertical and widescreen. Title and game sound, no music."):
+// one square capture cut to several aspects with per-part crop positions, a fade from black, a title card.
+const aspectFixture = () => ({ formatVersion: 1, name: 'fixture', world: { url: '/dwell/?fresh=1&seed=1' },
+  capture: { size: [1920, 1920], fps: 30 }, aspects: { '9x16': [1080, 1920], '16x9': [1920, 1080] },
+  title: { text: 'DWELL', fromEndS: 5, fadeS: 1.5, width: { '9x16': 0.8, '16x9': 0.45 } }, splice: { fadeIn: 1.2 },
+  shots: [{ id: 'a', kind: 'path', path: 'videos/bifacial/s1_outline_push.json', splice: [{ to: 3, crop: { '9x16': [0.3, 0.5] } }] },
+    { id: 'b', kind: 'path', path: 'videos/bifacial/s2_crane_a_to_b.json', splice: [{ to: 2, cut: true, crop: { '16x9': [0.5, 0.2] } }] }] });
+
+test('aspects: one shot list, a plan per aspect with its size, its crops, its title width and the fade in', () => {
+  const m = validate(aspectFixture());
+  const v = splicePlan(m, '/c', '9x16'), w = splicePlan(m, '/c', '16x9');
+  assert.equal(v.out, '/c/fixture/fixture-9x16.mp4');
+  assert.deepEqual(v.size, [1080, 1920]);
+  assert.deepEqual(w.size, [1920, 1080]);
+  assert.deepEqual(v.clips.map((c) => c.crop ?? null), [[0.3, 0.5], null]);
+  assert.deepEqual(w.clips.map((c) => c.crop ?? null), [null, [0.5, 0.2]]);
+  assert.equal(v.fadeIn, 1.2);
+  assert.deepEqual(v.titleCard, { image: '/c/fixture/title-9x16.png', fromEndS: 5, fadeS: 1.5, widthPx: 864 });
+  assert.equal(w.titleCard.widthPx, 864); // 0.45 × 1920
+  assert.throws(() => splicePlan(m, '/c', '4x3'), /no aspect "4x3"/);
+  // without aspects: one framing at the capture size, no crop, as before
+  const plain = aspectFixture(); delete plain.aspects; delete plain.title;
+  plain.shots = plain.shots.map((s) => ({ ...s, splice: s.splice.map(({ crop: _, ...p }) => p) }));
+  assert.equal(splicePlan(validate(plain), '/c').out, '/c/fixture/fixture.mp4');
+});
+
+test('aspects, crops and titles: bad entries fail with a message', () => {
+  let b = aspectFixture(); b.shots[0].splice[0].crop = { '4x3': [0.5, 0.5] }; fails(b, /crop: no aspect "4x3"/);
+  b = aspectFixture(); b.shots[0].splice[0].crop = { '9x16': [1.5, 0.5] }; fails(b, /crop.9x16: expected \[x, y\], each 0–1/);
+  b = aspectFixture(); b.aspects['9x16'] = [1080]; fails(b, /aspects.9x16: expected \[width, height\]/);
+  b = aspectFixture(); b.title.text = ''; fails(b, /title.text/);
+  b = aspectFixture(); b.title.width = { '4x3': 0.5 }; fails(b, /title.width: no aspect "4x3"/);
+  b = aspectFixture(); b.title.font = 'Georgia'; fails(b, /video.title: unknown key "font"/);
+  b = aspectFixture(); b.splice.fadeIn = -1; fails(b, /splice.fadeIn/);
+});
+
+test('the splice crops each part where its aspect says, fades in from black and fades the title in over the end', { skip: !python && 'no python3' }, () => {
+  const plan = { out: '/w/v.mp4', size: [108, 192], fps: 30, fade: 0.8, audio: true, fadeIn: 1.2,
+    titleCard: { image: '/w/title.png', fromEndS: 5, fadeS: 1.5, widthPx: 86 }, clips: [
+      { src: '/c/a.mp4', from: 0, to: 4, crop: [0.3, 0.5], audio: 'keep' },
+      { src: '/c/b.mp4', from: 0, to: 6, cut: true, audio: 'keep' }, { src: '/c/c.mp4', from: 0, to: 8, audio: 'keep' }] };
+  const { commands, seconds } = dry(plan);
+  const graph = (c) => c[c.indexOf('-filter_complex') + 1];
+  assert.match(graph(commands[0]), /crop=108:192:x=\(iw-108\)\*0\.3:y=\(ih-192\)\*0\.5,fps=30/);
+  assert.match(graph(commands[1]), /crop=108:192,fps=30/); // no crop given: the centre
+  const final = commands.at(-1), g = graph(final);
+  assert.equal(seconds, 17.2); // (4 + 6 cut) + 8 − 0.8
+  assert.deepEqual(final.slice(final.indexOf('-loop'), final.indexOf('-loop') + 4), ['-loop', '1', '-i', '/w/title.png']);
+  assert.match(g, /\[2:v\]scale=86:-1,format=rgba,fade=t=in:st=12\.200:d=1\.5:alpha=1\[title\]/);
+  assert.match(g, /\[x1\]\[title\]overlay=\(W-w\)\/2:\(H-h\)\/2:shortest=1:enable='gte\(t,12\.200\)'\[titled\]/);
+  assert.match(g, /\[titled\]fade=t=in:st=0:d=1\.2,fade=t=out:st=16\.200:d=1\[out\]/);
+  assert.match(g, /afade=t=in:st=0:d=1\.2,afade=t=out/);
+});
+
+test('the title card page inlines the client\'s wordmark style and escapes the text', async () => {
+  const { titleHtml } = await import('./title.mjs');
+  const html = titleHtml('<D&WELL>');
+  assert.ok(html.includes('.wordmark {'), 'the client stylesheet with its .wordmark rule');
+  assert.ok(html.includes('&lt;D&amp;WELL&gt;') && !html.includes('<D&WELL>'));
+});
+
+test('end to end: a square clip cut to 9:16 and 16:9, faded in from black, with the title over the end', { skip: (!ffmpeg || !python) && 'no ffmpeg or python3' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'splice-aspect-'));
+  const clip = join(dir, 'sq.mp4'), title = join(dir, 'title.png');
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=0x808080:s=192x192:r=30:d=4', '-f', 'lavfi', '-i', 'sine=d=4',
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clip]).status, 0);
+  assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=white:s=40x20,format=rgba', '-frames:v', '1', title]).status, 0);
+  for (const [w, h] of [[108, 192], [192, 108]]) {
+    const out = join(dir, `v${w}.mp4`), plan = join(dir, `p${w}.json`);
+    writeFileSync(plan, JSON.stringify({ out, size: [w, h], fps: 30, audio: true, fadeIn: 1, titleCard: { image: title, fromEndS: 2, fadeS: 0.2, widthPx: 40 },
+      clips: [{ src: clip, from: 0, to: 4, crop: w < h ? [0.2, 0.5] : [0.5, 0.8], audio: 'keep' }] }));
+    const r = spawnSync('python3', [join(SKILL, 'scripts/splice.py'), plan], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const s = JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=width,height', '-of', 'json', out], { encoding: 'utf8' }).stdout).streams[0];
+    assert.deepEqual([s.width, s.height], [w, h]);
+    const centre = (t) => {
+      const q = spawnSync('ffmpeg', ['-v', 'info', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=8:8:${w / 2 - 4}:${h / 2 - 4},signalstats,metadata=print:key=lavfi.signalstats.YAVG`, '-f', 'null', '-'], { encoding: 'utf8' });
+      return +(/YAVG=([\d.]+)/.exec(q.stderr)?.[1] ?? NaN);
+    };
+    assert.ok(centre(0) < 40, `the first frame is black (${centre(0)})`);
+    assert.ok(Math.abs(centre(1.5) - 128) < 30, `grey before the title (${centre(1.5)})`);
+    assert.ok(centre(2.6) > 200, `the white title over the centre near the end (${centre(2.6)})`);
+  }
+});

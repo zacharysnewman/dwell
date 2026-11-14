@@ -1,0 +1,38 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s11: the tall cone at dusk",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    1500.5,
+    3000,
+    -5200.5
+   ],
+   "look": [
+    -90,
+    3
+   ],
+   "fov": 40,
+   "timeOfDay": 0.77
+  },
+  {
+   "t": 5,
+   "position": [
+    1100.5,
+    2990,
+    -5200.5
+   ],
+   "look": [
+    -90,
+    3
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "ease",
+   "easing": "inOutSine"
+  }
+ ]
+}
