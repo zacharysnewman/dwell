@@ -2722,7 +2722,11 @@ export function validatePlates(data) {
   range("hotspots.count", data.hotspots.count, 0, 32, true);
   num("hotspots.within", data.hotspots.within, 0, data.reach);
   const rim = data.rim;
-  obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "noise"]);
+  obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "coast", "noise"]);
+  obj("rim.coast", rim.coast, ["amplitude", "wavelength", "octaves"]);
+  num("rim.coast.amplitude", rim.coast.amplitude, 0, 20_000);
+  num("rim.coast.wavelength", rim.coast.wavelength, 100, 1_000_000, true);
+  num("rim.coast.octaves", rim.coast.octaves, 1, 8, true);
   num("rim.edgeSea", rim.edgeSea, 0, data.reach / 4);
   num("rim.edgeCoast", rim.edgeCoast, 0, 100_000);
   range("rim.shelf", rim.shelf, 0, data.reach / 2);
@@ -2744,6 +2748,7 @@ export function validatePlates(data) {
     "along",
     "rift",
     "arc",
+    "cones",
     "hotspot",
   ]);
   num("uplift.speedRef", u.speedRef, 0.01, 100);
@@ -2838,6 +2843,12 @@ export function validatePlates(data) {
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
   num("uplift.hotspot.widen", u.hotspot.widen, 0, 2);
+  obj("uplift.cones", u.cones, ["radius", "height", "spacing", "offset", "shape"]);
+  range("uplift.cones.radius", u.cones.radius, 0.1, 5);
+  range("uplift.cones.height", u.cones.height, 0, 5);
+  num("uplift.cones.spacing", u.cones.spacing, 0, 0.9);
+  num("uplift.cones.offset", u.cones.offset, 0, 50_000);
+  num("uplift.cones.shape", u.cones.shape, 0, 0.6);
   // The Realistic world's variety (WORK_QUEUE item 15, part B): the erosion's routing, the relief.
   const v = data.variety;
   obj("variety", v, ["flow", "relief"]);
@@ -2902,7 +2913,8 @@ export function platesRust(data) {
     `// ${platesHeader}`,
     "",
     "use crate::plate_tectonics::{",
-    "    AlongRule, ArcMode, ArcRule, ChainRule, PairForm, PairRule, PlateUplift, RiftRule, Shape, Side,",
+    "    AlongRule, ArcMode, ArcRule, ChainRule, ConeVariety, PairForm, PairRule, PlateUplift, RiftRule,",
+    "    Shape, Side,",
     "};",
     "use crate::plates::{",
     "    BoundaryKind, FixturePlate, KindRule, PlateFixture, PlateKind, PlateRules, RimRule,",
@@ -2937,7 +2949,7 @@ export function platesRust(data) {
     ["hotspots_within", rf(data.hotspots.within)],
     [
       "rim",
-      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
+      `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, coast_amplitude: ${rf(data.rim.coast.amplitude)}, coast_wavelength: ${data.rim.coast.wavelength}, coast_octaves: ${data.rim.coast.octaves}, shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,
     ],
   ];
   for (const [k, v] of fields) rs.push(`    ${k}: ${v},`);
@@ -2973,6 +2985,10 @@ export function platesRust(data) {
     [
       "arc",
       `ArcRule { distance: ${rf(a.distance)}, min_distance: ${rf(a.minDistance)}, spacing: ${rf(a.spacing)}, min_length: ${rf(a.minLength)}, max_cones: ${a.maxCones}, cone_height: ${rf(a.coneHeight)}, cone_radius: ${rf(a.coneRadius)}, crater_radius: ${rf(a.craterRadius)}, crater_depth: ${rf(a.craterDepth)}, hardness: ${rf(a.hardness)} }`,
+    ],
+    [
+      "cones",
+      `ConeVariety { radius: [${rf(u.cones.radius[0])}, ${rf(u.cones.radius[1])}], height: [${rf(u.cones.height[0])}, ${rf(u.cones.height[1])}], spacing: ${rf(u.cones.spacing)}, offset: ${rf(u.cones.offset)}, shape: ${rf(u.cones.shape)} }`,
     ],
     [
       "hotspot",

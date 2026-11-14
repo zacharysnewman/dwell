@@ -782,9 +782,14 @@ pub fn from_heights_with(
         routing,
     );
     if let (Some(s), Some(u)) = (shield, &uneroded) {
+        // The cap fades out toward the cone's foot (the shield's cube over its most): capped in
+        // full only toward the summit, so the ground the uplift raised around a cone meets its
+        // flank instead of standing as a circular cliff at its foot (the map check, 2026-11-14).
+        let most = s.iter().copied().fold(0.0f64, f64::max).max(1e-9);
         for i in 0..len {
-            if s[i] > 0.0 && !sea[i] {
-                h[i] = h[i].min(u[i]);
+            if s[i] > 0.0 && !sea[i] && h[i] > u[i] {
+                let w = (s[i] / most).powi(3);
+                h[i] -= w * (h[i] - u[i]);
             }
         }
     }

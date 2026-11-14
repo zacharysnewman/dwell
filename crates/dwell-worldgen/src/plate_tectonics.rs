@@ -163,6 +163,34 @@ pub struct PlateUplift {
     pub rift: RiftRule,
     pub arc: ArcRule,
     pub hotspot: ChainRule,
+    pub cones: ConeVariety,
+}
+
+/// Each placed cone and island varied (plates.json `uplift.cones`; the map check, 2026-11-14:
+/// "perfectly round island clusters"): radius and height × draws in [min, max], a chain's spacing
+/// and an arc's places ± `spacing` of theirs, islands `offset` m off their line either way, every
+/// outline irregular by ± `shape` of its radius.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ConeVariety {
+    pub radius: [f64; 2],
+    pub height: [f64; 2],
+    pub spacing: f64,
+    pub offset: f64,
+    pub shape: f64,
+}
+
+/// A cone's outline factor at the angle `theta` (radians) round it: 1 ± `shape`, three lobes of
+/// phases hashed from its centre, so no two cones share an outline and none is a circle.
+pub fn outline(v: &Volcano, shape: f64, theta: f64) -> f64 {
+    if shape <= 0.0 {
+        return 1.0;
+    }
+    let key = mix32((v.x as i64 as u32) ^ mix32((v.z as i64 as u32) ^ 0x0C0E_0001));
+    let ph = |k: u32| f64::from(mix32(key ^ k)) / 4_294_967_296.0 * std::f64::consts::TAU;
+    let wave = 0.5 * (2.0 * theta + ph(1)).sin()
+        + 0.3 * (3.0 * theta + ph(2)).sin()
+        + 0.2 * (5.0 * theta + ph(3)).sin();
+    1.0 + shape * wave
 }
 
 impl PlateUplift {
@@ -614,7 +642,7 @@ impl PlateTectonics {
         let cones = self
             .volcanoes
             .iter()
-            .map(|v| Tectonics::cone(v, ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt()))
+            .map(|v| Tectonics::cone(v, self.cone_distance(v, x, z)))
             .fold(0.0, f64::max);
         let cones = if cones > 0.0 {
             cones * self.rim_fade(x, z)
@@ -633,11 +661,18 @@ impl PlateTectonics {
         }
         let mut s = 0.0f64;
         for v in self.volcanoes.iter().filter(|v| v.chain == 0) {
-            let r = ((x - v.x).powi(2) + (z - v.z).powi(2)).sqrt();
+            let r = self.cone_distance(v, x, z);
             let t = (1.0 - r / v.radius.max(1.0)).clamp(0.0, 1.0);
             s = s.max(t * t * (3.0 - 2.0 * t));
         }
         k * s
+    }
+
+    /// The distance (m) from a cone's centre to (x, z) as its irregular outline reads it: the
+    /// plain distance over [`outline`]'s factor at that angle.
+    pub fn cone_distance(&self, v: &Volcano, x: f64, z: f64) -> f64 {
+        let (dx, dz) = (x - v.x, z - v.z);
+        (dx * dx + dz * dz).sqrt() / outline(v, self.uplift.cones.shape, dz.atan2(dx)).max(0.1)
     }
 
     /// The arcs: along each subducting boundary whose pair has an arc, on polylines at least
@@ -672,8 +707,13 @@ impl PlateTectonics {
                     continue;
                 }
                 let count = ((total / a.spacing.max(1.0)) as u32).clamp(1, a.max_cones.max(1));
+                let cv = &self.uplift.cones;
+                let key = mix32(line.seed ^ (pl.len() as u32).wrapping_mul(0x27D4_EB2F));
                 for k in 0..count {
-                    let mut s = (f64::from(k) + 0.5) * total / f64::from(count);
+                    // Each cone's place along the line ± `cones.spacing` of the gap between them.
+                    let slot = total / f64::from(count);
+                    let jitter = cv.spacing * (draw(key, 4 * k, [-0.5, 0.5])) * slot;
+                    let mut s = ((f64::from(k) + 0.5) * slot + jitter).clamp(0.0, total);
                     let mut seg = 0;
                     while seg + 1 < lens.len() && s > lens[seg] {
                         s -= lens[seg];
@@ -709,8 +749,8 @@ impl PlateTectonics {
                     out.push(Volcano {
                         x: c[0],
                         z: c[1],
-                        height: a.cone_height * line.scale,
-                        radius: a.cone_radius,
+                        height: a.cone_height * line.scale * draw(key, 4 * k + 1, cv.height),
+                        radius: a.cone_radius * draw(key, 4 * k + 2, cv.radius),
                         crater_radius: a.crater_radius,
                         crater_depth: a.crater_depth,
                         chain: 0,
@@ -727,17 +767,30 @@ impl PlateTectonics {
     fn place_chains(&self) -> Vec<Volcano> {
         let c = &self.uplift.hotspot;
         let mut out = Vec::new();
-        for hs in &self.layout.hotspots {
+        let cv = &self.uplift.cones;
+        for (h, hs) in self.layout.hotspots.iter().enumerate() {
             let still = hs.trail == [0.0, 0.0];
+            let key = mix32((hs.at[0] as i64 as u32) ^ mix32(hs.at[1] as i64 as u32 ^ h as u32));
+            // The chain's own size (its islands older down it, lower and broader, as before).
+            let (hf, rf) = (draw(key, 1, cv.height), draw(key, 2, cv.radius));
+            let mut d = 0.0;
             for k in 0..if still { c.islands.min(1) } else { c.islands } {
                 let age = f64::from(k);
-                let d = age * c.spacing;
-                let (x, z) = (hs.at[0] + d * hs.trail[0], hs.at[1] + d * hs.trail[1]);
+                if k > 0 {
+                    d += c.spacing * (1.0 + cv.spacing * draw(key, 8 * k, [-1.0, 1.0]));
+                }
+                // Off its line either way (no row of islands on a ruler).
+                let off = cv.offset * draw(key, 8 * k + 1, [-1.0, 1.0]);
+                let (nx, nz) = (-hs.trail[1], hs.trail[0]);
+                let (x, z) = (
+                    hs.at[0] + d * hs.trail[0] + off * nx,
+                    hs.at[1] + d * hs.trail[1] + off * nz,
+                );
                 out.push(Volcano {
                     x,
                     z,
-                    height: c.height * c.decay.powf(age),
-                    radius: c.radius * (1.0 + c.widen * age),
+                    height: c.height * hf * c.decay.powf(age),
+                    radius: c.radius * rf * (1.0 + c.widen * age),
                     crater_radius: 0.0,
                     crater_depth: 0.0,
                     chain: k + 1,
@@ -1015,19 +1068,16 @@ mod tests {
         let mut seen = 0;
         for seed in 0..40 {
             let t = PlateTectonics::for_seed(seed);
+            // Each hotspot's islands follow the last's (`volcanoes` after the arcs' cones).
+            let mut islands = t.volcanoes.iter().filter(|v| v.chain > 0);
             for hs in &t.layout.hotspots {
                 let m = t.layout.plates[hs.plate].motion;
-                let chain: Vec<_> = t
-                    .volcanoes
-                    .iter()
-                    .filter(|v| v.chain > 0)
-                    .filter(|v| {
-                        let (dx, dz) = (v.x - hs.at[0], v.z - hs.at[1]);
-                        // On this hotspot's line.
-                        (dx * hs.trail[1] - dz * hs.trail[0]).abs() < 1.0
-                            && dx * hs.trail[0] + dz * hs.trail[1] >= -1.0
-                    })
-                    .collect();
+                let n = if hs.trail == [0.0, 0.0] {
+                    UPLIFT.hotspot.islands.min(1)
+                } else {
+                    UPLIFT.hotspot.islands
+                };
+                let chain: Vec<_> = islands.by_ref().take(n as usize).collect();
                 if chain.len() < 2 {
                     continue;
                 }

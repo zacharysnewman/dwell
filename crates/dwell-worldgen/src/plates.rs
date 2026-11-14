@@ -65,6 +65,11 @@ pub struct RimRule {
     /// A continent reaching the rim ends this far (m) inside the band, drawn per sector.
     pub shelf: [f64; 2],
     pub sectors: u32,
+    /// Every plate-edge coast moves by ±`coast_amplitude` m of noise at `coast_wavelength` m
+    /// (`coast_octaves`): bays and headlands, no coast straight for km (the map check, 2026-11-14).
+    pub coast_amplitude: f64,
+    pub coast_wavelength: i32,
+    pub coast_octaves: u32,
     /// The rim's coast moves by ±this much (m) of noise at this wavelength (m).
     pub noise_amplitude: f64,
     pub noise_wavelength: i32,
@@ -453,12 +458,10 @@ impl PlateLayout {
         best.1
     }
 
-    /// Whether a face-local point is land: on a continental plate and inside the rim's coast.
+    /// Whether a face-local point is land: inside the plates' coast ([`PlateLayout::coast_distance`]
+    /// above 0: a continental plate, its coast moved by the coast noise, inside the rim's coast).
     pub fn is_land(&self, x: f64, z: f64) -> bool {
-        if self.land_edge(x, z) <= 0.0 || self.plates.is_empty() {
-            return false;
-        }
-        self.plates[self.plate_at(x, z)].kind == PlateKind::Continental
+        !self.plates.is_empty() && self.coast_distance(x, z) > 0.0
     }
 
     /// The signed distance (m) to the plates' coast at a face-local point: > 0 on land (a
@@ -488,10 +491,28 @@ impl PlateLayout {
             near = near.min((dist2([wx, wz], pb.centre) - da) / (2.0 * gap));
         }
         let near = near.min(1.0e6);
-        match pa.kind {
-            PlateKind::Continental => near.min(edge),
-            PlateKind::Oceanic => (-near).min(edge),
+        let signed = match pa.kind {
+            PlateKind::Continental => near,
+            PlateKind::Oceanic => -near,
+        };
+        (signed + self.coast_noise(x, z)).min(edge)
+    }
+
+    /// The plate-edge coasts' noise (m, `rim.coast`) at a face-local point.
+    pub fn coast_noise(&self, x: f64, z: f64) -> f64 {
+        let r = &self.rules.rim;
+        if r.coast_amplitude <= 0.0 {
+            return 0.0;
         }
+        let n = fbm2(
+            mix32(self.rim_seed ^ 0xC0A5_7000),
+            x as i64,
+            z as i64,
+            r.coast_wavelength,
+            r.coast_octaves,
+            None,
+        );
+        r.coast_amplitude * 2.0 * f64::from(n)
     }
 
     /// Each plate's interior (m): the farthest any of its points inside the land's edge lies from
@@ -867,8 +888,13 @@ mod tests {
                 }
                 let band = PLATES.reach - PLATES.rim.edge_sea;
                 for (x, z) in [(0.0, 0.0), (5000.0, -3000.0), (-12000.0, 9000.0)] {
+                    // The plate's kind, but for the coast's noise near its edge.
                     let kind = l.plates[l.plate_at(x, z)].kind;
-                    assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
+                    let d = l.coast_distance(x, z);
+                    assert_eq!(l.is_land(x, z), d > 0.0, "{x} {z}");
+                    if d.abs() > 2.0 * PLATES.rim.coast_amplitude && l.land_edge(x, z) > 0.0 {
+                        assert_eq!(l.is_land(x, z), kind == PlateKind::Continental, "{x} {z}");
+                    }
                 }
                 for a in 0..72 {
                     let th = f64::from(a) * std::f64::consts::TAU / 72.0;

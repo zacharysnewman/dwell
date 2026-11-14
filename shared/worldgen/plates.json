@@ -33,6 +33,7 @@
     "edgeCoast": 3000,
     "shelf": [1000, 8000],
     "sectors": 10,
+    "coast": { "amplitude": 900, "wavelength": 3000, "octaves": 3 },
     "noise": {
       "amplitude": 800,
       "wavelength": 7000
@@ -214,6 +215,10 @@
       "craterRadius": 350,
       "craterDepth": 60,
       "hardness": 0.6
+    },
+    "cones": {
+      "$comment": "Each placed cone and hotspot island varied (the map check, 2026-11-14: \"perfectly round island clusters\", \"six identical round cone islands\"): its radius and its height × a draw in `radius` and `height` [min, max]; a chain's spacing ± `spacing` of itself and each island `offset` m off its line either way; an arc's cones ± `spacing` of theirs along it; every cone's outline irregular by ± `shape` of its radius (three lobes of seeded phase)."
+      ,"radius": [0.6, 1.4], "height": [0.65, 1.3], "spacing": 0.35, "offset": 1800, "shape": 0.3
     },
     "hotspot": {
       "islands": 4,
