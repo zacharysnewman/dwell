@@ -83,7 +83,34 @@ const sorted = (xs, order) => [...xs].sort((a, b) => order.indexOf(a) - order.in
  * Validates one parsed structure file and returns its canonical form. Every error names the file
  * and the entry (`playground.json: palette."s": unknown block "dwell:nope"`).
  */
-export function validate(json, file, registry) {
+/**
+ * Multi-cell blocks whole in the data (BUGS.md #171; docs/BLOCK_REGISTRY.md, Multi-cell blocks): a
+ * block whose `extends.up` names a part has that part in the cell above it, and a part (`partOf`)
+ * stands on its block. `parts`: `{ id → { extendsUp, partOf } }` (shared/blocks/parts.mjs
+ * `partsFromNamespaces`).
+ */
+function checkWhole(cells, [sx, sy, sz], states, parts, fail) {
+  const blockAt = (x, y, z) => {
+    if (y < 0 || y >= sy) return null;
+    const st = states.get(cells[(y * sz + z) * sx + x]);
+    return st == null ? null : st.split('[')[0];
+  };
+  for (let y = 0; y < sy; y++)
+    for (let z = 0; z < sz; z++)
+      for (let x = 0; x < sx; x++) {
+        const id = blockAt(x, y, z);
+        const p = id && parts.get(id);
+        if (!p) continue;
+        const at = `layers[${y}][${z}][${x}]`;
+        if (p.extendsUp && blockAt(x, y + 1, z) !== p.extendsUp)
+          fail(at, `${id} needs ${p.extendsUp} in the cell above it (a multi-cell block is whole or not at all)`);
+        if (p.partOf && blockAt(x, y - 1, z) !== p.partOf)
+          fail(at, `${id} is part of ${p.partOf} and must stand on one (a multi-cell block is whole or not at all)`);
+      }
+}
+
+/** Validates a structure file; `parts` (optional) checks its multi-cell blocks are whole. */
+export function validate(json, file, registry, parts = undefined) {
   const fail = (entry, why) => {
     throw new Error(`${file}: ${entry}: ${why}`);
   };
@@ -183,6 +210,7 @@ export function validate(json, file, registry) {
   }
 
   const cells = layers.map((layer) => layer.join('')).join('');
+  if (parts) checkWhole(cells, size, states, parts, fail);
   return { name: json.name, kind: json.kind, size, anchor, palette: states, cells, variants };
 }
 

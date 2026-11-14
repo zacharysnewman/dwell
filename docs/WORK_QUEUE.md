@@ -25,6 +25,14 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
+  generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
+  on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data
+  validated), a place needs every cell free, any edit taking one half takes the other, a saved lone half is repaired
+  on load. Done on `claude/torch-pairs-thl8l9` (`dwell_world::parts`); a saved lone half is removed, not completed. The
+  generator's shrines were already whole on the seeds checked, so the owner's look is the acceptance check.
+  **Owner should see:** every torch, at shrines and wherever placed, has both its stick and its flame; you can never
+  end up with a floating flame or a headless stick.
 - **Tree mesh bugs (owner, 2026-11-13; BUGS.md #167, #168):** "Tree leaf inside faces touching the tree log
   shouldn't be shown and they cause z fighting. Also sideways logs (after a tree is felled) octagon shape corners are
   shorter than when upright, the sides aren't the same length and they should be the same." Brief: cull the leaf face

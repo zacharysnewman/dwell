@@ -146,6 +146,13 @@ its parts (the server's check refuses it unless their cells are free, like its o
 a cell clears the other cells of the multi-cell block that was there, in the same
 `VoxelModification`, together with what that leaves unsupported. The targeting outline covers every
 cell (`outline_box`). The 1 m torch (`dwell:torch` with `dwell:torch_upper`) is the first.
+A multi-cell block is in the world **whole or not at all** (BUGS.md #171, `dwell_world::parts`): a
+structure's data holds a part above its block (`shared/structures` gen fails a lone half); the
+generator stamps all of its cells or none (`Placed::cells_whole`); a region edit drops a lone half
+it would put and clears the other half of one it cuts (`parts::keep_whole`, in
+`check_region_edit`); every server tick's changes, whatever wrote them, clear the other cells of one
+they took a cell of (`parts::lone_parts`, in `broadcast_changes`); and a lone half in a chunk read
+from a world file is removed when it loads (`parts::repair_chunk`).
 
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable

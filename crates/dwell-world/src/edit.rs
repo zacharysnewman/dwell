@@ -219,19 +219,8 @@ fn block_name(m: StateId) -> &'static str {
     }
 }
 
-/// The other cells of the multi-cell block a state at `cell` belongs to (block data `extends`,
-/// `partOf`; BLOCK_REGISTRY.md, Multi-cell blocks): each with the block expected there.
-fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], &'static str)> {
-    let s = info(m);
-    let mut out = Vec::new();
-    if let Some(up) = s.extends_up {
-        out.push((above(cell), up));
-    }
-    if let Some(of) = s.part_of {
-        out.push((below(cell), of));
-    }
-    out
-}
+// The other cells of a multi-cell block (block data `extends`, `partOf`): crate::parts.
+use crate::parts::partners;
 
 /// Every write an edit setting `cell` to `material` makes, in order (the server sends them in one
 /// `VoxelModification`; the client predicts the same): the cell; a multi-cell block's other cells

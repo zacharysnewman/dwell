@@ -498,3 +498,45 @@ fn a_spawn_without_a_shrine_near_gets_its_own() {
     // The chunks there build it: near() lists it.
     assert_eq!(none.near(t, (s.x, s.z), (s.x, s.z)), vec![s]);
 }
+
+dwell_world::both_faces!(
+    /// On face `f`: every torch a shrine stands is whole, its stick and its flame (owner,
+    /// 2026-11-14, BUGS.md #171: "the torches sometimes are placed by me or the generator without
+    /// their tops or bottoms, it should be impossible to have one without the other"). The
+    /// generator stamps a multi-cell block's cells together or neither.
+    fn every_shrine_torch_is_generated_whole(f: FaceFrame) {
+        let (torch, upper) = (require("dwell:torch"), require("dwell:torch_upper"));
+        let (mut whole, mut lone) = (0, Vec::new());
+        for seed in [0u64, 1, 7, 42] {
+            let g = BifacialTerrain::new(seed);
+            let t = g.local(f.face);
+            let sh = t.shrines().expect("shrines");
+            let mut v = Voxels::new(&g);
+            for s in shrines_of(&g, f.face) {
+                let placed = t.shrine(sh, s);
+                for (p, state) in placed.cells() {
+                    if state != torch && state != upper {
+                        continue;
+                    }
+                    let here = v.at(p[0], f.row(p[1]), p[2]);
+                    let (lo, hi) = if state == torch {
+                        (here, v.at(p[0], f.row(p[1] + 1), p[2]))
+                    } else {
+                        (v.at(p[0], f.row(p[1] - 1), p[2]), here)
+                    };
+                    let (is_lo, is_hi) = (lo == f.state(torch), hi == f.state(upper));
+                    if is_lo && is_hi {
+                        whole += 1;
+                    } else if is_lo || is_hi {
+                        lone.push((seed, p, is_lo, is_hi));
+                    }
+                }
+            }
+        }
+        assert!(
+            lone.is_empty(),
+            "lone torch halves (seed, cell, stick, flame): {lone:?}"
+        );
+        assert!(whole > 100, "{whole} whole torch cells");
+    }
+);

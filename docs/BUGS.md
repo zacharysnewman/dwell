@@ -6,6 +6,34 @@ pins it.
 
 ## Open
 
+### 171. Torches without their tops or bottoms: a flame with no stick, a stick with no flame
+
+Owner, 2026-11-14: "A bug: the torches sometimes are placed by me or the generator without their tops or bottoms, it
+should be impossible to have one without the other". Screenshot: at a (bigger, 16 m) shrine, a row of flames on the
+dais with no sticks under them.
+
+**Owner should see:** every torch, at shrines and wherever placed, has both its stick and its flame; you can never
+end up with a floating flame or a headless stick.
+
+Fixed on `claude/torch-pairs-thl8l9` by one rule over the block data's multi-cell blocks (`extends` / `partOf`), not torch
+code (`crates/dwell-world/src/parts.rs`): structures' data must hold a part above its block (`shared/structures`
+gen fails a lone half, `format.mjs` `checkWhole`); the generator stamps a multi-cell block's cells together or
+neither (`Placed::cells_whole`, in `stamp_monuments` and `stamp_trees`); a fill, paste or structure edit drops a
+lone half it would put and clears the other half of one it cuts (`parts::keep_whole` in `check_region_edit`, so
+the client predicts it); every server tick's changes, whatever made them (a break, a blast, water, lava, a falling
+piece, growth, grazing), clear the other cell of a torch they took one cell of (`parts::lone_parts` in
+`broadcast_changes`); and a lone half in a chunk read from a world file is **removed** when it loads
+(`parts::repair_chunk`; removed rather than completed: completing would write a cell nobody put, and breaking either
+half already removes both). Placing by hand was already refused when the flame's cell is taken
+(`check_block_edit`). Tests on both faces: `crates/dwell-world/tests/parts.rs`, the shrines' `every_shrine_torch_is_generated_whole`,
+`shared/structures/gen.test.mjs`.
+
+Not reproduced: on seeds 0, 1, 7 and 42, on both faces, every shrine's torches generate whole on the unfixed code
+too (the new shrine test passes there), so the screenshot's lone flames came from something after generation, most
+likely a write that took the stick's cell without the flame's (the server now clears the flame with it), or a world
+saved earlier with them (cleared when its chunks load). A partner in a chunk that is not loaded when the lone half
+loads is left until an edit beside it. The owner's look at a shrine confirms it.
+
 ### 170. The record tool's settle wait never sees the view idle while builders edit nearby
 
 Found recording the builders (2026-11-14): `take.mjs`'s `viewIdle` (the bench's rule) waited its full 30–45 s and

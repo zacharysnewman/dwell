@@ -225,6 +225,8 @@ fn check_region_edit_with(
             }
         }
     }
+    // A multi-cell block (a torch) whole or not at all (BUGS.md #171).
+    crate::parts::keep_whole(&mut out.changes, |p| world.get_voxel(p[0], p[1], p[2]));
     out
 }
 
