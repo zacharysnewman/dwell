@@ -13,13 +13,14 @@ export const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VIDEOS = join(SKILL, 'videos');
 
 const KEYS = {
-  video: ['formatVersion', 'name', 'description', 'world', 'capture', 'audio', 'splice', 'shots'],
+  video: ['formatVersion', 'name', 'description', 'world', 'capture', 'aspects', 'title', 'audio', 'splice', 'shots'],
+  title: ['text', 'fromEndS', 'fadeS', 'width'],
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
-  splice: ['fade', 'crf', 'gainDb'],
+  splice: ['fade', 'fadeIn', 'crf', 'gainDb'],
   shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice'],
   setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'eval'],
-  part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio'],
+  part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio', 'crop'],
 };
 const KINDS = { path: 'path', take: 'script' };
 
@@ -46,8 +47,26 @@ export function validate(m, base = SKILL) {
   if (m.audio !== undefined && typeof m.audio !== 'boolean') errs.push('video.audio: expected true or false (the game\'s effects and ambience; never music)');
   if (m.splice !== undefined && keys(m.splice, 'splice', 'video.splice')) {
     if (m.splice.fade !== undefined) num(m.splice.fade, 'video.splice.fade');
+    if (m.splice.fadeIn !== undefined) num(m.splice.fadeIn, 'video.splice.fadeIn');
     if (m.splice.crf !== undefined) num(m.splice.crf, 'video.splice.crf');
     if (m.splice.gainDb !== undefined && !(typeof m.splice.gainDb === 'number' && m.splice.gainDb >= 0 && m.splice.gainDb <= 40)) errs.push('video.splice.gainDb: expected a number of dB from 0 to 40 (the whole sound lifted, limited)');
+  }
+  // aspects: one shot list cut to several framings ({"9x16": [1080, 1920], "16x9": [1920, 1080]}), each a crop of the
+  // capture (record a square, crop each aspect out of it); without it the video has one framing, capture.size
+  const aspects = m.aspects === undefined ? [] : obj(m.aspects) ? Object.keys(m.aspects) : (errs.push('video.aspects: expected {name: [width, height]}'), []);
+  for (const a of aspects) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(a)) errs.push(`video.aspects: "${a}" is not a lowercase name (e.g. 9x16)`);
+    size(m.aspects[a], `video.aspects.${a}`);
+  }
+  if (m.title !== undefined && keys(m.title, 'title', 'video.title')) {
+    if (typeof m.title.text !== 'string' || !m.title.text.trim()) errs.push('video.title.text: expected the title\'s text');
+    num(m.title.fromEndS, 'video.title.fromEndS');
+    if (m.title.fadeS !== undefined) num(m.title.fadeS, 'video.title.fadeS');
+    const w = m.title.width;
+    const frac = (v, where) => { if (!(typeof v === 'number' && v > 0 && v <= 1)) errs.push(`${where}: expected a share of the frame's width, 0–1`); };
+    if (typeof w === 'number') frac(w, 'video.title.width');
+    else if (obj(w)) for (const [a, v] of Object.entries(w)) { if (!aspects.includes(a)) errs.push(`video.title.width: no aspect "${a}"`); frac(v, `video.title.width.${a}`); }
+    else errs.push('video.title.width: expected a share of the frame\'s width, or one per aspect');
   }
   if (!Array.isArray(m.shots) || m.shots.length === 0) errs.push('video.shots: expected a non-empty list');
   const ids = new Set(), labels = new Set();
@@ -97,6 +116,14 @@ export function validate(m, base = SKILL) {
       if (p.vf !== undefined && typeof p.vf !== 'string') errs.push(`${pat}.vf: expected ffmpeg filters`);
       if (p.cut !== undefined && typeof p.cut !== 'boolean') errs.push(`${pat}.cut: expected true or false`);
       if (p.audio !== undefined && !PART_AUDIO.includes(p.audio)) errs.push(`${pat}.audio: expected one of ${PART_AUDIO.join(', ')}, got ${JSON.stringify(p.audio)}`);
+      if (p.crop !== undefined) {
+        // where each aspect's crop sits in the capture: [x, y], 0 = left/top edge, 0.5 the centre, 1 = right/bottom
+        if (!obj(p.crop)) errs.push(`${pat}.crop: expected {aspect: [x, y]} (0–1, 0.5 the centre)`);
+        else for (const [a, v] of Object.entries(p.crop)) {
+          if (!aspects.includes(a)) errs.push(`${pat}.crop: no aspect "${a}" (video.aspects: ${aspects.join(', ') || 'none'})`);
+          if (!Array.isArray(v) || v.length !== 2 || !v.every((x) => typeof x === 'number' && x >= 0 && x <= 1)) errs.push(`${pat}.crop.${a}: expected [x, y], each 0–1`);
+        }
+      }
       if (p.cut && i === 0 && j === 0) errs.push(`${pat}.cut: the first part has nothing to cut from`);
       if (p.label !== undefined) {
         if (typeof p.label !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(p.label)) errs.push(`${pat}.label: expected a lowercase id`);
@@ -146,6 +173,8 @@ export function fingerprint(m, shot, base = SKILL) {
 /** Where a video's clips live: <cache>/<video>/<shot>.mp4 with <shot>.json (the fingerprint and capture stats). */
 export const clipPath = (cache, m, id) => join(cache, m.name, `${id}.mp4`);
 export const metaPath = (cache, m, id) => join(cache, m.name, `${id}.json`);
+/** The title card's image for an aspect (title.mjs renders it: the game's wordmark, transparent). */
+export const titlePath = (cache, m, aspect) => join(cache, m.name, `title${aspect ? `-${aspect}` : ''}.png`);
 
 /**
  * Which shots to record and why: the ones `--only` names, and every other shot with no cached clip or
@@ -170,16 +199,28 @@ export function selectShots(m, { only = [], spliceOnly = false, cached, fingerpr
   return plan;
 }
 
-/** The splice.py plan for the whole video from the cached clips. */
-export function splicePlan(m, cache) {
-  const plan = { out: join(cache, m.name, `${m.name}.mp4`), size: m.capture.size, fps: m.capture.fps };
+/** The video's framings: its aspects' names, or [null] (one framing, the capture's size). */
+export const aspectsOf = (m) => m.aspects ? Object.keys(m.aspects) : [null];
+
+/** The splice.py plan for the whole video from the cached clips, in one aspect (a name from video.aspects) or the capture's framing. */
+export function splicePlan(m, cache, aspect = null) {
+  if (aspect !== null && !m.aspects?.[aspect]) throw new Error(`no aspect "${aspect}" (video.aspects: ${aspectsOf(m).join(', ')})`);
+  const size = aspect ? m.aspects[aspect] : m.capture.size;
+  const plan = { out: join(cache, m.name, `${m.name}${aspect ? `-${aspect}` : ''}.mp4`), size, fps: m.capture.fps };
   if (m.splice?.fade !== undefined) plan.fade = m.splice.fade;
+  if (m.splice?.fadeIn !== undefined) plan.fadeIn = m.splice.fadeIn;
   if (m.splice?.crf !== undefined) plan.crf = m.splice.crf;
   if (m.splice?.gainDb !== undefined) plan.gainDb = m.splice.gainDb;
   plan.audio = m.shots.some((s) => shotAudio(m, s));
-  plan.clips = m.shots.flatMap((s) => s.splice.map(({ label: _, audio, ...p }) => ({
+  plan.clips = m.shots.flatMap((s) => s.splice.map(({ label: _, audio, crop, ...p }) => ({
     src: clipPath(cache, m, s.id), from: p.from ?? 0, ...p,
+    ...(crop?.[aspect] ? { crop: crop[aspect] } : {}),
     ...(plan.audio ? { audio: shotAudio(m, s) ? partAudio(audio, p.speed ?? 1) : 'mute' } : {}),
   })));
+  if (m.title) {
+    const w = typeof m.title.width === 'number' ? m.title.width : m.title.width[aspect] ?? 0.5;
+    plan.titleCard = { image: titlePath(cache, m, aspect), fromEndS: m.title.fromEndS, fadeS: m.title.fadeS ?? 1 };
+    plan.titleCard.widthPx = Math.round(size[0] * w);
+  }
   return plan;
 }

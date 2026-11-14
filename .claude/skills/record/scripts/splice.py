@@ -6,7 +6,11 @@ python3 splice.py plan.json [--dry-run] — plan: {"out", "size": [w, h], "fps",
 "clips": [{"src": frame folder or mp4, "from": s, "to": s, "speed"?: k (0.5 = half speed),
 "vf"?: extra ffmpeg filters (e.g. a grade, "eq=gamma=1.4"), "cut"?: true (a hard cut into this clip, no
 cross-fade: to split one take into parts at different speeds), "audio"?: "keep" | "stretch" | "mute" (with the
-plan's audio: the clip's sound as is, time-stretched to its speed with the pitch kept, or silence)}]}.
+plan's audio: the clip's sound as is, time-stretched to its speed with the pitch kept, or silence), "crop"?: [x, y]
+(where the frame's crop sits in a clip of another shape, 0-1 each, default the centre: one square capture cut to
+9:16 and 16:9)}], "fadeIn"?: s (the video fades in from black, picture and sound), "titleCard"?: {"image": a
+transparent PNG (title.mjs), "widthPx", "fromEndS": s before the end it fades in, "fadeS"} (centred over the last
+shot; it fades out to black with the video)}.
 Frame folders come from driver.mjs (f00000.jpg … plus times.json); they're turned into an mp4 at their measured
 frame rate first. The sound cuts, cross-fades and fades out with the picture. Writes `out`, and a still per clip
 next to it. --dry-run prints the ffmpeg commands as JSON and runs nothing (take.test.mjs checks the graphs)."""
@@ -52,10 +56,20 @@ def concat_args(paths, audio, out):
             '-c:v', 'libx264', '-crf', '18', out]
 
 
-def join_graph(durations, fade, audio, gain_db=0):
+def crop_filter(W, H, crop=None):
+    """Scale a clip to cover W x H and crop W x H out of it, at `crop` = [x, y] (0-1: 0 the left/top edge, 0.5 the
+    centre, 1 the right/bottom; default the centre): a square capture gives both a 9:16 and a 16:9 framing."""
+    x, y = crop if crop else (0.5, 0.5)
+    pos = '' if (x, y) == (0.5, 0.5) else f':x=(iw-{W})*{x:g}:y=(ih-{H})*{y:g}'
+    return f'scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}{pos}'
+
+
+def join_graph(durations, fade, audio, gain_db=0, fade_in=0, title=None):
     """The cross-fades between the groups (xfade, and acrossfade for the sound: both shorten the video by `fade`
     a join) and the fade out of the last second; `gain_db` lifts the whole sound (the tap records the game's mix
-    quietly, ~-50 dB mean), with a limiter so it can't clip. Returns (filter graph, total seconds)."""
+    quietly, ~-50 dB mean), with a limiter so it can't clip. `fade_in` s from black at the start (picture and
+    sound). `title` = (input index, from_end_s, fade_s, width_px): a title image fading in over the end, centred,
+    before the fade out. Returns (filter graph, total seconds)."""
     parts, prev, aprev, t = [], '[0:v]', '[0:a]', durations[0]
     for i in range(1, len(durations)):
         parts.append(f'{prev}[{i}:v]xfade=transition=fade:duration={fade}:offset={t - fade:.3f}[x{i}]')
@@ -63,10 +77,18 @@ def join_graph(durations, fade, audio, gain_db=0):
             parts.append(f'{aprev}[{i}:a]acrossfade=d={fade}:c1=tri:c2=tri[ax{i}]')
             aprev = f'[ax{i}]'
         prev, t = f'[x{i}]', t + durations[i] - fade
-    parts.append(f'{prev}fade=t=out:st={t - 1:.3f}:d=1[out]')
+    if title:
+        idx, from_end, fade_s, width = title
+        at = max(t - from_end, 0)
+        parts.append(f'[{idx}:v]scale={width}:-1,format=rgba,fade=t=in:st={at:.3f}:d={fade_s}:alpha=1[title]')
+        parts.append(f"{prev}[title]overlay=(W-w)/2:(H-h)/2:shortest=1:enable='gte(t,{at:.3f})'[titled]")
+        prev = '[titled]'
+    head = f'fade=t=in:st=0:d={fade_in},' if fade_in else ''
+    parts.append(f'{prev}{head}fade=t=out:st={t - 1:.3f}:d=1[out]')
     if audio:
         lift = f'volume={gain_db}dB,alimiter=limit=0.9,' if gain_db else ''
-        parts.append(f'{aprev}{lift}afade=t=out:st={t - 1:.3f}:d=1,atrim=0:{t:.3f}[aout]')
+        ahead = f'afade=t=in:st=0:d={fade_in},' if fade_in else ''
+        parts.append(f'{aprev}{lift}{ahead}afade=t=out:st={t - 1:.3f}:d=1,atrim=0:{t:.3f}[aout]')
     return ';'.join(parts), t
 
 
@@ -77,7 +99,7 @@ def main(argv):
     audio = bool(plan.get('audio'))
     out = plan['out']; work = os.path.splitext(out)[0] + '_seg'
     if not dry: os.makedirs(work, exist_ok=True)
-    V = f'scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},fps={FPS},format=yuv420p,setsar=1'
+    V = f'fps={FPS},format=yuv420p,setsar=1'
     commands = []
 
     def run(*a):
@@ -105,12 +127,13 @@ def main(argv):
     speeds = [float(c.get('speed', 1)) for c in plan['clips']]
     extra = [c.get('vf') for c in plan['clips']]
     cuts = [bool(c.get('cut')) for c in plan['clips']]
+    crops = [crop_filter(W, H, c.get('crop')) for c in plan['clips']]
     sound = [(c.get('audio', 'keep') if has_audio(clips[i][0]) else 'mute') if audio else None for i, c in enumerate(plan['clips'])]
     filters = '' if dry else subprocess.run(['ffmpeg', '-hide_banner', '-filters'], capture_output=True, text=True).stdout
     if plan.get('title') and 'drawtext' in filters:
         font = next((f for f in ['/System/Library/Fonts/Supplemental/Georgia.ttf', '/System/Library/Fonts/Helvetica.ttc'] if os.path.exists(f)), None)
         esc = lambda s: s.replace(':', r'\:').replace("'", r"\'")
-        vf = f"{V},trim=0:3,setpts=PTS-STARTPTS,eq=brightness=-0.25:saturation=0.8"
+        vf = f"{crop_filter(W, H)},{V},trim=0:3,setpts=PTS-STARTPTS,eq=brightness=-0.25:saturation=0.8"
         vf += f",drawtext=fontfile={font}:text='{esc(plan['title'])}':fontsize={W // 18}:fontcolor=white:x=(w-tw)/2:y=(h-th)/2-10"
         if plan.get('subtitle'):
             vf += f",drawtext=fontfile={font}:text='{esc(plan['subtitle'])}':fontsize={W // 40}:fontcolor=white@0.85:x=(w-tw)/2:y=(h/2)+{W // 20}"
@@ -121,7 +144,7 @@ def main(argv):
     for i, (src, a, b) in enumerate(clips):
         seg = os.path.join(work, f'{i:02d}.mp4')
         k = speeds[i]
-        vf = (f'setpts=PTS/{k},' if k != 1 else '') + V + (f',{extra[i]}' if extra[i] else '')
+        vf = (f'setpts=PTS/{k},' if k != 1 else '') + crops[i] + ',' + V + (f',{extra[i]}' if extra[i] else '')
         run(*segment_args(src, a, b, k, vf, sound[i], seg))
         segs.append((seg, (b - a) / k))
     stills = list(segs)
@@ -137,7 +160,13 @@ def main(argv):
         run(*concat_args([p for p, _ in group], audio, joined))
         segs.append((joined, sum(d for _, d in group)))
     inputs = sum((['-i', p] for p, _ in segs), [])
-    graph, t = join_graph([d for _, d in segs], X, audio, plan.get('gainDb', 0))
+    card = plan.get('titleCard')
+    title = None
+    if card:
+        if not dry and not os.path.exists(card['image']): sys.exit(f"no title image {card['image']} (title.mjs renders it)")
+        inputs += ['-loop', '1', '-i', card['image']]
+        title = (len(segs), float(card['fromEndS']), float(card.get('fadeS', 1)), int(card.get('widthPx', W // 2)))
+    graph, t = join_graph([d for _, d in segs], X, audio, plan.get('gainDb', 0), plan.get('fadeIn', 0), title)
     run(*inputs, '-filter_complex', graph, '-map', '[out]', *(['-map', '[aout]', *AUDIO] if audio else ['-an']),
         '-r', str(FPS), '-c:v', 'libx264', '-crf', str(plan.get('crf', 21)),
         '-preset', 'slow', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out)

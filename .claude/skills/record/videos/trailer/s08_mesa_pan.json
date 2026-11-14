@@ -1,0 +1,38 @@
+{
+ "formatVersion": 1,
+ "name": "trailer s08: mesa pan",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [
+    15800,
+    1250,
+    -200
+   ],
+   "look": [
+    -5,
+    -15
+   ],
+   "fov": 50,
+   "timeOfDay": 0.765
+  },
+  {
+   "t": 5,
+   "position": [
+    15800,
+    1250,
+    -200
+   ],
+   "look": [
+    30,
+    -13
+   ]
+  }
+ ],
+ "segments": [
+  {
+   "move": "pan",
+   "easing": "inOutSine"
+  }
+ ]
+}

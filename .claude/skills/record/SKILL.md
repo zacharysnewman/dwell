@@ -49,6 +49,30 @@ and missing files).
 **Footage policy:** raw frames are deleted as soon as a shot is encoded; the per-shot clips stay in the cache until
 the owner approves the video (so a re-record of one shot is minutes), then `--clean`. Never commit footage.
 
+## 0a. Camera patterns
+
+Plan shots from [CAMERA_PATTERNS.md](CAMERA_PATTERNS.md) (owner, 2026-11-13: "Use these patterns (document the
+patterns)"): the owner's camera spec distilled — the camera model and lens table (Dwell's `fov` is vertical degrees:
+24 mm → 53, 35 → 38, 50 → 27, 85 → 16), shot sizes, angles, moves, compounds, cuts and transitions, the trailer
+structure, intent → shot, validation checks — then each pattern mapped to theater paths, presets, takes and the
+splice, with what the tools can't do yet (roll, handheld noise, depth of field, motion blur, screen-space framing, …).
+
+## 0c. Two aspects, a fade from black and a title card (the trailer)
+
+The trailer (owner, 2026-11-13: "Let's do vertical and widescreen. Title and game sound, no music.") is one manifest
+cut twice. Showcases stay 9:16 and text-free; these keys are for a trailer:
+
+- **`aspects`** `{"9x16": [1080, 1920], "16x9": [1920, 1080]}`: record **square** (`capture.size` [1920, 1920]) and
+  crop each aspect out of the same clip, so one take serves both (9:16 keeps the full vertical view, 16:9 the full
+  horizontal one: frame the subject in the centre square). take.mjs splices `<video>-9x16.mp4` and
+  `<video>-16x9.mp4` (`--aspect 9x16` splices one). A part's **`crop`** `{"16x9": [0.5, 0.35]}` moves that aspect's
+  window (0–1, 0.5 the centre) where a subject would be cut off.
+- **`splice.fadeIn`** (s): the video fades in from black, picture and sound.
+- **`title`** `{"text", "fromEndS", "fadeS", "width": {aspect: share of the frame's width}}`: `scripts/title.mjs`
+  renders the text in the game's own wordmark (the main menu's `.wordmark` rule from `client/src/style.css`, the
+  rounded display font with its grass-and-earth extrusion) to a transparent PNG, and the splice fades it in,
+  centred, `fromEndS` before the end; it goes out with the video's fade to black.
+
 ## 0b. Sound: effects and ambience, never music
 
 Every take records **the game's own sound** — the effects bus (footsteps, chops, splashes, the room's reverb) and the
@@ -328,3 +352,13 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   track with a limiter (→ −26 dB mean, peaks −0.7 dB). **The target box:** `view: {"targetOutline": false}` in a
   shot's setup (BUGS.md #113 fixed). Timings: the full `take.mjs water` ~4 min; `--only s3` 1 min 52 s; a re-splice
   1 min 15 s.
+- 2026-11-13, the trailer v1 (`videos/trailer/`, 19 parts, ~53 s, two aspects from one square capture; notes per shot in
+  each shot's `note`). **Square 1920×1920 captures** ran 17–59 fps (36 typical) and encoded in 25–60 s a shot; the
+  full first pass of 18 shots took ~25 min, so re-take with `--only`. **Ground heights:** `d.voxel` read 0 everywhere
+  from the driver; `npm run bench -- --warm --spot <spot>` prints each spot's eye and ground ("m over the ground at
+  G") in ~20 s a spot: use it to place cameras. **Wrong-face views:** a camera or player that showed stars below and
+  terrain overhead (the forest test world opened `at=` 18 m over its ground; a teleport into a mesa wall) — open a
+  world above everything and fly down. **Fresh-world lava lakes start empty** (fill with `d.lava('rate', …)` first).
+  **`sunLand` refuses off home** (after `moonLand`): reload between them. **`d.die()`** shows a third-person death
+  camera, then respawns at the nearest shrine's steps (a free shrine shot). The region tool's outline box and a
+  tree in front spoiled the dynamite row: check the line of sight first.
