@@ -136,8 +136,14 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// its ground), mesa country without tan sand (the `dwell:mesa_country` blend, its dither at 12 m)
 /// and sagebrush sparse on the erosion's standing tops (placements.json `tops`). Each alone moves
 /// face A's hash (with the first two undone it still moves, by the sagebrush).
+///
+/// Re-pinned 2026-11-14 for the 0.69 line: pines standing on snowy grass or snow take their
+/// snowy leaves whatever their height (placements.json variants' `on`; the owner: "trees at snow
+/// level should use snow leaves"). Face A only; with `on` removed the pin reads as before.
+/// Both faces again (the same line) for mesa country's blend shared with the Realistic world
+/// (`dwell:mesa_country`: 220 m patches, the slope's push into red sand, no cap below the last tone).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "aca376b226a9b407"), (Face::B, "651d111b005fa437")];
+    [(Face::A, "1d5ff0f198e05f6f"), (Face::B, "573480c5c9a7174d")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

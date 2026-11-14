@@ -456,13 +456,14 @@ export function validatePlacements(
     for (const v of p.variants ?? []) {
       const vat = `${at}: variant ${v?.name ?? "(unnamed)"}`;
       const vk = Object.keys(v ?? {}).filter(
-        (k) => !["name", "replace", "height", "$comment"].includes(k),
+        (k) => !["name", "replace", "height", "on", "$comment"].includes(k),
       );
       if (vk.length) fail(`${vat}: unknown ${vk.join(", ")}`);
       if (!(typeof v.name === "string" && NAME.test(v.name)))
         fail(`${vat}: name must be [a-z0-9_]+`);
       const pairs = Object.entries(v.replace ?? {});
       if (!pairs.length) fail(`${vat}: replace must map blocks to blocks`);
+      for (const b of v.on ?? []) if (!blocks.get(b)) fail(`${vat}: on names unknown block ${b}`);
       for (const [from, to] of pairs) {
         if (!blocks.get(from))
           fail(`${vat}: replace names unknown block ${from}`);
@@ -535,7 +536,7 @@ export function placementsRust(data, species = registrySpecies()) {
       const pairs = Object.entries(v.replace).map(
         ([a, b]) => `(${JSON.stringify(a)}, ${JSON.stringify(b)})`,
       );
-      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(", ")}], from: ${v.height[0]}, full: ${v.height[1]} }`;
+      return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(", ")}], from: ${v.height[0]}, full: ${v.height[1]}, on: &[${(v.on ?? []).map((b) => JSON.stringify(b)).join(", ")}] }`;
     });
     rs.push(`        variants: &[${vs.join(", ")}],`);
     rs.push(`        tops: ${rf(p.tops ?? 1)},`);
@@ -619,6 +620,9 @@ export function vegetationRust(data) {
   return rs.join("\n");
 }
 
+/** The erosion's optional keys' defaults (0.69): absent, as before. */
+const EROSION_DEFAULTS = { warp: 0, warpWavelength: 200 };
+
 /** The Rust for the validated geology (rocks.json, `validateRocks`; systemic terrain T2). */
 export function rocksRust(data) {
   const rs = [
@@ -683,12 +687,18 @@ export function rocksRust(data) {
   rs.push(`    ledge_every: ${rf(data.shaping.ledgeEvery)},`);
   rs.push(`    tread_relief: ${rf(data.shaping.treadRelief)},`);
   rs.push(
+    `    cover_rain: ${data.shaping.coverRain === undefined ? "f64::INFINITY" : rf(data.shaping.coverRain)},`,
+  );
+  rs.push(`    cover_noise: ${rf(data.shaping.coverNoise ?? 0)},`);
+  rs.push(`    edge_jitter: ${rf(data.shaping.edgeJitter ?? 0)},`);
+  rs.push(`    edge_fade: ${rf(data.shaping.edgeFade ?? 0)},`);
+  rs.push(
     `    notched: Notched::${{ none: "None", mesaEdges: "MesaEdges", all: "All" }[data.shaping.notched]},`,
   );
   rs.push("    erosion: Erosion {");
   const snake = (k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   for (const k of Object.keys(GEOLOGY.erosion))
-    rs.push(`        ${snake(k)}: ${rf(data.erosion[k])},`);
+    rs.push(`        ${snake(k)}: ${rf(data.erosion[k] ?? EROSION_DEFAULTS[k])},`);
   rs.push("    },");
   rs.push("    blends: &[");
   for (const b of data.blends ?? []) {
@@ -1086,6 +1096,7 @@ export function terrainRust({
   rs.push(`    dither_speckle: ${rf(bm.ditherSpeckle ?? 1)},`);
   rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
   rs.push(`    trees_sharpen: ${rf(bm.treesSharpen ?? 1)},`);
+  rs.push(`    rock_edge: ${rf(bm.rockEdge ?? 0)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);

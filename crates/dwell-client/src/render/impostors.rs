@@ -1455,7 +1455,12 @@ mod tests {
         let (desk, phone) = (atlas_bytes(c, Tier::Desktop), atlas_bytes(c, Tier::Phone));
         assert!(c.px(Tier::Phone) < c.px(Tier::Desktop));
         assert_eq!(desk, phone * 4, "half the side: a quarter of the bytes");
-        // 16 MB: 25 views since BUGS.md #154 (6 azimuths × 4 elevations + the top, 1.25× the 17).
-        assert!(phone <= 16 << 20, "the phone's atlas {} MB", phone >> 20);
+        // A baked tree's layer is the budget: at most 200 KiB on a phone (25 views since BUGS.md
+        // #154, 6 azimuths × 4 elevations + the top, at 32 px, 8 bytes a texel). The whole atlas
+        // grows with the species, by data (a seventh, sagebrush, took it from 14 to 16.4 MB on
+        // 2026-11-13); 24 MB is room for two more before this asks again.
+        let per_layer = phone / u64::from(c.layer_count());
+        assert!(per_layer <= 200 << 10, "a phone layer {per_layer} B");
+        assert!(phone <= 24 << 20, "the phone's atlas {} MB", phone >> 20);
     }
 }

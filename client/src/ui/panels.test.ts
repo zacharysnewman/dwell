@@ -5,7 +5,7 @@ import { Panels, RELEASE_ESC_MS, type Panel } from './panels';
  * A fake document and canvas: `requestPointerLock` locks only inside a user gesture (as browsers
  * do), and the lock's changes reach the panels as the browser's `pointerlockchange` would.
  */
-function rig() {
+function rig(lockable = true) {
   const shown: Record<Exclude<Panel, 'none'>, boolean> = {
     inventory: false,
     menu: false,
@@ -38,6 +38,7 @@ function rig() {
       shown[p] = open;
       return true;
     },
+    lockable: () => lockable,
   });
   function changed(): void {
     panels.lockChanged(now);
@@ -214,5 +215,23 @@ describe('Panels (BUGS.md #137)', () => {
     expect(r.panels.escape(r.now + 1000)).toBe(true);
     expect(r.shown.map).toBe(false);
     expect(r.shown.menu).toBe(false);
+  });
+});
+
+describe('on a touch screen (BUGS.md #174)', () => {
+  it('closing a panel takes no pointer lock: the fingers stay with the touch controls', () => {
+    const r = rig(false);
+    r.gesture(() => {
+      r.panels.open('inventory');
+    });
+    r.gesture(() => {
+      r.panels.close('inventory');
+    });
+    expect(r.requests).toEqual([]);
+    expect(r.locked()).toBe(false);
+    r.gesture(() => {
+      r.panels.click();
+    });
+    expect(r.requests).toEqual([]);
   });
 });

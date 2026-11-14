@@ -6,7 +6,7 @@ pins it.
 
 ## Open
 
-### 176. A cinematic take's sounds late on a few frames a clip
+### 177. A cinematic take's sounds late on a few frames a clip
 
 Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
 scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
@@ -22,7 +22,7 @@ suspended clock whatever the overshoot; the re-timing on the frame marks (`reali
 report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
 …"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
 
-### 175. Remote players step after the server drops time
+### 176. Remote players step after the server drops time
 
 Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
 (dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
@@ -37,6 +37,45 @@ only on frames a snapshot came (one in three at 30 fps), a step of three frames'
 toward their latest state by frame time and dropped items aren't moved by snapshots, so neither has a server clock
 to fix. Test (both faces): `remotes::tests::a_remote_drawn_after_the_server_dropped_time_moves_every_frame`, a
 remote at 6 m/s after a ½ s stall, 30 fps frames: red before (frames drawn still, deviation 1.00), within 3 % after.
+### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
+
+Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
+a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
+and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
+`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
+generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
+only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
+height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
+(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
+borders), and none was bisected yet.
+
+**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
+(about 9 s).
+
+**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
+as from face A.
+
+### 174. On a phone nothing in the inventory answers after opening the bag
+
+Owner, 2026-11-14: "A bug too for mobile, I can't seem to access inventory, after opening bag, nothing is
+intractable." On a touch device the Bag button opens the inventory, but no slot, item or button in it responds to a tap.
+
+**Owner should see:** on a phone, the bag opens the inventory and every slot, item and button in it answers a tap;
+the bag closes it again and the stick, look and buttons work as before.
+
+**Cause:** the touch controls' layer (`#touch-controls`) covers the whole screen (`inset: 0`). While the inventory is
+open its stick and look zones are hidden, but the layer itself was raised over the inventory (`z-index` above
+`--z-widgets`, so the bag button stays on top to close it) and still took every tap: the inventory under it never got
+one. Since the bag button came in (0.52.23). Second, found by the same test: closing the inventory asked for the
+pointer lock (`Panels.lock`, as on a desktop), and where a touch browser grants it (an iPad with a trackpad, Chrome's
+touch emulation) the fingers went to the locked canvas, not the touch controls: no look or stick after closing.
+
+**Fixed:** with the inventory open the layer lets taps through (`pointer-events: none`) but for the bag button
+(`style.css`); and while the touch controls are on screen playing takes no pointer lock (`PanelViews.lockable`).
+Tests: `e2e/touch.spec.ts` "on a phone the bag opens an inventory that answers taps, and closes to working controls"
+(a finger tap at a slot's centre on an iPhone 13 page; red: the slot never selected, the layer took it; with the layer
+fixed, red: no look after closing, the canvas held the lock) and `panels.test.ts` "closing a panel takes no pointer
+lock" (red: a lock request).
 
 ### 173. The dynamite blast looks low framerate: the flung pieces stand still between snapshots
 
@@ -62,7 +101,7 @@ session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOP
 Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
 `game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
 frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
-frame, peaking every third). Remote players share the estimator since #175.
+frame, peaking every third). Remote players share the estimator since #176.
 
 ### 172. Trees disappear when the camera gets close
 

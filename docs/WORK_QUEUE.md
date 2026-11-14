@@ -979,6 +979,27 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    lowland bare lava 6.4 % / 8.8 % → 0.7 % / 1.8 % (`tests/realistic_volcanoes.rs`); the straight red strip not
    yet found. Held (orchestrator, 2026-11-14, the realism audit): island spacing and variety (2). Not yet: (0c) shrubs
    and talus, (0d) placement bleed and snowy leaves, (6).
+   **0.69 follow-up (orchestrator, 2026-11-14, after the owner approved merging 0.68: "Go ahead and just merge away. No
+   need to wait."; branch `claude/realistic-069`):** everything not built in 0.68, and from the map check: soft fingered
+   edges (no straight or smooth-curved hard edges; "the long straight dirt→grass line"), "brown contour stripes on stone
+   hills" (bedded steps reading as stripes), shrub and bush species, cliff talus including underwater, placement bleed
+   across edges, snowy leaves at the snow line, mesa wall fins and the grey lake band, the straight red strip on dormant
+   islands, "pasted-looking red-dirt/stone blobs on the sand desert", "mesa patches reading as flat blobs". **Owner
+   should see:** each as its item above says; stone hills without brown contour stripes; the sand desert without pasted
+   blobs of red dirt or stone; mesa country reading as relief, not flat blobs.
+   **Built on `claude/realistic-069` (the 0.69 line; awaiting the maps):** contour stripes: wet bedded hills are
+   grassy steps with rock risers (`rocks.json` `shaping.coverRain` 260 ± 60 mm; wet ground showing a bedded rock's
+   stone or dirt 31 % / 34 % → 0.6 % / 0.7 %, `tests/realistic_cover.rs`); soft edges (`biomeMap.rockEdge`,
+   `shaping.edgeJitter`, `shaping.edgeFade`: fine straight runs 3.3 % / 0.8 % → 0.0 % / 0.3 %, axis runs over 4 m
+   14.6 % / 15.2 % → 13.2 % / 12.8 %, `tests/realistic_bands.rs`); biome borders as one wandering, fingered line instead of
+   a km-wide camouflage (`biomeMap` dither 0.06 at 160 m, the weights read at a point warped at three scales); the
+   sand desert without pasted blobs (its core's non-sand 3.2 % → 0, dunes sand throughout,
+   `tests/realistic_deserts.rs`); washes and scarps meander (`erosion.warp`); mesa country's tones follow the
+   relief (the blend's slope into red sand, 220 m patches); snowy leaves on every pine standing on snowy grass or
+   snow (placements' variant `on`; red 157 / 804 and 37 / 302 snowy, green all, `tests/realistic_snowy_leaves.rs`).
+   Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
+   lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
+   the owner's "~4 m" axis-run ideal.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
@@ -2480,7 +2501,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
    snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
    same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
-   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #175 (remotes) and #176 (late
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #176 (remotes) and #177 (late
    sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
    delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
    ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
@@ -2488,6 +2509,15 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** in a world with a friend, after a hitch (the host's world busy loading), the friend keeps
    moving smoothly on every frame instead of stepping a few times a second; a cinematic take's log reads `late 0`
    (a `re-based N` count for steps that overshot), every sound on its frame.
+   **The camera through a wall (owner, 2026-11-14):** "That flyover video goes straight through a wall. Not a big deal
+   since you're just showing something but that shouldn't be included in most recordings." The forest fly-over's path
+   ends inside a hill (8.35–10 s). Built: a camera clearance check (THEATER_MODE.md §6.2, the record skill's §0f):
+   every path shot's eye sampled every 0.05 s and probed against the world's solid blocks within 0.3 m (the local
+   world's own voxels, generated as needed; data in `shared/theater/cinematic.json` `clearance`); a path through
+   solid ground fails the take with the times, positions and the lift that clears it, unless the shot sets
+   `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
+   four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
+   unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

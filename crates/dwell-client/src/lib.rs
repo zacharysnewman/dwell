@@ -6,6 +6,7 @@
 pub mod blasts;
 pub mod blueprints;
 pub mod bodies;
+pub mod camera_clearance;
 pub mod chips;
 pub mod chisel;
 pub mod chisel_section;

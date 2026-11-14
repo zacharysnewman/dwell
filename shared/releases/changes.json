@@ -2,6 +2,48 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.69.2",
+      "changes": [
+        "Behind the scenes: tests brought up to date with the new tree species and the eyes placed on the face."
+      ]
+    },
+    {
+      "version": "0.69.1",
+      "changes": [
+        "Phones: the inventory answers taps again after opening the bag, and the controls work after closing it."
+      ]
+    },
+    {
+      "version": "0.69.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds: their ground redrawn from the seed",
+        "Grassy hillsides in wet country show rock only on their ledges, not stripes of bare stone and dirt",
+        "Ground types meet along wandering, fingered edges; deserts and mesa country meet along one ragged line",
+        "Sand deserts are dunes of sand without pasted blobs; washes in mesa country meander",
+        "Trees standing on snow have snowy leaves"
+      ]
+    },
+    {
+      "version": "0.68.3",
+      "changes": [
+        "Trees no longer vanish as you fly close: a tree keeps its far look until its real one is ready, then fades to it",
+        "A dynamite blast's flung pieces move smoothly on every frame instead of standing still between updates"
+      ]
+    },
+    {
+      "version": "0.68.2",
+      "changes": [
+        "Recordings: a cinematic take renders a camera path offline, one exact frame at a time: the world and the camera move exactly one frame's time per frame however long it takes to draw, and each frame waits for the view to finish loading.",
+        "Cinematic takes fly the path once first to load what they will see, draw at a higher quality, and step the game's sound with the frames so every sound lands on its frame."
+      ]
+    },
+    {
+      "version": "0.68.1",
+      "changes": [
+        "Recordings: a camera path that passes through the ground now fails before it records, naming where and how far to lift it (a deliberate shot can allow it)."
+      ]
+    },
+    {
       "version": "0.68.0",
       "changes": [
         "A new compatibility line for Realistic worlds: their ground redrawn from the seed",

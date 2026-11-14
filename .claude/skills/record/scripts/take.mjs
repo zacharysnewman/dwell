@@ -176,6 +176,7 @@ async function recordShot(m, shot, o, state) {
   if (shot.render === 'cinematic') return recordCinematic(m, shot, size, s);
   if (shot.kind === 'path') {
     const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
+    console.log('  clearance', clearanceVerdict(shot, JSON.parse(await post('/eval', clearanceScript(path)))));
     const hold = { formatVersion: 1, keyframes: [{ ...path.keyframes[0], t: 0 }, { t: 1000 }], segments: [{ move: 'cut' }] };
     await post('/eval', `(async () => { d.theater('hud', { shown: false });
       d.theater('play', { path: ${JSON.stringify(hold)} }); await new Promise(r => setTimeout(r, ${(s.warmS ?? 2) * 1000})); return 1; })()`);
@@ -206,9 +207,10 @@ async function recordCinematic(m, shot, size, s) {
   const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
   const started = await post(`/cine/start?name=${shot.id}`); console.log(' ', started);
   const settings = { ...(shot.cinematic ?? {}), ...(shotAudio(m, shot) ? {} : { audio: { on: false } }) };
+  const clip = shot.allowClipping ? ', allowClipping: true' : '';
   // Started, then polled: a take runs for minutes, past fetch's 300 s wait for a reply's headers.
   await post('/eval', `(d.theater('hud', { shown: false }), globalThis.__cine = null,
-    d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)} })
+    d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)}${clip} })
       .then((r) => { globalThis.__cine = { ok: JSON.stringify(r) }; }, (e) => { globalThis.__cine = { error: String(e?.stack ?? e) }; }), 'started')`);
   let done = null;
   while (!done) { await sleep(2000); done = JSON.parse(await post('/eval', 'globalThis.__cine')); }
@@ -217,9 +219,29 @@ async function recordCinematic(m, shot, size, s) {
   const a = r.audio;
   console.log(`  ${shot.id}: ${r.frames} frames (${r.seconds.toFixed(2)} s at ${r.fps} fps) in ${r.wallS.toFixed(0)} s (pre-roll ${r.prerollS.toFixed(0)} s);`
     + ` settle mean ${r.settle.meanMs.toFixed(0)} ms, p95 ${r.settle.p95Ms.toFixed(0)}, max ${r.settle.maxMs.toFixed(0)}, capped ${r.settle.capped.length ? r.settle.capped.join(',') : 'none'};`
-    + ` ${r.ticks} ticks` + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}, re-based ${a.rebased ?? 0}` : '; silent'));
+    + ` ${r.ticks} ticks` + (r.clearance ? `; clearance ${r.clearance.clipping.length ? `${r.clearance.clipping.length} clip(s), allowed` : 'clear'} (${r.clearance.samples} samples, ${r.clearance.unchecked} unchecked)` : '') + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}, re-based ${a.rebased ?? 0}` : '; silent'));
   const dir = /^"?cinematic (\S+?)"?$/.exec(started.trim())?.[1] ?? null;
   return { stats: { frames: r.frames, seconds: r.seconds, fps: r.fps }, log: r, frames: dir, cinematic: { fps: r.fps } };
+}
+
+/**
+ * The page script of a real-time path shot's clearance pass (THEATER_MODE.md §6.2, `__dwell.clearance`): the path
+ * flown once in coarse steps, its eye sampled finely against the loaded world (the driver replies with it as JSON).
+ */
+export function clearanceScript(path) {
+  return `(async () => { d.theater('hud', { shown: false });
+    return await d.clearance(${JSON.stringify(path)}); })()`;
+}
+
+/**
+ * A clearance result → its log line; throws with the result's message when the path passes through solid ground
+ * and the shot doesn't set `allowClipping` (owner, 2026-11-14: "that shouldn't be included in most recordings").
+ */
+export function clearanceVerdict(shot, r) {
+  const unchecked = r.unchecked ? `, ${r.unchecked} unchecked (not loaded)` : '';
+  if (!r.clipping.length) return `clear: ${r.samples} samples within ${r.radiusM} m${unchecked}`;
+  if (!shot.allowClipping) throw new Error(`${shot.id}: ${r.message}`);
+  return `clips in ${r.clipping.length} place(s), allowed (allowClipping)${unchecked}:\n${r.message}`;
 }
 
 /** A cinematic folder → its clip: the PNG frames at the take's exact rate, its stepped sound muxed as is. */

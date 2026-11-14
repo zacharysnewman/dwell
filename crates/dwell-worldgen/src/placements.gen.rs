@@ -22,7 +22,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         max_gradient_sq: 0.9325548,
         spacing: 1,
         rotations: &[0, 1, 2, 3],
-        variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250 }],
+        variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250, on: &["dwell:snowy_grass", "dwell:snow"] }],
         tops: 1.0,
     },
     Placement {
@@ -64,7 +64,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         max_gradient_sq: 0.9325548,
         spacing: 1,
         rotations: &[0, 1, 2, 3],
-        variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250 }],
+        variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250, on: &["dwell:snowy_grass", "dwell:snow"] }],
         tops: 1.0,
     },
     Placement {

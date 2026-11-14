@@ -291,7 +291,7 @@ shots) runs it; the settings are data, `shared/theater/cinematic.json` (validate
   resumed until its clock reaches the next frame's time. While a take holds the engine's clock
   (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`),
   and Web Audio's sample-accurate scheduling puts it on its frame. A step that overshoots past the lead (a hardware
-  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #176) moves the timeline on by the overshoot
+  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #177) moves the timeline on by the overshoot
   (`TakeTimeline`), so the frame's sounds and mark are still scheduled ahead of the suspended clock; the re-timing on
   the marks takes the extra audio out. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
   its time; a third channel carries an impulse scheduled like a sound at every frame, which calibrates the
@@ -300,6 +300,32 @@ shots) runs it; the settings are data, `shared/theater/cinematic.json` (validate
 
 A cinematic take is for a **local world** (the page hosts the world it steps); on a remote server the world keeps
 its own time and only the client's clock and the camera are stepped.
+
+### 6.2 The camera clearance check [built]
+
+Owner, 2026-11-14: "That flyover video goes straight through a wall. Not a big deal since you're just showing
+something but that shouldn't be included in most recordings." Before a take the camera path is sampled finely and
+each eye tested against the world (`src/theater/clearance.ts`; `dwell-client` `camera_clearance`):
+
+- **Samples.** `Client.theaterSamples(path, stepS)` plays the path with a fresh `dwell_theater::Player` (the targets
+  where they are now) every `clearance.stepS` (0.05 s) of take time: `[takeS, pathS, x, y, z, …]`.
+- **The probe.** An eye is in solid ground when its centre or one of the six points `radiusM` (0.3 m) away along the
+  axes lies inside a `solid` state's shape (`point_in_solid`: ramps and face B's turned-over shapes by their solid
+  only); the **lift** is how far it must rise along its face's up (`FaceFrame`), in `liftStepM` steps up to
+  `liftMaxM`, to be clear. On a **local world** the probe runs in the world's worker against its server's voxels
+  (`LocalCore::camera_clearance`: chunks loaded or generated as needed, so every eye is known — terrain, trees and
+  edits); on a **remote** one against the client's loaded chunks (`Client.cameraClearance`, `cameraLift`), where an
+  eye in a chunk not held is **unchecked**, never clear.
+- **When.** A cinematic take probes every eye before its pre-roll (a local world fails at once), and the unchecked
+  ones during the pre-roll, each step's once it has settled. A real-time path shot runs `__dwell.clearance(path)`
+  first: every eye at once, and when some are unchecked a quick frame-exact pass that flies the path in `passStepS`
+  (1 s) steps, waiting at most `capMs` a step for their chunks.
+- **The verdict.** Consecutive solid samples are one clip: its take and path times, its first eye, the keyframes it
+  lies between and the most lift its eyes need. A take with clips fails with them (`cinematic: the camera path passes
+  through solid ground …`) unless it is given **`allowClipping: true`** (the record skill's shot option, a deliberate
+  shot); the report's `clearance` lists them either way.
+- **Data.** `shared/theater/cinematic.json` `clearance`: `radiusM`, `stepS`, `passStepS`, `capMs`, `liftStepM`,
+  `liftMaxM` (validated; a take's `settings.clearance` overrides them).
 
 ## 7. Multiplayer, permissions and the simulation viewpoint
 
