@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.64.2",
+      "changes": [
+        "Leaves no longer flicker where they touch tree trunks and branches",
+        "A felled log's end is the same even octagon as a standing trunk"
+      ]
+    },
+    {
       "version": "0.64.1",
       "changes": [
         "Behind the scenes: the recording tools cut one take to both portrait and widescreen, with a fade-in and the game's title, for the first trailer"
