@@ -129,6 +129,9 @@ pub struct Fly {
     /// m/s at the slider's level 0, walking (the same at every height).
     pub speed: f32,
     pub run_factor: f32,
+    /// Forward follows the look's pitch (fly where you look; BUGS.md #154: a player aiming at the
+    /// moon and holding forward flew level under it). Off, forward is level along the yaw.
+    pub follow_pitch: bool,
     /// 1/s: how quickly velocity follows the wish.
     pub drag: f32,
     /// |x|, |y|, |z| (m): flight is not bounded by the world (ADR 0025 D3), only held inside the
@@ -365,6 +368,7 @@ impl Default for PlayerControllerConfig {
             fly: Fly {
                 speed: 8.0,
                 run_factor: 2.5,
+                follow_pitch: true,
                 drag: 8.0,
                 position_limit: (dwell_protocol::world::POS64_LIMIT - 1_024) as f32,
             },

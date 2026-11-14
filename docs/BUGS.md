@@ -547,6 +547,26 @@ face, or the placement check against its shape.
 
 ## Fixed
 
+### 154. Flying at the moon never got closer (fixed after 0.63.6)
+
+Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and
+couldn't get there. It didn't seem to get any closer." On the Mac (keyboard and mouse, the released build; 0.63.6 is
+deployed and has #905's space flight since 0.60.14). Cause: creative flight's forward was level along the yaw
+(PLAYER_CONTROLLER.md §6.7), so aiming at the moon in the sky and holding W flew level under it at 362 m/s, never
+climbing out of home's slab, where far flight (#905) stays off; the moon rose overhead as the player flew. Reproduced
+natively (W held, the look on the moon from home's ground: 90 s, 572 km of 597 km left, up 0 m/s) and in Chrome
+(the bench's `flyAtMoon` step, real held W: 100 s, 599 km left). Now forward follows the look's pitch (`fly.follow_pitch`,
+`controller::fly_direction`); Space and crouch still rise and sink. From home's ground the same flight is captured in
+47.8 s natively (face B, where the moon is up at the rig's clock) and 50.4 s in Chrome. The moon's disc is drawn where
+it is: it sits under the crosshair the whole way (`moon-fly`'s shots). Tests: `dwell-physics`
+`forward_flies_where_the_camera_looks` (red: rose 0 m in 1 s; and its mirror run), `dwell-client`
+`holding_forward_at_the_moon_from_home_reaches_it` (red: not captured in 90 s, nearest 572 329 m; green 47.8 s, no snap).
+Open: the browser run counted 18 snaps (server corrections) on the way, most while far flight sped up (native lockstep:
+none); not fixed here.
+
+**Owner should see:** aim at the moon in the sky in creative flight at the top speed and hold W: the ground falls
+away, the speed climbs into space, and the moon is reached in under a minute; look elsewhere to steer.
+
 ### 153. A portal's marker floated hundreds of metres above the portal (fixed after 0.63.3)
 
 Owner, 2026-11-13: "Another bug, Im not sure if it's because I was flying high at the time, but the portal indicator

@@ -189,6 +189,13 @@ export type Step =
       maxS?: number;
     }
   /**
+   * A player's flight to the moon (BUGS.md #154): flight on at the top level, Forward (W) held as
+   * a key, and every ½ s the look turned onto the moon in the sky (`__dwell.moon().look`, as a
+   * player's mouse keeps it there), until captured or `maxS` (120); logs the distance, height,
+   * speed and snaps, a screenshot `<name>-NN.png` every `shotEveryS` (10). Saved in `trips`.
+   */
+  | { do: 'flyAtMoon'; name: string; maxS?: number; run?: boolean; shotEveryS?: number }
+  /**
    * Teleports onto the moon's ground on face `face` (`a`, `b`; `__dwell.moonLand`, a local world),
    * no flight, waits until standing there with its chunk held (at most `maxS`, 60) and `waitS`
    * (3) more, then prints the frame's draw calls, triangles and mesh bytes; saved in the report's
@@ -478,6 +485,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
   lava: ['op', 'args'],
   herd: ['kind', 'back'],
   flyTo: ['to', 'face', 'marginM', 'landM', 'maxS'],
+  flyAtMoon: ['name', 'maxS', 'run', 'shotEveryS'],
   moonLand: ['face', 'maxS', 'waitS'],
   sunLand: ['face', 'river', 'maxS', 'waitS'],
   mark: [],
@@ -736,6 +744,16 @@ export function parseStep(where: string, v: unknown): Step {
         ...(o.back === undefined ? {} : { back: num(at('back'), o.back, 0, 2000) }),
       };
     }
+    case 'flyAtMoon':
+      return {
+        do: d,
+        name: name(at('name'), o.name),
+        ...(o.maxS === undefined ? {} : { maxS: num(at('maxS'), o.maxS, 1, 600) }),
+        ...(o.run === undefined ? {} : { run: bool(at('run'), o.run) }),
+        ...(o.shotEveryS === undefined
+          ? {}
+          : { shotEveryS: num(at('shotEveryS'), o.shotEveryS, 1, 600) }),
+      };
     case 'flyTo': {
       if (o.to !== 'moon' && o.to !== 'home') {
         throw new ViewError(`${at('to')}: expected "moon" or "home"`);

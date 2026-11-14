@@ -5019,3 +5019,86 @@ fn a_teleport_past_the_rim_fails_with_a_message() {
         "moved inside the rim: {now:?}"
     );
 }
+
+/// BUGS.md #154 (owner, 2026-11-13: "are you supposed to be able to fly to the moon? I tried
+/// for like 8 minutes at max speed and couldn't get there"): a player on home's ground, flying
+/// at the slider's top level, aiming at the moon in the sky and holding only forward (W, as a
+/// player does; no Space or crouch), reaches its capture in about a minute, with no server
+/// correction on the way.
+// both-faces: it flies from whichever face the moon is over at the rig's clock (from the other
+// it is under the ground); the flight's face-local wish is checked on both faces in
+// dwell-physics' flight.rs (and its mirror suite).
+#[test]
+fn holding_forward_at_the_moon_from_home_reaches_it() {
+    let mut rig = Rig::with_generator(GENERATOR_SANDBOX);
+    assert!(rig.run_until(60 * 20, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    rig.input.flight.set_allowed(true);
+    rig.input.flight.set(true);
+    rig.input.flight.set_speed_level(11.0);
+    rig.run_until(30, |_| false);
+    let mut m0 = rig.game.as_ref().unwrap().moon_report().expect("a moon");
+    if m0.look.1 < 0.0 {
+        // Under this face's horizon: onto the other face's ground, under the spawn.
+        let id = my_id(&rig);
+        let p = rig.core.server().feet_of(id).unwrap();
+        let here = dwell_world::FaceFrame::at_height(p[1]);
+        let there = if here == dwell_world::FaceFrame::A {
+            dwell_world::FaceFrame::B
+        } else {
+            dwell_world::FaceFrame::A
+        };
+        let q = there.point([p[0], here.y(p[1]) + 2.0, p[2]]);
+        assert!(rig.core.server().place_on_grid(id, q, [0.0; 3]));
+        rig.run_until(120, |_| false);
+        m0 = rig.game.as_ref().unwrap().moon_report().unwrap();
+    }
+    eprintln!(
+        "from {:?}: the moon at pitch {:.1}°",
+        rig.scene.borrow().camera_face,
+        m0.look.1
+    );
+    assert!(m0.look.1 > 0.0, "the moon is in this face's sky");
+    assert_eq!(m0.grid, "home");
+    let snaps0 = rig.game.as_ref().unwrap().debug_state().stats.snaps;
+    let mut captured_s = None;
+    let start_d = m0.distance;
+    let mut d_min = start_d;
+    for step in 0..10 * 90 {
+        let m = rig.game.as_ref().unwrap().moon_report().unwrap();
+        if m.grid == "moon" {
+            captured_s = Some(step as f64 * 0.1);
+            break;
+        }
+        d_min = d_min.min(m.distance);
+        if step % 50 == 0 {
+            eprintln!(
+                "t {:5.1} s  d {:9.0} m  look ({:6.1}, {:5.1})  up {:8.1} m/s",
+                step as f64 * 0.1,
+                m.distance,
+                m.look.0,
+                m.look.1,
+                m.up_mps
+            );
+        }
+        let (yaw, pitch) = m.look;
+        rig.input.look.yaw = yaw;
+        rig.input.look.pitch = pitch;
+        rig.input.set_key("KeyW", true);
+        rig.run_until(6, |_| false);
+    }
+    rig.input.set_key("KeyW", false);
+    let t = captured_s.unwrap_or_else(|| {
+        panic!("not captured in 90 s: from {start_d:.0} m, nearest {d_min:.0} m")
+    });
+    eprintln!("captured after {t:.1} s");
+    assert!(t < 75.0, "captured after {t:.1} s");
+    assert_eq!(
+        rig.game.as_ref().unwrap().debug_state().stats.snaps,
+        snaps0,
+        "no server correction on the way"
+    );
+}

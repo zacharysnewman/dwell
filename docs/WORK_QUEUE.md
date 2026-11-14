@@ -1031,6 +1031,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    frictionless and uncapped. The repro is un-ignored (0.4–0.5 m, was 155–160 m; both faces).
 
 27. **The moon as a real bifacial world** — **M-7c client built (2026-11-13, branch
+   **Flying to the moon (2026-11-13, BUGS.md #154):** owner: "Also, are you supposed to be able to fly to the moon? I tried
+   for like 8 minutes at max speed and couldn't get there. It didn't seem to get any closer." Fixed on
+   `claude/moon-flight-real`: flight's forward follows the look's pitch, so aiming at the moon and holding W reaches it
+   (~50 s from home's ground, Chrome and natively). Owner should see: aim at the moon, hold W at the top flight speed,
+   arrive in under a minute. Open: 18 server snaps on the browser flight while far flight speeds up.
    `claude/moon-client-m7c-mxftge`):** the game client sets the travel hook (`Game::set_grid_frames`, from the
    session's `grid.frames`), holds only its grid's chunks (dropped at a crossing; the server sends the moon's as
    voxels and streams home again from nothing after the release), draws in the moon's local frame (the sun turned

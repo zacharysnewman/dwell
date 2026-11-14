@@ -917,6 +917,72 @@ async function step(run: Run, s: Step): Promise<void> {
       );
       return;
     }
+    case 'flyAtMoon': {
+      // As a player flies there (BUGS.md #154): real held keys, the look kept on the moon.
+      type M = {
+        grid: string;
+        distance: number;
+        look: { yaw: number; pitch: number };
+        upMps: number;
+        feet: number[];
+      };
+      const moon = (): Promise<M | null> => call<M | null>(page, 'd.moon()');
+      const snaps = (): Promise<number> => call<number>(page, 'd.state()?.stats?.snaps ?? 0');
+      await call(page, 'd.fly(true)');
+      await call(page, 'd.flySpeed(11)');
+      const m0 = await moon();
+      if (!m0) throw new Error('flyAtMoon: no moon report');
+      await call(page, `d.look(${String(m0.look.yaw)}, ${String(m0.look.pitch)})`);
+      const snaps0 = await snaps();
+      const maxS = s.maxS ?? 120;
+      const every = s.shotEveryS ?? 10;
+      const t0 = Date.now();
+      let nextShot = 0;
+      let shot = 0;
+      let last = m0;
+      let lastT = 0;
+      let capturedS: number | null = null;
+      await call(page, `d.press('KeyW', true)`);
+      if (s.run) await call(page, `d.press('ShiftLeft', true)`);
+      try {
+        for (;;) {
+          const t = (Date.now() - t0) / 1000;
+          const m = await moon();
+          if (!m) throw new Error('flyAtMoon: the moon report went away');
+          if (m.grid === 'moon') {
+            capturedS = t;
+            break;
+          }
+          if (t > maxS) break;
+          await call(page, `d.look(${String(m.look.yaw)}, ${String(m.look.pitch)})`);
+          const closing = t > lastT ? (last.distance - m.distance) / (t - lastT) : 0;
+          if (t >= nextShot) {
+            console.log(
+              `  t ${f(t)} s: ${f(m.distance / 1000)} km to go, look (${f(m.look.yaw)}, ${f(m.look.pitch)}), closing ${f(closing)} m/s, up ${f(m.upMps)} m/s, snaps ${String((await snaps()) - snaps0)}`,
+            );
+            await page.screenshot({
+              path: join(run.dir, `${s.name}-${String(shot).padStart(2, '0')}.png`),
+            });
+            shot += 1;
+            nextShot += every;
+          }
+          last = m;
+          lastT = t;
+          await page.waitForTimeout(500);
+        }
+      } finally {
+        await call(page, `d.press('KeyW', false)`);
+        if (s.run) await call(page, `d.press('ShiftLeft', false)`);
+      }
+      const snapped = (await snaps()) - snaps0;
+      await page.screenshot({ path: join(run.dir, `${s.name}-end.png`) });
+      run.trips.push({ flyAtMoon: s.name, capturedS, snaps: snapped, fromM: m0.distance });
+      console.log(
+        `  flyAtMoon ${s.name}: ${capturedS === null ? `NOT captured in ${f(maxS)} s` : `captured after ${f(capturedS)} s`}, ${String(snapped)} snaps`,
+      );
+      if (capturedS === null) throw new Error(`flyAtMoon: not captured in ${f(maxS)} s`);
+      return;
+    }
     case 'moonLand':
     case 'sunLand': {
       const options = {
