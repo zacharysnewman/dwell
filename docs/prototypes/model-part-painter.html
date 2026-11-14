@@ -15,6 +15,10 @@
   /docs/prototypes/model-part-painter.html: "Load the Peasant" fetches its GLB, part map, the palette and
   creatures.json). The core script block (id "core") is pure (no DOM, no three.js) and is run by
   shared/models/painter.test.mjs, which checks it against parts.mjs on the repo's files.
+
+  Select faces (owner, 2026-11-14): click, box and connected-colour selection of faces, copied as text to paste in
+  chat ("peasant @60% faces: 1203,1204,1210–1215 (8) — parts: …") and loaded back. A face id is the triangle's
+  index in the level's GLB primitive (detail_k, primitive 0), each level numbered from 0.
 -->
 <style>
   :root { --bg: #e9eff6; --ink: #241c28; --panel: #ffffffe6; --line: #43354a33; --accent: #82bd45; --warn: #b8402e; }
@@ -41,10 +45,14 @@
   #parts .count { text-align: right; font-variant-numeric: tabular-nums; }
   #variant .entry { display: grid; grid-template-columns: 70px 1fr; gap: 4px; align-items: center; margin: 2px 0; }
   #info { position: absolute; left: 10px; bottom: 10px; background: var(--panel); padding: 6px 9px; border-radius: 8px; pointer-events: none; white-space: pre; font: 12px ui-monospace, monospace; max-width: calc(100% - 40px); overflow: hidden; }
+  #box { position: absolute; border: 1.5px dashed #ff2fd0; background: #ff2fd022; pointer-events: none; display: none; }
   #brush { position: absolute; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #000a; border-radius: 50%; pointer-events: none; display: none; }
   #drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 20px; background: #82bd4555; pointer-events: none; }
-  #help { position: absolute; right: 10px; top: 10px; background: var(--panel); padding: 6px 9px; border-radius: 8px; font-size: 12px; max-width: 280px; }
+  #help { position: absolute; right: 10px; top: 10px; background: var(--panel); padding: 6px 9px; border-radius: 8px; font-size: 12px; max-width: 280px; cursor: pointer; }
+  #help.min { max-width: none; } #help.min > * , #help.min { font-size: 0; } #help.min::before { content: "Help \25B8"; font-size: 12px; }
   textarea { width: 100%; box-sizing: border-box; height: 70px; font: 11px ui-monospace, monospace; }
+  #ftext, #fload { height: 54px; } #fbandout { height: 90px; }
+  #facesBox { display: none; }
   @media (max-width: 700px) {
     #app { flex-direction: column-reverse; }
     #side { width: 100%; height: 45vh; border-right: none; border-top: 1px solid var(--line); }
@@ -73,8 +81,9 @@
 
     <h2>View</h2>
     <div class="row" id="views">
-      <button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button>
-      <button data-view="top">Top</button>
+      <button data-view="front">Front</button><button data-view="back">Back</button><button data-view="left">Left</button>
+      <button data-view="right">Right</button><button data-view="top">Top</button><button data-view="threequarter">¾</button>
+      <button data-view="reset" title="frame the whole model from the front (key F)">Reset</button>
     </div>
     <div class="row" id="modes">
       <button data-mode="parts" class="on">Parts</button><button data-mode="real">Real colours</button>
@@ -90,6 +99,32 @@
       <span class="muted">Alt-click: the vertex's heaviest joint</span>
     </div>
 
+    <h2>Edit</h2>
+    <div class="row" id="edits">
+      <button data-edit="paint" class="on">Paint parts</button><button data-edit="faces">Select faces</button>
+    </div>
+
+    <div id="facesBox">
+    <h2>Faces</h2>
+    <div class="muted">A face id is the triangle's index in the level's GLB primitive (detail_k): each level numbers its own faces from 0.</div>
+    <div class="row" id="ftools">
+      <button data-ftool="click" class="on">Click</button><button data-ftool="box">Box</button>
+    </div>
+    <div class="row"><label><input type="checkbox" id="fconnected"> connected same colour</label></div>
+    <div class="row"><label><input type="checkbox" id="fvisible" checked> box: only faces I can see</label></div>
+    <div class="row">
+      <button id="fnone">Select none</button><button id="finvert">Invert</button>
+    </div>
+    <div id="fcount" class="muted"></div>
+    <div class="row"><button id="fcopy">Copy face ids</button><span id="fcopymsg" class="muted"></span></div>
+    <textarea id="ftext" readonly placeholder="The selection's text appears here (select it by hand if the clipboard is blocked)."></textarea>
+    <div class="muted">Paste a selection to load it (switches to its level):</div>
+    <textarea id="fload" placeholder="peasant @60% faces: 1203,1204,1210–1215"></textarea>
+    <div class="row"><button id="floadbtn">Load selection</button><button id="fband">Band from selection</button></div>
+    <textarea id="fbandout" readonly placeholder="A decor band entry for models.json covering the selection."></textarea>
+    </div>
+
+    <div id="paintBox">
     <h2>Paint</h2>
     <div class="row" id="tools">
       <button data-tool="brush" class="on">Brush</button><button data-tool="island">Fill island</button>
@@ -103,6 +138,7 @@
     </div>
     <div class="row">
       <button id="undo">Undo</button><button id="redo">Redo</button>
+    </div>
     </div>
 
     <h2>Parts</h2>
@@ -127,10 +163,14 @@
   </div>
   <div id="view">
     <div id="brush"></div>
+    <div id="box"></div>
     <div id="info">Load a model.</div>
     <div id="drop">Drop to load</div>
-    <div id="help">Left-drag: paint (Orbit tool: rotate) · right-drag: rotate · middle or shift-drag: pan · wheel: zoom ·
-      [ ] brush size · 0–6 part (0 erases) · Ctrl+Z / Ctrl+Shift+Z undo, redo</div>
+    <div id="help" title="click to fold"><b>Camera:</b> left-drag orbit (painting: middle-drag, or hold Space, or the Orbit tool) · right- or
+      shift-drag pan · wheel or pinch: zoom to the cursor · double-click: focus there · F reset · touch: one finger
+      orbits, two pan and zoom.<br><b>Faces:</b> click toggles · shift-click adds · ctrl-click removes · alt-drag or Box:
+      box select (shift adds, ctrl removes) · Esc none · Ctrl+C copy.<br><b>Paint:</b> [ ] brush size · 0–6 part ·
+      Ctrl+Z / Ctrl+Shift+Z undo, redo</div>
   </div>
 </div>
 
@@ -391,10 +431,202 @@ var PainterCore = (function () {
     return [f(0), f(8), f(4)];
   }
 
+  // ---- Faces (owner, 2026-11-14: select faces, copy their ids to talk about them) ----
+  // A face id is the triangle's index in the level's GLB primitive (detail_k, primitive 0): triangle t is
+  // indices[3t], indices[3t+1], indices[3t+2]. Each level numbers its own triangles from 0.
+
+  /** Sorted unique ids as text, runs of three or more compressed: "3,4,10–15". */
+  function compressIds(ids) {
+    var s = Array.from(new Set(Array.from(ids, Number))).filter(function (x) { return Number.isInteger(x) && x >= 0; })
+      .sort(function (a, b) { return a - b; });
+    var out = [];
+    for (var i = 0; i < s.length;) {
+      var j = i;
+      while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+      if (j - i >= 2) out.push(s[i] + "–" + s[j]);
+      else for (var k = i; k <= j; k++) out.push(String(s[k]));
+      i = j + 1;
+    }
+    return out.join(",");
+  }
+  /** The ids of a list as compressIds writes it (also "-" or "..", spaces): sorted, unique. */
+  function parseIds(text) {
+    var out = new Set();
+    String(text).split(/[,\s]+/).forEach(function (tok) {
+      if (!tok) return;
+      var m = tok.match(/^(\d+)(?:(?:–|—|-|\.\.)(\d+))?$/);
+      if (!m) throw new Error("not a face id or range: " + JSON.stringify(tok));
+      var a = Number(m[1]), b = m[2] === undefined ? a : Number(m[2]);
+      if (b < a) { var t = a; a = b; b = t; }
+      if (b - a > 1e6) throw new Error("range too long: " + tok);
+      for (var x = a; x <= b; x++) out.add(x);
+    });
+    return Array.from(out).sort(function (a, b) { return a - b; });
+  }
+  /** "name 12, other 2": counts by name, the commonest first. */
+  function tally(names) {
+    var n = {};
+    names.forEach(function (x) { n[x] = (n[x] || 0) + 1; });
+    return Object.keys(n).sort(function (a, b) { return n[b] - n[a] || (a < b ? -1 : 1); })
+      .map(function (k) { return k + " " + n[k]; }).join(", ");
+  }
+  /**
+   * The text the Copy button writes: "peasant @60% faces: 1203,1204,1210–1215 (8) — parts: shirt 6, belt 2 —
+   * colours: wool_green 6, leather 2". `sel` = { model, level ("60%"), ids, parts: name a face, colours: name a face }.
+   */
+  function formatSelection(sel) {
+    var ids = parseIds(compressIds(sel.ids));
+    var s = (sel.model || "model") + " @" + sel.level + " faces: " + (compressIds(ids) || "none") + " (" + ids.length + ")";
+    if (sel.parts && sel.parts.length) s += " — parts: " + tally(sel.parts);
+    if (sel.colours && sel.colours.length) s += " — colours: " + tally(sel.colours);
+    return s;
+  }
+  /**
+   * A selection's text read back: { model, level, ids } ("peasant @60% faces: 1,2,5–9 (7) — …"); a bare id
+   * list gives model and level null. The parts and colours after the count are ignored.
+   */
+  function parseSelection(text) {
+    var t = String(text).trim();
+    var m = t.match(/^(?:([A-Za-z0-9_.-]+)\s*)?@\s*(\d+(?:\.\d+)?)\s*%\s*faces?\s*:\s*([\s\S]*)$/i);
+    var model = null, level = null, rest = t;
+    if (m) { model = m[1] || null; level = Number(m[2]); rest = m[3]; }
+    rest = rest.split(/\(|—|–\s|\s-\s|\|/)[0];
+    if (/^\s*none\s*$/i.test(rest)) return { model: model, level: level, ids: [] };
+    return { model: model, level: level, ids: parseIds(rest.trim()) };
+  }
+  /** A face's three vertex indices. */
+  function faceVerts(mesh, t) { return [mesh.indices[t * 3], mesh.indices[t * 3 + 1], mesh.indices[t * 3 + 2]]; }
+  /** A face's part (the commonest of its three vertices' parts; the first on a tie), 0 for none. */
+  function facePart(mesh, parts, t) {
+    if (!parts) return 0;
+    var v = faceVerts(mesh, t).map(function (i) { return parts[i]; });
+    return v[1] === v[2] && v[0] !== v[1] ? v[1] : v[0];
+  }
+  /** A face's centre (bind pose). */
+  function faceCentre(mesh, t) {
+    var v = faceVerts(mesh, t), c = [0, 0, 0];
+    v.forEach(function (i) { for (var k = 0; k < 3; k++) c[k] += mesh.position[i * 3 + k] / 3; });
+    return c;
+  }
+  /**
+   * The faces in a screen rectangle: `sx`, `sy` the vertices' screen positions (pixels, y down), `rect`
+   * [x0, y0, x1, y1] (any corner order). A face is in when its centre is inside; with `front` only the
+   * faces wound counter-clockwise on screen as glTF's front (in pixels, y down: a negative cross product).
+   */
+  function facesInRect(indices, sx, sy, rect, front) {
+    var x0 = Math.min(rect[0], rect[2]), x1 = Math.max(rect[0], rect[2]);
+    var y0 = Math.min(rect[1], rect[3]), y1 = Math.max(rect[1], rect[3]);
+    var out = [];
+    for (var t = 0; t < indices.length / 3; t++) {
+      var a = indices[t * 3], b = indices[t * 3 + 1], c = indices[t * 3 + 2];
+      var cx = (sx[a] + sx[b] + sx[c]) / 3, cy = (sy[a] + sy[b] + sy[c]) / 3;
+      if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
+      if (front && (sx[b] - sx[a]) * (sy[c] - sy[a]) - (sy[b] - sy[a]) * (sx[c] - sx[a]) >= 0) continue;
+      out.push(t);
+    }
+    return out;
+  }
+  /**
+   * Is a point hidden from `eye`: does any face but `skip` cross the segment eye → point short of it
+   * (by `eps`)? Möller–Trumbore, both windings.
+   */
+  function hidden(mesh, eye, p, skip, eps) {
+    var P = mesh.position, I = mesh.indices;
+    var dx = p[0] - eye[0], dy = p[1] - eye[1], dz = p[2] - eye[2];
+    var dist = Math.hypot(dx, dy, dz); dx /= dist; dy /= dist; dz /= dist;
+    for (var t = 0; t < I.length / 3; t++) {
+      if (t === skip) continue;
+      var a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+      var e1x = P[b] - P[a], e1y = P[b + 1] - P[a + 1], e1z = P[b + 2] - P[a + 2];
+      var e2x = P[c] - P[a], e2y = P[c + 1] - P[a + 1], e2z = P[c + 2] - P[a + 2];
+      var hx = dy * e2z - dz * e2y, hy = dz * e2x - dx * e2z, hz = dx * e2y - dy * e2x;
+      var det = e1x * hx + e1y * hy + e1z * hz;
+      if (Math.abs(det) < 1e-12) continue;
+      var f = 1 / det, qx = eye[0] - P[a], qy = eye[1] - P[a + 1], qz = eye[2] - P[a + 2];
+      var u = f * (qx * hx + qy * hy + qz * hz);
+      if (u < 0 || u > 1) continue;
+      var rx = qy * e1z - qz * e1y, ry = qz * e1x - qx * e1z, rz = qx * e1y - qy * e1x;
+      var v = f * (dx * rx + dy * ry + dz * rz);
+      if (v < 0 || u + v > 1) continue;
+      var d = f * (e2x * rx + e2y * ry + e2z * rz);
+      if (d > 0 && d < dist - eps) return true;
+    }
+    return false;
+  }
+  /**
+   * The faces joined to face `start` across shared edges (welded by position, as islands) whose colour
+   * (their first vertex's, within 2/255) is the start's: "select connected same colour".
+   */
+  function connectedSameColour(mesh, start) {
+    var nt = mesh.indices.length / 3;
+    var key = function (i) { return pos(mesh, i).map(function (x) { return x.toFixed(4); }).join(","); };
+    var vk = new Array(mesh.count);
+    for (var i = 0; i < mesh.count; i++) vk[i] = key(i);
+    var edges = new Map();
+    for (var t = 0; t < nt; t++) {
+      var v = faceVerts(mesh, t);
+      for (var e = 0; e < 3; e++) {
+        var a = vk[v[e]], b = vk[v[(e + 1) % 3]], k = a < b ? a + "|" + b : b + "|" + a;
+        if (!edges.has(k)) edges.set(k, []);
+        edges.get(k).push(t);
+      }
+    }
+    var c0 = col(mesh, mesh.indices[start * 3]);
+    var same = function (t) {
+      var c = col(mesh, mesh.indices[t * 3]);
+      return Math.abs(c[0] - c0[0]) < 2 / 255 && Math.abs(c[1] - c0[1]) < 2 / 255 && Math.abs(c[2] - c0[2]) < 2 / 255;
+    };
+    var seen = new Uint8Array(nt), stack = [start], out = [];
+    seen[start] = 1;
+    while (stack.length) {
+      var f = stack.pop();
+      out.push(f);
+      var w = faceVerts(mesh, f);
+      for (var e2 = 0; e2 < 3; e2++) {
+        var p = vk[w[e2]], q = vk[w[(e2 + 1) % 3]];
+        (edges.get(p < q ? p + "|" + q : q + "|" + p) || []).forEach(function (g) {
+          if (!seen[g] && same(g)) { seen[g] = 1; stack.push(g); }
+        });
+      }
+    }
+    return out.sort(function (a, b) { return a - b; });
+  }
+  /**
+   * A decor `band` entry (models.json `decor`, shared/models/decor.mjs) covering the selected faces: their
+   * centres' height and distance from the vertical axis (padded by `pad`, default 5 mm), `span` the
+   * tallest face, `part` when they are all one part. Decor picks facets by position, not by id, so the
+   * band may take a few more faces than the selection; `colours` are placeholders to edit.
+   */
+  function bandFromFaces(mesh, ids, partName, pad) {
+    if (!ids.length) throw new Error("select some faces first");
+    pad = pad === undefined ? 0.005 : pad;
+    var y0 = Infinity, y1 = -Infinity, r0 = Infinity, r1 = -Infinity, span = 0, parts = {};
+    ids.forEach(function (t) {
+      var c = faceCentre(mesh, t), r = Math.hypot(c[0], c[2]);
+      y0 = Math.min(y0, c[1]); y1 = Math.max(y1, c[1]); r0 = Math.min(r0, r); r1 = Math.max(r1, r);
+      var ys = faceVerts(mesh, t).map(function (i) { return mesh.position[i * 3 + 1]; });
+      span = Math.max(span, Math.max.apply(null, ys) - Math.min.apply(null, ys));
+      parts[partName ? partName(t) : ""] = true;
+    });
+    var round = function (x) { return Math.round(x * 1000) / 1000; };
+    var out = { kind: "band" };
+    var ps = Object.keys(parts);
+    if (ps.length === 1 && ps[0] && ps[0] !== "none") out.part = ps[0];
+    out.y = [round(y0 - pad), round(y1 + pad)];
+    out.r = [round(Math.max(0, r0 - pad)), round(r1 + pad)];
+    out.span = round(span + pad);
+    out.order = true;
+    out.colours = ["wool_red", "brass", "wool_blue", "wool_green"];
+    return out;
+  }
+
   return { MAX_PARTS: MAX_PARTS, ROW: ROW, PART_COLOURS: PART_COLOURS, parseGlb: parseGlb, islands: islands, rows: rows,
     validateParts: validateParts, parseParts: parseParts, exportParts: exportParts, toSrgb: toSrgb, luma: luma,
     recolour: recolour, rampBase: rampBase, partRemap: partRemap, nearestRamp: nearestRamp, seedFromColours: seedFromColours,
-    levelParts: levelParts, weightOn: weightOn, heat: heat };
+    levelParts: levelParts, weightOn: weightOn, heat: heat,
+    compressIds: compressIds, parseIds: parseIds, formatSelection: formatSelection, parseSelection: parseSelection,
+    facePart: facePart, faceCentre: faceCentre, facesInRect: facesInRect, hidden: hidden,
+    connectedSameColour: connectedSameColour, bandFromFaces: bandFromFaces };
 })();
 </script>
 
@@ -415,6 +647,7 @@ var PainterCore = (function () {
     current: 1, colours: C.PART_COLOURS.map(function (c) { return c.slice(); }),
     creature: -1, entries: [], choice: [],
     undo: [], redo: [],
+    edit: "paint", ftool: "click", faceSel: {}, hoverFace: -1,   // face select: a Set of face ids a level
   };
 
   function status(msg, bad) {
@@ -435,8 +668,11 @@ var PainterCore = (function () {
   var sun = new THREE.DirectionalLight(0xffffff, 0.5);
   sun.position.set(0.4, 0.6, 1);
   camera.add(sun);
-  var meshObj = null, dotsObj = null, wireObj = null;
+  var meshObj = null, dotsObj = null, wireObj = null, selObj = null, hoverObj = null;
+  // The camera: an orbit about `target` (yaw round +y, 0 looking at the model's front from +z; pitch clamped
+  // short of the poles, so it never flips), `r` from it, clamped to the model's size.
   var orbit = { target: new THREE.Vector3(), theta: 0, phi: 0.1, r: 3, span: 1 };
+  var PITCH = 1.55, tween = null;
   var camDirty = true;
 
   function bg() {
@@ -446,15 +682,18 @@ var PainterCore = (function () {
   bg();
   if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () { bg(); draw(); });
 
+  function clampR(r) { return Math.max(orbit.span * 0.04, Math.min(orbit.span * 20, r)); }
   function placeCamera() {
     var o = orbit;
-    o.phi = Math.max(-1.55, Math.min(1.55, o.phi));
+    o.phi = Math.max(-PITCH, Math.min(PITCH, o.phi));
+    o.r = clampR(o.r);
+    camera.up.set(0, 1, 0);
     camera.position.set(
       o.target.x + o.r * Math.sin(o.theta) * Math.cos(o.phi),
       o.target.y + o.r * Math.sin(o.phi),
       o.target.z + o.r * Math.cos(o.theta) * Math.cos(o.phi));
     camera.lookAt(o.target);
-    camera.near = o.r / 100; camera.far = o.r * 100;
+    camera.near = Math.max(o.r / 200, 1e-4); camera.far = o.r * 100 + o.span * 10;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     camDirty = true;
@@ -473,18 +712,91 @@ var PainterCore = (function () {
     drawQueued = true;
     requestAnimationFrame(function () { drawQueued = false; renderer.render(scene, camera); });
   }
-  function setView(v) {
-    orbit.theta = { front: 0, side: Math.PI / 2, back: Math.PI, top: 0 }[v];
-    orbit.phi = v === "top" ? 1.5 : 0.08;
-    orbit.r = orbit.span * 2.1;
-    orbit.target.copy(orbit.centre || new THREE.Vector3());
+  /** Eases the camera to `to` ({ target, theta, phi, r }, any left out kept) over `ms`; yaw the short way. */
+  function animateTo(to, ms) {
+    var from = { target: orbit.target.clone(), theta: orbit.theta, phi: orbit.phi, r: orbit.r };
+    var dest = { target: to.target ? to.target.clone() : from.target.clone(), theta: to.theta === undefined ? from.theta : to.theta,
+      phi: to.phi === undefined ? from.phi : to.phi, r: to.r === undefined ? from.r : to.r };
+    var dt = dest.theta - from.theta;
+    dt = Math.atan2(Math.sin(dt), Math.cos(dt));
+    var start = performance.now();
+    var mine = tween = {};
+    var step = function (now) {
+      if (tween !== mine) return;
+      var k = ms > 0 ? Math.min(1, (now - start) / ms) : 1, e = k * k * (3 - 2 * k);
+      orbit.target.lerpVectors(from.target, dest.target, e);
+      orbit.theta = from.theta + dt * e;
+      orbit.phi = from.phi + (dest.phi - from.phi) * e;
+      orbit.r = from.r * Math.pow(dest.r / from.r, e);
+      placeCamera();
+      if (k < 1) requestAnimationFrame(step); else tween = null;
+    };
+    requestAnimationFrame(step);
+  }
+  function stopTween() { tween = null; }
+  var VIEWS = { front: [0, 0.08], back: [Math.PI, 0.08], left: [Math.PI / 2, 0.08], right: [-Math.PI / 2, 0.08],
+    top: [0, PITCH], threequarter: [Math.PI / 4, 0.35], reset: [0, 0.08] };
+  /** A named view: front, back, left/right (the model's own sides: it faces +z, so its left is +x), top, ¾, reset. */
+  function setView(v, ms) {
+    var a = VIEWS[v] || VIEWS.front;
+    var to = { theta: a[0], phi: a[1] };
+    if (v === "reset" || !meshObj) { to.target = orbit.centre || new THREE.Vector3(); to.r = orbit.span * 2.1; }
+    if (ms === 0 || !meshObj) {
+      stopTween();
+      orbit.theta = to.theta; orbit.phi = to.phi;
+      if (to.target) orbit.target.copy(to.target);
+      if (to.r) orbit.r = to.r;
+      placeCamera();
+    } else animateTo(to, ms === undefined ? 280 : ms);
+  }
+  /** World units a screen pixel spans at the target's depth. */
+  function worldPerPixel() { return 2 * orbit.r * Math.tan(camera.fov * Math.PI / 360) / Math.max(host.clientHeight, 1); }
+  /** Moves the view by a screen drag of (dx, dy) pixels: the point under the cursor follows it. */
+  function panBy(dx, dy) {
+    var s = worldPerPixel();
+    var right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    var upv = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    orbit.target.addScaledVector(right, -dx * s).addScaledVector(upv, dy * s);
     placeCamera();
+  }
+  function orbitBy(dx, dy) { orbit.theta -= dx * 0.008; orbit.phi += dy * 0.008; placeCamera(); }
+  function ndc(px, py) { return new THREE.Vector2(px / host.clientWidth * 2 - 1, 1 - py / host.clientHeight * 2); }
+  /** The model's surface point under a screen point, or null. */
+  function surfaceAt(px, py) {
+    if (!meshObj) return null;
+    ray.setFromCamera(ndc(px, py), camera);
+    var hit = ray.intersectObject(meshObj, false)[0];
+    return hit || null;
+  }
+  /**
+   * Zooms by `factor` (the distance's ratio) toward a screen point: the surface under it (else the point at
+   * the target's depth) stays under the cursor.
+   */
+  function zoomAt(px, py, factor) {
+    stopTween();
+    var nr = clampR(orbit.r * factor), k = nr / orbit.r;
+    if (k === 1) return;
+    var hit = surfaceAt(px, py), P;
+    if (hit) P = hit.point.clone();
+    else {
+      ray.setFromCamera(ndc(px, py), camera);
+      var fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+      P = camera.position.clone().addScaledVector(ray.ray.direction, orbit.r / Math.max(ray.ray.direction.dot(fwd), 1e-3));
+    }
+    orbit.target.sub(P).multiplyScalar(k).add(P);
+    orbit.r = nr;
+    placeCamera();
+  }
+  /** Double-click: centre the view on the surface point there. */
+  function focusAt(px, py) {
+    var hit = surfaceAt(px, py);
+    if (hit) animateTo({ target: hit.point.clone(), r: Math.min(orbit.r, orbit.span * 1.2) }, 300);
   }
 
   // ---- Geometry ----
   function buildGeometry() {
-    [meshObj, dotsObj, wireObj].forEach(function (o) { if (o) { scene.remove(o); o.geometry.dispose(); } });
-    meshObj = dotsObj = wireObj = null;
+    [meshObj, dotsObj, wireObj, selObj, hoverObj].forEach(function (o) { if (o) { scene.remove(o); o.geometry.dispose(); } });
+    meshObj = dotsObj = wireObj = selObj = hoverObj = null;
     var m = S.view && S.view.mesh;
     if (!m) { draw(); return; }
     var n = m.indices.length;
@@ -506,6 +818,11 @@ var PainterCore = (function () {
     wireObj = new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 }));
     wireObj.visible = $("wire").checked;
     scene.add(wireObj);
+    // The face selection's outline and the hovered face's.
+    selObj = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffe14d }));
+    hoverObj = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x18e0ff, depthTest: false, transparent: true }));
+    hoverObj.renderOrder = 2;
+    scene.add(selObj); scene.add(hoverObj);
     // Bounds and the screen cache.
     var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     for (var i = 0; i < m.count; i++) for (var a = 0; a < 3; a++) {
@@ -540,7 +857,14 @@ var PainterCore = (function () {
       var v = per[m.indices[c]];
       ca.array[c * 3] = v[0]; ca.array[c * 3 + 1] = v[1]; ca.array[c * 3 + 2] = v[2];
     }
+    if (S.edit === "faces") {
+      var fs = faceSet();
+      fs.forEach(function (t) {
+        for (var q = t * 3; q < t * 3 + 3; q++) for (var z = 0; z < 3; z++) ca.array[q * 3 + z] = ca.array[q * 3 + z] * 0.4 + TINT[z] * 0.6;
+      });
+    }
     ca.needsUpdate = true;
+    outlineFaces();
     var da = dotsObj.geometry.attributes.color;
     for (var j = 0; j < m.count; j++) {
       var d = S.view.parts ? S.colours[S.view.parts[j]] : [255, 255, 255];
@@ -549,6 +873,33 @@ var PainterCore = (function () {
     da.needsUpdate = true;
     draw();
     renderParts();
+  }
+
+  // ---- Face selection: the outline, the tint ----
+  var TINT = [1, 0.18, 0.82];
+  /** The drawn level's selection (a Set of face ids). */
+  function faceSet() { return S.faceSel[S.level] || (S.faceSel[S.level] = new Set()); }
+  function edgeLines(obj, list) {
+    if (!obj) return;
+    var m = S.view.mesh, a = new Float32Array(list.length * 18), n = 0;
+    list.forEach(function (t) {
+      for (var e = 0; e < 3; e++) {
+        var p = m.indices[t * 3 + e], q = m.indices[t * 3 + (e + 1) % 3];
+        for (var k = 0; k < 3; k++) a[n + k] = m.position[p * 3 + k];
+        for (var k2 = 0; k2 < 3; k2++) a[n + 3 + k2] = m.position[q * 3 + k2];
+        n += 6;
+      }
+    });
+    obj.geometry.dispose();
+    obj.geometry = new THREE.BufferGeometry();
+    obj.geometry.setAttribute("position", new THREE.BufferAttribute(a, 3));
+  }
+  function outlineFaces() {
+    if (!selObj) return;
+    var on = S.edit === "faces";
+    selObj.visible = hoverObj.visible = on;
+    edgeLines(selObj, on ? Array.from(faceSet()) : []);
+    edgeLines(hoverObj, on && S.hoverFace >= 0 ? [S.hoverFace] : []);
   }
 
   // ---- The view's mesh (level 0 painted; others read-only, mapped as parts.mjs levelParts) ----
@@ -561,17 +912,30 @@ var PainterCore = (function () {
       S.view = { mesh: mesh, parts: S.parts ? C.levelParts(S.base, S.parts, mesh) : null };
     }
     var keepCam = !!meshObj;
+    S.hoverFace = -1;
     buildGeometry();
-    if (!keepCam) setView("front");
+    refreshFacePanel();
+    if (!keepCam) setView("reset", 0);
     status(k === 0 ? "" : "Level " + S.glb.levels[k] + ": its parts are mapped from detail_0 (read-only; paint detail_0).");
   }
   function refreshLevels() {
     var sel = $("level");
     sel.innerHTML = "";
     (S.glb ? S.glb.levels : []).forEach(function (n, i) {
-      var o = document.createElement("option"); o.value = i; o.textContent = n; sel.appendChild(o);
+      var o = document.createElement("option"); o.value = i; o.textContent = n + " \u00b7 " + levelLabel(i); sel.appendChild(o);
     });
     sel.value = String(S.level);
+  }
+  /** A level's percentage as the game names it (models.json `detail.levels` labels, else 100/60/35/20). */
+  function levelLabel(k) {
+    var ls = S.models && S.models.detail && S.models.detail.levels;
+    var l = ls && ls[k] && ls[k].label ? ls[k].label : ["100 %", "60 %", "35 %", "20 %"][k];
+    return l ? l.replace(/\s+/g, "") : "detail_" + k;
+  }
+  function levelOfPercent(pc) {
+    if (!S.glb) return -1;
+    for (var k = 0; k < S.glb.levels.length; k++) if (parseFloat(levelLabel(k)) === pc) return k;
+    return -1;
   }
   function refreshJoints() {
     var sel = $("joint");
@@ -595,9 +959,10 @@ var PainterCore = (function () {
     var glb = C.parseGlb(buffer);
     var first = glb.meshNames.indexOf("detail_0") >= 0 ? "detail_0" : glb.meshNames[0];
     S.glb = glb; S.glbName = name; S.base = glb.mesh(first); S.isl = C.islands(S.base);
-    S.joint = 0; S.level = 0; S.undo = []; S.redo = [];
+    S.joint = 0; S.level = 0; S.undo = []; S.redo = []; S.faceSel = {}; S.hoverFace = -1;
     var model = S.models && Object.keys(S.models.models || {}).find(function (k) { return (S.models.models[k].glb || "").split("/").pop() === name; });
     S.exclude = (S.models && S.models.palette && S.models.palette.exclude) || [];
+    S.modelName = model || name.replace(/\.glb$/i, "") || "model";
     if (S.parts && S.parts.length !== S.base.count) { S.pending = { file: S.file, name: S.fileName, text: null }; S.parts = null; }
     if (S.pending) {
       var p = S.pending; S.pending = null;
@@ -994,16 +1359,153 @@ var PainterCore = (function () {
   }
   function partName(k) { return k === 0 ? "none" : S.names[k - 1]; }
 
-  // ---- Pointer ----
-  var cv = renderer.domElement, drag = null;
+  // ---- Face select ----
+  function faceCount() { return S.view ? S.view.mesh.indices.length / 3 : 0; }
+  function pickFace(px, py) {
+    var hit = surfaceAt(px, py);
+    return hit ? hit.faceIndex : -1;
+  }
+  function faceColourName(t) {
+    var m = S.view.mesh, v = m.indices[t * 3], lin = [m.colour[v * 3], m.colour[v * 3 + 1], m.colour[v * 3 + 2]];
+    if (S.palette) return C.nearestRamp(S.palette, lin, S.exclude);
+    return hex(lin.map(function (x) { return Math.round(C.toSrgb(x) * 255); }));
+  }
+  function facePartName(t) { return partName(C.facePart(S.view.mesh, S.view.parts, t)); }
+  /** Changes the drawn level's selection: `how` "add", "remove", "toggle" (by the first face), "set". */
+  function changeFaces(list, how) {
+    var fs = faceSet();
+    if (how === "set") fs.clear();
+    var add = how === "add" || how === "set" || (how === "toggle" && list.length && !fs.has(list[0]));
+    list.forEach(function (t) { if (add) fs.add(t); else fs.delete(t); });
+    recolourAll();
+    refreshFacePanel();
+  }
+  function selectionText() {
+    var ids = Array.from(faceSet()).sort(function (a, b) { return a - b; });
+    return C.formatSelection({ model: S.modelName, level: levelLabel(S.level), ids: ids,
+      parts: ids.map(facePartName), colours: ids.map(faceColourName) });
+  }
+  function refreshFacePanel() {
+    if (!S.view) { $("fcount").textContent = ""; $("ftext").value = ""; return; }
+    var n = faceSet().size;
+    $("fcount").textContent = n + " of " + faceCount() + " faces selected on " + S.glb.levels[S.level] + " (" + levelLabel(S.level) + ")" +
+      (Object.keys(S.faceSel).some(function (k) { return Number(k) !== S.level && S.faceSel[k].size; }) ? "; other levels keep their own selections" : "");
+    $("ftext").value = n ? selectionText() : "";
+  }
+  function faceClick(px, py, how) {
+    var t = pickFace(px, py);
+    if (t < 0) return;
+    changeFaces($("fconnected").checked ? C.connectedSameColour(S.view.mesh, t) : [t], how);
+  }
+  /** The faces whose centre is in a screen rectangle, front-facing and unhidden unless "only faces I can see" is off. */
+  function facesInBox(rect) {
+    var sc = ensureScreen(), m = S.view.mesh, seen = $("fvisible").checked;
+    var list = C.facesInRect(m.indices, sc.x, sc.y, rect, seen);
+    if (!seen) return list;
+    var eye = camera.position.toArray(), eps = orbit.span * 2e-3;
+    return list.filter(function (t) { return !C.hidden(m, eye, C.faceCentre(m, t), t, eps); });
+  }
+  function setEdit(e) {
+    S.edit = e;
+    Array.from($("edits").children).forEach(function (b) { b.classList.toggle("on", b.dataset.edit === e); });
+    $("facesBox").style.display = e === "faces" ? "block" : "none";
+    $("paintBox").style.display = e === "paint" ? "block" : "none";
+    $("brush").style.display = "none";
+    S.hoverFace = -1;
+    recolourAll();
+    refreshFacePanel();
+  }
+  Array.from($("edits").children).forEach(function (b) { b.onclick = function () { setEdit(b.dataset.edit); }; });
+  function setFtool(t) {
+    S.ftool = t;
+    Array.from($("ftools").children).forEach(function (b) { b.classList.toggle("on", b.dataset.ftool === t); });
+  }
+  Array.from($("ftools").children).forEach(function (b) { b.onclick = function () { setFtool(b.dataset.ftool); }; });
+  $("fnone").onclick = function () { if (S.view) changeFaces([], "set"); };
+  $("finvert").onclick = function () {
+    if (!S.view) return;
+    var fs = faceSet(), list = [];
+    for (var t = 0; t < faceCount(); t++) if (!fs.has(t)) list.push(t);
+    changeFaces(list, "set");
+  };
+  function copyFaces() {
+    if (!S.view) return;
+    var text = selectionText();
+    $("ftext").value = text;
+    var msg = $("fcopymsg");
+    var fallback = function () { $("ftext").focus(); $("ftext").select(); msg.className = "warn"; msg.textContent = "Clipboard blocked: the text is selected below, copy it by hand."; };
+    if (navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(function () { msg.className = "muted"; msg.textContent = "Copied."; }, fallback);
+    else fallback();
+  }
+  $("fcopy").onclick = copyFaces;
+  /** Selects the faces a pasted selection names, on its level (when it names one this model has). */
+  function loadSelection(text) {
+    if (!S.view) throw new Error("load a model first");
+    var sel = C.parseSelection(text), notes = [];
+    if (sel.level !== null) {
+      var k = levelOfPercent(sel.level);
+      if (k < 0) notes.push("no " + sel.level + "% level here; used " + levelLabel(S.level));
+      else if (k !== S.level) { setLevel(k); $("level").value = String(k); }
+    }
+    if (sel.model && sel.model !== S.modelName) notes.push("it names " + sel.model + ", this is " + S.modelName);
+    var n = faceCount(), ids = sel.ids.filter(function (t) { return t < n; });
+    if (ids.length < sel.ids.length) notes.push((sel.ids.length - ids.length) + " ids past the level's " + n + " faces dropped");
+    if (S.edit !== "faces") setEdit("faces");
+    changeFaces(ids, "set");
+    status("Loaded " + ids.length + " faces on " + levelLabel(S.level) + (notes.length ? " (" + notes.join("; ") + ")" : "") + ".", notes.length > 0);
+    return ids;
+  }
+  $("floadbtn").onclick = function () {
+    try { loadSelection($("fload").value); } catch (e) { status("Selection: " + e.message, true); }
+  };
+  $("fband").onclick = function () {
+    try {
+      var ids = Array.from(faceSet()).sort(function (a, b) { return a - b; });
+      var band = C.bandFromFaces(S.view.mesh, ids, facePartName);
+      band.$comment = "From the painter's selection " + S.modelName + " @" + levelLabel(S.level) + " (" + ids.length + " faces): decor picks facets by position, so check the render.";
+      $("fbandout").value = JSON.stringify(band);
+    } catch (e) { $("fbandout").value = e.message; }
+  };
+
+  // ---- Pointer: mouse, pen and touch ----
+  var cv = renderer.domElement, drag = null, pointers = new Map(), spaceDown = false, lastTap = null;
   cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
   function local(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  function howOf(e) { return e.ctrlKey || e.metaKey ? "remove" : e.shiftKey ? "add" : "toggle"; }
+  function showBox(r) {
+    var b = $("box");
+    if (!r) { b.style.display = "none"; return; }
+    b.style.display = "block";
+    b.style.left = Math.min(r[0], r[2]) + "px"; b.style.top = Math.min(r[1], r[3]) + "px";
+    b.style.width = Math.abs(r[2] - r[0]) + "px"; b.style.height = Math.abs(r[3] - r[1]) + "px";
+  }
+  function twoFinger() {
+    var ps = Array.from(pointers.values());
+    return { mid: [(ps[0][0] + ps[1][0]) / 2, (ps[0][1] + ps[1][1]) / 2], dist: Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]) || 1 };
+  }
+  function endDrag() {
+    if (drag && drag.kind === "paint") endStroke();
+    if (drag && drag.kind === "box") showBox(null);
+    drag = null;
+  }
   cv.addEventListener("pointerdown", function (e) {
     var p = local(e);
     cv.setPointerCapture(e.pointerId);
-    var orbitBtn = e.button === 2 || (e.button === 0 && S.tool === "orbit");
-    var pan = e.button === 1 || (e.shiftKey && (e.button === 0 || e.button === 2));
-    if (e.button === 0 && e.altKey && S.view) {
+    pointers.set(e.pointerId, p);
+    stopTween();
+    if (pointers.size === 2) {
+      // A second finger: pan and pinch; whatever the first finger started is dropped.
+      if (drag && drag.kind === "paint") endStroke();
+      showBox(null);
+      var g = twoFinger();
+      drag = { kind: "touch2", mid: g.mid, dist: g.dist };
+      return;
+    }
+    if (pointers.size > 2) return;
+    var faces = S.edit === "faces" && !!S.view;
+    var pan = e.button === 2 || (e.shiftKey && e.button === 0 && !faces) || (e.shiftKey && e.button === 2);
+    if (e.button === 0 && e.altKey && !faces && S.view) {
       var v = pickVertex(p[0], p[1]);
       if (v >= 0) {
         var m = S.view.mesh, bj = 0, bw = -1;
@@ -1013,9 +1515,13 @@ var PainterCore = (function () {
       return;
     }
     if (pan) drag = { kind: "pan", x: p[0], y: p[1] };
-    else if (orbitBtn) drag = { kind: "orbit", x: p[0], y: p[1] };
-    else if (e.button === 0) {
-      if (!canPaint()) return;
+    else if (e.button === 1 || (e.button === 0 && (spaceDown || (!faces && S.tool === "orbit")))) drag = { kind: "orbit", x: p[0], y: p[1] };
+    else if (e.button === 0 && faces) {
+      if (e.altKey || S.ftool === "box") drag = { kind: "box", x0: p[0], y0: p[1], how: e.ctrlKey || e.metaKey ? "remove" : e.shiftKey ? "add" : "set" };
+      // A press: a click (no move) selects; a drag past a few pixels orbits; shift-drag pans.
+      else drag = { kind: "press", x0: p[0], y0: p[1], x: p[0], y: p[1], how: howOf(e), shift: e.shiftKey };
+    } else if (e.button === 0) {
+      if (!canPaint()) { drag = { kind: "orbit", x: p[0], y: p[1] }; return; }
       if (S.tool === "brush") { drag = { kind: "paint" }; beginStroke(); brushAt(p[0], p[1]); }
       else if (S.tool === "island") fillIsland(p[0], p[1]);
       else if (S.tool === "same") fillSame(p[0], p[1]);
@@ -1023,33 +1529,60 @@ var PainterCore = (function () {
   });
   cv.addEventListener("pointermove", function (e) {
     var p = local(e);
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
     var b = $("brush");
-    var showBrush = S.tool === "brush" || S.tool === "same";
+    var showBrush = S.edit === "paint" && (S.tool === "brush" || S.tool === "same") && e.pointerType !== "touch";
     b.style.display = showBrush && S.glb ? "block" : "none";
     b.style.width = b.style.height = S.radius * 2 + "px";
     b.style.left = p[0] - S.radius + "px"; b.style.top = p[1] - S.radius + "px";
-    if (drag && drag.kind === "orbit") {
-      orbit.theta -= (p[0] - drag.x) * 0.008; orbit.phi += (p[1] - drag.y) * 0.008;
-      drag.x = p[0]; drag.y = p[1]; placeCamera();
-    } else if (drag && drag.kind === "pan") {
-      var s = orbit.r * 0.0015;
-      var right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-      var up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
-      orbit.target.addScaledVector(right, -(p[0] - drag.x) * s).addScaledVector(up, (p[1] - drag.y) * s);
-      drag.x = p[0]; drag.y = p[1]; placeCamera();
-    } else if (drag && drag.kind === "paint") brushAt(p[0], p[1]);
-    hover(p);
+    if (drag && drag.kind === "touch2") {
+      if (pointers.size < 2) return;
+      var g = twoFinger();
+      panBy(g.mid[0] - drag.mid[0], g.mid[1] - drag.mid[1]);
+      zoomAt(g.mid[0], g.mid[1], drag.dist / g.dist);
+      drag.mid = g.mid; drag.dist = g.dist;
+      return;
+    }
+    if (drag && drag.kind === "press" && Math.hypot(p[0] - drag.x0, p[1] - drag.y0) > 5)
+      drag = { kind: drag.shift ? "pan" : "orbit", x: drag.x, y: drag.y };
+    if (drag && drag.kind === "orbit") { orbitBy(p[0] - drag.x, p[1] - drag.y); drag.x = p[0]; drag.y = p[1]; }
+    else if (drag && drag.kind === "pan") { panBy(p[0] - drag.x, p[1] - drag.y); drag.x = p[0]; drag.y = p[1]; }
+    else if (drag && drag.kind === "box") { drag.rect = [drag.x0, drag.y0, p[0], p[1]]; showBox(drag.rect); }
+    else if (drag && drag.kind === "paint") brushAt(p[0], p[1]);
+    if (!drag || drag.kind === "press" || drag.kind === "box" || drag.kind === "paint") hover(p);
   });
-  function up() { if (drag && drag.kind === "paint") endStroke(); drag = null; }
+  function up(e) {
+    var p = local(e);
+    pointers.delete(e.pointerId);
+    if (drag && drag.kind === "touch2") { if (pointers.size === 0) drag = null; return; }
+    if (drag && drag.kind === "press") {
+      // A double tap or click focuses (dblclick doesn't fire for touch); a single one selects.
+      var now = performance.now();
+      if (lastTap && now - lastTap.t < 320 && Math.hypot(p[0] - lastTap.x, p[1] - lastTap.y) < 12) {
+        changeFaces(lastTap.faces, lastTap.undo); lastTap = null; focusAt(p[0], p[1]);
+      } else {
+        var before = Array.from(faceSet());
+        faceClick(p[0], p[1], drag.how);
+        lastTap = { t: now, x: p[0], y: p[1], faces: before, undo: "set" };
+      }
+    } else if (drag && drag.kind === "box" && drag.rect && Math.abs(drag.rect[2] - drag.rect[0]) + Math.abs(drag.rect[3] - drag.rect[1]) > 3) {
+      changeFaces(facesInBox(drag.rect), drag.how);
+    }
+    endDrag();
+  }
   cv.addEventListener("pointerup", up);
-  cv.addEventListener("pointercancel", up);
+  cv.addEventListener("pointercancel", function (e) { pointers.delete(e.pointerId); endDrag(); });
   cv.addEventListener("pointerleave", function () { $("brush").style.display = "none"; });
+  cv.addEventListener("dblclick", function (e) {
+    if (S.edit === "faces") return; // handled as a double press (above), which also undoes the first click
+    var p = local(e); focusAt(p[0], p[1]);
+  });
   cv.addEventListener("wheel", function (e) {
     e.preventDefault();
-    orbit.r *= Math.exp(e.deltaY * 0.0012);
-    orbit.r = Math.max(orbit.span * 0.1, Math.min(orbit.span * 20, orbit.r));
-    placeCamera();
+    var p = local(e), d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    zoomAt(p[0], p[1], Math.exp(Math.max(-200, Math.min(200, d)) * (e.ctrlKey ? 0.01 : 0.0015)));
   }, { passive: false });
+  document.addEventListener("keyup", function (e) { if (e.code === "Space") spaceDown = false; });
   var hoverQueued = null;
   function hover(p) {
     if (hoverQueued) { hoverQueued = p; return; }
@@ -1057,6 +1590,16 @@ var PainterCore = (function () {
     requestAnimationFrame(function () {
       var q = hoverQueued; hoverQueued = null;
       if (!S.view) return;
+      if (S.edit === "faces") {
+        var t = pickFace(q[0], q[1]);
+        if (t !== S.hoverFace) { S.hoverFace = t; outlineFaces(); draw(); }
+        if (t < 0) { $("info").textContent = "\u2014"; return; }
+        var fm = S.view.mesh, fv = [fm.indices[t * 3], fm.indices[t * 3 + 1], fm.indices[t * 3 + 2]], fc = C.faceCentre(fm, t);
+        $("info").textContent = S.glb.levels[S.level] + " (" + levelLabel(S.level) + ") face " + t + (faceSet().has(t) ? " (selected)" : "") +
+          " \u00b7 part " + facePartName(t) + " \u00b7 colour " + faceColourName(t) + "\nvertices " + fv.join(", ") +
+          " \u00b7 centre y " + fc[1].toFixed(3) + ", r " + Math.hypot(fc[0], fc[2]).toFixed(3);
+        return;
+      }
       var v = pickVertex(q[0], q[1]);
       if (v < 0) { $("info").textContent = "—"; return; }
       var m = S.view.mesh, lin = [m.colour[v * 3], m.colour[v * 3 + 1], m.colour[v * 3 + 2]];
@@ -1072,6 +1615,13 @@ var PainterCore = (function () {
   document.addEventListener("keydown", function (e) {
     if (e.target && (e.target.tagName === "INPUT" && e.target.type === "text" || e.target.tagName === "TEXTAREA")) return;
     var mod = e.ctrlKey || e.metaKey;
+    if (e.code === "Space") { spaceDown = true; if (e.target === document.body) e.preventDefault(); return; }
+    if (!mod && e.key.toLowerCase() === "f") { setView("reset"); return; }
+    if (S.edit === "faces") {
+      if (e.key === "Escape") { changeFaces([], "set"); return; }
+      if (mod && e.key.toLowerCase() === "c" && !String(window.getSelection && window.getSelection())) { e.preventDefault(); copyFaces(); return; }
+      if (mod && e.key.toLowerCase() === "z") return;
+    }
     if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
     else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); doRedo(); }
     else if (e.key === "[") setRadius(S.radius / 1.2);
@@ -1106,12 +1656,18 @@ var PainterCore = (function () {
     } catch (e) { $("exportmsg").className = "warn"; $("exportmsg").textContent = e.message; }
   };
 
+  $("help").onclick = function () { $("help").classList.toggle("min"); };
+
   // A handle for scripts and screenshots.
   window.painter = {
     state: S, core: C, exportText: exportText, setView: setView, setMode: setMode, setTool: setTool, setLevel: setLevel,
     loadGlb: loadGlb, handleText: handleText, select: select, undo: doUndo, redo: doRedo,
     paintAt: function (x, y) { if (!canPaint()) return 0; beginStroke(); brushAt(x, y); var n = stroke.changed; endStroke(); return n; },
     fillIsland: fillIsland, fillSame: fillSame, setRadius: setRadius,
+    setEdit: setEdit, faces: function () { return Array.from(faceSet()).sort(function (a, b) { return a - b; }); },
+    selectFaces: function (ids, how) { changeFaces(ids, how || "set"); }, selectionText: selectionText, loadSelection: loadSelection,
+    boxSelect: function (rect, how) { changeFaces(facesInBox(rect), how || "set"); }, clickFace: faceClick,
+    camera: camera, orbit: orbit, zoomAt: zoomAt, panBy: panBy, orbitBy: orbitBy, focusAt: focusAt,
   };
 
   setMode("parts");

@@ -18,7 +18,7 @@ const page = readFileSync(join(root, "docs/prototypes/model-part-painter.html"),
 function core() {
   const m = page.match(/<script id="core">([\s\S]*?)<\/script>/);
   assert.ok(m, "the page has a <script id=\"core\">");
-  const ctx = { TextDecoder, Uint8Array, DataView, Float64Array, Int32Array, Map, Math, JSON, Array, Object, Number, String, RegExp, Error };
+  const ctx = { TextDecoder, Uint8Array, DataView, Float64Array, Int32Array, Map, Set, Math, JSON, Array, Object, Number, String, RegExp, Error };
   vm.createContext(ctx);
   return vm.runInContext(`${m[1]}\nPainterCore;`, ctx);
 }
@@ -135,4 +135,124 @@ test("the variant recolour is dwell_models::recolour's luminance-ratio rule", ()
   // A part the model lacks or a ramp the palette lacks is left out.
   const none = C.partRemap(["skin"], [{ part: "hat", from: "hair_brown", to: ["x"] }, { part: "skin", from: "nope", to: ["skin_tan"] }], [0, 0], palette);
   assert.ok(none.every((r) => r === null));
+});
+
+// ---- Face select (owner, 2026-11-14: "select/deselect faces on the mesh … copy those Face IDs so I can paste
+// them here and talk about them") ----
+
+test("face ids compress to ranges of three or more and parse back", () => {
+  assert.equal(C.compressIds([1215, 1203, 1204, 1210, 1211, 1212, 1213, 1214, 1204]), "1203,1204,1210\u20131215");
+  assert.equal(C.compressIds([]), "");
+  assert.equal(C.compressIds([5]), "5");
+  assert.equal(C.compressIds([0, 1, 2, 4, 6, 7, 8, 9]), "0\u20132,4,6\u20139");
+  assert.deepEqual(Array.from(C.parseIds("1203,1204,1210\u20131215")), [1203, 1204, 1210, 1211, 1212, 1213, 1214, 1215]);
+  // Typed by hand: hyphens, "..", spaces, out of order, repeats.
+  assert.deepEqual(Array.from(C.parseIds(" 9, 3-5 7..8 4 ")), [3, 4, 5, 7, 8, 9]);
+  assert.throws(() => C.parseIds("3,x"), /not a face id/);
+  for (let n = 0; n < 50; n++) {
+    const ids = [...new Set(Array.from({ length: 40 }, (_, i) => (i * 7919 + n * 31) % 97))].sort((a, b) => a - b);
+    assert.deepEqual(Array.from(C.parseIds(C.compressIds(ids))), ids);
+  }
+});
+
+test("the copied selection text has the model, level, ranges, count, parts and colours, and reads back", () => {
+  const text = C.formatSelection({
+    model: "peasant", level: "60%", ids: [1203, 1204, 1210, 1211, 1212, 1213, 1214, 1215],
+    parts: ["shirt", "shirt", "shirt", "belt", "shirt", "shirt", "shirt", "belt"],
+    colours: ["wool_green", "wool_green", "wool_green", "leather", "wool_green", "wool_green", "wool_green", "leather"],
+  });
+  assert.equal(text, "peasant @60% faces: 1203,1204,1210\u20131215 (8) \u2014 parts: shirt 6, belt 2 \u2014 colours: wool_green 6, leather 2");
+  const back = C.parseSelection(text);
+  assert.equal(back.model, "peasant");
+  assert.equal(back.level, 60);
+  assert.deepEqual(Array.from(back.ids), [1203, 1204, 1210, 1211, 1212, 1213, 1214, 1215]);
+  // A bare list, a hand-typed line, an empty selection.
+  assert.deepEqual(Array.from(C.parseSelection("4, 6-8").ids), [4, 6, 7, 8]);
+  assert.equal(C.parseSelection("4, 6-8").level, null);
+  const typed = C.parseSelection("peasant @ 35 % faces: 10-12");
+  assert.equal(typed.level, 35);
+  assert.deepEqual(Array.from(typed.ids), [10, 11, 12]);
+  const none = C.formatSelection({ model: "peasant", level: "100%", ids: [] });
+  assert.equal(none, "peasant @100% faces: none (0)");
+  assert.deepEqual(Array.from(C.parseSelection(none).ids), []);
+});
+
+/** The Peasant's level `k` seen from the front (+z), orthographic: screen x = x, y = -y (pixels, y down). */
+function frontScreen(m, scale = 500) {
+  const sx = new Float64Array(m.count), sy = new Float64Array(m.count);
+  for (let i = 0; i < m.count; i++) { sx[i] = m.position[i * 3] * scale; sy[i] = -m.position[i * 3 + 1] * scale; }
+  return { sx, sy };
+}
+
+test("box select takes the faces whose centre is in the box, front-facing ones by their winding", () => {
+  const g = C.parseGlb(new Uint8Array(glbBytes));
+  const m = g.mesh("detail_1");
+  const { sx, sy } = frontScreen(m);
+  const all = C.facesInRect(m.indices, sx, sy, [-1e4, -1e4, 1e4, 1e4], false);
+  assert.equal(all.length, m.indices.length / 3);
+  // The rectangle's corners in any order.
+  const rect = [-60, -500, 60, -400]; // x ±0.12 m, y 0.8–1.0 m: the waist
+  const a = C.facesInRect(m.indices, sx, sy, rect, false);
+  assert.deepEqual(Array.from(C.facesInRect(m.indices, sx, sy, [60, -400, -60, -500], false)), Array.from(a));
+  for (const t of a) {
+    const c = C.faceCentre(m, t);
+    assert.ok(Math.abs(c[0] * 500) <= 60 && c[1] >= 0.8 - 1e-9 && c[1] <= 1.0 + 1e-9, `face ${t}'s centre is in the box`);
+  }
+  // Front-facing from +z: the faces whose geometric normal (glTF's counter-clockwise front) points to +z.
+  const front = C.facesInRect(m.indices, sx, sy, rect, true);
+  assert.ok(front.length > 0 && front.length < a.length, `${front.length} of ${a.length} face the camera`);
+  for (const t of a) {
+    const [p, q, r] = [0, 1, 2].map((k) => m.indices[t * 3 + k]);
+    const P = (i) => [m.position[i * 3], m.position[i * 3 + 1], m.position[i * 3 + 2]];
+    const [A, B, D] = [P(p), P(q), P(r)];
+    const nz = (B[0] - A[0]) * (D[1] - A[1]) - (B[1] - A[1]) * (D[0] - A[0]);
+    if (Math.abs(nz) < 1e-9) continue;
+    assert.equal(front.includes(t), nz > 0, `face ${t}: front iff its normal's z > 0`);
+  }
+});
+
+test("a face behind another is hidden; one in front is not", () => {
+  const g = C.parseGlb(new Uint8Array(glbBytes));
+  const m = g.mesh("detail_1");
+  const eye = [0, 0.9, 5];
+  const { sx, sy } = frontScreen(m);
+  const waist = C.facesInRect(m.indices, sx, sy, [-60, -500, 60, -400], false);
+  const front = waist.filter((t) => C.faceCentre(m, t)[2] > 0.05);
+  const back = waist.filter((t) => C.faceCentre(m, t)[2] < -0.05);
+  assert.ok(front.length && back.length);
+  assert.ok(back.every((t) => C.hidden(m, eye, C.faceCentre(m, t), t, 1e-3)), "the back of the waist is hidden from the front");
+  assert.ok(front.some((t) => !C.hidden(m, eye, C.faceCentre(m, t), t, 1e-3)), "some of the front is seen");
+});
+
+test("connected same colour stays on one colour and grows across shared edges", () => {
+  const g = C.parseGlb(new Uint8Array(glbBytes));
+  const m = g.mesh("detail_0");
+  const col = (t) => Array.from(m.colour.slice(m.indices[t * 3] * 3, m.indices[t * 3] * 3 + 3));
+  let grew = false;
+  for (const start of [0, 100, 500, 1000, 1500, 2000]) {
+    const set = C.connectedSameColour(m, start);
+    assert.ok(set.includes(start));
+    const c0 = col(start);
+    for (const t of set) col(t).forEach((x, k) => assert.ok(Math.abs(x - c0[k]) < 2 / 255, `face ${t} is face ${start}'s colour`));
+    if (set.length > 1) grew = true;
+  }
+  assert.ok(grew, "some region is more than one face");
+});
+
+test("a band from a selection covers its faces' heights and radii", () => {
+  const g = C.parseGlb(new Uint8Array(glbBytes));
+  const m = g.mesh("detail_1");
+  const { sx, sy } = frontScreen(m);
+  const ids = C.facesInRect(m.indices, sx, sy, [-60, -470, 60, -440], true);
+  const band = C.bandFromFaces(m, ids, () => "shirt");
+  assert.equal(band.kind, "band");
+  assert.equal(band.part, "shirt");
+  assert.equal(band.order, true);
+  for (const t of ids) {
+    const c = C.faceCentre(m, t);
+    assert.ok(c[1] >= band.y[0] && c[1] <= band.y[1]);
+    assert.ok(Math.hypot(c[0], c[2]) >= band.r[0] && Math.hypot(c[0], c[2]) <= band.r[1]);
+  }
+  assert.equal(C.bandFromFaces(m, ids, (t) => (t % 2 ? "shirt" : "pattern_1")).part, undefined);
+  assert.throws(() => C.bandFromFaces(m, [], null), /select some faces/);
 });
