@@ -989,9 +989,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    blobs of red dirt or stone; mesa country reading as relief, not flat blobs.
    **Built on `claude/realistic-069` (the 0.69 line; awaiting the maps):** contour stripes: wet bedded hills are
    grassy steps with rock risers (`rocks.json` `shaping.coverRain` 260 ± 60 mm; wet ground showing a bedded rock's
-   stone or dirt 31 % / 34 % → 0.1 %, `tests/realistic_cover.rs`); soft edges (`biomeMap.rockEdge`,
-   `shaping.edgeJitter`, `shaping.edgeFade`: fine straight runs 3.3 % / 0.8 % → 0.0 % / 0.2 %, axis runs over 4 m
-   14.6 % / 15.2 % → 12–14 %, `tests/realistic_bands.rs`); biome borders as one wandering, fingered line instead of
+   stone or dirt 31 % / 34 % → 0.6 % / 0.7 %, `tests/realistic_cover.rs`); soft edges (`biomeMap.rockEdge`,
+   `shaping.edgeJitter`, `shaping.edgeFade`: fine straight runs 3.3 % / 0.8 % → 0.0 % / 0.3 %, axis runs over 4 m
+   14.6 % / 15.2 % → 13.2 % / 12.8 %, `tests/realistic_bands.rs`); biome borders as one wandering, fingered line instead of
    a km-wide camouflage (`biomeMap` dither 0.06 at 160 m, the weights read at a point warped at three scales); the
    sand desert without pasted blobs (its core's non-sand 3.2 % → 0, dunes sand throughout,
    `tests/realistic_deserts.rs`); washes and scarps meander (`erosion.warp`); mesa country's tones follow the
