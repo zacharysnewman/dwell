@@ -9,7 +9,8 @@
   "biomeMap": {
     "ditherSpeckle": 0,
     "ditherWavelength": 48,
-    "ditherWarp": 60
+    "ditherWarp": 60,
+    "treesSharpen": 4
   },
   "geology": {
     "shaping": {
@@ -39,7 +40,7 @@
     "preset:mixed_forest",
     "preset:old_growth",
     "preset:red_rock_mesa",
-    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands" },
+    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
     "preset:savanna",
     "preset:snowfield",
     "preset:steppe",

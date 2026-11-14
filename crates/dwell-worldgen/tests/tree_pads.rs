@@ -62,6 +62,7 @@ fn wide_base(f: FaceFrame) -> TerrainGenerator {
         spacing: 0,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     };
     let biome = Biome {
         placements: &["test_wide_base"],

@@ -510,6 +510,7 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
             .and_then(Value::as_f64)
             .unwrap_or(1.0),
         dither_warp: v.get("ditherWarp").and_then(Value::as_f64).unwrap_or(0.0),
+        trees_sharpen: v.get("treesSharpen").and_then(Value::as_f64).unwrap_or(1.0),
         wind_direction: n("windDirection")?,
         wind_reach: n("windReach")?,
         base_rain: n("baseRain")?,

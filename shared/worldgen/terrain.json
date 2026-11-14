@@ -138,6 +138,7 @@
     "dither": 0.25,
     "ditherSpeckle": 1,
     "ditherWarp": 0,
+    "treesSharpen": 1,
     "windDirection": 270,
     "windReach": 5000,
     "baseRain": 0.15,

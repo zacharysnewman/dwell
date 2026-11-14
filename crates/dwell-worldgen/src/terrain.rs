@@ -241,6 +241,8 @@ pub struct BiomeMap {
     /// The border noise's sample point warped by about ± this (m) at 4 × its wavelength (0: none),
     /// so a border wanders in organic fingers rather than following the weights' contours.
     pub dither_warp: f64,
+    /// The biomes' tree densities blend by their weights to this power (1: as they are).
+    pub trees_sharpen: f64,
     /// The rain shadow (`biomemap::rainfall`): where the prevailing wind blows from (degrees,
     /// face-local, from +x toward +z).
     pub wind_direction: f64,
@@ -3493,7 +3495,14 @@ impl TerrainGenerator {
         let volcanic = self
             .plate_tectonics()
             .map_or(1.0, |t| t.volcano_trees(x as f64, z as f64) as f32);
-        volcanic * self.biome_tree_density_at(i, x, z)
+        // A rule sparse on the erosion's standing tops (`tops`, 0.66: sagebrush on the floors).
+        let tops = self.planters.get(i).map_or(1.0, |p| p.rule().tops);
+        let on_top = tops < 1.0
+            && self
+                .erosion_at(x, z)
+                .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
+        let tops = if on_top { tops } else { 1.0 };
+        tops * volcanic * self.biome_tree_density_at(i, x, z)
     }
 
     fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
@@ -3506,11 +3515,18 @@ impl TerrainGenerator {
             return d[0];
         }
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
-        self.biomes
-            .mix(x, z, base)
-            .iter()
-            .map(|(b, w)| d[b] * w as f32)
-            .sum()
+        let mix = self.biomes.mix(x, z, base);
+        let k = self.biomes.params.trees_sharpen;
+        if k == 1.0 {
+            return mix.iter().map(|(b, w)| d[b] * w as f32).sum();
+        }
+        // The weights to the power `treesSharpen` (0.66, Realistic: a neighbour's dense shrubs
+        // don't spill far across a wide border; WORK_QUEUE item 15).
+        let (sum, total) = mix.iter().fold((0.0f64, 0.0f64), |(s, t), (b, w)| {
+            let w = w.powf(k);
+            (s + f64::from(d[b]) * w, t + w)
+        });
+        (sum / total.max(1e-12)) as f32
     }
 
     /// Whether the biomes' `ground` varies the ground items (ADR 0074 B5; else they ask nothing of

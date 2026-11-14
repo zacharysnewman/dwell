@@ -123,7 +123,7 @@
       "rotate": [0, 90, 180, 270]
     },
     {
-      "$comment": "Sagebrush (0.64; owner, 2026-11-13, of Monument Valley: \"Some brush too.\"): grey-green shrubs dense on mesa and desert floors, one per 2 m cell in 0.9, crowns touching (about 1.5–3 m apart), none steeper than 25° (none on walls or talus).",
+      "$comment": "Sagebrush (0.64; owner, 2026-11-13, of Monument Valley: \"Some brush too.\"): grey-green shrubs dense on mesa and desert floors, one per 2 m cell in 0.9, crowns touching (about 1.5–3 m apart), none steeper than 25° (none on walls or talus); `tops` 0.12: mostly on the floors, sparse on the mesas' and buttes' standing tops (0.66; the map check, 2026-11-14: \"tops read green under thick sagebrush\").",
       "name": "sagebrush",
       "structures": { "dwell:sagebrush": 1 },
       "on": ["dwell:red_dirt", "dwell:red_sand", "dwell:sand"],
@@ -133,7 +133,8 @@
       "height": [1, 2500],
       "maxSlopeDeg": 25,
       "spacing": -2,
-      "rotate": [0, 90, 180, 270]
+      "rotate": [0, 90, 180, 270],
+      "tops": 0.12
     }
   ]
 }

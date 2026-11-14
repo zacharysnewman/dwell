@@ -274,6 +274,7 @@ const PLACEMENT_KEYS = [
   "spacing",
   "rotate",
   "variants",
+  "tops",
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
@@ -437,6 +438,8 @@ export function validatePlacements(
     }
     if (!(isNum(p.maxSlopeDeg) && p.maxSlopeDeg > 0 && p.maxSlopeDeg < 90))
       fail(`${at}: maxSlopeDeg must be in (0, 90) degrees`);
+    if (p.tops !== undefined && !(isNum(p.tops) && p.tops >= 0 && p.tops <= 1))
+      fail(`${at}: tops must be in [0, 1]`);
     // Negative: two crowns may interleave by that many blocks (a dense stand, WORK_QUEUE item 32).
     if (!(Number.isInteger(p.spacing) && p.spacing >= -4 && p.spacing <= 16)) {
       fail(`${at}: spacing must be a whole number of blocks in [-4, 16]`);
@@ -535,6 +538,7 @@ export function placementsRust(data, species = registrySpecies()) {
       return `Variant { name: ${JSON.stringify(v.name)}, replace: &[${pairs.join(", ")}], from: ${v.height[0]}, full: ${v.height[1]} }`;
     });
     rs.push(`        variants: &[${vs.join(", ")}],`);
+    rs.push(`        tops: ${rf(p.tops ?? 1)},`);
     rs.push("    },");
   }
   rs.push("];");
@@ -1081,6 +1085,7 @@ export function terrainRust({
   rs.push(`    dither: ${rf(bm.dither)},`);
   rs.push(`    dither_speckle: ${rf(bm.ditherSpeckle ?? 1)},`);
   rs.push(`    dither_warp: ${rf(bm.ditherWarp ?? 0)},`);
+  rs.push(`    trees_sharpen: ${rf(bm.treesSharpen ?? 1)},`);
   rs.push(`    wind_direction: ${rf(bm.windDirection)},`);
   rs.push(`    wind_reach: ${rf(bm.windReach)},`);
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);

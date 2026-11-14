@@ -23,6 +23,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 1,
         rotations: &[0, 1, 2, 3],
         variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250 }],
+        tops: 1.0,
     },
     Placement {
         name: "broadleaf_groves",
@@ -43,6 +44,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 1,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     },
     Placement {
         name: "conifer_groves",
@@ -63,6 +65,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 1,
         rotations: &[0, 1, 2, 3],
         variants: &[Variant { name: "snowy", replace: &[("dwell:leaves", "dwell:snowy_leaves")], from: 1050, full: 1250 }],
+        tops: 1.0,
     },
     Placement {
         name: "palm_coasts",
@@ -83,6 +86,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 1,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     },
     Placement {
         name: "boulders",
@@ -103,6 +107,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 2,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     },
     Placement {
         name: "old_growth",
@@ -123,6 +128,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: -2,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     },
     Placement {
         name: "rainforest_groves",
@@ -143,6 +149,7 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: 0,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 1.0,
     },
     Placement {
         name: "sagebrush",
@@ -163,5 +170,6 @@ pub static PLACEMENTS: [Placement; 8] = [
         spacing: -2,
         rotations: &[0, 1, 2, 3],
         variants: &[],
+        tops: 0.12,
     },
 ];
