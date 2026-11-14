@@ -258,7 +258,7 @@ pub const GEOLOGY: Geology = Geology {
         rift_width: 3000.0,
         basin_distance: 12000.0,
         edge_fade: 600.0,
-        mixing: Mixing { wavelength: 2600.0, warp: 1800.0, warp_wavelength: 9000.0, edge_shift: 1500.0, edge_wavelength: 6000.0, fade: 150.0 },
+        mixing: Mixing { wavelength: 2400.0, warp: 1800.0, warp_wavelength: 9000.0, edge_shift: 1500.0, edge_wavelength: 6000.0, fade: 150.0 },
         rules: &[
             PlateRule { setting: PlateSetting::Arc, stack: "dwell:arc_volcanics", mix: &[] },
             PlateRule { setting: PlateSetting::Hotspot, stack: "dwell:hotspot_shield", mix: &[] },

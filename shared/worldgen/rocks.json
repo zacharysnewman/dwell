@@ -37,7 +37,7 @@
     "riftWidth": 3000,
     "basinDistance": 12000,
     "edgeFade": 600,
-    "mixing": { "wavelength": 2600, "warp": 1800, "warpWavelength": 9000, "edgeShift": 1500, "edgeWavelength": 6000, "fade": 150 },
+    "mixing": { "wavelength": 2400, "warp": 1800, "warpWavelength": 9000, "edgeShift": 1500, "edgeWavelength": 6000, "fade": 150 },
     "rules": [
       { "setting": "arc", "stack": "dwell:arc_volcanics" },
       { "setting": "hotspot", "stack": "dwell:hotspot_shield" },

@@ -48,7 +48,7 @@ pub const UPLIFT: PlateUplift = PlateUplift {
         PairRule { boundary: BoundaryKind::Transform, plates: [PlateKind::Oceanic, PlateKind::Oceanic], landforms: &[PairForm { side: Side::Astride, shape: Shape::Bump, height: 15.0, width: 1500.0, distance: 0.0 }], arc: ArcMode::None },
     ],
     along: AlongRule { height: 0.4, width: 0.4, wavelength: 9000, octaves: 2 },
-    rift: RiftRule { segment_length: [8000.0, 15000.0], depth: [0.7, 1.3], width: [0.7, 1.3], sill: [0.1, 0.45], step_over: 1500.0 },
+    rift: RiftRule { segment_length: [8000.0, 15000.0], depth: [0.7, 1.3], width: [0.7, 1.3], sill: [0.15, 0.6], step_over: 1500.0 },
     arc: ArcRule { distance: 9000.0, min_distance: 2000.0, spacing: 10000.0, min_length: 6000.0, max_cones: 4, cone_height: 900.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hardness: 0.6 },
     hotspot: ChainRule { islands: 4, spacing: 5000.0, height: 420.0, radius: 2600.0, decay: 0.65, widen: 0.12 },
 };
