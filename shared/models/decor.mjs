@@ -46,6 +46,10 @@
 //       { "colour": "hair_black",     (metres: across, up) at `at` [u, v] in the surface's frame (u
 //         "at": [0, 0], "size": [w, h], "lift": 0 } ] }   across, v up; mirrored, u flips), skinned
 //                                     wholly to `joint`. A quad's own `lift` adds to the piece's.
+//     In place of `at` and `mirror`: "faces": [[808, 809], [1518, 1519]], one anchor per list, each
+//     the area-weighted centre of those triangles of the full mesh (`detail_0`, primitive 0, the
+//     triangle indices the Model Part Painter copies; joined by shared edges), its ray along `facing`
+//     laid on every level as `at`'s is; an anchor at -x flips u as `mirror` does.
 //   The added vertices sit after the mesh's own (the part map lists them, no part), recorded in the
 //   primitive's `extras.decor` so a second run replaces them rather than adding more.
 //
@@ -58,7 +62,7 @@ const KINDS = {
   mark: new Set(["kind", "colour", "at", "radius", "mirror", "$comment"]),
   band: new Set(["kind", "part", "y", "r", "colours", "segments", "phase", "order", "span", "outer", "parts", "$comment"]),
   fill: new Set(["kind", "part", "y", "r", "colour", "$comment"]),
-  piece: new Set(["kind", "joint", "at", "facing", "lift", "mirror", "quads", "$comment"]),
+  piece: new Set(["kind", "joint", "at", "faces", "facing", "lift", "mirror", "quads", "$comment"]),
 };
 const QUAD_KEYS = new Set(["colour", "at", "size", "lift", "$comment"]);
 
@@ -106,7 +110,16 @@ export function validateDecor(list, palette, at = "decor", parts = undefined, re
     } else if (d.kind === "piece") {
       if (typeof d.joint !== "string" || (joints && !joints.includes(d.joint)))
         fail(`${w}.joint: the model's skin has no joint ${d.joint}`);
-      point(d.at, `${w}.at`);
+      if ((d.at === undefined) === (d.faces === undefined)) fail(`${w}: either at or faces, not both`);
+      if (d.at !== undefined) point(d.at, `${w}.at`);
+      else {
+        if (!Array.isArray(d.faces) || !d.faces.length) fail(`${w}.faces is a non-empty list of face lists`);
+        d.faces.forEach((f, k) => {
+          if (!Array.isArray(f) || !f.length || !f.every((t) => Number.isInteger(t) && t >= 0))
+            fail(`${w}.faces[${k}] is a non-empty list of face ids (triangle indices of detail_0)`);
+        });
+        if (d.mirror !== undefined) fail(`${w}.mirror: a piece by faces lists each side's faces`);
+      }
       if (!/^[+-][xyz]$/.test(d.facing ?? "")) fail(`${w}.facing is an axis (+z, -x, ...)`);
       if (d.lift !== undefined && !(d.lift >= 0)) fail(`${w}.lift is a distance (0 or more)`);
       if (d.mirror !== undefined && typeof d.mirror !== "boolean") fail(`${w}.mirror is true or false`);
@@ -311,15 +324,66 @@ const norm = (a) => {
 const AXES = { x: 0, y: 1, z: 2 };
 
 /**
- * A piece's quads on one mesh (`indices`, `pos(i)`): a list of { corners: [4 x [x,y,z]] (counter-
- * clockwise seen from outside), normal, colour }; throws when its ray misses the mesh.
+ * A piece's anchors: [{ at: [x, y, z], side: 1 | -1 }], from `at` (and `mirror`), or from `faces` on
+ * the full mesh (`indices`, `pos(i)`: detail_0's own triangles, before any piece): each list's
+ * area-weighted centre, side the sign of its x. Throws on a face id past the mesh or faces not joined.
  */
-export function pieceQuads(d, indices, pos) {
+export function pieceAnchors(d, indices = undefined, pos = undefined) {
+  if (d.faces === undefined)
+    return (d.mirror ? [1, -1] : [1]).map((side) => ({
+      at: [d.at[0] * side, d.at[1], d.at[2]],
+      side,
+    }));
+  if (!indices) throw new Error("a piece by faces needs the full mesh (detail_0)");
+  const tris = indices.length / 3;
+  return d.faces.map((list) => {
+    for (const t of list) if (t >= tris) throw new Error(`a piece's face ${t} is past detail_0's ${tris} triangles`);
+    // Joined: every face reaches the first through faces sharing an edge.
+    const edges = (t) =>
+      [0, 1, 2].map((k) => [indices[3 * t + k], indices[3 * t + ((k + 1) % 3)]].sort((a, b) => a - b).join());
+    const reached = new Set([list[0]]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const t of list) {
+        if (reached.has(t)) continue;
+        const e = new Set(edges(t));
+        if ([...reached].some((r) => edges(r).some((x) => e.has(x)))) {
+          reached.add(t);
+          grew = true;
+        }
+      }
+    }
+    if (reached.size !== new Set(list).size)
+      throw new Error(`a piece's faces [${list}] are not joined by shared edges`);
+    let area = 0;
+    const sum = [0, 0, 0];
+    for (const t of list) {
+      const [a, b, c] = [0, 1, 2].map((k) => pos(indices[3 * t + k]));
+      const w =
+        Math.hypot(
+          ...cross(
+            b.map((v, k) => v - a[k]),
+            c.map((v, k) => v - a[k]),
+          ),
+        ) / 2;
+      area += w;
+      for (let k = 0; k < 3; k++) sum[k] += (w * (a[k] + b[k] + c[k])) / 3;
+    }
+    const at = sum.map((x) => x / (area || 1));
+    return { at, side: at[0] < 0 ? -1 : 1 };
+  });
+}
+
+/**
+ * A piece's quads on one mesh (`indices`, `pos(i)`): a list of { corners: [4 x [x,y,z]] (counter-
+ * clockwise seen from outside), normal, colour }; throws when its ray misses the mesh. `anchors`:
+ * `pieceAnchors` (needed for a piece by `faces`).
+ */
+export function pieceQuads(d, indices, pos, anchors = pieceAnchors(d)) {
   const axis = [0, 0, 0];
   axis[AXES[d.facing[1]]] = d.facing[0] === "-" ? -1 : 1;
   const out = [];
-  for (const side of d.mirror ? [1, -1] : [1]) {
-    const at = [d.at[0] * side, d.at[1], d.at[2]];
+  for (const { at, side } of anchors) {
     const o = at.map((v, k) => v + axis[k]);
     const dir = axis.map((v) => -v);
     let best = Infinity;
@@ -430,96 +494,117 @@ export function addPieces(bytes, list, palette) {
   const SIZE = { 5126: 4, 5123: 2, 5121: 1, 5125: 4 };
   const WIDTH = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
   const stride = (a) => SIZE[a.componentType] * WIDTH[a.type];
-  for (const m of json.meshes ?? [])
-    for (const p of m.primitives) {
-      if (p.indices === undefined || p.attributes.POSITION === undefined) continue;
-      const names = Object.keys(p.attributes);
-      for (const i of [...names.map((k) => p.attributes[k]), p.indices]) {
-        const a = json.accessors[i];
-        if (a.byteOffset || json.bufferViews[a.bufferView].byteStride)
-          throw new Error(`mesh ${m.name}: an accessor shares or strides its buffer view`);
-      }
-      // Remove what an earlier run added.
-      const had = p.extras?.decor ?? { vertices: 0, indices: 0 };
-      const keep = json.accessors[p.attributes.POSITION].count - had.vertices;
-      for (const k of names) {
-        const a = json.accessors[p.attributes[k]];
-        a.count = keep;
-        views[a.bufferView] = views[a.bufferView].subarray(0, keep * stride(a));
-      }
-      const ia = json.accessors[p.indices];
-      ia.count -= had.indices;
-      views[ia.bufferView] = views[ia.bufferView].subarray(0, ia.count * stride(ia));
-      if (p.extras) delete p.extras.decor;
-      if (p.extras && !Object.keys(p.extras).length) delete p.extras;
-      const posAcc = json.accessors[p.attributes.POSITION];
-      const posView = views[posAcc.bufferView];
-      const pos = (i) => [0, 1, 2].map((k) => posView.readFloatLE(i * 12 + k * 4));
-      const idxSize = SIZE[ia.componentType];
-      const idxView = views[ia.bufferView];
-      const indices = Array.from({ length: ia.count }, (_, i) =>
-        idxSize === 2 ? idxView.readUInt16LE(i * 2) : idxView.readUInt32LE(i * 4),
-      );
-      const quads = pieces.flatMap((d) => {
-        const joint = jointNames.indexOf(d.joint);
-        if (joint < 0) throw new Error(`a piece's joint ${d.joint} is not in the skin`);
-        return pieceQuads(d, indices, pos).map((q) => ({ ...q, joint }));
-      });
-      const add = quads.length * 4;
-      if (idxSize === 2 && keep + add > 65535) throw new Error(`mesh ${m.name}: too many vertices for 16-bit indices`);
-      for (const k of names) {
-        const a = json.accessors[p.attributes[k]];
-        const size = SIZE[a.componentType];
-        const w = WIDTH[a.type];
-        const extra = Buffer.alloc(add * w * size);
-        const put = (i, c, x) => {
-          const off = (i * w + c) * size;
-          const unit = (max) => (a.normalized ? Math.round(Math.min(1, Math.max(0, x)) * max) : x);
-          if (a.componentType === 5126) extra.writeFloatLE(x, off);
-          else if (a.componentType === 5123) extra.writeUInt16LE(unit(65535), off);
-          else if (a.componentType === 5121) extra.writeUInt8(unit(255), off);
-          else extra.writeUInt32LE(x, off);
-        };
-        quads.forEach((q, n) => {
-          const c = linear(q.colour);
-          for (let v = 0; v < 4; v++) {
-            const vals =
-              {
-                POSITION: q.corners[v],
-                NORMAL: q.normal,
-                COLOR_0: [...c, 1],
-                JOINTS_0: [q.joint, 0, 0, 0],
-                WEIGHTS_0: [1, 0, 0, 0],
-              }[k] ?? [];
-            for (let cc = 0; cc < w; cc++) put(n * 4 + v, cc, vals[cc] ?? 0);
-          }
-        });
-        views[a.bufferView] = Buffer.concat([views[a.bufferView], extra]);
-        a.count = keep + add;
-      }
-      // POSITION's bounds (glTF requires them).
-      const pv = views[posAcc.bufferView];
-      posAcc.min = [Infinity, Infinity, Infinity];
-      posAcc.max = [-Infinity, -Infinity, -Infinity];
-      for (let i = 0; i < posAcc.count; i++)
-        for (let c = 0; c < 3; c++) {
-          const x = pv.readFloatLE((i * 3 + c) * 4);
-          posAcc.min[c] = Math.min(posAcc.min[c], x);
-          posAcc.max[c] = Math.max(posAcc.max[c], x);
-        }
-      if (!quads.length) continue;
-      const extraIdx = Buffer.alloc(quads.length * 6 * idxSize);
-      quads.forEach((_, n) =>
-        [0, 1, 2, 0, 2, 3].forEach((v, j) => {
-          const x = keep + n * 4 + v;
-          if (idxSize === 2) extraIdx.writeUInt16LE(x, (n * 6 + j) * 2);
-          else extraIdx.writeUInt32LE(x, (n * 6 + j) * 4);
-        }),
-      );
-      views[ia.bufferView] = Buffer.concat([views[ia.bufferView], extraIdx]);
-      ia.count += quads.length * 6;
-      p.extras = { ...(p.extras ?? {}), decor: { vertices: add, indices: quads.length * 6 } };
+  const prims = (json.meshes ?? []).flatMap((m) =>
+    m.primitives.filter((p) => p.indices !== undefined && p.attributes.POSITION !== undefined).map((p) => ({ m, p })),
+  );
+  // Every primitive's own triangles (what an earlier run added removed).
+  const own = new Map();
+  for (const { m, p } of prims) {
+    const names = Object.keys(p.attributes);
+    for (const i of [...names.map((k) => p.attributes[k]), p.indices]) {
+      const a = json.accessors[i];
+      if (a.byteOffset || json.bufferViews[a.bufferView].byteStride)
+        throw new Error(`mesh ${m.name}: an accessor shares or strides its buffer view`);
     }
+    // Remove what an earlier run added.
+    const had = p.extras?.decor ?? { vertices: 0, indices: 0 };
+    const keep = json.accessors[p.attributes.POSITION].count - had.vertices;
+    for (const k of names) {
+      const a = json.accessors[p.attributes[k]];
+      a.count = keep;
+      views[a.bufferView] = views[a.bufferView].subarray(0, keep * stride(a));
+    }
+    const ia = json.accessors[p.indices];
+    ia.count -= had.indices;
+    views[ia.bufferView] = views[ia.bufferView].subarray(0, ia.count * stride(ia));
+    if (p.extras) delete p.extras.decor;
+    if (p.extras && !Object.keys(p.extras).length) delete p.extras;
+    const posView = views[json.accessors[p.attributes.POSITION].bufferView];
+    const pos = (i) => [0, 1, 2].map((k) => posView.readFloatLE(i * 12 + k * 4));
+    const idxSize = SIZE[ia.componentType];
+    const idxView = views[ia.bufferView];
+    const indices = Array.from({ length: ia.count }, (_, i) =>
+      idxSize === 2 ? idxView.readUInt16LE(i * 2) : idxView.readUInt32LE(i * 4),
+    );
+    own.set(p, { indices, pos, keep, idxSize });
+  }
+  // The anchors, once, from the full mesh's first primitive (a piece by `faces` names its triangles).
+  const full = prims.find(({ m }) => m.name === "detail_0") ?? prims[0];
+  const anchors = pieces.map((d) => {
+    const base = d.faces && full ? own.get(full.p) : undefined;
+    return pieceAnchors(d, base?.indices, base?.pos);
+  });
+  for (const { m, p } of prims) {
+    const names = Object.keys(p.attributes);
+    const ia = json.accessors[p.indices];
+    const posAcc = json.accessors[p.attributes.POSITION];
+    const { indices, pos, keep, idxSize } = own.get(p);
+    const quads = pieces.flatMap((d, n) => {
+      const joint = jointNames.indexOf(d.joint);
+      if (joint < 0) throw new Error(`a piece's joint ${d.joint} is not in the skin`);
+      return pieceQuads(d, indices, pos, anchors[n]).map((q) => ({
+        ...q,
+        joint,
+      }));
+    });
+    const add = quads.length * 4;
+    if (idxSize === 2 && keep + add > 65535) throw new Error(`mesh ${m.name}: too many vertices for 16-bit indices`);
+    for (const k of names) {
+      const a = json.accessors[p.attributes[k]];
+      const size = SIZE[a.componentType];
+      const w = WIDTH[a.type];
+      const extra = Buffer.alloc(add * w * size);
+      const put = (i, c, x) => {
+        const off = (i * w + c) * size;
+        const unit = (max) => (a.normalized ? Math.round(Math.min(1, Math.max(0, x)) * max) : x);
+        if (a.componentType === 5126) extra.writeFloatLE(x, off);
+        else if (a.componentType === 5123) extra.writeUInt16LE(unit(65535), off);
+        else if (a.componentType === 5121) extra.writeUInt8(unit(255), off);
+        else extra.writeUInt32LE(x, off);
+      };
+      quads.forEach((q, n) => {
+        const c = linear(q.colour);
+        for (let v = 0; v < 4; v++) {
+          const vals =
+            {
+              POSITION: q.corners[v],
+              NORMAL: q.normal,
+              COLOR_0: [...c, 1],
+              JOINTS_0: [q.joint, 0, 0, 0],
+              WEIGHTS_0: [1, 0, 0, 0],
+            }[k] ?? [];
+          for (let cc = 0; cc < w; cc++) put(n * 4 + v, cc, vals[cc] ?? 0);
+        }
+      });
+      views[a.bufferView] = Buffer.concat([views[a.bufferView], extra]);
+      a.count = keep + add;
+    }
+    // POSITION's bounds (glTF requires them).
+    const pv = views[posAcc.bufferView];
+    posAcc.min = [Infinity, Infinity, Infinity];
+    posAcc.max = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < posAcc.count; i++)
+      for (let c = 0; c < 3; c++) {
+        const x = pv.readFloatLE((i * 3 + c) * 4);
+        posAcc.min[c] = Math.min(posAcc.min[c], x);
+        posAcc.max[c] = Math.max(posAcc.max[c], x);
+      }
+    if (!quads.length) continue;
+    const extraIdx = Buffer.alloc(quads.length * 6 * idxSize);
+    quads.forEach((_, n) =>
+      [0, 1, 2, 0, 2, 3].forEach((v, j) => {
+        const x = keep + n * 4 + v;
+        if (idxSize === 2) extraIdx.writeUInt16LE(x, (n * 6 + j) * 2);
+        else extraIdx.writeUInt32LE(x, (n * 6 + j) * 4);
+      }),
+    );
+    views[ia.bufferView] = Buffer.concat([views[ia.bufferView], extraIdx]);
+    ia.count += quads.length * 6;
+    p.extras = {
+      ...(p.extras ?? {}),
+      decor: { vertices: add, indices: quads.length * 6 },
+    };
+  }
   // The buffer laid out again (views 4-byte aligned) and the GLB written.
   let off = 0;
   const bins = [];

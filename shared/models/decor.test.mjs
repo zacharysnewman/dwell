@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { addPieces, addedVertices, bandSector, decorBase, decorParts, decorPlan, facets, rayHit, validateDecor } from "./decor.mjs";
+import { addPieces, addedVertices, bandSector, decorBase, decorParts, decorPlan, facets, pieceAnchors, rayHit, validateDecor } from "./decor.mjs";
 import { resolveColor } from "./gen.mjs";
 import { allLevelParts, readMesh } from "./parts.mjs";
 
@@ -93,6 +93,12 @@ test("bad decor fails with a message", () => {
   bad({ ...piece, joint: "tail" }, /no joint tail/, { joints: ["head"] });
   bad({ ...piece, facing: "up" }, /facing/);
   bad({ ...piece, quads: [{ colour: "hair_black", at: [0, 0], size: [0, 0.01] }] }, /size/);
+  const { at: _, ...byFaces } = { ...piece, faces: [[0, 1]] };
+  bad({ ...piece, faces: [[0, 1]] }, /either at or faces/);
+  bad({ ...byFaces, at: undefined, faces: [] }, /faces is a non-empty list/);
+  bad({ ...byFaces, faces: [[0, -1]] }, /face ids/);
+  bad({ ...byFaces, mirror: true }, /lists each side's faces/);
+  assert.doesNotThrow(() => validateDecor([byFaces], palette, "decor", ["hat"], [], ["head"]));
   assert.doesNotThrow(() => validateDecor([band], palette, "decor", ["hat"]));
   assert.doesNotThrow(() => validateDecor([piece], palette, "decor", ["hat"], [], ["head"]));
 });
@@ -261,6 +267,102 @@ test("the Peasant's crown above its band is one colour at every level (no stray 
     }
     assert.ok(n > 3, `detail_${k}: the crown (${n} facets)`);
   });
+});
+
+// The owner's picks in the Model Part Painter (2026-11-14): "Eyes should be centered on these faces:
+// peasant @100% faces: 808,809,1518,1519".
+const EYE_FACES = [
+  [808, 809],
+  [1518, 1519],
+];
+const own = (m, k) => m.count - addedVertices(glb, `detail_${k}`);
+// A list of faces' area-weighted centre on mesh m, from its triangles alone.
+const facesCentre = (m, list) => {
+  let area = 0;
+  const sum = [0, 0, 0];
+  for (const t of list) {
+    const [a, b, c] = [0, 1, 2].map((j) => m.position(m.indices[3 * t + j]));
+    const e1 = b.map((v, k) => v - a[k]);
+    const e2 = c.map((v, k) => v - a[k]);
+    const w = Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]) / 2;
+    area += w;
+    for (let k = 0; k < 3; k++) sum[k] += (w * (a[k] + b[k] + c[k])) / 3;
+  }
+  return sum.map((x) => x / area);
+};
+// Each side's dark quad's centre at level k (the quads follow the anchors, a dark eye then its glint).
+const eyeCentres = (m, k) => {
+  const eyes = entry("piece");
+  return EYE_FACES.map((_, side) => centreOf(m, [0, 1, 2, 3].map((i) => own(m, k) + side * 4 * eyes.quads.length + i)));
+};
+
+test("the Peasant's eyes are anchored by the owner's face picks", () => {
+  assert.deepEqual(entry("piece").faces, EYE_FACES);
+  const m = levels[0];
+  // Each pick is a quad of the full mesh: two triangles sharing an edge, four corners.
+  for (const list of EYE_FACES) {
+    const corners = new Set(list.flatMap((t) => [0, 1, 2].map((j) => m.indices[3 * t + j])));
+    assert.equal(corners.size, 4, `faces ${list}: two triangles sharing an edge`);
+  }
+  // 808+809 is the +x eye, 1518+1519 the -x.
+  assert.ok(facesCentre(m, EYE_FACES[0])[0] > 0.03 && facesCentre(m, EYE_FACES[1])[0] < -0.03);
+});
+
+test("each eye is centred on its face pair at 100 % and lies on every level's face", () => {
+  const lift = entry("piece").lift;
+  const full = EYE_FACES.map((list) => facesCentre(levels[0], list));
+  levels.forEach((m, k) => {
+    eyeCentres(m, k).forEach((c, side) => {
+      // On this level's own surface: the ray from in front back along -z meets its first triangle just behind.
+      let best = Infinity;
+      for (let t = 0; t < m.indices.length; t += 3) {
+        if (m.indices[t] >= own(m, k)) continue;
+        const h = rayHit([c[0], c[1], c[2] + 1], [0, 0, -1], ...[0, 1, 2].map((j) => m.position(m.indices[t + j])));
+        if (h > 0 && h < best) best = h;
+      }
+      const gap = best - 1;
+      assert.ok(gap > 0 && gap < lift * 2, `detail_${k} side ${side}: ${(gap * 1000).toFixed(2)} mm off the face`);
+      // Over the owner's faces: x and y within 3 mm of the pair's centre at 100 % (lowered levels' faces
+      // tilt the lift a little), z within 5 mm (each level's surface is its own).
+      const d = c.map((x, a) => Math.abs(x - full[side][a]));
+      assert.ok(d[0] < 0.003 && d[1] < 0.003 && d[2] < 0.005, `detail_${k} side ${side}: ${c} vs ${full[side]}`);
+    });
+  });
+});
+
+test("the eyes are symmetric about the model's centre line at every level", () => {
+  levels.forEach((m, k) => {
+    const [a, b] = eyeCentres(m, k);
+    assert.ok(Math.abs(a[0] + b[0]) < 0.002, `detail_${k}: x ${a[0]} vs ${b[0]}`);
+    assert.ok(Math.abs(a[1] - b[1]) < 0.002, `detail_${k}: y ${a[1]} vs ${b[1]}`);
+    assert.ok(Math.abs(a[2] - b[2]) < 0.004, `detail_${k}: z ${a[2]} vs ${b[2]}`);
+  });
+});
+
+test("a piece by faces: the faces' area-weighted centre, side by x; a bad id or unjoined faces fail", () => {
+  // Two unit triangles making a square at x 1..2 (z 0), and one apart.
+  const pts = [
+    [1, 0, 0],
+    [2, 0, 0],
+    [2, 1, 0],
+    [1, 1, 0],
+    [-3, 0, 0],
+    [-2, 0, 0],
+    [-2, 1, 0],
+  ];
+  const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6];
+  const pos = (i) => pts[i];
+  const d = { faces: [[0, 1], [2]] };
+  const [a, b] = pieceAnchors(d, indices, pos);
+  assert.deepEqual(a, { at: [1.5, 0.5, 0], side: 1 });
+  assert.equal(b.side, -1);
+  assert.throws(() => pieceAnchors({ faces: [[0, 2]] }, indices, pos), /not joined/);
+  assert.throws(() => pieceAnchors({ faces: [[3]] }, indices, pos), /past detail_0/);
+  // By `at` and `mirror`, as before.
+  assert.deepEqual(pieceAnchors({ at: [0.1, 1, 0], mirror: true }), [
+    { at: [0.1, 1, 0], side: 1 },
+    { at: [-0.1, 1, 0], side: -1 },
+  ]);
 });
 
 test("pieces are added once: a second run replaces them", () => {
