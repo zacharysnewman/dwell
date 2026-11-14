@@ -36,6 +36,11 @@ const TIERS: Record<string, Audit> = {
   bake: { fixed: "the moon's terrain bake for a world seed, not a cost tier" },
   sun_bake: { fixed: "the sun world's far-body bake for a world seed, not a cost tier" },
   player: { fixed: 'a clip player lookup (characters), not a cost tier' },
+  // impostors.rs `tier_for`: the far trees' atlas size by device; Far trees switches them.
+  tier: {
+    fixed:
+      "the far-tree impostor atlas's size by device (CPU, phone, desktop); Far trees turns them off",
+  },
   pixel_art: { fixed: 'a dev preview (`?pixelart=`), off unless asked for' },
   moon_normals: { fixed: "the CPU adapter's cheapest tier only; a GPU always draws it (one disc)" },
   stars: { fixed: "the CPU adapter's cheapest tier only; a GPU always draws them (night sky)" },

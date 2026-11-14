@@ -1041,7 +1041,7 @@ enum Part {
     /// The cutout mesh's plants alone, not its trees' leaves (`impostors::CutoutDraw::Plants`).
     Plants,
     /// The cutout mesh's trees' leaves alone (the shadow casters past `plantCascades`, which
-    /// plants don't cast into and leaves do: BUGS.md #155).
+    /// plants don't cast into and leaves do: BUGS.md #156).
     Leaves,
 }
 
@@ -2154,7 +2154,7 @@ impl Renderer {
             let (vs, entry, a) = match kind {
                 Kind::Terrain => ("terrain_vs", "shadow_terrain_fs", &terrain_attrs),
                 Kind::Flat => ("flat_vs", "shadow_flat_fs", &flat_attrs),
-                // Its own vertex stage: no leaf card dropped for the camera's side of it (BUGS.md #155).
+                // Its own vertex stage: no leaf card dropped for the camera's side of it (BUGS.md #156).
                 _ => ("shadow_cutout_vs", "shadow_cutout_fs", &cutout_attrs),
             };
             // Drawn in full (no fragment stage): the depth-only vertex stage, which reads the
@@ -5471,7 +5471,7 @@ impl Renderer {
                 push(item(Kind::Terrain, offset, None, fade, mesh), b, tag, Solid);
             }
             // The plants and the trees' leaves apart: plants cast into the nearest
-            // `plantCascades`, leaves into every cascade (BUGS.md #155: past those a crown cast
+            // `plantCascades`, leaves into every cascade (BUGS.md #156: past those a crown cast
             // nothing, and its shadow flipped as the camera moved it between cascades).
             if let Some(m) = c.cutout.as_ref().filter(|_| self.cutout_shown) {
                 for (part, kind, tag) in [

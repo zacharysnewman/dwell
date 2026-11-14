@@ -433,6 +433,28 @@ pub fn move_direction(input: &Input) -> Vec3 {
     forward * input.move_y + camera_right(input.look_yaw) * input.move_x
 }
 
+/// Creative flight's wish direction (face-local, length ≤ 1; PLAYER_CONTROLLER.md §6.7): with
+/// `follow_pitch` forward goes where the camera looks, up or down with its pitch, so a player
+/// aiming at the moon and holding forward flies at it (BUGS.md #155); without, forward is level
+/// along the yaw. Jump rises and crouch sinks on top, the vertical held to the speed.
+pub fn fly_direction(input: &Input, follow_pitch: bool) -> Vec3 {
+    let mut d = move_direction(input);
+    let pitch = if follow_pitch {
+        input.look_pitch * DEG_TO_RAD
+    } else {
+        0.0
+    };
+    let (sin_p, cos_p) = (libm::sinf(pitch), libm::cosf(pitch));
+    let yaw = input.look_yaw * DEG_TO_RAD;
+    let forward = Vec3::new(libm::sinf(yaw), 0.0, libm::cosf(yaw));
+    // The forward share of the level move tilts with the pitch; the strafe stays level.
+    let along = forward * input.move_y;
+    d = d - along + along * cos_p;
+    let rise = f32::from(u8::from(input.jump)) - f32::from(u8::from(input.crouch));
+    d.y = (input.move_y * sin_p + rise).clamp(-1.0, 1.0);
+    d
+}
+
 pub type PlayerHandle = u32;
 
 struct Player {
@@ -2022,8 +2044,7 @@ impl Players {
         let base = cfg.fly.speed * if c.input.run { cfg.fly.run_factor } else { 1.0 };
         // Far from every grid the server raises it (far flight, MOON_WORLD.md §7).
         let speed = (base * fly_speed_factor(c.input.fly_speed)).max(far);
-        let mut wish = move_direction(&c.input) * speed;
-        wish.y = (f32::from(u8::from(c.input.jump)) - f32::from(u8::from(c.input.crouch))) * speed;
+        let wish = fly_direction(&c.input, cfg.fly.follow_pitch) * speed;
         let mut velocity =
             body_velocity + (wish - body_velocity) * (1.0 - libm::expf(-cfg.fly.drag * DT));
         // No bound from the world (ADR 0025 D3): only the wire format's range holds a position.

@@ -547,7 +547,7 @@ face, or the placement check against its shape.
 
 ## Fixed
 
-### 155. A tree's shadows flip between two looks as you move (fixed after 0.63.5; the owner's GPU check outstanding)
+### 156. A tree's shadows flip between two looks as you move (fixed after 0.63.8; the owner's GPU check outstanding)
 
 Owner, 2026-11-13: "Also for trees the shadows seem to flip flop between two shadow types even on close trees as you
 move. Where shadows cast by the tree are only below, or they're both below the tree and on top of the tree. Like the
@@ -574,6 +574,26 @@ before: the crown's top 0 under a card in the near cascades, and the ground unde
 at the edge), `a_trees_leaves_cast_into_every_cascade_and_plants_into_the_nearest`,
 `a_trees_leaves_take_the_same_normal_offset_in_every_cascade`. **Owner should see:** walking and flying around
 trees, their shadows (on the ground and within the canopy) stay the same, with no flip between two looks.
+### 155. Flying at the moon never got closer (fixed after 0.63.6)
+
+Owner, 2026-11-13: "Also, are you supposed to be able to fly to the moon? I tried for like 8 minutes at max speed and
+couldn't get there. It didn't seem to get any closer." On the Mac (keyboard and mouse, the released build; 0.63.6 is
+deployed and has #905's space flight since 0.60.14). Cause: creative flight's forward was level along the yaw
+(PLAYER_CONTROLLER.md §6.7), so aiming at the moon in the sky and holding W flew level under it at 362 m/s, never
+climbing out of home's slab, where far flight (#905) stays off; the moon rose overhead as the player flew. Reproduced
+natively (W held, the look on the moon from home's ground: 90 s, 572 km of 597 km left, up 0 m/s) and in Chrome
+(the bench's `flyAtMoon` step, real held W: 100 s, 599 km left). Now forward follows the look's pitch (`fly.follow_pitch`,
+`controller::fly_direction`); Space and crouch still rise and sink. From home's ground the same flight is captured in
+47.8 s natively (face B, where the moon is up at the rig's clock) and 50.4 s in Chrome. The moon's disc is drawn where
+it is: it sits under the crosshair the whole way (`moon-fly`'s shots). Tests: `dwell-physics`
+`forward_flies_where_the_camera_looks` (red: rose 0 m in 1 s; and its mirror run), `dwell-client`
+`holding_forward_at_the_moon_from_home_reaches_it` (red: not captured in 90 s, nearest 572 329 m; green 47.8 s, no snap).
+Open: the browser run counted 18 snaps (server corrections) on the way, most while far flight sped up (native lockstep:
+none); not fixed here.
+
+**Owner should see:** aim at the moon in the sky in creative flight at the top speed and hold W: the ground falls
+away, the speed climbs into space, and the moon is reached in under a minute; look elsewhere to steer.
+
 ### 154. Far trees drew doubled and half faded at the hand-over, splitting as the eye flew up and down
 
 Owner, 2026-11-13, with two screenshots: "There seems to be doubled partially faded imposters, they can't fade

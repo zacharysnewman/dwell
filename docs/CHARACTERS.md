@@ -922,7 +922,7 @@ by default) and a combat hook; the combat AI waits for the sword mechanic.
   and what its hand shows. An NPC's colours become a **remap by part** (`dwell_models::part_remap`:
   per part of its model's part map, the model ramp's base and the picked ramp's base, sRGB, by name
   from `RAMP_BASES`, which `shared/models/gen.mjs` writes from `shared/textures/palette.json`; at most
-  `MAX_REMAP` 6 parts), sent per body in the skinned instance block after the light (`remap` rows, a
+  `MAX_REMAP` 9 parts: the clothes, skin and hair, and the four places of the rings' pattern, §11.14), sent per body in the skinned instance block after the light (`remap` rows, a
   pair a part). Each vertex carries its part in its colour's alpha byte (`skinned::vertex_bytes`), and
   the vertex shader gives a remapped part's vertex the new base at its shade of the old (luminance over
   the old base's; `dwell_models::recolour` mirrors it), so the Peasant's skin_tan neck and the hair's
@@ -1056,8 +1056,28 @@ A model's `decor` (models.json, `shared/models/decor.mjs`) is applied by the imp
   `segments` (equal sectors) or `order: true` (the facets sorted round the ring take the colours in turn:
   strict alternation on irregular triangles); `span` drops tall facets (no spikes), `outer` keeps only the
   outermost. The Peasant's hat band: the hat part inside r 0.19 m (the crown; the brim is beyond), y
-  1.555–1.635, bark and wool_red in order. The waist ring: the outermost facets at the belt's height, no taller
-  than 0.12 m, leather and wool_green in order (60 % and 100 % show a ring; at 35 % and 20 % the waist is long
-  triangles and only a few short facets, or none, are painted).
-- A villager's colours recolour by part (§11.11), so on a recoloured villager the hat band reads as light and
-  dark of the hat's colour.
+  1.555–1.635, no facet taller than 0.1 m. The waist ring: the outermost facets at the belt's height, no taller
+  than 0.12 m (60 % and 100 % show a ring round the sides and back; the front's facets at 60 % are tall, so
+  none is painted there; at 35 % the waist is a few short facets and at 20 % none). An ordered band holds a
+  whole number of its sequence round the ring (the narrowest facets left over join the segment before them; a
+  ring shorter than one sequence is left unpainted), so the sequence never meets itself at the seam.
+- **Band parts** (2026-11-13, owner: "losing the colorful waist of the shirt patterns. I want those back, but
+  cleaner … a colorful day of the dead Mexico kind of vibes"): a band's `parts` puts each place of its
+  sequence in a part of its own (the Peasant's `pattern_1`..`pattern_4`, in the part map's names but on no
+  vertex of its own; `gen.mjs` puts them on the facets each band paints, at every level, `decorParts`). So
+  the shirt's and hat's recolour (§11.11) no longer repaint the rings (to 0.63.x the waist ring sat in the
+  shirt part and the band in the hat's, and read as light and dark of the clothes). Both rings run four
+  places, painted wool_red, brass, wool_blue, wool_green in the GLB (what the player's own model shows).
+- **The villager's pattern** (`shared/creatures/patterns.json`, creatures.json `npc.pattern`): a set of
+  patterns, each a sequence of 2 to 4 colours round the ring (`#rrggbb`, its length dividing the ring's
+  places, no colour next to itself; a 3-colour pattern is a 4-long sequence like a b c b) and the clothes
+  bases it `pairs` with (per clothes part). An NPC picks a pattern by weight from its seed
+  (`dwell_sim::creatures::npc_pattern`), then its clothes from the pattern's pairs (a part it pairs; any
+  other from its own `to`), and each place takes its colour flat (shade 0). The `fiesta` set: magenta,
+  marigold, turquoise, sun yellow, lime, violet, scarlet and a bone white, paired with plain linen, canvas,
+  dark or straw clothes. A fixture set (`fixtures/patterns.json`) is picked by data alone in a test.
+- **Fills** (`kind: "fill"`): one colour over the facets of a part in a height and radius range. The
+  Peasant's crown above the brim (r under 0.19 m, from y 1.5) is filled with the hat's ramp before the band
+  is painted, so the crown above the band is one colour at every level (the pack's brass and bark triangles,
+  and the first band's tall facets reaching up the crown, are gone): owner, 2026-11-13, "the hat tops have
+  some color artifacts, not just above the brim".
