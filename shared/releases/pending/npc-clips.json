@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Villagers now sit down on level ground, legs out and the sword across a raised knee, instead of standing.",
+    "Villagers look around by turning their head and shoulders in a slow scan, instead of spinning in place.",
+    "A villager's raised vertical block now holds the sword upright in front of its face, and clashes spark on the drawn blade."
+  ]
+}

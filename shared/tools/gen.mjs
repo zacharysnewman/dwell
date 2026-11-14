@@ -45,7 +45,7 @@ const STANCE_FIELDS = ['rollDeg', 'raisedPose', 'blade'];
  * its tip, metres from the holder's feet in its facing (right, up, ahead), fitted to the third-person
  * raised pose with `clip_probe` (a dwell-client test keeps the sword's in step with its clips). */
 const BLADE_FIELDS = ['grip', 'tip'];
-export const BLADE_DEFAULTS = { level: { grip: [0.06, 1.3, 0.44], tip: [-0.72, 1.38, 0.53] }, vertical: { grip: [0.5, 1.38, 0.33], tip: [0.38, 1.73, -0.45] } };
+export const BLADE_DEFAULTS = { level: { grip: [0.06, 1.3, 0.44], tip: [-0.72, 1.38, 0.53] }, vertical: { grip: [0.12, 1.19, 0.43], tip: [0.13, 2.04, 0.47] } };
 function validateBlade(b, at) {
   known(b, BLADE_FIELDS, at);
   for (const k of BLADE_FIELDS) {

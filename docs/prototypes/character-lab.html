@@ -2812,7 +2812,9 @@ const DATA = {
     "kneel": "biped_kneel",
     "kneel_sword": "biped_kneel_sword",
     "stand": "biped_stand",
-    "stand_sword": "biped_stand_sword"
+    "stand_sword": "biped_stand_sword",
+    "sit": "biped_sit",
+    "look": "biped_look"
    },
    "firstPerson": {
     "bones": [
@@ -8538,7 +8540,7 @@ const DATA = {
    ]
   },
   "biped_guard_vertical": {
-   "$comment": "The sword's block raised in the vertical stance, seen by others (role `guard_vertical`): the right fist up before the chest, the blade upright ahead of the face; over the gait in place of the hold.",
+   "$comment": "The sword's block raised in the vertical stance, seen by others (role `guard_vertical`): the right fist up before the chest, the blade upright ahead of the face (fitted with `clip_probe --fit 0/0.12,1.2,0.42/0.1,1.97,0.48 --body`, BUGS.md #87: before, a first guess leaned it 66° back over the shoulder); over the gait in place of the hold.",
    "rig": "biped",
    "layer": "hold",
    "duration": 1,
@@ -8550,22 +8552,22 @@ const DATA = {
      "bones": {
       "chest": [
        0,
-       -8,
+       -1,
        0
       ],
       "arm_r": [
-       -55,
-       -15,
-       -12
+       -39,
+       28,
+       11
       ],
       "forearm_r": [
-       -75,
+       -66,
        0,
        0
       ],
       "hand_r": [
-       -20,
-       0,
+       18,
+       4,
        0
       ]
      }
@@ -8801,6 +8803,438 @@ const DATA = {
       ],
       "foot_r": [
        -6,
+       0,
+       0
+      ]
+     }
+    }
+   ]
+  },
+  "biped_sit": {
+   "$comment": "An NPC sitting on the ground where it stands (role `sit`; WORK_QUEUE item 38: shared/creatures `seat` `on: ground`): the seat, the heels and the left hand behind it on the ground, the left leg out, the right knee up with the right forearm resting over it, breathing; the ground test (gen.test.mjs) keeps the lowest point at the ground.",
+   "rig": "biped",
+   "layer": "base",
+   "duration": 4,
+   "loop": true,
+   "ease": "spline",
+   "blend": 0.4,
+   "keys": [
+    {
+     "t": 0,
+     "root": [
+      0,
+      -0.79,
+      0
+     ],
+     "bones": {
+      "hips": [
+       -4,
+       0,
+       0
+      ],
+      "chest": [
+       10,
+       0,
+       0
+      ],
+      "head": [
+       -6,
+       0,
+       0
+      ],
+      "thigh_l": [
+       -97,
+       0,
+       8
+      ],
+      "shin_l": [
+       22,
+       0,
+       0
+      ],
+      "foot_l": [
+       -10,
+       0,
+       0
+      ],
+      "thigh_r": [
+       -114,
+       0,
+       -6
+      ],
+      "shin_r": [
+       56,
+       0,
+       0
+      ],
+      "foot_r": [
+       -20,
+       0,
+       0
+      ],
+      "arm_l": [
+       24,
+       0,
+       16
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "hand_l": [
+       0,
+       0,
+       0
+      ],
+      "arm_r": [
+       -50,
+       0,
+       -4
+      ],
+      "forearm_r": [
+       -30,
+       0,
+       0
+      ],
+      "hand_r": [
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 2,
+     "root": [
+      0,
+      -0.79,
+      0
+     ],
+     "bones": {
+      "hips": [
+       -4,
+       0,
+       0
+      ],
+      "chest": [
+       13,
+       0,
+       0
+      ],
+      "head": [
+       -3,
+       3,
+       0
+      ],
+      "thigh_l": [
+       -97,
+       0,
+       8
+      ],
+      "shin_l": [
+       22,
+       0,
+       0
+      ],
+      "foot_l": [
+       -10,
+       0,
+       0
+      ],
+      "thigh_r": [
+       -114,
+       0,
+       -6
+      ],
+      "shin_r": [
+       56,
+       0,
+       0
+      ],
+      "foot_r": [
+       -20,
+       0,
+       0
+      ],
+      "arm_l": [
+       24,
+       0,
+       16
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "hand_l": [
+       0,
+       0,
+       0
+      ],
+      "arm_r": [
+       -50,
+       0,
+       -4
+      ],
+      "forearm_r": [
+       -30,
+       0,
+       0
+      ],
+      "hand_r": [
+       0,
+       0,
+       0
+      ]
+     }
+    }
+   ]
+  },
+  "biped_look": {
+   "$comment": "An NPC looking around (role `look`; WORK_QUEUE item 38): standing still, a slow scan of the head and chest, left, a pause, back through the middle to the right, a pause, back (10 s); the body holds its heading (the server no longer sweeps it).",
+   "rig": "biped",
+   "layer": "base",
+   "duration": 10,
+   "loop": true,
+   "ease": "spline",
+   "blend": 0.4,
+   "keys": [
+    {
+     "t": 0,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       0,
+       0
+      ],
+      "head": [
+       0,
+       0,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 2,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       18,
+       0
+      ],
+      "head": [
+       -4,
+       50,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 3.4,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       20,
+       0
+      ],
+      "head": [
+       2,
+       55,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 5,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       0,
+       0
+      ],
+      "head": [
+       0,
+       0,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 7,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       -18,
+       0
+      ],
+      "head": [
+       -6,
+       -50,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "t": 8.4,
+     "root": [
+      0,
+      0,
+      0
+     ],
+     "bones": {
+      "chest": [
+       2,
+       -20,
+       0
+      ],
+      "head": [
+       0,
+       -55,
+       0
+      ],
+      "arm_l": [
+       0,
+       0,
+       6
+      ],
+      "arm_r": [
+       0,
+       0,
+       -6
+      ],
+      "forearm_l": [
+       -10,
+       0,
+       0
+      ],
+      "forearm_r": [
+       -10,
        0,
        0
       ]
