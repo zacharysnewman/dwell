@@ -627,3 +627,28 @@ impl FarSource for VolcanicTerrain {
         })
     }
 }
+
+impl crate::grid_lod::GridColumns for VolcanicTerrain {
+    fn radius_m(&self) -> f64 {
+        self.radius
+    }
+    /// The chunks' column: the crust or the shore's glass, and the lava over it to its level.
+    fn lod_column(
+        &self,
+        face: Face,
+        x: f64,
+        z: f64,
+        _cell_m: f64,
+    ) -> Option<crate::grid_lod::GridColumn> {
+        if !self.inside(x, z) {
+            return None;
+        }
+        let col = self.column(face, x, z);
+        Some(crate::grid_lod::GridColumn {
+            ground_m: col.ground,
+            ground: self.ground_block(&col),
+            fluid_m: col.lava,
+            fluid: self.lava,
+        })
+    }
+}

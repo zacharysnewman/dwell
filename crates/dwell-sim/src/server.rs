@@ -3537,7 +3537,7 @@ impl Server {
         let mut collapse = TickChanges::default();
         // A cell that goes into a piece takes the attached blocks on it (block data
         // `needsSupport`: tall grass, a torch, a sapling, a ladder): removed, not left floating
-        // (owner, 2026-11-13, BUGS.md #159).
+        // (owner, 2026-11-13, BUGS.md #165).
         let mut removed = Vec::new();
         let new = self.felling.detach(
             &mut self.world,

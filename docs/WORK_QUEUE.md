@@ -25,7 +25,7 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
-- **Dynamite and tall grass (owner, 2026-11-13; BUGS.md #159):** "Dynamite blows up (physics) tall grass that's
+- **Dynamite and tall grass (owner, 2026-11-13; BUGS.md #165):** "Dynamite blows up (physics) tall grass that's
   wrong. It should just be destroyed if the block under it is moved or destroyed." Brief: as a data rule, not a
   tall-grass case — blocks that sit on or attach to another and aren't structural are never flung pieces; in a blast
   they're removed (their drops in adventure), and whenever the block under them is moved or destroyed by any means
@@ -1250,6 +1250,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `claude/moon-fixes-3-l0zjdx`.
    **Built natively (0.63.0, a new line):** all five (BUGS.md #143–#145 say how; MOON_WORLD.md §7.3). **Left:** the
    browser look on a GPU (`moon-draw`, `sun-draw`); shadows from the rig's lights; the rig on water and characters.
+   **Real LOD on the moon and the sun (owner, 2026-11-13):** "The moon looks really bad. The LODs look like it's either
+   high detail or super duper low detail, unlike home world. The LOD colors don't match either." (BUGS.md #159.) Brief:
+   a per-grid LOD instance (home's `LodSystem`, graded levels and fades) whose sections come from the grid's own
+   generator, coloured by the same block-look path as home's LOD, dropped and rebuilt at crossings (#879's rule),
+   replacing `grid_lod.rs`'s rings on the grid (the far-body bake kept for seeing the grid from outside). Branch
+   `claude/grid-lod`. **Owner should see:** on the moon (and sun), distant terrain steps down in detail gradually like
+   at home, with matching colours from near to far, no jump from full detail to a blurry low-detail mesh.
+   **Built natively (2026-11-14):** a `LodSystem` per grid (`dwell-client` `grid_lod.rs`), its sections from the
+   grid's generator in the job workers (`Job::GridLod`; `dwell-worldgen` `grid_lod.rs`), meshed and coloured as
+   home's; `grids.json` `lod: true`; the rim view scaled per grid (the moon drew both faces). Tests both faces, moon
+   and sun (BUGS.md #159). **Left:** the owner's look on a GPU (screenshots on the moon and the sun, near to far).
 28. **An atmosphere: the sky thinning to space** (owner 2026-11-12: "We likely need an atmosphere transition now
    between sky thinning to space. Clouds shouldn't extend past the earth atmosphere either."). With flight to the
    moon, climbing should fade the sky's scattering to black space with stars by day, the horizon glow becoming a
@@ -2082,6 +2093,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Outstanding: the owner's look on a GPU and a phone (the screenshots), a dedicated server's switch for
    `theaterGuests`, T-5.
 
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the REC
+   badge's dot was a faint pink smudge that blinked out (BUGS.md #159), and on a phone in portrait the stick and
+   Up/Down were hidden while the bottom sheet was open (BUGS.md #160). **Fixed (`claude/visual-small-1`):** a
+   saturated red dot ringed in white on a light pill, pulsing no lower than 60 %; the flying controls ride just above
+   the bottom sheet, open or collapsed. **Owner should see:** a clear red recording dot; on a phone in portrait, the
+   stick and Up/Down above the open sheet, flying the camera while the sheet is open.
+
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
    lava."). Queued. Built on the moon's systems (MOON_WORLD.md): a grid with its own frame in grids.json, a
@@ -2135,7 +2153,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    the LOD per grid covers the sun; the sun is lit by home's and the moon's reflected light (each at its true
    direction, its strength by albedo, phase and apparent size, as data) and a warm lava ambient from below (data), the
    lava's own glow and bloom kept. BUGS.md #145.
+
+   **Refinement (orchestrator's GPU pass on 0.63.8, 2026-11-13; owner: "Focus on refinement only for now"):** the
+   sun's dry crust beside the lava read nearly black, so the reflected light barely showed (BUGS.md #161). **Fixed
+   (`claude/visual-small-1`), data only:** the rig's ambient floor 0.06 → 1.2 (a softer warm), the glow 0.45 → 2.5,
+   home 0.9 → 6.0, the moon 0.35 → 2.0. **Owner should see:** at a sun river head, the crust reads as dark warm-lit
+   basalt with its form visible, brighter toward home; the lava as bright as before.
 ## Done
+
+- **Treetops missing below the camera 25-40 m over a forest (BUGS.md #162; brief 2026-11-13: "first confirm with a
+  real flight"; "a tree straight below at 25-80 m is always drawn"; also "add to `__dwell.state()` the current grid's
+  LOD stats (not home's) when on another grid"):** the LOD walk stopped at a coarse section the terrain calls empty
+  but the trees reach into; it now walks through to the streamed chunks around the camera. `__dwell.state().lod` is
+  the grid's LOD's on another grid. The crowns' missing floor shadow was mostly the same missing crowns.
 
 - **Placing against a ramp's downhill side, and a held Place by the clock (BUGS.md #23, #30; brief 2026-11-13:
   "aim at the sloped face and the placed block goes into the cell the face points into (by the face's real
@@ -2271,6 +2301,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   hits; creative doesn't wear, metal tools are unlimited).
 
 ## Smaller items, after the queue
+
+- **The player's voice sounded like a bear (BUGS.md #159, 2026-11-13, `claude/player-vocals`), done.** Owner: "Another
+  bug, the vocal player audio it sounds like a bear instead of a person, not sure if this is a pitch problem or if it's
+  the wrong sound effect, happens when you run out of stamina and maybe other related player effects." The wrong sound:
+  the out-of-stamina breath played the pack's `MONSTER_Exhausted_05/_07`; it is procedural now, and every player vocal
+  sound is checked to be a human take (`samples.from`) at a rate within 0.9–1.1. Owner should hear: when you run out of
+  stamina (and on other player effort/hurt sounds), a human breath/grunt at a natural pitch, not a growl. Then
+  (`claude/human-breath`, done): the breath plays the pack's `VOICE_MALE_Sigh_1`, `GRUNT_Male_Quick`,
+  `GRUNT_Male_Quick_Deep` (a man's breath and two breathy exhales, picked by analysis; the pack has no `BREATH` category).
+  Owner to hear: run out of stamina. Then (2026-11-13, `claude/breath-sigh`, done), after hearing the three previews
+  (1 `VOICE_MALE_Sigh_1`, 2 `GRUNT_Male_Quick`, 3 `GRUNT_Male_Quick_Deep`), owner: "1, sigh is my choice". The breath
+  plays only the sigh (±0.5 semitone); the two grunts' files are deleted; the noise puffs are only the fallback until
+  it decodes. Owner should hear: run out of stamina, one human sigh every time.
 
 - **The inventory opened the game menu too (BUGS.md #137, 2026-11-13, `claude/inventory-lock`), done.** Owner: "Opening
   your inventory currently opens the menu too, on top of your inventory. Which isn't correct. Should just open your

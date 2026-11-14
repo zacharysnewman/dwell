@@ -83,6 +83,10 @@ pub enum Purpose {
     Bounds(i32, i32, i32),
     Section(u64),
     SectionMesh(u64),
+    /// A grid LOD's jobs (`crate::grid_lod`), each with its instance's epoch.
+    GridBounds(u64, i32, i32, i32),
+    GridSection(u64, u64),
+    GridSectionMesh(u64, u64),
     /// The verification chunk's hash (§6.3).
     Verify,
     /// The F4 map.
@@ -119,6 +123,11 @@ impl Purpose {
             Purpose::Bounds(..) => ("job.bounds.wait", "job.bounds.run"),
             Purpose::Section(..) => ("job.section.wait", "job.section.run"),
             Purpose::SectionMesh(..) => ("job.section_mesh.wait", "job.section_mesh.run"),
+            Purpose::GridBounds(..) => ("job.grid_bounds.wait", "job.grid_bounds.run"),
+            Purpose::GridSection(..) => ("job.grid_section.wait", "job.grid_section.run"),
+            Purpose::GridSectionMesh(..) => {
+                ("job.grid_section_mesh.wait", "job.grid_section_mesh.run")
+            }
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
             Purpose::MapLayer(..) => ("job.map_layer.wait", "job.map_layer.run"),
@@ -492,6 +501,38 @@ impl dwell_lod::SectionMesher for MeshJobs {
         let trees = self.0.borrow().trees;
         self.0.borrow_mut().submit(
             Purpose::SectionMesh(token),
+            Job::MeshSection {
+                cells: job.cells,
+                surface: job.surface,
+                water_drop: job.water_drop,
+                mirror: job.mirror,
+                tints: job.tints,
+                trees,
+            },
+        );
+    }
+}
+
+/// A grid LOD's jobs in the pool (`crate::grid_lod`).
+pub struct GridPool(pub PoolRef);
+
+impl crate::grid_lod::GridJobs for GridPool {
+    fn bounds(&mut self, grid: u8, epoch: u64, level: i32, i: i32, k: i32) {
+        self.0.borrow_mut().submit(
+            Purpose::GridBounds(epoch, level, i, k),
+            Job::GridLodBounds { grid, level, i, k },
+        );
+    }
+    fn section(&mut self, grid: u8, epoch: u64, c: LodCoord, token: u64) {
+        self.0.borrow_mut().submit(
+            Purpose::GridSection(epoch, token),
+            Job::GridLod { grid, coord: c },
+        );
+    }
+    fn mesh(&mut self, epoch: u64, job: dwell_lod::LodMeshJob, token: u64) {
+        let trees = self.0.borrow().trees;
+        self.0.borrow_mut().submit(
+            Purpose::GridSectionMesh(epoch, token),
             Job::MeshSection {
                 cells: job.cells,
                 surface: job.surface,
