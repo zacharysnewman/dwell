@@ -417,7 +417,40 @@ pub fn held_for(item: Option<&'static str>, role: &str) -> Held {
 pub struct HeadView {
     pub head: [f32; 3],
     pub grip: [f32; 3],
+    /// The handle's line at the head's end (the grip axis out to the model's far end).
+    pub axis_end: [f32; 3],
+    /// The head's point standing farthest out from the handle (an axe's blade, a pick's point).
+    pub far: [f32; 3],
     pub size: f32,
+}
+
+impl HeadView {
+    /// The handle's lean on screen: degrees from upright, negative leaning left (its head end
+    /// toward the screen's left, from the grip).
+    pub fn lean_deg(&self) -> f32 {
+        let (dx, dy) = (
+            self.axis_end[0] - self.grip[0],
+            self.axis_end[1] - self.grip[1],
+        );
+        dx.atan2(dy).to_degrees()
+    }
+
+    /// Which side of the handle the head's farthest point (its blade, its pick) stands out on,
+    /// on screen: negative left of it (seen along the handle from the grip), as a share of the
+    /// handle's length on screen.
+    pub fn head_side(&self) -> f32 {
+        let d = [
+            self.axis_end[0] - self.grip[0],
+            self.axis_end[1] - self.grip[1],
+        ];
+        let h = [
+            self.far[0] - self.axis_end[0],
+            self.far[1] - self.axis_end[1],
+        ];
+        let l = d[0].hypot(d[1]).max(1e-6);
+        // Right of the handle (its direction turned clockwise) is positive.
+        (h[0] * d[1] - h[1] * d[0]) / (l * l)
+    }
 }
 
 pub fn head_view(item: &'static str, role: &str, t: f32, extra_yaw: f32) -> Option<HeadView> {
@@ -454,6 +487,17 @@ pub fn head_view(item: &'static str, role: &str, t: f32, extra_yaw: f32) -> Opti
     // summed area is about the head's silhouette (a closed mesh shows each place twice).
     let mut head = Vec::new();
     let mut area = 0.0f32;
+    let off_axis = |v: &[f32; 3]| {
+        let q = [0, 1, 2].map(|k| v[k] - g.at[k]);
+        let a = dot3(q, g.axis);
+        (0..3).map(|k| (q[k] - g.axis[k] * a).powi(2)).sum::<f32>()
+    };
+    let far_v = verts
+        .iter()
+        .filter(|v| along(v) >= cut)
+        .max_by(|a, b| off_axis(a).total_cmp(&off_axis(b)))
+        .copied()
+        .unwrap_or(g.at);
     for tri in verts.chunks_exact(3) {
         if !tri.iter().all(|v| along(v) >= cut) {
             continue;
@@ -463,9 +507,12 @@ pub fn head_view(item: &'static str, role: &str, t: f32, extra_yaw: f32) -> Opti
         head.extend([a, b, c]);
     }
     let (gb, gp) = local_point(held, Point::Grip)?;
+    let end = [0, 1, 2].map(|k| g.at[k] + g.axis[k] * max);
     Some(HeadView {
         head: centroid(head.iter()),
         grip: screen(gb, gp),
+        axis_end: screen(bone, end),
+        far: screen(bone, turn(far_v)),
         size: area / 2.0,
     })
 }
@@ -2228,6 +2275,35 @@ mod tool_swing_tests {
         );
     }
 
+    // Owner, 2026-11-15: "all the tools are rotated so their heads face off to the right, they
+    // should face in to the left and more upright. Animations can be adjusted accordingly to
+    // ensure the hit aligns with the pointer." At rest every tool's head stands out on the left
+    // of its handle (toward the crosshair), and the handle stands within 15° of upright (it leaned
+    // 17.6° and the stone axe's and pickaxe's heads stood out on the right before).
+    // face-a-only: screen space is the view's, the same on both faces.
+    #[test]
+    fn every_tools_head_faces_in_to_the_left_and_stands_upright_at_rest() {
+        let mut bad = Vec::new();
+        for item in BREAK_TOOLS.iter().map(|b| b.item) {
+            let v = head_view(item, "idle", 0.0, 0.0).expect("a head");
+            eprintln!(
+                "{item}: lean {:.1}°, head side {:.3}, {v:?}",
+                v.lean_deg(),
+                v.head_side()
+            );
+            if v.head_side() > -0.05 {
+                bad.push(format!(
+                    "{item}: the head out to the right ({:.3})",
+                    v.head_side()
+                ));
+            }
+            if v.lean_deg().abs() > 15.0 || v.lean_deg() > 0.0 {
+                bad.push(format!("{item}: {:.1}° from upright", v.lean_deg()));
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
+    }
+
     // The head shows at rest: its centre on screen, clear of the hand (not behind the fist), and
     // the tool's turn about its handle (props.json `hold.yaw`) shows more of it than none: the axes'
     // and the stone pickaxe's heads, end-on before, a good deal more.
@@ -2260,12 +2336,13 @@ mod tool_swing_tests {
                 v.size,
                 unturned.size
             );
+            // Since 2026-11-15 the head faces in (its `roll`), which shows it broadside already:
+            // at least as much head as the axes' turned heads showed before (0.055).
             if item.ends_with("_axe") || item == "dwell:stone_pickaxe" {
                 assert!(
-                    v.size > 1.3 * unturned.size,
-                    "{item}: turned {yaw}°, its head shows: {} vs {} unturned",
-                    v.size,
-                    unturned.size
+                    v.size > 0.055,
+                    "{item}: turned {yaw}°, its head shows: {}",
+                    v.size
                 );
             }
         }
