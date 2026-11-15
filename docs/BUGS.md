@@ -722,6 +722,16 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 180. Releases 0.70.3 onward never reached the site: Pages over its 1 GB limit (fixed after 0.70.7)
+
+Owner, 2026-11-15: "And 70.3/4 haven't deployed yet." The Release workflow tagged and published each release, but its
+"Update the site" build stopped: `Site: 1025.0 MB of 1000.0 MB (102.5%; budget 900 MB), 37 builds, about 27.7 MB per
+build ⛔ over the Pages limit: the deploy is stopped` (run 43668658029, 0.70.4; the same for 0.70.3–0.70.7). Fix: the
+retention policy (`shared/version/site-retention.json`) keeps the newest 12 lines (was 20) and 4 dev builds (was 10);
+older builds stay as GitHub releases and can be pinned back. `site.test.ts`'s policy test pins the new values (red on
+the old file). Long term the Cloudflare move lifts the limit. Owner should see: the launcher at /dwell/ offering the
+newest release (0.70.8 or later) within minutes of its merge.
+
 ### 177. Vertical streaks through a moving flood: water column side faces inside the water (fixed after 0.70.5)
 
 Found 2026-11-14 by Claude in the dam-break recording (`videos/dam-break/`, scene `shared/theater/scenes/dam_break.json`;

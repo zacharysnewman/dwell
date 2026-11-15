@@ -16,6 +16,10 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Session limits (owner, 2026-11-15):** "When you resume just 1 task locally, one cloud session." — one local job
+  and one cloud session at a time, until the owner says otherwise. Same message: "And 70.3/4 haven't deployed yet."
+  (BUGS.md, the site over Pages' 1 GB limit; fixed by a smaller retention policy). Owner should see: the newest release
+  on the launcher.
 - **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
   doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
   Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
