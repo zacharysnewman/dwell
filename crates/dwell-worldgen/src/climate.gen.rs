@@ -28,6 +28,9 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         [90.0, 1.0],
     ],
     lapse_rate: 6.5,
+    degrees_per_km: 0.009,
+    maritime: 4.0,
+    maritime_reach_m: 20000.0,
     winds: &[
         WindCell { name: "trade_winds", latitude: [0.0, 30.0], from: 60.0 },
         WindCell { name: "westerlies", latitude: [30.0, 60.0], from: 240.0 },
@@ -42,6 +45,8 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         base_rain: 0.15,
         uplift_rain: 1.5,
         lee_dry: 1.0,
+        lee_floor: 0.4,
+        recover_m: 60000.0,
         blur_m: 4000.0,
     },
     max_grid_bytes: 1048576,
@@ -52,15 +57,15 @@ pub const CLIMATE: ClimateRules = ClimateRules {
         moisture_share: 0.6,
     },
     rain_variety: &[
-        VarietyNoise { amplitude: 0.7, wavelength: 7000.0 },
-        VarietyNoise { amplitude: 0.5, wavelength: 2500.0 },
+        VarietyNoise { amplitude: 0.08, wavelength: 7000.0 },
+        VarietyNoise { amplitude: 0.04, wavelength: 2500.0 },
     ],
     rain_mm_variety: &[
-        VarietyNoise { amplitude: 280.0, wavelength: 6500.0 },
-        VarietyNoise { amplitude: 120.0, wavelength: 2200.0 },
+        VarietyNoise { amplitude: 0.0, wavelength: 6500.0 },
+        VarietyNoise { amplitude: 0.0, wavelength: 2200.0 },
     ],
     celsius_variety: &[
-        VarietyNoise { amplitude: 3.5, wavelength: 7000.0 },
-        VarietyNoise { amplitude: 1.5, wavelength: 1800.0 },
+        VarietyNoise { amplitude: 0.6, wavelength: 7000.0 },
+        VarietyNoise { amplitude: 0.3, wavelength: 1800.0 },
     ],
 };

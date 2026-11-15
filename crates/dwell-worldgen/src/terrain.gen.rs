@@ -40,6 +40,8 @@ pub const BIOME_MAP: BiomeMap = BiomeMap {
     base_rain: 0.15,
     uplift_rain: 1.5,
     lee_dry: 1.0,
+    lee_floor: 0.0,
+    recover_m: 0.0,
     rain_share: 0.0,
     wind_smooth_m: 3000.0,
     sharpen: 1.0,

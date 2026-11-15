@@ -219,10 +219,18 @@ pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &Biom
         };
         let grade = (ground(c) - h_up) / step * 10.0;
         let r = (flat + params.uplift_rain * grade.max(0.0) - params.lee_dry * (-grade).max(0.0))
+            .max(params.lee_floor * flat)
             .clamp(0.0, 1.0);
         let m_up = m_up.clamp(0.0, 1.0);
         rain[c] = (m_up * r) as f32;
-        moisture[c] = (m_up * (1.0 - r * dry)) as f32;
+        let m = m_up * (1.0 - r * dry);
+        // The air takes moisture back over land (`recover_m`; 0: never, as before).
+        let m = if params.recover_m > 0.0 {
+            m + (1.0 - m) * (step / params.recover_m).min(1.0)
+        } else {
+            m
+        };
+        moisture[c] = m as f32;
     }
     Rain { rain, moisture }
 }
@@ -403,7 +411,7 @@ impl BiomeField {
         let rivers = 1.0 - t * t * (3.0 - 2.0 * t);
         let coast = self.sample(|c| self.coast.get(c), xf, zf);
         if let Some((c, grid)) = &self.climate {
-            let celsius = c.temperature_c(xf, zf, elevation);
+            let celsius = c.temperature_near_sea(xf, zf, elevation, coast);
             let rain = c.rain_mm(grid, xf, zf);
             let b = c.rules.biomes;
             let wet = (rain / b.wet_mm).clamp(0.0, 1.0);

@@ -56,6 +56,11 @@ pub struct RainRules {
     pub base_rain: f64,
     pub uplift_rain: f64,
     pub lee_dry: f64,
+    /// The lee keeps at least this share of the flat rate (0.71: a lee is drier, not dead).
+    pub lee_floor: f64,
+    /// Over land the air takes back half its lost moisture over about this many m (0: never;
+    /// 0.71: lakes, forests and soils give it back, so one crest doesn't dry a continent).
+    pub recover_m: f64,
     /// The biomes' rain: the marched rain low-passed over about this many m (BUGS.md #164: the
     /// march's rain is near all or nothing cell to cell, and read bilinearly the biomes' edges ran
     /// along the grid's rows and columns, km-long straight edges; 0: as marched). The rivers'
@@ -92,6 +97,13 @@ pub struct ClimateRules {
     pub rain_by_latitude: &'static [[f64; 2]],
     /// °C per 1000 m.
     pub lapse_rate: f64,
+    /// Latitude in real degrees per km north (real-world scale, 0.71: about 0.009, so a 100 km
+    /// face spans about 1°, a 10× world about 9°), round the face's own latitude in its band.
+    pub degrees_per_km: f64,
+    /// Maritime moderation (°C): by the sea, ground colder than 10 °C warms by up to this,
+    /// fading over `maritime_reach_m` inland (an island at 65° is not continental).
+    pub maritime: f64,
+    pub maritime_reach_m: f64,
     pub winds: &'static [WindCell],
     pub wind_jitter: f64,
     pub rain: RainRules,
@@ -178,6 +190,8 @@ pub struct Climate {
     pub wind_from: f64,
     /// The disc's radius (m) the band spans.
     pub radius: f64,
+    /// The face's latitude at its centre (degrees, drawn in its band).
+    pub centre: f64,
     /// The variety noises' seed (`rules.rain_variety`, `celsius_variety`).
     pub variety_seed: u32,
 }
@@ -217,6 +231,8 @@ impl Climate {
         let wind = rules.wind_at(0.5 * (lo + hi));
         let jitter = rules.wind_jitter * (2.0 * unit(0xC11A_0003) - 1.0);
         let wind_from = (north + rules.winds[wind].from + jitter).rem_euclid(360.0);
+        // The face's own latitude in its band (real-world scale, 0.71).
+        let centre = lo + (hi - lo) * unit(0xC11A_0005);
         Self {
             rules,
             band,
@@ -224,6 +240,7 @@ impl Climate {
             north,
             wind_from,
             radius: f64::from(dwell_world::WORLD_RADIUS),
+            centre,
             variety_seed: seed_word(seed, 0xC11A_0004),
         }
     }
@@ -251,6 +268,11 @@ impl Climate {
     /// The latitude (degrees north) at face-local (x, z).
     pub fn latitude(&self, x: f64, z: f64) -> f64 {
         let (nx, nz) = self.north_vector();
+        if self.rules.degrees_per_km > 0.0 {
+            // Real degrees per km round the face's own latitude (0.71).
+            return (self.centre + (x * nx + z * nz) / 1000.0 * self.rules.degrees_per_km)
+                .clamp(0.0, 90.0);
+        }
         let along = ((x * nx + z * nz) / self.radius).clamp(-1.0, 1.0);
         let [lo, hi] = self.band().latitude;
         lo + (hi - lo) * (0.5 + 0.5 * along)
@@ -265,6 +287,17 @@ impl Climate {
     pub fn temperature_c(&self, x: f64, z: f64, elevation: f64) -> f64 {
         self.sea_level_c(x, z) - self.rules.lapse_rate * elevation.max(0.0) / 1000.0
             + self.variety(self.rules.celsius_variety, 0, x, z)
+    }
+
+    /// [`Climate::temperature_c`] `coast` m from the sea: the maritime moderation added.
+    pub fn temperature_near_sea(&self, x: f64, z: f64, elevation: f64, coast: f64) -> f64 {
+        let c = self.temperature_c(x, z, elevation);
+        let r = &self.rules;
+        if r.maritime <= 0.0 {
+            return c;
+        }
+        let near = (-coast.max(0.0) / r.maritime_reach_m.max(1.0)).exp();
+        c + r.maritime * near * ((10.0 - c) / 10.0).clamp(0.0, 1.0)
     }
 
     /// The sum of the `list` noises' amplitude × noise (about ±1 each) at (x, z), stream `k`.
@@ -288,6 +321,8 @@ impl Climate {
         params.base_rain = r.base_rain;
         params.uplift_rain = r.uplift_rain;
         params.lee_dry = r.lee_dry;
+        params.lee_floor = r.lee_floor;
+        params.recover_m = r.recover_m;
         params.wind_smooth_m = r.smooth_m;
         let rain = rainfall(g.n, g.cell, &g.height, &g.sea, &params).rain;
         let land: Vec<f64> = (0..rain.len())
