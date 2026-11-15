@@ -1094,7 +1094,7 @@ export function validateRocks(data, blocks) {
     // How a rule's stacks mix and the settings' edges wander (WORK_QUEUE item 15); optional.
     const mx = pp.mixing;
     if (mx !== undefined) {
-      const mk = ["$comment", "wavelength", "warp", "warpWavelength", "edgeShift", "edgeWavelength", "fade"];
+      const mk = ["$comment", "wavelength", "warp", "warpWavelength", "edgeShift", "edgeWavelength", "fade", "octaves"];
       if (typeof mx !== "object" || mx === null) pf("mixing must be an object");
       const me = Object.keys(mx).filter((k) => !mk.includes(k));
       if (me.length) pf(`mixing: unknown ${me.join(", ")}`);
@@ -1104,6 +1104,8 @@ export function validateRocks(data, blocks) {
         if (!between(mx[k], 0, 20000)) pf(`mixing.${k} must be in [0, 20000] m`);
       if (mx.fade !== undefined && !between(mx.fade, 0, 10000))
         pf("mixing.fade must be in [0, 10000] m");
+      if (mx.octaves !== undefined && !(Number.isInteger(mx.octaves) && mx.octaves >= 1 && mx.octaves <= 8))
+        pf("mixing.octaves must be an integer in [1, 8]");
     }
     const rc = pp.rangeCore;
     if (

@@ -21,6 +21,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let seeds: u64 = arg(&args, "--seeds", "50").parse().unwrap();
     let size: f64 = arg(&args, "--size", "1").parse().unwrap();
+    // `--list`: one line a face (to pick test seeds with the features a test needs).
+    let list = args.iter().any(|a| a == "--list");
     let reach = PLATES.reach * size;
     let (mut plates, mut bounds, mut land, mut ocean, mut faces) = (0.0, 0.0, 0.0, 0, 0);
     let mut spacing = Vec::new();
@@ -33,7 +35,7 @@ fn main() {
             // A grid over the disc: the plates seen, the land share.
             let n = 80;
             let mut seen = std::collections::BTreeSet::new();
-            let (mut l, mut all) = (0, 0);
+            let (mut l, mut all, mut top) = (0, 0, 0.0f64);
             for j in 0..n {
                 for i in 0..n {
                     let x = -reach + (i as f64 + 0.5) * 2.0 * reach / n as f64;
@@ -44,6 +46,7 @@ fn main() {
                     all += 1;
                     seen.insert(layout.plate_at(x, z));
                     l += usize::from(layout.is_land(x, z) || t.height(x, z) > 0.0);
+                    top = top.max(t.height(x, z));
                 }
             }
             let share = l as f64 / all.max(1) as f64;
@@ -64,6 +67,15 @@ fn main() {
                 .filter(|v| v.x.hypot(v.z) < reach)
                 .map(|v| [v.x, v.z])
                 .collect();
+            if list {
+                println!(
+                    "seed {s} {face:?}: plates {}, boundaries {b}, land {:.0} %, uplift max {top:.0} m, volcanoes {}, band {}",
+                    seen.len(),
+                    100.0 * share,
+                    vs.len(),
+                    dwell_worldgen::climate::Climate::for_seed(seed).band().name
+                );
+            }
             for (k, a) in vs.iter().enumerate() {
                 let d = vs
                     .iter()

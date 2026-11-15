@@ -17,7 +17,14 @@ use dwell_worldgen::terrain::{Biome, PRESET_BIOMES, WhereRange};
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-const SEEDS: [u64; 3] = [1, 7, 42];
+#[path = "support/realistic_seeds.rs"]
+mod realistic_seeds;
+
+/// Real-world scale (0.71): the first three seeds whose face has land and a range (a third land,
+/// uplift to 800 m); a 1× face is often one plate's low interior or ocean.
+fn seeds(face: Face) -> Vec<u64> {
+    realistic_seeds::seeds_with(face, 3, 0.3, 800.0)
+}
 
 /// The dry biomes: none where the rain is a wet coast's.
 const DRY: [&str; 4] = [
@@ -111,12 +118,17 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
         let mut want = *p;
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
-            want.trees = &[("boulders", 0.25), ("sagebrush", 0.012)];
             // 0.69: sand on its steep faces too (no grey stone blobs on the dunes).
             want.bands = Box::leak(Box::new([dwell_worldgen::terrain::ElevationBand {
                 rock: "dwell:sand",
                 ..p.bands[0]
             }]));
+        }
+        // The world lists each biome's plants itself (0.69: shrubs, boulders, talus), so only
+        // they may differ from the preset's.
+        if let Some(b) = b {
+            want.trees = b.trees;
+            want.placements = b.placements;
         }
         assert_eq!(b, Some(&want), "{}: listed, unchanged", p.name);
     }
@@ -131,13 +143,15 @@ dwell_world::both_faces!(
     /// starter's is the 0..1 map's, with no rain read.
     fn the_realistic_worlds_geography_is_its_climates(f: FaceFrame) {
         let e = edit();
-        let m = map(&e, 7, f);
-        let field = BiomeField::with_params(&m, face_seed(7, f.face), e.map);
+        let w = seeds(f.face)[1];
+        let m = map(&e, w, f);
+        let field = BiomeField::with_params(&m, face_seed(w, f.face), e.map);
         let c = field.climate().expect("a Realistic world has a climate");
         assert_eq!(*c, Climate::for_seed(m.seed), "the face seed's own climate");
         let (x, z, h) = land(&m, 8)[0];
         let g: Geography = field.geography(x, z, h);
-        assert!((g.celsius - c.temperature_c(x as f64, z as f64, h)).abs() < 1e-9);
+        // The latitude's and height's, moderated by the sea (0.71, `maritime`).
+        assert!((g.celsius - c.temperature_near_sea(x as f64, z as f64, h, g.coast)).abs() < 1e-9);
         assert!(
             g.rain
                 .is_some_and(|r| (0.0..=CLIMATE.biomes.max_rain_mm).contains(&r))
@@ -155,7 +169,7 @@ dwell_world::both_faces!(
         let e = edit();
         let mut wet_points = 0;
         let (mut all_wind, mut all_lee) = (0.0, 0.0);
-        for world in SEEDS {
+        for world in seeds(f.face) {
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             let c = *field.climate().unwrap();
@@ -274,7 +288,7 @@ dwell_world::both_faces!(
         let ice = preset("preset:snowfield").place.celsius;
         let t = preset("preset:alpine_tundra").place.celsius;
         let mut above = 0;
-        for world in SEEDS {
+        for world in seeds(f.face) {
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 2) {
@@ -309,14 +323,15 @@ dwell_world::both_faces!(
     /// On the same ground, a colder band has more boreal and tundra and less of the warm biomes.
     fn a_colder_band_has_more_boreal_and_tundra(f: FaceFrame) {
         let e = edit();
-        let m = map(&e, 7, f);
+        let w = seeds(f.face)[1];
+        let m = map(&e, w, f);
         let cells = land(&m, 3);
         let band = |name: &str| CLIMATE.bands.iter().position(|b| b.name == name).unwrap();
         let shares: Vec<(f64, f64)> = ["subtropical", "temperate", "subarctic"]
             .iter()
             .map(|b| {
                 let c = Climate::with_band(CLIMATE, m.seed, band(b));
-                let field = BiomeField::with_climate(&m, face_seed(7, f.face), e.map, Some(c));
+                let field = BiomeField::with_climate(&m, face_seed(w, f.face), e.map, Some(c));
                 (
                     share(&field, &e.biomes, &cells, &COLD),
                     share(&field, &e.biomes, &cells, &WARM),
@@ -383,6 +398,18 @@ fn seed_in_band(f: FaceFrame, band: &str) -> u64 {
         .unwrap_or_else(|| panic!("{:?}: a seed in the {band} band", f.face))
 }
 
+/// The first seed in `band` whose face has land and a range to cast a rain shadow (real-world
+/// scale, 0.71: most 1× faces are one plate's low interior, with no lee to dry).
+fn ranged_seed_in_band(f: FaceFrame, band: &str) -> u64 {
+    (1..500)
+        .filter(|&w| Climate::for_seed(face_seed(w, f.face)).band().name == band)
+        .find(|&w| {
+            let (land, top) = realistic_seeds::survey(w, f.face);
+            land >= 0.3 && top >= 800.0
+        })
+        .unwrap_or_else(|| panic!("{:?}: a seed with a range in the {band} band", f.face))
+}
+
 dwell_world::both_faces!(
     /// §7 q9 (owner, 2026-11-12: "Yes add those biomes"): the climates no preset covered at R4, where
     /// the default biome was the fallback, take the new presets: the cold, nearly rainless interior
@@ -406,7 +433,12 @@ dwell_world::both_faces!(
         // (cells, of them the default chose without the two, the new preset chose with them).
         let (mut dry, mut hot) = ([0u32; 3], [0u32; 3]);
         let (mut was, mut is) = (0u32, 0u32);
-        for world in [42, seed_in_band(f, "subtropical")] {
+        // The cold desert's climate is a subarctic lee (the lee keeps `rain.leeFloor`, 0.71: 180 mm
+        // there), the rainforest's the subtropics' windward coasts.
+        for world in [
+            ranged_seed_in_band(f, "subarctic"),
+            ranged_seed_in_band(f, "subtropical"),
+        ] {
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 3) {
@@ -419,7 +451,7 @@ dwell_world::both_faces!(
                 // On low ground (the alpine presets take the high cold and dry).
                 let tally = if h > 600.0 {
                     None
-                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 150.0 {
+                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 240.0 {
                     Some((&mut dry, cold))
                 } else if g.celsius >= 18.0 && rain >= 2500.0 {
                     Some((&mut hot, wet))

@@ -356,6 +356,9 @@ pub struct Mixing {
     /// How far (m) inside a mixed patch's edge the shaping fades in (in place of `edgeFade`, so
     /// the patches' fades leave most of their ground stepped; 0: `edgeFade`'s).
     pub fade: f64,
+    /// The mixing noises' octaves (0, absent: 3); more add finer wander to the edges, so a broad
+    /// patch's border is not a smooth curve at a km's scale (0.71, real-world scale).
+    pub octaves: u32,
 }
 
 /// The rock provinces from plate history (`rocks.json` `plateProvinces`, R5): the settings'
@@ -781,7 +784,11 @@ impl Resolved {
     /// octaves turned off the lattice (WORK_QUEUE item 15).
     fn mixing_noise(&self, k: u32, x: f64, z: f64, wavelength: f64) -> f32 {
         let seed = crate::noise::mix32(self.seed ^ crate::noise::mix32(0x31C5_0000 + k));
-        crate::noise::fbm2_turned(seed, x, z, wavelength.max(1.0), 3, 2.13, 37.0, 0.0)
+        let octaves = match self.geology.plate_provinces.mixing.octaves {
+            0 => 3,
+            o => o,
+        };
+        crate::noise::fbm2_turned(seed, x, z, wavelength.max(1.0), octaves, 2.13, 37.0, 0.0)
     }
 
     /// The province's stack at (x, z) and how fully it shapes there (fading to 0 at a border).

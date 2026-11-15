@@ -802,6 +802,10 @@ fn plate_provinces_from_json(v: Option<&Value>) -> Result<crate::geology::PlateP
                         None => 0.0,
                         Some(_) => g("fade")?,
                     },
+                    octaves: match m.get("octaves") {
+                        None => 0,
+                        Some(_) => g("octaves")? as u32,
+                    },
                 }
             }
         },

@@ -10,7 +10,14 @@ use dwell_worldgen::climate::{CLIMATE, Climate, CoarseGround, RainGrid};
 use dwell_worldgen::hydrology::{self, HydrologyMap};
 use dwell_worldgen::terrain::{FIXTURE_WORLDS, HEIGHT, HeightField};
 
-const SEEDS: [u64; 3] = [1, 7, 42];
+#[path = "support/realistic_seeds.rs"]
+mod realistic_seeds;
+
+/// Real-world scale (0.71): the first three seeds whose face has a range to shadow (a third land,
+/// uplift to 800 m); a 1× face is often one plate's low interior or ocean.
+fn seeds(face: dwell_world::Face) -> Vec<u64> {
+    realistic_seeds::seeds_with(face, 3, 0.3, 800.0)
+}
 
 fn realistic() -> HeightField {
     FIXTURE_WORLDS
@@ -75,7 +82,7 @@ dwell_world::both_faces!(
     /// grid and in the discharge's rain.
     fn the_windward_side_of_the_main_range_is_twice_as_wet_as_its_lee(f: FaceFrame) {
         let (mut all_wq, mut all_lq) = (0.0, 0.0);
-        for world in SEEDS {
+        for world in seeds(f.face) {
             let seed = face_seed(world, f.face);
             let m = map(seed);
             let c = Climate::for_seed(seed);
@@ -121,7 +128,7 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     /// The map's coarse rain grid stays under `climate.json` `maxGridBytes`, with cells ≥ `rain.cell`.
     fn the_coarse_rain_grid_stays_under_its_bound(f: FaceFrame) {
-        let seed = face_seed(SEEDS[0], f.face);
+        let seed = face_seed(1, f.face);
         let m = map(seed);
         let (g, r) = marched(&m);
         assert!(g.cell >= CLIMATE.rain.cell, "{} m cells", g.cell);
@@ -138,8 +145,8 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     /// Each face draws its own climate from its face seed, and its temperature falls with height.
     fn each_face_draws_its_own_climate(f: FaceFrame) {
-        let c = Climate::for_face(SEEDS[1], f.face);
-        assert_eq!(c, Climate::for_seed(face_seed(SEEDS[1], f.face)));
+        let c = Climate::for_face(7, f.face);
+        assert_eq!(c, Climate::for_seed(face_seed(7, f.face)));
         assert!(c.temperature_c(0.0, 0.0, 1000.0) < c.temperature_c(0.0, 0.0, 0.0));
     }
 );
@@ -148,7 +155,7 @@ dwell_world::both_faces!(
     /// The default world has no climate: its discharge's rain is the profile's uniform rain.
     fn the_default_world_rain_is_unchanged(f: FaceFrame) {
         assert!(!HEIGHT.tectonics.from_climate());
-        let seed = face_seed(SEEDS[0], f.face);
+        let seed = face_seed(1, f.face);
         let m = hydrology::generate_seed(seed, hydrology::default_profile());
         assert!(m.rain.iter().all(|&r| r == 1.0));
         assert!(m.climate.is_none());

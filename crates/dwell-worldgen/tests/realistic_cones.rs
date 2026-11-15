@@ -15,7 +15,7 @@ use dwell_worldgen::plate_tectonics::PlateTectonics;
 use dwell_worldgen::terrain::FIXTURE_WORLDS;
 use dwell_worldgen::worldmap::WorldMap;
 
-const SEEDS: [u64; 5] = [1, 7, 42, 274_005_646, 2_741_893_632];
+const SEEDS: std::ops::Range<u64> = 0..80;
 const RIM_BREAK: f64 = 0.4;
 
 both_faces!(
@@ -27,9 +27,22 @@ both_faces!(
             .1;
         let mut seen = 0;
         let mut report = Vec::new();
+        // Real-world scale (0.71): a face holds a volcano only now and then (arcs ~70 km apart,
+        // hotspots ~90 km), so the seeds are the first whose face has a cratered cone on its disc,
+        // until four cones are measured.
         for world in SEEDS {
+            if seen >= 4 {
+                break;
+            }
             let seed = face_seed(world, f.face);
             let t = PlateTectonics::for_seed(seed);
+            if !t
+                .volcanoes
+                .iter()
+                .any(|v| v.chain == 0 && v.crater_radius > 0.0 && v.x.hypot(v.z) < 45_000.0)
+            {
+                continue;
+            }
             let map = WorldMap::for_height(seed, h);
             for v in t
                 .volcanoes
