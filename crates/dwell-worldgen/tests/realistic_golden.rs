@@ -182,8 +182,30 @@ fn the_realistic_worlds_biome_sets_fit_a_phones_budget() {
 fn the_big_maps_layers_sample_the_realistic_worlds_plates_uplift_rain_and_rocks() {
     // both-faces: each face's own plates and climate (R1, R3) show in its layers.
     use dwell_worldgen::map_layers::{MapField, sample};
-    maps();
-    let terrain = BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).expect("the terrain");
+    use dwell_worldgen::plates::{PLATES, PlateKind, PlateLayout};
+    // Real-world scale (0.71): a 1× face is usually one plate, so the layers are read on the first
+    // seed whose faces both show an oceanic and a continental plate on the disc.
+    let both = |w: u64| {
+        [Face::A, Face::B].into_iter().all(|f| {
+            let l = PlateLayout::generate(&PLATES, face_seed(w, f));
+            let mut kinds = [false; 2];
+            for j in -8..=8 {
+                for i in -8..=8 {
+                    let (x, z) = (f64::from(i) * 5_500.0, f64::from(j) * 5_500.0);
+                    if x.hypot(z) < 44_000.0 {
+                        let k = l.plates[l.plate_at(x, z)].kind;
+                        kinds[usize::from(k == PlateKind::Continental)] = true;
+                    }
+                }
+            }
+            kinds == [true, true]
+        })
+    };
+    let seed = (0..2000u64)
+        .find(|&w| both(w))
+        .expect("a seed with both kinds on both faces");
+    eprintln!("seed {seed}");
+    let terrain = BifacialTerrain::for_generator(GENERATOR_TERRAIN, seed).expect("the terrain");
     // The whole disc (the realistic batch's plates reach the rim, 0.64).
     let n = 64;
     let (x0, step) = (-48_000, 96_000 / n as i64);
@@ -198,7 +220,7 @@ fn the_big_maps_layers_sample_the_realistic_worlds_plates_uplift_rain_and_rocks(
         let mut ids = p.ids.clone();
         ids.sort_unstable();
         ids.dedup();
-        assert!(ids.len() >= 3, "{face:?}: {} plates", ids.len());
+        assert!(ids.len() >= 2, "{face:?}: {} plates", ids.len());
         let u = sample(g, MapField::Uplift, x0, x0, step, n).expect("uplift");
         let hi = u.values.iter().copied().fold(f32::MIN, f32::max);
         let lo = u.values.iter().copied().fold(f32::MAX, f32::min);
