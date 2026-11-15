@@ -3313,6 +3313,16 @@ impl TerrainGenerator {
         }
     }
 
+    /// The world map's eroded height (m over sea level; negative: the sea floor) at face-local
+    /// (x, z), with none of the fine detail; none outside the world's disc. Cheap (a bicubic read of
+    /// the map): for coarse consumers such as the clouds' weather field (docs/CLOUDS.md §11).
+    pub fn map_height(&self, x: f64, z: f64) -> Option<f64> {
+        if !self.world().inside_disc(x as i64, z as i64) {
+            return None;
+        }
+        Some(self.map.height_at(x, z).0)
+    }
+
     /// The ground at face-local column (x, z) with no water shaped into it: the map's eroded height
     /// and the fine detail, without the river cut, valley, levees or lake shore (`base_column`'s first
     /// two layers); none outside the world's disc. For the water surface grid's prototype (Phase 53
