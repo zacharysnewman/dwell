@@ -2,6 +2,7 @@
   "changes": [
     "Builders clear their site before they build: a tree in the way comes down whole, leaves and all, with the grass, rocks and stray blocks round the blueprint.",
     "What a builder clears drops its items at the site in adventure.",
-    "A blueprint's panel says Clearing, then Building."
+    "A blueprint's panel says Clearing, then Building.",
+    "Placing a blueprint works from the start of a session again, not only after the game mode changes."
   ]
 }

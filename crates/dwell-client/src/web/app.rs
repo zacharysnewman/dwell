@@ -4136,6 +4136,11 @@ impl Inner {
             game.set_markers_synced(
                 s.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
             );
+            // Set at the start too, not only when the host changes the mode: without it no
+            // blueprint could be placed (Blueprint, Test in town) until a mode change.
+            game.set_blueprints_synced(
+                s.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
+            );
             game.set_theater_viewpoint(
                 s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)
                     && s.theater_viewpoint(),
