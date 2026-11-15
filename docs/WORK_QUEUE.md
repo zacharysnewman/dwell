@@ -25,9 +25,27 @@ Last updated: 2026-11-11 (0.52.108).
   - Door swing: later.
   - Axe swish: once per animated swing, as built — kept.
   - Felling: after the 3D damage mask, a cut tree gets a push again and falls toward the side with the least structure
-    holding it (queued with the damage-mask job). Owner should see: a tree whose bottom log breaks falls, even one
-    touching a hillside, toward its open side.
+    (queued with the damage-mask job). Correction (owner, 2026-11-15): **"I think the tree interpretation may not be
+    correct, 'so a tree touching a hillside falls away from the hill' my description only had to do with the contents
+    of the block you're breaking on break, than the surrounding terrain, essentially following the realistic falling
+    toward the broken side of the tree."** So the direction comes from the broken log's own damage (the side of the
+    log that lost the most material, as a real notch), not from the terrain or the neighbouring support; the support
+    rule is unchanged. Owner should see: a tree whose bottom log you chop from one side falls over, toward the side
+    you chopped.
   - Small changes are made directly in the main conversation, not in subagents.
+
+- **Axe chopping clip review (owner, 2026-11-15, after #980's clip):** "I don't see any chunks disappearing from the log
+  from mesh deformation in that axe chopping video. Also all the tools are rotated so their heads face off to the right,
+  they should face in to the left and more upright. Animations can be adjusted accordingly to ensure the hit aligns
+  with the pointer." And: **"We can update damage to be more of a 3D bit mask, which should work on any object
+  shape."** (WORK_QUEUE item 26; BUGS.md.)
+  - Damage as a 3D bit mask: built on `claude/damage-mask` (BLOCK_DAMAGE.md §15): a damaged cell's removed material
+    is a mask over a sub-grid of the cell (the look's `grid` per metre), the block's own shape (cube, octagonal log,
+    ramp, any convex shape) drawn intersected with it; stone and dirt use it too (one path). Owner should see: chunks
+    coming off a log as the axe hits it, stone and dirt dug into blocky chunks as before, ramps too.
+  - Tool grip: heads in toward the screen's centre (left) and more upright, the hit still on the crosshair. Owner
+    should see: each tool at rest with its head leaning in, upright-ish, and striking at the crosshair.
+  - Felling push: above (the owner's correction). Owner should see: a chopped tree falls toward the chopped side.
 
 - **Screen-space ambient occlusion (owner, 2026-11-15):** "I'd like to implement screen space ambient occlusion."
   Answers: presets "High and Ultra" (a cheap half-resolution pass on High within ~1 ms, a fuller one on Ultra; off on

@@ -799,3 +799,47 @@ drawn as the axe's head-sized V bites (`cut_of_marks`). Now it is a break tool a
   `a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage` (both faces); `shared/tools/gen.test.mjs`.
   Red on the old build: the break-tool data, the older save's cut sent, the older client's swing, the
   client's axe a swung tool, the log carved by bites.
+
+## 15. Damage as a 3D bit mask, on any shape (WORK_QUEUE item 26, BUGS.md #185)
+
+Owner, 2026-11-15, after the axe clip: "I don't see any chunks disappearing from the log from mesh deformation in that
+axe chopping video." → **"We can update damage to be more of a 3D bit mask, which should work on any object shape."**
+§6.2's carve was a height field pushed into each struck cube face, and §6.5's into a ramp's polygons; an octagonal log
+was neither, so §14 gave it cracks only. One mechanism now replaces both carves (`dwell-mesh` `mesher/damage_mask.rs`):
+
+- **The mask:** a damaged cell's removed material is a bit mask over a sub-grid of the cell, the look's `grid` cells per
+  metre on each axis (data; 8 by default: 8 × 4 × 8 in the 1 × ½ × 1 m cell; stone's 12: 12 × 6 × 12). Each sub-cell
+  is ranked by its cost from the cell's marks: its distance from the struck point, inward along the struck face's
+  normal and across it, the across scaled by the look's `size` over its `depth` (wider than deep for stone's flakes),
+  shaped by its `profile` (`bowl`: round, a little rough; `facets`: an L2/L∞ blend, rough in two-sub-cell blocks;
+  `spall`: flattened and elongated along a turn of each mark's own, rougher), each mark weighed by its piece
+  (`HitMark::chunk`). The cheapest are removed until the bite rule's volume is gone (§10: the fraction × ½ × the
+  shape's **own** volume, measured over the sub-grid: a cube's ½ m³, a ramp's half, an octagon's 0.83 of the cell),
+  counting only the share of each sub-cell inside the shape. So the mask grows only as the damage does, and the
+  same cell and view always give the same mask.
+- **No new state:** the mask is a function of the damage view the server already keeps, saves and sends (the
+  fraction and up to four marks, each its struck face and point). The world format, the wire and the registry are
+  unchanged; no new compatibility line, and an older client on the line draws its own look.
+- **The mesh:** the block's own shape, convex, as a hull of half-spaces (the cube; a shaped block's polygons from
+  `dwell_blocks::shape::faces_of`, a ramp or any ½ m piece; an octagonal log's prism from `octagon::outline_width`,
+  cut by its shape for a wood ramp) intersected with what the mask keeps: each of the shape's visible faces split
+  along the sub-grid only where removed sub-cells are near (a k-d split over a summed-volume table, so an untouched
+  face stays one polygon) and the removed sub-cells' parts dropped; and the walls between kept and removed sub-cells,
+  merged into rectangles, clipped to the hull. A damaged cube leaves the greedy merge on every face (its faces keep
+  their corner light, bilinear over the pieces); a ramp's and a log's faces keep their own lighting per point. The
+  walls take the block's inside tile (its end along its axis: dirt under grass, a log's end grain), the struck
+  faces' light, darker and more occluded the deeper they lie (`darken`), stone's spall lifted toward the look's
+  `color`; every face drawn, walls too, carries the crack overlay (§6.3).
+- **A non-convex shape** would be clipped to its convex hull (none is damaged today: the stored ramps are convex).
+- **Retired:** the height-field carves (`damage_mesh::carve_*`, `mesher/ramp_damage.rs`) and their tests. The look's
+  `triangles` is now the budget the perf test holds the mask to; `facets` and `flakes` are unread by the mask.
+- **Cost:** 50 damaged stone and dirt cells (one to four struck faces each) add 331 triangles a cell (512 budget) and
+  mesh in 14 ms against 5.4 ms undamaged (debug-optimised test build).
+- **Tests** (`dwell-mesh` `mesher/damage_mask_tests.rs`): `the_mask_grows_by_stage` (each stage a superset, half the
+  cell at the break, every profile), `the_first_chunks_come_off_the_struck_face_round_the_point`,
+  `a_damaged_octagon_log_loses_volume_by_stage` (both faces; the closed mesh's volume, the bite rule's share within
+  2 %; red with the log drawn whole, as before), `a_cubes_and_a_ramps_damage_takes_the_bite_rules_volume` (both faces:
+  stone and dirt k bites after k, inside the cell; the dirt ramp half its own at the break),
+  `a_fixture_shape_gets_damage_by_data_alone` (a wedge given as polygons and a fixture look),
+  `meshing_fifty_damaged_cells_stays_within_budget`; `damage_mesh`'s crack tests (walls looking down are cracked
+  too).
