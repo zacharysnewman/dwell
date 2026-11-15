@@ -16,6 +16,18 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner answers (2026-11-15):** "Wooden shovel 6 hits. Warmer stone brick, door swing can come later. Axe swish should
+  play once per swing (animated swing). Trees should get the force applied to them like it used to be so they fall again,
+  towards the side with the least structure (post 3D bit mask change). Make small changes in this thread."
+  - Wooden shovel: 6 hits on dirt, the stone shovel 5 (as built in #963) — kept.
+  - Stone brick: a warm `dressed_stone` palette ramp instead of the cool `stone` ramp (it read dark bluish). Done.
+    Owner should see: stone brick walls in a warm, sandy grey.
+  - Door swing: later.
+  - Axe swish: once per animated swing, as built — kept.
+  - Felling: after the 3D damage mask, a cut tree gets a push again and falls toward the side with the least structure
+    holding it (queued with the damage-mask job). Owner should see: a tree whose bottom log breaks falls, even one
+    touching a hillside, toward its open side.
+  - Small changes are made directly in the main conversation, not in subagents.
 - **Region tools on touch (owner, 2026-11-15):** "I'd love to copy a structure in mobile but there's no selection or
   copy control for it. Perhaps we could add a mobile button for it, but only when you're flying perhaps? I have a
   structure I want to select the region of, so I can copy, and paste it here." And: "If there's no block under your

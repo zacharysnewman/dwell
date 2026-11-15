@@ -415,8 +415,8 @@
       ]
     },
     "stone_brick": {
-      "$comment": "Stone brick walls (owner, 2026-11-14; prototype content): dressed stone in the stone ramp, two courses a tile with shadowed mortar joints, the upper course's joints offset half a brick, a light along each brick's top.",
-      "use": "block", "ramp": "stone", "overlay": 1,
+      "$comment": "Stone brick walls (owner, 2026-11-14; prototype content): dressed stone in the warm dressed_stone ramp (owner, 2026-11-15: \"Warmer stone brick\"; was the stone ramp, which read dark bluish), two courses a tile with shadowed mortar joints, the upper course's joints offset half a brick, a light along each brick's top.",
+      "use": "block", "ramp": "dressed_stone", "overlay": 1,
       "layers": [
         { "kind": "fill", "color": "@base" },
         { "kind": "slab", "count": 4, "colors": ["@light"], "width": [5, 8], "length": [8, 12], "angle": 0, "angleJitter": 10, "opacity": 0.3, "softness": 1.5 },
