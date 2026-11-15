@@ -16,6 +16,17 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **The owner's house replaces the NPC hut (2026-11-15):** "Add in the house I built to replace the NPC house" (the
+  owner's `dwell:house1`: 6 × 11 × 6, plank floor, stone brick walls, a 2 m west door, a torch inside, a hipped thatch
+  roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
+  0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
+  houses built as his house.
+- **Owner, 2026-11-15:** "Yes performance pass to get up to 60fps" — next local job (High at 60 fps on the M1 Air;
+  biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
+  High holding 60 fps on the M1 Air in forest, meadow and open ground.
+- **Owner, 2026-11-15:** "We need to increase the range when pasting so it doesn't overlap with your position" — the
+  paste preview sits far enough ahead that it never overlaps the player. Owner should see: a paste never placed
+  inside or on top of you.
 - **Owner answers (2026-11-15):** "Wooden shovel 6 hits. Warmer stone brick, door swing can come later. Axe swish should
   play once per swing (animated swing). Trees should get the force applied to them like it used to be so they fall again,
   towards the side with the least structure (post 3D bit mask change). Make small changes in this thread."

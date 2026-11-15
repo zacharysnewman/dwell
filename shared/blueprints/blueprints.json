@@ -50,6 +50,7 @@
     ]
   },
   "catalog": [
+    "dwell:house1",
     "dwell:bp_hut",
     "dwell:bp_wall",
     "dwell:bp_well",
@@ -82,14 +83,14 @@
             "turn": 0
           },
           {
-            "structure": "dwell:bp_hut",
+            "structure": "dwell:house1",
             "at": [-9, -2],
-            "turn": 1
+            "turn": 0
           },
           {
-            "structure": "dwell:bp_hut",
+            "structure": "dwell:house1",
             "at": [9, -2],
-            "turn": 3
+            "turn": 2
           },
           {
             "structure": "dwell:bp_watchtower",
