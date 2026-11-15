@@ -20,6 +20,7 @@ fn is_log(m: u16) -> bool {
 
 fn join_streaming(f: &mut Fixture, id: SessionId) {
     let w = f.join(id, &Client::new(id as u8));
+    start_with_axe(&mut f.server, id as u16);
     let mut v = Chunk::default();
     generate_flat_chunk(ChunkCoord::from_array(w.verification_chunk), &mut v);
     f.send(id, Message::WorldgenCheck(chunk_hash(&v)));

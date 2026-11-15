@@ -32,6 +32,8 @@ import {
   validateHand,
   measureHandle,
   validateProps,
+  validateDerive,
+  paintProp,
   paletteStops,
   resolveColor,
   rust,
@@ -51,6 +53,11 @@ const fixture = () =>
 test("the data validates and the generated tables are current", () => {
   validate(data(), palette, here);
   for (const [path, text] of generate()) {
+    // A derived prop's GLB (`derive`) is bytes: compared as bytes (a text diff of it is huge).
+    if (Buffer.isBuffer(text)) {
+      assert.ok(readFileSync(path).equals(text), `${path} is stale: run node shared/models/gen.mjs`);
+      continue;
+    }
     assert.equal(
       readFileSync(path, "utf8"),
       text,
@@ -711,4 +718,28 @@ test("every NPC colour part is a part of its model", () => {
   const none = structuredClone(creatures);
   none.creatures.find((c) => c.npc).model = "wolf";
   assert.throws(() => checkCreatureParts(none, models), /need a part map on model wolf/);
+});
+
+test("a derived prop is its source's GLB with the paint laid below its height: the stone shovel's stone blade", () => {
+  const p = props().props.stone_shovel;
+  assert.equal(p.derive.from, "wooden_shovel");
+  const wood = propSummary(readFileSync(join(here, props().props.wooden_shovel.glb)));
+  const stone = propSummary(readFileSync(join(here, p.glb)));
+  // The same shape; the blade's dark wood (8,6,11) gone, the stone grey there.
+  assert.deepEqual(stone.size, wood.size);
+  assert.ok(stone.palette.includes("101,93,93") && !wood.palette.includes("101,93,93"));
+  assert.ok(!stone.palette.includes("8,6,11"));
+  // By data alone: a fixture prop derived from another, painted below 0 m.
+  const f = fixtureProps();
+  const [src] = Object.keys(f.props);
+  const bad = (derive, re) => {
+    const g = fixtureProps();
+    g.props.copy = { ...g.props[src], derive };
+    assert.throws(() => validateDerive("copy", g.props.copy, g.props), re);
+  };
+  bad({ from: "nope", paint: [{ belowY: 0, color: "#000000" }] }, /derive\.from: nope is not an imported prop/);
+  bad({ from: src, paint: [] }, /derive\.paint is a non-empty list/);
+  bad({ from: src, paint: [{ belowY: 0, color: "grey" }] }, /paint\[0\]\.color is #rrggbb/);
+  const painted = paintProp(readFileSync(join(fixtures, f.props[src].glb)), [{ belowY: 0, color: "#ff0000" }]);
+  assert.ok(propSummary(painted).palette.includes("255,0,0"));
 });

@@ -211,7 +211,9 @@
     },
     {
       "name": "sand",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:sand_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "$drops": "Owner, 2026-11-14: \"Yeah sand should have sub chunks.\": a ½ m cell breaks into 8 sand clumps, as dirt into dirt clumps; 8 make sand again (shared/inventory recipes).",
+      "drops": [{ "item": "dwell:sand_clump", "count": 8 }],
       "support": "falls",
       "$settlesAs": "Owner, 2026-11-13: \"gravity blocks like sand settling ... shouldn't settle ramps away from other blocks they should transform into flat blocks\": a fallen sand ramp (its family falls too) settles as full sand.",
       "settlesAs": "full",
@@ -300,14 +302,10 @@
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
+      "$drops": "Owner, 2026-11-14: \"grass fiber should be a guaranteed drop, seeds will be 50%\" and \"Cutting grass that's taller than 1 gives +1 plant fiber each\": one fibre for each ½ m cell (a taller stand's cells go with the cell under them, each dropping its own), a seed at 50 %, at every stage; the gem from a full tuft as before.",
       "drops": [
-        { "item": "dwell:grass_fiber", "when": { "stage": ["3"] } },
-        { "item": "dwell:grass_fiber", "chance": 0.75, "when": { "stage": ["2"] } },
-        { "item": "dwell:grass_fiber", "chance": 0.5, "when": { "stage": ["1"] } },
-        { "item": "dwell:grass_fiber", "chance": 0.25, "when": { "stage": ["0"] } },
-        { "item": "dwell:grass_seed", "chance": 0.5, "when": { "stage": ["3"] } },
-        { "item": "dwell:grass_seed", "chance": 0.25, "when": { "stage": ["2"] } },
-        { "item": "dwell:grass_seed", "chance": 0.1, "when": { "stage": ["1"] } },
+        { "item": "dwell:grass_fiber" },
+        { "item": "dwell:grass_seed", "chance": 0.5 },
         { "chance": 0.125, "when": { "stage": ["3"] }, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
       ],
       "sound": "dwell:grass",

@@ -73,7 +73,8 @@ fn edit(fx: &mut Fixture, f: FaceFrame, action: BlockEditAction, local: [i32; 3]
             point: None,
         }),
     );
-    for _ in 0..3 {
+    // Past a held tool's contact (the starting shovel's, 0.26 s: the hit lands then).
+    for _ in 0..20 {
         fx.server.step();
     }
 }
@@ -292,16 +293,13 @@ impl MoveLocal for Fixture {
 }
 
 #[test]
-fn an_adventure_player_starts_with_an_axe_and_a_creative_one_with_nothing() {
-    // Owner (2026-11-08): "Adventure starts with an axe." (face-a-only: no face involved)
+fn an_adventure_player_starts_with_a_wooden_shovel_and_a_creative_one_with_nothing() {
+    // Owner (2026-11-14): "Perhaps you could start with a wooden shovel instead of an axe since
+    // dirt drops rocks." (2026-11-08 it was an axe.) (face-a-only: no face involved)
     let adv = scene(FaceFrame::A, "adventure");
-    assert_eq!(
-        adv.server
-            .inventory_of(1)
-            .unwrap()
-            .count_of("dwell:stone_axe"),
-        1
-    );
+    let inv = adv.server.inventory_of(1).unwrap();
+    assert_eq!(inv.count_of("dwell:wooden_shovel"), 1);
+    assert_eq!(inv.count_of("dwell:stone_axe"), 0, "no axe: it is combined");
     let cre = scene(FaceFrame::A, "creative");
     assert!(cre.server.inventory_of(1).unwrap().is_empty());
 }
@@ -672,8 +670,8 @@ fn the_server_combines_pieces_into_slabs_and_stone_tools() {
     assert_eq!(count(&fx, "dwell:stone_pickaxe"), 1);
     assert_eq!(
         count(&fx, "dwell:stone_axe"),
-        2,
-        "the starting axe and the made one"
+        1,
+        "the made one (none to start)"
     );
     assert_eq!(count(&fx, "dwell:stick"), 0);
     assert_eq!(count(&fx, "dwell:rock_shard"), 0);
@@ -684,8 +682,254 @@ fn the_server_combines_pieces_into_slabs_and_stone_tools() {
         Message::InventoryAction(InventoryAction::Combine { recipe: 7 }),
     );
     step(&mut fx, 2);
-    assert_eq!(count(&fx, "dwell:stone_axe"), 2);
+    assert_eq!(count(&fx, "dwell:stone_axe"), 1);
 }
+
+#[test]
+fn the_server_combines_the_shovels_and_sand_clumps_into_sand() {
+    // face-a-only: inventories have no face.
+    // Owner, 2026-11-14: "Shovel should get a 4 wood sticks recipe 2 grass fiber." and the stone
+    // shovel "just make it 2 stone like the others"; "sand should have sub chunks. And let's leave
+    // them all at 8 actually."
+    let mut fx = scene(FaceFrame::A, "adventure");
+    let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
+    fx.server.give(1, "dwell:stick", 3);
+    fx.server.give(1, "dwell:grass_fiber", 2);
+    combine(&mut fx, "dwell:wooden_shovel");
+    assert_eq!(
+        count(&fx, "dwell:wooden_shovel"),
+        1,
+        "refused: 3 sticks (the start's only)"
+    );
+    fx.server.give(1, "dwell:stick", 1);
+    combine(&mut fx, "dwell:wooden_shovel");
+    assert_eq!(
+        count(&fx, "dwell:wooden_shovel"),
+        2,
+        "4 sticks and 2 fibres"
+    );
+    assert_eq!(
+        (count(&fx, "dwell:stick"), count(&fx, "dwell:grass_fiber")),
+        (0, 0)
+    );
+    fx.server.give(1, "dwell:stick", 2);
+    fx.server.give(1, "dwell:rock_shard", 2);
+    fx.server.give(1, "dwell:grass_fiber", 2);
+    combine(&mut fx, "dwell:stone_shovel");
+    assert_eq!(count(&fx, "dwell:stone_shovel"), 1);
+    assert_eq!(
+        count(&fx, "dwell:rock_shard"),
+        0,
+        "2 shards, as the stone axe and pickaxe"
+    );
+    fx.server.give(1, "dwell:sand_clump", 7);
+    combine(&mut fx, "dwell:sand_slab");
+    assert_eq!(count(&fx, "dwell:sand"), 0, "refused: 7 clumps");
+    fx.server.give(1, "dwell:sand_clump", 1);
+    combine(&mut fx, "dwell:sand_slab");
+    assert_eq!(
+        (count(&fx, "dwell:sand"), count(&fx, "dwell:sand_clump")),
+        (1, 0)
+    );
+}
+
+dwell_world::both_faces!(
+    /// Sand breaks into 8 sand clumps, as dirt into dirt clumps (owner, 2026-11-14).
+    fn breaking_sand_in_adventure_drops_8_sand_clumps(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        set_local(&mut fx, f, [2, BASE - 1, 0], "dwell:sand");
+        edit(&mut fx, f, BlockEditAction::Break, [2, BASE - 1, 0], 0);
+        assert_eq!(loose_count(&fx, "dwell:sand_clump"), 8);
+    }
+);
+
+// --- What rests on a destroyed block drops with it (WORK_QUEUE item 58, BUGS.md #178) ---
+// Owner, 2026-11-14: "When you destroy a block with grass, rock, sticks on it, those should drop
+// too." and "Essentially a general rule of blocks or items sitting on a block should be dropped
+// when that block is destroyed." One rule however the block goes (a break, a region's clearing, a
+// blast, a fall): a block that needs the cell under it (`needsSupport`, `placeOn`) breaks and drops
+// its drops, up the column, and a ground item on its top is knocked loose.
+
+fn set_local(fx: &mut Fixture, f: FaceFrame, local: [i32; 3], state: &str) {
+    let [x, y, z] = f.cell(local);
+    let s = f.state(dwell_blocks::parse_state(state).unwrap_or_else(|e| panic!("{state}: {e}")));
+    fx.server.world().set_voxel(x, y, z, s);
+}
+
+fn loose_count(fx: &Fixture, item: &str) -> u32 {
+    fx.server
+        .loose_items()
+        .iter()
+        .filter(|it| it.stack.item == item)
+        .map(|it| u32::from(it.stack.count))
+        .sum()
+}
+
+fn local_state(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) -> u16 {
+    let [x, y, z] = f.cell(local);
+    fx.server.world().get_voxel(x, y, z)
+}
+
+/// Clears one cell (face-local) with a region fill of air, as a drag's or a tool's region does.
+fn clear_region(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) {
+    fx.send(
+        1,
+        Message::RegionEdit(RegionEdit {
+            op: RegionEditOp::Fill,
+            min: f.cell(local),
+            size: [1, 1, 1],
+            material: 0,
+            from: 0,
+            cells: Vec::new(),
+        }),
+    );
+    step(fx, 3);
+}
+
+/// `test:moss` (shared/blocks/fixtures), registered from its data as a server mod would: a block
+/// that stands on the cell under it, and on itself, added by data alone.
+fn moss() -> u16 {
+    static ID: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    *ID.get_or_init(|| {
+        dwell_blocks::state("test:moss").unwrap_or_else(|| {
+            let mut row = *dwell_blocks::fixture::STATES
+                .iter()
+                .find(|s| s.name == "test:moss")
+                .expect("the fixture has test:moss");
+            row.shape_index = dwell_blocks::info(require("dwell:tall_grass")).shape_index;
+            dwell_blocks::register(
+                dwell_blocks::Origin::Server,
+                dwell_blocks::NewBlock {
+                    name: "test:moss".into(),
+                    properties: Vec::new(),
+                    states: vec![row],
+                },
+            )
+            .expect("registers")
+        })
+    })
+}
+
+dwell_world::both_faces!(
+    /// Breaking a block drops what stands on it: tall grass (its fibre), a torch (itself, both its
+    /// cells gone) and a sapling, each where it stood; nothing is left standing on air.
+    fn the_blocks_standing_on_a_broken_block_drop_with_it(f: FaceFrame) {
+        let mut fx = scene(f, "adventure");
+        set_local(&mut fx, f, [2, BASE, 0], "dwell:tall_grass[stage=3]");
+        set_local(&mut fx, f, [-2, BASE - 1, 2], "dwell:grass");
+        set_local(&mut fx, f, [-2, BASE, 2], "dwell:oak_sapling");
+        set_local(&mut fx, f, [0, BASE, -3], "dwell:torch");
+        set_local(&mut fx, f, [0, BASE + 1, -3], "dwell:torch_upper");
+        edit(&mut fx, f, BlockEditAction::Break, [2, BASE - 1, 0], 0);
+        edit(&mut fx, f, BlockEditAction::Break, [-2, BASE - 1, 2], 0);
+        edit(&mut fx, f, BlockEditAction::Break, [0, BASE - 1, -3], 0);
+        let air = f.state(0);
+        for c in [
+            [2, BASE, 0],
+            [-2, BASE, 2],
+            [0, BASE, -3],
+            [0, BASE + 1, -3],
+        ] {
+            assert_eq!(local_state(&mut fx, f, c), air, "{c:?} cleared");
+        }
+        assert!(
+            loose_count(&fx, "dwell:grass_fiber") >= 1,
+            "the tuft's fibre"
+        );
+        assert_eq!(loose_count(&fx, "dwell:oak_sapling"), 1, "the sapling");
+        assert_eq!(loose_count(&fx, "dwell:torch"), 1, "the torch, once");
+    }
+);
+
+dwell_world::both_faces!(
+    /// A block added by data alone (`test:moss`: `needsSupport: below`, standing on itself too)
+    /// gets the rule, up its column: three of it on a stone drop three when the stone goes, by a
+    /// break or by a region's clearing.
+    fn a_data_only_block_and_a_column_of_it_drop_when_their_ground_goes(f: FaceFrame) {
+        let moss = moss();
+        for by_region in [false, true] {
+            let mut fx = scene(f, "adventure");
+            for r in 0..3 {
+                let [x, y, z] = f.cell([1, BASE + r, 2]);
+                fx.server.world().set_voxel(x, y, z, f.state(moss));
+            }
+            if by_region {
+                clear_region(&mut fx, f, [1, BASE - 1, 2]);
+            } else {
+                edit(&mut fx, f, BlockEditAction::Break, [1, BASE - 1, 2], 0);
+            }
+            for r in 0..3 {
+                assert_eq!(
+                    local_state(&mut fx, f, [1, BASE + r, 2]),
+                    f.state(0),
+                    "region {by_region}: moss {r} cleared"
+                );
+            }
+            assert_eq!(
+                loose_count(&fx, "test:moss"),
+                3,
+                "region {by_region}: the column dropped cell by cell; ground {}, loose {:?}",
+                local_state(&mut fx, f, [1, BASE - 1, 2]),
+                fx.server.loose_items()
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// A region's clearing drops what stood on what it cleared: tall grass's fibre, and the
+    /// ground rock lying on it knocked loose (red before: the tuft vanished, the rock floated).
+    fn a_regions_clearing_drops_what_stood_on_it(f: FaceFrame) {
+        let mut fx = ground_scene(f, "adventure");
+        let rocks = wall_and_rocks(&mut fx, f);
+        let rock = f.cell(rocks[0]);
+        set_local(&mut fx, f, [-2, BASE, -2], "dwell:tall_grass[stage=3]");
+        set_local(&mut fx, f, [-2, BASE - 1, -2], "dwell:grass");
+        clear_region(&mut fx, f, [-2, BASE - 1, -2]);
+        assert_eq!(local_state(&mut fx, f, [-2, BASE, -2]), f.state(0));
+        assert!(
+            loose_count(&fx, "dwell:grass_fiber") >= 1,
+            "the tuft's fibre"
+        );
+        let before = loose_count(&fx, "dwell:rock");
+        clear_region(&mut fx, f, [rock[0], rock[1] - 1, rock[2]]);
+        assert!(
+            fx.server.ground_item_at(rocks[0]).is_none(),
+            "not left floating"
+        );
+        assert_eq!(loose_count(&fx, "dwell:rock"), before + 1, "knocked loose");
+    }
+);
+
+dwell_world::both_faces!(
+    /// A blast that takes the ground under a ground rock knocks it loose (red before: it floated
+    /// over the crater).
+    fn a_blast_under_a_ground_rock_knocks_it_loose(f: FaceFrame) {
+        use dwell_world::explosives::{EXPLOSIVES, lit_state};
+        let mut fx = ground_scene(f, "adventure");
+        let rocks = wall_and_rocks(&mut fx, f);
+        let rock = f.cell(rocks[0]);
+        let (i, e) = EXPLOSIVES
+            .iter()
+            .enumerate()
+            .find(|(_, e)| e.name == "dwell:dynamite")
+            .expect("dynamite");
+        let under = f.cell([rock[0], rock[1] - 1, rock[2]]);
+        fx.server.world().set_voxel(
+            under[0],
+            under[1],
+            under[2],
+            f.state(lit_state(e).expect("lit")),
+        );
+        fx.server.light_fuse(under, i, 0.0);
+        step(&mut fx, 5);
+        assert!(
+            fx.server.ground_item_at(rocks[0]).is_none(),
+            "not left floating"
+        );
+        assert!(loose_count(&fx, "dwell:rock") >= 1, "knocked loose");
+    }
+);
 
 #[test]
 fn the_town_blocks_combine_from_wood_shards_sticks_and_fibre() {

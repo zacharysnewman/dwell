@@ -1,5 +1,5 @@
 {
-  "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres) or, with `look`, the item's one shaped look used everywhere it is drawn (in the hand, on the hotbar and backpack, loose, and lying on the ground as a ground item of shared/ground): `shape` rod or lump, `size` [x, y, z] metres, the `texture` of a block's side, tinted by `color`, or instead `model`, a prop of shared/models/props.json (its own mesh and palette colours; ADR 0070 §8; the stone pickaxe proves the path and does nothing yet), optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
+  "$comment": "Inventories and loose items (docs/adr/0066-inventory-and-drops.md). Every block is an item of its own name; `items` lists the items that are not blocks (prototype content, ARCHITECTURE.md §6.1): a label, and a simple look for the hotbar and a loose item (`color`, `size` in metres) or, with `look`, the item's one shaped look used everywhere it is drawn (in the hand, on the hotbar and backpack, loose, and lying on the ground as a ground item of shared/ground): `shape` rod, lump, cluster (seeds), shard or strands (fibre: thin blades splayed flat), `size` [x, y, z] metres, the `texture` of a block's side, tinted by `color`, or instead `model`, a prop of shared/models/props.json (its own mesh and palette colours; ADR 0070 §8; the stone pickaxe proves the path and does nothing yet), every item has one (a missing look fails the generator: it was drawn as a block, BUGS.md #179), optionally `value` (currency: picked up into the wallet), and optionally `stack` (at most stackSize). What a block drops is its `drops` in shared/blocks/*.json. Run `node shared/inventory/gen.mjs` after editing (it checks every block's drops too); CI fails if the generated files are stale.",
   "formatVersion": 1,
   "hotbarSlots": 6,
   "backpackSlots": 30,
@@ -30,8 +30,8 @@
       "size": 0.12,
       "look": { "shape": "cluster", "size": [0.12, 0.05, 0.11], "texture": "dwell:sand", "color": "#f4dc78" }
     },
-    { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1 },
-    { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5 },
+    { "name": "dwell:gem", "label": "Gem", "color": "#4fb07a", "size": 0.14, "value": 1, "look": { "shape": "shard", "size": [0.09, 0.07, 0.07], "texture": "dwell:stone", "color": "#7fe0a6" } },
+    { "name": "dwell:gem_large", "label": "Large gem", "color": "#4f7fd0", "size": 0.2, "value": 5, "look": { "shape": "shard", "size": [0.13, 0.1, 0.1], "texture": "dwell:stone", "color": "#86aef0" } },
     {
       "name": "dwell:wood",
       "label": "Wood chunk",
@@ -54,6 +54,13 @@
       "look": { "shape": "shard", "size": [0.18, 0.045, 0.06], "texture": "dwell:stone", "color": "#f0ece6" }
     },
     {
+      "name": "dwell:sand_clump",
+      "label": "Sand clump",
+      "color": "#d8bf8a",
+      "size": 0.1,
+      "look": { "shape": "lump", "size": [0.09, 0.06, 0.08], "texture": "dwell:sand", "color": "#f2e8d8" }
+    },
+    {
       "name": "dwell:dirt_clump",
       "label": "Dirt clump",
       "color": "#8a5a3a",
@@ -65,7 +72,7 @@
       "label": "Grass fiber",
       "color": "#9fbf4a",
       "size": 0.12,
-      "look": { "shape": "cluster", "size": [0.14, 0.04, 0.1], "texture": "dwell:sand", "color": "#b8e070" }
+      "look": { "shape": "strands", "size": [0.2, 0.03, 0.08], "texture": "dwell:sand", "color": "#c8d27a" }
     },
     { "name": "dwell:stone_axe", "label": "Stone axe", "color": "#7d7468", "size": 0.6, "stack": 1, "look": { "model": "stone_axes" } },
     { "name": "dwell:metal_axe", "label": "Metal axe", "color": "#8c8f96", "size": 0.65, "stack": 1, "look": { "model": "metal_axe" } },
@@ -73,14 +80,16 @@
     { "name": "dwell:stone_pickaxe", "label": "Stone pickaxe", "color": "#8a7a66", "size": 0.6, "stack": 1, "look": { "model": "stone_pickaxes" } },
     { "name": "dwell:metal_pickaxe", "label": "Metal pickaxe", "color": "#8c8f96", "size": 0.7, "stack": 1, "look": { "model": "metal_pickaxes" } },
     { "name": "dwell:wooden_shovel", "label": "Wooden shovel", "color": "#8a6440", "size": 1.0, "stack": 1, "look": { "model": "wooden_shovel" } },
+    { "name": "dwell:stone_shovel", "label": "Stone shovel", "color": "#7d7468", "size": 1.0, "stack": 1, "look": { "model": "stone_shovel" } },
     { "name": "dwell:metal_shovel", "label": "Metal shovel", "color": "#8c8f96", "size": 1.0, "stack": 1, "look": { "model": "metal_shovel" } }
   ],
   "$wallets": "Currency items (with a `value`) go to the wallet, not a slot: a total up to its capacity (owner, 2026-11-08: the starting wallet holds 99; bigger wallets later).",
   "wallets": [{ "name": "dwell:pouch", "label": "Pouch", "capacity": 99 }],
-  "$recipes": "Combining (owner, 2026-11-11): each recipe's `inputs` (items and counts, taken from anywhere in the inventory) make its `output`; applied by the server (InventoryAction::Combine, sent only to a server whose Inventory has inventory_flags::COMBINE), listed in the backpack's Combine section where items are used. `name` names it on the wire (unique); `label` (optional) names the Combine button, else the output item's label (a slab's item is its block, labelled \"Stone\": the recipe says \"Stone slab\"). A slab is a block's own item: the ½ m piece it places. The stone axe and the stone pickaxe share their inputs (the player picks which).",
+  "$recipes": "Combining (owner, 2026-11-11): each recipe's `inputs` (items and counts, taken from anywhere in the inventory) make its `output`; applied by the server (InventoryAction::Combine, sent only to a server whose Inventory has inventory_flags::COMBINE), listed in the backpack's Combine section where items are used. `name` names it on the wire (unique); `label` (optional) names the Combine button, else the output item's label (a slab's item is its block, labelled \"Stone\": the recipe says \"Stone slab\"). A slab is a block's own item: the ½ m piece it places. The stone axe, the stone pickaxe and the stone shovel share their inputs (the player picks which); the wooden shovel is 4 sticks and 2 grass fibre (owner, 2026-11-14). Adventure starts with a wooden shovel (owner, 2026-11-14: \"Perhaps you could start with a wooden shovel instead of an axe since dirt drops rocks.\").",
   "recipes": [
     { "name": "dwell:stone_slab", "label": "Stone slab", "inputs": [{ "item": "dwell:rock_shard", "count": 8 }], "output": { "item": "dwell:stone", "count": 1 } },
     { "name": "dwell:dirt_slab", "label": "Dirt slab", "inputs": [{ "item": "dwell:dirt_clump", "count": 8 }], "output": { "item": "dwell:dirt", "count": 1 } },
+    { "name": "dwell:sand_slab", "label": "Sand slab", "inputs": [{ "item": "dwell:sand_clump", "count": 8 }], "output": { "item": "dwell:sand", "count": 1 } },
     { "name": "dwell:log_slab", "label": "Log slab", "inputs": [{ "item": "dwell:wood", "count": 8 }], "output": { "item": "dwell:log", "count": 1 } },
     { "name": "dwell:planks_slab", "label": "Planks", "inputs": [{ "item": "dwell:wood", "count": 8 }], "output": { "item": "dwell:planks", "count": 1 } },
     { "name": "dwell:stone_brick_slab", "label": "Stone brick", "inputs": [{ "item": "dwell:rock_shard", "count": 8 }], "output": { "item": "dwell:stone_brick", "count": 1 } },
@@ -94,8 +103,18 @@
       "name": "dwell:stone_pickaxe",
       "inputs": [{ "item": "dwell:stick", "count": 2 }, { "item": "dwell:rock_shard", "count": 2 }, { "item": "dwell:grass_fiber", "count": 2 }],
       "output": { "item": "dwell:stone_pickaxe", "count": 1 }
+    },
+    {
+      "name": "dwell:wooden_shovel",
+      "inputs": [{ "item": "dwell:stick", "count": 4 }, { "item": "dwell:grass_fiber", "count": 2 }],
+      "output": { "item": "dwell:wooden_shovel", "count": 1 }
+    },
+    {
+      "name": "dwell:stone_shovel",
+      "inputs": [{ "item": "dwell:stick", "count": 2 }, { "item": "dwell:rock_shard", "count": 2 }, { "item": "dwell:grass_fiber", "count": 2 }],
+      "output": { "item": "dwell:stone_shovel", "count": 1 }
     }
   ],
-  "startingItems": [{ "item": "dwell:stone_axe", "count": 1 }],
+  "startingItems": [{ "item": "dwell:wooden_shovel", "count": 1 }],
   "startingWallet": "dwell:pouch"
 }

@@ -33,7 +33,7 @@ const TOP_FIELDS = [
 const ITEM_FIELDS = ['name', 'label', 'color', 'size', 'stack', 'value', 'look'];
 const LOOK_FIELDS = ['shape', 'size', 'texture', 'color'];
 /** The looks' shapes (a fixed vocabulary: `dwell_protocol::inventory::LookShape`). */
-export const LOOK_SHAPES = ['rod', 'lump', 'cluster', 'shard'];
+export const LOOK_SHAPES = ['rod', 'lump', 'cluster', 'shard', 'strands'];
 /** A model look's shape (`look: { model }`): not written in the data, implied by `model`. */
 /** A look shape's Rust variant (`rod` → `Rod`). */
 export const lookVariant = (s) => s[0].toUpperCase() + s.slice(1);
@@ -103,9 +103,12 @@ export function validateInventory(data, namespaces) {
     if (it.value !== undefined && (!isInt(it.value) || it.value < 1 || it.value > 9999)) {
       fail(`${at}: value must be a whole number in [1, 9999] (a currency item's worth in the wallet)`);
     }
-    // `look`: the item's one look (ADR 0071's rod or lump, or a cluster of seeds), drawn the same in the hand, on the
+    // `look`: the item's one look (ADR 0071's rod or lump, a cluster of seeds, a shard, strands of fibre), drawn the same in the hand, on the
     // hotbar, loose and lying on the ground (shared/ground names the item, not a look of its own).
     let look = null;
+    // Every item draws its own look: without one a loose item fell back to a small stone block in
+    // its colour (BUGS.md #179; owner, 2026-11-14: "Plant fiber looks like a block for the drop.").
+    if (it.look === undefined) fail(`${at}: needs a \`look\` (a shape or a model): an item without one is drawn as a block`);
     if (it.look !== undefined) {
       const l = it.look;
       if (typeof l !== 'object' || l === null || Array.isArray(l)) fail(`${at}.look must be an object`);

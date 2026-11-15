@@ -210,3 +210,18 @@ pub fn flat() -> ServerConfig {
 pub fn coord_of(m: &ChunkData) -> ChunkCoord {
     ChunkCoord::from_array(m.coord)
 }
+
+/// Player `player_id` holding only a stone axe in its first slot: every adventure player's start
+/// before the wooden shovel (owner, 2026-11-14), for the tests about the axe.
+pub fn start_with_axe(server: &mut dwell_sim::server::Server, player_id: u16) {
+    // Only an adventure start (creative's inventory is empty).
+    let Some(now) = server.inventory_of(player_id) else {
+        return;
+    };
+    if now.count_of("dwell:wooden_shovel") == 0 {
+        return;
+    }
+    let mut inv = dwell_protocol::inventory::Inventory::default();
+    inv.add("dwell:stone_axe", 1);
+    server.set_inventory(player_id, inv);
+}

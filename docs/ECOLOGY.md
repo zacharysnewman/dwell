@@ -534,9 +534,11 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   sprout over the rule's ground in a world that grows grass (`Server::eaten_to`, `Rule::eaten`: the
   roots stay and it regrows stage by stage), air as before otherwise. **Broken by hand** it is
   removed, as before (a player clears grass to build), and regrows from the roots as a sprout where
-  generated grass stood. **Drops by stage**: the drop rules' `when` (ADR 0066 amended): fiber 25 %,
-  50 %, 75 %, 100 % and seed 0, 10 %, 25 %, 50 % from a sprout to full; the gem chance only at full
-  height (full drops exactly as before). **Generation** places each tuft at its column's top stage
+  generated grass stood. **Drops** (owner, 2026-11-14: "grass fiber should be a guaranteed drop, seeds will be 50%"; "Cutting
+  grass that's taller than 1 gives +1 plant fiber each"): one grass fibre for each ½ m cell of the stand
+  (each cell drops its own as it goes with the cell under it), a seed at 50 %, at every stage; the gem
+  chance only at full height (the drop rules' `when`, ADR 0066 amended). Until 2026-11-14 they went by
+  stage (fibre 25–100 %, seed 0–50 %). **Generation** places each tuft at its column's top stage
   (`grass::generated_tuft`, the decoration's undergrowth factor as the share): the default world (one
   biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry (the starter: a
   change to the terrain its seed generates, re-pinned, for the owner's next line). Full
@@ -548,7 +550,10 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   meadows don't change under their players; a world keeps its own after. Not a compatibility change:
   worldgen, the goldens and the protocol are unchanged (growth writes ordinary block edits).
 - **Not yet**: a setting in the world's menu; grass on a chunk's edge cells seeded only from loaded
-  neighbours.
+  neighbours; **grass up to 2 m** (owner, 2026-11-14: "I'm not seeing grass taller than 1 though is it
+  pretty slow?" → "Oh it's supposed to be growing up to 2m"): a column of up to four ½ m cells grown a cell
+  at a time once the one below is full, capped by the climate's share (data in `shared/worldgen/grass.json`),
+  cut whole above the cell cut (WORK_QUEUE item 58, the next change).
 
 Tests: `cargo test -p dwell-worldgen --test grass` (both faces): a meadow spreads over days toward
 `maxDensity` and never onto an infertile column; a dry stretch (share 0.1) stays sparse and share 0

@@ -555,8 +555,13 @@ mod tests {
             hits_to_break("dwell:stone", Some("dwell:metal_shovel")),
             None
         );
+        // Owner, 2026-11-14: the stone shovel digs faster than the wooden one (its `wood` tier).
         assert_eq!(
             hits_to_break("dwell:dirt", Some("dwell:wooden_shovel")),
+            Some(6)
+        );
+        assert_eq!(
+            hits_to_break("dwell:dirt", Some("dwell:stone_shovel")),
             Some(5)
         );
         assert_eq!(
@@ -704,7 +709,8 @@ mod tests {
     #[test]
     fn a_bite_is_half_the_blocks_volume_over_its_hits() {
         let cases = [
-            ("dwell:dirt", Some("dwell:wooden_shovel"), 5),
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 6),
+            ("dwell:dirt", Some("dwell:stone_shovel"), 5),
             ("dwell:dirt", None, 11),
             ("dwell:stone", Some("dwell:stone_pickaxe"), 5),
             ("dwell:stone", Some("dwell:metal_pickaxe"), 3),

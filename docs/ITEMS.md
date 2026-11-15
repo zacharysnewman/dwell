@@ -215,7 +215,7 @@ prediction alike.
 |---|---|
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
-| `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
+| `needsSupport` | `below`: stands on the cell under it and goes with it, dropping its drops however that cell goes — a break, a region, a blast, a fall (tall grass, torch; BUGS.md #178); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
 | `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
@@ -445,12 +445,15 @@ placements overlay shows the ground items in their looks' colours beside the str
   creative has no backpack, everything is in its catalogue). A button names the output by the
   recipe's optional `label` (the slabs: "Stone slab", "Dirt slab", "Log slab": a slab's item is its
   block, labelled "Stone"), else by the output item's label. Recipes: 8 rock shards → stone (the ½ m
-  slab), 8 dirt clumps → dirt, 8 wood chunks → log; 2 sticks + 2 rock shards + 2 grass fibers → a stone
-  axe, or the same inputs → a stone pickaxe (the player picks).
+  slab), 8 dirt clumps → dirt, 8 wood chunks → log, 8 sand clumps → sand (2026-11-14: sand breaks into 8
+  `dwell:sand_clump`, as dirt into dirt clumps; "let's leave them all at 8"); 2 sticks + 2 rock shards + 2
+  grass fibers → a stone axe, a stone pickaxe or a stone shovel (the player picks); 4 sticks + 2 grass fibers
+  → a wooden shovel (owner, 2026-11-14). Adventure starts with a wooden shovel (`startingItems`; owner,
+  2026-11-14: "start with a wooden shovel instead of an axe since dirt drops rocks").
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
   `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
   validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe, stone
-  pickaxe and wooden shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
+  pickaxe, wooden shovel and stone shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
   "have double durability"; they also break in about half the hits with pieces twice the size,
   BLOCK_DAMAGE.md §9). A hit that counts uses one: a chop, or a block
   break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is

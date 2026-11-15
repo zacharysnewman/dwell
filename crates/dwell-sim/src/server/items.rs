@@ -359,6 +359,19 @@ impl Server {
         s.inventory.add(item, count)
     }
 
+    /// Replaces a joined player's inventory (tests and tools: a scene that starts with the stone
+    /// axe, as every player did before the wooden shovel, WORK_QUEUE item 58), sent to its client.
+    pub fn set_inventory(&mut self, player_id: u16, inventory: Inventory) {
+        if let Some(s) = self
+            .sessions
+            .values_mut()
+            .find(|s| s.joined() && s.player_id == player_id)
+        {
+            s.inventory = inventory;
+            s.inventory_dirty = true;
+        }
+    }
+
     /// The loose items lying in the world.
     pub fn loose_items(&self) -> &[crate::loose_items::LooseItem] {
         &self.loose.items
@@ -393,9 +406,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_broken_tufts_drops_follow_its_growth_stage() {
+    fn a_broken_tuft_drops_one_fibre_a_cell_and_a_seed_at_half_at_every_stage() {
         // face-a-only: block states and drop rules, no world.
-        // docs/ECOLOGY.md §10: the rules that hold for a state by its `stage` (`when`).
+        // Owner, 2026-11-14: "grass fiber should be a guaranteed drop, seeds will be 50%" and
+        // "Cutting grass that's taller than 1 gives +1 plant fiber each": every ½ m cell of a stand
+        // drops one fibre (a taller stand's cells each go with the cell under them, dropping their
+        // own), at every stage; a seed at 50 %; the gem only from a full tuft, as before.
         let grass = dwell_blocks::require("dwell:tall_grass");
         let d = inv::drops_of("dwell:tall_grass").unwrap();
         let stage = |v| dwell_blocks::with_property(grass, "stage", v).unwrap();
@@ -406,17 +422,16 @@ mod tests {
                 .map(|r| r.chance)
                 .sum()
         };
-        // The default (full, as placed or saved before stages) drops as before.
-        assert_eq!(chance(grass, "dwell:grass_fiber"), 1.0);
-        assert_eq!(chance(grass, "dwell:grass_seed"), 0.5);
-        assert_eq!(certain_drops_of(grass), vec![("dwell:grass_fiber", 1)]);
-        assert!(
-            certain_drops_of(stage("0")).is_empty(),
-            "a sprout: nothing certain"
-        );
-        for item in ["dwell:grass_fiber", "dwell:grass_seed"] {
-            let by = ["0", "1", "2", "3"].map(|v| chance(stage(v), item));
-            assert!(by.windows(2).all(|w| w[0] < w[1]), "{item}: {by:?}");
+        for v in ["0", "1", "2", "3"] {
+            let s = stage(v);
+            assert_eq!(
+                certain_drops_of(s),
+                vec![("dwell:grass_fiber", 1)],
+                "stage {v}"
+            );
+            assert_eq!(chance(s, "dwell:grass_seed"), 0.5, "stage {v}");
+            let gem = chance(s, "dwell:gem");
+            assert_eq!(gem, if v == "3" { 0.125 } else { 0.0 }, "stage {v}");
         }
     }
 }

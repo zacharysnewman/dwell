@@ -51,6 +51,12 @@
       "sideUnder": { "dwell:stone": "grassSide" }
     },
     {
+      "$comment": "A plant that stands on the block under it by data alone (`needsSupport: below`, WORK_QUEUE item 58): destroying that block breaks it and drops it (it lists no `drops`: itself), as tall grass or a torch; it grows on itself too (`placeOn`), so a column of it drops cell by cell.",
+      "name": "moss", "density": 100, "shape": "empty", "look": "cross", "render": "cutout", "needsSupport": "below",
+      "placeOn": ["dwell:stone", "dwell:dirt", "dwell:grass", "test:moss"],
+      "cross": { "height": 0.3 }, "color": "#4a7a3a", "textures": "tallGrass"
+    },
+    {
       "$comment": "A cross plant outlined by data alone (`outline: true`; the cross default is off, docs/ART_DIRECTION.md §7.4).",
       "name": "reed", "density": 100, "shape": "empty", "look": "cross", "render": "cutout", "outline": true,
       "cross": { "height": 1.0, "quads": 3, "sitOnSupport": false }, "color": "#6a8a3a", "textures": "tallGrass"

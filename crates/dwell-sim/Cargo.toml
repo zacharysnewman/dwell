@@ -23,6 +23,8 @@ serde_json = "1"
 getrandom = "0.3"
 
 [dev-dependencies]
+# A block added by data alone (shared/blocks/fixtures: `test:moss`) in the support-drop tests.
+dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
 dwell-game = { path = "../dwell-game" }
 ed25519-dalek = "2"
 

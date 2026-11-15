@@ -166,6 +166,9 @@ struct TickChanges {
     index: HashMap<ChunkCoord, (usize, HashMap<u16, usize>)>,
     /// Each changed cell's state before its first change (for water flow, docs/WATER_FLOW.md).
     before: Vec<([i32; 3], u16)>,
+    /// The attached blocks (block data `needsSupport`, `placeOn`) these writes removed with what
+    /// held them, each cell with what was there: they drop as if broken (WORK_QUEUE item 58).
+    attached: Vec<([i32; 3], u16)>,
     /// Water's own writes: not told to water again.
     water: bool,
     /// Lava's own writes: not told to the lava fields again (`Lava::touch`).
@@ -195,6 +198,7 @@ impl TickChanges {
             }
             self.set(world, at, m);
         }
+        self.attached.extend_from_slice(&removed);
         removed
     }
 
@@ -3391,7 +3395,6 @@ impl Server {
             }
             self.drop_sapling(cell, dwell_world::centre_of_cell(cell));
         }
-        self.knock_ground(&under_ground);
         // An explosive lit by an edit (a torch held against it) starts its fuse (docs/EXPLOSIVES.md).
         for &c in &edited {
             let m = self.world.get_voxel_if_loaded(c);
@@ -3443,10 +3446,24 @@ impl Server {
         let TickChanges {
             chunks: mut changed,
             before,
+            attached,
             water,
             lava,
             ..
         } = changes;
+        // What rested on a destroyed block goes with it, however it went (a break, a region, a
+        // blast, a fall into a piece, a felling; owner, 2026-11-14: "a general rule of blocks or
+        // items sitting on a block should be dropped when that block is destroyed"): the attached
+        // blocks the writes removed drop their drops, and a ground item on a cell that is no
+        // longer solid is knocked loose (WORK_QUEUE item 58, BUGS.md #178).
+        let lost: Vec<([i32; 3], u16)> = before
+            .iter()
+            .filter(|&&(c, was)| {
+                let now = self.world.get_voxel_if_loaded(c);
+                was != now && !info(now).solid
+            })
+            .copied()
+            .collect();
         // The lava fields read an edited column's bed and water again (a dug channel, poured water).
         if !lava && !self.lava.is_empty() {
             for &(cell, _) in &before {
@@ -3531,6 +3548,8 @@ impl Server {
                 self.send_reliable(id, &Message::VoxelModification(m), Channel::World);
             }
         }
+        self.drop_attached(&attached);
+        self.knock_ground(&lost);
     }
 
     /// Detaches what the cells `changed` left without support (docs/FELLING.md §2): the pieces'
@@ -3564,7 +3583,6 @@ impl Server {
             &mut |world, cell, m| removed.extend(collapse.set_and_unsupport(world, cell, m)),
         );
         self.broadcast_changes(collapse, VoxelModificationReason::Collapse);
-        self.drop_attached(&removed);
         for i in new {
             let m = self.spawn_message(i);
             self.broadcast_world(&m);
@@ -3773,7 +3791,6 @@ impl Server {
         }
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Explosion);
-        self.drop_attached(&removed);
         // The water round it kicked outward (docs/EXPLOSIVES.md §3.5), after the cells it cleared,
         // in the same batch: the grid's own law carries the wave to the banks and back.
         if e.wave_impulse > 0.0 && e.wave_reach_m > 0.0 {

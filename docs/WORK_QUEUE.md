@@ -3401,6 +3401,53 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
    seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
 
+58. **Adventure's start: a wooden shovel, shovel recipes, and what rests on a block drops with it** (owner 2026-11-14,
+   through the orchestrator; branch `claude/adventure-start`).
+   (a) **"Perhaps you could start with a wooden shovel instead of an axe since dirt drops rocks."** Adventure's
+   starting item (`shared/inventory/inventory.json` `startingItems`) is `dwell:wooden_shovel`, not `dwell:stone_axe`
+   (the stone axe is combined from 2 sticks, 2 rock shards and 2 grass fibre).
+   **Owner should see:** a new adventure world starts with a wooden shovel in the hotbar and no axe.
+   (c) **"Shovel should get a 4 wood sticks recipe 2 grass fiber. Stone shovel is 1 stone, 2 sticks, and 2 grass
+   fiber."** Then: **"Or just make it 2 stone like the others."** Recipes: `dwell:wooden_shovel` = 4 sticks + 2 grass
+   fibre; `dwell:stone_shovel` = 2 rock shards + 2 sticks + 2 grass fibre, as the stone axe and pickaxe. The stone shovel is a new tool: the shovel class at the stone tier, wearing after 32 hits like the
+   stone axe and pickaxe, digging faster than the wooden shovel, drawn as the wooden shovel with a stone blade, and on
+   the creative hotbar's tools.
+   **Owner should see:** the backpack's Combine lists Wooden shovel and Stone shovel; the stone shovel digs dirt in
+   fewer hits than the wooden one and breaks after 32 hits.
+   (b) **"When you destroy a block with grass, rock, sticks on it, those should drop too."** Then: **"Essentially a
+   general rule of blocks or items sitting on a block should be dropped when that block is destroyed."** One general
+   rule (BUGS.md #178): anything the destroyed block holds up — a block whose placement needs the cell under it
+   (`needsSupport`, `placeOn`: plants, torches, saplings, any piece the support rule says no longer stands) and any
+   ground item lying on its top — breaks and drops its own drops (loose items, in adventure), cascading upward.
+   Blocks that stand on their own keep the existing support and falling rules.
+   **Owner should see:** digging the block under tall grass, a torch, a sapling or a ground rock or stick drops their
+   items onto the ground (adventure); nothing floats or vanishes; a stack of them drops in order.
+   (d) **"Let's keep drops the same but halve the resource cost of assembling blocks. 4 rock shards, 4 dirt clods, 4
+   sand clumps, etc."**, then reversed the same day: **"Yeah sand should have sub chunks. And let's leave them all at 8
+   actually."** So every piece → block recipe stays at 8, and sand gets pieces: `dwell:sand_clump` ("Sand clump"),
+   8 a ½ m sand cell (as dirt's clumps), and 8 sand clumps → sand. Red sand and red dirt keep their drops (red dirt
+   drops plain dirt clumps; red sand drops itself).
+   **Owner should see:** digging sand drops sand clumps; the backpack's Combine makes a sand slab from 8 of them.
+   (e) **"Plant fiber looks like a block for the drop."** (BUGS.md #179.) Grass fibre's look was a `cluster`
+   (seeds' heap of lumps) that read as a little block, and the gems had no look at all (drawn as a stone block in
+   their colour). Now a `strands` look (five thin blades splayed flat) for the fibre, the gems a shard each, and an
+   item without a look fails the generator.
+   **Owner should see:** dropped grass fibre lies as a little fan of green-straw blades, a gem as a small crystal;
+   nothing loose is drawn as a cube.
+   (f) **"Also grass fiber should be a guaranteed drop, seeds will be 50%"**, then **"1-2 grass fiber."**, then
+   **"Cutting grass that's taller than 1 gives +1 plant fiber each. You're right that makes more sense than
+   random."** So tall grass drops one fibre for each ½ m cell of its height (each cell drops its own as it goes
+   with the cell under it: today's one-cell tuft gives 1, a two-cell stand 2), no randomness; a seed at 50 % at
+   every stage; the gem as before.
+   **Owner should see:** cutting a tuft always gives a grass fibre, about half the time a seed too.
+   (g) **"I'm not seeing grass taller than 1 though is it pretty slow?"** → **"Oh it's supposed to be growing up to
+   2m"**: tall grass grows up to 2 m, up to four ½ m cells stacked, a cell at a time once the one below is full,
+   capped by the climate's share (data in `shared/worldgen/grass.json`: max cells per share band, days per cell),
+   cutting any cell cuts the column above it (and drops its fibre, one a cell). **Not built in this change**: the
+   next one (ECOLOGY.md §10 "Not yet").
+   **Owner should see:** a lush meadow's grass reaching about 2 m over a few in-game days, a dry steppe's staying
+   short.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
@@ -3455,7 +3502,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 - **Crafting proposal shelved** (2026-11-11): "That's a lot of assumptions I don't think I want to do
   any of those crafting question things for now." Only the pieces and combine recipes were built.
-- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab;
+- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab, 8 sand
+  clumps → a sand slab (2026-11-14: "let's leave them all at 8 actually");
   rocks still found in grass and dirt at random; sticks from leaves. Stone tools: 2 sticks + 2 rock
   shards + 2 grass fibers. Stone axe durability 32.
 - **Volcanoes:** dormant for now, eruptions later.
