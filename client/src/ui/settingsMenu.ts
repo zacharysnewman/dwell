@@ -1440,6 +1440,12 @@ export class SettingsMenu {
     tab?.addEventListener('click', onShow);
   }
 
+  /** Opens the menu on the Structures page, as its tab does (the touch region bar's Save). */
+  openStructures(): void {
+    this.setOpen(true);
+    this.pages.get('structures')?.tab.click();
+  }
+
   /** Adds the Debug page: each tool a button with its key (DEBUG_KEYS). */
   addDebugTools(tools: DebugTool[]): void {
     const page = el('section');

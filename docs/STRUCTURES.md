@@ -169,6 +169,19 @@ capped at about 32³ per request.
 
 - **S2b:** save, load, export and import (`IMPLEMENTATION_PLAN.md` Phase 27).
 
+### 5.1 Corners in the air, and the tools on touch (owner, 2026-11-15)
+
+- **A corner with no block aimed at** is the cell `region_tools::AHEAD_M` (0.5 m) in front of the eye along the
+  crosshair (`ahead_cell`, a world ray, so the same on either face); owner: "If there's no block under your cross
+  hair it should pick the block 0.5m in front of you (crosshair)" — "That applies to desktop and movile." An aimed-at
+  block still wins. While a corner could be set (the touch bar open, or a selection begun; not in paste mode) that
+  cell is outlined where nothing is aimed at (`RegionTools::shows_ahead`).
+- **The touch region bar** (`client/src/ui/regionBar.ts`; data `shared/input/touchRegion.json`): a Select button,
+  shown while the data's `showWhen` holds (`flying`, and the mode's `abilities`: `structures`, i.e. creative), opens
+  a bar of buttons, each running a region tool by name (`Client.tool`) or a shell action (`save`: the Structures
+  page with the selection); `in` says whether it shows while choosing a box or in paste mode. A new button is a data
+  entry, validated by name (tool, state, ability). No edit logic is in the bar: it runs the same tools as the keys.
+
 Still to build: the anchor, and the eyedropper (the brushes' replace pick covers part of it).
 
 ## 6. Plan and compatibility

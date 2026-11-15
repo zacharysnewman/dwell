@@ -2167,6 +2167,10 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   app.touch?.setOnBag(() => {
     setInventoryOpen(app, !inventoryOpen(app));
   });
+  // The touch region bar's Save: the Structures page, its save set to the selection.
+  app.touch?.setOnRegionAction((name) => {
+    if (name === 'save') app.settings?.openStructures();
+  });
   app.client.select(0);
   // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.
   app.backpack = new Backpack(

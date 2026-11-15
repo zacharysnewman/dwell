@@ -1996,6 +1996,54 @@ impl Client {
             .and_then(|g| g.region.selection())
             .map_or_else(Vec::new, |(min, size)| [min, size].concat())
     }
+    /// The region tools' state for the touch region bar (ui/regionBar.ts): `[enabled, pasting,
+    /// selected]` as 0/1 (enabled: the server takes region edits); empty before a game.
+    #[wasm_bindgen(js_name = regionState)]
+    pub fn region_state(&self) -> Vec<u8> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| {
+                let r = &g.region;
+                vec![
+                    u8::from(r.enabled),
+                    u8::from(r.pasting()),
+                    u8::from(r.selection().is_some()),
+                ]
+            })
+    }
+    /// The region tools' HUD line (`RegionTools::status`): the selection or paste box and the
+    /// last tool's message.
+    #[wasm_bindgen(js_name = regionStatus)]
+    pub fn region_status(&self) -> String {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(String::new, |g| g.region.status())
+    }
+    /// The touch region bar is open (`open`) or closed: while open the cell a corner would take is
+    /// outlined even where no block is aimed at (`RegionTools::armed`).
+    #[wasm_bindgen(js_name = setRegionArmed)]
+    pub fn set_region_armed(&self, open: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.region.armed = open;
+        }
+    }
+    /// Whether the world's mode allows the ability of that data name (`shared/modes/modes.json`,
+    /// e.g. `structures`); false for a name this build doesn't know.
+    pub fn allows(&self, ability: &str) -> bool {
+        use dwell_protocol::modes::Ability;
+        let Some(a) = Ability::ALL.into_iter().find(|a| a.name() == ability) else {
+            return false;
+        };
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_some_and(|s| s.allows(a))
+    }
     /// Loads a structure into the region tools' clipboard and turns paste mode on: the ghost box
     /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
     /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
