@@ -116,6 +116,7 @@ const TOP_KEYS = [
   "creatures",
   "brush",
   "pickup",
+  "craft",
   "self",
   "sounds",
 ];
@@ -579,6 +580,7 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     creatures: undefined,
     brush: undefined,
     pickup: undefined,
+    craft: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -787,6 +789,16 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     out.pickup = { windowS: p.windowS, reachM: p.reachM, minS: p.minS };
   }
   if (!out.pickup) fail("pickup", "missing (the pickup sound's window and rate)");
+  // Making an item with Combine (owner, 2026-11-15): once per press the server answers with a change.
+  for (const file of sorted) {
+    const c = file.craft;
+    if (c === undefined) continue;
+    if (out.craft) fail("craft", "given twice");
+    keysIn("craft", c, ["$comment", "windowS"]);
+    number("craft.windowS", c.windowS, 0.05, 10);
+    out.craft = { windowS: c.windowS };
+  }
+  if (!out.craft) fail("craft", "missing (the craft sound's window)");
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every

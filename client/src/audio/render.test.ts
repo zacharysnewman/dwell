@@ -37,10 +37,14 @@ describe('offline renders', () => {
     expect(names).not.toContain('loop_night_faint_to_full');
     // An event with variants renders each alone and eight in a row: the pickup's pop (owner,
     // 2026-11-14) has one file per variant to listen to.
-    const pop = SOUND_DATA.sounds['dwell:item_pickup'];
-    const variants = pop?.layers[0]?.alts?.length ?? 0;
-    for (let k = 1; k <= variants; k++) expect(names).toContain(`variant_item_pickup_${String(k)}`);
-    expect(names).toContain('variations_item_pickup_x8');
+    // The craft's clack and chime (owner, 2026-11-15) too.
+    for (const sound of ['item_pickup', 'item_craft']) {
+      const def = SOUND_DATA.sounds[`dwell:${sound}`];
+      const variants = def?.layers[0]?.alts?.length ?? 0;
+      expect(variants).toBe(4);
+      for (let k = 1; k <= variants; k++) expect(names).toContain(`variant_${sound}_${String(k)}`);
+      expect(names).toContain(`variations_${sound}_x8`);
+    }
     expect(new Set(names).size).toBe(names.length);
     const walk = renderPlan(SOUND_DATA).find((j) => j.name === 'steps_stone_walk_x10');
     expect(walk?.plays.length).toBe(10);

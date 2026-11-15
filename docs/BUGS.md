@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 182. A held break at nothing loops its knock (phones in Break mode, the held mouse too)
+
+Owner, 2026-11-15: "there seems to be a looping sound when you have "break" on for mobile and you tap and hold the
+right side of the screen. It should definitely not play more than once when hitting nothing." A still touch on the
+look side in Break mode is a held Break (WORK_QUEUE item 17); with nothing aimed at, each repeat
+(`Game::repeat_held_use`) found no target, pushed the refusal knock (`deny`) and returned false, so the hold's clock
+never moved on and the repeat was due again the next frame: a knock every frame (122 in 2 s). The held mouse button
+did the same on desktop.
+
+**Owner should see:** on a phone in Break mode, holding the right side of the screen at the sky knocks once; held on a
+block, each hit sounds as before; a held left click into the air on desktop knocks once too.
+
+**Fixed:** `HeldUse::miss_sounds` (`crates/dwell-client/src/held_use.rs`): a click's miss knocks, a hold's only on its
+first swing; a new hold knocks once again. Tests: `game_local` `break_held_at_the_sky_knocks_once_per_hold` (touch
+and mouse holders; red: 122 knocks, green: 1), `held_use` `a_hold_at_nothing_sounds_its_miss_once`.
+
 ### 181. Stone tools can't be crafted from the rocks dirt and grass give
 
 Owner, 2026-11-15 (screenshot: a backpack with 33 grass fibre, 17 sticks and 13 Rocks; Combine offered only Thatch
