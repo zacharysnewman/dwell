@@ -683,6 +683,35 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 177. Vertical streaks through a moving flood: water column side faces inside the water (fixed after 0.70.5)
+
+Found 2026-11-14 by Claude in the dam-break recording (`videos/dam-break/`, scene `shared/theater/scenes/dam_break.json`;
+not reported by the owner). Through the flood's translucent water, a staircase of thin vertical lines (the outlines of
+the columns' levels) and two long bars across the valley along the dam's old upstream face, both drawn inside the water.
+
+**Owner should see:** the dam break's flood reads as one clear body of water: no streaks or bars inside it, the
+flood front and the banks as before; a river and the sea look as before.
+
+**Cause:** two. (1) **Step faces the heightfield already draws.** With the GPU heightfield drawing the water's surface
+(`ChunkFlags::water_tops` false), the chunk mesher still drew a side face between two columns of one water at different
+levels (the "slit" fix of BUGS.md #4). The heightfield joins a step within `join_m` (0.2 m) into a slope, so that face
+stood across the slope, and it draws a bigger step as a skirt, so the face doubled it. Worse, while only a chunk's water
+levels change the client redraws its tile, not its mesh (`chunk_stream` `levels_only`, until the water settles), so the
+faces stayed where the levels had been and the moving flood rose over them: measured on the scene's flood natively, half
+of the meshed side faces stood fully inside the water a second later. (2) **A sheet of water hung where the dam stood.**
+The lake was held still till the dam went; the columns against the dam fell 3 m in the grid's first step after the
+release, before it had drawn them (`drawn` unset), and its draw cleared cells only from the floor up to the new level:
+rows 27–29 m of the row against the dam stayed water over air for good (24 columns), a 1 m sheet across the valley
+drawn as the two bars.
+
+**Fixed:** (1) in the heightfield mode the mesher leaves out a side face between two cells of one water that lie in
+their columns' top water (`heightfield::surface_draws_step`); the grid and skirts draw that step. (2) a column the grid
+hasn't drawn since its cells were written otherwise clears the liquid standing on over its level too (`water.rs` `draw`).
+Red → green: `dwell-mesh` `heightfield::tests::steps_between_columns_of_one_water_are_the_surfaces_not_the_meshes`
+(both faces; red: 8 side triangles in the water) and `dwell-sim --test scenes no_water_hangs_where_the_dam_stood` (red:
+24 water cells over air at z 99). Left: the flood front's step-cell slopes (`step_water`) are meshed too and also stay
+behind while only the levels change, a few square metres at the front at a time.
+
 ### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B) (fixed after 0.70.2)
 
 Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local

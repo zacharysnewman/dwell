@@ -178,3 +178,42 @@ fn the_dam_break_is_heard_from_the_takes_camera() {
         "the loop starts"
     );
 }
+
+/// BUGS.md #177: the water standing against the dam fell at once when it went, before the grid
+/// had drawn its column, and the grid cleared its cells only up to the new level: a sheet of
+/// water 2 m tall hung over the flood along the dam's old face for good, drawn as tall streaks
+/// through the moving water. No water cell stands over an open one after the break.
+#[test]
+fn no_water_hangs_where_the_dam_stood() {
+    // face-a-only: the flat world the scene builds on is face A's; the grid's columns are
+    // face-local (`water::tests`).
+    let scene = dam_break();
+    let mut f = Fixture::new(flat());
+    f.server.build_scene(&scene);
+    for tick in 0..60 * 6 {
+        if tick == 180 {
+            f.server.scene_event(&scene, 0).expect("the event");
+        }
+        f.server.step();
+        f.take_all();
+    }
+    let w = f.server.world();
+    let mut hanging = Vec::new();
+    for z in 90..110 {
+        for x in -24..24 {
+            for r in row_of_m(20.0)..row_of_m(31.0) {
+                if dwell_blocks::info(w.get_voxel(x, r, z)).liquid
+                    && w.get_voxel(x, r - 1, z) == dwell_blocks::AIR
+                {
+                    hanging.push((x, r, z));
+                }
+            }
+        }
+    }
+    assert!(
+        hanging.is_empty(),
+        "{} water cells over air, e.g. {:?}",
+        hanging.len(),
+        &hanging[..hanging.len().min(4)]
+    );
+}
