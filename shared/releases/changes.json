@@ -2,6 +2,17 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.6",
+      "changes": [
+        "Adventure now starts with a wooden shovel instead of a stone axe; the axe is combined from sticks, rock shards and grass fibre",
+        "New stone shovel: 2 sticks, 2 rock shards and 2 grass fibre; it digs faster than the wooden shovel, which you can now make from 4 sticks and 2 grass fibre",
+        "Sand breaks into sand clumps, and 8 make sand again",
+        "Whatever rests on a block drops when the block goes, however it goes: tall grass, torches, saplings and the rocks and sticks lying on it no longer vanish or float",
+        "Cutting tall grass always gives a grass fibre, and a seed about half the time",
+        "Dropped grass fibre lies as a little bundle of blades, and gems as small crystals, instead of tiny blocks"
+      ]
+    },
+    {
       "version": "0.70.5",
       "changes": [
         "Thick clouds read like real cumulus: bright white sunlit tops and sides from above, lighter bases from below instead of a muddy grey.",
