@@ -3638,6 +3638,7 @@ impl<S: Scene> Game<S> {
             velocity: self.current.velocity,
             world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
             gravity: f64::from(self.predictor.config().body.gravity),
+            radius: f64::from(self.predictor.config().body.radius),
         };
         let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
         let f = FaceFrame::at_height(viewer.feet[1]);
