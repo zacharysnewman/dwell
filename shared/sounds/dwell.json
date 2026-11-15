@@ -14,6 +14,12 @@
     "everyM": 2.5,
     "minS": 0.3
   },
+  "pickup": {
+    "$comment": "Picking up a ground item (WORK_QUEUE, owner 2026-11-14): the local player's inventory gaining items within `windowS` seconds of a loose item within `reachM` metres of them going or shrinking plays `item_pickup` once; never closer than `minS` seconds, so a burst of pickups in one frame or a sweep through a pile plays one pop, not a stack. Others' pickups are not heard (the server does not say who took an item).",
+    "windowS": 0.5,
+    "reachM": 3.0,
+    "minS": 0.09
+  },
   "self": {
     "$comment": "AUDIO.md §5a (BUGS.md #110): where the local player's own sounds are heard (an event's `self`; the game sends them without a position). Each placement is metres from the ear in the listener's own frame — `right`, `up`, `ahead` — so looking up or down never moves them behind the head: footsteps at the feet, a little ahead; a tool at the right hand. `stepM` moves alternate plays (each footstep) that far left and right; `reverb` is the share sent to the room on top of the sound's own. An event without `self` plays centred at the ear (your own voice: a gasp, a hurt).",
     "feet": {"right": 0, "up": -1.5, "ahead": 0.6, "stepM": 0.15, "reverb": 0.08},
@@ -61,6 +67,7 @@
     "axe_swish": {"sound": "axe_swish", "self": "hand"},
     "axe_rustle": {"sound": "axe_rustle", "self": "hand"},
     "exhausted": {"sound": "breath_heavy"},
+    "item_pickup": {"sound": "item_pickup", "self": "body"},
     "gasp": {"sound": "gasp"},
     "strain": {"sound": "strain"},
     "creature_step": {"creature": "step"},
@@ -2334,6 +2341,7 @@
         {"source": "noise", "color": "pink", "gain": 0.12, "filters": [{"type": "bandpass", "freq": 1500, "q": 1.4, "to": 5000}], "env": {"attack": 0.25, "decay": 0.45}}
       ]
     },
+    "item_pickup": {"gain": 0.45, "reverb": 0.03, "variation": {"pitch": 1.2, "gain": 1.5, "cutoff": 0.1, "time": 0.12}, "layers": [{"source": "osc", "wave": "sine", "freq": 520, "to": 980, "gain": 0.3, "env": {"attack": 0.002, "decay": 0.055}, "alts": [{"freq": 470, "to": 900}, {"freq": 580, "to": 1080}, {"freq": 540, "to": 860}, {"freq": 500, "to": 1040}]}, {"source": "modal", "freq": 1400, "gain": 0.08, "partials": [[1, 1, 0.03], [2.3, 0.35, 0.015]], "alts": [{"freq": 1320}, {"freq": 1520}, {"freq": 1450}, {"freq": 1260}]}, {"source": "noise", "color": "pink", "gain": 0.07, "filters": [{"type": "bandpass", "freq": 2600, "q": 1.2}], "env": {"attack": 0.0005, "decay": 0.012}}]},
     "torch_place": {
       "gain": 1.5, "reverb": 0.1,
       "variation": {"pitch": 1.5, "gain": 1, "cutoff": 0.1, "time": 0.1},

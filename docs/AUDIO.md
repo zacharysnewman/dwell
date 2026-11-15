@@ -374,8 +374,21 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
 | `leaf_brush` | procedural |
 
 The samples are now about 1.8 MB in all. Not built: remote players brushing leaves and stepping on
-sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
+sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, inventory/UI/coins, eating and
 drinking, the ladder's creak.
+
+**Picking up a ground item (owner, 2026-11-14: "I want picking up drops off the ground to have a sound, with
+some random variety. Maybe a light popping sound.").** The event `item_pickup` (`self`: the body) plays
+`item_pickup`, procedural: a sine chirp up (~520 → 980 Hz, a 55 ms decay), a faint modal ping and a 12 ms
+pink tick, four variants (`alts`) drawn round-robin by the seeded variation (never the last one twice), with
+±1.2 semitones and ±1.5 dB of jitter; at about a deny's level, well under the footsteps. The client
+(`dwell-game` `PickupSounds`) plays it when the local player's inventory gains items within `pickup.windowS`
+(0.5 s) of a loose item within `pickup.reachM` (3 m) of them going or shrinking, never closer than
+`pickup.minS` (0.09 s): a burst in one frame, or a sweep through a pile, pops once, not a stack. Crafting
+(a gain, no drop) and a drop that merged or despawned (no gain) are silent. Others' pickups are not heard:
+the server doesn't say who took an item, and a guess from where a drop vanished would sound on merges and
+despawns too. `npm run sfx:render -- --only item_pickup` renders each variant alone (`variant_…`) and eight
+in a row (`variations_…_x8`); an event sound with variants gets those renders by data alone.
 
 ## 3. Synthesis (`client/src/audio/synth.ts`)
 

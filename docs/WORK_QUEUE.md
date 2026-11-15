@@ -55,6 +55,14 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **A pickup sound (owner, 2026-11-14):** "I want picking up drops off the ground to have a sound, with some
+  random variety. Maybe a light popping sound." Built on `claude/pickup-sound` (AUDIO.md §2d): `dwell:item_pickup`,
+  a soft procedural pop in four variants drawn by the seeded variation with pitch and gain jitter, as data in
+  `shared/sounds/dwell.json` (the sound, the event, the `pickup` window and rate); a burst pops once. The local
+  player's pickups only: others' are not heard (the server doesn't say who took an item). Previews: `npm run
+  sfx:render -- --only item_pickup`. **Owner should see:** walking over items on the ground in adventure, each
+  pickup gives a light, soft pop that differs a little each time; sweeping through a pile gives a quick few pops,
+  not a loud stack; crafting makes no pop.
 - **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
   generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
   on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data

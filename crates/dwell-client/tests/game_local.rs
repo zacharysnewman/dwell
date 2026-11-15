@@ -5383,3 +5383,64 @@ fn after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame() {
         "of {flying} piece-frames in the air, (frame, drawn still): {frozen:?}"
     );
 }
+
+/// Owner, 2026-11-14: "I want picking up drops off the ground to have a sound, with some random
+/// variety. Maybe a light popping sound." A stack dropped at the player's feet in adventure goes
+/// into the inventory with one `item_pickup` (at the listener); three dropped at once pop once,
+/// not a stack; a stack dropped far off and never taken is silent.
+// face-a-only: the sandbox's floor; `PickupSounds` itself reads no geometry (dwell-game).
+#[test]
+fn picking_up_a_ground_item_pops_once_and_a_burst_pops_once() {
+    use dwell_game::sound::SoundKind;
+    use dwell_protocol::inventory::Stack;
+    let mut rig = predicting_rig(0);
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(rig.core.server().set_mode("adventure"));
+    rig.run_until(60, |_| false);
+    rig.game.as_mut().unwrap().take_sounds();
+    let count = |rig: &mut Rig| -> u32 {
+        rig.core
+            .server()
+            .inventory_of(player_id)
+            .unwrap()
+            .slots
+            .iter()
+            .flatten()
+            .map(|s| u32::from(s.count))
+            .sum()
+    };
+    let pops = |rig: &mut Rig, frames: usize| -> usize {
+        let mut n = 0;
+        for _ in 0..frames {
+            rig.frame();
+            n += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == SoundKind::ItemPickup && e.at.is_none())
+                .count();
+        }
+        n
+    };
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let at = [feet[0], feet[1] + 0.3, feet[2]];
+    // Far off: lies there, no pop.
+    rig.core.server().drop_item(
+        Stack::new("dwell:dirt", 2),
+        [feet[0] + 40.0, feet[1] + 0.3, feet[2]],
+    );
+    assert_eq!(pops(&mut rig, 90), 0, "a drop no one takes is silent");
+    let before = count(&mut rig);
+    rig.core.server().drop_item(Stack::new("dwell:dirt", 1), at);
+    assert_eq!(pops(&mut rig, 120), 1, "one pop for the pickup");
+    assert_eq!(count(&mut rig), before + 1, "it went into the inventory");
+    for _ in 0..3 {
+        rig.core.server().drop_item(Stack::new("dwell:dirt", 1), at);
+    }
+    assert_eq!(pops(&mut rig, 120), 1, "three taken at once pop once");
+    assert_eq!(count(&mut rig), before + 4);
+}
