@@ -1905,6 +1905,11 @@ impl TerrainGenerator {
         0.0
     }
 
+    /// The plate settings at face-local (x, z), in a world whose rocks come from plates (R5).
+    pub fn plate_settings_at(&self, x: i64, z: i64) -> Option<crate::geology::PlateSettings> {
+        self.biomes.geology.plate_settings(x, z)
+    }
+
     /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.
     pub fn rain_at(&self, x: i64, z: i64) -> Option<f64> {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
