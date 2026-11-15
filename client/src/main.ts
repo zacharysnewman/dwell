@@ -271,6 +271,11 @@ interface DwellDebug {
   pick(item: string): boolean;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
+  /** Places the catalog's blueprint `name` at the crosshair's place cell, turned `turn` quarter
+   * turns, as the Structures page does (docs/BLUEPRINTS.md §3); false with no aim. */
+  blueprint(name: string, turn?: number): boolean;
+  /** The aimed blueprint's panel text (`blueprintPanel`; "" with none aimed). */
+  blueprintPanel(): string;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
   /** Turns creative flight on or off by pressing F, the fly key, if it isn't already (and the
@@ -1608,6 +1613,8 @@ async function start(): Promise<App | null> {
     pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
       client.placement() as { cell: [number, number, number]; material: number } | null,
+    blueprint: (name, turn) => client.placeBlueprint(name, turn ?? 0),
+    blueprintPanel: () => client.blueprintPanel(),
     voxel: (x, y, z) => client.voxel(x, y, z),
     fly: (on) => {
       client.fly(on);
