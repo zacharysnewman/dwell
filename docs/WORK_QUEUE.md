@@ -20,6 +20,10 @@ Last updated: 2026-11-11 (0.52.108).
   other free slot ones. And let's pause the other recordings for now unless you run out of things to do."** So the
   scale rework (item 15) goes ahead of every other free-slot item and the showcase recordings pause; the 0.70
   leftovers (the dormant islands' red strip, the owner's ~4 m axis-run ideal) follow it.
+- **One change at a time, locally (owner, 2026-11-15, relayed by the orchestrator):** **"Just run one change/feature at
+  a time locally, no cloud sessions."** The real-world-scale branch (`claude/realistic-scale`) stopped as a draft PR
+  listing what is done and what is left, for a local agent to continue. Owner should see: no cloud sessions running;
+  the scale work continued by one local agent from the draft PR's list.
 - **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
   doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
   Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
