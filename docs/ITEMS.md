@@ -184,6 +184,20 @@ species' `dropChance` (5 %) besides the leaf's own sticks, where items are used 
 species' sapling is data alone: the block, the catalogue entry and the species' `sapling` (the trees'
 and the items' node tests check it is a block and in the catalogue).
 
+### The town blocks (2026-11-14)
+
+The owner: **"Let's just do 3 blocks. Plank floors, stone brick walls, thatch roof. And doors also."**
+`dwell:planks`, `dwell:stone_brick` and `dwell:thatch` are ½ m pieces like the rest (category blocks),
+with the **thatch slope** and **thatch steep slope** (`dwell:thatch_ramp`, the stone slopes' pieces) for
+pitched roofs, and the **door** (`dwell:door`, category shapes, `drag: none`, facing back at the player):
+placed by its bottom cell, it stands 2 m (four cells; BLOCK_REGISTRY.md, Doors). Combining
+(`shared/inventory` recipes, cost 8 kept): 8 wood → planks (**"Can we make planks assembled from 8 wood
+pieces from trees."**; the log recipe stays), 8 rock shards → stone brick, 6 sticks and 2 grass fibre →
+thatch (**"8 stone chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant fibre"**); the
+thatch slopes are thatch's pieces, no recipe of their own. Textures: painterly materials
+`stone_brick`, `thatch` (the palette's new `straw` ramp) and `door` in `shared/textures/materials.json`;
+planks reuse the build platform's boards.
+
 ## 2. Pieces on the wire
 
 `BlockEditRequest` carries the piece (protocol 19): `rows` (1–`MAX_PIECE_ROWS` 2) and `down`. A place
@@ -201,7 +215,7 @@ prediction alike.
 |---|---|
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
-| `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
+| `needsSupport` | `below`: stands on the cell under it and goes with it, dropping its drops however that cell goes — a break, a region, a blast, a fall (tall grass, torch; BUGS.md #178); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
 | `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
@@ -391,7 +405,7 @@ the item each gives, a rod or lump look; rules: the blocks it lies on, the canop
 beside, a density) → `shared/ground/gen.mjs` → `dwell-world` `ground.gen.rs`. They are drawn in the
 chunk mesh and have no collision. **Hit one** (0.50.74; the break action: the mouse's break
 click, the touch Break button, the controller's break, an axe's swing) and it is knocked loose as
-the spinning loose item of the same item a drop gives (`dwell:stick`, `dwell:rock`: they stack),
+the spinning loose item of the same item a drop gives (`dwell:stick`, `dwell:rock_shard`: they stack),
 which walking near collects; in creative, where breaking drops nothing, it simply vanishes. The hit
 goes to the item when it is nearer than the block behind it, so the ground under it isn't broken.
 There is no pick-up button: E is the backpack, X the spyglass. The server keeps the knocked ones gone
@@ -416,7 +430,10 @@ placements overlay shows the ground items in their looks' colours beside the str
   `look`, like the rock shard's). BLOCK_DAMAGE's split applies:
   half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
   break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
-  want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
+  want rocks to be found in grass and dirt at random"), a rock shard since 2026-11-15 (owner: "One item: rock =
+  shard"; BUGS.md #181): `dwell:rock` is no longer an item, only an `aliases` entry of `inventory.json`
+  that reads an old save's or a sender's Rock as a Rock shard, 1:1 (`dwell_protocol::inventory::canonical_item`);
+  leaves keep their sticks; tall grass drops a
   `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
   tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.
 - **Combining** (owner, 2026-11-11): recipes as data, `shared/inventory/inventory.json` `recipes`
@@ -431,12 +448,15 @@ placements overlay shows the ground items in their looks' colours beside the str
   creative has no backpack, everything is in its catalogue). A button names the output by the
   recipe's optional `label` (the slabs: "Stone slab", "Dirt slab", "Log slab": a slab's item is its
   block, labelled "Stone"), else by the output item's label. Recipes: 8 rock shards → stone (the ½ m
-  slab), 8 dirt clumps → dirt, 8 wood chunks → log; 2 sticks + 2 rock shards + 2 grass fibers → a stone
-  axe, or the same inputs → a stone pickaxe (the player picks).
+  slab), 8 dirt clumps → dirt, 8 wood chunks → log, 8 sand clumps → sand (2026-11-14: sand breaks into 8
+  `dwell:sand_clump`, as dirt into dirt clumps; "let's leave them all at 8"); 2 sticks + 2 rock shards + 2
+  grass fibers → a stone axe, a stone pickaxe or a stone shovel (the player picks); 4 sticks + 2 grass fibers
+  → a wooden shovel (owner, 2026-11-14). Adventure starts with a wooden shovel (`startingItems`; owner,
+  2026-11-14: "start with a wooden shovel instead of an axe since dirt drops rocks").
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
   `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
   validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe, stone
-  pickaxe and wooden shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
+  pickaxe, wooden shovel and stone shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
   "have double durability"; they also break in about half the hits with pieces twice the size,
   BLOCK_DAMAGE.md §9). A hit that counts uses one: a chop, or a block
   break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is

@@ -27,9 +27,10 @@ test('a kind and a rule added by data alone are emitted, drawn with its item\'s 
 test('bad entries fail naming the entry and the problem', () => {
   const cases = [
     [(g) => (g.kinds[0].item = 'dwell:diamond'), /kinds\.dwell:ground_stick: item "dwell:diamond" is not an inventory item/],
-    [(g) => (g.kinds[0].item = 'dwell:gem'), /kinds\.dwell:ground_stick: item dwell:gem has no look/],
+    // Every item has a look since BUGS.md #179; the rule still names one without.
+    [(g, i) => { delete i.items.find((it) => it.name === 'dwell:gem').look; g.kinds[0].item = 'dwell:gem'; }, /kinds\.dwell:ground_stick: item dwell:gem has no look/],
     [(g) => (g.kinds[0].shape = 'rod'), /kinds\.dwell:ground_stick: unknown field shape/],
-    [(g, i) => (i.items[0].look.texture = 'dwell:marble'), /kinds\.dwell:ground_rock: dwell:rock's look\.texture: "dwell:marble" is not a block/],
+    [(g, i) => (i.items.find((it) => it.name === 'dwell:rock_shard').look.texture = 'dwell:marble'), /kinds\.dwell:ground_rock: dwell:rock_shard's look\.texture: "dwell:marble" is not a block/],
     [(g) => (g.kinds[0].colour = '#000000'), /kinds\.dwell:ground_stick: unknown field colour/],
     [(g) => (g.rules[0].kind = 'dwell:twig'), /rules\[0\]: kind "dwell:twig" is not in kinds/],
     [(g) => (g.rules[0].on = ['dwell:moss']), /rules\[0\]\.on\[0\]: "dwell:moss" is not a block/],

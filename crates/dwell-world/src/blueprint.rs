@@ -309,6 +309,14 @@ pub fn cost_item(state: StateId) -> &'static str {
     dwell_protocol::inventory::drops_of(name).map_or(name, |d| d.cost)
 }
 
+/// Whether a cell of `state` comes with another cell of its multi-cell block rather than being put
+/// on its own (a torch's flame, a door's cells above its bottom one; BLOCK_REGISTRY.md, Multi-cell
+/// blocks): placing the block's first cell puts it, so it costs nothing and no one places it.
+pub fn comes_with(state: StateId) -> bool {
+    let s = info(state);
+    s.part_of.is_some() || s.column.is_some_and(|c| c.index > 0)
+}
+
 /// Whether a block can be put in a cell holding `m`: air, a liquid, or a replaceable plant.
 pub fn free(m: StateId) -> bool {
     !targetable(m) || info(m).replaceable
@@ -424,7 +432,12 @@ impl Ghost {
             let now = get(c)?;
             if let Some(&i) = self.index.get(&c) {
                 let g = self.cells[i];
-                if free(now) && !built(now, g.state) && has(g.state) && self.supported(c, get) {
+                if free(now)
+                    && !built(now, g.state)
+                    && !comes_with(g.state)
+                    && has(g.state)
+                    && self.supported(c, get)
+                {
                     return Some(g);
                 }
             }
@@ -460,6 +473,9 @@ impl Ghost {
         let mut left = 0;
         for c in self.remaining(get) {
             left += 1;
+            if comes_with(c.state) {
+                continue; // put with its block's first cell
+            }
             let name = cost_item(c.state);
             match by.iter_mut().find(|n| n.block == name) {
                 Some(n) => n.need += 1,
@@ -510,7 +526,7 @@ impl Ghost {
         let f = self.face;
         let mut cells: Vec<_> = self
             .remaining(get)
-            .filter(|c| get(c.world).is_some_and(free))
+            .filter(|c| get(c.world).is_some_and(free) && !comes_with(c.state))
             .enumerate()
             .map(|(i, c)| {
                 let down = f.cell([c.local[0], c.local[1] - 1, c.local[2]]);
@@ -719,6 +735,65 @@ impl TownRules {
         }
         let c = self.clear_m;
         [b[0] - c, b[1] - c, b[2] + c, b[3] + c]
+    }
+
+    /// "Test in town" (owner, 2026-11-14: "a quick way to test a saved building in a village";
+    /// docs/BLUEPRINTS.md §6c): where a structure's blueprint goes beside the town site of `sites`
+    /// nearest face-local column `near`, within `reach_m` of it: on rings round the site's layout
+    /// (`clear_box`), 2 m apart and widening, the nearest to `near` on the first ring with a spot
+    /// whose box (`half` columns either way of the anchor, so any turn fits) keeps a column clear of
+    /// the layout and of every box of `taken` (blueprints already placed, [x0, z0, x1, z1] inclusive)
+    /// and whose `ground` (the face-local row a place fills at a column; None: not known) is known.
+    /// Its face-local anchor cell, or None: no site near, or no free spot round it.
+    pub fn test_spot(
+        &self,
+        sites: &[TownSite],
+        near: [f64; 2],
+        reach_m: f64,
+        half: i32,
+        taken: &[[i32; 4]],
+        ground: &dyn Fn(i32, i32) -> Option<i32>,
+    ) -> Option<[i32; 3]> {
+        let d = |x: f64, z: f64| (x - near[0]).hypot(z - near[1]);
+        let site = sites
+            .iter()
+            .filter(|t| d(f64::from(t.x) + 0.5, f64::from(t.z) + 0.5) <= reach_m)
+            .min_by(|a, b| {
+                d(f64::from(a.x), f64::from(a.z)).total_cmp(&d(f64::from(b.x), f64::from(b.z)))
+            })?;
+        let [x0, z0, x1, z1] = self.clear_box(site);
+        let overlaps = |b: [i32; 4], o: [i32; 4]| {
+            b[0] <= o[2] + 1 && o[0] <= b[2] + 1 && b[1] <= o[3] + 1 && o[1] <= b[3] + 1
+        };
+        for ring in 0..12 {
+            let out = half + 1 + 2 * ring;
+            let (lx, lz, hx, hz) = (x0 - out, z0 - out, x1 + out, z1 + out);
+            let mut spots = Vec::new();
+            for x in (lx..=hx).step_by(2) {
+                spots.push([x, lz]);
+                spots.push([x, hz]);
+            }
+            for z in (lz..=hz).step_by(2) {
+                spots.push([lx, z]);
+                spots.push([hx, z]);
+            }
+            let best = spots
+                .into_iter()
+                .filter(|&[x, z]| {
+                    let b = [x - half, z - half, x + half, z + half];
+                    !overlaps(b, [x0, z0, x1, z1]) && !taken.iter().any(|&t| overlaps(b, t))
+                })
+                .filter_map(|[x, z]| ground(x, z).map(|y| [x, y, z]))
+                .min_by(|a, b| {
+                    let da = d(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5);
+                    let db = d(f64::from(b[0]) + 0.5, f64::from(b[2]) + 0.5);
+                    da.total_cmp(&db).then(a.cmp(b))
+                });
+            if best.is_some() {
+                return best;
+            }
+        }
+        None
     }
 
     /// A site's blueprints: each structure's name, its anchor's face-local column and its turn.

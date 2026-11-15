@@ -548,6 +548,56 @@ export function propSummary(bytes) {
   };
 }
 
+/**
+ * A derived prop's GLB (props.json `derive`): its `from` prop's GLB with each `paint` applied to
+ * COLOR_0 (a new buffer): every vertex below `belowY` (metres, the GLB's frame: a tool's head end
+ * is its −y) takes `color` (sRGB "#rrggbb", stored as the importer stores a face's colour: each
+ * channel / 255). The stone shovel is the wooden shovel with a stone blade (owner, 2026-11-14).
+ */
+export function paintProp(bytes, paint) {
+  const b = Buffer.from(bytes);
+  const g = glbJson(b);
+  const binAt = 20 + b.readUInt32LE(12) + 8;
+  for (const prim of g.meshes?.[0]?.primitives ?? []) {
+    const pos = glbAccessor(b, prim.attributes.POSITION).values;
+    const a = g.accessors[prim.attributes.COLOR_0];
+    const v = g.bufferViews[a.bufferView];
+    const width = { VEC3: 3, VEC4: 4 }[a.type];
+    const [size, write, max] = {
+      5126: [4, "writeFloatLE", 1],
+      5123: [2, "writeUInt16LE", 65535],
+      5121: [1, "writeUInt8", 255],
+    }[a.componentType];
+    const scale = a.normalized ? max : 1;
+    const stride = v.byteStride ?? size * width;
+    const at = binAt + (v.byteOffset ?? 0) + (a.byteOffset ?? 0);
+    for (let i = 0; i < a.count; i++) {
+      const rule = paint.find((r) => pos[i * 3 + 1] < r.belowY);
+      if (!rule) continue;
+      const rgb = [1, 3, 5].map((k) => parseInt(rule.color.slice(k, k + 2), 16) / 255);
+      for (let k = 0; k < 3; k++) {
+        const x = rgb[k] * scale;
+        b[write](scale === 1 ? x : Math.round(x), at + i * stride + k * size);
+      }
+    }
+  }
+  return b;
+}
+
+/** Validates a prop's `derive` (`props`: props.json's props). Throws naming the bad entry. */
+export function validateDerive(name, p, props) {
+  const at = `props.json: prop ${name}: derive`;
+  const d = p.derive;
+  if (typeof d !== "object" || d === null) throw new Error(`${at} is { from, paint }`);
+  const src = props[d.from];
+  if (!src || src.derive) throw new Error(`${at}.from: ${d.from} is not an imported prop`);
+  if (!Array.isArray(d.paint) || d.paint.length === 0) throw new Error(`${at}.paint is a non-empty list`);
+  d.paint.forEach((r, i) => {
+    if (!Number.isFinite(r.belowY)) throw new Error(`${at}.paint[${i}].belowY is metres`);
+    if (!/^#[0-9a-fA-F]{6}$/.test(r.color ?? "")) throw new Error(`${at}.paint[${i}].color is #rrggbb`);
+  });
+}
+
 /** Validates props.json (`dir`: where its GLB paths are relative to). Throws naming the bad entry. */
 export function validateProps(data, dir, read = (p) => readFileSync(p)) {
   const fail = (msg) => {
@@ -574,7 +624,8 @@ export function validateProps(data, dir, read = (p) => readFileSync(p)) {
       );
     if (typeof p.glb !== "string") fail(`${at}: no glb`);
     const path = join(dir, p.glb);
-    if (!existsSync(path)) fail(`${at}: missing GLB ${p.glb}`);
+    // A derived prop's GLB is this generator's output: `read` hands it over before it is written.
+    if (p.derive === undefined && !existsSync(path)) fail(`${at}: missing GLB ${p.glb}`);
     let s;
     try {
       s = propSummary(read(path));
@@ -892,6 +943,8 @@ const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 export function generate() {
   const palette = readJson(join(root, "shared/textures/palette.json"));
   const outputs = [];
+  // Derived props' GLBs go last, after the tables (tests index the tables by position).
+  const glbs = [];
   for (const [src, out] of [
     [here, "models.gen.rs"],
     [join(here, "fixtures"), "fixture.gen.rs"],
@@ -901,7 +954,17 @@ export function generate() {
     if (src === here)
       checkCreatureParts(readJson(join(root, "shared/creatures/creatures.json")), models);
     const propsData = readJson(join(src, "props.json"));
-    const props = validateProps(propsData, src);
+    // Derived props' GLBs (`derive`): generated from their source prop's, written with the rest.
+    const derived = new Map();
+    for (const [name, p] of Object.entries(propsData.props ?? {})) {
+      if (p.derive === undefined) continue;
+      validateDerive(name, p, propsData.props);
+      const from = propsData.props[p.derive.from];
+      const bytes = paintProp(readFileSync(join(src, from.glb)), p.derive.paint);
+      derived.set(join(src, p.glb), bytes);
+      glbs.push([join(src, p.glb), bytes]);
+    }
+    const props = validateProps(propsData, src, (path) => derived.get(path) ?? readFileSync(path));
     // The game builds in the props an item's look names; the fixture, all of its own.
     const built =
       src === here
@@ -923,7 +986,7 @@ export function generate() {
         rustRampBases(palette),
     ]);
   }
-  return outputs;
+  return [...outputs, ...glbs];
 }
 
 /**
@@ -968,5 +1031,5 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   for (const [path, text] of generate()) writeFileSync(path, text);
-  console.log("shared/models: wrote models.gen.rs, fixture.gen.rs");
+  console.log("shared/models: wrote models.gen.rs, fixture.gen.rs and the derived props' GLBs");
 }

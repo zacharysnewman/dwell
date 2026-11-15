@@ -142,8 +142,11 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// level should use snow leaves"). Face A only; with `on` removed the pin reads as before.
 /// Both faces again (the same line) for mesa country's blend shared with the Realistic world
 /// (`dwell:mesa_country`: 220 m patches, the slope's push into red sand, no cap below the last tone).
+/// Both faces again (the 0.70 follow-up) for plants bleeding across borders (placements.json
+/// `bleed` on the pines, oaks, boulders and sagebrush; owner: "Bushes, shrubs, rocks, trees, should
+/// bleed into the edge of the neighboring terrain").
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "1d5ff0f198e05f6f"), (Face::B, "573480c5c9a7174d")];
+    [(Face::A, "2ff929bc1f2f6461"), (Face::B, "64d6e966bff666e6")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

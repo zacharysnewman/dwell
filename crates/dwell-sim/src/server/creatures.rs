@@ -4,7 +4,7 @@
 //! (WORK_QUEUE item 38) are creatures too; a client with the `creatures.npcs` capability also gets
 //! their part (kind, pose, palette variant) at the end of each message.
 
-use super::{Server, SessionId};
+use super::{Server, SessionId, TickChanges, VoxelModificationReason};
 use dwell_protocol::CreaturePoseNet;
 use dwell_protocol::capability_names::{
     CREATURES_NPCS, CREATURES_POSES, HUMANS_DEFEAT, NPCS_CARRY, NPCS_SWINGS,
@@ -20,6 +20,63 @@ const SEND_EVERY: u32 = 6;
 const SPAWN_EVERY: u32 = 30;
 
 impl Server {
+    /// NPCs that open doors (shared/creatures `opensDoors`; docs/BLOCK_REGISTRY.md, Doors): each
+    /// closed door one is in or walking into is opened (every cell of it, an edit everyone is
+    /// sent), and each door they opened is closed again once no such NPC and no player is within
+    /// `DOOR_CLEAR_M` of it. A door a player has since closed, broken or changed is forgotten.
+    pub(crate) fn npc_doors(&mut self, players: &[[f64; 3]]) {
+        const AHEAD_M: f64 = 0.6;
+        const DOOR_CLEAR_M: f64 = 1.6;
+        let mut changes = TickChanges::default();
+        let world = &self.world;
+        let get = |c: [i32; 3]| {
+            world.find(chunk_of(c[0], c[1], c[2]))?;
+            Some(world.get_voxel_if_loaded(c))
+        };
+        let open = self.creatures.doors_to_open(&get, AHEAD_M);
+        // Still a door this opened, open: close it when nobody is near.
+        let mut keep = Vec::new();
+        let mut close = Vec::new();
+        for c in std::mem::take(&mut self.creatures.opened_doors) {
+            let Some(m) = get(c) else { continue };
+            let Some(shut) = dwell_world::edit::toggled(m) else {
+                continue;
+            };
+            if !crate::creatures::closed_door(shut) {
+                continue; // a player closed it, or it is not open
+            }
+            let player_near = players.iter().any(|p| {
+                let centre = dwell_world::pos_of_cell(c);
+                (p[0] - centre[0] - 0.5).hypot(p[2] - centre[2] - 0.5) < DOOR_CLEAR_M
+                    && (p[1] - centre[1]).abs() < 3.0
+            });
+            if player_near || self.creatures.door_user_near(c, DOOR_CLEAR_M) {
+                keep.push(c);
+            } else {
+                close.push((c, shut));
+            }
+        }
+        let mut any = false;
+        for (c, shut) in close {
+            changes.set_and_unsupport(&mut self.world, c, shut);
+            any = true;
+        }
+        for c in open {
+            let m = self.world.get_voxel_if_loaded(c);
+            if let Some(o) = dwell_world::edit::toggled(m)
+                && crate::creatures::closed_door(m)
+            {
+                changes.set_and_unsupport(&mut self.world, c, o);
+                keep.push(c);
+                any = true;
+            }
+        }
+        self.creatures.opened_doors = keep;
+        if any {
+            self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        }
+    }
+
     pub(super) fn creatures_hello(&mut self, id: SessionId) {
         let Some(s) = self.sessions.get_mut(&id) else {
             return;
@@ -208,6 +265,7 @@ impl Server {
             Some(world.get_voxel_if_loaded(c))
         };
         self.creatures.step_near(&get, &players);
+        self.npc_doors(&players);
         // Defeated NPCs whose kneel is over stand up at the shrine nearest where they fell, on
         // that face (§11.13, docs/SHRINES.md §5); where none is near, where they knelt.
         for (id, knelt) in self.creatures.take_stand_ups() {

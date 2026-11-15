@@ -228,7 +228,8 @@ impl LooseItems {
             if count > 0 && !item.is_empty() {
                 out.push(LooseItem {
                     id: 0,
-                    stack: Stack::new(&item, count),
+                    // An old item name reads as the item it became (`dwell:rock` → a rock shard).
+                    stack: Stack::new(dwell_protocol::inventory::canonical_item(&item), count),
                     position,
                     fall: 0.0,
                     resting: false,
@@ -291,7 +292,7 @@ mod tests {
         assert!(items.removed.contains(&first));
         assert!(items.get(second).is_some());
         for _ in 0..MAX_DROPS {
-            items.drop(Stack::new("dwell:rock", 1), [0.5, 10.0, 0.5]);
+            items.drop(Stack::new("dwell:rock_shard", 1), [0.5, 10.0, 0.5]);
         }
         assert_eq!(items.items.len(), MAX_DROPS);
         assert!(items.get(second).is_none(), "the oldest went first");
@@ -311,10 +312,19 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_old_rock_loads_as_a_rock_shard() {
+        // face-a-only: a byte format. Owner, 2026-11-15: "One item: rock = shard".
+        let mut items = LooseItems::default();
+        items.drop(Stack::new("dwell:rock", 4), [1.0, 40.0, 2.0]);
+        let saved = LooseItems::from_bytes(&items.to_bytes()).unwrap();
+        assert_eq!(saved[0].stack, Stack::new("dwell:rock_shard", 4));
+    }
+
+    #[test]
     fn a_worn_tool_keeps_its_wear_across_a_save_and_an_older_save_loads_unworn() {
         // face-a-only: a byte format.
         let mut items = LooseItems::default();
-        items.drop(Stack::new("dwell:rock", 3), [1.0, 40.0, 2.0]);
+        items.drop(Stack::new("dwell:rock_shard", 3), [1.0, 40.0, 2.0]);
         let worn = Stack {
             wear: 11,
             ..Stack::new("dwell:stone_axe", 1)
@@ -322,7 +332,7 @@ mod tests {
         items.drop(worn.clone(), [2.0, 40.0, 2.0]);
         let saved = LooseItems::from_bytes(&items.to_bytes()).unwrap();
         assert_eq!(saved.len(), 2, "the wear entry is not an item");
-        assert_eq!(saved[0].stack, Stack::new("dwell:rock", 3));
+        assert_eq!(saved[0].stack, Stack::new("dwell:rock_shard", 3));
         assert_eq!(saved[1].stack, worn, "21 hits left, not a fresh axe");
         assert_eq!(saved[1].position, [2.0, 40.0, 2.0]);
 

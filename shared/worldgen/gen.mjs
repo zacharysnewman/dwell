@@ -275,6 +275,9 @@ const PLACEMENT_KEYS = [
   "rotate",
   "variants",
   "tops",
+  "cliffReach",
+  "wet",
+  "bleed",
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
@@ -440,6 +443,11 @@ export function validatePlacements(
       fail(`${at}: maxSlopeDeg must be in (0, 90) degrees`);
     if (p.tops !== undefined && !(isNum(p.tops) && p.tops >= 0 && p.tops <= 1))
       fail(`${at}: tops must be in [0, 1]`);
+    if (p.cliffReach !== undefined && !(isNum(p.cliffReach) && p.cliffReach >= 0 && p.cliffReach <= 64))
+      fail(`${at}: cliffReach must be in [0, 64] m`);
+    if (p.wet !== undefined && typeof p.wet !== "boolean") fail(`${at}: wet must be true or false`);
+    if (p.bleed !== undefined && !(isNum(p.bleed) && p.bleed >= 0 && p.bleed <= 200))
+      fail(`${at}: bleed must be in [0, 200] m`);
     // Negative: two crowns may interleave by that many blocks (a dense stand, WORK_QUEUE item 32).
     if (!(Number.isInteger(p.spacing) && p.spacing >= -4 && p.spacing <= 16)) {
       fail(`${at}: spacing must be a whole number of blocks in [-4, 16]`);
@@ -540,6 +548,9 @@ export function placementsRust(data, species = registrySpecies()) {
     });
     rs.push(`        variants: &[${vs.join(", ")}],`);
     rs.push(`        tops: ${rf(p.tops ?? 1)},`);
+    rs.push(`        cliff_reach: ${rf(p.cliffReach ?? 0)},`);
+    rs.push(`        wet: ${p.wet === true},`);
+    rs.push(`        bleed: ${rf(p.bleed ?? 0)},`);
     rs.push("    },");
   }
   rs.push("];");
@@ -2524,7 +2535,7 @@ export function validateGrass(data, blocks, decorations) {
     throw new Error(`grass.json: ${m}`);
   };
   if (typeof data !== "object" || data === null) fail("must be an object");
-  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", ...Object.keys(GRASS)];
+  const keys = ["$comment", "block", "on", "onRamps", "decoration", "stages", "height", ...Object.keys(GRASS)];
   const extra = Object.keys(data).filter((k) => !keys.includes(k));
   if (extra.length) fail(`unknown ${extra.join(", ")}`);
   if (typeof data.block !== "string" || !blocks.has(data.block))
@@ -2563,8 +2574,44 @@ export function validateGrass(data, blocks, decorations) {
   for (const k of ["reach", "openAbove", "catchUpDays"]) {
     if (!Number.isInteger(data[k])) fail(`${k} must be a whole number`);
   }
+  validateGrassHeight(data, blocks.get(data.block), fail);
   validateGrassStages(data, blocks.get(data.block), fail);
+  // A column grows past its first cell only where that cell grows full.
+  const full = data.stages.share[data.stages.share.length - 1];
+  if (data.height.cells.some((b) => b.cells > 1 && b.share < full))
+    fail(`height.cells: a band above 1 cell needs at least full height's share ${full}`);
   return data;
+}
+
+/** The most ½ m cells a stand of tall grass grows to (owner 2026-11-14: "up to 2m"). */
+export const GRASS_MAX_CELLS = 4;
+
+/** grass.json's `height` (a stand up to 2 m, docs/ECOLOGY.md §10) against the grown block and its stages. */
+function validateGrassHeight(data, block, fail) {
+  const h = data.height;
+  if (typeof h !== "object" || h === null) fail("height must be an object");
+  const extra = Object.keys(h).filter((k) => !["$comment", "stalk", "daysPerCell", "cells"].includes(k));
+  if (extra.length) fail(`height: unknown ${extra.join(", ")}`);
+  // Checked before the stages (whose order leaves the stalk out).
+  const property = data.stages?.property;
+  const values = block.properties?.[property] ?? [];
+  if (values.length && (typeof h.stalk !== "string" || !values.includes(h.stalk) || (data.stages?.order ?? []).includes(h.stalk)))
+    fail(`height.stalk must be a ${property} value of ${data.block} that is not a stage`);
+  if (!(isNum(h.daysPerCell) && h.daysPerCell >= 0.25 && h.daysPerCell <= 60))
+    fail("height.daysPerCell must be in [0.25, 60]");
+  const bands = h.cells;
+  if (!Array.isArray(bands) || bands.length === 0) fail("height.cells must list one or more bands");
+  for (const b of bands) {
+    if (typeof b !== "object" || b === null || Object.keys(b).some((k) => k !== "share" && k !== "cells"))
+      fail("height.cells: each band is { share, cells }");
+    if (!(isNum(b.share) && b.share >= 0 && b.share <= 1)) fail("height.cells: share must be in [0, 1]");
+    if (!(Number.isInteger(b.cells) && b.cells >= 1 && b.cells <= GRASS_MAX_CELLS))
+      fail(`height.cells: cells must be a whole number in [1, ${GRASS_MAX_CELLS}]`);
+  }
+  if (bands[0].share !== 0 || bands[0].cells !== 1)
+    fail("height.cells must start at share 0 with 1 cell");
+  if (bands.some((b, i) => i > 0 && !(b.share > bands[i - 1].share && b.cells > bands[i - 1].cells)))
+    fail("height.cells: each band's share and cells must rise over the one before");
 }
 
 /** The least mean days from sprout to full height (owner 2026-11-12: "a week or more"). */
@@ -2580,8 +2627,10 @@ function validateGrassStages(data, block, fail) {
   if (!values) fail(`stages.property ${JSON.stringify(st.property)} is not a property of ${data.block}`);
   if (!Array.isArray(st.order) || st.order.length < 4)
     fail("stages.order must list at least 4 values (a sprout to full)");
-  if (st.order.length !== values.length || st.order.some((v) => !values.includes(v)) || new Set(st.order).size !== st.order.length)
-    fail(`stages.order must list each of ${data.block}'s ${st.property} values once (${values.join(", ")})`);
+  // Every value but the stand's stalk (`height.stalk`, a lower cell) is a stage.
+  const staged = values.filter((v) => v !== data.height?.stalk);
+  if (st.order.length !== staged.length || st.order.some((v) => !staged.includes(v)) || new Set(st.order).size !== st.order.length)
+    fail(`stages.order must list each of ${data.block}'s ${st.property} values once (${staged.join(", ")})`);
   if (st.order[st.order.length - 1] !== values[0])
     fail(`stages.order must end with the property's default ${values[0]} (full: placed and saved tall grass)`);
   if (!Array.isArray(st.days) || st.days.length !== st.order.length - 1 || st.days.some((d) => !(isNum(d) && d >= 1 && d <= 60)))
@@ -2620,6 +2669,13 @@ export function grassRust(g) {
         `        GrassStage { value: ${JSON.stringify(v)}, days: ${f(g.stages.days[i] ?? 0)}, share: ${f(g.stages.share[i])} },`,
     ),
     "    ],",
+    "    height: GrassHeight {",
+    `        stalk: ${JSON.stringify(g.height.stalk)},`,
+    `        days_per_cell: ${f(g.height.daysPerCell)},`,
+    "        cells: &[",
+    ...g.height.cells.map((b) => `            GrassCells { share: ${f(b.share)}, cells: ${b.cells} },`),
+    "        ],",
+    "    },",
     "};",
     "",
   ].join("\n");

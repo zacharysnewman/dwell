@@ -22,7 +22,7 @@ const ATTACK_FIELDS = ['reachM', 'cooldownS', 'damage', 'knockbackMps', 'liftMps
 /** A death's drop (WORK_QUEUE item 35): an item and how many, [min, max] or n. */
 const DROP_FIELDS = ['item', 'count'];
 const RULE_FIELDS = ['creature', 'on', 'chance', 'group', 'mix', 'spacingM', 'biomes'];
-const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'appearance', 'pattern', 'held', 'disposition', 'combat', 'fight'];
+const NPC_FIELDS = ['lookAtM', 'turnDegPerS', 'bumpM', 'sidestepM', 'idles', 'colours', 'appearance', 'pattern', 'held', 'disposition', 'combat', 'fight', 'opensDoors'];
 /** How an NPC whose `fightBack` triggered fights with a held weapon (WORK_QUEUE items 35 and 38,
  * round 2): the stance it picks (`counter`: the one that blocks its foe's swing; `random`: either,
  * picked anew each wind-up), whether it raises its block while its foe winds up, whether it strikes
@@ -198,6 +198,9 @@ function validateNpc(n, at, ramps, items, appearance, patterns = loadPatterns())
   range('turnDegPerS', 1, 720);
   range('bumpM', 0.1, 4);
   range('sidestepM', 0.25, 8);
+  // Doors (docs/BLOCK_REGISTRY.md, Doors): an NPC that opens the closed doors it walks through (a
+  // block with a `toggle`) and closes them behind it.
+  if (n.opensDoors !== undefined && typeof n.opensDoors !== 'boolean') fail(`${at}: opensDoors must be true or false`);
   if (!Array.isArray(n.idles) || n.idles.length === 0) fail(`${at}: idles must be a non-empty list`);
   n.idles.forEach((d, i) => {
     const iat = `${at}.idles[${i}]`;
@@ -485,7 +488,7 @@ function npcRust(n) {
         .map((pt) => `Pattern { name: ${JSON.stringify(pt.name)}, weight: ${f(pt.weight)}, colours: ${strs(pt.colours)}, pairs: &[${pt.pairs.map(([part, list]) => `(${JSON.stringify(part)}, ${strs(list)})`).join(', ')}] }`)
         .join(', ')}] })`
     : 'None';
-  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}], appearance: ${appearance}, pattern: ${pattern} })`;
+  return `Some(NpcDef { look_at_m: ${f(n.lookAtM)}, turn_deg_per_s: ${f(n.turnDegPerS)}, bump_m: ${f(n.bumpM)}, sidestep_m: ${f(n.sidestepM)}, held: ${n.held ? `Some(${JSON.stringify(n.held)})` : 'None'}, disposition: Disposition::${pose(n.disposition ?? 'neutral')}, combat: Combat::${pose(n.combat ?? 'none')}, fight: ${fightRust({ ...FIGHT_DEFAULTS, ...(n.fight ?? {}) })}, idles: &[${idles}], colours: &[${colours}], appearance: ${appearance}, pattern: ${pattern}, opens_doors: ${n.opensDoors === true} })`;
 }
 
 /**

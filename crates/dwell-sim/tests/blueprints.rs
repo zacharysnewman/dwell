@@ -88,15 +88,21 @@ fn sent(fx: &mut Fixture, ids: &[SessionId]) -> Vec<Vec<BlueprintsMessage>> {
 }
 
 /// The cells of the world's blueprint `b` holding their block, and those left.
+/// (pieces built, pieces left): a multi-cell block's cells that come with its first (a door's upper
+/// cells, `comes_with`) are not pieces of their own.
 fn progress(fx: &mut Fixture, b: &Blueprint) -> (usize, usize) {
     let g = Ghost::of(b);
     let world = fx.server.world();
-    let done = g
+    let pieces: Vec<_> = g
         .cells
+        .iter()
+        .filter(|c| !dwell_world::blueprint::comes_with(c.state))
+        .collect();
+    let done = pieces
         .iter()
         .filter(|c| built(world.get_voxel(c.world[0], c.world[1], c.world[2]), c.state))
         .count();
-    (done, g.cells.len() - done)
+    (done, pieces.len() - done)
 }
 
 both_faces!(
@@ -255,7 +261,8 @@ both_faces!(
         fx.server
             .world()
             .set_voxel(occupied[0], occupied[1], occupied[2], dirt);
-        let total = Ghost::of(&b).cells.len();
+        // Pieces: a door's cells above its first come with it (`comes_with`).
+        let total = progress(&mut fx, &b).1;
         step(&mut fx, 2);
         let builders = fx.server.builders_of(id);
         assert_eq!(builders.len(), 1, "a builder came");

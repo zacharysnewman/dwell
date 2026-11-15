@@ -3480,6 +3480,55 @@ impl Client {
             .as_mut()
             .is_some_and(|g| g.place_blueprint_structure(&s, turn))
     }
+    /// "Test in town" (docs/BLUEPRINTS.md §6c): a structure of the player's library (as
+    /// `placeBlueprintCells` takes it) placed as a blueprint beside the nearest town, so its builders
+    /// build it; with no town near, at the crosshair. "town" placed in a town, "here" at the
+    /// crosshair, "" not placed.
+    #[wasm_bindgen(js_name = placeBlueprintInTown)]
+    pub fn place_blueprint_in_town(
+        &self,
+        name: &str,
+        size: Vec<u8>,
+        anchor: Vec<u8>,
+        palette: &str,
+        cells: Vec<u8>,
+        turn: u8,
+    ) -> String {
+        let (Ok(size), Ok(anchor)) = (<[u8; 3]>::try_from(size), <[u8; 3]>::try_from(anchor))
+        else {
+            return String::new();
+        };
+        let names: Vec<String> = palette.lines().map(str::to_owned).collect();
+        let states: Vec<Option<dwell_blocks::StateId>> = cells
+            .iter()
+            .map(|&c| {
+                (c > 0)
+                    .then(|| names.get(usize::from(c) - 1))
+                    .flatten()
+                    .and_then(|n| dwell_blocks::parse_state(n).ok())
+            })
+            .collect();
+        if states.len() != size.iter().map(|&n| usize::from(n)).product::<usize>() {
+            return String::new();
+        }
+        let s = dwell_world::structure::Structure::from_cells(
+            dwell_blocks::intern(name),
+            0,
+            size.map(i32::from),
+            anchor.map(i32::from),
+            &states,
+        );
+        let mut st = self.inner.borrow_mut();
+        match st
+            .game
+            .as_mut()
+            .and_then(|g| g.place_blueprint_in_town(&s, turn))
+        {
+            Some(true) => "town".into(),
+            Some(false) => "here".into(),
+            None => String::new(),
+        }
+    }
     /// Removes the blueprint the view aims into; false when none is.
     #[wasm_bindgen(js_name = removeAimedBlueprint)]
     pub fn remove_aimed_blueprint(&self) -> bool {

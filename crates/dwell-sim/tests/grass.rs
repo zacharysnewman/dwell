@@ -208,3 +208,36 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Up to 2 m (WORK_QUEUE item 58 g): over the days the server grows, a lush stand grows cell
+    /// by cell to four ½ m cells, its lower cells stalks; a bite at its foot leaves a sprout and
+    /// nothing standing over it.
+    fn the_server_grows_a_lush_stand_to_two_metres_and_a_bite_takes_it(f: FaceFrame) {
+        let rule = dwell_worldgen::grass::Rule::build(0);
+        let mut fx = scene(f, config(f), 0);
+        let foot = [10, FLAT_TOP_Y, 10];
+        let [x, y, z] = f.cell(foot);
+        fx.server.world().set_voxel(x, y, z, f.state(rule.block()));
+        for _ in 0..12 {
+            fx.server.step();
+        }
+        grow_all(&mut fx);
+        let at = |fx: &mut Fixture, k: i32| {
+            let [x, y, z] = f.cell([foot[0], foot[1] + k, foot[2]]);
+            f.state(fx.server.world().get_voxel(x, y, z))
+        };
+        for k in 0..3 {
+            assert_eq!(at(&mut fx, k), rule.stalk(), "cell {k} a stalk");
+        }
+        assert_eq!(at(&mut fx, 3), rule.block(), "the tip full, 2 m up");
+        assert_eq!(at(&mut fx, 4), M.air, "no more than four cells");
+        let bite = fx.server.eaten_stand(f.cell(foot));
+        assert_eq!(bite.len(), 4);
+        assert_eq!(bite[0], (f.cell(foot), f.state(rule.sprout())));
+        assert!(
+            bite[1..].iter().all(|&(_, s)| s == M.air),
+            "the stand over it eaten too"
+        );
+    }
+);

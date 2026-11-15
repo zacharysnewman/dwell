@@ -344,6 +344,17 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(u8::from(*detail));
             [*size, *z0, *z1].into_iter().for_each(|v| w.u32(v));
         }
+        Job::CloudWeather {
+            face_b,
+            corner,
+            seconds,
+        } => {
+            w.u8(13);
+            w.u8(u8::from(*face_b));
+            [corner[0], corner[1], *seconds]
+                .into_iter()
+                .for_each(|v| w.f64(v));
+        }
         Job::ImpostorBake { layer, px } => {
             w.u8(9);
             w.u32(*layer);
@@ -531,6 +542,11 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             i: r.i32()?,
             k: r.i32()?,
         },
+        13 => Job::CloudWeather {
+            face_b: r.u8()? == 1,
+            corner: [r.f64()?, r.f64()?],
+            seconds: r.f64()?,
+        },
         _ => return Err(DecodeError),
     };
     Ok((id, job))
@@ -615,6 +631,16 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
         Output::CloudNoise(b) => {
             w.u8(9);
             w.bytes(b);
+        }
+        Output::CloudWeather {
+            face_b,
+            corner,
+            texels,
+        } => {
+            w.u8(12);
+            w.u8(u8::from(*face_b));
+            corner.iter().for_each(|&v| w.f64(v));
+            w.bytes(texels);
         }
         Output::Impostor {
             centre_y,
@@ -722,6 +748,11 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
         7 => Output::Done,
         8 => Output::LodMap(if r.u8()? == 1 { Some(r.bytes()?) } else { None }),
         9 => Output::CloudNoise(r.bytes()?),
+        12 => Output::CloudWeather {
+            face_b: r.u8()? == 1,
+            corner: [r.f64()?, r.f64()?],
+            texels: r.bytes()?,
+        },
         10 => Output::Impostor {
             centre_y: f32::from_bits(r.u32()?),
             radius: f32::from_bits(r.u32()?),
@@ -788,6 +819,7 @@ mod tests {
         assert_eq!(ground.map(|g| g.2.len()), Some(n));
     }
 
+    // both-faces: the round trip carries face B's flag (and face A's in other jobs) as data.
     #[test]
     fn every_job_and_result_round_trips() {
         let r = Runner::world(GENERATOR_TERRAIN, 7);
@@ -828,6 +860,11 @@ mod tests {
                 size: 16,
                 z0: 3,
                 z1: 9,
+            },
+            Job::CloudWeather {
+                face_b: true,
+                corner: [-32768.5, 1024.25],
+                seconds: 12345.678,
             },
             Job::ImpostorBake { layer: 17, px: 64 },
             Job::FarTrees {
@@ -922,6 +959,15 @@ mod tests {
         assert_eq!(
             decode_output(&encode_output(5, &noise)).unwrap(),
             (5, noise)
+        );
+        let weather = Output::CloudWeather {
+            face_b: true,
+            corner: [-4096.0, 81920.5],
+            texels: vec![128, 7, 0, 255],
+        };
+        assert_eq!(
+            decode_output(&encode_output(6, &weather)).unwrap(),
+            (6, weather)
         );
         let baked = Output::Impostor {
             centre_y: 6.25,

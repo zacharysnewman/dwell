@@ -195,7 +195,7 @@ mod tests {
         // face-a-only: names, no geometry.
         let mut i = Inventory::default();
         i.slots[0] = Some(Stack::new("dwell:dirt", 3));
-        i.slots[1] = Some(Stack::new("dwell:rock", 1));
+        i.slots[1] = Some(Stack::new("dwell:rock_shard", 1));
         let palette = ["dwell:stone", "dwell:dirt"];
         assert_eq!(palette_slot_for(&i, 0, &palette), Some(1));
         assert_eq!(
@@ -211,7 +211,7 @@ mod tests {
             // Owner, 2026-11-09: "Why don't sticks and rocks in your hand and hotbar look like
             // sticks and rocks on the ground?" A loose one is its look's shape: a rod long along
             // x, a lump of 14 faces; not the stand-in block's cube.
-            for (item, triangles) in [("dwell:stick", 12), ("dwell:rock", 32)] {
+            for (item, triangles) in [("dwell:stick", 12), ("dwell:wood", 32)] {
                 let look = inv::item(item).and_then(|d| d.look).expect(item);
                 let (meshes, size) = item_meshes(item, f).expect(item);
                 let m = &meshes[0].opaque;

@@ -1,0 +1,15 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md §6.1): a fallen block of a cliff, 2 m by 1.5 m by 1.5 m, for its talus (placements.json `talus`, WORK_QUEUE item 15, 0.69). Not Dwell's rock design.",
+  "format": 1,
+  "name": "dwell:talus_block",
+  "kind": "voxels",
+  "size": [2, 3, 2],
+  "anchor": [0, 0, 0],
+  "palette": { ".": null, "s": "dwell:stone" },
+  "layers": [
+    ["ss", "ss"],
+    ["ss", "s."],
+    ["s.", ".."]
+  ],
+  "variants": { "rotate": [0, 90, 180, 270] }
+}

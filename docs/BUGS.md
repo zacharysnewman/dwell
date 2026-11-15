@@ -6,23 +6,65 @@ pins it.
 
 ## Open
 
-### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
+### 181. Stone tools can't be crafted from the rocks dirt and grass give
 
-Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
-a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
-and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
-`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
-generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
-only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
-height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
-(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
-borders), and none was bisected yet.
+Owner, 2026-11-15 (screenshot: a backpack with 33 grass fibre, 17 sticks and 13 Rocks; Combine offered only Thatch
+and the Wooden shovel): "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards". Dirt and grass
+dropped `dwell:rock` (chance 0.5) and the ground's loose rocks were `dwell:rock`, an item apart from
+`dwell:rock_shard`, which the stone tool recipes take and only stone gave. The owner's decision: "One item: rock =
+shard".
 
-**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
-(about 9 s).
+**Owner should see:** breaking dirt or grass, and picking up a rock from the ground, gives Rock shards; with 2 sticks,
+2 rock shards and 2 grass fibre the backpack's Combine offers the stone axe, the stone pickaxe and the stone shovel;
+the Rocks already in a backpack (or lying loose in a saved world) show as Rock shards.
 
-**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
-as from face A.
+**Fixed:** one item. Dirt's and grass's random drop and the ground rock's item are `dwell:rock_shard`
+(`shared/blocks/dwell.json`, `shared/ground/ground.json`; the ground rock now lies as a shard, its item's one look);
+`dwell:rock` is gone as an item and kept as an alias (`shared/inventory/inventory.json` `aliases`, generated into
+`dwell_protocol::inventory::ITEM_ALIASES`), so a saved or sent stack of it reads 1:1 as rock shards
+(`canonical_item`, in `Inventory::read` and the saved loose items). Tests: `dwell-protocol` inventory
+`rocks_from_dirt_make_the_stone_tools` (red: no stone tool offered), `an_old_rock_reads_back_as_a_rock_shard` (red),
+the data test's dirt and grass drops (red: `dwell:rock`); `dwell-sim` `a_saved_old_rock_loads_as_a_rock_shard`, the
+ground rock pick-up tests in `tests/items.rs` (a rock shard collected); `shared/inventory/gen.test.mjs` the alias.
+
+### 179. Grass fibre (and the gems) drawn as a block when dropped
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "Plant fiber looks like a block for the drop." A loose grass fibre was a
+`cluster` look (the seeds' heap of tiny lumps) under a green-tinted sand tile, which reads as a little block; the
+gems had no `look` at all, so a loose gem fell back to the stand-in stone block tinted its colour.
+
+**Owner should see:** dropped grass fibre lying as a little fan of green-straw blades, a gem as a small crystal;
+no loose item drawn as a cube.
+
+**Fixed:** a `strands` look shape (five thin blades splayed flat from a tied end, `dwell-mesh` `ground_mesh`) for
+the fibre; the gems a `shard` each; the generator fails an item without a `look` (`shared/inventory/gen.mjs`), so
+nothing can fall back to the block again. Tests: `shared/inventory/gen.test.mjs` "every item that is not a block
+has its own look" (red: the gems had none, the fibre a cluster) and `ground_mesh`
+`the_grass_fibre_draws_strands_not_a_block` (red: a cluster).
+
+### 178. What rested on a destroyed block vanished or floated
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "When you destroy a block with grass, rock, sticks on it, those should drop
+too." and "Essentially a general rule of blocks or items sitting on a block should be dropped when that block is
+destroyed." A plain break already dropped the blocks standing on it and knocked the ground items loose, but the
+other ways a block goes did not: a region's clearing removed the tall grass, torches and saplings on what it
+cleared without their drops, and a region, a blast, a fall into a piece and a felling never knocked the ground
+rocks and sticks on the cells they took (gone, or drawn floating where a client had them). A block registered at
+run time (a mod's) was never counted as attached at all (`dwell_world::edit::attached` read only the build's
+table), nor named for `placeOn`.
+
+**Owner should see:** digging, blasting or clearing the block under tall grass, a torch, a sapling or a ground rock
+or stick drops their items onto the ground (adventure); nothing floats or vanishes; a stack of them drops cell by
+cell.
+
+**Fixed:** one rule, in the one place every change of the world goes through (`Server::broadcast_changes`): the
+attached blocks the tick's writes removed with what held them (block data `needsSupport`, `placeOn`; recorded by
+`TickChanges::set_and_unsupport`) drop their drops, and a ground item over a cell that is no longer solid is
+knocked loose; the separate calls in the break, blast, collapse and chopping paths are gone. `attached` and
+`supported_on` read a run-time block's own data. Blocks that stand on their own keep the support and falling
+rules. Tests (`dwell-sim` `tests/items.rs`, both faces): `a_regions_clearing_drops_what_stood_on_it` and
+`a_blast_under_a_ground_rock_knocks_it_loose` (red: no fibre, no rock), `a_data_only_block_and_a_column_of_it_drop_when_their_ground_goes`
+(the fixture `test:moss`, three stacked: red by region, none dropped), `the_blocks_standing_on_a_broken_block_drop_with_it`.
 
 ### 174. On a phone nothing in the inventory answers after opening the bag
 
@@ -700,6 +742,103 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 180. Releases 0.70.3 onward never reached the site: Pages over its 1 GB limit (fixed after 0.70.7)
+
+Owner, 2026-11-15: "And 70.3/4 haven't deployed yet." The Release workflow tagged and published each release, but its
+"Update the site" build stopped: `Site: 1025.0 MB of 1000.0 MB (102.5%; budget 900 MB), 37 builds, about 27.7 MB per
+build ⛔ over the Pages limit: the deploy is stopped` (run 43668658029, 0.70.4; the same for 0.70.3–0.70.7). Fix: the
+retention policy (`shared/version/site-retention.json`) keeps the newest 12 lines (was 20) and 4 dev builds (was 10);
+older builds stay as GitHub releases and can be pinned back. `site.test.ts`'s policy test pins the new values (red on
+the old file). Long term the Cloudflare move lifts the limit. Owner should see: the launcher at /dwell/ offering the
+newest release (0.70.8 or later) within minutes of its merge.
+
+### 177. Vertical streaks through a moving flood: water column side faces inside the water (fixed after 0.70.5)
+
+Found 2026-11-14 by Claude in the dam-break recording (`videos/dam-break/`, scene `shared/theater/scenes/dam_break.json`;
+not reported by the owner). Through the flood's translucent water, a staircase of thin vertical lines (the outlines of
+the columns' levels) and two long bars across the valley along the dam's old upstream face, both drawn inside the water.
+
+**Owner should see:** the dam break's flood reads as one clear body of water: no streaks or bars inside it, the
+flood front and the banks as before; a river and the sea look as before.
+
+**Cause:** two. (1) **Step faces the heightfield already draws.** With the GPU heightfield drawing the water's surface
+(`ChunkFlags::water_tops` false), the chunk mesher still drew a side face between two columns of one water at different
+levels (the "slit" fix of BUGS.md #4). The heightfield joins a step within `join_m` (0.2 m) into a slope, so that face
+stood across the slope, and it draws a bigger step as a skirt, so the face doubled it. Worse, while only a chunk's water
+levels change the client redraws its tile, not its mesh (`chunk_stream` `levels_only`, until the water settles), so the
+faces stayed where the levels had been and the moving flood rose over them: measured on the scene's flood natively, half
+of the meshed side faces stood fully inside the water a second later. (2) **A sheet of water hung where the dam stood.**
+The lake was held still till the dam went; the columns against the dam fell 3 m in the grid's first step after the
+release, before it had drawn them (`drawn` unset), and its draw cleared cells only from the floor up to the new level:
+rows 27–29 m of the row against the dam stayed water over air for good (24 columns), a 1 m sheet across the valley
+drawn as the two bars.
+
+**Fixed:** (1) in the heightfield mode the mesher leaves out a side face between two cells of one water that lie in
+their columns' top water (`heightfield::surface_draws_step`); the grid and skirts draw that step. (2) a column the grid
+hasn't drawn since its cells were written otherwise clears the liquid standing on over its level too (`water.rs` `draw`).
+Red → green: `dwell-mesh` `heightfield::tests::steps_between_columns_of_one_water_are_the_surfaces_not_the_meshes`
+(both faces; red: 8 side triangles in the water) and `dwell-sim --test scenes no_water_hangs_where_the_dam_stood` (red:
+24 water cells over air at z 99). Left: the flood front's step-cell slopes (`step_water`) are meshed too and also stay
+behind while only the levels change, a few square metres at the front at a time.
+
+### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B) (fixed after 0.70.2)
+
+Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
+a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
+and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
+`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
+generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
+only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
+height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
+(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
+borders), and none was bisected yet.
+
+**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
+(about 9 s).
+
+**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
+as from face A.
+
+**Cause (2026-11-14):** not a face-B mirroring, and not the terrain: the probe. On face B the flier came down 6 cm from
+the edge of a column one cell (½ m) higher than the one under its centre (feet at face-local (−5973.94, 99.49,
+−724.78); the column under it tops out at 99.0, its −x neighbour at 99.5), and the 0.3 m capsule rests on that
+neighbour's edge. `moon_probe::ground_height` read only the column under the feet's centre, so a body standing on a step
+read +0.49 m. Face A's landing spot happened to be clear of a step. **Fix:** the probe's ground is the highest column top
+the body's footprint covers (`footprint_top`, the controller's `body.radius`), on the moon and the sun; the moon probe's
+test now stands at cell middles. Red → green: `moon_probe` `by_a_step_the_ground_is_the_higher_column_the_body_stands_on`
+(a/b) read 0.5 m with the old centre-column rule; the sun trip passes on both faces.
+
+### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
+
+Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
+(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
+silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
+the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
+held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
+beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
+16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
+grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
+reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
+**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
+
+**Fixed (2026-11-14, `claude/flood-sound`).** Two causes. (1) **The listener stayed at the player's body**: a placed
+camera (a theater path, a cinematic take) moved the view but `Game::draw` set the audio listener, and so the ambience
+probe, from the body's eye only, and the take's player stood on the land 180 m from the camera; so the wind bed read
+the body's 1.6 m `height` and every placed sound was heard from there. The listener now follows the placed camera; the
+probe also reads 64 m down (was 40 m), past the wind bed's full 60 m. (2) **Moving water had no voice past the beds'
+~24 m**: a new hearing (`dwell-game` `rush.rs`, data `shared/sounds` `ambient.rush`) reads the current table out to
+160 m, every 4th column faster than 0.15 m/s adding speed × depth × its area weighted by distance (and each
+waterfall its discharge), and drives a rushing loop (`water_rush`, its loudness and brightness by the level, placed
+2 m toward the flow), a `flood` bed on the river recording (a new ambience input `rush`) and a `flood_burst` once
+when much water starts moving at once (the rise over 1 s at least half of what is heard). Still water adds nothing.
+Red → green: `cargo test -p dwell-client --test game_local a_placed_camera_high_up_is_the_listener_and_hears_the_height`
+failed on the unfixed code (the listener at the body, `[-1.0, 33.6, -0.25]` vs the camera's `[29, 102, -0.25]`) and
+passes; `dwell-game` `rush::tests` (still water silent, flow near the listener heard from its side, falling off with
+distance yet heard at 60–100 m, a waterfall louder, one burst at the onset and none walking up to running water, both
+faces) and `dwell-sim --test scenes the_dam_break_is_heard_from_the_takes_camera` (silent before the event; level
+0.11 at 3.2 s rising to 0.5 from the take's camera; one burst) are new (the old code had no hearing of the grid's
+water: the take recorded −91 dB).
 
 ### 171. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types (fixed in 0.65.0)
 

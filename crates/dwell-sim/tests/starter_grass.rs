@@ -87,3 +87,57 @@ fn the_servers_meadow_chunks_keep_the_generated_tall_grass() {
         "the server's chunks hold {now} tall grass cells, the generator's {generated}"
     );
 }
+
+/// Up to 2 m (WORK_QUEUE item 58 g) in the starter's meadow as the game runs it: over a few world
+/// days the server's grass step grows the meadow's lush columns to stands of several cells (stalks
+/// under a tip), and its dry ones stay one cell.
+#[test]
+fn the_starter_meadow_grows_tall_over_a_few_days() {
+    // face-a-only: the tour's meadow is face A's.
+    install();
+    let f = FaceFrame::A;
+    let t = BifacialTerrain::for_generator(GENERATOR_TERRAIN, SEED).unwrap();
+    let y = t.local(f.face).surface_y_at(MEADOW[0], MEADOW[1]).unwrap();
+    let mut fx = Fixture::new(ServerConfig {
+        generator_version: GENERATOR_TERRAIN,
+        world_seed: SEED,
+        spawn: Some(f.point([
+            f64::from(MEADOW[0]) + 0.5,
+            y + 1.0,
+            f64::from(MEADOW[1]) + 0.5,
+        ])),
+        mode: "creative".into(),
+        // A world day every 3 s of the tick (the clock's 20-minute day × 400, `?growth=400`).
+        growth_speed: 400.0,
+        ..flat()
+    });
+    fx.join(1, &Client::new(1));
+    let stalk = dwell_blocks::parse_state("dwell:tall_grass[stage=stalk]").unwrap();
+    let stalks = |fx: &mut Fixture| -> usize {
+        fx.server
+            .world()
+            .chunks()
+            .map(|(_, k)| k.voxels().iter().filter(|&&m| m == stalk).count())
+            .sum()
+    };
+    for _ in 0..2 * SIM_HZ {
+        fx.server.step();
+    }
+    let _ = fx.take_all();
+    let before = stalks(&mut fx);
+    // ~10 world days.
+    for _ in 0..30 * SIM_HZ {
+        fx.server.step();
+    }
+    let _ = fx.take_all();
+    let after = stalks(&mut fx);
+    println!(
+        "days {:.1}, grown chunks {}, stalks {before} → {after}",
+        fx.server.world_days(),
+        fx.server.grass().days.len()
+    );
+    assert!(
+        after > 1000,
+        "the meadow grew tall: {before} → {after} stalks"
+    );
+}

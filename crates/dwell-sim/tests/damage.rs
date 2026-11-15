@@ -43,6 +43,7 @@ fn scene_with(f: FaceFrame, config: ServerConfig) -> Fixture {
         .world()
         .set_voxel(x, y, z, f.state(require("dwell:dirt")));
     fx.join(1, &Client::new(1));
+    start_with_axe(&mut fx.server, 1);
     fx.send(1, Message::InventoryAction(InventoryAction::Hello));
     fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
     for _ in 0..5 {
@@ -329,7 +330,7 @@ dwell_world::both_faces!(
         // sixteenths of a 1-in-8 bite: 26 for 5 hits, 43 for 3 (the metal tool's 5/3 the stone's).
         for (stone_tool, metal_tool, cell) in [
             ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE),
-            ("dwell:wooden_shovel", "dwell:metal_shovel", DIRT),
+            ("dwell:stone_shovel", "dwell:metal_shovel", DIRT),
         ] {
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", stone_tool);
@@ -493,12 +494,12 @@ dwell_world::both_faces!(
         let mut rocks = 0;
         for _ in 0..12 {
             let mut fx = scene_with(f, config(f, "adventure"));
-            hold(&mut fx, "adventure", "dwell:wooden_shovel");
+            hold(&mut fx, "adventure", "dwell:stone_shovel");
             let n = hits_to_break(&mut fx, f, DIRT);
             assert_eq!(n, 5, "a stone-tier shovel");
             assert_eq!(loose(&fx, "dwell:dirt_clump"), 8);
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
-            rocks += loose(&fx, "dwell:rock");
+            rocks += loose(&fx, "dwell:rock_shard");
         }
         assert!(
             rocks > 0,
@@ -806,5 +807,21 @@ dwell_world::both_faces!(
             "the rest refused"
         );
         assert_eq!(block_at(&mut fx, f, DIRT), "dwell:dirt");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-14: the stone shovel (2 sticks, 2 rock shards, 2 grass fibre) digs dirt in
+    /// fewer hits than the wooden one (the `wood` tier), and wears out after 32 hits as the other
+    /// stone tools do.
+    fn the_stone_shovel_digs_dirt_faster_than_the_wooden_one_and_wears_at_32(f: FaceFrame) {
+        let mut by = Vec::new();
+        for tool in ["dwell:wooden_shovel", "dwell:stone_shovel"] {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", tool);
+            by.push(hits_to_break(&mut fx, f, DIRT));
+        }
+        assert_eq!(by, [6, 5], "wooden, stone");
+        assert_eq!(chopping::durability("dwell:stone_shovel"), Some(32));
     }
 );

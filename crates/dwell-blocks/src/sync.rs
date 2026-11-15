@@ -68,6 +68,11 @@ pub mod tag {
     /// `f32` the cross-section's width (`CrossSection::width`, ADR 0079), after tag 13, sent only
     /// when below 1. A rule: it shapes collision.
     pub const CROSS_WIDTH: u8 = 14;
+    /// `str` property, `u8` index, `u8` count: its place in a column block (`StateInfo::column`,
+    /// a door's four cells), sent only when it has one. A rule: it keeps the block whole.
+    pub const COLUMN: u8 = 15;
+    /// `str` the property a Use flips (`StateInfo::toggle`, a door's `open`), sent only when set.
+    pub const TOGGLE: u8 = 16;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -349,6 +354,16 @@ pub fn state_fields(s: &StateInfo) -> Fields {
         if c.width < 1.0 {
             out.push(field(tag::CROSS_WIDTH, |w| w.f32(c.width)));
         }
+    }
+    if let Some(c) = s.column {
+        out.push(field(tag::COLUMN, |w| {
+            w.str(c.property);
+            w.u8(c.index);
+            w.u8(c.count);
+        }));
+    }
+    if let Some(t) = s.toggle {
+        out.push(field(tag::TOGGLE, |w| w.str(t)));
     }
     if s.near_fade > 0.0 {
         out.push(field(tag::NEAR_FADE, |w| w.f32(s.near_fade)));
@@ -724,6 +739,8 @@ fn default_row(name: &str) -> StateInfo {
         held: None,
         extends_up: None,
         part_of: None,
+        column: None,
+        toggle: None,
         support_role: SupportRole::Ground,
         passable: false,
         axis: Axis::Y,
@@ -757,6 +774,8 @@ fn apply_rules(
     row.moldable = None;
     row.support_role = SupportRole::Ground;
     row.cross_section = None;
+    row.column = None;
+    row.toggle = None;
     for (t, bytes) in fields {
         let mut r = ByteReader::new(bytes);
         match *t {
@@ -855,6 +874,22 @@ fn apply_rules(
                 let width = r.f32();
                 if let (true, Some(c)) = (r.ok() && width.is_finite(), row.cross_section.as_mut()) {
                     c.width = width.clamp(0.05, 1.0);
+                }
+            }
+            tag::COLUMN => {
+                let (property, index, count) = (r.str(MAX_STR), r.u8(), r.u8());
+                if r.ok() && index < count && !property.is_empty() {
+                    row.column = Some(crate::Column {
+                        property: intern(&property),
+                        index,
+                        count,
+                    });
+                }
+            }
+            tag::TOGGLE => {
+                let t = r.str(MAX_STR);
+                if r.ok() && !t.is_empty() {
+                    row.toggle = Some(intern(&t));
                 }
             }
             t if t & tag::LOOK_BIT == 0 => {

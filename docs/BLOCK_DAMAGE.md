@@ -73,7 +73,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   2.5), rounded up; else `default`. A block without `damage` breaks in one hit, as before.
   Prototype values: stone and its ramp `{ default: null, pickaxe: 7 }` (stone pickaxe 5, metal 3, by
   hand or another tool: can't); dirt, grass, snowy grass, sand and their ramps `{ default: 11, shovel: 7 }`
-  (shovel 5, metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
+  (shovel 5 — the stone shovel; the wooden shovel, the `wood` tier since 2026-11-14, 6 — metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
   like the others since WORK_QUEUE item 51).
 - **Generator and validation:** `shared/tools/gen.mjs` reads every block's `damage` (as it does
   `breakWith`), emits `BLOCK_DAMAGE` into `dwell_protocol::chopping`'s table and `client/src/ui/tools.gen.ts`,

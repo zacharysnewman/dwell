@@ -684,19 +684,24 @@ pub const LOOP_OFF: f64 = 0.01;
 
 /// One continuous sound on its own voice: started, moved and stopped by a level (0–1).
 #[derive(Clone, Copy, Debug)]
-struct LoopTrack {
+pub(crate) struct LoopTrack {
     start: SoundKind,
     update: SoundKind,
     stop: SoundKind,
     voice: u32,
-    playing: bool,
+    pub(crate) playing: bool,
     sent: f64,
     sent_at: Option<[f64; 3]>,
     since: f64,
 }
 
 impl LoopTrack {
-    const fn new(start: SoundKind, update: SoundKind, stop: SoundKind, voice: u32) -> Self {
+    pub(crate) const fn new(
+        start: SoundKind,
+        update: SoundKind,
+        stop: SoundKind,
+        voice: u32,
+    ) -> Self {
         Self {
             start,
             update,
@@ -722,7 +727,7 @@ impl LoopTrack {
     }
 
     /// The level this update (`block`: its sound set, for set loops).
-    fn set(
+    pub(crate) fn set(
         &mut self,
         level: f64,
         block: StateId,
@@ -756,7 +761,7 @@ impl LoopTrack {
         }
     }
 
-    fn end(&mut self, out: &mut Vec<SoundEvent>) {
+    pub(crate) fn end(&mut self, out: &mut Vec<SoundEvent>) {
         if self.playing {
             out.push(self.event(self.stop, 0, 0.0, self.sent_at));
             self.playing = false;

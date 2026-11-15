@@ -3815,7 +3815,7 @@ fn scene_bindings(samples: u32) -> String {
          @group(3) @binding(10) var cloud_dist_now: texture_2d<f32>;\n\
          const CLOUD_DEPTH_TAPS: i32 = {taps};\n\
          const CLOUD_HISTORY_CLAMP: f32 = {clamp:?};\n{}",
-        dwell_look::clouds::cloud_march_wgsl(3, 4, 6),
+        dwell_look::clouds::cloud_march_wgsl(3, 4, 6, 11),
     )
 }
 

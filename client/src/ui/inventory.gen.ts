@@ -16,7 +16,6 @@ export interface ItemDef {
 }
 
 export const ITEMS: readonly ItemDef[] = [
-  { name: "dwell:rock", label: "Rock", color: "#8f8a84", size: 0.18, stack: 64, value: 0 },
   { name: "dwell:stick", label: "Stick", color: "#7a5634", size: 0.22, stack: 64, value: 0 },
   { name: "dwell:grass_seed", label: "Grass seed", color: "#b9b45a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:gem", label: "Gem", color: "#4fb07a", size: 0.14, stack: 64, value: 1 },
@@ -24,6 +23,7 @@ export const ITEMS: readonly ItemDef[] = [
   { name: "dwell:wood", label: "Wood chunk", color: "#a07446", size: 0.24, stack: 64, value: 0 },
   { name: "dwell:raw_meat", label: "Raw meat", color: "#b0524a", size: 0.2, stack: 64, value: 0 },
   { name: "dwell:rock_shard", label: "Rock shard", color: "#8f8a84", size: 0.1, stack: 64, value: 0 },
+  { name: "dwell:sand_clump", label: "Sand clump", color: "#d8bf8a", size: 0.1, stack: 64, value: 0 },
   { name: "dwell:dirt_clump", label: "Dirt clump", color: "#8a5a3a", size: 0.1, stack: 64, value: 0 },
   { name: "dwell:grass_fiber", label: "Grass fiber", color: "#9fbf4a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:stone_axe", label: "Stone axe", color: "#7d7468", size: 0.6, stack: 1, value: 0 },
@@ -32,6 +32,7 @@ export const ITEMS: readonly ItemDef[] = [
   { name: "dwell:stone_pickaxe", label: "Stone pickaxe", color: "#8a7a66", size: 0.6, stack: 1, value: 0 },
   { name: "dwell:metal_pickaxe", label: "Metal pickaxe", color: "#8c8f96", size: 0.7, stack: 1, value: 0 },
   { name: "dwell:wooden_shovel", label: "Wooden shovel", color: "#8a6440", size: 1, stack: 1, value: 0 },
+  { name: "dwell:stone_shovel", label: "Stone shovel", color: "#7d7468", size: 1, stack: 1, value: 0 },
   { name: "dwell:metal_shovel", label: "Metal shovel", color: "#8c8f96", size: 1, stack: 1, value: 0 },
 ];
 
@@ -52,7 +53,13 @@ export interface Recipe {
 export const RECIPES: readonly Recipe[] = [
   {"name":"dwell:stone_slab","label":"Stone slab","inputs":[{"item":"dwell:rock_shard","count":8}],"output":{"item":"dwell:stone","count":1}},
   {"name":"dwell:dirt_slab","label":"Dirt slab","inputs":[{"item":"dwell:dirt_clump","count":8}],"output":{"item":"dwell:dirt","count":1}},
+  {"name":"dwell:sand_slab","label":"Sand slab","inputs":[{"item":"dwell:sand_clump","count":8}],"output":{"item":"dwell:sand","count":1}},
   {"name":"dwell:log_slab","label":"Log slab","inputs":[{"item":"dwell:wood","count":8}],"output":{"item":"dwell:log","count":1}},
+  {"name":"dwell:planks_slab","label":"Planks","inputs":[{"item":"dwell:wood","count":8}],"output":{"item":"dwell:planks","count":1}},
+  {"name":"dwell:stone_brick_slab","label":"Stone brick","inputs":[{"item":"dwell:rock_shard","count":8}],"output":{"item":"dwell:stone_brick","count":1}},
+  {"name":"dwell:thatch_slab","label":"Thatch","inputs":[{"item":"dwell:stick","count":6},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:thatch","count":1}},
   {"name":"dwell:stone_axe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_axe","count":1}},
   {"name":"dwell:stone_pickaxe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_pickaxe","count":1}},
+  {"name":"dwell:wooden_shovel","inputs":[{"item":"dwell:stick","count":4},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:wooden_shovel","count":1}},
+  {"name":"dwell:stone_shovel","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_shovel","count":1}},
 ];

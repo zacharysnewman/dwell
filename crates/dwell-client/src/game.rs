@@ -284,6 +284,13 @@ pub trait Scene: TerrainRenderer {
     }
     /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base).
     fn cloud_noise_slab(&mut self, _detail: bool, _z0: u32, _texels: &[u8]) {}
+    /// The clouds' weather field's next map to bake, if one is due (docs/CLOUDS.md §11); asking
+    /// marks one out.
+    fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        None
+    }
+    /// A baked weather map, or `None` when its bake failed.
+    fn cloud_weather_map(&mut self, _map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -966,6 +973,10 @@ pub struct Game<S: Scene> {
     /// The blasts going off near us (docs/EXPLOSIVES.md §4): their flash, smoke, dust and shake.
     blasts: crate::blasts::Blasts,
     fall_sounds: dwell_game::sound::FallSounds,
+    /// The grid's moving water heard from afar, and a flood's burst (BUGS.md #176), with the time
+    /// since it last listened.
+    rush_sounds: dwell_game::rush::RushSounds,
+    rush_elapsed_s: f64,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -999,6 +1010,8 @@ pub struct Game<S: Scene> {
     lod_map: Option<crate::lod_map::LodMap>,
     /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
     far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// The clouds' weather map out with the job workers (docs/CLOUDS.md §11).
+    cloud_weather_asked: Option<dwell_look::weather_field::MapAt>,
     /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
     /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
     /// chunks arrived or changed since they were filtered.
@@ -1249,6 +1262,8 @@ impl<S: Scene> Game<S> {
             falls_shown: true,
             blasts: crate::blasts::Blasts::default(),
             fall_sounds: dwell_game::sound::FallSounds::new(),
+            rush_sounds: dwell_game::rush::RushSounds::new(),
+            rush_elapsed_s: 0.0,
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -1259,6 +1274,7 @@ impl<S: Scene> Game<S> {
             unloads: Default::default(),
             lod_map: None,
             far_tree_jobs: Default::default(),
+            cloud_weather_asked: None,
             far_tree_lists: Default::default(),
             far_tree_felled: Default::default(),
             far_tree_stale: Default::default(),
@@ -2563,6 +2579,22 @@ impl<S: Scene> Game<S> {
                         .borrow_mut()
                         .cloud_noise_slab(detail, z0, &texels);
                 }
+                (Purpose::CloudWeather, out) => {
+                    let mut scene = self.scene.borrow_mut();
+                    match (out, self.cloud_weather_asked.take()) {
+                        (
+                            Output::CloudWeather {
+                                face_b,
+                                corner,
+                                texels,
+                            },
+                            Some(at),
+                        ) if at.face_b == face_b && at.corner == corner => {
+                            scene.cloud_weather_map(Some((at, &texels)));
+                        }
+                        _ => scene.cloud_weather_map(None),
+                    }
+                }
                 (Purpose::LodMap(job), out) => {
                     if let Some(map) = &mut self.lod_map
                         && map.on_done(&job)
@@ -3649,6 +3681,7 @@ impl<S: Scene> Game<S> {
             velocity: self.current.velocity,
             world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
             gravity: f64::from(self.predictor.config().body.gravity),
+            radius: f64::from(self.predictor.config().body.radius),
         };
         let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
         let f = FaceFrame::at_height(viewer.feet[1]);
@@ -4040,7 +4073,7 @@ impl<S: Scene> Game<S> {
 
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
     /// `dwell_game::ambience::INPUTS` order.
-    pub fn ambience(&self) -> [f64; 10] {
+    pub fn ambience(&self) -> [f64; 11] {
         self.ambience.to_array()
     }
 
@@ -5396,6 +5429,9 @@ impl<S: Scene> Game<S> {
                     .borrow_mut()
                     .set_camera(v.eye, yaw, pitch, face, roll);
                 self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+                // A placed camera (a theater path, a cinematic take) hears from where it is: the
+                // listener, the ambience and every placed sound follow it (BUGS.md #176).
+                self.listener = listener(v.eye, yaw, pitch, face);
                 v.eye
             }
             None => camera_eye,
@@ -5674,6 +5710,7 @@ impl<S: Scene> Game<S> {
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
         // The ambience beds' surroundings (AUDIO.md §2c), four times a second.
         self.ambience_due_s -= dt;
+        self.rush_elapsed_s += dt;
         if self.ambience_due_s <= 0.0 {
             self.ambience_due_s = 0.25;
             let fire_m = fires
@@ -5701,6 +5738,18 @@ impl<S: Scene> Game<S> {
             l.day = dwell_game::ambience::daylight(self.day.sun, face);
             l.fire_m = fire_m;
             l.underwater = f64::from(u8::from(self.eye_underwater));
+            // The moving water heard from afar (BUGS.md #176): its loop and burst, and its bed.
+            let falls: Vec<([f64; 3], f64)> = self
+                .falls
+                .iter()
+                .map(|f| (f.lip_world(), f.discharge()))
+                .collect();
+            let heard = telemetry::span("rush.hear", || dwell_game::rush::hear(store, eye, &falls));
+            l.rush = heard.level();
+            let down = face.vector([0.0, -1.0, 0.0]);
+            let elapsed = std::mem::take(&mut self.rush_elapsed_s);
+            self.rush_sounds
+                .update(eye, down, &heard, elapsed, &mut self.sounds);
             self.ambience = l;
         }
         let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
@@ -5864,6 +5913,7 @@ impl<S: Scene> Game<S> {
         }
         self.update_lod_map(position);
         self.update_cloud_noise();
+        self.update_cloud_weather();
         self.update_far_trees(position);
     }
 
@@ -5907,6 +5957,24 @@ impl<S: Scene> Game<S> {
             LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
+    }
+
+    /// The clouds' weather field (docs/CLOUDS.md §11): when the renderer wants a new map (a volume
+    /// tier, every `weatherField.updateS` or when the eye leaves the window), its bake goes to a
+    /// job worker, which has the world's terrain; the map goes to the renderer as it comes back.
+    fn update_cloud_weather(&mut self) {
+        let Some(at) = self.scene.borrow_mut().take_cloud_weather_request() else {
+            return;
+        };
+        self.cloud_weather_asked = Some(at);
+        self.pool.borrow_mut().submit(
+            Purpose::CloudWeather,
+            crate::jobs::Job::CloudWeather {
+                face_b: at.face_b,
+                corner: at.corner,
+                seconds: at.seconds,
+            },
+        );
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake

@@ -158,10 +158,10 @@ dwell_world::both_faces!(
     /// both faces.
     fn a_ramp_after_k_hits_has_carved_k_bites_of_half_its_volume(f: FaceFrame) {
         for (block, tool, shape) in [
-            ("dirt", "dwell:wooden_shovel", "ramp"),
+            ("dirt", "dwell:stone_shovel", "ramp"),
             ("stone", "dwell:stone_pickaxe", "ramp"),
-            ("dirt", "dwell:wooden_shovel", "steep_lower"),
-            ("sand", "dwell:wooden_shovel", "steep_upper"),
+            ("dirt", "dwell:stone_shovel", "steep_lower"),
+            ("sand", "dwell:stone_shovel", "steep_upper"),
         ] {
             let state = shaped(block, shape);
             let name = format!("dwell:{block}_ramp");

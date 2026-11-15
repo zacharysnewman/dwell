@@ -932,7 +932,7 @@ mod tests {
                 cell - v
             };
             for (block, tool, n) in [
-                ("dwell:dirt", "dwell:wooden_shovel", 5),
+                ("dwell:dirt", "dwell:stone_shovel", 5),
                 ("dwell:dirt", "dwell:metal_shovel", 3),
                 ("dwell:stone", "dwell:stone_pickaxe", 5),
                 ("dwell:stone", "dwell:metal_pickaxe", 3),

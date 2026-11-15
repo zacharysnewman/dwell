@@ -5,7 +5,7 @@ use crate::ground::{GroundKind, GroundRule, GroundShape, NearWall, Under};
 /// The ground items' kinds, in data order (a kind's index is its id in the mesh and on the wire).
 pub const KINDS: [GroundKind; 2] = [
     GroundKind { name: "dwell:ground_stick", item: "dwell:stick", shape: GroundShape::Rod, size: [0.42, 0.05, 0.05], texture: "dwell:log", color: [201, 162, 122], scale: [0.75, 1.15], step: Some("stick_snap"), hit: Some("stick_snap") },
-    GroundKind { name: "dwell:ground_rock", item: "dwell:rock", shape: GroundShape::Lump, size: [0.16, 0.09, 0.13], texture: "dwell:stone", color: [230, 226, 220], scale: [0.7, 1.4], step: None, hit: None },
+    GroundKind { name: "dwell:ground_rock", item: "dwell:rock_shard", shape: GroundShape::Shard, size: [0.18, 0.045, 0.06], texture: "dwell:stone", color: [240, 236, 230], scale: [0.7, 1.4], step: None, hit: None },
 ];
 
 /// The scatter's rules, in order: the first whose conditions hold and whose roll hits places its kind.

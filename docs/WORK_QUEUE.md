@@ -16,6 +16,36 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **One rock item (owner, 2026-11-15):** "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards"
+  (BUGS.md #181), and the decision: "One item: rock = shard" — dirt, grass and the ground's rocks give Rock shards;
+  everything that means "stone" uses the one item; Rocks already in inventories and saved loose rocks become Rock
+  shards. Done on `claude/rock-is-shard` (`dwell:rock` an alias of `dwell:rock_shard`, `inventory.json` `aliases`).
+  **Owner should see:** 2 sticks, 2 rock shards (from dirt) and 2 grass fibre offer the stone axe, pickaxe and shovel
+  in Combine; old Rocks show as Rock shards.
+- **Session limits (owner, 2026-11-15):** "When you resume just 1 task locally, one cloud session." — one local job
+  and one cloud session at a time, until the owner says otherwise. Same message: "And 70.3/4 haven't deployed yet."
+  (BUGS.md, the site over Pages' 1 GB limit; fixed by a smaller retention policy). Owner should see: the newest release
+  on the launcher.
+- **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
+  doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
+  Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
+  brick for walls, thatch with ramp shapes for pitched roofs) plus a door that opens and closes, used by players and
+  villagers; no plaster, beam or glass; painterly textures from the palette; each block also as ½ m pieces. Doors:
+  "2m doors." (2 m tall, one cell wide, a lower and upper half like the torch pair). Keepers come to Claude as
+  exported JSON. Recipes: "Can we make planks assembled from 8 wood pieces from trees." (8 wood → planks; the log
+  recipe stays; costs stay 8) and "8 stone chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant
+  fibre" (8 rock shards → stone brick; 6 sticks + 2 grass fibre → thatch). Done on `claude/town-blocks`:
+  `dwell:planks`, `dwell:stone_brick`, `dwell:thatch` with `dwell:thatch_ramp`, `dwell:door` (a `column` of four
+  ½ m cells, `swing`, `toggle`: a Use is a Place aimed at it, whatever is held; BLOCK_REGISTRY.md, Doors); villagers
+  and builders open the doors they walk through and close them behind them (`opensDoors`); the Structures page's
+  **Test in town** puts a saved structure as a blueprint beside the nearest town for its builders (BLUEPRINTS.md
+  §6c); the hamlet's huts are rebuilt in the new blocks with a door. Not built: an open/close swing animation (the
+  state changes at once, with the wood sound); a player building a blueprint's door by held Place (builders put it).
+  **Owner should see:** in a town (`?spawn=town`), huts of plank floors, stone brick walls and thatch roofs with a
+  2 m door; Place (right-click) on a door opens and closes it, and you walk through it open, not closed; villagers
+  open a door as they walk through and it shuts behind them; on the Structures page, **Test in town** on a saved
+  building has the town's builders put it up beside the town.
+
 - **Current priority: refinement only (owner, 2026-11-13 evening):** "Refocus priorities on bug fixes, visual
   cleanups, and refinements we have instead of new features. Something like properly showing LODs is a refinement
   and visual cleanup. Tree billboards, terrain slope generation, those kind of things. We have lots of unrefined
@@ -585,6 +615,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
    height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
    coverage, height and type across the world and change over time with the weather, with no repeating pattern.
+   **Built (2026-11-14, branch `claude/cloud-weather`, CLOUDS.md §11; research and open questions:
+   `docs/proposals/CLOUD_WEATHER.md`):** a weather field per world and face (`weatherField` data,
+   `dwell_look::weather_field`): non-periodic humidity from synoptic (160 km, warped into fronts), mesoscale and
+   local octaves moving with the wind and evolving over hours; orographic lift on windward slopes and the rain
+   shadow's clear lee from the world map; instability-driven type; dry air lifting the cloud base; depth by
+   instability. Baked as a 64 × 64 map round the eye in a job worker every 2 s; the march reads one texel per
+   sample in place of the two regional noise fields. Cost on the M1 Air (Medium, the High preset's; clouds pass
+   plus composite over Off, p50): ground 0.87 → 0.85 ms, from 3.5 km up 3.13 → 3.06 ms (unchanged). Screenshots
+   before/after (noon, morning, late day; ground and 6 km, 16 km up): clear spells overhead with banks of cloud
+   beside them, instead of an even scatter. Left: dense regions still read grey from above (lighting, not the
+   field); streets and cells, fronts' structure, the deck (Low) and reflections taking the field.
+   Follow-up (2026-11-14, orchestrator's brief): **"dense cloud banks read grey, sometimes gloomy, from above and
+   below … make thick cloud read like real cumulus: bright sunlit tops and sides from above, darker but not muddy
+   bases from below, still dark under real storm cloud where the field says so."** **Built (branch
+   `claude/cloud-cumulus-light`, CLOUDS.md §12):** each march step lit at its transmittance-weighted depth (the
+   dense cloud's surface, not ~400 m inside it), multiple scattering added as a second octave instead of a floor,
+   the sky's light reaching under cloud through its sides by the type's `darkening` (storm cloud keeps its dark
+   base) and tinted by the sky's hue; data in `clouds.json` `volume` (`surfaceLight`, `multiScatterFalloff`,
+   `ambientSide`, `skyHue`). Cost on the M1 Air (Medium, the High preset's; clouds + composite over Off, p50):
+   ground 0.81 → 0.83 ms, 3.5 km up 3.05 → 3.12 ms (noise). **Owner should see:** from a plane's height at noon,
+   cloud banks with brilliant white sunlit tops and sides instead of grey masses; from the ground, clouds white
+   with light blue-grey bases, not muddy grey; storm cloud still dark underneath; at sunset, banks lit warm on
+   the sun's side. Open until the owner confirms the look.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -1008,6 +1061,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
    lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
    the owner's "~4 m" axis-run ideal.
+   **Built on `claude/realistic-070` (the 0.70 line; awaiting the maps):** cliff talus into the water (placements.json
+   `talus`: 1 m stones, 2 m blocks and boulders, red sandstone on red ground, `cliffReach` 12 m from a wall's or steep
+   rock's foot, `wet` on beds under water; counts by distance 4036 / 907 / 35, 62 / 102 pieces under water,
+   `tests/realistic_talus.rs`); shrubs and bushes in clumps (species `bush`, `low_shrub`, `scrub`; placements
+   `bushes`, `cold_shrubs`, `scrub` by biome, the bushes by moisture: 19–34 per ha, variance / mean 1.9–3.6,
+   `tests/realistic_shrubs.rs`); plants bleed across borders (placements' `bleed` 30–50 m: 212 / 269 plants on a
+   neighbour's ground, falling with distance, `tests/realistic_bleed.rs`). Not reproduced on the measured seeds
+   (guards kept): the mesa lake's grey band (`tests/realistic_mesa_lakes.rs`, 0–0.1 % grey), fence-thin mesa walls
+   (`tests/realistic_fins.rs`, 0.3 % of the standing ground; a `minWidth` cut tried changed nothing and was dropped).
+   Not found: the dormant islands' straight red strip (needs the map check's location).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
@@ -2515,6 +2578,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
    four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
    unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
+   **A dam break, and scenes as data (owner, 2026-11-14):** "Do a rendered recording of a 10 block high dam of a river
+   suddenly deleted. 30s of real time for our first one. We'll probably do a bunch of these so if you need tools to
+   generate a valley with a river/lake with a dam, go ahead and make them." Built (`claude/dam-scene`, THEATER_MODE.md
+   §6.3): scenes as data (`shared/theater/scenes/*.json`: a valley's size, slopes and materials, a wall across it by
+   height in blocks, a lake held behind it to a level, timed events), one builder (`dwell-sim` `scene.rs`,
+   `Server::build_scene`: the lake joins the water held, still from the start), `__dwell.scene`, a cinematic take's
+   `events`, and a record shot's `"scene"`. The first: `dam_break` (a stone dam of ten 1 m blocks, i.e. 20 half-cells,
+   10 m over the floor, the lake 9 m deep behind it, the water at real time), its dam deleted at 3 s, 30 s cinematic
+   at 30 fps with the game's sound, 16:9 (`videos/dam-break/`) and re-aimed 9:16 (`videos/dam-break-9x16/`). A river
+   fed by a source is not built (the grid has no sources yet): the first scene is a still lake.
+   **Owner should see:** a valley with a still lake behind a 10-block dam; at 3 s the dam vanishes at once and the lake
+   pours through and floods down the valley, the camera drifting after the front, for 30 s of real time, no clipping,
+   in both aspects.
+   **The dam break's sound (BUGS.md #176, found recording it; orchestrator's brief 2026-11-14):** both takes were silent.
+   Fixed on `claude/flood-sound`: a placed camera is the listener, the wind bed plays up high, and the grid's moving
+   water is heard from afar (`ambient.rush`: a rushing loop by flow × depth × distance, toward the flow; a flood bed;
+   a burst when the dam goes). **Owner should see:** the 16:9 dam break re-rendered with sound: the wind up high, a
+   crash as the dam goes and rushing water while the flood runs.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of
@@ -3338,6 +3419,55 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
    seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
 
+58. **Adventure's start: a wooden shovel, shovel recipes, and what rests on a block drops with it** (owner 2026-11-14,
+   through the orchestrator; branch `claude/adventure-start`).
+   (a) **"Perhaps you could start with a wooden shovel instead of an axe since dirt drops rocks."** Adventure's
+   starting item (`shared/inventory/inventory.json` `startingItems`) is `dwell:wooden_shovel`, not `dwell:stone_axe`
+   (the stone axe is combined from 2 sticks, 2 rock shards and 2 grass fibre).
+   **Owner should see:** a new adventure world starts with a wooden shovel in the hotbar and no axe.
+   (c) **"Shovel should get a 4 wood sticks recipe 2 grass fiber. Stone shovel is 1 stone, 2 sticks, and 2 grass
+   fiber."** Then: **"Or just make it 2 stone like the others."** Recipes: `dwell:wooden_shovel` = 4 sticks + 2 grass
+   fibre; `dwell:stone_shovel` = 2 rock shards + 2 sticks + 2 grass fibre, as the stone axe and pickaxe. The stone shovel is a new tool: the shovel class at the stone tier, wearing after 32 hits like the
+   stone axe and pickaxe, digging faster than the wooden shovel, drawn as the wooden shovel with a stone blade, and on
+   the creative hotbar's tools.
+   **Owner should see:** the backpack's Combine lists Wooden shovel and Stone shovel; the stone shovel digs dirt in
+   fewer hits than the wooden one and breaks after 32 hits.
+   (b) **"When you destroy a block with grass, rock, sticks on it, those should drop too."** Then: **"Essentially a
+   general rule of blocks or items sitting on a block should be dropped when that block is destroyed."** One general
+   rule (BUGS.md #178): anything the destroyed block holds up — a block whose placement needs the cell under it
+   (`needsSupport`, `placeOn`: plants, torches, saplings, any piece the support rule says no longer stands) and any
+   ground item lying on its top — breaks and drops its own drops (loose items, in adventure), cascading upward.
+   Blocks that stand on their own keep the existing support and falling rules.
+   **Owner should see:** digging the block under tall grass, a torch, a sapling or a ground rock or stick drops their
+   items onto the ground (adventure); nothing floats or vanishes; a stack of them drops in order.
+   (d) **"Let's keep drops the same but halve the resource cost of assembling blocks. 4 rock shards, 4 dirt clods, 4
+   sand clumps, etc."**, then reversed the same day: **"Yeah sand should have sub chunks. And let's leave them all at 8
+   actually."** So every piece → block recipe stays at 8, and sand gets pieces: `dwell:sand_clump` ("Sand clump"),
+   8 a ½ m sand cell (as dirt's clumps), and 8 sand clumps → sand. Red sand and red dirt keep their drops (red dirt
+   drops plain dirt clumps; red sand drops itself).
+   **Owner should see:** digging sand drops sand clumps; the backpack's Combine makes a sand slab from 8 of them.
+   (e) **"Plant fiber looks like a block for the drop."** (BUGS.md #179.) Grass fibre's look was a `cluster`
+   (seeds' heap of lumps) that read as a little block, and the gems had no look at all (drawn as a stone block in
+   their colour). Now a `strands` look (five thin blades splayed flat) for the fibre, the gems a shard each, and an
+   item without a look fails the generator.
+   **Owner should see:** dropped grass fibre lies as a little fan of green-straw blades, a gem as a small crystal;
+   nothing loose is drawn as a cube.
+   (f) **"Also grass fiber should be a guaranteed drop, seeds will be 50%"**, then **"1-2 grass fiber."**, then
+   **"Cutting grass that's taller than 1 gives +1 plant fiber each. You're right that makes more sense than
+   random."** So tall grass drops one fibre for each ½ m cell of its height (each cell drops its own as it goes
+   with the cell under it: today's one-cell tuft gives 1, a two-cell stand 2), no randomness; a seed at 50 % at
+   every stage; the gem as before.
+   **Owner should see:** cutting a tuft always gives a grass fibre, about half the time a seed too.
+   (g) **"I'm not seeing grass taller than 1 though is it pretty slow?"** → **"Oh it's supposed to be growing up to
+   2m"**: tall grass grows up to 2 m, up to four ½ m cells stacked, a cell at a time once the one below is full,
+   capped by the climate's share (data in `shared/worldgen/grass.json`: max cells per share band, days per cell),
+   cutting any cell cuts the column above it (and drops its fibre, one a cell). **Built** (branch
+   `claude/grass-2m`, ECOLOGY.md §10 "Up to 2 m"): grass.json `height` (stalk cells, `daysPerCell` 1.5, share
+   bands 0 → 1 cell, 0.7 → 2, 0.8 → 3, 0.9 → 4); generation unchanged, so meadows grow tall over their first
+   days; a grazer's bite eats the stand.
+   **Owner should see:** a lush meadow's grass reaching about 2 m over a few in-game days, a dry steppe's staying
+   short.
+
 ## Future (needs owner answers)
 
 - **Waterlogging** (owner 2026-11-12: "Eventually we'll want to make it so some blocks if they don't move for a little
@@ -3392,7 +3522,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 - **Crafting proposal shelved** (2026-11-11): "That's a lot of assumptions I don't think I want to do
   any of those crafting question things for now." Only the pieces and combine recipes were built.
-- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab;
+- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab, 8 sand
+  clumps → a sand slab (2026-11-14: "let's leave them all at 8 actually");
   rocks still found in grass and dirt at random; sticks from leaves. Stone tools: 2 sticks + 2 rock
   shards + 2 grass fibers. Stone axe durability 32.
 - **Volcanoes:** dormant for now, eruptions later.

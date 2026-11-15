@@ -263,12 +263,12 @@ test('a placement pads its trunks by its `pad`, by default when it lists a tree 
   const rs = placementsRust(validatePlacements(d, blocks, structures));
   const pads = [...rs.matchAll(/pad_trunk: (true|false),/g)].map((m) => m[1]);
   assert.deepEqual(pads, ['true', 'false', 'false', 'true']);
-  // The checked-in tree placements all pad; the boulders don't.
+  // The checked-in tree placements all pad; the boulders and the talus (0.69) don't.
   const built = placementsRust(validatePlacements(loadPlacements(), blocks, structures));
   const names = [...built.matchAll(/name: "([a-z_]+)",\n(?:.*\n){3}\s+pad_trunk: (true|false)/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(
     names.filter(([, p]) => p === 'false').map(([n]) => n),
-    ['boulders'],
+    ['boulders', 'talus'],
   );
 });
 
@@ -1146,9 +1146,31 @@ test('grass.json validates, its output is current, and bad entries fail naming t
   badStages({ extra: 1 }, /stages: unknown extra/);
   assert.throws(() => validateGrass({ ...grass(), stages: undefined }, blocks, decorations), /stages must be an object/);
   // A fixture's slower stages by data alone.
-  const slow = validateGrass(stages({ days: [10, 10, 10], share: [0, 0, 0, 0.9] }), blocks, decorations);
+  const slow = validateGrass(
+    { ...stages({ days: [10, 10, 10], share: [0, 0, 0, 0.9] }), height: { ...grass().height, cells: [{ share: 0, cells: 1 }, { share: 0.95, cells: 2 }] } },
+    blocks,
+    decorations,
+  );
   assert.match(grassRust(slow), /GrassStage \{ value: "1", days: 10\.0, share: 0\.0 \}/);
   assert.match(grassRust(slow), /GrassStage \{ value: "3", days: 0\.0, share: 0\.9 \}/);
+  // Up to 2 m (WORK_QUEUE item 58 g): the stand's height, by data.
+  const height = (patch) => ({ ...grass(), height: { ...grass().height, ...patch } });
+  const badHeight = (patch, re) => assert.throws(() => validateGrass(height(patch), blocks, decorations), re);
+  badHeight({ stalk: '3' }, /height.stalk must be a stage value of dwell:tall_grass that is not a stage/);
+  badHeight({ stalk: 'nope' }, /height.stalk must be/);
+  badHeight({ daysPerCell: 0 }, /height.daysPerCell must be in/);
+  badHeight({ cells: [] }, /height.cells must list one or more bands/);
+  badHeight({ cells: [{ share: 0, cells: 2 }] }, /must start at share 0 with 1 cell/);
+  badHeight({ cells: [{ share: 0, cells: 1 }, { share: 0.9, cells: 5 }] }, /cells must be a whole number in \[1, 4\]/);
+  badHeight({ cells: [{ share: 0, cells: 1 }, { share: 0.9, cells: 3 }, { share: 0.8, cells: 4 }] }, /must rise/);
+  badHeight({ cells: [{ share: 0, cells: 1 }, { share: 0.3, cells: 2 }] }, /needs at least full height's share 0.6/);
+  badHeight({ cells: [{ share: 0, cells: 1, tall: 1 }] }, /each band is \{ share, cells \}/);
+  badHeight({ extra: 1 }, /height: unknown extra/);
+  assert.throws(() => validateGrass({ ...grass(), height: undefined }, blocks, decorations), /height must be an object/);
+  // A fixture's two-cell cap by data alone.
+  const short = validateGrass(height({ daysPerCell: 4, cells: [{ share: 0, cells: 1 }, { share: 0.6, cells: 2 }] }), blocks, decorations);
+  assert.match(grassRust(short), /days_per_cell: 4\.0,/);
+  assert.match(grassRust(short), /GrassCells \{ share: 0\.6, cells: 2 \}/);
 });
 
 const loadClimate = () => JSON.parse(readFileSync(join(here, 'climate.json'), 'utf8'));
