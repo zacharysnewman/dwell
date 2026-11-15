@@ -263,12 +263,12 @@ test('a placement pads its trunks by its `pad`, by default when it lists a tree 
   const rs = placementsRust(validatePlacements(d, blocks, structures));
   const pads = [...rs.matchAll(/pad_trunk: (true|false),/g)].map((m) => m[1]);
   assert.deepEqual(pads, ['true', 'false', 'false', 'true']);
-  // The checked-in tree placements all pad; the boulders don't.
+  // The checked-in tree placements all pad; the boulders and the talus (0.69) don't.
   const built = placementsRust(validatePlacements(loadPlacements(), blocks, structures));
   const names = [...built.matchAll(/name: "([a-z_]+)",\n(?:.*\n){3}\s+pad_trunk: (true|false)/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(
     names.filter(([, p]) => p === 'false').map(([n]) => n),
-    ['boulders'],
+    ['boulders', 'talus'],
   );
 });
 

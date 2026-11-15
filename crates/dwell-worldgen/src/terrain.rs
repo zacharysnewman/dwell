@@ -1852,6 +1852,55 @@ impl TerrainGenerator {
         (x as f64 + w(1), z as f64 + w(2))
     }
 
+    /// How near face-local (x, z) lies to a rock wall's foot, 1 at it to 0 `reach` m out: the
+    /// nearest of 8 directions at three distances (a third, two thirds, all of `reach`) where the
+    /// column is a wall or steep rock (0.69, talus).
+    pub fn cliff_factor(&self, x: i64, z: i64, reach: f64) -> f64 {
+        const DIRS: [(f64, f64); 8] = [
+            (1.0, 0.0),
+            (0.707, 0.707),
+            (0.0, 1.0),
+            (-0.707, 0.707),
+            (-1.0, 0.0),
+            (-0.707, -0.707),
+            (0.0, -1.0),
+            (0.707, -0.707),
+        ];
+        // Under water (a shore), a cliff is any column standing 2 m over its neighbour 2 m away
+        // (a sea cliff's face lies in the shore band, not the rock band).
+        let wet = self.column_at(x as i32, z as i32).water != Water::None;
+        let rock = |x: i64, z: i64| {
+            let c = self.column_at(x as i32, z as i32);
+            if c.outside {
+                return false;
+            }
+            if c.wall || c.band == Band::Rock {
+                return true;
+            }
+            wet && c.water == Water::None && {
+                let lowest = [(2, 0), (-2, 0), (0, 2), (0, -2)]
+                    .iter()
+                    .map(|(dx, dz)| self.column_at(x as i32 + dx, z as i32 + dz).height)
+                    .fold(f32::MAX, f32::min);
+                c.height - lowest >= 2.0
+            }
+        };
+        if rock(x, z) {
+            return 0.0; // on the wall itself: no boulder
+        }
+        for k in 1..=3 {
+            let r = reach * f64::from(k) / 3.0;
+            if DIRS
+                .iter()
+                .any(|(dx, dz)| rock(x + (dx * r).round() as i64, z + (dz * r).round() as i64))
+            {
+                let t = 1.0 - f64::from(k - 1) / 3.0;
+                return t * t;
+            }
+        }
+        0.0
+    }
+
     /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.
     pub fn rain_at(&self, x: i64, z: i64) -> Option<f64> {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
@@ -3651,7 +3700,37 @@ impl TerrainGenerator {
                 .erosion_at(x, z)
                 .is_some_and(|(s, margin, _)| s > 0.5 && margin > 0.0);
         let tops = if on_top { tops } else { 1.0 };
-        tops * volcanic * self.biome_tree_density_at(i, x, z)
+        // Talus at cliff feet (`cliffReach`, 0.69): only near a rock wall.
+        let reach = self.planters.get(i).map_or(0.0, |p| p.rule().cliff_reach);
+        let cliff = if reach > 0.0 {
+            self.cliff_factor(x, z, f64::from(reach)) as f32
+        } else {
+            1.0
+        };
+        // Bleed across borders (`bleed`, 0.69): the biomes' density read at a point moved by a
+        // fine noise, so each side's plants reach raggedly into the other.
+        let bleed = self
+            .planters
+            .get(i)
+            .map_or(0.0, |p| f64::from(p.rule().bleed));
+        let (bx, bz) = if bleed > 0.0 {
+            let w = |k: u32| {
+                (bleed
+                    * 2.0
+                    * f64::from(fbm2(
+                        crate::noise::mix32(self.snow_seed ^ 0xB1EE_0690 ^ k),
+                        x + self.offset_x,
+                        z + self.offset_z,
+                        (bleed * 0.8).max(8.0) as i32,
+                        2,
+                        None,
+                    ))) as i64
+            };
+            (x + w(1), z + w(2))
+        } else {
+            (x, z)
+        };
+        cliff * tops * volcanic * self.biome_tree_density_at(i, bx, bz)
     }
 
     fn biome_tree_density_at(&self, i: usize, x: i64, z: i64) -> f32 {
@@ -4519,6 +4598,19 @@ impl TerrainGenerator {
     /// column's ground and water (`column_at`, so a chunk and the one beside it agree on a pair
     /// split between them), and, in this chunk, over air or a replaceable block as stamped so far.
     fn stamp_free(&self, coord: ChunkCoord, chunk: &Chunk, volume: Overlap, p: [i32; 3]) -> bool {
+        self.stamp_free_in(coord, chunk, volume, p, false)
+    }
+
+    /// [`Self::stamp_free`], or with `wet` (a placement's `wet`, 0.69) under water too: its water
+    /// cells count as free.
+    fn stamp_free_in(
+        &self,
+        coord: ChunkCoord,
+        chunk: &Chunk,
+        volume: Overlap,
+        p: [i32; 3],
+        wet: bool,
+    ) -> bool {
         const S: i32 = CHUNK_SIZE;
         if !(FACE_MIN_Y..FACE_MAX_Y).contains(&p[1])
             || (volume == Overlap::Partial
@@ -4531,13 +4623,14 @@ impl TerrainGenerator {
             return false;
         }
         let col = self.column_at(p[0], p[2]);
-        if col.outside || p[1] <= top_voxel(col.height) || p[1] < col.water_row() {
+        if col.outside || p[1] <= top_voxel(col.height) || (!wet && p[1] < col.water_row()) {
             return false;
         }
         let (lx, ly, lz) = (p[0] - coord.x * S, p[1] - coord.y * S, p[2] - coord.z * S);
         if (0..S).contains(&lx) && (0..S).contains(&ly) && (0..S).contains(&lz) {
             let v = chunk.voxels()[local_index(lx, ly, lz)];
-            return v == M.air || dwell_blocks::info(v).replaceable;
+            let i = dwell_blocks::info(v);
+            return v == M.air || i.replaceable || (wet && i.liquid);
         }
         true
     }
@@ -4610,7 +4703,8 @@ impl TerrainGenerator {
                 continue;
             }
             // A multi-cell block is stamped whole or not at all (BUGS.md #171).
-            let cells = placed.cells_whole(|p| self.stamp_free(coord, chunk, volume, p));
+            let wet = self.planters[t.planter as usize].rule().wet;
+            let cells = placed.cells_whole(|p| self.stamp_free_in(coord, chunk, volume, p, wet));
             let voxels = chunk.voxels_mut();
             for (p, state) in cells {
                 let (lx, ly, lz) = (p[0] - x0, p[1] - y0, p[2] - z0);
@@ -4629,7 +4723,8 @@ impl TerrainGenerator {
                     continue;
                 }
                 let v = &mut voxels[local_index(lx, ly, lz)];
-                if *v == M.air || dwell_blocks::info(*v).replaceable {
+                let i = dwell_blocks::info(*v);
+                if *v == M.air || i.replaceable || (wet && i.liquid) {
                     *v = state;
                 }
             }

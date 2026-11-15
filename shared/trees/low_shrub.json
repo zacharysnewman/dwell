@@ -1,0 +1,76 @@
+{
+  "$comment": "Prototype content (0.69; owner, 2026-11-14: \"We also need more shrubbery/bushes etc.\"): a small, low leafy shrub, about 0.5\u20131 m, for boreal and alpine ground (placements.json `cold_shrubs`). Lengths in metres. Run `node shared/trees/gen.mjs` after editing.",
+  "name": "dwell:low_shrub",
+  "label": "Low shrub",
+  "blocks": {
+    "log": "dwell:log",
+    "leaf": "dwell:leaves"
+  },
+  "trunk": {
+    "height": {
+      "sapling": 0.5,
+      "mature": [
+        0.5,
+        0.5
+      ]
+    },
+    "heightStep": 0.5,
+    "width": {
+      "sapling": 0.25,
+      "mature": 0.25,
+      "step": 0.25
+    }
+  },
+  "branches": {
+    "kind": "none"
+  },
+  "crown": {
+    "shape": "lumpy",
+    "centre": 0,
+    "radius": [
+      0.8,
+      0.5,
+      0.8
+    ],
+    "lumps": {
+      "radius": [
+        0.3,
+        0.5
+      ],
+      "height": [
+        0.25,
+        0.4
+      ]
+    },
+    "roughness": 0.3,
+    "scale": [
+      0.3,
+      1
+    ]
+  },
+  "variety": {
+    "crown": [
+      0.8,
+      1.2
+    ],
+    "lightness": [
+      0.85,
+      1.12
+    ],
+    "hue": [
+      -0.02,
+      0.02
+    ]
+  },
+  "growth": {
+    "stages": 4,
+    "daysPerStage": 3,
+    "wild": [
+      0,
+      1,
+      2,
+      5
+    ],
+    "variants": 16
+  }
+}

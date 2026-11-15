@@ -1020,6 +1020,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
    lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
    the owner's "~4 m" axis-run ideal.
+   **Built on `claude/realistic-070` (the 0.70 line; awaiting the maps):** cliff talus into the water (placements.json
+   `talus`: 1 m stones, 2 m blocks and boulders, red sandstone on red ground, `cliffReach` 12 m from a wall's or steep
+   rock's foot, `wet` on beds under water; counts by distance 4036 / 907 / 35, 62 / 102 pieces under water,
+   `tests/realistic_talus.rs`); shrubs and bushes in clumps (species `bush`, `low_shrub`, `scrub`; placements
+   `bushes`, `cold_shrubs`, `scrub` by biome, the bushes by moisture: 19–34 per ha, variance / mean 1.9–3.6,
+   `tests/realistic_shrubs.rs`); plants bleed across borders (placements' `bleed` 30–50 m: 212 / 269 plants on a
+   neighbour's ground, falling with distance, `tests/realistic_bleed.rs`). Not reproduced on the measured seeds
+   (guards kept): the mesa lake's grey band (`tests/realistic_mesa_lakes.rs`, 0–0.1 % grey), fence-thin mesa walls
+   (`tests/realistic_fins.rs`, 0.3 % of the standing ground; a `minWidth` cut tried changed nothing and was dropped).
+   Not found: the dormant islands' straight red strip (needs the map check's location).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

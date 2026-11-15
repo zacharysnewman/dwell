@@ -275,6 +275,9 @@ const PLACEMENT_KEYS = [
   "rotate",
   "variants",
   "tops",
+  "cliffReach",
+  "wet",
+  "bleed",
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
@@ -440,6 +443,11 @@ export function validatePlacements(
       fail(`${at}: maxSlopeDeg must be in (0, 90) degrees`);
     if (p.tops !== undefined && !(isNum(p.tops) && p.tops >= 0 && p.tops <= 1))
       fail(`${at}: tops must be in [0, 1]`);
+    if (p.cliffReach !== undefined && !(isNum(p.cliffReach) && p.cliffReach >= 0 && p.cliffReach <= 64))
+      fail(`${at}: cliffReach must be in [0, 64] m`);
+    if (p.wet !== undefined && typeof p.wet !== "boolean") fail(`${at}: wet must be true or false`);
+    if (p.bleed !== undefined && !(isNum(p.bleed) && p.bleed >= 0 && p.bleed <= 200))
+      fail(`${at}: bleed must be in [0, 200] m`);
     // Negative: two crowns may interleave by that many blocks (a dense stand, WORK_QUEUE item 32).
     if (!(Number.isInteger(p.spacing) && p.spacing >= -4 && p.spacing <= 16)) {
       fail(`${at}: spacing must be a whole number of blocks in [-4, 16]`);
@@ -540,6 +548,9 @@ export function placementsRust(data, species = registrySpecies()) {
     });
     rs.push(`        variants: &[${vs.join(", ")}],`);
     rs.push(`        tops: ${rf(p.tops ?? 1)},`);
+    rs.push(`        cliff_reach: ${rf(p.cliffReach ?? 0)},`);
+    rs.push(`        wet: ${p.wet === true},`);
+    rs.push(`        bleed: ${rf(p.bleed ?? 0)},`);
     rs.push("    },");
   }
   rs.push("];");
