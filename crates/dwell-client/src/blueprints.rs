@@ -302,28 +302,27 @@ mod tests {
             ..record_of(&s, f, [0, 64, 0], 0).unwrap()
         }));
         let get = |c: [i32; 3]| Some(if c[1] < 64 { M.stone } else { M.air });
-        let have = |n: &str| if n == "dwell:log" { 12 } else { 3 };
+        let have = |_: &str| 3;
         let p = bp.panel(0, &get, &have).unwrap();
         assert_eq!(p.name, "dwell:bp_hut");
-        assert_eq!(p.left, 111);
+        assert_eq!(p.left, 154);
+        let need = |block, need| Need {
+            block,
+            have: 3,
+            need,
+        };
         assert_eq!(
             p.rows,
             vec![
-                Need {
-                    block: "dwell:log",
-                    have: 12,
-                    need: 61
-                },
-                Need {
-                    block: "dwell:stone",
-                    have: 3,
-                    need: 50
-                }
+                need("dwell:stone_brick", 76),
+                need("dwell:thatch", 40),
+                need("dwell:planks", 34),
+                need("dwell:door", 1),
             ]
         );
         assert_eq!(p.more, 0);
         bp.rules.panel_rows = 1;
         let p = bp.panel(0, &get, &have).unwrap();
-        assert_eq!((p.rows.len(), p.more), (1, 1));
+        assert_eq!((p.rows.len(), p.more), (1, 3));
     }
 }
