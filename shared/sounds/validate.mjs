@@ -134,6 +134,7 @@ export const AMBIENCE_INPUTS = [
   "day",
   "fireM",
   "underwater",
+  "rush",
 ];
 /** The mixer's buses (AUDIO.md §3); the underwater filter names the ones it muffles. */
 export const BUSES = ["effects", "ambience", "ui", "music"];
@@ -477,7 +478,8 @@ function resolveSamples(sounds, dir, beds = {}) {
 /**
  * The ambient sounds' tunables (AUDIO.md §2): `fire` — burning light sources (a placed torch, one
  * in a hand) crackle within `radiusM`, the nearest `max`; `falls` — waterfalls rush within
- * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e). (No wind loop: removed, owner
+ * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e);
+ * `rush` — the grid's moving water heard from afar, and a flood's burst (its `$comment`, BUGS.md #176). (No wind loop: removed, owner
  * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
 /**
@@ -507,7 +509,7 @@ export function validateUnderwater(u) {
 }
 
 function validateAmbient(a) {
-  keysIn("ambient", a, ["fire", "falls"]);
+  keysIn("ambient", a, ["fire", "falls", "rush"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
   number("ambient.fire.radiusM", a.fire.radiusM, 1, 48);
   number("ambient.fire.max", a.fire.max, 0, 16, { integer: true });
@@ -515,6 +517,39 @@ function validateAmbient(a) {
   number("ambient.falls.radiusM", a.falls.radiusM, 1, 128);
   number("ambient.falls.max", a.falls.max, 0, 16, { integer: true });
   number("ambient.falls.fullM3s", a.falls.fullM3s, 0.01, 1000);
+  const r = a.rush;
+  keysIn("ambient.rush", r, [
+    "$comment",
+    "radiusM",
+    "strideColumns",
+    "minSpeedMs",
+    "nearM",
+    "fullFlux",
+    "fallWeight",
+    "panM",
+    "burst",
+  ]);
+  number("ambient.rush.radiusM", r.radiusM, 8, 256);
+  number("ambient.rush.strideColumns", r.strideColumns, 1, 16, { integer: true });
+  number("ambient.rush.minSpeedMs", r.minSpeedMs, 0.01, 10);
+  number("ambient.rush.nearM", r.nearM, 0.5, 128);
+  number("ambient.rush.fullFlux", r.fullFlux, 0.01, 1e6);
+  number("ambient.rush.fallWeight", r.fallWeight, 0, 100);
+  number("ambient.rush.panM", r.panM, 0.5, 16);
+  keysIn("ambient.rush.burst", r.burst, [
+    "windowS",
+    "minLevel",
+    "minShare",
+    "fullLevel",
+    "cooldownS",
+  ]);
+  number("ambient.rush.burst.windowS", r.burst.windowS, 0.25, 10);
+  number("ambient.rush.burst.minLevel", r.burst.minLevel, 0.01, 1);
+  number("ambient.rush.burst.minShare", r.burst.minShare, 0, 1);
+  number("ambient.rush.burst.fullLevel", r.burst.fullLevel, 0.01, 1);
+  if (r.burst.fullLevel < r.burst.minLevel)
+    fail("ambient.rush.burst.fullLevel", "must be at least minLevel");
+  number("ambient.rush.burst.cooldownS", r.burst.cooldownS, 0, 600);
   return a;
 }
 

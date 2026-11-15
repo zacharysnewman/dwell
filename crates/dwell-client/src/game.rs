@@ -966,6 +966,10 @@ pub struct Game<S: Scene> {
     /// The blasts going off near us (docs/EXPLOSIVES.md §4): their flash, smoke, dust and shake.
     blasts: crate::blasts::Blasts,
     fall_sounds: dwell_game::sound::FallSounds,
+    /// The grid's moving water heard from afar, and a flood's burst (BUGS.md #176), with the time
+    /// since it last listened.
+    rush_sounds: dwell_game::rush::RushSounds,
+    rush_elapsed_s: f64,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -1247,6 +1251,8 @@ impl<S: Scene> Game<S> {
             falls_shown: true,
             blasts: crate::blasts::Blasts::default(),
             fall_sounds: dwell_game::sound::FallSounds::new(),
+            rush_sounds: dwell_game::rush::RushSounds::new(),
+            rush_elapsed_s: 0.0,
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
@@ -4003,7 +4009,7 @@ impl<S: Scene> Game<S> {
 
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
     /// `dwell_game::ambience::INPUTS` order.
-    pub fn ambience(&self) -> [f64; 10] {
+    pub fn ambience(&self) -> [f64; 11] {
         self.ambience.to_array()
     }
 
@@ -5359,6 +5365,9 @@ impl<S: Scene> Game<S> {
                     .borrow_mut()
                     .set_camera(v.eye, yaw, pitch, face, roll);
                 self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+                // A placed camera (a theater path, a cinematic take) hears from where it is: the
+                // listener, the ambience and every placed sound follow it (BUGS.md #176).
+                self.listener = listener(v.eye, yaw, pitch, face);
                 v.eye
             }
             None => camera_eye,
@@ -5637,6 +5646,7 @@ impl<S: Scene> Game<S> {
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
         // The ambience beds' surroundings (AUDIO.md §2c), four times a second.
         self.ambience_due_s -= dt;
+        self.rush_elapsed_s += dt;
         if self.ambience_due_s <= 0.0 {
             self.ambience_due_s = 0.25;
             let fire_m = fires
@@ -5664,6 +5674,18 @@ impl<S: Scene> Game<S> {
             l.day = dwell_game::ambience::daylight(self.day.sun, face);
             l.fire_m = fire_m;
             l.underwater = f64::from(u8::from(self.eye_underwater));
+            // The moving water heard from afar (BUGS.md #176): its loop and burst, and its bed.
+            let falls: Vec<([f64; 3], f64)> = self
+                .falls
+                .iter()
+                .map(|f| (f.lip_world(), f.discharge()))
+                .collect();
+            let heard = telemetry::span("rush.hear", || dwell_game::rush::hear(store, eye, &falls));
+            l.rush = heard.level();
+            let down = face.vector([0.0, -1.0, 0.0]);
+            let elapsed = std::mem::take(&mut self.rush_elapsed_s);
+            self.rush_sounds
+                .update(eye, down, &heard, elapsed, &mut self.sounds);
             self.ambience = l;
         }
         let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)

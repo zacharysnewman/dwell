@@ -341,6 +341,23 @@ export const SOUND_DATA: SoundData = {
       "set": "swim_under",
       "fallback": false,
       "self": "body"
+    },
+    {
+      "name": "rush",
+      "sound": "dwell:water_rush",
+      "loop": "start"
+    },
+    {
+      "name": "rush_level",
+      "loop": "update"
+    },
+    {
+      "name": "rush_end",
+      "loop": "stop"
+    },
+    {
+      "name": "flood_burst",
+      "sound": "dwell:flood_burst"
     }
   ],
   "sets": {
@@ -678,6 +695,23 @@ export const SOUND_DATA: SoundData = {
       "radiusM": 40,
       "max": 3,
       "fullM3s": 2
+    },
+    "rush": {
+      "$comment": "BUGS.md #176 (docs/AUDIO.md §5): the grid's moving water heard. Every `strideColumns`-th column of the current table within `radiusM` running faster than `minSpeedMs` adds its speed × depth × the area it stands for, weighted by distance (1 / (1 + (d / nearM)²), faded to nothing at radiusM); each waterfall adds its discharge × `fallWeight` the same way. The sum over `fullFlux` (its square root, at most 1) is the rushing loop's level, its loudness and brightness, placed `panM` toward where it comes from. `burst`: once the flow near the listener rises by `minLevel` (the same measure, over what the same chunks carried `windowS` before), the rise at least `minShare` of all that is heard (much water starting to move at once, not a flood front running on), a flood crash plays, at full intensity from a rise of `fullLevel`, then not again for `cooldownS`.",
+      "radiusM": 160,
+      "strideColumns": 4,
+      "minSpeedMs": 0.15,
+      "nearM": 12,
+      "fullFlux": 1500,
+      "fallWeight": 30,
+      "panM": 2,
+      "burst": {
+        "windowS": 1,
+        "minLevel": 0.1,
+        "minShare": 0.5,
+        "fullLevel": 0.3,
+        "cooldownS": 15
+      }
     }
   },
   "ambience": {
@@ -826,6 +860,19 @@ export const SOUND_DATA: SoundData = {
             "input": "underwater",
             "from": 0,
             "full": 1
+          }
+        ]
+      },
+      "dwell:flood": {
+        "files": [
+          "river-loop-1-c2810749.m4a"
+        ],
+        "gain": 0.4,
+        "when": [
+          {
+            "input": "rush",
+            "from": 0.03,
+            "full": 0.6
           }
         ]
       }
@@ -7015,6 +7062,168 @@ export const SOUND_DATA: SoundData = {
           "tremolo": {
             "rate": 9,
             "depth": 0.3
+          }
+        }
+      ]
+    },
+    "dwell:water_rush": {
+      "gain": 1.1,
+      "reverb": 0.12,
+      "loop": true,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.08
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.35,
+          1.25
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.7,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 260,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 0.4,
+            "depth": 0.2
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 700,
+              "q": 0.5
+            }
+          ],
+          "tremolo": {
+            "rate": 1.7,
+            "depth": 0.18
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.12,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 6,
+            "depth": 0.35
+          }
+        }
+      ]
+    },
+    "dwell:flood_burst": {
+      "gain": 1.6,
+      "reverb": 0.4,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.5,
+          1.1
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.9,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 380,
+              "q": 0.8,
+              "to": 120
+            }
+          ],
+          "env": {
+            "attack": 0.02,
+            "hold": 0.3,
+            "decay": 2.4
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1100,
+              "q": 0.6,
+              "to": 500
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "hold": 0.15,
+            "decay": 1.6
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 52,
+          "gain": 0.45,
+          "partials": [
+            [
+              1,
+              1,
+              1.4
+            ],
+            [
+              1.7,
+              0.4,
+              0.9
+            ]
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.18,
+          "at": 0.05,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3400,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.05,
+            "decay": 1.1
           }
         }
       ]

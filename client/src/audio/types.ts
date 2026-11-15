@@ -185,6 +185,23 @@ export interface AmbientDef {
   fire: { radiusM: number; max: number };
   /** Waterfalls (docs/WATER_SURFACE_GRID.md §2e): within `radiusM`, the nearest `max`, full at `fullM3s`. */
   falls: { radiusM: number; max: number; fullM3s: number };
+  /** The grid's moving water heard (BUGS.md #176): the fields' meanings in the data's `$comment`. */
+  rush: {
+    radiusM: number;
+    strideColumns: number;
+    minSpeedMs: number;
+    nearM: number;
+    fullFlux: number;
+    fallWeight: number;
+    panM: number;
+    burst: {
+      windowS: number;
+      minLevel: number;
+      minShare: number;
+      fullLevel: number;
+      cooldownS: number;
+    };
+  };
 }
 
 /** A bed's condition (AUDIO.md §2c): 0 at `from`, 1 at `full`, at least `floor`. */
