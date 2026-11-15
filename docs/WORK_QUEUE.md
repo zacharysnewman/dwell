@@ -597,6 +597,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
    height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
    coverage, height and type across the world and change over time with the weather, with no repeating pattern.
+   **Built (2026-11-14, branch `claude/cloud-weather`, CLOUDS.md §11; research and open questions:
+   `docs/proposals/CLOUD_WEATHER.md`):** a weather field per world and face (`weatherField` data,
+   `dwell_look::weather_field`): non-periodic humidity from synoptic (160 km, warped into fronts), mesoscale and
+   local octaves moving with the wind and evolving over hours; orographic lift on windward slopes and the rain
+   shadow's clear lee from the world map; instability-driven type; dry air lifting the cloud base; depth by
+   instability. Baked as a 64 × 64 map round the eye in a job worker every 2 s; the march reads one texel per
+   sample in place of the two regional noise fields. Cost on the M1 Air (Medium, the High preset's; clouds pass
+   plus composite over Off, p50): ground 0.87 → 0.85 ms, from 3.5 km up 3.13 → 3.06 ms (unchanged). Screenshots
+   before/after (noon, morning, late day; ground and 6 km, 16 km up): clear spells overhead with banks of cloud
+   beside them, instead of an even scatter. Left: dense regions still read grey from above (lighting, not the
+   field); streets and cells, fronts' structure, the deck (Low) and reflections taking the field.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate

@@ -102,13 +102,42 @@ const SCHEMA = {
   },
   weather: {
     type: [0, 1],
-    typeVariation: [0, 1],
-    typeScaleM: [64, 1e6],
-    typeFromCoverage: [0, 4],
-    coverScaleM: [64, 1e6],
     coverVariation: [0, 1],
     deckBreakup: [0, 0.9],
     precipitation: [0, 1],
+  },
+  weatherField: {
+    sizeCells: ["count", 8, 256],
+    cellM: [64, 1e5],
+    updateS: [0.05, 600],
+    recentreM: [0, 1e6],
+    steer: [0, 20],
+    synopticM: [1000, 1e7],
+    synopticEvolveS: [1, 1e7],
+    frontWarpM: [0, 1e6],
+    mesoM: [500, 1e7],
+    mesoEvolveS: [1, 1e7],
+    mesoWeight: [0, 1],
+    localM: [100, 1e7],
+    localEvolveS: [1, 1e7],
+    localWeight: [0, 1],
+    contrast: [0, 10],
+    instabilityM: [500, 1e7],
+    instabilityEvolveS: [1, 1e7],
+    typeRange: [0, 1],
+    upwindM: [10, 1e5],
+    upslopeGain: [0, 100],
+    elevationGain: [0, 4],
+    shadowM: [10, 1e6],
+    shadowGain: [0, 10],
+    oroType: [0, 4],
+    oroDepth: [0, 4],
+    seaHumidity: [-1, 1],
+    seaType: [-1, 1],
+    seaLift: [-1, 1],
+    liftMax: [0, 0.9],
+    depthMin: [0.05, 4],
+    depthMax: [0.05, 4],
   },
 };
 
@@ -350,18 +379,17 @@ export function validateClouds(data, atmosphere = loadAtmosphere()) {
   }
   if (form.baseHigh <= form.baseLow)
     fail("form.baseHigh must be greater than form.baseLow");
-  // The weather's regional fields are value noise on a coarser lattice of the deck's: whole
-  // multiples of its cells that divide its period, so they tile with it too.
-  for (const k of ["typeScaleM", "coverScaleM"]) {
-    const v = data.weather[k];
-    if (
-      !Number.isInteger(v / shape.scaleM) ||
-      !Number.isInteger(shape.wrapM / v)
-    )
-      fail(
-        `weather.${k} must be a whole multiple of shape.scaleM that divides shape.wrapM (the field tiles with the deck)`,
-      );
-  }
+  // The weather field (docs/CLOUDS.md §11): its window must reach past the march, and its
+  // octaves must add up to at most the whole.
+  const wf = data.weatherField;
+  if (wf.mesoWeight + wf.localWeight > 1)
+    fail("weatherField.mesoWeight + localWeight must be at most 1");
+  if (wf.depthMax < wf.depthMin)
+    fail("weatherField.depthMax must be at least depthMin");
+  if ((wf.sizeCells * wf.cellM) / 2 - wf.recentreM < data.volume.maxDistanceM)
+    fail(
+      "weatherField's window (sizeCells × cellM / 2 - recentreM) must reach past volume.maxDistanceM",
+    );
   return data;
 }
 
@@ -388,8 +416,9 @@ export function cloudsRust(data) {
       volume: "VolumeTunables",
       form: "FormTunables",
       weather: "WeatherTunables",
+      weatherField: "WeatherFieldTunables",
     }[section];
-    rs.push(`    ${section}: ${type} {`);
+    rs.push(`    ${snake(section)}: ${type} {`);
     for (const [k, spec] of Object.entries(fields)) {
       const v = data[section][k];
       if (spec === "color")
