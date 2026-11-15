@@ -187,6 +187,7 @@ export interface AmbientDef {
   falls: { radiusM: number; max: number; fullM3s: number };
   /** The grid's moving water heard (BUGS.md #176): the fields' meanings in the data's `$comment`. */
   rush: {
+    $comment?: string;
     radiusM: number;
     strideColumns: number;
     minSpeedMs: number;

@@ -14,6 +14,9 @@
   "fps": 30
  },
  "audio": true,
+ "splice": {
+  "gainDb": 20
+ },
  "shots": [
   {
    "id": "flood",

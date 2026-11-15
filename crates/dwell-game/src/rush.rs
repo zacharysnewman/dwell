@@ -11,7 +11,7 @@
 use std::collections::VecDeque;
 
 use dwell_world::currents::{CS, CurrentKey};
-use dwell_world::{FaceFrame, VoxelWorld, falls, row_of_m};
+use dwell_world::{CHUNK_SIZE, FaceFrame, VoxelWorld, falls, row_of_m};
 
 use crate::sound::{LoopTrack, SoundEvent, SoundKind, ambient};
 
@@ -43,6 +43,9 @@ pub struct Heard {
     /// Each moving water chunk's flux, unweighted, and its weight's share (weighted / unweighted):
     /// what the burst compares a moment later.
     pub chunks: Vec<(CurrentKey, f64, f64)>,
+    /// The world's chunk columns (x, z) loaded within reach, sorted: water whose land arrives
+    /// later streamed in (a join, a teleport), it did not start to move.
+    pub land: Vec<(i32, i32)>,
 }
 
 impl Heard {
@@ -124,7 +127,27 @@ pub fn hear(world: &VoxelWorld, eye: [f64; 3], falls: &[([f64; 3], f64)]) -> Hea
     if heard.flux > 0.0 {
         heard.from = Some(mid.map(|v| v / heard.flux));
     }
+    let side = f64::from(CHUNK_SIZE);
+    let mut land: Vec<(i32, i32)> = world
+        .chunks()
+        .map(|(c, _)| (c.x, c.z))
+        .filter(|&(x, z)| {
+            let mid = |v: i32| (f64::from(v) + 0.5) * side;
+            (mid(x) - eye[0]).hypot(mid(z) - eye[2]) <= reach + side
+        })
+        .collect();
+    land.sort_unstable();
+    land.dedup();
+    heard.land = land;
     heard
+}
+
+/// A water chunk's land: the world chunk column holding its first column.
+fn land_of((_, cx, cz): CurrentKey) -> (i32, i32) {
+    (
+        (cx * CS).div_euclid(CHUNK_SIZE),
+        (cz * CS).div_euclid(CHUNK_SIZE),
+    )
 }
 
 /// Where the loop sounds: `RUSH_PAN_M` from the listener toward `from` (the shell's distance
@@ -139,7 +162,7 @@ pub fn placed(listener: [f64; 3], from: [f64; 3], down: [f64; 3]) -> [f64; 3] {
 
 /// One hearing remembered: its time (s), what each moving chunk carried (unweighted) and where
 /// the listener was.
-type Hearing = (f64, Vec<(CurrentKey, f64)>, [f64; 3]);
+type Hearing = (f64, Vec<(CurrentKey, f64)>, [f64; 3], Vec<(i32, i32)>);
 
 /// The rushing loop and the flood's burst, from what is heard now and then.
 #[derive(Clone, Debug)]
@@ -177,7 +200,7 @@ impl RushSounds {
     /// while the history is shorter than the window, or the listener moved past the margin in it
     /// (a jump: what is near now was not near then).
     fn onset(&self, heard: &Heard, listener: [f64; 3]) -> Option<f64> {
-        let (t0, then, at) = self.history.front()?;
+        let (t0, then, at, land) = self.history.front()?;
         if self.t - t0 < ambient::RUSH_BURST_WINDOW_S * 0.999 {
             return None;
         }
@@ -191,6 +214,7 @@ impl RushSounds {
         let rise: f64 = heard
             .chunks
             .iter()
+            .filter(|(key, _, _)| land.binary_search(&land_of(*key)).is_ok())
             .map(|(key, raw, share)| {
                 let before = then.iter().find(|(k, _)| k == key).map_or(0.0, |(_, r)| *r);
                 (raw - before).max(0.0) * share
@@ -231,11 +255,12 @@ impl RushSounds {
             self.t,
             heard.chunks.iter().map(|(k, r, _)| (*k, *r)).collect(),
             listener,
+            heard.land.clone(),
         ));
         while self
             .history
             .get(1)
-            .is_some_and(|(t, _, _)| self.t - t >= ambient::RUSH_BURST_WINDOW_S)
+            .is_some_and(|(t, ..)| self.t - t >= ambient::RUSH_BURST_WINDOW_S)
         {
             self.history.pop_front();
         }
@@ -421,6 +446,48 @@ mod tests {
             assert!(
                 out.iter().any(|e| e.kind == SoundKind::RushEnd),
                 "it stops with the flow: {out:?}"
+            );
+        }
+    );
+
+    both_faces!(
+        /// Arriving (a teleport) where a river runs is no burst, though its water streams in after
+        /// the listener arrives (its land was not loaded before); a dam going later is one.
+        fn arriving_at_running_water_is_no_burst(f: FaceFrame) {
+            let empty = VoxelWorld::new(empty_generator(), None);
+            let moving = channel(f, 128, 16, 8, [3.0, 0.0]);
+            let still = channel(f, 128, 16, 8, [0.0, 0.0]);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            let mut rush = RushSounds::new();
+            let mut out = Vec::new();
+            let far = over(f, 3000.0, 4.0, 3000.0);
+            let eye = over(f, 64.0, 4.0, -10.0);
+            for _ in 0..60 {
+                rush.update(far, down, &hear(&empty, far, &[]), 0.25, &mut out);
+            }
+            // Teleported: nothing loaded for a second, then the running river arrives.
+            for i in 0..40 {
+                let w = if i < 4 { &empty } else { &moving };
+                rush.update(eye, down, &hear(w, eye, &[]), 0.25, &mut out);
+            }
+            assert!(rush.playing());
+            assert!(
+                !out.iter().any(|e| e.kind == SoundKind::FloodBurst),
+                "{out:?}"
+            );
+            // Long after: the river stops (a dam upstream) and starts again at once.
+            for _ in 0..20 {
+                rush.update(eye, down, &hear(&still, eye, &[]), 0.25, &mut out);
+            }
+            for _ in 0..8 {
+                rush.update(eye, down, &hear(&moving, eye, &[]), 0.25, &mut out);
+            }
+            assert_eq!(
+                out.iter()
+                    .filter(|e| e.kind == SoundKind::FloodBurst)
+                    .count(),
+                1,
+                "{out:?}"
             );
         }
     );
