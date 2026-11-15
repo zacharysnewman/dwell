@@ -151,6 +151,21 @@ impl WorldMap {
         map
     }
 
+    /// [`WorldMap::for_height`] in a world of `size` (a Realistic world at any size, 0.71).
+    pub fn for_height_sized(
+        seed: u64,
+        h: crate::terrain::HeightField,
+        size: dwell_protocol::world_size::WorldSize,
+    ) -> Self {
+        let p = hydrology::default_profile();
+        let mut map = Self::from_hydrology(
+            seed,
+            &hydrology::generate_with_height_sized(seed, p, h, size),
+        );
+        map.tectonics = h.tectonics;
+        map
+    }
+
     /// [`WorldMap::for_height`] for a Realistic world over a given plate tectonics (R2; tests: a
     /// fixture layout or rules changed by data).
     pub fn for_plates(

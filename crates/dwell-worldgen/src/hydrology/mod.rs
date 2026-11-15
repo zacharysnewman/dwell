@@ -472,6 +472,26 @@ pub fn generate_with_height(
     tectonic_map(seed, p, h, BaseField::with_height(seed, h), None)
 }
 
+/// [`generate_with_height`] in a world of `size` (BIG_MAP.md M2): a Realistic world's plates over
+/// its disc (real-world scale, 0.71); another height field's as [`generate_with_height`] at the
+/// default size only.
+pub fn generate_with_height_sized(
+    seed: u64,
+    p: &HydrologyParams,
+    h: crate::terrain::HeightField,
+    size: dwell_protocol::world_size::WorldSize,
+) -> HydrologyMap {
+    if !h.tectonics.from_plates() || size == dwell_protocol::world_size::WorldSize::DEFAULT {
+        return generate_with_height(seed, p, h);
+    }
+    let p = p.sized(size);
+    let reach = size.world_radius_m() as f64;
+    let plates = crate::plate_tectonics::PlateTectonics::for_seed_sized(seed, reach);
+    let layout = std::sync::Arc::new(plates.layout.clone());
+    let base = BaseField::with_plates(seed, h, Some(layout)).in_world(size);
+    tectonic_map(seed, &p, h, base, Some(&plates))
+}
+
 /// [`generate_with_height`] for a Realistic world (`tectonics.plates` 1, R2) over a given plate
 /// tectonics (the face seed's, or a test's): the plates' coast is the base field's, and every
 /// boundary's landform, arc cone and hotspot island is added as the hand-placed boundary's are.

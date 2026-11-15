@@ -101,11 +101,15 @@ pub struct PlateRules {
     pub warp_detail: &'static [(f64, i32)],
     /// A boundary is a transform where |closing rate| < this × the relative speed.
     pub transform_below: f64,
-    /// The seed picks a hotspot count in `hotspots_min ..= hotspots_max`, each within
-    /// `hotspots_within` m of the centre.
+    /// The seed picks a hotspot count in `hotspots_min ..= hotspots_max`, each anywhere in the
+    /// plates' disc (`centres`; real-world scale, 0.71: no bias toward the face's centre).
     pub hotspots_min: u32,
     pub hotspots_max: u32,
-    pub hotspots_within: f64,
+    /// Passive margins (0.71): inside a continental plate the continent's own coast, where a
+    /// noise of `margin_wavelength` m falls in its lowest `margin_sea` share (shelf sea), so a
+    /// face deep inside one plate can still hold a coast.
+    pub margin_wavelength: i32,
+    pub margin_sea: f64,
     pub rim: RimRule,
 }
 
@@ -262,6 +266,8 @@ pub struct Boundary {
     pub meeting: Meeting,
     /// Points on it (face-local x, z, m): midpoints between scan cells either side, in scan order.
     pub points: Vec<[f64; 2]>,
+    /// The scan's cell (m) the points were found on ([`PlateLayout::scan_cell`]).
+    pub scan: f64,
 }
 
 impl Boundary {
@@ -282,7 +288,9 @@ impl Boundary {
     /// vertices at least `spacing` m apart (its two ends kept).
     pub fn polylines(&self, link: f64, spacing: f64) -> Vec<Vec<[f64; 2]>> {
         let mut left = self.points.clone();
-        let absorb = (ABSORB * SCAN_CELL).powi(2);
+        let absorb = (ABSORB * self.scan).powi(2);
+        // A coarser scan (a bigger world) links its points farther apart.
+        let link = link.max(3.0 * self.scan);
         let mut lines = Vec::new();
         while !left.is_empty() {
             let start = left.remove(0);
@@ -409,6 +417,15 @@ impl PlateLayout {
         Self::generate(&PLATES, face_seed(world_seed, face))
     }
 
+    /// The layout `seed` draws from `rules` over a disc of `reach` m (a world size's radius; the
+    /// rules' own `reach` is the default size's): the plates, the rim and the boundaries scanned
+    /// over that disc (real-world scale, 0.71: the plates are the same size whatever the world's).
+    pub fn generate_sized(rules: &PlateRules, seed: u64, reach: f64) -> Self {
+        let mut r = *rules;
+        r.reach = reach;
+        Self::generate(&r, seed)
+    }
+
     /// The layout `seed` draws from `rules`.
     pub fn generate(rules: &PlateRules, seed: u64) -> Self {
         let plates = draw_plates(rules, seed);
@@ -502,10 +519,31 @@ impl PlateLayout {
         }
         let near = near.min(1.0e6);
         let signed = match pa.kind {
-            PlateKind::Continental => near,
+            PlateKind::Continental => near.min(self.margin_distance(x, z)),
             PlateKind::Oceanic => -near,
         };
         (signed.min(land) + noise).min(deep)
+    }
+
+    /// A continent's passive margin (`margin_*`, 0.71): the signed distance (m, about) to the
+    /// coast its own shelf draws inside a continental plate, > 0 on the continent.
+    pub fn margin_distance(&self, x: f64, z: f64) -> f64 {
+        let r = &self.rules;
+        if r.margin_sea <= 0.0 || r.margin_wavelength <= 0 {
+            return f64::INFINITY;
+        }
+        // A 2-octave fbm's spread is about 0.17: the threshold its lowest `margin_sea` share.
+        let t = 0.17 * crate::geology::normal_quantile(r.margin_sea);
+        let n = f64::from(fbm2(
+            mix32(self.rim_seed ^ 0x3A26_0710),
+            x as i64,
+            z as i64,
+            r.margin_wavelength,
+            2,
+            None,
+        ));
+        // The fbm's slope is about its spread over a sixth of its wavelength.
+        (n - t) / 0.17 * f64::from(r.margin_wavelength) / 6.0
     }
 
     /// The plate-edge coasts' noise (m, `rim.coast`) at a face-local point.
@@ -539,12 +577,13 @@ impl PlateLayout {
     pub fn interiors(&self) -> Vec<f64> {
         let mut best = vec![0.0f64; self.plates.len()];
         let reach = self.rules.reach;
-        let n = (2.0 * reach / INTERIOR_CELL) as i64 + 1;
+        let cell = (reach / 50.0).max(INTERIOR_CELL);
+        let n = (2.0 * reach / cell) as i64 + 1;
         for j in 0..n {
             for i in 0..n {
                 let (x, z) = (
-                    -reach + (i as f64 + 0.5) * INTERIOR_CELL,
-                    -reach + (j as f64 + 0.5) * INTERIOR_CELL,
+                    -reach + (i as f64 + 0.5) * cell,
+                    -reach + (j as f64 + 0.5) * cell,
                 );
                 let edge = self.land_edge(x, z);
                 if edge <= 0.0 {
@@ -619,6 +658,9 @@ impl PlateLayout {
                 .iter()
                 .zip(&self.plates)
                 .enumerate()
+                // A plate that never reaches the disc is no sliver of it (real-world scale, 0.71:
+                // most of a world's plates lie beyond a small face).
+                .filter(|(_, (d, _))| **d > 0.0)
                 .map(|(i, (&d, p))| (d / need(&self.rules, p.kind).0.max(1.0), i))
                 .filter(|&(share, _)| share < 1.0)
                 .min_by(|a, b| a.0.total_cmp(&b.0));
@@ -654,12 +696,19 @@ impl PlateLayout {
         (wx, wz)
     }
 
+    /// The boundary scan's cell (m): [`SCAN_CELL`] at the default size, a hundredth of the disc's
+    /// radius in a bigger world (the same number of cells).
+    pub fn scan_cell(&self) -> f64 {
+        (self.rules.reach / 100.0).max(SCAN_CELL)
+    }
+
     /// The boundaries: scan cells within the reach, each neighbour pair on different plates adds
     /// the midpoint to that pair's boundary.
     fn scan_boundaries(&self) -> Vec<Boundary> {
         let reach = self.rules.reach;
-        let n = (2.0 * reach / SCAN_CELL) as i64 + 1;
-        let at = |i: i64| -reach + (i as f64 + 0.5) * SCAN_CELL;
+        let cell = self.scan_cell();
+        let n = (2.0 * reach / cell) as i64 + 1;
+        let at = |i: i64| -reach + (i as f64 + 0.5) * cell;
         let inside = |x: f64, z: f64| x * x + z * z <= reach * reach;
         let mut row = vec![usize::MAX; n as usize];
         let mut found: Vec<Boundary> = Vec::new();
@@ -675,6 +724,7 @@ impl PlateLayout {
                         self.rules.transform_below,
                     ),
                     points: vec![point],
+                    scan: cell,
                 }),
             }
         };
@@ -693,11 +743,11 @@ impl PlateLayout {
                     // point at the cells' midpoint put every near-vertical or near-horizontal
                     // stretch of boundary on the scan's grid lines, km-long axis-aligned edges).
                     if left != usize::MAX && left != here {
-                        add(left, here, self.crossing([x - SCAN_CELL, z], [x, z], left));
+                        add(left, here, self.crossing([x - cell, z], [x, z], left));
                     }
                     let up = row[i as usize];
                     if up != usize::MAX && up != here {
-                        add(up, here, self.crossing([x, z - SCAN_CELL], [x, z], up));
+                        add(up, here, self.crossing([x, z - cell], [x, z], up));
                     }
                 }
                 left = here;
@@ -728,7 +778,7 @@ impl PlateLayout {
         let n = d.count(r.hotspots_min, r.hotspots_max);
         (0..n)
             .map(|_| {
-                let at = d.in_disc(r.hotspots_within);
+                let at = d.in_disc(r.centres);
                 let plate = self.plate_at(at[0], at[1]);
                 let [vx, vz] = self.plates[plate].motion;
                 let s = (vx * vx + vz * vz).sqrt();

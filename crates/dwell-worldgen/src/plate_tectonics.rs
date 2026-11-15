@@ -464,6 +464,8 @@ pub struct PlateTectonics {
     pub volcanoes: Vec<Volcano>,
     /// Each volcano's state (`uplift.volcanism`), as `volcanoes`.
     pub states: Vec<VolcanoState>,
+    /// How many of `volcanoes` are placed cones and islands (the rest their satellites).
+    pub mains: usize,
     /// The boundaries' summed landform (m) on the coarse grid: `n` × `n` nodes from `x0`.
     field: Vec<f32>,
     n: usize,
@@ -474,6 +476,12 @@ impl PlateTectonics {
     /// The tectonics of face seed `seed` by the build's rules (plates.json).
     pub fn for_seed(seed: u64) -> Self {
         Self::new(PlateLayout::generate(&PLATES, seed), &UPLIFT)
+    }
+
+    /// [`PlateTectonics::for_seed`] over a disc of `reach` m (a world size's radius; real-world
+    /// scale, 0.71: the same plates, more of them seen).
+    pub fn for_seed_sized(seed: u64, reach: f64) -> Self {
+        Self::new(PlateLayout::generate_sized(&PLATES, seed, reach), &UPLIFT)
     }
 
     /// The tectonics of a layout by `uplift`'s rules.
@@ -491,6 +499,7 @@ impl PlateTectonics {
             lines,
             volcanoes: Vec::new(),
             states: Vec::new(),
+            mains: 0,
             field: Vec::new(),
             n: 0,
             x0: 0.0,
@@ -498,6 +507,7 @@ impl PlateTectonics {
         t.volcanoes = t.place_arcs();
         t.volcanoes.extend(t.place_chains());
         t.states = t.volcanoes.iter().map(|v| t.state_of(v)).collect();
+        t.mains = t.volcanoes.len();
         for (parent, v) in t.satellites() {
             t.volcanoes.push(v);
             let s = t.states[parent];

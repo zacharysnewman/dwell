@@ -1053,7 +1053,7 @@ impl BiomeSet {
             field,
             params,
             geology: crate::geology::Resolved::new(geology, world_seed)
-                .with_tectonics(map.tectonics),
+                .with_tectonics_over(map.tectonics, map.world_radius() as f64),
             biome_stack,
             rock_first,
             rock_palette,

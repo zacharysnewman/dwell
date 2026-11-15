@@ -12,23 +12,24 @@ use crate::plates::{FlowRouting, InteriorRelief, PlateVariety};
 
 /// The plate layout's rules (shared/worldgen/plates.json).
 pub const PLATES: PlateRules = PlateRules {
-    count_min: 7,
-    count_max: 11,
+    count_min: 5,
+    count_max: 9,
     reach: 50000.0,
-    centres: 56000.0,
-    spacing: 12000.0,
+    centres: 2000000.0,
+    spacing: 400000.0,
     attempts: 400,
-    oceanic: KindRule { weight: 0.5, min: 1, interior: 5000.0 },
-    continental: KindRule { weight: 0.5, min: 1, interior: 8000.0 },
+    oceanic: KindRule { weight: 0.3, min: 1, interior: 5000.0 },
+    continental: KindRule { weight: 0.7, min: 1, interior: 8000.0 },
     speed: [1.0, 10.0],
     age: [5.0, 200.0],
-    warp_amplitude: 3500.0,
-    warp_wavelength: 30000,
-    warp_detail: &[(2200.0, 7000), (600.0, 2000)],
+    warp_amplitude: 60000.0,
+    warp_wavelength: 600000,
+    warp_detail: &[(3500.0, 30000), (2200.0, 7000), (600.0, 2000)],
     transform_below: 0.4,
-    hotspots_min: 0,
-    hotspots_max: 2,
-    hotspots_within: 40000.0,
+    hotspots_min: 1,
+    hotspots_max: 4,
+    margin_wavelength: 900000,
+    margin_sea: 0.2,
     rim: RimRule { edge_sea: 2500.0, edge_coast: 3000.0, coast: &[(4500.0, 18000, 2), (900.0, 3000, 3)], shelf: [1000.0, 8000.0], sectors: 10, noise_amplitude: 800.0, noise_wavelength: 7000 },
 };
 
@@ -53,10 +54,10 @@ pub const UPLIFT: PlateUplift = PlateUplift {
     ],
     along: AlongRule { height: 0.4, width: 0.4, wavelength: 9000, octaves: 2 },
     rift: RiftRule { segment_length: [8000.0, 15000.0], depth: [0.7, 1.3], width: [0.7, 1.3], sill: [0.15, 0.6], step_over: 1500.0 },
-    arc: ArcRule { distance: 9000.0, min_distance: 2000.0, spacing: 10000.0, min_length: 6000.0, max_cones: 4, cone_height: 900.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hardness: 0.6 },
+    arc: ArcRule { distance: 9000.0, min_distance: 2000.0, spacing: 70000.0, min_length: 40000.0, max_cones: 4, cone_height: 900.0, cone_radius: 3500.0, crater_radius: 350.0, crater_depth: 60.0, hardness: 0.6 },
     cones: ConeVariety { radius: [0.6, 1.4], height: [0.65, 1.3], spacing: 0.5, offset: 1800.0, shape: 0.3, each: [0.75, 1.3], satellites: [0.0, 3.0], satellite_size: [0.2, 0.45], satellite_distance: [0.7, 1.4], skip: 0.2 },
-    volcanism: Volcanism { active: 0.4, age_jitter: 0.1, footprint: 1.0, edge: 0.2, edge_wavelength: 600.0, fade: 0.25, patch_wavelength: 70.0, cover: [0.05, 0.85], dirt: 0.2, trees: [0.45, 0.95], apron: [50.0, 180.0], apron_depth: 22.0, apron_noise: 0.5, glass_share: 0.3, bare_shore: 14.0, bare_vent: 0.22, cover_full: 0.5, bare: Surface { rock: "dwell:shield_basalt", part: RockPart::Scree }, glass: Surface { rock: "dwell:lava_glass", part: RockPart::Scree }, soil: Surface { rock: "dwell:shale", part: RockPart::Cap } },
-    hotspot: ChainRule { islands: 4, spacing: 5000.0, height: 420.0, radius: 2600.0, decay: 0.65, widen: 0.12 },
+    volcanism: Volcanism { active: 0.15, age_jitter: 0.1, footprint: 1.0, edge: 0.2, edge_wavelength: 600.0, fade: 0.25, patch_wavelength: 70.0, cover: [0.05, 0.85], dirt: 0.2, trees: [0.45, 0.95], apron: [50.0, 180.0], apron_depth: 22.0, apron_noise: 0.5, glass_share: 0.3, bare_shore: 14.0, bare_vent: 0.22, cover_full: 0.5, bare: Surface { rock: "dwell:shield_basalt", part: RockPart::Scree }, glass: Surface { rock: "dwell:lava_glass", part: RockPart::Scree }, soil: Surface { rock: "dwell:shale", part: RockPart::Cap } },
+    hotspot: ChainRule { islands: 4, spacing: 90000.0, height: 420.0, radius: 2600.0, decay: 0.65, widen: 0.12 },
 };
 
 /// The Realistic world's variety (plates.json `variety`, WORK_QUEUE item 15).

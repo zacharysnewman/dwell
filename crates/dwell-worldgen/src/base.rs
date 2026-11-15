@@ -53,6 +53,12 @@ impl BaseField {
         }
     }
 
+    /// This field over the disc of a world of `size` (a Realistic world's at any size, 0.71).
+    pub fn in_world(mut self, size: WorldSize) -> Self {
+        self.world = WorldBounds::of(size);
+        self
+    }
+
     /// The world's disc radius (m) this field covers.
     pub fn world_radius(&self) -> i64 {
         self.world.radius()

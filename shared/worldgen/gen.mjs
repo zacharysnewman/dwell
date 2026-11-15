@@ -2656,6 +2656,7 @@ const PLATES_TOP = [
   "warp",
   "transformBelow",
   "hotspots",
+  "margins",
   "rim",
   "uplift",
   "variety",
@@ -2720,8 +2721,9 @@ export function validatePlates(data) {
     if (!(k in data)) fail(`${k} is missing`);
   range("count", data.count, 1, 32, true);
   num("reach", data.reach, 1000, 100_000);
-  num("centres", data.centres, data.reach, 4 * data.reach);
-  num("spacing", data.spacing, 0, 2 * data.reach);
+  // Real-world scale (0.71): the plates' disc and spacing in km, independent of the world's size.
+  num("centres", data.centres, data.reach, 20_000_000);
+  num("spacing", data.spacing, 0, 10_000_000);
   num("attempts", data.attempts, 1, 100_000, true);
   obj("kinds", data.kinds, PLATE_KINDS);
   let weight = 0;
@@ -2744,21 +2746,23 @@ export function validatePlates(data) {
   range("speed", data.speed, 0, 100);
   range("age", data.age, 0, 4000);
   obj("warp", data.warp, ["amplitude", "wavelength", "detail"]);
-  num("warp.amplitude", data.warp.amplitude, 0, data.reach);
-  num("warp.wavelength", data.warp.wavelength, 100, 1_000_000, true);
+  num("warp.amplitude", data.warp.amplitude, 0, 1_000_000);
+  num("warp.wavelength", data.warp.wavelength, 100, 10_000_000, true);
   // Finer warps over the first (0.64; the owner: "our tectonic plates are too straight"), each
   // {amplitude, wavelength}, at most four.
   const detail = data.warp.detail ?? [];
   if (!(Array.isArray(detail) && detail.length <= 4)) fail("warp.detail must be a list of at most four");
   detail.forEach((w, i) => {
     obj(`warp.detail[${i}]`, w, ["amplitude", "wavelength"]);
-    num(`warp.detail[${i}].amplitude`, w.amplitude, 0, data.reach);
-    num(`warp.detail[${i}].wavelength`, w.wavelength, 100, 1_000_000, true);
+    num(`warp.detail[${i}].amplitude`, w.amplitude, 0, 1_000_000);
+    num(`warp.detail[${i}].wavelength`, w.wavelength, 100, 10_000_000, true);
   });
   num("transformBelow", data.transformBelow, 0, 1);
-  obj("hotspots", data.hotspots, ["count", "within"]);
-  range("hotspots.count", data.hotspots.count, 0, 32, true);
-  num("hotspots.within", data.hotspots.within, 0, data.reach);
+  obj("hotspots", data.hotspots, ["$comment", "count"]);
+  range("hotspots.count", data.hotspots.count, 0, 64, true);
+  obj("margins", data.margins, ["$comment", "wavelength", "sea"]);
+  num("margins.wavelength", data.margins.wavelength, 1000, 10_000_000, true);
+  num("margins.sea", data.margins.sea, 0, 0.95);
   const rim = data.rim;
   obj("rim", rim, ["edgeSea", "edgeCoast", "shelf", "sectors", "coast", "noise"]);
   if (!Array.isArray(rim.coast) || rim.coast.length > 4) fail("rim.coast must be a list of at most 4 layers");
@@ -2776,8 +2780,6 @@ export function validatePlates(data) {
   // The noise may not carry the coast past the shelf: the outer band stays sea.
   num("rim.noise.amplitude", rim.noise.amplitude, 0, rim.shelf[0]);
   num("rim.noise.wavelength", rim.noise.wavelength, 100, 1_000_000, true);
-  if (data.hotspots.within > data.reach - rim.edgeSea)
-    fail("hotspots.within must leave the rim's edgeSea band clear");
   const u = data.uplift;
   obj("uplift", u, [
     "seaRidges",
@@ -2870,7 +2872,7 @@ export function validatePlates(data) {
   for (const k of UPLIFT_ARC) if (!(k in u.arc)) fail(`uplift.arc.${k} is missing`);
   num("uplift.arc.distance", u.arc.distance, 0, 50_000);
   num("uplift.arc.minDistance", u.arc.minDistance, 0, u.arc.distance);
-  num("uplift.arc.spacing", u.arc.spacing, 1, 100_000);
+  num("uplift.arc.spacing", u.arc.spacing, 1, 500_000);
   num("uplift.arc.minLength", u.arc.minLength, 0, 200_000);
   num("uplift.arc.maxCones", u.arc.maxCones, 0, 32, true);
   num("uplift.arc.coneHeight", u.arc.coneHeight, 0, 8000);
@@ -2882,7 +2884,7 @@ export function validatePlates(data) {
   for (const k of UPLIFT_CHAIN)
     if (!(k in u.hotspot)) fail(`uplift.hotspot.${k} is missing`);
   num("uplift.hotspot.islands", u.hotspot.islands, 0, 32, true);
-  num("uplift.hotspot.spacing", u.hotspot.spacing, 1, 50_000);
+  num("uplift.hotspot.spacing", u.hotspot.spacing, 1, 500_000);
   num("uplift.hotspot.height", u.hotspot.height, 0, 5000);
   num("uplift.hotspot.radius", u.hotspot.radius, 1, 20_000);
   num("uplift.hotspot.decay", u.hotspot.decay, 0, 1);
@@ -3064,7 +3066,8 @@ export function platesRust(data) {
     ["transform_below", rf(data.transformBelow)],
     ["hotspots_min", `${data.hotspots.count[0]}`],
     ["hotspots_max", `${data.hotspots.count[1]}`],
-    ["hotspots_within", rf(data.hotspots.within)],
+    ["margin_wavelength", `${data.margins.wavelength}`],
+    ["margin_sea", rf(data.margins.sea)],
     [
       "rim",
       `RimRule { edge_sea: ${rf(data.rim.edgeSea)}, edge_coast: ${rf(data.rim.edgeCoast)}, coast: &[${data.rim.coast.map((l) => `(${rf(l.amplitude)}, ${l.wavelength}, ${l.octaves})`).join(", ")}], shelf: [${rf(data.rim.shelf[0])}, ${rf(data.rim.shelf[1])}], sectors: ${data.rim.sectors}, noise_amplitude: ${rf(data.rim.noise.amplitude)}, noise_wavelength: ${data.rim.noise.wavelength} }`,

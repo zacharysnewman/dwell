@@ -17,6 +17,8 @@ fn main() {
     let mut out = ".".to_string();
     let mut seeds = Vec::new();
     let mut faces = vec![Face::A];
+    // The disc's radius × this (a Realistic world at 10×, real-world scale 0.71).
+    let mut size: u32 = 1;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -25,6 +27,10 @@ fn main() {
                 i += 1;
             }
             "--both" => faces = vec![Face::A, Face::B],
+            "--size" => {
+                size = args[i + 1].parse().expect("size");
+                i += 1;
+            }
             s => seeds.push(s.parse::<u64>().expect("seed")),
         }
         i += 1;
@@ -37,8 +43,9 @@ fn main() {
     for s in seeds {
         for &face in &faces {
             let seed = face_seed(s, face);
-            let layout = PlateLayout::generate(&PLATES, seed);
-            let m = WorldMap::for_height(seed, h);
+            let ws = dwell_protocol::world_size::WorldSize::scaled(size).expect("a world size");
+            let layout = PlateLayout::generate_sized(&PLATES, seed, ws.world_radius_m() as f64);
+            let m = WorldMap::for_height_sized(seed, h, ws);
             let n = m.n;
             let mut rgb = vec![0u8; n * n * 3];
             for c in 0..n * n {
@@ -74,7 +81,11 @@ fn main() {
                 rgb[c * 3 + 2] = b.clamp(0.0, 255.0) as u8;
             }
             let f = if face == Face::A { "a" } else { "b" };
-            let path = format!("{out}/realistic-{s}-{f}.png");
+            let path = if size == 1 {
+                format!("{out}/realistic-{s}-{f}.png")
+            } else {
+                format!("{out}/realistic-{s}-{f}-{size}x.png")
+            };
             std::fs::write(&path, png::encode(n as u32, n as u32, &rgb)).expect("write");
             println!("{path}");
         }

@@ -1,18 +1,18 @@
 {
   "$comment": "The plate layout a Realistic world's seed draws (docs/proposals/REALISTIC_WORLD.md §3.1, phase R1; owner 2026-11-11: plates decide land and sea, face B its own plates from its own face seed). Read by crates/dwell-worldgen/src/plates.rs and plate_tectonics.rs; only a world with terrain.json tectonics.plates 1 (the Realistic test world, worlds/realistic.json, R2) reads it, so nothing here changes the default's or the starter's terrain. `count` [min, max]: the seed picks how many plates (3–5 for the first region, the proposal's default; Q1 not answered). `reach`: the disc (m) the layout covers, the world's radius at the default size; `centres`: plate centres are drawn within this many m of the centre (more than the reach, so plates straddle the rim and the visible area holds plate middles, not only their tips). `spacing`: the least distance between two plates' centres (m), tried at up to `attempts` seeded points. No sliver plates (realistic batch A, 0.64): each kind's `interior` is the least distance (m) some point of a plate of that kind must lie from every other plate and from the rim inside the land area (a continent's room beyond its boundary landforms; for an ocean, half the narrowest strait it may make between two continents); a plate short of it is removed while the count stays at least `count`'s min, else turned to the other kind where the kinds' minimums allow. `rim` (owner, 2026-11-13: no circular sea cap): the plates of mixed kinds run out to the rim; where a continent reaches it, the land ends as a passive margin `shelf` [min, max] m inside the outer `edgeSea` m band, the shelf drawn per each of `sectors` sectors round the disc (cosine-blended) with the coast moved ±`noise.amplitude` m by noise at `noise.wavelength` m; the outer `edgeSea` m are always sea at least `edgeCoast` m out to sea (deep), and every landform fades to nothing at that coast. `rim.coast` (the map check, 2026-11-14: no straight coasts, no continent its plate's polygon): every coast, the plate edges' and the rim's, moves by the sum of these layers' noise, each {amplitude ± m, wavelength m, octaves}: broad peninsulas and gulfs, then bays and headlands; never more than 0.6 of the way into the outer band's distance (no land meets the band). `kinds`: each plate kind (code vocabulary: oceanic, continental) has a draw `weight` and a `min` count the layout keeps (oceanic plate = sea, continental = land). `speed` [min, max] cm/yr and `age` [min, max] Myr are drawn uniformly per plate. `warp`: the boundaries curve by `amplitude` m of noise at `wavelength` m, and by each of `detail`'s {amplitude, wavelength} finer warps (0.64; owner, 2026-11-14: \"our tectonic plates are too straight\": sweeping arcs with smaller bends). `transformBelow`: a boundary is transform where the closing (or opening) rate across it is less than this share of the plates' relative speed, else convergent (closing) or divergent (opening). `hotspots`: `count` [min, max] points fixed in the mantle within `within` m of the centre; the chain's older islands lie along the overlying plate's motion. `fixtures`: two-plate layouts by data with the boundary each must give (`kind`, and `subducts`: the index of the plate that dives, or null) — the tests check every entry. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
-  "count": [7, 11],
+  "count": [5, 9],
   "reach": 50000,
-  "centres": 56000,
-  "spacing": 12000,
+  "centres": 2000000,
+  "spacing": 400000,
   "attempts": 400,
   "kinds": {
     "oceanic": {
-      "weight": 0.5,
+      "weight": 0.3,
       "min": 1,
       "interior": 5000
     },
     "continental": {
-      "weight": 0.5,
+      "weight": 0.7,
       "min": 1,
       "interior": 8000
     }
@@ -20,17 +20,23 @@
   "speed": [1, 10],
   "age": [5, 200],
   "warp": {
-    "amplitude": 3500,
-    "wavelength": 30000,
+    "amplitude": 60000,
+    "wavelength": 600000,
     "detail": [
+      { "amplitude": 3500, "wavelength": 30000 },
       { "amplitude": 2200, "wavelength": 7000 },
       { "amplitude": 600, "wavelength": 2000 }
     ]
   },
   "transformBelow": 0.4,
   "hotspots": {
-    "count": [0, 2],
-    "within": 40000
+    "$comment": "Hotspots (real-world scale, 0.71): `count` [min, max] drawn anywhere in the plates' disc (`centres`), no bias toward the face (about one per 3 to 12 million km², as on Earth).",
+    "count": [1, 4]
+  },
+  "margins": {
+    "$comment": "Passive margins (real-world scale, 0.71): inside a continental plate the continent's own coast where a noise of `wavelength` m falls in its lowest `sea` share (shelf sea), so a face deep inside one plate may still hold a coast, far from any boundary.",
+    "wavelength": 900000,
+    "sea": 0.2
   },
   "rim": {
     "edgeSea": 2500,
@@ -215,8 +221,8 @@
     "arc": {
       "distance": 9000,
       "minDistance": 2000,
-      "spacing": 10000,
-      "minLength": 6000,
+      "spacing": 70000,
+      "minLength": 40000,
       "maxCones": 4,
       "coneHeight": 900,
       "coneRadius": 3500,
@@ -235,7 +241,7 @@
     },
     "volcanism": {
       "$comment": "Active and dormant volcanoes (owner, 2026-11-13: \"active volcanoes should've dumped some noisy lava stone in the water around them. And if they're dormant, they should slowly gain dirt and grass, and trees.\" Set once at terrain generation from each volcano's state and age; a live system later, docs/FUTURE.md; VOLCANOES.md §6.7). Applies to the Realistic world's placed volcanoes, its arc cones and hotspot islands (with their satellites); the default world's hand-placed tectonics are unchanged. Each arc cone is active with chance `active`, else dormant at a weathering age drawn 0..1; a hotspot chain's youngest island is active and each older one dormant at its place down the chain (0..1, ± `ageJitter`); a satellite takes its parent's. A volcano's ground is its outline out to `footprint` × its radius, the edge moved ± `edge` of it by noise at `edgeWavelength` m and faded into the ground around over the last `fade` of it (no ring). There the surface is by `cover`, the share covered at the age (smoothstep from `cover[0]` to `cover[1]`; 0 on an active cone): a patch noise at `patchWavelength` m over that share keeps the biome's ground, the next `dirt` of it shows `soil`'s blocks (dirt patches), the rest `bare`'s (dark lava rock, no plants); steep faces and the crater stay rock as everywhere. Trees there × a smoothstep of the age from `trees[0]` to `trees[1]` (none on an active cone, the oldest wooded). An active volcano's apron: under water no deeper than `apronDepth` m, within `apron` [min, max] m (drawn per volcano, ± `apronNoise` of it by the patch noise) of its shore (the depth over the ground's slope), the sea floor is `bare`'s, `glass`'s where a second noise passes 1 − `glassShare` (obsidian where the lava met the water). Each surface names a rock (rocks.json `rocks`) and its part: `face`, `cap` or `scree`. A mostly green dormant one (its cover at least `coverFull`) shows bare rock only near its shore (under `bareShore` m over the sea) and round its vent (within `bareVent` of its radius), its young flows; elsewhere the cover (0.68; the map check, 2026-11-14: \"black blotches across the green lowland\").",
-      "active": 0.4,
+      "active": 0.15,
       "ageJitter": 0.1,
       "footprint": 1.0,
       "edge": 0.2,
@@ -258,7 +264,7 @@
     },
     "hotspot": {
       "islands": 4,
-      "spacing": 5000,
+      "spacing": 90000,
       "height": 420,
       "radius": 2600,
       "decay": 0.65,

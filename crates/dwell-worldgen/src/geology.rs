@@ -215,6 +215,21 @@ impl Blend {
 const FBM3_SD: f64 = 0.1725;
 
 /// The standard normal CDF (Abramowitz and Stegun 26.2.17, |error| < 7.5e-8).
+/// The standard normal's quantile at `p` (0..1), by bisection on [`normal_cdf`].
+pub fn normal_quantile(p: f64) -> f64 {
+    let p = p.clamp(1e-9, 1.0 - 1e-9);
+    let (mut lo, mut hi) = (-8.0, 8.0);
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if normal_cdf(mid) < p {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
 fn normal_cdf(x: f64) -> f64 {
     let t = 1.0 / (1.0 + 0.231_641_9 * x.abs());
     let d = 0.398_942_3 * (-x * x / 2.0).exp();
@@ -734,9 +749,17 @@ impl Resolved {
     /// With the tectonic provinces of `t` (T5): a volcano's ground is the volcanic stack, the old
     /// core's the core stack. Off (`t` disabled): the noise's provinces alone.
     pub fn with_tectonics(mut self, t: crate::tectonics::Tectonics) -> Self {
+        self = self.with_tectonics_over(t, crate::plates::PLATES.reach);
+        self
+    }
+
+    /// [`Resolved::with_tectonics`] over the disc of `reach` m (the world map's radius: a
+    /// Realistic world at any size, 0.71).
+    pub fn with_tectonics_over(mut self, t: crate::tectonics::Tectonics, reach: f64) -> Self {
         if t.from_plates() {
             // R5: the face seed's plates (the world map's, `hydrology::generate_with_height`).
-            let plates = crate::plate_tectonics::PlateTectonics::for_seed(self.world_seed);
+            let plates =
+                crate::plate_tectonics::PlateTectonics::for_seed_sized(self.world_seed, reach);
             self = self.with_plates(std::sync::Arc::new(plates));
         }
         if t.enabled() {
