@@ -56,6 +56,14 @@
       "cross": { "height": 1.0, "quads": 3, "sitOnSupport": false }, "color": "#6a8a3a", "textures": "tallGrass"
     },
     {
+      "$comment": "A door by data alone (BLOCK_REGISTRY.md, Doors): a 1.5 m gate over three cells (`column`), open (`swing`) a plate turned toward its hinge with no collision, flipped by a Use (`toggle`).",
+      "name": "gate", "density": 600, "shape": "full", "render": "cutout", "color": "#806040", "textures": "planks",
+      "facingProperty": "facing",
+      "properties": { "facing": ["north", "east", "south", "west"], "hinge": ["left", "right"], "open": ["false", "true"], "part": ["low", "mid", "high"] },
+      "palette": [{ "facing": "north" }, { "facing": "east" }],
+      "column": "part", "swing": { "property": "open", "hinge": "hinge" }, "toggle": "open"
+    },
+    {
       "$comment": "A light emitter by data alone (docs/DAY_NIGHT.md §10): this one gives off level 14 of block light, lets none through, and draws the `test:lantern` light around it (a light source added by data alone, docs/LIGHTS.md).",
       "name": "lamp", "density": 1800, "shape": "full", "placeable": true, "emits": 14, "light": "test:lantern", "color": "#ffe0a0", "textures": "stone"
     }

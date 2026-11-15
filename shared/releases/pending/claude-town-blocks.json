@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "New town blocks: plank floors, stone brick walls and thatch roofs, with thatch slopes for pitched roofs.",
+    "Doors: 2 m tall; use Place on one to open or close it. Villagers open doors as they pass and close them behind them.",
+    "Combine 8 wood into planks, 8 rock shards into stone brick, and 6 sticks with 2 grass fibre into thatch.",
+    "The village huts are now built of planks, stone brick and thatch, with a door.",
+    "Structures page: Test in town has the nearest town's builders put up a saved building beside the town."
+  ]
+}
