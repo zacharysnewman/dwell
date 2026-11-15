@@ -118,6 +118,11 @@ fn contact_ticks(item: &str) -> u32 {
 /// One break (`BlockEditRequest`, as the pickaxe's) of face-local `cell` from its face-local −x
 /// face, struck at face-local `at`; then past the edit rate and the tool's contact.
 fn hit_at(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3], at: [f64; 3]) {
+    hit_face(fx, f, cell, 1, at);
+}
+
+/// A hit on face-local `face` (`FACES` order: +x 0, −x 1, +z 4, −z 5) of `cell` at `at`.
+fn hit_face(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3], face: usize, at: [f64; 3]) {
     let w = f.cell(cell);
     let p = f.point(at);
     let lo = [f64::from(w[0]), m_of_row(w[1]), f64::from(w[2])];
@@ -128,7 +133,7 @@ fn hit_at(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3], at: [f64; 3]) {
         Message::BlockEditRequest(BlockEditRequest {
             action: BlockEditAction::Break,
             cell: w,
-            face: f.cell_face(1) as u8,
+            face: f.cell_face(face) as u8,
             material: 0,
             rows: 1,
             down: false,
@@ -273,6 +278,8 @@ dwell_world::both_faces!(
 dwell_world::both_faces!(
     fn breaking_the_bottom_log_of_a_tree_fells_it(f: FaceFrame) {
         let mut fx = scene(f, "adventure", true);
+        // Beside the fall line (it falls toward the −x side cut), not under it.
+        move_to_local(&mut fx, f, 1.8, m_of_row(BASE), 2.6);
         for _ in 0..log_hits(AXE) {
             at_trunk(&mut fx, f, BASE);
         }
@@ -313,7 +320,66 @@ dwell_world::both_faces!(
             }
         }
         assert!(lean[1] < 0.5, "down within 4 s: {lean:?}");
-        assert!(lean[0] > 0.5, "away from the player: {lean:?}");
+        // Toward the side its log was cut from (the −x, where the player stands; owner,
+        // 2026-11-15: "the realistic falling toward the broken side of the tree").
+        assert!(lean[0] < -0.5, "toward the cut side: {lean:?}");
+    }
+);
+
+/// The lean (face-local up of the body) of piece `id` once it is down, within 4 s.
+fn fallen_lean(fx: &mut Fixture, f: FaceFrame, id: u32) -> [f64; 3] {
+    let mut lean = [0.0, 1.0, 0.0];
+    for _ in 0..4 * 60 {
+        fx.server.step();
+        let Some((_, q)) = fx.server.body_pose(id) else {
+            break;
+        };
+        lean = f.vector((q * dwell_physics::DVec3::from(f.up())).to_array());
+        if lean[1] < 0.5 {
+            break;
+        }
+    }
+    lean
+}
+
+dwell_world::both_faces!(
+    /// A tree falls toward the side its bottom log was cut from (owner, 2026-11-15: "my
+    /// description only had to do with the contents of the block you're breaking on break, than
+    /// the surrounding terrain, essentially following the realistic falling toward the broken
+    /// side of the tree"; BLOCK_DAMAGE.md §16): cut from +x it falls to +x, from +z to +z, the
+    /// player standing on that side (the nearest player, whom the old rule tipped it away from).
+    fn a_tree_falls_toward_the_side_its_bottom_log_was_cut_from(f: FaceFrame) {
+        let row = m_of_row(BASE) + 0.12;
+        for (stand, face, at, axis) in [
+            // Beside the fall line, not under the trunk.
+            ([4.8, 2.6], 0usize, [4.0, row, 0.5], 0usize),
+            ([5.6, 1.8], 4, [3.5, row, 1.0], 2),
+        ] {
+            let mut fx = scene(f, "adventure", true);
+            move_to_local(&mut fx, f, stand[0], m_of_row(BASE), stand[1]);
+            for _ in 0..5 {
+                fx.server.step();
+            }
+            fx.take_all();
+            for _ in 0..log_hits(AXE) {
+                hit_face(&mut fx, f, [3, BASE, 0], face, at);
+            }
+            assert_eq!(cell_is(&mut fx, f, [3, BASE, 0]), M.air, "broken");
+            let id = fx
+                .take(1)
+                .iter()
+                .find_map(|(m, _)| match m {
+                    Message::EntitySpawn(s) => Some(s.id),
+                    _ => None,
+                })
+                .expect("the trunk falls as a body");
+            let lean = fallen_lean(&mut fx, f, id);
+            assert!(lean[1] < 0.5, "face {face}: down within 4 s: {lean:?}");
+            assert!(
+                lean[axis] > 0.5,
+                "face {face}: toward the cut side: {lean:?}"
+            );
+        }
     }
 );
 

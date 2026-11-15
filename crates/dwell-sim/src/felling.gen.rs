@@ -9,6 +9,7 @@ pub const FELLING: FellingData = FellingData {
     max_piece_cells: 4096,
     topple_spin: 0.6,
     topple_tip_speed: 4.0,
+    cut_tip: 1.5,
     sleep_linear: 0.05,
     sleep_angular: 0.05,
     rest_drift: 0.1,

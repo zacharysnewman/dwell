@@ -392,6 +392,69 @@ impl DamageView {
     }
 }
 
+/// The level side of a cell its hits took the most from (docs/BLOCK_DAMAGE.md §16): a unit
+/// `[x, z]` toward it, from its marks as its damage mask removes material round them (each mark's
+/// struck side, and where on the cell it struck, weighed by its piece, `HitMark::chunk`); none
+/// without marks or when they balance. Level axes only, so the same on both faces (a mark's
+/// `point` is world-oriented; x and z are not turned over).
+pub fn cut_side(marks: &[HitMark]) -> Option<[f64; 2]> {
+    let mut d = [0.0f64; 2];
+    for m in marks {
+        let w = m.scale();
+        // The struck side's outward normal, level (faces 0/1: ±x, 4/5: ±z; up and down: none).
+        let n = match m.face {
+            0 => [1.0, 0.0],
+            1 => [-1.0, 0.0],
+            4 => [0.0, 1.0],
+            5 => [0.0, -1.0],
+            _ => [0.0, 0.0],
+        };
+        // Where on the cell it struck, from its middle (−½..½).
+        let off = [
+            f64::from(m.point[0]) / 255.0 - 0.5,
+            f64::from(m.point[2]) / 255.0 - 0.5,
+        ];
+        d[0] += w * (n[0] + off[0]);
+        d[1] += w * (n[1] + off[1]);
+    }
+    let l = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    (l > 0.05).then(|| [d[0] / l, d[1] / l])
+}
+
+#[cfg(test)]
+mod cut_side_tests {
+    use super::*;
+
+    #[test]
+    fn the_cut_side_is_where_the_hits_took_the_most() {
+        // both-faces: level axes only (a mark's x and z are not turned over on face B).
+        let at = |face: u8, p: [u8; 3]| HitMark::at(face, p);
+        // Struck on +x: toward +x.
+        let s = cut_side(&[at(0, [255, 40, 128]), at(0, [255, 90, 120])]).unwrap();
+        assert!(s[0] > 0.95, "{s:?}");
+        // Mostly −z, one on +x: toward −z, a little +x.
+        let s = cut_side(&[
+            at(5, [128, 40, 0]),
+            at(5, [140, 40, 0]),
+            at(0, [255, 40, 128]),
+        ])
+        .unwrap();
+        assert!(s[1] < -0.8 && s[0] > 0.0, "{s:?}");
+        // A bigger piece weighs more.
+        let big = HitMark {
+            chunk: 4 * HitMark::ONE,
+            ..at(1, [0, 40, 128])
+        };
+        let s = cut_side(&[at(0, [255, 40, 128]), big]).unwrap();
+        assert!(s[0] < 0.0, "{s:?}");
+        // From the top, by where it struck; none without marks or balanced.
+        let s = cut_side(&[at(2, [230, 255, 128])]).unwrap();
+        assert!(s[0] > 0.95, "{s:?}");
+        assert!(cut_side(&[]).is_none());
+        assert!(cut_side(&[at(0, [255, 40, 128]), at(1, [0, 40, 128])]).is_none());
+    }
+}
+
 /// The damaged cells of a world.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Damage {

@@ -756,6 +756,8 @@ Owner, 2026-11-13: "You should also be able to hold 'punch' to dig with your han
 
 ## 14. The axe is a break tool, as the pickaxe and the shovel (WORK_QUEUE item 26)
 
+**The look superseded by §15 (2026-11-15):** a damaged log loses chunks by its damage mask, not cracks alone.
+
 Owner, 2026-11-14: **"Let's simplify the axe to be like the shovel and pick, without the multiple modes."**
 2026-11-15, after the first half (one mode, #954): **"Did you change the axe (or fix deploys for changes to
 it) since 10:40? It does not have the same behavior as the other tools."** → **"That's how it was, it was
@@ -843,3 +845,23 @@ was neither, so §14 gave it cracks only. One mechanism now replaces both carves
   `a_fixture_shape_gets_damage_by_data_alone` (a wedge given as polygons and a fixture look),
   `meshing_fifty_damaged_cells_stays_within_budget`; `damage_mesh`'s crack tests (walls looking down are cracked
   too).
+
+## 16. A felled tree falls toward its cut side (WORK_QUEUE item 26)
+
+Owner, 2026-11-15: "Trees should get the force applied to them like it used to be so they fall again, towards the side
+with the least structure (post 3D bit mask change)." Corrected: **"my description only had to do with the contents of
+the block you're breaking on break, than the surrounding terrain, essentially following the realistic falling toward
+the broken side of the tree."** So the direction comes from the broken log alone, never from the terrain or the
+neighbouring support (the support rule is unchanged).
+
+- **The side:** `dwell_protocol::damage::cut_side(marks)`: the level direction its hits took the most from, as its mask
+  (§15) removes round them: each mark's struck side's outward normal plus where on the cell it struck, weighed by its
+  piece; level axes only, so the same on both faces. None without marks or when they balance.
+- **The push:** the hit that breaks a damaged block records its side; what the edit lets go of falls tipped toward it
+  (`Server::fell_tipped` with a point far past the opposite side) at `felling.json` `cutTip` (1.5) of the topple spin
+  and tip speed, about its foot as before (FELLING.md §3). A break without damage (a one-hit break) is tipped away from
+  the nearest player as before.
+- **Tests:** `dwell-protocol` `the_cut_side_is_where_the_hits_took_the_most`; `dwell-sim` `chopping`
+  `a_tree_falls_toward_the_side_its_bottom_log_was_cut_from` (both faces: cut from +x it falls to +x, from +z to +z,
+  the cutter standing on that side; red on the old rule, which tipped it away from the cutter: lean −0.22 x, −0.84 z),
+  `breaking_the_bottom_log_of_a_tree_fells_it` (now toward the −x side cut).
