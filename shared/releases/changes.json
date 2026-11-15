@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.9",
+      "changes": [
+        "Tall grass grows up to 2 m: in a lush meadow a full tuft grows another ½ m every day or two, to four cells; dry or cold ground stays short.",
+        "Cutting a tall stand at any height takes everything above the cut, one grass fibre for each ½ m cell.",
+        "A deer grazing a tall stand eats it down to a sprout."
+      ]
+    },
+    {
       "version": "0.70.8",
       "changes": [
         "The site holds fewer old builds so new releases fit on it again; older builds stay downloadable on GitHub."
