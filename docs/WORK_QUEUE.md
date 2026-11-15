@@ -608,6 +608,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    before/after (noon, morning, late day; ground and 6 km, 16 km up): clear spells overhead with banks of cloud
    beside them, instead of an even scatter. Left: dense regions still read grey from above (lighting, not the
    field); streets and cells, fronts' structure, the deck (Low) and reflections taking the field.
+   Follow-up (2026-11-14, orchestrator's brief): **"dense cloud banks read grey, sometimes gloomy, from above and
+   below … make thick cloud read like real cumulus: bright sunlit tops and sides from above, darker but not muddy
+   bases from below, still dark under real storm cloud where the field says so."** **Built (branch
+   `claude/cloud-cumulus-light`, CLOUDS.md §12):** each march step lit at its transmittance-weighted depth (the
+   dense cloud's surface, not ~400 m inside it), multiple scattering added as a second octave instead of a floor,
+   the sky's light reaching under cloud through its sides by the type's `darkening` (storm cloud keeps its dark
+   base) and tinted by the sky's hue; data in `clouds.json` `volume` (`surfaceLight`, `multiScatterFalloff`,
+   `ambientSide`, `skyHue`). Cost on the M1 Air (Medium, the High preset's; clouds + composite over Off, p50):
+   ground 0.81 → 0.83 ms, 3.5 km up 3.05 → 3.12 ms (noise). **Owner should see:** from a plane's height at noon,
+   cloud banks with brilliant white sunlit tops and sides instead of grey masses; from the ground, clouds white
+   with light blue-grey bases, not muddy grey; storm cloud still dark underneath; at sunset, banks lit warm on
+   the sun's side. Open until the owner confirms the look.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
