@@ -6,19 +6,6 @@ pins it.
 
 ## Open
 
-### 183. A blueprint's ghost and panel don't show in a local world (found 2026-11-15, site clearing's GPU check)
-
-Found while checking builders' site clearing (WORK_QUEUE item 56) on `?local=1&seed=0&fresh=1&spawn=town` on a real
-GPU. Two parts. (1) **Fixed in the same change:** `Client::start_game` never set `blueprints_synced` (only a host's
-mode change did), so a fresh session couldn't place a blueprint at all (Blueprint, Test in town: `placeBlueprint`
-returned false). It is now set at the start with the other capabilities (no automated test: `web/app.rs` is the wasm
-shell; checked in the browser: false before, true after, and the hut placed). (2) **Open:** once placed, the server
-builds it (its builder clears and builds, the blocks appear), but the client draws no ghost and the panel stays empty
-while the view aims into its box (`blueprintPanel` "", `__dwell.state().target` in the box), also after a reload,
-which suggests the client holds no ghosts (`Blueprints` `Added`/`All` not reaching it, or not applied). Suspects: the
-server's `send_blueprints` (`blueprints_sent`) in the local worker's join order; `ClientBlueprints::apply`. Repro:
-the link above, teleport by a tree, `__dwell.blueprint('dwell:bp_hut')`, aim into the box.
-
 ### 182. A held break at nothing loops its knock (phones in Break mode, the held mouse too)
 
 Owner, 2026-11-15: "there seems to be a looping sound when you have "break" on for mobile and you tap and hold the
@@ -771,6 +758,20 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 183. A blueprint's ghost and panel didn't show (fixed after 0.70.14)
+
+Found 2026-11-15 in site clearing's GPU check (`?local=1&seed=0&fresh=1&spawn=town`, `__dwell.blueprint('dwell:bp_hut')`).
+Two parts. (1) Fixed in 0.70.14: `Client::start_game` never set `blueprints_synced`, so a fresh session couldn't place a
+blueprint until a mode change. (2) Once placed, the server built it, but the client drew no ghost and the panel stayed
+empty when aimed into its box, also after a reload. Cause: the server sends `Blueprints` (`All` at the capabilities,
+`Added`/`Removed` after) on the **world** channel, and the client session (`net/session.rs` `on_reliable`) forwards a
+world-channel message to the game only if it is in its list, which `Blueprints` wasn't (it was handled on the control
+channel only); the message was dropped silently. Not only local worlds: every server. Fixed: `Blueprints` is in the
+world channel's list. Test: `game_local` `a_blueprint_placed_in_a_local_world_comes_back_as_a_ghost_with_its_panel`
+(red: the server kept the hut, the client's panel never showed; green after). **Owner should see:** a blueprint placed
+(Blueprints, or Structures → Test in town) shows its ghost when you look at it, and the panel names it, "Clearing"
+then "Building".
 
 ### 180. Releases 0.70.3 onward never reached the site: Pages over its 1 GB limit (fixed after 0.70.7)
 

@@ -1133,15 +1133,19 @@ mod tests {
                 assert!(g.cells.iter().any(|c| c.local == at));
                 assert!(g.cells.iter().all(|c| c.local[1] >= at[1]));
             }
-            // A quarter turn moves the doorway (south, +z) to the west (−x).
+            // A quarter turn moves the door (south, +z) to the west (−x); the wall fills the rest.
             let door = |turn| {
                 let g = Ghost::of(&record_of(&s, f, at, turn).unwrap());
+                let is_door = |c: [i32; 3]| {
+                    g.at(f.cell(c))
+                        .is_some_and(|m| block_of(m).name == "dwell:door")
+                };
                 let d = [at[0], at[1] + 1, at[2] + 2];
                 let w = [at[0] - 2, at[1] + 1, at[2]];
-                (g.at(f.cell(d)).is_some(), g.at(f.cell(w)).is_some())
+                (is_door(d), is_door(w))
             };
-            assert_eq!(door(0), (false, true));
-            assert_eq!(door(1), (true, false));
+            assert_eq!(door(0), (true, false));
+            assert_eq!(door(1), (false, true));
         }
     );
 
@@ -1161,10 +1165,11 @@ mod tests {
             let all = |_: StateId| true;
             let p = g.pick(eye, dir, 6.0, &get, &all).expect("the floor's edge");
             assert_eq!(p.local, [0, 64, 2]);
-            assert_eq!(block_of(p.state).name, "dwell:stone");
-            // Without stone nothing is picked there (it shows red), not another block.
-            let no_stone = |m: StateId| block_of(m).name != "dwell:stone";
-            assert_eq!(g.pick(eye, dir, 6.0, &get, &no_stone), None);
+            assert_eq!(block_of(p.state).name, "dwell:planks");
+            // Without planks nothing is picked there (it shows red), not another block (the door
+            // over it has no floor to stand on yet).
+            let no_planks = |m: StateId| block_of(m).name != "dwell:planks";
+            assert_eq!(g.pick(eye, dir, 6.0, &get, &no_planks), None);
             // Aimed off the blueprint: nothing.
             let away = f.vector([0.0, -0.2, 1.0]);
             assert_eq!(g.pick(eye, away, 6.0, &get, &all), None);
@@ -1172,7 +1177,7 @@ mod tests {
             assert_eq!(g.pick(eye, dir, 1.0, &get, &all), None);
             // Built: the next cell along is not that one.
             let mut set = HashMap::new();
-            set.insert(f.cell([0, 64, 2]), M.stone);
+            set.insert(f.cell([0, 64, 2]), p.state);
             let get = world(f, 64, &set);
             assert_ne!(
                 g.pick(eye, dir, 6.0, &get, &all).map(|c| c.local),
@@ -1186,33 +1191,48 @@ mod tests {
             let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
             let set = HashMap::new();
             let get = world(f, 64, &set);
-            let have = |n: &str| if n == "dwell:log" { 12 } else { 0 };
+            let have = |n: &str| if n == "dwell:stone_brick" { 12 } else { 0 };
             let (rows, left) = g.needs(&get, &have);
-            // The hut: a 5 × 5 stone floor and roof, log walls 4 rows of the 16 edge cells less a
-            // 3-row doorway.
-            assert_eq!(left, 25 + 25 + 16 * 4 - 3);
+            // The hut: a 5 × 5 plank floor; stone brick walls 4 rows of the 16 edge cells less the
+            // door's column, and a ring of 16 under the roof round 9 planks; a thatch roof of 25 and
+            // 15 cells. Every cell is left, but the door is needed once (its bottom cell's).
+            assert_eq!(left, 25 + 16 * 4 + 16 + 9 + 25 + 15);
             assert_eq!(
                 rows[0],
                 Need {
-                    block: "dwell:log",
+                    block: "dwell:stone_brick",
                     have: 12,
-                    need: 61
+                    need: 15 * 4 + 16
                 }
             );
             assert_eq!(
-                rows[1],
-                Need {
-                    block: "dwell:stone",
+                rows.iter().find(|r| r.block == "dwell:planks"),
+                Some(&Need {
+                    block: "dwell:planks",
                     have: 0,
-                    need: 50
-                }
+                    need: 25 + 9
+                })
             );
-            // One floor cell built: one fewer stone.
+            assert_eq!(
+                rows.iter()
+                    .find(|r| r.block == "dwell:door")
+                    .map(|r| r.need),
+                Some(1),
+                "the door's upper cells come with it"
+            );
+            assert_eq!(rows.iter().map(|r| r.need).sum::<u32>(), left as u32 - 3);
+            // One floor cell built: one fewer plank.
+            let planks = |rows: &[Need]| {
+                rows.iter()
+                    .find(|r| r.block == "dwell:planks")
+                    .unwrap()
+                    .need
+            };
             let mut set = HashMap::new();
-            set.insert(f.cell([0, 64, 0]), M.stone);
+            set.insert(f.cell([0, 64, 0]), g.at(f.cell([0, 64, 0])).unwrap());
             let get = world(f, 64, &set);
-            let (rows, left2) = g.needs(&get, &have);
-            assert_eq!((rows[1].need, left2), (49, left - 1));
+            let (rows2, left2) = g.needs(&get, &have);
+            assert_eq!((planks(&rows2), left2), (planks(&rows) - 1, left - 1));
             assert_eq!(g.complete(&get), Some(false));
         }
     );
@@ -1270,22 +1290,33 @@ mod tests {
                 };
                 rows.push(c.local[1]);
                 set.insert(c.world, c.state);
+                // A door's bottom cell puts the cells of its column above (`comes_with`).
+                let mut up = c.local;
+                loop {
+                    up[1] += 1;
+                    match g.at(f.cell(up)) {
+                        Some(m) if comes_with(m) => set.insert(f.cell(up), m),
+                        _ => break,
+                    };
+                }
             }
             assert!(
                 rows.windows(2).all(|w| w[0] <= w[1]),
                 "lowest row first: {rows:?}"
             );
+            let with = g.cells.iter().filter(|c| comes_with(c.state)).count();
+            assert_eq!(with, 3, "the door's cells over its bottom one");
             assert_eq!(
                 rows.len(),
-                g.cells.len() - 1,
-                "every cell but the occupied one"
+                g.cells.len() - 1 - with,
+                "every cell but the occupied one and those put with the door"
             );
             {
                 let get = world(f, 64, &set);
                 assert_eq!(g.complete(&get), Some(false));
                 assert_eq!(g.remaining(&get).count(), 1);
             }
-            set.insert(occupied, parse_state("dwell:log").unwrap());
+            set.insert(occupied, g.at(occupied).unwrap());
             let get = world(f, 64, &set);
             assert_eq!(g.complete(&get), Some(true));
         }
@@ -1385,32 +1416,36 @@ mod tests {
             let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
             let set = HashMap::new();
             let get = world(f, 64, &set);
-            // The floor first: 25 stone, so a load of 10 is all stone.
+            // The floor first: 25 planks, so a load of 10 is all planks.
+            let planks = g.at(f.cell([0, 64, 0])).unwrap();
+            assert_eq!(block_of(planks).name, "dwell:planks");
             let load = g.next_load(&get, None, 10, true);
-            assert_eq!(load, vec![(f.state(M.stone), 10)]);
-            // The floor built but three cells: a mixed load is those three stone, then logs.
+            assert_eq!(load, vec![(planks, 10)]);
+            // The floor built but three cells: a mixed load is those three planks, then the walls'
+            // stone brick (and the door).
             let mut set = HashMap::new();
             for c in g.cells.iter().filter(|c| c.local[1] == 64).skip(3) {
                 set.insert(c.world, c.state);
             }
             let get = world(f, 64, &set);
             let load = g.next_load(&get, None, 10, true);
-            assert_eq!(load[0], (f.state(M.stone), 3));
+            assert_eq!(load[0], (planks, 3));
             assert_eq!(load.iter().map(|l| l.1).sum::<u32>(), 10);
             assert!(
                 load[1..]
                     .iter()
-                    .all(|l| block_of(l.0).name.ends_with("log"))
+                    .all(|l| ["dwell:stone_brick", "dwell:door"].contains(&block_of(l.0).name))
             );
-            // Unmixed: only the stone.
-            assert_eq!(
-                g.next_load(&get, None, 10, false),
-                vec![(f.state(M.stone), 3)]
-            );
-            // A builder carrying only logs is given only log cells.
-            let log = load[1].0;
-            let next = g.builder_next_of(&get, None, &|s| s == log).unwrap();
-            assert_eq!(next.state, log);
+            // Unmixed: only the planks.
+            assert_eq!(g.next_load(&get, None, 10, false), vec![(planks, 3)]);
+            // A builder carrying only stone brick is given only stone brick cells.
+            let brick = load
+                .iter()
+                .map(|l| l.0)
+                .find(|&m| block_of(m).name == "dwell:stone_brick")
+                .unwrap();
+            let next = g.builder_next_of(&get, None, &|s| s == brick).unwrap();
+            assert_eq!(next.state, brick);
         }
     );
 

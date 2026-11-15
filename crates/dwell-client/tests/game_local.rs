@@ -5549,3 +5549,43 @@ fn a_combine_that_makes_an_item_sounds_once_per_press() {
     assert_eq!(stones(&mut rig), 2, "no shards left: nothing made");
     assert_eq!((craft, pop), (0, 0), "a press that made nothing is silent");
 }
+
+/// BUGS.md #183: a blueprint placed in a local world reaches the client as its ghost, whose
+/// panel shows while the view aims into its box.
+#[test]
+fn a_blueprint_placed_in_a_local_world_comes_back_as_a_ghost_with_its_panel() {
+    use dwell_protocol::capability_names::BLUEPRINTS_WORLD;
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    assert!(
+        rig.session.capability(BLUEPRINTS_WORLD),
+        "the server keeps blueprints"
+    );
+    let game = rig.game.as_mut().unwrap();
+    // As the web app does at the start (`start_game`).
+    game.set_blueprints_synced(rig.session.capability(BLUEPRINTS_WORLD));
+    rig.input.look.pitch = -40.0;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    let hut = dwell_world::structure::load("dwell:bp_hut").expect("the hut");
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .place_blueprint_structure(&hut, 0),
+        "placed at the crosshair"
+    );
+    assert!(
+        rig.run_until(60, |r| !r.core.server().blueprint_list().is_empty()),
+        "the server keeps it"
+    );
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().blueprint_panel().is_some()),
+        "the client draws its ghost and the panel shows aimed into its box"
+    );
+}
