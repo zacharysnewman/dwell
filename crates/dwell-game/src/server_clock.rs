@@ -15,7 +15,7 @@ pub const SNAP_MS: f64 = 250.0;
 /// How long (ms, local) a snapshot's delay counts toward the estimate: the estimate is the least
 /// delay seen within it, so it follows a slower link, or a server that dropped time (a local
 /// world's worker busy past its catch-up cap, `LocalCore::advance`), within this. It drifted up
-/// 0.05 ms a snapshot before (BUGS.md #173, #176): after the server dropped ½ s, pieces and remote
+/// 0.05 ms a snapshot before (BUGS.md #173, #180): after the server dropped ½ s, pieces and remote
 /// players were drawn past their newest snapshots for minutes, moving only on frames one came.
 pub const WINDOW_MS: f64 = 1000.0;
 

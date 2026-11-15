@@ -291,7 +291,7 @@ shots) runs it; the settings are data, `shared/theater/cinematic.json` (validate
   resumed until its clock reaches the next frame's time. While a take holds the engine's clock
   (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`),
   and Web Audio's sample-accurate scheduling puts it on its frame. A step that overshoots past the lead (a hardware
-  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #177) moves the timeline on by the overshoot
+  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #181) moves the timeline on by the overshoot
   (`TakeTimeline`), so the frame's sounds and mark are still scheduled ahead of the suspended clock; the re-timing on
   the marks takes the extra audio out. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
   its time; a third channel carries an impulse scheduled like a sound at every frame, which calibrates the
@@ -326,6 +326,45 @@ each eye tested against the world (`src/theater/clearance.ts`; `dwell-client` `c
   shot); the report's `clearance` lists them either way.
 - **Data.** `shared/theater/cinematic.json` `clearance`: `radiusM`, `stepS`, `passStepS`, `capMs`, `liftStepM`,
   `liftMaxM` (validated; a take's `settings.clearance` overrides them).
+
+### 6.3 Scenes: test worlds as data [built]
+
+Owner, 2026-11-14: "Do a rendered recording of a 10 block high dam of a river suddenly deleted. 30s of real time for our
+first one. We'll probably do a bunch of these so if you need tools to generate a valley with a river/lake with a dam, go
+ahead and make them." A **scene** is a test world for a recording, as data (`shared/theater/scenes/<name>.json`), built
+into the page's local world before a take and run on the take's clock:
+
+- **The format** (`dwell-sim` `scene.rs`, `Scene::parse`; a bad entry fails with its path and reason, unknown keys
+  named): the world it builds on (`flat`: `?world=flat`), the face, the valley's head (`origin`, world x and z) and
+  `axis` (±x, ±z); the **terrain** (`valley`: the land's height, length, floor width, depth, the floor's fall, the
+  sides' and ends' slope, the air cleared over the land, and its materials — surface, under and its depth, rock, the
+  bed — by block name); the **structures** (`wall`: a dam across the valley at `atM`, `heightBlocks` blocks of
+  `blockM` — 1 m blocks or ½ m cells — over the floor there, `thicknessM`, its material); the **water** (`lake`: every
+  open cell upstream of a structure filled to `levelM`, or `belowTopM` under its top); **events** (`{atS, do:
+  "remove", target}`: a structure deleted all at once); `waterClock` (`game`, the world's; `real`, the world's water
+  speed set so a second of water is a second of play: a 20-minute day otherwise runs the water 72× real time). The
+  engine is that fixed vocabulary; a scene is data, and `cargo test -p dwell-sim scene` parses every file.
+- **The builder** (`Scene::cells`, face-local through the scene's `FaceFrame`): each column's ground from the valley's
+  height function (the floor, then the slope up to the land, rounded at the ends), its top cell a ramp by the
+  half-height grid's rule (HALF_HEIGHT_GRID.md §4: gentle on a 1-in-2 slope, steep on 1-in-1), ramps under the lake
+  flooded; only the cells that differ from the world are written. `Server::build_scene` writes them as modifications of
+  at most 60 000 cells (under the wire's 1 MiB), not told to the water cell by cell; it then has the water read the
+  scene's chunks again as fresh loads (`cells::Mirror::forget`), so the lake joins the grid **held**, as a generated
+  lake does: still, at its level, from the first tick (no fill or settle to wait for; the record skill's wait for no
+  water chunk awake passes at once). The dam_break scene builds in ~0.1 s natively, ~0.25 s in the browser (256 388
+  cells, 43 304 of water).
+- **Events** (`Server::scene_event`): `remove` sets the structure's cells that still hold its material to air as one
+  ordinary edit the water hears, so the held lake is freed by it and runs out by the grid's law.
+- **In the page:** `__dwell.scene('build', text)`, `('event', index)`, `('status')` (the local worker's `sceneDev`
+  message, `LocalCore::scene_dev`); a cinematic take's **`events`** (`{atS, op: 'scene', arg}`) run before the world
+  steps past their time (`eventsDue`: an event at 3 s is in the world from frame 91 at 30 fps, frame 90 being 3 s
+  exactly), reported with the frame that first shows them. The record skill's shot names a scene (`"scene":
+  "dam_break"`): built after the world loads, its events on the cinematic clock (or by timers in a real-time take).
+- **Measured** (the dam_break scene: a 320 m valley, its floor 14 m wide and 12 m deep, sides 1 in 1; a stone dam of
+  ten 1 m blocks 100 m down, 4 m thick; the lake 9 m deep behind it): natively, 20 s after the dam goes the lake has
+  fallen 3.5 m and the flood has run 116 m down the valley (`tests/scenes.rs`).
+- **Not yet:** a river with a source (the grid has no springs to feed one: G1's map sources), terrain other than the
+  valley, structures other than a wall, events other than removal.
 
 ## 7. Multiplayer, permissions and the simulation viewpoint
 

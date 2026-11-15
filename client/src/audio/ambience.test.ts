@@ -32,6 +32,7 @@ const base: Surroundings = {
   day: 1,
   fireM: 99,
   underwater: 0,
+  rush: 0,
 };
 const at = (s: Partial<Surroundings>): Record<string, number> => bedGains(A, { ...base, ...s });
 
@@ -39,10 +40,24 @@ describe('ambience beds (AUDIO.md §2c)', () => {
   it('reads the probe in the Rust order', () => {
     expect([...INPUTS]).toEqual(AMBIENCE_INPUTS);
     expect(decodeSurroundings([])).toBeNull();
-    const s = decodeSurroundings([1, 2, 3, 4, 5, 6, 7, 8, 9, 1]);
+    const s = decodeSurroundings([1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 0.5]);
     expect(s?.altitude).toBe(1);
     expect(s?.fireM).toBe(9);
     expect(s?.underwater).toBe(1);
+    expect(s?.rush).toBe(0.5);
+  });
+
+  it('hears moving water from afar by the rush, and still water not at all (BUGS.md #176)', () => {
+    // A flood seen from 90 m up: no water within the probe, the rush probe's level 0.15-0.6.
+    const high = { altitude: 90, height: 60, open: 1 };
+    expect(at({ ...high, rush: 0 })['dwell:flood'] ?? 0).toBe(0);
+    const far = at({ ...high, rush: 0.15 })['dwell:flood'] ?? 0;
+    const near = at({ ...high, rush: 0.6 })['dwell:flood'] ?? 0;
+    expect(far).toBeGreaterThan(0.01);
+    expect(near).toBeGreaterThan(far * 2);
+    expect(near).toBeLessThanOrEqual(A.cap);
+    // The wind still blows up there (the camera is the listener: BUGS.md #176).
+    expect(at(high)['dwell:wind'] ?? 0).toBeGreaterThan(0.2);
   });
 
   it('plays the underwater bed only with the eye under water (BUGS.md #104)', () => {

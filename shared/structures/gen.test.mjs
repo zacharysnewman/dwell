@@ -164,9 +164,31 @@ test('a structure with half a multi-cell block fails; a whole one validates', ()
   assert.throws(() => validate(post(['t', 't', 'u']), 'torch.json', reg, parts), /layers\[0\]\[0\]\[0\]: test:stick needs test:flame/);
 });
 
+// Doors (owner, 2026-11-14: "2m doors."): a column block's cells stacked whole, bottom to top, the
+// same door in each (a door's `part` the column).
+test('a structure with a door missing a cell, or out of order, fails; a whole one validates', () => {
+  const st = (p, f = 'south') => `test:gate[facing=${f},part=${p}]`;
+  const reg = registryFromVector(['hash 0', '0 test:air', '1 test:stone', `2 ${st('a')}`, `3 ${st('b')}`, `4 ${st('c')}`, `5 ${st('b', 'north')}`].join('\n'));
+  const parts = new Map([['test:gate', { extendsUp: null, partOf: null, column: { property: 'part', values: ['a', 'b', 'c'] } }]]);
+  const post = (layers) => ({
+    format: 1,
+    name: 'test:door',
+    kind: 'voxels',
+    size: [1, layers.length, 1],
+    anchor: [0, 0, 0],
+    palette: { '.': null, s: 'test:stone', a: st('a'), b: st('b'), c: st('c'), n: st('b', 'north') },
+    layers: layers.map((c) => [c]),
+  });
+  assert.equal(validate(post(['s', 'a', 'b', 'c']), 'door.json', reg, parts).cells.length, 4);
+  assert.throws(() => validate(post(['s', 'a', '.', 'c']), 'door.json', reg, parts), /test:gate's part a needs b of the same test:gate above/);
+  assert.throws(() => validate(post(['s', 'a', 'b']), 'door.json', reg, parts), /part b needs c/);
+  assert.throws(() => validate(post(['s', 'a', 'n', 'c']), 'door.json', reg, parts), /needs b of the same/);
+});
+
 test('the build structures keep their multi-cell blocks whole', async () => {
   const { registryParts } = await import('./gen.mjs');
   const parts = registryParts();
   assert.equal(parts.get('dwell:torch')?.extendsUp, 'dwell:torch_upper');
   assert.equal(parts.get('dwell:torch_upper')?.partOf, 'dwell:torch');
+  assert.deepEqual(parts.get('dwell:door')?.column, { property: 'part', values: ['bottom', 'lower', 'upper', 'top'] });
 });

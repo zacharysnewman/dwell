@@ -93,5 +93,18 @@ pub const VEGETATION: Vegetation = Vegetation {
             fade: [0.0, 0.4, 0.0],
             density: 1.0,
         },
+        Kind {
+            name: "dwell:shrubs",
+            placement: "bushes",
+            decoration: "",
+            ground: "",
+            temperature: [0.0, 40.0],
+            moisture: [0.12, 1.0],
+            min_soil: 0.1,
+            max_slope_deg: 40.0,
+            soils: &[],
+            fade: [2.0, 0.15, 0.1],
+            density: 1.0,
+        },
     ],
 };

@@ -16,6 +16,26 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
+  doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
+  Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
+  brick for walls, thatch with ramp shapes for pitched roofs) plus a door that opens and closes, used by players and
+  villagers; no plaster, beam or glass; painterly textures from the palette; each block also as ½ m pieces. Doors:
+  "2m doors." (2 m tall, one cell wide, a lower and upper half like the torch pair). Keepers come to Claude as
+  exported JSON. Recipes: "Can we make planks assembled from 8 wood pieces from trees." (8 wood → planks; the log
+  recipe stays; costs stay 8) and "8 stone chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant
+  fibre" (8 rock shards → stone brick; 6 sticks + 2 grass fibre → thatch). Done on `claude/town-blocks`:
+  `dwell:planks`, `dwell:stone_brick`, `dwell:thatch` with `dwell:thatch_ramp`, `dwell:door` (a `column` of four
+  ½ m cells, `swing`, `toggle`: a Use is a Place aimed at it, whatever is held; BLOCK_REGISTRY.md, Doors); villagers
+  and builders open the doors they walk through and close them behind them (`opensDoors`); the Structures page's
+  **Test in town** puts a saved structure as a blueprint beside the nearest town for its builders (BLUEPRINTS.md
+  §6c); the hamlet's huts are rebuilt in the new blocks with a door. Not built: an open/close swing animation (the
+  state changes at once, with the wood sound); a player building a blueprint's door by held Place (builders put it).
+  **Owner should see:** in a town (`?spawn=town`), huts of plank floors, stone brick walls and thatch roofs with a
+  2 m door; Place (right-click) on a door opens and closes it, and you walk through it open, not closed; villagers
+  open a door as they walk through and it shuts behind them; on the Structures page, **Test in town** on a saved
+  building has the town's builders put it up beside the town.
+
 - **Current priority: refinement only (owner, 2026-11-13 evening):** "Refocus priorities on bug fixes, visual
   cleanups, and refinements we have instead of new features. Something like properly showing LODs is a refinement
   and visual cleanup. Tree billboards, terrain slope generation, those kind of things. We have lots of unrefined
@@ -577,6 +597,29 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
    height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
    coverage, height and type across the world and change over time with the weather, with no repeating pattern.
+   **Built (2026-11-14, branch `claude/cloud-weather`, CLOUDS.md §11; research and open questions:
+   `docs/proposals/CLOUD_WEATHER.md`):** a weather field per world and face (`weatherField` data,
+   `dwell_look::weather_field`): non-periodic humidity from synoptic (160 km, warped into fronts), mesoscale and
+   local octaves moving with the wind and evolving over hours; orographic lift on windward slopes and the rain
+   shadow's clear lee from the world map; instability-driven type; dry air lifting the cloud base; depth by
+   instability. Baked as a 64 × 64 map round the eye in a job worker every 2 s; the march reads one texel per
+   sample in place of the two regional noise fields. Cost on the M1 Air (Medium, the High preset's; clouds pass
+   plus composite over Off, p50): ground 0.87 → 0.85 ms, from 3.5 km up 3.13 → 3.06 ms (unchanged). Screenshots
+   before/after (noon, morning, late day; ground and 6 km, 16 km up): clear spells overhead with banks of cloud
+   beside them, instead of an even scatter. Left: dense regions still read grey from above (lighting, not the
+   field); streets and cells, fronts' structure, the deck (Low) and reflections taking the field.
+   Follow-up (2026-11-14, orchestrator's brief): **"dense cloud banks read grey, sometimes gloomy, from above and
+   below … make thick cloud read like real cumulus: bright sunlit tops and sides from above, darker but not muddy
+   bases from below, still dark under real storm cloud where the field says so."** **Built (branch
+   `claude/cloud-cumulus-light`, CLOUDS.md §12):** each march step lit at its transmittance-weighted depth (the
+   dense cloud's surface, not ~400 m inside it), multiple scattering added as a second octave instead of a floor,
+   the sky's light reaching under cloud through its sides by the type's `darkening` (storm cloud keeps its dark
+   base) and tinted by the sky's hue; data in `clouds.json` `volume` (`surfaceLight`, `multiScatterFalloff`,
+   `ambientSide`, `skyHue`). Cost on the M1 Air (Medium, the High preset's; clouds + composite over Off, p50):
+   ground 0.81 → 0.83 ms, 3.5 km up 3.05 → 3.12 ms (noise). **Owner should see:** from a plane's height at noon,
+   cloud banks with brilliant white sunlit tops and sides instead of grey masses; from the ground, clouds white
+   with light blue-grey bases, not muddy grey; storm cloud still dark underneath; at sunset, banks lit warm on
+   the sun's side. Open until the owner confirms the look.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -1000,6 +1043,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
    lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
    the owner's "~4 m" axis-run ideal.
+   **Built on `claude/realistic-070` (the 0.70 line; awaiting the maps):** cliff talus into the water (placements.json
+   `talus`: 1 m stones, 2 m blocks and boulders, red sandstone on red ground, `cliffReach` 12 m from a wall's or steep
+   rock's foot, `wet` on beds under water; counts by distance 4036 / 907 / 35, 62 / 102 pieces under water,
+   `tests/realistic_talus.rs`); shrubs and bushes in clumps (species `bush`, `low_shrub`, `scrub`; placements
+   `bushes`, `cold_shrubs`, `scrub` by biome, the bushes by moisture: 19–34 per ha, variance / mean 1.9–3.6,
+   `tests/realistic_shrubs.rs`); plants bleed across borders (placements' `bleed` 30–50 m: 212 / 269 plants on a
+   neighbour's ground, falling with distance, `tests/realistic_bleed.rs`). Not reproduced on the measured seeds
+   (guards kept): the mesa lake's grey band (`tests/realistic_mesa_lakes.rs`, 0–0.1 % grey), fence-thin mesa walls
+   (`tests/realistic_fins.rs`, 0.3 % of the standing ground; a `minWidth` cut tried changed nothing and was dropped).
+   Not found: the dormant islands' straight red strip (needs the map check's location).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
@@ -2501,7 +2554,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
    snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
    same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
-   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #176 (remotes) and #177 (late
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #180 (remotes) and #181 (late
    sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
    delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
    ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
@@ -2518,6 +2571,24 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
    four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
    unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
+   **A dam break, and scenes as data (owner, 2026-11-14):** "Do a rendered recording of a 10 block high dam of a river
+   suddenly deleted. 30s of real time for our first one. We'll probably do a bunch of these so if you need tools to
+   generate a valley with a river/lake with a dam, go ahead and make them." Built (`claude/dam-scene`, THEATER_MODE.md
+   §6.3): scenes as data (`shared/theater/scenes/*.json`: a valley's size, slopes and materials, a wall across it by
+   height in blocks, a lake held behind it to a level, timed events), one builder (`dwell-sim` `scene.rs`,
+   `Server::build_scene`: the lake joins the water held, still from the start), `__dwell.scene`, a cinematic take's
+   `events`, and a record shot's `"scene"`. The first: `dam_break` (a stone dam of ten 1 m blocks, i.e. 20 half-cells,
+   10 m over the floor, the lake 9 m deep behind it, the water at real time), its dam deleted at 3 s, 30 s cinematic
+   at 30 fps with the game's sound, 16:9 (`videos/dam-break/`) and re-aimed 9:16 (`videos/dam-break-9x16/`). A river
+   fed by a source is not built (the grid has no sources yet): the first scene is a still lake.
+   **Owner should see:** a valley with a still lake behind a 10-block dam; at 3 s the dam vanishes at once and the lake
+   pours through and floods down the valley, the camera drifting after the front, for 30 s of real time, no clipping,
+   in both aspects.
+   **The dam break's sound (BUGS.md #176, found recording it; orchestrator's brief 2026-11-14):** both takes were silent.
+   Fixed on `claude/flood-sound`: a placed camera is the listener, the wind bed plays up high, and the grid's moving
+   water is heard from afar (`ambient.rush`: a rushing loop by flow × depth × distance, toward the flow; a flood bed;
+   a burst when the dam goes). **Owner should see:** the 16:9 dam break re-rendered with sound: the wind up high, a
+   crash as the dam goes and rushing water while the flood runs.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

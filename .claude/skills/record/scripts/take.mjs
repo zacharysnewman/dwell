@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, stat
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { SKILL, aspectsOf, clipPath, fingerprint, loadVideo, metaPath, selectShots, shotAudio, splicePlan } from './videos.mjs';
+import { SKILL, aspectsOf, clipPath, fingerprint, loadVideo, metaPath, sceneEvents, sceneText, selectShots, shotAudio, splicePlan } from './videos.mjs';
 import { renderTitle } from './title.mjs';
 import { audioAlignment, cinematicEncodeArgs, encodeArgs } from './audio.mjs';
 
@@ -140,6 +140,23 @@ export function settleScript(quietMs = 1000, maxS = 60, loadedMs = 3000) {
     return 'NOT settled ' + ((Date.now() - t0) / 1000).toFixed(1); })()`;
 }
 
+/**
+ * The page script that builds a scene (THEATER_MODE.md §6.3) into the page's local world and waits until its water
+ * is still: no water chunk awake for `quietMs`, at most `maxS` seconds. It returns the build's figures and the wait
+ * (`settledS`, or `settled: false` past the cap); a bad scene throws with the builder's message.
+ */
+export function sceneBuildScript(text, maxS = 60, quietMs = 1500) {
+  return `(async () => { const t0 = Date.now();
+    const built = JSON.parse(await d.scene('build', ${JSON.stringify(text)}) ?? '{"error":"not a local world"}');
+    if (built.error) throw new Error('scene: ' + built.error);
+    const t1 = Date.now(); let quiet = null; let st = null;
+    while (Date.now() - t1 < ${maxS * 1000}) { st = JSON.parse(await d.scene('status'));
+      const now = Date.now(); quiet = st.awake === 0 && st.tick > 0 ? (quiet ?? now) : null;
+      if (quiet !== null && now - quiet >= ${quietMs}) return JSON.stringify({ ...built, buildS: (t1 - t0) / 1000, settledS: (quiet - t1) / 1000, status: st });
+      await new Promise((r) => setTimeout(r, 250)); }
+    return JSON.stringify({ ...built, buildS: (t1 - t0) / 1000, settled: false, status: st }); })()`;
+}
+
 async function waitReady(url) {
   const t0 = Date.now();
   while (Date.now() - t0 < 180_000) {
@@ -167,6 +184,7 @@ async function recordShot(m, shot, o, state) {
   if (!state.loaded && state.fresh && !s.url) await waitReady(url); // a driver just started on the world's link
   else if (!state.loaded || s.reload || s.url) await load(m, url);
   state.loaded = true;
+  if (shot.scene) console.log('  scene', await post('/eval', sceneBuildScript(sceneText(shot.scene), s.sceneSettleS ?? 60)));
   await post('/eval', `(async () => { ${s.view ? `d.setView(${JSON.stringify(s.view)});` : ''}
     ${s.timeOfDay !== undefined ? `d.setTime(${s.timeOfDay});` : ''}
     ${s.hud !== undefined ? `d.theater('hud', { shown: ${s.hud} });` : ''}
@@ -182,7 +200,10 @@ async function recordShot(m, shot, o, state) {
       d.theater('play', { path: ${JSON.stringify(hold)} }); await new Promise(r => setTimeout(r, ${(s.warmS ?? 2) * 1000})); return 1; })()`);
     if (s.settleS !== 0) console.log('  view', await post('/eval', settleScript(1000, s.settleS ?? 60)));
     started = await post(`/rec/start?name=${shot.id}${sound}`); console.log(started);
+    // a scene's events in real time: each at its time from the path's start
+    const events = shot.scene ? sceneEvents(sceneText(shot.scene)) : [];
     log = await post('/eval', `(async () => { d.theater('play', { path: ${JSON.stringify(path)} });
+      for (const e of ${JSON.stringify(events)}) setTimeout(() => d.scene('event', e.arg), e.atS * 1000);
       while (!d.theater('state', {}).finished) await new Promise(r => setTimeout(r, 100)); await new Promise(r => setTimeout(r, 300)); return 'played'; })()`);
   } else {
     const src = scriptSource(resolve(SKILL, shot.script));
@@ -207,7 +228,8 @@ async function recordCinematic(m, shot, size, s) {
   const path = JSON.parse(readFileSync(resolve(SKILL, shot.path), 'utf8'));
   const started = await post(`/cine/start?name=${shot.id}`); console.log(' ', started);
   const settings = { ...(shot.cinematic ?? {}), ...(shotAudio(m, shot) ? {} : { audio: { on: false } }) };
-  const clip = shot.allowClipping ? ', allowClipping: true' : '';
+  const clip = (shot.allowClipping ? ', allowClipping: true' : '')
+    + (shot.scene ? `, events: ${JSON.stringify(sceneEvents(sceneText(shot.scene)))}` : '');
   // Started, then polled: a take runs for minutes, past fetch's 300 s wait for a reply's headers.
   await post('/eval', `(d.theater('hud', { shown: false }), globalThis.__cine = null,
     d.cinematic({ path: ${JSON.stringify(path)}, size: ${JSON.stringify(size)}, settings: ${JSON.stringify(settings)}${clip} })
@@ -219,7 +241,7 @@ async function recordCinematic(m, shot, size, s) {
   const a = r.audio;
   console.log(`  ${shot.id}: ${r.frames} frames (${r.seconds.toFixed(2)} s at ${r.fps} fps) in ${r.wallS.toFixed(0)} s (pre-roll ${r.prerollS.toFixed(0)} s);`
     + ` settle mean ${r.settle.meanMs.toFixed(0)} ms, p95 ${r.settle.p95Ms.toFixed(0)}, max ${r.settle.maxMs.toFixed(0)}, capped ${r.settle.capped.length ? r.settle.capped.join(',') : 'none'};`
-    + ` ${r.ticks} ticks` + (r.clearance ? `; clearance ${r.clearance.clipping.length ? `${r.clearance.clipping.length} clip(s), allowed` : 'clear'} (${r.clearance.samples} samples, ${r.clearance.unchecked} unchecked)` : '') + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}, re-based ${a.rebased ?? 0}` : '; silent'));
+    + ` ${r.ticks} ticks` + (r.events?.length ? `; events ${r.events.map((e) => `${e.atS} s (frame ${e.frame}): ${e.result}`).join(', ')}` : '') + (r.clearance ? `; clearance ${r.clearance.clipping.length ? `${r.clearance.clipping.length} clip(s), allowed` : 'clear'} (${r.clearance.samples} samples, ${r.clearance.unchecked} unchecked)` : '') + (a ? `; sound ${a.seconds.toFixed(3)} s, ${a.impulses} frame marks, error mean ${a.meanErrorMs.toFixed(2)} ms max ${a.maxErrorMs.toFixed(2)} ms, late ${a.late}, re-based ${a.rebased ?? 0}` : '; silent'));
   const dir = /^"?cinematic (\S+?)"?$/.exec(started.trim())?.[1] ?? null;
   return { stats: { frames: r.frames, seconds: r.seconds, fps: r.fps }, log: r, frames: dir, cinematic: { fps: r.fps } };
 }

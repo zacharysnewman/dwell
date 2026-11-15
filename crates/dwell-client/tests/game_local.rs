@@ -1194,6 +1194,40 @@ fn a_theater_path_drives_the_view() {
     assert_eq!(g.theater_state(), None);
 }
 
+/// BUGS.md #176: a placed camera (a theater path, a cinematic take) hears the world from where it
+/// is, not from the player's body: 70 m over the flat world the listener is the camera and the
+/// ambience reads the height the wind bed wants (`height` past its 60 m full, open sky).
+/// face-a-only: the flat test world is face A's; the listener's eye is a world point.
+#[test]
+fn a_placed_camera_high_up_is_the_listener_and_hears_the_height() {
+    let mut rig = Rig::with_generator(dwell_world::GENERATOR_FLAT);
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let eye = [feet[0] + 30.0, feet[1] + 70.0, feet[2]];
+    rig.game.as_mut().unwrap().set_view(Some(ViewOverride {
+        eye,
+        yaw_deg: 0.0,
+        pitch_deg: -30.0,
+        fov_deg: None,
+        up: None,
+    }));
+    rig.run_until(60, |_| false);
+    let g = rig.game.as_ref().unwrap();
+    let l = g.listener();
+    assert!(
+        (0..3).all(|k| (l[k] - eye[k]).abs() < 1e-6),
+        "the listener is the camera: {l:?} vs {eye:?}"
+    );
+    let a = g.ambience();
+    let (height, open) = (a[1], a[2]);
+    assert!(height >= 60.0, "70 m over the ground reads high: {a:?}");
+    assert_eq!(open, 1.0, "{a:?}");
+}
+
 /// The simulation viewpoint (docs/THEATER_MODE.md §7, T-4): a playing path's eye goes to the
 /// server as `TheaterViewpoint` only where it is one (the capability and creative), at the rate,
 /// and one clear follows when the path stops; elsewhere (adventure, an older server) none is sent.

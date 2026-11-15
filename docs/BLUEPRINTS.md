@@ -129,6 +129,26 @@ The dev link **`?spawn=town`** (`town-b`) opens its own world file with the spaw
 the face's spawn (`dwell_worldgen::town_spawn_for_sized`, `local::spawn_by_town`), so it founds at once and its
 builders come (docs/DEV_TOOLS.md).
 
+## 6c. Test in town, and the town blocks (2026-11-14)
+
+The owner asked for **"a quick way to test a saved building in a village"** and new man-made blocks
+(BLOCK_REGISTRY.md, Doors; ITEMS.md, The town blocks). Each saved structure on the Structures page has a
+**Test in town** button: it places the structure as a blueprint (an ordinary `Place`: per world, seen by
+everyone, saved as any blueprint) beside the town site nearest the player within 400 m, so the town's
+builders build it; with no town near, at the crosshair as **Blueprint** does. The spot is
+`TownRules::test_spot` (`dwell-world`, pure): rings round the site's layout box (`clear_box`) 2 m apart,
+widening, the spot nearest the player on the first ring whose box (the structure's furthest column from
+its anchor, so any turn fits) keeps a column clear of the layout and of every blueprint already placed,
+on ground the client has loaded (the lowest free cell over a solid one). The client sites the towns from
+the seed as the map does (`BifacialTerrain::town_in`); no protocol change.
+
+The hamlet's huts (`dwell:bp_hut`) are built of the town blocks: a plank floor, stone brick walls 2 m tall,
+a 2 m door in the south wall and a pitched thatch roof (½ m ramps at the eaves, a plank ceiling). The door
+is one piece: a builder places its bottom cell and the rest come with it (`comes_with`); villagers and
+builders open it as they pass (BLOCK_REGISTRY.md, Doors). Its box is the same, so the towns' clear ground
+and the trees a seed generates are unchanged. Tests: `dwell-world` `tests/test_in_town.rs`; `dwell-sim`
+`tests/blueprints.rs` (the hut, door and all, built by a builder).
+
 ## 7. Built, and left
 
 Built (B1–B4): the data and its generator, the four test blueprints, the record and message behind the
@@ -144,6 +164,9 @@ Left:
 - A blueprint's ghost is drawn only while aimed into (within four reaches); a brush in use hides it.
 - A builder shows no building pose of its own (it stands; the place swing is the players').
 - Gathering for builders: B5's later phases (§9); player-placed towns (later).
+- A player building a blueprint's door by held Place: the ghost's door is a multi-cell block, which the
+  one-cell region fill drops as lone (`parts::keep_whole`), so only builders put doors for now (a player
+  places a door from the hotbar).
 
 ## 8. Tests
 

@@ -78,6 +78,18 @@
       "soils": [],
       "fade": { "temperature": 0, "moisture": 0.4, "soil": 0 },
       "density": 1
+    },
+    {
+      "$comment": "Bushes (0.69): more where the ground is wetter (along streams and lakes), none in the dry; their clusters and each biome's share are placements.json `bushes` and the biomes' `trees`.",
+      "name": "dwell:shrubs",
+      "placement": "bushes",
+      "temperature": [0, 40],
+      "moisture": [0.12, 1],
+      "minSoil": 0.1,
+      "maxSlopeDeg": 40,
+      "soils": [],
+      "fade": { "temperature": 2, "moisture": 0.15, "soil": 0.1 },
+      "density": 1
     }
   ]
 }

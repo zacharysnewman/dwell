@@ -990,6 +990,7 @@ version = "0.0.0"
 dependencies = [
  "dwell-blocks",
  "dwell-ecology",
+ "dwell-game",
  "dwell-lava",
  "dwell-look",
  "dwell-physics",

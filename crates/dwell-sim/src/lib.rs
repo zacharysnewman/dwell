@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod lava;
 pub mod lod_propagation;
 pub mod loose_items;
+pub mod scene;
 pub mod server;
 pub mod sky_columns;
 pub mod travel;

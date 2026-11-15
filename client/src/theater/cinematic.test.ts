@@ -3,9 +3,11 @@ import data from '../../../shared/theater/cinematic.json';
 import {
   CINEMATIC,
   SettleGate,
+  eventsDue,
   frameName,
   frameTimeS,
   parseCinematic,
+  parseEvents,
   percentile,
   runCinematic,
   ticksDue,
@@ -227,6 +229,71 @@ describe('the take', () => {
       expect(log.captures).toBe(31);
       // frame 4 never loaded: captured at the cap, and reported
       expect(r.settle.capped).toEqual([4]);
+    } finally {
+      (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
+    }
+  });
+});
+
+describe("a take's timed events (§6.3)", () => {
+  it('fire before the world steps past them, once each, in time order', () => {
+    const ev = [
+      { atS: 3, op: 'scene', arg: '0' },
+      { atS: 0, op: 'scene', arg: '1' },
+    ];
+    // at 30 fps frame 90 is exactly 3 s: the step from 89 to 90 doesn't run it, 90 to 91 does
+    expect(eventsDue(ev, frameTimeS(89, 0, 30, 1), frameTimeS(90, 0, 30, 1))).toEqual([]);
+    expect(eventsDue(ev, frameTimeS(90, 0, 30, 1), frameTimeS(91, 0, 30, 1))).toEqual([ev[0]]);
+    expect(eventsDue(ev, 0, 1 / 30)).toEqual([ev[1]]);
+    expect(eventsDue(ev, 0, 10).map((e) => e.arg)).toEqual(['1', '0']);
+  });
+  it('are checked', () => {
+    expect(parseEvents(undefined)).toEqual([]);
+    expect(() => parseEvents({})).toThrow('expected a list');
+    expect(() => parseEvents([{ atS: -1, op: 'scene' }])).toThrow('events[0]');
+    expect(parseEvents([{ atS: 1, op: 'scene' }])).toEqual([{ atS: 1, op: 'scene', arg: '' }]);
+  });
+  it('run on their frame of a take, between its world steps', async () => {
+    const offscreen = globalThis.OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
+      getContext() {
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
+      }
+      transferToImageBitmap() {
+        return {};
+      }
+      convertToBlob() {
+        return Promise.resolve(new Blob([new Uint8Array([1])]));
+      }
+    };
+    try {
+      const { host, log } = fakeHost(1);
+      const ran: [string, string, number][] = [];
+      host.event = (op, arg) => {
+        ran.push([op, arg, log.steps.length]);
+        return Promise.resolve('{"removed":3}');
+      };
+      const r = await runCinematic(host, {
+        path: {},
+        size: [16, 9],
+        settings: { preroll: { stepS: 0 }, audio: { on: false } },
+        events: [{ atS: 0.5, op: 'scene', arg: '0' }],
+      });
+      // frame 15 is 0.5 s: 15 steps made before it runs, and frame 16 is the first to show it
+      expect(ran).toEqual([['scene', '0', 15]]);
+      expect(r.events).toEqual([{ atS: 0.5, frame: 16, op: 'scene', result: '{"removed":3}' }]);
+      delete host.event;
+      await expect(
+        runCinematic(host, {
+          path: {},
+          size: [16, 9],
+          events: [{ atS: 0, op: 'scene', arg: '0' }],
+        }),
+      ).rejects.toThrow('runs no events');
     } finally {
       (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
     }

@@ -101,6 +101,8 @@ pub enum Purpose {
     LodMap(crate::lod_map::TileJob),
     /// A slab of the clouds' shape noise: the detail texture's (else the base's), from slice z0.
     CloudNoise(bool, u32),
+    /// The clouds' weather field (docs/CLOUDS.md §11).
+    CloudWeather,
     /// An impostor atlas layer's bake (`Job::ImpostorBake`).
     ImpostorBake(u32),
     /// A tile of far trees (`Job::FarTrees`): face (0 A, 1 B) and the tile's indices.
@@ -135,6 +137,7 @@ impl Purpose {
             Purpose::Base(..) => ("job.base.wait", "job.base.run"),
             Purpose::LodMap(..) => ("job.lod_map.wait", "job.lod_map.run"),
             Purpose::CloudNoise(..) => ("job.cloud_noise.wait", "job.cloud_noise.run"),
+            Purpose::CloudWeather => ("job.cloud_weather.wait", "job.cloud_weather.run"),
             Purpose::Reveal(..) => ("job.reveal.wait", "job.reveal.run"),
             Purpose::ImpostorBake(..) => ("job.impostor_bake.wait", "job.impostor_bake.run"),
             Purpose::FarTrees(..) => ("job.far_trees.wait", "job.far_trees.run"),

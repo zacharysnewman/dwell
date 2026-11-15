@@ -56,6 +56,7 @@ export class LoopbackTransport implements Transport {
   private readonly reports: ((report: string | null) => void)[] = [];
   private readonly mapFinds: ((result: string | null) => void)[] = [];
   private readonly lavaAnswers: ((result: string | null) => void)[] = [];
+  private readonly sceneAnswers: ((result: string | null) => void)[] = [];
   private readonly clearances: ((result: number[] | null) => void)[] = [];
   private readonly steps: ((tick: number | null) => void)[] = [];
 
@@ -191,6 +192,15 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /** The scenes' dev tools (local.rs `scene_dev`; JSON); null once the transport is closed. */
+  sceneDev(op: string, text: string): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.sceneAnswers.push(resolve);
+      this.post({ t: 'sceneDev', op, text });
+    });
+  }
+
   /** The lava's dev tools (local.rs `lava_dev`; JSON); null once the transport is closed. */
   lavaDev(op: string, args: number[]): Promise<string | null> {
     if (this.closed) return Promise.resolve(null);
@@ -275,6 +285,7 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
     for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
+    for (const resolve of this.sceneAnswers.splice(0)) resolve(null);
     for (const resolve of this.clearances.splice(0)) resolve(null);
     for (const resolve of this.steps.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
@@ -319,6 +330,9 @@ export class LoopbackTransport implements Transport {
         break;
       case 'lavaDev':
         this.lavaAnswers.shift()?.(msg.result);
+        break;
+      case 'sceneDev':
+        this.sceneAnswers.shift()?.(msg.result);
         break;
       case 'cameraClearance':
         this.clearances.shift()?.(msg.result);
