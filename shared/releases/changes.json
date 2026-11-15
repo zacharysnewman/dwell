@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.16",
+      "changes": [
+        "The axe now works exactly like the pickaxe and shovel: each swing lands at the crosshair and counts down a log's hits.",
+        "A log takes 10 hits with the stone axe (5 with the metal one), cracking and throwing chips, then breaks whole and drops its wood.",
+        "Breaking a tree's trunk still topples the tree above.",
+        "No more notches or V bites carved into logs."
+      ]
+    },
+    {
       "version": "0.70.15",
       "changes": [
         "A placed blueprint shows its ghost again when you look at it, with its panel (Clearing, then Building)"
