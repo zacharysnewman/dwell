@@ -19,6 +19,17 @@ the surrounding terrain, essentially following the realistic falling toward the 
   octagonal log is not, so #980 drew logs with cracks only.
 - **Fixed (chunks):** damage is a 3D bit mask over the cell for any shape (BLOCK_DAMAGE.md §15). Test:
   `dwell-mesh` `a_damaged_octagon_log_loses_volume_by_stage` (both faces; red with the log drawn whole, as main did).
+- **Fixed (felling):** a tree falls toward the side its bottom log's hits took out (BLOCK_DAMAGE.md §16). Test:
+  `dwell-sim` `chopping` `a_tree_falls_toward_the_side_its_bottom_log_was_cut_from` (both faces; red on the old rule).
+- **Cause (grip):** each tool's turn about its handle (`shared/models/props.json` `hold.roll`/`yaw`) left the stone axe's
+  and stone pickaxe's heads standing out on the right of the handle, and the `tool` hold pose leaned the handle 17.6°.
+- **Fixed (grip):** the stone axe and pickaxe and the metal axe `roll` 120 (the head out on the left of the handle, in
+  toward the crosshair; the metal pickaxe and the shovels already were), and the `tool` hold pose
+  (`shared/characters/characters.json`) stands the handle at 10° from upright; the break clips' strike keys
+  (`fp_break_*` at 0.14 and 0.26 s) turn the hand back by the same 12°, so each head still meets the crosshair at its
+  contact (`every_tools_head_meets_the_crosshair_at_its_contact`, both faces). Test: `dwell-client` `clip_probe`
+  `every_tools_head_faces_in_to_the_left_and_stands_upright_at_rest` (red on main: the stone axe's head side +0.108,
+  the lean 17.6°).
 
 **Owner should see:** chunks coming off a log with each axe hit; each tool held with its head leaning in toward the
 crosshair, more upright, and striking at it; a tree whose bottom log you chop from one side falls toward that side.

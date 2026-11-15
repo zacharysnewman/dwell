@@ -2360,7 +2360,8 @@ mod tests {
                         t.item
                     ));
                 }
-                if y1 > 0.45 {
+                // 2026-11-15: more upright (owner), so a little higher.
+                if y1 > 0.6 {
                     bad.push(format!("{}: up to y {y1:.2}, high in the view", t.item));
                 }
                 if area < 0.38 {
