@@ -6,6 +6,27 @@ pins it.
 
 ## Open
 
+### 181. Stone tools can't be crafted from the rocks dirt and grass give
+
+Owner, 2026-11-15 (screenshot: a backpack with 33 grass fibre, 17 sticks and 13 Rocks; Combine offered only Thatch
+and the Wooden shovel): "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards". Dirt and grass
+dropped `dwell:rock` (chance 0.5) and the ground's loose rocks were `dwell:rock`, an item apart from
+`dwell:rock_shard`, which the stone tool recipes take and only stone gave. The owner's decision: "One item: rock =
+shard".
+
+**Owner should see:** breaking dirt or grass, and picking up a rock from the ground, gives Rock shards; with 2 sticks,
+2 rock shards and 2 grass fibre the backpack's Combine offers the stone axe, the stone pickaxe and the stone shovel;
+the Rocks already in a backpack (or lying loose in a saved world) show as Rock shards.
+
+**Fixed:** one item. Dirt's and grass's random drop and the ground rock's item are `dwell:rock_shard`
+(`shared/blocks/dwell.json`, `shared/ground/ground.json`; the ground rock now lies as a shard, its item's one look);
+`dwell:rock` is gone as an item and kept as an alias (`shared/inventory/inventory.json` `aliases`, generated into
+`dwell_protocol::inventory::ITEM_ALIASES`), so a saved or sent stack of it reads 1:1 as rock shards
+(`canonical_item`, in `Inventory::read` and the saved loose items). Tests: `dwell-protocol` inventory
+`rocks_from_dirt_make_the_stone_tools` (red: no stone tool offered), `an_old_rock_reads_back_as_a_rock_shard` (red),
+the data test's dirt and grass drops (red: `dwell:rock`); `dwell-sim` `a_saved_old_rock_loads_as_a_rock_shard`, the
+ground rock pick-up tests in `tests/items.rs` (a rock shard collected); `shared/inventory/gen.test.mjs` the alias.
+
 ### 179. Grass fibre (and the gems) drawn as a block when dropped
 
 Owner, 2026-11-14 (WORK_QUEUE item 58): "Plant fiber looks like a block for the drop." A loose grass fibre was a

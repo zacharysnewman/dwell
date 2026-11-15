@@ -13,8 +13,9 @@ mod table {
 }
 
 pub use table::{
-    BACKPACK_SLOTS, DESPAWN_SECONDS, DROPS, HOTBAR_SLOTS, ITEMS, MAX_DROPS, PICKUP_DELAY_SECONDS,
-    PICKUP_RADIUS_M, RECIPES, STACK_SIZE, STARTING_ITEMS, STARTING_WALLET, WALLETS,
+    BACKPACK_SLOTS, DESPAWN_SECONDS, DROPS, HOTBAR_SLOTS, ITEM_ALIASES, ITEMS, MAX_DROPS,
+    PICKUP_DELAY_SECONDS, PICKUP_RADIUS_M, RECIPES, STACK_SIZE, STARTING_ITEMS, STARTING_WALLET,
+    WALLETS,
 };
 
 /// Every slot: the hotbar's first, then the backpack's.
@@ -160,6 +161,16 @@ pub fn combine_request(server_flags: u8, name: &str) -> Option<crate::messages::
 /// The non-block item of that name.
 pub fn item(name: &str) -> Option<&'static ItemDef> {
     ITEMS.iter().find(|i| i.name == name)
+}
+
+/// The item a saved or sent name means now: an old name of shared/inventory's `aliases` (an item
+/// merged into another, `dwell:rock` → `dwell:rock_shard`) reads as the item it became, 1:1; any
+/// other name is itself (unknown names are kept: a newer build's items).
+pub fn canonical_item(name: &str) -> &str {
+    ITEM_ALIASES
+        .iter()
+        .find(|(from, _)| *from == name)
+        .map_or(name, |(_, to)| to)
 }
 
 /// The most of `name` one slot holds.
@@ -562,7 +573,7 @@ impl Inventory {
             let (i, item, count) = (usize::from(r.u8()), r.str(MAX_ITEM_NAME), r.u16());
             if r.ok() && i < SLOTS && count > 0 && !item.is_empty() {
                 inv.slots[i] = Some(Stack {
-                    item,
+                    item: canonical_item(&item).to_string(),
                     count,
                     wear: 0,
                 });
@@ -634,7 +645,7 @@ mod tests {
             assert!(
                 rules
                     .iter()
-                    .any(|r| r.chance < 1.0 && r.choices[0].item == "dwell:rock"),
+                    .any(|r| r.chance < 1.0 && r.choices[0].item == "dwell:rock_shard"),
                 "{block}"
             );
         }
@@ -647,7 +658,7 @@ mod tests {
 
     static FIXTURE: &[Recipe] = &[Recipe {
         name: "test:pebble_pile",
-        inputs: &[("dwell:rock", 3), ("dwell:stick", 1)],
+        inputs: &[("dwell:rock_shard", 3), ("dwell:stick", 1)],
         output: ("dwell:stone", 2),
     }];
 
@@ -655,11 +666,11 @@ mod tests {
     fn a_fixture_recipe_by_data_alone_takes_its_inputs_and_adds_its_output() {
         let r = recipe_in(FIXTURE, recipe_id("test:pebble_pile")).expect("found by its id");
         let mut inv = Inventory::default();
-        inv.add("dwell:rock", 5);
+        inv.add("dwell:rock_shard", 5);
         inv.add("dwell:stick", 1);
         assert_eq!(inv.can_make(r), 1);
         assert!(inv.combine(r));
-        assert_eq!(inv.count_of("dwell:rock"), 2);
+        assert_eq!(inv.count_of("dwell:rock_shard"), 2);
         assert_eq!(inv.count_of("dwell:stick"), 0);
         assert_eq!(inv.count_of("dwell:stone"), 2);
         // Refused without its inputs, changing nothing.
@@ -667,6 +678,49 @@ mod tests {
         assert!(!inv.combine(r));
         assert_eq!(inv, before);
         assert!(recipe_in(FIXTURE, 1).is_none());
+    }
+
+    /// BUGS.md (owner, 2026-11-15): "Why can't I craft stone tools? I have grass fiber, sticks,
+    /// and rock shards". Dirt's rock was an item of its own the stone tools didn't take.
+    #[test]
+    fn rocks_from_dirt_make_the_stone_tools() {
+        let mut inv = Inventory::default();
+        inv.add("dwell:stick", 2);
+        inv.add("dwell:grass_fiber", 2);
+        // Two rocks from dirt: its chance rule's item.
+        let rock = drops_of("dwell:dirt")
+            .unwrap()
+            .drops
+            .iter()
+            .find(|r| r.chance < 1.0)
+            .expect("dirt's chance of a rock")
+            .choices[0]
+            .item;
+        inv.add(rock, 2);
+        for tool in [
+            "dwell:stone_axe",
+            "dwell:stone_pickaxe",
+            "dwell:stone_shovel",
+        ] {
+            let r = recipe_in(RECIPES, recipe_id(tool)).expect(tool);
+            assert_eq!(inv.can_make(r), 1, "{tool} offered");
+        }
+    }
+
+    /// An inventory saved with the old `dwell:rock` reads back as rock shards, 1:1 (an alias of
+    /// shared/inventory's `aliases`), so the append-only stores and saved worlds keep loading.
+    #[test]
+    fn an_old_rock_reads_back_as_a_rock_shard() {
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(Stack::new("dwell:rock", 13));
+        inv.slots[1] = Some(Stack::new("dwell:rock_shard", 2));
+        let back = Inventory::from_bytes(&inv.to_bytes()).unwrap();
+        assert_eq!(back.slots[0], Some(Stack::new("dwell:rock_shard", 13)));
+        assert_eq!(back.count_of("dwell:rock_shard"), 15);
+        assert_eq!(back.count_of("dwell:rock"), 0);
+        assert!(item("dwell:rock").is_none(), "no longer an item of its own");
+        assert_eq!(canonical_item("dwell:rock"), "dwell:rock_shard");
+        assert_eq!(canonical_item("mod:unknown"), "mod:unknown");
     }
 
     #[test]
@@ -733,7 +787,7 @@ mod tests {
         assert!(before.tool_broke(&inv, hits), "the client's break sound");
         assert_eq!(inv.wear_held(hits), Wear::None, "nothing held");
         // An item that doesn't wear.
-        inv.add("dwell:rock", 1);
+        inv.add("dwell:rock_shard", 1);
         assert_eq!(inv.wear_held(hits), Wear::None);
     }
 
@@ -770,7 +824,7 @@ mod tests {
     #[test]
     fn wear_round_trips_and_an_older_build_reads_the_record_without_it() {
         let mut inv = Inventory::starting();
-        inv.add("dwell:rock", 3);
+        inv.add("dwell:rock_shard", 3);
         inv.wear_held(crate::chopping::durability);
         inv.wear_held(crate::chopping::durability);
         // Moving the axe keeps its wear.
@@ -807,21 +861,21 @@ mod tests {
         assert_eq!(inv.slots[0], Some(worn("dwell:stone_axe", 1, 11)));
         // A stackable item (to see the rule, not its data): different wear goes to its own slot,
         // the same wear merges, and an unworn add goes to the unworn stack.
-        inv.add_stack(&worn("dwell:rock", 2, 3));
-        inv.add("dwell:rock", 4);
-        inv.add_stack(&worn("dwell:rock", 1, 3));
-        assert_eq!(inv.slots[1], Some(worn("dwell:rock", 3, 3)));
-        assert_eq!(inv.slots[2], Some(Stack::new("dwell:rock", 4)));
+        inv.add_stack(&worn("dwell:rock_shard", 2, 3));
+        inv.add("dwell:rock_shard", 4);
+        inv.add_stack(&worn("dwell:rock_shard", 1, 3));
+        assert_eq!(inv.slots[1], Some(worn("dwell:rock_shard", 3, 3)));
+        assert_eq!(inv.slots[2], Some(Stack::new("dwell:rock_shard", 4)));
         // A move onto different wear swaps rather than merging; a part moved keeps its wear.
         assert!(inv.move_items(2, 1, 0));
-        assert_eq!(inv.slots[1], Some(Stack::new("dwell:rock", 4)));
-        assert_eq!(inv.slots[2], Some(worn("dwell:rock", 3, 3)));
+        assert_eq!(inv.slots[1], Some(Stack::new("dwell:rock_shard", 4)));
+        assert_eq!(inv.slots[2], Some(worn("dwell:rock_shard", 3, 3)));
         assert!(
             !inv.move_items(2, 1, 1),
             "a part onto different wear: nowhere"
         );
         assert!(inv.move_items(2, 5, 1));
-        assert_eq!(inv.slots[5], Some(worn("dwell:rock", 1, 3)));
+        assert_eq!(inv.slots[5], Some(worn("dwell:rock_shard", 1, 3)));
     }
 
     /// Owner, 2026-11-10: the hotbar went from 9 slots to 6 and the backpack from 27 to 30, so
@@ -860,7 +914,7 @@ mod tests {
         for (i, want) in [
             (6, ("dwell:dirt", 12)),
             (7, ("dwell:stick", 5)),
-            (8, ("dwell:rock", 64)),
+            (8, ("dwell:rock_shard", 64)), // the old Rock: a Rock shard now
         ] {
             assert!(i >= HOTBAR_SLOTS, "slot {i} is the backpack's now");
             assert_eq!(at(i), Some(want));
@@ -882,8 +936,15 @@ mod tests {
                 .collect()
         };
         // Owner, 2026-11-11: a cell breaks into 8 pieces of its material; rocks still at random.
-        assert_eq!(items("dwell:grass"), ["dwell:dirt_clump", "dwell:rock"]);
-        assert_eq!(items("dwell:dirt"), ["dwell:dirt_clump", "dwell:rock"]);
+        // One rock item (owner, 2026-11-15: "One item: rock = shard"): dirt and grass give shards.
+        assert_eq!(
+            items("dwell:grass"),
+            ["dwell:dirt_clump", "dwell:rock_shard"]
+        );
+        assert_eq!(
+            items("dwell:dirt"),
+            ["dwell:dirt_clump", "dwell:rock_shard"]
+        );
         assert_eq!(items("dwell:leaves"), ["dwell:stick"]);
         assert_eq!(items("dwell:stone"), ["dwell:rock_shard"]);
         // Tall grass at full height (its default stage; the other stages drop less, by `when`).
@@ -1011,7 +1072,7 @@ mod tests {
                 chance: 1.0,
                 when: &[],
                 choices: &[DropChoice {
-                    item: "dwell:rock",
+                    item: "dwell:rock_shard",
                     min: 2,
                     max: 4,
                     weight: 1.0,
@@ -1108,7 +1169,7 @@ mod tests {
     fn the_new_messages_round_trip_and_reject_bad_ones() {
         use crate::{InventoryAction, InventoryMessage, ItemDropNet, ItemDrops, Message};
         let mut inventory = Inventory::default();
-        inventory.add("dwell:rock", 3);
+        inventory.add("dwell:rock_shard", 3);
         let all = [
             Message::InventoryAction(InventoryAction::Hello),
             Message::InventoryAction(InventoryAction::Move {

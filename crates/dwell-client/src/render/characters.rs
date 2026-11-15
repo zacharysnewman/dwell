@@ -2400,7 +2400,7 @@ mod tests {
         let ch = dwell_characters::player();
         for (item, shown) in [
             ("dwell:stick", "rod"),
-            ("dwell:rock", "lump"),
+            ("dwell:wood", "lump"),
             ("dwell:grass_seed", "cluster"),
         ] {
             let held = Held::Look(item);

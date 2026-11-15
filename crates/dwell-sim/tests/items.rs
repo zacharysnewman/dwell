@@ -241,8 +241,10 @@ fn inventories_and_loose_items_are_saved_with_the_world() {
         let mut fx = scene_with(f, cfg(), true);
         fx.server.give(1, "dwell:dirt", 5);
         fx.server.give(1, "dwell:gem", 4);
-        fx.server
-            .drop_item(Stack::new("dwell:rock", 2), [4.5, m_of_row(BASE), 4.5]);
+        fx.server.drop_item(
+            Stack::new("dwell:rock_shard", 2),
+            [4.5, m_of_row(BASE), 4.5],
+        );
         fx.server.save_now();
         fx.server.flush_store();
     }
@@ -252,7 +254,7 @@ fn inventories_and_loose_items_are_saved_with_the_world() {
     assert_eq!(inv.money, 4);
     let loose = fx.server.loose_items();
     assert_eq!(loose.len(), 1);
-    assert_eq!(loose[0].stack, Stack::new("dwell:rock", 2));
+    assert_eq!(loose[0].stack, Stack::new("dwell:rock_shard", 2));
     step(&mut fx, 1);
 }
 
@@ -368,7 +370,7 @@ fn loose_rocks(fx: &Fixture) -> usize {
     fx.server
         .loose_items()
         .iter()
-        .filter(|it| it.stack.item == "dwell:rock")
+        .filter(|it| it.stack.item == "dwell:rock_shard")
         .count()
 }
 
@@ -383,7 +385,7 @@ dwell_world::both_faces!(
         fx.send(1, Message::InventoryAction(InventoryAction::GroundHello));
         step(&mut fx, 1);
         let rocks = wall_and_rocks(&mut fx, f);
-        fx.server.give(1, "dwell:rock", 1);
+        fx.server.give(1, "dwell:rock_shard", 1);
         fx.take_all();
         let near = *rocks
             .iter()
@@ -392,7 +394,10 @@ dwell_world::both_faces!(
         let lay = fx.server.ground_item_at(near).unwrap().point();
         hit(&mut fx, near);
         assert_eq!(
-            fx.server.inventory_of(1).unwrap().count_of("dwell:rock"),
+            fx.server
+                .inventory_of(1)
+                .unwrap()
+                .count_of("dwell:rock_shard"),
             1,
             "not straight into the inventory"
         );
@@ -401,7 +406,7 @@ dwell_world::both_faces!(
             .server
             .loose_items()
             .iter()
-            .find(|it| it.stack.item == "dwell:rock")
+            .find(|it| it.stack.item == "dwell:rock_shard")
             .unwrap();
         let d = (0..3)
             .map(|k| (it.position[k] - lay[k]).powi(2))
@@ -428,12 +433,12 @@ dwell_world::both_faces!(
         );
         step(&mut fx, 60);
         let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:rock"), 2, "collected");
+        assert_eq!(inv.count_of("dwell:rock_shard"), 2, "collected");
         assert_eq!(
             inv.slots
                 .iter()
                 .flatten()
-                .filter(|s| s.item == "dwell:rock")
+                .filter(|s| s.item == "dwell:rock_shard")
                 .count(),
             1,
             "one stack with the dropped rock"
@@ -468,7 +473,7 @@ dwell_world::both_faces!(
         assert_eq!(loose_rocks(&fx), 0, "nothing dropped");
         step(&mut fx, 60);
         let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:rock"), 0, "nothing taken");
+        assert_eq!(inv.count_of("dwell:rock_shard"), 0, "nothing taken");
     }
 );
 
@@ -494,7 +499,7 @@ dwell_world::both_faces!(
         );
         let loose = fx.server.loose_items();
         assert!(
-            loose.iter().any(|it| it.stack.item == "dwell:rock"),
+            loose.iter().any(|it| it.stack.item == "dwell:rock_shard"),
             "{loose:?}"
         );
         assert!(loose.len() > before);
@@ -934,13 +939,21 @@ dwell_world::both_faces!(
             loose_count(&fx, "dwell:grass_fiber") >= 1,
             "the tuft's fibre"
         );
-        let before = loose_count(&fx, "dwell:rock");
-        clear_region(&mut fx, f, [rock[0], rock[1] - 1, rock[2]]);
+        // Sand under it: its own drop is no rock shard (grass's sometimes is), so the count is
+        // the knocked-loose rock's alone.
+        let under = [rock[0], rock[1] - 1, rock[2]];
+        set_local(&mut fx, f, under, "dwell:sand");
+        let before = loose_count(&fx, "dwell:rock_shard");
+        clear_region(&mut fx, f, under);
         assert!(
             fx.server.ground_item_at(rocks[0]).is_none(),
             "not left floating"
         );
-        assert_eq!(loose_count(&fx, "dwell:rock"), before + 1, "knocked loose");
+        assert_eq!(
+            loose_count(&fx, "dwell:rock_shard"),
+            before + 1,
+            "knocked loose"
+        );
     }
 );
 
@@ -970,7 +983,7 @@ dwell_world::both_faces!(
             fx.server.ground_item_at(rocks[0]).is_none(),
             "not left floating"
         );
-        assert!(loose_count(&fx, "dwell:rock") >= 1, "knocked loose");
+        assert!(loose_count(&fx, "dwell:rock_shard") >= 1, "knocked loose");
     }
 );
 

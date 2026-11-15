@@ -16,6 +16,12 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **One rock item (owner, 2026-11-15):** "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards"
+  (BUGS.md #181), and the decision: "One item: rock = shard" — dirt, grass and the ground's rocks give Rock shards;
+  everything that means "stone" uses the one item; Rocks already in inventories and saved loose rocks become Rock
+  shards. Done on `claude/rock-is-shard` (`dwell:rock` an alias of `dwell:rock_shard`, `inventory.json` `aliases`).
+  **Owner should see:** 2 sticks, 2 rock shards (from dirt) and 2 grass fibre offer the stone axe, pickaxe and shovel
+  in Combine; old Rocks show as Rock shards.
 - **Session limits (owner, 2026-11-15):** "When you resume just 1 task locally, one cloud session." — one local job
   and one cloud session at a time, until the owner says otherwise. Same message: "And 70.3/4 haven't deployed yet."
   (BUGS.md, the site over Pages' 1 GB limit; fixed by a smaller retention policy). Owner should see: the newest release

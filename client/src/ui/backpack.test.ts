@@ -35,7 +35,7 @@ describe('backpack', () => {
 
   it('labels items: non-block items from the data, blocks from their name', () => {
     expect(ITEMS.find((i) => i.name === 'dwell:gem')?.value).toBe(1);
-    expect(itemLabel('dwell:rock')).toBe('Rock');
+    expect(itemLabel('dwell:rock_shard')).toBe('Rock shard');
     expect(itemLabel('dwell:snowy_grass')).toBe('Snowy grass');
   });
 });
@@ -114,7 +114,7 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     expect(
       recipeOutput({
         name: 'test:pair',
-        inputs: [{ item: 'dwell:rock', count: 1 }],
+        inputs: [{ item: 'dwell:rock_shard', count: 1 }],
         output: { item: 'dwell:stick', count: 2 },
       }),
     ).toBe('2 Stick');
@@ -126,6 +126,6 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     expect(wearLeft('dwell:stone_axe', 31)).toBeCloseTo(1 / 32);
     // Owner, 2026-11-12: metal tools "have double durability".
     expect(wearLeft('dwell:metal_axe', 8)).toBe(0.875);
-    expect(wearLeft('dwell:rock', 8)).toBeNull();
+    expect(wearLeft('dwell:rock_shard', 8)).toBeNull();
   });
 });

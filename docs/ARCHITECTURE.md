@@ -3602,7 +3602,7 @@ lump of a few polygons with a block's side tile, turned and scaled per item): no
 collision. The break action aimed at one, when it is nearer than the block behind it
 (`Rules::hit_before`; a click, touch's Break, the controller's, an axe's swing), sends `Pick`
 (0.50.74: no pick-up key or button); the server checks and knocks it loose as a loose item of the
-kind's item (`dwell:stick`, `dwell:rock`: the drops' items, so they stack; walking near collects it;
+kind's item (`dwell:stick`, `dwell:rock_shard`: the drops' items, so they stack; walking near collects it;
 in creative it vanishes, as breaking drops nothing), keeps the cell in its gone set (`server/ground.rs`, saved in `ground_gone`) and tells clients, which mesh the chunk
 again without it. Breaking the block under one knocks it loose (a loose item in adventure; gone in
 creative); it vanishes with no write when its ground goes by other edits (regions, blasts,

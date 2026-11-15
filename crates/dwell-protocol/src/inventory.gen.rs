@@ -27,7 +27,6 @@ pub static STARTING_ITEMS: &[(&str, u16)] = &[("dwell:wooden_shovel", 1)];
 
 /// The items that are not blocks.
 pub static ITEMS: &[ItemDef] = &[
-    ItemDef { name: "dwell:rock", label: "Rock", color: [143, 138, 132], size: 0.18, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Lump, size: [0.16, 0.09, 0.13], texture: "dwell:stone", color: [230, 226, 220], model: "" }) },
     ItemDef { name: "dwell:stick", label: "Stick", color: [122, 86, 52], size: 0.22, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Rod, size: [0.42, 0.05, 0.05], texture: "dwell:log", color: [201, 162, 122], model: "" }) },
     ItemDef { name: "dwell:grass_seed", label: "Grass seed", color: [185, 180, 90], size: 0.12, stack: 64, value: 0, look: Some(ItemLook { shape: LookShape::Cluster, size: [0.12, 0.05, 0.11], texture: "dwell:sand", color: [244, 220, 120], model: "" }) },
     ItemDef { name: "dwell:gem", label: "Gem", color: [79, 176, 122], size: 0.14, stack: 64, value: 1, look: Some(ItemLook { shape: LookShape::Shard, size: [0.09, 0.07, 0.07], texture: "dwell:stone", color: [127, 224, 166], model: "" }) },
@@ -48,6 +47,9 @@ pub static ITEMS: &[ItemDef] = &[
     ItemDef { name: "dwell:metal_shovel", label: "Metal shovel", color: [140, 143, 150], size: 1.0, stack: 1, value: 0, look: Some(ItemLook { shape: LookShape::Model, size: [1.0, 1.0, 1.0], texture: "", color: [255, 255, 255], model: "metal_shovel" }) },
 ];
 
+/// Old item names and the item each became (read 1:1 from saves and the wire): (from, to).
+pub static ITEM_ALIASES: &[(&str, &str)] = &[("dwell:rock", "dwell:rock_shard")];
+
 /// The recipes (combining): inputs → output.
 pub static RECIPES: &[Recipe] = &[
     Recipe { name: "dwell:stone_slab", inputs: &[("dwell:rock_shard", 8)], output: ("dwell:stone", 1) },
@@ -67,8 +69,8 @@ pub static RECIPES: &[Recipe] = &[
 pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:air", cost: "dwell:air", drops: &[] },
     BlockDrops { block: "dwell:stone", cost: "dwell:stone", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:dirt", cost: "dwell:dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:grass", cost: "dwell:grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:dirt", cost: "dwell:dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:grass", cost: "dwell:grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:ladder", cost: "dwell:ladder", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:ladder", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:water", cost: "dwell:water", drops: &[] },
     BlockDrops { block: "dwell:sand", cost: "dwell:sand", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:sand_clump", min: 8, max: 8, weight: 1.0 }] }] },
@@ -77,14 +79,14 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:leaves", cost: "dwell:leaves", drops: &[DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:stick", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:tall_grass", cost: "dwell:tall_grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:grass_fiber", min: 1, max: 1, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[("stage", &["3", "2", "1", "0"])], choices: &[DropChoice { item: "dwell:grass_seed", min: 1, max: 1, weight: 1.0 }] }, DropRule { chance: 0.125, when: &[("stage", &["3"])], choices: &[DropChoice { item: "dwell:gem", min: 1, max: 1, weight: 95.0 }, DropChoice { item: "dwell:gem_large", min: 1, max: 1, weight: 5.0 }] }] },
     BlockDrops { block: "dwell:stone_ramp", cost: "dwell:stone", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 8, max: 8, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:dirt_ramp", cost: "dwell:dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:grass_ramp", cost: "dwell:grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:dirt_ramp", cost: "dwell:dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:grass_ramp", cost: "dwell:grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:sand_ramp", cost: "dwell:sand", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:sand_clump", min: 8, max: 8, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:torch", cost: "dwell:torch", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:torch", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:torch_upper", cost: "dwell:torch_upper", drops: &[] },
     BlockDrops { block: "dwell:bedrock", cost: "dwell:bedrock", drops: &[] },
-    BlockDrops { block: "dwell:snowy_grass", cost: "dwell:snowy_grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:snowy_grass_ramp", cost: "dwell:snowy_grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:snowy_grass", cost: "dwell:snowy_grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:snowy_grass_ramp", cost: "dwell:snowy_grass", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:snowy_leaves", cost: "dwell:snowy_leaves", drops: &[DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:stick", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:build_platform", cost: "dwell:build_platform", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:build_platform", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:running_water", cost: "dwell:running_water", drops: &[] },
@@ -117,8 +119,8 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:moon_dust_ramp", cost: "dwell:moon_dust", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:moon_dust", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:moon_mare_dust_ramp", cost: "dwell:moon_mare_dust", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:moon_mare_dust", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:red_sand_ramp", cost: "dwell:red_sand", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:red_sand", min: 1, max: 1, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:red_dirt", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
-    BlockDrops { block: "dwell:red_dirt_ramp", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_dirt", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:red_dirt_ramp", cost: "dwell:red_dirt", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:dirt_clump", min: 8, max: 8, weight: 1.0 }] }, DropRule { chance: 0.5, when: &[], choices: &[DropChoice { item: "dwell:rock_shard", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:brush", cost: "dwell:brush", drops: &[DropRule { chance: 0.3, when: &[], choices: &[DropChoice { item: "dwell:stick", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:planks", cost: "dwell:planks", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:planks", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:stone_brick", cost: "dwell:stone_brick", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:stone_brick", min: 1, max: 1, weight: 1.0 }] }] },
