@@ -499,7 +499,7 @@ dwell_world::both_faces!(
             assert_eq!(n, 5, "a stone-tier shovel");
             assert_eq!(loose(&fx, "dwell:dirt_clump"), 8);
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
-            rocks += loose(&fx, "dwell:rock");
+            rocks += loose(&fx, "dwell:rock_shard");
         }
         assert!(
             rocks > 0,

@@ -732,7 +732,7 @@ mod tests {
         // both-faces: item-local geometry; the loose item mirrors it with its face.
         for (item, shape, faces) in [
             ("dwell:stick", GroundShape::Rod, 6),
-            ("dwell:rock", GroundShape::Lump, 14),
+            ("dwell:wood", GroundShape::Lump, 14),
         ] {
             let l = look(item);
             assert_eq!(l.shape, shape, "{item}");
@@ -886,7 +886,7 @@ mod tests {
     fn an_items_picture_draws_its_shape_not_a_square() {
         // face-a-only: a picture, no world geometry.
         use crate::textures::TILE;
-        for item in ["dwell:stick", "dwell:rock"] {
+        for item in ["dwell:stick", "dwell:wood"] {
             let px = look_swatch(&look(item));
             assert_eq!(px.len(), TILE * TILE * 4);
             let opaque = px.chunks_exact(4).filter(|p| p[3] == 255).count();

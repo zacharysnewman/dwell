@@ -15,7 +15,7 @@ test("the build's data validates with the owner's rules", () => {
     dropsOf(d, 'dwell:grass').map((r) => [r.choices[0].item, r.chance]),
     [
       ['dwell:dirt_clump', 1],
-      ['dwell:rock', 0.5],
+      ['dwell:rock_shard', 0.5],
     ],
   );
   // Owner, 2026-11-11: a ½ m cell breaks into 8 pieces of its material.
@@ -105,15 +105,15 @@ test('bad entries fail naming the entry and the problem', () => {
   const cases = [
     [(i) => (i.stackSize = 0), /stackSize must be a whole number/],
     [(i) => (i.hotbarSlots = 11), /hotbarSlots must be a whole number in \[1, 10\]/],
-    [(i) => (i.items[0].colour = '#000000'), /items\.dwell:rock: unknown field colour/],
+    [(i) => (i.items[0].colour = '#000000'), /items\.dwell:stick: unknown field colour/],
     [(i) => (i.items[0].name = 'rock'), /items\.rock: name must be namespace:name/],
     [(i) => (i.items[0].name = 'dwell:dirt'), /a block of that name is already an item/],
-    [(i) => (i.items[1].stack = 65), /items\.dwell:stick: stack must be/],
-    [(i) => (i.items[3].value = 0), /items\.dwell:gem: value must be/],
-    [(i) => (i.items[0].look.shape = 'cube'), /items\.dwell:rock\.look: shape must be one of rod, lump, cluster/],
-    [(i) => (i.items[0].look.size = [0.1, 0, 0.1]), /items\.dwell:rock\.look: size must be/],
-    [(i) => (i.items[1].look.texture = 'dwell:marble'), /items\.dwell:stick\.look: texture "dwell:marble" is not a block/],
-    [(i) => (i.items[1].look.colour = '#000000'), /items\.dwell:stick\.look: unknown field colour/],
+    [(i) => (i.items[0].stack = 65), /items\.dwell:stick: stack must be/],
+    [(i) => (i.items[2].value = 0), /items\.dwell:gem: value must be/],
+    [(i) => (i.items[0].look.shape = 'cube'), /items\.dwell:stick\.look: shape must be one of rod, lump, cluster/],
+    [(i) => (i.items[0].look.size = [0.1, 0, 0.1]), /items\.dwell:stick\.look: size must be/],
+    [(i) => (i.items[0].look.texture = 'dwell:marble'), /items\.dwell:stick\.look: texture "dwell:marble" is not a block/],
+    [(i) => (i.items[0].look.colour = '#000000'), /items\.dwell:stick\.look: unknown field colour/],
     [(i) => (i.startingWallet = 'dwell:bag'), /startingWallet must name one of the wallets/],
     [(i) => (i.wallets[0].capacity = 0), /wallets\.dwell:pouch: capacity must be/],
     [(i, b) => (b[0].blocks.find((x) => x.name === 'dirt').drops = [{ item: 'dwell:diamond' }]), /dwell:dirt: drops\[0\]: item dwell:diamond is neither/],
@@ -144,9 +144,9 @@ test('new players start with the data\'s items: a wooden shovel (owner, 2026-11-
 
 test('a recipe added by data alone is emitted, and a bad one fails with a message', () => {
   const [inv, blocks] = fresh();
-  inv.recipes.push({ name: 'test:cairn', inputs: [{ item: 'dwell:rock', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
+  inv.recipes.push({ name: 'test:cairn', inputs: [{ item: 'dwell:rock_shard', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
   const d = validateInventory(inv, blocks);
-  assert.match(inventoryRust(d), /Recipe \{ name: "test:cairn", inputs: &\[\("dwell:rock", 4\)\], output: \("dwell:stone", 1\) \}/);
+  assert.match(inventoryRust(d), /Recipe \{ name: "test:cairn", inputs: &\[\("dwell:rock_shard", 4\)\], output: \("dwell:stone", 1\) \}/);
   assert.match(inventoryTs(d), /"name":"test:cairn"/);
   const bad = (r, re) => {
     const [i, b] = fresh();
@@ -155,10 +155,10 @@ test('a recipe added by data alone is emitted, and a bad one fails with a messag
   };
   bad({ name: 'test:x', inputs: [{ item: 'dwell:nothing', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /neither|must name/);
   bad({ name: 'test:x', inputs: [], output: { item: 'dwell:stone', count: 1 } }, /inputs must be a list/);
-  bad({ name: 'test:x', inputs: [{ item: 'dwell:rock', count: 0 }], output: { item: 'dwell:stone', count: 1 } }, /count must be/);
+  bad({ name: 'test:x', inputs: [{ item: 'dwell:rock_shard', count: 0 }], output: { item: 'dwell:stone', count: 1 } }, /count must be/);
   bad({ name: 'test:x', inputs: [{ item: 'dwell:gem', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /currency/);
-  bad({ name: 'test:x', label: '', inputs: [{ item: 'dwell:rock', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /label must be/);
-  bad({ name: 'dwell:stone_axe', inputs: [{ item: 'dwell:rock', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /listed twice/);
+  bad({ name: 'test:x', label: '', inputs: [{ item: 'dwell:rock_shard', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /label must be/);
+  bad({ name: 'dwell:stone_axe', inputs: [{ item: 'dwell:rock_shard', count: 1 }], output: { item: 'dwell:stone', count: 1 } }, /listed twice/);
 });
 
 test("the slab recipes name their ½ m piece by a label of their own, not the block's (\"Stone slab\")", () => {
@@ -169,7 +169,7 @@ test("the slab recipes name their ½ m piece by a label of their own, not the bl
   // A tool's recipe has none: its button says the item's own label.
   assert.equal(label('dwell:stone_axe'), undefined);
   const [inv, blocks] = fresh();
-  inv.recipes.push({ name: 'test:cairn', label: 'Cairn', inputs: [{ item: 'dwell:rock', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
+  inv.recipes.push({ name: 'test:cairn', label: 'Cairn', inputs: [{ item: 'dwell:rock_shard', count: 4 }], output: { item: 'dwell:stone', count: 1 } });
   assert.match(inventoryTs(validateInventory(inv, blocks)), /"name":"test:cairn","label":"Cairn"/);
 });
 
@@ -189,4 +189,24 @@ test('every item that is not a block has its own look, and grass fibre is strand
   const [inv, blocks] = fresh();
   delete inv.items.find((it) => it.name === 'dwell:grass_fiber').look;
   assert.throws(() => validateInventory(inv, blocks), /items\.dwell:grass_fiber: needs a `look`/);
+});
+
+test('an alias reads an old item name as the item it became (owner, 2026-11-15: "One item: rock = shard")', () => {
+  const d = validateInventory(...fresh());
+  assert.deepEqual(d.aliases, [{ from: 'dwell:rock', to: 'dwell:rock_shard' }]);
+  assert.ok(!d.items.some((it) => it.name === 'dwell:rock'), 'the Rock is no item of its own');
+  assert.match(inventoryRust(d), /ITEM_ALIASES: &\[\(&str, &str\)\] = &\[\("dwell:rock", "dwell:rock_shard"\)\]/);
+  // One added by data alone is emitted; a bad one fails naming it.
+  const [inv, blocks] = fresh();
+  inv.aliases.push({ from: 'test:pebble', to: 'dwell:rock_shard' });
+  assert.match(inventoryRust(validateInventory(inv, blocks)), /\("test:pebble", "dwell:rock_shard"\)/);
+  const bad = (a, message) => {
+    const [inv, blocks] = fresh();
+    inv.aliases.push(a);
+    assert.throws(() => validateInventory(inv, blocks), message);
+  };
+  bad({ from: 'dwell:stick', to: 'dwell:rock_shard' }, /aliases\.dwell:stick: dwell:stick is still a block or an item/);
+  bad({ from: 'test:pebble', to: 'dwell:diamond' }, /aliases\.test:pebble: to must name a block or an item/);
+  bad({ from: 'dwell:rock', to: 'dwell:stone' }, /aliases: a name is listed twice/);
+  bad({ from: 'test:pebble', to: 'dwell:stone', size: 1 }, /aliases\.test:pebble: unknown field size/);
 });

@@ -25,6 +25,7 @@ const TOP_FIELDS = [
   'pickupDelaySeconds',
   'maxDrops',
   'items',
+  'aliases',
   'wallets',
   'startingWallet',
   'startingItems',
@@ -145,6 +146,20 @@ export function validateInventory(data, namespaces) {
   const itemNames = new Set(items.map((i) => i.name));
   if (itemNames.size !== items.length) fail('items: a name is listed twice');
   const known = (n) => blockIds.has(n) || itemNames.has(n);
+  // `aliases`: old item names merged into another item (owner, 2026-11-15: "One item: rock =
+  // shard"), `{ "from": old, "to": item }`. A saved or sent stack of `from` reads as `to`, 1:1, so
+  // worlds and the append-only stores with the old name keep loading. `from` is no item or block.
+  if (data.aliases !== undefined && !Array.isArray(data.aliases)) fail('aliases must be a list of { from, to }');
+  const aliases = (data.aliases ?? []).map((a, i) => {
+    const at = typeof a?.from === 'string' ? `aliases.${a.from}` : `aliases[${i}]`;
+    if (typeof a !== 'object' || a === null) fail(`${at} must be an object`);
+    for (const k of Object.keys(a)) if (!['from', 'to'].includes(k)) fail(`${at}: unknown field ${k} (from, to)`);
+    if (typeof a.from !== 'string' || !NAMESPACED.test(a.from) || a.from.length > MAX_NAME) fail(`${at}: from must be namespace:name`);
+    if (known(a.from)) fail(`${at}: ${a.from} is still a block or an item (an alias names an item that is gone)`);
+    if (typeof a.to !== 'string' || !known(a.to)) fail(`${at}: to must name a block or an item, not ${a.to}`);
+    return { from: a.from, to: a.to };
+  });
+  if (new Set(aliases.map((a) => a.from)).size !== aliases.length) fail('aliases: a name is listed twice');
 
   const byId = new Map(blocks.map((b) => [b.id, b]));
   const explicit = (b) => {
@@ -243,7 +258,7 @@ export function validateInventory(data, namespaces) {
     return { name: r.name, ...(r.label !== undefined ? { label: r.label } : {}), inputs, output: amount(r.output, `${at}.output`) };
   });
   if (new Set(recipes.map((r) => r.name)).size !== recipes.length) fail('recipes: a name is listed twice');
-  return { ...data, items, wallets, drops, startingItems, recipes };
+  return { ...data, items, aliases, wallets, drops, startingItems, recipes };
 }
 
 /** The block files, as shared/blocks/gen.mjs reads them (and the fixtures with `fixture`). */
@@ -306,6 +321,9 @@ export function inventoryRust(d) {
     );
   }
   rs.push('];');
+  rs.push('');
+  rs.push('/// Old item names and the item each became (read 1:1 from saves and the wire): (from, to).');
+  rs.push(`pub static ITEM_ALIASES: &[(&str, &str)] = &[${d.aliases.map((a) => `("${a.from}", "${a.to}")`).join(', ')}];`);
   rs.push('');
   rs.push('/// The recipes (combining): inputs → output.');
   rs.push('pub static RECIPES: &[Recipe] = &[');

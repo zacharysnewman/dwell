@@ -16,7 +16,6 @@ export interface ItemDef {
 }
 
 export const ITEMS: readonly ItemDef[] = [
-  { name: "dwell:rock", label: "Rock", color: "#8f8a84", size: 0.18, stack: 64, value: 0 },
   { name: "dwell:stick", label: "Stick", color: "#7a5634", size: 0.22, stack: 64, value: 0 },
   { name: "dwell:grass_seed", label: "Grass seed", color: "#b9b45a", size: 0.12, stack: 64, value: 0 },
   { name: "dwell:gem", label: "Gem", color: "#4fb07a", size: 0.14, stack: 64, value: 1 },
