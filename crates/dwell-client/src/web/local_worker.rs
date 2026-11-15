@@ -333,6 +333,12 @@ impl LocalWorld {
     pub fn teleport(&mut self, x: f64, y: f64, z: f64) -> bool {
         self.core.teleport_local_player([x, y, z])
     }
+    /// The scenes' dev tools (`LocalCore::scene_dev`): `build` a scene file's text, run `event`
+    /// i, the water's `status`; JSON back.
+    #[wasm_bindgen(js_name = sceneDev)]
+    pub fn scene_dev(&mut self, op: &str, text: &str) -> String {
+        self.core.scene_dev(op, text)
+    }
     /// The lava's dev tools (`LocalCore::lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate,
     /// depth]; JSON back.
     #[wasm_bindgen(js_name = lavaDev)]
