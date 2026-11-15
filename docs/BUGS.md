@@ -6,6 +6,19 @@ pins it.
 
 ## Open
 
+### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
+
+Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
+(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
+silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
+the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
+held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
+beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
+16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
+grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
+reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
+**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
+
 ### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
 
 Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local

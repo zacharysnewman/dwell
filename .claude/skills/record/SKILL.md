@@ -431,7 +431,10 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   ~50° look down) shows the floor, the lake and the dam. 16:9: across the valley from beside the dam, the lake on the
   left and the valley running up to the right; 9:16: over the lake looking down the valley's length, so it runs up
   the frame. **The flood** (the water at real time, `waterClock: "real"`): the front ran ~5–6 m/s down the dry bed.
-  A 6 s test take rendered 181 frames in 93 s (14 s pre-roll; ~0.45 s a frame at 1920×1080, supersample 2).
+  A 6 s test take rendered 181 frames in 93 s (14 s pre-roll; ~0.45 s a frame at 1920×1080, supersample 2); the full
+  30 s takes 401 s (16:9) and 713 s (9:16, 1080×1920) of rendering plus ~100 s each to encode, no frame capped.
+  **Sound:** both takes were silent (BUGS.md #176): the water beds hear water within ~24 m only, so a high flood shot
+  has no sound; film the water from low over it, or wait for #176, when the sound matters.
 - 2026-11-13, the trailer v1 (`videos/trailer/`, 19 parts, ~53 s, two aspects from one square capture; notes per shot in
   each shot's `note`). **Square 1920×1920 captures** ran 17–59 fps (36 typical) and encoded in 25–60 s a shot; the
   full first pass of 18 shots took ~25 min, so re-take with `--only`. **Ground heights:** `d.voxel` read 0 everywhere

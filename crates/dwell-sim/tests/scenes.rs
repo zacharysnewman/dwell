@@ -117,6 +117,10 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
     );
     let world = f.server.world();
     for r in row_of_m(20.0)..row_of_m(30.0) {
-        assert_ne!(world.get_voxel(0, r, 101), stone, "the dam is gone (row {r})");
+        assert_ne!(
+            world.get_voxel(0, r, 101),
+            stone,
+            "the dam is gone (row {r})"
+        );
     }
 }
