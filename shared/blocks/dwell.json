@@ -887,7 +887,7 @@
     {
       "$comment": "Town building blocks (owner, 2026-11-14: \"Let's just do 3 blocks. Plank floors, stone brick walls, thatch roof. And doors also.\"): plank floors, a man-made block of sawn boards (the build platform's painterly boards). Combined from 8 wood (shared/inventory). Prototype content.",
       "name": "planks",
-      "damage": { "default": 12, "axe": 8, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "full",
@@ -928,7 +928,7 @@
     {
       "$comment": "The door (owner, 2026-11-14: \"2m doors.\"): 2 m tall over four ½ m cells, one wide, a column (`column`: its `part` property's values bottom to top, every cell of it the same door; BLOCK_REGISTRY.md, Multi-cell blocks). Closed it fills its cell as a block does (the doorway of a 1 m wall); open (`swing`) it is a thin plate against the cell's side, turned a quarter toward its `hinge`, with no collision. A Use (Place aimed at it, whatever is held) flips `open` on all four cells (`toggle`); villagers open the doors they walk through and close them behind them (shared/creatures `opensDoors`). Placed by its bottom part, facing the player. Prototype content.",
       "name": "door",
-      "damage": { "default": 12, "axe": 8, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "full",
