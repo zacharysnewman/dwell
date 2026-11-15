@@ -108,7 +108,17 @@ dwell_world::both_faces!(
                 })
             })
             .expect("a collision among 100 seeds");
-        let seeds: Vec<u64> = SEEDS.iter().copied().chain([collide]).collect();
+        // And its first with an arc's cone on the disc (real-world scale, 0.71: arcs ~70 km
+        // apart, so a 1× face seldom holds one).
+        let arc = (0..200u64)
+            .find(|&w| {
+                let t = PlateTectonics::for_seed(face_seed(w, f.face));
+                t.volcanoes[..t.mains]
+                    .iter()
+                    .any(|v| v.chain == 0 && t.layout.land_edge(v.x, v.z) > 0.0)
+            })
+            .expect("an arc's cone among 200 seeds");
+        let seeds: Vec<u64> = SEEDS.iter().copied().chain([collide, arc]).collect();
         for &world in &seeds {
             let seed = face_seed(world, f.face);
             let g = generator(seed);
@@ -228,7 +238,9 @@ dwell_world::both_faces!(
                 seen.push(s);
             }
         }
-        assert!(seen.len() >= 5, "the provinces met: {seen:?}");
+        // Real-world scale (0.71): a 1× face is mostly one plate's interior, its setting's stack
+        // and its mix (three stacks; five when the face held several plates' settings).
+        assert!(seen.len() >= 3, "the provinces met: {seen:?}");
     }
 );
 
@@ -245,7 +257,12 @@ dwell_world::both_faces!(
         let forest =
             |b: &str| b.contains("forest") || b.contains("boreal") || b.contains("old_growth");
         let (mut arid, mut humid, mut forests) = (0, 0, 0);
-        for world in SEEDS {
+        // Real-world scale (0.71): a face's floors are one plate's few settings, so the seeds run
+        // from 0 until each kind of floor is sampled enough (at most 16 seeds).
+        for world in 0..16u64 {
+            if arid >= 30 && humid >= 50 && forests >= 5 {
+                break;
+            }
             let g = generator(face_seed(world, f.face));
             let r = g.world().radius() as i32;
             let mut wrong = Vec::new();

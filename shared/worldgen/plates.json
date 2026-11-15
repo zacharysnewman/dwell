@@ -25,7 +25,7 @@
     "detail": [
       { "amplitude": 3500, "wavelength": 30000 },
       { "amplitude": 2200, "wavelength": 7000 },
-      { "amplitude": 600, "wavelength": 2000 }
+      { "amplitude": 900, "wavelength": 2000 }
     ]
   },
   "transformBelow": 0.4,

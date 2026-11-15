@@ -22,7 +22,7 @@ use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
 /// The brief's seeds and the owner's (its face B is a third red rock mesa: most of the mesas).
-const SEEDS: [u64; 4] = [1, 7, 42, 2_741_893_632];
+const SEEDS: std::ops::Range<u64> = 0..12;
 /// The tops' and floors' rms gain (m) over the flat 0.61 relief, [min, max].
 /// Tops 0.12 m at least (0.25 before the 0.65 line's curved plates moved the mesas: face A now samples
 /// only seed 1 A's 4 top patches, 0.91 -> 1.04 m; face B 0.80 -> 1.27 m over 7).
@@ -162,7 +162,12 @@ fn census(world: u64, f: FaceFrame) -> Census {
 both_faces!(
     fn mesa_tops_and_floors_have_relief_and_walls_stay_walls(f: FaceFrame) {
         let mut all = Census::default();
+        // Real-world scale (0.71): mesa country is on some faces, not every one, so the seeds run
+        // from 0 until enough tops and floors are sampled (at least four seeds, at most 12).
         for world in SEEDS {
+            if world >= 4 && all.top[1].1 >= 4 && all.floor[1].1 >= 10 {
+                break;
+            }
             let c = census(world, f);
             let mean = |(s, n): (f64, usize)| s / n.max(1) as f64;
             eprintln!(

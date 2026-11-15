@@ -24,7 +24,7 @@ pub const PLATES: PlateRules = PlateRules {
     age: [5.0, 200.0],
     warp_amplitude: 60000.0,
     warp_wavelength: 600000,
-    warp_detail: &[(3500.0, 30000), (2200.0, 7000), (600.0, 2000)],
+    warp_detail: &[(3500.0, 30000), (2200.0, 7000), (900.0, 2000)],
     transform_below: 0.4,
     hotspots_min: 1,
     hotspots_max: 4,

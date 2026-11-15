@@ -1,8 +1,9 @@
 //! Mesa country on typical seeds (WORK_QUEUE item 15, the map check of 2026-11-14: "mesa country
-//! on typical seeds"). On seeds 1, 7, 42, 274005646 and 2741893632, both faces: every face outside
-//! the subarctic band holds at least [`MIN_SHARE`] of its land in the red rock mesa
-//! (`preset:red_rock_mesa`; 0.9 % to 27 % when written). A subarctic face (both of seed 7's) has
-//! no warm dry ground for it, as it should.
+//! on typical seeds"). Before real-world scale (0.71) every face outside the subarctic band held
+//! some; now a 1× face spans under a degree of latitude and its lee keeps `rain.leeFloor` of the
+//! rain, so only the dry faces do. Over the first [`FACES`] faces with land outside the subarctic
+//! (both faces), at least [`MIN_FACES`] hold at least [`MIN_SHARE`] of their land in the red rock
+//! mesa (`preset:red_rock_mesa`).
 
 use std::sync::Arc;
 
@@ -13,19 +14,24 @@ use dwell_worldgen::config::world_config;
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-const SEEDS: [u64; 5] = [1, 7, 42, 274_005_646, 2_741_893_632];
+const SEEDS: std::ops::Range<u64> = 0..40;
 const MIN_SHARE: f64 = 0.005;
+const FACES: usize = 10;
+const MIN_FACES: usize = 2;
 
 both_faces!(
-    fn every_face_outside_the_subarctic_holds_mesa_country(f: FaceFrame) {
+    fn dry_faces_outside_the_subarctic_hold_mesa_country(f: FaceFrame) {
         let e = world_config(NAME).unwrap().expect("the Realistic world");
         let mesa = e
             .biomes
             .iter()
             .position(|b| b.name == "preset:red_rock_mesa")
             .expect("the red rock mesa");
-        let mut checked = 0;
+        let (mut checked, mut holding, mut report) = (0, 0, Vec::new());
         for world in SEEDS {
+            if checked >= FACES {
+                break;
+            }
             let seed = face_seed(world, f.face);
             let map = Arc::new(
                 WorldMap::for_height(seed, e.height.expect("its height field"))
@@ -55,14 +61,21 @@ both_faces!(
                     );
                 }
             }
-            let share = found as f64 / land.max(1) as f64;
+            // A face nearly all ocean has too little land to count.
+            if land < 2000 {
+                continue;
+            }
+            let share = found as f64 / land as f64;
             checked += 1;
-            assert!(
-                share >= MIN_SHARE,
-                "seed {world} ({band}): mesa country {:.2} % of the land",
-                100.0 * share
-            );
+            holding += usize::from(share >= MIN_SHARE);
+            report.push(format!("seed {world} ({band}): {:.2} %", 100.0 * share));
         }
-        assert!(checked >= 3, "{checked} faces outside the subarctic");
+        eprintln!("{:?}: {}", f.face, report.join(", "));
+        assert!(
+            checked >= FACES && holding >= MIN_FACES,
+            "{:?}: {holding} of {checked} faces hold mesa country: {}",
+            f.face,
+            report.join(", ")
+        );
     }
 );

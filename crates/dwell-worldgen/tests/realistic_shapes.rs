@@ -25,7 +25,9 @@ use dwell_worldgen::terrain::FIXTURE_WORLDS;
 use dwell_worldgen::worldmap::WorldMap;
 use map_shapes::{Mask, cv};
 
-const SEEDS: [u64; 5] = [1, 7, 42, 274_005_646, 2_741_893_632];
+/// Real-world scale (0.71): a 1× face holds few islands (most are one plate's interior), so the
+/// seeds run from 0 until the islands measured are enough (at least five seeds, at most 40).
+const SEEDS: std::ops::Range<u64> = 0..40;
 const STRIP_KM: f64 = 5.0;
 const COAST_STRAIGHT: f64 = 0.02;
 const BOUNDARY_STRAIGHT: f64 = 0.04;
@@ -117,6 +119,9 @@ both_faces!(
         let (mut radii, mut spacing, mut irregular) = (Vec::new(), Vec::new(), Vec::new());
         let mut report = Vec::new();
         for world in SEEDS {
+            if world >= 5 && radii.len() >= 8 && spacing.len() >= 6 {
+                break;
+            }
             let m = measure(world, f.face);
             report.push(format!(
                 "seed {world}: strip {:.1} km, straight coast {:.2} %, boundary {:.2} % / {:.2} %",
