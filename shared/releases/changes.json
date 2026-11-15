@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.24",
+      "changes": [
+        "Distant tall grass fades out blade by blade instead of pixel by pixel, which is cheaper to draw."
+      ]
+    },
+    {
       "version": "0.70.23",
       "changes": [
         "Villages build a new stone and thatch house, designed in game, in place of the old hut."
