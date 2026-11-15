@@ -47,6 +47,13 @@ placing, so the parts follow from each other instead of from a JSON file.
 looking really good." The Realistic world is to replace the default world once it looks really good; until then its
 look changes are Realistic-only (WORK_QUEUE item 15).
 
+**Real-world scale (owner, 2026-11-14):** "We already have 10x realistic worlds right? Those seem like the same fix
+regardless it's to scale the regions by the world size essentially right?" — every system in real-world absolute
+units (km, degrees per km) instead of fractions of the disc, so the world's size decides its variety: a 1× face
+(~100 km) one tectonic setting and about 1° of latitude, a 10× world several plates and real climate bands. On
+ocean faces: "The just ocean is ok if that just ends up happening. If it's super often we can tune it, it if not,
+it's ok if you end up in the ocean." Built on `claude/realistic-scale` (WORK_QUEUE item 15).
+
 ## 2. What exists today: hand-placed or seed-derived
 
 "Hand-placed" means a number in a world file says where or what; "seed-derived" means the seed draws it;

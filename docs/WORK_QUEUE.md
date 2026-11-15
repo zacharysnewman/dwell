@@ -16,6 +16,10 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Realistic at real-world scale, first (owner, 2026-11-14):** **"Realistic at world scale should be ahead of all the
+  other free slot ones. And let's pause the other recordings for now unless you run out of things to do."** So the
+  scale rework (item 15) goes ahead of every other free-slot item and the showcase recordings pause; the 0.70
+  leftovers (the dormant islands' red strip, the owner's ~4 m axis-run ideal) follow it.
 - **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
   doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
   Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
@@ -1030,6 +1034,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (guards kept): the mesa lake's grey band (`tests/realistic_mesa_lakes.rs`, 0–0.1 % grey), fence-thin mesa walls
    (`tests/realistic_fins.rs`, 0.3 % of the standing ground; a `minWidth` cut tried changed nothing and was dropped).
    Not found: the dormant islands' straight red strip (needs the map check's location).
+   **Real-world scale (owner, 2026-11-14, after a realism audit found the tectonics, climate and rock at the wrong
+   scale for a 100 km face):** **"We already have 10x realistic worlds right? Those seem like the same fix regardless
+   it's to scale the regions by the world size essentially right?"** Yes: every system in real-world absolute units
+   (km, degrees per km), not fractions of the disc, so a 1× face (~100 km) gets one tectonic setting and a narrow
+   latitude span and a 10× world several plates and real climate bands, from the same rules. On faces of ocean:
+   **"The just ocean is ok if that just ends up happening. If it's super often we can tune it, it if not, it's ok if
+   you end up in the ocean."** (no forced land, no centring; the continental/oceanic weights stay data; the spawn
+   still finds land or a shrine island). Branch `claude/realistic-scale`. **Owner should see:** a 1× Realistic world
+   that reads as one coherent region (one setting: an interior basin, a passive margin, a range, an arc or a
+   hotspot island), climate changing little across it; a 10× world with several plates, ranges between them and
+   climate bands from its latitude span; volcanoes tens of km apart; lee sides drier, not desert-dead; rock as
+   ordered layers (sedimentary cover over basement, granite bodies, volcanic rock only at volcanoes); mesas where
+   flat beds, uplift and a dry climate meet.
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges
