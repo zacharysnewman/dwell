@@ -44,36 +44,6 @@ knocked loose; the separate calls in the break, blast, collapse and chopping pat
 rules. Tests (`dwell-sim` `tests/items.rs`, both faces): `a_regions_clearing_drops_what_stood_on_it` and
 `a_blast_under_a_ground_rock_knocks_it_loose` (red: no fibre, no rock), `a_data_only_block_and_a_column_of_it_drop_when_their_ground_goes`
 (the fixture `test:moss`, three stacked: red by region, none dropped), `the_blocks_standing_on_a_broken_block_drop_with_it`.
-### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
-
-Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
-(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
-silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
-the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
-held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
-beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
-16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
-grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
-reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
-**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
-
-### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
-
-Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
-a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
-and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
-`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
-generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
-only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
-height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
-(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
-borders), and none was bisected yet.
-
-**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
-(about 9 s).
-
-**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
-as from face A.
 
 ### 174. On a phone nothing in the inventory answers after opening the bag
 
@@ -751,6 +721,64 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B) (fixed after 0.70.2)
+
+Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
+a_sun_trip_on_a_jittery_device_makes_no_snap` passes on face A and fails on face B: the flier is captured with no snap
+and flies down, but after flight is turned off it comes to rest (`up_mps` 0, alive, health 100, on the `sun` grid) with
+`ground_m` 0.4936, over the test's 0.3 m bar, for all 30 s. `ground_m` is `moon_probe::ground_height`, the grid's
+generated height under the feet. The player is standing on cells half a metre (one cell) above that height on face B
+only. Either the sun crust on face B now carries a ½ m step the height function doesn't know about, or the face-B
+height is a cell low. The moon trip's same check passes on both faces. The test was added green on 2026-11-13
+(1eca0ffe); many worldgen and terrain changes merged since (the Realistic 0.66–0.69 work: ramps, ground edges, biome
+borders), and none was bisected yet.
+
+**Repro:** `cargo test -p dwell-client --test game_local a_sun_trip_on_a_jittery_device_makes_no_snap::b`
+(about 9 s).
+
+**Owner should see:** nothing yet (a test only); once fixed, landing on the sun from face B stands on its crust the same
+as from face A.
+
+**Cause (2026-11-14):** not a face-B mirroring, and not the terrain: the probe. On face B the flier came down 6 cm from
+the edge of a column one cell (½ m) higher than the one under its centre (feet at face-local (−5973.94, 99.49,
+−724.78); the column under it tops out at 99.0, its −x neighbour at 99.5), and the 0.3 m capsule rests on that
+neighbour's edge. `moon_probe::ground_height` read only the column under the feet's centre, so a body standing on a step
+read +0.49 m. Face A's landing spot happened to be clear of a step. **Fix:** the probe's ground is the highest column top
+the body's footprint covers (`footprint_top`, the controller's `body.radius`), on the moon and the sun; the moon probe's
+test now stands at cell middles. Red → green: `moon_probe` `by_a_step_the_ground_is_the_higher_column_the_body_stands_on`
+(a/b) read 0.5 m with the old centre-column rule; the sun trip passes on both faces.
+
+### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
+
+Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
+(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
+silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
+the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
+held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
+beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
+16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
+grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
+reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
+**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
+
+**Fixed (2026-11-14, `claude/flood-sound`).** Two causes. (1) **The listener stayed at the player's body**: a placed
+camera (a theater path, a cinematic take) moved the view but `Game::draw` set the audio listener, and so the ambience
+probe, from the body's eye only, and the take's player stood on the land 180 m from the camera; so the wind bed read
+the body's 1.6 m `height` and every placed sound was heard from there. The listener now follows the placed camera; the
+probe also reads 64 m down (was 40 m), past the wind bed's full 60 m. (2) **Moving water had no voice past the beds'
+~24 m**: a new hearing (`dwell-game` `rush.rs`, data `shared/sounds` `ambient.rush`) reads the current table out to
+160 m, every 4th column faster than 0.15 m/s adding speed × depth × its area weighted by distance (and each
+waterfall its discharge), and drives a rushing loop (`water_rush`, its loudness and brightness by the level, placed
+2 m toward the flow), a `flood` bed on the river recording (a new ambience input `rush`) and a `flood_burst` once
+when much water starts moving at once (the rise over 1 s at least half of what is heard). Still water adds nothing.
+Red → green: `cargo test -p dwell-client --test game_local a_placed_camera_high_up_is_the_listener_and_hears_the_height`
+failed on the unfixed code (the listener at the body, `[-1.0, 33.6, -0.25]` vs the camera's `[29, 102, -0.25]`) and
+passes; `dwell-game` `rush::tests` (still water silent, flow near the listener heard from its side, falling off with
+distance yet heard at 60–100 m, a waterfall louder, one burst at the onset and none walking up to running water, both
+faces) and `dwell-sim --test scenes the_dam_break_is_heard_from_the_takes_camera` (silent before the event; level
+0.11 at 3.2 s rising to 0.5 from the take's camera; one burst) are new (the old code had no hearing of the grid's
+water: the take recorded −91 dB).
 
 ### 171. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types (fixed in 0.65.0)
 

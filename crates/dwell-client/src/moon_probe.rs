@@ -21,6 +21,9 @@ pub struct Viewer {
     pub world_s: f64,
     /// Home's surface gravity (m/s², the controller config's).
     pub gravity: f64,
+    /// The body's radius (m, the controller config's): the ground under the feet is the highest
+    /// column top its footprint covers (BUGS.md #175).
+    pub radius: f64,
 }
 
 /// The moon seen from the player.
@@ -97,7 +100,7 @@ pub fn grid_report(
         n.split_once(':').map_or(n.as_str(), |(_, s)| s).to_owned()
     };
     let ground_m = (viewer.grid == index)
-        .then(|| ground_height(def, world_seed, f, viewer.feet))
+        .then(|| ground_height(def, world_seed, f, viewer.feet, viewer.radius))
         .flatten();
     let capture_m = def.capture_m.unwrap_or(0.0);
     Some(MoonReport {
@@ -121,12 +124,33 @@ pub fn grid_report(
 /// The top of the generated ground the feet stand on at face-local (x, z): its column's top cell's
 /// top (`top_row`, the height rounded to the ½ m cells), not the smooth height, which lies up to
 /// a quarter cell over or under it (BUGS.md: a landing read 0.11–0.24 m under the ground).
-fn ground_top(t: &dwell_worldgen::grids::CrateredTerrain, f: FaceFrame, x: f64, z: f64) -> f64 {
-    t.top_row(f.face, x.floor() as i64, z.floor() as i64)
-        .map_or_else(
-            || t.height(f.face, x, z),
-            |top| (top + 1) as f64 * dwell_world::CELL_H,
-        )
+fn ground_top(t: &dwell_worldgen::grids::CrateredTerrain, f: FaceFrame, x: i64, z: i64) -> f64 {
+    t.top_row(f.face, x, z).map_or_else(
+        || t.height(f.face, x as f64 + 0.5, z as f64 + 0.5),
+        |top| (top + 1) as f64 * dwell_world::CELL_H,
+    )
+}
+
+/// The highest of `top(x, z)` over the columns a body of `radius` at face-local (x, z) covers:
+/// what it stands on. A body by the edge of a column a cell higher stands on that column's top,
+/// half a metre over the one under its centre (BUGS.md #175).
+fn footprint_top(x: f64, z: f64, radius: f64, top: impl Fn(i64, i64) -> f64) -> f64 {
+    let r = radius.max(0.0);
+    let (x0, x1) = ((x - r).floor() as i64, (x + r).floor() as i64);
+    let (z0, z1) = ((z - r).floor() as i64, (z + r).floor() as i64);
+    let mut best = f64::NEG_INFINITY;
+    for cz in z0..=z1 {
+        for cx in x0..=x1 {
+            // The footprint's nearest point in the column (the centre's own column always).
+            let dx = x - x.clamp(cx as f64, (cx + 1) as f64);
+            let dz = z - z.clamp(cz as f64, (cz + 1) as f64);
+            let own = cx == x.floor() as i64 && cz == z.floor() as i64;
+            if own || dx * dx + dz * dz < r * r {
+                best = best.max(top(cx, cz));
+            }
+        }
+    }
+    best
 }
 
 impl MoonReport {
@@ -158,18 +182,21 @@ fn ground_height(
     world_seed: u64,
     f: FaceFrame,
     feet: V3,
+    radius: f64,
 ) -> Option<f64> {
     let l = f.point(feet);
     let h = match &def.generator {
         dwell_worldgen::grids::GridGenerator::Cratered(_) => {
             let t = dwell_worldgen::grids::CrateredTerrain::new(def, world_seed)?;
-            ground_top(&t, f, l[0], l[2])
+            footprint_top(l[0], l[2], radius, |x, z| ground_top(&t, f, x, z))
         }
         // The ground's top cell, as the generator rounds it (`VolcanicTerrain::rows`).
         dwell_worldgen::grids::GridGenerator::Volcanic(_) => {
             let t = dwell_worldgen::volcanic::VolcanicTerrain::new(def, world_seed)?;
-            let h = t.height(f.face, l[0].floor() + 0.5, l[2].floor() + 0.5);
-            (h / dwell_world::CELL_H).round() * dwell_world::CELL_H
+            footprint_top(l[0], l[2], radius, |x, z| {
+                let h = t.height(f.face, x as f64 + 0.5, z as f64 + 0.5);
+                (h / dwell_world::CELL_H).round() * dwell_world::CELL_H
+            })
         }
         _ => return None,
     };
@@ -280,6 +307,7 @@ mod tests {
             velocity: f.vector([0.0, -2.0, 0.0]),
             world_s: 1234.0,
             gravity: 9.81,
+            radius: 0.3,
         }
     }
 
@@ -293,7 +321,11 @@ mod tests {
             let t = dwell_worldgen::grids::CrateredTerrain::new(def, SEED).unwrap();
             let mut off = 0;
             for k in 0..200 {
-                let (x, z) = (f64::from(k) * 37.3 - 3700.0, f64::from(k) * -21.7 + 900.0);
+                // At a cell's middle, so the body's footprint covers that column only.
+                let (x, z) = (
+                    (f64::from(k) * 37.3 - 3700.0).floor() + 0.5,
+                    (f64::from(k) * -21.7 + 900.0).floor() + 0.5,
+                );
                 let top = t
                     .top_row(f.face, x.floor() as i64, z.floor() as i64)
                     .unwrap();
@@ -312,6 +344,42 @@ mod tests {
                 off > 50,
                 "the smooth height is not the cells' top ({off} of 200)"
             );
+        }
+    );
+
+    dwell_world::both_faces!(
+        /// BUGS.md #175: a body by the edge of a column a cell higher stands on that column's top,
+        /// and reads 0 m over the ground, not the half metre over the column under its centre
+        /// (the sun trip's face-B landing, 0.49 m).
+        fn by_a_step_the_ground_is_the_higher_column_the_body_stands_on(f: FaceFrame) {
+            let m = map();
+            let &(i, def, _) = m.grids.iter().find(|g| g.1.name == "dwell:sun").unwrap();
+            let t = dwell_worldgen::volcanic::VolcanicTerrain::new(def, SEED).unwrap();
+            let top = |x: i64, z: i64| t.rows(f.face, x, z).map_or(i64::MIN, |r| r.0);
+            let s = t.spawn_point(f.face);
+            let (sx, sz) = (s[0].floor() as i64, s[2].floor() as i64);
+            let mut found = 0;
+            for k in 0..4000i64 {
+                let (x, z) = (sx + (k % 64) * 61 - 1950, sz + (k / 64) * 59 - 1850);
+                if top(x, z) == i64::MIN || top(x - 1, z) != top(x, z) + 1 {
+                    continue;
+                }
+                found += 1;
+                // 6 cm from the higher column's edge, the feet on its top.
+                let stand = (top(x - 1, z) + 1) as f64 * dwell_world::CELL_H;
+                let feet = f.point([x as f64 + 0.06, stand, z as f64 + 0.5]);
+                let r = grid_report(&m, SEED, "dwell:sun", viewer(f, i, feet)).unwrap();
+                let g = r.ground_m.unwrap();
+                assert!(
+                    g.abs() < 1e-9,
+                    "({x}, {z}): {g} m over the step it stands on"
+                );
+                // Clear of the step, the column under the centre.
+                let feet = f.point([x as f64 + 0.5, stand - 0.5, z as f64 + 0.5]);
+                let r = grid_report(&m, SEED, "dwell:sun", viewer(f, i, feet)).unwrap();
+                assert!(r.ground_m.unwrap().abs() < 1e-9);
+            }
+            assert!(found > 5, "steps by the stand point: {found}");
         }
     );
 
