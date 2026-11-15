@@ -30,6 +30,7 @@ const TIERS: Record<string, Audit> = {
   samples: { setting: 'antialias.mode' },
   shadows: { setting: 'shadows' },
   shafts: { setting: 'shafts' },
+  ssao: { setting: 'ssao.quality' },
   torch_shadows: { setting: 'torchShadows' },
   water: { setting: 'water' },
   pixel_ratio: { setting: 'renderScale' },
@@ -54,6 +55,7 @@ const LOOKS: Record<string, Audit> = {
   atmosphere: { fixed: "the sky's colour by height, one term of the sky pass: no cost of its own" },
   bloom: { setting: 'bloom' },
   clouds: { setting: 'clouds' },
+  ssao: { setting: 'ssao.quality' },
   daynight: { fixed: 'the world clock, sun, moon and sky keyframes: the look of the day itself' },
   flames: { fixed: "a few billboards a lit torch; their light follows Torch shadows' tiers" },
   fog: {

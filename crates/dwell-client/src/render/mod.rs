@@ -34,6 +34,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod skinned;
+pub mod ssao;
 pub mod staged;
 pub mod streaming;
 pub mod timing;
@@ -1637,6 +1638,13 @@ pub struct Renderer {
     bloom: dwell_look::bloom::BloomQuality,
     bloom_layout: wgpu::BindGroupLayout,
     bloom_pipelines: bloom::BloomPipelines,
+    /// Screen-space ambient occlusion (docs/SSAO.md): the setting and its strength, its passes'
+    /// group layout, uniform and pipelines (`ssao.rs`).
+    ssao: dwell_look::ssao::SsaoQuality,
+    ssao_strength: f64,
+    ssao_layout: wgpu::BindGroupLayout,
+    ssao_uniform: wgpu::Buffer,
+    ssao_pipelines: ssao::SsaoPipelines,
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
@@ -2393,6 +2401,15 @@ impl Renderer {
         let bloom_layout = frame::bloom_layout(&device);
         let bloom_pipelines =
             bloom::BloomPipelines::new(&device, samples, &scene_read_layout, &bloom_layout);
+        // The ambient occlusion's passes (docs/SSAO.md): over the view depth, into its buffers.
+        let ssao_layout = ssao::layout(&device, samples);
+        let ssao_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ssao"),
+            size: ssao::UNIFORM_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ssao_pipelines = ssao::SsaoPipelines::new(&device, samples, &ssao_layout);
         // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
         // its distances, at the tier's reduced size, over the last frame's (group 3).
         let cloud_layout = frame::cloud_history_layout(&device);
@@ -2703,6 +2720,11 @@ impl Renderer {
             bloom: dwell_look::bloom::BloomQuality::High,
             bloom_layout,
             bloom_pipelines,
+            ssao: dwell_look::ssao::SsaoQuality::Off,
+            ssao_strength: 1.0,
+            ssao_layout,
+            ssao_uniform,
+            ssao_pipelines,
             cloud_layout,
             cloud_march_layout,
             cloud_noise,
@@ -3161,6 +3183,18 @@ impl Renderer {
     fn bloom_tier(&self) -> Option<dwell_look::bloom::BloomTier> {
         bloom::bloom_for(self.adapter, self.phone, self.bloom).tier()
     }
+    /// The Ambient occlusion setting (Off, Low, High) and its strength (× the data's; docs/SSAO.md).
+    pub fn set_ssao(&mut self, quality: dwell_look::ssao::SsaoQuality, strength: f64) {
+        self.ssao = quality;
+        self.ssao_strength = strength.clamp(0.0, 4.0);
+    }
+    /// The ambient occlusion's tier this frame draws (`ssao::ssao_for`: none on a CPU adapter or a
+    /// phone, nor at strength 0).
+    fn ssao_tier(&self) -> Option<dwell_look::ssao::SsaoTier> {
+        ssao::ssao_for(self.adapter, self.phone, self.ssao)
+            .tier()
+            .filter(|_| self.ssao_strength > 0.0)
+    }
     /// The eye this frame is drawn from (world m).
     pub fn eye_position(&self) -> [f64; 3] {
         self.eye
@@ -3363,6 +3397,9 @@ impl Renderer {
         }
         if self.bloom_tier().is_some() {
             set.extend(self.bloom_pipelines.all());
+        }
+        if self.ssao_tier().is_some() {
+            set.extend(self.ssao_pipelines.all());
         }
         set
     }
@@ -4518,11 +4555,16 @@ impl Renderer {
         let bloom = self
             .bloom_tier()
             .map_or((1, 1, 1), |t| dwell_look::bloom::chain(self.size, t));
+        // The ambient occlusion's buffers at the tier's size (1 × 1 with none).
+        let ssao = self
+            .ssao_tier()
+            .map_or((1, 1), |t| dwell_look::ssao::buffer_size(self.size, t));
         if self.targets.as_ref().is_some_and(|t| {
             t.under.is_some() == under
                 && t.shafts_size() == shafts
                 && t.clouds_size() == clouds
                 && t.bloom.size() == bloom
+                && t.ssao.size() == ssao
         }) {
             return;
         }
@@ -4552,6 +4594,9 @@ impl Renderer {
                 ),
                 bloom,
                 bloom_layout: &self.bloom_layout,
+                ssao,
+                ssao_layout: &self.ssao_layout,
+                ssao_uniform: &self.ssao_uniform,
             },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
@@ -5173,6 +5218,25 @@ impl Renderer {
             // Your own torch's flame over your arms.
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
+        }
+        // The ambient occlusion (docs/SSAO.md) from the finished view depth, multiplied into the
+        // scene's resolved colour before anything reads it (the clouds, shafts, bloom, composite).
+        if let Some(tier) = self.ssao_tier() {
+            let u = ssao::uniforms(
+                self.size,
+                targets.ssao.size(),
+                tier,
+                self.frame_fov(),
+                self.ssao_strength,
+            );
+            self.queue.write_buffer(&self.ssao_uniform, 0, floats(&u));
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::SSAO));
+            calls += self.ssao_pipelines.encode(
+                &mut encoder,
+                &targets.ssao,
+                &targets.colour.1,
+                self.timer.as_ref().map(|t| (t, query)),
+            );
         }
         // The volumetric clouds (docs/CLOUDS.md §8.6) into their reduced buffer, over the last
         // frame's, which then keeps a copy for the next.
@@ -8029,6 +8093,40 @@ mod tests {
                 r.warm_set().len() - warm_off,
                 3,
                 "the warm-up takes its three"
+            );
+        }
+        draws_cleanly(r);
+    }
+
+    /// The ambient occlusion off (docs/SSAO.md: Low, Medium, the phone tier, a CPU adapter, or a
+    /// strength of 0) builds none of its pipelines and keeps 1 × 1 buffers; on, it warms its four
+    /// and sizes its buffers by the tier (Low half the drawing buffer, High all of it).
+    #[test]
+    fn ssao_off_builds_no_pipeline_and_on_sizes_its_buffers_by_tier() {
+        use dwell_look::ssao::{SsaoQuality, buffer_size};
+        let mut r = noop_renderer();
+        r.set_ssao(SsaoQuality::Off, 1.0);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(r.ssao_pipelines.all().iter().all(|p| !p.built()), "off");
+        r.ensure_targets();
+        assert_eq!(r.targets.as_ref().unwrap().ssao.size(), (1, 1));
+        let warm_off = r.warm_set().len();
+        r.set_ssao(SsaoQuality::High, 0.0);
+        assert!(r.ssao_tier().is_none(), "strength 0 draws none");
+        for q in [SsaoQuality::Low, SsaoQuality::High] {
+            r.set_ssao(q, 1.0);
+            let tier = r.ssao_tier().expect("on a GPU");
+            assert_eq!(
+                r.warm_set().len() - warm_off,
+                4,
+                "the warm-up takes its four"
+            );
+            r.ensure_targets();
+            assert_eq!(
+                r.targets.as_ref().unwrap().ssao.size(),
+                buffer_size(r.size, tier)
             );
         }
         draws_cleanly(r);

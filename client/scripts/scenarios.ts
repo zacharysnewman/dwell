@@ -104,6 +104,10 @@ export type Step =
       waterfalls?: boolean;
       shafts?: 'off' | 'low' | 'high';
       bloom?: 'off' | 'low' | 'high';
+      /** The ambient occlusion's tier (docs/SSAO.md). */
+      ssao?: 'off' | 'low' | 'high';
+      /** Its strength (× the data's; the Settings slider's 0–2, up to 4 to look closely). */
+      ssaoStrength?: number;
       torchShadows?: 'off' | 'low' | 'high';
       cards?: boolean;
       grass?: boolean;
@@ -465,6 +469,8 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'waterfalls',
     'shafts',
     'bloom',
+    'ssao',
+    'ssaoStrength',
     'cards',
     'grass',
     'renderScale',
@@ -626,6 +632,11 @@ export function parseStep(where: string, v: unknown): Step {
         ),
         ...opt('shafts', tier('shafts')),
         ...opt('bloom', tier('bloom')),
+        ...opt('ssao', tier('ssao')),
+        ...opt(
+          'ssaoStrength',
+          o.ssaoStrength === undefined ? undefined : num(at('ssaoStrength'), o.ssaoStrength, 0, 4),
+        ),
         ...opt('torchShadows', tier('torchShadows')),
         ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
         ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),

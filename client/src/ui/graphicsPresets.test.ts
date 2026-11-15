@@ -101,6 +101,7 @@ describe('applying a preset', () => {
     shadows: null,
     shafts: null,
     bloom: null,
+    ssao: { ...s.ssao, quality: null },
     clouds: null,
     leafCards: null,
     detail: null,

@@ -2205,6 +2205,17 @@ impl Client {
             .borrow_mut()
             .set_bloom(BloomQuality::from_name(quality).unwrap_or(BloomQuality::High));
     }
+    /// The Ambient occlusion setting: `off`, `low` or `high` (anything else: off) and its strength
+    /// (× the data's, 0–2; docs/SSAO.md).
+    #[wasm_bindgen(js_name = setSsao)]
+    pub fn set_ssao(&self, quality: &str, strength: f64) {
+        use dwell_look::ssao::SsaoQuality;
+        let strength = if strength.is_finite() { strength } else { 1.0 };
+        self.inner.borrow().renderer.borrow_mut().set_ssao(
+            SsaoQuality::from_name(quality).unwrap_or(SsaoQuality::Off),
+            strength,
+        );
+    }
     /// The run-time plumes' dev tools (`__dwell.plume`, docs/CLOUDS.md §8.7;
     /// `dwell_look::plumes::dev`): `list`, `add` [x, y, z, radius?, height?, density?, riseMps?],
     /// `near` [dx, dz], `move` [x, y, z], `remove`, `clear`; JSON back.
