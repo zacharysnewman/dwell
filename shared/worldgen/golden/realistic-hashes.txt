@@ -1,6 +1,6 @@
 # The Realistic world (test:realistic), seed 42, both faces: chunk x y z fnv1a64(voxels) | lod level i j k kind fnv1a64(kind, cells)
 # Rewrite: REALISTIC_GOLDEN=write cargo test --release -p dwell-worldgen --test realistic_golden
-# registry 8892ede122354d78
+# registry 39f32739de92ccac
 chunk -938 0 -938 a264ffcbd923325
 chunk -938 1 -938 55437e003182325
 chunk -750 0 -938 4125133fe7847d7d
