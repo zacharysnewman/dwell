@@ -18,12 +18,23 @@ use dwell_worldgen::terrain::TerrainGenerator;
 use dwell_worldgen::worldmap::WorldMap;
 
 const NAME: &str = "test:realistic";
-const SEEDS: [u64; 4] = [1, 7, 42, 2_741_893_632];
+/// Real-world scale (0.71): a 1× face is mostly one plate's interior, often warm or low, so the
+/// seeds run from 0 over the faces with land until both kinds of pine are sampled enough.
+const SEEDS: std::ops::Range<u64> = 0..30;
+
+#[path = "support/realistic_seeds.rs"]
+mod realistic_seeds;
 
 both_faces!(
     fn trees_at_the_snow_line_have_snowy_leaves(f: FaceFrame) {
         let (mut on_snow, mut snowy_on_snow, mut low, mut snowy_low) = (0, 0, 0, 0);
         for world in SEEDS {
+            if on_snow >= 20 && low >= 20 {
+                break;
+            }
+            if realistic_seeds::survey(world, f.face).0 < 0.3 {
+                continue;
+            }
             let e = world_config(NAME).unwrap().expect("the Realistic world");
             let seed = face_seed(world, f.face);
             let map = Arc::new(
