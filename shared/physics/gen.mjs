@@ -17,6 +17,7 @@ export const FELLING_RANGES = {
   maxPieceCells: [1, 4096, true],
   toppleSpin: [0, 10, false],
   toppleTipSpeed: [0, 100, false],
+  cutTip: [0, 4, false],
   sleepLinear: [0, 10, false],
   sleepAngular: [0, 10, false],
   restDrift: [0, 10, false],

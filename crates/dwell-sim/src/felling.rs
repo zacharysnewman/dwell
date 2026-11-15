@@ -19,6 +19,7 @@ pub struct FellingData {
     pub max_piece_cells: usize,
     pub topple_spin: f64,
     pub topple_tip_speed: f64,
+    pub cut_tip: f64,
     pub sleep_linear: f64,
     pub sleep_angular: f64,
     pub rest_drift: f64,
@@ -310,6 +311,9 @@ pub struct FellingRules {
     pub topple_spin: f64,
     /// At most this fast (m/s) at its farthest point from its foot: a tall trunk is nudged.
     pub topple_tip_speed: f64,
+    /// The share of the topple a trunk let go by breaking a damaged log under it tips with, toward
+    /// the side of that log that lost the most (docs/BLOCK_DAMAGE.md §16).
+    pub cut_tip: f64,
     /// A piece hitting a player faster than this (m/s toward them) hurts, `hit_damage_per_speed`
     /// points per m/s over it.
     pub hit_speed: f64,
@@ -350,6 +354,7 @@ impl From<FellingData> for FellingRules {
             max_piece_cells: d.max_piece_cells,
             topple_spin: d.topple_spin,
             topple_tip_speed: d.topple_tip_speed,
+            cut_tip: d.cut_tip,
             hit_speed: d.hit_speed,
             hit_damage_per_speed: d.hit_damage_per_speed,
             hold_speed: d.hold_speed,

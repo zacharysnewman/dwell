@@ -3033,6 +3033,8 @@ impl Server {
         // and the cells a last hit broke, with their hits (the destroy drops what is left).
         let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
         let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
+        // The cells broken through by damage this tick and the side their hits took out.
+        let mut cut_sides: Vec<([i32; 3], [f64; 2])> = Vec::new();
         // Cells a hit damaged this tick, for the clients that draw damage.
         let mut damaged: Vec<[i32; 3]> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
@@ -3195,6 +3197,16 @@ impl Server {
                                 continue;
                             }
                             destroyed_after.insert(outcome.cell, n);
+                            // What it held falls toward the side the hits took out (the broken
+                            // log's notch; docs/BLOCK_DAMAGE.md §16).
+                            if let Some(side) = self
+                                .damage
+                                .cells
+                                .get(&outcome.cell)
+                                .and_then(|d| dwell_protocol::damage::cut_side(&d.marks))
+                            {
+                                cut_sides.push((outcome.cell, side));
+                            }
                         }
                         Some(_) => {
                             s.edit_credit -= 1.0;
@@ -3406,16 +3418,25 @@ impl Server {
                 }
             }
         }
-        // What the edits left without support falls (docs/FELLING.md §2), tipped away from the
-        // nearest player (who cut it, as a rule).
-        let near = edited.first().and_then(|&c| {
-            let at = crate::felling::cell_centre(c);
-            capsules
-                .iter()
-                .map(|p| DVec3::from(p.center))
-                .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
-        });
-        self.fell(&edited, 0, near);
+        // What the edits left without support falls (docs/FELLING.md §2): toward the side a
+        // damaged block broken under it lost the most (owner, 2026-11-15: "the realistic falling
+        // toward the broken side of the tree"; docs/BLOCK_DAMAGE.md §16), at `cutTip` of the
+        // topple; else tipped away from the nearest player (who cut it, as a rule).
+        if let Some(&(cell, [sx, sz])) = cut_sides.first() {
+            let at = crate::felling::cell_centre(cell);
+            let from = at - DVec3::new(sx, 0.0, sz) * 64.0;
+            let tip = self.felling.rules.cut_tip;
+            self.fell_tipped(&edited, 0, Some((from, tip)));
+        } else {
+            let near = edited.first().and_then(|&c| {
+                let at = crate::felling::cell_centre(c);
+                capsules
+                    .iter()
+                    .map(|p| DVec3::from(p.center))
+                    .min_by(|a, b| (*a - at).length().total_cmp(&(*b - at).length()))
+            });
+            self.fell(&edited, 0, near);
+        }
         self.send_edit_acks();
     }
 

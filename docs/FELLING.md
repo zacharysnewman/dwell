@@ -228,7 +228,10 @@ Tier 2 debris (Phase 21).
 **Since 2026-11-15 (docs/BLOCK_DAMAGE.md §14; owner: the axe "was different from the other tools", and
 "Tree still falls"):** the axe is a break tool as the pickaxe: a log takes block damage, the axe's last hit
 (a block edit) breaks the whole log, and a standing trunk above falls as one body as after any break (§2),
-tipped away from the nearest player, with no fell wedges. No wood is cut: an older save's cuts are ignored.
+with no fell wedges: **since 2026-11-15** tipped toward the side of the broken log its hits took out the most
+(`dwell_protocol::damage::cut_side` over its marks, the side its damage mask removed: a real notch), at `cutTip`
+(1.5) of the topple (docs/BLOCK_DAMAGE.md §16); a break with no damage (one hit) is still tipped away from the
+nearest player. No wood is cut: an older save's cuts are ignored.
 (WORK_QUEUE item 51, 2026-11-12, had the log take damage through the axe's own swing, tipped toward the side
 struck.) What follows describes the older cut model, kept only as history and for drawing an older
 server's cuts.
