@@ -7,6 +7,7 @@
 //! the origin. It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
 pub mod arena;
+pub mod blades;
 pub mod blasts;
 pub mod bloom;
 pub mod camera;

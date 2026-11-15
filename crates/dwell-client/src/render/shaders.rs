@@ -948,6 +948,8 @@ struct CutoutOut {
     // 1 for a tree's leaves (their faces and cards): their shadow lookup's normal offset is at
     // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #156).
     @location(10) @interpolate(flat) leaf: f32,
+    // A plant's distance fade, blade by blade (`blade_fade`): 1 drawn in full, 0 dropped.
+    @location(11) @interpolate(flat) blade: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -1081,8 +1083,24 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
     o.light = v.lit.x;
     o.flood = v.lit.yz;
     o.leaf = select(0.0, 1.0, v.plant.y < 0.0 || v.plant.w < 0.0);
+    o.blade = 1.0;
+    if (v.plant.y >= 0.0 && v.plant.w > 0.0) {
+        o.blade = blade_fade(v, draw);
+        if (o.blade <= 0.0) {
+            o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+        }
+    }
     return o;
 }
+
+// A plant (a cross: tall grass, flowers) fades with distance blade by blade, not pixel by pixel
+// (the owner's 60 fps on High, 2026-11-15): each column's plants take a fixed random rank, and
+// over the fade from `plant.z` to `plant.w` m a growing share of them is dropped whole in the
+// vertex stage (no pixels), each dissolving over the last BLADE_DISSOLVE of its rank. The fade's
+// pixels were the cutout's largest cost: every blade out to its end was drawn and most of its
+// pixels discarded. The column (the cross's centre, its cell's middle: the corners' shared point,
+// so a quad's four corners agree) and its distance from the eye across the ground (both faces
+// alike) rule it; its rank is a hash of the column's world x, z (modulo WIND_PERIOD).
 
 // What a cutout fragment writes: the scene's outputs and the samples it covers.
 struct CutoutSceneOut {
@@ -1136,6 +1154,8 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         // distance.
         if (i.leaf > 0.5 && frame.far_trees.w > 0.5) {
             fade = tree_cards_share(i.rel);
+        } else if (i.leaf < 0.5) {
+            fade = i.blade;
         } else {
             fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
         }
@@ -1290,7 +1310,7 @@ fn shadow_cutout_fs(i: CutoutOut) {
     let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_crisp(atlas_uv), 0.0).a;
     var fade = 1.0;
     if (i.fade.y > 0.0) {
-        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        fade = select(1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel)), i.blade, i.leaf < 0.5);
     }
     if (alpha < 0.5 || fade <= pixel_noise(i.clip.xy) || fade_discard(draw, i.clip.xy)) {
         discard;
@@ -3846,12 +3866,13 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
         super::flow::wgsl() + &super::tree_fade::wgsl(),
         scene_bindings(samples),
+        super::blades::wgsl(),
         water_slope()
     ) + &super::heightfield::wgsl()
         + &super::impostors::wgsl(dwell_worldgen::impostor::Config::get())
