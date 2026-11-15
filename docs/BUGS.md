@@ -6,6 +6,23 @@ pins it.
 
 ## Open
 
+### 185. No chunks come off a chopped log; tools held with their heads off to the right; chopped trees don't fall over
+
+Owner, 2026-11-15, after the axe clip of #980: "I don't see any chunks disappearing from the log from mesh deformation
+in that axe chopping video. Also all the tools are rotated so their heads face off to the right, they should face in to
+the left and more upright. Animations can be adjusted accordingly to ensure the hit aligns with the pointer." And:
+"Trees should get the force applied to them like it used to be so they fall again, towards the side with the least
+structure", corrected: "my description only had to do with the contents of the block you're breaking on break, than
+the surrounding terrain, essentially following the realistic falling toward the broken side of the tree."
+
+- **Cause (chunks):** the carved damage look was a height field per cube face (BLOCK_DAMAGE.md §6.2), which an
+  octagonal log is not, so #980 drew logs with cracks only.
+- **Fixed (chunks):** damage is a 3D bit mask over the cell for any shape (BLOCK_DAMAGE.md §15). Test:
+  `dwell-mesh` `a_damaged_octagon_log_loses_volume_by_stage` (both faces; red with the log drawn whole, as main did).
+
+**Owner should see:** chunks coming off a log with each axe hit; each tool held with its head leaning in toward the
+crosshair, more upright, and striking at it; a tree whose bottom log you chop from one side falls toward that side.
+
 ### 184. The axe still behaves unlike the pickaxe and the shovel (a gap in #954)
 
 Owner, 2026-11-15: "Did you change the axe (or fix deploys for changes to it) since 10:40? It does not have the same

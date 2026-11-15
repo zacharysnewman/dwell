@@ -898,17 +898,17 @@ at that tick. The client shows its hit's sound and chips (a one-hit break's soun
 (`hit_feedback::PendingHits`), does not predict a tool's one-hit break (the server's change at the
 contact shows it), and starts one tool swing at a time. Wire unchanged. **The look [built, D2 0.52.28]:** the client keeps the server's `Damage` per cell
 (`ChunkStream::set_damage`), the chunk's mesh job carries its damaged cells
-(`dwell_mesh::mesh_chunk_damaged`), and the mesher **carves** each struck face (BLOCK_DAMAGE.md §6.2,
-built): the face leaves the greedy merge and is meshed as a tensor grid over its marks' reach whose
-vertices are pushed in by a height field (`mesher/relief.rs` `Carve`: soils' merged bowls, smooth-lit;
-stone's angular facets round each hit, flat-lit), with the face's uvs, corner light, and a darker, more
-occluded floor; the field is 0 on the cell's edge, so the face's outline and its neighbours' are
-unchanged (watertight); each cell's struck faces share a triangle budget (`damage.look` `profile`,
-`facets`, `grid`, `triangles`). The decals and §6.1's per-pixel relief quads are no longer emitted (the
-shader's relief path is unreached, kept until the owner's look review); face-local through the face-B
-turn-over; collision unchanged), from the block's `damage.look` data. **Cracks [built, 0.54.x]**
-(BLOCK_DAMAGE.md §6.3): past its look's first `cracks.stages` fraction a cell leaves the merge on every
-exposed face (unstruck ones one flat quad each), and each vertex carries the crack overlay in the opaque
+(`dwell_mesh::mesh_chunk_damaged`), and the mesher draws each damaged cell as its block's own shape
+intersected with a **3D damage mask** **[built, 2026-11-15; BLOCK_DAMAGE.md §15]**: a bit mask over a sub-grid
+of the cell (the look's `grid` per metre), the sub-cells nearest the struck points (inward from the struck
+face, shaped by the look's `profile`) removed until the bite rule's volume of the shape is gone, a function of
+the synced damage view alone (no new saved or wire state); the shape's faces split along the sub-grid where
+removed sub-cells are near, and the walls between kept and removed sub-cells clipped to the shape (any convex
+shape: the cube, a ramp, the octagonal log), in the block's inside tile, darker by depth (`mesher/damage_mask.rs`;
+the height-field carves of §6.2 and §6.5 are retired); a damaged cube leaves the greedy merge on every face;
+face-local through the face-B turn-over; collision unchanged. **Cracks [built, 0.54.x]**
+(BLOCK_DAMAGE.md §6.3): past its look's first `cracks.stages` fraction every face a damaged cell draws
+(its mask's walls too), and each vertex carries the crack overlay in the opaque
 mesh's optional `cracks` stream (four unorm bytes: the crack tile's s and t round the hit nearest the
 face, the stage tile's atlas slot + 1, the strength; empty for a chunk without cracks, filled with 0 in
 the terrain buffer, whose vertex grows 72 → 76 bytes); `terrain_fs` multiplies the face by the stage's
