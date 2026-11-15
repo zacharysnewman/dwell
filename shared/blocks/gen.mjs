@@ -494,6 +494,73 @@ try {
 checkBlockSounds(blocks.map((b) => ({ id: b.id, sound: b.def.sound })), loadSounds());
 if (states.length > 0xffff) fail('too many states');
 
+// Columns, swings and toggles (docs/BLOCK_REGISTRY.md, "Multi-cell blocks" and "Doors"): a small
+// fixed vocabulary over a block's own properties.
+// - `column: "<property>"`: the block fills one cell per value of the property, bottom to top (face-
+//   local up), every cell the same state but that property: placed whole by its first value, cleared
+//   whole (dwell_world::parts). Only its first cell needs what `needsSupport` asks.
+// - `swing: { property, hinge }`: where `property` (two values, "false" and "true") is "true" the
+//   state is open: no collision, drawn as a thin plate (the ladder look) against the cell's side, its
+//   facing turned a quarter toward `hinge` ("left": anticlockwise seen from above, "right": clockwise).
+// - `toggle: "<property>"`: a Use (a Place aimed at it) flips the property (two values) on every cell.
+const TURN_FACING = { north: 0, east: 1, south: 2, west: 3 };
+const FACING_OF = ['north', 'east', 'south', 'west'];
+for (const b of blocks) {
+  const d = b.def;
+  const propOf = (name) => b.props.find((p) => p.name === name);
+  if (d.column !== undefined) {
+    const p = propOf(d.column);
+    if (typeof d.column !== 'string' || !p) fail(`${b.id}: column must name a property of the block`);
+    if (p.values.length < 2 || p.values.length > 8) fail(`${b.id}: column ${d.column} must have 2 to 8 values (its cells)`);
+    if (d.extends !== undefined || d.partOf !== undefined) fail(`${b.id}: column and extends/partOf are two ways of one thing: use one`);
+    for (const e of d.palette ?? []) {
+      if (e[d.column] !== undefined && e[d.column] !== p.values[0]) fail(`${b.id}: a column is placed by its first cell: palette entries keep ${d.column} ${p.values[0]}`);
+    }
+  }
+  if (d.swing !== undefined) {
+    onlyKeys(b.id, 'swing', d.swing, ['property', 'hinge']);
+    const p = propOf(d.swing.property);
+    if (!p || p.values.join() !== 'false,true') fail(`${b.id}: swing.property must name a property of false, true`);
+    const h = propOf(d.swing.hinge);
+    if (!h || h.values.some((v) => !['left', 'right'].includes(v))) fail(`${b.id}: swing.hinge must name a property of left, right`);
+    if (!d.facingProperty) fail(`${b.id}: swing needs a facingProperty (the side it closes)`);
+    if (d.shape !== 'full' || (d.look ?? 'cube') !== 'cube') fail(`${b.id}: swing needs shape full and look cube (its closed state)`);
+  }
+  if (d.toggle !== undefined) {
+    const p = propOf(d.toggle);
+    if (typeof d.toggle !== 'string' || !p || p.values.length !== 2) fail(`${b.id}: toggle must name a property of two values`);
+  }
+}
+// What a state's own values change: its shape, look, facing, selection, light filter and support.
+for (const st of states) {
+  const d = st.block.def;
+  const facing = d.facingProperty ? st.values[d.facingProperty] : null;
+  st.over = {
+    shape: d.shape,
+    look: st.block.look,
+    facing,
+    selection: d.selectionBox ? selectionOf(d, st.values) : null,
+    lightFilter: lightFilterOf(d),
+    needsSupport: d.needsSupport ?? null,
+  };
+  if (d.column !== undefined && st.values[d.column] !== st.block.props.find((p) => p.name === d.column).values[0]) {
+    st.over.needsSupport = null;
+  }
+  if (d.swing && st.values[d.swing.property] === 'true') {
+    const turn = st.values[d.swing.hinge] === 'left' ? 3 : 1;
+    const open = FACING_OF[(TURN_FACING[facing] + turn) % 4];
+    const plate = { ...d, selectionBox: [0, 0, 0.875, 1, 1, 1], cross: undefined };
+    st.over = {
+      ...st.over,
+      shape: 'empty',
+      look: 'ladder',
+      facing: open,
+      selection: selectionOf(plate, { ...st.values, [d.facingProperty]: open }),
+      lightFilter: 0,
+    };
+  }
+}
+
 // Shapes (shapes.mjs): one baked geometry per distinct (corners, inversion, diagonal); index 0 is
 // the empty shape. States of full blocks use the cube, shaped families derive theirs from their
 // properties.
@@ -515,8 +582,8 @@ for (const st of states) {
     const p = fp ? st.block.props.find((q) => q.name === fp) : null;
     st.fill = p ? Number(st.values[fp]) / Math.max(...p.values.map(Number)) : 1;
   }
-  if (d.shape === 'empty') st.shapeIndex = 0;
-  else if (d.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
+  if (st.over.shape === 'empty') st.shapeIndex = 0;
+  else if (st.over.shape === 'full') st.shapeIndex = shapeIndexOf(cubeShape());
   else {
     const of = { slope: slopeShape, slab: slabShape, ramp: rampShape }[d.slopeFamily];
     st.shapeIndex = shapeIndexOf(of(st.values));
@@ -696,16 +763,16 @@ for (let first = 0; first < states.length; first += CHUNK) {
     `state: '${s.string}'`,
     `block: ${blocks.indexOf(s.block)}`,
     `values: { ${s.block.props.map((p) => `${p.name}: '${s.values[p.name]}'`).join(', ')} }`,
-    `look: '${s.block.look}'`,
+    `look: '${s.over.look}'`,
     `render: '${renderOf(d)}'`,
     `color: ${colorNum(d.color)}`,
     `opacity: ${opacityOf(s.block)}`,
   ];
   if (d.textures) parts.push(`textures: ${tex(d.textures)}`);
-  if (d.look === 'ladder' && d.facingProperty) {
-    parts.push(`ladderFace: ${LADDER_FACE[s.values[d.facingProperty]]}`);
+  if (s.over.look === 'ladder' && s.over.facing) {
+    parts.push(`ladderFace: ${LADDER_FACE[s.over.facing]}`);
   }
-  if (d.selectionBox) parts.push(`selection: [${selectionOf(d, s.values).join(', ')}]`);
+  if (s.over.selection) parts.push(`selection: [${s.over.selection.join(', ')}]`);
   parts.push(`shape: ${s.shapeIndex}`);
   parts.push(`flooded: ${s.flooded}`);
   parts.push(`placeable: ${!!s.placeable}`);
@@ -801,14 +868,15 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   for (const st of states) {
     const d = st.block.def;
     const t = d.textures ? (typeof d.textures === 'string' ? { top: d.textures, side: d.textures, bottom: d.textures } : d.textures) : null;
-    const facing = d.facingProperty ? `Facing::${pascal(st.values[d.facingProperty])}` : 'Facing::None';
+    const facing = st.over.facing ? `Facing::${pascal(st.over.facing)}` : 'Facing::None';
+    const col = d.column === undefined ? null : st.block.props.find((p) => p.name === d.column);
     const fields = [
       `name: ${rstr(st.string)}`,
       `block: ${blocks.indexOf(st.block)}`,
       `density_kg_m3: ${rf(d.density)}`,
-      `solid: ${d.shape !== 'empty'}`,
+      `solid: ${st.over.shape !== 'empty'}`,
       `indestructible: ${!!d.indestructible}`,
-      `shape: VoxelShape::${RS_SHAPES[d.shape]}`,
+      `shape: VoxelShape::${RS_SHAPES[st.over.shape]}`,
       `shape_index: ${st.shapeIndex}`,
       `flooded: ${st.flooded}`,
       `climbable: ${!!d.climbable}`,
@@ -817,7 +885,7 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `liquid: ${!!d.liquid}`,
       `fluid: ${st.block.fluid === null ? 'None' : `Some(${st.block.fluid})`}`,
       `placeable: ${!!st.placeable}`,
-      `look: ${rstr(st.block.look)}`,
+      `look: ${rstr(st.over.look)}`,
       `color: 0x${d.color.replace('#', '').toLowerCase()}`,
       `opacity: ${rf(opacityOf(st.block))}`,
       `textures: ${t ? `Some(Textures { top: ${rstr(t.top)}, side: ${rstr(t.side)}, bottom: ${rstr(t.bottom)} })` : 'None'}`,
@@ -828,19 +896,21 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `wind: ${d.wind ? `Some(Wind { strength: ${rf(d.wind.strength)}, speed: ${rf(d.wind.speed)} })` : 'None'}`,
       `fade: ${d.fade ? `Some(Fade { start: ${rf(d.fade.start)}, end: ${rf(d.fade.end)} })` : 'None'}`,
       `outline: ${outlineOf(d)}`,
-      `selection: ${d.selectionBox ? `Some([${selectionOf(d, st.values).map(rf).join(', ')}])` : 'None'}`,
+      `selection: ${st.over.selection ? `Some([${st.over.selection.map(rf).join(', ')}])` : 'None'}`,
       `place_on: &[${(d.placeOn ?? []).map(rstr).join(', ')}]`,
-      `needs_support: Support::${d.needsSupport ? pascal(d.needsSupport) : 'None'}`,
+      `needs_support: Support::${st.over.needsSupport ? pascal(st.over.needsSupport) : 'None'}`,
       `replaceable: ${!!d.replaceable}`,
       `on_slopes: ${!!d.onSlopes}`,
       `moldable: ${d.moldable === undefined ? 'None' : `Some(${rstr(d.moldable)})`}`,
       `medium: Medium::${d.medium ? pascal(d.medium) : 'Any'}`,
-      `light_filter: ${lightFilterOf(d)}`,
+      `light_filter: ${st.over.lightFilter}`,
       `emits: ${d.emits ?? 0}`,
       `light: ${st.block.light === null ? 'None' : `Some(&LIGHTS[${st.block.light}])`}`,
       `held: ${st.block.held === null ? 'None' : `Some(${rstr(st.block.held)})`}`,
       `extends_up: ${parts.get(st.block.id).extendsUp === null ? 'None' : `Some(${rstr(parts.get(st.block.id).extendsUp)})`}`,
       `part_of: ${parts.get(st.block.id).partOf === null ? 'None' : `Some(${rstr(parts.get(st.block.id).partOf)})`}`,
+      `column: ${col ? `Some(Column { property: ${rstr(col.name)}, index: ${col.values.indexOf(st.values[col.name])}, count: ${col.values.length} })` : 'None'}`,
+      `toggle: ${d.toggle === undefined ? 'None' : `Some(${rstr(d.toggle)})`}`,
       `support_role: SupportRole::${pascal(d.support ?? 'ground')}`,
       `passable: ${!!d.passable}`,
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,

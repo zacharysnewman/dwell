@@ -106,6 +106,23 @@ function checkWhole(cells, [sx, sy, sz], states, parts, fail) {
           fail(at, `${id} needs ${p.extendsUp} in the cell above it (a multi-cell block is whole or not at all)`);
         if (p.partOf && blockAt(x, y - 1, z) !== p.partOf)
           fail(at, `${id} is part of ${p.partOf} and must stand on one (a multi-cell block is whole or not at all)`);
+        // A column (a door): each cell its own value, the one below the previous value and the one
+        // above the next, the rest of the state the same.
+        if (p.column) {
+          const stateAt = (yy) => (yy < 0 || yy >= sy ? null : states.get(cells[(yy * sz + z) * sx + x]) ?? null);
+          const { property, values } = p.column;
+          const valueOf = (st) => st?.match(new RegExp(`[\\[,]${property}=([a-z0-9_]+)`))?.[1];
+          const rest = (st) => st?.replace(new RegExp(`${property}=[a-z0-9_]+`), '');
+          const here = stateAt(y);
+          const k = values.indexOf(valueOf(here));
+          if (k < 0) fail(at, `${id} needs its ${property} (a column block's cell)`);
+          for (const [dy, want] of [[-1, k - 1], [1, k + 1]]) {
+            if (want < 0 || want >= values.length) continue;
+            const other = stateAt(y + dy);
+            if (valueOf(other) !== values[want] || rest(other) !== rest(here))
+              fail(at, `${id}'s ${property} ${values[k]} needs ${values[want]} of the same ${id} ${dy > 0 ? 'above' : 'below'} it (a multi-cell block is whole or not at all)`);
+          }
+        }
       }
 }
 
