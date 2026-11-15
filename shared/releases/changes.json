@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.14",
+      "changes": [
+        "Builders clear their site before they build: a tree in the way comes down whole, leaves and all, with the grass, rocks and stray blocks round the blueprint.",
+        "What a builder clears drops its items at the site in adventure.",
+        "A blueprint's panel says Clearing, then Building.",
+        "Placing a blueprint works from the start of a session again, not only after the game mode changes."
+      ]
+    },
+    {
       "version": "0.70.13",
       "changes": [
         "On a phone, while flying in creative, a Select button opens the region tools: set corners, copy, paste (rotate, mirror), undo, save as a structure and clear",
