@@ -8,6 +8,7 @@
     "ice":         { "shadow": "#5d8cc2", "base": "#b4d6ea", "light": "#e6efe9" },
     "soil":        { "shadow": "#5b3a3c", "base": "#8e5d3d", "light": "#b98352" },
     "stone":       { "shadow": "#817e8e", "base": "#a9a3a3", "light": "#dcd0b9" },
+    "dressed_stone": { "shadow": "#8a7872", "base": "#b9a68a", "light": "#e4d0ab" },
     "red_rock":    { "shadow": "#5a2822", "base": "#8e4430", "light": "#b86a48" },
     "flint":       { "shadow": "#5e5249", "base": "#8a7d70", "light": "#b9ab98" },
     "bedrock":     { "shadow": "#3a3645", "base": "#555060", "light": "#7d7680" },
