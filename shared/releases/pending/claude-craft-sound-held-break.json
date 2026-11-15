@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Making an item with Combine now plays a short wooden clack with a small chime, a little different each time.",
-    "Holding Break at the sky (a held touch on phones, or a held click) no longer repeats its knock: it sounds once per hold."
-  ]
-}

@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.12",
+      "changes": [
+        "Making an item with Combine now plays a short wooden clack with a small chime, a little different each time.",
+        "Holding Break at the sky (a held touch on phones, or a held click) no longer repeats its knock: it sounds once per hold."
+      ]
+    },
+    {
       "version": "0.70.11",
       "changes": [
         "Picking up items off the ground now makes a light pop that varies a little each time"
