@@ -85,10 +85,11 @@ fn the_palette_is_the_registrys_placeable_states() {
         .collect();
     // The stone slopes (owner, 2026-10-30): every stone ramp state, 4 facings × flooded × half ×
     // 3 shapes; the hotbar picks the shape and the facing.
+    // The thatch slopes too (owner, 2026-11-14: the thatch roof's ramps).
     let (ramps, names): (Vec<&str>, Vec<&str>) = all
         .into_iter()
-        .partition(|n| n.starts_with("dwell:stone_ramp["));
-    assert_eq!(ramps.len(), 48, "{ramps:?}");
+        .partition(|n| n.starts_with("dwell:stone_ramp[") || n.starts_with("dwell:thatch_ramp["));
+    assert_eq!(ramps.len(), 96, "{ramps:?}");
     assert_eq!(
         names,
         [
@@ -124,6 +125,13 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:red_sand[flooded=false]",
             "dwell:red_dirt[flooded=false]",
             "dwell:brush[flooded=false]",
+            "dwell:planks",
+            "dwell:stone_brick",
+            "dwell:thatch",
+            "dwell:door[facing=north,hinge=left,open=false,part=bottom]",
+            "dwell:door[facing=east,hinge=left,open=false,part=bottom]",
+            "dwell:door[facing=south,hinge=left,open=false,part=bottom]",
+            "dwell:door[facing=west,hinge=left,open=false,part=bottom]",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));

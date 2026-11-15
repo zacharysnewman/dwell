@@ -21,6 +21,9 @@
     "tallGrass": "tall_grass",
     "ladder": "ladder_wood",
     "planks": "planks",
+    "stoneBrick": "stone_brick",
+    "thatch": "thatch",
+    "door": "door",
     "dirtSkirt": "dirt_skirt",
     "snow": "snow_top",
     "snowSide": "snow_side",
@@ -409,6 +412,40 @@
         { "kind": "streak", "count": 10, "colors": ["@light"], "width": [1, 1.6], "length": [10, 22], "angle": 0, "angleJitter": 3, "opacity": 0.35 },
         { "kind": "slab", "at": [[16, 0.5, 40], [16, 8.5, 40], [16, 16.5, 40], [16, 24.5, 40]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 0, "opacity": 0.7, "clip": true },
         { "kind": "slab", "at": [[16, 1.5, 40], [16, 9.5, 40], [16, 17.5, 40], [16, 25.5, 40]], "colors": ["@light"], "width": 0.8, "length": 1, "angle": 0, "opacity": 0.4, "clip": true }
+      ]
+    },
+    "stone_brick": {
+      "$comment": "Stone brick walls (owner, 2026-11-14; prototype content): dressed stone in the stone ramp, two courses a tile with shadowed mortar joints, the upper course's joints offset half a brick, a light along each brick's top.",
+      "use": "block", "ramp": "stone", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "slab", "count": 4, "colors": ["@light"], "width": [5, 8], "length": [8, 12], "angle": 0, "angleJitter": 10, "opacity": 0.3, "softness": 1.5 },
+        { "kind": "slab", "count": 3, "colors": ["@shadow"], "width": [4, 6], "length": [6, 10], "angle": 0, "angleJitter": 10, "opacity": 0.25, "softness": 1.5, "seed": 1 },
+        { "kind": "slab", "at": [[16, 0.5, 40], [16, 16.5, 40]], "colors": ["@shadow"], "width": 1.2, "length": 1, "angle": 0, "opacity": 0.85, "clip": true },
+        { "kind": "slab", "at": [[0.5, 8.5, 16], [16.5, 8.5, 16], [8.5, 24.5, 16], [24.5, 24.5, 16]], "colors": ["@shadow"], "width": 1.2, "length": 1, "angle": 90, "opacity": 0.85, "clip": true },
+        { "kind": "slab", "at": [[16, 15.2, 40], [16, 31.2, 40]], "colors": ["@light"], "width": 0.8, "length": 1, "angle": 0, "opacity": 0.45, "clip": true }
+      ]
+    },
+    "thatch": {
+      "$comment": "The thatch roof (owner, 2026-11-14; prototype content): bundled straw in the straw ramp, long strands lying down the tile with darker hollows between them.",
+      "use": "block", "ramp": "straw", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@base" },
+        { "kind": "blade", "count": 14, "colors": ["@shadow"], "width": [1.6, 2.4], "length": [12, 20], "angle": 92, "angleJitter": 8, "bend": [-2, 2], "opacity": 0.5 },
+        { "kind": "blade", "count": 18, "colors": ["@light"], "width": [1, 1.6], "length": [10, 18], "angle": 88, "angleJitter": 8, "bend": [-2, 2], "opacity": 0.55, "seed": 1 },
+        { "kind": "slab", "at": [[16, 1, 40], [16, 17, 40]], "colors": ["@shadow"], "width": 1.4, "length": 1, "angle": 0, "opacity": 0.4, "softness": 1, "clip": true }
+      ]
+    },
+    "door": {
+      "$comment": "The door (owner, 2026-11-14; prototype content): upright boards in the heartwood ramp, shadowed seams between them, a light grain, and a batten across each ½ m cell.",
+      "use": "block", "ramp": "heartwood", "overlay": 1,
+      "layers": [
+        { "kind": "fill", "color": "@shadow" },
+        { "kind": "streak", "count": 10, "colors": ["@base"], "width": [1, 1.6], "length": [12, 24], "angle": 90, "angleJitter": 3, "opacity": 0.45 },
+        { "kind": "slab", "at": [[0.5, 16, 40], [8.5, 16, 40], [16.5, 16, 40], [24.5, 16, 40]], "colors": ["@shadow"], "width": 1, "length": 1, "angle": 90, "opacity": 0.8, "clip": true },
+        { "kind": "slab", "at": [[16, 16, 40]], "colors": ["@base"], "width": 5, "length": 1, "angle": 0, "softness": 0.5, "clip": true },
+        { "kind": "slab", "at": [[16, 18.2, 40]], "colors": ["@light"], "width": 0.8, "length": 1, "angle": 0, "opacity": 0.5, "clip": true },
+        { "kind": "slab", "at": [[16, 13.6, 40]], "colors": ["bark.shadow"], "width": 0.8, "length": 1, "angle": 0, "opacity": 0.6, "clip": true }
       ]
     },
     "ladder_wood": {

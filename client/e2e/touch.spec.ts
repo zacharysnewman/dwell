@@ -226,3 +226,51 @@ test('on a phone a button toggles the debug overlay (no F3 key)', async ({ page 
   await tapButton(2);
   await expect(page.locator('#debug-overlay')).toBeHidden();
 });
+
+// BUGS.md #174 (owner, 2026-11-14): "I can't seem to access inventory, after opening bag, nothing is
+// intractable." The touch layer is the whole screen; raised over the inventory so the bag button
+// stays on top, it took every tap meant for the inventory. And closing it took the pointer lock,
+// which sent the fingers to the canvas: no look after.
+test('on a phone the bag opens an inventory that answers taps, and closes to working controls', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto('./?world=flat');
+  await expect
+    .poll(async () => (await read(page))?.active ?? false, { timeout: 30_000 })
+    .toBe(true);
+  const tap = async (selector: string) => {
+    const box = await page.locator(selector).first().boundingBox();
+    if (!box) throw new Error(`${selector}: not on screen`);
+    // A finger at the element's centre: whatever is on top there gets the tap.
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  await tap('#touch-bag');
+  const inv = page.locator('#creative-inventory');
+  await expect(inv).toBeVisible();
+  // A slot of the inventory's hotbar is selected by a tap...
+  await tap('#creative-inventory .inventory-hotbar [data-slot="3"]');
+  await expect(inv.locator('.inventory-hotbar [data-slot="3"]')).toHaveClass(/selected/, {
+    timeout: 5_000,
+  });
+  // ...and an item tapped goes into it.
+  const label = await inv.locator('.inventory-items [data-item]').nth(4).getAttribute('title');
+  await tap('#creative-inventory .inventory-items [data-item] >> nth=4');
+  await expect(inv.locator('.inventory-hotbar [data-slot="3"]')).toHaveAttribute(
+    'title',
+    label ?? '',
+    { timeout: 5_000 },
+  );
+  // The bag closes it again, and the controls are back and answer.
+  await tap('#touch-bag');
+  await expect(inv).toBeHidden();
+  await expect(page.locator('#touch-jump')).toBeVisible();
+  const before = await yaw(page);
+  const cdp = await page.context().newCDPSession(page);
+  await touch(cdp, 'touchStart', [{ x: 600, y: 200, id: 2 }]);
+  for (let i = 1; i <= 8; i++) await touch(cdp, 'touchMove', [{ x: 600 - i * 15, y: 200, id: 2 }]);
+  await touch(cdp, 'touchEnd', []);
+  await expect
+    .poll(async () => Math.abs((await yaw(page)) - before), { timeout: 5_000 })
+    .toBeGreaterThan(1);
+});
