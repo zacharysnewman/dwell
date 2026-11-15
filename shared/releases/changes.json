@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.70.20",
+      "changes": [
+        "Chopping a log now knocks real chunks out of it with each axe hit, as digging dirt and mining stone do.",
+        "Block damage works on any block shape: ramps and logs show the chunks taken out of them."
+      ]
+    },
+    {
       "version": "0.70.19",
       "changes": [
         "Ambient occlusion: soft shadows where people, trees, grass and buildings meet the ground and each other (High and Ultra presets).",
