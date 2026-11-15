@@ -363,26 +363,36 @@ dwell_world::both_faces!(
     /// it has weight where the climate fits and none where the rain is far below its least.
     fn a_biome_with_a_climate_envelope_is_placed_by_it(f: FaceFrame) {
         let e = edit();
-        let m = map(&e, 1, f);
+        let w = seeds(f.face)[0];
+        let m = map(&e, w, f);
+        let field = BiomeField::with_params(&m, face_seed(w, f.face), e.map);
+        // The envelope's least rain is the face's median (real-world scale, 0.71: a 1× face's
+        // rain spans one band's, so no fixed mm splits every face).
+        let cells = land(&m, 2);
+        let mut rains: Vec<f64> = cells
+            .iter()
+            .map(|&(x, z, h)| field.mix_geography(x, z, h).rain.unwrap())
+            .collect();
+        rains.sort_by(f64::total_cmp);
+        let least = rains[rains.len() / 2];
         let mut bog = preset("preset:wetland");
         bog.name = "test:rain_bog";
         bog.place.wetness = WhereRange::ANY;
         bog.place.elevation = WhereRange::ANY;
         bog.place.rain = WhereRange {
-            min: 1200.0,
+            min: least,
             max: f64::INFINITY,
             blend: 100.0,
         };
         let list = [e.biomes[0], bog];
-        let field = BiomeField::with_params(&m, face_seed(1, f.face), e.map);
         let (mut wet, mut dry) = (0, 0);
-        for &(x, z, h) in &land(&m, 2) {
+        for &(x, z, h) in &cells {
             let r = field.mix_geography(x, z, h).rain.unwrap();
             let w = field.mix(&list, x, z, h).weight(1);
-            if r >= 1300.0 {
+            if r >= least + 100.0 {
                 assert!(w > 0.99, "{r} mm: {w}");
                 wet += 1;
-            } else if r < 1100.0 {
+            } else if r < least - 100.0 {
                 assert_eq!(w, 0.0, "{r} mm");
                 dry += 1;
             }
