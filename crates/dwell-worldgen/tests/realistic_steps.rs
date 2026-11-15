@@ -19,6 +19,25 @@ const NAME: &str = "test:realistic";
 /// The seed the census reads (42 before the realistic batch's plates, 0.64, whose wider continents
 /// put its bedded ground on flat plains; 7 has bedded hills on both faces).
 const SEED: u64 = 7;
+
+#[path = "support/realistic_seeds.rs"]
+mod realistic_seeds;
+
+/// Real-world scale (0.71): volcanic rock (the vertical, columnar basalt) only at volcanoes, which
+/// a 1× face seldom holds, so the census reads the face's first seed with land and a main volcano
+/// on it (arcs ~70 km apart, hotspots ~90 km).
+fn seed_for(face: dwell_world::Face) -> u64 {
+    use dwell_worldgen::plate_tectonics::PlateTectonics;
+    (0..300u64)
+        .find(|&w| {
+            let t = PlateTectonics::for_seed(face_seed(w, face));
+            realistic_seeds::survey(w, face).0 >= 0.3
+                && t.volcanoes[..t.mains]
+                    .iter()
+                    .any(|v| v.x.hypot(v.z) < 25_000.0 && t.layout.land_edge(v.x, v.z) > 0.0)
+        })
+        .expect("a face with a volcano on land among 300 seeds")
+}
 /// A drop to a neighbouring column at least this tall (m) is a wall: the column is stepped.
 const WALL: f32 = 2.0;
 
@@ -88,7 +107,7 @@ fn share((stepped, n): (usize, usize)) -> f64 {
 dwell_world::both_faces!(
     /// Steps on bedded stacks and vertical rock, none on massive granite, and no global cliffs.
     fn realistic_steps_follow_the_rock(f: FaceFrame) {
-        let seed = face_seed(SEED, f.face);
+        let seed = face_seed(seed_for(f.face), f.face);
         let (shaped, reshaped) = census(&generator(seed, None), 1000);
         // The same land unshaped (strength 0): the steps are the rock's, not the height field's.
         let (plain, _) = census(&generator(seed, Some(0.0)), 1000);
@@ -209,7 +228,7 @@ dwell_world::both_faces!(
     /// 0.64 the owner's straight-edge rule holds off the rock walls' edges: "I'd like the old rule
     /// to apply except for mesa edges".)
     fn bedded_slopes_ramp_between_ledges(f: FaceFrame) {
-        let seed = face_seed(SEED, f.face);
+        let seed = face_seed(seed_for(f.face), f.face);
         let g = generator(seed, None);
         let ledge = g.geology().ledge;
         assert!(ledge >= 1.0, "rocks.json shaping.ledge: {ledge}");
