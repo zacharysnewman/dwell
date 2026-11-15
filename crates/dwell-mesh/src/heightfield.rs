@@ -357,6 +357,23 @@ pub(crate) fn skirt_covers(
         .is_some_and(|b| y as f32 * dwell_world::CELL_H as f32 >= b - 1e-4)
 }
 
+/// Whether the heightfield draws the step between liquid cell `cell` (face-local, chunk-local)
+/// and the same water's cell beside it in column `beside` (padded x, z), so the chunk mesher
+/// leaves out the side face it would draw between them (BUGS.md #177): both cells lie in their
+/// columns' top water ([`crate::mesher::water_runs`]), whose surfaces the grid joins (a step within
+/// `join_m`) or whose skirt runs down to the lower one. A side face the mesh kept there stood across
+/// the joined slope or doubled the skirt, and stayed inside the water while only its levels changed.
+pub(crate) fn surface_draws_step(
+    runs: &[Option<crate::mesher::WaterRun>],
+    [x, y, z]: [i32; 3],
+    [bx, bz]: [i32; 2],
+) -> bool {
+    let run = |x: i32, z: i32| runs[(x + 1) as usize + TILE * (z + 1) as usize];
+    let in_run =
+        |r: Option<crate::mesher::WaterRun>| r.is_some_and(|r| (r.floor..=r.top).contains(&y));
+    in_run(run(x, z)) && in_run(run(bx, bz))
+}
+
 #[cfg(test)]
 #[path = "heightfield_tests.rs"]
 mod tests;

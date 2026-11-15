@@ -3337,7 +3337,6 @@ dwell_world::both_faces!(
                 water_tops: true,
                 cards: true,
                 plants: 100,
-                ..ChunkFlags::default()
             },
         )
         .expect("padded")

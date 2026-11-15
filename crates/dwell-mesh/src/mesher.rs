@@ -2446,6 +2446,12 @@ fn mesh_cells(
                     // is this cell's to draw, or the step shows a slit into the water
                     // (docs/BUGS.md 4).
                     if k.liquid && axis != 1 && same_fluid(&k, &kn) {
+                        // The heightfield's grid and skirts draw it (BUGS.md #177).
+                        if let Some(runs) = &runs
+                            && crate::heightfield::surface_draws_step(runs, cell, [nx, nz])
+                        {
+                            continue;
+                        }
                         let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
                         // Under the water's slope over a step cell, the strip is inside it.
