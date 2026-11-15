@@ -11,7 +11,7 @@ use dwell_world::FaceFrame;
 use crate::sound::ambient;
 
 /// The surroundings the beds read, in the order the shell decodes them (`ambience.ts` `INPUTS`).
-pub const INPUTS: [&str; 10] = [
+pub const INPUTS: [&str; 11] = [
     "altitude",
     "height",
     "open",
@@ -22,6 +22,7 @@ pub const INPUTS: [&str; 10] = [
     "day",
     "fireM",
     "underwater",
+    "rush",
 ];
 
 /// A distance with nothing found (m).
@@ -30,7 +31,9 @@ pub const FAR_M: f64 = 99.0;
 const SIDE: i32 = 4;
 /// How far above the eye a column is read (a roof, a canopy) and how far below it (m).
 const ABOVE_M: f64 = 8.0;
-const BELOW_M: f64 = 40.0;
+/// Below: past the wind bed's full height (shared/sounds `ambience.beds.wind`, 60 m), so a camera
+/// high over the land reads the whole of it (BUGS.md #176).
+const BELOW_M: f64 = 64.0;
 
 /// The listener's surroundings.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -55,11 +58,13 @@ pub struct Listening {
     pub fire_m: f64,
     /// 1 with the eye under a fluid's surface, else 0 ([`hears_underwater`]; the underwater bed).
     pub underwater: f64,
+    /// The level (0–1) of the moving water heard from afar ([`crate::rush`]; the flood bed).
+    pub rush: f64,
 }
 
 impl Listening {
     /// In [`INPUTS`] order.
-    pub fn to_array(&self) -> [f64; 10] {
+    pub fn to_array(&self) -> [f64; 11] {
         [
             self.altitude,
             self.height,
@@ -71,6 +76,7 @@ impl Listening {
             self.day,
             self.fire_m,
             self.underwater,
+            self.rush,
         ]
     }
 }
@@ -158,6 +164,7 @@ pub fn probe(
         day: 0.0,
         fire_m: FAR_M,
         underwater: 0.0,
+        rush: 0.0,
     }
 }
 
@@ -289,12 +296,13 @@ mod tests {
             day: 8.0,
             fire_m: 9.0,
             underwater: 10.0,
+            rush: 11.0,
         };
         assert_eq!(
             l.to_array(),
-            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]
         );
-        assert_eq!(INPUTS.len(), 10);
+        assert_eq!(INPUTS.len(), 11);
     }
 
     both_faces!(
