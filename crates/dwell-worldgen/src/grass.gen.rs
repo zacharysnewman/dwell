@@ -19,4 +19,14 @@ pub const GRASS: GrassData = GrassData {
         GrassStage { value: "2", days: 4.0, share: 0.4 },
         GrassStage { value: "3", days: 0.0, share: 0.6 },
     ],
+    height: GrassHeight {
+        stalk: "stalk",
+        days_per_cell: 1.5,
+        cells: &[
+            GrassCells { share: 0.0, cells: 1 },
+            GrassCells { share: 0.7, cells: 2 },
+            GrassCells { share: 0.8, cells: 3 },
+            GrassCells { share: 0.9, cells: 4 },
+        ],
+    },
 };

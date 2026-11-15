@@ -2981,6 +2981,37 @@ dwell_world::both_faces!(
             "taller stage by stage: {tops:?}"
         );
         assert_eq!(dwell_blocks::info(stages[3]).cross.unwrap().height, 0.85);
+        // A stand's lower cell (up to 2 m, WORK_QUEUE item 58 g): full blades reaching into the
+        // cell over it, so the stand reads as one; its box stays in its own cell.
+        let stalk = dwell_blocks::with_property(grass_block, "stage", "stalk").expect("a stalk");
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        for x in 0..8 {
+            source.set_voxel(o[0] + 4 + x, o[1] + 4, o[2] + 4, cube_block());
+            source.set_voxel(o[0] + 4 + x, o[1] + 5, o[2] + 4, stalk);
+            source.set_voxel(o[0] + 4 + x, o[1] + 6, o[2] + 4, grass_block);
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).cutout);
+        let top_of = |y0: f32| {
+            m.positions
+                .iter()
+                .skip(1)
+                .step_by(3)
+                .copied()
+                .filter(|&y| y < y0 + 1.5)
+                .fold(f32::MIN, f32::max)
+                - y0
+        };
+        let h = dwell_blocks::info(stalk).cross.unwrap();
+        let drawn = top_of(5.0);
+        assert!(
+            drawn > 1.0 && drawn <= h.height + 1e-4,
+            "a stalk reaches into the cell over it: {drawn}"
+        );
+        assert!(
+            dwell_blocks::info(stalk)
+                .selection
+                .is_none_or(|b| b[4] <= 1.0)
+        );
     }
 );
 

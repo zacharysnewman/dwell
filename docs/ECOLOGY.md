@@ -541,19 +541,36 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   stage (fibre 25–100 %, seed 0–50 %). **Generation** places each tuft at its column's top stage
   (`grass::generated_tuft`, the decoration's undergrowth factor as the share): the default world (one
   biome, share 1) is unchanged; a world of several biomes gets shorter grass where it is dry (the starter: a
-  change to the terrain its seed generates, re-pinned, for the owner's next line). Full
-  height is still one ½ m cell's 0.85; a ~1 m stand needs a two-cell top for the tallest climates
-  (later).
+  change to the terrain its seed generates, re-pinned, for the owner's next line). A first cell's
+  full height is one ½ m cell's 0.85; taller stands grow over the days (next).
+- **Up to 2 m** (owner, 2026-11-14: "I'm not seeing grass taller than 1 though is it pretty slow?" →
+  "Oh it's supposed to be growing up to 2m"; WORK_QUEUE item 58 g): a stand is a **column of up to four
+  ½ m cells** of tall grass, its lower cells **stalks** (the `stage` value `stalk`, added: an older build
+  reads it as full height, ADR 0063) and its top cell the stages' tip. grass.json's `height` drives it
+  (`gen.mjs` `validateGrassHeight`): a column whose tip is full and whose climate allows another cell
+  (`cells`: bands of the share and their most cells, `0` → 1, `0.7` → 2, `0.8` → 3, `0.9` → 4; a band over 1
+  cell needs the share of full height) starts one when the cell over it is air with `openAbove` cells of
+  air over that, and air or tall grass as generated (a player's block wins): its tip becomes a stalk,
+  the cell over it a sprout. Over the first cell a column takes `order.length` steps (a stage, or a new
+  cell) per `daysPerCell` (1.5) days, the whole steps every day and the rest by a roll hashed on (seed,
+  day, face-local tip), so a lush meadow's full tufts reach ~1 m in a day or two and 2 m in about 4½
+  days; the first cell keeps the stages' days. Only a column standing on the rule's ground grows past a
+  cell (a tuft placed on dirt or stone stays one). The chunk holding a column's tip grows it (into the
+  chunk over it, when loaded). Drawn: a stalk's blades are `cross.heights` 1.33 of its cell, reaching
+  into the cell above so the stand reads as one (`cross.heights` may now be up to 2; the selection box
+  stays in its cell). **Cut**: tall grass stands on tall grass (`placeOn`), so cutting any cell takes
+  the cells over it by the support rule (WORK_QUEUE item 58 b), each dropping its fibre; the seed and
+  the gem come only from the tip (`when`); a stalk left on top is made a tip again by the next day's
+  step. **Eaten**: a grazer's bite at a stand's foot leaves a sprout and eats the cells over it
+  (`Server::eaten_stand`). **Generation is unchanged** (one cell a tuft): meadows grow tall over their
+  first days in a world that grows grass.
 - **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
   grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
   (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
   meadows don't change under their players; a world keeps its own after. Not a compatibility change:
   worldgen, the goldens and the protocol are unchanged (growth writes ordinary block edits).
 - **Not yet**: a setting in the world's menu; grass on a chunk's edge cells seeded only from loaded
-  neighbours; **grass up to 2 m** (owner, 2026-11-14: "I'm not seeing grass taller than 1 though is it
-  pretty slow?" → "Oh it's supposed to be growing up to 2m"): a column of up to four ½ m cells grown a cell
-  at a time once the one below is full, capped by the climate's share (data in `shared/worldgen/grass.json`),
-  cut whole above the cell cut (WORK_QUEUE item 58, the next change).
+  neighbours.
 
 Tests: `cargo test -p dwell-worldgen --test grass` (both faces): a meadow spreads over days toward
 `maxDensity` and never onto an infertile column; a dry stretch (share 0.1) stays sparse and share 0
@@ -574,4 +591,11 @@ grass.json validates, bad entries fail naming the field (the stages too). Growin
 `a_broken_tufts_drops_follow_its_growth_stage`, `dwell-protocol`
 `taller_tall_grass_drops_more_fiber_and_seeds`; `dwell-mesh`
 `tall_grass_draws_each_growth_stage_at_its_height` (both faces); `client/src/world/blocksGen.test.ts`
-and `shared/inventory/gen.test.mjs` the `cross.heights` and `when` data.
+and `shared/inventory/gen.test.mjs` the `cross.heights` and `when` data. Up to 2 m: `cargo test -p
+dwell-worldgen --test grass` `the_climate_caps_a_stands_cells_by_data`, and (both faces)
+`a_lush_meadow_grows_to_two_metres_over_a_few_days`, `a_dry_column_stops_at_its_cap`,
+`a_column_stops_under_a_players_block_and_off_its_ground`, `a_cut_column_grows_back_from_what_stands`,
+`a_stands_height_by_data_alone`; `cargo test -p dwell-sim --test grass`
+`the_server_grows_a_lush_stand_to_two_metres_and_a_bite_takes_it`, `--test items`
+`cutting_a_stand_takes_the_cells_over_it_and_drops_a_fibre_a_cell` (both faces); `dwell-mesh`
+`tall_grass_draws_each_growth_stage_at_its_height` (the stalk); `gen.test.mjs` the `height` data.

@@ -842,6 +842,49 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// A stand of tall grass up to 2 m (WORK_QUEUE item 58 g): cutting any cell cuts the cells over
+    /// it, each dropping its fibre ("Cutting grass that's taller than 1 gives +1 plant fiber each"),
+    /// and the seed only from the tip; what is under the cut stands.
+    fn cutting_a_stand_takes_the_cells_over_it_and_drops_a_fibre_a_cell(f: FaceFrame) {
+        for (cut, gone) in [(0, 4), (1, 3), (2, 2)] {
+            let mut fx = scene(f, "adventure");
+            set_local(&mut fx, f, [2, BASE - 1, 0], "dwell:grass");
+            for k in 0..3 {
+                set_local(
+                    &mut fx,
+                    f,
+                    [2, BASE + k, 0],
+                    "dwell:tall_grass[stage=stalk]",
+                );
+            }
+            set_local(&mut fx, f, [2, BASE + 3, 0], "dwell:tall_grass[stage=3]");
+            edit(&mut fx, f, BlockEditAction::Break, [2, BASE + cut, 0], 0);
+            let tall = dwell_blocks::require("dwell:tall_grass");
+            for k in 0..4 {
+                let s = local_state(&mut fx, f, [2, BASE + k, 0]);
+                let stands = s != f.state(0)
+                    && dwell_blocks::block_of(f.state(s)).name == "dwell:tall_grass";
+                assert_eq!(
+                    stands,
+                    k < cut,
+                    "cut at {cut}: cell {k} ({s}, tall grass {tall})"
+                );
+            }
+            assert_eq!(
+                loose_count(&fx, "dwell:grass_fiber"),
+                gone,
+                "cut at {cut}: a fibre a cell; loose {:?}",
+                fx.server.loose_items()
+            );
+            assert!(
+                loose_count(&fx, "dwell:grass_seed") <= 1,
+                "a seed from the tip only"
+            );
+        }
+    }
+);
+
+dwell_world::both_faces!(
     /// A block added by data alone (`test:moss`: `needsSupport: below`, standing on itself too)
     /// gets the rule, up its column: three of it on a stone drop three when the stone goes, by a
     /// break or by a region's clearing.

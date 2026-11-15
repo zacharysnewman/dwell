@@ -71,7 +71,8 @@ function selectionOf(d, values) {
   const raw = d.selectionBox;
   if (!raw) return raw;
   const scale = d.cross?.heights ? crossHeightOf(d, values) / (d.cross.height ?? 1) : 1;
-  const b = scale === 1 ? raw : [raw[0], raw[1], raw[2], raw[3], +(raw[1] + (raw[4] - raw[1]) * scale).toFixed(4), raw[5]];
+  // Never past the cell's top (a stalk drawn into the cell above is aimed at in its own cell).
+  const b = scale === 1 ? raw : [raw[0], raw[1], raw[2], raw[3], +Math.min(1, raw[1] + (raw[4] - raw[1]) * scale).toFixed(4), raw[5]];
   if (!d.facingProperty) return b;
   const turn = TURN[values[d.facingProperty]];
   const [ax, az] = turn(b[0], b[2]);
@@ -395,7 +396,8 @@ for (const ns of namespaces) {
       if (!ramp && !def.axisProperty) fail(`${id}: crossSection needs an axisProperty (the octagon lies across its axis)`);
     }
     // Heights (docs/ECOLOGY.md §10, a plant's growth stages): a property whose values give the
-    // cross's height (a fraction of the cell, in (0, 1]); its default (first) value must be the
+    // cross's height (a fraction of the cell, in (0, 2]: past 1 a stalk reaching into the cell above,
+    // tall grass's lower cells, WORK_QUEUE item 58 g); its default (first) value must be the
     // block's `cross.height`, so a state placed or generated without the property draws as before.
     // The state's selection box is scaled with it (`selectionOf`).
     if (def.cross?.heights !== undefined) {
@@ -406,7 +408,7 @@ for (const ns of namespaces) {
       if (typeof heights !== 'object' || heights === null) fail(`${id}: cross.heights.heights must map each value to a height`);
       for (const v of p.values) {
         const h = heights[v];
-        if (typeof h !== 'number' || !(h > 0 && h <= 1)) fail(`${id}: cross.heights.heights.${v} must be a number in (0, 1]`);
+        if (typeof h !== 'number' || !(h > 0 && h <= 2)) fail(`${id}: cross.heights.heights.${v} must be a number in (0, 2]`);
       }
       if (Object.keys(heights).some((v) => !p.values.includes(v))) fail(`${id}: cross.heights.heights names a value the property lacks`);
       if (heights[p.values[0]] !== (def.cross.height ?? 1)) fail(`${id}: cross.heights: the default value ${p.values[0]} must be cross.height (as before)`);

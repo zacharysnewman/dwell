@@ -302,10 +302,10 @@
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
-      "$drops": "Owner, 2026-11-14: \"grass fiber should be a guaranteed drop, seeds will be 50%\" and \"Cutting grass that's taller than 1 gives +1 plant fiber each\": one fibre for each ½ m cell (a taller stand's cells go with the cell under them, each dropping its own), a seed at 50 %, at every stage; the gem from a full tuft as before.",
+      "$drops": "Owner, 2026-11-14: \"grass fiber should be a guaranteed drop, seeds will be 50%\" and \"Cutting grass that's taller than 1 gives +1 plant fiber each\": one fibre for each ½ m cell (a taller stand's cells go with the cell under them, each dropping its own), a seed at 50 %, at every stage; the gem from a full tuft as before. A stand up to 2 m (WORK_QUEUE item 58 g): its lower cells are stalks (`stage` `stalk`), each dropping its fibre; the seed and the gem come from its top cell only.",
       "drops": [
         { "item": "dwell:grass_fiber" },
-        { "item": "dwell:grass_seed", "chance": 0.5 },
+        { "item": "dwell:grass_seed", "chance": 0.5, "when": { "stage": ["3", "2", "1", "0"] } },
         { "chance": 0.125, "when": { "stage": ["3"] }, "pick": [{ "item": "dwell:gem", "weight": 95 }, { "item": "dwell:gem_large", "weight": 5 }] }
       ],
       "sound": "dwell:grass",
@@ -314,13 +314,13 @@
       "placeable": true,
       "look": "cross",
       "render": "cutout",
-      "properties": { "stage": ["3", "2", "1", "0"] },
+      "properties": { "stage": ["3", "2", "1", "0", "stalk"] },
       "cross": {
         "height": 0.85,
         "heights": {
-          "$comment": "Growth stages (docs/ECOLOGY.md §10, shared/worldgen/grass.json `stages`): a sprout (0) to full height (3, the default: tall grass placed, or saved before stages, is full).",
+          "$comment": "Growth stages (docs/ECOLOGY.md §10, shared/worldgen/grass.json `stages`): a sprout (0) to full height (3, the default: tall grass placed, or saved before stages, is full). `stalk` is a lower cell of a stand up to 2 m (grass.json `height`): full blades drawn a third past the cell's top, so the cell above's blades rise out of them without a gap.",
           "property": "stage",
-          "heights": { "0": 0.25, "1": 0.45, "2": 0.65, "3": 0.85 }
+          "heights": { "0": 0.25, "1": 0.45, "2": 0.65, "3": 0.85, "stalk": 1.33 }
         },
         "quads": 2,
         "jitter": {
@@ -352,8 +352,10 @@
         "dwell:grass",
         "dwell:dirt",
         "dwell:grass_ramp",
-        "dwell:dirt_ramp"
+        "dwell:dirt_ramp",
+        "dwell:tall_grass"
       ],
+      "$placeOn": "On tall grass too: a stand up to 2 m is a column of cells, each standing on the one under it, so cutting one takes the cells above it (WORK_QUEUE item 58 g).",
       "needsSupport": "below",
       "replaceable": true,
       "medium": "air",

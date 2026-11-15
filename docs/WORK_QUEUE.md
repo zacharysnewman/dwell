@@ -3447,8 +3447,10 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (g) **"I'm not seeing grass taller than 1 though is it pretty slow?"** → **"Oh it's supposed to be growing up to
    2m"**: tall grass grows up to 2 m, up to four ½ m cells stacked, a cell at a time once the one below is full,
    capped by the climate's share (data in `shared/worldgen/grass.json`: max cells per share band, days per cell),
-   cutting any cell cuts the column above it (and drops its fibre, one a cell). **Not built in this change**: the
-   next one (ECOLOGY.md §10 "Not yet").
+   cutting any cell cuts the column above it (and drops its fibre, one a cell). **Built** (branch
+   `claude/grass-2m`, ECOLOGY.md §10 "Up to 2 m"): grass.json `height` (stalk cells, `daysPerCell` 1.5, share
+   bands 0 → 1 cell, 0.7 → 2, 0.8 → 3, 0.9 → 4); generation unchanged, so meadows grow tall over their first
+   days; a grazer's bite eats the stand.
    **Owner should see:** a lush meadow's grass reaching about 2 m over a few in-game days, a dry steppe's staying
    short.
 
