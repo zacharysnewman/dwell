@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.0",
+      "changes": [
+        "A new compatibility line for Realistic worlds, now at real-world scale: plates hundreds to thousands of km across, so a world's size decides how many it holds",
+        "A standard Realistic world is one coherent region, its climate changing about one degree of latitude across it; a 10x world spans several plates and climate bands",
+        "Volcanoes stand tens of km apart; rain shadows are drier but never dead; coasts are milder in the cold",
+        "Rock lies in broad ordered units (sedimentary cover, granite bodies), with volcanic rock only at volcanoes and rifts",
+        "Some Realistic worlds are open ocean with islands: that is the plates' doing"
+      ]
+    },
+    {
       "version": "0.70.0",
       "changes": [
         "A new compatibility line for Realistic worlds: their ground redrawn from the seed",

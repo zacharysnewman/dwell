@@ -1047,6 +1047,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    climate bands from its latitude span; volcanoes tens of km apart; lee sides drier, not desert-dead; rock as
    ordered layers (sedimentary cover over basement, granite bodies, volcanic rock only at volcanoes); mesas where
    flat beds, uplift and a dry climate meet.
+   **Built on `claude/realistic-scale` (the 0.71 line; awaiting the maps at 1× and 10×):** plates in real km (centres
+   within 2000 km, at least 400 km apart; `examples/realistic_scale.rs`, 50 seeds at 1×, 10 at 10×): plates per 1×
+   face 6.6 → 1.1 (87 of 100 faces on one plate), boundaries 10.9 → 0.2; at 10× 8.6 → 3.0 plates and 16.7 → 3.0
+   boundaries; latitude `degreesPerKm` 0.009 round each face's own latitude (10–14° per face → 0.9° at 1×, 9° at 10×);
+   volcanoes 2.6 → 75 km apart (arcs 70 km, chains 90 km; 0.15 of arc cones active); hotspots anywhere in the plates'
+   disc (the `within` centring gone); a continent's own passive-margin coast (`margins`); the lee keeps 0.4 of the flat
+   rain (0.016 → 0.12 on a ridge fixture) and the air takes moisture back over land (`recoverM`); the rain noise nearly
+   off and the temperature's ±3.5 / ±1.5 °C → ±0.6 / ±0.3; maritime moderation (+4 °C at the coast for ground under
+   10 °C); rock in ordered units (3.6 → 1.45 units per 2 × 2 km, basalt only at volcanoes and rifts, granite as
+   discrete bodies); Realistic maps at any size (`WorldMap::for_height_sized`, `realistic_map --size 10`). Ocean faces
+   (under 5 % land) at 1×: 25 % of 100 faces (continental weight 0.7, data). Not done: mesas without the biome's
+   `rockStack` (the mesa palette is tied to that stack), relief caps by setting, the boundary landforms' widths in
+   real km (a 10× range is still 3.5 km wide).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

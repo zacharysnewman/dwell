@@ -10,8 +10,8 @@
     "height": {
       "sapling": 0.5,
       "mature": [
-        0.5,
-        1
+        1,
+        1.5
       ]
     },
     "heightStep": 0.5,

@@ -952,7 +952,7 @@ mod tests {
                     assert!((PLATES.age[0]..=PLATES.age[1]).contains(&p.age));
                     assert!(dist2(p.centre, [0.0, 0.0]) <= PLATES.centres * PLATES.centres);
                 }
-                assert!(!l.boundaries.is_empty(), "seed {seed}: plates meet");
+                // Real-world scale (0.71): a face may lie on one plate, with no boundary.
                 for b in &l.boundaries {
                     let [p, q] = b.plates.map(|i| l.plates[i]);
                     assert_eq!(b.meeting, classify(&p, &q, PLATES.transform_below));
@@ -978,8 +978,14 @@ mod tests {
                     assert!(l.coast_distance(x * 1.01, z * 1.01) <= -PLATES.rim.edge_coast);
                 }
                 assert!(!l.is_land(0.0, -PLATES.reach - 1000.0));
-                // No sliver plates: each plate has its kind's interior.
-                for (d, p) in l.interiors().iter().zip(&l.plates) {
+                // No sliver plates: each plate reaching the disc has its kind's interior (0.71:
+                // the plates beyond a small face have none in it).
+                for (d, p) in l
+                    .interiors()
+                    .iter()
+                    .zip(&l.plates)
+                    .filter(|(d, _)| **d > 0.0)
+                {
                     let need = match p.kind {
                         PlateKind::Oceanic => PLATES.oceanic.interior,
                         PlateKind::Continental => PLATES.continental.interior,

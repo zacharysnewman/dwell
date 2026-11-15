@@ -512,12 +512,16 @@ mod tests {
 
     #[test]
     fn the_band_spans_the_map_north_to_south_and_height_cools() {
+        // Real-world scale (0.71): the face's own latitude in its band at the centre, and
+        // `degreesPerKm` north and south of it.
         let c = Climate::for_seed(3);
         let (nx, nz) = c.north_vector();
         let r = c.radius;
         let [lo, hi] = c.band().latitude;
-        assert!((c.latitude(-nx * r, -nz * r) - lo).abs() < 1e-9);
-        assert!((c.latitude(nx * r, nz * r) - hi).abs() < 1e-9);
+        assert!((lo..=hi).contains(&c.centre), "{} in {lo}..{hi}", c.centre);
+        let d = RULES.degrees_per_km * r / 1000.0;
+        assert!((c.latitude(-nx * r, -nz * r) - (c.centre - d)).abs() < 1e-9);
+        assert!((c.latitude(nx * r, nz * r) - (c.centre + d)).abs() < 1e-9);
         assert!(c.sea_level_c(nx * r, nz * r) < c.sea_level_c(-nx * r, -nz * r));
         let sea = c.temperature_c(0.0, 0.0, 0.0);
         let high = c.temperature_c(0.0, 0.0, 2000.0);

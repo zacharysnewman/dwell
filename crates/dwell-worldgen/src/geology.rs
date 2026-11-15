@@ -1365,6 +1365,7 @@ mod plate_province_tests {
         for r in &mut rules {
             if r.setting == PlateSetting::Core {
                 r.stack = "dwell:basalt_flows";
+                r.mix = &[];
             }
         }
         let mut g = GEOLOGY;

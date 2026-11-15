@@ -194,7 +194,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         tops: 0.12,
         cliff_reach: 0.0,
         wet: false,
-        bleed: 30.0,
+        bleed: 0.0,
     },
     Placement {
         name: "talus",
