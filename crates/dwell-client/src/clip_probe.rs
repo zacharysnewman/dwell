@@ -1551,40 +1551,6 @@ mod chop_swing_tests {
     }
 
     #[test]
-    fn the_level_chop_strikes_right_to_left_across_the_screen() {
-        // face-a-only: the first-person screen is view space, the same on both faces (the world
-        // space test below checks both).
-        let r = run("chop_level");
-        let s = within(&r, "strike");
-        let (first, last) = (s[0].at[0].screen, s[s.len() - 1].at[0].screen);
-        assert!(
-            first[0] > 0.3,
-            "the strike starts right of centre: {first:?}\n{}",
-            table(&r)
-        );
-        assert!(
-            last[0] < -0.2,
-            "the strike ends left of centre: {last:?}\n{}",
-            table(&r)
-        );
-        let ph = r.phase("strike").unwrap();
-        assert!(
-            ph.screen[0] < -0.8 && ph.screen[0].abs() > 2.0 * ph.screen[1].abs(),
-            "the strike is mostly leftward: {ph:?}"
-        );
-        for w in s.windows(2) {
-            let dx = w[1].at[0].screen[0] - w[0].at[0].screen[0];
-            assert!(
-                dx < 0.02,
-                "the head never goes back right during the strike: {:.3}→{:.3} s, dx {dx:+.3}\n{}",
-                w[0].t,
-                w[1].t,
-                table(&r)
-            );
-        }
-    }
-
-    #[test]
     fn no_sleeve_shows_at_the_bottom_of_the_screen_through_a_swing() {
         // face-a-only: the first-person screen is view space, the same on both faces. WORK_QUEUE
         // item 17's "blue sleeve blob": the level chop lifts the shoulder in front of the eye from
@@ -1637,96 +1603,6 @@ mod chop_swing_tests {
         }
     }
 
-    #[test]
-    fn the_vertical_chop_strikes_top_to_bottom_across_the_screen() {
-        // face-a-only: view space, as above.
-        let r = run("chop_vertical");
-        let s = within(&r, "strike");
-        let (first, last) = (s[0].at[0].screen, s[s.len() - 1].at[0].screen);
-        assert!(
-            first[1] > 0.4,
-            "the strike starts high: {first:?}\n{}",
-            table(&r)
-        );
-        assert!(
-            last[1] < -0.4,
-            "the strike ends low: {last:?}\n{}",
-            table(&r)
-        );
-        let ph = r.phase("strike").unwrap();
-        assert!(
-            ph.screen[1] < -1.0 && ph.screen[1].abs() > 2.0 * ph.screen[0].abs(),
-            "the strike is mostly downward: {ph:?}"
-        );
-        for w in s.windows(2) {
-            let dy = w[1].at[0].screen[1] - w[0].at[0].screen[1];
-            assert!(
-                dy < 0.02,
-                "the head never goes back up during the strike: {:.3}→{:.3} s, dy {dy:+.3}\n{}",
-                w[0].t,
-                w[1].t,
-                table(&r)
-            );
-        }
-    }
-
-    #[test]
-    fn the_head_meets_the_crosshair_at_contact_in_both_swings() {
-        // face-a-only: view space. The axe has one swing since 2026-11-14 (owner: "like the shovel
-        // and pick, without the multiple modes"): `chop_vertical` is no tool's swing now (the
-        // default vertical role a two-stance tool's data could name), so its level one.
-        {
-            let role = "chop_level";
-            let r = run(role);
-            let c = r.contact_t.expect("a chop has a contact time");
-            let a = r.at(0, c);
-            assert!(
-                a.screen[0].abs() < 0.12 && a.screen[1].abs() < 0.12 && a.screen[2] > 0.3,
-                "{role}: at contact ({c:.3} s) the head is on the crosshair, in front: {a:?}"
-            );
-            // And the strike is the swing's fastest stretch, peaking within it.
-            let ph = r.phase("strike").unwrap();
-            assert!(
-                r.peak_t >= ph.from && r.peak_t <= ph.to,
-                "{role}: the peak speed ({:.1} at {:.3} s) is in the strike {:.2}–{:.2}",
-                r.peak_speed,
-                r.peak_t,
-                ph.from,
-                ph.to
-            );
-        }
-    }
-
-    #[test]
-    fn the_wind_up_goes_the_other_way_and_the_recovery_returns_to_rest() {
-        // face-a-only: view space.
-        for (role, axis) in [("chop_level", 0), ("chop_vertical", 1)] {
-            let r = run(role);
-            let w = r.phase("wind-up").unwrap();
-            let s = r.phase("strike").unwrap();
-            assert!(
-                w.screen[axis] * s.screen[axis] < 0.0 && w.screen[axis].abs() > 0.15,
-                "{role}: the wind-up draws back against the strike: {w:?} vs {s:?}"
-            );
-            let (a, b) = (r.samples[0].at[0], r.samples[r.samples.len() - 1].at[0]);
-            for k in 0..3 {
-                assert!(
-                    (a.local[k] - b.local[k]).abs() < 1e-3,
-                    "{role}: the recovery ends where the swing began: {a:?} vs {b:?}"
-                );
-            }
-            // Never behind or inside the eye: everything held stays in front.
-            for smp in &r.samples {
-                assert!(
-                    smp.at[0].screen[2] > 0.15,
-                    "{role}: the head at {:.3} s is {:.3} m ahead",
-                    smp.t,
-                    smp.at[0].screen[2]
-                );
-            }
-        }
-    }
-
     /// A point's path length (m, the player's frame) over samples.
     fn travel(s: &[&Sample], k: usize) -> f32 {
         s.windows(2)
@@ -1735,46 +1611,6 @@ mod chop_swing_tests {
                 (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt()
             })
             .sum()
-    }
-
-    #[test]
-    fn the_arms_drive_the_strike_not_the_wrist() {
-        // face-a-only: view space. Owner review 2026-11-11: the head's arc was mostly a wrist
-        // turn, the grip and elbow nearly still (the grip went 0.2 m to the head's 1.1 m).
-        for role in ["chop_level", "chop_vertical"] {
-            let mut p = Probe::new(role);
-            p.samples = 121;
-            p.points = vec![Point::ToolHead, Point::Grip];
-            let r = probe(&p).expect("probe");
-            let s = within(&r, "strike");
-            let (head, grip) = (travel(&s, 0), travel(&s, 1));
-            assert!(
-                grip >= 0.4 * head && grip > 0.4,
-                "{role}: the hands travel the arc with the head: grip {grip:.2} m, head {head:.2} m"
-            );
-        }
-    }
-
-    #[test]
-    fn the_edge_faces_its_motion_through_the_strike() {
-        // face-a-only: view space. Owner, 2026-11-11: "Ensure your tooling helps you tell
-        // rotation too": the blade turned the wrong way is a rotation the head's path can't show.
-        // The axe's one swing (owner, 2026-11-14).
-        {
-            let role = "chop_level";
-            let mut p = Probe::new(role);
-            p.samples = 121;
-            let r = probe(&p).expect("probe");
-            for s in within(&r, "strike") {
-                let a = s.orient.blade_vs_motion.expect("an axe has an edge");
-                assert!(
-                    a < 50.0,
-                    "{role}: at {:.3} s the edge faces {a:.0}° off its motion (want < 50°)\n{}",
-                    s.t,
-                    table(&r)
-                );
-            }
-        }
     }
 
     #[test]
@@ -1805,84 +1641,6 @@ mod chop_swing_tests {
             );
         }
     }
-
-    #[test]
-    fn the_level_strike_stays_level_on_screen() {
-        // face-a-only: view space. Round 2's refit drew the head back high off the top right, so
-        // the strike came down diagonally to the crosshair.
-        let mut p = Probe::new("chop_level");
-        p.samples = 121;
-        let r = probe(&p).expect("probe");
-        let s = within(&r, "strike");
-        let (mut dx, mut dy) = (0.0f32, 0.0f32);
-        for w in s.windows(2) {
-            let (a, b) = (w[0].at[0].screen, w[1].at[0].screen);
-            dx += (b[0] - a[0]).abs();
-            dy += (b[1] - a[1]).abs();
-        }
-        let high = s
-            .iter()
-            .map(|x| x.at[0].screen[1].abs())
-            .fold(0.0, f32::max);
-        assert!(
-            dy < 0.3 * dx && high < 0.45,
-            "the level strike runs across, not down: across {dx:.2}, up/down {dy:.2}, \
-             furthest off the crosshair's height {high:.2}\n{}",
-            table(&r)
-        );
-    }
-
-    #[test]
-    fn the_wind_up_draws_back_far_and_long_enough() {
-        // face-a-only: view space. Owner review: a 0.1 s flick with no draw back over the shoulder.
-        for role in ["chop_level", "chop_vertical"] {
-            let mut p = Probe::new(role);
-            p.samples = 121;
-            p.points = vec![Point::ToolHead, Point::Grip];
-            let r = probe(&p).expect("probe");
-            let w = r.phase("wind-up").unwrap();
-            let d = w.to - w.from;
-            assert!(
-                (0.25..=0.35).contains(&d),
-                "{role}: the wind-up takes {d:.2} s (want 0.25–0.35)"
-            );
-            let (a, b) = (r.at(0, w.from).local, r.at(0, w.to).local);
-            let head = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
-            let (a, b) = (r.at(1, w.from).local, r.at(1, w.to).local);
-            let grip = (0..3).map(|i| (b[i] - a[i]).powi(2)).sum::<f32>().sqrt();
-            assert!(
-                head >= 0.45 && grip >= 0.35,
-                "{role}: the wind-up draws the head {head:.2} m and the hands {grip:.2} m back"
-            );
-        }
-    }
-
-    dwell_world::both_faces!(
-        fn the_swings_go_the_same_way_in_the_world_on_either_face(f: FaceFrame) {
-            // The arms are turned into the world by the camera's basis: the level strike moves
-            // the head along the view's left, the vertical one along its down, on either face and
-            // any heading.
-            for yaw in [0.0, 70.0, 200.0] {
-                for (role, way) in [("chop_level", 0usize), ("chop_vertical", 1)] {
-                    let mut p = Probe::new(role);
-                    (p.face, p.yaw, p.pitch) = (f, yaw, -10.0);
-                    let r = probe(&p).expect("probe");
-                    let s = within(&r, "strike");
-                    let (a, b) = (s[0].at[0].world, s[s.len() - 1].at[0].world);
-                    let d: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
-                    let basis = aim(yaw, -10.0, f, 0.0);
-                    let axis = if way == 0 { basis.right } else { basis.up };
-                    let along = (0..3).map(|k| d[k] * axis[k]).sum::<f64>();
-                    assert!(
-                        along < -0.2,
-                        "{role} at yaw {yaw}: the head travels {along:.3} m along the view's \
-                         {} (want left/down)",
-                        if way == 0 { "right" } else { "up" }
-                    );
-                }
-            }
-        }
-    );
 
     /// The sword's own swings (WORK_QUEUE item 35): its `clips` roles, probed holding it.
     const SWORD_SWINGS: [(&str, usize); 2] = [("slash_level", 0), ("slash_overhead", 1)];
@@ -2052,39 +1810,8 @@ mod chop_swing_tests {
     );
 
     #[test]
-    fn others_see_the_same_swing_on_the_body() {
-        // face-a-only: the body's rig is posed face-locally (right, up, ahead of its feet); its
-        // frame (`body_frame`) turns it onto either face like every other body.
-        let r = run("chop_level");
-        let s = r.phase("strike").unwrap();
-        assert!(
-            s.body[0] < -0.6 && s.body[0].abs() > 2.0 * s.body[1].abs(),
-            "the body's level strike sweeps from its right to its left: {s:?}"
-        );
-        let c = r.at(0, r.contact_t.unwrap());
-        assert!(
-            c.body[2] > 0.5 && c.body[0].abs() < 0.15,
-            "at contact the head is in front of the body: {c:?}"
-        );
-        let r = run("chop_vertical");
-        let s = r.phase("strike").unwrap();
-        assert!(
-            s.body[1] < -0.8 && s.body[1].abs() > 2.0 * s.body[0].abs(),
-            "the body's vertical strike comes down: {s:?}"
-        );
-        let w = r.phase("wind-up").unwrap();
-        assert!(w.body[1] > 0.2, "it is raised first: {w:?}");
-        // Both swings play their own body clips, not the generic break.
-        let ch = player();
-        for role in ["chop_level", "chop_vertical"] {
-            let clip = ch.clip(role).map(|i| TABLES.clip(i).name);
-            assert_eq!(clip, Some(&*format!("biped_{role}")), "{role}");
-        }
-    }
-
-    #[test]
     fn the_sheet_draws_every_view_and_the_table_names_the_phases() {
-        let r = run("chop_level");
+        let r = run_sword("slash_level", 63);
         let s = svg(&r, &VIEWS);
         for v in VIEWS {
             assert!(s.contains(view_title(v)), "{v}");
@@ -2102,7 +1829,7 @@ mod chop_swing_tests {
     #[test]
     fn the_probe_prints_the_cameras_sway_turning_left_through_the_level_strike() {
         // Each chop sample carries the view's sway (CHARACTERS.md §5.2), at rest at both ends.
-        let r = run("chop_level");
+        let r = run_sword("slash_level", 63);
         let cams: Vec<_> = r
             .samples
             .iter()
@@ -2129,117 +1856,6 @@ mod chop_swing_tests {
         assert!(run("break").samples.iter().all(|s| s.camera.is_none()));
     }
 
-    /// The tool head's first-person screen place (NDC x, y) each frame (60 fps) of one swing of
-    /// the stone axe played through the arms' animator as the game drives it
-    /// (`crate::chop::SwingRun::arms` applied each frame, `game.rs` `update_swing_run`), its path
-    /// meeting something at arc step `hit` (none: a miss), from its start to 1 s past its end.
-    fn played(role: &str, hit: Option<u32>) -> Vec<[f32; 2]> {
-        let ch = player();
-        let fp = ch.first_person.expect("first person");
-        let tan = (f64::from(fp.fov).to_radians() / 2.0).tan() as f32;
-        let tool = dwell_protocol::chopping::tool("dwell:stone_axe").expect("the axe");
-        let vertical = role == "chop_vertical";
-        let held = held_for(Some("dwell:stone_axe"), role);
-        let (bone, q) = local_point(held, Point::ToolHead).expect("a head");
-        let impact = hit.map(|step| crate::chop::Impact {
-            cell: [0, 0, 0],
-            face: 0,
-            point: [0.0; 3],
-            step,
-            wood: true,
-        });
-        let mut run = crate::chop::SwingRun::new(tool, vertical, 0.0, impact);
-        let input = MoveInput {
-            holding: true,
-            ..Default::default()
-        };
-        let mut a = Animator::new(&TABLES, ch, Space::Arms);
-        a.update(&input, 0.0);
-        a.swing(swing_of(role).unwrap());
-        let dt = 1.0 / 60.0;
-        let frames = ((run.length() + 1.0) / dt) as usize;
-        let mut live = true;
-        (0..frames)
-            .map(|i| {
-                let now_ms = i as f64 * dt * 1000.0;
-                if live {
-                    let d = run.arms(now_ms);
-                    d.apply(&mut a);
-                    live = d != crate::chop::ArmsDrive::Release;
-                    let _ = run.take_impact(now_ms);
-                }
-                let pose = a.update(&input, dt as f32);
-                let hold = held.item().and_then(|(n, _)| ch.item(n));
-                let v = arm_transforms(ch, &with_item(&pose, hold))[bone].apply(q);
-                let z = v[2].max(1e-3);
-                [-v[0] / (z * tan * 16.0 / 9.0), v[1] / (z * tan)]
-            })
-            .collect()
-    }
-
-    /// The strokes along one screen axis (`axis` 0 x, 1 y) going the strike's way (`sign` −1:
-    /// toward −): each stretch moving that way by more than `min` NDC in all, a stroke.
-    fn strokes(path: &[[f32; 2]], axis: usize, sign: f32, min: f32) -> Vec<(usize, f32)> {
-        let mut out = Vec::new();
-        let (mut from, mut run) = (0, 0.0f32);
-        for (i, w) in path.windows(2).enumerate() {
-            let d = (w[1][axis] - w[0][axis]) * sign;
-            if d > 1e-4 {
-                if run == 0.0 {
-                    from = i;
-                }
-                run += d;
-            } else if d < -1e-4 || i + 2 == path.len() {
-                if run > min {
-                    out.push((from, run));
-                }
-                run = 0.0;
-            }
-        }
-        if run > min {
-            out.push((from, run));
-        }
-        out
-    }
-
-    // BUGS.md #93 (owner, 2026-11-12: "For vertical swings on axe, sword, etc, it sort of double
-    // swings"; "The animation double swings"): one vertical swing must draw one down-stroke, a hit
-    // (the head stopped in the wood: the hit-stop, the pull-out) as well as a miss, and nothing
-    // after it ends. Before the fix a hit's pull-out played the clip backwards from contact to its
-    // start (the head back up over the shoulder and down again), and at its end the arms' clip was
-    // let go at that start and played on by itself: the whole swing a second time.
-    // face-a-only: the first-person screen (view space; the arms never depend on the face).
-    #[test]
-    fn one_swing_draws_one_stroke_hit_or_miss() {
-        let mid = swing_def(Some("dwell:stone_axe"), "chop_vertical")
-            .map(|s| s.samples / 2)
-            .unwrap();
-        for hit in [None, Some(mid), Some(2)] {
-            let v = played("chop_vertical", hit);
-            let downs = strokes(&v, 1, -1.0, 0.8);
-            assert_eq!(
-                downs.len(),
-                1,
-                "vertical, hit {hit:?}: one down-stroke, got {downs:?}\n{v:?}"
-            );
-            // And it ends at rest (the clip's first key, the idle arms' sway aside) and stays there.
-            let rest = v[0];
-            for p in &v[v.len() - 20..] {
-                assert!(
-                    (p[0] - rest[0]).abs() < 0.2 && (p[1] - rest[1]).abs() < 0.2,
-                    "vertical, hit {hit:?}: back at rest {rest:?} after the swing, at {p:?}"
-                );
-            }
-            // Level swings: one right → left stroke too.
-            let l = played("chop_level", hit);
-            let lefts = strokes(&l, 0, -1.0, 0.8);
-            assert_eq!(
-                lefts.len(),
-                1,
-                "level, hit {hit:?}: one right → left stroke, got {lefts:?}\n{l:?}"
-            );
-        }
-    }
 }
 
 #[cfg(test)]

@@ -966,16 +966,17 @@ mod tests {
     );
 
     dwell_world::both_faces!(
-        /// A log hit by the axe through block damage (WORK_QUEUE item 51) is carved with the axe's
-        /// bites at its marks, grown by the bite rule: after k of its n hits the closed mesh has
-        /// lost k × ½ ÷ n of the log's own volume (the octagon's), within 10 %; undamaged, it is
-        /// the plain log; on both faces.
-        fn a_damaged_log_is_carved_by_its_marks_k_bites_after_k_hits(f: FaceFrame) {
+        /// A log hit by the axe takes block damage as any block (owner, 2026-11-15: the axe "was
+        /// different from the other tools"; BLOCK_DAMAGE.md §14): no bites, no notch. After k of
+        /// its n hits the closed mesh is the whole octagon (its volume and triangles the plain
+        /// log's), and past its look's first crack stage its faces carry the wood's cracks; on
+        /// both faces.
+        fn a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage(f: FaceFrame) {
             let local = [3, 5, 4];
             let py = |y: u8| if f == FaceFrame::B { 255 - y } else { y };
             // On −x (face 1), the lower and upper bands, across z.
             let spots = [[0, 64, 128], [0, 190, 90], [0, 64, 170], [0, 190, 140]];
-            let volume = |k: u32, n: u32| -> (f64, usize) {
+            let mesh = |k: u32, n: u32| {
                 let marks: Vec<_> = spots
                     .iter()
                     .cycle()
@@ -983,33 +984,45 @@ mod tests {
                     .map(|p| (1u8, [p[0], py(p[1]), p[2]]))
                     .collect();
                 let frac = (255.0 * f64::from(k) / f64::from(n)).round() as u8;
-                let (pts, tris) = mesh_one(f, "dwell:log", local, &marks, frac);
-                let v: f64 = tris
-                    .iter()
-                    .map(|t| {
-                        let [a, b, c] = t.map(|i| pts[i as usize]);
-                        let bc = [
-                            b[1] * c[2] - b[2] * c[1],
-                            b[2] * c[0] - b[0] * c[2],
-                            b[0] * c[1] - b[1] * c[0],
-                        ];
-                        (a[0] * bc[0] + a[1] * bc[1] + a[2] * bc[2]) / 6.0
-                    })
-                    .sum::<f64>()
-                    .abs();
-                (v, tris.len())
+                let cell = world_cell(f, local);
+                let mut padded = vec![0u16; PADDED_VOLUME];
+                padded[padded_index(cell[0], cell[1], cell[2])] =
+                    dwell_blocks::require("dwell:log");
+                let view = DamageView {
+                    fraction: frac,
+                    marks: marks
+                        .iter()
+                        .map(|&(face, point)| HitMark::at(world_face(f, face), point))
+                        .collect(),
+                };
+                mesh_chunk_damaged(
+                    &padded,
+                    &[],
+                    f == FaceFrame::B,
+                    [0, 0, 0],
+                    &[],
+                    None,
+                    ChunkFlags::default(),
+                    &[(cell, view)],
+                )
+                .expect("padded volume")
+                .opaque
             };
             let n = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
                 .expect("an axe breaks a log");
-            let (whole, _) = volume(0, n);
+            let whole = mesh(0, n);
+            assert!(whole.cracks.iter().all(|c| *c == 0), "undamaged: no cracks");
+            let look = dwell_protocol::damage::look_of("dwell:log").expect("the log's look");
+            let first = look.cracks.expect("wood cracks").stages[0];
             for k in 1..n {
-                let (v, _) = volume(k, n);
-
-                let got = (whole - v) / whole;
-                let want = 0.5 * f64::from(k) / f64::from(n);
-                assert!(
-                    (got - want).abs() < 0.1 * want,
-                    "{k} of {n} hits carved {got:.4} of the log, the rule {want:.4}"
+                let m = mesh(k, n);
+                assert_eq!(m.positions, whole.positions, "{k} of {n}: the whole octagon");
+                assert_eq!(m.indices, whole.indices, "{k} of {n}: its triangles");
+                let cracked = m.cracks.iter().any(|c| (c >> 16) & 0xff != 0);
+                assert_eq!(
+                    cracked,
+                    f64::from(k) / f64::from(n) >= first,
+                    "{k} of {n}: cracks past {first}"
                 );
             }
         }

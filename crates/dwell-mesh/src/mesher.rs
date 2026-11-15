@@ -1089,28 +1089,9 @@ const CUT_SHADE: f64 = 0.55;
 /// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
 /// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
 /// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
-/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
-/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell (the server's `log_span`).
-fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
-    match dwell_blocks::octagon::section_of(m) {
-        Some((section, _)) if grain == 1 && section.width < 1.0 => {
-            let w = f64::from(section.width).clamp(0.05, 1.0);
-            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
-        }
-        _ => [0.0, 1.0],
-    }
-}
-
-/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 51), its cut made of its marks
-/// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
-fn carved_voxel(
-    b: &mut Builder,
-    cells: &Cells<'_>,
-    k: &Kind,
-    cell: [i32; 3],
-    cut: &Cut,
-    damage: Option<f64>,
-) {
+/// Only an older server's cuts are drawn so (this build cuts no wood: the axe takes block damage,
+/// docs/BLOCK_DAMAGE.md §14).
+fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
     let grain = k.style.axis;
     let wood = dwell_protocol::chopping::wood(k.style.block);
     let look = wood.map_or(
@@ -1137,13 +1118,12 @@ fn carved_voxel(
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
         // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
-        let progress =
-            damage.unwrap_or_else(|| wood.map_or(cut.cross(grain), |w| cut.progress(w, grain)));
+        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
         carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };
-    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell, damage));
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell));
     for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
@@ -1226,7 +1206,6 @@ fn cut_cracks(
     grain: usize,
     cut: &Cut,
     cell: [i32; 3],
-    damage: Option<f64>,
 ) -> Option<damage_mesh::CrackLayer> {
     use dwell_protocol::chopping::side_axis;
     let cracks = look.cracks.as_ref()?;
@@ -1235,7 +1214,7 @@ fn cut_cracks(
     } else {
         wood.buck_fraction
     };
-    let fraction = damage.unwrap_or_else(|| (cut.cross(grain) / through.max(1e-6)).min(1.0));
+    let fraction = (cut.cross(grain) / through.max(1e-6)).min(1.0);
     let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
     let side = cut.deepest(grain)?;
     let bite = cut.bites[side].all().last()?;
@@ -1251,8 +1230,17 @@ fn cut_cracks(
 
 /// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
 /// squared off where it joins a neighbour. Bark on the sides and chamfers, end grain on the caps;
-/// each face lit by the sky its side sees (a chamfer: the mean of its two sides').
-fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell: [i32; 3]) {
+/// each face lit by the sky its side sees (a chamfer: the mean of its two sides'). A damaged one
+/// (`crack`: its damage look's crack layer and its hits) carries the cracks on every face drawn,
+/// centred per face on the hit on it or nearest it, as a damaged cube's (BLOCK_DAMAGE.md §6.3).
+fn octagon_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    m: StateId,
+    cell: [i32; 3],
+    crack: Option<(&damage_mesh::CrackLayer, &[HitMark])>,
+) {
     use dwell_blocks::octagon::{Part as Oct, cap_pieces, joined_mask, open_faces, section_of};
     let [x, y, z] = cell;
     let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
@@ -1356,6 +1344,10 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
                 [l0[0].max(l1[0]), l0[1].max(l1[1])]
             })
             .collect();
+        if crack.is_some() {
+            let n = b.vertex_count() as usize;
+            b.m.cracks.resize(n, 0);
+        }
         let first = b.m.uvs.len();
         b.polygon(
             &f.pts,
@@ -1367,6 +1359,17 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
             None,
             Some((&light, &flood)),
         );
+        if let Some((layer, marks)) = crack {
+            let face = sides[0];
+            let c = layer.for_face(face, marks);
+            let (pu, pv) = damage_mesh::plane_axes(face / 2);
+            let metres = |p: &[f64; 3], a: usize| p[a] * if a == 1 { CELL_H } else { 1.0 };
+            b.m.cracks.extend(
+                f.pts
+                    .iter()
+                    .map(|p| c.pack(face, [metres(p, pu), metres(p, pv)])),
+            );
+        }
         if tile.turn {
             for uv in b.m.uvs[first..].chunks_exact_mut(2) {
                 uv.swap(0, 1);
@@ -2338,29 +2341,24 @@ fn mesh_cells(
         .map(|(i, (c, _, _))| (*c, i))
         .collect();
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
-    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 51) is drawn
-    // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
-    // octagon's carve. A cell with an older save's cut keeps the cut's.
-    let mut progress: HashMap<[i32; 3], f64> = HashMap::new();
-    let mut carved = carved.clone();
+    // A damaged octagonal log (hit by the axe through block damage, as any block; owner,
+    // 2026-11-15: the axe "was different from the other tools") is drawn whole, its damage look's
+    // cracks over its faces by the damage, centred on the hits (BLOCK_DAMAGE.md §14): no bites,
+    // no notch. A cell with an older server's cut keeps the cut's carve.
+    let mut cracked_logs: HashMap<[i32; 3], (damage_mesh::CrackLayer, &[HitMark])> =
+        HashMap::new();
     for (c, state, view) in damaged {
         let k = kinds.of(*state);
-        if padded[padded_index(c[0], c[1], c[2])] != *state || carved.contains_key(c) {
+        if padded[padded_index(c[0], c[1], c[2])] != *state
+            || !k.style.octagon
+            || carved.contains_key(c)
+        {
             continue;
         }
-        let Some(wood) = dwell_protocol::chopping::wood(k.style.block) else {
-            continue;
-        };
-        let grain = k.style.axis;
-        let cut = dwell_protocol::chopping::cut_of_marks(
-            grain,
-            &view.marks,
-            &wood.cut.bite,
-            wood_span(*state, grain),
-        );
-        if cut.has_bites() {
-            carved.insert(*c, cut);
-            progress.insert(*c, f64::from(view.fraction) / 255.0);
+        if let Some(look) = dwell_protocol::damage::look_of(k.style.block)
+            && let Some(layer) = damage_mesh::CrackLayer::of(&look, view, *c)
+        {
+            cracked_logs.insert(*c, (layer, &view.marks[..]));
         }
     }
     // A cut cell is carved only if it is drawn as an opaque cube.
@@ -2735,10 +2733,13 @@ fn mesh_cells(
                     .then(|| carved.get(&[cx, cy, cz]))
                     .flatten()
                 {
-                    let damage = progress.get(&[cx, cy, cz]).copied();
-                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut, damage);
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
                 } else if k.style.octagon {
-                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
+                    let crack = (!cracked_logs.is_empty())
+                        .then(|| cracked_logs.get(&[cx, cy, cz]))
+                        .flatten()
+                        .map(|(l, marks)| (l, *marks));
+                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], crack);
                 }
                 if k.style.leafy
                     && let Some(crowns) = &crowns

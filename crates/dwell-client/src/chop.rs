@@ -512,7 +512,7 @@ mod tests {
     use super::*;
 
     fn axe() -> &'static ToolDef {
-        dwell_protocol::chopping::tool("dwell:stone_axe").unwrap()
+        dwell_protocol::chopping::tool("dwell:sword").unwrap()
     }
 
     fn impact(step: u32, wood: bool) -> Impact {
@@ -692,65 +692,6 @@ mod tests {
         assert!(c.run.unwrap().vertical);
     }
 
-    // Owner, 2026-11-14: "Let's simplify the axe to be like the shovel and pick, without the
-    // multiple modes." Whatever stance was left from a sword, the axe swings level, says so to the
-    // server and shows one hint.
-    #[test]
-    fn the_axe_swings_level_whatever_the_stance() {
-        let mut c = Chopping {
-            on: true,
-            sweep: true,
-            vertical: true,
-            ..Default::default()
-        };
-        let m = c.start(axe(), [1.0, 0.0, 0.0], None, 0.0);
-        assert!(matches!(
-            m,
-            Some(Some(ChopAction::Sweep {
-                vertical: false,
-                ..
-            }))
-        ));
-        assert!(!c.run.unwrap().vertical);
-        let level = Chopping::default().hint(axe());
-        assert_eq!(c.hint(axe()), level);
-    }
-
-    #[test]
-    fn a_swing_through_only_leaves_rustles_once_and_follows_through_with_no_bounce() {
-        // face-a-only: timing of the swing's run, no world.
-        assert!(axe().clears_block("dwell:leaves") && axe().clears_block("dwell:snowy_leaves"));
-        assert!(axe().swing.rustle.is_some(), "a rustle, not the clank");
-        let mut c = Chopping {
-            on: true,
-            sweep: true,
-            ..Default::default()
-        };
-        c.start(axe(), [1.0, 0.0, 0.0], None, 0.0).unwrap();
-        let cells = [
-            dwell_world::swing::Cleared {
-                cell: [2, 0, 0],
-                step: 4,
-            },
-            dwell_world::swing::Cleared {
-                cell: [2, 1, 0],
-                step: 6,
-            },
-        ];
-        c.set_cleared(&cells);
-        assert_eq!(c.cleared, vec![[2, 0, 0], [2, 1, 0]]);
-        let mut run = c.run.unwrap();
-        let at = axe().swing.time_of_step(4) * 1000.0;
-        assert!(!run.take_clear(at - 1.0), "not before the head gets there");
-        assert!(run.take_clear(at + 1.0));
-        assert!(!run.take_clear(at + 2.0), "once");
-        // Not a hit: no impact (no hit-stop, no clank), a miss's follow-through.
-        assert_eq!(run.take_impact(at + 500.0), None);
-        assert_eq!(run.length(), axe().swing.miss_length());
-        // A swing that clears nothing has no clear moment.
-        let mut plain = SwingRun::new(axe(), false, 0.0, Some(impact(5, true)));
-        assert!(!plain.take_clear(1e6));
-    }
 }
 
 #[cfg(test)]
@@ -760,7 +701,7 @@ mod sway_tests {
     use dwell_world::FaceFrame;
 
     fn axe() -> &'static ToolDef {
-        dwell_protocol::chopping::tool("dwell:stone_axe").unwrap()
+        dwell_protocol::chopping::tool("dwell:sword").unwrap()
     }
 
     fn hit_at(step: u32, wood: bool) -> Impact {

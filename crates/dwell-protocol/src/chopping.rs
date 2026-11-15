@@ -714,8 +714,9 @@ pub fn break_speed(block: &str, held: Option<&str>) -> f64 {
     break_speed_in(BREAK_CLASSES, BREAK_TOOLS, block, held)
 }
 
-/// The tool kind breaking a block needs where blocks are not unlimited (its `breakWith`), if any.
-pub fn break_with(block: &str) -> Option<ToolKind> {
+/// The break tool class breaking a block needs where blocks are not unlimited (its `breakWith`,
+/// a `breaking.classes` key), if any.
+pub fn break_with(block: &str) -> Option<&'static str> {
     BREAK_WITH
         .iter()
         .find(|(b, _)| *b == block)
@@ -723,11 +724,16 @@ pub fn break_with(block: &str) -> Option<ToolKind> {
 }
 
 /// Whether a break of `block` holding `held` (an item name, none: an empty hand) is allowed where
-/// blocks are not unlimited: a block with a `breakWith` needs a tool of that kind.
+/// blocks are not unlimited: a block with a `breakWith` needs a break tool of that class
+/// (`breaking.tools`: a log, an axe).
 pub fn may_break_holding(block: &str, held: Option<&str>) -> bool {
     match break_with(block) {
         None => true,
-        Some(kind) => held.and_then(tool).is_some_and(|t| t.kind == kind),
+        Some(class) => held.is_some_and(|h| {
+            BREAK_TOOLS
+                .iter()
+                .any(|b| b.item == h && b.class == class)
+        }),
     }
 }
 
