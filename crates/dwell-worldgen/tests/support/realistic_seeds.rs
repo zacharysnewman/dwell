@@ -29,7 +29,7 @@ pub fn survey(world: u64, face: Face) -> (f64, f64) {
             top = top.max(h);
         }
     }
-    (f64::from(land) / f64::from(all.max(1)), top)
+    (land as f64 / all.max(1) as f64, top)
 }
 
 /// The first `k` worlds (from 0) whose `face` is at least `min_land` land with an uplift of at
