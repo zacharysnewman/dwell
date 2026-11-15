@@ -54,6 +54,17 @@ dwell_world::both_faces!(
                 took < SPAWN_BUDGET,
                 "seed {seed}: the spawn took {took:?} (budget {SPAWN_BUDGET:?})"
             );
+            // A face of open ocean (real-world scale, 0.71: about a quarter of 1× faces) spawns on
+            // the sea at the centre, with no shrine to stand at (`tests/realistic_ocean_spawn.rs`).
+            let m = t.map();
+            if !(0..m.height.len()).any(|c| !m.is_sea(c) && m.height[c].is_finite()) {
+                assert_eq!(
+                    [spawn[0], spawn[2]],
+                    [0.5, 0.5],
+                    "seed {seed}: the sea's spawn"
+                );
+                continue;
+            }
             let sh = t.shrines().expect("the Realistic world has shrines");
             let [px, _, pz] = t.spawn_search_point();
             let s = sh.spawn_shrine(t);
