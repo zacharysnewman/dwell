@@ -16,6 +16,26 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
+  doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
+  Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
+  brick for walls, thatch with ramp shapes for pitched roofs) plus a door that opens and closes, used by players and
+  villagers; no plaster, beam or glass; painterly textures from the palette; each block also as ½ m pieces. Doors:
+  "2m doors." (2 m tall, one cell wide, a lower and upper half like the torch pair). Keepers come to Claude as
+  exported JSON. Recipes: "Can we make planks assembled from 8 wood pieces from trees." (8 wood → planks; the log
+  recipe stays; costs stay 8) and "8 stone chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant
+  fibre" (8 rock shards → stone brick; 6 sticks + 2 grass fibre → thatch). Done on `claude/town-blocks`:
+  `dwell:planks`, `dwell:stone_brick`, `dwell:thatch` with `dwell:thatch_ramp`, `dwell:door` (a `column` of four
+  ½ m cells, `swing`, `toggle`: a Use is a Place aimed at it, whatever is held; BLOCK_REGISTRY.md, Doors); villagers
+  and builders open the doors they walk through and close them behind them (`opensDoors`); the Structures page's
+  **Test in town** puts a saved structure as a blueprint beside the nearest town for its builders (BLUEPRINTS.md
+  §6c); the hamlet's huts are rebuilt in the new blocks with a door. Not built: an open/close swing animation (the
+  state changes at once, with the wood sound); a player building a blueprint's door by held Place (builders put it).
+  **Owner should see:** in a town (`?spawn=town`), huts of plank floors, stone brick walls and thatch roofs with a
+  2 m door; Place (right-click) on a door opens and closes it, and you walk through it open, not closed; villagers
+  open a door as they walk through and it shuts behind them; on the Structures page, **Test in town** on a saved
+  building has the town's builders put it up beside the town.
+
 - **Current priority: refinement only (owner, 2026-11-13 evening):** "Refocus priorities on bug fixes, visual
   cleanups, and refinements we have instead of new features. Something like properly showing LODs is a refinement
   and visual cleanup. Tree billboards, terrain slope generation, those kind of things. We have lots of unrefined
@@ -1000,6 +1020,16 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    Not yet: shrub and bush species, cliff talus (and underwater), placement bleed, the mesa wall fins, the grey
    lake band, the straight red strip on dormant islands (the straight washes found here may be it; not confirmed),
    the owner's "~4 m" axis-run ideal.
+   **Built on `claude/realistic-070` (the 0.70 line; awaiting the maps):** cliff talus into the water (placements.json
+   `talus`: 1 m stones, 2 m blocks and boulders, red sandstone on red ground, `cliffReach` 12 m from a wall's or steep
+   rock's foot, `wet` on beds under water; counts by distance 4036 / 907 / 35, 62 / 102 pieces under water,
+   `tests/realistic_talus.rs`); shrubs and bushes in clumps (species `bush`, `low_shrub`, `scrub`; placements
+   `bushes`, `cold_shrubs`, `scrub` by biome, the bushes by moisture: 19–34 per ha, variance / mean 1.9–3.6,
+   `tests/realistic_shrubs.rs`); plants bleed across borders (placements' `bleed` 30–50 m: 212 / 269 plants on a
+   neighbour's ground, falling with distance, `tests/realistic_bleed.rs`). Not reproduced on the measured seeds
+   (guards kept): the mesa lake's grey band (`tests/realistic_mesa_lakes.rs`, 0–0.1 % grey), fence-thin mesa walls
+   (`tests/realistic_fins.rs`, 0.3 % of the standing ground; a `minWidth` cut tried changed nothing and was dropped).
+   Not found: the dormant islands' straight red strip (needs the map check's location).
    (1) **Ramps.** Owner, on the stepped look of diagonal slopes: **'Im not sure I want to "fix" the step look yet. Isn't
    that the original rule showing?'** (it is: the default world's straight-edge rule), then: **"Let's put it back in for
    everything not excluding mesa edges"**. So the original straight-edge rule everywhere in Realistic, mesa edges

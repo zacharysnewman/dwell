@@ -43,6 +43,11 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:red_sand_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:red_dirt', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:red_dirt_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:planks', default: 12, tools: { axe: 8 } },
+  { block: 'dwell:stone_brick', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:thatch', default: 6, tools: {  } },
+  { block: 'dwell:thatch_ramp', default: 6, tools: {  } },
+  { block: 'dwell:door', default: 12, tools: { axe: 8 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

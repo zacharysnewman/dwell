@@ -1,11 +1,11 @@
 {
-  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 56). Not Dwell's building design. A 5 \u00d7 5 m hut: a stone floor, log walls 2 m tall with a doorway, a stone roof.",
+  "$comment": "Prototype content (ARCHITECTURE.md \u00a76.1): a test blueprint for builder NPCs and players (docs/BLUEPRINTS.md, WORK_QUEUE item 56). Not Dwell's building design. A 5 \u00d7 5 m hut in the town blocks (owner, 2026-11-14): a plank floor, stone brick walls 2 m tall with a 2 m door in the south wall, a pitched thatch roof (\u00bd m ramps at the eaves, a ridge along x).",
   "format": 1,
   "name": "dwell:bp_hut",
   "kind": "voxels",
   "size": [
     5,
-    6,
+    8,
     5
   ],
   "anchor": [
@@ -15,51 +15,72 @@
   ],
   "palette": {
     ".": null,
-    "s": "dwell:stone",
-    "l": "dwell:log"
+    "p": "dwell:planks",
+    "b": "dwell:stone_brick",
+    "t": "dwell:thatch",
+    "n": "dwell:thatch_ramp[facing=north,flooded=false,half=bottom,shape=ramp]",
+    "s": "dwell:thatch_ramp[facing=south,flooded=false,half=bottom,shape=ramp]",
+    "0": "dwell:door[facing=south,hinge=left,open=false,part=bottom]",
+    "1": "dwell:door[facing=south,hinge=left,open=false,part=lower]",
+    "2": "dwell:door[facing=south,hinge=left,open=false,part=upper]",
+    "3": "dwell:door[facing=south,hinge=left,open=false,part=top]"
   },
   "layers": [
     [
-      "sssss",
-      "sssss",
-      "sssss",
-      "sssss",
+      "ppppp",
+      "ppppp",
+      "ppppp",
+      "ppppp",
+      "ppppp"
+    ],
+    [
+      "bbbbb",
+      "b...b",
+      "b...b",
+      "b...b",
+      "bb0bb"
+    ],
+    [
+      "bbbbb",
+      "b...b",
+      "b...b",
+      "b...b",
+      "bb1bb"
+    ],
+    [
+      "bbbbb",
+      "b...b",
+      "b...b",
+      "b...b",
+      "bb2bb"
+    ],
+    [
+      "bbbbb",
+      "b...b",
+      "b...b",
+      "b...b",
+      "bb3bb"
+    ],
+    [
+      "bbbbb",
+      "bpppb",
+      "bpppb",
+      "bpppb",
+      "bbbbb"
+    ],
+    [
+      "nnnnn",
+      "ttttt",
+      "ttttt",
+      "ttttt",
       "sssss"
     ],
     [
-      "lllll",
-      "l...l",
-      "l...l",
-      "l...l",
-      "ll.ll"
-    ],
-    [
-      "lllll",
-      "l...l",
-      "l...l",
-      "l...l",
-      "ll.ll"
-    ],
-    [
-      "lllll",
-      "l...l",
-      "l...l",
-      "l...l",
-      "ll.ll"
-    ],
-    [
-      "lllll",
-      "l...l",
-      "l...l",
-      "l...l",
-      "lllll"
-    ],
-    [
+      ".....",
+      "nnnnn",
+      "ttttt",
       "sssss",
-      "sssss",
-      "sssss",
-      "sssss",
-      "sssss"
+      "....."
     ]
   ]
 }

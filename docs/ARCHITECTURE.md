@@ -1288,7 +1288,13 @@ rule tag 10). One rule in `dwell_world::edit::edit_writes`, which the server app
 and region edit and the client's prediction mirrors: placing puts the parts (their cells must be
 free), and changing a cell clears the rest of the multi-cell block that was there, with what that
 leaves unsupported, in the same `VoxelModification`; the outline spans the cells (`outline_box`).
-The 1 m torch (`dwell:torch` and `dwell:torch_upper`, two ½ m cells) is the first.
+The 1 m torch (`dwell:torch` and `dwell:torch_upper`, two ½ m cells) is the first. **Columns and doors
+[built, 2026-11-14]**: a block's `column` (a property whose values are its cells bottom to top; rule tag 15)
+is a multi-cell block under the same rules, each cell its own exact state; `swing` makes a state with its
+`open` property true passable and drawn as a plate (the generator's per-state shape and look), and `toggle`
+(rule tag 16) makes a Place aimed at it a **Use** that flips the property on every cell
+(`edit::toggled`, nothing paid). `dwell:door` is 2 m over four cells; NPCs with `opensDoors` walk
+through closed doors, the server opening and closing them (`Server::npc_doors`). BLOCK_REGISTRY.md, Doors.
 
 **Unbreakable blocks [built, Phase 27 S2a]** ([ADR 0031](./adr/0031-data-driven-structures.md)). The
 block data's existing `indestructible` property (bedrock's, kept for Phase 20's structural anchor)

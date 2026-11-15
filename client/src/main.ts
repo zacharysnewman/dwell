@@ -1430,6 +1430,24 @@ async function start(): Promise<App | null> {
           return e instanceof Error ? e.message : String(e);
         }
       },
+      placeInTown: (s, turn) => {
+        try {
+          const { palette, cells } = blueprintCellsOf(s);
+          const at = client.placeBlueprintInTown(
+            s.name,
+            new Uint8Array(s.size),
+            new Uint8Array(s.anchor),
+            palette,
+            cells,
+            turn,
+          );
+          return at === 'town' || at === 'here'
+            ? { at }
+            : { error: 'No town near, and nowhere aimed to place it.' };
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : String(e) };
+        }
+      },
       removeAimed: () => client.removeAimedBlueprint(),
     },
   });

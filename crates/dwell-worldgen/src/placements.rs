@@ -60,6 +60,17 @@ pub struct Placement {
     /// `TerrainGenerator::erosion_at`'s margin above 0; 1: no matter). Sagebrush mostly on the
     /// floors (WORK_QUEUE item 15, 0.68: "tops read green under thick sagebrush").
     pub tops: f32,
+    /// Talus at cliff feet (0.69; owner, 2026-11-14: "Stone cliff regions should get rocks and
+    /// boulders at the base of cliffs"): above 0, the density falls from full at a rock wall's foot
+    /// to none this many m out (`TerrainGenerator::cliff_factor`); 0: walls don't matter.
+    pub cliff_reach: f32,
+    /// It may stand on a bed under water too, its cells replacing the water ("Including in the
+    /// water."); false: dry ground only.
+    pub wet: bool,
+    /// Its biomes' density read at a point moved up to this many m by a fine noise (0.69; owner,
+    /// 2026-11-14: "Bushes, shrubs, rocks, trees, should bleed into the edge of the neighboring
+    /// terrain"): its plants reach raggedly past a border, the neighbour's into its side; 0: none.
+    pub bleed: f32,
 }
 
 /// A swap of a placed structure's blocks by its anchor's height (m above sea level): none at
@@ -348,6 +359,45 @@ impl Planter {
     /// Whether it stands on ground block `b`.
     pub fn stands_on(&self, b: StateId) -> bool {
         self.on.contains(&b)
+            || (self.rule.wet && {
+                // Under water a bed's block takes its flooded state: by its name.
+                let n = dwell_blocks::info(b).name;
+                let n = n.split('[').next().unwrap_or(n);
+                self.rule.on.contains(&n)
+            })
+    }
+
+    /// Whether a candidate at (x, z) on ground `g` it doesn't take stands all the same by its
+    /// `bleed` (0.69): dry ground of its own (`on`) within `bleed` m in one of three hashed
+    /// directions, at a chance falling with that distance, so its plants reach raggedly past the
+    /// border onto the neighbour's ground.
+    fn bleeds(
+        &self,
+        gx: i32,
+        gz: i32,
+        (x, z): (i32, i32),
+        g: &Ground,
+        ground: &dyn Fn(i32, i32) -> Option<Ground>,
+    ) -> bool {
+        let reach = self.rule.bleed;
+        if reach <= 0.0 || !g.dry {
+            return false;
+        }
+        for k in 0..3 {
+            let a = unit(self.h(gx, gz, 20 + k)) * std::f32::consts::TAU;
+            let r = reach * (0.2 + 0.8 * unit(self.h(gx, gz, 30 + k)));
+            let (dx, dz) = ((r * a.cos()).round() as i32, (r * a.sin()).round() as i32);
+            if ground(x + dx, z + dz).is_some_and(|o| o.dry && self.stands_on(o.block)) {
+                let fall = 1.0 - r / reach;
+                return unit(self.h(gx, gz, 40)) < fall * fall;
+            }
+        }
+        false
+    }
+
+    /// Whether ground `g` takes it: dry (or a bed under water, if `wet`) and one of `on`.
+    fn takes(&self, g: &Ground) -> bool {
+        (g.dry || self.rule.wet) && self.stands_on(g.block)
     }
 
     /// Whether it can stand anywhere in this world.
@@ -452,7 +502,7 @@ impl Planter {
             return None;
         }
         let g = ground(x, z)?;
-        if !g.dry || !self.on.contains(&g.block) {
+        if !self.takes(&g) && !self.bleeds(gx, gz, (x, z), &g, ground) {
             return None;
         }
         if roll >= most * self.rise_factor(g.above_sea) {
@@ -491,7 +541,7 @@ impl Planter {
             for cz in z0..=z1 {
                 for cx in x0..=x1 {
                     match ground(cx, cz) {
-                        Some(c) if c.dry && self.on.contains(&c.block) => {}
+                        Some(c) if self.takes(&c) => {}
                         _ => return None,
                     }
                 }
@@ -848,6 +898,9 @@ mod tests {
             rotations: &[0, 1, 2, 3],
             variants: &[],
             tops: 1.0,
+            cliff_reach: 0.0,
+            wet: false,
+            bleed: 0.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let oak = crate::species::find("dwell:oak").unwrap();
@@ -893,6 +946,9 @@ mod tests {
             rotations: &[0],
             variants: &[],
             tops: 1.0,
+            cliff_reach: 0.0,
+            wet: false,
+            bleed: 0.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let dirt = flat("dwell:dirt");

@@ -90,13 +90,14 @@ test('a drop rule holds only for the states its `when` lists (tall grass by stag
   const grass = d.drops.find((b) => b.block === 'dwell:tall_grass');
   const of = (stage) => grass.drops.filter((r) => r.when.every((w) => w.values.includes(stage)));
   const chance = (stage, item) => of(stage).filter((r) => r.choices.some((c) => c.item === item)).reduce((a, r) => a + r.chance, 0);
-  // More drops the taller it is; the full stage (the default) drops as before.
-  for (const item of ['dwell:grass_fiber', 'dwell:grass_seed']) {
-    for (const [lo, hi] of [['0', '1'], ['1', '2'], ['2', '3']]) assert.ok(chance(lo, item) < chance(hi, item), `${item} ${lo} < ${hi}`);
+  // Owner, 2026-11-14: a fibre always and a seed at 50 % at every stage (one fibre a ½ m cell);
+  // the gem's rule still holds only for the full stage.
+  for (const stage of ['0', '1', '2', '3']) {
+    assert.equal(chance(stage, 'dwell:grass_fiber'), 1, `fibre at stage ${stage}`);
+    assert.equal(chance(stage, 'dwell:grass_seed'), 0.5, `seed at stage ${stage}`);
+    assert.equal(chance(stage, 'dwell:gem'), stage === '3' ? 0.125 : 0, `gem at stage ${stage}`);
   }
-  assert.equal(chance('3', 'dwell:grass_fiber'), 1);
-  assert.equal(chance('3', 'dwell:grass_seed'), 0.5);
-  assert.match(inventoryRust(d), /DropRule \{ chance: 0\.5, when: &\[\("stage", &\["3"\]\)\], choices: &\[DropChoice \{ item: "dwell:grass_seed"/);
+  assert.match(inventoryRust(d), /DropRule \{ chance: 0\.125, when: &\[\("stage", &\["3"\]\)\], choices: &\[DropChoice \{ item: "dwell:gem"/);
   assert.match(inventoryRust(d), /block: "dwell:dirt", cost: "dwell:dirt", drops: &\[DropRule \{ chance: 1\.0, when: &\[\], /);
 });
 

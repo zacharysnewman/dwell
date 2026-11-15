@@ -3105,7 +3105,8 @@ impl Server {
                 };
                 // The item asked for must be held; it is used up when it is what goes in (a torch
                 // held against dynamite lights it and stays in the hand).
-                if uses_items && edit.action == BlockEditAction::Place {
+                // A Use (a door opened or closed) pays nothing and needs nothing held.
+                if uses_items && edit.action == BlockEditAction::Place && !outcome.toggled {
                     let item = items::cost_of(edit.material);
                     let placed = items::cost_of(outcome.material) == item;
                     if s.inventory.count_of(&item) == 0 {

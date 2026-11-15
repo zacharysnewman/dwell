@@ -243,6 +243,12 @@ pub struct StateInfo {
     pub extends_up: Option<&'static str>,
     /// The block this one is the upper part of (block data `partOf`): cleared with it.
     pub part_of: Option<&'static str>,
+    /// A column block (block data `column`; BLOCK_REGISTRY.md, Multi-cell blocks): one cell per
+    /// value of a property, bottom to top (face-local up), placed and cleared whole. A door.
+    pub column: Option<Column>,
+    /// The property a Use (a Place aimed at it) flips between its two values on every cell of the
+    /// block (block data `toggle`: a door's `open`).
+    pub toggle: Option<&'static str>,
     /// What it counts as for holding things up (block data `support`; docs/FELLING.md).
     pub support_role: SupportRole,
     /// Players and falling pieces pass through it (block data `passable`: leaves); targeting
@@ -264,6 +270,15 @@ pub struct StateInfo {
     /// sides square off to full width where a neighbour of its join group lies on them
     /// ([`crate::octagon`]); none for a plain cube.
     pub cross_section: Option<CrossSection>,
+}
+
+/// A column block's place in its column (block data `column`): the property naming its cell, this
+/// state's value's index (0 the bottom cell) and how many cells the column has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Column {
+    pub property: &'static str,
+    pub index: u8,
+    pub count: u8,
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

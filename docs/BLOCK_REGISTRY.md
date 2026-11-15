@@ -154,6 +154,34 @@ it would put and clears the other half of one it cuts (`parts::keep_whole`, in
 they took a cell of (`parts::lone_parts`, in `broadcast_changes`); and a lone half in a chunk read
 from a world file is removed when it loads (`parts::repair_chunk`).
 
+**Columns** (**built**, 2026-11-14): `"column": "<property>"` makes a block fill one cell per value of
+that property, bottom to top (face-local up), every cell the same state but that property (a door's
+`part`: `bottom`, `lower`, `upper`, `top`). It is a multi-cell block like the torch (the same
+`dwell_world::parts` rules: `partners` gives each other cell's exact state, `holds` matches it), placed
+by its first value (its `palette` entries keep it), which alone needs what `needsSupport` asks.
+`StateInfo::column` (`property`, `index`, `count`); synced as rule tag `15` (`COLUMN`). A structure's
+data must stack a column whole and in order (`shared/structures` `format.mjs`); in a blueprint the cells
+above the first come with it (`blueprint::comes_with`: no cost, no builder places them).
+
+**Doors** (**built**, 2026-11-14; owner: "Let's just do 3 blocks. Plank floors, stone brick walls,
+thatch roof. And doors also." / "2m doors."): two more words of vocabulary, both over a block's own
+properties. `"swing": { "property", "hinge" }` (on a `facingProperty` block of shape full, look cube):
+where `property` (`false`, `true`) is `true` the state is open: shape empty (no collision), drawn as
+the ladder look's thin plate against the cell's side, its facing a quarter turn from the door's toward
+`hinge` (`left` anticlockwise seen from above, `right` clockwise), its selection box the plate, light
+through (the generator's per-state look, facing, selection, light filter). `"toggle": "<property>"`
+(two values): a **Use** — a Place aimed at it, whatever is held, nothing paid — flips it on every cell
+(`edit::toggled`, in `check_block_edit`: `EditOutcome::toggled`; refused `IntoPlayer` while a body
+stands where it would close); synced as rule tag `16` (`TOGGLE`). An older client ignores both tags (it
+predicts no toggle; the server's edit still arrives). `dwell:door` is the first: 2 m over four ½ m cells,
+closed it fills its cell as a block does (the doorway of a 1 m wall), drawn cutout. NPCs whose data says
+`opensDoors` (shared/creatures `npc.opensDoors`: the villagers and builders) walk through a closed door as
+an open one (`creatures::through_door`); the server opens each door one is in or walking into
+(`Creatures::doors_to_open`) and closes the doors they opened once no such NPC and no player is within
+1.6 m (`Server::npc_doors`). A turned door keeps its closed facing; an open door's `StateInfo::facing` is
+its plate's. Tests: `dwell-world` `tests/doors.rs` (both faces), `dwell-sim` `tests/doors.rs` (both faces:
+a villager through, a doe stopped), the fixture's `test:gate` (a 3-cell door by data alone).
+
 **Family convention for shaped variants** (**built, Phase 9**, [ADR 0016](./adr/0016-slope-blocks.md); recommended here first): plain
 blocks stay plain (`dwell:stone`), and shaped forms are separate blocks generated per shapeable
 material, carrying only the properties that matter to them — `dwell:stone_slab[half,flooded]`,

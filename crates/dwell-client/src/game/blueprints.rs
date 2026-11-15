@@ -189,6 +189,76 @@ impl<S: Scene> Game<S> {
         true
     }
 
+    /// "Test in town" (docs/BLUEPRINTS.md §6c): a structure placed as a blueprint beside the town
+    /// site nearest the player (within `TEST_TOWN_REACH_M`, sited from the seed as the server sites
+    /// them; `TownRules::test_spot` on the ground the client has loaded), so the town's builders
+    /// build it; with no town near, at the crosshair as [`Self::place_blueprint_structure`]. Some(true)
+    /// placed in a town, Some(false) at the crosshair, None not placed.
+    pub fn place_blueprint_in_town(
+        &mut self,
+        s: &dwell_world::structure::Structure,
+        turn: u8,
+    ) -> Option<bool> {
+        const TEST_TOWN_REACH_M: f64 = 400.0;
+        if !self.blueprints_synced {
+            return None;
+        }
+        let f = self.current.face;
+        let feet = f.point(self.predictor.position().to_array());
+        let rules = &dwell_world::blueprint::SHIPPED.towns;
+        let mut sites = Vec::new();
+        if let Some(t) = self.far_terrain.clone() {
+            let seed = self.world_seed();
+            let [ci, ck] = rules.cell_of(feet[0].floor() as i32, feet[2].floor() as i32);
+            for k in ck - 1..=ck + 1 {
+                for i in ci - 1..=ci + 1 {
+                    sites.extend(t.town_in(seed, f.face, [i, k]));
+                }
+            }
+        }
+        let taken: Vec<[i32; 4]> = self
+            .blueprints
+            .ghosts
+            .iter()
+            .filter(|b| b.face.face == f.face)
+            .map(|b| [b.min[0], b.min[2], b.max[0], b.max[2]])
+            .collect();
+        let [sx, _, sz] = s.size;
+        let [ax, _, az] = s.anchor;
+        let half = ax.max(sx - 1 - ax).max(az).max(sz - 1 - az);
+        let row = dwell_world::cell_of_pos(feet)[1];
+        let store = &*self.streamer.store_mut();
+        let get = |c: [i32; 3]| {
+            store.find(chunk_of(c[0], c[1], c[2]))?;
+            Some(store.get_voxel_if_loaded(c))
+        };
+        // The row a place fills at a column: the lowest free cell over a solid one, searched down
+        // from well above the player (a town lies on the ground near its face's surface).
+        let ground = |x: i32, z: i32| {
+            (row - 96..row + 96).rev().find_map(|y| {
+                let here = get(f.cell([x, y, z]))?;
+                let under = get(f.cell([x, y - 1, z]))?;
+                (dwell_world::blueprint::free(here) && !dwell_world::blueprint::free(under))
+                    .then_some(y)
+            })
+        };
+        match rules.test_spot(
+            &sites,
+            [feet[0], feet[2]],
+            TEST_TOWN_REACH_M,
+            half,
+            &taken,
+            &ground,
+        ) {
+            Some(at) => {
+                let b = record_of(s, f, f.cell(at), turn)?;
+                self.send_blueprint(BlueprintsMessage::Place(b));
+                Some(true)
+            }
+            None => self.place_blueprint_structure(s, turn).then_some(false),
+        }
+    }
+
     /// A blueprint record placed as it is (a shell-built one).
     pub fn place_blueprint(&mut self, b: Blueprint) -> bool {
         if !self.blueprints_synced {

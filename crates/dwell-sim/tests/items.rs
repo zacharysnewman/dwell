@@ -930,3 +930,43 @@ dwell_world::both_faces!(
         assert!(loose_count(&fx, "dwell:rock") >= 1, "knocked loose");
     }
 );
+
+#[test]
+fn the_town_blocks_combine_from_wood_shards_sticks_and_fibre() {
+    // face-a-only: inventories have no face.
+    // Owner, 2026-11-14: "Can we make planks assembled from 8 wood pieces from trees." / "8 stone
+    // chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant fibre".
+    let mut fx = scene(FaceFrame::A, "adventure");
+    let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
+    fx.server.give(1, "dwell:wood", 15);
+    combine(&mut fx, "dwell:planks_slab");
+    combine(&mut fx, "dwell:planks_slab");
+    assert_eq!(
+        (count(&fx, "dwell:planks"), count(&fx, "dwell:wood")),
+        (1, 7),
+        "8 wood a plank, the 7 left refused"
+    );
+    fx.server.give(1, "dwell:rock_shard", 8);
+    combine(&mut fx, "dwell:stone_brick_slab");
+    assert_eq!(
+        (
+            count(&fx, "dwell:stone_brick"),
+            count(&fx, "dwell:rock_shard")
+        ),
+        (1, 0)
+    );
+    fx.server.give(1, "dwell:stick", 6);
+    fx.server.give(1, "dwell:grass_fiber", 1);
+    combine(&mut fx, "dwell:thatch_slab");
+    assert_eq!(count(&fx, "dwell:thatch"), 0, "refused: one fibre");
+    fx.server.give(1, "dwell:grass_fiber", 1);
+    combine(&mut fx, "dwell:thatch_slab");
+    assert_eq!(
+        (
+            count(&fx, "dwell:thatch"),
+            count(&fx, "dwell:stick"),
+            count(&fx, "dwell:grass_fiber")
+        ),
+        (1, 0, 0)
+    );
+}

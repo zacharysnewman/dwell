@@ -51,15 +51,18 @@ export function checkParts(blocks) {
 
 /**
  * The multi-cell blocks of the registry's namespace files (shared/blocks/*.json, parsed): `{ id →
- * { extendsUp, partOf } }` for each block naming `extends` or `partOf` (unchecked: gen.mjs checks
+ * { extendsUp, partOf, column } }` for each block naming `extends`, `partOf` or `column` (`column`:
+ * `{ property, values }` bottom to top, else null) (unchecked: gen.mjs checks
  * them with checkParts). For checks over data placing blocks (structures: a part above its block).
  */
 export function partsFromNamespaces(namespaces) {
   const out = new Map();
   for (const ns of namespaces) {
     for (const def of ns.blocks ?? []) {
-      if (def.extends === undefined && def.partOf === undefined) continue;
-      out.set(`${ns.namespace}:${def.name}`, { extendsUp: def.extends?.up ?? null, partOf: def.partOf ?? null });
+      if (def.extends === undefined && def.partOf === undefined && def.column === undefined) continue;
+      // A column (a door): its property and values, bottom to top.
+      const column = def.column === undefined ? null : { property: def.column, values: def.properties?.[def.column] ?? [] };
+      out.set(`${ns.namespace}:${def.name}`, { extendsUp: def.extends?.up ?? null, partOf: def.partOf ?? null, column });
     }
   }
   return out;

@@ -184,6 +184,20 @@ species' `dropChance` (5 %) besides the leaf's own sticks, where items are used 
 species' sapling is data alone: the block, the catalogue entry and the species' `sapling` (the trees'
 and the items' node tests check it is a block and in the catalogue).
 
+### The town blocks (2026-11-14)
+
+The owner: **"Let's just do 3 blocks. Plank floors, stone brick walls, thatch roof. And doors also."**
+`dwell:planks`, `dwell:stone_brick` and `dwell:thatch` are ½ m pieces like the rest (category blocks),
+with the **thatch slope** and **thatch steep slope** (`dwell:thatch_ramp`, the stone slopes' pieces) for
+pitched roofs, and the **door** (`dwell:door`, category shapes, `drag: none`, facing back at the player):
+placed by its bottom cell, it stands 2 m (four cells; BLOCK_REGISTRY.md, Doors). Combining
+(`shared/inventory` recipes, cost 8 kept): 8 wood → planks (**"Can we make planks assembled from 8 wood
+pieces from trees."**; the log recipe stays), 8 rock shards → stone brick, 6 sticks and 2 grass fibre →
+thatch (**"8 stone chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant fibre"**); the
+thatch slopes are thatch's pieces, no recipe of their own. Textures: painterly materials
+`stone_brick`, `thatch` (the palette's new `straw` ramp) and `door` in `shared/textures/materials.json`;
+planks reuse the build platform's boards.
+
 ## 2. Pieces on the wire
 
 `BlockEditRequest` carries the piece (protocol 19): `rows` (1–`MAX_PIECE_ROWS` 2) and `down`. A place
