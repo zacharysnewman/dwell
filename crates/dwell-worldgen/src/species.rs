@@ -589,8 +589,9 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
-        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf and the mesa's
-        // sagebrush (0.64) are wild only: no sapling of their own yet.
+        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf, the mesa's
+        // sagebrush (0.64) and the shrubs (bush, low shrub, scrub) are wild only: no sapling of
+        // their own yet.
         let wild: Vec<_> = SPECIES
             .iter()
             .filter(|s| s.sapling.is_none())
@@ -599,9 +600,12 @@ mod tests {
         assert_eq!(
             wild,
             [
+                "dwell:bush",
+                "dwell:low_shrub",
                 "dwell:old_oak",
                 "dwell:old_pine",
                 "dwell:sagebrush",
+                "dwell:scrub",
                 "dwell:tall_broadleaf"
             ]
         );
@@ -716,6 +720,7 @@ mod tests {
             (ys.max().unwrap(), xs.max().unwrap(), t.cells.len())
         };
         for s in &SPECIES {
+            let mut grew_out = false;
             for seed in 0..8 {
                 let mut last = (0, 0, 0);
                 for stage in 0..s.stages {
@@ -738,7 +743,14 @@ mod tests {
                     );
                     last = now;
                 }
+                // Taller and over twice the cells, unless its trunk stays at its sapling's height
+                // by its data (a shrub's ½ m, `mature` from 0.5): such a seed only fills out, its
+                // top no lower (the loop above), and a small one (a low shrub) may stay as it was.
                 let (young, old) = (grow(s, seed, 1), grow(s, seed, s.stages - 1));
+                if old.height <= s.sapling_height {
+                    grew_out |= old.cells.len() > young.cells.len() * 2;
+                    continue;
+                }
                 assert!(
                     old.height > young.height && old.cells.len() > young.cells.len() * 2,
                     "{}: young {} m {} cells, old {} m {} cells",
@@ -748,7 +760,13 @@ mod tests {
                     old.height,
                     old.cells.len()
                 );
+                grew_out = true;
             }
+            assert!(
+                grew_out,
+                "{}: no seed grows to over twice its young cells",
+                s.name
+            );
         }
     }
 

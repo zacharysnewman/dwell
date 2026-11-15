@@ -3416,6 +3416,9 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    tree and grass cleared before the first piece, drops in adventure, a save mid-clear resumes). **Owner should see:**
    Structures → a saved hut → **Test in town** placed over a tree: the builder takes the whole tree down at once, clears
    the grass round the box, the panel reads "Clearing" then "Building", and only then the floor goes in.
+   **Ghosts and panel fixed (2026-11-15, BUGS.md #183):** the client dropped the server's `Blueprints` (sent on the
+   world channel), so no placed blueprint showed its ghost or panel; now it applies them. The hut's tests (`dwell-world`
+   `blueprint`) follow the town-block hut (planks, stone brick, thatch, the door column put from its bottom cell).
 
 57. **Villagers fetch materials from a storehouse (an Age of Empires-style work loop)** (owner 2026-11-14, after asking
    whether "town plans will clear trees" means villagers clear them: **"Ideally long term, I'd like this to work a lot
