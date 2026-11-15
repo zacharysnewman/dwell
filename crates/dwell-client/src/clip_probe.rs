@@ -1855,7 +1855,6 @@ mod chop_swing_tests {
         // A clip that is not a chop has none.
         assert!(run("break").samples.iter().all(|s| s.camera.is_none()));
     }
-
 }
 
 #[cfg(test)]

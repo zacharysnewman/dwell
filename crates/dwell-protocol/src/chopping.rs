@@ -767,11 +767,9 @@ pub fn break_with(block: &str) -> Option<&'static str> {
 pub fn may_break_holding(block: &str, held: Option<&str>) -> bool {
     match break_with(block) {
         None => true,
-        Some(class) => held.is_some_and(|h| {
-            BREAK_TOOLS
-                .iter()
-                .any(|b| b.item == h && b.class == class)
-        }),
+        Some(class) => {
+            held.is_some_and(|h| BREAK_TOOLS.iter().any(|b| b.item == h && b.class == class))
+        }
     }
 }
 
@@ -1592,10 +1590,7 @@ mod tests {
     #[test]
     fn a_chop_bites_half_the_cell_over_the_swings_to_fell() {
         let log = wood("dwell:log").unwrap();
-        let (stone, metal) = (
-            fixture::older_axe(false),
-            fixture::older_axe(true),
-        );
+        let (stone, metal) = (fixture::older_axe(false), fixture::older_axe(true));
         assert_eq!(super::swings_to_fell(stone, log), 11);
         assert_eq!(super::swings_to_fell(metal, log), 5);
         for t in [stone, metal] {

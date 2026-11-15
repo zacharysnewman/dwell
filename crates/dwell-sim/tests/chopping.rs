@@ -197,7 +197,10 @@ fn the_axe_is_a_break_tool_as_the_pickaxe_and_swings_no_more() {
         assert!(tool(axe).is_none(), "{axe}: no chopping swing");
         let b = BREAK_TOOLS.iter().find(|b| b.item == axe).expect(axe);
         assert_eq!(b.class, "axe");
-        assert_eq!(b.contact_s, pick.contact_s, "{axe}: strikes at the pick's contact");
+        assert_eq!(
+            b.contact_s, pick.contact_s,
+            "{axe}: strikes at the pick's contact"
+        );
         assert_eq!(b.repeat_s, pick.repeat_s, "{axe}: repeats held as the pick");
         assert!(b.clip.starts_with("break_"), "{axe}: a break clip");
     }
@@ -247,12 +250,20 @@ dwell_world::both_faces!(
             );
             hit_at(&mut fx, f, [3, BASE, 0], [3.0, m_of_row(BASE) + 0.25, 0.5]);
         }
-        assert_eq!(cell_is(&mut fx, f, [3, BASE, 0]), M.air, "broken whole after {n}");
-        assert!(fx.server.damage_of(f.cell([3, BASE, 0])).is_none(), "its damage gone");
+        assert_eq!(
+            cell_is(&mut fx, f, [3, BASE, 0]),
+            M.air,
+            "broken whole after {n}"
+        );
+        assert!(
+            fx.server.damage_of(f.cell([3, BASE, 0])).is_none(),
+            "its damage gone"
+        );
         assert_eq!(wood_count(&fx), 8, "its drops");
         let sent = fx.take(1);
         assert!(
-            sent.iter().all(|(m, _)| !matches!(m, Message::EntitySpawn(_))),
+            sent.iter()
+                .all(|(m, _)| !matches!(m, Message::EntitySpawn(_))),
             "nothing to fell"
         );
         assert!(no_cuts_sent(&sent));
@@ -265,7 +276,11 @@ dwell_world::both_faces!(
         for _ in 0..log_hits(AXE) {
             at_trunk(&mut fx, f, BASE);
         }
-        assert_eq!(cell_is(&mut fx, f, [3, BASE, 0]), M.air, "the bottom log broken");
+        assert_eq!(
+            cell_is(&mut fx, f, [3, BASE, 0]),
+            M.air,
+            "the bottom log broken"
+        );
         let sent = fx.take(1);
         let spawns: Vec<EntitySpawn> = sent
             .iter()
@@ -277,7 +292,11 @@ dwell_world::both_faces!(
         assert_eq!(spawns.len(), 1, "one body");
         assert_eq!(spawns[0].cells.len(), 9, "the trunk above it");
         for r in BASE + 1..BASE + 10 {
-            assert_eq!(cell_is(&mut fx, f, [3, r, 0]), M.air, "row {r} went with it");
+            assert_eq!(
+                cell_is(&mut fx, f, [3, r, 0]),
+                M.air,
+                "row {r} went with it"
+            );
         }
         assert_eq!(wood_count(&fx), 8, "the broken log's drops");
         // It topples: down within 4 s, away from the player who broke it (−x of it).
@@ -345,10 +364,18 @@ dwell_world::both_faces!(
             Message::InventoryAction(InventoryAction::Select { slot: 3 }),
         );
         hand_break(&mut fx, f, [3, AT, 0]);
-        assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), log(f, "y"), "the log stays");
+        assert_eq!(
+            cell_is(&mut fx, f, [3, AT, 0]),
+            log(f, "y"),
+            "the log stays"
+        );
         assert!(fx.server.damage_of(f.cell([3, AT, 0])).is_none(), "not hit");
         hand_break(&mut fx, f, [2, AT, 1]);
-        assert_eq!(cell_is(&mut fx, f, [2, AT, 1]), M.air, "leaves break by hand");
+        assert_eq!(
+            cell_is(&mut fx, f, [2, AT, 1]),
+            M.air,
+            "leaves break by hand"
+        );
     }
 );
 
@@ -373,7 +400,11 @@ dwell_world::both_faces!(
         for _ in 0..40 {
             fx.server.step();
         }
-        let d = fx.server.damage_of(f.cell([3, AT, 0])).expect("hit").clone();
+        let d = fx
+            .server
+            .damage_of(f.cell([3, AT, 0]))
+            .expect("hit")
+            .clone();
         assert_eq!(d.hits, 1);
         assert_eq!(d.marks[0].face, f.cell_face(1) as u8, "on its −x face");
         // A sweep at the trunk from the eye, level along +x: one more hit, on the row it meets.

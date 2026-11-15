@@ -1016,7 +1016,10 @@ mod tests {
             let first = look.cracks.expect("wood cracks").stages[0];
             for k in 1..n {
                 let m = mesh(k, n);
-                assert_eq!(m.positions, whole.positions, "{k} of {n}: the whole octagon");
+                assert_eq!(
+                    m.positions, whole.positions,
+                    "{k} of {n}: the whole octagon"
+                );
                 assert_eq!(m.indices, whole.indices, "{k} of {n}: its triangles");
                 let cracked = m.cracks.iter().any(|c| (c >> 16) & 0xff != 0);
                 assert_eq!(

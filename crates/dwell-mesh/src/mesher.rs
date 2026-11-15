@@ -2345,8 +2345,7 @@ fn mesh_cells(
     // 2026-11-15: the axe "was different from the other tools") is drawn whole, its damage look's
     // cracks over its faces by the damage, centred on the hits (BLOCK_DAMAGE.md §14): no bites,
     // no notch. A cell with an older server's cut keeps the cut's carve.
-    let mut cracked_logs: HashMap<[i32; 3], (damage_mesh::CrackLayer, &[HitMark])> =
-        HashMap::new();
+    let mut cracked_logs: HashMap<[i32; 3], (damage_mesh::CrackLayer, &[HitMark])> = HashMap::new();
     for (c, state, view) in damaged {
         let k = kinds.of(*state);
         if padded[padded_index(c[0], c[1], c[2])] != *state

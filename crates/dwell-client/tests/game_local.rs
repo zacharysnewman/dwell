@@ -3470,7 +3470,11 @@ fn the_axe_hits_a_log_as_the_pickaxe_hits_stone() {
         );
     }
     assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().damage_at(p).is_some()));
-    assert_eq!(server_voxel(&mut rig, p), placed, "one hit of {n}: it stands");
+    assert_eq!(
+        server_voxel(&mut rig, p),
+        placed,
+        "one hit of {n}: it stands"
+    );
     // The rest of its hits, one a swing: then it breaks whole.
     let mut hits = 1;
     let mut frames = 0;

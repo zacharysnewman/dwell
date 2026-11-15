@@ -691,7 +691,6 @@ mod tests {
         ));
         assert!(c.run.unwrap().vertical);
     }
-
 }
 
 #[cfg(test)]
