@@ -174,6 +174,12 @@ pub struct CloudNoise {
     base: (wgpu::Texture, wgpu::TextureView),
     detail: (wgpu::Texture, wgpu::TextureView),
     sampler: wgpu::Sampler,
+    /// The weather field's map (docs/CLOUDS.md §11; RGBA8, `weatherField.sizeCells`²): neutral
+    /// weather until the first bake comes back from the job workers, then the latest.
+    weather: (wgpu::Texture, wgpu::TextureView),
+    /// The map it holds (its face, corner and clock), and whether a bake is out.
+    weather_at: Option<dwell_look::weather_field::MapAt>,
+    weather_pending: bool,
     /// The slices of each texture written so far (base, detail).
     written: [u32; 2],
     /// The bake was handed to the game (`Renderer::take_cloud_noise_request`).
@@ -201,9 +207,31 @@ impl CloudNoise {
             (texture, view)
         };
         let repeat = wgpu::AddressMode::Repeat;
+        let n = t.weather_field.size_cells;
+        let weather = {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("cloud weather map"),
+                size: wgpu::Extent3d {
+                    width: n,
+                    height: n,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
         Self {
             base: make("cloud base noise", t.form.base_size),
             detail: make("cloud detail noise", t.form.detail_size),
+            weather,
+            weather_at: None,
+            weather_pending: false,
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("cloud noise"),
                 address_mode_u: repeat,
@@ -222,6 +250,42 @@ impl CloudNoise {
     fn ready(&self) -> bool {
         self.written[0] >= self.base.0.size().depth_or_array_layers
             && self.written[1] >= self.detail.0.size().depth_or_array_layers
+    }
+
+    /// The neutral weather everywhere (before the first bake): written once at start.
+    fn write_neutral_weather(&self, queue: &wgpu::Queue, t: &dwell_look::clouds::CloudTunables) {
+        let cell = dwell_look::weather_field::encode(
+            t,
+            &dwell_look::weather_field::WeatherCell::neutral(t),
+        );
+        let n = t.weather_field.size_cells as usize;
+        self.write_weather(queue, &cell.repeat(n * n));
+    }
+
+    fn write_weather(&self, queue: &wgpu::Queue, texels: &[u8]) {
+        let n = self.weather.0.size().width;
+        if texels.len() != (4 * n * n) as usize {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.weather.0,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * n),
+                rows_per_image: Some(n),
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     fn write(&mut self, queue: &wgpu::Queue, detail: bool, z0: u32, texels: &[u8]) {
@@ -2334,6 +2398,7 @@ impl Renderer {
         let cloud_layout = frame::cloud_history_layout(&device);
         let cloud_march_layout = frame::cloud_march_layout(&device);
         let cloud_noise = CloudNoise::new(&device, &CLOUDS);
+        cloud_noise.write_neutral_weather(&queue, &CLOUDS);
         let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cloud history"),
             size: frame::CLOUD_PREV_BYTES,
@@ -3025,6 +3090,33 @@ impl Renderer {
     /// `z0..`) into its texture; the volume draws once both are whole.
     pub fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
         self.cloud_noise.write(&self.queue, detail, z0, texels);
+    }
+    /// The weather field's next map to bake (docs/CLOUDS.md §11), when a volume tier draws and one
+    /// is due (`weather_field::due`); asking marks one out.
+    pub fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        if clouds_for(self.adapter, self.clouds).volume(&CLOUDS).steps == 0 {
+            return None;
+        }
+        let n = &mut self.cloud_noise;
+        let next = dwell_look::weather_field::due(
+            &CLOUDS,
+            n.weather_at,
+            n.weather_pending,
+            self.face.is_b(),
+            [self.eye[0], self.eye[2]],
+            self.cloud_seconds,
+        )?;
+        n.weather_pending = true;
+        Some(next)
+    }
+    /// A baked weather map (`None`: the bake failed; the next is asked for at once).
+    pub fn cloud_weather_map(&mut self, map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {
+        let n = &mut self.cloud_noise;
+        n.weather_pending = false;
+        if let Some((at, texels)) = map {
+            n.write_weather(&self.queue, texels);
+            n.weather_at = Some(at);
+        }
     }
     /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
     /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
@@ -4456,6 +4548,7 @@ impl Renderer {
                     &self.cloud_noise.base.1,
                     &self.cloud_noise.detail.1,
                     &self.cloud_noise.sampler,
+                    &self.cloud_noise.weather.1,
                 ),
                 bloom,
                 bloom_layout: &self.bloom_layout,
@@ -5096,13 +5189,20 @@ impl Renderer {
             let block = self.cloud_prev_uniform(view, tier.history_blend);
             self.queue
                 .write_buffer(&self.cloud_prev_buffer, 0, floats(block.as_flattened()));
-            let plumes = self.plumes.pack(
+            let mut plumes = self.plumes.pack(
                 &CLOUDS,
                 self.eye,
                 self.face,
                 self.cloud_seconds,
                 self.clouds_now(),
             );
+            // The weather map's corner from the eye (head.zw, docs/CLOUDS.md §11), in f64 here.
+            let corner = self.cloud_noise.weather_at.map_or_else(
+                || dwell_look::weather_field::corner_for(&CLOUDS, [self.eye[0], self.eye[2]]),
+                |m| m.corner,
+            );
+            plumes[2] = (corner[0] - self.eye[0]) as f32;
+            plumes[3] = (corner[1] - self.eye[2]) as f32;
             self.queue
                 .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::CLOUDS));
@@ -6732,6 +6832,12 @@ impl crate::game::Scene for Renderer {
     }
     fn take_cloud_noise_request(&mut self) -> bool {
         Renderer::take_cloud_noise_request(self)
+    }
+    fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        Renderer::take_cloud_weather_request(self)
+    }
+    fn cloud_weather_map(&mut self, map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {
+        Renderer::cloud_weather_map(self, map);
     }
     fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
         Renderer::cloud_noise_slab(self, detail, z0, texels);

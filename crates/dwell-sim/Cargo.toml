@@ -17,6 +17,7 @@ dwell-protocol = { path = "../dwell-protocol" }
 dwell-storage = { path = "../dwell-storage" }
 dwell-world = { path = "../dwell-world" }
 dwell-worldgen = { path = "../dwell-worldgen" }
+serde_json = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 getrandom = "0.3"
@@ -25,7 +26,6 @@ getrandom = "0.3"
 # A block added by data alone (shared/blocks/fixtures: `test:moss`) in the support-drop tests.
 dwell-blocks = { path = "../dwell-blocks", features = ["fixture"] }
 ed25519-dalek = "2"
-serde_json = "1"
 
 [lints]
 workspace = true

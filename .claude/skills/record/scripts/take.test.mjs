@@ -5,16 +5,16 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
+import { SKILL, VIDEOS, clipPath, fingerprint, loadVideo, metaPath, resolveOnly, sceneEvents, sceneText, selectShots, shotAudio, splicePlan, validate } from './videos.mjs';
 import { alignFilter, audioAlignment, audioStartExpr, cinematicEncodeArgs, encodeArgs, partAudio } from './audio.mjs';
-import { clearanceScript, clearanceVerdict, encodeClip, fetchRetrying, settleScript, viewIdle, viewLoaded } from './take.mjs';
+import { clearanceScript, clearanceVerdict, encodeClip, fetchRetrying, sceneBuildScript, settleScript, viewIdle, viewLoaded } from './take.mjs';
 
 const bifacial = () => loadVideo('bifacial');
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const fails = (m, re) => assert.throws(() => validate(m), re);
 
 test('every committed video manifest validates', () => {
-  for (const name of ['bifacial', 'water', 'trailer']) assert.equal(loadVideo(name).name, name);
+  for (const name of ['bifacial', 'water', 'trailer', 'dam-break', 'dam-break-9x16']) assert.equal(loadVideo(name).name, name);
   assert.ok(existsSync(join(VIDEOS, 'bifacial', 'video.json')));
 });
 
@@ -459,4 +459,22 @@ test('a path through solid ground fails the shot unless it sets allowClipping (o
   let b = copy(m); b.shots[0].allowClipping = true; assert.equal(validate(b).shots[0].allowClipping, true);
   b = copy(m); b.shots[0].allowClipping = 'yes'; fails(b, /allowClipping: true or false, on a "path" shot only/);
   b = copy(m); b.shots[2].allowClipping = true; fails(b, /allowClipping: true or false, on a "path" shot only/);
+});
+
+test('a shot names a scene (THEATER_MODE.md §6.3): its file must exist, on a path shot; its events run on the take\'s clock', () => {
+  const m = loadVideo('dam-break');
+  assert.equal(m.shots[0].scene, 'dam_break');
+  let b = copy(m); b.shots[0].scene = 'no_such_scene'; fails(b, /scene: no scene "no_such_scene"/);
+  b = copy(bifacial()); b.shots[2].scene = 'dam_break'; fails(b, /a scene is built for a "path" shot only/);
+  b = copy(m); b.shots[0].setup.sceneSettleS = -1; fails(b, /sceneSettleS/);
+  // the dam_break scene's one event: the dam removed at 3 s, the take's event 0
+  assert.deepEqual(sceneEvents(sceneText('dam_break')), [{ atS: 3, op: 'scene', arg: '0' }]);
+  assert.equal(sceneText('../video'), null);
+  // the build script builds the file's text and waits for still water
+  const js = sceneBuildScript('{"name":"x"}', 5);
+  assert.match(js, /d\.scene\('build', "\{\\"name\\":\\"x\\"\}"\)/);
+  assert.match(js, /st\.awake === 0/);
+  // the scene is part of the shot's recipe: a changed scene re-records it
+  const plain = copy(m); delete plain.shots[0].scene;
+  assert.notEqual(fingerprint(m, m.shots[0]), fingerprint(plain, plain.shots[0]));
 });

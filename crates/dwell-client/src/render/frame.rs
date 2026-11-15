@@ -251,8 +251,9 @@ impl BloomChain {
 }
 
 /// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the last frame's
-/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the baked
-/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler).
+/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7), the baked
+/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler) and the weather
+/// field's map (§11, binding 11).
 pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let texture_3d = |binding| wgpu::BindGroupLayoutEntry {
         binding,
@@ -284,6 +285,17 @@ pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 binding: 8,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            // The weather field's map (docs/CLOUDS.md §11), 2D.
+            wgpu::BindGroupLayoutEntry {
+                binding: 11,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -429,6 +441,7 @@ pub struct SceneGroups<'a> {
         &'a wgpu::TextureView,
         &'a wgpu::TextureView,
         &'a wgpu::Sampler,
+        &'a wgpu::TextureView,
     ),
     /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
     pub bloom: (u32, u32, u32),
@@ -568,7 +581,7 @@ impl Targets {
                 },
             ],
         });
-        let (base, detail, noise_sampler) = groups.cloud_noise;
+        let (base, detail, noise_sampler, weather) = groups.cloud_noise;
         let cloud_march_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cloud march"),
             layout: groups.cloud_march_layout,
@@ -592,6 +605,10 @@ impl Targets {
                 wgpu::BindGroupEntry {
                     binding: 8,
                     resource: wgpu::BindingResource::Sampler(noise_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(weather),
                 },
             ],
         });

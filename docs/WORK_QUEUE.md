@@ -597,6 +597,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    too uniform and patterned at a macro level so some research and optimize this to be like real clouds, non uniform
    height, shape, etc based on actual changing weather models."** **Owner should see:** a sky whose clouds vary in
    coverage, height and type across the world and change over time with the weather, with no repeating pattern.
+   **Built (2026-11-14, branch `claude/cloud-weather`, CLOUDS.md §11; research and open questions:
+   `docs/proposals/CLOUD_WEATHER.md`):** a weather field per world and face (`weatherField` data,
+   `dwell_look::weather_field`): non-periodic humidity from synoptic (160 km, warped into fronts), mesoscale and
+   local octaves moving with the wind and evolving over hours; orographic lift on windward slopes and the rain
+   shadow's clear lee from the world map; instability-driven type; dry air lifting the cloud base; depth by
+   instability. Baked as a 64 × 64 map round the eye in a job worker every 2 s; the march reads one texel per
+   sample in place of the two regional noise fields. Cost on the M1 Air (Medium, the High preset's; clouds pass
+   plus composite over Off, p50): ground 0.87 → 0.85 ms, from 3.5 km up 3.13 → 3.06 ms (unchanged). Screenshots
+   before/after (noon, morning, late day; ground and 6 km, 16 km up): clear spells overhead with banks of cloud
+   beside them, instead of an even scatter. Left: dense regions still read grey from above (lighting, not the
+   field); streets and cells, fronts' structure, the deck (Low) and reflections taking the field.
 14. **Tall grass grows and spreads** (owner 2026-11-11: "I want tall grass to steadily grow and spread. It
    should probably have a max depending on climate/biome."). **Built** (ADR 0075 T3c, docs/ECOLOGY.md §10):
    `shared/worldgen/grass.json` (the rule as data: the block, the ground, the decoration whose climate
@@ -2537,6 +2548,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
    four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
    unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
+   **A dam break, and scenes as data (owner, 2026-11-14):** "Do a rendered recording of a 10 block high dam of a river
+   suddenly deleted. 30s of real time for our first one. We'll probably do a bunch of these so if you need tools to
+   generate a valley with a river/lake with a dam, go ahead and make them." Built (`claude/dam-scene`, THEATER_MODE.md
+   §6.3): scenes as data (`shared/theater/scenes/*.json`: a valley's size, slopes and materials, a wall across it by
+   height in blocks, a lake held behind it to a level, timed events), one builder (`dwell-sim` `scene.rs`,
+   `Server::build_scene`: the lake joins the water held, still from the start), `__dwell.scene`, a cinematic take's
+   `events`, and a record shot's `"scene"`. The first: `dam_break` (a stone dam of ten 1 m blocks, i.e. 20 half-cells,
+   10 m over the floor, the lake 9 m deep behind it, the water at real time), its dam deleted at 3 s, 30 s cinematic
+   at 30 fps with the game's sound, 16:9 (`videos/dam-break/`) and re-aimed 9:16 (`videos/dam-break-9x16/`). A river
+   fed by a source is not built (the grid has no sources yet): the first scene is a still lake.
+   **Owner should see:** a valley with a still lake behind a 10-block dam; at 3 s the dam vanishes at once and the lake
+   pours through and floods down the valley, the camera drifting after the front, for 30 s of real time, no clipping,
+   in both aspects.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

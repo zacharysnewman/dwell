@@ -1092,7 +1092,11 @@ AudioContext suspended between them, plays scheduled at their frame's time). Bef
 clearance check** (THEATER_MODE.md §6.2, `src/theater/clearance.ts`, `dwell-client` `camera_clearance`) samples the
 path every 0.05 s and probes each eye against the solid blocks within 0.3 m (on a local world in its worker,
 `LocalCore::camera_clearance`, chunks generated as needed; else the client's loaded chunks); a path through solid
-ground fails the take unless it allows clipping. The
+ground fails the take unless it allows clipping. **Scenes** (THEATER_MODE.md §6.3, `dwell-sim` `scene.rs`, data in
+`shared/theater/scenes/`): a test world as data — a valley, a dam, a lake held behind it, timed events — built into a
+local world by `Server::build_scene` (the cells that differ, then its chunks given to the water again as fresh loads so
+the lake joins held, at rest) through the local worker's `sceneDev` message; a take's events (a structure removed,
+`Server::scene_event`) run on the cinematic clock. The
 host's `theaterGuests` world setting (`WorldSettings` 0x87) turns the mode off for guests; the host (the loopback
 session or an op) always may, and the server ignores a guest's viewpoint while it is off.
 
@@ -3310,8 +3314,13 @@ chunks), keeps the last selection (`LodSystem::update`; ~1 ms a frame standing s
   clamped into the box of this frame's 3 × 3 matching neighbours, and the result is copied to the
   history. Near or in the layer a tier takes its `nearSteps` and `nearDivisor`. The composite
   upsamples it in place of the eye's deck (`upsampled_clouds`, depth-aware by the texels' scene
-  spans, §8.9). **Shape** (`CLOUDS.md` §9): the deck's noise as the weather map (cover, cloud type
-  along `cloudTypes`' axis, precipitation), height profiles per cloud type as data (stratus to
+  spans, §8.9). **Weather** (`CLOUDS.md` §11): a coarse evolving weather field per world and face
+  (`dwell_look::weather_field`, data `weatherField`: humidity, type, the floor's lift, the depth, from
+  non-periodic noise moving with the wind and the world map's terrain upwind), baked as a 64² RGBA8 map
+  round the eye in a job worker (`Job::CloudWeather`) every 2 s and sampled by the march (group 3
+  binding 11; its corner in the plume uniform's head). **Shape** (`CLOUDS.md` §9): the weather map
+  per column (cover from the field's humidity and the deck's noise, cloud type along `cloudTypes`'
+  axis, precipitation), height profiles per cloud type as data (stratus to
   cumulonimbus with an anvil), the base shape from a baked tiling 3D Perlin–Worley texture remapped by
   the cover, its edges eroded by a baked Worley detail texture distorted by curl noise, sheared
   downwind; the two textures (`form.baseSize`³, `form.detailSize`³ RGBA8, group 3 bindings 6–8 with a

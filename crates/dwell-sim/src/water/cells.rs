@@ -383,6 +383,12 @@ impl Mirror {
         out
     }
 
+    /// Forgets what the copy was told of chunk `at`: the next sync sends it as a fresh load (its
+    /// water read again, as the scan reads a generated chunk's), as a scene's build wants.
+    pub fn forget(&mut self, at: ChunkCoord) {
+        self.seen.remove(&at);
+    }
+
     /// A chunk's revision moved from `before` to `after` by changes told to the copy cell by cell:
     /// kept as told, if the copy was up to date before them.
     pub fn told(&mut self, at: ChunkCoord, stamp: u64, before: u32, after: u32) {

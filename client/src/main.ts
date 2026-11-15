@@ -413,6 +413,14 @@ interface DwellDebug {
    */
   lava(op?: 'report' | 'rate' | 'vent' | 'ventNear', args?: number[]): Promise<string | null>;
   /**
+   * The local world's scenes (docs/THEATER_MODE.md §6.3, `shared/theater/scenes/*.json`): `build`
+   * with a scene file's text builds it into the world (its figures as JSON, or `{error}` naming
+   * each bad entry); `event` with an event's index runs it (a structure removed); `status` the
+   * water's figures (`awake` chunks: the build's lake is still once none are). Null outside a
+   * local world.
+   */
+  scene(op: 'build' | 'event' | 'status', text?: string): Promise<string | null>;
+  /**
    * Dev: `n` villagers (≤ 16) in a ring `radius` m (default 3) round the local player's feet, each
    * its own palette variant from `variant` (default 0) (CHARACTERS.md §11.11). JSON of their ids;
    * null outside a local world.
@@ -1527,6 +1535,11 @@ async function start(): Promise<App | null> {
       await f(file, btoa(bin));
     },
     audio: (leadS) => startCinematicAudio(audio(), leadS),
+    event: async (op, arg) => {
+      // `scene`: a built scene's event by index (local.rs `scene_dev`), on the take's clock.
+      if (op !== 'scene') throw new Error(`cinematic: no event op ${op}`);
+      return (await app.loopback?.sceneDev('event', arg)) ?? null;
+    },
     wallMs: () => performance.now(),
     clearance: {
       samples: (json, stepS, max) => client.theaterSamples(json, stepS, max),
@@ -1797,6 +1810,7 @@ async function start(): Promise<App | null> {
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
+    scene: (op, text) => app.loopback?.sceneDev(op, text ?? '') ?? Promise.resolve(null),
     animalPose: (pose) =>
       app.loopback?.lavaDev('animalPose', [
         pose === null ? -1 : ['stand', 'graze', 'lookUp', 'earFlick', 'sit', 'lie'].indexOf(pose),

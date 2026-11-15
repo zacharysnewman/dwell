@@ -170,12 +170,24 @@ test("bad entries fail with their path named", () => {
       /sources\.lavaVent\.color must be a colour/,
     ],
     [
-      (d) => (d.weather.coverScaleM = 3000),
-      /weather\.coverScaleM must be a whole multiple of shape\.scaleM that divides shape\.wrapM/,
+      (d) => (d.weather.coverScaleM = 8192),
+      /unknown entry weather\.coverScaleM/,
     ],
     [
-      (d) => (d.weather.typeScaleM = 3 * d.shape.scaleM),
-      /weather\.typeScaleM must be a whole multiple of shape\.scaleM that divides shape\.wrapM/,
+      (d) => (d.weatherField.sizeCells = 16),
+      /weatherField's window .* must reach past volume\.maxDistanceM/,
+    ],
+    [
+      (d) => (d.weatherField.mesoWeight = 0.9),
+      /weatherField\.mesoWeight \+ localWeight must be at most 1/,
+    ],
+    [
+      (d) => (d.weatherField.depthMax = 0.1),
+      /weatherField\.depthMax must be at least depthMin/,
+    ],
+    [
+      (d) => delete d.weatherField.upslopeGain,
+      /missing entry weatherField\.upslopeGain/,
     ],
     [
       (d) => (d.form.baseHigh = d.form.baseLow),

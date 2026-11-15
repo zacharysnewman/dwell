@@ -95,6 +95,14 @@ pub enum Job {
         z0: u32,
         z1: u32,
     },
+    /// The clouds' weather field (docs/CLOUDS.md §11, `dwell_look::weather_field::bake`): the map
+    /// on face B (else A) at `corner` (world x, z metres) at the clouds' clock `seconds`, over the
+    /// world's terrain where the worker has one.
+    CloudWeather {
+        face_b: bool,
+        corner: [f64; 2],
+        seconds: f64,
+    },
     /// One baked far tree of the impostors' atlas (`dwell_worldgen::impostor::Config::bake_layer`,
     /// docs/proposals/TREE_IMPOSTORS.md): array layer `layer` at `px` texels a view.
     ImpostorBake { layer: u32, px: u32 },
@@ -157,6 +165,12 @@ pub enum Output {
     LodMap(Option<Vec<u8>>),
     /// A cloud-noise slab's RGBA8 texels (x, then y, then z).
     CloudNoise(Vec<u8>),
+    /// The weather field's map: RGBA8 texels (rows of x), at the job's face and corner.
+    CloudWeather {
+        face_b: bool,
+        corner: [f64; 2],
+        texels: Vec<u8>,
+    },
     /// A baked impostor layer: the bounding sphere's centre height over the foot and radius (m),
     /// the albedo and the normal + depth atlases (RGBA8 rows); empty past the layers.
     Impostor {
@@ -354,6 +368,38 @@ impl Runner {
                     dwell_look::cloud_noise::bake_base_slab(size, z0, z1)
                 };
                 Output::CloudNoise(slab.into_iter().flatten().collect())
+            }
+            Job::CloudWeather {
+                face_b,
+                corner,
+                seconds,
+            } => {
+                let t = &dwell_look::clouds::CLOUDS;
+                let seed = dwell_look::weather_field::face_seed(self.seed.unwrap_or(0), face_b);
+                let face = if face_b {
+                    dwell_world::Face::B
+                } else {
+                    dwell_world::Face::A
+                };
+                let texels = match &self.terrain {
+                    Some(terrain) => {
+                        let local = terrain.local(face);
+                        let ground = |x: f64, z: f64| local.map_height(x, z);
+                        dwell_look::weather_field::bake(t, seed, corner, seconds, &ground)
+                    }
+                    None => dwell_look::weather_field::bake(
+                        t,
+                        seed,
+                        corner,
+                        seconds,
+                        &dwell_look::weather_field::no_ground,
+                    ),
+                };
+                Output::CloudWeather {
+                    face_b,
+                    corner,
+                    texels,
+                }
             }
             Job::ImpostorBake { layer, px } => {
                 let config = dwell_worldgen::impostor::Config::get();
