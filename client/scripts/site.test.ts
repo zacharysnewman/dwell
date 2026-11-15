@@ -24,7 +24,7 @@ const policy = (over: Partial<RetentionPolicy> = {}): RetentionPolicy => ({
   newestLines: 0,
   newestOverall: 1000,
   pinned: [],
-  devKeep: 10,
+  devKeep: 4,
   sizeBudgetMB: 900,
   ...over,
 });
@@ -165,12 +165,12 @@ describe('the retention policy', () => {
     expect(strict.prune).toEqual(plan.prune);
   });
 
-  it("is read from shared/version/site-retention.json: the owner's policy (2026-11-09)", () => {
+  it("is read from shared/version/site-retention.json: the owner's policy (2026-11-09; 2026-11-15 fewer lines and dev builds: the site hit Pages' 1 GB at 37 builds)", () => {
     expect(loadRetention()).toEqual({
-      newestLines: 20,
+      newestLines: 12,
       newestOverall: 10,
       pinned: ['0.1', '0.10'],
-      devKeep: 10,
+      devKeep: 4,
       sizeBudgetMB: 900,
     });
   });
