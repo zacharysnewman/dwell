@@ -15,7 +15,7 @@ use dwell_worldgen::plate_tectonics::PlateTectonics;
 use dwell_worldgen::terrain::FIXTURE_WORLDS;
 use dwell_worldgen::worldmap::WorldMap;
 
-const SEEDS: std::ops::Range<u64> = 0..80;
+const SEEDS: std::ops::Range<u64> = 0..400;
 const RIM_BREAK: f64 = 0.4;
 
 both_faces!(

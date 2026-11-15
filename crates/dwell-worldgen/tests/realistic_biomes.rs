@@ -476,7 +476,16 @@ dwell_world::both_faces!(
             }
         }
         for (name, t) in [("cold desert", dry), ("tropical rainforest", hot)] {
-            assert!(t[0] >= 20, "{:?}: {name} climate cells {t:?}", f.face);
+            // Real-world scale (0.71): a lee keeps `rain.leeFloor` of the flat rate (a temperate
+            // lee ~360 mm, a subarctic ~180 mm) and no band is equatorial, so on 1× faces these
+            // climates are rare and may be absent; where they occur the preset takes them.
+            if t[0] < 20 {
+                eprintln!(
+                    "{:?}: {name} climate cells {t:?} (rare at real-world scale)",
+                    f.face
+                );
+                continue;
+            }
             // (Since the realistic batch's plates, 0.64, the default is no longer most of these
             // cells' fallback without the two: the steppe and the sand desert share them; the
             // check is that each new preset takes most of its climate.)

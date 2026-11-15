@@ -82,6 +82,7 @@ dwell_world::both_faces!(
     /// grid and in the discharge's rain.
     fn the_windward_side_of_the_main_range_is_twice_as_wet_as_its_lee(f: FaceFrame) {
         let (mut all_wq, mut all_lq) = (0.0, 0.0);
+        let (mut all_w, mut all_l) = (0.0, 0.0);
         for world in seeds(f.face) {
             let seed = face_seed(world, f.face);
             let m = map(seed);
@@ -95,7 +96,11 @@ dwell_world::both_faces!(
                 c.wind_cell().name,
                 c.wind_from
             );
-            assert!(wind >= 2.0 * lee, "seed {world}: windward {wind} lee {lee}");
+            // Real-world scale (0.71): the lee keeps `rain.leeFloor` (0.4) of the flat rate, so a
+            // range the air reaches half dried shadows less: 1.4 × per seed (seed 20 A: 1.52),
+            // twice over the seeds together (below).
+            assert!(wind >= 1.4 * lee, "seed {world}: windward {wind} lee {lee}");
+            (all_w, all_l) = (all_w + wind, all_l + lee);
             // The discharge's rain (per map cell, the map's own march) follows it.
             let at = |x: f64, z: f64| {
                 let i = (((x - m.x0) / m.cell).round() as usize).min(m.grid.n - 1);
@@ -118,6 +123,10 @@ dwell_world::both_faces!(
             );
             (all_wq, all_lq) = (all_wq + wq, all_lq + lq);
         }
+        assert!(
+            all_w >= 2.0 * all_l,
+            "the seeds' coarse rain windward {all_w} lee {all_l}"
+        );
         assert!(
             all_wq >= 1.5 * all_lq,
             "the seeds' discharge rain windward {all_wq} lee {all_lq}"
