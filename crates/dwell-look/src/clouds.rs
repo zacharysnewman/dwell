@@ -99,8 +99,15 @@ pub struct VolumeTunables {
     /// `light_step_growth` times the last.
     pub light_step_m: f64,
     pub light_step_growth: f64,
-    /// The floor of light that reaches deep inside (multiple scattering: a wider, weaker Beer).
+    /// The floor of light that reaches deep inside (multiple scattering: a wider, weaker Beer),
+    /// and how much slower that Beer dims than the direct light's (`multi_scatter_falloff` × the
+    /// optical depth: §12).
     pub multi_scatter: f64,
+    pub multi_scatter_falloff: f64,
+    /// How much of a view step's light is taken where its opacity is (§12): 1 at the
+    /// transmittance-weighted depth into the step (a dense cloud's surface, as the eye sees it),
+    /// 0 at the step's middle (hundreds of metres inside on a coarse march: grey tops).
+    pub surface_light: f64,
     /// The powder term: thin edges facing away from the light a little darker.
     pub powder: f64,
     /// The dual-lobe Henyey–Greenstein phase: the forward and back lobes' g, the back lobe's
@@ -118,6 +125,12 @@ pub struct VolumeTunables {
     pub ground_bounce: f64,
     pub bounce_tint: Rgb,
     pub ambient_depth_m: f64,
+    /// The share of the sky's light that still reaches a sample deep under cloud, through the
+    /// cloud's sides and scattered down (§12), × (1 − the cloud type's `darkening`): fair-weather
+    /// cumulus keeps it, storm cloud loses it.
+    pub ambient_side: f64,
+    /// How much the sky's hue tints the ambient (0: the shade colour alone, 1: × the sky's hue).
+    pub sky_hue: f64,
     pub max_distance_m: f64,
     /// The composite's band against the scene (BUGS.md #88): a texel's cloud is a pixel's where
     /// the texel's march ended within the band of the pixel's scene: the texel's depth range, at
@@ -913,6 +926,22 @@ pub fn light_depth(
     od
 }
 
+/// How far before a view sample its light is taken (m, §12): a step `dt` long of opacity
+/// `sigma` (per m: the view's extinction × the density) scatters toward the eye mostly near where
+/// the ray enters it, the transmittance-weighted depth `1/σ − dt·e^{−σdt}/(1 − e^{−σdt})` into
+/// it, not its middle; × `volume.surface_light`. Thin steps (σ·dt small) are lit at their
+/// middle; a dense cloud's at its surface (`cloud_step_pull`).
+pub fn step_pull(t: &CloudTunables, sigma: f64, dt: f64) -> f64 {
+    let x = sigma * dt;
+    let mean = if x < 1e-3 {
+        0.5 * dt
+    } else {
+        let e = (-x).exp();
+        1.0 / sigma - dt * e / (1.0 - e)
+    };
+    t.volume.surface_light * (0.5 * dt - mean).max(0.0)
+}
+
 /// Henyey–Greenstein's phase for the cosine `c` between the view ray and the light's direction,
 /// scaled so that even scattering is 1.
 pub fn henyey_greenstein(c: f64, g: f64) -> f64 {
@@ -940,15 +969,30 @@ pub struct SampleLight {
 
 /// `cloud_vol_light`'s weights: Beer toward the light with the multiple-scattering floor, the
 /// powder term (strongest looking away from the light), the phase; the ambient from above dimmed
-/// by the cloud above, the bounce from below by the cloud below.
-pub fn sample_light(t: &CloudTunables, od: f64, c: f64, above_m: f64, below_m: f64) -> SampleLight {
+/// by the cloud above down to its side share (`ambient_side`, less under a darker type:
+/// `darkening`), the bounce from below by the cloud below.
+pub fn sample_light(
+    t: &CloudTunables,
+    od: f64,
+    c: f64,
+    above_m: f64,
+    below_m: f64,
+    darkening: f64,
+) -> SampleLight {
     let v = &t.volume;
     let tau = t.light.absorption * v.light_extinction * od;
-    let beer = (-tau).exp().max(v.multi_scatter * (-0.25 * tau).exp());
+    // Two octaves of scattering (Wrenninge 2015, Hillaire 2016 §5.8): the direct light by Beer
+    // shaped by the phase, plus the light scattered many times, a wider, weaker Beer
+    // (`multi_scatter`, `multi_scatter_falloff`) at half the phase's shaping (nearer even): what
+    // keeps a thick cloud's sunlit surface bright seen from any side (§12).
+    let phase = cloud_phase(v, c);
+    let octaves = (-tau).exp() * phase
+        + v.multi_scatter * (-v.multi_scatter_falloff * tau).exp() * (0.5 + 0.5 * phase);
     let powder = 1.0 - v.powder * (0.5 - 0.5 * c) * (-2.0 * tau).exp();
+    let side = v.ambient_side * (1.0 - darkening).clamp(0.0, 1.0);
     SampleLight {
-        sun: v.sun_strength * beer * powder * cloud_phase(v, c),
-        sky: v.sky_ambient * (-above_m / v.ambient_depth_m).exp(),
+        sun: v.sun_strength * octaves * powder,
+        sky: v.sky_ambient * (side + (1.0 - side) * (-above_m / v.ambient_depth_m).exp()),
         bounce: v.ground_bounce * (-below_m / v.ambient_depth_m).exp(),
     }
 }
@@ -995,7 +1039,8 @@ pub fn day_shading(t: &CloudTunables, sun_up: f64, sun_hue: Rgb, ambient_hue: Rg
     let l = &t.light;
     let low = low_sun(t, sun_up);
     let lit = mix3([0, 1, 2].map(|i| l.sunlit[i] * sun_hue[i]), l.sunset, low);
-    let shade = [0, 1, 2].map(|i| l.shade[i] * (0.5 + 0.5 * ambient_hue[i]));
+    let k = t.volume.sky_hue;
+    let shade = [0, 1, 2].map(|i| l.shade[i] * (1.0 - k + k * ambient_hue[i]));
     let warm = l.sunset.map(|c| c * SUNSET_SHADE);
     (
         lit,
@@ -1532,6 +1577,13 @@ pub fn cloud_wgsl(t: &CloudTunables) -> String {
             f(v.light_step_growth)
         ),
         format!("const CLOUD_VOL_MULTI: f32 = {};", f(v.multi_scatter)),
+        format!(
+            "const CLOUD_VOL_MULTI_FALLOFF: f32 = {};",
+            f(v.multi_scatter_falloff)
+        ),
+        format!("const CLOUD_VOL_SURFACE: f32 = {};", f(v.surface_light)),
+        format!("const CLOUD_VOL_SIDE: f32 = {};", f(v.ambient_side)),
+        format!("const CLOUD_VOL_SKY_HUE: f32 = {};", f(v.sky_hue)),
         format!("const CLOUD_VOL_POWDER: f32 = {};", f(v.powder)),
         format!("const CLOUD_VOL_PHASE_F: f32 = {};", f(v.phase_forward)),
         format!("const CLOUD_VOL_PHASE_B: f32 = {};", f(v.phase_back)),
@@ -1907,7 +1959,7 @@ fn cloud_shading(face: f32, lights: CloudLighting) -> CloudShading {
 	// the shade (the sky's light, the ground's bounce) toward the deck's shaded side of it.
 	let low = cloud_low_sun(sun_up);
 	let day_lit = mix(CLOUD_SUNLIT * cloud_hue(lights.sun_color), CLOUD_SUNSET, low);
-	let day_shade = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), 0.5), CLOUD_SUNSET * CLOUD_SUNSET_SHADE, min(low * CLOUD_VOL_SUNSET_SHADE, 1.0));
+	let day_shade = mix(CLOUD_SHADE * mix(vec3f(1.0), cloud_hue(lights.day_ambient), CLOUD_VOL_SKY_HUE), CLOUD_SUNSET * CLOUD_SUNSET_SHADE, min(low * CLOUD_VOL_SUNSET_SHADE, 1.0));
 	let night_lit = CLOUD_NIGHT_LIT * cloud_hue(lights.moon_color);
 	let night_shade = CLOUD_NIGHT_SHADE * mix(vec3f(1.0), cloud_hue(lights.night_ambient), 0.5);
 	return CloudShading(mix(night_lit, day_lit, dayness), mix(night_shade, day_shade, dayness), light, dot(light, up), dayness);
@@ -1920,16 +1972,32 @@ fn cloud_ray_light(dir: vec3f, sh: CloudShading) -> vec2f {
 	return vec2f(cloud_phase(c), CLOUD_VOL_POWDER * (0.5 - 0.5 * c));
 }
 
+// How far before a view sample its light is taken (step_pull, §12): the transmittance-weighted
+// depth into a step `dt` of opacity `sigma` per m, not its middle.
+fn cloud_step_pull(sigma: f32, dt: f32) -> f32 {
+	let x = sigma * dt;
+	if (x < 1e-3) {
+		return 0.0;
+	}
+	let e = exp(-x);
+	return CLOUD_VOL_SURFACE * max(0.5 * dt - (1.0 / sigma - dt * e / (1.0 - e)), 0.0);
+}
+
 // A sample's colour (sample_light, sample_colour): the light through `od` (m of density 1) toward
 // it by Beer with a multiple-scattering floor, the powder term and the ray's phase (`ray`:
 // cloud_ray_light), plus the sky's light from above dimmed by the cloud `above` (m) and the
 // ground's darker bounce from below dimmed by the cloud `below`: bases darker than tops.
-fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f) -> vec3f {
+fn cloud_vol_light(sh: CloudShading, od: f32, above: f32, below: f32, ray: vec2f, darkening: f32) -> vec3f {
 	let tau = CLOUD_ABSORPTION * CLOUD_VOL_LIGHT_EXTINCTION * od;
-	let beer = max(exp(-tau), CLOUD_VOL_MULTI * exp(-0.25 * tau));
+	// Two octaves (sample_light): the direct light shaped by the phase, plus the many times
+	// scattered light, wider and weaker, at half the phase's shaping.
+	let octaves = exp(-tau) * ray.x + CLOUD_VOL_MULTI * exp(-CLOUD_VOL_MULTI_FALLOFF * tau) * (0.5 + 0.5 * ray.x);
 	let powder = 1.0 - ray.y * exp(-2.0 * tau);
-	let sun = CLOUD_VOL_SUN * beer * powder * ray.x;
-	let amb = CLOUD_VOL_SKY * exp(-above / CLOUD_VOL_AMBIENT_DEPTH) + CLOUD_VOL_BOUNCE * exp(-below / CLOUD_VOL_AMBIENT_DEPTH) * CLOUD_VOL_BOUNCE_TINT;
+	let sun = CLOUD_VOL_SUN * octaves * powder;
+	// The sky's light through the cloud above, down to its share through the sides (less under a
+	// darker type: storm cloud).
+	let side = CLOUD_VOL_SIDE * clamp(1.0 - darkening, 0.0, 1.0);
+	let amb = CLOUD_VOL_SKY * mix(exp(-above / CLOUD_VOL_AMBIENT_DEPTH), 1.0, side) + CLOUD_VOL_BOUNCE * exp(-below / CLOUD_VOL_AMBIENT_DEPTH) * CLOUD_VOL_BOUNCE_TINT;
 	return sh.shade * amb + sh.lit * sun;
 }
 
@@ -2005,9 +2073,14 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 		if (first < 0.0) {
 			first = t;
 		}
+		// The step's light where its opacity is (step_pull, §12): toward the eye from the sample to
+		// the transmittance-weighted depth into the step, a dense cloud's surface.
+		let pull = cloud_step_pull(extinction * d, dt);
+		let ys = y - rise * pull / CLOUD_VOL_H;
+		let ps = pm - vec3f(dir.x, rise, dir.z) * pull;
 		// The cloud above and below in this column, from its profile (column_cover_m; no lookups).
-		let above = 0.5 * wm.x * max(prof.fade.w - y, 0.0) * CLOUD_VOL_H;
-		let below = 0.5 * wm.x * clamp(y, 0.0, prof.fade.w) * CLOUD_VOL_H;
+		let above = 0.5 * wm.x * max(prof.fade.w - ys, 0.0) * CLOUD_VOL_H;
+		let below = 0.5 * wm.x * clamp(ys, 0.0, prof.fade.w) * CLOUD_VOL_H;
 		// The light march (light_depth): growing steps toward the light through the cheap base shape
 		// (no detail), stopping where the path leaves the layer; with none, the cloud above along the
 		// light's slant.
@@ -2022,17 +2095,17 @@ fn cloud_layer_march(dir: vec3f, rise: f32, eye_h: f32, max_t: f32, jitter: f32,
 				break;
 			}
 			let mid = at + 0.5 * len;
-			let yl = y + sh.light_rise * mid / CLOUD_VOL_H;
+			let yl = ys + sh.light_rise * mid / CLOUD_VOL_H;
 			if (yl <= 0.0 || yl >= 1.0) {
 				break;
 			}
 			// The column's cover (regional: it barely changes along the light's path; no noise).
-			let pl = pm + vec3f(sh.light.x, sh.light_rise, sh.light.z) * mid;
+			let pl = ps + vec3f(sh.light.x, sh.light_rise, sh.light.z) * mid;
 			od += len * cloud_base_shape(cloud_base_at(pl), yl, wm.x, prof, cloud_height_gradient(prof, yl)) * cloud_density_scale(prof, yl);
 			at += len;
 			len *= CLOUD_VOL_LIGHT_GROWTH;
 		}
-		let col = cloud_vol_light(sh, od, above, below, ray);
+		let col = cloud_vol_light(sh, od, above, below, ray, prof.darkening);
 		// The view's opacity (volume.extinction or the run-time override): what hides a cloud
 		// behind another; the light's path above has its own (lightExtinction).
 		let a = 1.0 - exp(-extinction * d * dt);
@@ -2149,7 +2222,7 @@ fn dwell_cloud_plumes(layer: CloudMarch, dir: vec3f, rise: f32, eye_h: f32, max_
 				first = t;
 			}
 			// Its own thickness toward the light (its radius), the column over and under the sample.
-			let col = p.color.rgb * cloud_vol_light(sh, d * p.at.z, 0.5 * d * (p.span.y - h), 0.5 * d * (h - p.span.x), ray);
+			let col = p.color.rgb * cloud_vol_light(sh, d * p.at.z, 0.5 * d * (p.span.y - h), 0.5 * d * (h - p.span.x), ray, 0.0);
 			let a = 1.0 - exp(-CLOUD_PLUME_EXTINCTION * d * dt);
 			energy += trans * a * col;
 			trans *= 1.0 - a;
@@ -3019,7 +3092,7 @@ mod volume_tests {
         let od = light_depth(t, steps, y, d, above, rise, |s| {
             broad_density(y + rise * s / h)
         });
-        let l = sample_light(t, od, c, above, below);
+        let l = sample_light(t, od, c, above, below, p.darkening);
         soft_clip(sample_colour(t, l, t.light.sunlit, t.light.shade))
     }
 
@@ -3042,8 +3115,12 @@ mod volume_tests {
         ] {
             let at = |y| lum(lit_sample(&CLOUDS, y, 1.0, 0.0, steps));
             let (hi, lo) = (at(top - 0.01), at(0.04));
+            // With no light samples (no shipped tier: Low draws the 2D deck) the cloud above stands
+            // for the light's path at the top too, so less relief; the sky's light through the
+            // sides (§12) lifts the base.
+            let relief = if steps == 0 { 1.25 } else { 1.4 };
             assert!(
-                hi > 1.4 * lo,
+                hi > relief * lo,
                 "{steps} light samples: top {hi:.3}, base {lo:.3}"
             );
             // The base reads as shade, not as a hole: the sky's and the ground's light reach it.
@@ -3095,7 +3172,7 @@ mod volume_tests {
         );
         assert!(away > side, "the back lobe: {away:.2} vs {side:.2}");
         // Thin cloud (little in the way) toward the sun is brighter than seen from the side.
-        let thin = |c| sample_light(&CLOUDS, 20.0, c, 0.0, 0.0).sun;
+        let thin = |c| sample_light(&CLOUDS, 20.0, c, 0.0, 0.0, 0.0).sun;
         assert!(thin(0.98) > 1.5 * thin(0.0));
         // By data: no phase strength, even all round; HG is 1 for g 0.
         let even = VolumeTunables {
@@ -3211,7 +3288,7 @@ mod volume_tests {
         let od = light_depth(t, t.tiers.high.light_steps, y, dens(y), above, 1.0, |s| {
             dens(y + s / h)
         });
-        let l = sample_light(t, od, c, above, below);
+        let l = sample_light(t, od, c, above, below, p.darkening);
         lum(soft_clip(sample_colour(t, l, lit, shade))) / lum(lit)
     }
 
@@ -3224,6 +3301,64 @@ mod volume_tests {
             .filter(|&y| height_gradient(&p, y) > 0.15)
             .fold(0.0, f64::max);
         (top, p.base[1] + 0.01)
+    }
+
+    #[test]
+    fn a_coarse_steps_light_is_taken_at_the_dense_clouds_surface() {
+        // §12: a dense step's light is taken where its opacity is, near where the ray enters it;
+        // a thin step's at its middle; none with `surfaceLight` 0.
+        let v = &CLOUDS.volume;
+        let dt = 840.0; // Medium's 10 steps through the layer from 6 km up, looking 22° down.
+        let dense = step_pull(&CLOUDS, v.extinction, dt);
+        assert!(
+            (dense - (0.5 * dt - 1.0 / v.extinction)).abs() < 1.0,
+            "lit {dense:.0} m before the middle"
+        );
+        assert!(
+            step_pull(&CLOUDS, 1e-7, dt) < 1e-3,
+            "a thin step at its middle"
+        );
+        let mid = CloudTunables {
+            volume: VolumeTunables {
+                surface_light: 0.0,
+                ..CLOUDS.volume
+            },
+            ..CLOUDS
+        };
+        assert_eq!(step_pull(&mid, v.extinction, dt), 0.0);
+        assert!(cloud_wgsl(&CLOUDS).contains("CLOUD_VOL_SURFACE"));
+        let src = cloud_wgsl(&CLOUDS) + &cloud_march_wgsl(0, 0, 1, 4);
+        assert!(src.contains("let pull = cloud_step_pull(extinction * d, dt);"));
+
+        // The owner's grey banks from above (WORK_QUEUE item 13): a cumulus at noon seen from
+        // above, its first dense step's middle half a step inside the top. Lit there it was grey;
+        // lit at its surface it reads near the sunlit white.
+        let k = CLOUDS
+            .cloud_types
+            .iter()
+            .find(|c| c.name == "cumulus")
+            .unwrap()
+            .at;
+        let w = Weather {
+            cover: 1.0,
+            kind: k,
+            precipitation: 0.0,
+            lift: 0.0,
+            depth: 1.0,
+        };
+        let (top, _) = top_and_base(&CLOUDS, k);
+        let h = v.top_m - v.base_m;
+        let down = 22f64.to_radians().sin();
+        let c = -0.9;
+        let middle = top - 0.5 * dt * down / h;
+        let surface = middle + step_pull(&CLOUDS, v.extinction * 0.8, dt) * down / h;
+        let (m, s) = (
+            noon_sample(&CLOUDS, &w, middle, c),
+            noon_sample(&CLOUDS, &w, surface, c),
+        );
+        eprintln!("from above: step middle {m:.3}, surface {s:.3} of the white");
+        assert!(s >= 0.9, "the sunlit top from above: {s:.3} of the white");
+        assert!(s >= m, "surface {s:.3} vs middle {m:.3}");
     }
 
     #[test]
@@ -3328,7 +3463,7 @@ mod volume_tests {
         let od = light_depth(t, steps, y, d, above, rise, |s| {
             broad_density(y + rise * s / h)
         });
-        let l = sample_light(t, od, c, above, below);
+        let l = sample_light(t, od, c, above, below, p.darkening);
         soft_clip(sample_colour(t, l, shading.0, shading.1))
     }
 
@@ -3375,7 +3510,11 @@ mod volume_tests {
         let old = untinted(&CLOUDS, low_up, low_sun_hue, low_sky);
         let before = tinted_sample(&CLOUDS, top - 0.01, low_up, 0.0, steps, old);
         let before_base = tinted_sample(&CLOUDS, 0.04, low_up, 0.0, steps, old);
-        assert!(near(before) > 0.15, "before: {before:.3?}");
+        // (0.15 off before §12's brighter sunlit octaves; 0.12 since.)
+        assert!(
+            near(before) > 0.1 && near(before) > 2.5 * near(lit_side),
+            "before: {before:.3?}"
+        );
         assert!(warmth(before_base) < 1.2, "before: {before_base:.3?}");
         // Noon: the tint is gone (the low sun's ramp is 0) and the look is what it was.
         let (noon_up, noon_sun, noon_sky) = day_at(90.0);
@@ -3452,8 +3591,8 @@ mod volume_tests {
             ..CLOUDS
         };
         assert_eq!(
-            sample_light(&CLOUDS, 300.0, 0.2, 100.0, 50.0),
-            sample_light(&opaque, 300.0, 0.2, 100.0, 50.0)
+            sample_light(&CLOUDS, 300.0, 0.2, 100.0, 50.0, 0.0),
+            sample_light(&opaque, 300.0, 0.2, 100.0, 50.0, 0.0)
         );
         // The shipped view is more opaque than the light (the owner's A/B: a cloud hides the
         // ones behind it; light still goes through).

@@ -869,3 +869,40 @@ open questions: [`proposals/CLOUD_WEATHER.md`](proposals/CLOUD_WEATHER.md).
   phones), reflections and Snell's window taking the field (they keep the uniform deck), server-side weather
   (proposal §5–6).
 
+
+## 12. Thick cloud's light (2026-11-14, WORK_QUEUE item 13)
+
+The follow-up §11 left: dense banks read grey, sometimes gloomy, from above and below. Three causes in the volume's
+lighting (§8.8), none in the weather field:
+
+1. **The march lit each step at its middle.** Medium marches 10 steps through the layer (840 m each from 6 km up
+   looking 22° down); a dense step is opaque within ~1/(σ·d) ≈ 70 m of where the ray enters it, but its light was
+   taken ~400 m inside, under the light's own cloud and the column's cloud above: a sunlit top drawn with the
+   light of the cloud's interior. Each step now takes its light at its **transmittance-weighted depth**
+   (`step_pull`, `cloud_step_pull`: `½dt − (1/σ − dt·e^{−σdt}/(1 − e^{−σdt}))` before the sample, × `surfaceLight`):
+   a dense cloud's surface as the eye sees it, a thin step still at its middle. The light march and the
+   column's cloud above and below start from there; no extra look-ups (a few ALU a cloudy sample).
+2. **Multiple scattering was a floor, not added.** `max(e^{−τ}, 0.5·e^{−τ/4})` × the phase: looking down at a top
+   with the sun overhead the phase is ~0.8 (back-scatter), so a thick cloud's surface read ~0.6 of white. Now two
+   octaves (Wrenninge 2015, Hillaire 2016 §5.8): `e^{−τ}·phase + multiScatter·e^{−multiScatterFalloff·τ}·(½ + ½
+   phase)`, the many-times-scattered light wider, weaker and nearer even (half the phase's shaping), so a thick
+   cloud's sunlit surface is bright from any side; deep inside (bases from below) both octaves still fall off.
+   `sunStrength` 1.3 → 1.1 keeps thin cloud where it was. `powder` 0.5 → 0.3 (it darkened sunlit tops seen from
+   above by up to half).
+3. **The ambient was a flat grey and went to nothing under deep cloud.** The sky's light dimmed by e every
+   `ambientDepthM` of the column's cloud above, so a 1–2 km tall cumulus's base had almost none and only the warm
+   grey bounce: muddy. A share of it, `ambientSide` (0.35), still reaches through the cloud's sides and scattered
+   down, × (1 − the type's `darkening`, `cloudTypes`): cumulus (0.4) keeps 0.21 of the sky's light at its base,
+   cumulonimbus (0.8) 0.07, so storm cloud stays dark where the field makes it. The ambient takes the sky's hue
+   at `skyHue` (0.75; was a fixed 0.5): shaded sides and bases read blue-white under a blue sky, not grey.
+
+CPU twin (`sample_light`, `step_pull`, `day_shading`; tests in `volume_tests`): a cumulus at noon seen from above
+reads ≥ 0.9 of the sunlit white at its surface; fair-weather tops ≥ 0.8 and bases ≥ 0.45, cumulonimbus's base
+the darkest (cumulus 0.64, cumulonimbus 0.25 of white, was 0.57 and 0.23); the step pull is the formula's, thin
+steps none, none at `surfaceLight` 0; the shader uses it.
+
+Cost (M1 Air, `--warm --unthrottled`, 1280 × 720, Medium: the High preset's; `gpu.clouds` + `gpu.composite` over
+Off's composite, p50): from the ground looking 25° up 0.81 → 0.83 ms, 3.5 km up looking down 3.05 → 3.12 ms (within
+the runs' noise). In game (noon from 6 km, the ground under a bank, a late sun at 0.77): the banks' sunlit tops and
+sides white instead of mid-grey, the bases blue-white to light grey with darker cores, the far bank at sunset still
+dark where it is deep.
