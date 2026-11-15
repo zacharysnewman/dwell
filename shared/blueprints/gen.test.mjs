@@ -30,6 +30,7 @@ test("the data validates and the generated table is current", () => {
 
 test("the catalog holds the test blueprints, the storehouse last", () => {
   assert.deepEqual(data().catalog, [
+    "dwell:house1",
     "dwell:bp_hut",
     "dwell:bp_wall",
     "dwell:bp_well",
@@ -78,7 +79,7 @@ test("bad entries fail naming them", () => {
     (d) => (d.catalog = ["dwell:nope"]),
     /catalog\[0\]: unknown structure "dwell:nope"/,
   );
-  bad((d) => d.catalog.push(d.catalog[0]), /catalog\[5\]: dwell:bp_hut twice/);
+  bad((d) => d.catalog.push(d.catalog[0]), /catalog\[6\]: dwell:house1 twice/);
   // B5: jobs, the storehouse, the carried look, a plan's roles.
   bad(
     (d) => (d.jobs[0].kind = "haul"),
