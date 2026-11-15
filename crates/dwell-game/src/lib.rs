@@ -26,6 +26,7 @@ pub mod loading;
 pub mod minimap;
 pub mod region_tools;
 pub mod remotes;
+pub mod rush;
 pub mod sound;
 pub mod stream_budget;
 pub mod touch;

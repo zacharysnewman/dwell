@@ -124,3 +124,57 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
         );
     }
 }
+
+/// BUGS.md #176: the dam break filmed from its take's camera (90 m up, ~95 m from the dam;
+/// `.claude/skills/record/videos/dam-break/wide.json`) is heard: the still lake is silent, the
+/// flood rushes once the dam goes, and its onset bursts once. The game's own hearing
+/// (`dwell_game::rush`) over the server's water (the world's cells and current table).
+#[test]
+fn the_dam_break_is_heard_from_the_takes_camera() {
+    // face-a-only: the flat world the scene builds on is face A's; the hearing on both faces is
+    // `dwell_game::rush`'s tests.
+    use dwell_game::rush::{RushSounds, hear};
+    use dwell_game::sound::SoundKind;
+    let scene = dam_break();
+    let mut f = Fixture::new(flat());
+    f.server.build_scene(&scene);
+    let camera = |t: f64| {
+        let s = (t / 30.0).clamp(0.0, 1.0);
+        [-62.0 - 4.0 * s, 90.0 + 4.0 * s, 86.0 + 128.0 * s]
+    };
+    let down = [0.0, -1.0, 0.0];
+    let mut rush = RushSounds::new();
+    let mut out = Vec::new();
+    let mut levels = Vec::new();
+    for tick in 0..60 * 20 {
+        let t = f64::from(tick) / 60.0;
+        if tick == 180 {
+            f.server.scene_event(&scene, 0).expect("the event");
+        }
+        f.server.step();
+        f.take_all();
+        if tick % 15 == 14 {
+            let heard = hear(f.server.world(), camera(t), &[]);
+            levels.push((t, heard.level()));
+            rush.update(camera(t), down, &heard, 0.25, &mut out);
+        }
+    }
+    eprintln!("levels: {levels:.2?}");
+    let before = levels.iter().filter(|(t, _)| *t < 3.0).map(|l| l.1);
+    assert_eq!(before.fold(0.0, f64::max), 0.0, "the still lake is silent");
+    let after = levels.iter().filter(|(t, _)| *t > 6.0).map(|l| l.1);
+    let quietest = after.fold(1.0, f64::min);
+    assert!(
+        quietest > 0.2,
+        "the flood is heard from 90 m up: {levels:.2?}"
+    );
+    let bursts: Vec<_> = out
+        .iter()
+        .filter(|e| e.kind == SoundKind::FloodBurst)
+        .collect();
+    assert_eq!(bursts.len(), 1, "{bursts:?}");
+    assert!(
+        out.iter().any(|e| e.kind == SoundKind::Rush),
+        "the loop starts"
+    );
+}

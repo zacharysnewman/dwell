@@ -6,19 +6,6 @@ pins it.
 
 ## Open
 
-### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
-
-Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
-(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
-silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
-the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
-held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
-beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
-16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
-grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
-reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
-**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
-
 ### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B)
 
 Found 2026-11-14 checking failing tests on main (not reported by the owner). `cargo test -p dwell-client --test game_local
@@ -713,6 +700,37 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 176. A high shot of a flood is silent: no water and no wind beds 60–90 m over the land
+
+Found 2026-11-14 recording the dam break (WORK_QUEUE item 41; not reported by the owner). Both 30 s cinematic takes
+(`videos/dam-break/`, `videos/dam-break-9x16/`, the camera 90 m up, ~60 m over the valley floor) recorded digital
+silence (−91 dB through the whole flood): the frame-exact sound pipeline ran (its frame marks aligned, error 0 ms), but
+the game made no sound to record. Checked live on the same page through the recording tap: with the theater camera
+held 90 m up over the flood, peak 0; 4 m over the flood water, peak 0.004 (the water beds). Two suspects: the water
+beds hear only water within `waterM` 24 m of the listener (`shared/sounds/dwell.json` `ambience`, the probe's
+16 m radius), so a flood seen from afar has no voice at all (there is no flood or flowing-water event sound for the
+grid's moving water); and the wind bed (`height` 12–60 m, `open`) should have played up there but didn't (the probe
+reads at most `BELOW_M` 40 m down: worth checking `ambience::probe` and the bed's gain with a camera that high).
+**Owner should see:** a flood filmed from a high camera sounds like rushing water (and the wind up there).
+
+**Fixed (2026-11-14, `claude/flood-sound`).** Two causes. (1) **The listener stayed at the player's body**: a placed
+camera (a theater path, a cinematic take) moved the view but `Game::draw` set the audio listener, and so the ambience
+probe, from the body's eye only, and the take's player stood on the land 180 m from the camera; so the wind bed read
+the body's 1.6 m `height` and every placed sound was heard from there. The listener now follows the placed camera; the
+probe also reads 64 m down (was 40 m), past the wind bed's full 60 m. (2) **Moving water had no voice past the beds'
+~24 m**: a new hearing (`dwell-game` `rush.rs`, data `shared/sounds` `ambient.rush`) reads the current table out to
+160 m, every 4th column faster than 0.15 m/s adding speed × depth × its area weighted by distance (and each
+waterfall its discharge), and drives a rushing loop (`water_rush`, its loudness and brightness by the level, placed
+2 m toward the flow), a `flood` bed on the river recording (a new ambience input `rush`) and a `flood_burst` once
+when much water starts moving at once (the rise over 1 s at least half of what is heard). Still water adds nothing.
+Red → green: `cargo test -p dwell-client --test game_local a_placed_camera_high_up_is_the_listener_and_hears_the_height`
+failed on the unfixed code (the listener at the body, `[-1.0, 33.6, -0.25]` vs the camera's `[29, 102, -0.25]`) and
+passes; `dwell-game` `rush::tests` (still water silent, flow near the listener heard from its side, falling off with
+distance yet heard at 60–100 m, a waterfall louder, one burst at the onset and none walking up to running water, both
+faces) and `dwell-sim --test scenes the_dam_break_is_heard_from_the_takes_camera` (silent before the event; level
+0.11 at 3.2 s rising to 0.5 from the take's camera; one burst) are new (the old code had no hearing of the grid's
+water: the take recorded −91 dB).
 
 ### 171. Realistic terrain from the air: harsh bands, straight strips and lines of terrain types (fixed in 0.65.0)
 

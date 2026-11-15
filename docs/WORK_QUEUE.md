@@ -2561,6 +2561,11 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** a valley with a still lake behind a 10-block dam; at 3 s the dam vanishes at once and the lake
    pours through and floods down the valley, the camera drifting after the front, for 30 s of real time, no clipping,
    in both aspects.
+   **The dam break's sound (BUGS.md #176, found recording it; orchestrator's brief 2026-11-14):** both takes were silent.
+   Fixed on `claude/flood-sound`: a placed camera is the listener, the wind bed plays up high, and the grid's moving
+   water is heard from afar (`ambient.rush`: a rushing loop by flow × depth × distance, toward the flow; a flood bed;
+   a burst when the dam goes). **Owner should see:** the 16:9 dam break re-rendered with sound: the wind up high, a
+   crash as the dam goes and rushing water while the flood runs.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

@@ -55,10 +55,14 @@ pub enum SoundKind {
     SteamHiss = 48,
     Sizzle = 49,
     SwimUnder = 50,
+    Rush = 51,
+    RushLevel = 52,
+    RushEnd = 53,
+    FloodBurst = 54,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 51] = [
+    pub const ALL: [SoundKind; 55] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -110,6 +114,10 @@ impl SoundKind {
         SoundKind::SteamHiss,
         SoundKind::Sizzle,
         SoundKind::SwimUnder,
+        SoundKind::Rush,
+        SoundKind::RushLevel,
+        SoundKind::RushEnd,
+        SoundKind::FloodBurst,
     ];
 
     /// The event's name in the data.
@@ -166,6 +174,10 @@ impl SoundKind {
             SoundKind::SteamHiss => "steam_hiss",
             SoundKind::Sizzle => "sizzle",
             SoundKind::SwimUnder => "swim_under",
+            SoundKind::Rush => "rush",
+            SoundKind::RushLevel => "rush_level",
+            SoundKind::RushEnd => "rush_end",
+            SoundKind::FloodBurst => "flood_burst",
         }
     }
 
@@ -223,6 +235,10 @@ impl SoundKind {
             SoundKind::SteamHiss => None,
             SoundKind::Sizzle => None,
             SoundKind::SwimUnder => None,
+            SoundKind::Rush => None,
+            SoundKind::RushLevel => None,
+            SoundKind::RushEnd => None,
+            SoundKind::FloodBurst => None,
         }
     }
 }
@@ -262,6 +278,20 @@ pub mod ambient {
     pub const FALLS_RADIUS_M: f64 = 40.0;
     pub const FALLS_MAX: usize = 3;
     pub const FALLS_FULL_M3S: f64 = 2.0;
+    /// The grid's moving water heard (shared/sounds `ambient.rush`, what each means in its
+    /// `$comment`; BUGS.md #176).
+    pub const RUSH_RADIUS_M: f64 = 160.0;
+    pub const RUSH_STRIDE: i32 = 4;
+    pub const RUSH_MIN_SPEED_MS: f64 = 0.15;
+    pub const RUSH_NEAR_M: f64 = 12.0;
+    pub const RUSH_FULL_FLUX: f64 = 1500.0;
+    pub const RUSH_FALL_WEIGHT: f64 = 30.0;
+    pub const RUSH_PAN_M: f64 = 2.0;
+    pub const RUSH_BURST_WINDOW_S: f64 = 1.0;
+    pub const RUSH_BURST_MIN_LEVEL: f64 = 0.1;
+    pub const RUSH_BURST_MIN_SHARE: f64 = 0.5;
+    pub const RUSH_BURST_FULL_LEVEL: f64 = 0.3;
+    pub const RUSH_BURST_COOLDOWN_S: f64 = 15.0;
     /// The ambience probe's reach round the listener (m) and the blocks that count as trees
     /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).
     pub const AMBIENCE_RADIUS_M: f64 = 16.0;
