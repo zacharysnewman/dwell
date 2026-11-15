@@ -45,25 +45,26 @@ pub enum SoundKind {
     AxeRustle = 38,
     Exhausted = 39,
     ItemPickup = 40,
-    Gasp = 41,
-    Strain = 42,
-    CreatureStep = 43,
-    CreatureStartle = 44,
-    CreatureCall = 45,
-    FellLand = 46,
-    Brush = 47,
-    StickSnap = 48,
-    SteamHiss = 49,
-    Sizzle = 50,
-    SwimUnder = 51,
-    Rush = 52,
-    RushLevel = 53,
-    RushEnd = 54,
-    FloodBurst = 55,
+    ItemCraft = 41,
+    Gasp = 42,
+    Strain = 43,
+    CreatureStep = 44,
+    CreatureStartle = 45,
+    CreatureCall = 46,
+    FellLand = 47,
+    Brush = 48,
+    StickSnap = 49,
+    SteamHiss = 50,
+    Sizzle = 51,
+    SwimUnder = 52,
+    Rush = 53,
+    RushLevel = 54,
+    RushEnd = 55,
+    FloodBurst = 56,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 56] = [
+    pub const ALL: [SoundKind; 57] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -105,6 +106,7 @@ impl SoundKind {
         SoundKind::AxeRustle,
         SoundKind::Exhausted,
         SoundKind::ItemPickup,
+        SoundKind::ItemCraft,
         SoundKind::Gasp,
         SoundKind::Strain,
         SoundKind::CreatureStep,
@@ -166,6 +168,7 @@ impl SoundKind {
             SoundKind::AxeRustle => "axe_rustle",
             SoundKind::Exhausted => "exhausted",
             SoundKind::ItemPickup => "item_pickup",
+            SoundKind::ItemCraft => "item_craft",
             SoundKind::Gasp => "gasp",
             SoundKind::Strain => "strain",
             SoundKind::CreatureStep => "creature_step",
@@ -228,6 +231,7 @@ impl SoundKind {
             SoundKind::AxeRustle => None,
             SoundKind::Exhausted => None,
             SoundKind::ItemPickup => None,
+            SoundKind::ItemCraft => None,
             SoundKind::Gasp => None,
             SoundKind::Strain => None,
             SoundKind::CreatureStep => None,
@@ -329,4 +333,10 @@ pub mod pickup_sounds {
     pub const WINDOW_S: f64 = 0.5;
     pub const REACH_M: f64 = 3.0;
     pub const MIN_S: f64 = 0.09;
+}
+
+/// Making an item with Combine (shared/sounds `craft`; AUDIO.md §5): a press answered within
+/// `WINDOW_S` by a changed inventory plays `item_craft` once.
+pub mod craft_sounds {
+    pub const WINDOW_S: f64 = 1.0;
 }

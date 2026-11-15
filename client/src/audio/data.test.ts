@@ -232,6 +232,20 @@ describe('sound data', () => {
       /pickup: missing/,
     ],
     [
+      'a craft window out of range',
+      (f) => {
+        rec(f, 'craft').windowS = 0;
+      },
+      /craft\.windowS: 0 is outside/,
+    ],
+    [
+      'no craft section',
+      (f) => {
+        delete f.craft;
+      },
+      /craft: missing/,
+    ],
+    [
       'a fallback set without a slide',
       (f) => {
         delete (sets(f).stone as Record<string, string>).slide;

@@ -3576,6 +3576,55 @@ fn a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss() {
     );
 }
 
+/// Break held aimed at nothing (the sky) knocks its refusal once per hold, not on every repeat
+/// (owner, 2026-11-15, BUGS.md: "It should definitely not play more than once when hitting
+/// nothing."): a still touch in Break mode on phones and the held mouse alike; a new hold knocks
+/// once again.
+// face-a-only: the sandbox's sky and aim; the hold's gate has no geometry.
+#[test]
+fn break_held_at_the_sky_knocks_once_per_hold() {
+    use dwell_game::sound::SoundKind;
+    let mut rig = predicting_rig(0);
+    rig.input.look.pitch = 60.0; // the sky
+    for _ in 0..10 {
+        rig.frame();
+    }
+    assert!(
+        rig.game.as_ref().unwrap().debug_state().target.is_none(),
+        "aimed at the sky"
+    );
+    rig.game.as_mut().unwrap().take_sounds();
+    for holder in [
+        dwell_game::build_drag::Holder::Touch,
+        dwell_game::build_drag::Holder::Mouse,
+    ] {
+        let now = rig.now;
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Break, holder, now);
+        let mut knocks = 0;
+        while rig.now < now + 2000.0 {
+            rig.frame();
+            knocks += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == SoundKind::Deny)
+                .count();
+        }
+        rig.game.as_mut().unwrap().release_use(holder);
+        rig.frame();
+        rig.game.as_mut().unwrap().take_sounds();
+        assert_eq!(
+            knocks, 1,
+            "{holder:?}: two seconds held at the sky knock once"
+        );
+    }
+}
+
 /// Break held with the pickaxe (`repeatOnHold`): each swing strikes what is aimed at its own
 /// contact (WORK_QUEUE item 17: "each swing hitting what is targeted then"). Each swing starts at one
 /// stone and is turned to the other before its contact: the first lands on B, the second on A.
@@ -5443,4 +5492,60 @@ fn picking_up_a_ground_item_pops_once_and_a_burst_pops_once() {
     }
     assert_eq!(pops(&mut rig, 120), 1, "three taken at once pop once");
     assert_eq!(count(&mut rig), before + 4);
+}
+
+/// Combine that makes an item plays its craft sound once per press; a press without enough
+/// items is silent, and crafting is not a pickup (owner, 2026-11-15: "Do we yet have sounds for
+/// picking up drops and crafting items?").
+// face-a-only: inventory messages, no geometry.
+#[test]
+fn a_combine_that_makes_an_item_sounds_once_per_press() {
+    use dwell_game::sound::SoundKind;
+    let mut rig = predicting_rig(0);
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(rig.core.server().set_mode("adventure"));
+    rig.run_until(60, |_| false);
+    assert_eq!(rig.core.server().give(player_id, "dwell:rock_shard", 16), 0);
+    rig.run_until(30, |_| false);
+    rig.game.as_mut().unwrap().take_sounds();
+    let heard = |rig: &mut Rig, kind: SoundKind| -> usize {
+        let mut n = 0;
+        for _ in 0..30 {
+            rig.frame();
+            n += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == kind)
+                .count();
+        }
+        n
+    };
+    let stones = |rig: &mut Rig| {
+        rig.core
+            .server()
+            .inventory_of(player_id)
+            .unwrap()
+            .count_of("dwell:stone")
+    };
+    for made in 1..=2 {
+        assert!(rig.game.as_mut().unwrap().combine("dwell:stone_slab"));
+        assert_eq!(
+            heard(&mut rig, SoundKind::ItemCraft),
+            1,
+            "press {made}: once"
+        );
+        assert_eq!(stones(&mut rig), made, "it made a slab");
+    }
+    assert!(rig.game.as_mut().unwrap().combine("dwell:stone_slab"));
+    let (craft, pop) = (
+        heard(&mut rig, SoundKind::ItemCraft),
+        heard(&mut rig, SoundKind::ItemPickup),
+    );
+    assert_eq!(stones(&mut rig), 2, "no shards left: nothing made");
+    assert_eq!((craft, pop), (0, 0), "a press that made nothing is silent");
 }

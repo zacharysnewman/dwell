@@ -148,6 +148,12 @@ rs.push(`    pub const REACH_M: f64 = ${rf(data.pickup.reachM)};`);
 rs.push(`    pub const MIN_S: f64 = ${rf(data.pickup.minS)};`);
 rs.push("}");
 rs.push("");
+rs.push("/// Making an item with Combine (shared/sounds `craft`; AUDIO.md §5): a press answered within");
+rs.push("/// `WINDOW_S` by a changed inventory plays `item_craft` once.");
+rs.push("pub mod craft_sounds {");
+rs.push(`    pub const WINDOW_S: f64 = ${rf(data.craft.windowS)};`);
+rs.push("}");
+rs.push("");
 writeFileSync(join(root, "crates/dwell-game/src/sound.gen.rs"), rs.join("\n"));
 console.log(
   `sounds: ${Object.keys(data.sounds).length} sounds, ${Object.keys(data.sets).length} sets, ${data.events.length} events`,

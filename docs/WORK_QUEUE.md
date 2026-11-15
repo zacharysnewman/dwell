@@ -63,6 +63,17 @@ Last updated: 2026-11-11 (0.52.108).
   sfx:render -- --only item_pickup`. **Owner should see:** walking over items on the ground in adventure, each
   pickup gives a light, soft pop that differs a little each time; sweeping through a pile gives a quick few pops,
   not a loud stack; crafting makes no pop.
+- **Pickup and craft sounds, and the held break's loop (owner, 2026-11-15):** "Do we yet have sounds for picking up
+  drops and crafting items? Also, there seems to be a looping sound when you have "break" on for mobile and you tap
+  and hold the right side of the screen. It should definitely not play more than once when hitting nothing."
+  (a) The pickup pop (above) was finished and merged (0.70.x). (b) A craft sound, built (AUDIO.md §2d):
+  `dwell:item_craft`, a soft woody clack, a second lighter clack and a tiny chime, four variants with pitch and gain
+  jitter, as data in `shared/sounds/dwell.json` (the sound, the event, the `craft` window); it plays once for each
+  Combine press the server answers by making the item (`dwell-game` `CraftSounds`), a press without enough items is
+  silent. Previews: `npm run sfx:render -- --only item_craft`. (c) The loop is BUGS.md #182, fixed.
+  **Owner should see:** pressing a recipe's Combine in the backpack gives a short wooden clack with a small chime,
+  a little different each time; with too few items, nothing. On a phone in Break mode, holding the right side of the
+  screen at the sky knocks once, not over and over; held on a block, each hit sounds as before.
 - **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
   generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
   on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data

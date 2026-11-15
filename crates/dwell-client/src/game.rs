@@ -1092,6 +1092,8 @@ pub struct Game<S: Scene> {
     vital_sounds: dwell_game::sound::VitalSounds,
     /// Picking up a ground item: its pop (owner, 2026-11-14).
     pickup_sounds: dwell_game::sound::PickupSounds,
+    /// Making an item with Combine: its clack and chime (owner, 2026-11-15).
+    craft_sounds: dwell_game::sound::CraftSounds,
     /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
     creature_sounds: dwell_game::sound::CreatureSounds,
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
@@ -1317,6 +1319,7 @@ impl<S: Scene> Game<S> {
             fire_sounds: FireSounds::new(),
             vital_sounds: dwell_game::sound::VitalSounds::new(),
             pickup_sounds: dwell_game::sound::PickupSounds::new(),
+            craft_sounds: dwell_game::sound::CraftSounds::new(),
             creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
             ambience: dwell_game::ambience::Listening {
                 fire_m: dwell_game::ambience::FAR_M,
@@ -2375,6 +2378,13 @@ impl<S: Scene> Game<S> {
                     now_ms,
                 );
                 self.pickup_sounds.update(now_ms, &mut self.sounds);
+                let changed = self
+                    .loose
+                    .inventory
+                    .as_ref()
+                    .is_some_and(|(_, old)| old.slots != i.inventory.slots);
+                self.craft_sounds
+                    .inventory(changed, now_ms, &mut self.sounds);
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
@@ -2816,7 +2826,11 @@ impl<S: Scene> Game<S> {
             if action == EditAction::Place && self.edge_place(holder, now_ms) {
                 return true;
             }
-            self.sounds.push(sound_event(SoundKind::Deny));
+            // Break held at nothing knocks once per hold, not every repeat (BUGS.md, owner
+            // 2026-11-15: a still touch in Break mode looped it).
+            if action == EditAction::Place || self.held_use.miss_sounds() {
+                self.sounds.push(sound_event(SoundKind::Deny));
+            }
             return false;
         };
         let placement = self.interaction.placement();
@@ -6658,6 +6672,8 @@ impl<S: Scene> Game<S> {
         self.outbox
             .borrow_mut()
             .push(Send::Control(Message::InventoryAction(a)));
+        self.craft_sounds
+            .pressed(self.last_frame_ms.unwrap_or_default());
         true
     }
 

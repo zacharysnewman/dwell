@@ -1231,6 +1231,37 @@ impl PickupSounds {
     }
 }
 
+/// Making an item with Combine (owner, 2026-11-15; AUDIO.md §5, shared/sounds `craft`): a press of
+/// a recipe's Combine button waits up to `WINDOW_S` for the server's inventory (it always answers);
+/// a changed one made the recipe and plays `item_craft` once, an unchanged one (not enough items)
+/// is silent. Presses answered by one inventory (two in one tick) play once. Which variant plays is
+/// the shell's seeded draw (`alts`).
+#[derive(Clone, Debug, Default)]
+pub struct CraftSounds {
+    pressed_ms: Option<f64>,
+}
+
+impl CraftSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A Combine press was sent at `now_ms`.
+    pub fn pressed(&mut self, now_ms: f64) {
+        self.pressed_ms = Some(now_ms);
+    }
+
+    /// The inventory was sent again (`changed`: unlike the last one): the answer to a press.
+    pub fn inventory(&mut self, changed: bool, now_ms: f64, out: &mut Vec<SoundEvent>) {
+        let Some(p) = self.pressed_ms.take() else {
+            return;
+        };
+        if changed && now_ms - p <= craft_sounds::WINDOW_S * 1000.0 {
+            out.push(SoundEvent::new(SoundKind::ItemCraft, 0, 1.0, None));
+        }
+    }
+}
+
 pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     let mut v = Vec::with_capacity(events.len() * FLOATS_PER_EVENT);
     for e in events {
@@ -1506,7 +1537,50 @@ impl RemoteContacts {
 
 #[cfg(test)]
 mod tests {
-    use super::pickup_sounds;
+    use super::{craft_sounds, pickup_sounds};
+
+    #[test]
+    fn a_combine_that_makes_an_item_plays_once_and_one_that_fails_is_silent() {
+        // face-a-only: presses and inventories, no geometry.
+        let crafts = |out: &[SoundEvent]| {
+            out.iter()
+                .filter(|e| e.kind == SoundKind::ItemCraft && e.at.is_none())
+                .count()
+        };
+        let mut c = CraftSounds::new();
+        let mut out = Vec::new();
+        c.inventory(true, 0.0, &mut out);
+        assert_eq!(
+            crafts(&out),
+            0,
+            "a change with no press (a pickup) is not a craft"
+        );
+        c.pressed(100.0);
+        c.inventory(true, 150.0, &mut out);
+        assert_eq!(crafts(&out), 1, "the press made it: once");
+        c.inventory(true, 160.0, &mut out);
+        assert_eq!(crafts(&out), 1, "a later change is not that press's");
+        c.pressed(200.0);
+        c.inventory(false, 250.0, &mut out);
+        assert_eq!(
+            crafts(&out),
+            1,
+            "not enough items: the same inventory, silent"
+        );
+        c.pressed(300.0);
+        c.inventory(
+            true,
+            300.0 + craft_sounds::WINDOW_S * 1000.0 + 1.0,
+            &mut out,
+        );
+        assert_eq!(crafts(&out), 1, "an answer long after is not the press's");
+        for i in 0..3 {
+            let t = 2000.0 + 500.0 * f64::from(i);
+            c.pressed(t);
+            c.inventory(true, t + 30.0, &mut out);
+        }
+        assert_eq!(crafts(&out), 4, "three presses, three makes, three plays");
+    }
 
     fn pops(p: &mut PickupSounds, now_ms: f64) -> usize {
         let mut out = Vec::new();

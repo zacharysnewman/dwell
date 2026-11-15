@@ -286,6 +286,8 @@ export interface SoundData {
   brush: { everyM: number; minS: number };
   /** Picking up a ground item (AUDIO.md §5 `pickup`): the Rust game's window and rate; here for the checks. */
   pickup: { windowS: number; reachM: number; minS: number };
+  /** Making an item with Combine (AUDIO.md §5 `craft`): the Rust game's window; here for the checks. */
+  craft: { windowS: number };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];
