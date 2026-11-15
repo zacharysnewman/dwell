@@ -87,6 +87,17 @@ pub fn tool_for_key(code: &str, command: bool, shift: bool) -> Option<ToolAction
     }
 }
 
+/// How far in front of the eye a corner goes where the crosshair aims at no block (m). Owner,
+/// 2026-11-15: "If there's no block under your cross hair it should pick the block 0.5m in front of
+/// you (crosshair)." On desktop and touch alike.
+pub const AHEAD_M: f64 = 0.5;
+
+/// The cell [`AHEAD_M`] along the crosshair's ray from `eye` (`dir` a unit world direction, as the
+/// face's view gives it: the ray is the world's, so it holds on either face).
+pub fn ahead_cell(eye: [f64; 3], dir: [f64; 3]) -> [i32; 3] {
+    dwell_world::cell_of_pos(std::array::from_fn(|i| eye[i] + dir[i] * AHEAD_M))
+}
+
 /// What the tools read from the client: a box of states, or `None` where its chunks are not loaded.
 pub trait BoxSource {
     fn read_box(&mut self, min: [i32; 3], size: [i32; 3]) -> Option<Vec<StateId>>;
@@ -103,6 +114,9 @@ impl BoxSource for VoxelWorld {
 pub struct ToolContext {
     /// The aimed-at block.
     pub target: Option<[i32; 3]>,
+    /// The cell [`AHEAD_M`] in front of the eye along the crosshair ([`ahead_cell`]): a corner's
+    /// cell where no block is aimed at (owner, 2026-11-15).
+    pub ahead: Option<[i32; 3]>,
     /// Its state.
     pub target_state: StateId,
     /// The cell a block would be placed in (next to the target, through the aimed-at face).
@@ -170,6 +184,9 @@ pub struct RegionTools {
     /// The world's disc and build volume (its size, `Game::set_world`): a box outside them is not
     /// sent (BUGS.md #109).
     pub bounds: dwell_world::WorldBounds,
+    /// The region tools are in hand (the touch region bar is open, `Client::set_region_bar`): the
+    /// cell a corner would take is outlined even before the first corner is set.
+    pub armed: bool,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
@@ -234,6 +251,7 @@ impl RegionTools {
             structures: false,
             structure_ops: false,
             bounds: dwell_world::WorldBounds::DEFAULT,
+            armed: false,
             a: None,
             b: None,
             clipboard: None,
@@ -260,6 +278,13 @@ impl RegionTools {
 
     pub fn pasting(&self) -> bool {
         self.paste.is_some()
+    }
+
+    /// Whether the cell in front of the crosshair ([`ahead_cell`]) is outlined where no block is
+    /// aimed at: while a corner could be set (the tools armed, or a selection begun), not while
+    /// pasting.
+    pub fn shows_ahead(&self) -> bool {
+        !self.pasting() && (self.armed || self.a.is_some())
     }
 
     pub fn undo_depth(&self) -> (usize, usize) {
@@ -350,7 +375,8 @@ impl RegionTools {
         self.note.clear();
         match action {
             T::CornerA | T::CornerB => {
-                let Some(t) = ctx.target else {
+                // Nothing aimed at: the cell just in front of the crosshair (AHEAD_M).
+                let Some(t) = ctx.target.or(ctx.ahead) else {
                     self.note = "Aim at a block".into();
                     return None;
                 };
@@ -958,6 +984,7 @@ mod tests {
     fn ctx(target: Option<[i32; 3]>, material: StateId) -> ToolContext {
         ToolContext {
             target,
+            ahead: None,
             target_state: 0,
             placement: target.map(|t| [t[0], t[1] + 1, t[2]]),
             material,
@@ -1088,6 +1115,64 @@ mod tests {
         t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
         let m = t.act(ToolAction::Paste, &ctx(Some([3, 0, 3]), 0), &mut w);
         assert_eq!(op_of(m), Some(RegionEditOp::Paste));
+    }
+
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-15: "If there's no block under your cross hair it should pick the block
+        /// 0.5m in front of you (crosshair)." — on desktop and touch alike: with no block aimed
+        /// at, a corner is the cell `AHEAD_M` along the crosshair, the same face-local cell on
+        /// either face; an aimed-at block still wins, and with neither the corner is refused.
+        fn a_corner_with_no_block_aimed_at_is_the_cell_just_ahead(f: dwell_world::FaceFrame) {
+            // Face-local: the eye inside row 40 (20.1 m), looking along +x, then down.
+            let eye = f.point([10.3, 20.1, 4.7]);
+            let level = ahead_cell(eye, f.vector([1.0, 0.0, 0.0]));
+            assert_eq!(level, f.cell([10, 40, 4]), "{:?}", f.face);
+            let down = ahead_cell(eye, f.vector([0.0, -1.0, 0.0]));
+            assert_eq!(down, f.cell([10, 39, 4]), "toward the ground: {:?}", f.face);
+
+            let mut t = tools();
+            let mut w = world();
+            let air = |ahead| ToolContext {
+                ahead,
+                ..ctx(None, 0)
+            };
+            t.act(ToolAction::CornerA, &air(Some(level)), &mut w);
+            assert_eq!(t.selection(), Some((level, [1, 1, 1])));
+            t.act(ToolAction::CornerB, &air(Some(down)), &mut w);
+            let lo = std::array::from_fn(|i| level[i].min(down[i]));
+            assert_eq!(t.selection(), Some((lo, [1, 2, 1])));
+            // A block aimed at is the corner, not the cell ahead.
+            let aimed = ToolContext {
+                ahead: Some(level),
+                ..ctx(Some(f.cell([0, 2, 0])), 0)
+            };
+            t.act(ToolAction::CornerA, &aimed, &mut w);
+            assert_eq!(t.selection(), Some((f.cell([0, 2, 0]), [1, 1, 1])));
+            // Neither (not playing): no corner.
+            t.act(ToolAction::Deselect, &ctx(None, 0), &mut w);
+            t.act(ToolAction::CornerA, &air(None), &mut w);
+            assert_eq!(t.selection(), None);
+            assert!(t.status().contains("Aim at a block"));
+        }
+    );
+
+    /// The cell ahead is outlined while a corner could be set: the tools armed (the touch bar
+    /// open) or a selection begun, and not while pasting.
+    #[test]
+    fn the_cell_ahead_shows_while_a_corner_could_be_set() {
+        let mut t = tools();
+        let mut w = world();
+        assert!(!t.shows_ahead());
+        t.armed = true;
+        assert!(t.shows_ahead());
+        t.armed = false;
+        t.act(ToolAction::CornerA, &ctx(Some([0, 1, 0]), 0), &mut w);
+        assert!(t.shows_ahead(), "a selection begun");
+        w.set_voxel(0, 1, 0, require("dwell:stone"));
+        t.act(ToolAction::Copy, &ctx(None, 0), &mut w);
+        t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
+        t.armed = true;
+        assert!(!t.shows_ahead(), "pasting");
     }
 
     #[test]
@@ -1310,6 +1395,7 @@ mod tests {
         put(&mut w, from, [2, 2, 0], stone);
         let at = |f: dwell_world::FaceFrame, target: [i32; 3]| ToolContext {
             target: Some(f.cell(target)),
+            ahead: None,
             target_state: 0,
             placement: Some(f.cell([target[0], target[1] + 1, target[2]])),
             material: 0,
@@ -1397,6 +1483,7 @@ mod tests {
         }
         let at = ToolContext {
             target: Some(f.cell([0, 0, 0])),
+            ahead: None,
             target_state: 0,
             placement: Some(f.cell([0, 1, 0])),
             material: 0,

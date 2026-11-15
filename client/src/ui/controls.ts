@@ -64,8 +64,16 @@ export const KEYBOARD: ControlGroup[] = [
     // The region tools (dwell-game region_tools.rs `tool_for_key`), while the mouse is captured.
     title: 'Region tools',
     controls: [
-      { action: 'Select first corner', keys: ['B'], when: 'the targeted block' },
-      { action: 'Select second corner', keys: ['N'], when: 'the targeted block' },
+      {
+        action: 'Select first corner',
+        keys: ['B'],
+        when: 'the targeted block, or 0.5 m ahead with none',
+      },
+      {
+        action: 'Select second corner',
+        keys: ['N'],
+        when: 'the targeted block, or 0.5 m ahead with none',
+      },
       { action: 'Clear the selection', keys: ['X'] },
       { action: 'Fill with the chosen block', keys: ['G'], when: 'up to 32 a side' },
       { action: 'Hollow box of the chosen block', keys: ['H'] },
@@ -176,6 +184,11 @@ export const TOUCH: Control[] = [
   },
   { action: 'Jump, Run, Crouch, Fly', keys: ['Buttons, bottom right'] },
   { action: 'Choose block', keys: ['Tap the hotbar'] },
+  {
+    action: 'Select, copy and paste a box',
+    keys: ['Select, under Bag'],
+    when: 'while flying in creative',
+  },
   { action: 'Debug overlay', keys: ['ⓘ, top right'] },
 ];
 

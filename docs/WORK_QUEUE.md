@@ -16,6 +16,18 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Region tools on touch (owner, 2026-11-15):** "I'd love to copy a structure in mobile but there's no selection or
+  copy control for it. Perhaps we could add a mobile button for it, but only when you're flying perhaps? I have a
+  structure I want to select the region of, so I can copy, and paste it here." And: "If there's no block under your
+  cross hair it should pick the block 0.5m in front of you (crosshair)." — "That applies to desktop and movile."
+  Done on `claude/mobile-region`: a **Select** button (under Bag) while flying in creative opens a bar of the
+  existing region tools — Set A, Set B, Copy, Paste (then Place, Rotate, Mirror, Cancel), Undo, Save (the Structures
+  page's save with the selection) and Clear — from data (`shared/input/touchRegion.json`: `showWhen`, the buttons and
+  what each runs); with no block aimed at, a corner (B/N on desktop too) is the cell 0.5 m in front of the eye along
+  the crosshair (`region_tools::AHEAD_M`), outlined before it is set (STRUCTURES.md §5.1). **Owner should see:** on
+  the phone, fly, tap Select, set A and B (on blocks or in the air), Copy, fly elsewhere, Paste → Place; the copy
+  stands there, and Undo takes it away.
+
 - **One rock item (owner, 2026-11-15):** "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards"
   (BUGS.md #181), and the decision: "One item: rock = shard" — dirt, grass and the ground's rocks give Rock shards;
   everything that means "stone" uses the one item; Rocks already in inventories and saved loose rocks become Rock

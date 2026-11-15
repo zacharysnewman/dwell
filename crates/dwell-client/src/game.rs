@@ -1005,6 +1005,9 @@ pub struct Game<S: Scene> {
     pub lod_drawn: bool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
+    /// The cell just in front of the crosshair (`region_tools::ahead_cell`): a region corner's
+    /// where no block is aimed at.
+    ahead: Option<[i32; 3]>,
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
@@ -1272,6 +1275,7 @@ impl<S: Scene> Game<S> {
             prediction: EditPredictor::new(),
             character_lights: Default::default(),
             target_eye: None,
+            ahead: None,
             lod: None,
             unloads: Default::default(),
             lod_map: None,
@@ -3867,6 +3871,7 @@ impl<S: Scene> Game<S> {
         let target = self.brush.target().map(|t| t.cell);
         let ctx = ToolContext {
             target,
+            ahead: None,
             target_state: target
                 .map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2])),
             placement: self.brush.center(true),
@@ -4759,6 +4764,7 @@ impl<S: Scene> Game<S> {
             .map_or(0, |s| s.material);
         let ctx = ToolContext {
             target,
+            ahead: at.is_none().then_some(self.ahead).flatten(),
             target_state,
             placement: self.interaction.placement().map(|(c, _)| c),
             material,
@@ -6142,6 +6148,7 @@ impl<S: Scene> Game<S> {
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
         self.view_dir = dir;
+        self.ahead = eye.map(|e| dwell_game::region_tools::ahead_cell(e, dir));
         self.ground_target = eye.and_then(|e| self.ground_under_crosshair(e, dir));
         // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
         self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
@@ -6235,6 +6242,13 @@ impl<S: Scene> Game<S> {
                     .unwrap_or(cells[0]);
                 let h = dwell_world::CELL_H as f32 * cells.len() as f32;
                 (dwell_world::pos_of_cell(lowest), ([0.0; 3], [1.0, h, 1.0]))
+            });
+            // With the region tools in hand, the cell a corner would take (`ahead`), outlined
+            // before it is set.
+            let ghost = ghost.or_else(|| {
+                let ahead = self.ahead.filter(|_| self.region.shows_ahead())?;
+                let h = dwell_world::CELL_H as f32;
+                Some((dwell_world::pos_of_cell(ahead), ([0.0; 3], [1.0, h, 1.0])))
             });
             let (at, bounds) = ghost.map_or((None, FULL_CELL), |(p, b)| (Some(p), b));
             self.scene.borrow_mut().set_block_outline(at, bounds);
