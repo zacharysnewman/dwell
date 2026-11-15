@@ -240,19 +240,35 @@ fn qrot(q: vec4f, v: vec3f) -> vec3f {
 /// ink flag, set where the surface takes no ink outline (block data `outline: false`: the cross
 /// plants), and the next the self-lit flag (`self_lit_depth`, docs/LIGHTS.md §2), set where the
 /// surface gives off its own colour (a torch's flame), which the time of day's desaturation leaves
-/// alone. Two units in the last place (about 2e-7 of the depth) are far below anything a reader
-/// resolves, so the readers that don't ask are unchanged. **Every writer of the view depth goes
-/// through `frame_depth`** (a test checks it), or the flags would be its depth's own noise.
+/// alone. The next three carry the pixel's ambient-occlusion share (docs/SSAO.md): `frame_ao`,
+/// the share of its light the screen-space occlusion may darken, which `lambert_lit` sets as it
+/// lights the fragment, stored in `SHARE_LEVELS` + 1 steps (0: none, the fragments that never light
+/// through `lambert_lit`). Five units in the last place (about 4e-6 of the depth) are far below
+/// anything a reader resolves, so the readers that don't ask are unchanged. **Every writer of the
+/// view depth goes through `frame_depth`** (a test checks it), or the flags would be its depth's
+/// own noise; `self_lit_depth` stores the share again, for the writers that light after it.
 const FRAME_DEPTH: &str = r"
+var<private> frame_ao: f32 = 0.0;
+
+// The ambient-occlusion share's bits (2–4) of a stored view depth.
+fn frame_ao_bits() -> u32 {
+    return u32(round(clamp(frame_ao, 0.0, 1.0) * 7.0)) << 2u;
+}
+
 fn frame_depth(d: f32, inked: bool) -> f32 {
-    let b = bitcast<u32>(d) & ~3u;
-    return bitcast<f32>(select(b | 1u, b, inked));
+    let b = bitcast<u32>(d) & ~31u;
+    return bitcast<f32>(select(b | 1u, b, inked) | frame_ao_bits());
 }
 
 // A stored view depth flagged as a self-lit surface's (or not).
 fn self_lit_depth(d: f32, self_lit: bool) -> f32 {
-    let b = bitcast<u32>(d) & ~2u;
-    return bitcast<f32>(select(b, b | 2u, self_lit));
+    let b = bitcast<u32>(d) & ~30u;
+    return bitcast<f32>(select(b, b | 2u, self_lit) | frame_ao_bits());
+}
+
+// The ambient-occlusion share a stored view depth carries (0–1).
+fn frame_ao_share(d: f32) -> f32 {
+    return f32((bitcast<u32>(d) >> 2u) & 7u) / 7.0;
 }
 
 // Whether a stored view depth is a self-lit surface's.
@@ -460,7 +476,14 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let shade = frame.pixel_art.z * (1.0 - clamp(ks, 0.0, 1.0));
     let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient
         * mix(vec3f(1.0), frame.pixel_tint.rgb, shade);
-    let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
+    let glow = BLOCK_LIGHT * (PI * l.glow);
+    let irradiance = direct + hemi + glow + l.points;
+    // The share the screen-space occlusion may darken (docs/SSAO.md; dwell_look::ssao::share): the
+    // hemisphere and block light's, never the sun's, moon's or a torch's, less where the baked
+    // corner shading already darkens it.
+    let luma = vec3f(0.2126, 0.7152, 0.0722);
+    let open = clamp(dot(hemi + glow, luma) / max(dot(irradiance, luma), 1e-6), 0.0, 1.0);
+    frame_ao = open * (1.0 - SSAO_BAKED * (1.0 - clamp(l.ambient, 0.0, 1.0)));
     return irradiance * albedo / PI;
 }
 
@@ -3882,11 +3905,12 @@ pub fn lava_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\nconst SSAO_BAKED: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
+        dwell_look::ssao::SSAO.baked as f32,
         light_wgsl(),
         lava_wgsl(),
         dwell_mesh::ATLAS_CELLS,
@@ -4148,11 +4172,11 @@ mod tests {
         assert!(lit.contains(
             "let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct"
         ));
-        assert!(
-            lit.contains(
-                "let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;"
-            )
-        );
+        assert!(lit.contains("let glow = BLOCK_LIGHT * (PI * l.glow);"));
+        assert!(lit.contains("let irradiance = direct + hemi + glow + l.points;"));
+        // The occlusion's share (docs/SSAO.md) is the hemisphere and block light's, never the
+        // direct light's.
+        assert!(lit.contains("let open = clamp(dot(hemi + glow, luma)"));
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
         assert!(
             direct
@@ -4619,9 +4643,9 @@ mod tests {
         // The flag is the depth's lowest bit (the next the self-lit flag, cleared with it);
         // nothing drawn (0) takes the ink.
         let flag = super::FRAME_DEPTH;
-        assert!(flag.contains("let b = bitcast<u32>(d) & ~3u;"));
+        assert!(flag.contains("let b = bitcast<u32>(d) & ~31u;"));
         assert!(flag.contains("return (bitcast<u32>(d) & 2u) != 0u;"));
-        assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked));"));
+        assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked) | frame_ao_bits());"));
         assert!(flag.contains("return (bitcast<u32>(d) & 1u) == 0u;"));
     }
 

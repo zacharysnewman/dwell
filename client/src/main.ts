@@ -483,6 +483,9 @@ interface DwellDebug {
     /** Light shafts and bloom tiers (`off`, `low`, `high`). */
     shafts?: 'off' | 'low' | 'high';
     bloom?: 'off' | 'low' | 'high';
+    /** The ambient occlusion's tier and strength (docs/SSAO.md). */
+    ssao?: 'off' | 'low' | 'high';
+    ssaoStrength?: number;
     /** Leaf cards on (the tier's) or off (`Client.setCards`). */
     cards?: boolean;
     /** The tall grass and flowers drawn or not. */
@@ -1265,6 +1268,11 @@ async function start(): Promise<App | null> {
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
     // Bloom (WORK_QUEUE item 19); ?bloom=off|low|high overrides it (the bench).
     client.setBloom(new URLSearchParams(location.search).get('bloom') ?? s.bloom);
+    // Ambient occlusion (docs/SSAO.md); ?ssao=off|low|high overrides its tier (the bench).
+    client.setSsao(
+      new URLSearchParams(location.search).get('ssao') ?? s.ssao.quality,
+      s.ssao.strength,
+    );
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
     const rs = renderScaleFromQuery(location.search, s.renderScale);
     client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);
@@ -1713,6 +1721,7 @@ async function start(): Promise<App | null> {
       }
       if (v.shafts !== undefined) client.setShafts(v.shafts);
       if (v.bloom !== undefined) client.setBloom(v.bloom);
+      if (v.ssao !== undefined) client.setSsao(v.ssao, v.ssaoStrength ?? s.ssao.strength);
       if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
       if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
       if (v.torchShadows !== undefined) {

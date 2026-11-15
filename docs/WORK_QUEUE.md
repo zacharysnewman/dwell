@@ -28,6 +28,17 @@ Last updated: 2026-11-11 (0.52.108).
     holding it (queued with the damage-mask job). Owner should see: a tree whose bottom log breaks falls, even one
     touching a hillside, toward its open side.
   - Small changes are made directly in the main conversation, not in subagents.
+
+- **Screen-space ambient occlusion (owner, 2026-11-15):** "I'd like to implement screen space ambient occlusion."
+  Answers: presets "High and Ultra" (a cheap half-resolution pass on High within ~1 ms, a fuller one on Ultra; off on
+  Low/Medium, phones and the CPU adapter tier); scope "Everything, soft" (contact shadows where characters, trees,
+  grass, props and built blocks meet the ground and each other, subtle, not doubling the baked corner shading);
+  tuning "Data + Settings toggle" (`shared/look/ssao.json`; Settings → Graphics → Ambient occlusion and its strength).
+  Done on `claude/ssao` (docs/SSAO.md, ADR 0080): on the hemisphere and block light only, its own passes after the
+  scene. **Owner should see:** on High, soft darkening where villagers, huts, tree trunks, grass and cliff feet meet
+  the ground and in built corners, none in full sun on open ground; Settings → Graphics → Lighting → Ambient
+  occlusion Off/Low/High and its strength; frame rate on High unchanged at 60 fps.
+
 - **Region tools on touch (owner, 2026-11-15):** "I'd love to copy a structure in mobile but there's no selection or
   copy control for it. Perhaps we could add a mobile button for it, but only when you're flying perhaps? I have a
   structure I want to select the region of, so I can copy, and paste it here." And: "If there's no block under your

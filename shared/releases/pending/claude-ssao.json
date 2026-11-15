@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Ambient occlusion: soft shadows where people, trees, grass and buildings meet the ground and each other (High and Ultra presets).",
+    "Settings → Graphics → Lighting has Ambient occlusion (Off, Low, High) and its strength."
+  ]
+}

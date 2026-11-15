@@ -33,6 +33,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
+- `docs/SSAO.md` — screen-space ambient occlusion (ADR 0080): the owner's answers, the ambient share in the
+  view depth, the passes, the tiers (High and Ultra) and the Settings toggle and strength.
 - `docs/SPYGLASS.md` — design for Phase 38 (ADR 0039): the spyglass zoom, its data file, and the
   LOD's detail inside the zoomed cone.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,

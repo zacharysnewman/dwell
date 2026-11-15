@@ -48,6 +48,7 @@ const RENDER_LOOKS = [
   'waterfalls',
   'daynight',
   'bloom',
+  'ssao',
 ];
 /** The `shared/look` scripts that also emit HUD or settings code (client/src/ui). */
 const UI_LOOKS = ['loading', 'spyglass', 'watertiers', 'orbits'];

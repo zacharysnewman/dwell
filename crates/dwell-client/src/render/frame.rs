@@ -421,6 +421,8 @@ pub struct Targets {
     pub cloud_raw: (wgpu::Texture, wgpu::TextureView),
     /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
     pub bloom: BloomChain,
+    /// The ambient occlusion's buffers (docs/SSAO.md; the tier's size, 1 × 1 with it off).
+    pub ssao: super::ssao::SsaoTargets,
 }
 
 /// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
@@ -446,6 +448,10 @@ pub struct SceneGroups<'a> {
     /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
     pub bloom: (u32, u32, u32),
     pub bloom_layout: &'a wgpu::BindGroupLayout,
+    /// The ambient occlusion's buffer size ((1, 1) off), its passes' group layout and uniform.
+    pub ssao: (u32, u32),
+    pub ssao_layout: &'a wgpu::BindGroupLayout,
+    pub ssao_uniform: &'a wgpu::Buffer,
 }
 
 impl Targets {
@@ -613,6 +619,13 @@ impl Targets {
             ],
         });
         let bloom = BloomChain::new(device, groups.bloom, groups.bloom_layout, groups.sampler);
+        let ssao = super::ssao::SsaoTargets::new(
+            device,
+            groups.ssao,
+            groups.ssao_layout,
+            &view_depth.1,
+            groups.ssao_uniform,
+        );
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
@@ -705,6 +718,7 @@ impl Targets {
             cloud_march_group,
             cloud_raw,
             bloom,
+            ssao,
         }
     }
 
