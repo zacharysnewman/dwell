@@ -541,16 +541,14 @@ distortion, wind shear, the light march on the base shape only, blue-noise jitte
 
 ### 9.2 The weather map and the cloud types (data)
 
-- **Weather** (`clouds.json` `weather`, `cloud_weather`, twins `weather`, `column_weather`): **regional
-  fields**, not the clouds (BUGS.md #100, §9.9; the papers' weather map at 8–16 km). **Cover**: the global
-  coverage (the uniform a weather system sets) moved by ± `coverVariation` × 4c(1 − c) (so none and overcast stay
-  so) by a one-octave value-noise field with cells `coverScaleM` (8 km) across, then × (1 ± `deckBreakup`) by the
-  deck's own stretched noise `n` (1 km cells, warped: breaks the base texture's 2 km repeat); **type** along the
-  types' axis `type + typeVariation × (2v − 1) + typeFromCoverage × (regional cover − coverage)`, `v` a second
-  field with cells `typeScaleM` (16 km) across (`typeFromCoverage` 0: a cloud's core no longer towers over its
-  edges); **precipitation** (thicker, darker bases: each type's `darkening`). Both scales are whole multiples of
-  the deck's cells dividing its period (the generator checks), so the fields tile with it. Today type and
-  precipitation are the data's; a weather system will write them (§9.7).
+- **Weather** (`clouds.json` `weather`, `cloud_weather_cell`, twins `weather`, `column_weather`): **regional**,
+  not the clouds (BUGS.md #100, §9.9), and since 2026-11-14 read from the weather field (§11) per column.
+  **Cover**: the global coverage (the uniform a weather system sets) moved by ± `coverVariation` (0.55) × 4c(1 − c)
+  (so none and overcast stay so) by the field's humidity, then × (1 ± `deckBreakup`) by the deck's own stretched
+  noise `n` (1 km cells, warped: breaks the base texture's 2 km repeat); **type**, the floor's **lift** and the
+  **depth** the field's; **precipitation** (thicker, darker bases: each type's `darkening`) the data's. Until
+  2026-11-14 the cover and type were two one-octave value-noise fields (8 and 16 km cells, the cover ± 0.17,
+  repeating with the deck's 128 km wrap), which read as one weather everywhere (§11).
 - **Cloud types** (`cloudTypes`, an ordered list; `cloud_type_profile` is generated from it, twin
   `type_profile`): each a place on the type axis (`at`), a height profile as two spans in shares of the layer
   (`base`: the fade-in from its floor, short, so a **flat base**; `top`: the fade-out, long, so the noise's
@@ -564,8 +562,9 @@ distortion, wind shear, the light march on the base shape only, blue-noise jitte
 | cumulus | 0.6 | 0–0.03 | 0.04–0.42 (≤ 1.3 km; the fade from just over the base: flat base, domed top) | 0 | 1.0 |
 | cumulonimbus | 1.0 | 0–0.03 | 0.82–0.97 (≈ 3 km) | 0.8 | 1.4 |
 
-  With the shipped weather (`type` 0.42, `typeVariation` 0.3 over 16 km, `typeFromCoverage` 0) the sky is
-  stratocumulus to cumulus by region; a cumulonimbus is a region's (a weather system's), not every core's. A new type is a list
+  With the shipped weather field (`type` 0.42 ± `typeRange` 0.3 by its instability, more over windward
+  mountains, less over the sea) the sky ranges from stratus decks to towering cumulus by region; a cumulonimbus is
+  a region's, not every core's. A new type is a list
   entry (the generator checks the order, spans and names; a test adds a fixture tower by data alone).
 
 ### 9.3 The shape
@@ -823,3 +822,50 @@ by data is flat again. `clouds.test.mjs`: the new entries' bounds.
 
 Left (local, a GPU): the deck in game at `?clouds=low` against the old screenshots (sun high, low sun, from
 above, night) and `gpu.composite` on Low before and after; tune by `lowShadowOctaves` and `shadowStepM`.
+
+## 11. The weather field (2026-11-14, WORK_QUEUE item 13)
+
+The owner: "the clouds look too uniform and patterned at a macro level so some research and optimize this to be
+like real clouds, non uniform height, shape, etc based on actual changing weather models." The research and the
+open questions: [`proposals/CLOUD_WEATHER.md`](proposals/CLOUD_WEATHER.md).
+
+- **The field** (`dwell_look::weather_field`, data `clouds.json` `weatherField`): per world (the seed) and face, a
+  cell per column of **humidity** (0–1, 0.5 the mean), **type** (along the cloud-type axis), **lift** (the clouds'
+  floor over the layer's, up to `liftMax` 0.25 of it) and **depth** (the type's height profile scaled
+  `depthMin`–`depthMax`, 0.6–1.25). Computed on the CPU in f64 world metres, so it has no period:
+  - humidity from three octaves of evolving 3D value noise (x, z, time): synoptic `synopticM` 160 km
+    domain-warped by `frontWarpM` 45 km (bands and fronts, changing over 3 h), mesoscale 42 km (45 min), local
+    11 km (15 min), moving with the wind at `steer` (2.5) × its speed, sharpened by `contrast`: about 28 % of a
+    face clear, 12 % overcast;
+  - the terrain from the world's map (`TerrainGenerator::map_height`): `upslopeGain` × the ground's rise over
+    `upwindM` (4 km) along the wind plus `elevationGain` per km (orographic cloud over windward slopes and summits),
+    minus `shadowGain` per km that the highest ground within `shadowM` (16 km) upwind is over the column (the rain
+    shadow's clear lee); over the sea `seaHumidity`, `seaType`, `seaLift` (moister, flatter, lower decks);
+  - type: `weather.type` ± `typeRange` by an instability field (60 km, 90 min), + `oroType` × the lift;
+  - lift: (1 − humidity) × `liftMax` (dry air: a higher condensation level), lower over the sea;
+  - depth: by the instability, the humidity and `oroDepth` × the lift.
+- **The map**: `sizeCells`² RGBA8 texels `cellM` (1 km) across, a 65 km window round the eye snapped to whole
+  texels (`corner_for`), baked in a job worker (`Job::CloudWeather`, which has the terrain; `weather_field::bake`:
+  the ground read once on a grid with an apron upwind; ~1.6 ms natively) every `updateS` (2 s) of the clouds' clock
+  and when the eye is `recentreM` (4 km) from its centre or on the other face (`due`, tested). Neutral weather until
+  the first bake. On the GPU at the clouds pass's group 3 binding 11, sampled with the noise sampler clamped to its
+  edge texels; its corner from the eye rides in the plume uniform's head (`zw`, f64 on the CPU).
+- **In the march** (`cloud_weather_map_at`, one fetch a view sample, replacing the two regional value-noise fields:
+  cheaper per step): the cover from the humidity (`cloud_weather_cell`), the type, the column's floor raised by the
+  lift (`y` measured from it; `column_y`) and the profile's top fade scaled by the depth, kept under the layer's top
+  (`cloud_column_profile`, twin `column_profile`). The light samples reuse the column's cell.
+- **Tests** (`weather_field.rs`): the humidity's spread and clear/overcast shares over 600 km; no repetition (a
+  2048 km transect's autocorrelation under 0.5 at every lag past 200 km, not equal across the deck's 128 km wrap)
+  and no spike in its spectrum; bases varying by > 400 m and cumulus tops by > 800 m across regions; the field moving
+  with the wind and changing as it goes (and much changed after 4 h); a ridge across the wind moister, taller and
+  deeper on its windward slope and drier in its lee than flat ground; the sea's lower, flatter decks; the bake equal
+  to the field at its texels and stable under a window move; each face its own weather; the request schedule.
+  `clouds.rs`: the lift raises a cumulus's floor and the depth its top, never past the layer's top; the march
+  fetches the map once a sample and never in the light samples. `clouds.test.mjs`: the new entries' checks.
+- **Cost** (M1 Air, `--warm --unthrottled`, 1280 × 720, Medium: the High preset's; `gpu.clouds` + `gpu.composite`
+  over Off's composite, p50): from the ground looking 25° up 0.87 ms before, 0.85 ms after; 3.5 km up looking down
+  3.13 → 3.06 ms. The map's bake: 2.7–3.2 ms in a worker (WASM) every 2 s (`job.cloud_weather.run`).
+- **Not yet**: cloud streets and cells, a front's structure, higher layers, rain from the field, the 2D deck (Low,
+  phones), reflections and Snell's window taking the field (they keep the uniform deck), server-side weather
+  (proposal §5–6).
+

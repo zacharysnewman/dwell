@@ -284,6 +284,13 @@ pub trait Scene: TerrainRenderer {
     }
     /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base).
     fn cloud_noise_slab(&mut self, _detail: bool, _z0: u32, _texels: &[u8]) {}
+    /// The clouds' weather field's next map to bake, if one is due (docs/CLOUDS.md §11); asking
+    /// marks one out.
+    fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        None
+    }
+    /// A baked weather map, or `None` when its bake failed.
+    fn cloud_weather_map(&mut self, _map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -1003,6 +1010,8 @@ pub struct Game<S: Scene> {
     lod_map: Option<crate::lod_map::LodMap>,
     /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
     far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// The clouds' weather map out with the job workers (docs/CLOUDS.md §11).
+    cloud_weather_asked: Option<dwell_look::weather_field::MapAt>,
     /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
     /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
     /// chunks arrived or changed since they were filtered.
@@ -1263,6 +1272,7 @@ impl<S: Scene> Game<S> {
             unloads: Default::default(),
             lod_map: None,
             far_tree_jobs: Default::default(),
+            cloud_weather_asked: None,
             far_tree_lists: Default::default(),
             far_tree_felled: Default::default(),
             far_tree_stale: Default::default(),
@@ -2531,6 +2541,22 @@ impl<S: Scene> Game<S> {
                     self.scene
                         .borrow_mut()
                         .cloud_noise_slab(detail, z0, &texels);
+                }
+                (Purpose::CloudWeather, out) => {
+                    let mut scene = self.scene.borrow_mut();
+                    match (out, self.cloud_weather_asked.take()) {
+                        (
+                            Output::CloudWeather {
+                                face_b,
+                                corner,
+                                texels,
+                            },
+                            Some(at),
+                        ) if at.face_b == face_b && at.corner == corner => {
+                            scene.cloud_weather_map(Some((at, &texels)));
+                        }
+                        _ => scene.cloud_weather_map(None),
+                    }
                 }
                 (Purpose::LodMap(job), out) => {
                     if let Some(map) = &mut self.lod_map
@@ -5849,6 +5875,7 @@ impl<S: Scene> Game<S> {
         }
         self.update_lod_map(position);
         self.update_cloud_noise();
+        self.update_cloud_weather();
         self.update_far_trees(position);
     }
 
@@ -5892,6 +5919,24 @@ impl<S: Scene> Game<S> {
             LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
+    }
+
+    /// The clouds' weather field (docs/CLOUDS.md §11): when the renderer wants a new map (a volume
+    /// tier, every `weatherField.updateS` or when the eye leaves the window), its bake goes to a
+    /// job worker, which has the world's terrain; the map goes to the renderer as it comes back.
+    fn update_cloud_weather(&mut self) {
+        let Some(at) = self.scene.borrow_mut().take_cloud_weather_request() else {
+            return;
+        };
+        self.cloud_weather_asked = Some(at);
+        self.pool.borrow_mut().submit(
+            Purpose::CloudWeather,
+            crate::jobs::Job::CloudWeather {
+                face_b: at.face_b,
+                corner: at.corner,
+                seconds: at.seconds,
+            },
+        );
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake

@@ -41,6 +41,7 @@ pub mod water_tiers;
 mod water_tiers_gen;
 pub mod waterfalls;
 pub mod waterflow;
+pub mod weather_field;
 
 use daynight::{DAY_NIGHT, DayState, Sample};
 use dwell_world::FaceFrame;
