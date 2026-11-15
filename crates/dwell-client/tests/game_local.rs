@@ -3424,6 +3424,72 @@ fn a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click() {
     assert_eq!(host_voxel(&mut rig, p), stone, "one hit of five: it stands");
 }
 
+/// The axe as the pickaxe and the shovel (owner, 2026-11-14: "Let's simplify the axe to be like the
+/// shovel and pick, without the multiple modes"; 2026-11-15: "it was different from the other
+/// tools"): held, it is a break tool, not a swung one; a Break at a log is a block edit landing at
+/// the pickaxe's contact, its mark the log's block damage (1 of its hits), and the log breaks whole
+/// at its count.
+#[test]
+fn the_axe_hits_a_log_as_the_pickaxe_hits_stone() {
+    let mut rig = predicting_rig(2);
+    let log = dwell_blocks::block_of(dwell_blocks::require("dwell:log")).name;
+    let palette = dwell_game::block_interaction::palette();
+    let wood = palette
+        .iter()
+        .position(|s| s.item == "dwell:log")
+        .expect("the log on the palette");
+    let axe = palette
+        .iter()
+        .position(|s| s.tool == Some("dwell:stone_axe"))
+        .expect("the stone axe on the palette");
+    rig.game.as_mut().unwrap().interaction.select(wood as i64);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, rig.now));
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    let placed = server_voxel(&mut rig, p);
+    assert_eq!(dwell_blocks::block_of(placed).name, log, "placed");
+    rig.game.as_mut().unwrap().interaction.select(axe as i64);
+    for _ in 0..10 {
+        rig.frame();
+    }
+    let g = rig.game.as_mut().unwrap();
+    assert!(g.held_tool().is_none(), "the axe is not a swung tool");
+    assert_eq!(g.held_break_item(), Some("dwell:stone_axe"), "a break tool");
+    let contact = dwell_protocol::chopping::break_contact_s(Some("dwell:stone_axe")) * 1000.0;
+    assert_eq!(contact, pickaxe_contact_ms(), "the pickaxe's contact");
+    let n = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
+        .expect("an axe breaks a log");
+    let click = rig.now;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, click));
+    while rig.now + 1000.0 / 60.0 < click + contact {
+        rig.frame();
+        assert!(
+            rig.game.as_ref().unwrap().damage_at(p).is_none(),
+            "no mark before contact"
+        );
+    }
+    assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().damage_at(p).is_some()));
+    assert_eq!(
+        server_voxel(&mut rig, p),
+        placed,
+        "one hit of {n}: it stands"
+    );
+    // The rest of its hits, one a swing: then it breaks whole.
+    let mut hits = 1;
+    let mut frames = 0;
+    while hits < n && frames < 60 * 30 {
+        if rig.game.as_mut().unwrap().edit(EditAction::Break, rig.now) {
+            hits += 1;
+        }
+        rig.frame();
+        frames += 1;
+    }
+    assert_eq!(hits, n, "{n} swings");
+    assert!(rig.run_until(120, |r| server_voxel(r, p) != placed));
+    assert_eq!(server_voxel(&mut rig, p), 0, "broken whole after {n} hits");
+}
+
 /// Two ½ m stones on the sandbox's floor, `a` ahead (yaw 0°) and `b` beside it (yaw 35°), both 35° down, the
 /// stone pickaxe in hand and `hits.at_contact` on as the session announced it; the player's id.
 fn two_stones_and_a_pickaxe(rig: &mut Rig) -> ([i32; 3], [i32; 3], u16) {

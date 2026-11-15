@@ -685,6 +685,9 @@ client's sound and chips landed on it `contactS` later.
 
 ## 12. The axe like the other tools (WORK_QUEUE item 51)
 
+**Superseded by §14 (2026-11-15):** the axe is a break tool; its hits are block edits, a damaged log keeps
+its octagon and shows cracks (no bites), and the server cuts no wood. What follows is the step between.
+
 Owner, 2026-11-12: "Also the axe doesn't behave like the other tools. I think it should." Answer to how:
 **"Like the others, felling on top"**: logs take block damage like stone or dirt, and breaking a trunk's log
 fells the tree above as a body, as before.
@@ -750,3 +753,49 @@ Owner, 2026-11-13: "You should also be able to hold 'punch' to dig with your han
   landed); `dwell-client` `game_local` `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go`
   (the controller's hold: 4 punches in 3 × `repeatS`, none after the release, the dirt broken after its hand
   hits, none refused; red on the old client); `held_use.rs`; `shared/tools/gen.test.mjs`.
+
+## 14. The axe is a break tool, as the pickaxe and the shovel (WORK_QUEUE item 26)
+
+Owner, 2026-11-14: **"Let's simplify the axe to be like the shovel and pick, without the multiple modes."**
+2026-11-15, after the first half (one mode, #954): **"Did you change the axe (or fix deploys for changes to
+it) since 10:40? It does not have the same behavior as the other tools."** → **"That's how it was, it was
+different from the other tools"**. Asked what the tree above should do when you break through a trunk:
+**"Tree still falls (Recommended)"**.
+
+§12 had the log take block damage, but the axe still swung as a chopping tool: its own swing and camera, its
+arc swept through the leaves (cleared) to the wood, a stamina cost, the server's `chop_hit`, and the hits
+drawn as the axe's head-sized V bites (`cut_of_marks`). Now it is a break tool and nothing else:
+
+- **Data:** the axes are no longer in `shared/tools/tools.json` `tools` (the swung tools are the weapons,
+  the sword); their `breaking.tools` entries carry the pickaxe's `contactS` (0.26 s), `repeatOnHold` and
+  `repeatS` (0.5 s) and a break `clip` (the stone axe the stone pickaxe's, the metal axe the metal pickaxe's:
+  their heads sit alike; the clip_probe tests pin every break tool's head on the crosshair at contact).
+  `hints.axe` is gone (the axe has no swing hint, as the pickaxe). A block's `breakWith` names a break tool
+  class (`breaking.classes`: the log's `axe`), met by a break tool of that class in hand.
+- **The hit:** a Break with the axe is a block edit (`BlockEditRequest`), landing at its contact, as a
+  pickaxe's: the log's hits to break by the axe's tier (stone 10, metal 5; a tool keeps its hits in
+  creative), a mark each, one wear, its share of the 8 wood; the last breaks the whole log (its drops' rest)
+  and what it held up falls as after any break (FELLING.md: a standing trunk above as one body, tipped away
+  from the nearest player, with the `fell` crack). Leaves are broken as by any tool (one hit), not cleared by
+  an arc; no stamina.
+- **The look:** the log's `damage.look` (`kind: chips`, the `wood` crack set at 0.15/0.4/0.65/0.85, strength
+  0.85) and its `chips`. An octagonal log is not a cube, so §6.2's carve does not apply: a damaged log is drawn
+  as its whole octagon with the cracks over every face drawn (`octagon_voxel`, each face's layer centred on
+  its hit or the nearest), and the chips fly per hit. No bites, no notch.
+- **Retired:** the server cuts no wood (`server/chopping.rs` keeps the weapons, `Held` and the hellos);
+  an older save's `cuts` record is ignored (neither read nor written); `ChopAction::Hello` and `BitesHello`
+  are answered with an empty `Cuts`; the chopping prototype's server switch (`ServerConfig::chop2`) is gone.
+  An older client on the line still swings the axe: its `Swing`/`Sweep` lands as one block-damage hit on
+  what its aim meets (a straight ray, at most one per `repeatS`). The client still draws an older server's
+  cuts (`carved_voxel`); the generator keeps the chopping vocabulary, tested on the old axes'
+  data (`shared/tools/fixtures/chop_axes.json`, `chopping::fixture::older_axe`).
+- **Compatibility:** no new line. The registry, the world format and the wire are unchanged; an older
+  client's axe swing still lands (as damage).
+- **Tests:** `dwell-sim` `chopping` (`the_axe_is_a_break_tool_as_the_pickaxe_and_swings_no_more`,
+  `an_axe_hit_on_a_log_counts_its_hits_as_a_pickaxe_on_stone`, `the_log_breaks_whole_at_its_count_and_drops_its_wood`,
+  `breaking_the_bottom_log_of_a_tree_fells_it`, `an_older_clients_axe_swing_lands_as_one_block_damage_hit`
+  (both faces), `an_older_saves_cuts_are_ignored`); `dwell-client` `game_local`
+  `the_axe_hits_a_log_as_the_pickaxe_hits_stone`; `dwell-mesh`
+  `a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage` (both faces); `shared/tools/gen.test.mjs`.
+  Red on the old build: the break-tool data, the older save's cut sent, the older client's swing, the
+  client's axe a swung tool, the log carved by bites.

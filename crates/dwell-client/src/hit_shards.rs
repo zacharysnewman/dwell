@@ -284,9 +284,7 @@ mod tests {
                 "{block} {tool}: {got} vs {bite}"
             );
         }
-        let log = dwell_protocol::chopping::wood("dwell:log").unwrap();
-        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
-        let bite = dwell_protocol::chopping::chop_bite_m3(axe, log);
+        let bite = bite_m3_of("dwell:log", Some("dwell:stone_axe")).unwrap();
         assert!(
             (total("dwell:log", bite) - bite).abs() < 1e-3 * bite,
             "wood chips"

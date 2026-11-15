@@ -10,7 +10,7 @@ fn look() -> CutLook {
 }
 
 fn axe() -> &'static ToolDef {
-    chop::tool("dwell:stone_axe").expect("the stone axe is data")
+    chop::fixture::older_axe(false)
 }
 
 /// A swing as the server lands it (`server/chopping.rs` `swing`): the band the head comes in at,
@@ -374,7 +374,7 @@ fn the_notch_carves_half_the_log_over_its_swings_k_bites_after_k() {
     let l = look();
     let wood = chop::wood("dwell:log").unwrap();
     for name in ["dwell:stone_axe", "dwell:metal_axe"] {
-        let tool = chop::tool(name).unwrap();
+        let tool = chop::fixture::older_axe(name == "dwell:metal_axe");
         let n = chop::swings_to_fell(tool, wood);
         for outline in [None, Some(octagon())] {
             let wood_area = outline.as_deref().map_or(1.0, poly_area);

@@ -2,8 +2,6 @@
 
 /** A tool: its item name and kind (the swing hint shows for an axe). */
 export const TOOLS: readonly { name: string; kind: string }[] = [
-  { name: 'dwell:stone_axe', kind: 'axe' },
-  { name: 'dwell:metal_axe', kind: 'axe' },
   { name: 'dwell:sword', kind: 'weapon' },
 ];
 

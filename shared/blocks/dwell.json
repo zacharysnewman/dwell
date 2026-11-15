@@ -251,7 +251,7 @@
       "drops": [{"item": "dwell:wood", "count": 8}],
       "sound": "dwell:wood",
       "breakWith": "axe",
-      "damage": { "default": 24, "axe": 15, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "default": 24, "axe": 15, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "density": 700,
       "shape": "full",
       "placeable": true,
@@ -628,7 +628,7 @@
       "of": "log",
       "support": "carrier",
       "breakWith": "axe",
-      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "default": 12, "axe": 8, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "crossSection": "of"
     },
     {

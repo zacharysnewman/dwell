@@ -6,6 +6,25 @@ pins it.
 
 ## Open
 
+### 184. The axe still behaves unlike the pickaxe and the shovel (a gap in #954)
+
+Owner, 2026-11-15: "Did you change the axe (or fix deploys for changes to it) since 10:40? It does not have the same
+behavior as the other tools." (Claude: nothing changed it since #954.) "If you didn't change it." → "That's how it
+was, it was different from the other tools". The 2026-11-14 request ("Let's simplify the axe to be like the shovel and
+pick, without the multiple modes") was half done in #954: one mode, but the axe still swung as a chopping tool (its own
+swing and camera, an arc that cleared leaves, a stamina cost, the server's `chop_hit`) and drew its hits as the
+chopping system's V bites. Asked what a broken trunk's tree should do: "Tree still falls (Recommended)".
+
+**Owner should see:** in adventure with the stone axe, each click on a log swings like the pickaxe (the hit lands as
+the head reaches the crosshair), cracks spread over the log and wood chips fly, no V bites or notch; on the 10th hit
+the whole log breaks and drops wood; breaking a tree's bottom log, the tree above topples as a body with its crack.
+
+**Fixed:** the axes are break tools only (`shared/tools/tools.json`; docs/BLOCK_DAMAGE.md §14): hits are block edits
+taking the log's damage, a damaged log keeps its octagon with cracks, the server cuts no wood and ignores an older
+save's cuts. Tests: `dwell-sim` `chopping` (6 tests, both faces where it matters), `dwell-client` `game_local`
+`the_axe_hits_a_log_as_the_pickaxe_hits_stone`, `dwell-mesh`
+`a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage` (red on the old build → green).
+
 ### 182. A held break at nothing loops its knock (phones in Break mode, the held mouse too)
 
 Owner, 2026-11-15: "there seems to be a looping sound when you have "break" on for mobile and you tap and hold the

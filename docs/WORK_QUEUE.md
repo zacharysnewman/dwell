@@ -1255,6 +1255,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `the_axe_swings_level_whatever_the_stance`, `dwell-sim` chopping's swing-kind and chop2 tests (an axe asked
    vertical swings level; red on the old server → green). Probe sheets `docs/clip_probe/tool-swings/`
    (CHARACTERS.md §5). Not changed: the sword's two stances and slashes; others see the body's plain `break`.
+   Owner, 2026-11-15: **"Did you change the axe (or fix deploys for changes to it) since 10:40? It does not have
+   the same behavior as the other tools."** (Claude: nothing changed it since #954.) **"If you didn't change it."** →
+   **"That's how it was, it was different from the other tools"**. Asked "when you break through a trunk, what should
+   the tree above do?": **"Tree still falls (Recommended)"**. (#954 gave the axe one mode but left it a chopping tool:
+   its own swing, an arc clearing leaves, stamina, the V bites; BUGS.md #184.)
+   **Owner should see:** with the stone axe, each click on a log swings and lands like the pickaxe (at the
+   crosshair's contact), cracks spread and chips fly, no V bites or notch; the 10th hit breaks the whole log and
+   drops wood; breaking a tree's bottom log, the tree above still topples as a body with its crack.
+   **Status (axe-like-tools):** built 2026-11-15, waiting on the owner's look in game: the axes are break tools
+   only (contact 0.26 s, `repeatS` 0.5, the pickaxes' clips), hits are block edits taking the log's damage (stone 10,
+   metal 5), a damaged log keeps its octagon with the `wood` cracks (its `damage.look`), the server cuts no wood (an
+   older save's cuts ignored, an older client's axe swing one damage hit), felling as after any break
+   (docs/BLOCK_DAMAGE.md §14).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was

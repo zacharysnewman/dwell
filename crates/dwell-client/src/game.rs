@@ -2299,10 +2299,19 @@ impl<S: Scene> Game<S> {
             Message::HeldTools(list) => {
                 // The server sweeps swings along their path (its answer to our first `Held`).
                 self.chop.sweep = true;
+                // A swung tool (the sword) or a break tool (an axe, a pickaxe, a shovel), by its
+                // `'static` name; anything else is held as the wire's block.
                 for h in list {
-                    match dwell_protocol::chopping::tool(&h.tool) {
-                        Some(t) => {
-                            self.remote_tools.insert(h.player_id, (t.name, h.vertical));
+                    let swung = dwell_protocol::chopping::tool(&h.tool).map(|t| t.name);
+                    let name = swung.or_else(|| {
+                        dwell_protocol::chopping::BREAK_TOOLS
+                            .iter()
+                            .find(|b| b.item == h.tool)
+                            .map(|b| b.item)
+                    });
+                    match name {
+                        Some(n) => {
+                            self.remote_tools.insert(h.player_id, (n, h.vertical));
                         }
                         None => {
                             self.remote_tools.remove(&h.player_id);

@@ -22,6 +22,44 @@ mod table {
 #[allow(dead_code, unused_imports)]
 pub mod fixture {
     include!("tools_fixture.gen.rs");
+
+    /// The chopping axe as the build had it before the axe became a break tool (owner,
+    /// 2026-11-14: "like the shovel and pick"; docs/BLOCK_DAMAGE.md §14): `metal` the metal one.
+    /// No build cuts wood now; an older server's cuts are still drawn by their carve, whose tests
+    /// cut with this (its old `biteM`, `bindM`, `across`, `along`, `sharpness`, `clears`).
+    pub fn older_axe(metal: bool) -> &'static super::ToolDef {
+        static STONE: std::sync::LazyLock<super::ToolDef> =
+            std::sync::LazyLock::new(|| axe_of(false));
+        static METAL: std::sync::LazyLock<super::ToolDef> =
+            std::sync::LazyLock::new(|| axe_of(true));
+        if metal { &METAL } else { &STONE }
+    }
+
+    fn axe_of(metal: bool) -> super::ToolDef {
+        let sword = *super::tool("dwell:sword").expect("the sword is data");
+        super::ToolDef {
+            name: if metal {
+                "dwell:metal_axe"
+            } else {
+                "dwell:stone_axe"
+            },
+            kind: super::ToolKind::Axe,
+            held: Some("stone_axe"),
+            held_vertical: None,
+            swing_seconds: 0.45,
+            bite_m: if metal { 0.2 } else { 0.1 },
+            bind_m: 0.05,
+            across: 1.0,
+            along: 0.15,
+            sharpness: 2.0,
+            clip_level: "chop_level",
+            clip_vertical: "chop_vertical",
+            clears: &["dwell:leaves", "dwell:snowy_leaves"],
+            chop2_bite: if metal { 0.09 } else { 0.045 },
+            weapon: None,
+            ..sword
+        }
+    }
 }
 
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
@@ -714,8 +752,9 @@ pub fn break_speed(block: &str, held: Option<&str>) -> f64 {
     break_speed_in(BREAK_CLASSES, BREAK_TOOLS, block, held)
 }
 
-/// The tool kind breaking a block needs where blocks are not unlimited (its `breakWith`), if any.
-pub fn break_with(block: &str) -> Option<ToolKind> {
+/// The break tool class breaking a block needs where blocks are not unlimited (its `breakWith`,
+/// a `breaking.classes` key), if any.
+pub fn break_with(block: &str) -> Option<&'static str> {
     BREAK_WITH
         .iter()
         .find(|(b, _)| *b == block)
@@ -723,11 +762,14 @@ pub fn break_with(block: &str) -> Option<ToolKind> {
 }
 
 /// Whether a break of `block` holding `held` (an item name, none: an empty hand) is allowed where
-/// blocks are not unlimited: a block with a `breakWith` needs a tool of that kind.
+/// blocks are not unlimited: a block with a `breakWith` needs a break tool of that class
+/// (`breaking.tools`: a log, an axe).
 pub fn may_break_holding(block: &str, held: Option<&str>) -> bool {
     match break_with(block) {
         None => true,
-        Some(kind) => held.and_then(tool).is_some_and(|t| t.kind == kind),
+        Some(class) => {
+            held.is_some_and(|h| BREAK_TOOLS.iter().any(|b| b.item == h && b.class == class))
+        }
     }
 }
 
@@ -1299,13 +1341,11 @@ mod weapon_tests {
     #[test]
     fn each_tool_shows_its_own_kinds_hint() {
         let sword = tool("dwell:sword").expect("the sword");
-        let axe = tool("dwell:stone_axe").expect("the axe");
         let s = hint(sword.kind, false).expect("a weapon hint");
         assert!(s.starts_with("Sword"), "{s}");
         assert!(hint(sword.kind, true).unwrap().contains("vertical stance"));
-        // One mode (owner, 2026-11-14): the axe's hint is the same either way.
-        assert!(hint(axe.kind, false).unwrap().starts_with("Axe"));
-        assert_eq!(hint(axe.kind, true), hint(axe.kind, false));
+        // The axe is a break tool, as the pickaxe (owner, 2026-11-14): no swing hint.
+        assert!(hint(ToolKind::Axe, false).is_none());
         // Every tool in the data, the fixture's too, has its kind's hint.
         for t in TOOLS.iter().chain(fixture::TOOLS) {
             assert!(
@@ -1379,7 +1419,7 @@ mod tests {
     use super::*;
 
     fn axe() -> &'static ToolDef {
-        tool("dwell:stone_axe").expect("the stone axe is data")
+        fixture::older_axe(false)
     }
 
     #[test]
@@ -1525,7 +1565,7 @@ mod tests {
         let wood = wood("dwell:log").unwrap();
         let look = wood.cut.bite;
         for (name, n) in [("dwell:stone_axe", 11u32), ("dwell:metal_axe", 5)] {
-            let t = tool(name).unwrap();
+            let t = fixture::older_axe(name == "dwell:metal_axe");
             assert_eq!(super::swings_to_fell(t, wood), n, "{name}");
             let mut c = Cut::default();
             for k in 1..=n {
@@ -1550,10 +1590,7 @@ mod tests {
     #[test]
     fn a_chop_bites_half_the_cell_over_the_swings_to_fell() {
         let log = wood("dwell:log").unwrap();
-        let (stone, metal) = (
-            tool("dwell:stone_axe").unwrap(),
-            tool("dwell:metal_axe").unwrap(),
-        );
+        let (stone, metal) = (fixture::older_axe(false), fixture::older_axe(true));
         assert_eq!(super::swings_to_fell(stone, log), 11);
         assert_eq!(super::swings_to_fell(metal, log), 5);
         for t in [stone, metal] {
@@ -1633,7 +1670,7 @@ mod tests {
             (1.7..=2.3).contains(&r),
             "along the grain: {along} chops, {r:.2}×"
         );
-        let metal = tool("dwell:metal_axe").expect("metal axe");
+        let metal = fixture::older_axe(true);
         let (m, _) = chop2_to_fell(metal, false, |_| 0);
         assert!(m < stone, "metal: {m} chops, stone {stone}");
         // Not before half: one chop short of it still stands.

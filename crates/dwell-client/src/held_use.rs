@@ -140,7 +140,7 @@ mod tests {
     use dwell_protocol::chopping::{BREAK_TOOLS, ToolDef, tool};
 
     fn axe() -> &'static ToolDef {
-        tool("dwell:stone_axe").unwrap()
+        tool("dwell:sword").unwrap()
     }
 
     /// A hold of the axe for `hold_s` at 60 fps (its path meeting a wood at the arc's middle step
@@ -197,12 +197,15 @@ mod tests {
 
     #[test]
     fn the_axe_pick_shovel_and_sword_repeat_by_their_data() {
-        assert_eq!(Repeat::of_tool(axe()), Repeat::WhenReady);
         assert_eq!(
             Repeat::of_tool(tool("dwell:sword").unwrap()),
             Repeat::WhenReady
         );
+        // The axes break as the pickaxes and the shovels do (owner, 2026-11-14): at their
+        // `repeatS`.
         for p in [
+            "dwell:stone_axe",
+            "dwell:metal_axe",
             "dwell:stone_pickaxe",
             "dwell:metal_pickaxe",
             "dwell:wooden_shovel",
@@ -218,8 +221,7 @@ mod tests {
         assert_eq!(Repeat::of_break(None), Repeat::Every(hand));
         assert_eq!(Repeat::of_break(Some("dwell:stone")), Repeat::Every(hand));
         assert_eq!(Repeat::of_break(Some("dwell:torch")), Repeat::Every(hand));
-        // An axe's break-table entry and a chopping tool: not as a break (the swing repeats).
-        assert_eq!(Repeat::of_break(Some("dwell:stone_axe")), Repeat::No);
+        // A swung tool: not as a break (the swing repeats).
         assert_eq!(Repeat::of_break(Some("dwell:sword")), Repeat::No);
         // A tool added by data alone (shared/tools/fixtures: the stick club) repeats as its data says.
         let stick = dwell_protocol::chopping::fixture::TOOLS

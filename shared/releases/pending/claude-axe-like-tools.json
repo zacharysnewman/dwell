@@ -1,0 +1,8 @@
+{
+  "changes": [
+    "The axe now works exactly like the pickaxe and shovel: each swing lands at the crosshair and counts down a log's hits.",
+    "A log takes 10 hits with the stone axe (5 with the metal one), cracking and throwing chips, then breaks whole and drops its wood.",
+    "Breaking a tree's trunk still topples the tree above.",
+    "No more notches or V bites carved into logs."
+  ]
+}

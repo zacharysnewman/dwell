@@ -883,9 +883,14 @@ default; none: can't); the server keeps each damaged cell's state, hits and up t
 it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; in a
 mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool breaks every block in one hit
 (`dwell_protocol::damage::hits_to_break_for`, asked by the server and the client's prediction alike); the
-client predicts only one-hit breaks and tells the server its held pickaxe or shovel by
-`ChopAction::Held`. **Hits at contact [built, WORK_QUEUE item 25]:** a break made holding a tool with a
-`contactS` (`breaking.tools` in `shared/tools/tools.json`: the pickaxes and shovels, 0.26 s, the arms'
+client predicts only one-hit breaks and tells the server its held axe, pickaxe or shovel by
+`ChopAction::Held`. **The axe is a break tool [built, 2026-11-15; docs/BLOCK_DAMAGE.md §14]** (owner,
+2026-11-14: "Let's simplify the axe to be like the shovel and pick"): the axes are `breaking.tools`
+entries only (contact, `repeatS` and a break clip as the pickaxe's), not swung tools, so an axe hit is
+a block edit's break taking the log's block damage as a pickaxe's on stone, the last breaking the whole
+log and a tree it held up falling as a body (FELLING.md). A block's `breakWith` names a break tool
+class. **Hits at contact [built, WORK_QUEUE item 25]:** a break made holding a tool with a
+`contactS` (`breaking.tools` in `shared/tools/tools.json`: the axes, pickaxes and shovels, 0.26 s, the arms'
 `break` clip's strike; `dwell_protocol::chopping::break_contact_s`) is sent at the click and held in the
 session's edit queue until `contactS` after it arrives (never before the client's contact; later edits'
 acks wait behind it), dropped if the tool is no longer in hand then; its damage, mark, drops and wear land
@@ -2530,7 +2535,7 @@ lives in side files. Chunk and LOD blobs are the protocol's palette + RLE compre
 | `block_damage` | **[built, 0.52.28]** One record (key 0), rewritten each save: the blocks hit short of breaking (`dwell_protocol::damage::Damage::to_bytes`, version 1: each cell, its state, hits and up to four hit marks; ADR 0078). Optional: a world without it loads undamaged, older builds leave it; an unreadable record is kept, not overwritten |
 | `tree_growth` | **[built, 0.52.60]** One record (key 0), rewritten each save: the trees' growth records (`dwell_worldgen::growth::Records::to_bytes`, version 1: per tree its anchor, face, species by name, seed, stage, the world day it reached it, turn, planter, variant, stopped; ADR 0079). Optional: a world without it grows its trees from their drawn stages, older builds leave it; an unreadable record is kept, not overwritten |
 | `ecology` | **[built]** One record (key 0), rewritten each save: the far ecology (docs/ECOLOGY.md §6; `dwell-sim` `server/ecology.rs`, version 1: the world's `enabled` switch and `speed`, then each face's `Ecosystem::to_bytes`: its seed, day, forage grid, species by name, groups). Optional: a world without it starts a fresh ecology from its seed and catches up its days; older builds leave it; an unreadable record is kept, not overwritten |
-| `cuts` | **[built, 0.50.34]** One record (key 0), rewritten each save: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067; then, when any cell has bites, u8 1 and each cell's bites, WORK_QUEUE item 26: an older build can't read such a record and keeps it unread, an older record loads with no bites). Optional: older builds leave it; an unreadable record is kept, not overwritten |
+| `cuts` | **[built, 0.50.34; ignored since 2026-11-15: no build cuts wood, the record is neither read nor written]** One record (key 0), rewritten each save by older builds: the axes' cuts in wood cells (`dwell_protocol::chopping::Cuts::to_bytes`, version 1: each cell, then per side its notch and two kerfs as f32; ADR 0067; then, when any cell has bites, u8 1 and each cell's bites, WORK_QUEUE item 26: an older build can't read such a record and keeps it unread, an older record loads with no bites). Optional: older builds leave it; an unreadable record is kept, not overwritten |
 | `water` | **[built, 0.48.2]** The water surface grid's free water (§6.7, WATER_SURFACE_GRID.md): one LZ4 record of `Water::save` (`DWG1`): each water chunk with free columns, their floors, depths and flows (and the rest layer's), and what the chunk owes; held water is found again from the blocks. An older basin record (`DWW5`) is ignored |
 | `tree_tombstones` | **[planned, Phase 30]** Per chunk: the sparse set of chopped procedural tree ids `(chunk, procedural index)` and the pruned node sets of partly cut ones (§6.3 tree growth) |
 | `growers` | **[planned, Phase 30]** Player-planted trees, keyed by the chunk holding the root: structure, variant seed, root, planted world time, pruned nodes |
@@ -3445,7 +3450,7 @@ capacity and refill, the head's submerged share and the drowning damage. The vit
 player controller (`PlayerController::vitals`, PLAYER_CONTROLLER.md §6.13), stepped by one pure rule
 (`Vitals::step`) on the server and in the client's prediction alike, under the world's rules
 (`Players::set_vitals`: the mode's `stamina` and `oxygen`). Exhausted (stamina run to 0, until it is
-back to 25 %): no sprint, no treading water (the swimmer sinks), no axe swings (the server refuses
+back to 25 %): no sprint, no treading water (the swimmer sinks), no weapon swings (the server refuses
 them; a swing otherwise draws its tool's `staminaCost`). Out of air, `Server::damage` deals
 `drownDamage` each `drownIntervalSeconds` with cause `Drown`. The server sends each hello'd client
 its vitals with each snapshot (`Vitals`, §8.3), which corrects the prediction (`Predictor::on_vitals`,
@@ -3619,12 +3624,20 @@ shape, `rod`, `lump` or `cluster`, its `$block` material the look's tile and tin
 `held`, or by its look (`HELD_BY_LOOK`, `shared/blocks/lights.mjs`): a ladder the `card`, a cross
 plant the `cross`, drawn with the characters' `plane` part kind (one sheet, both sides, no edges).
 
-**Tools and chopping [built, 0.50.34–0.50.39]** (ADR 0067). Tools are items
+**Tools and chopping [built, 0.50.34–0.50.39; the axe's chopping retired 2026-11-15]** (ADR 0067). Since
+2026-11-15 (owner: the axe "was different from the other tools"; docs/BLOCK_DAMAGE.md §14) no
+tool cuts wood: the axes are break tools (above, block damage), the build's swung tools are the weapons
+(the sword), the server neither makes, loads nor sends cuts (an older save's `cuts` record is ignored,
+left as it is; a `ChopAction::Hello` is answered with an empty `Cuts`), an older client's axe
+`Swing`/`Sweep` lands as one block-damage hit on what its aim meets, and the chopping prototype's switch
+(`chop2`) is gone. What follows is the chopping vocabulary the generator still validates (`kind: axe`,
+woods, cuts) and the client's drawing of an older server's cuts; the swing as melee is the sword's.
+Tools are items
 with data in `shared/tools/tools.json` (a `kind` from a fixed vocabulary, `axe`; its swing wait,
 bite, bind and its share across and along the grain), and so are the woods an axe cuts (a block
 by name whose `axis` is its grain, its fell and buck fractions, what a cut-through length drops,
 its `chips` look); a tool's `held` names the characters' item a hand shows; a block's `breakWith`
-(block data) names the tool kind breaking it needs where blocks are not unlimited (the log: an
+(block data) names the break tool class breaking it needs where blocks are not unlimited (the log: an
 axe, so in adventure hands can't break logs; the server refuses the edit; creative breaks anything);
 `shared/tools/gen.mjs` validates them and emits `dwell_protocol::chopping`'s tables and
 `client/src/ui/tools.gen.ts`. The cut model (`dwell_protocol::chopping::Cut`) keeps per wood cell,
@@ -3646,7 +3659,7 @@ ADR 0067 §5a, `felling::fell_wedges`; a piece's shaped cell collides as its sha
 lying one cut through (its cell goes; in a mode that uses items it drops its wood items). The
 client (`dwell-client` `chop.rs`) sends the swings, keeps the cuts and shows the swing in the HUD;
 the axe is held from the inventory in adventure or from the creative hotbar (`items.json`'s
-`tool` entries). **The chopping prototype [built, 0.52.61, behind a switch]** (`chop2` in the tools data, off; dev
+`tool` entries). **The chopping prototype [built, 0.52.61, behind a switch; retired 2026-11-15, the server's switch removed]** (`chop2` in the tools data, off; dev
 `?chop=v2` on a local world: `ServerConfig::chop2`, the client's `chop::set_crosshair_aim`): the
 server takes a sweep's chop where the look meets the wood (`crosshair_hit`), a chop removes the
 tool's `chop2.bite` of the section (`Cut::chop2`; along the grain the wood's `chop2.along` of it),

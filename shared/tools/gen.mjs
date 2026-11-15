@@ -413,15 +413,17 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     if (!['open', 'matching'].includes(c2.fellWedgeTrunk)) fail(`${at}.chop2.fellWedgeTrunk must be one of open, matching`);
     return { ...w, buckDrops, chips, leaves: lv, sway, sounds, cut, fellWedge, fellWedgeTrunk, fellTip, chop2: c2 };
   });
-  // Blocks a break needs a tool kind for where blocks are not unlimited (`breakWith` on the block;
-  // owner, 2026-11-08: logs need an axe in adventure).
+  const breaking = validateBreaking(data.breaking, items, blocks);
+  // Blocks a break needs a tool class for where blocks are not unlimited (`breakWith` on the block,
+  // a `breaking.classes` key; owner, 2026-11-08: logs need an axe in adventure): a break tool of
+  // that class in hand (`breaking.tools`).
+  const classes = Object.keys(data.breaking?.classes ?? {});
   const breakWith = [];
   for (const [name, def] of blocks) {
     if (def.breakWith === undefined) continue;
-    if (!KINDS.includes(def.breakWith)) fail(`${name}.breakWith must be one of ${KINDS.join(', ')}`);
+    if (!classes.includes(def.breakWith)) fail(`${name}.breakWith must be one of ${classes.join(', ')} (a breaking.classes key)`);
     breakWith.push({ block: name, kind: def.breakWith });
   }
-  const breaking = validateBreaking(data.breaking, items, blocks);
   // A chopping tool's hold is its swing's (`tools[].repeatOnHold`), not a break tool's.
   for (const b of data.breaking?.tools ?? []) {
     if (b.repeatOnHold !== undefined && tools.some((t) => t.name === b.item)) fail(`breaking.tools: ${b.item} swings as a tool (tools.${b.item}); its repeatOnHold goes there`);
@@ -746,9 +748,10 @@ export function toolsRust(d) {
   for (const h of d.hints) rs.push(`    (ToolKind::${h.kind[0].toUpperCase() + h.kind.slice(1)}, "${h.level}", "${h.vertical}"),`);
   rs.push('];');
   rs.push('');
-  rs.push('/// Blocks a break needs a tool of a kind for, where blocks are not unlimited.');
-  rs.push('pub static BREAK_WITH: &[(&str, ToolKind)] = &[');
-  for (const b of d.breakWith) rs.push(`    ("${b.block}", ToolKind::${b.kind[0].toUpperCase() + b.kind.slice(1)}),`);
+  rs.push('/// Blocks a break needs a break tool of a class for (`breaking.classes`), where blocks are not');
+  rs.push('/// unlimited.');
+  rs.push('pub static BREAK_WITH: &[(&str, &str)] = &[');
+  for (const b of d.breakWith) rs.push(`    ("${b.block}", "${b.kind}"),`);
   rs.push('];');
   rs.push('');
   rs.push("/// Each block's tool class (`breaking.classes`): the class that is the right tool for it.");

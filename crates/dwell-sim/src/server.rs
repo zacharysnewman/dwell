@@ -381,11 +381,6 @@ pub struct ServerConfig {
     /// Every block breaks in one hit, as before block damage (docs/BLOCK_DAMAGE.md): a test
     /// world's switch, for tests and e2e specs that break blocks with one click. Off: the data's.
     pub one_hit_breaks: bool,
-    /// The chopping prototype (docs/WORK_QUEUE.md item 7, `chop2` in shared/tools/tools.json):
-    /// chops land where the look meets the trunk, each removes a share of the section, a tree
-    /// falls past half toward its notch. Off: today's chopping (ADR 0067). The data's `enabled`
-    /// by default; dev `?chop=v2` for a local world.
-    pub chop2: bool,
     /// A new world's far ecology (docs/ECOLOGY.md §6): on by default; off, the world has none
     /// (saved so: a world keeps its own). `ecology_speed` × the world's days (tests, dev; a
     /// per-world tuning hook, saved with it).
@@ -496,7 +491,6 @@ impl Default for ServerConfig {
             sky: None,
             world_size: dwell_protocol::world_size::WorldSize::DEFAULT,
             one_hit_breaks: false,
-            chop2: dwell_protocol::chopping::CHOP2_DEFAULT,
             ecology: true,
             ecology_speed: 1.0,
             ecology_islands: None,
@@ -730,9 +724,7 @@ struct Session {
     /// The host took flight away (a mode change, ADR 0065) while this player was in the air: its
     /// next landing hurts nothing (the fall is the host's doing), then it is cleared.
     flight_grace: bool,
-    /// Whether its client understands cuts (`ChopAction::Hello`, ADR 0067), and the tick its next
-    /// swing may land.
-    chop_hello: bool,
+    /// The tick its next swing may land.
     chop_ready: u32,
     /// Swings on their way to their contact (WORK_QUEUE item 25): the tick each lands, and it.
     pending_chops: Vec<(u32, ChopAction)>,
@@ -849,7 +841,6 @@ impl Session {
             inventory_dirty: false,
             inventory_unread: false,
             flight_grace: false,
-            chop_hello: false,
             chop_ready: 0,
             pending_chops: Vec::new(),
             vitals_hello: false,
@@ -1139,9 +1130,6 @@ pub struct Server {
     npc_strike_log: Vec<weapons::NpcStrikeLog>,
     /// The creatures' latest attacks on players ([`Self::bites`]).
     bite_log: Vec<weapons::BiteLog>,
-    /// The wood cells cut by axes (ADR 0067).
-    cuts: dwell_protocol::chopping::Cuts,
-    cuts_unread: bool,
     /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
     damage: dwell_protocol::damage::Damage,
     /// The saved damage is a newer build's: kept, not written over.
@@ -1366,8 +1354,6 @@ impl Server {
             strike_log: Vec::new(),
             npc_strike_log: Vec::new(),
             bite_log: Vec::new(),
-            cuts: Default::default(),
-            cuts_unread: false,
             damage: Default::default(),
             damage_unread: false,
             lava: Default::default(),
@@ -3489,8 +3475,7 @@ impl Server {
                 self.water_link.pending.push(WaterIn::Edit { cell, byte });
             }
         }
-        // A changed cell's cut goes with its wood (ADR 0067), and its damage with its block.
-        self.cuts_dropped(&before);
+        // A changed cell's damage goes with its block.
         if !self.damage.cells.is_empty() {
             let gone: Vec<[i32; 3]> = before
                 .iter()
@@ -5098,13 +5083,9 @@ impl Server {
         {
             self.loose.restore(saved);
         }
+        // An older build's cuts (the axe's notches and bites, ADR 0067) are ignored: wood is no
+        // longer cut (docs/FELLING.md §8); the record is left as it is, never written.
         // A record this build can't read (a newer one's) is kept: not written over.
-        if let Some(b) = db.cuts() {
-            match dwell_protocol::chopping::Cuts::from_bytes(&b) {
-                Some(c) => self.cuts = c,
-                None => self.cuts_unread = true,
-            }
-        }
         if let Some(b) = db.damage() {
             match dwell_protocol::damage::Damage::from_bytes(&b) {
                 Some(d) => self.damage = d,
@@ -5261,9 +5242,6 @@ impl Server {
         }
         batch.loose_items = Some(self.loose.to_bytes());
         batch.blueprints = self.blueprints.record_to_save();
-        if !self.cuts_unread {
-            batch.cuts = Some(self.cuts.to_bytes());
-        }
         if !self.lava_unread && !self.lava.is_empty() {
             batch.lava = Some(self.lava.to_bytes());
         }
