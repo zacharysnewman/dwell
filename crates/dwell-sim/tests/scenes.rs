@@ -43,8 +43,8 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
     assert!(r["cells"].as_u64().unwrap() > 100_000, "{report}");
     assert!(r["waterCells"].as_u64().unwrap() > 40_000, "{report}");
 
-    // The cells: the floor 12 m under the land at the head (20 m), 1 m lower 100 m down; the dam
-    // 10 m over the floor there (rows 38–57: 19–29 m), 4 m thick; the lake to 28 m behind it.
+    // The cells: the floor 12 m under the land (20 m); the dam 10 m over it 100 m down (rows
+    // 40–59: 20–30 m), 4 m thick; the lake to 29 m behind it.
     let stone = dwell_blocks::require("dwell:stone");
     let sand = dwell_blocks::require("dwell:sand");
     let w = f.server.world();
@@ -55,27 +55,27 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
     );
     for z in 100..104 {
         assert_eq!(
-            w.get_voxel(0, row_of_m(19.0), z),
+            w.get_voxel(0, row_of_m(20.0), z),
             stone,
             "the dam's foot at z {z}"
         );
         assert_eq!(
-            w.get_voxel(0, row_of_m(28.75), z),
+            w.get_voxel(0, row_of_m(29.75), z),
             stone,
             "the dam's top row at z {z}"
         );
         assert_eq!(
-            w.get_voxel(0, row_of_m(29.25), z),
+            w.get_voxel(0, row_of_m(30.25), z),
             dwell_blocks::AIR,
             "over the dam at z {z}"
         );
     }
     assert_eq!(
-        w.get_voxel(0, row_of_m(19.25), 104),
+        w.get_voxel(0, row_of_m(20.25), 104),
         dwell_blocks::AIR,
         "below the dam"
     );
-    assert_eq!(water_top(&mut f, 0, 50), Some(28.0), "the lake's level");
+    assert_eq!(water_top(&mut f, 0, 50), Some(29.0), "the lake's level");
     assert_eq!(water_top(&mut f, 0, 150), None, "dry below the dam");
 
     // Held still: after a few seconds the lake is at its level, nothing awake.
@@ -88,7 +88,7 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
         "the lake is held"
     );
     let lake = water_level(&f, 0, 50).expect("the lake joined the grid");
-    assert!((lake - 28.0).abs() < 0.01, "level {lake}");
+    assert!((lake - 29.0).abs() < 0.01, "level {lake}");
     assert_eq!(f.server.water().awake_chunks(), 0, "still");
     assert_eq!(water_top(&mut f, 0, 150), None);
 
@@ -110,15 +110,13 @@ fn the_dam_break_scene_builds_its_valley_dam_and_lake_and_the_flood_runs_down_it
         "after 20 s: the lake at {lake:.2} m, the flood 116 m below the dam after {reached:?} s, {} chunks awake",
         f.server.water().awake_chunks()
     );
-    assert!(lake < 27.0, "the lake fell: {lake}");
+    assert!(lake < 28.0, "the lake fell: {lake}");
     assert!(
         reached.is_some(),
         "the flood reached 116 m below the dam within 20 s"
     );
     let world = f.server.world();
-    assert_eq!(
-        world.get_voxel(0, row_of_m(25.0), 101),
-        dwell_blocks::AIR,
-        "the dam is gone"
-    );
+    for r in row_of_m(20.0)..row_of_m(30.0) {
+        assert_ne!(world.get_voxel(0, r, 101), stone, "the dam is gone (row {r})");
+    }
 }

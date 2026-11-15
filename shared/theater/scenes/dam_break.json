@@ -1,5 +1,5 @@
 {
-  "$comment": "A test world for recordings (docs/THEATER_MODE.md §6.3; owner, 2026-11-14: \"Do a rendered recording of a 10 block high dam of a river suddenly deleted … if you need tools to generate a valley with a river/lake with a dam, go ahead and make them\"). Built on the flat world (?world=flat) by dwell-sim scene.rs (validated there; `cargo test -p dwell-sim scene` checks every file here): a valley 320 m long down +z from (0, 0), its floor 14 m wide and 12 m under the land at its head, falling 1 m per 100 m, its sides and ends rising 1 in 2 (½ m ramps) to the land; a stone dam of ten 1 m blocks across it 100 m down, 4 m thick, a lake behind it one metre under its top (9 m deep at the dam), held still from the start; the water at real time; at 3 s the dam is deleted all at once. Prototype content: the materials are the flat world's.",
+  "$comment": "A test world for recordings (docs/THEATER_MODE.md §6.3; owner, 2026-11-14: \"Do a rendered recording of a 10 block high dam of a river suddenly deleted … if you need tools to generate a valley with a river/lake with a dam, go ahead and make them\"). Built on the flat world (?world=flat) by dwell-sim scene.rs (validated there; `cargo test -p dwell-sim scene` checks every file here): a valley 320 m long down +z from (0, 0), its floor 14 m wide and 12 m under the land, level (a floor's fall steps its 45° sides with notches where a row drops), its sides and ends rising 1 in 1 (1 m ramps, 45°) to the land; a stone dam of ten 1 m blocks across it 100 m down, 4 m thick, a lake behind it one metre under its top (9 m deep at the dam), held still from the start; the water at real time; at 3 s the dam is deleted all at once. Prototype content: the materials are the flat world's.",
   "formatVersion": 1,
   "name": "dam_break",
   "description": "A 10-block dam across a valley with a lake behind it, deleted at 3 s.",
@@ -14,8 +14,8 @@
     "lengthM": 320,
     "floorWidthM": 14,
     "depthM": 12,
-    "floorFall": 0.01,
-    "sideSlope": 0.5,
+    "floorFall": 0,
+    "sideSlope": 1,
     "clearM": 2,
     "surface": "dwell:grass",
     "under": "dwell:dirt",
@@ -34,6 +34,8 @@
       "material": "dwell:stone"
     }
   ],
-  "water": [{ "name": "reservoir", "kind": "lake", "behind": "dam", "belowTopM": 1 }],
+  "water": [
+    { "name": "reservoir", "kind": "lake", "behind": "dam", "belowTopM": 1 }
+  ],
   "events": [{ "atS": 3, "do": "remove", "target": "dam" }]
 }

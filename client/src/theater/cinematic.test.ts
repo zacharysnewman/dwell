@@ -256,7 +256,11 @@ describe("a take's timed events (§6.3)", () => {
     const offscreen = globalThis.OffscreenCanvas;
     (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
       getContext() {
-        return { drawImage: () => undefined, globalAlpha: 1, transferFromImageBitmap: () => undefined };
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
       }
       transferToImageBitmap() {
         return {};
@@ -281,9 +285,13 @@ describe("a take's timed events (§6.3)", () => {
       // frame 15 is 0.5 s: 15 steps made before it runs, and frame 16 is the first to show it
       expect(ran).toEqual([['scene', '0', 15]]);
       expect(r.events).toEqual([{ atS: 0.5, frame: 16, op: 'scene', result: '{"removed":3}' }]);
-      host.event = undefined;
+      delete host.event;
       await expect(
-        runCinematic(host, { path: {}, size: [16, 9], events: [{ atS: 0, op: 'scene', arg: '0' }] }),
+        runCinematic(host, {
+          path: {},
+          size: [16, 9],
+          events: [{ atS: 0, op: 'scene', arg: '0' }],
+        }),
       ).rejects.toThrow('runs no events');
     } finally {
       (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;

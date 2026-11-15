@@ -161,6 +161,19 @@ capped frames, the ticks and the sound's alignment (`error mean … max … ms, 
 - `videos/cinematic/` holds the first comparison (five 10 s 16:9 shots, each `_rt` and `_cine`); `--no-splice`
   records without splicing (the side-by-sides are made from the clips with ffmpeg `hstack`).
 
+## 0g. Scenes: a test world built for the shot (a valley, a dam, a lake, timed events)
+
+Owner, 2026-11-14 (WORK_QUEUE item 41): "Do a rendered recording of a 10 block high dam of a river suddenly deleted …
+We'll probably do a bunch of these so if you need tools to generate a valley with a river/lake with a dam, go ahead and
+make them." A shot's **`"scene": "<name>"`** builds `shared/theater/scenes/<name>.json` (docs/THEATER_MODE.md §6.3) into
+the page's local world right after it loads (`__dwell.scene('build', text)`, then a wait until no water chunk is awake,
+`setup.sceneSettleS` caps it, default 60 s; the log prints the build's figures and `settledS`), and the scene's
+**events** run on the take's clock: a cinematic take gets them as `events` (each before the world steps past its
+time; the log names the frame that first shows it), a real-time take by timers from the path's start. A new scene is a
+new file: copy `dam_break.json`, change the numbers (`cargo test -p dwell-sim scene` validates every file, and a bad
+entry fails the build with its path). Build on a fresh flat world (`/dwell/?world=flat&fresh=1&seed=0&at=…`, the
+spawn `at` on the land away from the valley and out of shot).
+
 ## 1. Run the game (new camera spots)
 
 Use the warm bench preview (`docs/DEV_TOOLS.md`, the `bench` skill): `npm run bench:warm` from `client/`
@@ -409,6 +422,16 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   track with a limiter (→ −26 dB mean, peaks −0.7 dB). **The target box:** `view: {"targetOutline": false}` in a
   shot's setup (BUGS.md #113 fixed). Timings: the full `take.mjs water` ~4 min; `--only s3` 1 min 52 s; a re-splice
   1 min 15 s.
+- 2026-11-14, the dam break (`videos/dam-break/` 16:9, `videos/dam-break-9x16/` 9:16; scene `dam_break`, 30 s
+  cinematic each). **The scene's look:** on 1-in-2 sides (½ m ramps) the valley barely read from above (the ramps
+  shade like the land); 1-in-1 sides (steep pieces) read as a valley. A floor that falls 1 m per 100 m stepped the 45°
+  sides with notches where a row drops: the scene's floor is level. **Shadows:** at timeOfDay 0.78 with the take's
+  high shadows the far land went dark in great patches with a lit rectangle near the camera (a far cascade); 0.72
+  was clean. **Cameras:** from 58 m up and 75 m off the valley the near rim hid the floor; 90 m up, 60 m off (a
+  ~50° look down) shows the floor, the lake and the dam. 16:9: across the valley from beside the dam, the lake on the
+  left and the valley running up to the right; 9:16: over the lake looking down the valley's length, so it runs up
+  the frame. **The flood** (the water at real time, `waterClock: "real"`): the front ran ~5–6 m/s down the dry bed.
+  A 6 s test take rendered 181 frames in 93 s (14 s pre-roll; ~0.45 s a frame at 1920×1080, supersample 2).
 - 2026-11-13, the trailer v1 (`videos/trailer/`, 19 parts, ~53 s, two aspects from one square capture; notes per shot in
   each shot's `note`). **Square 1920×1920 captures** ran 17–59 fps (36 typical) and encoded in 25–60 s a shot; the
   full first pass of 18 shots took ~25 min, so re-take with `--only`. **Ground heights:** `d.voxel` read 0 everywhere

@@ -1,0 +1,19 @@
+{
+ "formatVersion": 1,
+ "name": "dam break, 9:16: high over the lake looking down the valley (the lake at the bottom, the dam, the valley running up the frame), drifting downstream after the flood front",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [-10, 95, 15],
+   "target": [0, 18, 150],
+   "fov": 60,
+   "timeOfDay": 0.72
+  },
+  {
+   "t": 30,
+   "position": [-10, 92, 140],
+   "target": [0, 15, 290]
+  }
+ ],
+ "segments": [{ "move": "ease", "easing": "inOutSine" }]
+}

@@ -406,7 +406,12 @@ export async function runCinematic(
         const t = frameTimeS(i, s, cfg.fps, S);
         if (i > 0 || s > 0) {
           for (const e of eventsDue(events, lastT, t))
-            fired.push({ atS: e.atS, frame: i, op: e.op, result: (await host.event?.(e.op, e.arg)) ?? null });
+            fired.push({
+              atS: e.atS,
+              frame: i,
+              op: e.op,
+              result: (await host.event?.(e.op, e.arg)) ?? null,
+            });
           const due = ticksDue(t) - ticks;
           if (due > 0 && host.world) await host.world.step(due);
           ticks += Math.max(0, due);

@@ -1,0 +1,19 @@
+{
+ "formatVersion": 1,
+ "name": "dam break, 16:9: a high three-quarter view across the valley from beside the dam (the lake on the left, the dam, the valley running up to the right), drifting downstream after the flood front",
+ "keyframes": [
+  {
+   "t": 0,
+   "position": [-62, 90, 86],
+   "target": [0, 18, 124],
+   "fov": 48,
+   "timeOfDay": 0.72
+  },
+  {
+   "t": 30,
+   "position": [-66, 94, 214],
+   "target": [0, 16, 256]
+  }
+ ],
+ "segments": [{ "move": "ease", "easing": "inOutSine" }]
+}
