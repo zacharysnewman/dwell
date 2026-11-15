@@ -2181,7 +2181,7 @@ dwell_world::both_faces!(
     fn a_bitten_log_is_carved_where_it_was_struck_and_cracks(f: FaceFrame) {
         let log = require("dwell:log");
         let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
-        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
+        let axe = dwell_protocol::chopping::fixture::older_axe(false);
         let (x, z) = (5, 5);
         let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
         let mut cut = Cut::default();
@@ -2857,7 +2857,7 @@ fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
     // `carve::mirror_cut`; the meshed cracks on both faces: `a_bitten_log_is_carved_…`).
     use dwell_protocol::chopping as chop;
     let wood = chop::wood("dwell:log").unwrap();
-    let axe = chop::tool("dwell:stone_axe").unwrap();
+    let axe = chop::fixture::older_axe(false);
     let look = wood.cut;
     let face = face_of(0, -1);
     let (pu, pv) = damage_mesh::plane_axes(0);

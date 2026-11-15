@@ -5,6 +5,13 @@ answers, the gouges, chips, arms and the axe on the creative hotbar in 0.50.36, 
 the cuts carved into the chunk mesh in 0.50.60). Builds on ADR 0066 (items by
 name, drops, the Welcome-flag message pattern) and docs/FELLING.md (how a cut trunk falls).
 
+**Superseded for the axe (2026-11-15):** the axe is a break tool as the pickaxe and the shovel (owner,
+2026-11-14: "Let's simplify the axe to be like the shovel and pick, without the multiple modes"; 2026-11-15:
+"it was different from the other tools"; docs/BLOCK_DAMAGE.md §14, ADR 0078). No build cuts wood: the
+notches, kerfs, bites and the fell rule below no longer apply to new hits, an older save's cuts are ignored,
+and the server's chopping prototype switch is removed. The tool vocabulary (`kind`, swings, `clears`) stays
+for the swung tools (the sword) and the generator; the client still draws an older server's cuts.
+
 ## Context
 
 The owner (2026-11-08): "a stone axe with tree cutting mechanics. We'll actually show gouging in the

@@ -61,16 +61,18 @@ naming the entry, as does an unknown tool or giving both). The generator emits `
 palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
 axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it, as the inventory's
 axe does in adventure. Owner, 2026-11-08. Since 2026-11-14 the axe has **one mode** (owner: "Let's simplify
-the axe to be like the shovel and pick, without the multiple modes"): its level swing; right click does
-nothing with it (a tool has a second stance only with a `heldVertical`: the sword's).
+the axe to be like the shovel and pick, without the multiple modes"); since 2026-11-15 it **is a break tool
+as the pickaxe and the shovel** (owner: "it was different from the other tools"; docs/BLOCK_DAMAGE.md §14):
+its Break is a block edit at its contact counting down a log's hits, the last breaking the whole log (a
+tree above it falls); right click does nothing with it.
 
 The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
-follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.1), the
-stone and metal pickaxe and the wooden and metal shovel. A `tool` may also name a **breaking tool**
+follow it: the metal axe, the stone and metal pickaxe and the wooden and metal shovel, all break tools. A `tool` may also name a **breaking tool**
 (`shared/tools/tools.json` `breaking.tools`): it places nothing (Place is refused) and Break breaks as
 a bare hand does. Every tool's item has a model look (`shared/inventory` `look.model`, a prop of
 `shared/models/props.json`), so the hotbar, the backpack, a loose item and the hand all show its
-model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
+model (`Held::Model`, in the tools' hold; others see a player's held tool by name, `HeldTools`, a break
+tool's as their own hand holds it). `breaking`
 gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
 (`stone` 1.5, `metal` 3, a multiple of the bare hand's speed, and each a `chunk`: stone 1, metal 2, the size of
 the piece a hit takes off; BLOCK_DAMAGE.md §9); `break_speed(block, held)` is that
@@ -121,10 +123,10 @@ comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
 **Hold to keep swinging (WORK_QUEUE item 17).** Owner, 2026-11-12: "I wanted you to be able to hold
 the key down for tools like the axe." Holding the use (Break) button with a tool whose data says
-`repeatOnHold` swings it again and again until let go: a chopping tool (`tools[].repeatOnHold` in
-`shared/tools/tools.json`: both axes, the sword) as soon as the last swing is over (its whole length and
+`repeatOnHold` swings it again and again until let go: a swung tool (`tools[].repeatOnHold` in
+`shared/tools/tools.json`: the sword) as soon as the last swing is over (its whole length and
 `swingSeconds`), a break tool (`breaking.tools[].repeatOnHold` and `repeatS`, default 0.5 s and never
-before its `contactS`: the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
+before its `contactS`: the axes, the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
 aimed and swept when it starts (what is targeted then), sent as a click's is, so others see every swing
 by its swing count; it lands one contact, and a tool wears only on a hit. Letting go stops the repeats;
 the swing under way plays out. The mouse, the controller's Break and, in touch Break mode with such a
@@ -154,7 +156,7 @@ Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got
 weapons." The sword (`dwell:sword`, shared/inventory, a model look `sword` from the same
 *3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
 and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
-adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical: the sword keeps two stances,
+adventure it will come by recipe later. Held, it swings as the axe did before it became a break tool (Use toggles level and vertical: the sword keeps two stances,
 its `held`/`heldVertical` holds `sword` and `sword_vertical` in shared/characters), and its swing
 strikes the animals its arc crosses at contact (never a player): damage, knockback, the most creatures
 a swing hits and its durability are its `weapon` data, its swordplay (blocking by blade angle) its

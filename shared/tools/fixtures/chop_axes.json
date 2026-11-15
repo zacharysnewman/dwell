@@ -1,0 +1,216 @@
+{
+  "$comment": "Test data only (shared/tools/gen.test.mjs): the chopping axes as the build had them before the axe became a break tool (owner, 2026-11-14: \"Let's simplify the axe to be like the shovel and pick\"; docs/BLOCK_DAMAGE.md §14). The chopping vocabulary (`kind: axe`, woods, swings, clears) is still the generator's; its tests exercise it on these. Not in any build.",
+  "hints": {
+    "axe": {
+      "level": "Axe: hold to keep chopping"
+    }
+  },
+  "tools": [
+    {
+      "name": "dwell:stone_axe",
+      "kind": "axe",
+      "repeatOnHold": true,
+      "swingSeconds": 0.45,
+      "biteM": 0.1,
+      "bindM": 0.05,
+      "across": 1,
+      "along": 0.15,
+      "sharpness": 2,
+      "held": "stone_axe",
+      "swing": {
+        "windupS": 0.3,
+        "activeS": 0.12,
+        "hitStopS": 0.08,
+        "recoverHitS": 0.22,
+        "recoverMissS": 0.36,
+        "reachM": 2.2,
+        "arcDeg": 110,
+        "samples": 12,
+        "camera": {
+          "level": {
+            "keys": [
+              {
+                "t": 0
+              },
+              {
+                "t": 1,
+                "yaw": 1.8,
+                "pitch": 0.5,
+                "roll": 1.4,
+                "bob": [
+                  0.012,
+                  0.004,
+                  0.015
+                ]
+              },
+              {
+                "t": 1.5,
+                "yaw": -0.6,
+                "pitch": -0.2,
+                "roll": -0.6,
+                "bob": [
+                  -0.006,
+                  -0.002,
+                  -0.004
+                ]
+              },
+              {
+                "t": 2,
+                "yaw": -2,
+                "pitch": -0.4,
+                "roll": -1.3,
+                "bob": [
+                  -0.012,
+                  -0.004,
+                  -0.006
+                ]
+              },
+              {
+                "t": 2.5,
+                "yaw": -0.6,
+                "pitch": -0.1,
+                "roll": -0.4,
+                "bob": [
+                  -0.004,
+                  0,
+                  -0.002
+                ]
+              },
+              {
+                "t": 3
+              }
+            ],
+            "kick": {
+              "yaw": 0.5,
+              "pitch": -0.7,
+              "roll": 0.5,
+              "bob": [
+                0,
+                -0.006,
+                0.004
+              ],
+              "decayS": 0.09,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          }
+        },
+        "staminaCost": 8,
+        "swish": "axe_swish",
+        "bounce": "axe_clank",
+        "rustle": "axe_rustle",
+        "rustleLeaves": 5
+      },
+      "clears": [
+        "dwell:leaves",
+        "dwell:snowy_leaves"
+      ],
+      "chop2": {
+        "bite": 0.045
+      }
+    },
+    {
+      "name": "dwell:metal_axe",
+      "kind": "axe",
+      "repeatOnHold": true,
+      "swingSeconds": 0.45,
+      "biteM": 0.2,
+      "bindM": 0.05,
+      "across": 1,
+      "along": 0.15,
+      "sharpness": 2,
+      "held": "stone_axe",
+      "swing": {
+        "windupS": 0.3,
+        "activeS": 0.12,
+        "hitStopS": 0.08,
+        "recoverHitS": 0.22,
+        "recoverMissS": 0.36,
+        "reachM": 2.2,
+        "arcDeg": 110,
+        "samples": 12,
+        "camera": {
+          "level": {
+            "keys": [
+              {
+                "t": 0
+              },
+              {
+                "t": 1,
+                "yaw": 1.8,
+                "pitch": 0.5,
+                "roll": 1.4,
+                "bob": [
+                  0.012,
+                  0.004,
+                  0.015
+                ]
+              },
+              {
+                "t": 1.5,
+                "yaw": -0.6,
+                "pitch": -0.2,
+                "roll": -0.6,
+                "bob": [
+                  -0.006,
+                  -0.002,
+                  -0.004
+                ]
+              },
+              {
+                "t": 2,
+                "yaw": -2,
+                "pitch": -0.4,
+                "roll": -1.3,
+                "bob": [
+                  -0.012,
+                  -0.004,
+                  -0.006
+                ]
+              },
+              {
+                "t": 2.5,
+                "yaw": -0.6,
+                "pitch": -0.1,
+                "roll": -0.4,
+                "bob": [
+                  -0.004,
+                  0,
+                  -0.002
+                ]
+              },
+              {
+                "t": 3
+              }
+            ],
+            "kick": {
+              "yaw": 0.5,
+              "pitch": -0.7,
+              "roll": 0.5,
+              "bob": [
+                0,
+                -0.006,
+                0.004
+              ],
+              "decayS": 0.09,
+              "miss": 0.35,
+              "bounce": 1.6
+            }
+          }
+        },
+        "staminaCost": 8,
+        "swish": "axe_swish",
+        "bounce": "axe_clank",
+        "rustle": "axe_rustle",
+        "rustleLeaves": 5
+      },
+      "clears": [
+        "dwell:leaves",
+        "dwell:snowy_leaves"
+      ],
+      "chop2": {
+        "bite": 0.09
+      }
+    }
+  ]
+}
