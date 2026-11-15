@@ -219,10 +219,10 @@ pub fn rainfall(n: usize, cell: f64, height: &[f32], sea: &[bool], params: &Biom
         };
         let grade = (ground(c) - h_up) / step * 10.0;
         let r = (flat + params.uplift_rain * grade.max(0.0) - params.lee_dry * (-grade).max(0.0))
-            .max(params.lee_floor * flat)
             .clamp(0.0, 1.0);
         let m_up = m_up.clamp(0.0, 1.0);
-        rain[c] = (m_up * r) as f32;
+        // A lee is drier, not dead (`lee_floor`; 0: as before).
+        rain[c] = (m_up * r).max(params.lee_floor * flat) as f32;
         let m = m_up * (1.0 - r * dry);
         // The air takes moisture back over land (`recover_m`; 0: never, as before).
         let m = if params.recover_m > 0.0 {
