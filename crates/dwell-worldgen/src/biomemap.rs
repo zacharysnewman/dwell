@@ -131,7 +131,7 @@ pub struct BiomeField {
     /// `grid::SparseGrid`, BUGS.md #70).
     coast: SparseGrid<f32>,
     /// Per map cell: metres to the nearest river or lake cell.
-    fresh: Vec<f32>,
+    fresh: SparseGrid<f32>,
     climate_seed: u32,
     dither_seed: u32,
     /// The climate gradient's direction (a unit vector from the seed).
@@ -140,7 +140,7 @@ pub struct BiomeField {
     radius: f64,
     /// Per map cell: the rain shadow's rainfall (0..1, [`rainfall`]; the sea's flat rate over the
     /// sea, stored by its exceptions).
-    rain: SparseGrid<f32>,
+    rain: Option<SparseGrid<f32>>,
     /// The world's climate and its rain marched over the eroded map (coarse), if it has one (R4).
     climate: Option<(crate::climate::Climate, crate::climate::RainGrid)>,
 }
@@ -342,12 +342,23 @@ impl BiomeField {
                 wet[map.cell_at(f64::from(v.x), f64::from(v.z))] = true;
             }
         }
-        let fresh = chamfer(n, cell, |c| wet[c]);
+        // Read only as far as `wet_reach` (`geography`): capped two cells past it, a bilinear read
+        // within the reach is the uncapped one's exactly (a cell differs from its neighbour by under
+        // 1.5 cells), and the far land is one value the sparse grid needn't store.
+        let cap = (params.wet_reach + 2.0 * cell) as f32;
+        let fresh: Vec<f32> = chamfer(n, cell, |c| wet[c])
+            .into_iter()
+            .map(|d| d.min(cap))
+            .collect();
         drop(wet);
-        let sea: Vec<bool> = (0..n * n).map(|c| map.is_sea(c)).collect();
-        let rain = rainfall(n, cell, &map.height, &sea, &params).rain;
-        drop(sea);
-        let rain = SparseGrid::from_dense(&rain, most_common(&rain));
+        let fresh = SparseGrid::from_dense(&fresh, most_common(&fresh));
+        // A world with a climate reads its own march (`climate`); the biome map's isn't built.
+        let rain = climate.is_none().then(|| {
+            let sea: Vec<bool> = (0..n * n).map(|c| map.is_sea(c)).collect();
+            let rain = rainfall(n, cell, &map.height, &sea, &params).rain;
+            drop(sea);
+            SparseGrid::from_dense(&rain, most_common(&rain))
+        });
         let a = f64::from(seed_word(world_seed, 0xB10E_0001)) / f64::from(u32::MAX)
             * std::f64::consts::TAU;
         Self {
@@ -375,9 +386,11 @@ impl BiomeField {
     pub fn grid_bytes(&self) -> Vec<(&'static str, usize)> {
         let mut v = vec![
             ("biome field coast", self.coast.bytes()),
-            ("biome field fresh water", crate::vec_bytes(&self.fresh)),
-            ("biome field rain", self.rain.bytes()),
+            ("biome field fresh water", self.fresh.bytes()),
         ];
+        if let Some(r) = &self.rain {
+            v.push(("biome field rain", r.bytes()));
+        }
         if let Some((_, r)) = &self.climate {
             v.push(("biome field climate rain", r.bytes()));
         }
@@ -399,14 +412,21 @@ impl BiomeField {
 
     /// The rain shadow's rainfall at face-local (x, z), 0..1 ([`rainfall`]).
     pub fn rainfall(&self, x: f64, z: f64) -> f64 {
-        self.sample(|c| self.rain.get(c), x, z)
+        match (&self.rain, &self.climate) {
+            (Some(r), _) => self.sample(|c| r.get(c), x, z),
+            // The climate's march over its flat rate, as the biome map's 0..1 reads.
+            (None, Some((_, g))) if g.flat > 1e-12 => {
+                (g.at(x, z) / g.flat * self.params.base_rain).clamp(0.0, 1.0)
+            }
+            _ => 0.0,
+        }
     }
 
     /// The geography at face-local (x, z), whose world height field is `elevation` m.
     pub fn geography(&self, x: i64, z: i64, elevation: f64) -> Geography {
         let p = &self.params;
         let (xf, zf) = (x as f64, z as f64);
-        let fresh = self.sample(|c| self.fresh[c], xf, zf);
+        let fresh = self.sample(|c| self.fresh.get(c), xf, zf);
         let t = (fresh / p.wet_reach).clamp(0.0, 1.0);
         let rivers = 1.0 - t * t * (3.0 - 2.0 * t);
         let coast = self.sample(|c| self.coast.get(c), xf, zf);
