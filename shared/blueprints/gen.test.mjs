@@ -45,6 +45,8 @@ test("a fixture catalog entry, builder pace and town plan are added by data alon
   const v = validateBlueprints(d, structures, creatures);
   assert.deepEqual(v.catalog, ["test:ladder_post"]);
   assert.match(rust(v), /pace_s: 0\.5/);
+  // Site clearing: the margin and its pace by data alone.
+  assert.match(rust(v), /clear_margin_m: 2, clear_pace_s: 0\.25 \}/);
   assert.match(rust(v), /catalog: &\["test:ladder_post"\]/);
   assert.match(
     rust(v),
@@ -134,6 +136,10 @@ test("bad entries fail naming them", () => {
   );
   bad((d) => (d.limits.perWorld = 1.5), /limits.perWorld must be an integer/);
   bad((d) => (d.builder.speed = 1), /builder: unknown field "speed"/);
+  bad(
+    (d) => (d.builder.clearMarginM = 1.5),
+    /builder.clearMarginM must be an integer in 0..8/,
+  );
   bad((d) => (d.extra = 1), /unknown field "extra"/);
   bad(
     (d) => (d.towns.map.icon = "castle"),

@@ -46,16 +46,28 @@ export interface BlueprintRow {
 export interface BlueprintPanelView {
   name: string;
   left: number;
+  /** Its site is still being cleared (docs/BLUEPRINTS.md §5b), then it is building. */
+  clearing: boolean;
   rows: BlueprintRow[];
   /** Rows past the panel's most. */
   more: number;
 }
 
-/** The client's `blueprintPanel` text (name, cells left, "item have need" lines, "+n"); null for "". */
+/**
+ * The client's `blueprintPanel` text (name, "cells-left phase", "item have need" lines, "+n"); null
+ * for "".
+ */
 export function parseBlueprintPanel(text: string): BlueprintPanelView | null {
   if (text === '') return null;
-  const [name = '', left = '0', ...lines] = text.split('\n');
-  const view: BlueprintPanelView = { name, left: Number(left), rows: [], more: 0 };
+  const [name = '', status = '0', ...lines] = text.split('\n');
+  const [left = '0', phase = 'building'] = status.split(' ');
+  const view: BlueprintPanelView = {
+    name,
+    left: Number(left),
+    clearing: phase === 'clearing',
+    rows: [],
+    more: 0,
+  };
   for (const l of lines) {
     if (l.startsWith('+')) {
       view.more = Number(l.slice(1));
@@ -70,9 +82,10 @@ export function parseBlueprintPanel(text: string): BlueprintPanelView | null {
 /** A name without its namespace: "dwell:bp_hut" → "bp_hut". */
 const bare = (n: string): string => n.slice(n.indexOf(':') + 1);
 
-/** The panel's lines: the blueprint's name and cells left, then "log 12/40" per item. */
+/** The panel's lines: the blueprint's name, phase and cells left, then "log 12/40" per item. */
 export function blueprintPanelLines(v: BlueprintPanelView): string[] {
-  const out = [`${bare(v.name)} · ${String(v.left)} left`];
+  const phase = v.clearing ? 'Clearing' : 'Building';
+  const out = [`${bare(v.name)} · ${phase} · ${String(v.left)} left`];
   for (const r of v.rows) out.push(`${bare(r.item)} ${r.have}/${String(r.need)}`);
   if (v.more > 0) out.push(`+${String(v.more)} more`);
   return out;

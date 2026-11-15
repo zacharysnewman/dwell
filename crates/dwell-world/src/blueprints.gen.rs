@@ -5,7 +5,7 @@ pub const SHIPPED: Rules = Rules {
     player_pace_ms: 150.0,
     panel_rows: 6,
     ghost_face_cap: 24000,
-    builder: BuilderRules { creature: "dwell:builder", pace_s: 0.75, reach_m: 4.0, near_m: 96.0, per_blueprint: 1, job: "dwell:builder" },
+    builder: BuilderRules { creature: "dwell:builder", pace_s: 0.75, reach_m: 4.0, near_m: 96.0, per_blueprint: 1, job: "dwell:builder", clear_margin_m: 1, clear_pace_s: 0.5 },
     jobs: &[JobRules { name: "dwell:builder", kind: JobKind::Build, carry_max: 10, mixed_loads: true, wait_s: 3.0 }],
     storehouse: StorehouseRules { stock: StockMode::Unlimited, range_m: 64.0, reach_m: 2.5 },
     carry_look: CarryLook { item: "carried", joint: "spine.003", at: [0.0, -0.18, -0.2], piece_m: 0.2, per_layer: 2, kinds: &[CarryKind { block: "dwell:log", piece_m: 0.24, per_layer: 2 }] },

@@ -3404,6 +3404,18 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (see item 40). **Owner should see:** open the big map (M) in a world you have explored: a town icon where each
    town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
    the `spawn=town` link and watch the builders put up the hamlet in front of you.
+   **Builders clear their site first (owner, 2026-11-15):** **"NPCs don't clear their build site currently. That should be
+   the first step."** Built 2026-11-15 (branch `claude/builder-site-clearing`, BLUEPRINTS.md §5b): before placing
+   anything, a builder removes everything in the blueprint's box and a 1 m margin (`builder.clearMarginM`) from its floor
+   up that the blueprint doesn't want there: a tree whose trunk stands in it goes whole, logs and leaves in one removal
+   (nothing floats); tall grass, plants, rocks, players' blocks and terrain over the floor go one a `clearPaceS` (0.5 s);
+   a cell already holding its own block is kept, other blueprints' and storehouses' boxes are never touched, nothing
+   below the floor is dug. What it clears drops at the site where items are used (adventure). The panel says
+   "Clearing", then "Building". A half-cleared site resumes after a save (the world is the record). Tests: `dwell-world`
+   `blueprint` (both faces: the whole tree, the margin, the kept cells), `dwell-sim` `tests/blueprints.rs` (both faces:
+   tree and grass cleared before the first piece, drops in adventure, a save mid-clear resumes). **Owner should see:**
+   Structures → a saved hut → **Test in town** placed over a tree: the builder takes the whole tree down at once, clears
+   the grass round the box, the panel reads "Clearing" then "Building", and only then the floor goes in.
 
 57. **Villagers fetch materials from a storehouse (an Age of Empires-style work loop)** (owner 2026-11-14, after asking
    whether "town plans will clear trees" means villagers clear them: **"Ideally long term, I'd like this to work a lot

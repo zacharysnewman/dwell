@@ -38,10 +38,13 @@ describe('blueprints', () => {
   });
 
   it('reads the client’s panel: name, cells left, have/need per item, folded rows', () => {
-    const v = parseBlueprintPanel('dwell:bp_hut\n111\ndwell:log 12 61\ndwell:stone ∞ 50\n+2');
+    const v = parseBlueprintPanel(
+      'dwell:bp_hut\n111 building\ndwell:log 12 61\ndwell:stone ∞ 50\n+2',
+    );
     expect(v).toEqual({
       name: 'dwell:bp_hut',
       left: 111,
+      clearing: false,
       rows: [
         { item: 'dwell:log', have: '12', need: 61 },
         { item: 'dwell:stone', have: '∞', need: 50 },
@@ -50,12 +53,17 @@ describe('blueprints', () => {
     });
     if (!v) throw new Error('a panel');
     expect(blueprintPanelLines(v)).toEqual([
-      'bp_hut · 111 left',
+      'bp_hut · Building · 111 left',
       'log 12/61',
       'stone ∞/50',
       '+2 more',
     ]);
     expect(v.rows.map(rowShort)).toEqual([true, false]);
     expect(parseBlueprintPanel('')).toBeNull();
+    // Its site still being cleared (docs/BLUEPRINTS.md §5b): "Clearing", then "Building".
+    const c = parseBlueprintPanel('dwell:bp_hut\n153 clearing');
+    expect(c?.clearing).toBe(true);
+    if (!c) throw new Error('a panel');
+    expect(blueprintPanelLines(c)).toEqual(['bp_hut · Clearing · 153 left']);
   });
 });

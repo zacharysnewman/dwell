@@ -25,6 +25,8 @@ pub struct Panel {
     pub more: usize,
     /// Cells left to build.
     pub left: usize,
+    /// Its site is still being cleared (docs/BLUEPRINTS.md §5b): its builders place nothing yet.
+    pub clearing: bool,
 }
 
 /// The blueprints the server sent, and the held Place's state.
@@ -144,6 +146,14 @@ impl ClientBlueprints {
     ) -> Option<Panel> {
         let g = self.ghosts.get(i)?;
         let (mut rows, left) = g.needs(get, have);
+        // As the server clears it: never into another blueprint's box (the client doesn't know
+        // the storehouses' built boxes, which only a neighbour's margin could reach).
+        let keep = |c: [i32; 3]| {
+            self.ghosts
+                .iter()
+                .any(|o| o.id != g.id && (0..3).all(|k| c[k] >= o.min[k] && c[k] <= o.max[k]))
+        };
+        let clearing = g.clearing(get, self.rules.builder.clear_margin_m, &keep);
         let more = rows.len().saturating_sub(self.rules.panel_rows);
         rows.truncate(self.rules.panel_rows);
         Some(Panel {
@@ -151,6 +161,7 @@ impl ClientBlueprints {
             rows,
             more,
             left,
+            clearing,
         })
     }
 

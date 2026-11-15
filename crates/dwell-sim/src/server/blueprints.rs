@@ -354,6 +354,22 @@ impl Blueprints {
             .map(|(i, _)| i)
     }
 
+    /// The boxes (world cells, inclusive) clearing blueprint `id`'s site never touches: every
+    /// other blueprint's and every storehouse's but the one it builds (§5b).
+    fn keep_boxes(&self, id: u32) -> Vec<([i32; 3], [i32; 3])> {
+        self.list
+            .iter()
+            .filter(|(b, _)| b.id != id)
+            .map(|(_, g)| (g.min, g.max))
+            .chain(
+                self.storehouses
+                    .iter()
+                    .filter(|s| s.blueprint != id)
+                    .map(|s| (s.min, s.max)),
+            )
+            .collect()
+    }
+
     /// Whether blueprint `id` waits for its storehouse to be built first.
     fn waits_for_store(&self, id: u32, g: &Ghost) -> bool {
         self.store_for(id, g)
@@ -718,8 +734,12 @@ impl Server {
         let pace = (rules.pace_s * f64::from(SIM_HZ)).round().max(1.0) as u32;
         let stuck = (STUCK_S * f64::from(SIM_HZ)) as u32;
         let wait_ticks = (job.wait_s * f64::from(SIM_HZ)).round().max(1.0) as u32;
+        let clear_pace = (rules.clear_pace_s * f64::from(SIM_HZ)).round().max(1.0) as u32;
+        let rider_reach = self.felling.rules.support.rider_reach;
         let capsules = self.player_capsules();
         let mut placed: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
+        // What clearing removed (cell, what was there): it drops at the site.
+        let mut cleared: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         let mut ids: Vec<u32> = self.blueprints.builders.keys().copied().collect();
         ids.sort_unstable();
         for id in ids {
@@ -738,6 +758,12 @@ impl Server {
                 .filter(|&si| self.blueprints.storehouses[si].blueprint == 0)
                 .map(|si| (si, self.blueprints.storehouses[si].bounds()));
             let spot = self.builder_spot(id);
+            let keep_boxes = self.blueprints.keep_boxes(id);
+            let keep = |c: [i32; 3]| {
+                keep_boxes
+                    .iter()
+                    .any(|(lo, hi)| (0..3).all(|k| c[k] >= lo[k] && c[k] <= hi[k]))
+            };
             let g = g.clone();
             let bp = &mut self.blueprints;
             let workers = bp.builders.get_mut(&id).expect("builders");
@@ -755,8 +781,13 @@ impl Server {
                     Some(world.get_voxel_if_loaded(c))
                 };
                 let feet = f.point(cr.position);
+                // Clearing the site comes first (§5b): nothing is placed, and no load fetched,
+                // while something the blueprint doesn't want stands in it.
+                let clear =
+                    g.clear_next(&get, Some(feet), rules.clear_margin_m, rider_reach, &keep);
                 // To the storehouse for a load (B5).
-                if let Some((si, (sbx, sbz))) = store
+                if clear.is_none()
+                    && let Some((si, (sbx, sbz))) = store
                     && w.trip == Trip::ToStore
                 {
                     let p = [feet[0], feet[2]];
@@ -792,28 +823,51 @@ impl Server {
                     continue;
                 }
                 let trips = store.is_some();
-                let next = if trips {
+                let next = if clear.is_some() {
+                    None
+                } else if trips {
                     g.builder_next_of(&get, Some(feet), &|s| w.load.has(s))
                 } else {
                     g.builder_next_near(&get, Some(feet))
                 };
-                let Some(cell) = next else {
-                    cr.target = None;
-                    if trips {
-                        // Nothing it carries can go in: back for what can.
-                        w.go(Trip::ToStore);
+                let target = match (&clear, next) {
+                    (Some(job), _) => job.at,
+                    (None, Some(cell)) => cell.world,
+                    (None, None) => {
+                        cr.target = None;
+                        if trips {
+                            // Nothing it carries can go in: back for what can.
+                            w.go(Trip::ToStore);
+                        }
+                        continue;
                     }
-                    continue;
                 };
-                let centre = f.point(dwell_world::centre_of_cell(cell.world));
+                let centre = f.point(dwell_world::centre_of_cell(target));
                 let (dx, dz) = (centre[0] - feet[0], centre[2] - feet[2]);
                 let flat = dx.hypot(dz);
                 let reach = flat <= rules.reach_m && (centre[1] - feet[1]).abs() <= rules.reach_m;
-                // Never into its own body's column (it would wall itself in).
-                let own = flat < 0.75 && centre[1] >= feet[1] - 0.25;
+                // Never into its own body's column (it would wall itself in); clearing may.
+                let own = clear.is_none() && flat < 0.75 && centre[1] >= feet[1] - 0.25;
                 let inside =
                     feet[0] > bx[0] && feet[0] < bx[1] && feet[2] > bz[0] && feet[2] < bz[1];
-                if !own && (reach || w.walking >= stuck) {
+                if let Some(job) = &clear
+                    && (reach || w.walking >= stuck)
+                {
+                    cr.target = None;
+                    if w.wait == 0 {
+                        // The whole of it at once (a tree, logs and leaves: nothing floats).
+                        for &c in &job.cells {
+                            let was = world.get_voxel_if_loaded(c);
+                            let left = if info(was).flooded { M.water } else { M.air };
+                            placed.push((c, left));
+                            cleared.push((c, was));
+                        }
+                        w.wait = clear_pace;
+                        w.walking = 0;
+                    }
+                    continue;
+                }
+                if let Some(cell) = next.filter(|_| !own && (reach || w.walking >= stuck)) {
                     cr.target = None;
                     if w.wait == 0 {
                         let into_player =
@@ -889,6 +943,15 @@ impl Server {
             changes.set_and_unsupport(&mut self.world, cell, state);
         }
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        // What clearing removed drops at the site as if broken, where items are used (the
+        // builders' own blocks are unlimited: they collect nothing).
+        if self.uses_items() {
+            for (cell, was) in cleared {
+                let at = dwell_world::centre_of_cell(cell);
+                self.drop_block(was, at);
+                self.drop_sapling(cell, at);
+            }
+        }
     }
 
     /// Town sites (B4, docs/BLUEPRINTS.md §6): each site within `found_m` of a living player

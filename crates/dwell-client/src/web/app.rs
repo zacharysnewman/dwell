@@ -3583,7 +3583,8 @@ impl Client {
         let mut st = self.inner.borrow_mut();
         st.game.as_mut().is_some_and(|g| g.remove_aimed_blueprint())
     }
-    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left, then per item
+    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left and its phase
+    /// ("clearing" its site, then "building", §5b), then per item
     /// still needed "item have need", one a line ("" with none aimed); a last line "+n" folds rows
     /// past the panel's most.
     #[wasm_bindgen(js_name = blueprintPanel)]
@@ -3592,7 +3593,8 @@ impl Client {
         let Some(p) = st.game.as_mut().and_then(|g| g.blueprint_panel()) else {
             return String::new();
         };
-        let mut out = format!("{}\n{}", p.name, p.left);
+        let phase = if p.clearing { "clearing" } else { "building" };
+        let mut out = format!("{}\n{} {phase}", p.name, p.left);
         for r in &p.rows {
             let have = if r.have == u32::MAX {
                 "∞".to_string()
