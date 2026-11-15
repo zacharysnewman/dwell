@@ -270,6 +270,9 @@ struct WaterLink {
     overtaken: u64,
 }
 
+/// The most cells a scene's build sends in one modification (`Server::build_scene`): a
+/// modification stays well under the wire's 1 MiB message.
+const SCENE_BATCH: usize = 60_000;
 /// How long before an autosave the server asks the water for its record (ticks).
 const WATER_RECORD_LEAD_TICKS: u32 = 30;
 /// How long the LOD section of a chunk the water rewrites waits from its first change before it is
@@ -4407,6 +4410,92 @@ impl Server {
             })
             .collect();
         format!("[{}]", rows.join(","))
+    }
+
+    /// Builds a scene (docs/THEATER_MODE.md §6.3, `crate::scene`): the cells that differ from it
+    /// written as modifications of at most `SCENE_BATCH` cells (each client sent its chunks), its
+    /// chunks given to the water again as fresh loads so the scene's lake joins held at its level,
+    /// still from its first tick, as a generated lake does; and with a real-time water clock, the
+    /// world's water speed set to run it at real time. Returns its figures as JSON.
+    pub fn build_scene(&mut self, scene: &crate::scene::Scene) -> String {
+        let world = &mut self.world;
+        let plan = scene.cells(|[x, y, z]| world.get_voxel(x, y, z));
+        let mut cells = plan.cells;
+        cells.sort_by_key(|&(c, _)| {
+            let k = chunk_of(c[0], c[1], c[2]);
+            (k.x, k.y, k.z)
+        });
+        let mut chunks: HashSet<ChunkCoord> = HashSet::default();
+        for batch in cells.chunks(SCENE_BATCH) {
+            // The water isn't told cell by cell: it reads the chunks whole below.
+            let mut changes = TickChanges {
+                water: true,
+                ..TickChanges::default()
+            };
+            for &(c, m) in batch {
+                chunks.insert(chunk_of(c[0], c[1], c[2]));
+                changes.set(&mut self.world, c, m);
+            }
+            self.broadcast_changes(changes, VoxelModificationReason::Collapse);
+        }
+        for &c in &chunks {
+            self.water_link.mirror.forget(c);
+        }
+        if let Some(speed) = scene.water_speed(self.settings.clock.day_length_s()) {
+            self.settings.water_speed = speed as f32;
+        }
+        let structures: Vec<String> = plan
+            .structures
+            .iter()
+            .map(|(n, c)| format!("{{\"name\":{n:?},\"cells\":{}}}", c.len()))
+            .collect();
+        format!(
+            "{{\"scene\":{:?},\"cells\":{},\"chunks\":{},\"waterCells\":{},\"waterSpeed\":{},\"structures\":[{}]}}",
+            scene.name,
+            cells.len(),
+            chunks.len(),
+            plan.water_cells,
+            self.settings.water_speed,
+            structures.join(",")
+        )
+    }
+
+    /// Runs scene event `i` (`crate::scene::Event`): `remove` sets the named structure's cells
+    /// that still hold its material to air, as one edit the water hears (it frees the water by
+    /// them, so a lake held behind a dam runs out). Returns its figures as JSON, or what's wrong.
+    pub fn scene_event(&mut self, scene: &crate::scene::Scene, i: usize) -> Result<String, String> {
+        let e = scene
+            .events
+            .get(i)
+            .ok_or_else(|| format!("scene {:?} has no event {i}", scene.name))?;
+        let crate::scene::Action::Remove(target) = &e.action;
+        let wall = scene
+            .walls
+            .iter()
+            .find(|w| &w.name == target)
+            .ok_or_else(|| format!("no structure {target:?}"))?;
+        let material = scene.frame.state(dwell_blocks::require(&wall.material));
+        let world = &mut self.world;
+        let plan = scene.cells(|[x, y, z]| world.get_voxel(x, y, z));
+        let cells = plan
+            .structures
+            .into_iter()
+            .find(|(n, _)| n == target)
+            .map(|(_, c)| c)
+            .unwrap_or_default();
+        let mut changes = TickChanges::default();
+        let mut removed = 0;
+        for c in cells {
+            if self.world.get_voxel(c[0], c[1], c[2]) == material {
+                changes.set(&mut self.world, c, dwell_blocks::AIR);
+                removed += 1;
+            }
+        }
+        self.broadcast_changes(changes, VoxelModificationReason::Collapse);
+        Ok(format!(
+            "{{\"event\":{i},\"removed\":{removed},\"target\":{target:?},\"tick\":{}}}",
+            self.tick
+        ))
     }
 
     /// The water, for tests and tools (docs/WATER_SURFACE_GRID.md), where it runs inline.

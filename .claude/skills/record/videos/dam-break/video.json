@@ -1,0 +1,39 @@
+{
+ "formatVersion": 1,
+ "name": "dam-break",
+ "description": "WORK_QUEUE item 41 (owner, 2026-11-14): \"Do a rendered recording of a 10 block high dam of a river suddenly deleted. 30s of real time for our first one.\" The dam_break scene (shared/theater/scenes/dam_break.json) built on the flat world, its dam deleted at 3 s, the flood filmed for 30 s of real time as a cinematic take, 16:9.",
+ "world": {
+  "url": "/dwell/?world=flat&fresh=1&seed=0&at=-80,33,-90",
+  "storage": {
+   "dwell.clouds": "\"off\"",
+   "dwell.music": "\"off\""
+  }
+ },
+ "capture": {
+  "size": [1920, 1080],
+  "fps": 30
+ },
+ "audio": true,
+ "shots": [
+  {
+   "id": "flood",
+   "note": "the lake, the dam deleted at 3 s, the flood down the valley (cinematic, 30 s)",
+   "kind": "path",
+   "path": "videos/dam-break/wide.json",
+   "scene": "dam_break",
+   "setup": {
+    "view": {
+     "clouds": "off",
+     "targetOutline": false
+    }
+   },
+   "render": "cinematic",
+   "splice": [
+    {
+     "from": 0,
+     "to": 30
+    }
+   ]
+  }
+ ]
+}

@@ -434,7 +434,13 @@ independently. Use it for cinematic moves instead of per-frame `placeCamera` scr
   rendered offline — the local world stepped 1/fps a frame, the client's clock held, each frame settled, a pre-roll
   first, supersampled PNG frames and the frame-exact sound (`audio.wav`) handed to `window.__dwellRecSink` (the
   record driver's `/cine/start?name=`) — resolving with a report: frames, render time, the settle waits and capped
-  frames, the ticks, the sound's alignment. Settings: `shared/theater/cinematic.json`.
+  frames, the ticks, the sound's alignment. Settings: `shared/theater/cinematic.json`. `events: [{ atS, op: 'scene',
+  arg }]` runs a built scene's event (by index) on the take's clock, before the world steps past `atS`.
+- **Scenes** (`__dwell.scene('build', text)`, `('event', '0')`, `('status')`; THEATER_MODE.md §6.3): a test world
+  from `shared/theater/scenes/<name>.json` built into the local world (a valley, a dam, a lake held still behind it;
+  JSON back: cells, chunks, water cells, each structure's cells, or `{error}` naming each bad entry), an event run
+  (the dam removed), the water's figures (`awake` chunks). On `?world=flat&fresh=1&seed=0&at=-80,33,-90` the dam_break
+  scene's valley runs down +z from (0, 0); the record skill's `dam-break` videos use it.
   `audio: true` adds the game's sound (effects and ambience, never the music).
 - **The recording tap** (`__dwell.audioTap({ music: false })` → `{ stream, buses, close }` or null): the game's mix as
   a MediaStream, effects and ambience by default (`music`/`ui: true` to include those buses), on a parallel graph so

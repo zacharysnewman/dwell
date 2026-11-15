@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Recordings can build their own test worlds from data: a valley, a dam and a lake held behind it, with timed events like the dam vanishing",
+    "Behind the scenes: the first one is a 10-block dam deleted at 3 s and the flood that follows"
+  ]
+}

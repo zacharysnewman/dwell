@@ -158,6 +158,41 @@ export function ticksDue(tS: number, hz: number = SIM_HZ): number {
   return Math.floor(tS * hz + 1e-6);
 }
 
+/**
+ * A timed event of a take (THEATER_MODE.md §6.3): at take time `atS` (s) the host runs `op` with
+ * `arg` (`scene`: a built scene's event by index, e.g. its dam deleted), on the cinematic clock.
+ */
+export interface CinematicEvent {
+  atS: number;
+  op: string;
+  arg: string;
+}
+
+/** The events a take's events list holds, checked: each `{atS ≥ 0, op, arg}`, or an error naming it. */
+export function parseEvents(raw: unknown): CinematicEvent[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error('cinematic: events: expected a list');
+  return raw.map((e: unknown, i) => {
+    const o = (e ?? {}) as Partial<CinematicEvent>;
+    if (typeof o.atS !== 'number' || !(o.atS >= 0) || typeof o.op !== 'string' || !o.op)
+      throw new Error(`cinematic: events[${String(i)}]: expected {atS ≥ 0, op, arg}`);
+    return { atS: o.atS, op: o.op, arg: typeof o.arg === 'string' ? o.arg : '' };
+  });
+}
+
+/**
+ * The events that fire as the take steps from `fromS` to `toS` (s): those at `fromS` ≤ atS < `toS`,
+ * in time order. They run before the world steps past them, so an event at 3 s is in the world by
+ * the first frame after 3 s (frame 91 at 30 fps: frame 90 is 3 s exactly and still shows before it).
+ */
+export function eventsDue(
+  events: readonly CinematicEvent[],
+  fromS: number,
+  toS: number,
+): CinematicEvent[] {
+  return events.filter((e) => e.atS >= fromS && e.atS < toS).sort((a, b) => a.atS - b.atS);
+}
+
 /** The view's load state, as `__dwell.state()` reports it. */
 export interface ViewState {
   lod?: { waitingInView: number } | null;
@@ -241,6 +276,8 @@ export interface CinematicHost {
   sink(file: string, bytes: Uint8Array): Promise<void>;
   /** The sound stepped with the frames, or null (no audio). */
   audio(leadS: number): Promise<CinematicAudio | null>;
+  /** Runs a timed event (`CinematicEvent`'s op and arg); resolves with its answer. */
+  event?(op: string, arg: string): Promise<string | null>;
   wallMs(): number;
   /** The camera clearance check's world (clearance.ts), or null (no check). */
   clearance: ClearanceWorld | null;
@@ -256,6 +293,8 @@ export interface CinematicTakeOptions {
   frames?: number;
   /** A deliberate shot through solid ground: the clearance check reports it but doesn't fail the take. */
   allowClipping?: boolean;
+  /** Timed events (§6.3): each run at its take time, before the world steps past it. */
+  events?: unknown;
 }
 
 export interface CinematicReport {
@@ -270,6 +309,8 @@ export interface CinematicReport {
   audio: AudioStep | null;
   /** The camera clearance check (null without one): its samples, unchecked ones and clips. */
   clearance: Omit<ClearanceResult, 'message'> | null;
+  /** Each event run: its time, the first frame that shows it, and the host's answer. */
+  events: { atS: number; frame: number; op: string; result: string | null }[];
 }
 
 /** The p-th percentile of `xs` (0–1). */
@@ -298,6 +339,9 @@ export async function runCinematic(
   const cfg = parseCinematic(withOverrides(data, o.settings));
   const [w, h] = o.size;
   const json = typeof o.path === 'string' ? o.path : JSON.stringify(o.path);
+  const events = parseEvents(o.events);
+  if (events.length && !host.event) throw new Error('cinematic: this page runs no events');
+  const fired: CinematicReport['events'] = [];
   const t0 = host.wallMs();
   if (cfg.quality.shadows) host.setShadows(cfg.quality.shadows);
   host.setView(cfg.quality.view);
@@ -361,6 +405,13 @@ export async function runCinematic(
       for (let s = 0; s < S; s++) {
         const t = frameTimeS(i, s, cfg.fps, S);
         if (i > 0 || s > 0) {
+          for (const e of eventsDue(events, lastT, t))
+            fired.push({
+              atS: e.atS,
+              frame: i,
+              op: e.op,
+              result: (await host.event?.(e.op, e.arg)) ?? null,
+            });
           const due = ticksDue(t) - ticks;
           if (due > 0 && host.world) await host.world.step(due);
           ticks += Math.max(0, due);
@@ -418,6 +469,7 @@ export async function runCinematic(
         capped,
       },
       ticks,
+      events: fired,
       audio: step && { ...step, wav: new Uint8Array(0) },
       clearance: clear && {
         samples: clear.samples,

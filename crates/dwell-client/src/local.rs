@@ -34,6 +34,8 @@ pub struct LocalCore {
     pub storage_error: String,
     /// The bench's `carry` rig: a raft under the player moved at a set velocity (dev tools).
     carry: Option<Carry>,
+    /// The scene last built (`scene_dev`), for its events.
+    scene: Option<dwell_sim::scene::Scene>,
 }
 
 /// A body carrying the local player (the bench's `carry` step, docs/DEV_TOOLS.md): moved at
@@ -227,6 +229,7 @@ impl LocalCore {
             persisted,
             storage_error,
             carry: None,
+            scene: None,
         })
     }
 
@@ -447,6 +450,46 @@ impl LocalCore {
     pub fn kill_local_player(&mut self) {
         if let Some(p) = self.server.player_of_session(LOCAL_SESSION) {
             self.server.kill_player(p);
+        }
+    }
+
+    /// The scenes' dev tools (docs/THEATER_MODE.md §6.3, `dwell_sim::scene`), JSON back:
+    /// `"build"` with a scene file's text builds it into this world (`Server::build_scene`) and
+    /// keeps it for its events; `"event"` with an event's index runs it (`Server::scene_event`);
+    /// `"status"` the water's figures (its chunks awake: the build's lake is still once none are).
+    pub fn scene_dev(&mut self, op: &str, text: &str) -> String {
+        let error = |e: String| serde_json::json!({ "error": e }).to_string();
+        match op {
+            "build" => match dwell_sim::scene::Scene::parse(text) {
+                Ok(scene) => {
+                    let out = self.server.build_scene(&scene);
+                    self.scene = Some(scene);
+                    out
+                }
+                Err(e) => error(e),
+            },
+            "event" => {
+                let Some(scene) = &self.scene else {
+                    return error("no scene built".into());
+                };
+                match text.trim().parse::<usize>() {
+                    Ok(i) => self.server.scene_event(scene, i).unwrap_or_else(error),
+                    Err(_) => error(format!("event {text:?} is not an index")),
+                }
+            }
+            "status" => {
+                let (stats, _) = self.server.water_stats();
+                serde_json::json!({
+                    "scene": self.scene.as_ref().map(|s| s.name.clone()),
+                    "awake": stats.last.awake,
+                    "chunks": stats.last.chunks,
+                    "waterS": stats.last.t,
+                    "queue": stats.queue,
+                    "tick": self.server.tick(),
+                })
+                .to_string()
+            }
+            _ => error(format!("unknown scene op {op:?}")),
         }
     }
 

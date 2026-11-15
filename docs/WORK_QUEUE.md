@@ -2537,6 +2537,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `allowClipping: true`. Checked on the five cinematic paths: it finds the forest fly-over's 8.35–10 s, the other
    four are clear. **Owner should see:** no recording whose camera passes through the ground, a tree or a build
    unless the shot is meant to; a re-record of the forest fly-over is refused until its path is fixed.
+   **A dam break, and scenes as data (owner, 2026-11-14):** "Do a rendered recording of a 10 block high dam of a river
+   suddenly deleted. 30s of real time for our first one. We'll probably do a bunch of these so if you need tools to
+   generate a valley with a river/lake with a dam, go ahead and make them." Built (`claude/dam-scene`, THEATER_MODE.md
+   §6.3): scenes as data (`shared/theater/scenes/*.json`: a valley's size, slopes and materials, a wall across it by
+   height in blocks, a lake held behind it to a level, timed events), one builder (`dwell-sim` `scene.rs`,
+   `Server::build_scene`: the lake joins the water held, still from the start), `__dwell.scene`, a cinematic take's
+   `events`, and a record shot's `"scene"`. The first: `dam_break` (a stone dam of ten 1 m blocks, i.e. 20 half-cells,
+   10 m over the floor, the lake 9 m deep behind it, the water at real time), its dam deleted at 3 s, 30 s cinematic
+   at 30 fps with the game's sound, 16:9 (`videos/dam-break/`) and re-aimed 9:16 (`videos/dam-break-9x16/`). A river
+   fed by a source is not built (the grid has no sources yet): the first scene is a still lake.
+   **Owner should see:** a valley with a still lake behind a 10-block dam; at 3 s the dam vanishes at once and the lake
+   pours through and floods down the valley, the camera drifting after the front, for 30 s of real time, no clipping,
+   in both aspects.
 
 42. **The sun as a real world** — **deferred (owner, 2026-11-13: refinement only)** (owner 2026-11-12: "Add this feature to the queue, the sun is an actual world like
    the moon. Follow similar concepts as the moon. The sun is a volcano world. Constant flowing lava, oceans of

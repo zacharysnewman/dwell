@@ -201,6 +201,10 @@ export class LocalCore {
   lavaDev(op: string, args: number[]): string {
     return this.world.lavaDev(op, new Float64Array(args));
   }
+  /** The scenes' dev tools (JSON; local.rs `scene_dev`): `build` a scene file's text, `event` i, `status`. */
+  sceneDev(op: string, text: string): string {
+    return this.world.sceneDev(op, text);
+  }
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {
     return this.world.takeWaterReport();
