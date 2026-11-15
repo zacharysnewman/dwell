@@ -563,7 +563,11 @@ depending on climate/biome." Data: `shared/worldgen/grass.json` (`gen.mjs` `vali
   the gem come only from the tip (`when`); a stalk left on top is made a tip again by the next day's
   step. **Eaten**: a grazer's bite at a stand's foot leaves a sprout and eats the cells over it
   (`Server::eaten_stand`). **Generation is unchanged** (one cell a tuft): meadows grow tall over their
-  first days in a world that grows grass.
+  first days in a world that grows grass. Checked on the owner's M1 Air (2026-11-14, `?growth=400`, the
+  starter's meadow at its lush edge, ~25 world days): grass to head height at (10100, 16340), the steppe
+  still sparse and short; on High 60/60 fps throughout, `gpu.near` 5.9 → 7.9 ms and `gpu.frame` 8.7 →
+  11.4 ms mean (p95 9.7 → 17.0, with the ×400 growth re-meshing chunks every few seconds while it was
+  measured). The tour's meadow spot itself stands on a drier patch (share 0.54): one cell there.
 - **The world's switch**: saved in the optional `grass_growth` table (a version byte, the switch, each
   grown chunk's last day; another version's is kept unread and the growth stays off). `ServerConfig::grass`
   (on) is a **new** world's; a world saved before this (meta, no table) has none, so existing worlds'
