@@ -9,7 +9,7 @@
 //! falls (`Falls`: sand) with nothing solid under it falls with what of its kind is stacked on it. The search is bounded: a system of carriers and
 //! riders larger than `max_cells` is left standing (and judged again by a later change).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use dwell_blocks::{StateId, SupportRole, info};
 
@@ -104,6 +104,31 @@ fn falling_column(world: &mut VoxelWorld, start: [i32; 3]) -> Option<Piece> {
     Some(Piece { cells, carriers })
 }
 
+/// The 26 neighbours' offsets: a rider (a leaf) touches another rider or a carrier through an
+/// edge or a corner too (BUGS.md #193: a palm's drooping fronds and a broadleaf's odd leaf met
+/// their crown only so, and a fell left them hanging in the air).
+const AROUND: [[i32; 3]; 26] = {
+    let mut out = [[0; 3]; 26];
+    let mut k = 0;
+    let mut i = 0;
+    while i < 27 {
+        let d = [i % 3 - 1, (i / 3) % 3 - 1, i / 9 - 1];
+        if d[0] != 0 || d[1] != 0 || d[2] != 0 {
+            out[k] = d;
+            k += 1;
+        }
+        i += 1;
+    }
+    out
+};
+
+/// Whether cells of roles `a` and `b` `d` apart touch: through a face always, through an edge or a
+/// corner when one of them is a rider.
+fn touch(a: SupportRole, b: SupportRole, d: [i32; 3]) -> bool {
+    let faces = d.iter().filter(|v| **v != 0).count() == 1;
+    faces || a == SupportRole::Rider || b == SupportRole::Rider
+}
+
 fn add(a: [i32; 3], d: [i32; 3]) -> [i32; 3] {
     [a[0] + d[0], a[1] + d[1], a[2] + d[2]]
 }
@@ -141,13 +166,52 @@ pub fn detached_pieces(
             if r == SupportRole::Ground {
                 continue;
             }
-            if let Some(found) = system(world, start, rules, &mut seen) {
+            if let Some(found) = system(world, start, rules, &mut seen, &HashSet::new()) {
                 pieces.extend(found);
+            }
+        }
+    }
+    // The box a falling tree stood in (and a margin): the leaves there no tree holds go too, those
+    // touching nothing of it included (BUGS.md #193: a palm's fronds across a gap, left hanging
+    // where the felled tree had been).
+    let trees: Vec<&Piece> = pieces.iter().filter(|p| p.carriers > 0).collect();
+    if !trees.is_empty() {
+        let mut lo = [i32::MAX; 3];
+        let mut hi = [i32::MIN; 3];
+        for c in trees.iter().flat_map(|p| p.cells.iter()) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(c[k] - SWEEP_MARGIN);
+                hi[k] = hi[k].max(c[k] + SWEEP_MARGIN);
+            }
+        }
+        let falling: HashSet<[i32; 3]> = pieces
+            .iter()
+            .flat_map(|p| p.cells.iter().copied())
+            .collect();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    let c = [x, y, z];
+                    if seen.contains_key(&c) || falling.contains(&c) {
+                        continue;
+                    }
+                    if role(world.get_voxel(x, y, z)) != Some(SupportRole::Rider) {
+                        continue;
+                    }
+                    // Its system judged with the tree's cells gone (resting on them holds
+                    // nothing).
+                    if let Some(found) = system(world, c, rules, &mut seen, &falling) {
+                        pieces.extend(found);
+                    }
+                }
             }
         }
     }
     pieces
 }
+
+/// How far past a falling tree's cells [`detached_pieces`] looks for leaves it leaves unheld.
+const SWEEP_MARGIN: i32 = 2;
 
 /// The system of carriers and riders connected to `start` (face neighbours), and the pieces of it
 /// that lost their support; none when it is larger than `rules.max_cells` (left standing).
@@ -156,6 +220,7 @@ fn system(
     start: [i32; 3],
     rules: SupportRules,
     seen: &mut HashMap<[i32; 3], SupportRole>,
+    outer: &HashSet<[i32; 3]>,
 ) -> Option<Vec<Piece>> {
     // 1. The whole connected system, in breadth-first order, and its carriers touching ground.
     let mut cells: Vec<[i32; 3]> = Vec::new();
@@ -173,19 +238,23 @@ fn system(
         }
         let mine = roles[&c];
         let mut touches_ground = false;
-        for d in FACES {
+        for d in AROUND {
             let n = add(c, d);
-            if roles.contains_key(&n) {
+            // What falls already is not this system's (the sweep's, after a fell).
+            if roles.contains_key(&n) || outer.contains(&n) {
                 continue;
             }
+            let face = d.iter().filter(|v| **v != 0).count() == 1;
             let m = world.get_voxel(n[0], n[1], n[2]);
             match role(m) {
-                Some(SupportRole::Ground | SupportRole::Falls) => touches_ground |= anchors(m),
-                Some(r) => {
+                Some(SupportRole::Ground | SupportRole::Falls) => {
+                    touches_ground |= face && anchors(m);
+                }
+                Some(r) if touch(mine, r, d) => {
                     roles.insert(n, r);
                     queue.push_back(n);
                 }
-                None => {}
+                _ => {}
             }
         }
         if mine == SupportRole::Carrier && touches_ground {
@@ -242,7 +311,7 @@ fn system(
         if dist >= rules.rider_reach {
             continue;
         }
-        for d in FACES {
+        for d in AROUND {
             let n = add(c, d);
             if roles.get(&n) != Some(&SupportRole::Rider) || owner.contains_key(&n) {
                 continue;
@@ -276,6 +345,10 @@ fn system(
         out.push(Piece { cells, carriers });
     }
     loose.sort_unstable();
+    let falling: HashSet<[i32; 3]> = out
+        .iter()
+        .flat_map(|p: &Piece| p.cells.iter().copied())
+        .collect();
     let mut taken: HashMap<[i32; 3], ()> = HashMap::new();
     for &c in &loose {
         if taken.contains_key(&c) {
@@ -286,7 +359,7 @@ fn system(
         taken.insert(c, ());
         while let Some(p) = q.pop_front() {
             cells.push(p);
-            for d in FACES {
+            for d in AROUND {
                 let n = add(p, d);
                 if loose.binary_search(&n).is_ok() && !taken.contains_key(&n) {
                     taken.insert(n, ());
@@ -297,9 +370,14 @@ fn system(
         cells.sort_unstable();
         // Resting on something solid outside it (the ground, a block), loose leaves stay where
         // they are: they fall only to land (owner, 2026-10-28).
+        // Never on what falls in this change (BUGS.md #193: leaves on a felled tree's branch
+        // stayed in the air where it had been).
         let resting = cells.iter().any(|&c| {
             let u = under(c);
-            cells.binary_search(&u).is_err() && rests_on(world.get_voxel(u[0], u[1], u[2]))
+            cells.binary_search(&u).is_err()
+                && !falling.contains(&u)
+                && !outer.contains(&u)
+                && rests_on(world.get_voxel(u[0], u[1], u[2]))
         });
         if !resting {
             out.push(Piece { cells, carriers: 0 });
