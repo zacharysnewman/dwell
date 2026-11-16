@@ -72,8 +72,11 @@ Last updated: 2026-11-11 (0.52.108).
   Measured (2026-11-15, "Do we skip occluded chunks?"): no, and it would pay. `dwell-mesh` `tests/occlusion_probe.rs`
   (ignored; run by hand): in the default world (seed 7), eye at standing height, chunks within 160 m, the chunks
   the terrain alone hides wholly hold 25 % (spawn), 43 %, 36 % and 30 % of the triangles (trees not counted as
-  occluders). Next: a horizon cull on the CPU (occluder heights per chunk column, a horizon by azimuth), ahead of
-  packed vertices.
+  occluders). Built and measured a horizon cull on the CPU (occluder heights per chunk column over buried
+  ground, a horizon by azimuth; same-run A/B, M1 Air, High): it hid 64–151 chunks but only 1–2.5 % of the drawn
+  triangles (the hidden ones were mostly behind the camera, already frustum-culled, or deep chunks of little
+  geometry; giant trees lift chunks' tops over the line), −0.1 to −0.25 ms GPU for +1.5 ms CPU a frame. Not
+  adopted (kept on branch `claude/horizon-cull`); the probe's share counts every direction, not the view's.
 - **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
   rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
   bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).
