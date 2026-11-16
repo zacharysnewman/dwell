@@ -38,6 +38,11 @@ Last updated: 2026-11-11 (0.52.108).
   is needed. A whole island shows from 90 km from 0.15 on. Hosted Realistic builds differ visibly from 90 km at 0.64,
   0.65, 0.68 and 0.69 (0.60–0.63, 0.66–0.67 and 0.70 look the same). Open: a coastal camera per era (the default
   generator's island and Realistic's lie differently).
+  Owner: "Let me know when you finish all the shots? I'd like to compile them into a video, both sets of screenshots
+  back to back. A 2 second pause on the last shot of each." and "1 second on each screenshot." The cut:
+  `looks-video.py --first 1 --last 1 --hold 1 --set <default 0.10–0.58> --set <Realistic 0.55–0.71>` (the versions
+  whose look changed, 1 s each, each set's last 2 s). **Owner should see:** one 9:16 video, the default island's
+  looks then Realistic's, 1 s a version, a 2 s hold at the end of each set.
 - **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
   queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
   stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
