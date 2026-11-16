@@ -371,6 +371,31 @@ impl Rule {
         // The columns standing that may grow, or whose cells need putting right (a stalk left on
         // top by a cut, a stack placed by hand).
         let mut columns: Vec<Column> = Vec::new();
+        // Each column's tuft rows round the chunk (its columns and `reach` more each way, its rows
+        // and SEED_ROWS more each way), read once: a spot's "tall grass near" looks these up
+        // rather than ~245 cells each (~5 ms a chunk on the server's tick: priority 0).
+        let reach = self.data.reach;
+        let mut tufts: std::collections::HashMap<(i32, i32), Vec<i32>> =
+            std::collections::HashMap::new();
+        for z in z0 - reach..z0 + CHUNK_SIZE + reach {
+            for x in x0 - reach..x0 + CHUNK_SIZE + reach {
+                for y in y0 - SEED_ROWS..y0 + CHUNK_SIZE + SEED_ROWS {
+                    if is_grass(cells, [x, y, z]) {
+                        tufts.entry((x, z)).or_default().push(y);
+                    }
+                }
+            }
+        }
+        let grass_near = |x: i32, y: i32, z: i32| {
+            (-reach..=reach).any(|dx| {
+                (-reach..=reach).any(|dz| {
+                    (dx, dz) != (0, 0)
+                        && tufts
+                            .get(&(x + dx, z + dz))
+                            .is_some_and(|rows| rows.iter().any(|&ry| (ry - y).abs() <= SEED_ROWS))
+                })
+            })
+        };
         let mut env_cache: Option<((i32, i32), (f32, f64))> = None;
         let mut envelope = |x: i32, z: i32| match env_cache {
             Some((at, e)) if at == (x, z) => e,
@@ -440,14 +465,7 @@ impl Rule {
                     if cells.generated(f.cell(below)).map(|s| f.state(s)) != Some(ground) {
                         continue; // ground a player placed
                     }
-                    let r = self.data.reach;
-                    let near = (-r..=r).any(|dx| {
-                        (-r..=r).any(|dz| {
-                            (dx, dz) != (0, 0)
-                                && (-SEED_ROWS..=SEED_ROWS)
-                                    .any(|dy| is_grass(cells, [x + dx, y + dy, z + dz]))
-                        })
-                    });
+                    let near = grass_near(x, y, z);
                     spots.push(Spot {
                         p,
                         roots,
@@ -488,12 +506,13 @@ impl Rule {
             let mut today = Vec::new();
             for s in spots.iter().filter(|s| !grown.contains(&s.p)) {
                 let [x, y, z] = s.p;
+                // Near today's sprouts: the few grown, each tested (probing the ±reach box in the set
+                // cost ~5 ms a chunk on the server's tick: priority 0).
                 let near = s.near
-                    || (-r..=r).any(|dx| {
-                        (-r..=r).any(|dz| {
-                            (-SEED_ROWS..=SEED_ROWS)
-                                .any(|dy| grown.contains(&[x + dx, y + dy, z + dz]))
-                        })
+                    || grown.iter().any(|g| {
+                        (g[0] - x).abs() <= r
+                            && (g[2] - z).abs() <= r
+                            && (g[1] - y).abs() <= SEED_ROWS
                     });
                 let mut chance: f64 = 0.0;
                 if near {

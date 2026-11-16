@@ -278,7 +278,7 @@ dwell_world::both_faces!(
             (1..=2).contains(&n),
             "one step grows a couple of chunks: {n}"
         );
-        for _ in 0..60 {
+        for _ in 0..120 {
             fx.server.grow_grass_now();
         }
         let today = fx.server.world_days().floor() as u32;

@@ -22,6 +22,23 @@ each natively, 4.6 at worst: ~60 ms), after every big load. Fixed: grass 2 chunk
 `the_growers_look_at_new_chunks_a_few_a_tick` (100 in one tick). Owner should see: no periodic stall moving through
 grass or a portal.
 
+Priority 0 (owner, 2026-11-16: "I don't think we resolved the root cause ... the server never drops below 60fps"),
+measured in the browser (bench `stutter-run`) and natively (`tests/tick_budget.rs`), round 2:
+- Trees: a due tree grew all at once every 5 s (giants' stages ~3 ms each natively, two a step) → one tree a tick,
+  its two stages grown into a cache on earlier ticks (`dwell_worldgen::growth::warm`); a step's knocked-ground
+  check skipped for a tree's own cleared cells (the biomes' densities worked out for each, ~2 ms).
+- Grass and trees read an edited chunk "as generated" by regenerating it on the tick (~4 ms natively each) → the
+  generation jobs' pristine copies (`pristine`, the server's cache), the step waiting for them; grass's spread test
+  probed a slow set ~96k times a chunk → the few sprouts tested directly; its chunk reads copied once each.
+- The growth terrains (~0.6 s in the browser) were built on the first tick that needed them → once, shared, at a
+  join (behind the loading screen).
+- Collision: a reach build reads its neighbours, generating 9–12 chunks on one tick (~100 ms in the browser) → on
+  the server a build waits for neighbours the jobs haven't brought (they're asked for first), at most 2 generated a
+  tick (`Players::set_reach_generates`); the look-ahead, the falling pieces' boxes and `sync`'s rebuilds the same.
+Natively the worst tick went 31.8 → 3.0 ms; in the browser no chunk is generated on the tick any more. Still over
+budget in the browser: the save (20–38 ms at once), the join's first second (growth, ecology, water ~100 ms),
+growth bursts (~30 ms) and collision builds (~20 ms): next.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

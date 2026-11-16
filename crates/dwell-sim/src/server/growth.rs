@@ -10,12 +10,12 @@ use dwell_protocol::{SIM_HZ, VoxelModificationReason};
 use dwell_worldgen::growth::{Growers, Records};
 use std::sync::Arc;
 
-/// How often the growers step runs (s of the tick).
-const EVERY_S: u32 = 5;
 /// The most chunks looked at for new trees per step (the rest on the next).
 const SCANS_PER_STEP: usize = 256;
 /// The most chunks looked at for new trees a tick (~0.25 ms each natively, 4.6 at worst).
 const SCANS_PER_TICK: usize = 4;
+/// The most due trees grown a tick.
+const TREES_PER_TICK: usize = 1;
 
 impl Server {
     /// The world's days so far (its clock's day length), times the growth speed (dev, tests).
@@ -24,16 +24,27 @@ impl Server {
             * self.config.growth_speed
     }
 
+    /// The growers, on the grass's terrain (one build, never on a tick in play: `prepare_growth`
+    /// builds it at a join); none until the world maps are in.
     fn growers(&mut self) -> Option<Arc<Growers>> {
-        let (version, seed) = (self.config.generator_version, self.config.world_seed);
-        let override_ = self.config.generator_override.is_some();
-        self.growers
-            .get_or_insert_with(|| {
-                (!override_)
-                    .then(|| Growers::for_generator(version, seed))
-                    .flatten()
-            })
-            .clone()
+        if let Some(g) = &self.growers {
+            return g.clone();
+        }
+        if self.config.generator_override.is_some() {
+            self.growers = Some(None);
+            return None;
+        }
+        let t = self.grass_terrain()?;
+        let g = Growers::of_shared(t);
+        self.growers = Some(g.clone());
+        g
+    }
+
+    /// Builds the growth steps' terrain (the grass's and the growers', one shared), as a player
+    /// joins (behind the loading screen) rather than on the first tick that needs it (~0.6 s in
+    /// the browser: priority 0, the owner's "the server never drops below 60fps").
+    pub(super) fn prepare_growth(&mut self) {
+        let _ = self.growers();
     }
 
     /// Tests: the growers in place of the generator's.
@@ -53,13 +64,32 @@ impl Server {
     }
 
     /// The growers step: a few new chunks' trees recorded every tick (`SCANS_PER_TICK`; BUGS.md
-    /// #194: 256 at once, ~60 ms, stalled the game, crossing a portal above all), the due trees
-    /// grown every `EVERY_S` s.
+    /// #194: 256 at once, ~60 ms, stalled the game, crossing a portal above all), and at most
+    /// `TREES_PER_TICK` due trees grown a tick (all at once every 5 s, a giant's stage ~10 ms,
+    /// made 20–30 ms ticks: priority 0, the owner's "the server never drops below 60fps"); the
+    /// due ones found once a second.
     pub(super) fn grow_trees(&mut self) {
         self.scan_tree_chunks(SCANS_PER_TICK);
-        if self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
-            self.grow_due_trees();
+        if self.growth_due.is_empty() && self.tick.is_multiple_of(SIM_HZ) {
+            self.growth_due = self.due_tree_anchors().into();
         }
+        // One costly call a tick at most: the next due tree's old stage grown into the cache, else
+        // its new one, else (both kept) its step, which is cheap then.
+        let Some(&a) = self.growth_due.front() else {
+            return;
+        };
+        if let Some(r) = self.growth.trees.get(&a).cloned() {
+            let target = r.due(self.world_days());
+            if target > r.stage
+                && (dwell_worldgen::growth::warm(&r, r.stage)
+                    || dwell_worldgen::growth::warm(&r, target))
+            {
+                return; // grown one this tick: the step on a later one
+            }
+        }
+        let n = TREES_PER_TICK.min(self.growth_due.len());
+        let next: Vec<[i32; 3]> = self.growth_due.drain(..n).collect();
+        self.grow_these_trees(&next, true);
     }
 
     /// How many chunks have been looked at for trees (tests, tools).
@@ -92,19 +122,14 @@ impl Server {
     /// the due ones.
     pub fn grow_trees_now(&mut self) {
         self.scan_tree_chunks(SCANS_PER_STEP);
-        self.grow_due_trees();
+        let due = self.due_tree_anchors();
+        self.grow_these_trees(&due, false);
     }
 
-    /// Grows each recorded tree whose stage is due, where its box is loaded.
-    fn grow_due_trees(&mut self) {
-        let growers = self.growers();
-        if self.growth.trees.is_empty() {
-            return;
-        }
+    /// The recorded trees whose stage is due, where their anchor's chunk is loaded.
+    fn due_tree_anchors(&self) -> Vec<[i32; 3]> {
         let day = self.world_days();
-        let mut changes = TickChanges::default();
-        let anchors: Vec<[i32; 3]> = self
-            .growth
+        self.growth
             .trees
             .values()
             .filter(|r| !r.stopped && r.due(day) > r.stage)
@@ -115,14 +140,35 @@ impl Server {
                     .is_some()
             })
             .map(|r| r.anchor)
-            .collect();
-        for a in anchors {
-            let r = self.growth.trees[&a].clone();
+            .collect()
+    }
+
+    /// Grows each of the trees at `anchors` that is still due, where its box is loaded.
+    /// `wait`: an edited chunk's pristine copy not at hand, the tree waits for it (the tick's);
+    /// else the chunk is regenerated here (tests, tools).
+    fn grow_these_trees(&mut self, anchors: &[[i32; 3]], wait: bool) {
+        if anchors.is_empty() {
+            return;
+        }
+        let growers = self.growers();
+        let day = self.world_days();
+        let mut changes = TickChanges::default();
+        for &a in anchors {
+            let Some(r) = self.growth.trees.get(&a).cloned() else {
+                continue;
+            };
+            if r.stopped || r.due(day) <= r.stage {
+                continue;
+            }
             let target = r.due(day);
             let swaps = growers.as_ref().map_or(Vec::new(), |g| g.swaps(&r));
+            // What was generated, where a trunk widens over it (a player's block stops it): an
+            // unedited chunk's own cells, an edited one's from the jobs' pristine copy, never
+            // regenerated on the tick (priority 0, BUGS.md #194); one missing, the tree waits.
+            let missing = std::cell::RefCell::new(Vec::new());
             let step = {
-                // What was generated, where a trunk widens over it (a player's block stops it).
                 let world = std::cell::RefCell::new(&mut self.world);
+                let pristine = &self.pristine;
                 let cache = std::cell::RefCell::new(Default::default());
                 dwell_worldgen::growth::step(
                     &r,
@@ -130,6 +176,22 @@ impl Server {
                     &swaps,
                     &|c| world.borrow().get_voxel_if_loaded(c),
                     &|c| {
+                        let k = dwell_world::chunk_of(c[0], c[1], c[2]);
+                        let edited = world.borrow().find(k).is_some_and(|ch| ch.revision() > 0);
+                        if !edited {
+                            return world.borrow().get_voxel_if_loaded(c);
+                        }
+                        if let Some(p) = pristine.get(&k) {
+                            return p.get(
+                                c[0] - k.x * dwell_world::CHUNK_SIZE,
+                                c[1] - k.y * dwell_world::CHUNK_SIZE,
+                                c[2] - k.z * dwell_world::CHUNK_SIZE,
+                            );
+                        }
+                        if wait {
+                            missing.borrow_mut().push(k);
+                            return world.borrow().get_voxel_if_loaded(c);
+                        }
                         world
                             .borrow_mut()
                             .generated_voxel(c, &mut cache.borrow_mut())
@@ -138,6 +200,17 @@ impl Server {
             };
             if step.chunks.iter().any(|&k| self.world.find(k).is_none()) {
                 continue; // wait until its whole box is loaded
+            }
+            let mut missing = missing.into_inner();
+            if !missing.is_empty() {
+                missing.dedup();
+                for k in missing {
+                    if !self.pristine_wanted.contains(&k) && self.pristine_wanted.len() < 32 {
+                        self.pristine_wanted.push(k);
+                    }
+                }
+                self.growth_due.push_back(a); // again once its copies are here
+                continue;
             }
             let rec = self.growth.trees.get_mut(&a).expect("record");
             if step.stopped {

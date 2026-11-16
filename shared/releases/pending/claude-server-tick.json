@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Much smoother local worlds: tree and grass growth, and the land loading around a sprinting player, no longer stall the world's tick."
+  ]
+}

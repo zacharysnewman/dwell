@@ -440,11 +440,13 @@ async function record(run: Run, name: string): Promise<Telemetry> {
     state: unknown;
     render: unknown;
     memory: unknown;
+    server: unknown[];
     now: number;
   } | null>(
     page,
     `{ telemetry: d.telemetry(), frames: d.telemetryFrames(), ticks: d.ticks(), state: d.state(),
-       render: d.renderStats(), memory: d.memory(), now: performance.now() }`,
+       render: d.renderStats(), memory: d.memory(), server: d.serverHistory?.() ?? [],
+       now: performance.now() }`,
   );
   if (!data) throw new Error('the game is not running (no __dwell)');
   const longTasks = (await page.evaluate<number[][]>('globalThis.__benchLongTasks ?? []')).filter(
