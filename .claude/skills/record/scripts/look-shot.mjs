@@ -88,7 +88,10 @@ const browser = await chromium.launch({
   channel: 'chrome',
   args: ['--enable-unsafe-webgpu', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'],
 });
-const page = await (await browser.newContext({ viewport: { width: W, height: H } })).newPage();
+// The page's content policy would refuse the injected stylesheet that hides the HUD: bypassed.
+const page = await (
+  await browser.newContext({ viewport: { width: W, height: H }, bypassCSP: true })
+).newPage();
 await page.addInitScript(() => {
   localStorage.setItem('dwell.music', '"off"');
   localStorage.setItem('dwell.clouds', '"off"');
@@ -112,11 +115,22 @@ const hide = async () => {
   if (await has('theater')) {
     await ev(`d.theater('hud', { shown: false })`).catch(() => {});
   }
-  // Every page element but the canvas, re-applied (older builds re-show some).
-  // Everything but the canvas, at any depth (an old build's hotbar sits in the canvas's container).
+  // Everything but the game's own canvas (the largest: an old build's hotbar slots are canvases
+  // too), at any depth, as a stylesheet (an old build re-creates its hotbar) and inline.
+  await page.evaluate(() => {
+    const all = [...document.querySelectorAll('canvas')];
+    const game = all.sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    game?.setAttribute('data-look-keep', '');
+  });
+  await page
+    .addStyleTag({
+      content:
+        'body * { visibility: hidden !important; } canvas[data-look-keep] { visibility: visible !important; }',
+    })
+    .catch(() => {});
   await page.evaluate(() => {
     document.querySelectorAll('body *').forEach((e) => {
-      e.style.setProperty('visibility', e.tagName === 'CANVAS' ? 'visible' : 'hidden', 'important');
+      e.style.setProperty('visibility', e.hasAttribute('data-look-keep') ? 'visible' : 'hidden', 'important');
     });
   });
 };
