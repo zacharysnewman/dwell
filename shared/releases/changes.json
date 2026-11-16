@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.1",
+      "changes": [
+        "Fixed seeing the sky through a block's mined-away chunks: the blocks behind and under it now show through the holes, inside a chunk and across chunk edges."
+      ]
+    },
+    {
       "version": "0.71.0",
       "changes": [
         "A new compatibility line: worlds' trees are new",
