@@ -65,7 +65,7 @@ pub mod fixture {
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
-    HAND_REPEAT_S, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
+    HAND_REPEAT_S, HEAL, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`
@@ -679,6 +679,16 @@ pub struct Chips {
     pub speed: f64,
     /// Their size (m).
     pub size: f64,
+}
+
+/// How block damage heals (`breaking.heal`; owner, 2026-11-15): a cell starts healing `delay_s`
+/// after its last hit and heals from all but broken to whole over `full_s`, unless it is among the
+/// `keep_last` blocks a player hit last.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Heal {
+    pub delay_s: f64,
+    pub full_s: f64,
+    pub keep_last: usize,
 }
 
 /// A tool item's class and tier for breaking (`breaking.tools` in shared/tools/tools.json).

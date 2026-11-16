@@ -596,6 +596,19 @@ added. Built, as data:
   name, the metal tools' 64).
 - **Not done:** no browser check (cloud session, no GPU): the bigger marks in game are for the owner's look.
 
+## 9a. Healing (owner, 2026-11-15) **[built]**
+
+"We should probably have them heal over time whether you're there or not (like via accumulated time)";
+"blocks healing should happen on a delay (like 10s) before it starts. And the last 3 blocks you hit
+shouldn't heal. So you'd have hit a 4th block for the 1st block to start healing. Each player gets their
+own last 3 blocks." Data: `breaking.heal` in shared/tools/tools.json (`delayS` 10, `fullS` 30, `keepLast`
+3; `dwell_protocol::chopping::HEAL`). The server (`server/healing.rs`) keeps each damaged cell's heal
+clock (s of its ticks) and each player's last `keepLast` cells hit: a cell among some player's last ones
+waits; out of them (a player hits another block, or leaves), from `delayS` after, a hit heals every
+`fullS / need`, its record gone once whole, loaded chunk or not. Clients hear each hit healed (their
+damage view's fraction falls, the mask shrinks) and the cell made whole. Saves are unchanged: a loaded
+world's damage has no clock, and heals from the load.
+
 ## 10. The bite rule: one volume per hit (WORK_QUEUE item 18)
 
 Owner, 2026-11-12: **"the chunks that fly off and show chunked off the blocks should be equivalent to 50% of

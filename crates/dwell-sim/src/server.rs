@@ -54,6 +54,7 @@ pub use grids::{GridSlot, Grids};
 mod blueprints;
 mod ground;
 mod growth;
+mod healing;
 mod items;
 mod lava;
 mod markers;
@@ -1132,6 +1133,10 @@ pub struct Server {
     bite_log: Vec<weapons::BiteLog>,
     /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
     damage: dwell_protocol::damage::Damage,
+    /// When each damaged cell's heal clock started (s of the ticks; healing.rs), and each player's
+    /// last blocks hit (they don't heal).
+    heal_since: HashMap<[i32; 3], f64>,
+    recent_hits: HashMap<SessionId, std::collections::VecDeque<[i32; 3]>>,
     /// The saved damage is a newer build's: kept, not written over.
     damage_unread: bool,
     /// The lava fields (docs/proposals/VOLCANOES.md §6), saved with the world (`lava` table).
@@ -1355,6 +1360,8 @@ impl Server {
             npc_strike_log: Vec::new(),
             bite_log: Vec::new(),
             damage: Default::default(),
+            heal_since: Default::default(),
+            recent_hits: Default::default(),
             damage_unread: false,
             lava: Default::default(),
             lava_unread: false,
@@ -1487,6 +1494,7 @@ impl Server {
     fn remove_session(&mut self, id: SessionId) {
         // A player on another grid leaves from home, at its world position (its record's).
         self.bring_home(id);
+        self.forget_hits(id);
         let Some(s) = self.sessions.remove(&id) else {
             return;
         };
@@ -2287,6 +2295,7 @@ impl Server {
         self.send_lava_steam();
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
+        self.heal_damage();
         // Tall grass grows and spreads by them (ADR 0075 T3c).
         self.grow_grass();
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
@@ -3035,8 +3044,9 @@ impl Server {
         let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
         // The cells broken through by damage this tick and the side their hits took out.
         let mut cut_sides: Vec<([i32; 3], [f64; 2])> = Vec::new();
-        // Cells a hit damaged this tick, for the clients that draw damage.
+        // Cells a hit damaged this tick, for the clients that draw damage, and who hit them.
         let mut damaged: Vec<[i32; 3]> = Vec::new();
+        let mut hitters: Vec<(SessionId, [i32; 3])> = Vec::new();
         // Every broken cell and what it was, in any mode: ground items on them are knocked loose.
         let mut under_ground: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         // Saplings planted this tick (ADR 0079 S4): each becomes its species' stage-0 tree.
@@ -3193,6 +3203,7 @@ impl Server {
                                     hits.push((outcome.cell, state, n, k));
                                 }
                                 damaged.push(outcome.cell);
+                                hitters.push((id, outcome.cell));
                                 s.edit_refused.push(seq);
                                 continue;
                             }
@@ -3382,6 +3393,9 @@ impl Server {
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
+        for (id, c) in hitters {
+            self.note_hit(id, c);
+        }
         self.send_damage(&damaged, Vec::new());
         for (cell, was, n, k) in hits {
             self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);

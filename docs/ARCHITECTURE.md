@@ -830,6 +830,10 @@ than in each version directory: release builds load it from the site root (`__ME
 
 ### 5.3 Characters and creatures **[in progress; Phase 40: the design, data and prototype built; players in the game built (C1, C2's held item and swings); looks at join and creatures planned. Phase 54: other players and your shadow drawn as skinned models, held items in the skinned hand (S1, S2), wandering animals (S3, ADR 0073); your first-person arms and your own body in first person from the Peasant (0.54)]**
 
+**Damage heals [built, 2026-11-15; BLOCK_DAMAGE.md §9a]:** the server (`server/healing.rs`) heals each damaged
+cell a hit every `fullS / need` from `delayS` after its last hit, on its ticks whether its chunk is loaded or not,
+except the last `keepLast` cells each player hit (`breaking.heal` in shared/tools/tools.json); saves unchanged.
+
 **Skinned models [in progress, Phase 54 S1–S2]** ([ADR 0070](./adr/0070-skinned-models.md),
 [`CHARACTERS.md`](./CHARACTERS.md) §11). Skinned models from the owner's Unity Asset Store packs
 replace the rigid-part characters, starting with **other players' bodies**: they are drawn as the

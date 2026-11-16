@@ -824,3 +824,78 @@ dwell_world::both_faces!(
         assert_eq!(chopping::durability("dwell:stone_shovel"), Some(32));
     }
 );
+
+/// Steps the server `s` seconds of ticks.
+fn run_s(fx: &mut Fixture, s: f64) {
+    for _ in 0..(s * f64::from(SIM_HZ)).round() as u32 {
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: damaged blocks "heal over time whether you're there or not",
+    /// "on a delay (like 10s) before it starts. And the last 3 blocks you hit shouldn't heal. So
+    /// you'd have hit a 4th block for the 1st block to start healing." A stone hit twice, then three
+    /// others: from the fourth hit its delay runs, then a hit heals each `fullS / need`, and it is
+    /// whole; the three last stay as they are (red before: damage never healed).
+    fn a_block_heals_after_its_delay_once_out_of_your_last_three(f: FaceFrame) {
+        let heal = dwell_protocol::chopping::HEAL.expect("damage heals (breaking.heal)");
+        let mut fx = scene_with(f, config(f, "creative"));
+        hold(&mut fx, "creative", "dwell:stone_pickaxe");
+        let hits = |fx: &Fixture, c: [i32; 3]| fx.server.damage_hits(f.cell(c));
+        hit(&mut fx, f, STONE);
+        hit(&mut fx, f, STONE);
+        assert_eq!(hits(&fx, STONE), Some(2));
+        // Long past the delay while it is among the last three: it keeps its damage.
+        run_s(&mut fx, heal.delay_s + heal.full_s);
+        assert_eq!(
+            hits(&fx, STONE),
+            Some(2),
+            "kept while among your last blocks"
+        );
+        let others = [[-1, BASE - 1, 0], [1, BASE - 1, 0], [0, BASE - 1, -1]];
+        for c in others {
+            hit(&mut fx, f, c);
+        }
+        // Out of the last three now: its delay starts.
+        let need = 5.0; // a stone pickaxe on stone
+        let per = heal.full_s / need;
+        run_s(&mut fx, heal.delay_s - 0.5);
+        assert_eq!(hits(&fx, STONE), Some(2), "within the delay");
+        run_s(&mut fx, 0.5 + per + 0.6);
+        assert_eq!(
+            hits(&fx, STONE),
+            Some(1),
+            "one hit healed a step after the delay"
+        );
+        run_s(&mut fx, per + 0.6);
+        assert_eq!(hits(&fx, STONE), None, "whole again, its record gone");
+        for c in others {
+            assert_eq!(hits(&fx, c), Some(1), "your last three keep theirs");
+        }
+    }
+);
+
+#[test]
+fn a_loaded_worlds_damage_heals_from_the_load() {
+    // face-a-only: a byte format; the heal is face-free.
+    let f = FaceFrame::A;
+    let heal = dwell_protocol::chopping::HEAL.expect("damage heals");
+    let db = WorldDb::in_memory().expect("db");
+    let cfg = || ServerConfig {
+        store: Some(WorldStore::new(db.clone(), false)),
+        ..config(f, "creative")
+    };
+    {
+        let mut fx = scene_with(f, cfg());
+        hold(&mut fx, "creative", "dwell:stone_pickaxe");
+        hit(&mut fx, f, STONE);
+        fx.server.save_now();
+        fx.server.flush_store();
+    }
+    // Saved without its time (and no player's last blocks): it heals from the load.
+    let mut fx = scene_with(f, cfg());
+    assert_eq!(fx.server.damage_hits(f.cell(STONE)), Some(1));
+    run_s(&mut fx, heal.delay_s + heal.full_s / 5.0 + 1.5);
+    assert_eq!(fx.server.damage_hits(f.cell(STONE)), None, "healed");
+}

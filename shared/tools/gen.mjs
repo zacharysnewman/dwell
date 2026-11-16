@@ -573,8 +573,8 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
 /** Validates `breaking` (the right tool's break speed): each block in one class, every tool item
  * known with a known class and tier, every tier's speed above 0. None: no tool speeds a break. */
 export function validateBreaking(b, items, blocks) {
-  if (b === undefined) return { classes: [], tools: [], hand: { repeatS: null } };
-  known(b, ['$comment', 'tiers', 'classes', 'tools', 'hand'], 'breaking');
+  if (b === undefined) return { classes: [], tools: [], hand: { repeatS: null }, heal: validateHeal(undefined) };
+  known(b, ['$comment', 'tiers', 'classes', 'tools', 'hand', 'heal'], 'breaking');
   known(b.tiers, [...Object.keys(b.tiers ?? {})], 'breaking.tiers');
   for (const [t, v] of Object.entries(b.tiers)) {
     if (t[0] === '$') continue;
@@ -628,13 +628,28 @@ export function validateBreaking(b, items, blocks) {
     if (typeof clip !== 'string' || !/^[a-z][a-z0-9_]*$/.test(clip)) fail(`${at}: clip must be a role name (lowercase: the player's firstPerson.clips, shared/characters)`);
     return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS, clip };
   });
-  return { classes, tools, hand: validateHand(b.hand) };
+  return { classes, tools, hand: validateHand(b.hand), heal: validateHeal(b.heal) };
 }
 
 /** Validates `breaking.hand` (WORK_QUEUE item 17; owner, 2026-11-13: "You should also be able to hold
  * 'punch' to dig with your hand."): a punch (a break holding no breaking or chopping tool) repeats
  * while held when `repeatOnHold`, every `repeatS` (default 0.5 s), and the server takes a damage hit
  * by hand no faster. None: one punch per press, at the edit rate. */
+/** Validates `breaking.heal` (owner, 2026-11-15: damaged blocks "heal over time whether you're there or
+ * not"; "blocks healing should happen on a delay (like 10s) before it starts. And the last 3 blocks you
+ * hit shouldn't heal ... Each player gets their own last 3 blocks."): `delayS` after a cell's last hit
+ * before it heals, `fullS` from all but broken to whole, `keepLast` the blocks each player hit last that
+ * never heal. None: damage never heals. */
+export function validateHeal(h) {
+  if (h === undefined) return null;
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('breaking.heal must be an object { delayS, fullS, keepLast }');
+  known(h, ['delayS', 'fullS', 'keepLast'], 'breaking.heal');
+  if (typeof h.delayS !== 'number' || !(h.delayS >= 0 && h.delayS <= 3600)) fail('breaking.heal: delayS is seconds in [0, 3600]');
+  if (typeof h.fullS !== 'number' || !(h.fullS >= 1 && h.fullS <= 86400)) fail('breaking.heal: fullS is seconds in [1, 86400]');
+  if (!Number.isInteger(h.keepLast) || h.keepLast < 0 || h.keepLast > 16) fail('breaking.heal: keepLast is a whole number in [0, 16]');
+  return { delayS: h.delayS, fullS: h.fullS, keepLast: h.keepLast };
+}
+
 export function validateHand(h) {
   if (h === undefined) return { repeatS: null };
   if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('breaking.hand must be an object { repeatOnHold, repeatS }');
@@ -717,7 +732,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ClashLook, GuardDef, RaisedBlade, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, Heal, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ClashLook, GuardDef, RaisedBlade, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -778,6 +793,10 @@ export function toolsRust(d) {
   rs.push("/// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server");
   rs.push('/// takes damage hits by hand no faster; none: one per press.');
   rs.push(`pub const HAND_REPEAT_S: Option<f64> = ${d.breaking.hand.repeatS === null ? 'None' : `Some(${f64(d.breaking.hand.repeatS)})`};`);
+  const heal = d.breaking.heal;
+  rs.push("/// How damage heals (`breaking.heal`): s after a cell's last hit, s from all but broken to whole, and the");
+  rs.push('/// blocks each player hit last that never heal; none: it never heals.');
+  rs.push(`pub const HEAL: Option<Heal> = ${heal === null ? 'None' : `Some(Heal { delay_s: ${f64(heal.delayS)}, full_s: ${f64(heal.fullS)}, keep_last: ${heal.keepLast} })`};`);
   rs.push('');
   return rs.join('\n');
 }
