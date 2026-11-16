@@ -268,20 +268,22 @@ impl DamageMask {
         }
         let total: f64 = share.iter().sum::<f64>() * vm;
         let target = fraction.min(1.0) * BROKEN_AT * total;
-        // Each mark weighed by its piece (its bite against the others', `HitMark::chunk`).
-        let marks: Vec<&HitMark> = view.marks.iter().take(4).collect();
+        // Each mark weighed by its piece (its bite against the others', `HitMark::chunk`). Every
+        // mark the view holds (a client keeps all it has seen, BUGS.md #188).
+        let marks: Vec<&HitMark> = view.marks.iter().collect();
         let mean = marks.iter().map(|m| m.scale()).sum::<f64>() / marks.len() as f64;
         let frames: Vec<_> = marks.iter().map(|m| mark_frame(m)).collect();
         // The look's shape: how much wider than deep a bite runs (its `size` across over its
         // `depth`), kept to chunks (no hairline peel, no drill).
         let aniso = (0.5 * look.size / look.depth.max(0.02)).clamp(0.7, 3.0);
         let profile = look.profile;
-        let cost = |i: usize, j: usize, k: usize| -> f64 {
+        // The cost of sub-cell (i, j, k) from the first `upto` marks (each its own bite's cost).
+        let cost_upto = |i: usize, j: usize, k: usize, upto: usize| -> f64 {
             let c = lo(i, j, k);
             let h = lo(i + 1, j + 1, k + 1);
             let centre: [f64; 3] = std::array::from_fn(|a| 0.5 * (c[a] + h[a]) * ext(a));
             let mut best = f64::INFINITY;
-            for (mi, (m, (p, nin))) in marks.iter().zip(&frames).enumerate() {
+            for (mi, (m, (p, nin))) in marks.iter().zip(&frames).enumerate().take(upto) {
                 let d: [f64; 3] = std::array::from_fn(|a| centre[a] - p[a]);
                 let along = dot(d, *nin).abs();
                 let lat: [f64; 3] = std::array::from_fn(|a| d[a] - dot(d, *nin) * nin[a]);
@@ -328,29 +330,37 @@ impl DamageMask {
             }
             best
         };
-        let mut order: Vec<(f64, usize)> = Vec::with_capacity(count);
-        for k in 0..n[2] {
-            for j in 0..n[1] {
-                for i in 0..n[0] {
-                    let at = idx(i, j, k);
-                    if share[at] > 0.0 {
-                        order.push((cost(i, j, k), at));
-                    }
-                }
-            }
-        }
-        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        // Bite by bite (BUGS.md #188: chopping round a log, the far side's bites filled back in as
+        // newer marks took the volume): after mark `b` of `m` the volume removed is `b / m` of the
+        // target (each hit took its share, as the fraction grew), the cheapest sub-cells by the
+        // marks so far, and what an earlier bite removed stays removed.
+        let m = marks.len();
         let mut removed = vec![false; count];
         let mut gone = 0.0;
         let mut any = false;
-        for &(_, at) in &order {
-            let v = share[at] * vm;
-            if gone + 0.5 * v > target {
-                break;
+        for bite in 1..=m {
+            let goal = target * bite as f64 / m as f64;
+            let mut order: Vec<(f64, usize)> = Vec::with_capacity(count);
+            for k in 0..n[2] {
+                for j in 0..n[1] {
+                    for i in 0..n[0] {
+                        let at = idx(i, j, k);
+                        if share[at] > 0.0 && !removed[at] {
+                            order.push((cost_upto(i, j, k, bite), at));
+                        }
+                    }
+                }
             }
-            gone += v;
-            removed[at] = true;
-            any = true;
+            order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            for &(_, at) in &order {
+                let v = share[at] * vm;
+                if gone + 0.5 * v > goal {
+                    break;
+                }
+                gone += v;
+                removed[at] = true;
+                any = true;
+            }
         }
         if !any {
             return None;

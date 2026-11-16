@@ -13,6 +13,10 @@ around seems to repair the other side visually or something?" Cause (found): a d
 `MAX_HIT_MARKS` (4) hit marks (`dwell_protocol::damage::Damage::hit`), and its carved shape is drawn from the marks
 it holds, so hits on a new side push the oldest side's marks out and that side fills back in. Owner should see:
 every bite taken out of a block stays until it breaks (or heals by the healing rules), from whichever side.
+Fix (2026-11-15): a client keeps every mark it sees of a cell's damage (`DamageView::seen_after`, up to 48; the
+wire and saves unchanged), its mesh workers get them all, and the mask is built bite by bite (after mark b of m, b/m
+of the volume, the cheapest sub-cells by the marks so far, what an earlier bite removed kept). Red → green:
+`chopping_round_a_block_never_fills_a_bite_back_in`. Built; open until the owner's look.
 
 ### 187. A block's mined-away chunks show sky, not the blocks behind and under it
 

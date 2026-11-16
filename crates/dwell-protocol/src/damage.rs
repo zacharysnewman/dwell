@@ -284,6 +284,8 @@ pub fn certain_drops(rules: &[DropRule]) -> Vec<(&'static str, u32)> {
 
 /// The most hit marks a cell keeps (the newest; D2 draws them).
 pub const MAX_HIT_MARKS: usize = 4;
+/// The most marks a client keeps of a cell's damage (the bites it has seen, [`DamageView::seen_after`]).
+pub const MAX_SEEN_MARKS: usize = 48;
 
 /// Where a hit struck: the face (the edit's face index) and the point on it (each axis in
 /// 1/255ths of the cell), and how big a piece it took off.
@@ -374,6 +376,61 @@ impl DamageView {
             .map(|_| HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]))
             .collect();
         DamageView { fraction, marks }
+    }
+
+    /// Every mark, not only the wire's newest [`MAX_HIT_MARKS`] (a client's own copy to its mesh
+    /// workers: the bites it has seen, BUGS.md #188), up to [`MAX_SEEN_MARKS`], with their chunks.
+    pub fn write_all(&self, w: &mut ByteWriter) {
+        w.u8(self.fraction);
+        let n = self.marks.len().min(MAX_SEEN_MARKS);
+        w.u8(n as u8);
+        for m in &self.marks[..n] {
+            w.u8(m.face);
+            for p in m.point {
+                w.u8(p);
+            }
+            w.u8(m.chunk);
+        }
+    }
+
+    /// Reads [`Self::write_all`]'s form.
+    pub fn read_all(r: &mut ByteReader) -> DamageView {
+        let fraction = r.u8();
+        let n = usize::from(r.u8());
+        r.check(n <= MAX_SEEN_MARKS);
+        let marks = (0..n.min(MAX_SEEN_MARKS))
+            .map(|_| {
+                let mut m = HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]);
+                m.chunk = r.u8();
+                m
+            })
+            .collect();
+        DamageView { fraction, marks }
+    }
+
+    /// The view `next` (the server's newer one of the same damage) after this one, keeping every
+    /// mark this one holds (BUGS.md #188: the wire carries only the newest [`MAX_HIT_MARKS`], so
+    /// a client that kept only those saw the oldest side's bites fill back in): `next`'s marks
+    /// this one hasn't seen are added, oldest first. A lower fraction (healed, or a new damage)
+    /// starts over from `next`.
+    pub fn seen_after(&self, next: &DamageView) -> DamageView {
+        if next.fraction < self.fraction || next.marks.is_empty() {
+            return next.clone();
+        }
+        // The newest marks this one already ends with, as `next` starts with them.
+        let overlap = (0..=next.marks.len().min(self.marks.len()))
+            .rev()
+            .find(|&k| self.marks[self.marks.len() - k..] == next.marks[..k])
+            .unwrap_or(0);
+        let mut marks = self.marks.clone();
+        marks.extend_from_slice(&next.marks[overlap..]);
+        if marks.len() > MAX_SEEN_MARKS {
+            marks.drain(..marks.len() - MAX_SEEN_MARKS);
+        }
+        DamageView {
+            fraction: next.fraction,
+            marks,
+        }
     }
 
     /// Its marks' chunks (after the cells, [`CHUNKS_MARK`]): one byte a mark, as many as `write`

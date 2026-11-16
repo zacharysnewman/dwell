@@ -309,8 +309,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                 c.iter().for_each(|v| w.i32(*v));
                 let mut b = Vec::new();
                 let mut bw = dwell_protocol::bytes::ByteWriter::new(&mut b);
-                d.write(&mut bw);
-                d.write_chunks(&mut bw);
+                d.write_all(&mut bw);
                 w.bytes(&b);
             }
         }
@@ -471,8 +470,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 let c = [r.i32()?, r.i32()?, r.i32()?];
                 let b = r.bytes()?;
                 let mut br = dwell_protocol::bytes::ByteReader::new(&b);
-                let mut d = dwell_protocol::damage::DamageView::read(&mut br);
-                d.read_chunks(&mut br);
+                let d = dwell_protocol::damage::DamageView::read_all(&mut br);
                 if !(br.ok() && br.at_end()) {
                     return Err(DecodeError);
                 }
