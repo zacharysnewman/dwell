@@ -91,6 +91,11 @@ pub struct MeshArrays {
     pub fluids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
+    /// The opaque mesh only: how many of `indices`, at their end, are the logs of trees the far
+    /// tree lists hold (`Cells::tree_owned`): past the far trees' hand-over a chunk leaves them
+    /// to the trees' impostors, which draw the trunk too (owner, 2026-11-15: "fold trunks into
+    /// billboards").
+    pub tree_logs: u32,
 }
 
 impl MeshArrays {
@@ -2479,7 +2484,9 @@ pub(crate) fn mesh_chunk_full(
             &damaged,
             &border,
         );
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
+        append_ground_before_logs(&mut m.opaque, |o| {
+            ground_mesh::append(o, kinds, &flood, &items, origin, true)
+        });
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -2498,7 +2505,9 @@ pub(crate) fn mesh_chunk_full(
         let mut m = mesh_cells(
             kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged, &border,
         );
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
+        append_ground_before_logs(&mut m.opaque, |o| {
+            ground_mesh::append(o, kinds, &flood, &items, origin, false)
+        });
         m
     };
     let water = (!flags.water_tops)
@@ -2552,6 +2561,21 @@ pub fn tree_leaves_from(m: &MeshArrays) -> usize {
     lo * 3
 }
 
+/// Runs `append` (the ground items' meshes) on `m` keeping its listed trees' logs
+/// (`MeshArrays::tree_logs`) the last of its indices.
+fn append_ground_before_logs(m: &mut MeshArrays, append: impl FnOnce(&mut MeshArrays)) {
+    let logs = m.tree_logs as usize;
+    if logs == 0 {
+        append(m);
+        return;
+    }
+    let tail = m.indices.split_off(m.indices.len() - logs);
+    m.tree_logs = 0;
+    append(m);
+    m.indices.extend(tail);
+    m.tree_logs = logs as u32;
+}
+
 /// The facing groups of an opaque chunk mesh ([`group_by_facing`]): a triangle facing +X, −X, +Y,
 /// −Y, +Z or −Z ([`FACES`]' order) is in that group, any other (slopes, ramps, carved and relief
 /// faces) in group [`FACING_OTHER`].
@@ -2588,23 +2612,29 @@ fn facing_of(m: &MeshArrays, tri: &[u32]) -> usize {
 /// can skip the groups facing away from the camera ([`facing_ranges`]; the GPU would otherwise
 /// shade every one of their vertices before culling them: the near pass is bound by geometry).
 pub fn group_by_facing(m: &mut MeshArrays) {
+    // The listed trees' logs stay last, ungrouped (`MeshArrays::tree_logs`).
+    let head = m.indices.len() - m.tree_logs as usize;
     let mut groups: [Vec<u32>; FACING_GROUPS] = Default::default();
-    for tri in m.indices.chunks_exact(3) {
+    for tri in m.indices[..head].chunks_exact(3) {
         groups[facing_of(m, tri)].extend_from_slice(tri);
     }
+    let tail = m.indices.split_off(head);
     m.indices = groups.concat();
+    m.indices.extend(tail);
 }
 
 /// Each facing group's range of `indices` in a mesh ordered by [`group_by_facing`] (empty ranges for
 /// absent groups). A mesh not so ordered is all in [`FACING_OTHER`]'s range, drawn from every side.
 pub fn facing_ranges(m: &MeshArrays) -> [std::ops::Range<u32>; FACING_GROUPS] {
+    // Before the listed trees' logs (`tree_logs_range`).
+    let head = m.indices.len().saturating_sub(m.tree_logs as usize);
     let mut counts = [0u32; FACING_GROUPS];
     let mut last = 0;
-    for tri in m.indices.chunks_exact(3) {
+    for tri in m.indices[..head].chunks_exact(3) {
         let g = facing_of(m, tri);
         if g < last {
             counts = [0; FACING_GROUPS];
-            counts[FACING_OTHER] = m.indices.len() as u32;
+            counts[FACING_OTHER] = head as u32;
             break;
         }
         counts[g] += 3;
@@ -2615,6 +2645,12 @@ pub fn facing_ranges(m: &MeshArrays) -> [std::ops::Range<u32>; FACING_GROUPS] {
         at += n;
         at - n..at
     })
+}
+
+/// The range of `indices` holding the listed trees' logs (`MeshArrays::tree_logs`; empty for none).
+pub fn tree_logs_range(m: &MeshArrays) -> std::ops::Range<u32> {
+    let n = m.indices.len() as u32;
+    n - m.tree_logs.min(n)..n
 }
 
 /// Which facing groups (a bit each) of a chunk mesh can face an eye at `rel` from the chunk's
@@ -3100,6 +3136,8 @@ fn mesh_cells(
     }
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
     let crowns = leaves::Crowns::new(&cells);
+    // The listed trees' logs' vertices (`MeshArrays::tree_logs`).
+    let mut tree_log_vertices: Vec<std::ops::Range<u32>> = Vec::new();
     // Shaped blocks (the generated ramps): whole voxels, not slices.
     for cy in 0..N {
         for cz in 0..N {
@@ -3127,7 +3165,11 @@ fn mesh_cells(
                     let hit = (!damaged_logs.is_empty())
                         .then(|| damaged_logs.get(&[cx, cy, cz]).copied())
                         .flatten();
+                    let from = opaque.vertex_count();
                     octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], hit);
+                    if cells.tree_owned([cx, cy, cz]) {
+                        tree_log_vertices.push(from..opaque.vertex_count());
+                    }
                 }
                 if k.style.leafy
                     && let Some(crowns) = &crowns
@@ -3178,6 +3220,21 @@ fn mesh_cells(
                 }
             }
         }
+    }
+    // The listed trees' logs last (`MeshArrays::tree_logs`), each part keeping its order.
+    if !tree_log_vertices.is_empty() {
+        let is_log = |v: u32| tree_log_vertices.iter().any(|r| r.contains(&v));
+        let (mut rest, mut logs) = (Vec::with_capacity(opaque.m.indices.len()), Vec::new());
+        for tri in opaque.m.indices.chunks_exact(3) {
+            if is_log(tri[0]) {
+                logs.extend_from_slice(tri);
+            } else {
+                rest.extend_from_slice(tri);
+            }
+        }
+        opaque.m.tree_logs = logs.len() as u32;
+        rest.extend(logs);
+        opaque.m.indices = rest;
     }
     // The crack overlay's stream, once any face has it, covers every opaque vertex (0: none).
     if !opaque.m.cracks.is_empty() {

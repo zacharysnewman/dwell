@@ -1098,22 +1098,30 @@ struct Chunk {
     cutout: Option<GpuMesh>,
 }
 
+/// `Part::Facing`'s bit for the listed trees' logs (`MeshArrays::tree_logs`): left out past the
+/// far trees' hand-over, where their impostors draw the trunks (owner, 2026-11-15: "fold trunks
+/// into billboards").
+const TREE_LOGS_BIT: u8 = 1 << dwell_mesh::FACING_GROUPS;
+
 /// How far outside its chunk's box an opaque vertex may lie (m) for the facing test
 /// (`dwell_mesh::facing_mask`): ground items and damaged faces stand a little proud of it.
 const FACING_MARGIN_M: f64 = 1.0;
 
 /// The index ranges drawing the facing groups in `mask` of a chunk's opaque mesh (its `parts`:
-/// [0] all, [1 + g] group g), neighbours merged into one draw; the whole mesh when every group
-/// is in, or when the mesh has no groups.
+/// [0] all, [1 + g] group g, [8] the listed trees' logs, `TREE_LOGS_BIT`), neighbours merged into
+/// one draw; the whole mesh when everything is in, or when the mesh has no groups.
 fn facing_draws(parts: &[std::ops::Range<u32>], mask: u8) -> Vec<std::ops::Range<u32>> {
     let groups = parts.get(1..);
-    let all = (1u8 << dwell_mesh::FACING_GROUPS) - 1;
-    let Some(groups) = groups.filter(|g| g.len() == dwell_mesh::FACING_GROUPS && mask & all != all)
-    else {
+    if mask == u8::MAX {
+        return vec![parts[0].clone()];
+    }
+    let Some(groups) = groups.filter(|g| g.len() >= dwell_mesh::FACING_GROUPS) else {
         return vec![parts[0].clone()];
     };
+    // The groups, then the trees' logs where the mesh has them.
+    let n = groups.len().min(dwell_mesh::FACING_GROUPS + 1);
     let mut out: Vec<std::ops::Range<u32>> = Vec::new();
-    for (g, r) in groups.iter().enumerate() {
+    for (g, r) in groups[..n].iter().enumerate() {
         if mask & (1 << g) == 0 || r.is_empty() {
             continue;
         }
@@ -1255,6 +1263,8 @@ impl TerrainRenderer for RasterTerrain {
         )
         .map(|mut g| {
             g.parts.extend(dwell_mesh::facing_ranges(&m.opaque));
+            // [8] the listed trees' logs (`Part::Facing`'s bit 7).
+            g.parts.push(dwell_mesh::tree_logs_range(&m.opaque));
             g
         });
         let water = GpuMesh::fluid(
@@ -4202,6 +4212,17 @@ impl Renderer {
             let offset = [r[0], r[1], r[2], 1.0];
             if c.opaque.is_some() {
                 // Only the facing groups that can face the eye (the eye from the chunk's corner).
+                // Past the far trees' hand-over its trees' logs are their impostors' to draw.
+                let logs = far.is_none_or(|_| {
+                    let d2: f64 = (0..3)
+                        .map(|k| {
+                            let lo = f64::from(r[k]);
+                            let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                            d * d
+                        })
+                        .sum();
+                    impostors::cutout_draw(far, d2.sqrt() as f32) == impostors::CutoutDraw::All
+                });
                 let facing = if self.facing_cull {
                     dwell_mesh::facing_mask(
                         std::array::from_fn(|k| self.eye[k] - c.origin[k]),
@@ -4209,8 +4230,8 @@ impl Renderer {
                         FACING_MARGIN_M,
                     )
                 } else {
-                    u8::MAX
-                };
+                    u8::MAX & !TREE_LOGS_BIT
+                } | if logs { TREE_LOGS_BIT } else { 0 };
                 out.push(DrawItem {
                     kind: Kind::Terrain,
                     water: false,
@@ -5649,9 +5670,11 @@ impl Renderer {
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
         toward: Option<[f64; 3]>,
     ) -> Vec<Candidate> {
+        // Every tree's logs cast (the impostors cast none).
         let facing = toward
             .filter(|_| self.facing_cull)
-            .map_or(u8::MAX, dwell_mesh::facing_mask_toward);
+            .map_or(u8::MAX, dwell_mesh::facing_mask_toward)
+            | TREE_LOGS_BIT;
         use shadows::CasterKind::Solid;
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
@@ -7081,16 +7104,34 @@ mod tests {
     #[test]
     fn a_chunk_draws_its_facing_groups_with_neighbours_merged() {
         // face-a-only: index ranges, no up or down.
-        // [0] all, then +X 0..6, −X 6..9, +Y 9..30, −Y none, +Z 30..36, −Z 36..42, other 42..45.
-        let parts = vec![0..45, 0..6, 6..9, 9..30, 30..30, 30..36, 36..42, 42..45];
+        // [0] all, then +X 0..6, −X 6..9, +Y 9..30, −Y none, +Z 30..36, −Z 36..42, other 42..45,
+        // and the trees' logs 45..51.
+        let parts = vec![
+            0..51,
+            0..6,
+            6..9,
+            9..30,
+            30..30,
+            30..36,
+            36..42,
+            42..45,
+            45..51,
+        ];
         // +X, +Y, +Z and the other: +Y and +Z are neighbours (−Y between them is empty).
         assert_eq!(
             super::facing_draws(&parts, 0b101_0101),
             vec![0..6, 9..36, 42..45]
         );
+        // With the trees' logs (near the trees): merged onto the other group.
+        assert_eq!(
+            super::facing_draws(&parts, 0b1101_0101),
+            vec![0..6, 9..36, 42..51]
+        );
+        // Every group but no logs (past the hand-over): all but the logs.
+        assert_eq!(super::facing_draws(&parts, 0b0111_1111), vec![0..45]);
         // Everything, or a mesh without groups: one draw of it all.
-        assert_eq!(super::facing_draws(&parts, u8::MAX), vec![0..45]);
-        assert_eq!(super::facing_draws(&parts[..1], 0b100_0000), vec![0..45]);
+        assert_eq!(super::facing_draws(&parts, u8::MAX), vec![0..51]);
+        assert_eq!(super::facing_draws(&parts[..1], 0b100_0000), vec![0..51]);
     }
 
     #[test]

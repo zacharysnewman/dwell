@@ -3765,3 +3765,62 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: "fold trunks into billboards": a listed tree's logs are the opaque
+    /// mesh's last indices (`MeshArrays::tree_logs`), which a chunk past the far trees' hand-over
+    /// leaves to the impostor; logs no listed tree owns (a player's) stay with the rest, and the
+    /// facing groups cover the rest exactly.
+    fn a_listed_trees_logs_come_last(f: FaceFrame) {
+        let log = require("dwell:log");
+        let mut cells = Vec::new();
+        for y in 0..6 {
+            cells.push((4, 8 + y, 8, log));
+            cells.push((20, 8 + y, 8, log));
+        }
+        let padded = voxels(&cells);
+        let tree = dwell_world::tree_tint::TreeTint {
+            anchor: [4, 0, 8],
+            min: [0, i32::MIN / 2, 4],
+            max: [8, i32::MAX / 2, 12],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let mesh = |trees: &[dwell_world::tree_tint::TreeTint]| {
+            super::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags::default(),
+                &[],
+                trees,
+            )
+            .expect("padded")
+            .opaque
+        };
+        let none = mesh(&[]);
+        assert_eq!(none.tree_logs, 0, "no listed tree: no logs set apart");
+        let m = mesh(&[tree]);
+        assert!(m.tree_logs > 0);
+        assert_eq!(m.indices.len(), none.indices.len());
+        let tail = tree_logs_range(&m);
+        let x = |v: u32| m.positions[v as usize * 3];
+        assert!(
+            m.indices[tail.start as usize..]
+                .iter()
+                .all(|&v| x(v) < 12.0),
+            "only the listed tree's (x 4) logs come last"
+        );
+        assert!(
+            m.indices[..tail.start as usize]
+                .iter()
+                .any(|&v| x(v) > 12.0),
+            "the unlisted logs (x 20) stay with the rest"
+        );
+        let ranges = facing_ranges(&m);
+        assert_eq!(ranges[0].start, 0);
+        assert_eq!(ranges[FACING_GROUPS - 1].end, tail.start);
+    }
+);

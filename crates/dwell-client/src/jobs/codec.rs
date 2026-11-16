@@ -85,6 +85,7 @@ impl W {
         self.f32s(&m.flood);
         self.u32s(&m.cracks);
         self.u32s(&m.indices);
+        self.u32(m.tree_logs);
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -206,6 +207,7 @@ impl R<'_> {
             flood: self.f32s()?,
             cracks: self.u32s()?,
             indices: self.u32s()?,
+            tree_logs: self.u32()?,
         })
     }
     fn flat(&mut self) -> Res<FlatMesh> {
