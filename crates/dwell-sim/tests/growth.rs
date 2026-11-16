@@ -39,7 +39,10 @@ fn oak(f: FaceFrame) -> Record {
 }
 
 fn per() -> f64 {
-    f64::from(SPECIES[index("dwell:oak").unwrap()].days_per_stage)
+    // Its own pace (owner, 2026-11-15: each tree a different growth rate).
+    let s = &SPECIES[index("dwell:oak").unwrap()];
+    f64::from(s.days_per_stage)
+        / f64::from(dwell_worldgen::species::rate(s, oak(FaceFrame::A).seed))
 }
 
 /// A server with the oak's stage-2 cells in its world and its record due `n` stages.

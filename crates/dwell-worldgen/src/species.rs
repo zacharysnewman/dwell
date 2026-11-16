@@ -436,20 +436,56 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
             }
         }
     }
+    // Past a block's width the trunk takes the 3 columns beside it (+x, +z) and the tree centres
+    // on the four (owner, 2026-11-15: "Big trees can take up more blocks at the base as they grow
+    // past a 1 block width ... they will pop into to be centered on those 4 square of block
+    // columns"; 2 × 2 at most): a giant's width grows with its height past the range's top.
+    let wide = straight && qz(lerp(w0, w1 * (mature / top).max(1.0), g), ws) > 1.0 + 1e-3;
     if straight {
         for yc in 0..trunk_cells {
-            logs.insert([0, yc, 0], Part::Log(0, quarters));
+            logs.insert([0, yc, 0], Part::Log(0, if wide { 4 } else { quarters }));
         }
     }
+    let (logs, leaves) = if wide {
+        (
+            centred_on_four(logs),
+            centred_on_four(leaves.into_iter().map(|c| (c, Part::Leaf)).collect()),
+        )
+    } else {
+        (logs, leaves.into_iter().map(|c| (c, Part::Leaf)).collect())
+    };
     let mut cells = logs;
-    for c in leaves {
-        cells.entry(c).or_insert(Part::Leaf);
+    for (c, p) in leaves {
+        cells.entry(c).or_insert(p);
     }
     Grown {
         cells,
         height: h,
-        width,
+        width: if wide { 2.0 } else { width },
     }
+}
+
+/// A tree's cells spread to stand on four columns (a 2 × 2 trunk): split along its centre column
+/// in x and in z and drawn apart by one, so the column at 0 becomes 0 and 1 and every cell past it
+/// moves out by one. The trunk becomes four logs, and the crown and branches stay centred on the
+/// four (the corner they share), each side as it was.
+fn centred_on_four(cells: BTreeMap<[i32; 3], Part>) -> BTreeMap<[i32; 3], Part> {
+    let spread = |v: i32| -> &'static [i32] {
+        match v.signum() {
+            -1 => &[0],
+            0 => &[0, 1],
+            _ => &[1],
+        }
+    };
+    let mut out = BTreeMap::new();
+    for ([x, y, z], p) in cells {
+        for &dx in spread(x) {
+            for &dz in spread(z) {
+                out.insert([x + dx, y, z + dz], p);
+            }
+        }
+    }
+    out
 }
 
 /// A branch as a stepped path of log cells from `a` to `b` (the trunk cell `a` excluded), each
@@ -848,10 +884,71 @@ mod tests {
             let mut seen: Vec<u32> = stages.clone();
             seen.sort_unstable();
             seen.dedup();
-            assert!(seen.len() * 2 >= s.stages as usize, "{}: {stages:?}", s.name);
-            assert!(stages.iter().any(|&st| st + 2 < s.stages), "{}: some young", s.name);
-            assert!(stages.iter().any(|&st| st + 2 >= s.stages), "{}: some old", s.name);
+            assert!(
+                seen.len() * 2 >= s.stages as usize,
+                "{}: {stages:?}",
+                s.name
+            );
+            assert!(
+                stages.iter().any(|&st| st + 2 < s.stages),
+                "{}: some young",
+                s.name
+            );
+            assert!(
+                stages.iter().any(|&st| st + 2 >= s.stages),
+                "{}: some old",
+                s.name
+            );
         }
+    }
+
+    #[test]
+    fn a_giant_stands_on_a_two_by_two_trunk_centred_on_the_four() {
+        // face-a-only: a tree is built face-local. The owner, 2026-11-15: "Big trees can take up
+        // more blocks at the base as they grow past a 1 block width ... centered on those 4 square
+        // of block columns" (2 × 2 at most).
+        let oak = find("dwell:oak").expect("oak");
+        let last = oak.stages - 1;
+        let base = |t: &Grown| -> Vec<(i32, i32)> {
+            let mut c: Vec<(i32, i32)> = t
+                .cells
+                .iter()
+                .filter(|(c, p)| c[1] == 0 && matches!(p, Part::Log(0, _)))
+                .map(|(c, _)| (c[0], c[2]))
+                .collect();
+            c.sort_unstable();
+            c
+        };
+        let (mut wide, mut narrow) = (0, 0);
+        for seed in 0..64 {
+            let t = grow(oak, seed, last);
+            let b = base(&t);
+            if t.width > 1.0 {
+                wide += 1;
+                assert_eq!(b, vec![(0, 0), (0, 1), (1, 0), (1, 1)], "seed {seed}");
+                // Centred on the four: the crown's leaves average about the corner (x, z = 1).
+                let leaves: Vec<&[i32; 3]> = t
+                    .cells
+                    .iter()
+                    .filter(|(_, p)| **p == Part::Leaf)
+                    .map(|(c, _)| c)
+                    .collect();
+                for a in [0, 2] {
+                    let mean =
+                        leaves.iter().map(|c| c[a] as f32).sum::<f32>() / leaves.len() as f32;
+                    assert!(
+                        (mean - 1.0).abs() < 1.5,
+                        "seed {seed}: crown centre {mean} on axis {a}"
+                    );
+                }
+                // Its young self (stage 0) is one column.
+                assert_eq!(base(&grow(oak, seed, 0)), vec![(0, 0)]);
+            } else {
+                narrow += 1;
+                assert_eq!(b, vec![(0, 0)], "seed {seed}");
+            }
+        }
+        assert!(wide > 8 && narrow > 8, "{wide} wide, {narrow} narrow");
     }
 
     #[test]
@@ -859,7 +956,11 @@ mod tests {
         // face-a-only: no geometry. The owner, 2026-11-15: "a different ... growth rate".
         for s in &SPECIES {
             let rates: Vec<f32> = (0..64).map(|seed| rate(s, seed)).collect();
-            assert!(rates.iter().all(|r| (s.rate.0..=s.rate.1).contains(r)), "{}", s.name);
+            assert!(
+                rates.iter().all(|r| (s.rate.0..=s.rate.1).contains(r)),
+                "{}",
+                s.name
+            );
             if s.rate.0 < s.rate.1 {
                 let lo = rates.iter().copied().fold(f32::MAX, f32::min);
                 let hi = rates.iter().copied().fold(f32::MIN, f32::max);
@@ -874,20 +975,33 @@ mod tests {
         // of the trees to quadruple the height" (each species' top × `giant`, the crown with it).
         let oak = find("dwell:oak").expect("oak");
         assert_eq!(oak.giant, 4.0);
-        let mut grown: Vec<Grown> = (0..128).map(|seed| grow(oak, seed, oak.stages - 1)).collect();
+        let mut grown: Vec<Grown> = (0..128)
+            .map(|seed| grow(oak, seed, oak.stages - 1))
+            .collect();
         grown.sort_by(|a, b| a.height.total_cmp(&b.height));
         let tallest = grown.last().unwrap();
-        assert!(tallest.height > oak.mature_height.1 * 3.0, "tallest {}", tallest.height);
+        assert!(
+            tallest.height > oak.mature_height.1 * 3.0,
+            "tallest {}",
+            tallest.height
+        );
         // The crown follows the height by `crown.withHeight` (0.5: a 4× giant's crown about 2×):
         // the tallest quarter's crowns average wider than the shortest quarter's.
         let span = |t: &Grown| {
-            let xs = t.cells.values().zip(t.cells.keys()).filter(|(p, _)| **p == Part::Leaf);
+            let xs = t
+                .cells
+                .values()
+                .zip(t.cells.keys())
+                .filter(|(p, _)| **p == Part::Leaf);
             let xs: Vec<i32> = xs.map(|(_, c)| c[0]).collect();
             (xs.iter().max().unwrap() - xs.iter().min().unwrap()) as f32
         };
         let mean = |ts: &[Grown]| ts.iter().map(span).sum::<f32>() / ts.len() as f32;
         let (short, tall) = (mean(&grown[..32]), mean(&grown[96..]));
-        assert!(tall > short * 1.3, "a giant's crown is wider: {tall} vs {short}");
+        assert!(
+            tall > short * 1.3,
+            "a giant's crown is wider: {tall} vs {short}"
+        );
     }
 
     #[test]
@@ -912,7 +1026,10 @@ mod tests {
                 "{}: a sapling is thin",
                 s.name
             );
-            assert_eq!(f32::from(old) / 4.0, s.width.1, "{}", s.name);
+            // Mature, its species' width, or a full log where a giant stands on a 2 × 2 trunk.
+            let mature = grow(s, 3, s.stages - 1);
+            let want = if mature.width > 1.0 { 1.0 } else { s.width.1 };
+            assert_eq!(f32::from(old) / 4.0, want, "{}", s.name);
             for st in 1..s.stages {
                 assert!(quarters(st) >= quarters(st - 1), "{}", s.name);
             }

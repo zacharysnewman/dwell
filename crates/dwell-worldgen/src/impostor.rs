@@ -1751,7 +1751,11 @@ mod crown_match {
         let (mut worst_iou, mut worst_off) = ((1.0f32, String::new()), (0.0f32, String::new()));
         for name in ["dwell:pine", "dwell:oak"] {
             let sp = crate::species::find(name).expect(name);
-            let real = grow(sp, super::tests::normal_seed(sp), sp.stages.saturating_sub(1));
+            let real = grow(
+                sp,
+                super::tests::normal_seed(sp),
+                sp.stages.saturating_sub(1),
+            );
             let b = bake_cells(&real.cells, c, px);
             let grid: HashMap<[i32; 3], Part> = real.cells.iter().map(|(k, p)| (*k, *p)).collect();
             let shapes: HashMap<Part, Vec<([f32; 3], f32)>> =
