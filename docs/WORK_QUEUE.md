@@ -21,6 +21,11 @@ Last updated: 2026-11-11 (0.52.108).
   roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
   0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
   houses built as his house.
+- **Owner, 2026-11-15 (queued, new feature):** "Side question, do we have a native build that doesn't run in browser
+  but in a bundled app?" then "Yeah lets queue up the real native app" — today: the Electron shell
+  (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev
+  harness with no menus, HUD or audio). Which path (packaged Electron or a full native client) to be asked before
+  designing. Owner should see: Dwell launched as an installed app on the Mac, not in a browser tab.
 - **Owner, 2026-11-15 (new feature, trees):** "Let's get rid of my pines. Make each tree have a different starting
   age, growth rate, and increase the max size of the trees to quadruple the height. Big trees can take up more blocks
   at the base as they grow past a 1 block width. They can expand into a neighboring 3 spaces if available (only player
