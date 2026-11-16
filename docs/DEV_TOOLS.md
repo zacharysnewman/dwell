@@ -388,8 +388,8 @@ call's wall time over the ticks it ran), `advanceMaxMs` (the worst call), `water
 `terrain`, `players`, `physics`, …; the worker's `performance.now` times them, 0.49.33; `terrain`, the
 terrain collision's loads and rebuilds, apart from `players` since 0.49.34; since 0.49.35 the tick's
 tail is `stream` (chunks sent), `worldgen`, `lod` and `save` (the autosave's batch and its encoding and
-commit, spread over ticks in the browser, ARCHITECTURE.md §6.4), once one `stream+lod+save`), `counts` (what the ticks did
-over the second, `Server::tick_counts`: `collisionBuilds`, terrain-collision chunk builds, and
+commit, spread over ticks in the browser, ARCHITECTURE.md §6.4), once one `stream+lod+save`; since 0.71 the former `water+respawn` is `water`, `growth` (trees, healing, grass), `ecology`, `items+creatures`, `blueprints` and `respawn`), `counts` (what the ticks did
+over the second, `Server::tick_counts`: `gen.<phase>`, the chunks each phase generated on the tick (only those that did; priority 0, BUGS.md #194); `collisionBuilds`, terrain-collision chunk builds, and
 `generatedOnTick`, chunks the tick generated itself rather than the server-jobs worker, and since
 0.49.42 `collisionCells`, full-cube cells put into or taken out of the terrain collider, a little a
 tick but those near players) and `waterStats` — `queue` (batches sent to the water and not yet answered), `runs`,
@@ -2023,3 +2023,17 @@ and the block on a cube, repainted on every change; `document.body.dataset.textu
 downloads `materials.json` and `palette.json` (drop them into `shared/textures/`, run
 `node shared/textures/gen.mjs`); edits persist in the browser (`dwell.chisel.textures`, set aside when
 the build's data changes); Reset textures returns to the build's.
+
+
+## The server's tick budget (priority 0, 2026-11-16)
+
+The owner: "it's absolutely mandatory that the server never drops below 60fps". Two tools measure it:
+
+- **Natively**, `cargo test --release -p dwell-sim --test tick_budget -- --ignored --nocapture` (`TICK_SECONDS`,
+  default 90; `TICK_AT_OWNER` starts at the owner's stutter spot): the owner's world (seed 3218026833), a player
+  sprinting and jumping through the controller, the jobs worker modelled by time (each job its native time × 2.5,
+  WASM's), a world day every 20 s; prints the tick p50/p99/max, the ticks over 8 and 16.7 ms and the 12 worst with
+  their phases.
+- **In the browser**, the bench's `stutter-run` (the same world, 40 s of sprinting and jumping): each record keeps
+  `server`, the local server's per-second figures (`__dwell.serverHistory()`: `advanceMaxMs`, `phasesMs`, `counts`
+  with `gen.<phase>`).

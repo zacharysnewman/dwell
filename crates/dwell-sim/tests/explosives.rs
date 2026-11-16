@@ -1377,7 +1377,7 @@ fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core
 /// `max` ticks (with `settle`, until the pieces have settled too): each tick's (ms, pieces spawned, phases), the cells the chain cleared within 12 m and
 /// the pieces spawned.
 /// A tick's phases (`Server::tick_phases`).
-type Phases = [(&'static str, f64); 14];
+type Phases = [(&'static str, f64); dwell_sim::server::TICK_PHASES.len()];
 
 struct Chain {
     ticks: Vec<(f64, usize, Phases)>,

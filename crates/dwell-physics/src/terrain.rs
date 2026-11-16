@@ -71,6 +71,14 @@ pub struct TerrainCollision {
     /// The chunks whose `applied` cells differ from their `solid` ones.
     behind: std::collections::BTreeSet<(i32, i32, i32)>,
     stats: CollisionStats,
+    /// In a generating world (the server's): the chunks a reach build waits for (it and its
+    /// neighbours, which its build reads), for the generation jobs to bring first; and the reach
+    /// builds this tick may still force, generating what they read (priority 0: a sprint's reach
+    /// generated 9–12 chunks in one tick, ~100 ms in the browser).
+    wanting: Vec<ChunkCoord>,
+    force_budget: usize,
+    /// Rebuilds `sync` waits on (their neighbours not generated yet), retried each sync.
+    pending_rebuild: Vec<ChunkCoord>,
 }
 
 /// The full-cube cells a tick puts into (or takes out of) the collider beyond those near players
@@ -340,6 +348,10 @@ impl TerrainCollision {
             applied: HashMap::default(),
             behind: std::collections::BTreeSet::new(),
             stats: CollisionStats::default(),
+            wanting: Vec::new(),
+            // Unbounded until a tick sets it (direct calls, tests, tools build at once).
+            force_budget: usize::MAX,
+            pending_rebuild: Vec::new(),
         }
     }
 
@@ -527,6 +539,29 @@ impl TerrainCollision {
     }
 
     /// (Re)builds a chunk's collision from the world, replacing what it held.
+    /// Builds chunk `c`'s collider unless, in a budgeted generating world (the server's), its build
+    /// would generate more neighbours than this tick's budget allows: then it waits, its missing
+    /// neighbours asked for (`wanting`), and this says false.
+    fn try_load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) -> bool {
+        if world.generates() && self.force_budget != usize::MAX {
+            let missing: Vec<ChunkCoord> = around(c)
+                .filter(|n| (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&n.y))
+                .filter(|n| world.would_generate(*n))
+                .collect();
+            if missing.len() > self.force_budget {
+                for n in missing {
+                    if !self.wanting.contains(&n) {
+                        self.wanting.push(n);
+                    }
+                }
+                return false;
+            }
+            self.force_budget -= missing.len();
+        }
+        self.load(physics, world, c);
+        true
+    }
+
     fn load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) {
         let built = build(world, c);
         let mesh_hash = built.mesh_hash();
@@ -617,14 +652,27 @@ impl TerrainCollision {
             for cz in a.z..=b.z {
                 for cx in a.x..=b.x {
                     let c = ChunkCoord::new(cx, cy, cz);
-                    if !self.chunks.contains_key(&c) {
-                        self.load(physics, world, c);
+                    if self.chunks.contains_key(&c) {
+                        continue;
+                    }
+                    if self.try_load(physics, world, c) {
                         self.stats.reach_loads += 1;
                     }
                 }
             }
         }
         self.stats.reach_cells += self.catch_up_box(physics, lo, hi) as u64;
+    }
+
+    /// The chunks reach builds waited for since the last call (a generating world's), for its
+    /// generation jobs to bring first.
+    pub fn take_wanting(&mut self) -> Vec<ChunkCoord> {
+        std::mem::take(&mut self.wanting)
+    }
+
+    /// The chunks a tick's reach builds may generate themselves (the rest wait for the jobs).
+    pub fn set_force_budget(&mut self, chunks: usize) {
+        self.force_budget = chunks;
     }
 
     /// The look-ahead's chunks for a player at `pos` moving at `velocity` (world metres, m/s) with
@@ -694,8 +742,9 @@ impl TerrainCollision {
             {
                 continue;
             }
-            self.load(physics, world, c);
-            built += 1;
+            if self.try_load(physics, world, c) {
+                built += 1;
+            }
         }
         self.stats.ahead_loads += built as u64;
         built
@@ -743,8 +792,7 @@ impl TerrainCollision {
             if built >= budget {
                 break;
             }
-            if !self.chunks.contains_key(&c) {
-                self.load(physics, world, c);
+            if !self.chunks.contains_key(&c) && self.try_load(physics, world, c) {
                 built += 1;
             }
         }
@@ -767,7 +815,7 @@ impl TerrainCollision {
                 changed.push(c);
             }
         }
-        if changed.is_empty() {
+        if changed.is_empty() && self.pending_rebuild.is_empty() {
             return;
         }
         let mut rebuild: Vec<ChunkCoord> = changed
@@ -777,10 +825,13 @@ impl TerrainCollision {
             .map(|(_, n)| n)
             .collect();
         // In a fixed order, so every run (and the client's prediction) builds the same colliders.
+        rebuild.extend(std::mem::take(&mut self.pending_rebuild));
         rebuild.sort_by_key(|c| (c.y, c.z, c.x));
         rebuild.dedup();
         for c in rebuild {
-            self.load(physics, world, c);
+            if self.chunks.contains_key(&c) && !self.try_load(physics, world, c) {
+                self.pending_rebuild.push(c); // its neighbours first (the jobs')
+            }
         }
         // Building may have generated chunks some watch saw as missing: take their stamps now.
         for (&c, w) in &mut self.watched {

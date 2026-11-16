@@ -409,6 +409,8 @@ interface DwellDebug {
    * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
    */
   serverStats(): ServerStats | null;
+  /** The local server's per-second figures over the last minutes, oldest first (empty outside one). */
+  serverHistory(): ServerStats[];
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
@@ -1830,6 +1832,7 @@ async function start(): Promise<App | null> {
     },
     sounds: () => [...sfx.recent],
     serverStats: () => app.loopback?.serverStats ?? null,
+    serverHistory: () => app.loopback?.serverHistory ?? [],
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),

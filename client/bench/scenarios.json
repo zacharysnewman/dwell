@@ -11166,6 +11166,87 @@
           "pitch": -8
         }
       ]
+    },
+    {
+      "name": "stutter-run",
+      "notes": "PRIORITY 0 (owner, 2026-11-16: \"the server never drops below 60fps\"; BUGS.md #194): the owner's world (seed 3218026833) where they saw the stutter, sprinting and jumping for ~40 s with turns; the local server's tick phases and the frames recorded.",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "seed": "3218026833",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": true
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "repeat",
+          "times": 15,
+          "steps": [
+            {
+              "do": "hold",
+              "code": "Space",
+              "s": 0.15
+            },
+            {
+              "do": "wait",
+              "s": 1.2
+            },
+            {
+              "do": "look",
+              "yaw": 0,
+              "pitch": 0
+            },
+            {
+              "do": "hold",
+              "code": "Space",
+              "s": 0.15
+            },
+            {
+              "do": "wait",
+              "s": 1.2
+            },
+            {
+              "do": "look",
+              "yaw": 90,
+              "pitch": 0
+            }
+          ]
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "key",
+          "code": "ShiftLeft",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "run"
+        }
+      ]
     }
   ]
 }

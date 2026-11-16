@@ -833,6 +833,12 @@ impl VoxelWorld {
 
     /// Whether a read of the chunk gives its real voxels: it is stored, or this world generates
     /// its chunks (a streamed world's missing chunk reads as air until it arrives).
+    /// Whether this world generates a chunk it lacks when read (the server's; a client's is
+    /// streamed).
+    pub fn generates(&self) -> bool {
+        self.generator.is_some()
+    }
+
     pub fn holds_or_generates(&self, coord: ChunkCoord) -> bool {
         self.generator.is_some() || self.chunks.contains_key(&coord)
     }
@@ -848,6 +854,15 @@ impl VoxelWorld {
 
     /// A chunk to read: generated on demand, or all air while missing in a streamed world or when
     /// the air test says the generator would leave it empty (not stored).
+    /// Whether a read of chunk `coord` would generate it here (a generating world's chunk not
+    /// stored, not saved and not all air): the costly read the server's tick avoids.
+    pub fn would_generate(&self, coord: ChunkCoord) -> bool {
+        self.generator.is_some()
+            && !self.chunks.contains_key(&coord)
+            && !self.saved_has(coord)
+            && !self.air.as_ref().is_some_and(|air| air(coord))
+    }
+
     pub fn read(&mut self, coord: ChunkCoord) -> &Chunk {
         if self.generator.is_some() {
             if let Some(air) = &self.air

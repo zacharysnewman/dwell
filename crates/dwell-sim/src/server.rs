@@ -139,6 +139,10 @@ fn punch_credit_per_tick() -> f64 {
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
+/// The chunks a tick's collision reach may generate itself (`Players::set_reach_generates`).
+const REACH_GENERATES_PER_TICK: usize = 2;
+/// The most pristine chunks (edited chunks as generated) kept for the growth steps (64 KiB each).
+const PRISTINE_KEPT: usize = 128;
 /// Inline, the sky floors (`sky_columns.rs`) computed per tick: at least one, then until this is
 /// spent (one is ~1 ms natively, a few in the browser; on wasm32 the budget is one).
 const SKY_FLOOR_BUDGET: Duration = Duration::from_micros(1000);
@@ -1032,7 +1036,30 @@ struct EditLogEntry {
 }
 
 /// The tick's phases, in order, as `Server::tick_phases` names them.
-pub const TICK_PHASES: [&str; 14] = [
+/// [`TICK_PHASES`]' names for the chunks each generated on the tick (`tick_counts`).
+const GEN_PHASES: [&str; 19] = [
+    "gen.collect",
+    "gen.edits",
+    "gen.terrain",
+    "gen.players",
+    "gen.pushes+damage",
+    "gen.pieces",
+    "gen.physics",
+    "gen.settle",
+    "gen.water",
+    "gen.growth",
+    "gen.ecology",
+    "gen.items+creatures",
+    "gen.blueprints",
+    "gen.respawn",
+    "gen.snapshots",
+    "gen.stream",
+    "gen.worldgen",
+    "gen.lod",
+    "gen.save",
+];
+
+pub const TICK_PHASES: [&str; 19] = [
     "collect",
     "edits",
     "terrain",
@@ -1041,7 +1068,12 @@ pub const TICK_PHASES: [&str; 14] = [
     "pieces",
     "physics",
     "settle",
-    "water+respawn",
+    "water",
+    "growth",
+    "ecology",
+    "items+creatures",
+    "blueprints",
+    "respawn",
     "snapshots",
     "stream",
     "worldgen",
@@ -1072,6 +1104,10 @@ pub struct Server {
     phase_ms: [f64; TICK_PHASES.len()],
     /// The counts `tick_counts` last read (collision builds, chunks generated on the tick).
     counts_at: [u64; 3],
+    /// The chunks generated on the tick by phase since the last `tick_counts`, and the world's
+    /// count at the last phase's end (priority 0: which phase reads a chunk not yet generated).
+    gen_phase: [u64; TICK_PHASES.len()],
+    gen_mark: u64,
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::host::WaterHost,
     /// The water's side of the world (ADR 0062): what its copy was told, what to send it next, the
@@ -1166,6 +1202,13 @@ pub struct Server {
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
     growth_scanned: HashSet<ChunkCoord>,
+    /// Edited chunks as generated, from the generation jobs (priority 0, BUGS.md #194: grass and
+    /// tree growth regenerated an edited chunk on the tick, ~4 ms natively each, to compare with
+    /// it); and the ones wanted next (low priority, after everything players need).
+    pristine: HashMap<ChunkCoord, Box<Chunk>>,
+    pristine_wanted: Vec<ChunkCoord>,
+    /// The due trees still to grow, a few a tick (`grow_trees`).
+    growth_due: std::collections::VecDeque<[i32; 3]>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1239,7 +1282,10 @@ impl Server {
             }
         };
         let mut physics = Physics::default();
-        let players = Players::new(&mut physics, true);
+        let mut players = Players::new(&mut physics, true);
+        // Its collision's reach generates at most a few chunks a tick; the generation jobs bring
+        // the rest first (priority 0, the owner's "the server never drops below 60fps").
+        players.set_reach_generates(Some(REACH_GENERATES_PER_TICK));
         let lod_threads = config
             .lod_threads
             .unwrap_or(usize::from(config.worldgen_threads > 0));
@@ -1290,6 +1336,8 @@ impl Server {
             relit: Arc::default(),
             phase_ms: [0.0; TICK_PHASES.len()],
             counts_at: [0; 3],
+            gen_phase: [0; TICK_PHASES.len()],
+            gen_mark: 0,
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
             // the sources to come.
@@ -1387,6 +1435,9 @@ impl Server {
             grass_terrain: Default::default(),
             growers: None,
             growth_scanned: Default::default(),
+            pristine: Default::default(),
+            pristine_wanted: Vec::new(),
+            growth_due: Default::default(),
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -1694,6 +1745,8 @@ impl Server {
                 "Signed in from another connection.",
             );
         }
+        // The growth steps' terrain, now (behind the joining player's loading screen).
+        self.prepare_growth();
         let player_id = self.allocate_player_id();
         let s = self.sessions.get_mut(&id).expect("session");
         s.player_id = player_id;
@@ -2139,12 +2192,18 @@ impl Server {
         for (c, chunk) in ready {
             if self.world.find(c).is_none() && !self.is_saved(c) {
                 self.world.put(c, *chunk);
+            } else if self.pristine_wanted.contains(&c) {
+                if self.pristine.len() >= PRISTINE_KEPT {
+                    self.pristine.clear();
+                }
+                self.pristine.insert(c, chunk);
+                self.pristine_wanted.retain(|w| *w != c);
             }
         }
         self.collect_saves();
         // What the water sent since (its writes, currents, wanted chunks, record).
         self.apply_water();
-        self.phase_ms[0] += watch.lap_ms();
+        self.lap(0, &mut watch);
 
         // 1. Block edits queued since the last tick (§6.5); collision syncs in the controller pass.
         // Swings whose head reaches what they hit this tick (WORK_QUEUE item 25).
@@ -2167,7 +2226,7 @@ impl Server {
             self.blast(fuse);
         }
         self.spawn_queued();
-        self.phase_ms[1] += watch.lap_ms();
+        self.lap(1, &mut watch);
 
         // Travel between the grids (MOON_WORLD.md §7.2): captures, releases, far flight.
         self.travel_players();
@@ -2234,13 +2293,13 @@ impl Server {
             .set_terrain_boxes(boxes, self.felling.rules.terrain_chunks_per_tick);
         self.players
             .tick_terrain(&mut self.world, &mut self.physics);
-        self.phase_ms[2] += watch.lap_ms();
+        self.lap(2, &mut watch);
         // The mode's stamina and oxygen (ADR 0069), as it is this tick.
         let rules = self.vitals_rules();
         self.players.set_vitals(rules);
         self.players
             .tick_controllers(&mut self.world, &mut self.physics);
-        self.phase_ms[3] += watch.lap_ms();
+        self.lap(3, &mut watch);
         // Pieces pushed are held from contacts while pushed (docs/BUILT_BODIES.md §6).
         let pushes = self.players.pushes().to_vec();
         self.felling.pushed(&mut self.physics, &pushes);
@@ -2267,14 +2326,14 @@ impl Server {
 
         // 4. The falling pieces' hard hits hurt (before the step resolves them), physics, then the
         // pieces at rest settle (docs/FELLING.md §4).
-        self.phase_ms[4] += watch.lap_ms();
+        self.lap(4, &mut watch);
         self.piece_hits();
         // Held bodies whose build platform is gone move (docs/BUILT_BODIES.md §3); bodies in water
         // float (§6).
         self.felling
             .release_unheld(&mut self.world, &mut self.physics);
         self.felling.float(&mut self.world, &mut self.physics);
-        self.phase_ms[5] += watch.lap_ms();
+        self.lap(5, &mut watch);
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));
@@ -2283,24 +2342,27 @@ impl Server {
                 self.after_away_tick(id);
             }
         }
-        self.phase_ms[6] += watch.lap_ms();
+        self.lap(6, &mut watch);
         self.rejoin_apart();
         self.tick += 1;
         self.settle_pieces();
-        self.phase_ms[7] += watch.lap_ms();
+        self.lap(7, &mut watch);
         self.flow_water();
         // Lava flows, cools and quenches (docs/proposals/VOLCANOES.md §6).
         self.flow_lava();
         self.flow_grid_lava();
         self.send_lava_steam();
+        self.lap(8, &mut watch);
         // Trees grow by the world's days (ADR 0079 S3).
         self.grow_trees();
         self.heal_damage();
         // Tall grass grows and spreads by them (ADR 0075 T3c).
         self.grow_grass();
+        self.lap(9, &mut watch);
         // The far ecology steps by them too (docs/ECOLOGY.md §6).
         self.step_ecology();
         self.send_ecology();
+        self.lap(10, &mut watch);
 
         // Loose items fall, are picked up and despawn (ADR 0066); inventories changed are sent.
         self.step_items();
@@ -2308,8 +2370,10 @@ impl Server {
         self.step_creatures();
         self.step_npc_fights();
         self.step_creature_attacks();
+        self.lap(11, &mut watch);
         // Blueprints complete, and their builders build (docs/BLUEPRINTS.md).
         self.step_blueprints();
+        self.lap(12, &mut watch);
 
         // 5. Respawns, then snapshots at SNAPSHOT_HZ.
         for &id in &ids {
@@ -2332,7 +2396,7 @@ impl Server {
             e.position = [p.x, self.feet_y(h), p.z];
             self.broadcast_world(&Message::PlayerEvent(e));
         }
-        self.phase_ms[8] += watch.lap_ms();
+        self.lap(13, &mut watch);
         if self.tick.is_multiple_of(SNAPSHOT_EVERY) {
             self.send_snapshots();
             self.send_vitals();
@@ -2340,7 +2404,7 @@ impl Server {
         if self.tick.is_multiple_of(CURRENTS_EVERY) {
             self.send_currents();
         }
-        self.phase_ms[9] += watch.lap_ms();
+        self.lap(14, &mut watch);
 
         // 6. Terrain streaming, then what to generate next and what to forget. The theater cameras'
         // viewpoints held back by their rate are taken first (THEATER_MODE.md §7).
@@ -2355,13 +2419,13 @@ impl Server {
                 self.stream_grid_chunks(id);
             }
         }
-        self.phase_ms[10] += watch.lap_ms();
+        self.lap(15, &mut watch);
         self.update_worldgen();
-        self.phase_ms[11] += watch.lap_ms();
+        self.lap(16, &mut watch);
 
         // 6b. Level of detail: propagation off the tick, index updates, answers (§6.6).
         self.update_lod();
-        self.phase_ms[12] += watch.lap_ms();
+        self.lap(17, &mut watch);
 
         // 7. Autosave (§6.4): the batch built here; committed by the I/O thread natively, and
         // without one (the browser) encoded a little a tick and committed on a tick of its own.
@@ -2389,10 +2453,10 @@ impl Server {
                 self.collect_saves();
             }
         }
-        self.phase_ms[13] += watch.lap_ms();
+        self.lap(18, &mut watch);
         // 8. What the water is told this tick goes as one batch.
         self.flush_water();
-        self.phase_ms[8] += watch.lap_ms();
+        self.lap(8, &mut watch);
     }
 
     /// What the ticks did since the last call, by name: the terrain collision's chunk builds
@@ -2400,18 +2464,37 @@ impl Server {
     /// (`generatedOnTick`), and the full-cube cells put into or taken out of the terrain collider
     /// (`collisionCells`, a little a tick but those near players and pieces): where a slow
     /// `terrain` phase's time goes (docs/DEV_TOOLS.md).
-    pub fn tick_counts(&mut self) -> [(&'static str, u64); 3] {
+    /// A tick phase's end: its wall time and the chunks it generated on the tick.
+    fn lap(&mut self, k: usize, watch: &mut crate::clock::Stopwatch) {
+        self.phase_ms[k] += watch.lap_ms();
+        let now = self.world.generated_on_access();
+        self.gen_phase[k] += now.saturating_sub(self.gen_mark);
+        self.gen_mark = now;
+    }
+
+    /// What the ticks did since the last call (above), and per phase the chunks it generated on
+    /// the tick (`gen.<phase>`, only those that did).
+    pub fn tick_counts(&mut self) -> Vec<(&'static str, u64)> {
         let now = [
             self.players.terrain().map_or(0, |t| t.loads()),
             self.world.generated_on_access(),
             self.players.terrain().map_or(0, |t| t.cells()),
         ];
         let before = std::mem::replace(&mut self.counts_at, now);
-        [
+        let mut out = vec![
             ("collisionBuilds", now[0].saturating_sub(before[0])),
             ("generatedOnTick", now[1].saturating_sub(before[1])),
             ("collisionCells", now[2].saturating_sub(before[2])),
-        ]
+        ];
+        let by_phase = std::mem::take(&mut self.gen_phase);
+        out.extend(
+            GEN_PHASES
+                .iter()
+                .zip(by_phase)
+                .filter(|(_, n)| *n > 0)
+                .map(|(name, n)| (*name, n)),
+        );
+        out
     }
 
     /// Each tick phase's wall time (ms, natively; zeros on wasm32) summed since the last call,
@@ -2452,9 +2535,15 @@ impl Server {
             .filter_map(|s| self.view_center(s))
             .collect();
         centers.extend(self.viewpoint_centers());
-        // Around players first (collision needs them), then chunks full-mode clients wait for.
+        // The chunks the players' collision waits for first (priority 0: else they were generated
+        // on the tick), then around players, then chunks full-mode clients wait for.
         // Saved chunks are read from the world file instead (a few per tick).
-        let mut wanted = Vec::new();
+        let mut wanted: Vec<ChunkCoord> = self
+            .players
+            .take_terrain_wanting()
+            .into_iter()
+            .filter(|&c| self.world.find(c).is_none() && !self.is_saved(c))
+            .collect();
         let mut loads = 0;
         for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
@@ -2525,6 +2614,12 @@ impl Server {
                 }
             }
         }
+        // Last, the pristine copies the growth steps wait for.
+        wanted.extend(
+            self.pristine_wanted
+                .iter()
+                .filter(|c| !self.pristine.contains_key(c)),
+        );
         self.worldgen.set_wanted(&wanted);
         // Inline (no thread or worker): the sky floors wanted this tick, within a budget.
         if let Some(sky) = &mut self.sky {

@@ -8,7 +8,7 @@
 //! Face-local inside: a tree is grown face-local and crossed into the world through its record's
 //! `FaceFrame` (`cell`, `state`), so face B's trees grow as face A's mirrored.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use dwell_blocks::StateId;
@@ -231,12 +231,60 @@ pub struct Step {
     pub chunks: Vec<ChunkCoord>,
 }
 
+/// The grown structures kept (species, seed, stage → its structure): growing one costs up to
+/// ~3 ms natively, a step needs two, and the server spreads them over its ticks (priority 0:
+/// the owner's "the server never drops below 60fps"), so it builds each once (`warm`).
+type Grown = std::sync::Arc<dwell_world::structure::Structure>;
+type GrownKept = std::sync::Mutex<Option<HashMap<(u16, u32, u8), Grown>>>;
+static GROWN: GrownKept = std::sync::Mutex::new(None);
+/// The most grown structures kept.
+const GROWN_KEPT: usize = 256;
+
+/// The record's species grown to `stage` (from the cache, else grown and kept).
+fn grown(r: &Record, stage: u8) -> Option<Grown> {
+    let key = (r.species, r.seed, stage);
+    if let Some(g) = GROWN
+        .lock()
+        .ok()?
+        .as_ref()
+        .and_then(|m| m.get(&key).cloned())
+    {
+        return Some(g);
+    }
+    let s = SPECIES.get(usize::from(r.species))?;
+    let g = std::sync::Arc::new(
+        species::grow(s, r.seed, u32::from(stage))
+            .structure(s, 0)
+            .ok()?,
+    );
+    let mut m = GROWN.lock().ok()?;
+    let m = m.get_or_insert_with(HashMap::new);
+    if m.len() >= GROWN_KEPT {
+        m.clear();
+    }
+    m.insert(key, g.clone());
+    Some(g)
+}
+
+/// Grows the record's stage `stage` into the cache if it isn't there; true if it grew it now (the
+/// costly call: the server does one a tick, then the step, `step`, finds both its stages kept).
+pub fn warm(r: &Record, stage: u8) -> bool {
+    let key = (r.species, r.seed, stage);
+    let kept = GROWN
+        .lock()
+        .ok()
+        .and_then(|m| m.as_ref().map(|m| m.contains_key(&key)))
+        .unwrap_or(false);
+    if kept {
+        return false;
+    }
+    grown(r, stage);
+    true
+}
+
 /// A tree's stage placed face-local at its local anchor, its variant's swaps made.
 fn placed(r: &Record, stage: u8, swaps: &[(StateId, StateId)]) -> Option<Placed> {
-    let s = SPECIES.get(usize::from(r.species))?;
-    let structure = species::grow(s, r.seed, u32::from(stage))
-        .structure(s, 0)
-        .ok()?;
+    let structure = grown(r, stage)?;
     let f = FaceFrame { face: r.face };
     let mut p = structure.place_oriented(
         f.cell(r.anchor),
@@ -315,38 +363,33 @@ pub fn step(
         .filter(|c| !was_base.contains(c))
         .collect();
     let trunk_growth = |p: [i32; 3]| widened.contains(&(p[0], p[2])) && old.at(p).is_none();
-    for y in lo[1]..=hi[1] {
-        for z in lo[2]..=hi[2] {
-            for x in lo[0]..=hi[0] {
-                let p = [x, y, z];
-                if !trunk_growth(p) || new.at(p).is_none() {
-                    continue;
-                }
-                let w = f.cell(p);
-                let here = read(w);
-                if here != air && here != generated(w) {
-                    out.blocked = true;
-                    return out;
-                }
-            }
+    // Only the cells either stage holds, in (y, z, x) order (a giant's box is ~400k cells, its
+    // tree a few thousand: walking the box cost ~5 ms a step on the tick, priority 0).
+    let mut cells: Vec<[i32; 3]> = old.cells().chain(new.cells()).map(|(c, _)| c).collect();
+    cells.sort_unstable_by_key(|c| (c[1], c[2], c[0]));
+    cells.dedup();
+    for &p in &cells {
+        if !trunk_growth(p) || new.at(p).is_none() {
+            continue;
+        }
+        let w = f.cell(p);
+        let here = read(w);
+        if here != air && here != generated(w) {
+            out.blocked = true;
+            return out;
         }
     }
-    for y in lo[1]..=hi[1] {
-        for z in lo[2]..=hi[2] {
-            for x in lo[0]..=hi[0] {
-                let p = [x, y, z];
-                let (was, now) = (old.at(p), new.at(p));
-                if was == now {
-                    continue;
-                }
-                let w = f.cell(p);
-                let expect = was.map_or(air, |m| f.state(m));
-                if read(w) != expect && !(trunk_growth(p) && now.is_some()) {
-                    continue; // edited (or grown into): the world's wins
-                }
-                out.writes.push((w, now.map_or(air, |m| f.state(m))));
-            }
+    for &p in &cells {
+        let (was, now) = (old.at(p), new.at(p));
+        if was == now {
+            continue;
         }
+        let w = f.cell(p);
+        let expect = was.map_or(air, |m| f.state(m));
+        if read(w) != expect && !(trunk_growth(p) && now.is_some()) {
+            continue; // edited (or grown into): the world's wins
+        }
+        out.writes.push((w, now.map_or(air, |m| f.state(m))));
     }
     out
 }
@@ -361,6 +404,19 @@ impl Growers {
     pub fn for_generator(version: u32, world_seed: u64) -> Option<Arc<Self>> {
         let terrain = BifacialTerrain::for_generator(version, world_seed)?;
         Self::of(terrain)
+    }
+
+    /// The growers of a terrain already built (shared with the grass's: building one costs
+    /// ~0.2 s natively, so the server builds it once, before play), if it places species trees.
+    pub fn of_shared(terrain: Arc<BifacialTerrain>) -> Option<Arc<Self>> {
+        let any = [Face::A, Face::B].into_iter().any(|f| {
+            terrain
+                .local(f)
+                .planters()
+                .iter()
+                .any(|p| p.active() && p.grows())
+        });
+        any.then(|| Arc::new(Self { terrain }))
     }
 
     /// The growers of a terrain, if either face has an active planter of species trees.
