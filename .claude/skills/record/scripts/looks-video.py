@@ -3,7 +3,10 @@
 newest, kept where the look changed, spliced into one portrait video on a speed curve.
 
   python3 looks-video.py --out video.mp4 [--min-diff 1.0] [--first 0.35] [--last 2.5] [--hold 3]
-                         [--fade 0.3] [--sheet sheet.png] DIR [DIR ...]
+                         [--fade 0.3] [--sheet sheet.png] DIR [DIR ...] [--set DIR[,DIR] ...]
+
+Several `--set`s play back to back (owner, 2026-11-16: "both sets of screenshots back to back. A 2 second pause
+on the last shot of each"): each set is chosen and eased on its own, its last still held `--hold` seconds.
 
 Each DIR holds `<version>-<view>.png`; every PNG is ordered by its version. A still is kept when its mean
 difference from the last kept one (grey, at 270×480) is at least `--min-diff`; the newest is always kept.
@@ -15,7 +18,6 @@ import argparse
 import glob
 import os
 import subprocess
-import tempfile
 
 from PIL import Image, ImageChops, ImageDraw, ImageStat
 
@@ -27,7 +29,8 @@ def version_key(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('dirs', nargs='+')
+    ap.add_argument('dirs', nargs='*')
+    ap.add_argument('--set', action='append', default=[])
     ap.add_argument('--out', required=True)
     ap.add_argument('--min-diff', type=float, default=1.0)
     ap.add_argument('--first', type=float, default=0.35)
@@ -38,15 +41,23 @@ def main():
     ap.add_argument('--sheet')
     a = ap.parse_args()
     w, h = (int(x) for x in a.size.split('x'))
-    stills = sorted({p for d in a.dirs for p in glob.glob(os.path.join(d, '*.png'))}, key=version_key)
-    kept, last = [], None
-    for i, p in enumerate(stills):
-        small = Image.open(p).convert('L').resize((270, 480))
-        diff = 1e9 if last is None else ImageStat.Stat(ImageChops.difference(small, last)).mean[0]
-        if diff >= a.min_diff or i == len(stills) - 1:
-            kept.append(p)
-            last = small
-    print(f'{len(kept)} of {len(stills)} stills kept:', ' '.join(os.path.basename(p).split('-')[0] for p in kept))
+    sets = [d.split(',') for d in a.set] + ([a.dirs] if a.dirs else [])
+    kept, durations = [], []
+    for dirs in sets:
+        stills = sorted({p for d in dirs for p in glob.glob(os.path.join(d, '*.png'))}, key=version_key)
+        these, last = [], None
+        for i, p in enumerate(stills):
+            small = Image.open(p).convert('L').resize((270, 480))
+            diff = 1e9 if last is None else ImageStat.Stat(ImageChops.difference(small, last)).mean[0]
+            if diff >= a.min_diff or i == len(stills) - 1:
+                these.append(p)
+                last = small
+        print(f'{len(these)} of {len(stills)} stills kept:', ' '.join(os.path.basename(p).split('-')[0] for p in these))
+        n = len(these)
+        for i in range(n):
+            t = i / max(1, n - 1)
+            durations.append(a.first + (a.last - a.first) * t * t + (a.hold if i == n - 1 else 0))
+        kept += these
     if a.sheet:
         cols = 6
         rows = (len(kept) + cols - 1) // cols
@@ -59,11 +70,6 @@ def main():
         sheet.save(a.sheet)
         print('sheet', a.sheet)
     n = len(kept)
-    durations = []
-    for i in range(n):
-        t = i / max(1, n - 1)
-        durations.append(a.first + (a.last - a.first) * t * t)
-    durations[-1] += a.hold
     # One ffmpeg pass: each still a looped input of its duration (plus the fade), chained with xfade.
     cmd = ['ffmpeg', '-y', '-loglevel', 'error']
     for p, d in zip(kept, durations):
