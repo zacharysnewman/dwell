@@ -34,7 +34,9 @@ Last updated: 2026-11-11 (0.52.108).
   (1) built: every ½ m cell of stone, dirt, grass, sand and log drops 4 pieces, all on the break (`hit_share` 0),
   and the piece → block recipes take 4 (stone, dirt, sand, log, planks, stone brick; thatch and tools unchanged).
   Owner should see: 4 chunks pop out when a block breaks, none while chopping; 4 make a block. (2) healing, with the
-  owner's decisions below: next.
+  owner's decisions below: built (2026-11-15): `breaking.heal` (10 s delay, whole over 30 s, each player's last 3
+  kept), on the server's ticks whether the chunk is loaded or not (BLOCK_DAMAGE.md §9a). Owner should see: a block
+  you leave alone (and 3 newer ones hit) heals back over half a minute.
 - **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
   starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
   healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the

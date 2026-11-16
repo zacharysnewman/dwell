@@ -314,6 +314,9 @@ impl Server {
             ..dwell_protocol::damage::HitMark::at(face, p)
         };
         let k = self.damage.hit(cell, m, n as u16, mark);
+        if u32::from(k) < n {
+            self.note_hit(id, cell);
+        }
         let centre = dwell_world::centre_of_cell(cell);
         if u32::from(k) < n {
             self.send_damage(&[cell], Vec::new());

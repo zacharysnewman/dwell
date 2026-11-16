@@ -247,6 +247,7 @@
     "hand": {
       "repeatOnHold": true,
       "repeatS": 0.4
-    }
+    },
+    "heal": { "delayS": 10, "fullS": 30, "keepLast": 3 }
   }
 }

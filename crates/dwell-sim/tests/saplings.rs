@@ -144,8 +144,8 @@ dwell_world::both_faces!(
             );
             // After daysPerStage × n days (over its own pace, owner 2026-11-15) it is stage n.
             let sp = &SPECIES[usize::from(r.species)];
-            let per = f64::from(sp.days_per_stage)
-                / f64::from(dwell_worldgen::species::rate(sp, r.seed));
+            let per =
+                f64::from(sp.days_per_stage) / f64::from(dwell_worldgen::species::rate(sp, r.seed));
             let n = 3u8;
             while fx.server.world_days() < r.since + per * f64::from(n) {
                 fx.server.step();
