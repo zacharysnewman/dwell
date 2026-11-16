@@ -21,6 +21,12 @@ Last updated: 2026-11-11 (0.52.108).
   roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
   0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
   houses built as his house.
+- **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
+  starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
+  healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the
+  4th block you hit lets the 1st start healing after ~10 s. (2) "Bloom stays on on high for now." (3) "The native app
+  should be electron wrapper for now." (4) "Immediately after the tree task you're working on, fix this rendering bug,
+  where chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it" (BUGS.md #187).
 - **Owner, 2026-11-15 (queued, new feature):** "Side question, do we have a native build that doesn't run in browser
   but in a bundled app?" then "Yeah lets queue up the real native app" — today: the Electron shell
   (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev
