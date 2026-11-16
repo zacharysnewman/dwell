@@ -51,8 +51,8 @@ fn modifications(messages: &[Message]) -> Vec<VoxelModification> {
 #[test]
 fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
     // Tall grass needs support (block data `placeOn`, `needsSupport`): a 3 × 3 × 3 fill on the
-    // flat world's grass keeps the bottom layer; the layers above (standing on tall grass) and the
-    // cells over a stone block go, in the same modification. Clearing the ground takes the rest.
+    // flat world's grass stands (tall grass on tall grass, a 2 m stand's rows), the cells over a
+    // stone block go, in the same modification. Clearing the ground takes the rest.
     let tall = dwell_blocks::require("dwell:tall_grass");
     let mut f = Fixture::new(flat());
     join_streaming(&mut f, 1);
@@ -65,16 +65,24 @@ fn a_fill_of_tall_grass_keeps_only_the_plants_that_stand_on_grass() {
     }
     f.send(1, fill([-2, G, 2], [3, 3, 3], tall));
     f.server.step();
+    // Since 2 m grass (owner, 2026-11-14: four ½ m rows) tall grass stands on tall grass: the
+    // three layers stand where the bottom one has grass under it; over the stone, none.
+    let is_tall = |m: u16| dwell_blocks::block_of(m).name == "dwell:tall_grass";
     for x in -2..1 {
         for z in 2..5 {
-            let want = if [x, z] == [-2, 3] { M.air } else { tall };
-            assert_eq!(f.server.world().get_voxel(x, G, z), want, "{x} 0 {z}");
+            let over_stone = [x, z] == [-2, 3];
+            assert_eq!(
+                f.server.world().get_voxel(x, G, z) == tall,
+                !over_stone,
+                "{x} 0 {z}"
+            );
             for y in 1..3 {
-                assert_eq!(
-                    f.server.world().get_voxel(x, y + G, z),
-                    M.air,
-                    "{x} {y} {z}"
-                );
+                let m = f.server.world().get_voxel(x, y + G, z);
+                if over_stone {
+                    assert_eq!(m, M.air, "{x} {y} {z}");
+                } else {
+                    assert!(is_tall(m), "{x} {y} {z}: the stand");
+                }
             }
         }
     }
