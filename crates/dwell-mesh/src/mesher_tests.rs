@@ -1475,7 +1475,12 @@ dwell_world::both_faces!(
                 ("transparent", a.transparent, b.transparent),
                 ("cutout", a.cutout, b.cutout),
             ] {
-                let mb = local_mesh(f, mb);
+                let mut mb = local_mesh(f, mb);
+                // The opaque mesh is grouped by world facing (`group_by_facing`): face B's tops
+                // face −y. Grouped face-locally (each group's order kept) it is face A's.
+                if name == "opaque" {
+                    group_by_facing(&mut mb);
+                }
                 for (field, x, y) in [
                     ("positions", &mb.positions, &ma.positions),
                     ("normals", &mb.normals, &ma.normals),
@@ -3531,6 +3536,163 @@ dwell_world::both_faces!(
                     q[2] < 8.0 + chamfer + 1e-4 || q[2] > 9.0 - chamfer - 1e-4,
                     "a leaf point on the bark: {q:?}"
                 );
+            }
+        }
+    }
+);
+
+/// Hilly ground for the facing tests: grass over stone in steps (natural ramps on their edges),
+/// a stone pillar with an overhang (faces of every direction) and an air pocket.
+fn hilly_chunk() -> Vec<u16> {
+    let mut cells = Vec::new();
+    for x in -1..33 {
+        for z in -1..33 {
+            let top = 6 + (x / 5 + z / 7) % 5;
+            for y in 0..top {
+                cells.push((x, y, z, stone()));
+            }
+            cells.push((x, top, z, grass()));
+        }
+    }
+    for y in 10..20 {
+        cells.push((16, y, 16, cube_block()));
+    }
+    for x in 14..19 {
+        cells.push((x, 20, 16, cube_block()));
+    }
+    voxels(&cells)
+}
+
+dwell_world::both_faces!(
+    /// The perf pass (owner, 2026-11-15: "Can we improve the core drawing?"): a chunk's opaque
+    /// mesh comes ordered by facing group, and each group's triangles face its axis (or none, the
+    /// other group), every triangle in exactly one range.
+    fn the_opaque_mesh_is_ordered_by_facing_group(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        assert_eq!(ranges[0].start, 0);
+        assert_eq!(ranges[FACING_GROUPS - 1].end as usize, m.indices.len());
+        for (g, r) in ranges.iter().enumerate() {
+            if g > 0 {
+                assert_eq!(ranges[g - 1].end, r.start);
+            }
+            for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                assert_eq!(facing_of(&m, tri), g);
+            }
+        }
+        // Hills have faces of every axis direction (bar the buried −Y but for the overhang).
+        for g in 0..6 {
+            assert!(!ranges[g].is_empty(), "group {g} empty: {ranges:?}");
+        }
+        eprintln!(
+            "facing groups: {:?}",
+            ranges.iter().map(|r| r.len() / 3).collect::<Vec<_>>()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// No triangle that faces an eye is left out by the eye's facing mask, from eyes all round
+    /// the chunk, in it and far off (red: a mask dropping a group that shows).
+    fn the_facing_mask_keeps_every_triangle_that_faces_the_eye(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        let extent = dwell_world::CHUNK_EXTENT_M;
+        let p = |i: u32| -> [f64; 3] {
+            std::array::from_fn(|k| f64::from(m.positions[i as usize * 3 + k]))
+        };
+        let (mut kept, mut cut) = (0, 0);
+        for ex in [-40.0, -0.01, 0.3, 8.0, 15.9, 16.2, 60.0] {
+            for ey in [-30.0, 1.0, 5.0, 9.0, 20.0, 80.0] {
+                for ez in [-25.0, 0.2, 7.7, 16.1, 50.0] {
+                    let eye = [ex, ey * extent[1] / 16.0, ez];
+                    let mask = facing_mask(eye, extent, 0.0);
+                    for (g, r) in ranges.iter().enumerate() {
+                        for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                            let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+                            let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                            let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+                            let n = [
+                                u[1] * v[2] - u[2] * v[1],
+                                u[2] * v[0] - u[0] * v[2],
+                                u[0] * v[1] - u[1] * v[0],
+                            ];
+                            let to_eye = (0..3).map(|k| n[k] * (eye[k] - a[k])).sum::<f64>();
+                            let drawn = mask & (1 << g) != 0;
+                            if to_eye > 1e-9 {
+                                assert!(drawn, "group {g} faces {eye:?} but is masked out");
+                            }
+                            if drawn { kept += 1 } else { cut += 1 }
+                        }
+                    }
+                }
+            }
+        }
+        // And the mask does skip a share (most of these eyes are above or level with the ground,
+        // whose tops always show).
+        assert!(cut * 10 > kept, "skipped {cut} of {}", kept + cut);
+    }
+);
+
+#[test]
+fn a_mesh_out_of_facing_order_draws_whole_as_the_other_group() {
+    // face-a-only: about the ranges of an unordered index list, not the faces.
+    let mut m = super::mesh_chunk(&hilly_chunk(), false).unwrap().opaque;
+    m.indices.reverse();
+    let ranges = facing_ranges(&m);
+    assert_eq!(ranges[FACING_OTHER], 0..m.indices.len() as u32);
+    assert!(ranges.iter().take(FACING_OTHER).all(|r| r.is_empty()));
+}
+
+#[test]
+fn the_facing_mask_is_everything_inside_the_chunk_and_three_axes_far_off() {
+    // face-a-only: the mask is world-axis arithmetic on the eye, the same on either face.
+    let e = dwell_world::CHUNK_EXTENT_M;
+    assert_eq!(facing_mask([8.0, 4.0, 8.0], e, 0.0), 0x7f);
+    // Far off +X, +Y, +Z of it: only the +X, +Y and +Z faces (and the others) can show.
+    assert_eq!(
+        facing_mask([100.0, 100.0, 100.0], e, 0.0),
+        0b100_0000 | 0b01_0101
+    );
+    assert_eq!(
+        facing_mask([-100.0, -100.0, -100.0], e, 0.0),
+        0b100_0000 | 0b10_1010
+    );
+}
+
+dwell_world::both_faces!(
+    /// The sun's shadow maps cast only the facing groups facing the light: every triangle facing
+    /// it is kept, for lights all round (red: a group facing the light masked out).
+    fn the_light_mask_keeps_every_triangle_facing_the_light(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        let p = |i: u32| -> [f64; 3] {
+            std::array::from_fn(|k| f64::from(m.positions[i as usize * 3 + k]))
+        };
+        for toward in [
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.6, 0.8, 0.0],
+            [-0.3, 0.9, 0.3],
+            [0.5, -0.5, -0.7071],
+            [1.0, 0.0, 0.0],
+        ] {
+            let mask = facing_mask_toward(toward);
+            assert!(mask.count_ones() <= 5, "{toward:?} keeps {mask:b}");
+            for (g, r) in ranges.iter().enumerate() {
+                for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                    let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+                    let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+                    let n = [
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0],
+                    ];
+                    if (0..3).map(|k| n[k] * toward[k]).sum::<f64>() > 1e-9 {
+                        assert!(mask & (1 << g) != 0, "group {g} faces {toward:?}");
+                    }
+                }
             }
         }
     }

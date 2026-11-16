@@ -2492,6 +2492,16 @@ impl Client {
             .borrow_mut()
             .set_heightfield_override(on);
     }
+    /// Whether chunks skip their faces turned away from the camera (on; off only to compare, the
+    /// bench's `view` `facing`; docs/DEV_TOOLS.md).
+    #[wasm_bindgen(js_name = setFacingCull)]
+    pub fn set_facing_cull(&self, on: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_facing_cull(on);
+    }
     /// Forces the leaf cards on (1) or off (0), or back to the tier's (any other value): `?cards=`,
     /// a dev tool (docs/DEV_TOOLS.md). Chunks meshed after it follow it, so it is set before the
     /// world streams in.

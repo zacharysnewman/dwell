@@ -1098,6 +1098,33 @@ struct Chunk {
     cutout: Option<GpuMesh>,
 }
 
+/// How far outside its chunk's box an opaque vertex may lie (m) for the facing test
+/// (`dwell_mesh::facing_mask`): ground items and damaged faces stand a little proud of it.
+const FACING_MARGIN_M: f64 = 1.0;
+
+/// The index ranges drawing the facing groups in `mask` of a chunk's opaque mesh (its `parts`:
+/// [0] all, [1 + g] group g), neighbours merged into one draw; the whole mesh when every group
+/// is in, or when the mesh has no groups.
+fn facing_draws(parts: &[std::ops::Range<u32>], mask: u8) -> Vec<std::ops::Range<u32>> {
+    let groups = parts.get(1..);
+    let all = (1u8 << dwell_mesh::FACING_GROUPS) - 1;
+    let Some(groups) = groups.filter(|g| g.len() == dwell_mesh::FACING_GROUPS && mask & all != all)
+    else {
+        return vec![parts[0].clone()];
+    };
+    let mut out: Vec<std::ops::Range<u32>> = Vec::new();
+    for (g, r) in groups.iter().enumerate() {
+        if mask & (1 << g) == 0 || r.is_empty() {
+            continue;
+        }
+        match out.last_mut() {
+            Some(last) if last.end == r.start => last.end = r.end,
+            _ => out.push(r.clone()),
+        }
+    }
+    out
+}
+
 /// Which of a chunk's meshes a draw is (one per render mode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Part {
@@ -1109,6 +1136,9 @@ enum Part {
     /// The cutout mesh's trees' leaves alone (the shadow casters past `plantCascades`, which
     /// plants don't cast into and leaves do: BUGS.md #156).
     Leaves,
+    /// The opaque mesh's facing groups in the mask (`dwell_mesh::facing_mask`): the ones that can
+    /// face the camera; the rest would be culled after their vertices were shaded.
+    Facing(u8),
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -1216,12 +1246,17 @@ impl TerrainRenderer for RasterTerrain {
                 .push(0..dwell_mesh::tree_leaves_from(&m.cutout) as u32);
             g
         });
+        // Its parts: [0] all, [1 + g] facing group g (`Part::Facing`).
         let opaque = GpuMesh::textured_staged(
             &self.arena,
             &m.opaque,
             Kind::Terrain,
             stage.then_some(&mut writes),
-        );
+        )
+        .map(|mut g| {
+            g.parts.extend(dwell_mesh::facing_ranges(&m.opaque));
+            g
+        });
         let water = GpuMesh::fluid(
             &self.arena,
             &t.positions,
@@ -1772,6 +1807,8 @@ pub struct Renderer {
     plant_wind: f64,
     /// Whether the cutout meshes (ladders, plants) are drawn (the bench's A/B of their cost).
     cutout_shown: bool,
+    /// Chunks skip their faces turned away from the camera (`set_facing_cull`).
+    facing_cull: bool,
     /// The falling pieces shown this frame (`show_pieces`).
     piece_poses: Vec<(u32, V3, [f32; 4])>,
     eye: V3,
@@ -2685,6 +2722,7 @@ impl Renderer {
             arena,
             plant_wind: 1.0,
             cutout_shown: true,
+            facing_cull: true,
             piece_poses: Vec::new(),
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
@@ -3005,6 +3043,10 @@ impl Renderer {
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
     /// Draws the cutout meshes or not (dev tools: `__dwell.plants`, measuring what they cost).
+    /// Whether chunks skip their faces turned away from the camera (`Part::Facing`; off to compare).
+    pub fn set_facing_cull(&mut self, on: bool) {
+        self.facing_cull = on;
+    }
     pub fn set_cutout_shown(&mut self, shown: bool) {
         self.cutout_shown = shown;
     }
@@ -4075,12 +4117,15 @@ impl Renderer {
             DrawMesh::Chunk(c, part) => {
                 let chunk = &self.terrain.chunks[c];
                 let m = match part {
-                    Part::Opaque => chunk.opaque.as_ref(),
+                    Part::Opaque | Part::Facing(_) => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
                     Part::Cutout | Part::Plants | Part::Leaves => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
-                (m, vec![m.part(*part)])
+                match part {
+                    Part::Facing(mask) => (m, facing_draws(&m.parts, *mask)),
+                    _ => (m, vec![m.part(*part)]),
+                }
             }
             DrawMesh::Section(id, w, mask) => {
                 let s = &self.terrain.sections[id];
@@ -4156,6 +4201,16 @@ impl Renderer {
             let r = self.rel(c.origin);
             let offset = [r[0], r[1], r[2], 1.0];
             if c.opaque.is_some() {
+                // Only the facing groups that can face the eye (the eye from the chunk's corner).
+                let facing = if self.facing_cull {
+                    dwell_mesh::facing_mask(
+                        std::array::from_fn(|k| self.eye[k] - c.origin[k]),
+                        CHUNK_EXTENT_M,
+                        FACING_MARGIN_M,
+                    )
+                } else {
+                    u8::MAX
+                };
                 out.push(DrawItem {
                     kind: Kind::Terrain,
                     water: false,
@@ -4169,7 +4224,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, Part::Opaque),
+                    mesh: DrawMesh::Chunk(coord, Part::Facing(facing)),
                 });
             }
             // The chunk's nearest point from the eye, for the far trees' hand-over.
@@ -4723,7 +4778,7 @@ impl Renderer {
         let shadow_plan = self.shadow_plan();
         let candidates = shadow_plan
             .as_ref()
-            .map(|_| self.shadow_candidates(chunk_fade))
+            .map(|p| self.shadow_candidates(chunk_fade, Some(p.caster.dir)))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
             let moving = moving_casters(
@@ -5586,7 +5641,17 @@ impl Renderer {
     /// plants, LOD sections and stand-ins (their skirts as shown), each with its box and an
     /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
     /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
-    fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
+    ///
+    /// With `toward` (the directional light's direction, toward it), chunks cast only their facing
+    /// groups that face it (`dwell_mesh::facing_mask_toward`); without it (torches) all of them.
+    fn shadow_candidates(
+        &self,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+        toward: Option<[f64; 3]>,
+    ) -> Vec<Candidate> {
+        let facing = toward
+            .filter(|_| self.facing_cull)
+            .map_or(u8::MAX, dwell_mesh::facing_mask_toward);
         use shadows::CasterKind::Solid;
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
@@ -5638,8 +5703,13 @@ impl Renderer {
                 ^ shadows::mix(coord.y as u64).rotate_left(21)
                 ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
-                let mesh = DrawMesh::Chunk(coord, Part::Opaque);
-                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag, Solid);
+                let mesh = DrawMesh::Chunk(coord, Part::Facing(facing));
+                push(
+                    item(Kind::Terrain, offset, None, fade, mesh),
+                    b,
+                    tag ^ u64::from(facing) << 8,
+                    Solid,
+                );
             }
             // The plants and the trees' leaves apart: plants cast into the nearest
             // `plantCascades`, leaves into every cascade (BUGS.md #156: past those a crown cast
@@ -6074,7 +6144,7 @@ impl Renderer {
             };
         }
         let candidates: Vec<Candidate> = self
-            .shadow_candidates(chunk_fade)
+            .shadow_candidates(chunk_fade, None)
             .into_iter()
             .filter(|c| c.draw.kind == Kind::Terrain && c.draw.fade == 0.0)
             .collect();
@@ -7007,6 +7077,21 @@ impl crate::game::Scene for Renderer {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_chunk_draws_its_facing_groups_with_neighbours_merged() {
+        // face-a-only: index ranges, no up or down.
+        // [0] all, then +X 0..6, −X 6..9, +Y 9..30, −Y none, +Z 30..36, −Z 36..42, other 42..45.
+        let parts = vec![0..45, 0..6, 6..9, 9..30, 30..30, 30..36, 36..42, 42..45];
+        // +X, +Y, +Z and the other: +Y and +Z are neighbours (−Y between them is empty).
+        assert_eq!(
+            super::facing_draws(&parts, 0b101_0101),
+            vec![0..6, 9..36, 42..45]
+        );
+        // Everything, or a mesh without groups: one draw of it all.
+        assert_eq!(super::facing_draws(&parts, u8::MAX), vec![0..45]);
+        assert_eq!(super::facing_draws(&parts[..1], 0b100_0000), vec![0..45]);
+    }
 
     #[test]
     fn interleave_puts_each_vertex_streams_in_order() {

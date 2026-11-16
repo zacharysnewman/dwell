@@ -111,6 +111,8 @@ export type Step =
       torchShadows?: 'off' | 'low' | 'high';
       cards?: boolean;
       grass?: boolean;
+      /** Chunks skip their faces turned away from the camera (on by default; off to compare). */
+      facing?: boolean;
       renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
@@ -473,6 +475,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'ssaoStrength',
     'cards',
     'grass',
+    'facing',
     'renderScale',
     'torchShadows',
   ],
@@ -639,6 +642,7 @@ export function parseStep(where: string, v: unknown): Step {
         ),
         ...opt('torchShadows', tier('torchShadows')),
         ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
+        ...opt('facing', o.facing === undefined ? undefined : bool(at('facing'), o.facing)),
         ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
         ...opt(
           'renderScale',
