@@ -88,7 +88,7 @@
         "shafts": "high",
         "bloom": "high",
         "ssao": "low",
-        "clouds": "medium",
+        "clouds": "low",
         "leafCards": "on",
         "tallGrass": 1,
         "farTrees": "on",
