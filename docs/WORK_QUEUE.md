@@ -30,6 +30,19 @@ Last updated: 2026-11-11 (0.52.108).
   the time, hides the HUD, waits for the view to settle and saves a PNG (~45 s a build). Older lines (0.55–0.58)
   are retired from the site: their builds would come from GitHub Releases. Proposed to the owner: straight down from
   90 km (the whole disc), midday.
+  Owner: "Yeah straight down at midday looks good.", "We'd want to use the same seed too.", "I want before realistic
+  terrain too.", "Perhaps we could another set from the coast." and, on old builds' camera, "You could always inject a
+  helper script". The tool now downloads any release's built site from GitHub (`--source github`, cached) and serves
+  it on :4180; `--world default` shoots the default terrain (the builds before Realistic); views may be relative to
+  the spawn (`fromSpawn`). `placeCamera` exists from 0.10.1 (only 0.10.0 lacks it: the same terrain), so no helper
+  is needed. A whole island shows from 90 km from 0.15 on. Hosted Realistic builds differ visibly from 90 km at 0.64,
+  0.65, 0.68 and 0.69 (0.60–0.63, 0.66–0.67 and 0.70 look the same). Open: a coastal camera per era (the default
+  generator's island and Realistic's lie differently).
+  Owner: "Let me know when you finish all the shots? I'd like to compile them into a video, both sets of screenshots
+  back to back. A 2 second pause on the last shot of each." and "1 second on each screenshot." The cut:
+  `looks-video.py --first 1 --last 1 --hold 1 --set <default 0.10–0.58> --set <Realistic 0.55–0.71>` (the versions
+  whose look changed, 1 s each, each set's last 2 s). **Owner should see:** one 9:16 video, the default island's
+  looks then Realistic's, 1 s a version, a 2 s hold at the end of each set.
 - **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
   queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
   stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md

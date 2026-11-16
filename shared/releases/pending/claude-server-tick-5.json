@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Growing trees no longer cause hitches in local worlds: their growth is worked out in the background."
-  ]
-}
