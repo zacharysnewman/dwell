@@ -21,6 +21,10 @@ Last updated: 2026-11-11 (0.52.108).
   roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
   0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
   houses built as his house.
+- **Found 2026-11-15 (CI):** main's end-to-end shards have failed since at least #985 (before the tree and damage
+  work): `characters.spec` 142, `edit.spec` 204 and 281, `join.spec` 55, `terrainDraw.spec` 22, `touch.spec` 283
+  (the phone region bar), besides the known `buildDrag`, `settings` and `spawn` ones (CLAUDE.md "Known CI
+  failures"). Not yet looked into; to run locally on the GPU config. Owner should see: CI green.
 - **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
   starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
   healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the
