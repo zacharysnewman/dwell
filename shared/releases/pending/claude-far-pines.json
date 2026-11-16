@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Fixed bare tree trunks (\"sticks\") at a distance: the hand-built pines now turn into far-tree billboards like every other tree, instead of losing their leaves.",
+    "Leaves no generated tree owns (ones you place) no longer vanish past ~55 m."
+  ]
+}

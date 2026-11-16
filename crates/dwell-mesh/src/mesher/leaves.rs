@@ -546,7 +546,8 @@ pub(super) fn leaf_voxel(
     for piece in list {
         emit(b, cells, crowns, k, (cell, ex), &piece, tint);
     }
-    if k.style.render == dwell_blocks::RenderMode::Cutout {
+    // Only a listed tree's leaves hand over to its impostor (BUGS.md #186).
+    if k.style.render == dwell_blocks::RenderMode::Cutout && cells.tree_owned(cell) {
         mark_tree_leaves(b, first);
     }
     if with_cards && k.style.render == dwell_blocks::RenderMode::Cutout {

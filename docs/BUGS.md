@@ -6,6 +6,26 @@ pins it.
 
 ## Open
 
+### 186. Bare trunks ("sticks") with no crown at middle distance
+
+Owner, 2026-11-15, on the bench's mixed-forest shot: "I do see a bug in that screenshot but it's probably not new,
+there's some \"sticks\" trees without leaves. Likely the billboard not rendering." And: "Also, why do we have
+\"sticks\" shouldn't we have billboards of the logs too?" Not new: the same trunks show in 0.70.21's shot of the
+spot (bench `high-mixed`, `test:starter` seed 0, `starter:mixed-forest`), up the hill ~30–80 m away, with leafy trees
+between them. Suspect: the far trees' hand-over: past it a chunk draws its plants without its trees' leaves
+(`impostors::cutout_draw`), and the tree's impostor should draw the crown; where it doesn't (a tree the impostors
+don't hold, or the chunk's distance and the tree's disagreeing about the hand-over) only the trunk is left. Owner should
+see: no bare trunks; a far tree is one billboard, trunk and crown together.
+
+Cause (found 2026-11-15): the bare trunks were the `pine_groves` placement's hand-built pines (`dwell:pine_tree`,
+`dwell:tall_pine_tree`). The far tree lists held species trees only, so those pines had no impostor, yet every leaf
+was marked a tree's (`TREE_LEAF_FADE`) and dropped past the hand-over. Fix: the hand-built trees are baked as
+impostors too (a layer each after the species', `impostor::structure_trees`) and listed as far trees and leaf
+owners; and only a listed tree's leaves are marked to hand over (`Cells::tree_owned`), so a placed leaf stays drawn.
+Red → green: `far_trees_hand_built.rs` (no far tree for `dwell:pine_tree` before) and the mesher's
+`only_a_listed_trees_leaves_hand_over_to_its_impostor`. Built; open until the owner's look. Trunks folded into the
+billboard (skipping the near trunk's geometry past the hand-over) is the follow-up.
+
 ### 185. No chunks come off a chopped log; tools held with their heads off to the right; chopped trees don't fall over
 
 Owner, 2026-11-15, after the axe clip of #980: "I don't see any chunks disappearing from the log from mesh deformation

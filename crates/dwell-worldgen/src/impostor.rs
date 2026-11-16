@@ -948,6 +948,77 @@ fn march(
     }
 }
 
+/// A hand-built tree: its structure's name and its cells as the bake reads them.
+pub type StructureTree = (&'static str, std::collections::BTreeMap<[i32; 3], Part>);
+
+/// The hand-built trees the placements stand (BUGS.md #186: `dwell:pine_tree`, ...): every
+/// placement structure that is no species' and holds both logs and leaves, by name, with its
+/// cells as the bake reads them (relative to its anchor, unturned). Each gets one atlas layer
+/// after the species' ([`Config::layer`]); a far tree list names one as species index
+/// `SPECIES.len()` + its index here ([`structure_tree`]).
+pub fn structure_trees() -> &'static [StructureTree] {
+    static TREES: OnceLock<Vec<StructureTree>> = OnceLock::new();
+    TREES.get_or_init(|| {
+        let mut names: Vec<&'static str> = crate::placements::PLACEMENTS
+            .iter()
+            .flat_map(|p| p.structures.iter().map(|(n, _)| *n))
+            .filter(|n| crate::species::find(n).is_none())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+            .into_iter()
+            .filter_map(|name| {
+                let s = dwell_world::structure::load(name).ok()?;
+                let placed = s.place_oriented(
+                    [0, 0, 0],
+                    dwell_world::structure::Orientation {
+                        quarter_turns: 0,
+                        mirror: None,
+                    },
+                    0,
+                );
+                let cells: std::collections::BTreeMap<[i32; 3], Part> = placed
+                    .cells()
+                    .filter_map(|(c, m)| part_of(m).map(|p| (c, p)))
+                    .collect();
+                let leaves = cells.values().any(|p| *p == Part::Leaf);
+                let logs = cells.values().any(|p| matches!(p, Part::Log(..)));
+                (leaves && logs).then_some((name, cells))
+            })
+            .collect()
+    })
+}
+
+/// The far tree list's species index of hand-built tree `name` ([`structure_trees`]), if it is one.
+pub fn structure_tree(name: &str) -> Option<u16> {
+    structure_trees()
+        .iter()
+        .position(|(n, _)| *n == name)
+        .map(|k| (crate::species::SPECIES.len() + k) as u16)
+}
+
+/// A block state as the bake reads it: a log (along its `axis`, full width) or a leaf (the leaves
+/// look, snowy ones too); anything else is not baked.
+fn part_of(m: dwell_blocks::StateId) -> Option<Part> {
+    let info = dwell_blocks::info(m);
+    let name = info.name;
+    if name.starts_with("dwell:log[") || name == "dwell:log" {
+        let axis = if name.contains("axis=x") {
+            1
+        } else if name.contains("axis=z") {
+            2
+        } else {
+            0
+        };
+        Some(Part::Log(axis, 4))
+    } else if name.starts_with("dwell:leaves") || name.starts_with("dwell:snowy_leaves") {
+        Some(Part::Leaf)
+    } else {
+        None
+    }
+}
+
 /// The seed variant `v` of every species and stage is baked from: a fixed spread, so the variants
 /// differ (a tree's own seed only picks one, [`Config::baked_for`]).
 pub fn variant_seed(v: u32) -> u32 {
@@ -1018,6 +1089,11 @@ impl Config {
     /// block of layers, then the nearest baked stage, then the seed's variant
     /// ([`Config::baked_for`]).
     pub fn layer(&self, species: u16, seed: u32, stage: u32) -> u32 {
+        // A hand-built tree: its one layer after the species' blocks.
+        let n = crate::species::SPECIES.len() as u32;
+        if u32::from(species) >= n {
+            return n * self.layers_per_species() + (u32::from(species) - n);
+        }
         let (slot, variant) = self.baked_for(seed, stage);
         u32::from(species) * self.layers_per_species() + slot as u32 * self.variants + variant
     }
@@ -1025,6 +1101,7 @@ impl Config {
     /// How many baked trees the atlas holds: every species' [`Config::layers_per_species`].
     pub fn layer_count(&self) -> u32 {
         crate::species::SPECIES.len() as u32 * self.layers_per_species()
+            + structure_trees().len() as u32
     }
 
     /// What array layer `layer` holds: (species index, the growth stage baked, the seed baked),
@@ -1032,6 +1109,13 @@ impl Config {
     /// `v` baked from seed `v`'s [`variant_seed`]). `None` past [`Config::layer_count`].
     pub fn layer_tree(&self, layer: u32) -> Option<(u16, u32, u32)> {
         let per = self.layers_per_species();
+        let species_layers = crate::species::SPECIES.len() as u32 * per;
+        if layer >= species_layers {
+            // A hand-built tree's layer: its far tree index, no stage or seed.
+            let k = layer - species_layers;
+            return ((k as usize) < structure_trees().len())
+                .then(|| ((crate::species::SPECIES.len() as u32 + k) as u16, 0, 0));
+        }
         let species = crate::species::SPECIES.get((layer / per.max(1)) as usize)?;
         let within = layer % per;
         let (slot, variant) = (within / self.variants, within % self.variants);
@@ -1043,7 +1127,10 @@ impl Config {
     /// layers).
     pub fn bake_layer(&self, layer: u32, px: u32) -> Option<Impostor> {
         let (species, stage, seed) = self.layer_tree(layer)?;
-        let sp = &crate::species::SPECIES[species as usize];
+        let Some(sp) = crate::species::SPECIES.get(species as usize) else {
+            let k = usize::from(species) - crate::species::SPECIES.len();
+            return Some(bake_cells(&structure_trees()[k].1, self, px));
+        };
         Some(bake(sp, seed, stage, self, px))
     }
 
@@ -1082,7 +1169,7 @@ mod tests {
         let c = small();
         assert_eq!(
             c.layer_count(),
-            SPECIES.len() as u32 * c.layers_per_species()
+            SPECIES.len() as u32 * c.layers_per_species() + structure_trees().len() as u32
         );
         for species in 0..SPECIES.len() as u16 {
             for seed in [1u32, 77, 4096, 123_456] {
@@ -1103,6 +1190,36 @@ mod tests {
             one.albedo.iter().any(|t| t[3] >= 128),
             "a tree, not an empty atlas"
         );
+    }
+
+    #[test]
+    fn the_hand_built_trees_are_baked_after_the_species() {
+        // face-a-only: data only. BUGS.md #186 (owner, 2026-11-15: "That tree I built seems like
+        // it should be handled identically to the others?"): the placements' hand-built pines get
+        // an impostor of their own, a layer each after the species' blocks.
+        let c = small();
+        let names: Vec<&str> = structure_trees().iter().map(|(n, _)| *n).collect();
+        for pine in ["dwell:pine_tree", "dwell:tall_pine_tree"] {
+            assert!(names.contains(&pine), "{pine} in {names:?}");
+        }
+        for (k, (name, cells)) in structure_trees().iter().enumerate() {
+            let species = structure_tree(name).expect("listed");
+            assert_eq!(usize::from(species), SPECIES.len() + k);
+            let layer = c.layer(species, 12_345, 3);
+            assert_eq!(
+                layer,
+                SPECIES.len() as u32 * c.layers_per_species() + k as u32
+            );
+            assert_eq!(c.layer_tree(layer), Some((species, 0, 0)));
+            assert!(cells.values().any(|p| *p == Part::Leaf), "{name}: leaves");
+            let baked = c.bake_layer(layer, 8).expect("baked");
+            assert!(
+                baked.albedo.iter().any(|t| t[3] >= 128),
+                "{name}: a tree, not an empty layer"
+            );
+        }
+        // Rocks and buildings are no trees.
+        assert!(structure_tree("dwell:talus_block").is_none());
     }
 
     #[test]

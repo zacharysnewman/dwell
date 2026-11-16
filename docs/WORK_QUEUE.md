@@ -30,7 +30,18 @@ Last updated: 2026-11-11 (0.52.108).
   "Optimize", "Make it faster?", "Yes go ahead": the near pass is bound by geometry (~2.2 M triangles in a meadow),
   so (1) chunk meshes grouped by face direction, the groups facing away from the camera (and the sun, for shadows)
   not drawn; (2) packed vertices (56/64 → ~16–20 bytes). Owner should see: the same picture, a higher frame rate
-  on High.
+  on High. (1) built: −0.5 to −0.9 ms. Then: "Seems like grass could be rendered at half if we only did a billboard
+  at most distances? Unless we already do that? Is that a heavy render?" — not done before: every plant is an X of
+  two quads at every distance. Plan: the cutout mesh's second quads in their own range; chunks past ~16 m draw the
+  first quads alone, turned to face the camera in the vertex stage. Owner should see: distant grass looking the same,
+  a higher frame rate in meadows.
+- **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
+  rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
+  bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).
+  Owner: "That tree I built seems like it should be handled identically to the others?" — the hand-built pines now
+  get impostors like the species trees (built). Then: "Are my hand built pines, handled differently logically? Do
+  they not grow?" and "So we already have \"pines\" separate from my hand built ones? Do we" — answered: yes, the
+  species `dwell:pine` grows; the hand-built pines are fixed structures (no growth, stages, tints or saplings).
 - **Owner, 2026-11-15:** "We need to increase the range when pasting so it doesn't overlap with your position" — the
   paste preview sits far enough ahead that it never overlaps the player. Owner should see: a paste never placed
   inside or on top of you.

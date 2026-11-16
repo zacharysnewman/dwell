@@ -2590,7 +2590,7 @@ dwell_world::both_faces!(
         let padded = voxels(&[(8, 8, 8, leaf)]);
         let mesh = |cards: bool| {
             in_cells(
-                super::mesh_chunk_flags(
+                super::mesh_chunk_trees(
                     &padded,
                     &[],
                     f.is_b(),
@@ -2602,6 +2602,8 @@ dwell_world::both_faces!(
                         cards,
                         ..ChunkFlags::default()
                     },
+                    &[],
+                    &[tree_over_chunk()],
                 )
                 .expect("padded"),
             )
@@ -3362,7 +3364,7 @@ dwell_world::both_faces!(
             cells.push((x, 9, 8, leaf));
         }
         let padded = voxels(&cells);
-        let m = super::mesh_chunk_flags(
+        let m = super::mesh_chunk_trees(
             &padded,
             &[],
             f.is_b(),
@@ -3374,6 +3376,8 @@ dwell_world::both_faces!(
                 cards: true,
                 plants: 100,
             },
+            &[],
+            &[tree_over_chunk()],
         )
         .expect("padded")
         .cutout;
@@ -3541,6 +3545,18 @@ dwell_world::both_faces!(
     }
 );
 
+/// A listed tree whose box holds the whole chunk (ADR 0079 tints, `Tint::NONE`): it owns every
+/// leaf there, so they hand over to its impostor (BUGS.md #186).
+fn tree_over_chunk() -> dwell_world::tree_tint::TreeTint {
+    dwell_world::tree_tint::TreeTint {
+        anchor: [8, 0, 8],
+        // Every row: a face-B chunk at origin 0 meshes at its face-local rows, far from 0.
+        min: [-8, i32::MIN / 2, -8],
+        max: [48, i32::MAX / 2, 48],
+        tint: dwell_world::tree_tint::Tint::NONE,
+    }
+}
+
 /// Hilly ground for the facing tests: grass over stone in steps (natural ramps on their edges),
 /// a stone pillar with an overhang (faces of every direction) and an air pocket.
 fn hilly_chunk() -> Vec<u16> {
@@ -3674,7 +3690,7 @@ dwell_world::both_faces!(
             [0.0, -1.0, 0.0],
             [0.6, 0.8, 0.0],
             [-0.3, 0.9, 0.3],
-            [0.5, -0.5, -0.7071],
+            [0.5, -0.5, -std::f64::consts::FRAC_1_SQRT_2],
             [1.0, 0.0, 0.0],
         ] {
             let mask = facing_mask_toward(toward);
@@ -3695,5 +3711,57 @@ dwell_world::both_faces!(
                 }
             }
         }
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #186 (owner, 2026-11-15: "there's some \"sticks\" trees without leaves"): only a
+    /// listed tree's leaves are marked to hand over to its far impostor. A leaf no listed tree owns
+    /// (the hand-built pines', a placed one) has no impostor, so it keeps drawing at a distance
+    /// (red before: every leaf was marked, and past the hand-over the hand-built pines were bare
+    /// trunks).
+    fn only_a_listed_trees_leaves_hand_over_to_its_impostor(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(4, 8, 8, leaf), (20, 8, 8, leaf)]);
+        // A tree owning the leaf at x 4 only (face-local cells; face B's chunk meshes face-local).
+        let tree = dwell_world::tree_tint::TreeTint {
+            anchor: [4, 0, 8],
+            min: [0, i32::MIN / 2, 4],
+            max: [8, i32::MAX / 2, 12],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let marked = |trees: &[dwell_world::tree_tint::TreeTint]| {
+            let m = super::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: false,
+                    plants: 100,
+                },
+                &[],
+                trees,
+            )
+            .expect("padded")
+            .cutout;
+            let xs: Vec<f32> = (0..m.positions.len() / 3)
+                .filter(|&v| m.plants[v * 4 + 3] == crate::TREE_LEAF_FADE)
+                .map(|v| m.positions[v * 3])
+                .collect();
+            (xs, m.positions.len() / 3)
+        };
+        let (none, n) = marked(&[]);
+        assert!(n > 0);
+        assert!(none.is_empty(), "no listed tree: no leaf hands over");
+        let (owned, _) = marked(&[tree]);
+        assert!(!owned.is_empty());
+        assert!(
+            owned.iter().all(|&x| x < 12.0),
+            "only the owned leaf (x 4) hands over: {owned:?}"
+        );
     }
 );
