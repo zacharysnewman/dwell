@@ -1736,6 +1736,44 @@ mod tests {
     }
 
     #[test]
+    fn a_two_by_two_trunk_tipped_onto_its_side_lies_as_one_straight_box() {
+        // BUGS.md #191 (owner, 2026-11-16: "settling tree logs not matching their alignment ... I
+        // haven't chopped this fallen tree at all"): a giant's 2 x 2 trunk (0.71), 16 rows (8 m),
+        // tipped 90 deg about z lies along x as one box: 8 cells long, 4 rows (2 m) high, 2 wide,
+        // every cell kept and a log along x, wherever between cells it came to rest.
+        let mut cells = Vec::new();
+        for y in 0..16 {
+            for (x, z) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                cells.push(([x, y, z], log()));
+            }
+        }
+        let p = piece(cells);
+        let tipped = DQuat::from_rotation_z(-std::f64::consts::FRAC_PI_2);
+        for origin in [
+            DVec3::new(10.5, 20.25, 3.5),
+            DVec3::new(10.0, 20.0, 3.0),
+            DVec3::new(10.3, 20.1, 3.7),
+            DVec3::new(10.9, 20.4, 3.2),
+        ] {
+            let got = resample(&p.cells, origin, tipped).1;
+            assert_eq!(got.len(), 64, "{origin}: every cell kept: {got:?}");
+            let set = |k: usize| -> std::collections::BTreeSet<i32> {
+                got.iter().map(|(c, _)| c[k]).collect()
+            };
+            let (xs, ys, zs) = (set(0), set(1), set(2));
+            assert_eq!(
+                (xs.len(), ys.len(), zs.len()),
+                (8, 4, 2),
+                "{origin}: one straight box: x {xs:?} y {ys:?} z {zs:?}"
+            );
+            assert!(
+                got.iter().all(|(_, m)| info(*m).axis == Axis::X),
+                "{origin}"
+            );
+        }
+    }
+
+    #[test]
     fn an_upright_trunk_tipped_onto_its_side_lies_as_logs_along_x() {
         // Eight rows of trunk (4 m) tipped 90° about z: it lies along x, 4 cells long and a metre
         // (two rows) high, every cell a log along x (docs/FELLING.md §4).

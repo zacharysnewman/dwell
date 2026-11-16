@@ -2988,8 +2988,10 @@ dwell_world::both_faces!(
             "taller stage by stage: {tops:?}"
         );
         assert_eq!(dwell_blocks::info(stages[3]).cross.unwrap().height, 0.85);
-        // A stand's lower cell (up to 2 m, WORK_QUEUE item 58 g): full blades reaching into the
-        // cell over it, so the stand reads as one; its box stays in its own cell.
+        // A stand's lower cell (up to 2 m, WORK_QUEUE item 58 g): its blades fill its cell
+        // exactly, the cell over it rising out of them in line (BUGS.md #192: they had reached a
+        // third past, each cell jittered on its own, and read as stacked tufts); its box stays
+        // in its own cell.
         let stalk = dwell_blocks::with_property(grass_block, "stage", "stalk").expect("a stalk");
         let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
         for x in 0..8 {
@@ -3008,11 +3010,10 @@ dwell_world::both_faces!(
                 .fold(f32::MIN, f32::max)
                 - y0
         };
-        let h = dwell_blocks::info(stalk).cross.unwrap();
         let drawn = top_of(5.0);
         assert!(
-            drawn > 1.0 && drawn <= h.height + 1e-4,
-            "a stalk reaches into the cell over it: {drawn}"
+            (drawn - 1.0).abs() < 1e-4,
+            "a stalk fills its cell, the cell over it going on: {drawn}"
         );
         assert!(
             dwell_blocks::info(stalk)
@@ -3869,3 +3870,54 @@ dwell_world::both_faces!(
         );
     }
 );
+
+#[test]
+fn a_stand_of_tall_grass_draws_as_one_plant_stretching_up() {
+    // face-a-only: the stand's rows and the tile's v are compared up face A's +y; the jitter is
+    // by the world column on either face (`Stand::seed`).
+    // BUGS.md #192 (owner, 2026-11-16: "the tall grass is like stacking when it grows ... it's
+    // supposed to extend or stretch up"): a stand of three cells (two stalks and the tip) draws
+    // its cells' quads in line (one plant's offset and turn), each stalk exactly its cell tall
+    // with the blades' lower band (no tips) and still, the tip rising from the top stalk.
+    let stalk = dwell_blocks::parse_state("dwell:tall_grass[stage=stalk]").expect("a stalk");
+    let m = mesh(
+        &[
+            (4, 0, 4, cube_block()),
+            (4, 1, 4, stalk),
+            (4, 2, 4, stalk),
+            (4, 3, 4, tall_grass()),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    let n = c.positions.len() / 3;
+    let quads_n = usize::from(dwell_blocks::info(tall_grass()).cross.expect("cross").quads);
+    assert_eq!(n, 3 * quads_n * 4, "three cells' quads");
+    let per_cell = quads_n * 4;
+    // In line: each cell's corners at the same x, z as the first cell's.
+    for cell in 1..3 {
+        for v in 0..per_cell {
+            let a = vertex(&c.positions, v as u32);
+            let b = vertex(&c.positions, (cell * per_cell + v) as u32);
+            assert!(
+                (a[0] - b[0]).abs() < 1e-5 && (a[2] - b[2]).abs() < 1e-5,
+                "cell {cell} vertex {v}: {a:?} vs {b:?}"
+            );
+        }
+    }
+    for cell in 0..2 {
+        let y = f64::from(cell as i32 + 1);
+        for v in cell * per_cell..(cell + 1) * per_cell {
+            let p = vertex(&c.positions, v as u32);
+            assert!(
+                (p[1] - y).abs() < 1e-5 || (p[1] - (y + 1.0)).abs() < 1e-5,
+                "stalk {cell}: exactly its cell: {p:?}"
+            );
+            assert!(
+                c.uvs[v * 2 + 1] <= 0.5,
+                "stalk {cell}: the blades' lower band"
+            );
+            assert_eq!(c.plants[v * 4], 0.0, "stalk {cell}: still");
+        }
+    }
+}
