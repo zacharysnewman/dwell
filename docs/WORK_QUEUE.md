@@ -30,6 +30,14 @@ Last updated: 2026-11-11 (0.52.108).
   the time, hides the HUD, waits for the view to settle and saves a PNG (~45 s a build). Older lines (0.55–0.58)
   are retired from the site: their builds would come from GitHub Releases. Proposed to the owner: straight down from
   90 km (the whole disc), midday.
+  Owner: "Yeah straight down at midday looks good.", "We'd want to use the same seed too.", "I want before realistic
+  terrain too.", "Perhaps we could another set from the coast." and, on old builds' camera, "You could always inject a
+  helper script". The tool now downloads any release's built site from GitHub (`--source github`, cached) and serves
+  it on :4180; `--world default` shoots the default terrain (the builds before Realistic); views may be relative to
+  the spawn (`fromSpawn`). `placeCamera` exists from 0.10.1 (only 0.10.0 lacks it: the same terrain), so no helper
+  is needed. A whole island shows from 90 km from 0.15 on. Hosted Realistic builds differ visibly from 90 km at 0.64,
+  0.65, 0.68 and 0.69 (0.60–0.63, 0.66–0.67 and 0.70 look the same). Open: a coastal camera per era (the default
+  generator's island and Realistic's lie differently).
 - **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
   queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
   stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
