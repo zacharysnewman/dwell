@@ -282,6 +282,36 @@ pub fn warm(r: &Record, stage: u8) -> bool {
     true
 }
 
+/// Whether the record's stage `stage` is grown and kept (no costly call to place it).
+pub fn is_kept(r: &Record, stage: u8) -> bool {
+    GROWN
+        .lock()
+        .ok()
+        .and_then(|m| {
+            m.as_ref()
+                .map(|m| m.contains_key(&(r.species, r.seed, stage)))
+        })
+        .unwrap_or(false)
+}
+
+/// Keeps a stage grown elsewhere (the server-jobs worker: `species`, `seed`, `stage` and what
+/// [`species::grow`] gave), its structure made here (~0.1 ms).
+pub fn keep_grown(species_index: u16, seed: u32, stage: u8, grown: &species::Grown) {
+    let Some(s) = SPECIES.get(usize::from(species_index)) else {
+        return;
+    };
+    let Ok(structure) = grown.structure(s, 0) else {
+        return;
+    };
+    if let Ok(mut m) = GROWN.lock() {
+        let m = m.get_or_insert_with(HashMap::new);
+        if m.len() >= GROWN_KEPT {
+            m.clear();
+        }
+        m.insert((species_index, seed, stage), std::sync::Arc::new(structure));
+    }
+}
+
 /// A tree's stage placed face-local at its local anchor, its variant's swaps made.
 fn placed(r: &Record, stage: u8, swaps: &[(StateId, StateId)]) -> Option<Placed> {
     let structure = grown(r, stage)?;

@@ -512,6 +512,53 @@ fn branch(logs: &mut BTreeMap<[i32; 3], Part>, a: [i32; 3], b: [i32; 3]) {
 }
 
 impl Grown {
+    /// Its bytes (the server-jobs worker's answer, `dwell_sim::jobs`): the height and width (f32),
+    /// the cell count (u32), then each cell's x, y, z (i16) and part (0 a leaf; else 1 + axis, and
+    /// the width in ¼ m), little-endian.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(12 + self.cells.len() * 8);
+        out.extend(self.height.to_le_bytes());
+        out.extend(self.width.to_le_bytes());
+        out.extend((self.cells.len() as u32).to_le_bytes());
+        for (c, part) in &self.cells {
+            for v in c {
+                out.extend((*v as i16).to_le_bytes());
+            }
+            let (a, w) = match part {
+                Part::Leaf => (0, 0),
+                Part::Log(axis, width) => (1 + axis, *width),
+            };
+            out.push(a);
+            out.push(w);
+        }
+        out
+    }
+
+    /// [`Self::to_bytes`] read back (None: not one).
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        let f = |at: usize| Some(f32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?));
+        let (height, width) = (f(0)?, f(4)?);
+        let n = u32::from_le_bytes(b.get(8..12)?.try_into().ok()?) as usize;
+        if b.len() != 12 + n * 8 {
+            return None;
+        }
+        let mut cells = BTreeMap::new();
+        for k in 0..n {
+            let r = &b[12 + k * 8..20 + k * 8];
+            let v = |i: usize| i32::from(i16::from_le_bytes([r[2 * i], r[2 * i + 1]]));
+            let part = match r[6] {
+                0 => Part::Leaf,
+                a => Part::Log(a - 1, r[7]),
+            };
+            cells.insert([v(0), v(1), v(2)], part);
+        }
+        Some(Self {
+            cells,
+            height,
+            width,
+        })
+    }
+
     /// The tree as a structure (anchor: the trunk's foot), its blocks resolved by name.
     pub fn structure(&self, species: &Species, hash: u64) -> Result<Structure, String> {
         let state = |n: String| parse_state(&n).map_err(|e| format!("{}: {n}: {e}", species.name));

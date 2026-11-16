@@ -80,11 +80,29 @@ impl Server {
         };
         if let Some(r) = self.growth.trees.get(&a).cloned() {
             let target = r.due(self.world_days());
-            if target > r.stage
-                && (dwell_worldgen::growth::warm(&r, r.stage)
-                    || dwell_worldgen::growth::warm(&r, target))
-            {
-                return; // grown one this tick: the step on a later one
+            if target > r.stage {
+                if self.config.jobs_remote {
+                    // Grown in the jobs worker (~20 ms a giant's stage in the browser): the tree
+                    // waits until both its stages are kept.
+                    let mut waiting = false;
+                    for stage in [r.stage, target] {
+                        if dwell_worldgen::growth::is_kept(&r, stage) {
+                            continue;
+                        }
+                        waiting = true;
+                        let k = (r.species, r.seed, stage);
+                        if !self.tree_jobs_out.contains(&k) && !self.tree_jobs.contains(&k) {
+                            self.tree_jobs.push_back(k);
+                        }
+                    }
+                    if waiting {
+                        return;
+                    }
+                } else if dwell_worldgen::growth::warm(&r, r.stage)
+                    || dwell_worldgen::growth::warm(&r, target)
+                {
+                    return; // grown one this tick: the step on a later one
+                }
             }
         }
         let n = TREES_PER_TICK.min(self.growth_due.len());

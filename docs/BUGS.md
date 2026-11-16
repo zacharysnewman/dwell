@@ -50,6 +50,9 @@ onto it); each phase's longest tick reported (`max.<phase>`, µs). The join's ~1
 second, behind the loading screen. Browser run after round 4: no chunk generated on the tick, no save spike,
 terrain ≤ 12 ms; still over budget: **growth single ticks 9–25 ms** (a giant tree's stage grown, or a grass
 chunk, in WASM ~10× native).
+Round 5: a tree's stages grow in the server-jobs worker (job "TJ1", answer "TD1": `species::Grown` as bytes,
+`growth::keep_grown`); with remote jobs a due tree waits until both its stages are kept. Browser run: every advance
+≤ 15.8 ms (growth ticks 11–14 ms, now grass chunks). Next: grass chunks off the tick too.
 
 ### 193. Leaves left hanging in the air after a tree is cut down
 
