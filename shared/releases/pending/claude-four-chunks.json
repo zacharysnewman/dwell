@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Blocks drop 4 pieces instead of 8, all when the block breaks (none while you chop or dig).",
-    "4 pieces make a block again: stone, dirt, sand, logs, planks and stone bricks."
-  ]
-}
