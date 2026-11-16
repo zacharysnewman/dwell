@@ -2480,8 +2480,10 @@ pub(crate) fn mesh_chunk_full(
     let water = (!flags.water_tops)
         .then(|| crate::heightfield::tile_with(kinds, &inner, light, mirror))
         .flatten();
+    let mut opaque = to_metres(m.opaque);
+    group_by_facing(&mut opaque);
     Ok(ChunkMeshes {
-        opaque: to_metres(m.opaque),
+        opaque,
         transparent: to_metres(m.transparent),
         cutout: to_metres(m.cutout),
         water,
@@ -2524,6 +2526,100 @@ pub fn tree_leaves_from(m: &MeshArrays) -> usize {
         }
     }
     lo * 3
+}
+
+/// The facing groups of an opaque chunk mesh ([`group_by_facing`]): a triangle facing +X, −X, +Y,
+/// −Y, +Z or −Z ([`FACES`]' order) is in that group, any other (slopes, ramps, carved and relief
+/// faces) in group [`FACING_OTHER`].
+pub const FACING_GROUPS: usize = 7;
+/// The group of triangles facing no axis: drawn from every side.
+pub const FACING_OTHER: usize = 6;
+
+/// A triangle's facing group, by its geometric normal (its winding: counter-clockwise from
+/// outside): an axis's when the normal is within ~0.5° of it, else [`FACING_OTHER`].
+fn facing_of(m: &MeshArrays, tri: &[u32]) -> usize {
+    let p = |i: u32| -> [f64; 3] {
+        let i = i as usize * 3;
+        std::array::from_fn(|k| f64::from(m.positions[i + k]))
+    };
+    let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+    let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+    let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+    let n = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len == 0.0 {
+        return FACING_OTHER;
+    }
+    FACES
+        .iter()
+        .position(|&(axis, sign)| n[axis] * f64::from(sign) / len > 0.99996)
+        .unwrap_or(FACING_OTHER)
+}
+
+/// Orders an opaque mesh's triangles by facing group (each group keeping its order), so a draw
+/// can skip the groups facing away from the camera ([`facing_ranges`]; the GPU would otherwise
+/// shade every one of their vertices before culling them: the near pass is bound by geometry).
+pub fn group_by_facing(m: &mut MeshArrays) {
+    let mut groups: [Vec<u32>; FACING_GROUPS] = Default::default();
+    for tri in m.indices.chunks_exact(3) {
+        groups[facing_of(m, tri)].extend_from_slice(tri);
+    }
+    m.indices = groups.concat();
+}
+
+/// Each facing group's range of `indices` in a mesh ordered by [`group_by_facing`] (empty ranges for
+/// absent groups). A mesh not so ordered is all in [`FACING_OTHER`]'s range, drawn from every side.
+pub fn facing_ranges(m: &MeshArrays) -> [std::ops::Range<u32>; FACING_GROUPS] {
+    let mut counts = [0u32; FACING_GROUPS];
+    let mut last = 0;
+    for tri in m.indices.chunks_exact(3) {
+        let g = facing_of(m, tri);
+        if g < last {
+            counts = [0; FACING_GROUPS];
+            counts[FACING_OTHER] = m.indices.len() as u32;
+            break;
+        }
+        counts[g] += 3;
+        last = g;
+    }
+    let mut at = 0;
+    counts.map(|n| {
+        at += n;
+        at - n..at
+    })
+}
+
+/// Which facing groups (a bit each) of a chunk mesh can face an eye at `rel` from the chunk's
+/// minimum corner (the eye minus the corner, m), the chunk `extent` m across: a face on the plane
+/// x = p facing +X shows only from x > p, and every +X face of the chunk is at p ≥ 0 (− `margin`,
+/// for vertices just outside the box). The other group always draws.
+pub fn facing_mask(rel: [f64; 3], extent: [f64; 3], margin: f64) -> u8 {
+    let mut mask = 1 << FACING_OTHER;
+    for (g, &(axis, sign)) in FACES.iter().enumerate() {
+        let shows = if sign > 0 {
+            rel[axis] > -margin
+        } else {
+            rel[axis] < extent[axis] + margin
+        };
+        mask |= u8::from(shows) << g;
+    }
+    mask
+}
+
+/// Which facing groups of a chunk mesh can face a directional light `toward` it (unit, world): a
+/// group whose axis points away from it is all back faces to it, culled anyway after its vertices
+/// are shaded (the shadow maps' opaque casters cull their back faces), and one edge-on to it casts
+/// nothing. The other group always.
+pub fn facing_mask_toward(toward: [f64; 3]) -> u8 {
+    let mut mask = 1 << FACING_OTHER;
+    for (g, &(axis, sign)) in FACES.iter().enumerate() {
+        mask |= u8::from(toward[axis] * f64::from(sign) > 0.0) << g;
+    }
+    mask
 }
 
 /// The one-voxel padded block ([`PADDED_VOLUME`]) inside a sky volume ([`SKY_VOLUME`]).

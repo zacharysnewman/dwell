@@ -24,6 +24,13 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-15:** "Yes performance pass to get up to 60fps" — next local job (High at 60 fps on the M1 Air;
   biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
   High holding 60 fps on the M1 Air in forest, meadow and open ground.
+  Owner, 2026-11-15, on the trims: "Thinner far grass, Clouds Low on High, Bloom Low on High, Cheaper shadows on
+  High"; then "2D clouds are fine for High" (Low is the 2D deck; its own cost ~0.7 ms, to be made cheaper); bloom
+  Low measured no saving (bloom off on High awaits the owner's yes). Then "Can we improve the core drawing?",
+  "Optimize", "Make it faster?", "Yes go ahead": the near pass is bound by geometry (~2.2 M triangles in a meadow),
+  so (1) chunk meshes grouped by face direction, the groups facing away from the camera (and the sun, for shadows)
+  not drawn; (2) packed vertices (56/64 → ~16–20 bytes). Owner should see: the same picture, a higher frame rate
+  on High.
 - **Owner, 2026-11-15:** "We need to increase the range when pasting so it doesn't overlap with your position" — the
   paste preview sits far enough ahead that it never overlaps the player. Owner should see: a paste never placed
   inside or on top of you.
