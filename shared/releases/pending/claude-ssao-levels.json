@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Ambient occlusion now has a look setting, Weak, Normal or Strong, in place of the strength slider: Normal (the default) and Strong show clearly in corners and under ledges, sunlit ones too; Weak is the old look."
+  ]
+}

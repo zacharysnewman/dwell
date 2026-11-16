@@ -108,6 +108,8 @@ export type Step =
       ssao?: 'off' | 'low' | 'high';
       /** Its strength (× the data's; the Settings slider's 0–2, up to 4 to look closely). */
       ssaoStrength?: number;
+      /** Its look (`weak`, `normal`, `strong`). */
+      ssaoLevel?: 'weak' | 'normal' | 'strong';
       torchShadows?: 'off' | 'low' | 'high';
       cards?: boolean;
       grass?: boolean;
@@ -473,6 +475,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'bloom',
     'ssao',
     'ssaoStrength',
+    'ssaoLevel',
     'cards',
     'grass',
     'facing',
@@ -639,6 +642,18 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt(
           'ssaoStrength',
           o.ssaoStrength === undefined ? undefined : num(at('ssaoStrength'), o.ssaoStrength, 0, 4),
+        ),
+        ...opt(
+          'ssaoLevel',
+          o.ssaoLevel === undefined
+            ? undefined
+            : ((): 'weak' | 'normal' | 'strong' => {
+                const v = o.ssaoLevel;
+                if (v !== 'weak' && v !== 'normal' && v !== 'strong') {
+                  throw new ViewError(`${at('ssaoLevel')}: expected "weak", "normal" or "strong"`);
+                }
+                return v;
+              })(),
         ),
         ...opt('torchShadows', tier('torchShadows')),
         ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),

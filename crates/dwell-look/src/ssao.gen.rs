@@ -23,6 +23,9 @@ pub const SSAO: SsaoLook = SsaoLook {
     blur_sharpness: 0.06,
 };
 
+/// The Settings looks (`levels`): weak, normal, strong.
+pub const LEVELS: [(&str, SsaoLevel); 3] = [("weak", SsaoLevel { strength: 0.9, intensity: 1.6, radius: 0.75, floor: 0.0 }), ("normal", SsaoLevel { strength: 1.0, intensity: 2.6, radius: 1.0, floor: 0.35 }), ("strong", SsaoLevel { strength: 1.0, intensity: 4.0, radius: 1.4, floor: 0.6 })];
+
 /// The High and Low tiers (`tiers`).
 pub const HIGH: SsaoTier = SsaoTier {
     scale: 1.0,

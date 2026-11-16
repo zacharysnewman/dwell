@@ -49,10 +49,12 @@ const TOP = {
   blurSharpness: [0, 1, 'open'],
 };
 const TIER = { scale: [0, 1, 'open'], samples: [4, MAX_SAMPLES, 'count'] };
+const LEVELS = ['weak', 'normal', 'strong'];
+const LEVEL = { strength: TOP.strength, intensity: TOP.intensity, radius: TOP.radius, floor: [0, 1] };
 
 /** Checks the data; returns it. */
 export function validateSsao(data) {
-  checkKeys('the file', data, [...Object.keys(TOP), 'tiers']);
+  checkKeys('the file', data, [...Object.keys(TOP), 'tiers', 'levels']);
   for (const [k, spec] of Object.entries(TOP)) checkValue(k, data[k], spec);
   if (data.nearTo < data.nearFrom) fail('nearTo must be at least nearFrom');
   if (data.farTo <= data.farFrom) fail('farTo must be past farFrom');
@@ -62,6 +64,14 @@ export function validateSsao(data) {
     checkKeys(`tiers.${t}`, data.tiers[t], Object.keys(TIER));
     for (const [k, spec] of Object.entries(TIER)) checkValue(`tiers.${t}.${k}`, data.tiers[t][k], spec);
   }
+  checkKeys('levels', data.levels, LEVELS);
+  for (const l of LEVELS) {
+    checkKeys(`levels.${l}`, data.levels[l], Object.keys(LEVEL));
+    for (const [k, spec] of Object.entries(LEVEL)) checkValue(`levels.${l}.${k}`, data.levels[l][k], spec);
+  }
+  // Weak is the file's own look (the owner: "with weak as our current setting").
+  for (const k of ['strength', 'intensity', 'radius']) if (data.levels.weak[k] !== data[k]) fail(`levels.weak.${k} must be the file's ${k} (${data[k]})`);
+  if (data.levels.weak.floor !== 0) fail("levels.weak.floor must be 0 (the file's look)");
   const [lo, hi] = [data.tiers.low, data.tiers.high];
   if (lo.scale > hi.scale || lo.samples > hi.samples) fail('tiers.low must cost no more than tiers.high (scale and samples)');
   return data;
@@ -98,6 +108,9 @@ export function ssaoRust(data) {
     '',
     '/// The look (every entry but `tiers`).',
     `pub const SSAO: SsaoLook = SsaoLook {\n${look.map(([k, v]) => `    ${k}: ${v},`).join('\n')}\n};`,
+    '',
+    '/// The Settings looks (`levels`): weak, normal, strong.',
+    `pub const LEVELS: [(&str, SsaoLevel); 3] = [${LEVELS.map((l) => `("${l}", SsaoLevel { strength: ${rf(data.levels[l].strength)}, intensity: ${rf(data.levels[l].intensity)}, radius: ${rf(data.levels[l].radius)}, floor: ${rf(data.levels[l].floor)} })`).join(', ')}];`,
     '',
     '/// The High and Low tiers (`tiers`).',
     `pub const HIGH: SsaoTier = ${tierRust(data.tiers.high)};`,

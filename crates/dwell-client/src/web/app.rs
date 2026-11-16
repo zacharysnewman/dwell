@@ -2207,6 +2207,15 @@ impl Client {
     }
     /// The Ambient occlusion setting: `off`, `low` or `high` (anything else: off) and its strength
     /// (× the data's, 0–2; docs/SSAO.md).
+    /// The Ambient occlusion look: `weak`, `normal` or `strong` (anything else: normal).
+    #[wasm_bindgen(js_name = setSsaoLevel)]
+    pub fn set_ssao_level(&self, level: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_ssao_level(level);
+    }
     #[wasm_bindgen(js_name = setSsao)]
     pub fn set_ssao(&self, quality: &str, strength: f64) {
         use dwell_look::ssao::SsaoQuality;

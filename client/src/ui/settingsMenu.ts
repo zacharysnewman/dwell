@@ -132,10 +132,11 @@ import {
 import {
   SSAO_KEY,
   SSAO_QUALITIES,
-  SSAO_STRENGTH,
+  SSAO_LEVELS,
   defaultSsao,
   sanitizeSsao,
   ssaoRecord,
+  type SsaoLevel,
   type SsaoQuality,
   type SsaoSettings,
 } from './ssaoSettings';
@@ -266,7 +267,11 @@ export function settingsJson(s: Settings): string {
     clouds: s.clouds,
     shafts: s.shafts,
     bloom: s.bloom,
-    ssao: { quality: s.ssao.quality, strength: Math.round(s.ssao.strength * 100) / 100 },
+    ssao: {
+      quality: s.ssao.quality,
+      strength: Math.round(s.ssao.strength * 100) / 100,
+      level: s.ssao.level,
+    },
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -609,6 +614,17 @@ const SSAO_CHOICE: ChoiceSpec<SsaoQuality> = {
   with: (s, v) => ({ ...s, ssao: { ...s.ssao, quality: v } }),
 };
 
+/** Its look: Weak (the first one's), Normal or Strong (owner, 2026-11-15). */
+const SSAO_LEVEL_CHOICE: ChoiceSpec<SsaoLevel> = {
+  label: 'Ambient occlusion look',
+  pin: 'ssao.level',
+  hint: 'How dark the soft shadows are where things meet',
+  choices: SSAO_LEVELS,
+  labels: { weak: 'Weak', normal: 'Normal', strong: 'Strong' },
+  get: (s) => s.ssao.level,
+  with: (s, v) => ({ ...s, ssao: { ...s.ssao, level: v } }),
+};
+
 /** The Graphics section's choices, from the data (shared/render/upscale.json). */
 const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
   {
@@ -754,18 +770,7 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           choice(TORCH_SHADOW_CHOICE),
           ...CHOICES.map(choice),
           choice(SSAO_CHOICE),
-          {
-            slider: {
-              label: 'Ambient occlusion strength',
-              pin: 'ssao.strength',
-              hint: 'How dark the ambient occlusion is (100%: as designed; 0%: none)',
-              ...SSAO_STRENGTH,
-              log: false,
-              format: (v) => `${String(Math.round(v * 100))}%`,
-              get: (s) => s.ssao.strength,
-              with: (s, v) => ({ ...s, ssao: { ...s.ssao, strength: v } }),
-            },
-          },
+          choice(SSAO_LEVEL_CHOICE),
         ],
       },
       { title: 'Sky & weather', rows: [choice(CLOUD_CHOICE)] },

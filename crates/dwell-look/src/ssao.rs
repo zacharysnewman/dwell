@@ -6,7 +6,7 @@
 mod generated {
     include!("ssao.gen.rs");
 }
-pub use generated::{HIGH, LOW, MAX_BLUR, MAX_SAMPLES, SSAO};
+pub use generated::{HIGH, LEVELS, LOW, MAX_BLUR, MAX_SAMPLES, SSAO};
 
 /// The look: the sampling radius (m), the estimator's intensity and bias (m), the darkening's
 /// strength, how much the baked corner shading weakens it, the widest the spiral may be (drawing
@@ -25,6 +25,27 @@ pub struct SsaoLook {
     pub far_to: f64,
     pub blur_radius: u32,
     pub blur_sharpness: f64,
+}
+
+/// A Settings look (`levels` in shared/look/ssao.json; owner, 2026-11-15): the strength, intensity
+/// and radius (m) it draws with in place of the file's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SsaoLevel {
+    pub strength: f64,
+    pub intensity: f64,
+    pub radius: f64,
+    /// The least share of a pixel's light it darkens (0: the scene's share alone).
+    pub floor: f64,
+}
+
+/// The look named `name` (`weak`, `normal`, `strong`); anything else: normal.
+pub fn level(name: &str) -> SsaoLevel {
+    LEVELS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .or_else(|| LEVELS.iter().find(|(n, _)| *n == "normal"))
+        .map(|(_, l)| *l)
+        .expect("the data has normal")
 }
 
 /// A tier of the setting: the buffer against the drawing buffer (each axis) and the samples a texel.
