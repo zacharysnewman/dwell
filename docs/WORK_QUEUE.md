@@ -55,6 +55,10 @@ Last updated: 2026-11-11 (0.52.108).
   (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev
   harness with no menus, HUD or audio). Which path (packaged Electron or a full native client) to be asked before
   designing. Owner should see: Dwell launched as an installed app on the Mac, not in a browser tab.
+  Owner: "The native app should be electron wrapper for now." Built (2026-11-16): `npm run package` in
+  `platforms/electron` makes `out/Dwell-darwin-arm64/Dwell.app` (the client inside, offline; unsigned: right click →
+  Open the first time); its smoke check runs a local world on the Mac's GPU. Open: signing, an icon, publishing it
+  with each release (CI), and whether it should follow the site's versions instead of carrying one.
 - **Owner, 2026-11-15 (new feature, trees):** "Let's get rid of my pines. Make each tree have a different starting
   age, growth rate, and increase the max size of the trees to quadruple the height. Big trees can take up more blocks
   at the base as they grow past a 1 block width. They can expand into a neighboring 3 spaces if available (only player

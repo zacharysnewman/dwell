@@ -24,8 +24,9 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-unsafe-webgpu');
   app.commandLine.appendSwitch('enable-features', 'Vulkan');
 }
-if (smoke) {
-  // Headless CI machines have no GPU: WebGPU on SwiftShader's Vulkan, in software.
+if (smoke && process.platform === 'linux') {
+  // Headless CI machines have no GPU: WebGPU on SwiftShader's Vulkan, in software (a Mac's smoke
+  // runs on its own GPU, Metal).
   app.commandLine.appendSwitch('use-vulkan', 'swiftshader');
   app.commandLine.appendSwitch('use-webgpu-adapter', 'swiftshader');
   app.commandLine.appendSwitch('enable-unsafe-swiftshader');
