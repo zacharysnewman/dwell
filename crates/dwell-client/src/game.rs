@@ -6173,8 +6173,13 @@ impl<S: Scene> Game<S> {
         });
         self.drag_build(eye, dir, now_ms);
         self.blueprint_frame(eye, dir, now_ms);
+        // Where no block is aimed at, the cell ahead (as the region tools' corners take it).
+        let ahead = eye.map(|e| {
+            let dir = view_direction(input.look.yaw, input.look.pitch, face);
+            dwell_game::region_tools::ahead_cell(e, dir)
+        });
         self.region
-            .aim(self.interaction.placement().map(|(c, _)| c));
+            .aim(self.interaction.placement().map(|(c, _)| c).or(ahead), eye);
         self.show_region_boxes();
         // The brush aims much further along the same ray (its mode's brush reach), and where the
         // ray meets nothing editable in reach, at the farthest editable cell along it: it always

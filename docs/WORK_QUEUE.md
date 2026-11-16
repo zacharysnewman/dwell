@@ -103,6 +103,9 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-15:** "We need to increase the range when pasting so it doesn't overlap with your position" — the
   paste preview sits far enough ahead that it never overlaps the player. Owner should see: a paste never placed
   inside or on top of you.
+  Built (2026-11-16): a paste stays centred on the aimed cell where that clears your body; else its near side on the
+  cell, reaching away along the look, pushed on until clear (`region_tools::paste_min`); with nothing aimed at, the
+  cell ahead. The ghost and the paste agree; desktop and touch alike.
 - **Owner answers (2026-11-15):** "Wooden shovel 6 hits. Warmer stone brick, door swing can come later. Axe swish should
   play once per swing (animated swing). Trees should get the force applied to them like it used to be so they fall again,
   towards the side with the least structure (post 3D bit mask change). Make small changes in this thread."
