@@ -43,13 +43,15 @@ pub fn ssao_for(device_type: wgpu::DeviceType, phone: bool, quality: SsaoQuality
 }
 
 /// The uniform for a drawing buffer of `scene` px with an occlusion buffer of `buffer` texels at
-/// `tier`, a vertical FOV of `fov_deg` and the Settings strength `strength` (× the data's).
+/// `tier`, a vertical FOV of `fov_deg`, the Settings look `level` (its strength, intensity and
+/// radius) and a strength `strength` over it (1: the look's; the bench's).
 pub fn uniforms(
     scene: (u32, u32),
     buffer: (u32, u32),
     tier: SsaoTier,
     fov_deg: f64,
     strength: f64,
+    level: dwell_look::ssao::SsaoLevel,
 ) -> [f32; 20] {
     let tan_y = (fov_deg.to_radians() / 2.0).tan();
     let tan_x = tan_y * f64::from(scene.0) / f64::from(scene.1.max(1));
@@ -59,14 +61,14 @@ pub fn uniforms(
     [
         tan_x as f32,
         tan_y as f32,
-        (l.strength * strength.clamp(0.0, 4.0)) as f32,
+        (level.strength * strength.clamp(0.0, 4.0)) as f32,
         tier.samples.min(MAX_SAMPLES) as f32,
         buffer.0 as f32,
         buffer.1 as f32,
         scene.0 as f32,
         scene.1 as f32,
-        l.radius as f32,
-        l.intensity as f32,
+        level.radius as f32,
+        level.intensity as f32,
         l.bias as f32,
         max_texels as f32,
         l.near_from as f32,
@@ -75,7 +77,7 @@ pub fn uniforms(
         l.far_to as f32,
         l.blur_sharpness as f32,
         l.blur_radius.min(MAX_BLUR) as f32,
-        0.0,
+        level.floor as f32,
         0.0,
     ]
 }
@@ -96,7 +98,8 @@ pub fn source(samples: u32) -> String {
 const WGSL: &str = r"
 // x, y the half-FOV tangents, z the strength (data × setting), w the samples; the buffer's size
 // (xy) and the drawing buffer's (zw); the radius (m), the intensity, the bias (m) and the widest
-// spiral (texels); the near and far fades (m); the blur's sharpness and taps each way.
+// spiral (texels); the near and far fades (m); the blur's sharpness and taps each way, and the
+// look's share floor (`SsaoLevel::floor`).
 struct Ssao {
     tan: vec4f,
     size: vec4f,
@@ -274,7 +277,8 @@ fn ssao_apply_fs(i: Out) -> @location(0) vec4f {
         weight += w;
     }
     let ao = sum / max(weight, 1e-6);
-    let factor = 1.0 - (1.0 - ao) * share;
+    // The look's floor: at least that share darkens, the sun's light too (owner, 2026-11-15).
+    let factor = 1.0 - (1.0 - ao) * max(share, ssao.blur.z);
     return vec4f(factor, factor, factor, 1.0);
 }
 ";
@@ -566,14 +570,50 @@ mod tests {
     #[test]
     fn the_uniform_carries_the_strength_samples_and_the_spiral_in_the_buffers_texels() {
         let tier = dwell_look::ssao::LOW;
-        let u = uniforms((1280, 800), (640, 400), tier, 90.0, 2.0);
+        let weak = dwell_look::ssao::level("weak");
+        let u = uniforms((1280, 800), (640, 400), tier, 90.0, 2.0, weak);
         assert!((u[1] - 1.0).abs() < 1e-6, "tan(45°)");
         assert!((u[0] - 1.6).abs() < 1e-6, "× the aspect");
         assert!((u[2] - (SSAO.strength * 2.0) as f32).abs() < 1e-6);
         assert_eq!(u[3], tier.samples as f32);
         assert_eq!(&u[4..8], &[640.0, 400.0, 1280.0, 800.0]);
         assert!((u[11] - (SSAO.max_pixels / 2.0) as f32).abs() < 1e-4);
-        assert_eq!(uniforms((1280, 800), (640, 400), tier, 90.0, 0.0)[2], 0.0);
+        assert_eq!(
+            uniforms((1280, 800), (640, 400), tier, 90.0, 0.0, weak)[2],
+            0.0
+        );
+    }
+
+    #[test]
+    fn weak_is_todays_look_and_stronger_levels_darken_more_and_wider() {
+        // The owner, 2026-11-15: "make a weak, normal, and strong setting for SSAO with weak as our
+        // current setting".
+        let tier = dwell_look::ssao::LOW;
+        let at = |name: &str| {
+            uniforms(
+                (1280, 800),
+                (640, 400),
+                tier,
+                90.0,
+                1.0,
+                dwell_look::ssao::level(name),
+            )
+        };
+        let weak = at("weak");
+        assert_eq!(
+            (weak[2], weak[8], weak[9]),
+            (
+                SSAO.strength as f32,
+                SSAO.radius as f32,
+                SSAO.intensity as f32
+            )
+        );
+        let (normal, strong) = (at("normal"), at("strong"));
+        for (a, b) in [(&weak, &normal), (&normal, &strong)] {
+            assert!(b[2] * b[9] > a[2] * a[9], "darker: {} {}", a[9], b[9]);
+            assert!(b[8] >= a[8], "as wide or wider");
+        }
+        assert_eq!(at("anything"), normal, "unknown: normal");
     }
 
     #[test]

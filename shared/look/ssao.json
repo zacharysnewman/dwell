@@ -12,6 +12,12 @@
   "farTo": 72,
   "blurRadius": 3,
   "blurSharpness": 0.06,
+  "levels": {
+    "$comment": "The Settings look (owner, 2026-11-15: \"I can't even tell the difference between off and on SSAO, maybe make a weak, normal, and strong setting for SSAO with weak as our current setting\"): each level's strength, intensity and radius (m) in place of the file's, and its floor: the least share of a pixel's light the occlusion darkens (the sun's too, so contact shadows show in sunlight; the file's look darkens only the sky and block light's share, floor 0); weak is the file's own, normal the default.",
+    "weak": { "strength": 0.9, "intensity": 1.6, "radius": 0.75, "floor": 0 },
+    "normal": { "strength": 1.0, "intensity": 2.6, "radius": 1.0, "floor": 0.35 },
+    "strong": { "strength": 1.0, "intensity": 4.0, "radius": 1.4, "floor": 0.6 }
+  },
   "tiers": {
     "high": { "scale": 1.0, "samples": 12 },
     "low": { "scale": 0.5, "samples": 8 }

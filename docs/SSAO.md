@@ -75,3 +75,17 @@ frame's difference is the cost. High keeps 60 fps with Low on.
   the floor darkens the water over it a little. Acceptable for shallow water; revisit if it shows.
 - Screen-space: what is off screen or hidden occludes nothing (edges of the view lose a little).
 - The half-resolution tier can miss thin grass blades' own occlusion; the ground round them still darkens.
+
+
+## Looks: Weak, Normal, Strong (owner, 2026-11-15) **[built]**
+
+"Hmmm, I can't even tell the difference between off and on SSAO, maybe make a weak, normal, and strong setting
+for SSAO with weak as our current setting." The Settings strength slider gave way to an **Ambient occlusion look**
+choice (Weak, Normal, the default, Strong; `level` in the `dwell.ssao` record, an optional field; `strength` stays
+stored, ×1, the bench's). Each look is data (`levels` in shared/look/ssao.json): its strength, intensity and radius in
+place of the file's, and a **floor**, the least share of a pixel's light the occlusion darkens. The file's look darkens
+only the sky and block light's share, which in sunlight is small, so it barely showed; Normal (0.35) and Strong (0.6)
+darken that share of the sun's light too, so contact shadows show in sunlight. Weak is the file's own look, floor 0
+(the generator checks it). The floor rides the uniform's spare slot (`blur.z`) into the apply pass:
+`1 − (1 − ao) · max(share, floor)`; no new pass, and a look changes at once (`setSsaoLevel`). The bench's
+`ssao-levels` scenario shoots three views at Off, Weak, Normal and Strong.

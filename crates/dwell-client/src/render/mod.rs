@@ -1742,6 +1742,8 @@ pub struct Renderer {
     /// group layout, uniform and pipelines (`ssao.rs`).
     ssao: dwell_look::ssao::SsaoQuality,
     ssao_strength: f64,
+    /// The ambient occlusion's Settings look (`dwell_look::ssao::level`: weak, normal, strong).
+    ssao_level: dwell_look::ssao::SsaoLevel,
     ssao_layout: wgpu::BindGroupLayout,
     ssao_uniform: wgpu::Buffer,
     ssao_pipelines: ssao::SsaoPipelines,
@@ -2828,6 +2830,7 @@ impl Renderer {
             bloom_pipelines,
             ssao: dwell_look::ssao::SsaoQuality::Off,
             ssao_strength: 1.0,
+            ssao_level: dwell_look::ssao::level("normal"),
             ssao_layout,
             ssao_uniform,
             ssao_pipelines,
@@ -3297,6 +3300,10 @@ impl Renderer {
     pub fn set_ssao(&mut self, quality: dwell_look::ssao::SsaoQuality, strength: f64) {
         self.ssao = quality;
         self.ssao_strength = strength.clamp(0.0, 4.0);
+    }
+    /// The ambient occlusion's look (`weak`, `normal`, `strong`; owner, 2026-11-15).
+    pub fn set_ssao_level(&mut self, name: &str) {
+        self.ssao_level = dwell_look::ssao::level(name);
     }
     /// The ambient occlusion's tier this frame draws (`ssao::ssao_for`: none on a CPU adapter or a
     /// phone, nor at strength 0).
@@ -5399,6 +5406,7 @@ impl Renderer {
                 tier,
                 self.frame_fov(),
                 self.ssao_strength,
+                self.ssao_level,
             );
             self.queue.write_buffer(&self.ssao_uniform, 0, floats(&u));
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::SSAO));

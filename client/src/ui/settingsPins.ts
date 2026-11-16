@@ -87,7 +87,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     one(['clouds'], CLOUDS_KEY, [], 'clouds'),
     one(['shafts'], SHAFTS_KEY, [], 'shafts'),
     one(['bloom'], BLOOM_KEY, [], 'bloom'),
-    ...rec('ssao', SSAO_KEY, ['quality', 'strength'], ['ssao']),
+    ...rec('ssao', SSAO_KEY, ['quality', 'strength', 'level'], ['ssao']),
     ...rec(
       'water',
       WATER_KEY,

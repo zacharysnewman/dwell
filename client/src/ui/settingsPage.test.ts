@@ -26,7 +26,11 @@ describe('the Settings page structure (menu M3)', () => {
       // The interface parts' toggles are rows too (On screen, shared/ui/hud.json). Not drawn, on
       // purpose: the model detail (no Settings control since 0.52.5, shared/models/models.json)
       // and, on a phone, the menu button (a phone may not hide it: hud.json's `phone: false`).
-      const unshown = mobile ? ['hud.shown.menu-button', 'modelDetail'] : ['modelDetail'];
+      // The SSAO strength stays stored (the bench's) but its slider gave way to the look
+      // (owner, 2026-11-15).
+      const unshown = mobile
+        ? ['ssao.strength', 'hud.shown.menu-button', 'modelDetail']
+        : ['ssao.strength', 'modelDetail'];
       const missing = SETTING_FIELDS.map((f) => f.id).filter((id) => !pins.has(id));
       expect(missing).toEqual(unshown);
       // ...and no row changes a setting that isn't stored.

@@ -9,17 +9,24 @@
 export const SSAO_QUALITIES = ['off', 'low', 'high'] as const;
 export type SsaoQuality = (typeof SSAO_QUALITIES)[number];
 
+/** Its look (shared/look/ssao.json `levels`; owner, 2026-11-15: "make a weak, normal, and strong
+ * setting for SSAO with weak as our current setting"). */
+export const SSAO_LEVELS = ['weak', 'normal', 'strong'] as const;
+export type SsaoLevel = (typeof SSAO_LEVELS)[number];
+
 export interface SsaoSettings {
   quality: SsaoQuality;
-  /** × the data's strength: 0 draws none, 1 the data's, 2 twice it. */
+  /** × the look's strength: 0 draws none, 1 the look's (no longer in the menu: the bench's). */
   strength: number;
+  /** The look: weak (the first one's), normal (the default) or strong. */
+  level: SsaoLevel;
 }
 
 export const SSAO_KEY = 'dwell.ssao';
 export const SSAO_STRENGTH = { min: 0, max: 2 } as const;
 
 export function defaultSsao(): SsaoSettings {
-  return { quality: 'off', strength: 1 };
+  return { quality: 'off', strength: 1, level: 'normal' };
 }
 
 /** The stored record as settings; anything missing or unknown takes the fallback's. */
@@ -31,7 +38,9 @@ export function sanitizeSsao(value: unknown, fallback: SsaoSettings): SsaoSettin
     typeof s === 'number' && Number.isFinite(s)
       ? Math.min(SSAO_STRENGTH.max, Math.max(SSAO_STRENGTH.min, s))
       : fallback.strength;
-  return { quality, strength };
+  // A record from before the look (no `level`) takes the default.
+  const level = SSAO_LEVELS.find((l) => l === stored?.level) ?? fallback.level;
+  return { quality, strength, level };
 }
 
 /**
@@ -43,5 +52,5 @@ export function ssaoRecord(stored: unknown, s: SsaoSettings): Record<string, unk
     typeof stored === 'object' && stored !== null && !Array.isArray(stored)
       ? (stored as Record<string, unknown>)
       : {};
-  return { ...kept, quality: s.quality, strength: s.strength };
+  return { ...kept, quality: s.quality, strength: s.strength, level: s.level };
 }

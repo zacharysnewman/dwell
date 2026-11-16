@@ -486,6 +486,8 @@ interface DwellDebug {
     /** The ambient occlusion's tier and strength (docs/SSAO.md). */
     ssao?: 'off' | 'low' | 'high';
     ssaoStrength?: number;
+    /** Its look (`weak`, `normal`, `strong`). */
+    ssaoLevel?: string;
     /** Leaf cards on (the tier's) or off (`Client.setCards`). */
     cards?: boolean;
     /** The tall grass and flowers drawn or not. */
@@ -1275,6 +1277,7 @@ async function start(): Promise<App | null> {
       new URLSearchParams(location.search).get('ssao') ?? s.ssao.quality,
       s.ssao.strength,
     );
+    client.setSsaoLevel(s.ssao.level);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
     const rs = renderScaleFromQuery(location.search, s.renderScale);
     client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);
@@ -1724,6 +1727,7 @@ async function start(): Promise<App | null> {
       if (v.shafts !== undefined) client.setShafts(v.shafts);
       if (v.bloom !== undefined) client.setBloom(v.bloom);
       if (v.ssao !== undefined) client.setSsao(v.ssao, v.ssaoStrength ?? s.ssao.strength);
+      if (v.ssaoLevel !== undefined) client.setSsaoLevel(v.ssaoLevel);
       if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
       if (v.facing !== undefined) client.setFacingCull(v.facing);
       if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
