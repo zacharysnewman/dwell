@@ -32,7 +32,8 @@ fn material(m: StateId) -> StateId {
 
 /// What the generator's structure placements put over the ground (the pines' log and leaves).
 fn placed(m: StateId) -> bool {
-    m == require("dwell:log") || m == require("dwell:leaves")
+    // Any state of a tree's blocks (species logs and leaves carry their own properties).
+    matches!(dwell_blocks::block_of(m).name, "dwell:log" | "dwell:leaves")
 }
 
 /// The core's fill at face-local row `y` (from the midplane): the bedrock in its first rows
@@ -425,12 +426,19 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         // A stored ramp topping a column is its material, shaped.
                         let m = material(chunk.get(lx, y, z));
                         let depth = ground - wy;
-                        if depth == -1 && wy >= water_row && decoration(m) {
+                        // A decoration stands on the ground up to 2 m (4 rows) tall: 2 m grass.
+                        if (-4..=-1).contains(&depth) && wy >= water_row && decoration(m) {
                             decorated += 1;
                         } else if depth < 0 && wy >= water_row && placed(m) {
                             // A placed structure's (tests/placements.rs).
                         } else if depth < 0 {
-                            assert_eq!(m, if wy < water_row { M.water } else { M.air });
+                            assert_eq!(
+                                m,
+                                if wy < water_row { M.water } else { M.air },
+                                "{} at depth {depth}, water {}",
+                                dwell_blocks::block_of(m).name,
+                                wy - water_row
+                            );
                             water += i32::from(m == M.water);
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             // face-boundary: face A's core
@@ -456,7 +464,13 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                             } else {
                                 M.stone
                             };
-                            assert_eq!(m, want);
+                            assert_eq!(
+                                m,
+                                want,
+                                "{} for {} at depth {depth}",
+                                dwell_blocks::block_of(m).name,
+                                dwell_blocks::block_of(want).name
+                            );
                             grass += i32::from(m == M.grass);
                         }
                     }

@@ -1242,6 +1242,10 @@ pub struct TerrainGenerator {
     /// How far above the ground decorations and placed structures reach (rows): the sky test
     /// leaves this much room over the highest ground before a chunk is all air.
     rise: f32,
+    /// [`Self::rise`] without the placed structures' part: the sky test adds the trees actually
+    /// placed over a chunk column instead (0.71's giants reach ~120 m: room for them over every
+    /// column kept the whole view's sky out of the Air chunks).
+    ground_rise: f32,
     /// The LOD colour map's river valleys (a preview, `?lodmap=on`; ARCHITECTURE.md §6.6 "Colour
     /// map"): where a river crosses an LOD cell too coarse to hold its water, the cell's ground is
     /// lowered this far (m) under the river's level (`lod_valley`). Off by default; never in
@@ -1405,6 +1409,7 @@ impl TerrainGenerator {
             shrines: None,
             towns: None,
             rise: DECORATION_RISE as f32,
+            ground_rise: DECORATION_RISE as f32,
             lod_valleys: None,
             volume: None,
             cache_id: next_cache_id(),
@@ -2230,6 +2235,7 @@ impl TerrainGenerator {
             v.strength = c;
         }
         self.rise = self.rise.max((v.reach_rows + 1) as f32);
+        self.ground_rise = self.ground_rise.max((v.reach_rows + 1) as f32);
         self.volume = Some(Arc::new(v));
         self.cache_id = next_cache_id();
         self
@@ -2306,6 +2312,7 @@ impl TerrainGenerator {
     fn raise_for_portals(&mut self) {
         if let Some(p) = &self.portals {
             self.rise = self.rise.max((p.rules.rim_rows + 1) as f32);
+            self.ground_rise = self.ground_rise.max((p.rules.rim_rows + 1) as f32);
         }
     }
 
@@ -3487,9 +3494,26 @@ impl TerrainGenerator {
     fn sky_floor(&self, cols: &[Column], (x0, z0): (i32, i32)) -> f32 {
         let ground = cols.iter().filter(|c| !c.outside).fold(-1e9f32, |top, c| {
             top.max(rows(c.height)).max(c.water_row() as f32)
-        }) + self.rise;
+        }) + self.ground_rise;
         let s = CHUNK_SIZE;
-        ground.max(self.monuments_top((x0, z0), (x0 + s - 1, z0 + s - 1)) as f32)
+        let (lo, hi) = ((x0, z0), (x0 + s - 1, z0 + s - 1));
+        ground
+            .max(self.monuments_top(lo, hi) as f32)
+            .max(self.trees_top(lo, hi) as f32)
+    }
+
+    /// The top (rows, exclusive) of the placed structures reaching columns [x0, x1] × [z0, z1]:
+    /// what the sky test leaves room for over the ground (the trees, as planted here).
+    fn trees_top(&self, lo: (i32, i32), hi: (i32, i32)) -> i32 {
+        self.trees_in(lo, hi)
+            .iter()
+            .map(|t| self.planters[t.planter as usize].place(t))
+            .filter(|p| {
+                p.max[0] >= lo.0 && p.min[0] <= hi.0 && p.max[2] >= lo.1 && p.min[2] <= hi.1
+            })
+            .map(|p| p.max[1] + 1)
+            .max()
+            .unwrap_or(i32::MIN / 2)
     }
 
     /// A portal's monument on this face: its anchor on the axis, its bottom row on the lowest

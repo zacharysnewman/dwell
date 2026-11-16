@@ -125,14 +125,14 @@ both_faces!(
 );
 
 both_faces!(
-    /// The default world stands hand-built pines, no species: no tree is listed, so its leaves
-    /// keep their colour (and its goldens, worldgen hashes, never see a mesh colour).
-    fn the_default_world_lists_no_tinted_trees(f: FaceFrame) {
+    /// The default world's pines are species trees since 0.71 (the hand-built ones went; owner,
+    /// 2026-11-15): they are listed, with their tints.
+    fn the_default_worlds_pines_are_listed_trees(f: FaceFrame) {
         let g = TerrainGenerator::new(face_seed(7, f.face));
         assert!(
             !g.trees_in((-200, -200), (199, 199)).is_empty(),
             "pines stand"
         );
-        assert!(g.tree_tints((-200, -200), (199, 199)).is_empty());
+        assert!(!g.tree_tints((-200, -200), (199, 199)).is_empty());
     }
 );

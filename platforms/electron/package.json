@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "smoke": "electron . --smoke --ozone-platform=headless",
-    "package": "node package-app.mjs"
+    "package": "node package-app.mjs",
+    "build-app": "npm --prefix ../../client run build && node package-app.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
