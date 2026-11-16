@@ -45,6 +45,9 @@ Last updated: 2026-11-11 (0.52.108).
   height: each species' maximum ×4, trees growing toward it at their own rates so ages and sizes vary; trunks stop at
   2 × 2; a player-placed block in one of the 3 spaces stops the tree growing (until it is removed). And: "And fold
   trunks into billboards." (past the hand-over the near trunk's geometry is not drawn; the billboard has it).
+  Built (2026-11-15): a listed tree's logs are the opaque mesh's last indices (`MeshArrays::tree_logs`); a chunk past
+  the leaves' hand-over leaves them out (`TREE_LOGS_BIT`), the sun's shadows keep them. Bench (M1 Air, High): forest
+  14.8 ms (~−0.25), triangles −4 %; mixed and open unchanged within noise.
 - **Owner, 2026-11-15:** "Yes performance pass to get up to 60fps" — next local job (High at 60 fps on the M1 Air;
   biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
   High holding 60 fps on the M1 Air in forest, meadow and open ground.
