@@ -81,12 +81,23 @@ test('the loading screen covers the join until the terrain around the player is 
     .poll(async () => (await loadingOf(page))?.terrainReady, { timeout: 30_000 })
     .toBe(true);
   // It listed the start's stages as they ran (shared/look/loading.json `stages`), each now ended:
-  // the page's, the local world's worker's and the client's readout's (a flat world has no map).
+  // the page's, the local world's worker's and the client's readout's, and the GPU's shader
+  // compile (Bug #71; a flat world has no map).
   const stages = await page.evaluate<{ id: string; endedMs: number | null }[]>(
     '(globalThis.__dwellStages?.() ?? []).map((s) => ({ id: s.id, endedMs: s.endedMs }))',
   );
   expect(stages.map((s) => s.id).sort()).toEqual(
-    ['game', 'graphics', 'join', 'page', 'server', 'spawn', 'terrain', 'worldFile'].sort(),
+    [
+      'game',
+      'graphics',
+      'join',
+      'page',
+      'server',
+      'shaders',
+      'spawn',
+      'terrain',
+      'worldFile',
+    ].sort(),
   );
   expect(stages.every((s) => s.endedMs !== null)).toBe(true);
 });
