@@ -67,6 +67,15 @@ Last updated: 2026-11-11 (0.52.108).
   once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
   Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
   chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
+  Round 6 (WIP branch `claude/server-tick-6`): a grass chunk grown a quarter a tick; tests green, browser check
+  pending. Owner, 2026-11-16: "Also for the hitching fixes, I'm getting big hitches while flying at 362 m/s." Next:
+  measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
+  tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
+  (362 m/s) with no hitches.
+- **Owner, 2026-11-16 (bug, BUGS.md #195):** "I'm seeing big gray speckles across the whole map at medium to far LODs
+  and they seem to mostly (sometimes entirely) disappear when up close. Some of them at least seem to come from cores
+  inside of terrain or the random "rocks/boulders" scattered about." Owner should see: no grey speckles at any
+  distance; far terrain shows the material it shows up close.
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.

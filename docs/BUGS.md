@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 195. Grey speckles across the map at medium and far LODs
+
+Owner, 2026-11-16: "I'm seeing big gray speckles across the whole map at medium to far LODs and they seem to mostly
+(sometimes entirely) disappear when up close. Some of them at least seem to come from cores inside of terrain or the
+random "rocks/boulders" scattered about." Suspects: the LOD's downsampling picks a buried stone/core cell or a lone
+boulder cell as a far cell's surface (a minority material winning a coarse cell, or a cell inside the ground exposed
+by the coarse mesh). Owner should see: no grey speckles at any distance; far terrain shows the material it shows up
+close.
+
 ### 194. The game stalls every few seconds while grass grows
 
 Owner, 2026-11-16 (M3 Max, "well under 10ms on everything else"): "I've noticed the server stuttering a bit while I'm
