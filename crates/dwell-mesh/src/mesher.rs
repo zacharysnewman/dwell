@@ -808,6 +808,36 @@ fn cell_noise(cell: [i64; 3], salt: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// Texture: across a cross's quad and up it, just inside the tile (fract(1) would wrap to its foot).
+const EDGE: f64 = 1e-3;
+/// How far up the tile a stalk's blades reach (the bases, under the tips: BUGS.md #192).
+const STALK_V: f64 = 0.45;
+
+/// Where a cross plant's cell stands in a stand of its block (tall grass up to 2 m: a column of
+/// cells, BUGS.md #192).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stand {
+    /// The cell above is the same plant: this one is a stalk.
+    pub below_top: bool,
+    /// The cell under it is the same plant.
+    pub above_foot: bool,
+}
+
+impl Stand {
+    fn of(&self) -> bool {
+        self.below_top || self.above_foot
+    }
+    /// The seed a cell's jitter and thinning take: its column's in a stand (so its cells line up
+    /// and are kept or thinned together), its own alone.
+    pub fn seed(&self, world: [i64; 3]) -> [i64; 3] {
+        if self.of() {
+            [world[0], i64::MIN / 3, world[2]]
+        } else {
+            world
+        }
+    }
+}
+
 /// Half the width of a cross's quad: corner to corner of the cell at 45° (√2 / 2).
 const CROSS_HALF_WIDTH: f64 = std::f64::consts::FRAC_1_SQRT_2;
 /// How much a cross's normals lean toward up (1: straight up, 0: the quad's own normal), so a
@@ -829,8 +859,12 @@ fn cross_voxel(
     [x, y, z]: [i32; 3],
     support: Option<&ShapeInfo>,
     (light, flood): (f32, [f32; 2]),
+    stand: Stand,
 ) {
     let Some(c) = style.cross else { return };
+    // A stand's cells (tall grass up to 2 m, BUGS.md #192: "it's supposed to extend or stretch
+    // up"): one plant, jittered by its column, its lower cells stalks.
+    let world = stand.seed(world);
     let sink = |px: f64, pz: f64| match support {
         Some(s) if c.sit_on_support => f64::from(plant_sink(
             s,
@@ -846,9 +880,21 @@ fn cross_voxel(
     let turn = jitter(3) * f64::from(c.rotation_deg).to_radians();
     let scale =
         f64::from(c.height_min) + f64::from(c.height_max - c.height_min) * cell_noise(world, 4);
-    let height = f64::from(c.height) * scale;
+    // A stalk fills its cell exactly, the cell above's blades rising out of its top.
+    let height = if stand.below_top {
+        1.0
+    } else {
+        f64::from(c.height) * scale
+    };
     let (y0, y1) = (f64::from(y), f64::from(y) + height);
-    let sway = style.wind.map_or(0.0, |w| f64::from(w.strength) * scale);
+    // A stalk stands still; the tip sways from its foot (no gap where the cells meet).
+    let sway = if stand.below_top {
+        0.0
+    } else {
+        style.wind.map_or(0.0, |w| f64::from(w.strength) * scale)
+    };
+    // A stalk draws the blades' lower band (their bases, no tips); the tip the whole tile.
+    let v_top = if stand.below_top { STALK_V } else { 1.0 - EDGE };
     let speed = style.wind.map_or(0.0, |w| f64::from(w.speed));
     let (fade0, fade1) = style
         .fade
@@ -859,8 +905,6 @@ fn cross_voxel(
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
     b.m.bare.resize(b.vertex_count() as usize, 0.0);
     let bare = if style.outline { 0.0 } else { 1.0 };
-    // Texture: across the quad and up it, just inside the tile (fract(1) would wrap to its foot).
-    const EDGE: f64 = 1e-3;
     for q in 0..u32::from(c.quads) {
         let angle = std::f64::consts::FRAC_PI_4
             + turn
@@ -883,8 +927,8 @@ fn cross_voxel(
         let corners = [
             (-CROSS_HALF_WIDTH, y0, EDGE, EDGE, 0.0),
             (CROSS_HALF_WIDTH, y0, 1.0 - EDGE, EDGE, 0.0),
-            (CROSS_HALF_WIDTH, y1, 1.0 - EDGE, 1.0 - EDGE, sway),
-            (-CROSS_HALF_WIDTH, y1, EDGE, 1.0 - EDGE, sway),
+            (CROSS_HALF_WIDTH, y1, 1.0 - EDGE, v_top, sway),
+            (-CROSS_HALF_WIDTH, y1, EDGE, v_top, sway),
         ];
         for (along, py, u, v, s) in corners {
             let (px, pz) = (cx + dx * along, cz + dz * along);
@@ -3252,8 +3296,17 @@ fn mesh_cells(
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     let flood = cells.flood.cell([cx, cy, cz]);
-                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`).
-                    if plant_kept(world, flags.plants) {
+                    let same = |dy: i32| {
+                        let n = cells.kind(cx, cy + dy, cz);
+                        n.style.look == Look::Cross && n.style.block == k.style.block
+                    };
+                    let stand = Stand {
+                        below_top: same(1),
+                        above_foot: same(-1),
+                    };
+                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`), a
+                    // stand whole.
+                    if plant_kept(stand.seed(world), flags.plants) {
                         cross_voxel(
                             target,
                             &k.style,
@@ -3261,6 +3314,7 @@ fn mesh_cells(
                             [cx, cy, cz],
                             support,
                             (light, flood),
+                            stand,
                         );
                     }
                     if k.style.render == RenderMode::Translucent {

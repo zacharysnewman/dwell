@@ -6,12 +6,32 @@ pins it.
 
 ## Open
 
+### 193. Leaves left hanging in the air after a tree is cut down
+
+Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should
+only be attached to trees or fall to the ground and settle there." (Photo: a few leaf blocks floating in the open sky
+over a meadow, no trunk near.) Owner should see: no leaves left floating; a felled tree's leaves go with it or fall to
+the ground.
+
+### 192. Growing tall grass stacks with gaps instead of stretching
+
+Owner, 2026-11-16: "I see the tall grass is like stacking when it grows but that's not right at all, it's supposed to
+extend or stretch up. That looks really bad stacked with gaps." (Photo: tall grass two and three cells high drawn as
+separate short tufts one over another, gaps between them.) Owner should see: tall grass that grows taller as one
+stand, its blades stretching up, no stacked tufts or gaps.
+
 ### 191. A fallen tree's logs settle out of line
 
 Owner, 2026-11-16: "I'm also seeing settling tree logs not matching their alignment, this is probably due to the
 original implementation and the later update to make them settle better. I haven't chopped this fallen tree at all"
 (screenshot: an unchopped fallen trunk lying as separate log pieces at different heights and offsets, ends
 staggered, not one straight trunk). Owner should see: a felled tree lies as one straight trunk, its logs in line.
+Looked into (2026-11-16): a 2 x 2 trunk resampled onto its side is one straight box at any rest offset
+(`felling.rs` unit test), and a giant's 2 x 2 trunk with a crown felled on flat ground, over a bush too, lies as one
+straight trunk (`tests/felling.rs` `a_two_by_two_trunk_with_a_crown_settles_as_one_straight_trunk`). Not reproduced
+yet: suspects are a trunk at rest on a hill (each column follows the pose, §4 step 2) or landing across other trees
+(each column lifted on its own over what holds its cells, step 3). Parked for the owner: where it was (a world and
+place, or how it came down).
 
 ### 190. Damaged slopes and logs show the void behind them
 

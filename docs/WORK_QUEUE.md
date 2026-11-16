@@ -42,6 +42,17 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+- **Owner, 2026-11-16 (bug, BUGS.md #193):** "Sometimes leaves hang in the air after cutting down a tree, possibly after
+  settling. Leaves should only be attached to trees or fall to the ground and settle there." Owner should see: no
+  floating leaves after a fell.
+- **Owner, 2026-11-16 (tuning):** "Trees also fall with too much force. They should have maybe 1/4 of that force for a
+  tree. And theoretically it should be scaled based on the trees mass so they all fall at the same relative starting
+  speed." To do: the felled trunk's topple push (`felling.json`'s tip/topple and the log's `fellTip`) at 1/4 of
+  today's for a tree, scaled by the piece's mass (or applied as a starting angular speed) so a sapling and a giant
+  start to tip at the same speed. Owner should see: trees tipping over gently, small and giant alike.
+- **Owner, 2026-11-16 (bug, BUGS.md #192):** "I see the tall grass is like stacking when it grows but that's not right
+  at all, it's supposed to extend or stretch up. That looks really bad stacked with gaps." Owner should see: growing
+  tall grass stretches up as one stand, no stacked tufts.
 - **Owner, 2026-11-16 (perf idea, queued):** "One major optimization I could see is to cull the underworld faces
   entirely unless you're near a portal chunk or a world edge chunk." then "Add that to the queue". To do: measure what
   face B (the far face, under the midplane) costs to draw from face A today (chunks, LOD, shadows), then skip it unless
