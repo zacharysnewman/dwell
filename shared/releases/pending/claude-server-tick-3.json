@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Saving a local world no longer stalls the game every few seconds."
+  ]
+}

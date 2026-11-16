@@ -139,6 +139,8 @@ fn punch_credit_per_tick() -> f64 {
 const REGION_CELLS_PER_TICK: f64 = region_edit::CELLS_PER_SECOND as f64 / SIM_HZ as f64;
 const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
+/// The most ticks between durable saves (an autosave in between commits lazily, `SaveBatch::lazy`).
+const DURABLE_SAVE_TICKS: u32 = 60 * SIM_HZ;
 /// The chunks a tick's collision reach may generate itself (`Players::set_reach_generates`).
 const REACH_GENERATES_PER_TICK: usize = 2;
 /// The most pristine chunks (edited chunks as generated) kept for the growth steps (64 KiB each).
@@ -1207,6 +1209,8 @@ pub struct Server {
     /// it); and the ones wanted next (low priority, after everything players need).
     pristine: HashMap<ChunkCoord, Box<Chunk>>,
     pristine_wanted: Vec<ChunkCoord>,
+    /// The tick of the last durable save (`autosave`; none yet: the first is durable).
+    last_durable_save: Option<u32>,
     /// The due trees still to grow, a few a tick (`grow_trees`).
     growth_due: std::collections::VecDeque<[i32; 3]>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
@@ -1437,6 +1441,7 @@ impl Server {
             growth_scanned: Default::default(),
             pristine: Default::default(),
             pristine_wanted: Vec::new(),
+            last_durable_save: None,
             growth_due: Default::default(),
             ground: Default::default(),
             ground_unread: false,
@@ -5311,7 +5316,7 @@ impl Server {
         } else {
             self.apply_water();
         }
-        self.autosave();
+        self.autosave_as(false);
         // Now, as said: an inline store's save is not left to the ticks.
         if let Some(store) = &self.config.store
             && !store.threaded()
@@ -5321,13 +5326,25 @@ impl Server {
         }
     }
 
-    /// Saves as `save_now`, with the water's newest record (asked for a moment before).
+    /// Saves as `save_now`, with the water's newest record (asked for a moment before): lazily
+    /// (not synced to the file) but once a minute (`DURABLE_SAVE_TICKS`).
     fn autosave(&mut self) {
+        let lazy = self
+            .last_durable_save
+            .is_some_and(|t| self.tick < t + DURABLE_SAVE_TICKS);
+        self.autosave_as(lazy);
+    }
+
+    fn autosave_as(&mut self, lazy: bool) {
         if self.config.store.is_none() {
             return;
         }
         self.next_save_tick = self.tick + self.config.autosave_seconds * SIM_HZ;
+        if !lazy {
+            self.last_durable_save = Some(self.tick);
+        }
         let mut batch = SaveBatch {
+            lazy,
             // This build's version is the world's last (and, for a new file, its first): RELEASES.md §6.
             meta: Some(WorldMeta {
                 world_seed: self.config.world_seed,
