@@ -1249,6 +1249,8 @@ pub struct Server {
     /// The tree stages (species, seed, stage) to grow in the jobs worker, and those out there.
     tree_jobs: std::collections::VecDeque<(u16, u32, u8)>,
     tree_jobs_out: HashSet<(u16, u32, u8)>,
+    /// The chunk the grass step is part way through on the tick, and its next quarter.
+    grass_part: Option<(ChunkCoord, u8)>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1484,6 +1486,7 @@ impl Server {
             growth_due: Default::default(),
             tree_jobs: Default::default(),
             tree_jobs_out: Default::default(),
+            grass_part: None,
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
