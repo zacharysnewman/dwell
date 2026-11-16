@@ -450,3 +450,117 @@ fn meshing_fifty_damaged_cells_stays_within_budget() {
         "meshing time: {masked_ms:.1} ms vs {plain_ms:.1}"
     );
 }
+
+/// The opaque triangles of a chunk holding stone at the face-local `cells`, `damaged` struck hard
+/// on its −x face, on face `f`: how many face +x on the plane x = `plane` (the face of the stone
+/// on the damaged block's −x side, toward it).
+fn faces_toward_damage(
+    f: FaceFrame,
+    cells: &[[i32; 3]],
+    damaged: Option<[i32; 3]>,
+    plane: f32,
+) -> usize {
+    let stone = dwell_blocks::require("dwell:stone");
+    let mut padded = vec![0u16; PADDED_VOLUME];
+    for &c in cells {
+        let w = world_cell(f, c);
+        padded[padded_index(w[0], w[1], w[2])] = stone;
+    }
+    let damage: Vec<_> = damaged
+        .map(|c| {
+            let view = DamageView {
+                fraction: 230,
+                marks: [[128, 128, 128], [128, 40, 200], [128, 220, 60]]
+                    .iter()
+                    .map(|&p| HitMark::at(world_face(f, 1), world_point(f, [0, p[1], p[2]])))
+                    .collect(),
+            };
+            (world_cell(f, c), view)
+        })
+        .into_iter()
+        .collect();
+    let m = mesh_chunk_damaged(
+        &padded,
+        &[],
+        f == FaceFrame::B,
+        [0, 0, 0],
+        &[],
+        None,
+        ChunkFlags::default(),
+        &damage,
+    )
+    .expect("padded volume")
+    .opaque;
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| {
+            let p =
+                |i: u32| -> [f32; 3] { std::array::from_fn(|k| m.positions[i as usize * 3 + k]) };
+            let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+            let on = [a, b, c].iter().all(|v| (v[0] - plane).abs() < 1e-4);
+            let u: [f32; 3] = std::array::from_fn(|k| b[k] - a[k]);
+            let v: [f32; 3] = std::array::from_fn(|k| c[k] - a[k]);
+            on && u[1] * v[2] - u[2] * v[1] > 0.0
+        })
+        .count()
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #187 (owner, 2026-11-15: "chunks mined away in the 3D Block damage bit mask
+    /// properly render the blocks under/behind it"): the stone beside a damaged stone draws its
+    /// face toward it, which the damaged block's carved chunks show through; inside a chunk and
+    /// across a chunk's border (the damaged block in the next chunk). Red before: culled, the
+    /// hole showed the sky.
+    fn a_blocks_face_toward_a_damaged_block_draws(f: FaceFrame) {
+        // Inside the chunk: stone at x 7, the damaged stone at x 8 (its −x face struck).
+        let (near, hit) = ([7, 8, 8], [8, 8, 8]);
+        assert_eq!(
+            faces_toward_damage(f, &[near, hit], None, 8.0),
+            0,
+            "undamaged: hidden"
+        );
+        assert!(
+            faces_toward_damage(f, &[near, hit], Some(hit), 8.0) > 0,
+            "damaged: drawn"
+        );
+        // Across the border: the chunk's stone at x 0, the damaged stone at x −1 (the
+        // neighbour chunk's, in this one's padding)... the face of x 0 toward −x.
+        let border = |damaged: Option<[i32; 3]>| {
+            // Mirror the setup in x: the damaged block on the −x side, so count −x faces at x 0.
+            let stone = dwell_blocks::require("dwell:stone");
+            let mut padded = vec![0u16; PADDED_VOLUME];
+            for c in [[0, 8, 8], [-1, 8, 8]] {
+                let w = world_cell(f, c);
+                padded[padded_index(w[0], w[1], w[2])] = stone;
+            }
+            let damage: Vec<_> = damaged
+                .map(|c| (world_cell(f, c), view(230, &[(0, [255, 128, 128])])))
+                .into_iter()
+                .collect();
+            let m = mesh_chunk_damaged(
+                &padded,
+                &[],
+                f == FaceFrame::B,
+                [0, 0, 0],
+                &[],
+                None,
+                ChunkFlags::default(),
+                &damage,
+            )
+            .expect("padded volume")
+            .opaque;
+            m.indices
+                .chunks_exact(3)
+                .filter(|t| {
+                    let x = |i: u32| m.positions[i as usize * 3];
+                    t.iter().all(|&i| x(i).abs() < 1e-4)
+                })
+                .count()
+        };
+        assert_eq!(border(None), 0, "undamaged across the border: hidden");
+        assert!(
+            border(Some([-1, 8, 8])) > 0,
+            "damaged across the border: drawn"
+        );
+    }
+);
