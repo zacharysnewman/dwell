@@ -412,8 +412,15 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
         for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
             let c = chunk_of(x, cy * S, cz);
             let chunk = gen_chunk(&g, c);
+            // A trunk's pad levels its columns (WORK_QUEUE item 44): their fill is the pad's.
+            let (lo, hi) = ((c.x * S, c.z * S), (c.x * S + S - 1, c.z * S + S - 1));
+            let pads =
+                dwell_worldgen::placements::pads_over(g.planters(), &g.trees_in(lo, hi), lo, hi);
             for z in 0..S {
                 for lx in 0..S {
+                    if pads[(z * S + lx) as usize].is_some() {
+                        continue;
+                    }
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
                     let col = g.column_at(c.x * S + lx, c.z * S + z);
                     let water_row = col.water_row();
@@ -467,9 +474,13 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                             assert_eq!(
                                 m,
                                 want,
-                                "{} for {} at depth {depth}",
+                                "{} for {} at depth {depth}, ({}, {wy}, {}): state_at {}",
                                 dwell_blocks::block_of(m).name,
-                                dwell_blocks::block_of(want).name
+                                dwell_blocks::block_of(want).name,
+                                c.x * S + lx,
+                                c.z * S + z,
+                                dwell_blocks::block_of(g.state_at(c.x * S + lx, wy, c.z * S + z))
+                                    .name
                             );
                             grass += i32::from(m == M.grass);
                         }

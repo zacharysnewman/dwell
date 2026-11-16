@@ -35,9 +35,13 @@ Last updated: 2026-11-11 (0.52.108).
   pines; the terrain trip test (a near chunk waited 806 frames): the sky test kept room for a 120 m giant over every
   column, so the whole view's sky was generated; it now takes the trees as planted over each column (214 frames;
   the limit is 240, as giants' crowns fill more chunks to mesh). To check in the browser: chunks popping in near
-  giant trees. Still red: worldgen `terrain` the_fill_grass_over_dirt_sand… (stone where dirt is expected at 3 m
-  deep, likely a giant's levelled base pad; its log check now takes species logs). The e2e failures remain. Owner
-  should see: CI green.
+  giant trees. Then (2026-11-16): worldgen `terrain`'s shore test skips a trunk's pad columns (levelled on purpose,
+  item 44); e2e `edit` palette (a 4-row piece's upper cells broken top-down; saplings skipped: one becomes a stage-0
+  tree at once, dwell-sim saplings.rs), `join` (the shaders stage), `settings` (High's 192 m, the Ambience volume,
+  the copied record matched on its own fields) pass on a GPU. Still red on CI only: `characters.spec.ts:142` (A's
+  arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
+  arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
+  play two-client (#34). Owner should see: CI green.
 - **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
   heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
   recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
