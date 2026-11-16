@@ -113,6 +113,8 @@ export type Step =
       grass?: boolean;
       /** Chunks skip their faces turned away from the camera (on by default; off to compare). */
       facing?: boolean;
+      /** Chunks the terrain hides from the eye are skipped (on by default; off to compare). */
+      horizon?: boolean;
       renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
@@ -476,6 +478,7 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'cards',
     'grass',
     'facing',
+    'horizon',
     'renderScale',
     'torchShadows',
   ],
@@ -643,6 +646,7 @@ export function parseStep(where: string, v: unknown): Step {
         ...opt('torchShadows', tier('torchShadows')),
         ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
         ...opt('facing', o.facing === undefined ? undefined : bool(at('facing'), o.facing)),
+        ...opt('horizon', o.horizon === undefined ? undefined : bool(at('horizon'), o.horizon)),
         ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
         ...opt(
           'renderScale',

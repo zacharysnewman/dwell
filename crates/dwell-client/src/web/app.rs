@@ -2492,6 +2492,16 @@ impl Client {
             .borrow_mut()
             .set_heightfield_override(on);
     }
+    /// Whether chunks the terrain hides from the eye are skipped (on; off only to compare, the
+    /// bench's `view` `horizon`; render/horizon.rs).
+    #[wasm_bindgen(js_name = setHorizonCull)]
+    pub fn set_horizon_cull(&self, on: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_horizon_cull(on);
+    }
     /// Whether chunks skip their faces turned away from the camera (on; off only to compare, the
     /// bench's `view` `facing`; docs/DEV_TOOLS.md).
     #[wasm_bindgen(js_name = setFacingCull)]
@@ -4347,9 +4357,11 @@ impl Inner {
         let view = frame.texture.create_view(&Default::default());
         let game = &self.game;
         telemetry::span("draw.render", || {
-            self.renderer.borrow_mut().render(&view, &|c| {
-                game.as_ref().map_or(Some(Fade::Full), |g| g.chunk_fade(c))
-            });
+            self.renderer.borrow_mut().render(
+                &view,
+                &|c| game.as_ref().map_or(Some(Fade::Full), |g| g.chunk_fade(c)),
+                &|c| game.as_ref().is_some_and(|g| g.chunk_buried(c)),
+            );
         });
         let queue = self.renderer.borrow().queue().clone();
         telemetry::span("draw.present", || queue.present(frame));

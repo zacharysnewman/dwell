@@ -492,6 +492,8 @@ interface DwellDebug {
     grass?: boolean;
     /** Chunks skip their faces turned away from the camera (`Client.setFacingCull`). */
     facing?: boolean;
+    /** Chunks the terrain hides are skipped (`Client.setHorizonCull`). */
+    horizon?: boolean;
     /** The render scale (shared/render/upscale.json's scales), with the current upscaler. */
     renderScale?: number;
     /** Torch shadows `off`, `low`, `high`. */
@@ -1726,6 +1728,7 @@ async function start(): Promise<App | null> {
       if (v.ssao !== undefined) client.setSsao(v.ssao, v.ssaoStrength ?? s.ssao.strength);
       if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
       if (v.facing !== undefined) client.setFacingCull(v.facing);
+      if (v.horizon !== undefined) client.setHorizonCull(v.horizon);
       if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
       if (v.torchShadows !== undefined) {
         client.setTorchShadows(shadowLevel(v.torchShadows));

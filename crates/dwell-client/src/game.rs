@@ -1944,6 +1944,12 @@ impl<S: Scene> Game<S> {
     /// How the renderer draws a chunk: in full, cross-fading with its level-1 section (dwell-lod
     /// fade.rs), or (None) not at all. On another grid its own LOD tree answers (BUGS.md #159),
     /// in full without one: home's selection is in home's coordinates (BUGS.md #123).
+    /// Whether the LOD knows chunk `c` is buried rock (the renderer's horizon cull: ground under
+    /// its occluders, render/horizon.rs).
+    pub fn chunk_buried(&self, c: ChunkCoord) -> bool {
+        self.grid_drawn == 0 && self.lod.as_ref().is_some_and(|l| l.buried_at(c))
+    }
+
     pub fn chunk_fade(&self, c: ChunkCoord) -> Option<Fade> {
         if self.grid_drawn != 0 {
             return self

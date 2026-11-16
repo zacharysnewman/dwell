@@ -287,8 +287,10 @@ pub async fn render_scene(device: wgpu::Device, queue: wgpu::Queue) -> Result<Ve
         dwell_world::FaceFrame::A,
         0.0,
     );
-    renderer.render(&texture.create_view(&Default::default()), &|_| {
-        Some(dwell_lod::fade::Fade::Full)
-    });
+    renderer.render(
+        &texture.create_view(&Default::default()),
+        &|_| Some(dwell_lod::fade::Fade::Full),
+        &|_| false,
+    );
     read_back(&device, &queue, &texture).await
 }

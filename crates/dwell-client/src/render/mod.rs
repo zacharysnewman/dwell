@@ -21,6 +21,7 @@ pub mod fxaa;
 pub mod geometry;
 pub mod glitter;
 pub mod heightfield;
+pub mod horizon;
 pub mod impostors;
 pub mod lights;
 pub mod lod_map;
@@ -1096,6 +1097,10 @@ struct Chunk {
     opaque: Option<GpuMesh>,
     water: Option<GpuMesh>,
     cutout: Option<GpuMesh>,
+    /// Rows solid through from its face-local bottom (`ChunkMeshes::floor`) and its meshes'
+    /// lowest and highest world y (m): the horizon cull's occluder and candidate (horizon.rs).
+    floor: u8,
+    span_y: [f64; 2],
 }
 
 /// `Part::Facing`'s bit for the listed trees' logs (`MeshArrays::tree_logs`): left out past the
@@ -1298,11 +1303,21 @@ impl TerrainRenderer for RasterTerrain {
             self.chunks.remove(&coord);
             return;
         }
+        let origin = chunk_origin_m(coord);
+        let span_y = [&m.opaque, &m.cutout, &m.transparent]
+            .iter()
+            .flat_map(|a| a.positions.iter().skip(1).step_by(3))
+            .fold([f64::MAX, f64::MIN], |[lo, hi], &y| {
+                let y = origin[1] + f64::from(y);
+                [lo.min(y), hi.max(y)]
+            });
         let chunk = Chunk {
-            origin: chunk_origin_m(coord),
+            origin,
             opaque,
             water,
             cutout,
+            floor: m.floor,
+            span_y,
         };
         if stage {
             self.pending.insert(coord, chunk);
@@ -1827,6 +1842,8 @@ pub struct Renderer {
     cutout_shown: bool,
     /// Chunks skip their faces turned away from the camera (`set_facing_cull`).
     facing_cull: bool,
+    /// Chunks the terrain hides are skipped (`set_horizon_cull`, horizon.rs).
+    horizon_cull: bool,
     /// The falling pieces shown this frame (`show_pieces`).
     piece_poses: Vec<(u32, V3, [f32; 4])>,
     eye: V3,
@@ -2741,6 +2758,7 @@ impl Renderer {
             plant_wind: 1.0,
             cutout_shown: true,
             facing_cull: true,
+            horizon_cull: true,
             piece_poses: Vec::new(),
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
@@ -3064,6 +3082,10 @@ impl Renderer {
     /// Whether chunks skip their faces turned away from the camera (`Part::Facing`; off to compare).
     pub fn set_facing_cull(&mut self, on: bool) {
         self.facing_cull = on;
+    }
+    /// Whether chunks the terrain hides from the eye are skipped (horizon.rs; off to compare).
+    pub fn set_horizon_cull(&mut self, on: bool) {
+        self.horizon_cull = on;
     }
     pub fn set_cutout_shown(&mut self, shown: bool) {
         self.cutout_shown = shown;
@@ -4204,10 +4226,82 @@ impl Renderer {
 
     /// The draws of both depth passes (`passes`: each pass's near and far view depth), in one sweep
     /// over the chunks and sections (gathering each pass on its own walked everything twice).
+    /// The chunks the terrain hides from the eye this frame (render/horizon.rs): its face's
+    /// chunks, each column's ground (a chunk's `floor` over a chunk below solid through or buried)
+    /// the occluders. Empty with the cull off.
+    fn horizon_hidden(
+        &self,
+        buried: &dyn Fn(ChunkCoord) -> bool,
+    ) -> std::collections::HashSet<ChunkCoord> {
+        let mut out = std::collections::HashSet::new();
+        if !self.horizon_cull {
+            return out;
+        }
+        let f = self.face;
+        let n = dwell_world::CHUNK_SIZE;
+        let eye = f.point(self.eye);
+        let mine = |c: &Chunk| {
+            dwell_world::FaceFrame::at_height(c.origin[1] + CHUNK_EXTENT_M[1] * 0.5) == f
+        };
+        // Face-local chunk → its floor (rows solid through from its bottom).
+        let floors: HashMap<ChunkCoord, u8> = self
+            .terrain
+            .chunks
+            .iter()
+            .filter(|(_, c)| mine(c))
+            .map(|(&k, c)| (f.chunk(k), c.floor))
+            .collect();
+        let fp = |l: ChunkCoord| {
+            let (x, z) = (f64::from(l.x * n), f64::from(l.z * n));
+            [x, z, x + f64::from(n), z + f64::from(n)]
+        };
+        let mut occluders = Vec::new();
+        for (&l, &floor) in &floors {
+            if floor == 0 {
+                continue;
+            }
+            let below = ChunkCoord::new(l.x, l.y - 1, l.z);
+            let grounded = floors.get(&below).is_some_and(|&b| b as i32 == n)
+                || (!floors.contains_key(&below) && buried(f.chunk(below)));
+            if grounded {
+                let top = f64::from(l.y * n + i32::from(floor)) * dwell_world::CELL_H;
+                occluders.push(horizon::Occluder {
+                    fp: fp(l),
+                    height: top - 0.25,
+                });
+            }
+        }
+        let mut keys = Vec::new();
+        let mut candidates = Vec::new();
+        for (&k, c) in &self.terrain.chunks {
+            if !mine(c) || c.span_y[0] > c.span_y[1] {
+                continue;
+            }
+            // Its highest point face-local, and a sway's reach over it.
+            let top = f.y(c.span_y[0]).max(f.y(c.span_y[1])) + 1.0;
+            keys.push(k);
+            candidates.push(horizon::Candidate {
+                fp: fp(f.chunk(k)),
+                top,
+            });
+        }
+        for (k, gone) in keys
+            .into_iter()
+            .zip(horizon::hidden(eye, &occluders, &candidates))
+        {
+            if gone {
+                out.insert(k);
+            }
+        }
+        crate::telemetry::add("horizon.hidden", out.len() as f64);
+        out
+    }
+
     fn collect(
         &self,
         passes: [(f64, f64); 2],
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+        hidden: &std::collections::HashSet<ChunkCoord>,
     ) -> [Vec<DrawItem>; 3] {
         let mut out = Vec::new();
         let plain = [1.0, 1.0, 1.0, 1.0];
@@ -4223,6 +4317,10 @@ impl Renderer {
         // plants' fades nothing (`impostors::cutout_draw`).
         let far = self.far_drawn().filter(|f| f.impostor);
         for (&coord, c) in &self.terrain.chunks {
+            // Hidden by the terrain from the eye (horizon.rs).
+            if hidden.contains(&coord) {
+                continue;
+            }
             let fade = chunk_fade(coord).filter(|f| !f.is_hidden());
             let passes = if fade.is_some() {
                 reaches(c.origin, CHUNK_EXTENT_M)
@@ -4730,10 +4828,12 @@ impl Renderer {
     ///
     /// The terrain's far and near passes (players and water with them) draw into the frame's
     /// targets; then the composite draws them into `target` with the lines over it.
+    /// `buried` says which chunks the LOD knows are buried rock (the horizon cull's ground).
     pub fn render(
         &mut self,
         target: &wgpu::TextureView,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+        buried: &dyn Fn(ChunkCoord) -> bool,
     ) {
         // The pixel-art preview's camera snap: the frame draws from the eye on the low-res grid
         // and the upscale shifts the picture by the remainder (dwell-look `snap_eye`).
@@ -4758,7 +4858,7 @@ impl Renderer {
             self.eye = snapped;
             self.pixel_shift = shift;
         }
-        self.render_frame(target, chunk_fade);
+        self.render_frame(target, chunk_fade, buried);
         self.eye = eye;
     }
 
@@ -4766,6 +4866,7 @@ impl Renderer {
         &mut self,
         target: &wgpu::TextureView,
         chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+        buried: &dyn Fn(ChunkCoord) -> bool,
     ) {
         // This frame's slice of the chunk meshes being written (staged.rs), before the draw.
         self.terrain.pump_staged();
@@ -4828,7 +4929,8 @@ impl Renderer {
             self.nearest_piece_m(),
         );
         let passes = [(far_near, FAR_PLANE), (NEAR_PLANE, NEAR_SPLIT)];
-        let draws = self.collect(passes, chunk_fade);
+        let hidden = self.horizon_hidden(buried);
+        let draws = self.collect(passes, chunk_fade, &hidden);
         let mut near_uniforms = None;
         for (i, (near, far)) in passes.iter().enumerate() {
             let u = self.frame_uniforms(&basis, *near, *far);
@@ -8744,7 +8846,7 @@ mod tests {
             for x in 0..=frame {
                 r.set_terrain_chunk(ChunkCoord { x, y: 0, z: 0 }, Some(&meshes));
             }
-            r.render(&view, &|_| Some(Fade::Full));
+            r.render(&view, &|_| Some(Fade::Full), &|_| false);
             r.device
                 .poll(wgpu::PollType::wait_indefinitely())
                 .expect("polled");
@@ -8779,7 +8881,7 @@ mod tests {
         let view = target.create_view(&Default::default());
         r.resize(8, 8, 1.0);
         for frame in 0..4 * timing::RING {
-            r.render(&view, &|_| Some(Fade::Full));
+            r.render(&view, &|_| Some(Fade::Full), &|_| false);
             r.device
                 .poll(wgpu::PollType::wait_indefinitely())
                 .expect("polled");

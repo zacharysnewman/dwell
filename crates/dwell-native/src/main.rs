@@ -476,10 +476,14 @@ impl Harness {
         let view = frame.texture.create_view(&Default::default());
         let game = &self.game;
         telemetry::span("draw.render", || {
-            self.gfx.renderer.borrow_mut().render(&view, &|c| {
-                game.as_ref()
-                    .map_or(Some(dwell_lod::fade::Fade::Full), |g| g.chunk_fade(c))
-            });
+            self.gfx.renderer.borrow_mut().render(
+                &view,
+                &|c| {
+                    game.as_ref()
+                        .map_or(Some(dwell_lod::fade::Fade::Full), |g| g.chunk_fade(c))
+                },
+                &|c| game.as_ref().is_some_and(|g| g.chunk_buried(c)),
+            );
         });
         let queue = self.gfx.renderer.borrow().queue().clone();
         telemetry::span("draw.present", || queue.present(frame));

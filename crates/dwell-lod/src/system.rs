@@ -809,6 +809,23 @@ impl LodSystem {
     /// its chunks are not shown and need not be (the loading screen's near ring, §6.3).
     /// The deepest section known on the way down decides: an empty or buried one is not descended
     /// below (sky over the player: its level-1 sections are never made).
+    /// Whether the LOD knows the chunk is buried rock (its section solid through): ground the
+    /// renderer's horizon cull stands its occluders on.
+    pub fn buried_at(&self, coord: ChunkCoord) -> bool {
+        let mut c = parent(lod_of_chunk(coord));
+        loop {
+            if let Some(n) = self.nodes.get(&id_of(c))
+                && (n.kind.is_some() || n.needs_answer)
+            {
+                return !n.needs_answer && matches!(n.kind, Some(LodKind::Buried));
+            }
+            if c.level >= MAX_LEVEL {
+                return false;
+            }
+            c = parent(c);
+        }
+    }
+
     pub fn shows_nothing_at(&self, coord: ChunkCoord) -> bool {
         let mut c = parent(lod_of_chunk(coord));
         loop {

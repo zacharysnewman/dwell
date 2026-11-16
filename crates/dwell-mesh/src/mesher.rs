@@ -131,6 +131,10 @@ pub struct ChunkMeshes {
     /// The ground densities the chunk's items were scattered with (its [`GroundJob`]'s, ADR 0074
     /// B5), handed back so the client's crosshair rolls the same.
     pub ground: dwell_world::ground::GroundDensity,
+    /// Rows solid through from the chunk's face-local bottom in every column (0..=N, the least
+    /// over its columns: full cubes that hide what is behind them): the renderer's horizon cull
+    /// takes the chunk's ground there as an occluder (the owner's 60 fps pass, 2026-11-15).
+    pub floor: u8,
 }
 
 /// Face index → (axis, sign): 0 +X, 1 −X, 2 +Y, 3 −Y, 4 +Z, 5 −Z.
@@ -2497,6 +2501,7 @@ pub(crate) fn mesh_chunk_full(
             cutout: flip_arrays_y(m.cutout),
             water: None,
             ground: Default::default(),
+            floor: 0,
         }
     } else {
         let carved = cuts
@@ -2519,13 +2524,43 @@ pub(crate) fn mesh_chunk_full(
         .flatten();
     let mut opaque = to_metres(m.opaque);
     group_by_facing(&mut opaque);
+    // Face-local: a mirrored chunk's rows turned over, its ground below as on face A.
+    let floor = if mirror {
+        solid_floor(kinds, &mirror_padded(&inner))
+    } else {
+        solid_floor(kinds, &inner)
+    };
     Ok(ChunkMeshes {
         opaque,
         transparent: to_metres(m.transparent),
         cutout: to_metres(m.cutout),
         water,
         ground: ground.map(|g| g.density.clone()).unwrap_or_default(),
+        floor,
     })
+}
+
+/// Rows solid through from the chunk's bottom in every column (`ChunkMeshes::floor`): full cubes
+/// that hide what is behind them, counted up from row 0 per column, the least over the columns.
+fn solid_floor(kinds: &Kinds, padded: &[u16]) -> u8 {
+    let mut least = N;
+    for z in 0..N {
+        for x in 0..N {
+            let mut y = 0;
+            while y < least {
+                let k = kinds.of(padded[padded_index(x, y, z)]);
+                if !(k.occludes && k.shape == Shape::Full && !k.style.octagon) {
+                    break;
+                }
+                y += 1;
+            }
+            least = least.min(y);
+            if least == 0 {
+                return 0;
+            }
+        }
+    }
+    least as u8
 }
 
 /// Whether a cutout triangle (its first index) is a tree's leaf face ([`crate::TREE_LEAF_FADE`]).
@@ -3296,6 +3331,7 @@ fn mesh_cells(
         cutout: cutout.m,
         water: None,
         ground: Default::default(),
+        floor: 0,
     }
 }
 
