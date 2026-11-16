@@ -637,6 +637,23 @@ impl Planter {
         self.shapes.iter().any(|s| s.grown.is_some())
     }
 
+    /// The far tree a tree is (its impostor): a species tree's (species index, seed, stage), or a
+    /// hand-built tree's (`impostor::structure_tree`'s index, its priority as the seed, stage 0;
+    /// BUGS.md #186); `None` for a structure that is no tree.
+    pub fn far_tree(&self, t: &Tree) -> Option<(u16, u32, u32)> {
+        let s = self.shapes.get(usize::from(t.shape))?;
+        s.grown.or_else(|| {
+            crate::impostor::structure_tree(s.structure.name).map(|k| (k, t.priority, 0))
+        })
+    }
+
+    /// Whether any of its structures is a tree with an impostor ([`Self::far_tree`]).
+    pub fn has_far_trees(&self) -> bool {
+        self.shapes.iter().any(|s| {
+            s.grown.is_some() || crate::impostor::structure_tree(s.structure.name).is_some()
+        })
+    }
+
     /// A tree's stem (face-local): its bottom cell and the cells standing straight up from it
     /// (`Shape::stem`), what a far tree's impostor reads to see it felled.
     pub fn stem(&self, t: &Tree) -> ([i32; 3], u8) {

@@ -410,6 +410,17 @@ impl<'a> Cells<'a> {
     }
 
     /// The leaf tint of chunk-local cell `cell`: its owning tree's (ADR 0079), else none.
+    /// Whether a species tree the generator lists owns `cell` (chunk-local): its leaves hand over
+    /// to that tree's far impostor (BUGS.md #186: a leaf no listed tree owns, a hand-built pine's or
+    /// a placed one, has no impostor to hand over to, so it stays drawn).
+    fn tree_owned(&self, cell: [i32; 3]) -> bool {
+        dwell_world::tree_tint::owner(
+            self.trees,
+            std::array::from_fn(|a| self.origin[a] + cell[a]),
+        )
+        .is_some()
+    }
+
     fn tint(&self, cell: [i32; 3]) -> dwell_world::tree_tint::Tint {
         dwell_world::tree_tint::tint_at(
             self.trees,
