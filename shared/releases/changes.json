@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.16",
+      "changes": [
+        "Cutting down a tree no longer leaves leaves hanging in the air: big crowns, palm fronds and leaves resting on the falling tree all come down with it."
+      ]
+    },
+    {
       "version": "0.71.15",
       "changes": [
         "Tall grass that has grown taller now stands as one plant stretching up, not stacked tufts with gaps."
