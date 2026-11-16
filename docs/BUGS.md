@@ -6,6 +6,22 @@ pins it.
 
 ## Open
 
+### 194. The game stalls every few seconds while grass grows
+
+Owner, 2026-11-16 (M3 Max, "well under 10ms on everything else"): "I've noticed the server stuttering a bit while I'm
+sprint jumping/sliding around this area", "It's a periodic stutter. But quite visible and stalls the player
+movement." Their block dump (0.71.14, seed 3218026833, at (−3357, 34 m, −3764)): its last 256 edits are all tall grass
+growing (`Rebake`), in two batches 1500 ticks (25 s) apart, 59 and 197+ cells. Cause: the grass step ran every 5 s of
+the tick and grew up to 64 chunks at once (each its 32 × 32 columns' envelope), their writes going out as one
+modification: after a world day's rollover every loaded chunk is behind, so the server's tick and the clients'
+re-meshing spiked every 5 s until all had grown. Also (owner: "there's almost always a stutter going through the
+portal"): the tree growers looked at up to 256 newly loaded chunks for their trees in one tick every 5 s (~0.25 ms
+each natively, 4.6 at worst: ~60 ms), after every big load. Fixed: grass 2 chunks and tree scans 4 chunks every tick
+(`grass.rs` `CHUNKS_PER_TICK`, `growth.rs` `SCANS_PER_TICK`); red → green `tests/grass.rs`
+`the_grass_step_spreads_its_chunks_over_the_ticks` (64 in one step) and `tests/growth.rs`
+`the_growers_look_at_new_chunks_a_few_a_tick` (100 in one tick). Owner should see: no periodic stall moving through
+grass or a portal.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should
