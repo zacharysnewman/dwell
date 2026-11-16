@@ -650,17 +650,20 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    // Terrain: position, normal (snorm8x4), colour, uv, tile, light and flood (unorm8x4), crack
-    // (unorm8x4): 64 bytes (`packed_lit`, WORK_QUEUE item 32; 84 before).
-    4 * (3 + 1 + 3 + 2 + 4 + 1 + 1),
+    // Terrain: position, normal (snorm8x4), colour, uv, tile (unorm16x4), light and flood
+    // (unorm8x4), crack (unorm8x4): 52 bytes (`packed_lit`, WORK_QUEUE item 32: 84 before; the
+    // tile in 16 bits since the 60 fps pass, 2026-11-15: 60 before).
+    4 * (3 + 1 + 3 + 2 + 2 + 1 + 1),
     4 * (3 + 3 + 3),         // Flat: position, normal, colour
     4 * (3 + 3 + 3 + 1),     // Line: position, colour, the other end, side (a quad corner)
     4 * (3 + 3),             // Ghost: position, colour (triangles)
     4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
-    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv, tile,
-    // plant (sway, wind speed, fade), and light, flood and bare (unorm8x4): 64 bytes (`packed_lit`,
-    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before).
-    4 * (3 + 1 + 1 + 2 + 4 + 4 + 1),
+    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv
+    // (float16x2), tile (unorm16x4), plant (sway, wind speed, fade; a leaf card's packed normal in
+    // its y, so full floats), and light, flood and bare (unorm8x4): 52 bytes (`packed_lit`,
+    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before, 64
+    // before the 60 fps pass, 2026-11-15).
+    4 * (3 + 1 + 1 + 1 + 2 + 4 + 1),
 ];
 
 pub(crate) fn floats(v: &[f32]) -> &[u8] {
@@ -756,15 +759,23 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     } else {
         (&m.colors[..], 3)
     };
-    let mut streams: Vec<(&[f32], usize)> = vec![
-        (&m.positions, 3),
-        (&normals, 1),
-        (colors, per),
-        (&m.uvs, 2),
-        (&m.tiles, 4),
-    ];
+    // The tile rectangle in 16 bits a value (unorm16x4: an atlas offset and size within 0..1).
+    let tiles: Vec<f32> = m
+        .tiles
+        .chunks_exact(4)
+        .flat_map(|t| [unorm16x2(t[0], t[1]), unorm16x2(t[2], t[3])])
+        .collect();
+    // The cutout's uv as halves (float16x2): a plant's or a leaf's few blocks of it.
+    let uvs: Vec<f32>;
+    let mut streams: Vec<(&[f32], usize)> = vec![(&m.positions, 3), (&normals, 1), (colors, per)];
     if kind == Kind::Cutout {
+        uvs = m.uvs.chunks_exact(2).map(|u| f16x2(u[0], u[1])).collect();
+        streams.push((&uvs, 1));
+        streams.push((&tiles, 2));
         streams.push((&m.plants, 4));
+    } else {
+        streams.push((&m.uvs, 2));
+        streams.push((&tiles, 2));
     }
     streams.push((&lit, 1));
     // The terrain's crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes a vertex in one
@@ -788,6 +799,41 @@ fn snorm8x3(n: [f32; 3]) -> f32 {
     let k = if len > 1e-12 { 1.0 / len } else { 0.0 };
     let b = |c: f32| u32::from((((c * k).clamp(-1.0, 1.0) * 127.0).round() as i8) as u8);
     f32::from_bits(b(n[0]) | b(n[1]) << 8 | b(n[2]) << 16)
+}
+
+/// Two 0–1 values as unorm16s in one float's slot, its bits as they are (two of them a vertex
+/// the pipeline reads as unorm16x4).
+fn unorm16x2(a: f32, b: f32) -> f32 {
+    let q = |c: f32| u32::from((c.clamp(0.0, 1.0) * 65535.0).round() as u16);
+    f32::from_bits(q(a) | q(b) << 16)
+}
+
+/// An f32 as IEEE half bits (round to nearest; past the half's range, its largest; tiny values
+/// flushed to zero).
+fn f16_bits(v: f32) -> u32 {
+    let b = v.to_bits();
+    let sign = (b >> 16) & 0x8000;
+    let x = v.abs();
+    if x.is_nan() {
+        return sign | 0x7e00;
+    }
+    if x < 6.103_515_6e-5 {
+        // Under the half's least normal: its subnormals (steps of 2^-24) or zero.
+        return sign | (x * 16_777_216.0).round() as u32;
+    }
+    if x >= 65504.0 {
+        return sign | 0x7bff;
+    }
+    let e = ((b >> 23) & 0xff) as i32 - 127 + 15;
+    let mant = b & 0x7f_ffff;
+    // Round the 23-bit mantissa to 10 (ties away), carrying into the exponent.
+    let r = ((e as u32) << 10) + ((mant + 0x1000) >> 13);
+    sign | r.min(0x7bff)
+}
+
+/// Two f32s as halves in one float's slot (the pipeline reads it as float16x2).
+fn f16x2(a: f32, b: f32) -> f32 {
+    f32::from_bits(f16_bits(a) | f16_bits(b) << 16)
 }
 
 /// Four 0–1 values as unorm bytes in one float's slot (the pipeline reads it as unorm8x4).
@@ -2059,8 +2105,9 @@ impl Renderer {
             (offset, attributes)
         };
         // The normal (snorm8x4) and the light and flood (unorm8x4) four bytes each (`packed_lit`).
-        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 2), (5, 1)]);
         terrain_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        terrain_attrs.1[4].format = wgpu::VertexFormat::Unorm16x4;
         terrain_attrs.1[5].format = wgpu::VertexFormat::Unorm8x4;
         // The crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes.
         terrain_attrs.1.push(wgpu::VertexAttribute {
@@ -2071,9 +2118,11 @@ impl Renderer {
         terrain_attrs.0 += 4;
         // The cutout's normal (snorm8x4) and its light, flood and bare (unorm8x4) are four bytes
         // each in one float's slot (`packed_cutout`).
-        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 1), (4, 2), (5, 4), (6, 1)]);
         cutout_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
         cutout_attrs.1[2].format = wgpu::VertexFormat::Unorm8x4;
+        cutout_attrs.1[3].format = wgpu::VertexFormat::Float16x2;
+        cutout_attrs.1[4].format = wgpu::VertexFormat::Unorm16x4;
         cutout_attrs.1[6].format = wgpu::VertexFormat::Unorm8x4;
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
@@ -7374,15 +7423,37 @@ mod tests {
     }
 
     #[test]
+    fn halves_and_unorm16s_pack_as_the_gpu_reads_them() {
+        // face-a-only: number formats. The 60 fps pass (2026-11-15): a cutout's uv as float16x2,
+        // every tile rectangle as unorm16x4.
+        for (v, bits) in [
+            (0.0f32, 0x0000u32),
+            (1.0, 0x3c00),
+            (-1.0, 0xbc00),
+            (2.5, 0x4100),
+            (0.5, 0x3800),
+            (3.0009765625, 0x4201),
+            (65504.0, 0x7bff),
+            (1e9, 0x7bff),
+        ] {
+            assert_eq!(super::f16_bits(v), bits, "{v}");
+        }
+        let b = super::unorm16x2(0.0, 1.0).to_bits();
+        assert_eq!((b & 0xffff, b >> 16), (0, 0xffff));
+        let b = super::unorm16x2(0.25, 0.75).to_bits();
+        assert_eq!((b & 0xffff, b >> 16), (16384, 49151));
+    }
+
+    #[test]
     fn every_kind_has_its_own_stride() {
         let ghost = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 4 + 1 + 1)),
+            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 2 + 1 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
-            (Kind::Cutout, 4 * (3 + 1 + 1 + 2 + 4 + 4 + 1)),
+            (Kind::Cutout, 4 * (3 + 1 + 1 + 1 + 2 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }
@@ -7523,8 +7594,23 @@ mod tests {
                     let got = unorm(bits >> (8 * a)) * scale;
                     assert!((got - c).abs() <= 0.5 / 255.0 * scale + 1e-6, "colour {a}");
                 }
-                assert_eq!(&at[11..15], &m.plants[4 * k..4 * k + 4], "plant");
-                let bits = at[15].to_bits();
+                // The uv as halves (float16x2), then the tile (unorm16x4) and the plant.
+                let half = |h: u32| {
+                    let (e, f) = ((h >> 10) & 0x1f, (h & 0x3ff) as f32);
+                    let v = if e == 0 {
+                        f / 1024.0 * 2f32.powi(-14)
+                    } else {
+                        (1.0 + f / 1024.0) * 2f32.powi(e as i32 - 15)
+                    };
+                    if h & 0x8000 != 0 { -v } else { v }
+                };
+                assert_eq!(&at[8..12], &m.plants[4 * k..4 * k + 4], "plant");
+                let uv = at[5].to_bits();
+                for (a, want) in m.uvs[2 * k..2 * k + 2].iter().enumerate() {
+                    let got = half(if a == 0 { uv & 0xffff } else { uv >> 16 });
+                    assert!((got - want).abs() <= want.abs() / 1024.0 + 1e-4, "uv {a}");
+                }
+                let bits = at[12].to_bits();
                 let want = [
                     m.light[k].clamp(0.0, 1.0),
                     m.flood[2 * k],
@@ -7559,7 +7645,8 @@ mod tests {
                     let got = snorm(at[3].to_bits() >> (8 * a));
                     assert!((got - c).abs() <= 0.5 / 127.0 + 1e-6, "terrain normal {a}");
                 }
-                let bits = at[13].to_bits();
+                // After the tile (unorm16x4: two slots).
+                let bits = at[11].to_bits();
                 let want = [
                     t.light[k].clamp(0.0, 1.0),
                     t.flood[2 * k],

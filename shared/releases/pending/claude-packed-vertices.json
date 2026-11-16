@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Slightly lighter terrain and plant vertices for the GPU (about 0.3–0.6 ms a frame in forests on an M1 Air on High), with the same picture."
+  ]
+}
