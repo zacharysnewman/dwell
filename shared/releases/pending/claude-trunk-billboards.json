@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Distant trees draw as one billboard, trunk included: the trunks' own blocks are no longer drawn past the hand-over, a little less work in forests."
-  ]
-}
