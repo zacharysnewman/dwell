@@ -24,7 +24,10 @@ Last updated: 2026-11-11 (0.52.108).
 - **Found 2026-11-15 (CI):** main's end-to-end shards have failed since at least #985 (before the tree and damage
   work): `characters.spec` 142, `edit.spec` 204 and 281, `join.spec` 55, `terrainDraw.spec` 22, `touch.spec` 283
   (the phone region bar), besides the known `buildDrag`, `settings` and `spawn` ones (CLAUDE.md "Known CI
-  failures"). Not yet looked into; to run locally on the GPU config. Owner should see: CI green.
+  failures"). Not yet looked into; to run locally on the GPU config. Also failing in `dwell-sim` since before #988
+  (the Rust job stopped at its format step since, hiding them): `explosives` (a block broken with
+  `one_hit_breaks` in adventure stays: "the dirt broke", "the stone broke"), `region_edits` (a fill of tall grass),
+  `streaming` (the verification hash), `chisel_in_game` (a retune: "air to build in"). Owner should see: CI green.
 - **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
   heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
   recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
