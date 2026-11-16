@@ -28,13 +28,11 @@
       "block": "dwell:stone",
       "thickness": 1
     },
-    "light": {
-      "block": "dwell:torch",
-      "radius": 2
-    }
+    "light": {"block": "dwell:torch", "at": "rim", "count": 12}
   },
   "lodCellM": 16,
-  "stand": [0, 5],
+  "stand": [0, 0],
+  "spawnTown": {"plan": "dwell:hamlet", "gapM": 4},
   "searchCells": 3,
   "spawnWithin": 1500,
   "worlds": {

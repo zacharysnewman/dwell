@@ -1903,7 +1903,7 @@ const SHRINE_KEYS = {
   flatBelowDeg: [0, 45],
   spawnWithin: [0, 100_000],
 };
-const SHRINE_OTHER = ["height", "structure", "stand", "design"];
+const SHRINE_OTHER = ["height", "structure", "stand", "design", "spawnTown"];
 export const SHRINE_REVEALS = ["explored", "all"];
 
 /** Checks the shrines' rules (and each world's overrides) against `structures`; throws naming the key. */
@@ -1926,6 +1926,18 @@ export function validateShrines(data, structures = registryStructures()) {
     }
     const lod = r.lodCellM;
     if ((lod & (lod - 1)) !== 0) fail(`${at}lodCellM must be a power of two`);
+    // The spawn's town (owner, 2026-11-16: "The spawn should be in a town"): a town plan of
+    // shared/blueprints/blueprints.json, built with the world in front of the spawn shrine's open
+    // side, `gapM` past its platform. Optional: none, no spawn town.
+    if (r.spawnTown != null) {
+      const t = r.spawnTown;
+      const plans = JSON.parse(readFileSync(join(root, "shared/blueprints/blueprints.json"), "utf8")).towns.plans.map((p) => p.name);
+      if (typeof t !== "object" || Array.isArray(t)) fail(`${at}spawnTown must be an object`);
+      const bad = Object.keys(t).filter((k) => !["$comment", "plan", "gapM"].includes(k));
+      if (bad.length) fail(`${at}spawnTown: unknown ${bad.join(", ")}`);
+      if (!plans.includes(t.plan)) fail(`${at}spawnTown.plan ${JSON.stringify(t.plan)} is not a town plan (${plans.join(", ")})`);
+      if (!(Number.isInteger(t.gapM) && t.gapM >= 0 && t.gapM <= 64)) fail(`${at}spawnTown.gapM must be a whole number in [0, 64]`);
+    }
     const h = r.height;
     if (!(Array.isArray(h) && h.length === 2 && h.every(isNum) && h[0] <= h[1]))
       fail(`${at}height must be [min, max] m above sea level with min ≤ max`);
@@ -2030,8 +2042,15 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
   if (block("lintel.block", d.lintel?.block).shape !== "full") fail(`lintel.block ${d.lintel.block} must be a full block`);
   const lintelRows = rows(d.lintel.thickness, "lintel.thickness");
   const light = block("light.block", d.light?.block);
-  if (!(isNum(d.light.radius) && d.light.radius > 0 && d.light.radius <= (steps.at(-1) ?? d.radius)))
+  // Where the light stands: `centre` (the dais's top within `radius`) or `rim` (`count` lights
+  // evenly round the platform's outer edge, a pillar's column skipped; owner, 2026-11-16: "let's
+  // just have torches on the outer edge of the platform, not the middle").
+  const lightAt = d.light.at ?? "centre";
+  if (!["centre", "rim"].includes(lightAt)) fail('light.at must be "centre" or "rim"');
+  if (lightAt === "centre" && !(isNum(d.light.radius) && d.light.radius > 0 && d.light.radius <= (steps.at(-1) ?? d.radius)))
     fail("light.radius must lie on the dais's top (≤ the last step's radius)");
+  if (lightAt === "rim" && !(Number.isInteger(d.light.count) && d.light.count >= 1 && d.light.count <= 64))
+    fail("light.count must be a whole number of lights in [1, 64]");
   const lightUp = light.extends?.up ?? null;
 
   const n = 2 * d.radius; // columns a side: the circle's centre is the corner point (radius, radius)
@@ -2126,13 +2145,40 @@ export function shrineStructure(name, design, blocks, cell = 0.5) {
     if (top - lintelRows <= floor(x, z)) fail(`lintel at ${key} leaves no air under it: taller pillars`);
     for (let y = top - lintelRows; y < top; y++) set(x, y, z, "l");
   }
-  for (let z = 0; z < n; z++)
-    for (let x = 0; x < n; x++) {
-      if (dist(x, z) > d.light.radius) continue;
-      const y = floor(x, z);
-      set(x, y, z, "t");
-      if (lightUp) set(x, y + 1, z, "u");
+  const lightAtColumn = (x, z) => {
+    const y = floor(x, z);
+    set(x, y, z, "t");
+    if (lightUp) set(x, y + 1, z, "u");
+  };
+  if (lightAt === "centre") {
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) if (dist(x, z) <= d.light.radius) lightAtColumn(x, z);
+  } else {
+    // The outer ring: the platform's columns with no platform column beyond them (a neighbour off
+    // it); each light at the ring column nearest its angle, none on a pillar's or the lintel's.
+    const ring = [];
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        if (floor(x, z) === 0) continue;
+        const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => floor(x + dx, z + dz) === 0);
+        if (edge && !pillarAt(x, z) && !lintel.has(`${x},${z}`)) ring.push([x, z]);
+      }
+    const used = new Set();
+    for (let k = 0; k < d.light.count; k++) {
+      const t = ((k + 0.5) / d.light.count) * 2 * Math.PI;
+      const [px, pz] = [d.radius + d.radius * Math.cos(t), d.radius + d.radius * Math.sin(t)];
+      let best = null;
+      for (const [x, z] of ring) {
+        const dd = Math.hypot(x + 0.5 - px, z + 0.5 - pz);
+        if (best === null || dd < best[0]) best = [dd, x, z];
+      }
+      // Under a pillar's way (its arc), no ring column lies near: that light is left out.
+      if (best && best[0] <= 1.5 && !used.has(`${best[1]},${best[2]}`)) {
+        used.add(`${best[1]},${best[2]}`);
+        lightAtColumn(best[1], best[2]);
+      }
     }
+  }
   const palette = { ".": null, s: d.block, p: p.block, l: d.lintel.block, t: d.light.block };
   if (lightUp) palette.u = lightUp;
   const structure = {
@@ -2168,6 +2214,7 @@ export function shrinesRust({ rules, worlds }) {
       ["search_cells", `${r.searchCells}`],
       ["flat_below_deg", rf(r.flatBelowDeg)],
       ["spawn_within", rf(r.spawnWithin)],
+      ["spawn_town", r.spawnTown ? `Some((${JSON.stringify(r.spawnTown.plan)}, ${r.spawnTown.gapM}))` : "None"],
     ];
     return [
       "ShrineRules {",

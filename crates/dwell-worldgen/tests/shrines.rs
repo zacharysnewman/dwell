@@ -146,10 +146,17 @@ dwell_world::both_faces!(
         for ((p, state), got) in placed.cells().zip(&first) {
             if *got == f.state(state) {
                 torches += usize::from(state == torch);
+            } else if dwell_blocks::block_of(state).name.starts_with("dwell:torch")
+                && *got == M.air
+            {
+                // A rim torch where the ground rises over the platform's edge (a slope under it,
+                // which a torch doesn't stand on) is left out.
             } else {
                 assert!(
                     p[1] <= t.ground_y(p[0], p[2]).expect("ground"),
-                    "{p:?} missing"
+                    "{p:?} missing: {} there, ground {:?}",
+                    dwell_blocks::block_of(*got).name,
+                    t.ground_y(p[0], p[2])
                 );
             }
         }
@@ -194,7 +201,7 @@ dwell_world::both_faces!(
         let g = BifacialTerrain::new(0);
         let t = g.local(f.face);
         let sh = t.shrines().expect("shrines");
-        let (stone, torch) = (require("dwell:stone"), require("dwell:torch"));
+        let stone = require("dwell:stone");
         let mut turns = std::collections::HashSet::new();
         for s in shrines_of(&g, f.face).into_iter().take(8) {
             turns.insert(s.turn);
@@ -204,13 +211,13 @@ dwell_world::both_faces!(
             assert_eq!(placed.max[0] - x0 + 1, 16, "{s:?} 16 m across x");
             assert_eq!(placed.max[2] - z0 + 1, 16, "{s:?} 16 m across z");
             let is_stone = |x: i32, y: i32, z: i32| cells.get(&[x, y, z]) == Some(&stone);
-            // Above the dais's top (the torches' row) only the pillars and the lintel stand.
-            let dais = cells
-                .iter()
-                .filter(|(_, st)| **st == torch)
-                .map(|(p, _)| p[1])
-                .min()
-                .expect("torches");
+            // Above the dais's top (the first row over its middle's stone) only the pillars, the
+            // lintel and the rim's torches stand.
+            let (mx, mz) = (x0 + 8, z0 + 8);
+            let mut dais = placed.min[1];
+            while is_stone(mx, dais, mz) {
+                dais += 1;
+            }
             // The pillars: the 8-connected groups of stone columns at the dais's top.
             let mut cols: Vec<[i32; 2]> = Vec::new();
             for z in z0..z0 + 16 {
@@ -538,5 +545,77 @@ dwell_world::both_faces!(
             "lone torch halves (seed, cell, stick, flame): {lone:?}"
         );
         assert!(whole > 100, "{whole} whole torch cells");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-16: "You should respawn at the middle of the shrine respawn platform facing
+    /// away forward (away from the pillars)": a shrine's stand is its dais's middle (the anchor's
+    /// column), and the yaw a player stands up with looks along its open half's way.
+    fn a_respawn_stands_in_the_middle_facing_away_from_the_pillars(f: FaceFrame) {
+        let g = BifacialTerrain::new(7);
+        let s = shrines_of(&g, f.face)[0];
+        let local = g.local(f.face);
+        let sh = local.shrines().expect("shrines");
+        assert_eq!(sh.stand_column(s), (s.x, s.z), "the dais's middle");
+        let yaw = g
+            .nearest_known_shrine_yaw(f.face, f64::from(s.x) + 0.5, f64::from(s.z) + 0.5)
+            .expect("a shrine");
+        let look = f.vector(f.look(yaw, 0.0));
+        let [fx, fz] = s.facing();
+        assert!(
+            (look[0] - f64::from(fx)).abs() < 1e-9 && (look[2] - f64::from(fz)).abs() < 1e-9,
+            "looking {look:?} along the open side {:?}",
+            [fx, fz]
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-16: "I'd also like you to start in a town. The spawn should be in a town.
+    /// One way to do that would be to place a town right next to the spawn." and "It shouldnt
+    /// grow beyond what we have for now": the spawn town stands in front of the spawn shrine's open
+    /// side (a player on the shrine facing out looks into it), its buildings generated with the
+    /// world (their plank floors there), and no grid town site crowds it.
+    fn a_new_world_starts_by_a_built_town_in_front_of_its_spawn_shrine(f: FaceFrame) {
+        let g = BifacialTerrain::new(7);
+        let local = g.local(f.face);
+        let sh = local.shrines().expect("shrines");
+        let s = sh.spawn_shrine(local);
+        let t = sh.spawn_town(local).expect("a spawn town");
+        let [fx, fz] = s.facing();
+        let (dx, dz) = (t.x - s.x, t.z - s.z);
+        assert!(
+            dx * fx + dz * fz > 0 && dx * fz - dz * fx == 0,
+            "the town ({dx}, {dz}) from the shrine lies along its open side {:?}",
+            [fx, fz]
+        );
+        let [x0, z0, x1, z1] = sh.spawn_town_box(local).expect("its box");
+        let mut v = Voxels::new(&g);
+        let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
+        for z in z0..=z1 {
+            for x in x0..=x1 {
+                let ground = local.ground_y(x, z).expect("ground");
+                for y in ground - 8..ground + 24 {
+                    let [wx, wy, wz] = f.cell([x, y, z]);
+                    let name = dwell_blocks::block_of(v.at(wx, wy, wz)).name;
+                    if ["dwell:planks", "dwell:stone_brick", "dwell:thatch", "dwell:thatch_slope", "dwell:door", "dwell:torch"].contains(&name) {
+                        *counts.entry(name).or_default() += 1;
+                    }
+                }
+            }
+        }
+        eprintln!("SPAWN TOWN blocks {counts:?}");
+        assert!(counts.get("dwell:planks").copied().unwrap_or(0) >= 60, "its houses stand built: {counts:?}");
+        // No grid town site's box reaches it.
+        let rules = dwell_world::blueprint::SHIPPED.towns;
+        let ground = |x: i32, z: i32| g.town_ground(f.face, x, z);
+        for o in rules.sites_near(7, f, f64::from(t.x), f64::from(t.z), 3000.0, &ground) {
+            let [a0, b0, a1, b1] = rules.clear_box(&o);
+            assert!(
+                a1 < x0 || a0 > x1 || b1 < z0 || b0 > z1,
+                "grid town {o:?} overlaps the spawn town"
+            );
+        }
     }
 );

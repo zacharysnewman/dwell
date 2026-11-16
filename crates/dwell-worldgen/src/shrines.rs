@@ -55,6 +55,10 @@ pub struct ShrineRules {
     /// The world spawn's shrine lies at most this far from the spawn search's point (m): failing
     /// one, a shrine is built at the point itself.
     pub spawn_within: f32,
+    /// The spawn's town (owner, 2026-11-16: "The spawn should be in a town"): its plan's name (a
+    /// town plan of shared/blueprints/blueprints.json) and the gap (m) past the platform, built with
+    /// the world in front of the spawn shrine's open side; None: no spawn town.
+    pub spawn_town: Option<(&'static str, i32)>,
 }
 
 mod table {
@@ -115,6 +119,8 @@ pub struct Shrines {
     spawn: OnceLock<Option<Shrine>>,
     /// The spawn search's point, once run (it takes ~0.6 s natively).
     search: OnceLock<[f64; 3]>,
+    /// The spawn's town site (face-local; resolved once, on demand).
+    town: OnceLock<Option<dwell_world::blueprint::TownSite>>,
 }
 
 impl Shrines {
@@ -152,6 +158,7 @@ impl Shrines {
             cells: RwLock::new(HashMap::new()),
             spawn: OnceLock::new(),
             search: OnceLock::new(),
+            town: OnceLock::new(),
         }
     }
 
@@ -392,6 +399,47 @@ impl Shrines {
         let [x, _, z] = self.search_point(g);
         self.nearest_grid_within(g, x, z)
             .expect("a grid shrine within spawn_within (else the spawn's own)")
+    }
+
+    /// The spawn's town (owner, 2026-11-16: "The spawn should be in a town. One way to do that
+    /// would be to place a town right next to the spawn."): the plan `spawn_town` names, its site
+    /// in front of the spawn shrine's open side (so a player on the shrine, facing out, looks into
+    /// it), its nearest clear-ground edge `gap` m past the platform. Built with the world, whole
+    /// (`spawn_town_layout`); never founded as a grid town. Face-local; its `face` is A's (it is
+    /// the same on either face's own frame).
+    pub fn spawn_town(&self, g: &TerrainGenerator) -> Option<dwell_world::blueprint::TownSite> {
+        *self.town.get_or_init(|| {
+            let (name, gap) = self.rules.spawn_town?;
+            let rules = dwell_world::blueprint::SHIPPED.towns;
+            let plan = rules.plans.iter().position(|p| p.name == name)?;
+            let s = self.spawn_shrine(g);
+            let [fx, fz] = s.facing();
+            // The plan's clear box about its centre: its edge toward the shrine (−facing).
+            let [x0, z0, x1, z1] = rules.plan_box(plan);
+            let near = match (fx, fz) {
+                (0, 1) => -z0,
+                (0, -1) => z1,
+                (1, 0) => -x0,
+                _ => x1,
+            };
+            // The platform's reach from the anchor along the facing.
+            let platform = self.reach;
+            let d = platform + gap + near;
+            let (x, z) = (s.x + fx * d, s.z + fz * d);
+            Some(dwell_world::blueprint::TownSite {
+                face: dwell_world::FaceFrame::A,
+                cell: rules.cell_of(x, z),
+                x,
+                z,
+                plan,
+            })
+        })
+    }
+
+    /// The spawn town's clear box [x0, z0, x1, z1] (face-local, inclusive), if it has one.
+    pub fn spawn_town_box(&self, g: &TerrainGenerator) -> Option<[i32; 4]> {
+        let t = self.spawn_town(g)?;
+        Some(dwell_world::blueprint::SHIPPED.towns.clear_box(&t))
     }
 
     fn nearest_grid_within(&self, g: &TerrainGenerator, x: f64, z: f64) -> Option<Shrine> {

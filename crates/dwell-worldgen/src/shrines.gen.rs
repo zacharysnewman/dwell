@@ -15,10 +15,11 @@ pub const SHRINES: ShrineRules = ShrineRules {
     clear: 3.0,
     structure: "dwell:shrine",
     lod_cell: 16,
-    stand: [0, 5],
+    stand: [0, 0],
     search_cells: 3,
     flat_below_deg: 2.0,
     spawn_within: 1500.0,
+    spawn_town: Some(("dwell:hamlet", 4)),
 };
 
 /// The rules in the worlds that override them, by world setting name.
@@ -35,9 +36,10 @@ pub const SHRINE_WORLDS: &[(&str, ShrineRules)] = &[
         clear: 3.0,
         structure: "dwell:shrine",
         lod_cell: 16,
-        stand: [0, 5],
+        stand: [0, 0],
         search_cells: 3,
         flat_below_deg: 2.0,
         spawn_within: 1500.0,
+        spawn_town: Some(("dwell:hamlet", 4)),
     }),
 ];

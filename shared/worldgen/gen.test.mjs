@@ -1345,10 +1345,19 @@ test('the shrine design builds the owner\'s shrine: 16 × 16 m, a half circle of
   }
   for (const p of pillars)
     assert.equal(seen.has(`${p.x},${p.top - 1},${p.z}`), p.joined, `pillar ${p.i}'s top ${p.joined ? 'joined' : 'apart'}`);
-  // The light stands at the centre of the dais, a disc of torches that reads at this size.
-  assert.equal(at(C, top(C, C), C), 't');
-  const torches = s.layers.flatMap((l) => l.join('')).join('').split('').filter((c) => c === 't').length;
-  assert.ok(torches >= 9, `${torches} torches`);
+  // The light stands round the platform's outer edge, not in the middle (owner, 2026-11-16: "let's
+  // just have torches on the outer edge of the platform, not the middle"): the dais's middle is
+  // clear, and every torch is on a ring column (a neighbour off the platform).
+  assert.notEqual(at(C, top(C, C), C), 't');
+  const ts = [];
+  s.layers.forEach((l, y) => l.forEach((row, z) => [...row].forEach((c, x) => c === 't' && ts.push([x, y, z]))));
+  assert.ok(ts.length >= 8, `${ts.length} torches`);
+  const onPlatform = (x, z) => x >= 0 && z >= 0 && x < s.size[0] && z < s.size[2] && s.layers[0][z][x] !== '.';
+  for (const [x, , z] of ts)
+    assert.ok(
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !onPlatform(x + dx, z + dz)),
+      `a torch at ${x},${z} off the rim`,
+    );
 });
 
 test('the shrine rules validate, each world\'s overrides too, and the generated table is current', () => {

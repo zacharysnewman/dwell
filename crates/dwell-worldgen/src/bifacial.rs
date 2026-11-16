@@ -175,6 +175,17 @@ impl BifacialTerrain {
         Some(dwell_world::FaceFrame { face }.point(g.shrine_stand(sh, s)))
     }
 
+    /// The face-local yaw (degrees) looking out of the shrine nearest (x, z) on `face`, away from
+    /// its pillars, its open half's way (owner, 2026-11-16: "facing away forward (away from the
+    /// pillars)"): a look's heading is (sin yaw, cos yaw) in face-local (x, z).
+    pub fn nearest_known_shrine_yaw(&self, face: Face, x: f64, z: f64) -> Option<f64> {
+        let g = self.local(face);
+        let sh = g.shrines()?;
+        let s = sh.nearest_known(g, x, z)?;
+        let [fx, fz] = s.facing();
+        Some(f64::from(fx).atan2(f64::from(fz)).to_degrees())
+    }
+
     /// The shrines on `face` in the grid cells within `cells` of column (x, z)'s (the map's).
     pub fn shrines_round(
         &self,

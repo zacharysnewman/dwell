@@ -3531,6 +3531,58 @@ impl TerrainGenerator {
     fn monuments_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
         let mut out = self.portal_monuments_near(lo, hi);
         out.extend(self.shrines_placed_near(lo, hi));
+        out.extend(self.spawn_town_placed_near(lo, hi));
+        out
+    }
+
+    /// The spawn's town's buildings reaching columns [x0, x1] × [z0, z1], placed: each blueprint
+    /// of its plan stood whole, its bottom row on the lowest ground under its footprint, as a
+    /// shrine (owner, 2026-11-16: "The spawn should be in a town"; built with the world, not by
+    /// builders: "It shouldnt grow beyond what we have for now").
+    fn spawn_town_placed_near(&self, lo: (i32, i32), hi: (i32, i32)) -> Vec<Placed> {
+        let Some(sh) = self.shrines.as_deref() else {
+            return Vec::new();
+        };
+        let Some([x0, z0, x1, z1]) = sh.spawn_town_box(self) else {
+            return Vec::new();
+        };
+        if x1 < lo.0 || x0 > hi.0 || z1 < lo.1 || z0 > hi.1 {
+            return Vec::new();
+        }
+        self.spawn_town_buildings()
+            .into_iter()
+            .filter(|m| {
+                m.max[0] >= lo.0 && m.min[0] <= hi.0 && m.max[2] >= lo.1 && m.min[2] <= hi.1
+            })
+            .collect()
+    }
+
+    /// The spawn town's buildings, placed (computed once per generator).
+    fn spawn_town_buildings(&self) -> Vec<Placed> {
+        let Some(sh) = self.shrines.as_deref() else {
+            return Vec::new();
+        };
+        let Some(t) = sh.spawn_town(self) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (name, [x, z], turn) in dwell_world::blueprint::SHIPPED.towns.layout(&t) {
+            let Ok(s) = dwell_world::structure::load(name) else {
+                continue;
+            };
+            let o = dwell_world::structure::Orientation {
+                quarter_turns: turn % 4,
+                mirror: None,
+            };
+            let probe = s.place_oriented([x, 0, z], o, 0);
+            let base = probe
+                .cells()
+                .filter(|(p, _)| p[1] == probe.min[1])
+                .map(|(p, _)| top_voxel(self.column_at(p[0], p[2]).height))
+                .min()
+                .unwrap_or_else(|| top_voxel(self.column_at(x, z).height));
+            out.push(s.place_oriented([x, base + 1 - probe.min[1], z], o, 0));
+        }
         out
     }
 

@@ -931,6 +931,9 @@ pub struct Game<S: Scene> {
     /// Seconds left of the stand at the shrine (`STAND_S`): third person, input held, the view
     /// fading back in from `stood_ms`.
     stand_left_s: f64,
+    /// The heading (face-local yaw, degrees) the view turns to at the next frame: out of the shrine
+    /// just stood up at, away from its pillars (owner, 2026-11-16).
+    turn_to_yaw: Option<f64>,
     stood_ms: f64,
     /// The last camera drawn (eye, pitch): where the defeat camera eases out from.
     last_camera: ([f64; 3], f64),
@@ -1243,6 +1246,7 @@ impl<S: Scene> Game<S> {
             defeat_yaw: None,
             defeat_from: ([0.0; 3], 0.0),
             stand_left_s: 0.0,
+            turn_to_yaw: None,
             stood_ms: 0.0,
             last_camera: ([0.0; 3], 0.0),
             fade: 0.0,
@@ -2132,6 +2136,12 @@ impl<S: Scene> Game<S> {
                     // Stood up at the shrine (§11.13): the stand plays, the view fades in.
                     self.stand_left_s = dwell_protocol::defeat::STAND_S;
                     self.stood_ms = now_ms;
+                    // Facing out of the shrine, away from its pillars (owner, 2026-11-16).
+                    let feet = s.local.position;
+                    self.turn_to_yaw = self.far_terrain.as_deref().and_then(|t| {
+                        let face = dwell_world::FaceFrame::at_height(feet[1]).face;
+                        t.nearest_known_shrine_yaw(face, feet[0], feet[2])
+                    });
                 }
                 if self.dead && !was_dead {
                     self.defeated_ms = now_ms;
@@ -4840,6 +4850,10 @@ impl<S: Scene> Game<S> {
         now: &mut dyn FnMut() -> f64,
     ) {
         self.frame_start_ms = now();
+        if let Some(yaw) = self.turn_to_yaw.take() {
+            input.look.yaw = yaw;
+            input.look.pitch = 0.0;
+        }
         input.brushes = self.brush.available;
         input.brush_active = self.brush.active();
         // Queued region edits (a brush stroke) as the server's cell rate allows.

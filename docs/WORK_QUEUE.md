@@ -16,6 +16,22 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
+  queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
+  stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
+  #194: the grass and tree-scan spikes were fixed in 0.71.x; not the whole cause.) To do: measure the server's tick
+  natively while a player sprints, jumps and slides through grass and crosses a portal, find every tick over 16.7 ms
+  and its phase, fix each, and keep a test or a bench that fails on a tick over budget. Owner should see: no stutter,
+  ever; the server at 60 ticks a second throughout.
+- **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
+  So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
+  starts to fall, and the trunk lies flatter.
+- **Owner, 2026-11-16 (bug, far trees):** "On trees I'm noticing some big trees may not have billboards at a
+  distance, seeing some with just logs at a distance." Owner should see: every big tree drawn as a billboard far off,
+  no bare logs.
+- **Paused for priority 0 (2026-11-16):** the shrine respawn and rim torches (built) and the spawn town (built with
+  the world; its houses' ground not yet levelled) are on branch `claude/shrine-respawn`, unreleased: they need the
+  0.72 line together.
 - **The owner's house replaces the NPC hut (2026-11-15):** "Add in the house I built to replace the NPC house" (the
   owner's `dwell:house1`: 6 × 11 × 6, plank floor, stone brick walls, a 2 m west door, a torch inside, a hipped thatch
   roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
@@ -53,6 +69,12 @@ Last updated: 2026-11-11 (0.52.108).
   way to do that would be to place a town right next to the spawn. We also don't need to mark the initial spawn
   point on the map, since you'll always respawn at a shrine." A worldgen change (where towns stand): a new
   compatibility line. Owner should see: a new world starts in a town; the map shows no spawn marker.
+  Owner's answers (2026-11-16): the spawn town "Built, and keeps growing" (it stands when the world is made and the
+  builders keep adding to it); the start "In the town, at its shrine" (the spawn shrine in or at the edge of the
+  town, the player on it facing the town). Plan: the spawn's town site sits beside the spawn shrine; part of its
+  plan generates built with the world (as the shrines do). Then: "It shouldnt grow beyond what we have for now, but
+  we'll be expanding on this.": the spawn town's whole plan (today's hamlet) stands built, with no blueprints; growing
+  it is later work.
 - **Owner, 2026-11-16 (bug, BUGS.md #194):** "I've noticed the server stuttering a bit while I'm sprint
   jumping/sliding around this area" (M3 Max), "It's a periodic stutter. But quite visible and stalls the player
   movement." and "there's almost always a stutter going through the portal (jumping into it, I think)". Fixed

@@ -25,10 +25,20 @@ pub fn town_ground(g: &TerrainGenerator, x: i32, z: i32) -> Option<f64> {
         && !c.stream
         && h >= sea + lo
         && h <= sea + hi;
-    // Clear of the resurrection shrines (their clear ground, and a margin) and the portals.
+    // Clear of the resurrection shrines (their clear ground, and a margin) and the portals, and
+    // of the spawn's own town (its box and a grid site's footprint round it).
+    let near_spawn_town = || {
+        let r = SHIPPED.towns.footprint_m;
+        g.shrines()
+            .and_then(|sh| sh.spawn_town_box(g))
+            .is_some_and(|[x0, z0, x1, z1]| {
+                x >= x0 - r && x <= x1 + r && z >= z0 - r && z <= z1 + r
+            })
+    };
     (dry && !g
         .shrines()
-        .is_some_and(|sh| sh.crowds(g, x, z, crate::TOWN_SHRINE_MARGIN_M)))
+        .is_some_and(|sh| sh.crowds(g, x, z, crate::TOWN_SHRINE_MARGIN_M))
+        && !near_spawn_town())
     .then_some(h)
 }
 
@@ -98,6 +108,15 @@ impl Towns {
         (x0, z0): (i32, i32),
         (x1, z1): (i32, i32),
     ) -> bool {
+        // The spawn's town, built with the world (owner, 2026-11-16), keeps its ground clear too.
+        if let Some([bx0, bz0, bx1, bz1]) = g.shrines().and_then(|sh| sh.spawn_town_box(g))
+            && bx0 <= x1
+            && bx1 >= x0
+            && bz0 <= z1
+            && bz1 >= z0
+        {
+            return true;
+        }
         if self.boxes.is_empty() {
             return false;
         }
