@@ -54,7 +54,7 @@ pub const SHADOWS: ShadowTunables = ShadowTunables {
             filter_taps: 2,
             refresh_frames: 4,
             far_per_frame: 1,
-            plant_cascades: 2,
+            plant_cascades: 0,
         },
     ],
 };
