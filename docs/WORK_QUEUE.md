@@ -69,6 +69,11 @@ Last updated: 2026-11-11 (0.52.108).
   Built (2026-11-15): past 16 m (`blades::BILLBOARD_M`) a plant's first quad turns to the eye in the vertex stage
   and its second is dropped; chunks wholly past it skip the second quads (`second_quads_from`). Bench (M1 Air, High):
   mixed forest −0.3 ms; forest and open unchanged within noise (less than hoped: the near pass is mostly terrain).
+  Measured (2026-11-15, "Do we skip occluded chunks?"): no, and it would pay. `dwell-mesh` `tests/occlusion_probe.rs`
+  (ignored; run by hand): in the default world (seed 7), eye at standing height, chunks within 160 m, the chunks
+  the terrain alone hides wholly hold 25 % (spawn), 43 %, 36 % and 30 % of the triangles (trees not counted as
+  occluders). Next: a horizon cull on the CPU (occluder heights per chunk column, a horizon by azimuth), ahead of
+  packed vertices.
 - **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
   rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
   bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).
