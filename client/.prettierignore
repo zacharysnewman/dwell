@@ -19,3 +19,5 @@ src/ui/modes.gen.ts
 src/ui/inventory.gen.ts
 src/ui/layout.gen.ts
 src/ui/skyPresets.gen.ts
+src/protocol/constants.gen.ts
+src/ui/tools.gen.ts

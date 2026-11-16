@@ -316,6 +316,7 @@
     "Replace the targeted kind of block": ["event:tool", "event:place", "event:break"],
     "Remove the blocks": ["event:tool", "event:break"],
     "Copy": ["event:tool"],
+    "Select, copy and paste a box": ["event:tool"],
     "Paste mode on or off": ["event:tool"],
     "Paste": ["event:tool", "event:place", "event:break"],
     "Rotate / mirror the paste": ["event:tool"],
