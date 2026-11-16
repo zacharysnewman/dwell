@@ -8,7 +8,7 @@
 //! Arithmetic is done in `f64` and stored as `f32`, as the TS computes in doubles and stores into
 //! `Float32Array`s, so the buffers match it value for value.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use damage_mask::{DamageMask, Hull};
@@ -2330,6 +2330,16 @@ fn damaged_cells(
         .collect()
 }
 
+/// The damaged cells in the chunk's one-cell border (face-local like [`damaged_cells`]): its
+/// faces against them draw, as against a damaged cell of its own (BUGS.md #187).
+fn damaged_border(damage: &[([i32; 3], DamageView)], mirror: bool) -> HashSet<[i32; 3]> {
+    damage
+        .iter()
+        .filter(|(c, _)| !in_chunk(*c) && c.iter().all(|v| (-1..=N).contains(v)))
+        .map(|(c, v)| damage_mesh::face_local(*c, v, mirror).0)
+        .collect()
+}
+
 /// What a chunk mesh leaves to other layers (proposals/WATER_GPU_SURFACE.md §3, item 6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChunkFlags {
@@ -2456,6 +2466,7 @@ pub(crate) fn mesh_chunk_full(
             })
             .collect();
         let damaged = damaged_cells(&inner, damage, true);
+        let border = damaged_border(damage, true);
         let mut m = mesh_cells(
             kinds,
             &mirror_padded(&inner),
@@ -2466,6 +2477,7 @@ pub(crate) fn mesh_chunk_full(
             flags,
             trees,
             &damaged,
+            &border,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
         ChunkMeshes {
@@ -2482,8 +2494,9 @@ pub(crate) fn mesh_chunk_full(
             .map(|(c, cut)| (*c, *cut))
             .collect();
         let damaged = damaged_cells(&inner, damage, false);
+        let border = damaged_border(damage, false);
         let mut m = mesh_cells(
-            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged,
+            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged, &border,
         );
         ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
         m
@@ -2673,6 +2686,7 @@ fn mesh_cells(
     flags: ChunkFlags,
     trees: &[TreeTint],
     damaged: &[([i32; 3], u16, DamageView)],
+    border: &HashSet<[i32; 3]>,
 ) -> ChunkMeshes {
     // Damaged cubes with a damage look (a cell holding another state than the one hit is
     // undamaged) leave the merge on every face, by cell and face: each drawn as the pieces its
@@ -2838,7 +2852,13 @@ fn mesh_cells(
                         }
                         continue;
                     }
-                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
+                    // Against a damaged cube the face draws (BUGS.md #187): its mask may have
+                    // carved away the material that hid it, and nothing else would fill the hole.
+                    let beside_damage = (!struck.is_empty() || !border.is_empty())
+                        && !k.liquid
+                        && (struck.contains_key(&([nx, ny, nz], face ^ 1))
+                            || border.contains(&[nx, ny, nz]));
+                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) && !beside_damage {
                         continue;
                     }
                     let ns = cells.state(nx, ny, nz);

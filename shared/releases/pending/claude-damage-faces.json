@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fixed seeing the sky through a block's mined-away chunks: the blocks behind and under it now show through the holes, inside a chunk and across chunk edges."
+  ]
+}

@@ -27,6 +27,8 @@ Last updated: 2026-11-11 (0.52.108).
   4th block you hit lets the 1st start healing after ~10 s. (2) "Bloom stays on on high for now." (3) "The native app
   should be electron wrapper for now." (4) "Immediately after the tree task you're working on, fix this rendering bug,
   where chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it" (BUGS.md #187).
+  (5) "For damaged blocks, at least trees sometimes circling the tree block and destroying all the way around seems to
+  repair the other side visually or something?" (BUGS.md #188: only the newest 4 hit marks are kept). Next after #187.
 - **Owner, 2026-11-15 (queued, new feature):** "Side question, do we have a native build that doesn't run in browser
   but in a bundled app?" then "Yeah lets queue up the real native app" — today: the Electron shell
   (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev

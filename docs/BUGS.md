@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 188. Chopping round a log heals the far side
+
+Owner, 2026-11-15: "For damaged blocks, at least trees sometimes circling the tree block and destroying all the way
+around seems to repair the other side visually or something?" Cause (found): a damaged cell keeps only its newest
+`MAX_HIT_MARKS` (4) hit marks (`dwell_protocol::damage::Damage::hit`), and its carved shape is drawn from the marks
+it holds, so hits on a new side push the oldest side's marks out and that side fills back in. Owner should see:
+every bite taken out of a block stays until it breaks (or heals by the healing rules), from whichever side.
+
 ### 187. A block's mined-away chunks show sky, not the blocks behind and under it
 
 Owner, 2026-11-15, with a phone screenshot (stone, the stone pickaxe, mid-break): "fix this rendering bug, where
@@ -25,6 +33,10 @@ between them. Suspect: the far trees' hand-over: past it a chunk draws its plant
 (`impostors::cutout_draw`), and the tree's impostor should draw the crown; where it doesn't (a tree the impostors
 don't hold, or the chunk's distance and the tree's disagreeing about the hand-over) only the trunk is left. Owner should
 see: no bare trunks; a far tree is one billboard, trunk and crown together.
+Cause and fix (2026-11-15): the neighbours' faces against a damaged cube were culled as hidden; they now draw
+(`mesh_cells`: beside a struck cell, or a damaged cell in the chunk's border, which mesh jobs now carry, and damage
+on a chunk's edge re-meshes the neighbour). Red → green: `a_blocks_face_toward_a_damaged_block_draws` (both faces,
+inside a chunk and across its border). Built; open until the owner's look.
 
 Cause (found 2026-11-15): the bare trunks were the `pine_groves` placement's hand-built pines (`dwell:pine_tree`,
 `dwell:tall_pine_tree`). The far tree lists held species trees only, so those pines had no impostor, yet every leaf
