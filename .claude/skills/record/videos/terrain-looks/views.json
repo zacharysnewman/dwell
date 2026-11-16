@@ -1,0 +1,45 @@
+{
+  "$comment": "Terrain-looks timelapse (owner, 2026-11-16): candidate views over a Realistic world (island at the origin, ~50 km radius). eye [x, y, z] m, yaw (0 = +z), pitch (deg, down negative), time (0..1 of the day: 0.27 sunrise, 0.5 noon).",
+  "views": {
+    "oblique-gold": {
+      "eye": [
+        0,
+        22000,
+        -62000
+      ],
+      "yaw": 0,
+      "pitch": -20,
+      "time": 0.29
+    },
+    "oblique-noon": {
+      "eye": [
+        0,
+        22000,
+        -62000
+      ],
+      "yaw": 0,
+      "pitch": -20,
+      "time": 0.45
+    },
+    "high-oblique-gold": {
+      "eye": [
+        0,
+        45000,
+        -45000
+      ],
+      "yaw": 0,
+      "pitch": -42,
+      "time": 0.3
+    },
+    "top-down-noon": {
+      "eye": [
+        0,
+        90000,
+        0
+      ],
+      "yaw": 0,
+      "pitch": -89,
+      "time": 0.45
+    }
+  }
+}

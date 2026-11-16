@@ -24,6 +24,12 @@ Last updated: 2026-11-11 (0.52.108).
   time of day you propose." and "Also, make tools to make each screenshot you take super quick and easy to setup the
   world and take it." Owner should see: a proposed angle and time of day (sample shots) first; then the timelapse
   video of every terrain look, oldest to newest, from high above.
+  Tool (2026-11-16): `node .claude/skills/record/scripts/look-shot.mjs --version <v|local> --out DIR [--only views]`
+  opens a hosted release (`dropkickarcade.com/dwell/v/<v>/`, the newest of each line from 0.59.3 is hosted) on a
+  fresh Realistic world (seed 7, clouds and music off), places each view of `videos/terrain-looks/views.json`, sets
+  the time, hides the HUD, waits for the view to settle and saves a PNG (~45 s a build). Older lines (0.55–0.58)
+  are retired from the site: their builds would come from GitHub Releases. Proposed to the owner: straight down from
+  90 km (the whole disc), midday.
 - **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
   queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
   stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
