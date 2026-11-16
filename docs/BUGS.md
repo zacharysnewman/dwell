@@ -6,6 +6,15 @@ pins it.
 
 ## Open
 
+### 187. A block's mined-away chunks show sky, not the blocks behind and under it
+
+Owner, 2026-11-15, with a phone screenshot (stone, the stone pickaxe, mid-break): "fix this rendering bug, where
+chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it". Through the carved
+chunks of a damaged block the neighbouring stone isn't drawn: the gap shows the sky's blue. Suspect: the neighbours'
+faces against the damaged cell are culled as hidden by a full block (the mesher's face culling sees the damaged cell
+as a whole cube), so once its chunks are carved away nothing covers the hole. Owner should see: through a block's
+carved chunks, the blocks behind and under it, solid.
+
 ### 186. Bare trunks ("sticks") with no crown at middle distance
 
 Owner, 2026-11-15, on the bench's mixed-forest shot: "I do see a bug in that screenshot but it's probably not new,

@@ -20,7 +20,9 @@ const STAND: (i32, i32) = (0, 0);
 const HALF: i32 = 100;
 /// The intended density (trees per hectare; the old-growth placement's grid 5, its crowns
 /// interleaving 2 blocks, stands ~220): a temperate rainforest's few hundred stems.
-const PER_HA: std::ops::RangeInclusive<f64> = 170.0..=280.0;
+/// Since giants (owner, 2026-11-15: up to 4× the height, crowns ~2×, 2 × 2 trunks) the biggest
+/// trees take more room, so the stand is a little thinner.
+const PER_HA: std::ops::RangeInclusive<f64> = 140.0..=280.0;
 
 fn edit() -> Edit {
     world_config(NAME)

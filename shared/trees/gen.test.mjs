@@ -56,9 +56,7 @@ test("the old-growth species stand taller than the species they grow from (WORK_
   for (const [old, young] of [["dwell:old_pine", "dwell:pine"], ["dwell:old_oak", "dwell:oak"]]) {
     const [lo, hi] = by[old].trunk.height.mature;
     assert.ok(lo > by[young].trunk.height.mature[1], `${old} mature from ${lo} m, above ${young}'s tallest`);
-    assert.ok(hi <= 26, `${old} at most 26 m (a leaf's tree is looked for 32 m up, growth.rs LEAF_RISE)`);
-    // An old stand: most generated trees at the last stage.
-    const w = by[old].growth.wild;
-    assert.ok(w[w.length - 1] * 2 > w.reduce((a, b) => a + b, 0), `${old}: mostly mature`);
+    // A giant at most 120 m (a leaf's tree is looked for 130 m up, growth.rs LEAF_RISE).
+    assert.ok(hi * (by[old].trunk.height.giant ?? 1) <= 120, `${old} at most 120 m`);
   }
 });

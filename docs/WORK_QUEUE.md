@@ -21,6 +21,28 @@ Last updated: 2026-11-11 (0.52.108).
   roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
   0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
   houses built as his house.
+- **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
+  starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
+  healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the
+  4th block you hit lets the 1st start healing after ~10 s. (2) "Bloom stays on on high for now." (3) "The native app
+  should be electron wrapper for now." (4) "Immediately after the tree task you're working on, fix this rendering bug,
+  where chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it" (BUGS.md #187).
+- **Owner, 2026-11-15 (queued, new feature):** "Side question, do we have a native build that doesn't run in browser
+  but in a bundled app?" then "Yeah lets queue up the real native app" — today: the Electron shell
+  (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev
+  harness with no menus, HUD or audio). Which path (packaged Electron or a full native client) to be asked before
+  designing. Owner should see: Dwell launched as an installed app on the Mac, not in a browser tab.
+- **Owner, 2026-11-15 (new feature, trees):** "Let's get rid of my pines. Make each tree have a different starting
+  age, growth rate, and increase the max size of the trees to quadruple the height. Big trees can take up more blocks
+  at the base as they grow past a 1 block width. They can expand into a neighboring 3 spaces if available (only player
+  placed blocks prevent growth into a space. When trees hit that size, they will pop into to be centered on those 4
+  square of block columns." Breaks worldgen (a new compatibility line). Design questions asked before building.
+  Owner should see: no hand-built pines; trees of many ages and sizes, the biggest four times today's height, the
+  big ones standing on 2 × 2 trunks centred on the four columns.
+  Owner's answers (2026-11-15): the hand-built pines' groves become species pines (`dwell:pine`), same places;
+  height: each species' maximum ×4, trees growing toward it at their own rates so ages and sizes vary; trunks stop at
+  2 × 2; a player-placed block in one of the 3 spaces stops the tree growing (until it is removed). And: "And fold
+  trunks into billboards." (past the hand-over the near trunk's geometry is not drawn; the billboard has it).
 - **Owner, 2026-11-15:** "Yes performance pass to get up to 60fps" — next local job (High at 60 fps on the M1 Air;
   biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
   High holding 60 fps on the M1 Air in forest, meadow and open ground.

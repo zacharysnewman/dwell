@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.0",
+      "changes": [
+        "A new compatibility line: worlds' trees are new",
+        "The hand-built pines are gone: pine groves grow the pine species instead",
+        "Trees grow far bigger: each tree's full size is drawn up to four times the old tallest, with a wider crown",
+        "Every tree grows at its own pace, and new worlds start their trees at all ages",
+        "Big trees stand on a 2 × 2 trunk, centred on the four blocks; a block you placed in the way stops the tree growing until it's gone"
+      ]
+    },
+    {
       "version": "0.70.26",
       "changes": [
         "Fixed bare tree trunks (\"sticks\") at a distance: the hand-built pines now turn into far-tree billboards like every other tree, instead of losing their leaves.",

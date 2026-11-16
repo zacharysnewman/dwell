@@ -39,13 +39,13 @@ pub struct Record {
 }
 
 impl Record {
-    /// The stage it should stand at on world day `day`: a stage every `daysPerStage` days since
-    /// it reached its own, up to the species' last.
+    /// The stage it should stand at on world day `day`: a stage every `daysPerStage` days (over
+    /// the tree's own `species::rate`) since it reached its own, up to the species' last.
     pub fn due(&self, day: f64) -> u8 {
         let Some(s) = SPECIES.get(usize::from(self.species)) else {
             return self.stage;
         };
-        let per = f64::from(s.days_per_stage).max(1e-6);
+        let per = (f64::from(s.days_per_stage) / f64::from(species::rate(s, self.seed))).max(1e-6);
         let n = ((day - self.since) / per).floor().max(0.0);
         let last = s.stages.saturating_sub(1) as f64;
         (f64::from(self.stage) + n).min(last) as u8
@@ -185,8 +185,9 @@ pub fn plant(item: &str, anchor: [i32; 3], ground: &str, day: f64) -> Result<Rec
 
 /// How far (cells) from a tree's anchor its leaves may reach, sideways and up: the bound
 /// [`tree_of_leaf`] looks within.
-const LEAF_REACH: i32 = 24;
-const LEAF_RISE: i32 = 64;
+/// Giants (trunk.height.giant, up to 120 m with their crowns grown with them) set the bounds.
+const LEAF_REACH: i32 = 48;
+const LEAF_RISE: i32 = 260;
 
 /// The recorded tree whose current stage put a leaf at world cell `cell` (its species' leaf block),
 /// if any: whose broken leaves drop its species' sapling (ADR 0079 S4).
@@ -223,6 +224,9 @@ pub fn sapling_drop(r: &Record, roll: f64) -> Option<&'static str> {
 pub struct Step {
     pub writes: Vec<([i32; 3], StateId)>,
     pub stopped: bool,
+    /// A player's block stands where its trunk widens to 2 × 2: it waits (no writes) until the block
+    /// is gone (owner, 2026-11-15: "only player placed blocks prevent growth into a space").
+    pub blocked: bool,
     /// The world chunks its stages' boxes reach (all must be loaded to grow).
     pub chunks: Vec<ChunkCoord>,
 }
@@ -257,12 +261,14 @@ pub fn cells_at(r: &Record, stage: u8) -> Vec<([i32; 3], StateId)> {
 }
 
 /// The step from the record's stage to `target`: the writes, reading the world with `read` (world
-/// cells). A pure function of the record, the target and the world it reads.
+/// cells) and, where the trunk widens, what was generated there with `generated` (what differs
+/// from it is a player's). A pure function of the record, the target and the world it reads.
 pub fn step(
     r: &Record,
     target: u8,
     swaps: &[(StateId, StateId)],
     read: &dyn Fn([i32; 3]) -> StateId,
+    generated: &dyn Fn([i32; 3]) -> StateId,
 ) -> Step {
     let mut out = Step::default();
     if r.stopped || target <= r.stage {
@@ -293,6 +299,38 @@ pub fn step(
         }
     }
     let air = dwell_world::M.air;
+    // The trunk's new columns (a 2 × 2 trunk's three beside the old one): its logs there take the
+    // place of what the world generated (ground, grass, a neighbour's leaves), and a player's block
+    // in one stops the tree until it is gone.
+    let base = |p: &Placed| -> Vec<(i32, i32)> {
+        let low = p.cells().map(|(c, _)| c[1]).min().unwrap_or(0);
+        p.cells()
+            .filter(|(c, _)| c[1] == low)
+            .map(|(c, _)| (c[0], c[2]))
+            .collect()
+    };
+    let (was_base, now_base) = (base(&old), base(&new));
+    let widened: Vec<(i32, i32)> = now_base
+        .into_iter()
+        .filter(|c| !was_base.contains(c))
+        .collect();
+    let trunk_growth = |p: [i32; 3]| widened.contains(&(p[0], p[2])) && old.at(p).is_none();
+    for y in lo[1]..=hi[1] {
+        for z in lo[2]..=hi[2] {
+            for x in lo[0]..=hi[0] {
+                let p = [x, y, z];
+                if !trunk_growth(p) || new.at(p).is_none() {
+                    continue;
+                }
+                let w = f.cell(p);
+                let here = read(w);
+                if here != air && here != generated(w) {
+                    out.blocked = true;
+                    return out;
+                }
+            }
+        }
+    }
     for y in lo[1]..=hi[1] {
         for z in lo[2]..=hi[2] {
             for x in lo[0]..=hi[0] {
@@ -303,7 +341,7 @@ pub fn step(
                 }
                 let w = f.cell(p);
                 let expect = was.map_or(air, |m| f.state(m));
-                if read(w) != expect {
+                if read(w) != expect && !(trunk_growth(p) && now.is_some()) {
                     continue; // edited (or grown into): the world's wins
                 }
                 out.writes.push((w, now.map_or(air, |m| f.state(m))));
@@ -414,9 +452,14 @@ mod tests {
     fn grow_to(world: &mut HashMap<[i32; 3], StateId>, r: &mut Record, target: u8) -> Step {
         let s = {
             let w = &*world;
-            step(r, target, &[], &|c| {
-                *w.get(&c).unwrap_or(&dwell_world::M.air)
-            })
+            // Generated: an empty world (whatever stands in it, a player put there).
+            step(
+                r,
+                target,
+                &[],
+                &|c| *w.get(&c).unwrap_or(&dwell_world::M.air),
+                &|_| dwell_world::M.air,
+            )
         };
         for (c, m) in &s.writes {
             if *m == dwell_world::M.air {
@@ -436,13 +479,16 @@ mod tests {
     #[test]
     fn a_tree_is_due_a_stage_every_days_per_stage() {
         // face-a-only: no geometry, only the clock.
+        // Each tree at its own pace (owner, 2026-11-15): `daysPerStage` over its seed's rate.
         let r = oak(FaceFrame::A, 2);
-        let per = f64::from(SPECIES[usize::from(r.species)].days_per_stage);
+        let s = &SPECIES[usize::from(r.species)];
+        let per = f64::from(s.days_per_stage) / f64::from(species::rate(s, r.seed));
+        let last = (s.stages - 1) as u8;
         assert_eq!(r.due(0.0), 2);
         assert_eq!(r.due(per * 0.99), 2);
-        assert_eq!(r.due(per), 3);
-        assert_eq!(r.due(per * 3.0 + 0.1), 5);
-        assert_eq!(r.due(per * 100.0), 7, "capped at the last stage");
+        assert_eq!(r.due(per * 1.0001), 3);
+        assert_eq!(r.due(per * 3.0001), 5);
+        assert_eq!(r.due(per * 100.0), last, "capped at the last stage");
     }
 
     dwell_world::both_faces!(
@@ -491,7 +537,68 @@ mod tests {
             let s = grow_to(&mut world, &mut r, 5);
             assert!(s.stopped && s.writes.is_empty());
             assert!(r.stopped);
-            assert!(step(&r, 7, &[], &|_| dwell_world::M.air).writes.is_empty());
+            let air = |_| dwell_world::M.air;
+            assert!(step(&r, 7, &[], &air, &air).writes.is_empty());
+        }
+    );
+
+    /// An oak record whose tree widens to a 2 × 2 trunk between `stage` and the next (the first
+    /// such seed and stage), on face `f`.
+    fn widening_oak(f: FaceFrame) -> (Record, u8) {
+        let s = species::find("dwell:oak").unwrap();
+        for seed in 0..256 {
+            for st in 1..s.stages {
+                let (a, b) = (species::grow(s, seed, st - 1), species::grow(s, seed, st));
+                if a.width <= 1.0 && b.width > 1.0 {
+                    let mut r = oak(f, (st - 1) as u8);
+                    r.seed = seed;
+                    return (r, st as u8);
+                }
+            }
+        }
+        panic!("no oak widens");
+    }
+
+    dwell_world::both_faces!(
+        /// The owner, 2026-11-15: a trunk widening to 2 × 2 grows into its 3 new columns over what
+        /// the world generated there, and "only player placed blocks prevent growth into a space"
+        /// (the tree then waits: "Stop growing").
+        fn a_widening_trunk_takes_generated_ground_but_waits_for_a_players_block(f: FaceFrame) {
+            let (r, target) = widening_oak(f);
+            let new: Vec<[i32; 3]> = cells_at(&r, target).into_iter().map(|(c, _)| c).collect();
+            let old: Vec<[i32; 3]> = cells_at(&r, r.stage).into_iter().map(|(c, _)| c).collect();
+            // A new trunk cell beside the old trunk, at the trunk's foot row.
+            let foot = r.anchor;
+            let beside = *new
+                .iter()
+                .find(|c| c[1] == foot[1] && !old.contains(c) && *c != &foot)
+                .expect("a new trunk column at the foot");
+            let stone = dwell_blocks::require("dwell:stone");
+            let world: HashMap<[i32; 3], StateId> = {
+                let mut w = world_of(&r);
+                w.insert(beside, stone);
+                w
+            };
+            let read = |c: [i32; 3]| *world.get(&c).unwrap_or(&dwell_world::M.air);
+            // Generated there: it grows over it.
+            let natural = step(&r, target, &[], &read, &|c| {
+                if c == beside {
+                    stone
+                } else {
+                    dwell_world::M.air
+                }
+            });
+            assert!(!natural.blocked);
+            assert!(
+                natural
+                    .writes
+                    .iter()
+                    .any(|(c, m)| *c == beside && *m != stone),
+                "the trunk takes the generated stone's place"
+            );
+            // A player's (not generated): it waits, writing nothing.
+            let placed = step(&r, target, &[], &read, &|_| dwell_world::M.air);
+            assert!(placed.blocked && placed.writes.is_empty() && !placed.stopped);
         }
     );
 
@@ -541,9 +648,9 @@ mod tests {
                     zero.contains_key(&r.anchor),
                     "{item}: the foot at the anchor"
                 );
-                let per = f64::from(s.days_per_stage);
+                let per = f64::from(s.days_per_stage) / f64::from(species::rate(s, r.seed));
                 for n in 1..s.stages as u8 {
-                    assert_eq!(r.due(1.5 + per * f64::from(n) + 1e-6), n);
+                    assert_eq!(r.due(1.5 + per * (f64::from(n) + 1e-4)), n);
                 }
                 // Grown n stages, it is stage n's tree.
                 let mut world = zero;

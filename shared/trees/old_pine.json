@@ -3,9 +3,9 @@
   "name": "dwell:old_pine",
   "label": "Old-growth pine",
   "blocks": {"log": "dwell:log", "leaf": "dwell:leaves"},
-  "trunk": {"height": {"sapling": 2, "mature": [18, 26]}, "heightStep": 0.5, "width": {"sapling": 0.25, "mature": 1, "step": 0.25}},
+  "trunk": {"height": {"sapling": 2, "mature": [18, 26], "giant": 4}, "heightStep": 0.5, "width": {"sapling": 0.25, "mature": 1, "step": 0.25}},
   "branches": {"kind": "whorl", "perWhorl": 4, "reach": 0.5, "emergeAt": 0.4},
-  "crown": {"shape": "cone", "base": 0.4, "top": 2, "radius": 2.6, "taper": 1.1, "tier": {"period": 2.5, "upper": 0.6}, "roughness": 0.25, "scale": [0.3, 1]},
+  "crown": {"shape": "cone", "base": 0.4, "top": 2, "radius": 2.6, "taper": 1.1, "tier": {"period": 2.5, "upper": 0.6}, "roughness": 0.25, "scale": [0.3, 1], "withHeight": 0.5},
   "variety": {"crown": [0.85, 1.15], "lightness": [0.7, 1.05], "hue": [-0.03, 0.03]},
-  "growth": {"stages": 8, "daysPerStage": 6, "wild": [0, 0, 1, 1, 1, 2, 3, 10], "variants": 16}
+  "growth": {"stages": 16, "daysPerStage": 3, "rate": [0.5, 2], "wild": [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3], "variants": 32}
 }

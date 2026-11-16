@@ -1198,10 +1198,8 @@ mod tests {
         // it should be handled identically to the others?"): the placements' hand-built pines get
         // an impostor of their own, a layer each after the species' blocks.
         let c = small();
-        let names: Vec<&str> = structure_trees().iter().map(|(n, _)| *n).collect();
-        for pine in ["dwell:pine_tree", "dwell:tall_pine_tree"] {
-            assert!(names.contains(&pine), "{pine} in {names:?}");
-        }
+        // (The owner then had the hand-built pines replaced by the species pine: no placement
+        // stands one now, so the list is empty; any placed later bakes as below.)
         for (k, (name, cells)) in structure_trees().iter().enumerate() {
             let species = structure_tree(name).expect("listed");
             assert_eq!(usize::from(species), SPECIES.len() + k);
@@ -1351,13 +1349,22 @@ mod tests {
         }
     }
 
+    /// A seed whose mature tree of `s` stands inside the species' old range (no giant): the bake's
+    /// quality tests measure a normal tree; a giant's crown covers fewer of a view's texels (its
+    /// resolution is a follow-up, WORK_QUEUE 2026-11-15 trees).
+    pub(super) fn normal_seed(s: &Species) -> u32 {
+        (0..64)
+            .find(|&seed| grow(s, seed, s.stages - 1).height <= s.mature_height.1)
+            .expect("a normal-sized seed")
+    }
+
     #[test]
     fn normals_point_outward_on_the_crowns_silhouette() {
         // face-a-only: face-local bake.
         let c = small();
         for name in ["dwell:oak", "dwell:pine"] {
             let s = find(name).unwrap();
-            let im = bake(s, 3, s.stages - 1, &c, 32);
+            let im = bake(s, normal_seed(s), s.stages - 1, &c, 32);
             for (vi, &v) in c.views.iter().enumerate() {
                 let (right, up) = basis(v);
                 let (mut good, mut all) = (0, 0);
@@ -1744,7 +1751,11 @@ mod crown_match {
         let (mut worst_iou, mut worst_off) = ((1.0f32, String::new()), (0.0f32, String::new()));
         for name in ["dwell:pine", "dwell:oak"] {
             let sp = crate::species::find(name).expect(name);
-            let real = grow(sp, 3, sp.stages.saturating_sub(1));
+            let real = grow(
+                sp,
+                super::tests::normal_seed(sp),
+                sp.stages.saturating_sub(1),
+            );
             let b = bake_cells(&real.cells, c, px);
             let grid: HashMap<[i32; 3], Part> = real.cells.iter().map(|(k, p)| (*k, *p)).collect();
             let shapes: HashMap<Part, Vec<([f32; 3], f32)>> =
@@ -1798,7 +1809,9 @@ mod crown_match {
                         worst_iou = (iou, at.clone());
                     }
                     let cy = |a: [f32; 3]| a[1] / a[2].max(1.0);
-                    let off = (cy(drawn) - cy(truth)).abs();
+                    // As a share of the tolerance: `REGISTER_M`, or `REGISTER_SHARE` of a big
+                    // tree's radius (a giant's crown, owner 2026-11-15, is four times the size).
+                    let off = (cy(drawn) - cy(truth)).abs() / REGISTER_M.max(REGISTER_SHARE * r);
                     if off > worst_off.0 {
                         worst_off = (off, at);
                     }
@@ -1812,8 +1825,8 @@ mod crown_match {
             worst_iou.1
         );
         assert!(
-            worst_off.0 < REGISTER_M,
-            "the impostor's crown sits {:.2} m off the real one's ({})",
+            worst_off.0 < 1.0,
+            "the impostor's crown sits {:.2} of the tolerance off the real one's ({})",
             worst_off.0,
             worst_off.1
         );
@@ -1824,6 +1837,8 @@ mod crown_match {
     const REGISTER_IOU: f32 = 0.66;
     /// How far (m) the impostor's silhouette centre may sit above or below the real crown's.
     const REGISTER_M: f32 = 0.3;
+    /// ... or this share of the baked radius, for a tree big enough that it is more.
+    const REGISTER_SHARE: f32 = 0.04;
 
     #[test]
     fn ao_is_off_by_default_and_darkens_texels_deep_in_the_crown_when_on() {

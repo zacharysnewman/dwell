@@ -99,8 +99,20 @@ impl Server {
             let target = r.due(day);
             let swaps = growers.as_ref().map_or(Vec::new(), |g| g.swaps(&r));
             let step = {
-                let world = &self.world;
-                dwell_worldgen::growth::step(&r, target, &swaps, &|c| world.get_voxel_if_loaded(c))
+                // What was generated, where a trunk widens over it (a player's block stops it).
+                let world = std::cell::RefCell::new(&mut self.world);
+                let cache = std::cell::RefCell::new(Default::default());
+                dwell_worldgen::growth::step(
+                    &r,
+                    target,
+                    &swaps,
+                    &|c| world.borrow().get_voxel_if_loaded(c),
+                    &|c| {
+                        world
+                            .borrow_mut()
+                            .generated_voxel(c, &mut cache.borrow_mut())
+                    },
+                )
             };
             if step.chunks.iter().any(|&k| self.world.find(k).is_none()) {
                 continue; // wait until its whole box is loaded
@@ -110,9 +122,13 @@ impl Server {
                 rec.stopped = true;
                 continue;
             }
-            let per = f64::from(
-                dwell_worldgen::species::SPECIES[usize::from(rec.species)].days_per_stage,
-            );
+            if step.blocked {
+                continue; // a player's block where its trunk widens: it waits
+            }
+            // Its own pace (`species::rate`).
+            let s = &dwell_worldgen::species::SPECIES[usize::from(rec.species)];
+            let per =
+                f64::from(s.days_per_stage) / f64::from(dwell_worldgen::species::rate(s, rec.seed));
             rec.since += f64::from(target - rec.stage) * per;
             rec.stage = target;
             for (c, m) in step.writes {
