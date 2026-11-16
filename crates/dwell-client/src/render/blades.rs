@@ -28,7 +28,8 @@ pub const CROSS_HALF_WIDTH: f32 = std::f32::consts::FRAC_1_SQRT_2;
 pub fn column(position: [f32; 2], normal: [f32; 2], u: f32) -> [f32; 2] {
     let (ax, az) = (normal[1] + 1e-6, -normal[0]);
     let len = (ax * ax + az * az).sqrt();
-    let half = if u < 0.5 {
+    // A plant's second quad carries u + `SECOND_QUAD_U` (dwell-mesh): its side is the fraction's.
+    let half = if u.fract() < 0.5 {
         -CROSS_HALF_WIDTH
     } else {
         CROSS_HALF_WIDTH
@@ -62,15 +63,75 @@ pub fn blade(rank: f32, start: f32, end: f32, distance: f32) -> f32 {
     ((rank - share * (1.0 + DISSOLVE)) / DISSOLVE + 1.0).clamp(0.0, 1.0)
 }
 
-/// The WGSL of [`column`], [`rank`] and [`blade`] (`cutout_vertex` calls `blade_fade`).
+/// Past this (m, the plant's centre from the eye across the ground) a cross plant is one quad
+/// turned to face the eye, its others dropped (owner, 2026-11-15: "grass could be rendered at half
+/// if we only did a billboard at most distances"); a chunk wholly past it draws only its plants'
+/// first quads (`dwell_mesh::second_quads_from`).
+pub const BILLBOARD_M: f32 = 16.0;
+
+/// How far up a cross plant's normals lean (dwell-mesh `CROSS_UP`).
+const CROSS_UP: f32 = 0.8;
+
+/// A plant's card past [`BILLBOARD_M`] (the reference of the WGSL `blade_card`): the corner
+/// `position` (chunk-local, x and z), on a quad along `along` (unit, x and z) of half-width
+/// `half` (signed: the corner's side), turned to face an eye `rel` from the plant's centre (the
+/// centre's eye-relative x and z): the corner's new x and z.
+pub fn card_corner(position: [f32; 2], along: [f32; 2], half: f32, rel: [f32; 2]) -> [f32; 2] {
+    let c = [position[0] - along[0] * half, position[1] - along[1] * half];
+    let d = (rel[0] * rel[0] + rel[1] * rel[1]).sqrt().max(1e-3);
+    let perp = [-rel[1] / d, rel[0] / d];
+    [c[0] + perp[0] * half, c[1] + perp[1] * half]
+}
+
+/// The WGSL of [`column`], [`rank`] and [`blade`] (`cutout_vertex` calls `blade_fade`), and of
+/// [`card_corner`] (`blade_card`).
 pub fn wgsl() -> String {
+    let second = dwell_mesh::SECOND_QUAD_U as f32;
     format!(
         "const BLADE_DISSOLVE: f32 = {DISSOLVE:?};
 const CROSS_HALF_WIDTH: f32 = {CROSS_HALF_WIDTH:?};
+const BILLBOARD_M: f32 = {BILLBOARD_M:?};
+const SECOND_QUAD_U: f32 = {second:?};
+const CROSS_UP: f32 = {CROSS_UP:?};
+// A cross plant's corner far off (render/blades.rs `card_corner`): past BILLBOARD_M its first
+// quad turns to face the eye and the rest are dropped (`keep` false). Chunks only (a piece's
+// plants, turned or scaled, stay as meshed).
+struct BladeCard {{
+    position: vec3f,
+    normal: vec3f,
+    keep: bool,
+}};
+fn blade_card(v: CutoutIn, draw: Draw) -> BladeCard {{
+    var out: BladeCard;
+    out.position = v.position;
+    out.normal = v.normal.xyz;
+    out.keep = true;
+    if (draw.offset.w != 1.0 || draw.quat.w < 0.99999) {{
+        return out;
+    }}
+    let across = normalize(vec2f(v.normal.z + 1e-6, -v.normal.x));
+    let half = select(CROSS_HALF_WIDTH, -CROSS_HALF_WIDTH, fract(v.uv.x) < 0.5);
+    let c = v.position.xz - across * half;
+    let rel = draw.offset.xz + c;
+    let dist = length(rel);
+    if (dist <= BILLBOARD_M) {{
+        return out;
+    }}
+    if (v.uv.x >= SECOND_QUAD_U) {{
+        out.keep = false;
+        return out;
+    }}
+    let d = rel / max(dist, 1e-3);
+    let p = c + vec2f(-d.y, d.x) * half;
+    out.position = vec3f(p.x, v.position.y, p.y);
+    // Facing the eye, leaned up (face B's up is −y: the mesher's lean's sign).
+    out.normal = normalize(vec3f(-d.x * (1.0 - CROSS_UP), CROSS_UP * sign(v.normal.y), -d.y * (1.0 - CROSS_UP)));
+    return out;
+}}
 // render/blades.rs: a cross plant's fade, column by column (1 drawn, 0 dropped whole).
 fn blade_fade(v: CutoutIn, draw: Draw) -> f32 {{
     let across = normalize(vec2f(v.normal.z + 1e-6, -v.normal.x));
-    let half = select(CROSS_HALF_WIDTH, -CROSS_HALF_WIDTH, v.uv.x < 0.5);
+    let half = select(CROSS_HALF_WIDTH, -CROSS_HALF_WIDTH, fract(v.uv.x) < 0.5);
     let centre = floor(v.position.xz - across * half) + 0.5;
     let rel = draw.offset.xyz + qrot(draw.quat, vec3f(centre.x, v.position.y, centre.y) * draw.offset.w);
     let world = floor(frame.tan.zw + rel.xz);
@@ -94,6 +155,30 @@ mod tests {
     fn snorm(n: [f32; 3]) -> [f32; 3] {
         let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
         n.map(|c| ((c / len).clamp(-1.0, 1.0) * 127.0).round() / 127.0)
+    }
+
+    #[test]
+    fn a_far_card_faces_the_eye_about_its_centre() {
+        // face-a-only: x and z only, the same on either face. The owner, 2026-11-15: "grass could
+        // be rendered at half if we only did a billboard": a far plant's corners turn about its
+        // centre to a quad square to the eye's direction, as wide as before.
+        let along = [std::f32::consts::FRAC_1_SQRT_2; 2];
+        let centre = [3.4f32, 7.2];
+        let corner = |half: f32| [centre[0] + along[0] * half, centre[1] + along[1] * half];
+        for rel in [[30.0f32, 0.0], [0.0, -40.0], [-20.0, 25.0]] {
+            let a = card_corner(corner(-CROSS_HALF_WIDTH), along, -CROSS_HALF_WIDTH, rel);
+            let b = card_corner(corner(CROSS_HALF_WIDTH), along, CROSS_HALF_WIDTH, rel);
+            let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+            assert!((mid[0] - centre[0]).abs() < 1e-5 && (mid[1] - centre[1]).abs() < 1e-5);
+            let w = [b[0] - a[0], b[1] - a[1]];
+            let len = (w[0] * w[0] + w[1] * w[1]).sqrt();
+            assert!(
+                (len - 2.0 * CROSS_HALF_WIDTH).abs() < 1e-4,
+                "as wide: {len}"
+            );
+            // Square to the view: across it, nothing along the eye's direction.
+            assert!((w[0] * rel[0] + w[1] * rel[1]).abs() < 1e-3, "{rel:?}");
+        }
     }
 
     dwell_world::both_faces!(

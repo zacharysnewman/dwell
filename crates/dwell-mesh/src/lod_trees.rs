@@ -404,7 +404,10 @@ mod tests {
             let (plain, tinted) = (near(&[]), near(&[oak]));
             // The trunk keeps its colour (its logs, a listed tree's, are set last for the far
             // hand-over: the same vertices, the triangles reordered).
-            assert_eq!(plain.opaque.colors, tinted.opaque.colors, "the trunk keeps its colour");
+            assert_eq!(
+                plain.opaque.colors, tinted.opaque.colors,
+                "the trunk keeps its colour"
+            );
             assert_eq!(plain.opaque.positions, tinted.opaque.positions);
             let (darker, placed) = compare(
                 &plain.cutout.colors,

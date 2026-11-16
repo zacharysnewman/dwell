@@ -62,6 +62,9 @@ Last updated: 2026-11-11 (0.52.108).
   two quads at every distance. Plan: the cutout mesh's second quads in their own range; chunks past ~16 m draw the
   first quads alone, turned to face the camera in the vertex stage. Owner should see: distant grass looking the same,
   a higher frame rate in meadows.
+  Built (2026-11-15): past 16 m (`blades::BILLBOARD_M`) a plant's first quad turns to the eye in the vertex stage
+  and its second is dropped; chunks wholly past it skip the second quads (`second_quads_from`). Bench (M1 Air, High):
+  mixed forest −0.3 ms; forest and open unchanged within noise (less than hoped: the near pass is mostly terrain).
 - **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
   rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
   bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).

@@ -3824,3 +3824,48 @@ dwell_world::both_faces!(
         assert_eq!(ranges[FACING_GROUPS - 1].end, tail.start);
     }
 );
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: "grass could be rendered at half if we only did a billboard at most
+    /// distances": a chunk's cutout holds its plants' quads past their first between
+    /// `second_quads_from` and `tree_leaves_from`, which a far chunk leaves out. Only those: a
+    /// leaf no listed tree owns (its u running in blocks past 2) stays before them (red before:
+    /// such leaves were taken for second quads and far crowns vanished).
+    fn only_plants_second_quads_are_set_apart_for_far_cards(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let ground = cube_block();
+        let mut cells = Vec::new();
+        for x in 0..32 {
+            for z in 0..32 {
+                cells.push((x, 4, z, ground));
+                cells.push((x, 5, z, if (x + z) % 3 == 0 { leaf } else { tall_grass() }));
+            }
+        }
+        let m = super::mesh_chunk_flags(
+            &voxels(&cells),
+            &[],
+            f.is_b(),
+            [0; 3],
+            &[],
+            None,
+            ChunkFlags {
+                water_tops: true,
+                cards: false,
+                plants: 100,
+            },
+        )
+        .expect("padded")
+        .cutout;
+        let (from, to) = (second_quads_from(&m), tree_leaves_from(&m));
+        assert!(from < to, "the plants have second quads: {from}..{to}");
+        let plant = |v: u32| m.plants[v as usize * 4 + 3] > 0.0;
+        assert!(
+            m.indices[from..to].iter().all(|&v| plant(v)),
+            "only plants' quads"
+        );
+        assert!(
+            m.indices[..from].iter().any(|&v| !plant(v)),
+            "the leaves stay with the first quads"
+        );
+    }
+);

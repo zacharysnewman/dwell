@@ -876,6 +876,10 @@ fn cross_voxel(
         let tint = normal_tint(n[0], n[1], n[2]);
         let (color, _) = surface(style, 1, 1);
         let base = b.vertex_count();
+        // A plant's quads past its first carry u + `SECOND_QUAD_U` (the tile repeats whole units,
+        // so it draws the same): far off the first turns to face the eye and these are dropped
+        // (`second_quads_from`, the shader's `blade_card`).
+        let du = if q > 0 { SECOND_QUAD_U } else { 0.0 };
         let corners = [
             (-CROSS_HALF_WIDTH, y0, EDGE, EDGE, 0.0),
             (CROSS_HALF_WIDTH, y0, 1.0 - EDGE, EDGE, 0.0),
@@ -892,7 +896,7 @@ fn cross_voxel(
                 (channel(color, 8) * tint[1]) as f32,
                 (channel(color, 0) * tint[2]) as f32,
             ]);
-            b.m.uvs.extend([u as f32, v as f32]);
+            b.m.uvs.extend([(u + du) as f32, v as f32]);
             b.push_tile(&tile);
             b.m.plants
                 .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
@@ -2532,16 +2536,53 @@ fn is_tree_leaf(m: &MeshArrays, first: u32) -> bool {
 /// Orders a cutout mesh's triangles with the trees' leaf faces last (each kind keeping its own
 /// order), so the indices before [`tree_leaves_from`] are everything but the leaves.
 fn tree_leaves_last(m: &mut MeshArrays) {
-    let (mut rest, mut leaves) = (Vec::with_capacity(m.indices.len()), Vec::new());
+    let (mut rest, mut second, mut leaves) =
+        (Vec::with_capacity(m.indices.len()), Vec::new(), Vec::new());
     for tri in m.indices.chunks_exact(3) {
         if is_tree_leaf(m, tri[0]) {
             leaves.extend_from_slice(tri);
+        } else if is_second_quad(m, tri[0]) {
+            second.extend_from_slice(tri);
         } else {
             rest.extend_from_slice(tri);
         }
     }
+    rest.extend(second);
     rest.extend(leaves);
     m.indices = rest;
+}
+
+/// What a cross plant's quads past its first add to their u ([`second_quads_from`]).
+pub const SECOND_QUAD_U: f64 = 2.0;
+
+/// Whether a cutout triangle (its first index) is a cross plant's quad past its first: a plant's
+/// vertex (a distance fade, no leaf's or card's mark) with u past `SECOND_QUAD_U` (other cutouts'
+/// u, a leaf face's among them, run in blocks and may pass it too).
+fn is_second_quad(m: &MeshArrays, first: u32) -> bool {
+    let v = first as usize;
+    let plant = m.plants.get(v * 4..v * 4 + 4);
+    plant.is_some_and(|p| p[1] >= 0.0 && p[3] > 0.0)
+        && m.uvs
+            .get(v * 2)
+            .is_some_and(|&u| f64::from(u) >= SECOND_QUAD_U)
+}
+
+/// Where a chunk's cutout mesh starts its plants' quads past their first, as an index into
+/// `indices`: they come just before the trees' leaves ([`tree_leaves_from`]), so a chunk far off
+/// (the plants there one quad each, turned to the eye: the owner's "grass could be rendered at
+/// half if we only did a billboard at most distances") draws `0..second_quads_from` and its leaves.
+pub fn second_quads_from(m: &MeshArrays) -> usize {
+    let end = tree_leaves_from(m) / 3;
+    let (mut lo, mut hi) = (0, end);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if is_second_quad(m, m.indices[mid * 3]) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo * 3
 }
 
 /// Where a chunk's cutout mesh (meshed with its trees' leaves last) starts its trees' leaf faces,
