@@ -590,7 +590,7 @@ pub struct WoodDef {
     pub fell_wedge_matching: bool,
     /// The felled trunk's tip toward the notch (`fellTip`, owner 2026-11-09: "make the tree tip if
     /// needed, like we used to, maybe 3/4 of the force"): a share of the scripted topple spin
-    /// (`felling.toppleSpin`, capped by `toppleTipSpeed`) it is released with; 0: none, the
+    /// (`felling.toppleSpin`) it is released with; 0: none, the
     /// wedges' contact alone.
     pub fell_tip: f64,
     /// The chopping prototype's rules (`chop2`).

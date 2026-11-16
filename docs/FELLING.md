@@ -179,10 +179,11 @@ same for every block.
 Block data: `support` (`ground` | `carrier` | `rider` | `falls`), `passable`, `density` (exists), log `axis`
 (`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
 generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`, validated, CI
-failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
-(4096), `toppleSpin` (0.6 rad/s) and `toppleTipSpeed` (4 m/s: the spin is about the piece's foot,
-the face-local bottom under its centre of mass, so the foot starts still, and at most this fast at
-its farthest point; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
+failing on stale output): `riderReach` (cells, 20), `maxSystemCells` (16384), `maxPieceCells`
+(4096), `toppleSpin` (0.6 rad/s, the same for every trunk, short or tall; owner, 2026-11-16: "they all
+fall at the same relative starting speed", the cap on its top's speed, `toppleTipSpeed` 4 m/s, gone;
+the spin is about the piece's foot, the face-local bottom under its centre of mass, so the foot starts
+still; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
 the foot of a 60 m one skidded back at 18 m/s; on face B the old spin tipped toward the cutter,
 `a_tall_trunk_tips_about_its_foot_away_from_who_cut_it`), `sleepLinear` / `sleepAngular` (0.05), `restDrift` (0.1 m: a piece that has gone no farther since it began counting is still too, jostled in a heap or rocked by water, 0.49.29), `sleepSeconds` (1; 2 before 0.49.29), `settleEveryTicks` (6: the pieces due settle together, 0.49.29),
 `maxSeconds` (30), `maxSettles` (1), `hitSpeed` (4 m/s),

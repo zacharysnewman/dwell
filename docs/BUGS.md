@@ -31,7 +31,10 @@ Looked into (2026-11-16): a 2 x 2 trunk resampled onto its side is one straight 
 straight trunk (`tests/felling.rs` `a_two_by_two_trunk_with_a_crown_settles_as_one_straight_trunk`). Not reproduced
 yet: suspects are a trunk at rest on a hill (each column follows the pose, §4 step 2) or landing across other trees
 (each column lifted on its own over what holds its cells, step 3). Parked for the owner: where it was (a world and
-place, or how it came down).
+place, or how it came down). Found and fixed (2026-11-16): with the gentler topple the same 2 x 2 trunk landing across a bush settled
+with those columns two rows up. The body lies through leaves (passable) on the ground under them, but the leaf cells
+counted as taken, so each column under them stepped up over them (settling step 3). A log now crushes the leaves where
+it settles (the server's `taken`); a player there still takes the cell.
 
 ### 190. Damaged slopes and logs show the void behind them
 
