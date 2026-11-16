@@ -42,6 +42,9 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+- **Owner, 2026-11-16 (bug, BUGS.md #189):** "I also found a bug where there's some grass shadow flickering I think,
+  very distracting, happens as you walk through tall grass sections." Owner should see: no flickering or streaking
+  shadows walking through tall grass.
 - **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
   heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
   recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
