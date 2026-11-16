@@ -42,6 +42,16 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+- **Owner, 2026-11-16 (perf idea, queued):** "One major optimization I could see is to cull the underworld faces
+  entirely unless you're near a portal chunk or a world edge chunk." then "Add that to the queue". To do: measure what
+  face B (the far face, under the midplane) costs to draw from face A today (chunks, LOD, shadows), then skip it unless
+  the player is near a portal shaft or the disc's rim, where face B can be seen. Owner should see: the same view and a
+  faster frame, with face B still showing through portals and over the rim.
+- **Owner, 2026-11-16 (bugs, BUGS.md #190, #191):** "looks like regular slabs properly show the under blocks when
+  damaged, but slopes and irregular shapes like logs don't, showing the void, or just straight through the blocks.
+  I'm also seeing settling tree logs not matching their alignment ... I haven't chopped this fallen tree at all".
+  Owner should see: damaged slopes and logs show what's behind their bitten parts; a felled tree lies as one straight
+  trunk.
 - **Owner, 2026-11-16 (bug, BUGS.md #189):** "I also found a bug where there's some grass shadow flickering I think,
   very distracting, happens as you walk through tall grass sections." Owner should see: no flickering or streaking
   shadows walking through tall grass.

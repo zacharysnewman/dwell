@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 191. A fallen tree's logs settle out of line
+
+Owner, 2026-11-16: "I'm also seeing settling tree logs not matching their alignment, this is probably due to the
+original implementation and the later update to make them settle better. I haven't chopped this fallen tree at all"
+(screenshot: an unchopped fallen trunk lying as separate log pieces at different heights and offsets, ends
+staggered, not one straight trunk). Owner should see: a felled tree lies as one straight trunk, its logs in line.
+
+### 190. Damaged slopes and logs show the void behind them
+
+Owner, 2026-11-16: "looks like regular slabs properly show the under blocks when damaged, but slopes and irregular
+shapes like logs don't, showing the void, or just straight through the blocks." #187's fix covered the full and
+slab shapes only. Owner should see: a damaged slope or log shows the blocks behind and under its bitten-out parts,
+as a slab does.
+
 ### 189. Grass shadows flicker while walking through tall grass
 
 Owner, 2026-11-16: "I also found a bug where there's some grass shadow flickering I think, very distracting, happens
