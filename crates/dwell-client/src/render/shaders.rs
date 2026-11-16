@@ -1066,7 +1066,19 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
+    // A cross plant far off: one quad turned to the eye, the rest dropped (render/blades.rs).
+    var position = v.position;
+    var normal = v.normal.xyz;
+    if (v.plant.y >= 0.0 && v.plant.w > 0.0) {
+        let card = blade_card(v, draw);
+        if (!card.keep) {
+            o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+            return o;
+        }
+        position = card.position;
+        normal = card.normal;
+    }
+    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, position * draw.offset.w));
     o.rel = sway(still, v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant, back_cull)) {
@@ -1074,7 +1086,7 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
         // nothing (one past the fade's margin only where all of it is faded out anyway).
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
     }
-    o.normal = qrot(draw.quat, v.normal.xyz);
+    o.normal = qrot(draw.quat, normal);
     o.color = v.color.rgb * (1.0 + 3.0 * v.color.a);
     o.uv = v.uv;
     o.tile = v.tile;
@@ -3981,9 +3993,14 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        for stage in ["terrain_vs", "cutout_vertex", "line_vs"] {
+        // (The cutout stage turns its plant's far card's corner, `position`: render/blades.rs.)
+        for (stage, at) in [
+            ("terrain_vs", "v.position"),
+            ("cutout_vertex", "position"),
+            ("line_vs", "v.position"),
+        ] {
             assert!(
-                body(stage).contains("qrot(draw.quat, v.position * draw.offset.w)"),
+                body(stage).contains(&format!("qrot(draw.quat, {at} * draw.offset.w)")),
                 "{stage} turns by the draw's rotation"
             );
         }

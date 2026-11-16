@@ -1147,6 +1147,11 @@ enum Part {
     /// The opaque mesh's facing groups in the mask (`dwell_mesh::facing_mask`): the ones that can
     /// face the camera; the rest would be culled after their vertices were shaded.
     Facing(u8),
+    /// The cutout mesh past `blades::BILLBOARD_M`: its plants' first quads (each a card turned to
+    /// the eye there) and its trees' leaves, without the plants' other quads.
+    CutoutCards,
+    /// [`Part::Plants`] past `blades::BILLBOARD_M`: the plants' first quads alone.
+    PlantCards,
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -1252,6 +1257,9 @@ impl TerrainRenderer for RasterTerrain {
         .map(|mut g| {
             g.parts
                 .push(0..dwell_mesh::tree_leaves_from(&m.cutout) as u32);
+            // [2] before the plants' quads past their first (`Part::PlantCards`).
+            g.parts
+                .push(0..dwell_mesh::second_quads_from(&m.cutout) as u32);
             g
         });
         // Its parts: [0] all, [1 + g] facing group g (`Part::Facing`).
@@ -4118,7 +4126,11 @@ impl Renderer {
             DrawMesh::Piece(id, k, part) => {
                 let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
                 let m = match part {
-                    Part::Cutout | Part::Plants | Part::Leaves => cutout.as_ref(),
+                    Part::Cutout
+                    | Part::Plants
+                    | Part::Leaves
+                    | Part::CutoutCards
+                    | Part::PlantCards => cutout.as_ref(),
                     _ => opaque.as_ref(),
                 }
                 .expect("collected");
@@ -4129,11 +4141,24 @@ impl Renderer {
                 let m = match part {
                     Part::Opaque | Part::Facing(_) => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
-                    Part::Cutout | Part::Plants | Part::Leaves => chunk.cutout.as_ref(),
+                    Part::Cutout
+                    | Part::Plants
+                    | Part::Leaves
+                    | Part::CutoutCards
+                    | Part::PlantCards => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
                 match part {
                     Part::Facing(mask) => (m, facing_draws(&m.parts, *mask)),
+                    Part::PlantCards | Part::CutoutCards => {
+                        let cards = m.parts.get(2).unwrap_or(&m.parts[0]).clone();
+                        let mut r = vec![cards];
+                        if *part == Part::CutoutCards {
+                            r.push(m.part(Part::Leaves));
+                        }
+                        r.retain(|x| !x.is_empty());
+                        (m, r)
+                    }
                     _ => (m, vec![m.part(*part)]),
                 }
             }
@@ -4230,7 +4255,7 @@ impl Renderer {
                         FACING_MARGIN_M,
                     )
                 } else {
-                    u8::MAX & !TREE_LOGS_BIT
+                    !TREE_LOGS_BIT
                 } | if logs { TREE_LOGS_BIT } else { 0 };
                 out.push(DrawItem {
                     kind: Kind::Terrain,
@@ -4264,6 +4289,26 @@ impl Renderer {
                 }
             } else {
                 Some(Part::Cutout)
+            };
+            // Wholly past the plants' cards (across the ground, as the shader measures, less a
+            // sway's reach): their quads past the first are not drawn (`blades::BILLBOARD_M`).
+            let across: f64 = [0, 2]
+                .iter()
+                .map(|&k| {
+                    let lo = f64::from(r[k]);
+                    let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                    d * d
+                })
+                .sum::<f64>()
+                .sqrt();
+            let cutout_part = if across > f64::from(blades::BILLBOARD_M) + 2.0 {
+                cutout_part.map(|p| match p {
+                    Part::Cutout => Part::CutoutCards,
+                    Part::Plants => Part::PlantCards,
+                    p => p,
+                })
+            } else {
+                cutout_part
             };
             if let Some(part) = cutout_part
                 && c.cutout
