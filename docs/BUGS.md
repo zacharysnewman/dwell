@@ -42,6 +42,14 @@ Round 3: the autosave every 5 s committed one transaction with a file sync (20�
 commit lazily (`SaveBatch::lazy`, redb `Durability::None`), durably the first and once a minute and every host
 `save_now` (a close, a page hidden); a test pins a lazy save kept by the next durable one. The once-a-minute durable
 commit is still one ~60 ms tick in the browser: next, with the join's first second (~100 ms).
+Round 4: the durable commit waits for a moment nobody moves (2 s without movement input, a minute or more after
+the last; forced after ten minutes; `a_durable_save_waits_for_a_still_moment`); tree scans 1 chunk a tick; the
+browser's local server takes the phone tier's collision budgets (1024 cells, 1 chunk ahead) and never generates a
+chunk for its collision (0: ~35 ms each in WASM; the reach waits for the jobs, a player inside new ground lifted
+onto it); each phase's longest tick reported (`max.<phase>`, µs). The join's ~100 ms is in the server's first
+second, behind the loading screen. Browser run after round 4: no chunk generated on the tick, no save spike,
+terrain ≤ 12 ms; still over budget: **growth single ticks 9–25 ms** (a giant tree's stage grown, or a grass
+chunk, in WASM ~10× native).
 
 ### 193. Leaves left hanging in the air after a tree is cut down
 

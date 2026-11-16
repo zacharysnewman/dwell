@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// The most chunks looked at for new trees per step (the rest on the next).
 const SCANS_PER_STEP: usize = 256;
 /// The most chunks looked at for new trees a tick (~0.25 ms each natively, 4.6 at worst).
-const SCANS_PER_TICK: usize = 4;
+const SCANS_PER_TICK: usize = 1;
 /// The most due trees grown a tick.
 const TREES_PER_TICK: usize = 1;
 
