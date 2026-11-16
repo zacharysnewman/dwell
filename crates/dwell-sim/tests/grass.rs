@@ -88,9 +88,9 @@ fn scene(f: FaceFrame, cfg: ServerConfig, ticks: u32) -> Fixture {
     fx
 }
 
-/// Runs the grass step until every loaded chunk is grown up to today (a step takes at most 64).
+/// Runs the grass step until every loaded chunk is grown up to today (a step takes at most 2).
 fn grow_all(fx: &mut Fixture) {
-    for _ in 0..64 {
+    for _ in 0..2048 {
         fx.server.grow_grass_now();
     }
 }
@@ -239,5 +239,56 @@ dwell_world::both_faces!(
             bite[1..].iter().all(|&(_, s)| s == M.air),
             "the stand over it eaten too"
         );
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #194 (owner, 2026-11-16: "It's a periodic stutter. But quite visible and stalls the
+    /// player movement."): the grass step grew up to 64 chunks in one tick every 5 s, a spike in
+    /// the server's tick and the clients' re-meshing. Now a tick grows at most a couple, every
+    /// tick, so a hundred chunks behind are spread over many ticks, and all of them still grow.
+    fn the_grass_step_spreads_its_chunks_over_the_ticks(f: FaceFrame) {
+        let mut fx = scene(f, config(f), 0);
+        for dx in -5..5 {
+            for dz in -5..5 {
+                let [x, y, z] = f.cell([dx * 32 + 4, FLAT_TOP_Y, dz * 32 + 4]);
+                fx.server.world().get_or_create(chunk_of(x, y, z));
+            }
+        }
+        // A world day on (a day a tick here): every chunk is behind.
+        for _ in 0..3 {
+            fx.server.step();
+            for dx in -5..5 {
+                for dz in -5..5 {
+                    let [x, y, z] = f.cell([dx * 32 + 4, FLAT_TOP_Y, dz * 32 + 4]);
+                    fx.server.world().get_or_create(chunk_of(x, y, z));
+                }
+            }
+        }
+        let before = fx.server.grass().days.clone();
+        fx.server.grow_grass_now();
+        let n = fx
+            .server
+            .grass()
+            .days
+            .iter()
+            .filter(|(c, d)| before.get(*c) != Some(*d))
+            .count();
+        assert!(
+            (1..=2).contains(&n),
+            "one step grows a couple of chunks: {n}"
+        );
+        for _ in 0..60 {
+            fx.server.grow_grass_now();
+        }
+        let today = fx.server.world_days().floor() as u32;
+        let done = fx
+            .server
+            .grass()
+            .days
+            .values()
+            .filter(|d| **d == today)
+            .count();
+        assert!(done >= 100, "every chunk grows in turn: {done}");
     }
 );

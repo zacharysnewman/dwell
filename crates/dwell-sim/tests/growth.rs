@@ -139,3 +139,37 @@ fn the_growth_records_survive_a_save() {
     let got = &fx.server.growth().trees[&anchor];
     assert_eq!(got.stage, 4, "the stage kept");
 }
+
+dwell_world::both_faces!(
+    /// BUGS.md #194 (owner, 2026-11-16: "a periodic stutter ... there's almost always a stutter
+    /// going through the portal"): the growers looked at up to 256 newly loaded chunks for their
+    /// trees in one tick every 5 s (~0.25 ms each: ~60 ms), a stall after every big load, crossing
+    /// a portal above all. Now a tick looks at a few, every tick.
+    fn the_growers_look_at_new_chunks_a_few_a_tick(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f));
+        fx.server
+            .set_growers(dwell_worldgen::growth::Growers::for_generator(
+                dwell_world::GENERATOR_TERRAIN,
+                7,
+            ));
+        let mut most = 0;
+        for _ in 0..(5 * 60 + 5) {
+            for dx in -5..5 {
+                for dz in -5..5 {
+                    let [x, y, z] = f.cell([dx * 32 + 4, BASE, dz * 32 + 4]);
+                    fx.server
+                        .world()
+                        .get_or_create(dwell_world::chunk_of(x, y, z));
+                }
+            }
+            let before = fx.server.tree_chunks_scanned();
+            fx.server.step();
+            most = most.max(fx.server.tree_chunks_scanned() - before);
+        }
+        assert!(most <= 4, "at most four chunks a tick: {most}");
+        assert!(
+            fx.server.tree_chunks_scanned() >= 100,
+            "all of them in turn"
+        );
+    }
+);

@@ -14,6 +14,8 @@ use std::sync::Arc;
 const EVERY_S: u32 = 5;
 /// The most chunks looked at for new trees per step (the rest on the next).
 const SCANS_PER_STEP: usize = 256;
+/// The most chunks looked at for new trees a tick (~0.25 ms each natively, 4.6 at worst).
+const SCANS_PER_TICK: usize = 4;
 
 impl Server {
     /// The world's days so far (its clock's day length), times the growth speed (dev, tests).
@@ -50,32 +52,52 @@ impl Server {
         self.growth.trees.insert(r.anchor, r);
     }
 
-    /// The growers step (every `EVERY_S` s).
+    /// The growers step: a few new chunks' trees recorded every tick (`SCANS_PER_TICK`; BUGS.md
+    /// #194: 256 at once, ~60 ms, stalled the game, crossing a portal above all), the due trees
+    /// grown every `EVERY_S` s.
     pub(super) fn grow_trees(&mut self) {
-        if !self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
-            return;
+        self.scan_tree_chunks(SCANS_PER_TICK);
+        if self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
+            self.grow_due_trees();
         }
-        self.grow_trees_now();
     }
 
-    /// The growers step now: record new chunks' trees, grow the due ones.
-    pub fn grow_trees_now(&mut self) {
-        let growers = self.growers();
-        if let Some(growers) = &growers {
-            let fresh: Vec<_> = self
-                .world
-                .chunks()
-                .map(|(c, _)| *c)
-                .filter(|c| !self.growth_scanned.contains(c))
-                .take(SCANS_PER_STEP)
-                .collect();
-            for c in fresh {
-                self.growth_scanned.insert(c);
-                for r in growers.trees_in_chunk(c) {
-                    self.growth.trees.entry(r.anchor).or_insert(r);
-                }
+    /// How many chunks have been looked at for trees (tests, tools).
+    pub fn tree_chunks_scanned(&self) -> usize {
+        self.growth_scanned.len()
+    }
+
+    /// Records the trees of up to `n` loaded chunks not looked at yet; how many it looked at.
+    pub fn scan_tree_chunks(&mut self, n: usize) -> usize {
+        let Some(growers) = self.growers() else {
+            return 0;
+        };
+        let fresh: Vec<_> = self
+            .world
+            .chunks()
+            .map(|(c, _)| *c)
+            .filter(|c| !self.growth_scanned.contains(c))
+            .take(n)
+            .collect();
+        for &c in &fresh {
+            self.growth_scanned.insert(c);
+            for r in growers.trees_in_chunk(c) {
+                self.growth.trees.entry(r.anchor).or_insert(r);
             }
         }
+        fresh.len()
+    }
+
+    /// The growers step now (tests, tools): record new chunks' trees (up to `SCANS_PER_STEP`), grow
+    /// the due ones.
+    pub fn grow_trees_now(&mut self) {
+        self.scan_tree_chunks(SCANS_PER_STEP);
+        self.grow_due_trees();
+    }
+
+    /// Grows each recorded tree whose stage is due, where its box is loaded.
+    fn grow_due_trees(&mut self) {
+        let growers = self.growers();
         if self.growth.trees.is_empty() {
             return;
         }

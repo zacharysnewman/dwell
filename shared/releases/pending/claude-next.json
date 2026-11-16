@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fixed a periodic stutter that stalled movement every few seconds, and the hitch when going through a portal: growing grass and trees now do their work a little at a time."
+  ]
+}

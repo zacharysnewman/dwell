@@ -42,6 +42,30 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+- **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
+  away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
+  middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
+  platform's middle looking away from the pillars; torches round the platform's rim only; stamina not refilling
+  while swimming under water.
+- **Owner, 2026-11-16 (spawn in a town):** "I'd also like you to start in a town. The spawn should be in a town. One
+  way to do that would be to place a town right next to the spawn. We also don't need to mark the initial spawn
+  point on the map, since you'll always respawn at a shrine." A worldgen change (where towns stand): a new
+  compatibility line. Owner should see: a new world starts in a town; the map shows no spawn marker.
+- **Owner, 2026-11-16 (bug, BUGS.md #194):** "I've noticed the server stuttering a bit while I'm sprint
+  jumping/sliding around this area" (M3 Max), "It's a periodic stutter. But quite visible and stalls the player
+  movement." and "there's almost always a stutter going through the portal (jumping into it, I think)". Fixed
+  (2026-11-16): the grass step grew 64 chunks in one tick every 5 s and the tree growers scanned 256 new chunks in one
+  tick (~60 ms, after every big load: crossing a portal); now 2 and 4 chunks every tick. Owner should see: no
+  periodic stall moving through grass or through a portal. To time next: the other periodic server steps
+  (blueprints' towns and checks, chunk eviction, creature spawns).
+- **Parked, need the owner's words:** "low_shrub seed" and "water darkened by SSAO underwater" were named in a session
+  brief, but no entry or bug records what was asked; ask the owner before working them.
+- **Owner, 2026-11-16 (tuning, waiting on the owner's numbers):** "I'd like to tune our hit table. Since we're working
+  with half meter blocks it might feel slower and less rewarding. Can you show me a table of tools and blocks, with
+  hits to break and time to break." Table given (hits from `dwell_protocol::damage::hits_to_break_for`, time = the
+  tool's `contactS` 0.26 s + (hits − 1) × `repeatS` 0.5 s; a punch lands at once, every 0.4 s). Found: a tool off its
+  class swings slower than a punch (0.5 s vs 0.4 s) for the same hits; thatch is quicker by hand. Owner should see:
+  breaking feels quick and rewarding at the numbers they pick.
 - **Owner, 2026-11-16 (bug, BUGS.md #193):** "Sometimes leaves hang in the air after cutting down a tree, possibly after
   settling. Leaves should only be attached to trees or fall to the ground and settle there." Owner should see: no
   floating leaves after a fell.

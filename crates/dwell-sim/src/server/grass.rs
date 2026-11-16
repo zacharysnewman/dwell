@@ -1,22 +1,21 @@
 //! The server's side of tall grass growing and spreading (ADR 0075 T3c, docs/ECOLOGY.md §10): every
-//! few seconds of the tick, each loaded chunk that hasn't grown up to today's whole world day grows
+//! tick a couple of the loaded chunks that hasn't grown up to today's whole world day grows
 //! the days it missed (at most the data's `catchUpDays`: on its first load since day 0, after an
 //! idle stretch), by `dwell_worldgen::grass::Rule::grow_chunk` over the face terrain's envelope. The
 //! writes go out as one modification. The world's switch and each grown chunk's last day are saved
 //! in an optional `grass_growth` table that older builds ignore.
 
 use super::{Server, TickChanges};
-use dwell_protocol::{SIM_HZ, VoxelModificationReason};
+use dwell_protocol::VoxelModificationReason;
 use dwell_world::{ChunkCoord, Face, FaceFrame, VoxelWorld, chunk_of};
 use dwell_worldgen::bifacial::BifacialTerrain;
 use dwell_worldgen::grass::{Cells, Envelope, TerrainEnvelope};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-/// How often the grass step runs (s of the tick).
-const EVERY_S: u32 = 5;
-/// The most chunks grown per step (the rest on the next).
-const CHUNKS_PER_STEP: usize = 64;
+/// The most chunks grown a tick (the rest on the next ticks): a few every tick, not 64 every
+/// 5 s, whose tick and re-meshing stalled the game (BUGS.md #194). 120 chunks a second.
+const CHUNKS_PER_TICK: usize = 2;
 /// The saved form's version.
 const VERSION: u8 = 1;
 
@@ -176,15 +175,12 @@ impl Server {
         t
     }
 
-    /// The grass step (every `EVERY_S` s).
+    /// The grass step, every tick.
     pub(super) fn grow_grass(&mut self) {
-        if !self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
-            return;
-        }
         self.grow_grass_now();
     }
 
-    /// The grass step now: up to `CHUNKS_PER_STEP` loaded chunks behind today grow their days.
+    /// The grass step now: up to `CHUNKS_PER_TICK` loaded chunks behind today grow their days.
     pub fn grow_grass_now(&mut self) {
         if !self.grass.enabled {
             return;
@@ -205,7 +201,7 @@ impl Server {
             .chunks()
             .map(|(c, _)| *c)
             .filter(|c| self.grass.days.get(c).copied().unwrap_or(0) < today)
-            .take(CHUNKS_PER_STEP)
+            .take(CHUNKS_PER_TICK)
             .collect();
         let mut changes = TickChanges::default();
         let mut writes = Vec::new();
