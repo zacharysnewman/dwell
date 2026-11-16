@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Faster loading of the land around you: the empty sky over the forests is no longer generated as if a giant tree could stand anywhere."
+  ]
+}

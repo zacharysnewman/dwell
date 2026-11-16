@@ -3002,7 +3002,7 @@ fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
 
 /// The long trip over generated terrain (seed 7, the owner's river world), the player carried
 /// 5 m/s in a straight line 40 m over its start (BUGS #54): every near chunk is drawn as a chunk
-/// within 2 s of coming into the ring.
+/// within 4 s of coming into the ring (2 s before 0.71's giant trees).
 /// face-a-only: the spawn is on face A; the trip's path is a world line.
 #[test]
 fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
@@ -3010,7 +3010,9 @@ fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
     eprintln!("worst near-chunk wait {worst:?}\n{log}");
     assert!(flown > 400.0, "carried {flown} m\n{log}");
     assert!(
-        worst.0 <= 120,
+        // 4 s at one job a frame: 0.71's giant trees (4x, owner 2026-11-15) put crowns in many more
+        // chunks to mesh (806 frames before the sky test took the trees as planted, 214 after).
+        worst.0 <= 240,
         "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
         worst.0,
         worst.1,
@@ -5573,7 +5575,8 @@ fn a_combine_that_makes_an_item_sounds_once_per_press() {
     };
     assert!(rig.core.server().set_mode("adventure"));
     rig.run_until(60, |_| false);
-    assert_eq!(rig.core.server().give(player_id, "dwell:rock_shard", 16), 0);
+    // Two stones' worth (4 shards a stone since 2026-11-15).
+    assert_eq!(rig.core.server().give(player_id, "dwell:rock_shard", 8), 0);
     rig.run_until(30, |_| false);
     rig.game.as_mut().unwrap().take_sounds();
     let heard = |rig: &mut Rig, kind: SoundKind| -> usize {

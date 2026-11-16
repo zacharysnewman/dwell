@@ -31,7 +31,13 @@ Last updated: 2026-11-11 (0.52.108).
   explosives tests waited 3 ticks for a held axe's hit that lands at its `contactS` (0.26 s); the region fill test
   predated 2 m grass (tall grass on tall grass stands); a giant's crown reached the chisel test's build cell and the
   air test's reach the whole streaming view (the sky past the trees' reach is asserted air). `dwell-sim` all green.
-  The e2e failures remain. Owner should see: CI green.
+  More (2026-11-16): the combine sound test gave 16 shards (4 a stone now); the leaf tint test predated species
+  pines; the terrain trip test (a near chunk waited 806 frames): the sky test kept room for a 120 m giant over every
+  column, so the whole view's sky was generated; it now takes the trees as planted over each column (214 frames;
+  the limit is 240, as giants' crowns fill more chunks to mesh). To check in the browser: chunks popping in near
+  giant trees. Still red: worldgen `terrain` the_fill_grass_over_dirt_sand… (stone where dirt is expected at 3 m
+  deep, likely a giant's levelled base pad; its log check now takes species logs). The e2e failures remain. Owner
+  should see: CI green.
 - **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
   heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
   recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
@@ -63,6 +69,11 @@ Last updated: 2026-11-11 (0.52.108).
   `platforms/electron` makes `out/Dwell-darwin-arm64/Dwell.app` (the client inside, offline; unsigned: right click →
   Open the first time); its smoke check runs a local world on the Mac's GPU. Open: signing, an icon, publishing it
   with each release (CI), and whether it should follow the site's versions instead of carrying one.
+  Owner, 2026-11-16: "For now, let's build each version locally in the electron native app, but just as an overwrite.
+  Mostly I want to try it out, without crowding my hard drive, later we'll set it up to build each one." Done: after
+  each merge, `npm run build-app` in `platforms/electron` rebuilds the client and packages it over the one
+  `out/Dwell-darwin-arm64/Dwell.app` (no copy per version). Owner should see: Dwell.app opening the newest merged
+  version. Later: a build per version (CI).
 - **Owner, 2026-11-15 (new feature, trees):** "Let's get rid of my pines. Make each tree have a different starting
   age, growth rate, and increase the max size of the trees to quadruple the height. Big trees can take up more blocks
   at the base as they grow past a 1 block width. They can expand into a neighboring 3 spaces if available (only player

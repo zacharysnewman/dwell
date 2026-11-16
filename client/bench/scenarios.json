@@ -9250,21 +9250,69 @@
       "steps": [
         { "do": "settle", "maxS": 60 },
         { "do": "view", "ssao": "off" },
-        { "do": "shot", "name": "broadleaf-off", "above": [22300.5, 100.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "broadleaf-off",
+          "above": [22300.5, 100.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "weak" },
-        { "do": "shot", "name": "broadleaf-weak", "above": [22300.5, 100.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "broadleaf-weak",
+          "above": [22300.5, 100.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "normal" },
-        { "do": "shot", "name": "broadleaf-normal", "above": [22300.5, 100.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "broadleaf-normal",
+          "above": [22300.5, 100.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "strong" },
-        { "do": "shot", "name": "broadleaf-strong", "above": [22300.5, 100.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "broadleaf-strong",
+          "above": [22300.5, 100.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "off" },
-        { "do": "shot", "name": "mixed-off", "above": [-18100.5, -6500.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "mixed-off",
+          "above": [-18100.5, -6500.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "weak" },
-        { "do": "shot", "name": "mixed-weak", "above": [-18100.5, -6500.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "mixed-weak",
+          "above": [-18100.5, -6500.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "normal" },
-        { "do": "shot", "name": "mixed-normal", "above": [-18100.5, -6500.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "mixed-normal",
+          "above": [-18100.5, -6500.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "high", "ssaoLevel": "strong" },
-        { "do": "shot", "name": "mixed-strong", "above": [-18100.5, -6500.5, 2], "yaw": 0, "pitch": -20 },
+        {
+          "do": "shot",
+          "name": "mixed-strong",
+          "above": [-18100.5, -6500.5, 2],
+          "yaw": 0,
+          "pitch": -20
+        },
         { "do": "view", "ssao": "off" },
         { "do": "spot", "spot": "starter:mesa-walls", "name": "mesa-off" },
         { "do": "view", "ssao": "high", "ssaoLevel": "weak" },
