@@ -39,13 +39,13 @@ pub struct Record {
 }
 
 impl Record {
-    /// The stage it should stand at on world day `day`: a stage every `daysPerStage` days since
-    /// it reached its own, up to the species' last.
+    /// The stage it should stand at on world day `day`: a stage every `daysPerStage` days (over
+    /// the tree's own `species::rate`) since it reached its own, up to the species' last.
     pub fn due(&self, day: f64) -> u8 {
         let Some(s) = SPECIES.get(usize::from(self.species)) else {
             return self.stage;
         };
-        let per = f64::from(s.days_per_stage).max(1e-6);
+        let per = (f64::from(s.days_per_stage) / f64::from(species::rate(s, self.seed))).max(1e-6);
         let n = ((day - self.since) / per).floor().max(0.0);
         let last = s.stages.saturating_sub(1) as f64;
         (f64::from(self.stage) + n).min(last) as u8
@@ -185,8 +185,9 @@ pub fn plant(item: &str, anchor: [i32; 3], ground: &str, day: f64) -> Result<Rec
 
 /// How far (cells) from a tree's anchor its leaves may reach, sideways and up: the bound
 /// [`tree_of_leaf`] looks within.
-const LEAF_REACH: i32 = 24;
-const LEAF_RISE: i32 = 64;
+/// Giants (trunk.height.giant, up to 120 m with their crowns grown with them) set the bounds.
+const LEAF_REACH: i32 = 48;
+const LEAF_RISE: i32 = 260;
 
 /// The recorded tree whose current stage put a leaf at world cell `cell` (its species' leaf block),
 /// if any: whose broken leaves drop its species' sapling (ADR 0079 S4).
@@ -436,13 +437,16 @@ mod tests {
     #[test]
     fn a_tree_is_due_a_stage_every_days_per_stage() {
         // face-a-only: no geometry, only the clock.
+        // Each tree at its own pace (owner, 2026-11-15): `daysPerStage` over its seed's rate.
         let r = oak(FaceFrame::A, 2);
-        let per = f64::from(SPECIES[usize::from(r.species)].days_per_stage);
+        let s = &SPECIES[usize::from(r.species)];
+        let per = f64::from(s.days_per_stage) / f64::from(species::rate(s, r.seed));
+        let last = (s.stages - 1) as u8;
         assert_eq!(r.due(0.0), 2);
         assert_eq!(r.due(per * 0.99), 2);
-        assert_eq!(r.due(per), 3);
-        assert_eq!(r.due(per * 3.0 + 0.1), 5);
-        assert_eq!(r.due(per * 100.0), 7, "capped at the last stage");
+        assert_eq!(r.due(per * 1.0001), 3);
+        assert_eq!(r.due(per * 3.0001), 5);
+        assert_eq!(r.due(per * 100.0), last, "capped at the last stage");
     }
 
     dwell_world::both_faces!(
@@ -541,9 +545,9 @@ mod tests {
                     zero.contains_key(&r.anchor),
                     "{item}: the foot at the anchor"
                 );
-                let per = f64::from(s.days_per_stage);
+                let per = f64::from(s.days_per_stage) / f64::from(species::rate(s, r.seed));
                 for n in 1..s.stages as u8 {
-                    assert_eq!(r.due(1.5 + per * f64::from(n) + 1e-6), n);
+                    assert_eq!(r.due(1.5 + per * (f64::from(n) + 1e-4)), n);
                 }
                 // Grown n stages, it is stage n's tree.
                 let mut world = zero;

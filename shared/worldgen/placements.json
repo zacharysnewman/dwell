@@ -3,7 +3,7 @@
   "placements": [
     {
       "name": "pine_groves",
-      "structures": { "dwell:pine_tree": 55, "dwell:tall_pine_tree": 45 },
+      "structures": { "dwell:pine": 1 },
       "on": ["dwell:grass", "dwell:snowy_grass"],
       "footprint": "on",
       "pad": "trunk",

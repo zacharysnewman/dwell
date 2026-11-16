@@ -33,7 +33,7 @@ dwell_world::both_faces!(
             g.far_trees(lo, hi).iter().map(|t| t.anchor).collect();
         let owners: std::collections::HashSet<[i32; 3]> =
             g.tree_tints(lo, hi).iter().map(|t| t.anchor).collect();
-        let mut pines = 0;
+        let mut trees = 0;
         for t in g.trees_in(lo, hi) {
             let inside =
                 (lo.0..=hi.0).contains(&t.anchor[0]) && (lo.1..=hi.1).contains(&t.anchor[2]);
@@ -43,7 +43,7 @@ dwell_world::both_faces!(
             if !inside || !tree {
                 continue;
             }
-            pines += usize::from(name.contains("pine_tree"));
+            trees += 1;
             assert!(
                 far.contains(&t.anchor),
                 "{name} at {:?}: no far tree",
@@ -55,10 +55,9 @@ dwell_world::both_faces!(
                 t.anchor
             );
         }
-        // The owner's spot is face A's; face B's ground there stands other trees (the rule above
-        // still holds for them).
+        // The owner's spot is face A's (face B's ground there may stand none).
         if !f.is_b() {
-            assert!(pines > 0, "the spot has hand-built pines");
+            assert!(trees > 0, "the spot has trees");
         }
     }
 );

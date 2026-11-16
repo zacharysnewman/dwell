@@ -887,9 +887,9 @@ mod tests {
     fn the_data_resolves_by_name() {
         let p = Planter::resolve(&PLACEMENTS, 7, (0, 0));
         assert_eq!(p.len(), PLACEMENTS.len());
-        assert_eq!(p[0].reach(), 3, "the tall pine reaches 3 m from its trunk");
-        // In cells: the 9 m pine is 18 ½ m cells on the half-height grid, its top 17 over the anchor.
-        assert_eq!(p[0].rise(), 9 * dwell_world::rows_for_m(1.0) - 1);
+        // The pine groves stand the species pine (its tallest grown variant sets the bounds).
+        assert!(p[0].reach() >= 3, "the pines reach {} m from the trunk", p[0].reach());
+        assert!(p[0].rise() > 14 * dwell_world::rows_for_m(1.0), "rise {}", p[0].rise());
     }
 
     #[test]

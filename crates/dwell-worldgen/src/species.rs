@@ -39,6 +39,9 @@ pub struct Species {
     pub leaf: &'static str,
     pub sapling_height: f32,
     pub mature_height: (f32, f32),
+    /// A tree's full height is drawn up to this × `mature_height`'s top (1: inside the range);
+    /// past that top its crown and trunk width grow with it (owner, 2026-11-15: giants).
+    pub giant: f32,
     pub height_step: f32,
     /// The trunk's width (m): sapling, mature, step; drawn by the log's `crossSection.widths`.
     pub width: (f32, f32, f32),
@@ -48,6 +51,9 @@ pub struct Species {
     pub crown: Crown,
     /// The crown's scale over the stages: sapling, mature.
     pub crown_scale: (f32, f32),
+    /// How a giant's crown follows its height past `mature_height`'s top: its scale × (height /
+    /// that top) to this power (1: in proportion; 0: not at all).
+    pub crown_with_height: f32,
     /// The crown's scale per seed.
     pub crown_variety: (f32, f32),
     /// The leaves' lightness factor per seed (a per-tree tint, `dwell_world::tree_tint`).
@@ -57,6 +63,8 @@ pub struct Species {
     pub stages: u32,
     /// A world's days from one stage to the next (growth over time).
     pub days_per_stage: f32,
+    /// Each tree's pace, drawn per seed: its stages come this many times as fast.
+    pub rate: (f32, f32),
     /// The weight of each stage among generated trees.
     pub wild: &'static [u32],
     /// How many seeded trees a placement draws of it.
@@ -211,18 +219,31 @@ pub fn tint(species: &Species, seed: u32) -> Tint {
     Tint { hue, lightness }
 }
 
+/// A tree's own pace (owner, 2026-11-15: "a different ... growth rate"): drawn per seed from the
+/// species' `rate`, its stages come this many times as fast as `days_per_stage`.
+pub fn rate(species: &Species, seed: u32) -> f32 {
+    Rng(seed.wrapping_mul(2_654_435_761).wrapping_add(0x5EED))
+        .range(species.rate)
+        .max(1e-3)
+}
+
 /// Grows `species` from `seed` to `stage` (0 = sapling .. stages − 1 = mature): a pure function.
 pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
     let n = species.stages.max(2);
     let g = stage.min(n - 1) as f32 / (n - 1) as f32;
     let mut r = Rng(seed.wrapping_mul(7919).wrapping_add(13));
-    let mature = r.range(species.mature_height);
+    let (lo, top) = species.mature_height;
+    let mature = r.range((lo, top * species.giant));
+    // A giant (past the range's top) grows its crown with its height (`crown_with_height`).
+    let size = (mature / top).max(1.0).powf(species.crown_with_height);
     let h = species.sapling_height.max(qz(
         lerp(species.sapling_height, mature, g),
         species.height_step,
     ));
     let mut vr = Rng(seed.wrapping_mul(104_729).wrapping_add(7));
-    let s = lerp(species.crown_scale.0, species.crown_scale.1, g) * vr.range(species.crown_variety);
+    let s = lerp(species.crown_scale.0, species.crown_scale.1, g)
+        * vr.range(species.crown_variety)
+        * lerp(1.0, size, g);
     let trunk_cells = (h / CELL).round() as i32;
     let (w0, w1, ws) = species.width;
     let width = qz(lerp(w0, w1, g), ws).clamp(w0, w1);
@@ -681,7 +702,8 @@ mod tests {
             let mut heights = Vec::new();
             for seed in 0..40 {
                 let t = grow(s, seed, s.stages - 1);
-                let (lo, hi) = s.mature_height;
+                // Up to `giant` × the range's top (owner, 2026-11-15: four times the height).
+                let (lo, hi) = (s.mature_height.0, s.mature_height.1 * s.giant);
                 assert!(
                     t.height >= lo - s.height_step && t.height <= hi + s.height_step,
                     "{} seed {seed}: {}",
@@ -818,18 +840,54 @@ mod tests {
     }
 
     #[test]
-    fn generated_trees_are_mostly_mature() {
-        // face-a-only: no geometry.
+    fn generated_trees_start_at_many_ages() {
+        // face-a-only: no geometry. The owner, 2026-11-15: "Make each tree have a different
+        // starting age": a placement's trees spread over the stages, young and old.
         for s in &SPECIES {
             let stages: Vec<u32> = wild(s).into_iter().map(|(_, st)| st).collect();
-            let mature = stages.iter().filter(|&&st| st + 2 >= s.stages).count();
-            assert!(mature * 2 >= stages.len(), "{}: {stages:?}", s.name);
-            assert!(
-                stages.iter().any(|&st| st + 2 < s.stages),
-                "{}: some young: {stages:?}",
-                s.name
-            );
+            let mut seen: Vec<u32> = stages.clone();
+            seen.sort_unstable();
+            seen.dedup();
+            assert!(seen.len() * 2 >= s.stages as usize, "{}: {stages:?}", s.name);
+            assert!(stages.iter().any(|&st| st + 2 < s.stages), "{}: some young", s.name);
+            assert!(stages.iter().any(|&st| st + 2 >= s.stages), "{}: some old", s.name);
         }
+    }
+
+    #[test]
+    fn a_tree_grows_at_its_own_pace() {
+        // face-a-only: no geometry. The owner, 2026-11-15: "a different ... growth rate".
+        for s in &SPECIES {
+            let rates: Vec<f32> = (0..64).map(|seed| rate(s, seed)).collect();
+            assert!(rates.iter().all(|r| (s.rate.0..=s.rate.1).contains(r)), "{}", s.name);
+            if s.rate.0 < s.rate.1 {
+                let lo = rates.iter().copied().fold(f32::MAX, f32::min);
+                let hi = rates.iter().copied().fold(f32::MIN, f32::max);
+                assert!(hi > lo * 2.0, "{}: rates {lo}–{hi}", s.name);
+            }
+        }
+    }
+
+    #[test]
+    fn giants_reach_four_times_the_old_top_with_crowns_to_match() {
+        // face-a-only: a tree is built face-local. The owner, 2026-11-15: "increase the max size
+        // of the trees to quadruple the height" (each species' top × `giant`, the crown with it).
+        let oak = find("dwell:oak").expect("oak");
+        assert_eq!(oak.giant, 4.0);
+        let mut grown: Vec<Grown> = (0..128).map(|seed| grow(oak, seed, oak.stages - 1)).collect();
+        grown.sort_by(|a, b| a.height.total_cmp(&b.height));
+        let tallest = grown.last().unwrap();
+        assert!(tallest.height > oak.mature_height.1 * 3.0, "tallest {}", tallest.height);
+        // The crown follows the height by `crown.withHeight` (0.5: a 4× giant's crown about 2×):
+        // the tallest quarter's crowns average wider than the shortest quarter's.
+        let span = |t: &Grown| {
+            let xs = t.cells.values().zip(t.cells.keys()).filter(|(p, _)| **p == Part::Leaf);
+            let xs: Vec<i32> = xs.map(|(_, c)| c[0]).collect();
+            (xs.iter().max().unwrap() - xs.iter().min().unwrap()) as f32
+        };
+        let mean = |ts: &[Grown]| ts.iter().map(span).sum::<f32>() / ts.len() as f32;
+        let (short, tall) = (mean(&grown[..32]), mean(&grown[96..]));
+        assert!(tall > short * 1.3, "a giant's crown is wider: {tall} vs {short}");
     }
 
     #[test]
