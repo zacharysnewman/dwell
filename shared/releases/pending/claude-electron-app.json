@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "A Mac desktop app: Dwell can now be packaged as Dwell.app (the game inside, playable offline)."
+  ]
+}

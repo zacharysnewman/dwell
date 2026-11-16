@@ -205,7 +205,11 @@ The page carries a strict Content-Security-Policy `<meta>` tag, since Pages cann
 ### 2.2 Desktop / Mobile shells **[in progress]**
 
 The same Vite build output is wrapped by:
-- **Electron** (`platforms/electron`) **[built: shell]** — Chromium, full WebTransport support.
+- **Electron** (`platforms/electron`) **[built: shell; packaged app built 2026-11-16]** — Chromium, full WebTransport
+  support. `npm run package` there (`package-app.mjs`, `@electron/packager`) builds `Dwell.app` (macOS on Apple Silicon by
+  default; `--platform`/`--arch` for others) with the client build inside as `app/`, served from the `dwell://`
+  protocol: offline, at the build's version; unsigned (owner, 2026-11-15: "The native app should be electron wrapper
+  for now"). Not yet built or published by CI.
   `main.js` serves the client build from a privileged, secure `dwell://` protocol (so WebCrypto,
   IndexedDB, WebTransport and WebGPU work) with COOP/COEP headers (cross-origin isolated, though
   the build it loads is the same single-threaded one as the web's, ADR 0007). WebGPU is turned on
