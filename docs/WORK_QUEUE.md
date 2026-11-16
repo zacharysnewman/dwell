@@ -16,6 +16,14 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
+  that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
+  world. Iterating from our first version we could see our big plate world, up to our current version. First it may
+  make sense to just take all the screenshots? And then splice them together with different durations into a video?
+  Not sure what's best. But we may want to show them on a speed curve or something. First show me what angle and
+  time of day you propose." and "Also, make tools to make each screenshot you take super quick and easy to setup the
+  world and take it." Owner should see: a proposed angle and time of day (sample shots) first; then the timelapse
+  video of every terrain look, oldest to newest, from high above.
 - **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
   queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
   stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
@@ -29,6 +37,15 @@ Last updated: 2026-11-11 (0.52.108).
   growth and collision bursts in the browser.
   Round 3: lazy autosaves (saves now ~0–2 ms a second in the browser, was 20–40 ms every 5 s). Next: the
   once-a-minute durable commit (~60 ms), the join's first second (~100 ms), bursts.
+  **Status (2026-11-16, round 4 merged; owner: "This is super important. Document this, what you're working on and
+  planned for working on next."):** done: growth spread over ticks and off regeneration, collision never generating
+  on the browser's tick, lazy autosaves with the durable commit in still moments, the browser's local server on the
+  phone's collision budgets, tools to see it (`tests/tick_budget.rs`, bench `stutter-run` with each phase's longest
+  tick). Remaining in the browser: growth ticks of 9–25 ms. **Next (planned):** (1) grow a tree's stage and a grass
+  chunk in the server-jobs worker (pure functions of the species/seed/stage and of a chunk with its apron), the tick
+  only applying the result; (2) a budget test that fails when a native tick of the harness exceeds 4 ms (WASM ~10×);
+  (3) the browser run again on a slower page (CPU throttled) and through a portal; (4) ecology's day step (8.6 ms
+  once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.

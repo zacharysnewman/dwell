@@ -141,6 +141,10 @@ const REGION_BURST_CELLS: f64 = region_edit::BURST_CELLS as f64;
 const MAX_SAVED_LOADS_PER_TICK: i32 = 16; // saved chunks read from the world file per tick
 /// The most ticks between durable saves (an autosave in between commits lazily, `SaveBatch::lazy`).
 const DURABLE_SAVE_TICKS: u32 = 60 * SIM_HZ;
+/// The most ticks between durable saves while players keep moving.
+const DURABLE_SAVE_MAX_TICKS: u32 = 600 * SIM_HZ;
+/// No movement input this long: the players stand still (a durable save's moment).
+const IDLE_TICKS: u32 = 2 * SIM_HZ;
 /// The chunks a tick's collision reach may generate itself (`Players::set_reach_generates`).
 const REACH_GENERATES_PER_TICK: usize = 2;
 /// The most pristine chunks (edited chunks as generated) kept for the growth steps (64 KiB each).
@@ -1038,6 +1042,29 @@ struct EditLogEntry {
 }
 
 /// The tick's phases, in order, as `Server::tick_phases` names them.
+/// [`TICK_PHASES`]' names for each phase's longest tick (`tick_counts`, µs).
+const MAX_PHASES: [&str; 19] = [
+    "max.collect",
+    "max.edits",
+    "max.terrain",
+    "max.players",
+    "max.pushes+damage",
+    "max.pieces",
+    "max.physics",
+    "max.settle",
+    "max.water",
+    "max.growth",
+    "max.ecology",
+    "max.items+creatures",
+    "max.blueprints",
+    "max.respawn",
+    "max.snapshots",
+    "max.stream",
+    "max.worldgen",
+    "max.lod",
+    "max.save",
+];
+
 /// [`TICK_PHASES`]' names for the chunks each generated on the tick (`tick_counts`).
 const GEN_PHASES: [&str; 19] = [
     "gen.collect",
@@ -1109,6 +1136,8 @@ pub struct Server {
     /// The chunks generated on the tick by phase since the last `tick_counts`, and the world's
     /// count at the last phase's end (priority 0: which phase reads a chunk not yet generated).
     gen_phase: [u64; TICK_PHASES.len()],
+    /// Each phase's longest single tick since the last `tick_counts` (ms).
+    phase_max_ms: [f64; TICK_PHASES.len()],
     gen_mark: u64,
     /// The water surface grid (docs/WATER_SURFACE_GRID.md): the world's water, held as found until edits free it.
     water: crate::water::host::WaterHost,
@@ -1211,6 +1240,10 @@ pub struct Server {
     pristine_wanted: Vec<ChunkCoord>,
     /// The tick of the last durable save (`autosave`; none yet: the first is durable).
     last_durable_save: Option<u32>,
+    /// The last tick any player's input moved (a durable save waits for a still moment).
+    last_moving_tick: u32,
+    /// Durable saves so far (tests).
+    durable_saves: u32,
     /// The due trees still to grow, a few a tick (`grow_trees`).
     growth_due: std::collections::VecDeque<[i32; 3]>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
@@ -1341,6 +1374,7 @@ impl Server {
             phase_ms: [0.0; TICK_PHASES.len()],
             counts_at: [0; 3],
             gen_phase: [0; TICK_PHASES.len()],
+            phase_max_ms: [0.0; TICK_PHASES.len()],
             gen_mark: 0,
             // The water surface grid (Phase 53, docs/WATER_SURFACE_GRID.md): the world's water read
             // from its blocks, held at rest until edits free it; the world map's flow kept for
@@ -1442,6 +1476,8 @@ impl Server {
             pristine: Default::default(),
             pristine_wanted: Vec::new(),
             last_durable_save: None,
+            last_moving_tick: 0,
+            durable_saves: 0,
             growth_due: Default::default(),
             ground: Default::default(),
             ground_unread: false,
@@ -2269,6 +2305,9 @@ impl Server {
             match s.inputs.front().copied().filter(|_| s.primed) {
                 Some((seq, input)) => {
                     s.last_input = input;
+                    if input.move_x != 0.0 || input.move_y != 0.0 || input.jump {
+                        self.last_moving_tick = self.tick;
+                    }
                     s.last_processed_seq = seq;
                     s.inputs.pop_front();
                 }
@@ -2471,7 +2510,9 @@ impl Server {
     /// `terrain` phase's time goes (docs/DEV_TOOLS.md).
     /// A tick phase's end: its wall time and the chunks it generated on the tick.
     fn lap(&mut self, k: usize, watch: &mut crate::clock::Stopwatch) {
-        self.phase_ms[k] += watch.lap_ms();
+        let ms = watch.lap_ms();
+        self.phase_ms[k] += ms;
+        self.phase_max_ms[k] = self.phase_max_ms[k].max(ms);
         let now = self.world.generated_on_access();
         self.gen_phase[k] += now.saturating_sub(self.gen_mark);
         self.gen_mark = now;
@@ -2491,6 +2532,15 @@ impl Server {
             ("generatedOnTick", now[1].saturating_sub(before[1])),
             ("collisionCells", now[2].saturating_sub(before[2])),
         ];
+        // Each phase's longest tick over 2 ms, in µs (`max.<phase>`): which tick a slow second's was.
+        let max = std::mem::take(&mut self.phase_max_ms);
+        out.extend(
+            MAX_PHASES
+                .iter()
+                .zip(max)
+                .filter(|(_, ms)| *ms > 2.0)
+                .map(|(name, ms)| (*name, (ms * 1000.0) as u64)),
+        );
         let by_phase = std::mem::take(&mut self.gen_phase);
         out.extend(
             GEN_PHASES
@@ -2500,6 +2550,30 @@ impl Server {
                 .map(|(name, n)| (*name, n)),
         );
         out
+    }
+
+    /// The terrain collision's budgets: the cells it puts in a tick beyond the players' reach, and
+    /// its look-ahead (the browser's local world takes the phone tier's: its WASM tick built two
+    /// chunks or 8192 cells in ~25 ms, priority 0).
+    pub fn set_collision_budgets(
+        &mut self,
+        cells: usize,
+        ahead: dwell_physics::terrain::CollisionAhead,
+    ) {
+        self.players.set_collision_cells_per_tick(cells);
+        self.players.set_collision_ahead(ahead);
+    }
+
+    /// The chunks a tick's collision reach may generate itself (default 2; the browser's local
+    /// world 0: a chunk there takes ~35 ms, so the reach waits for the jobs, a player inside new
+    /// ground lifted onto it, `lift_buried_players`).
+    pub fn set_reach_generates(&mut self, chunks: usize) {
+        self.players.set_reach_generates(Some(chunks));
+    }
+
+    /// How many saves so far were durable (synced to the file; the rest lazy: `SaveBatch::lazy`).
+    pub fn durable_saves(&self) -> u32 {
+        self.durable_saves
     }
 
     /// Each tick phase's wall time (ms, natively; zeros on wasm32) summed since the last call,
@@ -5329,9 +5403,13 @@ impl Server {
     /// Saves as `save_now`, with the water's newest record (asked for a moment before): lazily
     /// (not synced to the file) but once a minute (`DURABLE_SAVE_TICKS`).
     fn autosave(&mut self) {
-        let lazy = self
-            .last_durable_save
-            .is_some_and(|t| self.tick < t + DURABLE_SAVE_TICKS);
+        // Durable when nobody has moved for a moment (its file sync, ~60 ms in the browser, lands
+        // while all stand still) a minute or more after the last, else after ten minutes whatever.
+        let idle = self.tick >= self.last_moving_tick + IDLE_TICKS;
+        let lazy = self.last_durable_save.is_some_and(|t| {
+            let since = self.tick.saturating_sub(t);
+            since < DURABLE_SAVE_TICKS || (!idle && since < DURABLE_SAVE_MAX_TICKS)
+        });
         self.autosave_as(lazy);
     }
 
@@ -5342,6 +5420,7 @@ impl Server {
         self.next_save_tick = self.tick + self.config.autosave_seconds * SIM_HZ;
         if !lazy {
             self.last_durable_save = Some(self.tick);
+            self.durable_saves += 1;
         }
         let mut batch = SaveBatch {
             lazy,

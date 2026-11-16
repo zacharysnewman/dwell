@@ -166,7 +166,7 @@ dwell_world::both_faces!(
             fx.server.step();
             most = most.max(fx.server.tree_chunks_scanned() - before);
         }
-        assert!(most <= 4, "at most four chunks a tick: {most}");
+        assert!(most <= 1, "at most one chunk a tick: {most}");
         assert!(
             fx.server.tree_chunks_scanned() >= 100,
             "all of them in turn"

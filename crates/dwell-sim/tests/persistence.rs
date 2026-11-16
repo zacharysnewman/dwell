@@ -604,3 +604,40 @@ fn a_world_from_an_older_line_opens_on_this_builds_terrain() {
         );
     }
 }
+
+/// Priority 0 (owner, 2026-11-16: "the server never drops below 60fps"): an autosave's durable
+/// commit (its file sync, ~60 ms in the browser) waits for a moment nobody moves: a player running
+/// for two minutes gets only the world's first durable save; standing still a few seconds brings
+/// the next.
+#[test]
+fn a_durable_save_waits_for_a_still_moment() {
+    // face-a-only: saving has no up.
+    let mut fx = Fixture::new(ServerConfig {
+        autosave_seconds: 5,
+        store: Some(WorldStore::new(WorldDb::in_memory().expect("opens"), false)),
+        ..flat()
+    });
+    let w = fx.join(1, &Client::new(1));
+    let run = |fx: &mut Fixture, seconds: u32, moving: bool, seq: &mut u32| {
+        for _ in 0..seconds * 60 {
+            *seq += 1;
+            let input = dwell_physics::controller::Input {
+                move_y: if moving { 1.0 } else { 0.0 },
+                look_yaw: (*seq as f32) * 0.01,
+                ..Default::default()
+            };
+            let m = Message::PlayerInput(PlayerInput {
+                last_snapshot_tick: 0,
+                inputs: vec![dwell_physics::net::quantize_input(&input, *seq)],
+            });
+            fx.server.on_datagram(1, &m.encode());
+            fx.server.step();
+        }
+    };
+    let mut seq = 0;
+    run(&mut fx, 130, true, &mut seq);
+    assert_eq!(fx.server.durable_saves(), 1, "moving: only the first");
+    run(&mut fx, 8, false, &mut seq);
+    assert_eq!(fx.server.durable_saves(), 2, "still a moment: the next");
+    let _ = w;
+}

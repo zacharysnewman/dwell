@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Smoother local worlds: saving waits for a moment you stand still, and running into new land no longer stalls the world."
+  ]
+}

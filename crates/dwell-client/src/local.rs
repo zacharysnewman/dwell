@@ -222,8 +222,18 @@ impl LocalCore {
                 Err(e) => storage_error = e,
             }
         }
+        #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+        let mut server = Server::new(config, entropy);
+        // In the browser one WASM thread runs the whole tick: the phone tier's collision budgets
+        // (priority 0, the owner's "the server never drops below 60fps").
+        #[cfg(target_arch = "wasm32")]
+        {
+            let b = crate::render::streaming::StreamingBudgets::get();
+            server.set_collision_budgets(b.collision_cells(true), b.collision_ahead(true));
+            server.set_reach_generates(0);
+        }
         Ok(Self {
-            server: Server::new(config, entropy),
+            server,
             map: None,
             fixed: FixedStep::new(dwell_protocol::SIM_HZ),
             persisted,
