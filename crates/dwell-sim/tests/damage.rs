@@ -460,9 +460,8 @@ dwell_world::both_faces!(
             hit(&mut fx, f, STONE);
         }
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone");
-        // Owner, 2026-11-11: a ½ m stone cell breaks into 8 rock shards, half (4) over the hits
-        // (one each of the four before the last), the rest on the destroy.
-        assert_eq!(loose(&fx, "dwell:rock_shard"), 4);
+        // Owner, 2026-11-15: "4 chunks drop at the end not as you chop": no shard on a hit.
+        assert_eq!(loose(&fx, "dwell:rock_shard"), 0);
         assert_eq!(loose(&fx, "dwell:stone"), 0, "no longer the block itself");
         // Each hit's piece is a real 3D shard (BLOCK_DAMAGE.md §6.2, owner: "both"): the loose item
         // is drawn by its look, the angular `shard`, no bigger than the mark the hit carves.
@@ -482,22 +481,22 @@ dwell_world::both_faces!(
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
         assert_eq!(
             loose(&fx, "dwell:rock_shard"),
-            8,
-            "the cell's 8 pieces, once"
+            4,
+            "the cell's 4 pieces, once, on the break"
         );
     }
 );
 
 dwell_world::both_faces!(
     fn dirt_breaks_into_eight_clumps_and_may_turn_up_a_rock(f: FaceFrame) {
-        // Owner, 2026-11-11: 8 dirt clumps a cell, half over the hits; rocks still found at random.
+        // Owner, 2026-11-15: 4 dirt clumps a cell, all on the break; rocks still found at random.
         let mut rocks = 0;
         for _ in 0..12 {
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", "dwell:stone_shovel");
             let n = hits_to_break(&mut fx, f, DIRT);
             assert_eq!(n, 5, "a stone-tier shovel");
-            assert_eq!(loose(&fx, "dwell:dirt_clump"), 8);
+            assert_eq!(loose(&fx, "dwell:dirt_clump"), 4);
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
             rocks += loose(&fx, "dwell:rock_shard");
         }

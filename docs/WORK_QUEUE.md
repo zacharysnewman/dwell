@@ -25,6 +25,13 @@ Last updated: 2026-11-11 (0.52.108).
   work): `characters.spec` 142, `edit.spec` 204 and 281, `join.spec` 55, `terrainDraw.spec` 22, `touch.spec` 283
   (the phone region bar), besides the known `buildDrag`, `settings` and `spawn` ones (CLAUDE.md "Known CI
   failures"). Not yet looked into; to run locally on the GPU config. Owner should see: CI green.
+- **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
+  heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
+  recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
+  (1) built: every ½ m cell of stone, dirt, grass, sand and log drops 4 pieces, all on the break (`hit_share` 0),
+  and the piece → block recipes take 4 (stone, dirt, sand, log, planks, stone brick; thatch and tools unchanged).
+  Owner should see: 4 chunks pop out when a block breaks, none while chopping; 4 make a block. (2) healing, with the
+  owner's decisions below: next.
 - **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
   starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
   healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the

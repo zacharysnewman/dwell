@@ -96,9 +96,9 @@ dwell_world::both_faces!(
             .filter(|it| it.stack.item == "dwell:dirt_clump")
             .cloned()
             .collect();
-        // Owner, 2026-11-11: a ½ m grass cell breaks into 8 dirt clumps (one hit here: all 8).
+        // Owner, 2026-11-15: a ½ m grass cell breaks into 4 dirt clumps.
         assert_eq!(dirt.len(), 1, "one stack of clumps");
-        assert_eq!(dirt[0].stack.count, 8, "grass drops 8 dirt clumps");
+        assert_eq!(dirt[0].stack.count, 4, "grass drops 4 dirt clumps");
         let id = dirt[0].id;
         // It falls out of the broken cell onto the stone below and rests on its top.
         step(&mut fx, 60);
@@ -125,10 +125,10 @@ dwell_world::both_faces!(
         step(&mut fx, 5);
         assert!(fx.server.loose_items().iter().all(|it| it.id != id));
         let inv = fx.server.inventory_of(1).unwrap();
-        assert_eq!(inv.count_of("dwell:dirt_clump"), 8);
+        assert_eq!(inv.count_of("dwell:dirt_clump"), 4);
         let sent = fx.take(1);
         assert!(sent.iter().any(
-            |(m, _)| matches!(m, Message::Inventory(i) if i.inventory.count_of("dwell:dirt_clump") == 8
+            |(m, _)| matches!(m, Message::Inventory(i) if i.inventory.count_of("dwell:dirt_clump") == 4
                 && i.flags & inventory_flags::USES_ITEMS != 0)
         ));
         assert!(
@@ -642,18 +642,18 @@ fn the_server_combines_pieces_into_slabs_and_stone_tools() {
     assert!(sent.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
         if i.flags & inventory_flags::COMBINE != 0)));
     fx.server.give(1, "dwell:stick", 3);
-    // "8 Rock shards make a rock slab": refused with 7, made with 8.
-    fx.server.give(1, "dwell:rock_shard", 7);
+    // 4 rock shards make a stone block (owner, 2026-11-15): refused with 3, made with 4.
+    fx.server.give(1, "dwell:rock_shard", 3);
     combine(&mut fx, "dwell:stone_slab");
-    assert_eq!(count(&fx, "dwell:stone"), 0, "refused: 7 shards");
-    assert_eq!(count(&fx, "dwell:rock_shard"), 7, "nothing taken");
+    assert_eq!(count(&fx, "dwell:stone"), 0, "refused: 3 shards");
+    assert_eq!(count(&fx, "dwell:rock_shard"), 3, "nothing taken");
     fx.server.give(1, "dwell:rock_shard", 3);
     combine(&mut fx, "dwell:stone_slab");
     assert_eq!(count(&fx, "dwell:stone"), 1);
     assert_eq!(count(&fx, "dwell:rock_shard"), 2);
     // Dirt clumps and wood chunks.
-    fx.server.give(1, "dwell:dirt_clump", 8);
-    fx.server.give(1, "dwell:wood", 8);
+    fx.server.give(1, "dwell:dirt_clump", 4);
+    fx.server.give(1, "dwell:wood", 4);
     combine(&mut fx, "dwell:dirt_slab");
     combine(&mut fx, "dwell:log_slab");
     assert_eq!(
@@ -727,9 +727,9 @@ fn the_server_combines_the_shovels_and_sand_clumps_into_sand() {
         0,
         "2 shards, as the stone axe and pickaxe"
     );
-    fx.server.give(1, "dwell:sand_clump", 7);
+    fx.server.give(1, "dwell:sand_clump", 3);
     combine(&mut fx, "dwell:sand_slab");
-    assert_eq!(count(&fx, "dwell:sand"), 0, "refused: 7 clumps");
+    assert_eq!(count(&fx, "dwell:sand"), 0, "refused: 3 clumps");
     fx.server.give(1, "dwell:sand_clump", 1);
     combine(&mut fx, "dwell:sand_slab");
     assert_eq!(
@@ -739,12 +739,13 @@ fn the_server_combines_the_shovels_and_sand_clumps_into_sand() {
 }
 
 dwell_world::both_faces!(
-    /// Sand breaks into 8 sand clumps, as dirt into dirt clumps (owner, 2026-11-14).
-    fn breaking_sand_in_adventure_drops_8_sand_clumps(f: FaceFrame) {
+    /// Sand breaks into 4 sand clumps, as dirt into dirt clumps (owner, 2026-11-14; 4 since
+    /// 2026-11-15).
+    fn breaking_sand_in_adventure_drops_4_sand_clumps(f: FaceFrame) {
         let mut fx = scene(f, "adventure");
         set_local(&mut fx, f, [2, BASE - 1, 0], "dwell:sand");
         edit(&mut fx, f, BlockEditAction::Break, [2, BASE - 1, 0], 0);
-        assert_eq!(loose_count(&fx, "dwell:sand_clump"), 8);
+        assert_eq!(loose_count(&fx, "dwell:sand_clump"), 4);
     }
 );
 
@@ -994,15 +995,15 @@ fn the_town_blocks_combine_from_wood_shards_sticks_and_fibre() {
     // chunks for a stone bricks. Thatch roof comes from 6 sticks, 2 plant fibre".
     let mut fx = scene(FaceFrame::A, "adventure");
     let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
-    fx.server.give(1, "dwell:wood", 15);
+    fx.server.give(1, "dwell:wood", 7);
     combine(&mut fx, "dwell:planks_slab");
     combine(&mut fx, "dwell:planks_slab");
     assert_eq!(
         (count(&fx, "dwell:planks"), count(&fx, "dwell:wood")),
-        (1, 7),
-        "8 wood a plank, the 7 left refused"
+        (1, 3),
+        "4 wood a plank (owner, 2026-11-15), the 3 left refused"
     );
-    fx.server.give(1, "dwell:rock_shard", 8);
+    fx.server.give(1, "dwell:rock_shard", 4);
     combine(&mut fx, "dwell:stone_brick_slab");
     assert_eq!(
         (

@@ -425,7 +425,8 @@ placements overlay shows the ground items in their looks' colours beside the str
 ## 9. Pieces, combining and tool wear **[built, 0.52.46]**
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
-  chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
+  chunks to make a log slab"; since 2026-11-15, 4 pieces, all on the break: "4 chunks drop at the end not as you
+  chop"): a ½ m cell breaks into 4 pieces of its material, as its block's `drops`
   (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
   snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
   name kept: saves hold it; the bucked log's `buckDrops` keep it too), drawn as a lump of log (its
@@ -449,7 +450,7 @@ placements overlay shows the ground items in their looks' colours beside the str
   section lists the recipes the inventory can make with how many times and a button each (adventure:
   creative has no backpack, everything is in its catalogue). A button names the output by the
   recipe's optional `label` (the slabs: "Stone slab", "Dirt slab", "Log slab": a slab's item is its
-  block, labelled "Stone"), else by the output item's label. Recipes: 8 rock shards → stone (the ½ m
+  block, labelled "Stone"), else by the output item's label. Recipes (4 pieces since 2026-11-15; 8 before): 8 rock shards → stone (the ½ m
   slab), 8 dirt clumps → dirt, 8 wood chunks → log, 8 sand clumps → sand (2026-11-14: sand breaks into 8
   `dwell:sand_clump`, as dirt into dirt clumps; "let's leave them all at 8"); 2 sticks + 2 rock shards + 2
   grass fibers → a stone axe, a stone pickaxe or a stone shovel (the player picks); 4 sticks + 2 grass fibers

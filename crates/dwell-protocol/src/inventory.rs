@@ -622,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn a_half_metre_cell_breaks_into_eight_pieces_of_its_material() {
+    fn a_half_metre_cell_breaks_into_four_pieces_of_its_material() {
         for (block, piece) in [
             ("dwell:stone", "dwell:rock_shard"),
             ("dwell:stone_ramp", "dwell:rock_shard"),
@@ -634,10 +634,10 @@ mod tests {
             ("dwell:snowy_grass_ramp", "dwell:dirt_clump"),
             ("dwell:log", "dwell:wood"),
         ] {
-            assert_eq!(certain(block), vec![(piece, 8)], "{block}");
-            // Half over the hits, half on the destroy, totalling the 8 (stone pickaxe: 5 hits).
-            let hits: u32 = (1..5).map(|k| crate::damage::hit_share(8, 5, k)).sum();
-            assert_eq!((hits, crate::damage::destroy_share(8, 5)), (4, 4));
+            // The owner, 2026-11-15: "4 chunks drop at the end not as you chop".
+            assert_eq!(certain(block), vec![(piece, 4)], "{block}");
+            let hits: u32 = (1..5).map(|k| crate::damage::hit_share(4, 5, k)).sum();
+            assert_eq!((hits, crate::damage::destroy_share(4, 5)), (0, 4));
         }
         // "We still want rocks to be found in grass and dirt at random"; sticks from leaves.
         for block in ["dwell:grass", "dwell:dirt", "dwell:snowy_grass"] {
@@ -751,7 +751,8 @@ mod tests {
             ("dwell:log_slab", "dwell:wood", "dwell:log"),
         ] {
             let r = RECIPES.iter().find(|r| r.name == name).expect(name);
-            assert_eq!((r.inputs, r.output), (&[(piece, 8)][..], (block, 1)));
+            // Four pieces make a block (owner, 2026-11-15).
+            assert_eq!((r.inputs, r.output), (&[(piece, 4)][..], (block, 1)));
         }
     }
 

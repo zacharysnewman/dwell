@@ -89,11 +89,10 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   refused, so a predicted break gives way. The hit that reaches the count breaks it. A block that
   can't be broken so (stone by hand) is refused. Each hit costs one edit credit (the same rate limit,
   10 a second). Same in creative and adventure (owner).
-- **Drops** (where blocks are not unlimited): of the block's certain drops (rules with chance 1 and one
-  item, at their least count; a block without `drops` drops itself), half (rounded down) is spread over
-  the hits before the last (`hit_share`: hit k of n gives ⌊k·h/(n−1)⌋ − ⌊(k−1)·h/(n−1)⌋), the rest and
-  every chance drop on the destroy (`destroy_share`), so the hits and the destroy total the block's
-  drops exactly. Today's blocks drop one item, so a hit drops nothing yet: the per-hit drops show once a
+- **Drops** (where blocks are not unlimited): every drop falls on the destroy (`destroy_share`; a hit
+  drops none, `hit_share` 0: owner, 2026-11-15, "4 chunks drop at the end not as you chop"; until then
+  half the certain drops were spread over the hits before the last). A ½ m cell of stone, dirt, grass,
+  sand or log drops 4 pieces of its material (8 before 2026-11-15), and 4 pieces make the block again. Today's blocks drop one item, so a hit drops nothing yet: the per-hit drops show once a
   block drops more (D3 tuning, the owner's call).
 - **Client:** a Break the data (and the mode, §7) says takes one hit is predicted at once as before; one that takes more
   is not predicted (the server's hits so far aren't the client's), and its last hit shows when the

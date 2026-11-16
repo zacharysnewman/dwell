@@ -253,16 +253,13 @@ pub fn hits_to_break_for(block: &str, held: Option<&str>, instant_breaks: bool) 
     hits_to_break_in_mode(BLOCK_DAMAGE, BREAK_TOOLS, block, held, instant_breaks)
 }
 
-/// How many of a block's `total` drops (of one item) hit `k` (1-based) of `hits` gives: half the
-/// total (rounded down) spread over the hits before the last, so the hits' and the destroy's
-/// ([`destroy_share`]) sum to `total` exactly.
+/// How many of a block's `total` drops (of one item) hit `k` (1-based) of `hits` gives: none, every
+/// piece drops on the destroy ([`destroy_share`]; until 2026-11-15 half spread over the hits).
 pub fn hit_share(total: u32, hits: u32, k: u32) -> u32 {
-    if hits <= 1 || k == 0 || k >= hits {
-        return 0;
-    }
-    let half = total / 2;
-    let over = hits - 1;
-    k * half / over - (k - 1) * half / over
+    // The owner, 2026-11-15: "4 chunks drop at the end not as you chop": every piece drops on the
+    // destroy; a hit drops none (its marks and chips are its look alone).
+    let _ = (total, hits, k);
+    0
 }
 
 /// What the destroying hit gives of `total`: what the earlier hits ([`hit_share`]) did not.
@@ -969,23 +966,18 @@ mod tests {
     }
 
     #[test]
-    fn per_hit_and_destroy_drops_total_the_blocks_drops() {
+    fn every_piece_drops_on_the_destroy_none_on_a_hit() {
+        // The owner, 2026-11-15: "4 chunks drop at the end not as you chop" (red before: half the
+        // pieces were spread over the hits before the last).
         for total in 0..12 {
             for hits in 1..14 {
-                let on_hits: u32 = (1..hits).map(|k| hit_share(total, hits, k)).sum();
-                assert_eq!(
-                    on_hits,
-                    total / 2 * u32::from(hits > 1),
+                assert!(
+                    (1..hits).all(|k| hit_share(total, hits, k) == 0),
                     "{total} over {hits}"
                 );
-                assert_eq!(on_hits + destroy_share(total, hits), total);
+                assert_eq!(destroy_share(total, hits), total);
             }
         }
-        // Four over five hits: one a hit before the last.
-        assert_eq!(
-            (1..5).map(|k| hit_share(8, 5, k)).collect::<Vec<_>>(),
-            [1, 1, 1, 1]
-        );
     }
 
     #[test]
