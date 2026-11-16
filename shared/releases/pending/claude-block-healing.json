@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Damaged blocks heal: about 10 seconds after their last hit they start to mend, whole again within half a minute, whether you're nearby or not.",
-    "The last 3 blocks you hit never heal while you work on them; hitting a 4th lets the oldest start healing (each player has their own 3)."
-  ]
-}

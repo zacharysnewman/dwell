@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.8",
+      "changes": [
+        "Damaged blocks heal: about 10 seconds after their last hit they start to mend, whole again within half a minute, whether you're nearby or not.",
+        "The last 3 blocks you hit never heal while you work on them; hitting a 4th lets the oldest start healing (each player has their own 3)."
+      ]
+    },
+    {
       "version": "0.71.7",
       "changes": [
         "Blocks drop 4 pieces instead of 8, all when the block breaks (none while you chop or dig).",
