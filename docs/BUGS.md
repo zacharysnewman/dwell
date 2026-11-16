@@ -19,6 +19,12 @@ drawn once, as a billboard or as the full tree, never both except during the bri
 Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
 Owner should see: Realistic's rivers rise in the mountains (or high ground) and run down to the sea, not start at
 random points.
+Suspect (from the code, not yet measured): a river is drawn only from where the cell's accumulated discharge reaches
+the profile's `river_threshold` (0.4, `hydrology/rivers.rs`): the water gathering on the mountain above that point
+isn't drawn, so every river appears to start part way down, wherever its catchment first gets big enough. The
+orographic rain (`rain.rs`) also leaves lee slopes dry, so some start far from any peak. Fix options for the owner:
+(a) draw each river's headwater as a thin stream traced up its largest tributary to the ridge, (b) a lower threshold
+with narrower small rivers, (c) both. Next: plot the sources over the height map for seed 7 to confirm.
 
 ### 195. Grey speckles across the map at medium and far LODs
 
