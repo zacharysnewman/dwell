@@ -1246,6 +1246,9 @@ pub struct Server {
     durable_saves: u32,
     /// The due trees still to grow, a few a tick (`grow_trees`).
     growth_due: std::collections::VecDeque<[i32; 3]>,
+    /// The tree stages (species, seed, stage) to grow in the jobs worker, and those out there.
+    tree_jobs: std::collections::VecDeque<(u16, u32, u8)>,
+    tree_jobs_out: HashSet<(u16, u32, u8)>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1479,6 +1482,8 @@ impl Server {
             last_moving_tick: 0,
             durable_saves: 0,
             growth_due: Default::default(),
+            tree_jobs: Default::default(),
+            tree_jobs_out: Default::default(),
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -5633,6 +5638,13 @@ impl Server {
         if let Some(c) = self.worldgen.take_job() {
             return Some(crate::jobs::encode_chunk_job(c));
         }
+        // Then the tree stages the growers wait for (`grow_trees`), a couple out at once.
+        if self.tree_jobs_out.len() < 2
+            && let Some(k) = self.tree_jobs.pop_front()
+        {
+            self.tree_jobs_out.insert(k);
+            return Some(crate::jobs::encode_tree_job(k.0, k.1, k.2));
+        }
         self.lod.take_job()
     }
     /// The server-jobs worker's answer to a job; applied at the next tick. False if it can't be
@@ -5640,6 +5652,11 @@ impl Server {
     pub fn deliver_job(&mut self, bytes: &[u8]) -> bool {
         if let Some((c, chunk)) = crate::jobs::decode_chunk_done(bytes) {
             self.worldgen.deliver(c, chunk);
+            return true;
+        }
+        if let Some((k, grown)) = crate::jobs::decode_tree_done(bytes) {
+            dwell_worldgen::growth::keep_grown(k.0, k.1, k.2, &grown);
+            self.tree_jobs_out.remove(&k);
             return true;
         }
         if let Some((col, floor)) = crate::sky_columns::decode_done(bytes) {

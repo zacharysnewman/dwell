@@ -52,6 +52,8 @@ Last updated: 2026-11-11 (0.52.108).
   only applying the result; (2) a budget test that fails when a native tick of the harness exceeds 4 ms (WASM ~10×);
   (3) the browser run again on a slower page (CPU throttled) and through a portal; (4) ecology's day step (8.6 ms
   once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
+  Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
+  chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.
