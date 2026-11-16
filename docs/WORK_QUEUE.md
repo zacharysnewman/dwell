@@ -27,7 +27,11 @@ Last updated: 2026-11-11 (0.52.108).
   failures"). Not yet looked into; to run locally on the GPU config. Also failing in `dwell-sim` since before #988
   (the Rust job stopped at its format step since, hiding them): `explosives` (a block broken with
   `one_hit_breaks` in adventure stays: "the dirt broke", "the stone broke"), `region_edits` (a fill of tall grass),
-  `streaming` (the verification hash), `chisel_in_game` (a retune: "air to build in"). Owner should see: CI green.
+  `streaming` (the verification hash), `chisel_in_game` (a retune: "air to build in"). Fixed 2026-11-16: the
+  explosives tests waited 3 ticks for a held axe's hit that lands at its `contactS` (0.26 s); the region fill test
+  predated 2 m grass (tall grass on tall grass stands); a giant's crown reached the chisel test's build cell and the
+  air test's reach the whole streaming view (the sky past the trees' reach is asserted air). `dwell-sim` all green.
+  The e2e failures remain. Owner should see: CI green.
 - **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
   heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
   recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."

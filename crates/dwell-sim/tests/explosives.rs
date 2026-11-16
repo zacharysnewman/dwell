@@ -1732,7 +1732,8 @@ dwell_world::both_faces!(
                 point: None,
             }),
         );
-        s.run(3);
+        // Past the held axe's contact (`contactS`, 0.26 s: the hit lands then).
+        s.run(30);
         assert_eq!(s.get([0, -1, 0]), M.air, "the dirt broke");
         assert_eq!(s.get([0, 0, 0]), M.air, "the grass went with it");
         assert!(loose_count(&s, "dwell:grass_fiber") >= 1, "and dropped");
@@ -1763,7 +1764,8 @@ dwell_world::both_faces!(
                 point: None,
             }),
         );
-        let out = s.run(3);
+        // Past the held axe's contact (`contactS`, 0.26 s: the hit lands then).
+        let out = s.run(30);
         assert_eq!(s.get([0, -1, 0]), M.air, "the stone broke");
         assert_eq!(s.get([0, 0, 0]), M.air, "the sand fell");
         assert!(!spawns(&out).is_empty(), "as a piece");

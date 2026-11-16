@@ -70,7 +70,8 @@ fn a_retune_regenerates_nearby_chunks_keeps_edits_and_is_saved_with_the_world() 
         let mut s = server(&db);
         let ground = f.point([spawn[0], spawn[1] - 0.25, spawn[2]]);
         let surface = chunk_of_pos(ground);
-        let up = chunk_of_pos(f.point([spawn[0], spawn[1] + 40.0, spawn[2]]));
+        // Clear of every tree (0.71's giants reach over 100 m).
+        let up = chunk_of_pos(f.point([spawn[0], spawn[1] + 140.0, spawn[2]]));
         let far = ChunkCoord::new(surface.x + 6, surface.y, surface.z);
         let before = generated(surface);
         let sand_before = count(&before, sand);
