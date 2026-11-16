@@ -47,6 +47,8 @@ Last updated: 2026-11-11 (0.52.108).
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
   platform's middle looking away from the pillars; torches round the platform's rim only; stamina not refilling
   while swimming under water.
+  Stamina built (2026-11-16): `regenUnderWater` false in shared/vitals/vitals.json; asked about an exhausted swimmer
+  (who sinks, head under): "Never recover underwater", so one stays exhausted while under.
 - **Owner, 2026-11-16 (spawn in a town):** "I'd also like you to start in a town. The spawn should be in a town. One
   way to do that would be to place a town right next to the spawn. We also don't need to mark the initial spawn
   point on the map, since you'll always respawn at a shrine." A worldgen change (where towns stand): a new
