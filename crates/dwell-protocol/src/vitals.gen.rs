@@ -11,6 +11,7 @@ pub static VITALS: VitalsDef = VitalsDef {
     ],
     regen_per_second: 20.0,
     regen_delay_seconds: 1.0,
+    regen_under_water: false,
     recover_fraction: 0.25,
     exhausted_sink_speed: 1.2,
     oxygen_seconds: 20.0,

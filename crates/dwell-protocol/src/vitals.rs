@@ -43,6 +43,9 @@ pub struct VitalsDef {
     pub drains: [(Activity, f32); 3],
     pub regen_per_second: f32,
     pub regen_delay_seconds: f32,
+    /// Whether stamina comes back with the head under water (owner, 2026-11-16: "you shouldn't
+    /// recover stamina while underwater").
+    pub regen_under_water: bool,
     /// The share of `max_stamina` an exhausted player needs back.
     pub recover_fraction: f32,
     /// m/s an exhausted swimmer sinks at.
@@ -142,7 +145,8 @@ impl Vitals {
                 self.spend(rate * dt);
             } else {
                 self.rest_ticks = self.rest_ticks.saturating_add(1);
-                if f32::from(self.rest_ticks) * dt > d.regen_delay_seconds {
+                let breathing = d.regen_under_water || !head_under;
+                if breathing && f32::from(self.rest_ticks) * dt > d.regen_delay_seconds {
                     self.stamina = (self.stamina + d.regen_per_second * dt).min(d.max_stamina);
                 }
             }
@@ -219,6 +223,20 @@ mod tests {
             (back - VITALS.regen_per_second).abs() < 0.5,
             "regained {back}"
         );
+    }
+
+    #[test]
+    fn stamina_does_not_come_back_with_the_head_under_water() {
+        // Owner, 2026-11-16: "you shouldn't recover stamina while underwater" (`regenUnderWater`
+        // false): rested under water it stays where it was; back up, it regains.
+        assert!(!VITALS.regen_under_water);
+        let mut v = Vitals::default();
+        run(&mut v, Some(Activity::Sprint), false, 2.0);
+        let low = v.stamina;
+        run(&mut v, None, true, VITALS.regen_delay_seconds + 2.0);
+        assert_eq!(v.stamina, low, "under water: none back");
+        run(&mut v, None, false, VITALS.regen_delay_seconds + 1.0);
+        assert!(v.stamina > low, "out of the water: it comes back");
     }
 
     #[test]
