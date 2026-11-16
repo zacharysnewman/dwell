@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "The High graphics preset draws the 2D cloud layer instead of the 3D clouds (about 0.6 ms a frame on an M1 Air); Ultra keeps the 3D clouds."
-  ]
-}
