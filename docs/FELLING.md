@@ -40,13 +40,19 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
 1. The carriers connected to the change through carriers (face neighbours) are flood-filled into
    components; a component is **anchored** if any of its carriers touches a `ground` block.
 2. Each rider nearby belongs to the carrier nearest it through riders (a multi-source search from the
-   carriers, at most `riderReach` cells), so two trees' touching canopies split between their own
-   trunks and leaves never hold up a neighbour's crown.
+   carriers, at most `riderReach` cells: 20 since 0.71's giants, whose leaves reach 17 from their wood;
+   `tests/leaf_reach.rs` checks every species' grown tree against it), so two trees' touching canopies
+   split between their own trunks and leaves never hold up a neighbour's crown. A rider touches a rider
+   or a carrier through a face, an edge or a corner (26 neighbours; carriers join through faces only),
+   so a palm's drooping frond belongs to its crown (BUGS.md #193).
 3. Each unanchored component, with its riders, becomes one **piece**: its cells leave the grid in the
    same reliable change (reason `Collapse`) and it becomes a body. Riders that belong to no carrier
    within reach fall alone (a leaves-only piece, §3) — unless they rest on something solid under
    them (0.40.0: a leaf placed on the ground stays; owner, 2026-10-28: "all leaves fall to the
-   ground unless they're connected … to a tree trunk").
+   ground unless they're connected … to a tree trunk"). Resting on what falls in the same change holds
+   nothing, and after a tree falls the box it stood in (2 cells round) is swept: its leaves that no
+   standing tree holds fall too, those across a gap from it included (owner, 2026-11-16: "Leaves
+   should only be attached to trees or fall to the ground and settle there"; BUGS.md #193).
 4. A `falls` block (sand) next to the change with nothing solid under it falls with the column of
    its kind stacked on it (a piece of all carriers). It collides with the terrain and other pieces
    but passes players (`Collide::World`): it may hurt one (`hits` is by the geometry, not contact)
