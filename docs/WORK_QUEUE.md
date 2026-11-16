@@ -56,7 +56,8 @@ Last updated: 2026-11-11 (0.52.108).
   biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
   High holding 60 fps on the M1 Air in forest, meadow and open ground.
   Owner, 2026-11-15, on the trims: "Thinner far grass, Clouds Low on High, Bloom Low on High, Cheaper shadows on
-  High"; then "2D clouds are fine for High" (Low is the 2D deck; its own cost ~0.7 ms, to be made cheaper); bloom
+  High"; then "2D clouds are fine for High" (Low is the 2D deck; built 2026-11-15: High's clouds Low, −0.6 ms
+  at the mixed forest, the deck itself ~0.05 ms there, so not made cheaper); bloom
   Low measured no saving (bloom off on High awaits the owner's yes). Then "Can we improve the core drawing?",
   "Optimize", "Make it faster?", "Yes go ahead": the near pass is bound by geometry (~2.2 M triangles in a meadow),
   so (1) chunk meshes grouped by face direction, the groups facing away from the camera (and the sun, for shadows)
@@ -77,6 +78,9 @@ Last updated: 2026-11-11 (0.52.108).
   triangles (the hidden ones were mostly behind the camera, already frustum-culled, or deep chunks of little
   geometry; giant trees lift chunks' tops over the line), −0.1 to −0.25 ms GPU for +1.5 ms CPU a frame. Not
   adopted (kept on branch `claude/horizon-cull`); the probe's share counts every direction, not the view's.
+  (2) built (2026-11-15), less far than planned: the tile rectangle as unorm16x4 (terrain and cutout), a cutout's
+  uv as float16x2 (a terrain's merged uv runs to 32 blocks, too far for halves; a leaf card's plant y holds a packed
+  normal, too big for one): terrain 60 → 52 bytes, cutout 64 → 52. Bench (M1 Air, High): mixed −0.6 ms, forest −0.3.
 - **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
   rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
   bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).
