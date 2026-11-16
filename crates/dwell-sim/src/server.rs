@@ -4240,11 +4240,18 @@ impl Server {
         let mut placed: Vec<([i32; 3], u8)> = Vec::new();
         for i in due {
             // A cell is taken by a block there, or by a player for a block that blocks a body (a
-            // leaf may land where a player stands: players pass through leaves).
+            // leaf may land where a player stands: players pass through leaves). A log settling
+            // where leaves are crushes them (the body lay through them, on what is under them):
+            // they don't take its cell (BUGS.md #191: a felled trunk across a bush settled with
+            // those columns stepped up over it).
             let taken = |world: &mut VoxelWorld, c: [i32; 3], placing: dwell_blocks::StateId| {
                 let m = world.get_voxel(c[0], c[1], c[2]);
                 let s = info(m);
-                !(m == M.air || s.liquid || s.replaceable) || overlaps_player(placing, c, &capsules)
+                let crushed = s.passable
+                    && s.support_role == dwell_blocks::SupportRole::Rider
+                    && info(placing).support_role == dwell_blocks::SupportRole::Carrier;
+                !(m == M.air || s.liquid || s.replaceable || crushed)
+                    || overlaps_player(placing, c, &capsules)
             };
             let settled = self
                 .felling

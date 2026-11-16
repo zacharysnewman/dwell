@@ -18,7 +18,6 @@ pub struct FellingData {
     pub max_system_cells: usize,
     pub max_piece_cells: usize,
     pub topple_spin: f64,
-    pub topple_tip_speed: f64,
     pub cut_tip: f64,
     pub sleep_linear: f64,
     pub sleep_angular: f64,
@@ -309,8 +308,6 @@ pub struct FellingRules {
     /// The spin (rad/s) a piece cut by a player starts with, tipping it away from them: a trunk
     /// cut straight through would otherwise balance on its stump.
     pub topple_spin: f64,
-    /// At most this fast (m/s) at its farthest point from its foot: a tall trunk is nudged.
-    pub topple_tip_speed: f64,
     /// The share of the topple a trunk let go by breaking a damaged log under it tips with, toward
     /// the side of that log that lost the most (docs/BLOCK_DAMAGE.md §16).
     pub cut_tip: f64,
@@ -353,7 +350,6 @@ impl From<FellingData> for FellingRules {
             beach_ticks: ticks(d.beach_seconds),
             max_piece_cells: d.max_piece_cells,
             topple_spin: d.topple_spin,
-            topple_tip_speed: d.topple_tip_speed,
             cut_tip: d.cut_tip,
             hit_speed: d.hit_speed,
             hit_damage_per_speed: d.hit_damage_per_speed,
@@ -639,8 +635,8 @@ impl Felling {
             // Tipped away from who cut it: spun about the level axis across the line to them, about
             // its foot (the bottom of its cells, face-local, under its centre of mass), so the foot
             // starts still: a body's spin turns it about its centre of mass, which flung a tall
-            // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out"). Its farthest point
-            // at most `topple_tip_speed`: a tall trunk is nudged, gravity does the rest.
+            // trunk's foot back (60 m: 18 m/s; owner, 2026-10-30, "flip out").
+            // Every trunk at the same spin, short or tall (owner, 2026-11-16).
             if let Some((from, share)) = away_from.filter(|_| piece.carriers > 0) {
                 let up = DVec3::Y * f64::from(FaceFrame::at_row(reference[1]).sign());
                 let mut d = origin - from;
@@ -652,15 +648,7 @@ impl Felling {
                         .map(|b| b.center.dot(up) - b.half.y)
                         .fold(f64::INFINITY, f64::min);
                     let foot = com - up * (com.dot(up) - low);
-                    let far = boxes
-                        .iter()
-                        .map(|b| (b.center - foot).length() + b.half.length())
-                        .fold(0.0, f64::max);
-                    let spin = self
-                        .rules
-                        .topple_spin
-                        .min(self.rules.topple_tip_speed / far.max(1e-6))
-                        * share;
+                    let spin = self.rules.topple_spin * share;
                     let w = up.cross(d.normalize()) * spin;
                     physics.set_angular_velocity(body, w);
                     physics.set_velocity(body, w.cross(com - foot));
@@ -1852,48 +1840,55 @@ mod tests {
     dwell_world::both_faces!(
         /// A trunk cut at its foot tips away from who cut it about its foot (owner, 2026-10-30:
         /// 40–120 log columns "flip out"): spun about its centre of mass, a 120-row (60 m) trunk's
-        /// foot started skidding back at ~18 m/s and slid 20 m. Its foot starts still, its
-        /// farthest point no faster than `topple_tip_speed`, its top away from the cutter: the
-        /// same on face B (whose up is −y; tipped about the world's y it went toward them).
+        /// foot started skidding back at ~18 m/s and slid 20 m. Its foot starts still and its top
+        /// goes away from the cutter, the same on face B (whose up is −y). Every trunk starts at
+        /// the same spin, `topple_spin` × the share, short or tall (owner, 2026-11-16: "it should
+        /// be scaled based on the trees mass so they all fall at the same relative starting
+        /// speed"; a tall one's had been capped by its top's speed).
         fn a_tall_trunk_tips_about_its_foot_away_from_who_cut_it(f: dwell_world::FaceFrame) {
-            let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
-            let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
-            let mut felling = Felling::default();
-            let stone = dwell_blocks::require("dwell:stone");
-            let n = 120;
-            let [x, y, z] = f.cell([0, 40, 0]);
-            world.set_voxel(x, y, z, f.state(stone));
-            for i in 1..=n {
-                let [x, y, z] = f.cell([0, 40 + i, 0]);
-                world.set_voxel(x, y, z, f.state(log()));
+            let spin_of = |n: i32| {
+                let mut world = VoxelWorld::new(dwell_world::empty_generator(), None);
+                let mut physics = Physics::new(dwell_physics::PhysicsConfig::default());
+                let mut felling = Felling::default();
+                let stone = dwell_blocks::require("dwell:stone");
+                let [x, y, z] = f.cell([0, 40, 0]);
+                world.set_voxel(x, y, z, f.state(stone));
+                for i in 1..=n {
+                    let [x, y, z] = f.cell([0, 40 + i, 0]);
+                    world.set_voxel(x, y, z, f.state(log()));
+                }
+                // Cut at its foot (row 41), from −x.
+                let cut = f.cell([0, 41, 0]);
+                world.set_voxel(cut[0], cut[1], cut[2], M.air);
+                let from = DVec3::from_array(f.point([-1.0, 42.0 * CELL_H + 1.6, 0.5]));
+                let new = felling.detach(
+                    &mut world,
+                    &mut physics,
+                    &[cut],
+                    0,
+                    Some((from, 0.5)),
+                    &mut |w, c, m| w.set_voxel(c[0], c[1], c[2], m),
+                );
+                assert_eq!(new.len(), 1);
+                let body = felling.pieces[new[0]].body;
+                let foot = DVec3::from_array(f.point([0.5, 42.0 * CELL_H, 0.5]));
+                let top = DVec3::from_array(f.point([0.5, (41.0 + f64::from(n)) * CELL_H, 0.5]));
+                let foot_v = physics.point_velocity(body, foot);
+                assert!(foot_v.length() < 1e-6, "the foot starts still: {foot_v:?}");
+                let top_v = physics.point_velocity(body, top);
+                assert!(
+                    top_v.x > 0.0,
+                    "its top away from the cutter (+x): {top_v:?}"
+                );
+                top_v.length() / (top - foot).length()
+            };
+            for n in [16, 120] {
+                let spin = spin_of(n);
+                assert!(
+                    (spin - FELLING.topple_spin * 0.5).abs() < 1e-3,
+                    "{n} rows: {spin} rad/s"
+                );
             }
-            // Cut at its foot (row 41), from −x.
-            let cut = f.cell([0, 41, 0]);
-            world.set_voxel(cut[0], cut[1], cut[2], M.air);
-            let from = DVec3::from_array(f.point([-1.0, 42.0 * CELL_H + 1.6, 0.5]));
-            let new = felling.detach(
-                &mut world,
-                &mut physics,
-                &[cut],
-                0,
-                Some((from, 1.0)),
-                &mut |w, c, m| w.set_voxel(c[0], c[1], c[2], m),
-            );
-            assert_eq!(new.len(), 1);
-            let body = felling.pieces[new[0]].body;
-            let foot = DVec3::from_array(f.point([0.5, 42.0 * CELL_H, 0.5]));
-            let top = DVec3::from_array(f.point([0.5, (41.0 + f64::from(n)) * CELL_H, 0.5]));
-            let foot_v = physics.point_velocity(body, foot);
-            assert!(foot_v.length() < 1e-6, "the foot starts still: {foot_v:?}");
-            let top_v = physics.point_velocity(body, top);
-            assert!(
-                top_v.length() <= FELLING.topple_tip_speed + 1e-6,
-                "nudged: {top_v:?}"
-            );
-            assert!(
-                top_v.x > 0.5,
-                "its top away from the cutter (+x): {top_v:?}"
-            );
         }
     );
 

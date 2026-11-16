@@ -50,6 +50,11 @@ Last updated: 2026-11-11 (0.52.108).
   speed." To do: the felled trunk's topple push (`felling.json`'s tip/topple and the log's `fellTip`) at 1/4 of
   today's for a tree, scaled by the piece's mass (or applied as a starting angular speed) so a sapling and a giant
   start to tip at the same speed. Owner should see: trees tipping over gently, small and giant alike.
+  Built (2026-11-16): the topple is a starting spin (rad/s), not a force, so mass doesn't enter; every trunk now
+  starts at the same spin (`toppleSpin` × the share; the cap on a tall one's top speed, `toppleTipSpeed`, gone) and
+  an axe's cut tips at `cutTip` 0.75 (was 1.5: half; at a quarter, 0.375, and at 0.5 a short trunk cut through stayed
+  balanced on its stump, the wedge holding it, so half is the least that fells reliably). A short tree starts at
+  0.45 rad/s (was 0.9); a giant at the same, so it goes over as a short one does (its top had been capped at 6 m/s).
 - **Owner, 2026-11-16 (bug, BUGS.md #192):** "I see the tall grass is like stacking when it grows but that's not right
   at all, it's supposed to extend or stretch up. That looks really bad stacked with gaps." Owner should see: growing
   tall grass stretches up as one stand, no stacked tufts.
