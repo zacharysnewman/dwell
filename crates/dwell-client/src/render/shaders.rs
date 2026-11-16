@@ -1052,24 +1052,26 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
 
 @vertex
 fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
-    return cutout_vertex(v, k, true);
+    return cutout_vertex(v, k, true, true);
 }
 
 // The shadow passes' cutout vertices: as the scene's, but no card is dropped for the side of it
-// the camera is on (`card_dropped`'s `back_cull`).
+// the camera is on (`card_dropped`'s `back_cull`), and a far plant is not turned to the eye
+// (`cards` false): its shadow is the plant's as meshed, the same wherever the camera is (BUGS.md
+// #189: turned cards' shadows swept and streaked as the player walked).
 @vertex
 fn shadow_cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
-    return cutout_vertex(v, k, false);
+    return cutout_vertex(v, k, false, false);
 }
 
-fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
+fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool, cards: bool) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
     // A cross plant far off: one quad turned to the eye, the rest dropped (render/blades.rs).
     var position = v.position;
     var normal = v.normal.xyz;
-    if (v.plant.y >= 0.0 && v.plant.w > 0.0) {
+    if (cards && v.plant.y >= 0.0 && v.plant.w > 0.0) {
         let card = blade_card(v, draw);
         if (!card.keep) {
             o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
@@ -4651,6 +4653,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_shadow_passes_cast_far_plants_as_meshed_not_turned_to_the_eye() {
+        // BUGS.md #189 (owner, 2026-11-16: "grass shadow flickering ... as you walk through tall
+        // grass"): past blades::BILLBOARD_M the scene turns a plant's card to the eye; the shadow
+        // passes must not, or its shadow turns as the camera moves (sweeping, edge-on streaks).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        assert!(
+            body("shadow_cutout_vs").contains("cutout_vertex(v, k, false, false)"),
+            "the shadow vertex stage asks for no cards"
+        );
+        assert!(body("cutout_vs").contains("cutout_vertex(v, k, true, true)"));
+        let v = body("cutout_vertex");
+        let turn = v.find("blade_card(v, draw)").expect("the scene's turn");
+        let guard = v
+            .find("if (cards && ")
+            .expect("the turn only where cards are asked for");
+        assert!(guard < turn);
     }
 
     #[test]

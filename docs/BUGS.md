@@ -6,6 +6,17 @@ pins it.
 
 ## Open
 
+### 189. Grass shadows flicker while walking through tall grass
+
+Owner, 2026-11-16: "I also found a bug where there's some grass shadow flickering I think, very distracting, happens
+as you walk through tall grass sections. I couldn't screenshot it, I had to capture frames from a video recording."
+(Frames: long thin dark streaks across the meadow in one frame, gone in the next.) Cause (found): since 0.70's far
+grass cards (#996), a plant past 16 m is one quad turned to face the eye, and the shadow passes ran the same vertex
+stage, so the shadow came from the camera-turned card: as the player moves the cards turn and their shadows sweep,
+and a card edge-on to the sun casts a long thin streak. Fix: the shadow passes keep the plants as meshed (no turn,
+no dropped quads), so a plant's shadow doesn't depend on the camera. Owner should see: no flickering or streaking
+shadows walking through tall grass.
+
 ### 188. Chopping round a log heals the far side
 
 Owner, 2026-11-15: "For damaged blocks, at least trees sometimes circling the tree block and destroying all the way
