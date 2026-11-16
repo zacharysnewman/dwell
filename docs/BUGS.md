@@ -6,6 +6,20 @@ pins it.
 
 ## Open
 
+### 197. Billboards and full trees both drawn at once, and staying that way
+
+Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
+trees showing at the same time, not like just when transitioning, but both fully visible and static." Suspects: the
+billboard's hand-over to the chunk's full trees never completes for some trees (a chunk meshed with its trees while
+the far layer still counts it as not loaded, or the two decide by different distances). Owner should see: each tree
+drawn once, as a billboard or as the full tree, never both except during the brief fade.
+
+### 196. Realistic's rivers don't start in the mountains
+
+Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
+Owner should see: Realistic's rivers rise in the mountains (or high ground) and run down to the sea, not start at
+random points.
+
 ### 195. Grey speckles across the map at medium and far LODs
 
 Owner, 2026-11-16: "I'm seeing big gray speckles across the whole map at medium to far LODs and they seem to mostly

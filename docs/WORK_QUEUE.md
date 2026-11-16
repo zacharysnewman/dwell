@@ -72,6 +72,11 @@ Last updated: 2026-11-11 (0.52.108).
   measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
   tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
   (362 m/s) with no hitches.
+- **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
+  random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
+- **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
+  the same time, not like just when transitioning, but both fully visible and static." Owner should see: each tree
+  drawn once, billboard or full, never both except during the brief fade.
 - **Owner, 2026-11-16 (bug, BUGS.md #195):** "I'm seeing big gray speckles across the whole map at medium to far LODs
   and they seem to mostly (sometimes entirely) disappear when up close. Some of them at least seem to come from cores
   inside of terrain or the random "rocks/boulders" scattered about." Owner should see: no grey speckles at any
