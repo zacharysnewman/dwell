@@ -2606,6 +2606,10 @@ to world upgrades, `FUTURE.md`. `bodies` and `water` are optional tables, added 
   once. Also on shutdown (`dwell-server` saves on SIGINT/SIGTERM and waits for
   the commit) and when the local-mode page is hidden or closed. A new world's meta is written at
   once. Unix times come from `std::time` natively and from JS (`Date.now`) in the browser.
+- **Lazy autosaves [built, 2026-11-16, priority 0]:** an autosave commits with redb's `Durability::None`
+  (`SaveBatch::lazy`: the file isn't synced; the browser's sync was 20–40 ms on the server's tick every 5 s), but
+  the first, one a minute (`DURABLE_SAVE_TICKS`) and a host's `save_now` (a close, a page hidden) are durable; a
+  lazy save is persisted by the next durable one, so a crash loses at most the last minute.
 - **Crash safety:** a save is one redb write transaction: all of it commits or none of it (a test
   aborts a save just before its commit and finds the previous save intact, block states included,
   and redb's integrity check passing).

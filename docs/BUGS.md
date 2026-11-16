@@ -38,6 +38,10 @@ measured in the browser (bench `stutter-run`) and natively (`tests/tick_budget.r
 Natively the worst tick went 31.8 → 3.0 ms; in the browser no chunk is generated on the tick any more. Still over
 budget in the browser: the save (20–38 ms at once), the join's first second (growth, ecology, water ~100 ms),
 growth bursts (~30 ms) and collision builds (~20 ms): next.
+Round 3: the autosave every 5 s committed one transaction with a file sync (20–40 ms in the browser) → autosaves
+commit lazily (`SaveBatch::lazy`, redb `Durability::None`), durably the first and once a minute and every host
+`save_now` (a close, a page hidden); a test pins a lazy save kept by the next durable one. The once-a-minute durable
+commit is still one ~60 ms tick in the browser: next, with the join's first second (~100 ms).
 
 ### 193. Leaves left hanging in the air after a tree is cut down
 
