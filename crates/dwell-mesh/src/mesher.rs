@@ -1464,9 +1464,10 @@ fn octagon_voxel(
     m: StateId,
     cell: [i32; 3],
     damage: Option<&DamageView>,
+    damaged_beside: &dyn Fn([i32; 3]) -> bool,
 ) {
     use dwell_blocks::octagon::{
-        Part as Oct, cap_pieces, joined_mask, open_faces, outline_width, section_of,
+        Part as Oct, cap_pieces, joined_mask, open_faces_beside, outline_width, section_of,
     };
     let [x, y, z] = cell;
     let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
@@ -1516,7 +1517,9 @@ fn octagon_voxel(
         let n = dwell_blocks::octagon::outline(f64::from(section.chamfer), sec_axis, joined, size);
         f.pts.len() == n.len()
     };
-    let pieces = open_faces(m, &at, &covers, size)
+    // A face toward a damaged neighbour draws (BUGS.md #190): its carving may show it.
+    let opened = |o: [i32; 3]| damaged_beside([x + o[0], y + o[1], z + o[2]]);
+    let pieces = open_faces_beside(m, &at, &covers, size, &opened)
         .into_iter()
         .flat_map(|f| match f.part {
             Oct::Cap(end) if whole(&f) => cap_pieces(&section, sec_axis, joined, size, end),
@@ -2787,6 +2790,14 @@ fn mesh_cells(
             struck.insert((*c, face), i);
         }
     }
+    // Every damaged cell still holding the state hit, whatever its shape (a cube, a ramp, a
+    // log's octagon): its neighbours' faces toward it draw (BUGS.md #187, #190), as its carving
+    // may show them.
+    let damaged_here: HashSet<[i32; 3]> = damaged
+        .iter()
+        .filter(|(c, state, _)| padded[padded_index(c[0], c[1], c[2])] == *state)
+        .map(|(c, _, _)| *c)
+        .collect();
     // Damaged ramps (BUGS.md #112): carved and cracked in `shaped_voxel`, by cell.
     let ramp_hits: HashMap<[i32; 3], usize> = damaged
         .iter()
@@ -2929,12 +2940,11 @@ fn mesh_cells(
                         }
                         continue;
                     }
-                    // Against a damaged cube the face draws (BUGS.md #187): its mask may have
+                    // Against a damaged block the face draws (BUGS.md #187, #190): its mask may have
                     // carved away the material that hid it, and nothing else would fill the hole.
-                    let beside_damage = (!struck.is_empty() || !border.is_empty())
+                    let beside_damage = (!damaged_here.is_empty() || !border.is_empty())
                         && !k.liquid
-                        && (struck.contains_key(&([nx, ny, nz], face ^ 1))
-                            || border.contains(&[nx, ny, nz]));
+                        && (damaged_here.contains(&[nx, ny, nz]) || border.contains(&[nx, ny, nz]));
                     if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) && !beside_damage {
                         continue;
                     }
@@ -3207,7 +3217,8 @@ fn mesh_cells(
                         .then(|| damaged_logs.get(&[cx, cy, cz]).copied())
                         .flatten();
                     let from = opaque.vertex_count();
-                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], hit);
+                    let beside = |c: [i32; 3]| damaged_here.contains(&c) || border.contains(&c);
+                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], hit, &beside);
                     if cells.tree_owned([cx, cy, cz]) {
                         tree_log_vertices.push(from..opaque.vertex_count());
                     }

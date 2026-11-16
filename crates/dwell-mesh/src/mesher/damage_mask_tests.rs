@@ -629,3 +629,91 @@ fn a_lower_fraction_starts_the_seen_marks_over() {
     };
     assert_eq!(a.seen_after(&b), b);
 }
+
+/// [`faces_toward_damage`] with the block at `hit` of state `name` (stone at `near`): the +x
+/// faces on the plane x = `plane`, the block at `hit` damaged or not.
+fn faces_toward_shape(f: FaceFrame, name: &str, damaged: bool) -> usize {
+    faces_toward_shape_beside(f, "dwell:stone", name, damaged)
+}
+
+/// [`faces_toward_shape`] with `beside` (a state's name) in place of the stone.
+fn faces_toward_shape_beside(f: FaceFrame, beside: &str, name: &str, damaged: bool) -> usize {
+    let stone = dwell_blocks::parse_state(beside).expect("the block is data");
+    let state = dwell_blocks::parse_state(name).expect("the block is data");
+    let (near, hit) = ([7, 8, 8], [8, 8, 8]);
+    let mut padded = vec![0u16; PADDED_VOLUME];
+    let w = world_cell(f, near);
+    padded[padded_index(w[0], w[1], w[2])] = stone;
+    let w = world_cell(f, hit);
+    padded[padded_index(w[0], w[1], w[2])] = f.state(state);
+    let damage: Vec<_> = damaged
+        .then(|| {
+            let view = DamageView {
+                fraction: 230,
+                marks: [[128, 128, 128], [128, 40, 200], [128, 220, 60]]
+                    .iter()
+                    .map(|&p| HitMark::at(world_face(f, 1), world_point(f, [0, p[1], p[2]])))
+                    .collect(),
+            };
+            (world_cell(f, hit), view)
+        })
+        .into_iter()
+        .collect();
+    let m = mesh_chunk_damaged(
+        &padded,
+        &[],
+        f == FaceFrame::B,
+        [0, 0, 0],
+        &[],
+        None,
+        ChunkFlags::default(),
+        &damage,
+    )
+    .expect("padded volume")
+    .opaque;
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| {
+            let p =
+                |i: u32| -> [f32; 3] { std::array::from_fn(|k| m.positions[i as usize * 3 + k]) };
+            let (a, b, c) = (p(t[0]), p(t[1]), p(t[2]));
+            let on = [a, b, c].iter().all(|v| (v[0] - 8.0).abs() < 1e-4);
+            let u: [f32; 3] = std::array::from_fn(|k| b[k] - a[k]);
+            let v: [f32; 3] = std::array::from_fn(|k| c[k] - a[k]);
+            on && u[1] * v[2] - u[2] * v[1] > 0.0
+        })
+        .count()
+}
+
+dwell_world::both_faces!(
+    /// BUGS.md #190 (owner, 2026-11-16: "regular slabs properly show the under blocks when
+    /// damaged, but slopes and irregular shapes like logs don't, showing the void"): the stone
+    /// beside a damaged log or ramp draws its face toward it, as beside a damaged cube (#187).
+    fn a_blocks_face_toward_a_damaged_log_or_ramp_draws(f: FaceFrame) {
+        for name in [
+            "dwell:log",
+            "dwell:stone_ramp[facing=east,flooded=false,half=bottom,shape=ramp]",
+            "dwell:stone_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+        ] {
+            let hidden = faces_toward_shape(f, name, false);
+            if hidden > 0 {
+                continue; // this one's side toward the stone hides nothing
+            }
+            assert!(
+                faces_toward_shape(f, name, true) > 0,
+                "{name} damaged: drawn"
+            );
+        }
+        // A trunk's logs end to end (a felled one along x): the end beside a damaged log draws.
+        let log = "dwell:log[axis=x]";
+        assert_eq!(
+            faces_toward_shape_beside(f, log, log, false),
+            0,
+            "undamaged: hidden"
+        );
+        assert!(
+            faces_toward_shape_beside(f, log, log, true) > 0,
+            "damaged log: drawn"
+        );
+    }
+);
