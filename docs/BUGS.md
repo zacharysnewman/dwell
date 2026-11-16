@@ -24,7 +24,9 @@ the profile's `river_threshold` (0.4, `hydrology/rivers.rs`): the water gatherin
 isn't drawn, so every river appears to start part way down, wherever its catchment first gets big enough. The
 orographic rain (`rain.rs`) also leaves lee slopes dry, so some start far from any peak. Fix options for the owner:
 (a) draw each river's headwater as a thin stream traced up its largest tributary to the ridge, (b) a lower threshold
-with narrower small rivers, (c) both. Next: plot the sources over the height map for seed 7 to confirm.
+with narrower small rivers, (c) both. Confirmed for seed 7 face A (`realistic_map --rivers`): 36 rivers, 32 from
+springs; the springs' heights as a percentile of the land: p10 6, p50 16, p90 50, none above the 75th. Every river
+rises on the plain south of the snowy range; none starts in it.
 
 ### 195. Grey speckles across the map at medium and far LODs
 
