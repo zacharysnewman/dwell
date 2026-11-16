@@ -18,10 +18,10 @@ test("the build's data validates with the owner's rules", () => {
       ['dwell:rock_shard', 0.5],
     ],
   );
-  // Owner, 2026-11-11: a ½ m cell breaks into 8 pieces of its material.
-  assert.deepEqual(dropsOf(d, 'dwell:dirt')[0].choices[0], { item: 'dwell:dirt_clump', min: 8, max: 8, weight: 1 });
-  assert.deepEqual(dropsOf(d, 'dwell:stone')[0].choices[0], { item: 'dwell:rock_shard', min: 8, max: 8, weight: 1 });
-  assert.deepEqual(dropsOf(d, 'dwell:log')[0].choices[0], { item: 'dwell:wood', min: 8, max: 8, weight: 1 });
+  // Owner, 2026-11-15: a ½ m cell breaks into 4 pieces of its material (8 before).
+  assert.deepEqual(dropsOf(d, 'dwell:dirt')[0].choices[0], { item: 'dwell:dirt_clump', min: 4, max: 4, weight: 1 });
+  assert.deepEqual(dropsOf(d, 'dwell:stone')[0].choices[0], { item: 'dwell:rock_shard', min: 4, max: 4, weight: 1 });
+  assert.deepEqual(dropsOf(d, 'dwell:log')[0].choices[0], { item: 'dwell:wood', min: 4, max: 4, weight: 1 });
   assert.equal(dropsOf(d, 'dwell:tall_grass')[0].choices[0].item, 'dwell:grass_fiber');
   assert.deepEqual(
     d.recipes.find((r) => r.name === 'dwell:stone_axe').inputs.map((i) => [i.item, i.count]),

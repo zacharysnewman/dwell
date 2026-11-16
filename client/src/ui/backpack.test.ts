@@ -70,9 +70,9 @@ describe('combine and wear (owner, 2026-11-11)', () => {
   });
 
   it('lists the recipes the inventory can make, with how many times', () => {
-    expect(combinable(holding({ item: 'dwell:rock_shard', count: 7 }))).toEqual([]);
-    const can = combinable(holding({ item: 'dwell:rock_shard', count: 17 }));
-    // Stone bricks take 8 rock shards too (the town blocks).
+    expect(combinable(holding({ item: 'dwell:rock_shard', count: 3 }))).toEqual([]);
+    const can = combinable(holding({ item: 'dwell:rock_shard', count: 9 }));
+    // Stone and stone bricks take 4 rock shards each (owner, 2026-11-15).
     expect(can.map((c) => [c.recipe.name, c.times])).toEqual([
       ['dwell:stone_slab', 2],
       ['dwell:stone_brick_slab', 2],

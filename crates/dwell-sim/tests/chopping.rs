@@ -264,7 +264,8 @@ dwell_world::both_faces!(
             fx.server.damage_of(f.cell([3, BASE, 0])).is_none(),
             "its damage gone"
         );
-        assert_eq!(wood_count(&fx), 8, "its drops");
+        // All four on the break (owner, 2026-11-15: "4 chunks drop at the end not as you chop").
+        assert_eq!(wood_count(&fx), 4, "its drops");
         let sent = fx.take(1);
         assert!(
             sent.iter()
@@ -305,7 +306,7 @@ dwell_world::both_faces!(
                 "row {r} went with it"
             );
         }
-        assert_eq!(wood_count(&fx), 8, "the broken log's drops");
+        assert_eq!(wood_count(&fx), 4, "the broken log's drops");
         // It topples: down within 4 s, away from the player who broke it (−x of it).
         let id = spawns[0].id;
         let mut lean = [0.0; 3];
