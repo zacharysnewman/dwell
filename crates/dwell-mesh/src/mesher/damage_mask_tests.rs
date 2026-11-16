@@ -564,3 +564,68 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// BUGS.md #188 (owner, 2026-11-15: "circling the tree block and destroying all the way around
+/// seems to repair the other side"): hit after hit round all four sides of a block, each hit's mask
+/// holds every sub-cell the last one removed, as a client keeps the views (every mark it has seen,
+/// `DamageView::seen_after`, though each server view carries only its newest 4). Red before: the
+/// mask was drawn from the newest 4 marks, so the first sides' bites filled back in.
+#[test]
+fn chopping_round_a_block_never_fills_a_bite_back_in() {
+    // both-faces: face-local data, no up.
+    let look = fixture_look(CarveProfile::Facets);
+    // Round the sides, twice: +x, +z, −x, −z (faces 0, 4, 1, 5), mid-height.
+    let sides: [(u8, [u8; 3]); 4] = [
+        (0, [255, 128, 128]),
+        (4, [128, 128, 255]),
+        (1, [0, 128, 128]),
+        (5, [128, 128, 0]),
+    ];
+    let need = 12u32;
+    let mut seen = DamageView::default();
+    let mut last: Option<DamageMask> = None;
+    for hit in 1..=10u32 {
+        // The server's view: the fraction so far and its newest 4 marks.
+        let all: Vec<HitMark> = (1..=hit)
+            .map(|h| {
+                let (f, p) = sides[(h as usize - 1) % 4];
+                HitMark::at(f, p)
+            })
+            .collect();
+        let wire = DamageView {
+            fraction: (hit * 255 / need) as u8,
+            marks: all[all.len().saturating_sub(4)..].to_vec(),
+        };
+        seen = seen.seen_after(&wire);
+        assert_eq!(seen.marks, all, "hit {hit}: the client keeps every mark");
+        let mask = DamageMask::of(&look, &seen, &Hull::cube()).expect("a mask");
+        if let Some(prev) = &last {
+            let [a, b, c] = mask.dims();
+            for k in 0..c {
+                for j in 0..b {
+                    for i in 0..a {
+                        assert!(
+                            !prev.is_removed(i, j, k) || mask.is_removed(i, j, k),
+                            "hit {hit}: ({i}, {j}, {k}) filled back in"
+                        );
+                    }
+                }
+            }
+        }
+        last = Some(mask);
+    }
+}
+
+#[test]
+fn a_lower_fraction_starts_the_seen_marks_over() {
+    // both-faces: no geometry. A healed (or new) damage drops the old bites.
+    let a = DamageView {
+        fraction: 200,
+        marks: vec![HitMark::at(0, [255, 10, 10]), HitMark::at(1, [0, 10, 10])],
+    };
+    let b = DamageView {
+        fraction: 20,
+        marks: vec![HitMark::at(2, [10, 255, 10])],
+    };
+    assert_eq!(a.seen_after(&b), b);
+}

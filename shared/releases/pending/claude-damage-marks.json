@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Chopping or mining all the way round a block no longer fills the first sides' bites back in: every chunk you take out stays gone until the block breaks."
+  ]
+}

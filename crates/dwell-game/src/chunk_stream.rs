@@ -1345,7 +1345,14 @@ where
         damage: Option<dwell_protocol::damage::DamageView>,
     ) {
         let changed = match damage {
-            Some(d) => self.damage.insert(cell, d.clone()) != Some(d),
+            // Every bite seen stays (BUGS.md #188): the wire holds only the newest few marks.
+            Some(d) => {
+                let seen = match self.damage.get(&cell) {
+                    Some(old) => old.seen_after(&d),
+                    None => d,
+                };
+                self.damage.insert(cell, seen.clone()) != Some(seen)
+            }
             None => self.damage.remove(&cell).is_some(),
         };
         if !changed {
