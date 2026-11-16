@@ -581,6 +581,9 @@ export const SOUND_DATA: SoundData = {
     "Copy": [
       "event:tool"
     ],
+    "Select, copy and paste a box": [
+      "event:tool"
+    ],
     "Paste mode on or off": [
       "event:tool"
     ],
