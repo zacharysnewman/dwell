@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.5",
+      "changes": [
+        "Slightly lighter terrain and plant vertices for the GPU (about 0.3–0.6 ms a frame in forests on an M1 Air on High), with the same picture."
+      ]
+    },
+    {
       "version": "0.71.4",
       "changes": [
         "Distant tall grass and flowers draw as one card turned to face you instead of two crossed cards, a little lighter on the GPU in meadows."
