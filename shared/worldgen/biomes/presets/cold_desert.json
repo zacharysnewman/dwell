@@ -51,13 +51,11 @@
   ],
   "decorations": ["dry_grass"],
   "vegetation": 1,
-  "placements": ["boulders"],
+  "placements": [],
   "ground": {
     "dwell:ground_rock": 3
   },
-  "trees": {
-    "boulders": 0.8
-  },
+  "trees": {},
   "snow": {
     "belowC": -1,
     "maxSlope": 0.9,

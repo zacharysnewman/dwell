@@ -361,7 +361,7 @@
       "ground": {
         "dwell:ground_rock": 1.5
       },
-      "placements": ["conifer_groves", "boulders"],
+      "placements": ["conifer_groves"],
       "trees": {
         "conifer_groves": 0.3
       },
