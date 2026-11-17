@@ -6,6 +6,21 @@ pins it.
 
 ## Open
 
+### 205. A cut 2×2 trunk shows no faces on its inside (reported 2026-11-17, after 0.73.9)
+
+Owner, 2026-11-17 (screenshot: a giant trunk with a quarter cut away, see-through inside): "Something is very much
+worse with our damage displays. Not sure if it's related to the logs not adapting anymore, but the inside faces aren't
+rendering at all." Suspect (#204's fix, 0.73.4): a quarter frozen with its joined sides keeps them after the neighbour
+breaks, and a joined side is drawn by neither cell (ADR 0072: squared off against another log), so with the neighbour
+gone the side is open. A stored joined side whose neighbour is no longer a joining log must draw its flat full side.
+Owner should see: a cut 2×2 trunk closed on every side, its cut faces drawn.
+
+### 206. Blocks of a falling or moving piece break in one hit (reported 2026-11-17)
+
+Owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only take one hit to break instead of the
+correct value per block." A body's cells (a felled trunk, a built body) ignore the block's hits to break
+(docs/BLOCK_DAMAGE.md §17). Owner should see: a block of a moving piece takes the same hits as the block in the ground.
+
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
@@ -40,6 +55,12 @@ too (`setGrowthSpeed`). Tests: `dwell-worldgen` `a_far_tree_grows_as_its_real_tr
 record's stage on days 0–400), `dwell-client` `the_far_trees_are_drawn_grown_by_the_world_day_repacked_each_eighth`;
 red with `grown_by` returning the generated tree. Stage 1 (trunks with billboard crowns) is by design: only the leaves
 hand over to the impostor; the trunk is the chunk's mesh, drawn as long as its chunk draws (the owner's question).
+**Correction and the mesh's half (after 0.73.9):** stage 1 is the same bug. Past the hand-over a chunk skips a listed
+tree's logs (owner, 2026-11-15: "fold trunks into billboards"), but a cell counted as the tree's only inside its
+generated box (`tree_tints`), so a trunk grown taller and a crown grown wider drew beside the billboard. Each species
+tree's box now covers its full-grown tree (`grown_bounds`, memoised by species and seed), and a chunk asks for trees
+16 cells wider. Test: `leaf_tints` `a_full_grown_tree_lies_in_its_owners_box` (both faces; red with the generated
+boxes, green now).
 
 ### 196. Realistic's rivers don't start in the mountains
 

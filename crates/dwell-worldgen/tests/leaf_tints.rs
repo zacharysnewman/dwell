@@ -136,3 +136,44 @@ both_faces!(
         assert!(!g.tree_tints((-200, -200), (199, 199)).is_empty());
     }
 );
+
+dwell_world::both_faces!(
+    /// A tree the server grew on past its generated stage is still owned whole (BUGS.md #197:
+    /// its outer leaves and its taller trunk fell outside the generated box, owned by no tree, so
+    /// they drew beside its billboard): every cell of its full-grown tree, in any turn, lies in its
+    /// box, for each species tree about the spot.
+    fn a_full_grown_tree_lies_in_its_owners_box(f: FaceFrame) {
+        let g = starter(f);
+        let (x, z) = spot(f);
+        let (lo, hi) = ((x - 64, z - 64), (x + 64, z + 64));
+        let tints = g.tree_tints(lo, hi);
+        let mut checked = 0;
+        for t in g.far_trees(lo, hi) {
+            let Some(s) = dwell_worldgen::species::SPECIES.get(usize::from(t.species)) else {
+                continue;
+            };
+            let grown = dwell_worldgen::species::grow(s, t.seed, s.stages - 1);
+            let owner = tints
+                .iter()
+                .find(|b| b.anchor == t.anchor)
+                .expect("the far tree has its box");
+            for c in grown.cells.keys() {
+                for turn in 0..4 {
+                    let (mut dx, mut dz) = (c[0], c[2]);
+                    for _ in 0..turn {
+                        (dx, dz) = (-dz, dx);
+                    }
+                    let w = [t.anchor[0] + dx, t.anchor[1] + c[1], t.anchor[2] + dz];
+                    assert!(
+                        owner.holds(w),
+                        "{} {}: {w:?} outside {owner:?}",
+                        s.name,
+                        t.seed
+                    );
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked >= 3, "species trees about the spot: {checked}");
+    }
+);

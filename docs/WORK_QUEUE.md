@@ -16,6 +16,25 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner, 2026-11-17 (ships, cannons; up next after the current item, questions first):** "I have a few new features
+  to add. A steering wheel (ships wheel), a rudder (we'll add a sail later, but while it'll be required, it'll be mostly
+  for show), and cannons that shoot cannonballs. When these cannon balls hit terrain/other dynamic objects they'll have
+  physics turn on for them, new feature to allow them to land and settle on the dynamic structure that they were a part
+  of last. We could start with a land cannon, no ammo or complexity for now, cannon takes up 4 blocks 2m long by 1m
+  tall, shoots physics cannon ball in aimed direction. The goal is ship battles where cannons can blow off pieces of
+  ships. We'll likely need to add some kind of sinking mechanism, related to holes below the waterline. We currently
+  have buoyancy but it likely doesn't cover how a real boat works. Eventually we'll need to design our rendering and
+  physical handling so water fills the boat instead of already existing in it at the waterline. We're not implementing
+  this yet, but it will be up next. We'll clarify some questions first." Owner should see (first step): a land cannon
+  (2 m long, 1 m tall, four cells) that fires a physics cannonball where aimed, the ball knocking loose what it hits.
+- **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
+  Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
+- **Owner, 2026-11-17 (question):** "It might not just be leaves that don't show damage, I'm not seeing it on planks or
+  some other structures. Do we have this supported for everything?" Answer: only blocks with a `damage.look` show marks
+  (stone, the soils, logs, ice, sandstone, basalt, obsidian, moon dust); planks, stone brick, thatch, leaves, door,
+  ladder have none yet (they take hits unmarked). Owner should see: an answer, then looks for the rest on their call.
+- **Bugs, 2026-11-17:** BUGS.md #205 (a cut 2×2 trunk open inside; likely #204's frozen joins) and #206 (a moving
+  piece's blocks break in one hit).
 - **Owner, 2026-11-17 (tool efficiency; before the other up-next work):** "The next task I want you to work on
   before the other up next tasks is this: https://claude.ai/artifact/WNbGvJHQd3SP5MjdNYx2C8#sheet-sht_6jtd3xp8hj.0 I've
   designed a tool efficiency system for blocks, most of the values live on the block definitions themselves, except

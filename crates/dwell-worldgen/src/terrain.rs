@@ -4008,6 +4008,7 @@ impl TerrainGenerator {
     }
 
     /// The species trees reaching columns [x0, x1] × [z0, z1] (face-local) with their leaf tints
+    /// (each box its tree's full-grown reach, as the server grows it on, BUGS.md #197)
     /// (ADR 0079: each tree's seed drawn through its species' `variety`), for the meshers
     /// (`dwell_world::tree_tint`): every tree [`Self::far_trees`] lists, its tint `Tint::NONE`
     /// where its species' variety draws none, since owning a leaf also hands it over to the
@@ -4021,7 +4022,10 @@ impl TerrainGenerator {
         {
             return Vec::new();
         }
-        self.trees_in(lo, hi)
+        // A tree grown past its generated stage reaches farther (BUGS.md #197): look that much
+        // wider, and give each species tree its full-grown box.
+        let m = GROWN_REACH;
+        self.trees_in((lo.0 - m, lo.1 - m), (hi.0 + m, hi.1 + m))
             .into_iter()
             .filter_map(|t| {
                 let p = &self.planters[t.planter as usize];
@@ -4032,12 +4036,22 @@ impl TerrainGenerator {
                         crate::species::tint(s, seed)
                     });
                 let placed = p.place(&t);
+                let (mut min, mut max) = (placed.min, placed.max);
+                if let Some((gmin, gmax)) = grown_bounds(i, seed) {
+                    for a in 0..3 {
+                        min[a] = min[a].min(t.anchor[a] + gmin[a]);
+                        max[a] = max[a].max(t.anchor[a] + gmax[a]);
+                    }
+                }
                 Some(TreeTint {
                     anchor: t.anchor,
-                    min: placed.min,
-                    max: placed.max,
+                    min,
+                    max,
                     tint,
                 })
+            })
+            .filter(|t| {
+                t.max[0] >= lo.0 && t.min[0] <= hi.0 && t.max[2] >= lo.1 && t.min[2] <= hi.1
             })
             .collect()
     }
@@ -6295,4 +6309,34 @@ mod spawn_tests {
             assert!(relaxed > level, "{level} level, {relaxed} within 2 rows");
         }
     );
+}
+
+/// How far (cells) past its generated box a tree the server grew on can reach: the widest
+/// full-grown crown's half-width, for the trees a chunk asks for (BUGS.md #197).
+const GROWN_REACH: i32 = 16;
+
+/// A species tree's full-grown cells' box about its anchor (cells; x and z symmetric, as its turn
+/// is unknown here): the most any of its stages reaches. Memoised by (species, seed). None for a
+/// hand-built tree (no species).
+fn grown_bounds(species: u16, seed: u32) -> Option<([i32; 3], [i32; 3])> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type Bounds = ([i32; 3], [i32; 3]);
+    static MEMO: OnceLock<Mutex<HashMap<(u16, u32), Bounds>>> = OnceLock::new();
+    let s = crate::species::SPECIES.get(usize::from(species))?;
+    let memo = MEMO.get_or_init(Default::default);
+    if let Some(b) = memo.lock().expect("memo").get(&(species, seed)) {
+        return Some(*b);
+    }
+    let grown = crate::species::grow(s, seed, s.stages.saturating_sub(1));
+    let (mut lo_y, mut hi_y, mut half) = (0, 0, 0);
+    for c in grown.cells.keys() {
+        lo_y = lo_y.min(c[1]);
+        hi_y = hi_y.max(c[1]);
+        half = half.max(c[0].abs()).max(c[2].abs());
+    }
+    let half = half.min(GROWN_REACH);
+    let b = ([-half, lo_y, -half], [half, hi_y, half]);
+    memo.lock().expect("memo").insert((species, seed), b);
+    Some(b)
 }
