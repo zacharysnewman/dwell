@@ -88,6 +88,7 @@ Last updated: 2026-11-11 (0.52.108).
   shape, as the torch and ladder have), its neighbours' faces drawn round it.
   Waiting on the owner (2026-11-17): a cross like the torch's (flat, shorter, not solid; cheap) or a narrow solid
   octagonal bundle (~0.4 m, as thin trunks are; needs a fixed-width cross-section). Recommended: the bundle.
+  Owner, 2026-11-17: "Dynamite narrow 3D bundle." → the narrow solid bundle.
 - **Owner, 2026-11-17 (recipes):** "Make the thatch, planks and stone bricks recipes make 4 blocks for 2 chunks. I'm not
   sure what thatch costs now, that may be too simple for thatch." Today: planks 4 wood → 1, stone brick 4 rock shards
   → 1, thatch 6 sticks + 2 grass fibre → 1. Planks and stone brick to 2 → 4; thatch waits on the owner's cost (told
@@ -123,6 +124,8 @@ Last updated: 2026-11-11 (0.52.108).
   the small ones (1,200–2,000 km²) 23–34 %; subtropical faces 40–51 % dry plus ~30 % savanna. Heights: half the land
   under 100–310 m; 1–2 big ranges a face (90–700 km², tops 2.9–6 km) and a few small ones; under 1 % of land above
   400 m slopes under 5 % (no plateaus). Write-up sent to the owner; tuning waits on their call.
+  Owner, 2026-11-17: "Terrain I would need to see the difference" → each option's whole-world screenshots against
+  main (fewer deserts: a longer moisture reach or a gentle recovery; more ranges; high plains needs design first).
 
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
