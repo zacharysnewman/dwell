@@ -124,7 +124,16 @@ pub struct Chunk {
     /// a block placed, broken or reshaped, not water rising or falling in a cell. Terrain collision
     /// rebuilds a chunk only when it changes, so the water a blast lets in rebuilds nothing.
     collision_revision: u32,
+    /// Per side (−x, +x, −y, +y, −z, +z): the collision class changes within [`BORDER_CELLS`] of
+    /// it. A neighbour's collision reads only those cells, so terrain collision rebuilds a shaped
+    /// neighbour only when the sides facing it changed (BUGS.md #194: a tree's growth inside its
+    /// chunk rebuilt the 6–16 shaped chunks round it).
+    side_revision: [u32; 6],
 }
+
+/// How far into a chunk its neighbours' collision reads (a shape reads up to two cells across
+/// its chunk's border).
+pub const BORDER_CELLS: i32 = 2;
 
 impl Default for Chunk {
     fn default() -> Self {
@@ -133,6 +142,7 @@ impl Default for Chunk {
             revision: 0,
             stamp: 0,
             collision_revision: 0,
+            side_revision: [0; 6],
         }
     }
 }
@@ -157,11 +167,26 @@ impl Chunk {
     pub fn collision_revision(&self) -> u32 {
         self.collision_revision
     }
+    /// The collision class changes near each side (−x, +x, −y, +y, −z, +z; see the field).
+    pub fn side_revision(&self) -> [u32; 6] {
+        self.side_revision
+    }
     /// Edits (§6.5): voxels changed without per-voxel bumps, then one bump per modification.
     pub fn set_at(&mut self, index: usize, m: StateId) {
         let old = std::mem::replace(&mut self.voxels[index], m);
         if old != m && dwell_blocks::collision_class(old) != dwell_blocks::collision_class(m) {
             self.collision_revision = self.collision_revision.wrapping_add(1);
+            let i = index as i32;
+            let (lx, ly, lz) = (i & 31, (i >> 5) & 31, i >> 10);
+            for (axis, v) in [lx, ly, lz].into_iter().enumerate() {
+                if v < BORDER_CELLS {
+                    self.side_revision[axis * 2] = self.side_revision[axis * 2].wrapping_add(1);
+                }
+                if v >= CHUNK_SIZE - BORDER_CELLS {
+                    self.side_revision[axis * 2 + 1] =
+                        self.side_revision[axis * 2 + 1].wrapping_add(1);
+                }
+            }
         }
     }
     pub fn bump_revision(&mut self) {
@@ -181,6 +206,9 @@ impl Chunk {
     /// what is written isn't seen).
     pub fn voxels_mut(&mut self) -> &mut [StateId; CHUNK_VOLUME] {
         self.collision_revision = self.collision_revision.wrapping_add(1);
+        for s in &mut self.side_revision {
+            *s = s.wrapping_add(1);
+        }
         &mut self.voxels
     }
     pub fn from_voxels(voxels: &[StateId], revision: u32) -> Option<Self> {

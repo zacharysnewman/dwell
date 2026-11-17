@@ -94,6 +94,11 @@ Last updated: 2026-11-11 (0.52.108).
   `stutter-fly`, all rounds in) every second's worst tick after the join is ≤ 11 ms (was up to 664 ms in round 1,
   39–71 ms flying). Left: the join's first second (ecology's islands built at the first tick, ~25 ms, during
   loading), tree growth's collision rebuilds (occasional), the owner's look.
+  Owner, 2026-11-17, on tree growth's rebuilds: "There's a lot of trees, so once every few in game days is still
+  probably pretty often." Next (priority 0): a changed chunk's shaped neighbours rebuilt only when the cells on
+  their shared border changed (a tree grows inside its chunk: one build, not 6–16). Owner should see: no hitch when
+  trees grow nearby.
+  Done (round 13): neighbours rebuilt only when their shared border changed; the sprint at 60× growth 5.3 ms worst.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
@@ -141,6 +146,12 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+  2026-11-17: CI's Rust job stopped at the first failing file, hiding more. Fixed: the client's scenario test
+  (`stutter-run`/`stutter-fly` take an end shot), worldgen `lod` (tops compare the ground, not tree crowns, which
+  the species pines' giants put a cell apart), `realistic_biomes` (the world file owns each biome's plants). Still
+  red on main (`--no-fail-fast`): `realistic_sagebrush` (sagebrush on rock walls), `realistic_world` (a rift lake
+  27 km > 19, an arc cone off its plate, the map build time 6.0 s vs 1.7 under load), `starter_memory` (the starter
+  terrain golden changed).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
