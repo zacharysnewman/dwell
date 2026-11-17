@@ -150,6 +150,17 @@ impl Server {
         &self.grass
     }
 
+    /// The chunk the tick's grass step is part way through and its next quarter (tests, tools).
+    pub fn grass_in_hand(&self) -> Option<(ChunkCoord, u8)> {
+        self.grass_part
+    }
+
+    /// How many chunks the grass step has regenerated to read them as generated (tests, tools:
+    /// none on the tick, BUGS.md #194).
+    pub fn grass_regenerated(&self) -> usize {
+        self.grass_regenerated
+    }
+
     /// Tests, tools: the envelope in place of the terrain's, and the switch.
     pub fn set_grass_envelope(&mut self, env: Option<GrassEnvelope>) {
         self.grass_envelope = env;
@@ -208,6 +219,55 @@ impl Server {
         self.grass_step(false);
     }
 
+    /// Chunk `c`'s and the ones under and over it that are edited without a pristine copy (the
+    /// step would regenerate them to read them as generated).
+    fn grass_missing(&self, c: ChunkCoord) -> Vec<ChunkCoord> {
+        Self::grass_chunks(c)
+            .into_iter()
+            .filter(|k| {
+                self.world.find(*k).is_some_and(|ch| ch.revision() > 0)
+                    && !self.pristine.contains_key(k)
+            })
+            .collect()
+    }
+
+    fn grass_chunks(c: ChunkCoord) -> [ChunkCoord; 3] {
+        let f = FaceFrame::at_chunk_y(c.y);
+        let l = f.chunk(c);
+        [
+            c,
+            f.chunk(ChunkCoord::new(l.x, l.y - 1, l.z)),
+            f.chunk(ChunkCoord::new(l.x, l.y + 1, l.z)),
+        ]
+    }
+
+    /// Before a chunk's first quarter: its and its neighbours' cells kept as their generated ones
+    /// where unedited (a copy), so the later quarters read them so after its own grass edits them
+    /// (BUGS.md #194: they regenerated the chunk, 3–12 ms natively a quarter).
+    fn keep_unedited_as_pristine(&mut self, c: ChunkCoord) {
+        // Room for all three first: a clear part way would drop the ones just kept.
+        if self.pristine.len() + 3 > super::PRISTINE_KEPT {
+            self.pristine.clear();
+        }
+        for k in Self::grass_chunks(c) {
+            if let Some(ch) = self.world.find(k)
+                && ch.revision() == 0
+                && !self.pristine.contains_key(&k)
+            {
+                let copy = Box::new(ch.clone());
+                self.pristine.insert(k, copy);
+            }
+        }
+    }
+
+    fn want_pristine(&mut self, missing: Vec<ChunkCoord>) {
+        for k in missing {
+            if !self.pristine_wanted.contains(&k) && self.pristine_wanted.len() < 32 {
+                self.pristine_wanted.push(k);
+            }
+        }
+    }
+
     fn grass_step(&mut self, wait: bool) {
         if !self.grass.enabled {
             return;
@@ -222,7 +282,6 @@ impl Server {
             None
         };
         let today = self.world_days().floor().max(0.0) as u32;
-        let rule = &self.grass_rule;
         // A chunk grows once its own and the ones under and over it, where edited, are at hand as generated
         // (the jobs' pristine copies): never regenerated on the tick (priority 0, BUGS.md #194).
         let candidates: Vec<ChunkCoord> = self
@@ -235,36 +294,34 @@ impl Server {
         // On the tick a chunk grows a quarter of its columns a tick (`grow_chunk_part`), the one in
         // hand first; its day once the fourth is done.
         let mut behind: Vec<(ChunkCoord, Option<u8>)> = Vec::new();
-        if wait && let Some((c, k)) = self.grass_part {
-            behind.push((c, Some(k)));
+        let in_hand = wait.then_some(self.grass_part).flatten();
+        if let Some((c, k)) = in_hand {
+            // Part way through: on once its chunks still read as generated without regenerating
+            // (else it waits for their pristine copies).
+            let missing = self.grass_missing(c);
+            if missing.is_empty() {
+                behind.push((c, Some(k)));
+            } else {
+                self.want_pristine(missing);
+            }
         }
-        let in_hand = !behind.is_empty();
-        for c in candidates.into_iter().filter(|_| !in_hand) {
-            let f = FaceFrame::at_chunk_y(c.y);
-            let l = f.chunk(c);
-            let under = f.chunk(ChunkCoord::new(l.x, l.y - 1, l.z));
-            let over = f.chunk(ChunkCoord::new(l.x, l.y + 1, l.z));
-            let missing: Vec<ChunkCoord> = [c, under, over]
-                .into_iter()
-                .filter(|k| {
-                    self.world.find(*k).is_some_and(|ch| ch.revision() > 0)
-                        && !self.pristine.contains_key(k)
-                })
-                .collect();
+        for c in candidates.into_iter().filter(|_| in_hand.is_none()) {
+            let missing = self.grass_missing(c);
             if missing.is_empty() || !wait {
                 if behind.len() < CHUNKS_PER_TICK {
+                    if wait {
+                        self.keep_unedited_as_pristine(c);
+                    }
                     behind.push((c, wait.then_some(0)));
                 }
             } else {
-                for k in missing {
-                    if !self.pristine_wanted.contains(&k) && self.pristine_wanted.len() < 32 {
-                        self.pristine_wanted.push(k);
-                    }
-                }
+                self.want_pristine(missing);
             }
         }
+        let rule = &self.grass_rule;
         let mut changes = TickChanges::default();
         let mut writes = Vec::new();
+        let mut regenerated = 0;
         {
             let mut cells = WorldCells {
                 world: &mut self.world,
@@ -272,7 +329,7 @@ impl Server {
                 cache: Default::default(),
                 copies: Default::default(),
             };
-            for (c, part) in behind {
+            for (c, part) in behind.iter().copied() {
                 let last = self.grass.days.get(&c).copied().unwrap_or(0);
                 let (first, days) = rule.catch_up(last, today);
                 let f = FaceFrame::at_chunk_y(c.y);
@@ -308,10 +365,12 @@ impl Server {
                     }
                 }
             }
+            regenerated = cells.cache.len();
         }
         for (cell, s) in writes {
             changes.set(&mut self.world, cell, s);
         }
+        self.grass_regenerated += regenerated;
         if !changes.chunks.is_empty() {
             self.broadcast_changes(changes, VoxelModificationReason::Rebake);
         }

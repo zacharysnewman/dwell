@@ -292,3 +292,69 @@ dwell_world::both_faces!(
         assert!(done >= 100, "every chunk grows in turn: {done}");
     }
 );
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194): the tick's grass step never regenerates a chunk. A chunk grows a
+    /// quarter a tick; an edit between its quarters (its own first quarter's grass, a player's)
+    /// left it edited without a pristine copy, and the later quarters regenerated it (3–12 ms
+    /// natively a quarter). An unedited chunk's own cells are kept as its generated ones when it is
+    /// picked.
+    fn the_tick_never_regenerates_a_chunk_to_grow_grass(f: FaceFrame) {
+        // No edit to start with (the scene's would wait for its pristine copy, never sent here).
+        // The meadow with a generated tuft in each chunk (local column 8, 8): grass to spread from.
+        let base = generator(f);
+        let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
+        let tufted: dwell_world::ChunkGenerator =
+            Arc::new(move |c: ChunkCoord, chunk: &mut dwell_world::Chunk| {
+                base(c, chunk);
+                for ly in 0..CHUNK_SIZE {
+                    if f.row(c.y * CHUNK_SIZE + ly) == FLAT_TOP_Y {
+                        chunk.voxels_mut()[local_index(8, ly, 8)] = tall;
+                    }
+                }
+            });
+        let mut fx = Fixture::new(ServerConfig {
+            generator_override: Some(tufted),
+            // A world day every 300 ticks.
+            growth_speed: 240.0,
+            // The browser's: pristine copies come from the jobs worker (here never), not inline.
+            jobs_remote: true,
+            ..config(f)
+        });
+        fx.server.set_grass_envelope(Some(lush()));
+        let mut floors = Vec::new();
+        for dx in -2..2 {
+            for dz in -2..2 {
+                let [x, y, z] = f.cell([dx * 32 + 40, FLAT_TOP_Y, dz * 32 + 40]);
+                floors.push(chunk_of(x, y, z));
+                fx.server.world().get_or_create(chunk_of(x, y, z));
+            }
+        }
+        // Until a floor chunk (its meadow the spots) is part way through: then an edit in it.
+        let mut edited = false;
+        for _ in 0..700 {
+            // Kept loaded (no player here holds them).
+            for &c in &floors {
+                fx.server.world().get_or_create(c);
+            }
+            fx.server.step();
+            if !edited
+                && let Some((c, 1)) = fx.server.grass_in_hand()
+                && floors.contains(&c)
+            {
+                let o = [c.x * CHUNK_SIZE, c.y * CHUNK_SIZE, c.z * CHUNK_SIZE];
+                let stone = f.state(M.stone);
+                fx.server
+                    .world()
+                    .set_voxel(o[0] + 30, o[1] + 30, o[2] + 30, stone);
+                edited = true;
+            }
+        }
+        assert!(edited, "a chunk part way through");
+        assert_eq!(
+            fx.server.grass_regenerated(),
+            0,
+            "chunks regenerated on the tick"
+        );
+    }
+);
