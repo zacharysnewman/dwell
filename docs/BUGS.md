@@ -1043,6 +1043,18 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 200. The loading screen waits out its timeout for chunks the server never sends (fixed after 0.71.30)
+
+Owner, 2026-11-17: "Are there other easy wins for the rest of loading" and "Ensure you check a new world, a
+regenerated world, and a previously generated world." Seed 987654321 waited the full 20 s on "Loading the terrain"
+(new and regenerated); 9 of the near ring's 179 chunks never arrived. The client's predicted capsule centre was
+319.997 m, the server's just over the chunk border at 320 m: the two centred a chunk apart, and the ring (the
+view's own radius) reached chunks outside the server's view. **Fixed:** the ring is one less than the view (2
+against 3, `shared/look/loading.json`), within it across any one border. Test (red at 3, green at 2):
+`loading::tests::the_ring_lies_within_the_view_of_a_server_one_chunk_off`. Browser, new/regenerated/reopened:
+seed 987654321 24.5/22.3/8.3 → 10.6/8.8/7.5 s; seed 3218026833 15.9/14.1/11.8 → 11.0/9.0/7.0 s. Found with the new
+dev call `__dwell.nearMissing()`.
+
 ### 199. A cinematic take's sounds late on a few frames a clip (fixed after 0.71.28)
 
 Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make

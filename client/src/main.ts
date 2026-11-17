@@ -242,6 +242,9 @@ interface RenderStats {
 
 /** Hooks for automated tests (Playwright) and debugging from the console. */
 interface DwellDebug {
+  /** The near ring's centre ([cx, cy, cz, x, y, z]) then each chunk the loading screen still
+   * waits for: [x, y, z, loaded, drawable, drawnByLod, lodKnowsEmpty] (1/0). */
+  nearMissing: () => number[][] | null;
   state(): GameDebugState | null;
   press(code: string, down: boolean): void;
   look(yaw: number, pitch: number): void;
@@ -1593,6 +1596,9 @@ async function start(): Promise<App | null> {
   });
   window.__dwell = {
     state: () => client.debugState() as GameDebugState | null,
+    // The near ring's chunks the loading screen still waits for: [x, y, z, loaded, drawable,
+    // drawnByLod, lodKnowsEmpty] each (1/0).
+    nearMissing: () => client.nearMissing() as number[][] | null,
     press: (code, down) => {
       client.press(code, down);
       // The map's key is the shell's (ADR 0068), as a real key press is.

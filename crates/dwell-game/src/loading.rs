@@ -241,6 +241,37 @@ mod tests {
         const { assert!(LOADING.timeout_s >= 1.0) };
     }
 
+    /// The owner, 2026-11-17 ("Loading the terrain" 10–20 s): the client's predicted capsule
+    /// centre and the server's can sit either side of a chunk border (3 mm apart on seed
+    /// 987654321, the client's 319.997 m against a border at 320), so their rings' centres differ
+    /// by a chunk and the near ring's far side lies outside the server's view: never streamed,
+    /// the screen waited out its timeout. The ring of the checked-in radius lies within the view
+    /// whichever neighbouring chunk (across one border) the server centres on.
+    #[test]
+    fn the_ring_lies_within_the_view_of_a_server_one_chunk_off() {
+        let view = dwell_protocol::world::VIEW_RADIUS_CHUNKS as i32;
+        let inside = |c: [i32; 3]| c[0] * c[0] + c[1] * c[1] + c[2] * c[2] <= view * view + view;
+        // A border on one axis (millimetres from two or three at once, a chunk's edge or corner,
+        // is far rarer; the timeout still opens the screen there).
+        let off = [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ];
+        for o in near_ring_offsets(LOADING.radius_chunks) {
+            for d in off {
+                let c = [o[0] + d[0], o[1] + d[1], o[2] + d[2]];
+                assert!(
+                    inside(c),
+                    "ring chunk {o:?} is outside the view of a server centred {d:?} away"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_near_ring_is_the_servers_view_sphere_nearest_first() {
         let ring = near_ring_offsets(3);

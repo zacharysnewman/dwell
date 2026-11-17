@@ -1505,6 +1505,35 @@ impl<S: Scene> Game<S> {
         self.loading.update(now_ms, progress);
     }
 
+    /// The predicted capsule centre (the dev tools).
+    pub fn debug_position(&self) -> [f64; 3] {
+        self.current.position
+    }
+
+    /// The near ring's chunks not yet ready for the loading screen (the dev tools' `nearMissing`):
+    /// each chunk and whether it is loaded, drawable (meshed or air), drawn by the LOD as a chunk,
+    /// and known empty by the LOD.
+    pub fn near_missing(&self) -> Vec<([i32; 3], [bool; 4])> {
+        let c = dwell_world::chunk_of_pos(self.current.position);
+        let lod = self.lod.as_ref();
+        self.near_ring
+            .iter()
+            .map(|o| [c.x + o[0], c.y + o[1], c.z + o[2]])
+            .filter_map(|k| {
+                let cc = ChunkCoord::from_array(k);
+                let visible = lod.is_none_or(|l| l.chunk_visible(cc));
+                let nothing = lod.is_some_and(|l| l.shows_nothing_at(cc));
+                let flags = [
+                    self.streamer.revision(k).is_some(),
+                    self.streamer.drawable(k),
+                    visible,
+                    nothing,
+                ];
+                (!(flags[1] && (visible || nothing))).then_some((k, flags))
+            })
+            .collect()
+    }
+
     /// Places the camera (None: back to the player's eyes).
     /// Holds the axe's level or vertical swing at clip time `t` (s) on your arms and every remote
     /// body (puppets included), or releases it (none): the bench's `clip-strip` (DEV_TOOLS.md).
