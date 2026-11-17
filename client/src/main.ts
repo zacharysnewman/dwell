@@ -2730,6 +2730,8 @@ async function connect(app: App): Promise<void> {
   };
   status.textContent = localWorld ? `Starting ${target}…` : `Connecting to ${target}…`;
   const client = app.client;
+  // A local world's job workers start now, as its maps come, not at the join (loading, 2026-11-17).
+  if (localWorld) client.prewarmWorld(BigInt(localWorld.worldSeed), localWorld.generatorVersion);
   try {
     const key = await identify(client);
     let local: LocalSession | null = null;

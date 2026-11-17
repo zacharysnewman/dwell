@@ -235,6 +235,12 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
             w.u8(1);
             [*level, *i, *k].into_iter().for_each(|v| w.i32(v));
         }
+        Job::TownCell { face, i, k } => {
+            w.u8(14);
+            w.u8(*face);
+            w.i32(*i);
+            w.i32(*k);
+        }
         Job::Lod { coord } => {
             w.u8(2);
             [coord.level, coord.i, coord.j, coord.k]
@@ -542,6 +548,11 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
             i: r.i32()?,
             k: r.i32()?,
         },
+        14 => Job::TownCell {
+            face: r.u8()?,
+            i: r.i32()?,
+            k: r.i32()?,
+        },
         13 => Job::CloudWeather {
             face_b: r.u8()? == 1,
             corner: [r.f64()?, r.f64()?],
@@ -579,6 +590,16 @@ pub fn encode_output(id: u32, out: &Output) -> Vec<u8> {
             w.opt_f32s(surface);
             w.opt_f32s(surface_b);
             w.tints(tints);
+        }
+        Output::Town(site) => {
+            w.u8(13);
+            match site {
+                Some(v) => {
+                    w.u8(1);
+                    v.iter().for_each(|&x| w.i32(x));
+                }
+                None => w.u8(0),
+            }
         }
         Output::Map(bytes) => {
             w.u8(3);
@@ -753,6 +774,11 @@ pub fn decode_output(bytes: &[u8]) -> Result<(u32, Output), DecodeError> {
             corner: [r.f64()?, r.f64()?],
             texels: r.bytes()?,
         },
+        13 => Output::Town(if r.u8()? == 1 {
+            Some([r.i32()?, r.i32()?, r.i32()?])
+        } else {
+            None
+        }),
         10 => Output::Impostor {
             centre_y: f32::from_bits(r.u32()?),
             radius: f32::from_bits(r.u32()?),
@@ -826,6 +852,11 @@ mod tests {
         let jobs = [
             Job::Generate {
                 coord: ChunkCoord { x: 0, y: -1, z: 0 },
+            },
+            Job::TownCell {
+                face: 1,
+                i: -3,
+                k: 2,
             },
             Job::LodBounds {
                 level: 3,

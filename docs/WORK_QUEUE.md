@@ -130,6 +130,11 @@ Last updated: 2026-11-11 (0.52.108).
   sent, the screen waiting out 20 s). New/regenerated/reopened: seed 987654321 24.5/22.3/8.3 → 10.6/8.8/7.5 s, seed
   3218026833 15.9/14.1/11.8 → 11.0/9.0/7.0 s. Next: the 2–3 s before the first chunk arrives (the local server's
   first ticks late), "Loading the terrain" still ~6 s.
+  Done next (2026-11-17): the map's town sites were sited on the main thread in the first frame after a join (81
+  grid cells, ~1.4 s, a CPU profile): now a generation worker's job (`Job::TownCell`), a few out at once, nearest
+  first; and a local world's job workers start as its maps come (`prewarmWorld`), with this thread's terrain built
+  then, not at the join. New/regenerated/reopened: seed 987654321 10.6/8.8/7.5 → 9.2/7.1/5.6 s, seed 3218026833
+  11.0/9.0/7.0 → 8.7/6.2/4.7 s (from 24.5/22.3/8.3 and 15.9/14.1/11.8 this morning).
 - **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
   and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
   `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to

@@ -416,6 +416,9 @@ pub enum Send {
 
 pub type Outbox = Rc<RefCell<Vec<Send>>>;
 
+/// Town cells asked of the generation workers at once (`Game::town_sites`).
+const TOWN_JOBS_OUT: usize = 4;
+
 type Streamer<S> = ChunkStreamer<VoxelWorld, ChunkJobs, MeshJobs, View<S>>;
 
 /// The client sim's state after the latest tick (`ClientState` in the TS).
@@ -1039,6 +1042,9 @@ pub struct Game<S: Scene> {
     pending_lod: Option<LodSettings>,
     /// The latest F4 map (None until one arrives; an empty map without a terrain).
     map: Option<Vec<u8>>,
+    /// The map's town sites by (face B, cell i, k), and those asked of the workers (`town_sites`).
+    towns: std::collections::HashMap<(bool, i32, i32), Option<dwell_world::blueprint::TownSite>>,
+    towns_pending: std::collections::HashSet<(bool, i32, i32)>,
     /// The latest big-map debug layer (`request_map_layer`).
     map_layer: Option<(u8, u8, Vec<u8>)>,
     /// Finished chunk meshes waiting for their upload, taken under the frame's byte budget
@@ -1295,6 +1301,8 @@ impl<S: Scene> Game<S> {
             registry: None,
             pending_lod: None,
             map: None,
+            towns: Default::default(),
+            towns_pending: Default::default(),
             map_layer: None,
             mesh_uploads: Default::default(),
             reveal: std::collections::VecDeque::new(),
@@ -1768,6 +1776,43 @@ impl<S: Scene> Game<S> {
         self.lod_options = Some((options, s.detail_distance_m));
         self.lod = Some(lod);
         self.pending_lod = None;
+    }
+
+    /// The map's town sites in the (2n + 1)² grid cells round cell (ci, ck) on face B (`b`) or A:
+    /// those sited so far; the missing ones asked of the generation workers, nearest first, a few
+    /// at a time (each up to 40 height-field columns: all 81 on the main thread held the first frame
+    /// after a join ~1.4 s; loading, 2026-11-17).
+    pub fn town_sites(
+        &mut self,
+        b: bool,
+        ci: i32,
+        ck: i32,
+        n: i32,
+    ) -> Vec<dwell_world::blueprint::TownSite> {
+        let mut cells: Vec<(i32, i32)> = (ck - n..=ck + n)
+            .flat_map(|k| (ci - n..=ci + n).map(move |i| (i, k)))
+            .collect();
+        cells.sort_by_key(|&(i, k)| (i - ci).pow(2) + (k - ck).pow(2));
+        let mut out = Vec::new();
+        for (i, k) in cells {
+            match self.towns.get(&(b, i, k)) {
+                Some(site) => out.extend(*site),
+                None if self.towns_pending.len() < TOWN_JOBS_OUT
+                    && self.towns_pending.insert((b, i, k)) =>
+                {
+                    self.pool.borrow_mut().submit(
+                        Purpose::Town(b, i, k),
+                        crate::jobs::Job::TownCell {
+                            face: u8::from(b),
+                            i,
+                            k,
+                        },
+                    );
+                }
+                None => {}
+            }
+        }
+        out
     }
 
     /// Asks for the F4 map: n × n column samples from (x0, z0), `step` apart, of `face`.
@@ -2567,6 +2612,25 @@ impl<S: Scene> Game<S> {
                     self.verify(hash)
                 }
                 (Purpose::Map, Output::Map(bytes)) => self.map = Some(bytes.unwrap_or_default()),
+                (Purpose::Town(b, i, k), Output::Town(site)) => {
+                    self.towns_pending.remove(&(b, i, k));
+                    let face = if b {
+                        dwell_world::FaceFrame::B
+                    } else {
+                        dwell_world::FaceFrame::A
+                    };
+                    let site = site.map(|[x, z, plan]| dwell_world::blueprint::TownSite {
+                        face,
+                        cell: [i, k],
+                        x,
+                        z,
+                        plan: plan.max(0) as usize,
+                    });
+                    if self.towns.len() > 4096 {
+                        self.towns.clear();
+                    }
+                    self.towns.insert((b, i, k), site);
+                }
                 (Purpose::MapLayer(f, face), Output::Map(bytes)) => {
                     self.map_layer = Some((f, face, bytes.unwrap_or_default()));
                 }

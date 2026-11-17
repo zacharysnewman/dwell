@@ -17,6 +17,10 @@ use dwell_worldgen::BifacialTerrain;
 pub enum Job {
     /// A chunk's voxels (and their hash, for the verification check, §6.3).
     Generate { coord: ChunkCoord },
+    /// The town site of grid cell (i, k) on face `face` (0 A, 1 B), sited from the world's seed as
+    /// the server sites it (docs/BLUEPRINTS.md §6; the map's towns): up to 40 height-field columns,
+    /// ~17 ms in the browser, so never on the main thread (loading, 2026-11-17).
+    TownCell { face: u8, i: i32, k: i32 },
     /// Height bounds of the column of LOD sections (level, i, ·, k).
     LodBounds { level: i32, i: i32, k: i32 },
     /// An LOD section's cells and column surfaces.
@@ -144,6 +148,8 @@ impl Job {
 /// A job's result.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Output {
+    /// A town cell's site: its centre (face-local x, z) and plan index; none in that cell.
+    Town(Option<[i32; 3]>),
     Chunk {
         voxels: Vec<u16>,
         hash: u64,
@@ -418,6 +424,19 @@ impl Runner {
                     },
                 }
             }
+            Job::TownCell { face, i, k } => {
+                let face = if face == 1 {
+                    dwell_world::Face::B
+                } else {
+                    dwell_world::Face::A
+                };
+                Output::Town(match (&self.terrain, self.seed) {
+                    (Some(t), Some(seed)) => t
+                        .town_in(seed, face, [i, k])
+                        .map(|s| [s.x, s.z, s.plan as i32]),
+                    _ => None,
+                })
+            }
             Job::FarTrees { face, x0, z0, size } => match &self.terrain {
                 Some(t) if size > 0 => {
                     let face = if face == 1 {
@@ -679,6 +698,29 @@ mod tests {
 
     use super::*;
     use dwell_world::GENERATOR_TERRAIN;
+
+    dwell_world::both_faces!(
+        /// The map's towns (loading, 2026-11-17: ~1.4 s of the main thread at a join): a town cell's
+        /// job sites it as the world's terrain does, so the map shows the server's towns.
+        fn a_town_cell_job_sites_the_terrains_town(f: dwell_world::FaceFrame) {
+            let r = Runner::world(GENERATOR_TERRAIN, 1);
+            let t = dwell_worldgen::BifacialTerrain::for_generator(GENERATOR_TERRAIN, 1)
+                .expect("terrain");
+            let face = u8::from(f.is_b());
+            let mut sited = 0;
+            for (i, k) in [(0, 0), (1, -1), (-2, 3), (4, 4), (-5, -1)] {
+                let Output::Town(got) = r.run(Job::TownCell { face, i, k }) else {
+                    panic!("a town cell's output");
+                };
+                let want = t
+                    .town_in(1, f.face, [i, k])
+                    .map(|s| [s.x, s.z, s.plan as i32]);
+                assert_eq!(got, want, "cell {i}, {k}");
+                sited += usize::from(got.is_some());
+            }
+            let _ = sited;
+        }
+    );
 
     #[test]
     fn generates_hashes_and_meshes_a_chunk() {
