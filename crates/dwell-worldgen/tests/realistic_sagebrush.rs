@@ -33,7 +33,6 @@ fn red_dirt_has_its_ramps() {
 }
 
 both_faces!(
-    #[ignore = "sagebrush on rock walls (4-8): fixed with the red-desert brush change, 0.72 line (WORK_QUEUE)"]
     fn sagebrush_dots_the_floors_and_never_a_wall(f: FaceFrame) {
         let rule = PLACEMENTS
             .iter()
@@ -103,9 +102,22 @@ both_faces!(
             shrubs += s_here;
             area += a_here;
         }
-        assert_eq!(bad, 0, "{:?}: sagebrush on a rock wall", f.face);
         assert!(area > 5000, "{:?}: mesa floor sampled {area} m²", f.face);
         let d = shrubs as f64 / area as f64;
+        // A quarter of the old 0.9 per 2 m cell (owner, 2026-11-16: "the underbrush in red deserts is
+        // insane. It should probably be like 1/4 of what is."): at most 0.07 per m² of floor.
+        assert!(
+            d <= 0.07,
+            "{:?}: {d:.3} sagebrush per m² of floor, more than a quarter of the old 0.225",
+            f.face
+        );
+        // Sagebrush on rock walls (4–8 at 0.9, before the 0.72 quarter; WORK_QUEUE CI item): an
+        // open bug, counted here and checked with SAGEBRUSH_WALLS=1, so the density checks run.
+        if std::env::var("SAGEBRUSH_WALLS").is_ok() {
+            assert_eq!(bad, 0, "{:?}: sagebrush on a rock wall", f.face);
+        } else if bad > 0 {
+            eprintln!("{:?}: {bad} sagebrush on a rock wall (open)", f.face);
+        }
         assert!(
             (0.25 * full..=1.05 * full).contains(&d),
             "{:?}: {d:.3} sagebrush per m² of floor, the rule's {full:.3}",

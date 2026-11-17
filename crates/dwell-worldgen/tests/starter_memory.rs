@@ -148,9 +148,11 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 ///
 /// Re-pinned 2026-11-17 for the 0.71 line: the species pines (0.71.0: grown from species data,
 /// giants to 4× on 2×2 trunks). The same hashes at the v0.71.0 tag and on main then: nothing since
-/// changed the starter's terrain within the line.
+/// changed the starter's terrain within the line. Re-pinned for the 0.72 line: the red desert's
+/// sagebrush at a quarter (the owner: "Yes red desert sage brush, go"; the Starter is to go, so
+/// only re-pinned).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "b127397972ab5bd3"), (Face::B, "a6bda9cc786ed02b")];
+    [(Face::A, "4241e28090c93b51"), (Face::B, "6d2cd10a16028d21")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

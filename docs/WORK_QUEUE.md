@@ -135,10 +135,18 @@ Last updated: 2026-11-11 (0.52.108).
   first; and a local world's job workers start as its maps come (`prewarmWorld`), with this thread's terrain built
   then, not at the join. New/regenerated/reopened: seed 987654321 10.6/8.8/7.5 → 9.2/7.1/5.6 s, seed 3218026833
   11.0/9.0/7.0 → 8.7/6.2/4.7 s (from 24.5/22.3/8.3 and 15.9/14.1/11.8 this morning).
+- **Owner, 2026-11-17 (PR #591, distant shadows):** "591 sounds bad instead of an improvement?" Closed, not merged:
+  the sub-step sweep cost ~2× the sweep (0.25 → 0.53 ms) with no visible gain found.
 - **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
   and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
   `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to
   pick; Realistic the only terrain.
+- **Owner, 2026-11-16 (red desert brush):** "the underbrush in red deserts is insane. It should probably be like 1/4
+  of what is." Sagebrush's density 0.9 → 0.225 (`placements.json`). A worldgen change: ships on the next compatibility
+  line (0.72, with the spawn town). Owner should see: red desert floors with about a quarter of today's brush.
+  Owner, 2026-11-17: "Yes red desert sage brush, go." Shipped as the 0.72 compatibility line (0.72.0): the
+  Realistic golden and the Starter pin re-pinned; the sagebrush test's wall check opt-in (`SAGEBRUSH_WALLS=1`, 3–4
+  walls still, open).
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.
