@@ -184,7 +184,11 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     fn broken_leaves_of_a_species_tree_drop_its_sapling_at_the_datas_rate(f: FaceFrame) {
-        let cfg = config(f, "adventure");
+        // The drop rate, not the hits (leaves take 8 by hand since 2026-11-17's tool sheet).
+        let cfg = ServerConfig {
+            one_hit_breaks: true,
+            ..config(f, "adventure")
+        };
         let mut fx = scene(f, cfg, Box::new(SeededEntropy(42)));
         // A grown oak on the grass, recorded: its last stage, a seed of the old size (since 0.71 a
         // giant's crown can stand out of reach).
@@ -240,6 +244,8 @@ dwell_world::both_faces!(
                 );
                 step(&mut fx, 1);
                 edit_on(&mut fx, f, BlockEditAction::Break, *l, 5, 0);
+                // The held tool's hit lands at its swing's contact (`contactS`, WORK_QUEUE item 25).
+                step(&mut fx, 20);
                 let [x, y, z] = f.cell(*l);
                 broken += usize::from(fx.server.world().get_voxel(x, y, z) == M.air);
             }

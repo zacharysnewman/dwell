@@ -4053,6 +4053,12 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 - **Rocks from plain dirt** (2026-11-11): confirmed, as built in 0.52.46.
 - **Backpack:** 30 slots.
 
+- **CI after today's merges (2026-11-17):** main's run for #1068 failed on two of my misses, fixed together: the
+  generated brush and structure tables still named `dwell:log[axis=y,width=4]` (#1064 added `joined`), and two tests
+  pinned the wood chunk as a lump (#1067) and leaves as one hit (#1060, the sapling drop test, which also didn't wait out
+  the tool's contact). `edit.spec.ts`'s palette test failed on CI only (a block left in the cell on re-aiming); it passes
+  on a GPU in 30 s: recheck on the next main run before treating it as a new bug.
+
 ## Follow-ups (owner, 2026-11-17)
 
 "Put door swing animation, hit table, and spawn search in a follow up section. Wait to work until we organize the
