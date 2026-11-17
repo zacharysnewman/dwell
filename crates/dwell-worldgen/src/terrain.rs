@@ -256,6 +256,10 @@ pub struct BiomeMap {
     pub uplift_rain: f64,
     /// Less rain per 10 % grade the ground falls along the wind (the lee).
     pub lee_dry: f64,
+    /// The rain never below this share of the flat rate (0: as before; 0.71, the climate's).
+    pub lee_floor: f64,
+    /// Over land the air recovers moisture over about this many m (0: never, as before).
+    pub recover_m: f64,
     /// The rainfall's share of the wetness (0: the river/lake wetness alone, the default).
     pub rain_share: f64,
     /// The wind sees the ground low-passed over about this many metres (0: the map's own), so the

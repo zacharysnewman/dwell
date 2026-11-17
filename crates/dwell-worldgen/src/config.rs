@@ -520,6 +520,9 @@ pub fn biome_map_from_json(v: &Value) -> Result<BiomeMap, String> {
         rain_share: n("rainShare")?,
         wind_smooth_m: n("windSmoothM")?,
         sharpen: n("sharpen")?,
+        // The climate's own (climate.json `rain`); a biome map's: as before.
+        lee_floor: 0.0,
+        recover_m: 0.0,
     })
 }
 
