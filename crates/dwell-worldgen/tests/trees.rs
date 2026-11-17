@@ -127,10 +127,10 @@ fn a_bad_trees_entry_fails_with_a_message() {
     v["trees"] = json!({ "pine_groves": 1 });
     let e = biome_from_json(&v).unwrap_err();
     assert!(e.contains("not one of its placements"), "{e}");
-    let mut v = base.clone();
-    v["trees"] = json!({ "boulders": 9 });
+    let mut v = file("biomes/presets/red_rock_mesa.json");
+    v["trees"] = json!({ "sagebrush": 9 });
     let e = biome_from_json(&v).unwrap_err();
-    assert!(e.contains("trees.boulders must be in [0, 3]"), "{e}");
+    assert!(e.contains("trees.sagebrush must be in [0, 3]"), "{e}");
     let mut v = base;
     v["trees"] = json!([1]);
     assert!(biome_from_json(&v).unwrap_err().contains("trees must map"));
@@ -146,8 +146,12 @@ fn the_presets_pick_their_trees() {
             .unwrap()
     };
     assert_eq!(tree_density_of(&p("sand_desert"), "pine_groves"), 0.0);
-    assert!(tree_density_of(&p("sand_desert"), "boulders") > 0.0);
-    assert!(tree_density_of(&p("red_rock_mesa"), "boulders") > 1.0);
+    // No boulders (owner, 2026-11-17: "they don't sit down on the ground properly, let's get rid
+    // of them for now").
+    for b in PRESET_BIOMES {
+        assert_eq!(tree_density_of(b, "boulders"), 0.0, "{}", b.name);
+    }
+    assert!(tree_density_of(&p("red_rock_mesa"), "sagebrush") > 0.0);
     assert!(tree_density_of(&p("boreal"), "pine_groves") > 1.0);
     assert!(tree_density_of(&p("mixed_forest"), "broadleaf_groves") > 0.0);
     assert!(tree_density_of(&p("tropical_beach"), "broadleaf_groves") > 0.0);

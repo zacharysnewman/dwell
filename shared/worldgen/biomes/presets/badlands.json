@@ -66,7 +66,7 @@
     }
   ],
   "decorations": [],
-  "placements": ["boulders"],
+  "placements": [],
   "ground": {"dwell:ground_rock": 2},
   "water": "dwell:water",
   "rockStack": "dwell:badland_beds",

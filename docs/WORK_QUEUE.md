@@ -16,6 +16,10 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner, 2026-11-17 (boulders):** "We have "boulders" distributed randomly, but they don't sit down on the ground
+  properly, let's get rid of them for now." The `boulders` placement taken out of every biome (presets, Realistic,
+  Starter); its definition kept for when they seat properly; talus (rocks at cliff bases) stays. A worldgen change:
+  the 0.74 line. Owner should see: no loose boulders on new worlds.
 - **Owner, 2026-11-17 (ships, cannons; up next after the current item, questions first):** "I have a few new features
   to add. A steering wheel (ships wheel), a rudder (we'll add a sail later, but while it'll be required, it'll be mostly
   for show), and cannons that shoot cannonballs. When these cannon balls hit terrain/other dynamic objects they'll have
