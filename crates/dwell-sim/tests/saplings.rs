@@ -50,6 +50,7 @@ fn scene(f: FaceFrame, cfg: ServerConfig, entropy: Box<dyn Entropy>) -> Fixture 
             .set_voxel(x, y, z, f.state(require(block)));
     }
     fx.join(1, &Client::new(1));
+    start_with_axe(&mut fx.server, 1);
     fx.send(1, Message::InventoryAction(InventoryAction::Hello));
     feet_at(&mut fx, f, 0.5, m_of_row(BASE), 0.5);
     step(&mut fx, 5);
@@ -141,8 +142,10 @@ dwell_world::both_faces!(
                 f.state(require(item)),
                 "the sapling block became the tree"
             );
-            // After daysPerStage × n days it is stage n.
-            let per = f64::from(SPECIES[usize::from(r.species)].days_per_stage);
+            // After daysPerStage × n days (over its own pace, owner 2026-11-15) it is stage n.
+            let sp = &SPECIES[usize::from(r.species)];
+            let per =
+                f64::from(sp.days_per_stage) / f64::from(dwell_worldgen::species::rate(sp, r.seed));
             let n = 3u8;
             while fx.server.world_days() < r.since + per * f64::from(n) {
                 fx.server.step();
@@ -183,20 +186,28 @@ dwell_world::both_faces!(
     fn broken_leaves_of_a_species_tree_drop_its_sapling_at_the_datas_rate(f: FaceFrame) {
         let cfg = config(f, "adventure");
         let mut fx = scene(f, cfg, Box::new(SeededEntropy(42)));
-        // A grown oak (stage 7) on the grass, recorded.
+        // A grown oak on the grass, recorded: its last stage, a seed of the old size (since 0.71 a
+        // giant's crown can stand out of reach).
+        let oak = &SPECIES[index("dwell:oak").unwrap()];
+        let last = (oak.stages - 1) as u8;
+        let seed = (0..256)
+            .find(|&s| {
+                dwell_worldgen::species::grow(oak, s, u32::from(last)).height <= oak.mature_height.1
+            })
+            .expect("an oak of the old size");
         let r = Record {
             anchor: f.cell([GRASS[0], BASE, 0]),
             face: f.face,
             species: index("dwell:oak").unwrap() as u16,
-            seed: 5,
-            stage: 7,
+            seed,
+            stage: last,
             since: 0.0,
             turns: 0,
             planter: PLANTED,
             variant: 0,
             stopped: false,
         };
-        let cells = cells_at(&r, 7);
+        let cells = cells_at(&r, last);
         for ([x, y, z], m) in &cells {
             fx.server.world().set_voxel(*x, *y, *z, *m);
         }

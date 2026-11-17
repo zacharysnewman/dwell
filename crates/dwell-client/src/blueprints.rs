@@ -25,6 +25,8 @@ pub struct Panel {
     pub more: usize,
     /// Cells left to build.
     pub left: usize,
+    /// Its site is still being cleared (docs/BLUEPRINTS.md §5b): its builders place nothing yet.
+    pub clearing: bool,
 }
 
 /// The blueprints the server sent, and the held Place's state.
@@ -144,6 +146,14 @@ impl ClientBlueprints {
     ) -> Option<Panel> {
         let g = self.ghosts.get(i)?;
         let (mut rows, left) = g.needs(get, have);
+        // As the server clears it: never into another blueprint's box (the client doesn't know
+        // the storehouses' built boxes, which only a neighbour's margin could reach).
+        let keep = |c: [i32; 3]| {
+            self.ghosts
+                .iter()
+                .any(|o| o.id != g.id && (0..3).all(|k| c[k] >= o.min[k] && c[k] <= o.max[k]))
+        };
+        let clearing = g.clearing(get, self.rules.builder.clear_margin_m, &keep);
         let more = rows.len().saturating_sub(self.rules.panel_rows);
         rows.truncate(self.rules.panel_rows);
         Some(Panel {
@@ -151,6 +161,7 @@ impl ClientBlueprints {
             rows,
             more,
             left,
+            clearing,
         })
     }
 
@@ -291,28 +302,27 @@ mod tests {
             ..record_of(&s, f, [0, 64, 0], 0).unwrap()
         }));
         let get = |c: [i32; 3]| Some(if c[1] < 64 { M.stone } else { M.air });
-        let have = |n: &str| if n == "dwell:log" { 12 } else { 3 };
+        let have = |_: &str| 3;
         let p = bp.panel(0, &get, &have).unwrap();
         assert_eq!(p.name, "dwell:bp_hut");
-        assert_eq!(p.left, 111);
+        assert_eq!(p.left, 154);
+        let need = |block, need| Need {
+            block,
+            have: 3,
+            need,
+        };
         assert_eq!(
             p.rows,
             vec![
-                Need {
-                    block: "dwell:log",
-                    have: 12,
-                    need: 61
-                },
-                Need {
-                    block: "dwell:stone",
-                    have: 3,
-                    need: 50
-                }
+                need("dwell:stone_brick", 76),
+                need("dwell:thatch", 40),
+                need("dwell:planks", 34),
+                need("dwell:door", 1),
             ]
         );
         assert_eq!(p.more, 0);
         bp.rules.panel_rows = 1;
         let p = bp.panel(0, &get, &have).unwrap();
-        assert_eq!((p.rows.len(), p.more), (1, 1));
+        assert_eq!((p.rows.len(), p.more), (1, 3));
     }
 }

@@ -137,7 +137,7 @@ fn sweep(fx: &mut Fixture, id: SessionId) {
     fx.send(
         id,
         Message::Chop(ChopAction::Sweep {
-            tool: "dwell:stone_axe".into(),
+            tool: "dwell:sword".into(),
             look: [1.0, 0.0, 0.0],
             vertical: false,
         }),
@@ -148,7 +148,7 @@ fn sweep(fx: &mut Fixture, id: SessionId) {
 fn an_exhausted_swing_is_refused_and_a_rested_one_draws_its_cost() {
     // face-a-only: the swing's cost is no face's; the drowning test covers both.
     let f = FaceFrame::A;
-    let cost = dwell_protocol::chopping::tool("dwell:stone_axe")
+    let cost = dwell_protocol::chopping::tool("dwell:sword")
         .unwrap()
         .swing
         .stamina_cost as f32;

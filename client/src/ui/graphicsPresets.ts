@@ -17,6 +17,7 @@ import { UPSCALE } from './renderScaleSettings';
 import { BLOOM_QUALITIES, CLOUD_QUALITIES, SHAFT_QUALITIES } from './viewSettings';
 import { SHADOW_QUALITIES } from './shadowSettings';
 import { WATER_QUALITIES } from './waterSettings';
+import { SSAO_QUALITIES } from './ssaoSettings';
 import type { FeatureSettings } from './featureSettings';
 
 export type PresetValue = string | number;
@@ -126,6 +127,14 @@ export const PRESET_FIELDS = {
     check: oneOf(BLOOM_QUALITIES),
     get: (s) => s.bloom,
     with: (s, v) => ({ ...s, bloom: v as Settings['bloom'] }),
+  },
+  ssao: {
+    check: oneOf(SSAO_QUALITIES),
+    get: (s) => s.ssao.quality,
+    with: (s, v) => ({
+      ...s,
+      ssao: { ...s.ssao, quality: v as Settings['ssao']['quality'] },
+    }),
   },
   clouds: {
     check: oneOf(CLOUD_QUALITIES),

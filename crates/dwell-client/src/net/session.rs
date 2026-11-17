@@ -221,6 +221,14 @@ impl Session {
         }
     }
 
+    /// Whether the world's mode allows `a`: the default mode's until Welcome has arrived.
+    pub fn allows(&self, a: dwell_protocol::modes::Ability) -> bool {
+        match self.world {
+            Some(w) => w.allows(a),
+            None => dwell_protocol::modes::default_mode().allows(a),
+        }
+    }
+
     /// Whether the world's mode places saved structures from the player's library
     /// (`structures`; STRUCTURES.md §9). A server that names no mode plays the default one.
     pub fn structures(&self) -> bool {
@@ -734,6 +742,8 @@ impl Session {
                     | Message::Steam(_)
                     | Message::Ecology(_)
                     | Message::Swordplay(_)
+                    // The server sends the world's blueprints on the world channel (BUGS.md #183).
+                    | Message::Blueprints(_)
             ) && (self.joined()
                 || self.worldgen_wait.is_some()
                 || matches!(self.state, SessionState::Confirming { .. }))

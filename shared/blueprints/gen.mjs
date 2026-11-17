@@ -50,6 +50,8 @@ const SECTIONS = {
     reachM: [1, 16, false],
     nearM: [8, 1024, false],
     perBlueprint: [0, 8, true],
+    clearMarginM: [0, 8, true],
+    clearPaceS: [0.05, 600, false],
   },
   storehouse: { rangeM: [4, 1024, false], reachM: [0.5, 16, false] },
 };
@@ -393,7 +395,7 @@ export function rust(d) {
     `    player_pace_ms: ${num(d.player.paceMs)},`,
     `    panel_rows: ${d.player.panelRows},`,
     `    ghost_face_cap: ${d.ghost.faceCap},`,
-    `    builder: BuilderRules { creature: ${JSON.stringify(d.builder.creature)}, pace_s: ${num(d.builder.paceS)}, reach_m: ${num(d.builder.reachM)}, near_m: ${num(d.builder.nearM)}, per_blueprint: ${d.builder.perBlueprint}, job: ${JSON.stringify(d.builder.job)} },`,
+    `    builder: BuilderRules { creature: ${JSON.stringify(d.builder.creature)}, pace_s: ${num(d.builder.paceS)}, reach_m: ${num(d.builder.reachM)}, near_m: ${num(d.builder.nearM)}, per_blueprint: ${d.builder.perBlueprint}, job: ${JSON.stringify(d.builder.job)}, clear_margin_m: ${d.builder.clearMarginM}, clear_pace_s: ${num(d.builder.clearPaceS)} },`,
     `    jobs: &[${d.jobs.map((j) => `JobRules { name: ${JSON.stringify(j.name)}, kind: JobKind::${j.kind[0].toUpperCase()}${j.kind.slice(1)}, carry_max: ${j.carryMax}, mixed_loads: ${j.mixedLoads}, wait_s: ${num(j.waitS)} }`).join(", ")}],`,
     `    storehouse: StorehouseRules { stock: StockMode::${d.storehouse.stock[0].toUpperCase()}${d.storehouse.stock.slice(1)}, range_m: ${num(d.storehouse.rangeM)}, reach_m: ${num(d.storehouse.reachM)} },`,
     `    carry_look: CarryLook { item: ${JSON.stringify(d.carryLook.item)}, joint: ${JSON.stringify(d.carryLook.joint)}, at: [${d.carryLook.at.map(num).join(", ")}], piece_m: ${num(d.carryLook.pieceM)}, per_layer: ${d.carryLook.perLayer}, kinds: &[${d.carryLook.kinds.map((k) => `CarryKind { block: ${JSON.stringify(k.block)}, piece_m: ${num(k.pieceM)}, per_layer: ${k.perLayer} }`).join(", ")}] },`,

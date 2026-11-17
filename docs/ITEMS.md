@@ -61,16 +61,18 @@ naming the entry, as does an unknown tool or giving both). The generator emits `
 palette's slot is a tool (`PaletteSlot.tool`, material 0) drawn as a handle and a head. The stone
 axe (`dwell:stone_axe`) sits after the log: held in creative, left click swings it, as the inventory's
 axe does in adventure. Owner, 2026-11-08. Since 2026-11-14 the axe has **one mode** (owner: "Let's simplify
-the axe to be like the shovel and pick, without the multiple modes"): its level swing; right click does
-nothing with it (a tool has a second stance only with a `heldVertical`: the sword's).
+the axe to be like the shovel and pick, without the multiple modes"); since 2026-11-15 it **is a break tool
+as the pickaxe and the shovel** (owner: "it was different from the other tools"; docs/BLOCK_DAMAGE.md §14):
+its Break is a block edit at its contact counting down a log's hits, the last breaking the whole log (a
+tree above it falls); right click does nothing with it.
 
 The six tools (0.52.21; owner, 2026-11-10: "pickaxe, shovel, and axe. Stone and Metal variants")
-follow it: the metal axe (a chopping tool of its own, biting 0.2 m to the stone axe's 0.1), the
-stone and metal pickaxe and the wooden and metal shovel. A `tool` may also name a **breaking tool**
+follow it: the metal axe, the stone and metal pickaxe and the wooden and metal shovel, all break tools. A `tool` may also name a **breaking tool**
 (`shared/tools/tools.json` `breaking.tools`): it places nothing (Place is refused) and Break breaks as
 a bare hand does. Every tool's item has a model look (`shared/inventory` `look.model`, a prop of
 `shared/models/props.json`), so the hotbar, the backpack, a loose item and the hand all show its
-model (`Held::Model`: the axe in its swing's hold, the others in the axe's level hold). `breaking`
+model (`Held::Model`, in the tools' hold; others see a player's held tool by name, `HeldTools`, a break
+tool's as their own hand holds it). `breaking`
 gives each tool a class (`pickaxe`: stone; `shovel`: dirt, grass, sand; `axe`: wood) and a tier
 (`stone` 1.5, `metal` 3, a multiple of the bare hand's speed, and each a `chunk`: stone 1, metal 2, the size of
 the piece a hit takes off; BLOCK_DAMAGE.md §9); `break_speed(block, held)` is that
@@ -121,10 +123,10 @@ comes inside the arms' near plane (`ARMS_NEAR` + 1 cm).
 
 **Hold to keep swinging (WORK_QUEUE item 17).** Owner, 2026-11-12: "I wanted you to be able to hold
 the key down for tools like the axe." Holding the use (Break) button with a tool whose data says
-`repeatOnHold` swings it again and again until let go: a chopping tool (`tools[].repeatOnHold` in
-`shared/tools/tools.json`: both axes, the sword) as soon as the last swing is over (its whole length and
+`repeatOnHold` swings it again and again until let go: a swung tool (`tools[].repeatOnHold` in
+`shared/tools/tools.json`: the sword) as soon as the last swing is over (its whole length and
 `swingSeconds`), a break tool (`breaking.tools[].repeatOnHold` and `repeatS`, default 0.5 s and never
-before its `contactS`: the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
+before its `contactS`: the axes, the pickaxes, the shovels) every `repeatS`. Each repeat is a whole new swing,
 aimed and swept when it starts (what is targeted then), sent as a click's is, so others see every swing
 by its swing count; it lands one contact, and a tool wears only on a hit. Letting go stops the repeats;
 the swing under way plays out. The mouse, the controller's Break and, in touch Break mode with such a
@@ -154,7 +156,7 @@ Owner, 2026-11-12: "we'll want to bring in the swords from the model pack we got
 weapons." The sword (`dwell:sword`, shared/inventory, a model look `sword` from the same
 *3D Low Poly Tools Weapons Containers* pack) is a tool of kind **`weapon`** in `shared/tools/tools.json`
 and an item of the creative inventory's **Weapons** group (`items.json` `category: weapons`); in
-adventure it will come by recipe later. Held, it swings as the axe does (Use toggles level and vertical: the sword keeps two stances,
+adventure it will come by recipe later. Held, it swings as the axe did before it became a break tool (Use toggles level and vertical: the sword keeps two stances,
 its `held`/`heldVertical` holds `sword` and `sword_vertical` in shared/characters), and its swing
 strikes the animals its arc crosses at contact (never a player): damage, knockback, the most creatures
 a swing hits and its durability are its `weapon` data, its swordplay (blocking by blade angle) its
@@ -215,7 +217,7 @@ prediction alike.
 |---|---|
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
-| `needsSupport` | `below`: stands on the cell under it and goes with it (tall grass, torch); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
+| `needsSupport` | `below`: stands on the cell under it and goes with it, dropping its drops however that cell goes — a break, a region, a blast, a fall (tall grass, torch; BUGS.md #178); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
 | `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 
@@ -405,7 +407,7 @@ the item each gives, a rod or lump look; rules: the blocks it lies on, the canop
 beside, a density) → `shared/ground/gen.mjs` → `dwell-world` `ground.gen.rs`. They are drawn in the
 chunk mesh and have no collision. **Hit one** (0.50.74; the break action: the mouse's break
 click, the touch Break button, the controller's break, an axe's swing) and it is knocked loose as
-the spinning loose item of the same item a drop gives (`dwell:stick`, `dwell:rock`: they stack),
+the spinning loose item of the same item a drop gives (`dwell:stick`, `dwell:rock_shard`: they stack),
 which walking near collects; in creative, where breaking drops nothing, it simply vanishes. The hit
 goes to the item when it is nearer than the block behind it, so the ground under it isn't broken.
 There is no pick-up button: E is the backpack, X the spyglass. The server keeps the knocked ones gone
@@ -423,14 +425,18 @@ placements overlay shows the ground items in their looks' colours beside the str
 ## 9. Pieces, combining and tool wear **[built, 0.52.46]**
 
 - **Pieces** (owner, 2026-11-11: "8 Rock shards make a rock slab, 8 dirt clumps make a dirt slab, 8 wood
-  chunks to make a log slab"): a ½ m cell breaks into 8 pieces of its material, as its block's `drops`
+  chunks to make a log slab"; since 2026-11-15, 4 pieces, all on the break: "4 chunks drop at the end not as you
+  chop"): a ½ m cell breaks into 4 pieces of its material, as its block's `drops`
   (`{ "item": "dwell:rock_shard", "count": 8 }`): stone and its ramp → `dwell:rock_shard`; dirt, grass,
   snowy grass and their ramps → `dwell:dirt_clump`; log → `dwell:wood`, relabelled "Wood chunk" (its
   name kept: saves hold it; the bucked log's `buckDrops` keep it too), drawn as a lump of log (its
   `look`, like the rock shard's). BLOCK_DAMAGE's split applies:
   half (4) over the hits before the last, the rest on the destroy (stone pickaxe: 1 a hit, 4 on the
   break). Grass, snowy grass and now dirt keep (dirt: gain) the random rock (chance 0.5, "we still
-  want rocks to be found in grass and dirt at random"); leaves keep their sticks; tall grass drops a
+  want rocks to be found in grass and dirt at random"), a rock shard since 2026-11-15 (owner: "One item: rock =
+  shard"; BUGS.md #181): `dwell:rock` is no longer an item, only an `aliases` entry of `inventory.json`
+  that reads an old save's or a sender's Rock as a Rock shard, 1:1 (`dwell_protocol::inventory::canonical_item`);
+  leaves keep their sticks; tall grass drops a
   `dwell:grass_fiber` every time (owner: "2 grass fibers would be the final ingredient for stone
   tools"). Felled pieces (bodies), sand, snow, ice and the rest keep their drops.
 - **Combining** (owner, 2026-11-11): recipes as data, `shared/inventory/inventory.json` `recipes`
@@ -444,13 +450,16 @@ placements overlay shows the ground items in their looks' colours beside the str
   section lists the recipes the inventory can make with how many times and a button each (adventure:
   creative has no backpack, everything is in its catalogue). A button names the output by the
   recipe's optional `label` (the slabs: "Stone slab", "Dirt slab", "Log slab": a slab's item is its
-  block, labelled "Stone"), else by the output item's label. Recipes: 8 rock shards → stone (the ½ m
-  slab), 8 dirt clumps → dirt, 8 wood chunks → log; 2 sticks + 2 rock shards + 2 grass fibers → a stone
-  axe, or the same inputs → a stone pickaxe (the player picks).
+  block, labelled "Stone"), else by the output item's label. Recipes (4 pieces since 2026-11-15; 8 before): 8 rock shards → stone (the ½ m
+  slab), 8 dirt clumps → dirt, 8 wood chunks → log, 8 sand clumps → sand (2026-11-14: sand breaks into 8
+  `dwell:sand_clump`, as dirt into dirt clumps; "let's leave them all at 8"); 2 sticks + 2 rock shards + 2
+  grass fibers → a stone axe, a stone pickaxe or a stone shovel (the player picks); 4 sticks + 2 grass fibers
+  → a wooden shovel (owner, 2026-11-14). Adventure starts with a wooden shovel (`startingItems`; owner,
+  2026-11-14: "start with a wooden shovel instead of an axe since dirt drops rocks").
 - **Tool wear** (owner, 2026-11-11: the stone axe "should survive 32 hits of durability"):
   `shared/tools/tools.json` `durability` (`items`: tool item → hits; `creativeWear`; `breakSound`),
   validated and emitted (`DURABILITY`, `CREATIVE_WEAR`, `WEAR_BREAK_SOUND`). The stone axe, stone
-  pickaxe and wooden shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
+  pickaxe, wooden shovel and stone shovel 32; the metal axe, pickaxe and shovel 64 (owner, 2026-11-12: metal tools
   "have double durability"; they also break in about half the hits with pieces twice the size,
   BLOCK_DAMAGE.md §9). A hit that counts uses one: a chop, or a block
   break hit (one the server takes, refused ones don't) with the tool held; at none left the tool is

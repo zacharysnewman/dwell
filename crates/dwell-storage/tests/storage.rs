@@ -56,6 +56,7 @@ fn everything_round_trips_through_a_file() {
     {
         let db = WorldDb::open(&path).expect("creates");
         let batch = SaveBatch {
+            lazy: false,
             meta: Some(meta()),
             chunks: vec![SavedChunk {
                 coord: ChunkCoord::new(1, -2, 3),
@@ -732,4 +733,44 @@ fn each_players_markers_are_their_own_and_a_world_without_them_has_none() {
     assert_eq!(db.load_markers(&a), Some(vec![1, 0, 0]));
     assert_eq!(db.load_markers(&b), Some(vec![1, 0, 0]));
     assert_eq!(db.load_markers(&[5; 32]), None);
+}
+
+/// Priority 0 (owner, 2026-11-16: "the server never drops below 60fps"): an autosave commits
+/// lazily (`SaveBatch::lazy`, no sync of the file: the browser's took 20–40 ms on the server's tick
+/// every 5 s). A lazy save reads back at once, isn't in the file until a durable one follows, and
+/// then both are.
+#[test]
+fn a_lazy_save_is_kept_by_the_next_durable_one() {
+    let file = dwell_storage::BytesFile::new(Vec::new());
+    let db = WorldDb::open_backend(file.clone()).expect("opens");
+    let (a, b) = (ChunkCoord::new(1, -2, 3), ChunkCoord::new(4, -2, 3));
+    let chunk = |c| SavedChunk {
+        coord: c,
+        revision: 1,
+        voxels: chunk_of(require("dwell:sand")),
+    };
+    db.save(&SaveBatch {
+        lazy: true,
+        meta: Some(meta()),
+        chunks: vec![chunk(a)],
+        ..SaveBatch::default()
+    })
+    .expect("saves");
+    assert!(db.load_chunk(a).is_some(), "read back at once");
+    let reopened = WorldDb::open_backend(dwell_storage::BytesFile::new(file.bytes()));
+    assert!(
+        reopened.map_or(true, |d| d.load_chunk(a).is_none()),
+        "not in the file yet"
+    );
+    db.save(&SaveBatch {
+        chunks: vec![chunk(b)],
+        ..SaveBatch::default()
+    })
+    .expect("saves");
+    let reopened =
+        WorldDb::open_backend(dwell_storage::BytesFile::new(file.bytes())).expect("opens");
+    assert!(
+        reopened.load_chunk(a).is_some() && reopened.load_chunk(b).is_some(),
+        "both kept"
+    );
 }

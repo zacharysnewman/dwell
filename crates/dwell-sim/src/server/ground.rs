@@ -23,6 +23,21 @@ impl Server {
         if self.ground.cells.contains(&cell) {
             return None;
         }
+        // The rules' cheap tests first, as they stand now (the item's cell open, flat ground under
+        // it): a leaf or a log gone never held one, and the chunk's densities (the biomes, ~ms)
+        // aren't worked out for it (priority 0: a growing tree's cleared leaves cost ~4 ms a tick).
+        let f = FaceFrame::at_row(cell[1]);
+        let [x, y, z] = f.cell(cell);
+        let under = f.cell([x, y - 1, z]);
+        let below = match instead {
+            Some((at, m)) if at == under => m,
+            _ => self.world.get_voxel_if_loaded(under),
+        };
+        if !dwell_world::ground::open(self.world.get_voxel_if_loaded(cell))
+            || !dwell_world::ground::flat_ground(below)
+        {
+            return None;
+        }
         let seed = self.config.world_seed;
         let density = self.ground_density_of(cell);
         let world = &mut self.world;
@@ -140,6 +155,15 @@ impl Server {
     pub(super) fn knock_ground(&mut self, broken: &[([i32; 3], StateId)]) {
         let mut gone = Vec::new();
         for &(cell, was) in broken {
+            // A tree's block (a log or leaves) gone never held a ground item: the items lie on the
+            // terrain as generated, where a tree's cells were air (priority 0: a growing tree's
+            // cleared leaves cost ~2 ms a step working that out).
+            if matches!(
+                dwell_blocks::try_info(was).map(|i| i.support_role),
+                Some(dwell_blocks::SupportRole::Carrier | dwell_blocks::SupportRole::Rider)
+            ) {
+                continue;
+            }
             let f = FaceFrame::at_row(cell[1]);
             let [x, y, z] = f.cell(cell);
             let above = f.cell([x, y + 1, z]);

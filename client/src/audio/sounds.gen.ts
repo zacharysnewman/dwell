@@ -285,6 +285,16 @@ export const SOUND_DATA: SoundData = {
       "sound": "dwell:breath_heavy"
     },
     {
+      "name": "item_pickup",
+      "sound": "dwell:item_pickup",
+      "self": "body"
+    },
+    {
+      "name": "item_craft",
+      "sound": "dwell:item_craft",
+      "self": "hand"
+    },
+    {
       "name": "gasp",
       "sound": "dwell:gasp"
     },
@@ -569,6 +579,9 @@ export const SOUND_DATA: SoundData = {
       "event:break"
     ],
     "Copy": [
+      "event:tool"
+    ],
+    "Select, copy and paste a box": [
       "event:tool"
     ],
     "Paste mode on or off": [
@@ -917,6 +930,14 @@ export const SOUND_DATA: SoundData = {
   "brush": {
     "everyM": 2.5,
     "minS": 0.3
+  },
+  "pickup": {
+    "windowS": 0.5,
+    "reachM": 3,
+    "minS": 0.09
+  },
+  "craft": {
+    "windowS": 1
   },
   "sounds": {
     "dwell:stone_step": {
@@ -6828,6 +6849,248 @@ export const SOUND_DATA: SoundData = {
           "env": {
             "attack": 0.25,
             "decay": 0.45
+          }
+        }
+      ]
+    },
+    "dwell:item_craft": {
+      "gain": 0.55,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 0.8,
+        "gain": 1.2,
+        "cutoff": 0.08,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "modal",
+          "freq": 380,
+          "gain": 0.32,
+          "partials": [
+            [
+              1,
+              1,
+              0.07
+            ],
+            [
+              2.71,
+              0.45,
+              0.035
+            ],
+            [
+              5.2,
+              0.2,
+              0.015
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 350
+            },
+            {
+              "freq": 410
+            },
+            {
+              "freq": 365
+            },
+            {
+              "freq": 395
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.13,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1700,
+              "q": 1.4
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.018
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 540,
+          "gain": 0.2,
+          "at": 0.075,
+          "partials": [
+            [
+              1,
+              1,
+              0.05
+            ],
+            [
+              2.71,
+              0.4,
+              0.025
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 500,
+              "at": 0.07
+            },
+            {
+              "freq": 590,
+              "at": 0.08
+            },
+            {
+              "freq": 520,
+              "at": 0.085
+            },
+            {
+              "freq": 560,
+              "at": 0.072
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.08,
+          "at": 0.075,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2100,
+              "q": 1.4
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.014
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 1760,
+          "gain": 0.06,
+          "at": 0.12,
+          "partials": [
+            [
+              1,
+              1,
+              0.38
+            ],
+            [
+              2.76,
+              0.3,
+              0.16
+            ],
+            [
+              5.4,
+              0.12,
+              0.07
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 1568
+            },
+            {
+              "freq": 1976
+            },
+            {
+              "freq": 1661
+            },
+            {
+              "freq": 1865
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:item_pickup": {
+      "gain": 0.45,
+      "reverb": 0.03,
+      "variation": {
+        "pitch": 1.2,
+        "gain": 1.5,
+        "cutoff": 0.1,
+        "time": 0.12
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 520,
+          "to": 980,
+          "gain": 0.3,
+          "env": {
+            "attack": 0.002,
+            "decay": 0.055
+          },
+          "alts": [
+            {
+              "freq": 470,
+              "to": 900
+            },
+            {
+              "freq": 580,
+              "to": 1080
+            },
+            {
+              "freq": 540,
+              "to": 860
+            },
+            {
+              "freq": 500,
+              "to": 1040
+            }
+          ]
+        },
+        {
+          "source": "modal",
+          "freq": 1400,
+          "gain": 0.08,
+          "partials": [
+            [
+              1,
+              1,
+              0.03
+            ],
+            [
+              2.3,
+              0.35,
+              0.015
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 1320
+            },
+            {
+              "freq": 1520
+            },
+            {
+              "freq": 1450
+            },
+            {
+              "freq": 1260
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.07,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 1.2
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.012
           }
         }
       ]

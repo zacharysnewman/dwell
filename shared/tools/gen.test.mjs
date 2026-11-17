@@ -1,12 +1,45 @@
 // Tools and woods: validation and outputs (shared/tools/gen.mjs, ADR 0067).
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadNames, loadTools, toolsRust, toolsTs, validateTools } from './gen.mjs';
+
+/** The build's tools with the chopping axes of fixtures/chop_axes.json put back first (the axes
+ * are break tools in the build since 2026-11-14; the chopping vocabulary is tested on these), as
+ * break tools without their own hold (a chopping tool's hold is its swing's). */
+const chopData = () => {
+  const data = loadTools();
+  const fx = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/chop_axes.json'), 'utf8'));
+  data.tools = [...fx.tools, ...data.tools];
+  data.hints = { ...fx.hints, ...data.hints };
+  for (const b of data.breaking.tools) {
+    if (fx.tools.some((t) => t.name === b.item)) {
+      for (const k of ['contactS', 'repeatOnHold', 'repeatS', 'clip']) delete b[k];
+    }
+  }
+  return data;
+};
 
 const fresh = () => {
   const { items, blocks } = loadNames();
-  return [loadTools(), items, blocks];
+  return [chopData(), items, blocks];
 };
+
+test("the build's axes are break tools as the pickaxes and shovels, not chopping tools", () => {
+  const { items, blocks } = loadNames();
+  const d = validateTools(loadTools(), items, blocks);
+  const pick = d.breaking.tools.find((t) => t.item === 'dwell:stone_pickaxe');
+  for (const axe of ['dwell:stone_axe', 'dwell:metal_axe']) {
+    assert.ok(!d.tools.some((t) => t.name === axe), `${axe}: no chopping swing`);
+    const b = d.breaking.tools.find((t) => t.item === axe);
+    assert.equal(b.class, 'axe');
+    assert.equal(b.contactS, pick.contactS, `${axe}: the pickaxe's contact`);
+    assert.equal(b.repeatS, pick.repeatS, `${axe}: the pickaxe's repeat`);
+  }
+  assert.match(toolsRust(d), /item: "dwell:stone_axe", class: "axe", tier: "stone", speed: 1\.5, contact_s: 0\.26, repeat_s: Some\(0\.5\)/);
+});
 
 test("the build's data validates: the stone axe and the log", () => {
   const d = validateTools(...fresh());
@@ -56,7 +89,7 @@ test("the axe's held item, the log's chips and its breakWith reach the Rust tabl
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
   assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 3, piece: "dwell:wood", color: \[217, 179, 122\]/);
-  assert.match(rs, /\("dwell:log", ToolKind::Axe\),/);
+  assert.match(rs, /\("dwell:log", "axe"\),/);
 });
 
 test("a tool's swing, its holds and a wood's leaves, sway and sounds are data", () => {
@@ -97,12 +130,12 @@ test('a bad swing, leaves, sway or sound fails naming it', () => {
   bad((d) => (d.woods[0].sounds[0].event = 'nope'), /sounds\[0\]\.event: no sound event "nope"/);
 });
 
-test('a block needing a tool kind by data alone (breakWith) is emitted, an unknown kind fails', () => {
+test('a block needing a break tool class by data alone (breakWith) is emitted, an unknown class fails', () => {
   const [data, items, blocks] = fresh();
-  blocks.set('test:hard_wood', { breakWith: 'axe' });
-  assert.match(toolsRust(validateTools(data, items, blocks)), /\("test:hard_wood", ToolKind::Axe\),/);
-  blocks.set('test:hard_wood', { breakWith: 'pick' });
-  assert.throws(() => validateTools(data, items, blocks), /test:hard_wood\.breakWith must be one of axe/);
+  blocks.set('test:hard_rock', { breakWith: 'pickaxe' });
+  assert.match(toolsRust(validateTools(data, items, blocks)), /\("test:hard_rock", "pickaxe"\),/);
+  blocks.set('test:hard_rock', { breakWith: 'pick' });
+  assert.throws(() => validateTools(data, items, blocks), /test:hard_rock\.breakWith must be one of pickaxe, shovel, axe/);
 });
 
 test('breaking: the right tool class per material and a speed per tier reach the Rust table', () => {
@@ -117,10 +150,12 @@ test('breaking: the right tool class per material and a speed per tier reach the
   // Owner, 2026-11-12: metal tools "break double sized bigger chunks off and reach 50% broken
   // faster": twice the stone tier's speed (the bigger chunks follow from the fewer hits: the bite rule).
   const of = (i) => d.breaking.tools.find((t) => t.item === i);
-  for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:wooden_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
+  for (const [metal, stone] of [['dwell:metal_pickaxe', 'dwell:stone_pickaxe'], ['dwell:metal_shovel', 'dwell:stone_shovel'], ['dwell:metal_axe', 'dwell:stone_axe']]) {
     assert.equal(of(metal).speed, 2 * of(stone).speed, metal);
     assert.equal(of(metal).chunk, undefined, metal);
   }
+  // Owner, 2026-11-14: the stone shovel digs faster than the wooden one (the `wood` tier).
+  assert.ok(speed('dwell:stone_shovel') > speed('dwell:wooden_shovel') && speed('dwell:wooden_shovel') > 1);
   const rs = toolsRust(d);
   assert.match(rs, /\("dwell:stone", "pickaxe"\)/);
   assert.match(rs, /BreakTool \{ item: "dwell:metal_shovel", class: "shovel", tier: "metal", speed: 3\.0, contact_s: 0\.26, repeat_s: Some\(0\.5\), clip: "break_metal_shovel" \}/);
@@ -144,7 +179,7 @@ test('breaking: a fixture tool class and tier by data alone, and bad entries fai
   };
   bad((b) => b.tools.push({ item: 'test:nope', class: 'axe', tier: 'stone' }), /no item "test:nope"/);
   bad((b) => (b.tools[0].class = 'hammer'), /unknown class "hammer" \(pickaxe, shovel, axe\)/);
-  bad((b) => (b.tools[0].tier = 'gold'), /unknown tier "gold" \(stone, metal\)/);
+  bad((b) => (b.tools[0].tier = 'gold'), /unknown tier "gold" \(wood, stone, metal\)/);
   bad((b) => b.classes.axe.push('dwell:stone'), /dwell:stone is in both pickaxe and axe/);
   bad((b) => b.classes.axe.push('dwell:nope'), /breaking\.classes\.axe: no block "dwell:nope"/);
   bad((b) => (b.tiers.stone = 0), /breaking\.tiers\.stone is a speed above 0/);
@@ -175,7 +210,7 @@ test("a wood's cut look (its carved faces, ADR 0067 §11) is validated and reach
 
 test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, a fixture wood's by data alone", () => {
   const { items, blocks } = loadNames(true);
-  const data = loadTools();
+  const data = chopData();
   data.woods.push({
     ...data.woods[0],
     block: 'test:post',
@@ -188,7 +223,7 @@ test("a wood's bites and their cracks (WORK_QUEUE item 26) are data: validated, 
     /block: "test:post", .*bite: BiteLook \{ width_m: 0\.2, ends_m: 0\.05, step: 0\.5, band_m: 0\.3, depth_per_mouth: 3\.0, width_per_depth: 1\.0 \}, cracks: Some\(Cracks \{ tiles: &\["crackStone1", "crackStone2", "crackStone3", "crackStone4"\], stages: &\[0\.1, 0\.3, 0\.5, 0\.7\], strength: 0\.4, span: 1\.5 \}\) \}/,
   );
   const bad = (edit, re) => {
-    const data = loadTools();
+    const data = chopData();
     edit(data.woods[0].cut);
     assert.throws(() => validateTools(data, items, blocks), re);
   };
@@ -230,30 +265,30 @@ test("the axe clears leaves, not the stump's wood ramp (chopped); a fixture tool
 
 test('a fixture wood with its own fell wedge by data alone; a bad wedge fails naming it', () => {
   const { items, blocks } = loadNames(true);
-  const data = loadTools();
+  const data = chopData();
   data.woods.push({ ...data.woods[0], block: 'test:post', fellWedge: 'test:post_ramp', leaves: { block: null } });
   const d = validateTools(data, items, blocks);
   assert.match(toolsRust(d), /block: "test:post", .*fell_wedge: Some\("test:post_ramp"\)/);
   const bad = (wedge, re) => {
-    const data = loadTools();
+    const data = chopData();
     data.woods[0].fellWedge = wedge;
     assert.throws(() => validateTools(data, items, blocks), re);
   };
   bad('dwell:nope', /woods\.dwell:log\.fellWedge: no block named "dwell:nope"/);
   bad('dwell:stone', /fellWedge: dwell:stone is not a ramp block/);
   bad('dwell:stone_ramp', /fellWedge: dwell:stone_ramp must be a carrier/);
-  const rows = loadTools();
+  const rows = chopData();
   rows.woods[0].fellWedgeTrunk = 'flat';
   assert.throws(() => validateTools(rows, items, blocks), /woods\.dwell:log\.fellWedgeTrunk must be one of open, matching/);
   // The trunk's tip (owner, 2026-11-09: "like we used to") is data: validated, 0 by default.
   rows.woods[0].fellWedgeTrunk = 'open';
   rows.woods[0].fellTip = -1;
   assert.throws(() => validateTools(rows, items, blocks), /woods\.dwell:log\.fellTip must be a number in \[0, 2\]/);
-  const plain = loadTools();
+  const plain = chopData();
   delete plain.woods[0].fellTip;
   delete plain.woods[0].fellWedgeTrunk;
   assert.match(toolsRust(validateTools(plain, items, blocks)), /fell_wedge_matching: true, fell_tip: 0\.0, chop2: Chop2Wood \{[^}]*\} \}/);
-  assert.match(toolsRust(validateTools(loadTools(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0, chop2: Chop2Wood \{[^}]*\} \}/);
+  assert.match(toolsRust(validateTools(chopData(), items, blocks)), /block: "dwell:log", .*fell_tip: 1\.0, chop2: Chop2Wood \{[^}]*\} \}/);
 });
 
 test("block damage: the data's hits reach Rust and TS; a fixture block by data alone; bad entries fail naming them", () => {
@@ -331,13 +366,14 @@ test("block damage: the data's hits reach Rust and TS; a fixture block by data a
   bad({ default: 3, chips: { count: 5, shards: 9 } }, /test:clay\.damage\.chips\.shards must be a whole number in \[0, 8\]/);
 });
 
-test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits, the metal ones 64, creative does not wear, a fixture tool by data alone', () => {
+test('durability: the stone axe, stone pickaxe, wooden shovel and stone shovel survive 32 hits, the metal ones 64, creative does not wear, a fixture tool by data alone', () => {
   const [tools, items, blocks] = fresh();
   const d = validateTools(tools, items, blocks);
   assert.deepEqual(d.durability.items, [
     { item: 'dwell:stone_axe', hits: 32 },
     { item: 'dwell:stone_pickaxe', hits: 32 },
     { item: 'dwell:wooden_shovel', hits: 32 },
+    { item: 'dwell:stone_shovel', hits: 32 },
     // Owner, 2026-11-12: metal tools "have double durability".
     { item: 'dwell:metal_axe', hits: 64 },
     { item: 'dwell:metal_pickaxe', hits: 64 },
@@ -346,7 +382,7 @@ test('durability: the stone axe, stone pickaxe and wooden shovel survive 32 hits
     { item: 'dwell:sword', hits: 120 },
   ]);
   assert.equal(d.durability.creativeWear, false);
-  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\), \("dwell:sword", 120\)\];/);
+  assert.match(toolsRust(d), /pub static DURABILITY: &\[\(&str, u16\)\] = &\[\("dwell:stone_axe", 32\), \("dwell:stone_pickaxe", 32\), \("dwell:wooden_shovel", 32\), \("dwell:stone_shovel", 32\), \("dwell:metal_axe", 64\), \("dwell:metal_pickaxe", 64\), \("dwell:metal_shovel", 64\), \("dwell:sword", 120\)\];/);
   assert.match(toolsRust(d), /pub const CREATIVE_WEAR: bool = false;/);
   assert.match(toolsTs(d), /'dwell:stone_axe': 32,/);
   tools.durability.items['dwell:metal_pickaxe'] = 200;

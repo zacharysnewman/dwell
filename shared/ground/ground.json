@@ -9,7 +9,7 @@
     },
     {
       "name": "dwell:ground_rock",
-      "item": "dwell:rock",
+      "item": "dwell:rock_shard",
       "scale": [0.7, 1.4]
     }
   ],

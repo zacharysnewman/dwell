@@ -274,6 +274,18 @@ pub fn open_faces(
     covers: &dyn Fn(StateId) -> bool,
     size_m: [f64; 3],
 ) -> Vec<Face> {
+    open_faces_beside(m, at, covers, size_m, &|_| false)
+}
+
+/// [`open_faces`], keeping too the faces toward a neighbour `opened` says may show them (an
+/// offset from the cell: a damaged block's carving can, BUGS.md #190).
+pub fn open_faces_beside(
+    m: StateId,
+    at: &dyn Fn([i32; 3]) -> StateId,
+    covers: &dyn Fn(StateId) -> bool,
+    size_m: [f64; 3],
+    opened: &dyn Fn([i32; 3]) -> bool,
+) -> Vec<Face> {
     let Some((section, axis)) = section_of(m) else {
         return Vec::new();
     };
@@ -286,10 +298,14 @@ pub fn open_faces(
                 return true;
             }
             let n = at(face_offset(face));
-            joined & (1 << face) == 0 && !(covers(n) && section_of(n).is_none())
+            joined & (1 << face) == 0
+                && (opened(face_offset(face)) || !(covers(n) && section_of(n).is_none()))
         }
         Part::Cap(end) => {
             let d = face_offset(face_index(axis, end));
+            if opened(d) {
+                return true;
+            }
             let n = at(d);
             if section_of(n).is_none() {
                 return !covers(n);

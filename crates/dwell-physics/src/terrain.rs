@@ -49,6 +49,8 @@ type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
 struct Watch {
     stamp: u64,
     revision: u32,
+    /// Its sides' collision changes (`Chunk::side_revision`) as last read.
+    sides: [u32; 6],
     users: u32,
 }
 
@@ -71,6 +73,14 @@ pub struct TerrainCollision {
     /// The chunks whose `applied` cells differ from their `solid` ones.
     behind: std::collections::BTreeSet<(i32, i32, i32)>,
     stats: CollisionStats,
+    /// In a generating world (the server's): the chunks a reach build waits for (it and its
+    /// neighbours, which its build reads), for the generation jobs to bring first; and the reach
+    /// builds this tick may still force, generating what they read (priority 0: a sprint's reach
+    /// generated 9–12 chunks in one tick, ~100 ms in the browser).
+    wanting: Vec<ChunkCoord>,
+    force_budget: usize,
+    /// Rebuilds `sync` waits on (their neighbours not generated yet), retried each sync.
+    pending_rebuild: Vec<ChunkCoord>,
 }
 
 /// The full-cube cells a tick puts into (or takes out of) the collider beyond those near players
@@ -138,6 +148,22 @@ fn signature(world: &VoxelWorld, c: ChunkCoord) -> (u64, u32) {
     world
         .find(c)
         .map_or((0, 0), |ch| (ch.stamp(), ch.collision_revision()))
+}
+
+fn sides(world: &VoxelWorld, c: ChunkCoord) -> [u32; 6] {
+    world.find(c).map_or([0; 6], |ch| ch.side_revision())
+}
+
+/// Whether a change in chunk `c` whose sides `changed` (−x, +x, −y, +y, −z, +z) may change its
+/// neighbour `n`'s collision: `n` reads only `c`'s cells near it, which lie near every side of `c`
+/// facing `n`, so one of those sides unchanged leaves them as they were.
+fn reaches(c: ChunkCoord, n: ChunkCoord, changed: [bool; 6]) -> bool {
+    let d = [n.x - c.x, n.y - c.y, n.z - c.z];
+    d.iter().enumerate().all(|(axis, &v)| match v {
+        -1 => changed[axis * 2],
+        1 => changed[axis * 2 + 1],
+        _ => true,
+    })
 }
 
 /// The chunks a loaded chunk's collision reads: the 27 around it, or (empty) itself.
@@ -340,6 +366,10 @@ impl TerrainCollision {
             applied: HashMap::default(),
             behind: std::collections::BTreeSet::new(),
             stats: CollisionStats::default(),
+            wanting: Vec::new(),
+            // Unbounded until a tick sets it (direct calls, tests, tools build at once).
+            force_budget: usize::MAX,
+            pending_rebuild: Vec::new(),
         }
     }
 
@@ -527,6 +557,39 @@ impl TerrainCollision {
     }
 
     /// (Re)builds a chunk's collision from the world, replacing what it held.
+    /// Builds chunk `c`'s collider unless, in a budgeted generating world (the server's), its build
+    /// would generate more neighbours than this tick's budget allows: then it waits, its missing
+    /// neighbours asked for (`wanting`), and this says false.
+    fn try_load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) -> bool {
+        if world.generates() && self.force_budget != usize::MAX {
+            // A neighbour whose answer needs a sky floor waits like one that would generate: the
+            // server computes sky floors off the tick (BUGS.md #194: at 362 m/s these checks
+            // computed several a tick, 20+ ms natively).
+            let mut unknown = false;
+            let missing: Vec<ChunkCoord> = around(c)
+                .filter(|n| (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&n.y))
+                .filter(|n| match world.would_generate_known(*n) {
+                    Some(g) => g,
+                    None => {
+                        unknown = true;
+                        true
+                    }
+                })
+                .collect();
+            if unknown || missing.len() > self.force_budget {
+                for n in missing {
+                    if !self.wanting.contains(&n) {
+                        self.wanting.push(n);
+                    }
+                }
+                return false;
+            }
+            self.force_budget -= missing.len();
+        }
+        self.load(physics, world, c);
+        true
+    }
+
     fn load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) {
         let built = build(world, c);
         let mesh_hash = built.mesh_hash();
@@ -566,11 +629,13 @@ impl TerrainCollision {
             }
             for d in deps(c, wide) {
                 let (stamp, revision) = signature(world, d);
+                let sides = sides(world, d);
                 self.watched
                     .entry(d)
                     .or_insert(Watch {
                         stamp,
                         revision,
+                        sides,
                         users: 0,
                     })
                     .users += 1;
@@ -617,14 +682,27 @@ impl TerrainCollision {
             for cz in a.z..=b.z {
                 for cx in a.x..=b.x {
                     let c = ChunkCoord::new(cx, cy, cz);
-                    if !self.chunks.contains_key(&c) {
-                        self.load(physics, world, c);
+                    if self.chunks.contains_key(&c) {
+                        continue;
+                    }
+                    if self.try_load(physics, world, c) {
                         self.stats.reach_loads += 1;
                     }
                 }
             }
         }
         self.stats.reach_cells += self.catch_up_box(physics, lo, hi) as u64;
+    }
+
+    /// The chunks reach builds waited for since the last call (a generating world's), for its
+    /// generation jobs to bring first.
+    pub fn take_wanting(&mut self) -> Vec<ChunkCoord> {
+        std::mem::take(&mut self.wanting)
+    }
+
+    /// The chunks a tick's reach builds may generate themselves (the rest wait for the jobs).
+    pub fn set_force_budget(&mut self, chunks: usize) {
+        self.force_budget = chunks;
     }
 
     /// The look-ahead's chunks for a player at `pos` moving at `velocity` (world metres, m/s) with
@@ -694,8 +772,9 @@ impl TerrainCollision {
             {
                 continue;
             }
-            self.load(physics, world, c);
-            built += 1;
+            if self.try_load(physics, world, c) {
+                built += 1;
+            }
         }
         self.stats.ahead_loads += built as u64;
         built
@@ -743,8 +822,7 @@ impl TerrainCollision {
             if built >= budget {
                 break;
             }
-            if !self.chunks.contains_key(&c) {
-                self.load(physics, world, c);
+            if !self.chunks.contains_key(&c) && self.try_load(physics, world, c) {
                 built += 1;
             }
         }
@@ -759,32 +837,45 @@ impl TerrainCollision {
     /// unmodified chunk the world evicted reads the same when regenerated; rebuilding anyway is
     /// the simple, safe path.
     pub fn sync(&mut self, physics: &mut Physics, world: &mut VoxelWorld) {
-        let mut changed: Vec<ChunkCoord> = Vec::new();
+        // Each changed chunk with the sides whose cells changed (all of them when it was replaced).
+        let mut changed: Vec<(ChunkCoord, [bool; 6])> = Vec::new();
         for (&c, w) in &mut self.watched {
             let now = signature(world, c);
             if now != (w.stamp, w.revision) {
-                (w.stamp, w.revision) = now;
-                changed.push(c);
+                let s = sides(world, c);
+                let side_changed: [bool; 6] =
+                    std::array::from_fn(|i| now.0 != w.stamp || s[i] != w.sides[i]);
+                (w.stamp, w.revision, w.sides) = (now.0, now.1, s);
+                changed.push((c, side_changed));
             }
         }
-        if changed.is_empty() {
+        if changed.is_empty() && self.pending_rebuild.is_empty() {
             return;
         }
+        // The chunk itself, and the shaped chunks round it its change reaches (BUGS.md #194).
         let mut rebuild: Vec<ChunkCoord> = changed
             .iter()
-            .flat_map(|&c| around(c).map(move |n| (c, n)))
-            .filter(|&(c, n)| self.chunks.get(&n).is_some_and(|l| n == c || l.shaped))
-            .map(|(_, n)| n)
+            .flat_map(|&(c, side)| around(c).map(move |n| (c, n, side)))
+            .filter(|&(c, n, side)| {
+                self.chunks
+                    .get(&n)
+                    .is_some_and(|l| n == c || (l.shaped && reaches(c, n, side)))
+            })
+            .map(|(_, n, _)| n)
             .collect();
         // In a fixed order, so every run (and the client's prediction) builds the same colliders.
+        rebuild.extend(std::mem::take(&mut self.pending_rebuild));
         rebuild.sort_by_key(|c| (c.y, c.z, c.x));
         rebuild.dedup();
         for c in rebuild {
-            self.load(physics, world, c);
+            if self.chunks.contains_key(&c) && !self.try_load(physics, world, c) {
+                self.pending_rebuild.push(c); // its neighbours first (the jobs')
+            }
         }
         // Building may have generated chunks some watch saw as missing: take their stamps now.
         for (&c, w) in &mut self.watched {
             (w.stamp, w.revision) = signature(world, c);
+            w.sides = sides(world, c);
         }
     }
 
@@ -857,6 +948,55 @@ mod mass_tests {
             0.0,
             "the terrain collider has mass {}",
             collider.mass()
+        );
+    }
+}
+
+#[cfg(test)]
+mod air_tests {
+    use super::*;
+    use dwell_world::{Chunk, ChunkCoord, VoxelWorld};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Priority 0 (BUGS.md #194; owner, 2026-11-16: "big hitches while flying at 362 m/s"): the
+    /// reach's builds never compute a sky floor on the tick. A chunk whose neighbours' answer isn't
+    /// known waits (wanted), as one that would generate does, and the plain air test (a sky floor,
+    /// ~1 ms natively, several in the browser) is never asked.
+    #[test]
+    fn the_reach_waits_for_unknown_sky_floors_instead_of_computing_them() {
+        let generator: dwell_world::ChunkGenerator = Arc::new(|_: ChunkCoord, _: &mut Chunk| {});
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counter = asked.clone();
+        let air: dwell_world::AirChunkTest = Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::Relaxed);
+            true
+        });
+        let mut world = VoxelWorld::new(generator, Some(air));
+        world.set_air_known(Arc::new(|_| None));
+        let mut physics = Physics::default();
+        let mut terrain = TerrainCollision::new(&mut physics);
+        terrain.set_force_budget(0);
+        let p = DVec3::new(5000.0, 900.0, 5000.0);
+        terrain.ensure_box(
+            &mut physics,
+            &mut world,
+            p - DVec3::splat(15.0),
+            p + DVec3::splat(15.0),
+        );
+        assert_eq!(
+            asked.load(Ordering::Relaxed),
+            0,
+            "sky floors computed on the tick"
+        );
+        assert_eq!(
+            terrain.loaded_chunks(),
+            0,
+            "built before its neighbours were known"
+        );
+        assert!(
+            !terrain.take_wanting().is_empty(),
+            "the unknown chunks wanted"
         );
     }
 }
@@ -1057,6 +1197,27 @@ mod rebuild_tests {
             covered,
             "the ramp's face by the dug cell collides"
         );
+    }
+
+    // face-a-only: as above.
+    #[test]
+    fn an_edit_away_from_the_border_rebuilds_no_shaped_neighbour() {
+        // Priority 0 (BUGS.md #194; owner, 2026-11-17: "There's a lot of trees, so once every few
+        // in game days is still probably pretty often."): a tree's growth inside its chunk rebuilt
+        // every shaped chunk round it (6–16 builds, 2–7 ms natively). A neighbour reads only the
+        // cells within two of their shared border: a change deeper in rebuilds the chunk alone.
+        let ramp = dwell_blocks::parse_state(
+            "dwell:grass_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+        )
+        .expect("a ramp");
+        let (mut world, mut physics, mut terrain) = loaded();
+        world.set_voxel(-1, -1, 5, ramp);
+        terrain.sync(&mut physics, &mut world);
+        let before = terrain.loads();
+        // Dug 10 cells into the next chunk (x = 0..31): far from the ramp's chunk at x = -1.
+        world.set_voxel(10, -1, 5, dwell_world::M.air);
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(terrain.loads() - before, 1, "the edited chunk only");
     }
 
     // face-a-only: a buried chunk is one under solid ground; the rule has no up of its own.

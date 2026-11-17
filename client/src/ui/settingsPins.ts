@@ -19,6 +19,7 @@
 import type { PresetFieldName } from './graphicsPresets';
 import { HUD_ELEMENTS } from './hud.gen';
 import { FEATURES_KEY } from './featureSettings';
+import { SSAO_KEY } from './ssaoSettings';
 
 export const DETAIL_KEY = 'dwell.detail';
 export const EXPOSURE_KEY = 'dwell.exposure';
@@ -86,6 +87,7 @@ export function settingFields(keys: StoreKeys): SettingField[] {
     one(['clouds'], CLOUDS_KEY, [], 'clouds'),
     one(['shafts'], SHAFTS_KEY, [], 'shafts'),
     one(['bloom'], BLOOM_KEY, [], 'bloom'),
+    ...rec('ssao', SSAO_KEY, ['quality', 'strength', 'level'], ['ssao']),
     ...rec(
       'water',
       WATER_KEY,

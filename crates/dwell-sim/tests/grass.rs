@@ -88,9 +88,9 @@ fn scene(f: FaceFrame, cfg: ServerConfig, ticks: u32) -> Fixture {
     fx
 }
 
-/// Runs the grass step until every loaded chunk is grown up to today (a step takes at most 64).
+/// Runs the grass step until every loaded chunk is grown up to today (a step takes at most 2).
 fn grow_all(fx: &mut Fixture) {
-    for _ in 0..64 {
+    for _ in 0..2048 {
         fx.server.grow_grass_now();
     }
 }
@@ -205,6 +205,156 @@ dwell_world::both_faces!(
             fx.server.eaten_to(f.cell(p)),
             M.air,
             "no growth: gone, as before"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Up to 2 m (WORK_QUEUE item 58 g): over the days the server grows, a lush stand grows cell
+    /// by cell to four ½ m cells, its lower cells stalks; a bite at its foot leaves a sprout and
+    /// nothing standing over it.
+    fn the_server_grows_a_lush_stand_to_two_metres_and_a_bite_takes_it(f: FaceFrame) {
+        let rule = dwell_worldgen::grass::Rule::build(0);
+        let mut fx = scene(f, config(f), 0);
+        let foot = [10, FLAT_TOP_Y, 10];
+        let [x, y, z] = f.cell(foot);
+        fx.server.world().set_voxel(x, y, z, f.state(rule.block()));
+        for _ in 0..12 {
+            fx.server.step();
+        }
+        grow_all(&mut fx);
+        let at = |fx: &mut Fixture, k: i32| {
+            let [x, y, z] = f.cell([foot[0], foot[1] + k, foot[2]]);
+            f.state(fx.server.world().get_voxel(x, y, z))
+        };
+        for k in 0..3 {
+            assert_eq!(at(&mut fx, k), rule.stalk(), "cell {k} a stalk");
+        }
+        assert_eq!(at(&mut fx, 3), rule.block(), "the tip full, 2 m up");
+        assert_eq!(at(&mut fx, 4), M.air, "no more than four cells");
+        let bite = fx.server.eaten_stand(f.cell(foot));
+        assert_eq!(bite.len(), 4);
+        assert_eq!(bite[0], (f.cell(foot), f.state(rule.sprout())));
+        assert!(
+            bite[1..].iter().all(|&(_, s)| s == M.air),
+            "the stand over it eaten too"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #194 (owner, 2026-11-16: "It's a periodic stutter. But quite visible and stalls the
+    /// player movement."): the grass step grew up to 64 chunks in one tick every 5 s, a spike in
+    /// the server's tick and the clients' re-meshing. Now a tick grows at most a couple, every
+    /// tick, so a hundred chunks behind are spread over many ticks, and all of them still grow.
+    fn the_grass_step_spreads_its_chunks_over_the_ticks(f: FaceFrame) {
+        let mut fx = scene(f, config(f), 0);
+        for dx in -5..5 {
+            for dz in -5..5 {
+                let [x, y, z] = f.cell([dx * 32 + 4, FLAT_TOP_Y, dz * 32 + 4]);
+                fx.server.world().get_or_create(chunk_of(x, y, z));
+            }
+        }
+        // A world day on (a day a tick here): every chunk is behind.
+        for _ in 0..3 {
+            fx.server.step();
+            for dx in -5..5 {
+                for dz in -5..5 {
+                    let [x, y, z] = f.cell([dx * 32 + 4, FLAT_TOP_Y, dz * 32 + 4]);
+                    fx.server.world().get_or_create(chunk_of(x, y, z));
+                }
+            }
+        }
+        let before = fx.server.grass().days.clone();
+        fx.server.grow_grass_now();
+        let n = fx
+            .server
+            .grass()
+            .days
+            .iter()
+            .filter(|(c, d)| before.get(*c) != Some(*d))
+            .count();
+        assert!(
+            (1..=2).contains(&n),
+            "one step grows a couple of chunks: {n}"
+        );
+        for _ in 0..120 {
+            fx.server.grow_grass_now();
+        }
+        let today = fx.server.world_days().floor() as u32;
+        let done = fx
+            .server
+            .grass()
+            .days
+            .values()
+            .filter(|d| **d == today)
+            .count();
+        assert!(done >= 100, "every chunk grows in turn: {done}");
+    }
+);
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194): the tick's grass step never regenerates a chunk. A chunk grows a
+    /// quarter a tick; an edit between its quarters (its own first quarter's grass, a player's)
+    /// left it edited without a pristine copy, and the later quarters regenerated it (3–12 ms
+    /// natively a quarter). An unedited chunk's own cells are kept as its generated ones when it is
+    /// picked.
+    fn the_tick_never_regenerates_a_chunk_to_grow_grass(f: FaceFrame) {
+        // No edit to start with (the scene's would wait for its pristine copy, never sent here).
+        // The meadow with a generated tuft in each chunk (local column 8, 8): grass to spread from.
+        let base = generator(f);
+        let tall = f.state(dwell_blocks::require("dwell:tall_grass"));
+        let tufted: dwell_world::ChunkGenerator =
+            Arc::new(move |c: ChunkCoord, chunk: &mut dwell_world::Chunk| {
+                base(c, chunk);
+                for ly in 0..CHUNK_SIZE {
+                    if f.row(c.y * CHUNK_SIZE + ly) == FLAT_TOP_Y {
+                        chunk.voxels_mut()[local_index(8, ly, 8)] = tall;
+                    }
+                }
+            });
+        let mut fx = Fixture::new(ServerConfig {
+            generator_override: Some(tufted),
+            // A world day every 300 ticks.
+            growth_speed: 240.0,
+            // The browser's: pristine copies come from the jobs worker (here never), not inline.
+            jobs_remote: true,
+            ..config(f)
+        });
+        fx.server.set_grass_envelope(Some(lush()));
+        let mut floors = Vec::new();
+        for dx in -2..2 {
+            for dz in -2..2 {
+                let [x, y, z] = f.cell([dx * 32 + 40, FLAT_TOP_Y, dz * 32 + 40]);
+                floors.push(chunk_of(x, y, z));
+                fx.server.world().get_or_create(chunk_of(x, y, z));
+            }
+        }
+        // Until a floor chunk (its meadow the spots) is part way through: then an edit in it.
+        let mut edited = false;
+        for _ in 0..700 {
+            // Kept loaded (no player here holds them).
+            for &c in &floors {
+                fx.server.world().get_or_create(c);
+            }
+            fx.server.step();
+            if !edited
+                && let Some((c, 1)) = fx.server.grass_in_hand()
+                && floors.contains(&c)
+            {
+                let o = [c.x * CHUNK_SIZE, c.y * CHUNK_SIZE, c.z * CHUNK_SIZE];
+                let stone = f.state(M.stone);
+                fx.server
+                    .world()
+                    .set_voxel(o[0] + 30, o[1] + 30, o[2] + 30, stone);
+                edited = true;
+            }
+        }
+        assert!(edited, "a chunk part way through");
+        assert_eq!(
+            fx.server.grass_regenerated(),
+            0,
+            "chunks regenerated on the tick"
         );
     }
 );

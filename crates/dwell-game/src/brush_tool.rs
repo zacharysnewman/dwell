@@ -815,6 +815,7 @@ mod tests {
     fn ctx(material: StateId, now_ms: f64) -> ToolContext {
         ToolContext {
             target: None,
+            ahead: None,
             target_state: 0,
             placement: None,
             material,

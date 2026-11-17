@@ -360,6 +360,24 @@ everywhere, its `spacing` −2 (a negative spacing, new: two crowns may interlea
 ~220 trees a hectare; only the `preset:old_growth` biome lists it (ADR 0074, the old-growth forest),
 and `test:forest` is that forest everywhere, the tree performance reference (docs/DEV_TOOLS.md).
 
+**Giants, each tree's pace, 2 × 2 trunks (0.71.0, owner 2026-11-15):** "Let's get rid of my pines. Make each
+tree have a different starting age, growth rate, and increase the max size of the trees to quadruple the height.
+Big trees can take up more blocks at the base as they grow past a 1 block width. They can expand into a
+neighboring 3 spaces if available (only player placed blocks prevent growth into a space. When trees hit that size,
+they will pop into to be centered on those 4 square of block columns." Built as data and one rule each:
+- The `pine_groves` placement stands the species `dwell:pine`; the hand-built `dwell:pine_tree` and
+  `dwell:tall_pine_tree` structures are deleted.
+- `trunk.height.giant` (4 for the six trees): a seed draws its full height from the range's bottom up to `giant` ×
+  its top; past the top the crown grows by (height / top)^`crown.withHeight` (0.5: a 4× giant's crown about 2×;
+  in full proportion a forest's density fell from ~220 to ~92 trees a hectare) and the trunk's width by height / top.
+- `growth.rate` ([0.5, 2]): each tree's stages come `species::rate(seed)` times as fast as `daysPerStage`; 16
+  stages (halved `daysPerStage`, the same total) and an even `growth.wild` over 32 variants, so trees start at all ages.
+- A trunk past 1 m wide is 2 × 2 (at most): `grow` splits the tree along its centre column in x and z and draws
+  the halves apart by one (`centred_on_four`), so the trunk is four logs and the crown stays centred on their shared
+  corner. Growing into the three new columns (`growth::step`) the logs replace what the world generated there; a
+  block that differs from the generated one (a player's) makes the step wait (`Step::blocked`) until it is gone.
+- Impostors bake giants like any tree; a giant's crown covers fewer texels of a view (its resolution is a follow-up).
+
 **Far trees as impostors (proposal, WORK_QUEUE item 31; [`proposals/TREE_IMPOSTORS.md`](proposals/TREE_IMPOSTORS.md)):**
 the bake is built (phase I-1): `dwell_worldgen::impostor::bake(species, seed, stage, config, px)` ray casts the
 cells `grow` builds (logs as their width's octagon, leaf cells whole) from the views of

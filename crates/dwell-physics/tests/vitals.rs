@@ -91,35 +91,22 @@ fn a_rested_swimmer_floats_and_an_exhausted_one_sinks() {
 }
 
 #[test]
-fn an_exhausted_swimmer_rests_back_past_the_share_and_floats_again() {
+fn an_exhausted_swimmer_under_water_gets_no_stamina_back() {
+    // Owner, 2026-11-16: "you shouldn't recover stamina while underwater", and asked what that
+    // means for an exhausted swimmer sinking, "Never recover underwater": it stays exhausted while
+    // its head is under (it had rested back to the share and floated up again).
     let mut w = PlayerTestWorld::new();
     pool(&mut w);
     w.players.set_vitals(ADVENTURE);
     let e = w.spawn(v(0.5, -2.0, 0.5));
     w.step(ticks(1.0));
     w.players.controller_mut(e).vitals = exhausted();
-    // It sinks resting: back to the share in the delay plus the share's regen, not before.
     let back = VITALS.regen_delay_seconds + VITALS.recover_at() / VITALS.regen_per_second;
-    let mut t = 0;
-    while w.c(e).vitals.exhausted && t < ticks(back + 1.0) {
-        w.step(1);
-        t += 1;
-    }
+    w.step(ticks(back + 1.0));
     let c = w.c(e).vitals;
-    assert!(
-        !c.exhausted && c.stamina >= VITALS.recover_at() - 0.1,
-        "{c:?}"
-    );
-    assert!((t - ticks(back)).abs() <= 2, "{t} ticks to recover");
-    // Treading now, it spends again from the share without locking (25 → 24 % is fine).
-    w.step(ticks(1.0));
-    let c = w.c(e).vitals;
-    assert!(
-        c.stamina < VITALS.recover_at() + 1.0 && !c.exhausted,
-        "{c:?}"
-    );
-    let rising = w.vel(e).y;
-    assert!(rising > -0.2, "treading holds it up: {rising}");
+    assert!(c.exhausted, "still exhausted under water: {c:?}");
+    // (A little may come back in the moment before its head goes under.)
+    assert!(c.stamina < 2.0, "none back under water: {c:?}");
 }
 
 #[test]

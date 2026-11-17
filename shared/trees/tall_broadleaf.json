@@ -9,7 +9,7 @@
   "trunk": {
     "height": {
       "sapling": 1,
-      "mature": [10, 16]
+      "mature": [10, 16], "giant": 4
     },
     "heightStep": 0.5,
     "width": {
@@ -35,17 +35,12 @@
       "height": [0.9, 1.3]
     },
     "roughness": 0.3,
-    "scale": [0.3, 1]
+    "scale": [0.3, 1], "withHeight": 0.5
   },
   "variety": {
     "crown": [0.85, 1.2],
     "lightness": [0.6, 0.95],
     "hue": [-0.04, 0.03]
   },
-  "growth": {
-    "stages": 8,
-    "daysPerStage": 3,
-    "wild": [0, 1, 1, 1, 2, 3, 5, 12],
-    "variants": 16
-  }
+  "growth": {"stages": 16, "daysPerStage": 1.5, "rate": [0.5, 2], "wild": [1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3], "variants": 32}
 }

@@ -10,10 +10,21 @@ use dwell_protocol::{SIM_HZ, VoxelModificationReason};
 use dwell_worldgen::growth::{Growers, Records};
 use std::sync::Arc;
 
-/// How often the growers step runs (s of the tick).
-const EVERY_S: u32 = 5;
 /// The most chunks looked at for new trees per step (the rest on the next).
 const SCANS_PER_STEP: usize = 256;
+/// The most chunks looked at for new trees a tick (~0.25 ms each natively, 4.6 at worst).
+const SCANS_PER_TICK: usize = 1;
+/// The most due trees grown a tick.
+const TREES_PER_TICK: usize = 1;
+
+/// A chunk column on a face: (chunk x, chunk z, face).
+pub type ColumnKey = (i32, i32, dwell_world::Face);
+
+/// The column the scan is placing a quarter a tick: its key, the trees so far, the next quarter.
+pub type ColumnPart = (ColumnKey, Vec<dwell_worldgen::growth::Record>, u8);
+
+/// Chunk columns' tree placements kept by the scan; past this many it starts again.
+const TREE_COLUMNS_KEPT: usize = 4096;
 
 impl Server {
     /// The world's days so far (its clock's day length), times the growth speed (dev, tests).
@@ -22,16 +33,27 @@ impl Server {
             * self.config.growth_speed
     }
 
+    /// The growers, on the grass's terrain (one build, never on a tick in play: `prepare_growth`
+    /// builds it at a join); none until the world maps are in.
     fn growers(&mut self) -> Option<Arc<Growers>> {
-        let (version, seed) = (self.config.generator_version, self.config.world_seed);
-        let override_ = self.config.generator_override.is_some();
-        self.growers
-            .get_or_insert_with(|| {
-                (!override_)
-                    .then(|| Growers::for_generator(version, seed))
-                    .flatten()
-            })
-            .clone()
+        if let Some(g) = &self.growers {
+            return g.clone();
+        }
+        if self.config.generator_override.is_some() {
+            self.growers = Some(None);
+            return None;
+        }
+        let t = self.grass_terrain()?;
+        let g = Growers::of_shared(t);
+        self.growers = Some(g.clone());
+        g
+    }
+
+    /// Builds the growth steps' terrain (the grass's and the growers', one shared), as a player
+    /// joins (behind the loading screen) rather than on the first tick that needs it (~0.6 s in
+    /// the browser: priority 0, the owner's "the server never drops below 60fps").
+    pub(super) fn prepare_growth(&mut self) {
+        let _ = self.growers();
     }
 
     /// Tests: the growers in place of the generator's.
@@ -50,39 +72,166 @@ impl Server {
         self.growth.trees.insert(r.anchor, r);
     }
 
-    /// The growers step (every `EVERY_S` s).
+    /// The growers step: a few new chunks' trees recorded every tick (`SCANS_PER_TICK`; BUGS.md
+    /// #194: 256 at once, ~60 ms, stalled the game, crossing a portal above all), and at most
+    /// `TREES_PER_TICK` due trees grown a tick (all at once every 5 s, a giant's stage ~10 ms,
+    /// made 20–30 ms ticks: priority 0, the owner's "the server never drops below 60fps"); the
+    /// due ones found once a second.
     pub(super) fn grow_trees(&mut self) {
-        if !self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
-            return;
+        self.scan_tree_chunks_by(SCANS_PER_TICK, true);
+        if self.growth_due.is_empty() && self.tick.is_multiple_of(SIM_HZ) {
+            self.growth_due = self.due_tree_anchors().into();
         }
-        self.grow_trees_now();
-    }
-
-    /// The growers step now: record new chunks' trees, grow the due ones.
-    pub fn grow_trees_now(&mut self) {
-        let growers = self.growers();
-        if let Some(growers) = &growers {
-            let fresh: Vec<_> = self
-                .world
-                .chunks()
-                .map(|(c, _)| *c)
-                .filter(|c| !self.growth_scanned.contains(c))
-                .take(SCANS_PER_STEP)
-                .collect();
-            for c in fresh {
-                self.growth_scanned.insert(c);
-                for r in growers.trees_in_chunk(c) {
-                    self.growth.trees.entry(r.anchor).or_insert(r);
+        // One costly call a tick at most: the next due tree's old stage grown into the cache, else
+        // its new one, else (both kept) its step, which is cheap then.
+        let Some(&a) = self.growth_due.front() else {
+            return;
+        };
+        if let Some(r) = self.growth.trees.get(&a).cloned() {
+            let target = r.due(self.world_days());
+            if target > r.stage {
+                if self.config.jobs_remote {
+                    // Grown in the jobs worker (~20 ms a giant's stage in the browser): the tree
+                    // waits until both its stages are kept.
+                    let mut waiting = false;
+                    for stage in [r.stage, target] {
+                        if dwell_worldgen::growth::is_kept(&r, stage) {
+                            continue;
+                        }
+                        waiting = true;
+                        let k = (r.species, r.seed, stage);
+                        if !self.tree_jobs_out.contains(&k) && !self.tree_jobs.contains(&k) {
+                            self.tree_jobs.push_back(k);
+                        }
+                    }
+                    if waiting {
+                        return;
+                    }
+                } else if dwell_worldgen::growth::warm(&r, r.stage)
+                    || dwell_worldgen::growth::warm(&r, target)
+                {
+                    return; // grown one this tick: the step on a later one
                 }
             }
         }
-        if self.growth.trees.is_empty() {
-            return;
+        let n = TREES_PER_TICK.min(self.growth_due.len());
+        let next: Vec<[i32; 3]> = self.growth_due.drain(..n).collect();
+        self.grow_these_trees(&next, true);
+    }
+
+    /// How many distinct chunk columns (per face) the scan has looked at (tests, tools).
+    pub fn tree_columns_scanned(&self) -> usize {
+        self.growth_scanned
+            .iter()
+            .map(|&c| (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+
+    /// How many quarter columns the scan has placed (a whole column four; tests, tools).
+    pub fn tree_quarters_placed(&self) -> usize {
+        self.tree_quarters_placed
+    }
+
+    /// How many chunk columns' tree placements the scan has run (tests, tools).
+    pub fn tree_columns_placed(&self) -> usize {
+        self.tree_columns_placed
+    }
+
+    /// How many chunks have been looked at for trees (tests, tools).
+    pub fn tree_chunks_scanned(&self) -> usize {
+        self.growth_scanned.len()
+    }
+
+    /// Records the trees of up to `n` loaded chunks not looked at yet; how many it looked at.
+    pub fn scan_tree_chunks(&mut self, n: usize) -> usize {
+        self.scan_tree_chunks_by(n, false)
+    }
+
+    /// [`Self::scan_tree_chunks`]; `quarters`: a new column's placements a quarter a call (the
+    /// tick's: BUGS.md #194, ~5 ms natively a column), its chunks scanned once all four are in.
+    fn scan_tree_chunks_by(&mut self, n: usize, quarters: bool) -> usize {
+        let Some(growers) = self.growers() else {
+            return 0;
+        };
+        // In the browser (`jobs_remote`) a new column is the server-jobs worker's ("GJ1"): the scan
+        // records the chunks whose column has come, a few looked at a tick for one.
+        let remote = quarters && self.config.jobs_remote;
+        let look = if remote { n * 8 } else { n };
+        let fresh: Vec<_> = self
+            .world
+            .chunks()
+            .map(|(c, _)| *c)
+            .filter(|c| !self.growth_scanned.contains(c))
+            .take(look)
+            .collect();
+        let mut scanned = 0;
+        for &c in &fresh {
+            if scanned >= n {
+                break;
+            }
+            // A column's placements once for all its chunks (BUGS.md #194).
+            let key = (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face);
+            if !self.tree_columns.contains_key(&key) {
+                if remote {
+                    if !self.tree_column_jobs_out.contains(&key)
+                        && !self.tree_column_jobs.contains(&key)
+                    {
+                        self.tree_column_jobs.push_back(key);
+                    }
+                    continue;
+                }
+                if quarters {
+                    let (mut trees, k) = self
+                        .tree_column_part
+                        .take()
+                        .filter(|p| p.0 == key)
+                        .map_or((Vec::new(), 0), |p| (p.1, p.2));
+                    trees.extend(growers.trees_in_column_part(c, Some(k)));
+                    self.tree_quarters_placed += 1;
+                    if k < 3 {
+                        self.tree_column_part = Some((key, trees, k + 1));
+                        break; // a quarter a call: the rest on the next ones
+                    }
+                    self.keep_tree_column(key, trees);
+                } else {
+                    self.tree_quarters_placed += 4;
+                    self.keep_tree_column(key, growers.trees_in_column(c));
+                }
+            }
+            self.growth_scanned.insert(c);
+            scanned += 1;
+            for r in Growers::trees_of_chunk(&self.tree_columns[&key], c) {
+                self.growth.trees.entry(r.anchor).or_insert(r);
+            }
         }
+        scanned
+    }
+
+    pub(super) fn keep_tree_column(
+        &mut self,
+        key: (i32, i32, dwell_world::Face),
+        trees: Vec<dwell_worldgen::growth::Record>,
+    ) {
+        if self.tree_columns.len() >= TREE_COLUMNS_KEPT {
+            self.tree_columns.clear();
+        }
+        self.tree_columns_placed += 1;
+        self.tree_columns.insert(key, trees);
+    }
+
+    /// The growers step now (tests, tools): record new chunks' trees (up to `SCANS_PER_STEP`), grow
+    /// the due ones.
+    pub fn grow_trees_now(&mut self) {
+        self.scan_tree_chunks(SCANS_PER_STEP);
+        let due = self.due_tree_anchors();
+        self.grow_these_trees(&due, false);
+    }
+
+    /// The recorded trees whose stage is due, where their anchor's chunk is loaded.
+    fn due_tree_anchors(&self) -> Vec<[i32; 3]> {
         let day = self.world_days();
-        let mut changes = TickChanges::default();
-        let anchors: Vec<[i32; 3]> = self
-            .growth
+        self.growth
             .trees
             .values()
             .filter(|r| !r.stopped && r.due(day) > r.stage)
@@ -93,26 +242,90 @@ impl Server {
                     .is_some()
             })
             .map(|r| r.anchor)
-            .collect();
-        for a in anchors {
-            let r = self.growth.trees[&a].clone();
+            .collect()
+    }
+
+    /// Grows each of the trees at `anchors` that is still due, where its box is loaded.
+    /// `wait`: an edited chunk's pristine copy not at hand, the tree waits for it (the tick's);
+    /// else the chunk is regenerated here (tests, tools).
+    fn grow_these_trees(&mut self, anchors: &[[i32; 3]], wait: bool) {
+        if anchors.is_empty() {
+            return;
+        }
+        let growers = self.growers();
+        let day = self.world_days();
+        let mut changes = TickChanges::default();
+        for &a in anchors {
+            let Some(r) = self.growth.trees.get(&a).cloned() else {
+                continue;
+            };
+            if r.stopped || r.due(day) <= r.stage {
+                continue;
+            }
             let target = r.due(day);
             let swaps = growers.as_ref().map_or(Vec::new(), |g| g.swaps(&r));
+            // What was generated, where a trunk widens over it (a player's block stops it): an
+            // unedited chunk's own cells, an edited one's from the jobs' pristine copy, never
+            // regenerated on the tick (priority 0, BUGS.md #194); one missing, the tree waits.
+            let missing = std::cell::RefCell::new(Vec::new());
             let step = {
-                let world = &self.world;
-                dwell_worldgen::growth::step(&r, target, &swaps, &|c| world.get_voxel_if_loaded(c))
+                let world = std::cell::RefCell::new(&mut self.world);
+                let pristine = &self.pristine;
+                let cache = std::cell::RefCell::new(Default::default());
+                dwell_worldgen::growth::step(
+                    &r,
+                    target,
+                    &swaps,
+                    &|c| world.borrow().get_voxel_if_loaded(c),
+                    &|c| {
+                        let k = dwell_world::chunk_of(c[0], c[1], c[2]);
+                        let edited = world.borrow().find(k).is_some_and(|ch| ch.revision() > 0);
+                        if !edited {
+                            return world.borrow().get_voxel_if_loaded(c);
+                        }
+                        if let Some(p) = pristine.get(&k) {
+                            return p.get(
+                                c[0] - k.x * dwell_world::CHUNK_SIZE,
+                                c[1] - k.y * dwell_world::CHUNK_SIZE,
+                                c[2] - k.z * dwell_world::CHUNK_SIZE,
+                            );
+                        }
+                        if wait {
+                            missing.borrow_mut().push(k);
+                            return world.borrow().get_voxel_if_loaded(c);
+                        }
+                        world
+                            .borrow_mut()
+                            .generated_voxel(c, &mut cache.borrow_mut())
+                    },
+                )
             };
             if step.chunks.iter().any(|&k| self.world.find(k).is_none()) {
                 continue; // wait until its whole box is loaded
+            }
+            let mut missing = missing.into_inner();
+            if !missing.is_empty() {
+                missing.dedup();
+                for k in missing {
+                    if !self.pristine_wanted.contains(&k) && self.pristine_wanted.len() < 32 {
+                        self.pristine_wanted.push(k);
+                    }
+                }
+                self.growth_due.push_back(a); // again once its copies are here
+                continue;
             }
             let rec = self.growth.trees.get_mut(&a).expect("record");
             if step.stopped {
                 rec.stopped = true;
                 continue;
             }
-            let per = f64::from(
-                dwell_worldgen::species::SPECIES[usize::from(rec.species)].days_per_stage,
-            );
+            if step.blocked {
+                continue; // a player's block where its trunk widens: it waits
+            }
+            // Its own pace (`species::rate`).
+            let s = &dwell_worldgen::species::SPECIES[usize::from(rec.species)];
+            let per =
+                f64::from(s.days_per_stage) / f64::from(dwell_worldgen::species::rate(s, rec.seed));
             rec.since += f64::from(target - rec.stage) * per;
             rec.stage = target;
             for (c, m) in step.writes {

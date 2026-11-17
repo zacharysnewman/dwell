@@ -536,9 +536,9 @@
       ]
     },
     "tool": {
-      "label": "A tool drawn as its model held at rest (dwell-client `MODEL_HOLD`; props.json `hand`): no parts of its own, the prop's handle lies along the closed fist's grip axis and this pose of the hand leans it in toward the crosshair, low and right, at full size (owner, 2026-11-11: \"properly align them to the hand\")",
+      "label": "A tool drawn as its model held at rest (dwell-client `MODEL_HOLD`; props.json `hand`): no parts of its own, the prop's handle lies along the closed fist's grip axis and this pose of the hand leans it in toward the crosshair, low and right, at full size (owner, 2026-11-11: \"properly align them to the hand\"), and since 2026-11-15 more upright (10° from upright on screen, was 18°; owner: \"they should face in to the left and more upright\")",
       "on": "grip_r",
-      "pose": { "hand_r": [10, 0, -30], "forearm_r": [0, 10, 0] },
+      "pose": { "hand_r": [10, -12, -30], "forearm_r": [0, 10, 0] },
       "parts": []
     },
     "stone_axe": {
@@ -991,7 +991,7 @@
       ]
     },
     "fp_break_stone_pickaxe": {
-      "$comment": "The stone pickaxe's break swing (shared/tools `breaking.tools[].clip`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_stone_pickaxe --item dwell:stone_pickaxe --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
+      "$comment": "The stone pickaxe's break swing (shared/tools `breaking.tools[].clip`; its strike keys' hand_r y +12 since 2026-11-15, cancelling the more upright `tool` hold so the head still meets the crosshair at the contact; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): drawn back out to the right by 0.14 s (the head at the screen's right, a little above the crosshair), then swung in to the left and forward, the head reaching the crosshair at the tool's contactS (0.26 s), when the hit lands, and back to rest. Keys fitted with `clip_probe break_stone_pickaxe --item dwell:stone_pickaxe --fit` (grip and head places; the head 0.95 m out on the crosshair's ray), pinned by dwell-client clip_probe tests.",
       "rig": "biped",
       "space": "arms",
       "layer": "action",
@@ -1000,8 +1000,8 @@
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.14, "root": [-0.015, 0.07, -0.052], "bones": { "arm_r": [-48, 21, 30], "forearm_r": [-108, 0, 0], "hand_r": [51, -11, -1] } },
-        { "t": 0.26, "root": [0.001, 0.026, -0.031], "bones": { "arm_r": [-102, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [45, -4, -3] } },
+        { "t": 0.14, "root": [-0.015, 0.07, -0.052], "bones": { "arm_r": [-48, 21, 30], "forearm_r": [-108, 0, 0], "hand_r": [51, 1, -1] } },
+        { "t": 0.26, "root": [0.001, 0.026, -0.031], "bones": { "arm_r": [-102, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [45, 8, -3] } },
         { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
@@ -1015,8 +1015,8 @@
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.14, "root": [-0.014, 0.085, -0.027], "bones": { "arm_r": [-33, 29, 30], "forearm_r": [-117, 0, 0], "hand_r": [47, -10, -1] } },
-        { "t": 0.26, "root": [-0.012, 0.026, -0.055], "bones": { "arm_r": [-98, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [43, -6, -8] } },
+        { "t": 0.14, "root": [-0.014, 0.085, -0.027], "bones": { "arm_r": [-33, 29, 30], "forearm_r": [-117, 0, 0], "hand_r": [47, 2, -1] } },
+        { "t": 0.26, "root": [-0.012, 0.026, -0.055], "bones": { "arm_r": [-98, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [43, 6, -8] } },
         { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
@@ -1030,8 +1030,8 @@
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.14, "root": [-0.016, 0.087, -0.018], "bones": { "arm_r": [-28, 31, 30], "forearm_r": [-119, 0, 0], "hand_r": [46, -8, 0] } },
-        { "t": 0.26, "root": [-0.016, 0.028, -0.063], "bones": { "arm_r": [-97, 6, 30], "forearm_r": [0, 0, 0], "hand_r": [43, -6, -9] } },
+        { "t": 0.14, "root": [-0.016, 0.087, -0.018], "bones": { "arm_r": [-28, 31, 30], "forearm_r": [-119, 0, 0], "hand_r": [46, 4, 0] } },
+        { "t": 0.26, "root": [-0.016, 0.028, -0.063], "bones": { "arm_r": [-97, 6, 30], "forearm_r": [0, 0, 0], "hand_r": [43, 6, -9] } },
         { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },
@@ -1045,8 +1045,8 @@
       "ease": "smooth",
       "keys": [
         { "t": 0, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } },
-        { "t": 0.14, "root": [-0.014, 0.079, -0.054], "bones": { "arm_r": [-45, 21, 30], "forearm_r": [-107, 0, 0], "hand_r": [55, -12, -2] } },
-        { "t": 0.26, "root": [0.002, 0.029, -0.034], "bones": { "arm_r": [-100, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [51, -7, -6] } },
+        { "t": 0.14, "root": [-0.014, 0.079, -0.054], "bones": { "arm_r": [-45, 21, 30], "forearm_r": [-107, 0, 0], "hand_r": [55, 0, -2] } },
+        { "t": 0.26, "root": [0.002, 0.029, -0.034], "bones": { "arm_r": [-100, 5, 30], "forearm_r": [0, 0, 0], "hand_r": [51, 5, -6] } },
         { "t": 0.5, "root": [0, 0, 0], "bones": { "arm_r": [-70, 22, 0], "forearm_r": [-40, 0, 0], "hand_r": [10, 0, 0] } }
       ]
     },

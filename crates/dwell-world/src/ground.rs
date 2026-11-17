@@ -158,12 +158,12 @@ fn solid(m: StateId) -> bool {
 }
 
 /// Whether a cell can hold a ground item: open (air, or a plant one walks through), no liquid.
-fn open(m: StateId) -> bool {
+pub fn open(m: StateId) -> bool {
     try_info(m).is_some_and(|i| !i.solid && !i.liquid)
 }
 
 /// Whether a cell is ground an item lies flat on: a solid full block.
-fn flat_ground(m: StateId) -> bool {
+pub fn flat_ground(m: StateId) -> bool {
     try_info(m).is_some_and(|i| i.solid && i.shape == VoxelShape::Full)
 }
 

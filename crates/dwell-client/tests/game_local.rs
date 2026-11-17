@@ -3002,7 +3002,7 @@ fn a_long_trip_over_the_flat_world_keeps_the_near_ring_at_full_detail() {
 
 /// The long trip over generated terrain (seed 7, the owner's river world), the player carried
 /// 5 m/s in a straight line 40 m over its start (BUGS #54): every near chunk is drawn as a chunk
-/// within 2 s of coming into the ring.
+/// within 4 s of coming into the ring (2 s before 0.71's giant trees).
 /// face-a-only: the spawn is on face A; the trip's path is a world line.
 #[test]
 fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
@@ -3010,7 +3010,9 @@ fn a_long_trip_over_the_terrain_keeps_the_near_ring_at_full_detail() {
     eprintln!("worst near-chunk wait {worst:?}\n{log}");
     assert!(flown > 400.0, "carried {flown} m\n{log}");
     assert!(
-        worst.0 <= 120,
+        // 4 s at one job a frame: 0.71's giant trees (4x, owner 2026-11-15) put crowns in many more
+        // chunks to mesh (806 frames before the sky test took the trees as planted, 214 after).
+        worst.0 <= 240,
         "a near chunk waited {} frames to be drawn as a chunk (frame {}, {:?})\n{log}",
         worst.0,
         worst.1,
@@ -3424,6 +3426,72 @@ fn a_pickaxe_hit_marks_the_stone_at_its_contact_not_on_the_click() {
     assert_eq!(host_voxel(&mut rig, p), stone, "one hit of five: it stands");
 }
 
+/// The axe as the pickaxe and the shovel (owner, 2026-11-14: "Let's simplify the axe to be like the
+/// shovel and pick, without the multiple modes"; 2026-11-15: "it was different from the other
+/// tools"): held, it is a break tool, not a swung one; a Break at a log is a block edit landing at
+/// the pickaxe's contact, its mark the log's block damage (1 of its hits), and the log breaks whole
+/// at its count.
+#[test]
+fn the_axe_hits_a_log_as_the_pickaxe_hits_stone() {
+    let mut rig = predicting_rig(2);
+    let log = dwell_blocks::block_of(dwell_blocks::require("dwell:log")).name;
+    let palette = dwell_game::block_interaction::palette();
+    let wood = palette
+        .iter()
+        .position(|s| s.item == "dwell:log")
+        .expect("the log on the palette");
+    let axe = palette
+        .iter()
+        .position(|s| s.tool == Some("dwell:stone_axe"))
+        .expect("the stone axe on the palette");
+    rig.game.as_mut().unwrap().interaction.select(wood as i64);
+    let floor = target_at(&mut rig, 0.0, -40.0);
+    let p = [floor[0], floor[1] + 1, floor[2]];
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Place, rig.now));
+    assert!(rig.run_until(120, |r| r.game.as_ref().unwrap().prediction.pending() == 0));
+    let placed = server_voxel(&mut rig, p);
+    assert_eq!(dwell_blocks::block_of(placed).name, log, "placed");
+    rig.game.as_mut().unwrap().interaction.select(axe as i64);
+    for _ in 0..10 {
+        rig.frame();
+    }
+    let g = rig.game.as_mut().unwrap();
+    assert!(g.held_tool().is_none(), "the axe is not a swung tool");
+    assert_eq!(g.held_break_item(), Some("dwell:stone_axe"), "a break tool");
+    let contact = dwell_protocol::chopping::break_contact_s(Some("dwell:stone_axe")) * 1000.0;
+    assert_eq!(contact, pickaxe_contact_ms(), "the pickaxe's contact");
+    let n = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
+        .expect("an axe breaks a log");
+    let click = rig.now;
+    assert!(rig.game.as_mut().unwrap().edit(EditAction::Break, click));
+    while rig.now + 1000.0 / 60.0 < click + contact {
+        rig.frame();
+        assert!(
+            rig.game.as_ref().unwrap().damage_at(p).is_none(),
+            "no mark before contact"
+        );
+    }
+    assert!(rig.run_until(60, |r| r.game.as_ref().unwrap().damage_at(p).is_some()));
+    assert_eq!(
+        server_voxel(&mut rig, p),
+        placed,
+        "one hit of {n}: it stands"
+    );
+    // The rest of its hits, one a swing: then it breaks whole.
+    let mut hits = 1;
+    let mut frames = 0;
+    while hits < n && frames < 60 * 30 {
+        if rig.game.as_mut().unwrap().edit(EditAction::Break, rig.now) {
+            hits += 1;
+        }
+        rig.frame();
+        frames += 1;
+    }
+    assert_eq!(hits, n, "{n} swings");
+    assert!(rig.run_until(120, |r| server_voxel(r, p) != placed));
+    assert_eq!(server_voxel(&mut rig, p), 0, "broken whole after {n} hits");
+}
+
 /// Two ½ m stones on the sandbox's floor, `a` ahead (yaw 0°) and `b` beside it (yaw 35°), both 35° down, the
 /// stone pickaxe in hand and `hits.at_contact` on as the session announced it; the player's id.
 fn two_stones_and_a_pickaxe(rig: &mut Rig) -> ([i32; 3], [i32; 3], u16) {
@@ -3574,6 +3642,55 @@ fn a_pickaxe_swing_aimed_at_air_by_its_contact_is_a_miss() {
         (before.edits_applied, before.edits_rejected),
         "nothing sent"
     );
+}
+
+/// Break held aimed at nothing (the sky) knocks its refusal once per hold, not on every repeat
+/// (owner, 2026-11-15, BUGS.md: "It should definitely not play more than once when hitting
+/// nothing."): a still touch in Break mode on phones and the held mouse alike; a new hold knocks
+/// once again.
+// face-a-only: the sandbox's sky and aim; the hold's gate has no geometry.
+#[test]
+fn break_held_at_the_sky_knocks_once_per_hold() {
+    use dwell_game::sound::SoundKind;
+    let mut rig = predicting_rig(0);
+    rig.input.look.pitch = 60.0; // the sky
+    for _ in 0..10 {
+        rig.frame();
+    }
+    assert!(
+        rig.game.as_ref().unwrap().debug_state().target.is_none(),
+        "aimed at the sky"
+    );
+    rig.game.as_mut().unwrap().take_sounds();
+    for holder in [
+        dwell_game::build_drag::Holder::Touch,
+        dwell_game::build_drag::Holder::Mouse,
+    ] {
+        let now = rig.now;
+        rig.game
+            .as_mut()
+            .unwrap()
+            .edit_held(EditAction::Break, holder, now);
+        let mut knocks = 0;
+        while rig.now < now + 2000.0 {
+            rig.frame();
+            knocks += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == SoundKind::Deny)
+                .count();
+        }
+        rig.game.as_mut().unwrap().release_use(holder);
+        rig.frame();
+        rig.game.as_mut().unwrap().take_sounds();
+        assert_eq!(
+            knocks, 1,
+            "{holder:?}: two seconds held at the sky knock once"
+        );
+    }
 }
 
 /// Break held with the pickaxe (`repeatOnHold`): each swing strikes what is aimed at its own
@@ -5381,5 +5498,163 @@ fn after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame() {
     assert!(
         frozen.is_empty(),
         "of {flying} piece-frames in the air, (frame, drawn still): {frozen:?}"
+    );
+}
+
+/// Owner, 2026-11-14: "I want picking up drops off the ground to have a sound, with some random
+/// variety. Maybe a light popping sound." A stack dropped at the player's feet in adventure goes
+/// into the inventory with one `item_pickup` (at the listener); three dropped at once pop once,
+/// not a stack; a stack dropped far off and never taken is silent.
+// face-a-only: the sandbox's floor; `PickupSounds` itself reads no geometry (dwell-game).
+#[test]
+fn picking_up_a_ground_item_pops_once_and_a_burst_pops_once() {
+    use dwell_game::sound::SoundKind;
+    use dwell_protocol::inventory::Stack;
+    let mut rig = predicting_rig(0);
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(rig.core.server().set_mode("adventure"));
+    rig.run_until(60, |_| false);
+    rig.game.as_mut().unwrap().take_sounds();
+    let count = |rig: &mut Rig| -> u32 {
+        rig.core
+            .server()
+            .inventory_of(player_id)
+            .unwrap()
+            .slots
+            .iter()
+            .flatten()
+            .map(|s| u32::from(s.count))
+            .sum()
+    };
+    let pops = |rig: &mut Rig, frames: usize| -> usize {
+        let mut n = 0;
+        for _ in 0..frames {
+            rig.frame();
+            n += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == SoundKind::ItemPickup && e.at.is_none())
+                .count();
+        }
+        n
+    };
+    let feet = rig.game.as_ref().unwrap().debug_state().feet;
+    let at = [feet[0], feet[1] + 0.3, feet[2]];
+    // Far off: lies there, no pop.
+    rig.core.server().drop_item(
+        Stack::new("dwell:dirt", 2),
+        [feet[0] + 40.0, feet[1] + 0.3, feet[2]],
+    );
+    assert_eq!(pops(&mut rig, 90), 0, "a drop no one takes is silent");
+    let before = count(&mut rig);
+    rig.core.server().drop_item(Stack::new("dwell:dirt", 1), at);
+    assert_eq!(pops(&mut rig, 120), 1, "one pop for the pickup");
+    assert_eq!(count(&mut rig), before + 1, "it went into the inventory");
+    for _ in 0..3 {
+        rig.core.server().drop_item(Stack::new("dwell:dirt", 1), at);
+    }
+    assert_eq!(pops(&mut rig, 120), 1, "three taken at once pop once");
+    assert_eq!(count(&mut rig), before + 4);
+}
+
+/// Combine that makes an item plays its craft sound once per press; a press without enough
+/// items is silent, and crafting is not a pickup (owner, 2026-11-15: "Do we yet have sounds for
+/// picking up drops and crafting items?").
+// face-a-only: inventory messages, no geometry.
+#[test]
+fn a_combine_that_makes_an_item_sounds_once_per_press() {
+    use dwell_game::sound::SoundKind;
+    let mut rig = predicting_rig(0);
+    let SessionState::Joined { player_id, .. } = rig.session.state().clone() else {
+        panic!("joined")
+    };
+    assert!(rig.core.server().set_mode("adventure"));
+    rig.run_until(60, |_| false);
+    // Two stones' worth (4 shards a stone since 2026-11-15).
+    assert_eq!(rig.core.server().give(player_id, "dwell:rock_shard", 8), 0);
+    rig.run_until(30, |_| false);
+    rig.game.as_mut().unwrap().take_sounds();
+    let heard = |rig: &mut Rig, kind: SoundKind| -> usize {
+        let mut n = 0;
+        for _ in 0..30 {
+            rig.frame();
+            n += rig
+                .game
+                .as_mut()
+                .unwrap()
+                .take_sounds()
+                .iter()
+                .filter(|e| e.kind == kind)
+                .count();
+        }
+        n
+    };
+    let stones = |rig: &mut Rig| {
+        rig.core
+            .server()
+            .inventory_of(player_id)
+            .unwrap()
+            .count_of("dwell:stone")
+    };
+    for made in 1..=2 {
+        assert!(rig.game.as_mut().unwrap().combine("dwell:stone_slab"));
+        assert_eq!(
+            heard(&mut rig, SoundKind::ItemCraft),
+            1,
+            "press {made}: once"
+        );
+        assert_eq!(stones(&mut rig), made, "it made a slab");
+    }
+    assert!(rig.game.as_mut().unwrap().combine("dwell:stone_slab"));
+    let (craft, pop) = (
+        heard(&mut rig, SoundKind::ItemCraft),
+        heard(&mut rig, SoundKind::ItemPickup),
+    );
+    assert_eq!(stones(&mut rig), 2, "no shards left: nothing made");
+    assert_eq!((craft, pop), (0, 0), "a press that made nothing is silent");
+}
+
+/// BUGS.md #183: a blueprint placed in a local world reaches the client as its ghost, whose
+/// panel shows while the view aims into its box.
+#[test]
+fn a_blueprint_placed_in_a_local_world_comes_back_as_a_ghost_with_its_panel() {
+    use dwell_protocol::capability_names::BLUEPRINTS_WORLD;
+    let mut rig = Rig::new();
+    assert!(rig.run_until(60 * 30, |r| {
+        r.game
+            .as_ref()
+            .is_some_and(|g| g.debug_state().terrain_ready)
+    }));
+    assert!(
+        rig.session.capability(BLUEPRINTS_WORLD),
+        "the server keeps blueprints"
+    );
+    let game = rig.game.as_mut().unwrap();
+    // As the web app does at the start (`start_game`).
+    game.set_blueprints_synced(rig.session.capability(BLUEPRINTS_WORLD));
+    rig.input.look.pitch = -40.0;
+    assert!(rig.run_until(30, |r| {
+        r.game.as_ref().unwrap().debug_state().target.is_some()
+    }));
+    let hut = dwell_world::structure::load("dwell:bp_hut").expect("the hut");
+    assert!(
+        rig.game
+            .as_mut()
+            .unwrap()
+            .place_blueprint_structure(&hut, 0),
+        "placed at the crosshair"
+    );
+    assert!(
+        rig.run_until(60, |r| !r.core.server().blueprint_list().is_empty()),
+        "the server keeps it"
+    );
+    assert!(
+        rig.run_until(60, |r| r.game.as_mut().unwrap().blueprint_panel().is_some()),
+        "the client draws its ghost and the panel shows aimed into its box"
     );
 }

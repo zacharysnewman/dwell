@@ -127,7 +127,9 @@ pub fn look_item(shape: dwell_protocol::inventory::LookShape) -> Option<&'static
         // A shard is held as a lump is: in the fist, its own tile and tint.
         dwell_protocol::inventory::LookShape::Lump
         | dwell_protocol::inventory::LookShape::Shard => Some("lump"),
-        dwell_protocol::inventory::LookShape::Cluster => Some("cluster"),
+        // Strands of fibre are held as a cluster is: a pinch in the fist.
+        dwell_protocol::inventory::LookShape::Cluster
+        | dwell_protocol::inventory::LookShape::Strands => Some("cluster"),
         dwell_protocol::inventory::LookShape::Model => None,
     }
 }
@@ -2358,7 +2360,8 @@ mod tests {
                         t.item
                     ));
                 }
-                if y1 > 0.45 {
+                // 2026-11-15: more upright (owner), so a little higher.
+                if y1 > 0.6 {
                     bad.push(format!("{}: up to y {y1:.2}, high in the view", t.item));
                 }
                 if area < 0.38 {
@@ -2398,7 +2401,7 @@ mod tests {
         let ch = dwell_characters::player();
         for (item, shown) in [
             ("dwell:stick", "rod"),
-            ("dwell:rock", "lump"),
+            ("dwell:wood", "lump"),
             ("dwell:grass_seed", "cluster"),
         ] {
             let held = Held::Look(item);

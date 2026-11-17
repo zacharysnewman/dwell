@@ -18,5 +18,16 @@
     "order": ["0", "1", "2", "3"],
     "days": [3, 3, 4],
     "share": [0, 0.2, 0.4, 0.6]
+  },
+  "height": {
+    "$comment": "Growing up to 2 m (owner 2026-11-14: \"Oh it's supposed to be growing up to 2m\"): a stand is a column of up to four ½ m cells of `block`, its lower cells `stalk` (a value of the stages' property: full blades) and its top cell the stages' tip. A column at full height whose `cells` allow another (the cell over it air, with openAbove cells of air over that, and generated air or tall grass) starts a new cell: its top becomes a stalk and the cell over it a sprout. A column steps (a stage, or a new cell) order.length times per `daysPerCell` days (the whole steps every day, the rest by a roll), so each cell over the first takes `daysPerCell` days to come to full; the first cell keeps the stages' own days. `cells` caps a column by the climate's share as stages.share caps its first cell: each band's least share and its most cells, a band above 1 cell needing the share of full height (a lush meadow 2 m, a dry steppe 1 cell, cold ground low). Generation is unchanged (each tuft one cell): a meadow grows tall over its first days. Only a column standing on `on` ground grows taller.",
+    "stalk": "stalk",
+    "daysPerCell": 1.5,
+    "cells": [
+      { "share": 0, "cells": 1 },
+      { "share": 0.7, "cells": 2 },
+      { "share": 0.8, "cells": 3 },
+      { "share": 0.9, "cells": 4 }
+    ]
   }
 }

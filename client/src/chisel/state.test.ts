@@ -82,10 +82,11 @@ describe('Chisel state', () => {
 
   it("accepts every key gen.mjs takes in a world's knob groups, lists included", () => {
     // Every world file's overrides in the knob groups (the starter's tectonics.lavaVents too).
-    const worlds = import.meta.glob('../../../shared/worldgen/worlds/*.json', {
-      eager: true,
-      import: 'default',
-    }) as Record<string, { overrides?: Record<string, Record<string, unknown>> }>;
+    const worlds: Record<string, { overrides?: Record<string, Record<string, unknown>> }> =
+      import.meta.glob('../../../shared/worldgen/worlds/*.json', {
+        eager: true,
+        import: 'default',
+      });
     expect(Object.keys(worlds).length).toBeGreaterThan(0);
     for (const [file, w] of Object.entries(worlds)) {
       const world = Object.fromEntries(

@@ -87,6 +87,70 @@ pub fn tool_for_key(code: &str, command: bool, shift: bool) -> Option<ToolAction
     }
 }
 
+/// How far in front of the eye a corner goes where the crosshair aims at no block (m). Owner,
+/// 2026-11-15: "If there's no block under your cross hair it should pick the block 0.5m in front of
+/// you (crosshair)." On desktop and touch alike.
+pub const AHEAD_M: f64 = 0.5;
+
+/// A paste box's least corner (face-local cells) for a box of `size` aimed at cell `at` from the
+/// eye at `eye` (face-local m): centred on `at` and standing on it, as before, where that clears
+/// the player's body about the eye; else its near side on `at` along the horizontal axis the eye
+/// looks most along, centred across, pushed on along that axis until it clears the body (owner,
+/// 2026-11-15: a paste never overlaps your position).
+pub fn paste_min(at: [i32; 3], size: [i32; 3], eye: [f64; 3]) -> [i32; 3] {
+    let d = [
+        f64::from(at[0]) + 0.5 - eye[0],
+        f64::from(at[2]) + 0.5 - eye[2],
+    ];
+    let (axis, other) = if d[0].abs() >= d[1].abs() {
+        (0, 2)
+    } else {
+        (2, 0)
+    };
+    let ahead = if axis == 0 { d[0] } else { d[1] };
+    let sign = if ahead < 0.0 { -1 } else { 1 };
+    let mut min = [0; 3];
+    min[1] = at[1];
+    min[other] = at[other] - size[other] / 2;
+    min[axis] = if sign > 0 {
+        at[axis]
+    } else {
+        at[axis] - size[axis] + 1
+    };
+    // The body: a column about the eye, from the feet to just over the head.
+    let (r, below, above) = (0.45, 1.75, 0.25);
+    let overlaps = |m: [i32; 3]| {
+        let h = dwell_world::CELL_H;
+        let x = (f64::from(m[0]), f64::from(m[0] + size[0]));
+        let z = (f64::from(m[2]), f64::from(m[2] + size[2]));
+        let y = (f64::from(m[1]) * h, f64::from(m[1] + size[1]) * h);
+        x.0 < eye[0] + r
+            && x.1 > eye[0] - r
+            && z.0 < eye[2] + r
+            && z.1 > eye[2] - r
+            && y.0 < eye[1] + above
+            && y.1 > eye[1] - below
+    };
+    // Centred on the cell, as before, wherever that clears the body.
+    let centred = [at[0] - size[0] / 2, at[1], at[2] - size[2] / 2];
+    if !overlaps(centred) {
+        return centred;
+    }
+    for _ in 0..256 {
+        if !overlaps(min) {
+            break;
+        }
+        min[axis] += sign;
+    }
+    min
+}
+
+/// The cell [`AHEAD_M`] along the crosshair's ray from `eye` (`dir` a unit world direction, as the
+/// face's view gives it: the ray is the world's, so it holds on either face).
+pub fn ahead_cell(eye: [f64; 3], dir: [f64; 3]) -> [i32; 3] {
+    dwell_world::cell_of_pos(std::array::from_fn(|i| eye[i] + dir[i] * AHEAD_M))
+}
+
 /// What the tools read from the client: a box of states, or `None` where its chunks are not loaded.
 pub trait BoxSource {
     fn read_box(&mut self, min: [i32; 3], size: [i32; 3]) -> Option<Vec<StateId>>;
@@ -103,6 +167,9 @@ impl BoxSource for VoxelWorld {
 pub struct ToolContext {
     /// The aimed-at block.
     pub target: Option<[i32; 3]>,
+    /// The cell [`AHEAD_M`] in front of the eye along the crosshair ([`ahead_cell`]): a corner's
+    /// cell where no block is aimed at (owner, 2026-11-15).
+    pub ahead: Option<[i32; 3]>,
     /// Its state.
     pub target_state: StateId,
     /// The cell a block would be placed in (next to the target, through the aimed-at face).
@@ -170,11 +237,16 @@ pub struct RegionTools {
     /// The world's disc and build volume (its size, `Game::set_world`): a box outside them is not
     /// sent (BUGS.md #109).
     pub bounds: dwell_world::WorldBounds,
+    /// The region tools are in hand (the touch region bar is open, `Client::set_region_bar`): the
+    /// cell a corner would take is outlined even before the first corner is set.
+    pub armed: bool,
     a: Option<[i32; 3]>,
     b: Option<[i32; 3]>,
     clipboard: Option<Clipboard>,
     paste: Option<PasteTransform>,
     ghost: Option<[i32; 3]>,
+    /// The eye the ghost is placed from (`paste_min`).
+    ghost_eye: Option<[f64; 3]>,
     /// Steps of one or more edits (a brush stroke has several).
     undo: Vec<Vec<Diff>>,
     redo: Vec<Vec<Diff>>,
@@ -234,11 +306,13 @@ impl RegionTools {
             structures: false,
             structure_ops: false,
             bounds: dwell_world::WorldBounds::DEFAULT,
+            armed: false,
             a: None,
             b: None,
             clipboard: None,
             paste: None,
             ghost: None,
+            ghost_eye: None,
             undo: Vec::new(),
             redo: Vec::new(),
             queue: VecDeque::new(),
@@ -262,24 +336,42 @@ impl RegionTools {
         self.paste.is_some()
     }
 
+    /// Whether the cell in front of the crosshair ([`ahead_cell`]) is outlined where no block is
+    /// aimed at: while a corner could be set (the tools armed, or a selection begun), not while
+    /// pasting.
+    pub fn shows_ahead(&self) -> bool {
+        !self.pasting() && (self.armed || self.a.is_some())
+    }
+
     pub fn undo_depth(&self) -> (usize, usize) {
         (self.undo.len(), self.redo.len())
     }
 
-    /// Where a paste goes for the clipboard turned as it is: the box stands on the placement cell
-    /// (its bottom centre there).
-    fn paste_box(&self, at: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
+    /// Where a paste goes for the clipboard turned as it is: on the placement cell, its near side
+    /// there, reaching away from the eye, and never over the player (owner, 2026-11-15: "We need to
+    /// increase the range when pasting so it doesn't overlap with your position"; [`paste_min`]).
+    fn paste_box(&self, at: [i32; 3], eye: Option<[f64; 3]>) -> Option<([i32; 3], [i32; 3])> {
         let c = self.clipboard.as_ref()?;
         let size = self.paste?.size(c.size);
         // Face-local: on the placement cell, up from it; in the world through the face frame.
         let f = FaceFrame::at_row(at[1]);
-        let local = [at[0] - size[0] / 2, f.row(at[1]), at[2] - size[2] / 2];
+        let local_at = f.cell(at);
+        let local = match eye {
+            Some(e) => paste_min(local_at, size, f.point(e)),
+            None => [
+                local_at[0] - size[0] / 2,
+                local_at[1],
+                local_at[2] - size[2] / 2,
+            ],
+        };
         Some((f.box_min(local, size), size))
     }
 
-    /// Follows the crosshair (each frame): the ghost box's cell.
-    pub fn aim(&mut self, placement: Option<[i32; 3]>) {
+    /// Follows the crosshair (each frame): the ghost box's cell (the placement, or where no block
+    /// is aimed at the cell ahead), and the eye it is seen from.
+    pub fn aim(&mut self, placement: Option<[i32; 3]>, eye: Option<[f64; 3]>) {
         self.ghost = placement;
+        self.ghost_eye = eye;
     }
 
     /// The boxes to outline: the selection, and in paste mode the ghost.
@@ -292,7 +384,7 @@ impl RegionTools {
                 kind: ToolBoxKind::Selection,
             });
         }
-        if let Some((min, size)) = self.ghost.and_then(|g| self.paste_box(g)) {
+        if let Some((min, size)) = self.ghost.and_then(|g| self.paste_box(g, self.ghost_eye)) {
             out.push(ToolBox {
                 min,
                 size,
@@ -350,7 +442,8 @@ impl RegionTools {
         self.note.clear();
         match action {
             T::CornerA | T::CornerB => {
-                let Some(t) = ctx.target else {
+                // Nothing aimed at: the cell just in front of the crosshair (AHEAD_M).
+                let Some(t) = ctx.target.or(ctx.ahead) else {
                     self.note = "Aim at a block".into();
                     return None;
                 };
@@ -440,7 +533,11 @@ impl RegionTools {
                 let (Some(p), Some(c)) = (self.paste, self.clipboard.clone()) else {
                     return None;
                 };
-                let Some((min, _)) = ctx.placement.and_then(|at| self.paste_box(at)) else {
+                let Some((min, _)) = ctx
+                    .placement
+                    .or(ctx.ahead)
+                    .and_then(|at| self.paste_box(at, ctx.eye))
+                else {
                     self.note = "Aim where to paste".into();
                     return None;
                 };
@@ -930,6 +1027,46 @@ impl RegionTools {
 mod tests {
     use super::*;
     use dwell_blocks::{parse_state, require};
+
+    /// Whether a box at `min` of `size` (face-local cells) overlaps the body about `eye`.
+    fn on_body(min: [i32; 3], size: [i32; 3], eye: [f64; 3]) -> bool {
+        let h = dwell_world::CELL_H;
+        f64::from(min[0]) < eye[0] + 0.3
+            && f64::from(min[0] + size[0]) > eye[0] - 0.3
+            && f64::from(min[2]) < eye[2] + 0.3
+            && f64::from(min[2] + size[2]) > eye[2] - 0.3
+            && f64::from(min[1]) * h < eye[1]
+            && f64::from(min[1] + size[1]) * h > eye[1] - 1.6
+    }
+
+    #[test]
+    fn a_big_paste_aimed_close_never_stands_on_you() {
+        // face-a-only: face-local arithmetic; `paste_box` crosses it through the face frame. The
+        // owner, 2026-11-15: "We need to increase the range when pasting so it doesn't overlap
+        // with your position" (red before: the box stood centred on the aimed cell, over you).
+        let eye = [0.5, 10.0 * dwell_world::CELL_H + 1.6, 0.5];
+        let size = [10, 12, 10];
+        for at in [
+            [3, 10, 0],
+            [-3, 10, 0],
+            [0, 10, 3],
+            [0, 10, -3],
+            [2, 10, 1],
+            [1, 10, 1],
+        ] {
+            let min = paste_min(at, size, eye);
+            assert!(!on_body(min, size, eye), "{at:?}: {min:?}");
+        }
+    }
+
+    #[test]
+    fn a_paste_with_room_stays_centred_on_the_aimed_cell() {
+        // face-a-only: face-local arithmetic. Clear of the body: centred on the cell, as before.
+        let eye = [0.5, 10.0 * dwell_world::CELL_H + 1.6, 0.5];
+        assert_eq!(paste_min([5, 10, 0], [2, 2, 3], eye), [4, 10, -1]);
+        // Too big to centre there: its near side on the cell, reaching away (+x), clear of you.
+        assert_eq!(paste_min([3, 10, 0], [6, 2, 3], eye), [3, 10, -1]);
+    }
     use dwell_world::edit::EditCapsule;
     use dwell_world::region::{RegionCheck, check_region_edit};
     use dwell_world::{M, empty_generator};
@@ -958,10 +1095,13 @@ mod tests {
     fn ctx(target: Option<[i32; 3]>, material: StateId) -> ToolContext {
         ToolContext {
             target,
+            ahead: None,
             target_state: 0,
             placement: target.map(|t| [t[0], t[1] + 1, t[2]]),
             material,
-            eye: Some([0.5, 1.6, 0.5]),
+            // Flying over the pastes here, clear of them (one over you is pushed clear:
+            // `paste_min`).
+            eye: Some([0.5, 7.6, 0.5]),
             now_ms: 0.0,
         }
     }
@@ -1090,6 +1230,64 @@ mod tests {
         assert_eq!(op_of(m), Some(RegionEditOp::Paste));
     }
 
+    dwell_world::both_faces!(
+        /// Owner, 2026-11-15: "If there's no block under your cross hair it should pick the block
+        /// 0.5m in front of you (crosshair)." — on desktop and touch alike: with no block aimed
+        /// at, a corner is the cell `AHEAD_M` along the crosshair, the same face-local cell on
+        /// either face; an aimed-at block still wins, and with neither the corner is refused.
+        fn a_corner_with_no_block_aimed_at_is_the_cell_just_ahead(f: dwell_world::FaceFrame) {
+            // Face-local: the eye inside row 40 (20.1 m), looking along +x, then down.
+            let eye = f.point([10.3, 20.1, 4.7]);
+            let level = ahead_cell(eye, f.vector([1.0, 0.0, 0.0]));
+            assert_eq!(level, f.cell([10, 40, 4]), "{:?}", f.face);
+            let down = ahead_cell(eye, f.vector([0.0, -1.0, 0.0]));
+            assert_eq!(down, f.cell([10, 39, 4]), "toward the ground: {:?}", f.face);
+
+            let mut t = tools();
+            let mut w = world();
+            let air = |ahead| ToolContext {
+                ahead,
+                ..ctx(None, 0)
+            };
+            t.act(ToolAction::CornerA, &air(Some(level)), &mut w);
+            assert_eq!(t.selection(), Some((level, [1, 1, 1])));
+            t.act(ToolAction::CornerB, &air(Some(down)), &mut w);
+            let lo = std::array::from_fn(|i| level[i].min(down[i]));
+            assert_eq!(t.selection(), Some((lo, [1, 2, 1])));
+            // A block aimed at is the corner, not the cell ahead.
+            let aimed = ToolContext {
+                ahead: Some(level),
+                ..ctx(Some(f.cell([0, 2, 0])), 0)
+            };
+            t.act(ToolAction::CornerA, &aimed, &mut w);
+            assert_eq!(t.selection(), Some((f.cell([0, 2, 0]), [1, 1, 1])));
+            // Neither (not playing): no corner.
+            t.act(ToolAction::Deselect, &ctx(None, 0), &mut w);
+            t.act(ToolAction::CornerA, &air(None), &mut w);
+            assert_eq!(t.selection(), None);
+            assert!(t.status().contains("Aim at a block"));
+        }
+    );
+
+    /// The cell ahead is outlined while a corner could be set: the tools armed (the touch bar
+    /// open) or a selection begun, and not while pasting.
+    #[test]
+    fn the_cell_ahead_shows_while_a_corner_could_be_set() {
+        let mut t = tools();
+        let mut w = world();
+        assert!(!t.shows_ahead());
+        t.armed = true;
+        assert!(t.shows_ahead());
+        t.armed = false;
+        t.act(ToolAction::CornerA, &ctx(Some([0, 1, 0]), 0), &mut w);
+        assert!(t.shows_ahead(), "a selection begun");
+        w.set_voxel(0, 1, 0, require("dwell:stone"));
+        t.act(ToolAction::Copy, &ctx(None, 0), &mut w);
+        t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
+        t.armed = true;
+        assert!(!t.shows_ahead(), "pasting");
+    }
+
     #[test]
     fn two_corners_select_a_box_in_any_order() {
         let mut t = tools();
@@ -1208,7 +1406,7 @@ mod tests {
         assert!(t.pasting());
         t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
         // The ghost stands on the cell above the aimed-at block (10, 0, 10), centred.
-        t.aim(Some([10, 1, 10]));
+        t.aim(Some([10, 1, 10]), None);
         let ghost = t.boxes()[1];
         assert_eq!(ghost.kind, ToolBoxKind::Ghost);
         assert_eq!((ghost.min, ghost.size), ([10, 1, 9], [1, 2, 3]));
@@ -1279,7 +1477,8 @@ mod tests {
         // Outside the build sphere (ADR 0025): over its top, eye beside it.
         let top = dwell_world::BUILD_VOLUME.y_range().1 as i32;
         let near_top = ToolContext {
-            eye: Some([0.5, f64::from(top) - 1.0, 0.5]),
+            // Over the structure's top, clear of it (a paste over you is pushed clear).
+            eye: Some([0.5, f64::from(top) + 40.0, 0.5]),
             now_ms: 10_000.0,
             ..ctx(None, stone)
         };
@@ -1310,6 +1509,7 @@ mod tests {
         put(&mut w, from, [2, 2, 0], stone);
         let at = |f: dwell_world::FaceFrame, target: [i32; 3]| ToolContext {
             target: Some(f.cell(target)),
+            ahead: None,
             target_state: 0,
             placement: Some(f.cell([target[0], target[1] + 1, target[2]])),
             material: 0,
@@ -1323,7 +1523,7 @@ mod tests {
         t.act(ToolAction::PasteMode, &ctx(None, 0), &mut w);
         t.act(ToolAction::Rotate, &ctx(None, 0), &mut w);
         // The ghost stands on the aimed-at ground, toward the face's up.
-        t.aim(Some(to.cell([10, 1, 10])));
+        t.aim(Some(to.cell([10, 1, 10])), None);
         let ghost = t.boxes()[1];
         let (lo, hi) = (
             to.cell(ghost.min),
@@ -1397,10 +1597,12 @@ mod tests {
         }
         let at = ToolContext {
             target: Some(f.cell([0, 0, 0])),
+            ahead: None,
             target_state: 0,
             placement: Some(f.cell([0, 1, 0])),
             material: 0,
-            eye: Some([0.5, 1.6, 0.5]),
+            // Flying over it, clear of the box (a paste over you is pushed clear).
+            eye: Some(f.point([0.5, 60.0, 0.5])),
             now_ms: 0.0,
         };
         // Over one edit's side: nothing at once; its tiles queue as one undo step.

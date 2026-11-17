@@ -211,6 +211,41 @@ describe('sound data', () => {
       /ambient: unknown field "night"/,
     ],
     [
+      'a pickup window out of range',
+      (f) => {
+        rec(f, 'pickup').windowS = 0;
+      },
+      /pickup\.windowS: 0 is outside/,
+    ],
+    [
+      'a pickup section with an unknown field',
+      (f) => {
+        rec(f, 'pickup').pitch = 2;
+      },
+      /pickup: unknown field "pitch"/,
+    ],
+    [
+      'no pickup section',
+      (f) => {
+        delete f.pickup;
+      },
+      /pickup: missing/,
+    ],
+    [
+      'a craft window out of range',
+      (f) => {
+        rec(f, 'craft').windowS = 0;
+      },
+      /craft\.windowS: 0 is outside/,
+    ],
+    [
+      'no craft section',
+      (f) => {
+        delete f.craft;
+      },
+      /craft: missing/,
+    ],
+    [
       'a fallback set without a slide',
       (f) => {
         delete (sets(f).stone as Record<string, string>).slide;

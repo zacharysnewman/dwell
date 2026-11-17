@@ -477,7 +477,7 @@ mod tests {
     }
 
     dwell_world::both_faces!(
-        /// The pieces' clock fix (BUGS.md #173) for remote players (BUGS.md #180): the delivery
+        /// The pieces' clock fix (BUGS.md #173) for remote players (BUGS.md #198): the delivery
         /// estimate drifted up 1 ms a second, so after the server dropped ½ s a remote was drawn
         /// past its newest snapshot for minutes, held there and moving only on frames a snapshot
         /// came (one in three at 30 fps), a step of three frames' motion. Red before: drawn still

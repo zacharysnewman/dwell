@@ -6,37 +6,353 @@ pins it.
 
 ## Open
 
-### 181. A cinematic take's sounds late on a few frames a clip
+### 197. Billboards and full trees both drawn at once, and staying that way
 
-Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
-scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
-clip. The AudioContext is stepped to each frame's time and suspended; each frame's sounds go `audio.leadS` (50 ms)
-after it. A step's resume–suspend round trip overshoots by a hardware buffer, sometimes past the lead, and then that
-frame's sounds were scheduled before the context's clock and played late, by up to the overshoot.
+Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
+trees showing at the same time, not like just when transitioning, but both fully visible and static." Suspects: the
+billboard's hand-over to the chunk's full trees never completes for some trees (a chunk meshed with its trees while
+the far layer still counts it as not loaded, or the two decide by different distances). Owner should see: each tree
+drawn once, as a billboard or as the full tree, never both except during the brief fade.
 
-**Owner should see:** a cinematic take's log reading `late 0`, every sound on its frame.
+### 196. Realistic's rivers don't start in the mountains
 
-**Fixed:** the take's timeline (`TakeTimeline`, `client/src/theater/cinematicAudio.ts`) moves on by a step's
-overshoot past the lead plus a render quantum, so the frame's sounds and its mark are scheduled ahead of the
-suspended clock whatever the overshoot; the re-timing on the frame marks (`realign`) takes the extra audio out. The
-report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
-…"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
+Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
+Owner should see: Realistic's rivers rise in the mountains (or high ground) and run down to the sea, not start at
+random points.
+Suspect (from the code, not yet measured): a river is drawn only from where the cell's accumulated discharge reaches
+the profile's `river_threshold` (0.4, `hydrology/rivers.rs`): the water gathering on the mountain above that point
+isn't drawn, so every river appears to start part way down, wherever its catchment first gets big enough. The
+orographic rain (`rain.rs`) also leaves lee slopes dry, so some start far from any peak. Fix options for the owner:
+(a) draw each river's headwater as a thin stream traced up its largest tributary to the ridge, (b) a lower threshold
+with narrower small rivers, (c) both. Confirmed for seed 7 face A (`realistic_map --rivers`): 36 rivers, 32 from
+springs; the springs' heights as a percentile of the land: p10 6, p50 16, p90 50, none above the 75th. Every river
+rises on the plain south of the snowy range; none starts in it.
 
-### 180. Remote players step after the server drops time
+### 195. Grey speckles across the map at medium and far LODs
 
-Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
-(dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
-server's clock, the least delay seen drifting up 1 ms a second: after the server dropped time (a local world's
-worker busy past its catch-up cap) a remote was drawn past its newest snapshot for minutes, held there and moving
-only on frames a snapshot came (one in three at 30 fps), a step of three frames' motion each.
+Owner, 2026-11-16: "I'm seeing big gray speckles across the whole map at medium to far LODs and they seem to mostly
+(sometimes entirely) disappear when up close. Some of them at least seem to come from cores inside of terrain or the
+random "rocks/boulders" scattered about." Suspects: the LOD's downsampling picks a buried stone/core cell or a lone
+boulder cell as a far cell's surface (a minority material winning a coarse cell, or a cell inside the ground exposed
+by the coarse mesh). Owner should see: no grey speckles at any distance; far terrain shows the material it shows up
+close.
 
-**Owner should see:** a friend in your world moving smoothly on every frame after a hitch, not stepping.
+### 194. The game stalls every few seconds while grass grows
 
-**Fixed:** one estimator, `dwell_game::server_clock::ServerClock` (the least delay within the last second, slewed
-3 %, snapped past 250 ms), shared by the remote players and the pieces (bodies are pieces). Creatures and NPCs ease
-toward their latest state by frame time and dropped items aren't moved by snapshots, so neither has a server clock
-to fix. Test (both faces): `remotes::tests::a_remote_drawn_after_the_server_dropped_time_moves_every_frame`, a
-remote at 6 m/s after a ½ s stall, 30 fps frames: red before (frames drawn still, deviation 1.00), within 3 % after.
+Owner, 2026-11-16 (M3 Max, "well under 10ms on everything else"): "I've noticed the server stuttering a bit while I'm
+sprint jumping/sliding around this area", "It's a periodic stutter. But quite visible and stalls the player
+movement." Their block dump (0.71.14, seed 3218026833, at (−3357, 34 m, −3764)): its last 256 edits are all tall grass
+growing (`Rebake`), in two batches 1500 ticks (25 s) apart, 59 and 197+ cells. Cause: the grass step ran every 5 s of
+the tick and grew up to 64 chunks at once (each its 32 × 32 columns' envelope), their writes going out as one
+modification: after a world day's rollover every loaded chunk is behind, so the server's tick and the clients'
+re-meshing spiked every 5 s until all had grown. Also (owner: "there's almost always a stutter going through the
+portal"): the tree growers looked at up to 256 newly loaded chunks for their trees in one tick every 5 s (~0.25 ms
+each natively, 4.6 at worst: ~60 ms), after every big load. Fixed: grass 2 chunks and tree scans 4 chunks every tick
+(`grass.rs` `CHUNKS_PER_TICK`, `growth.rs` `SCANS_PER_TICK`); red → green `tests/grass.rs`
+`the_grass_step_spreads_its_chunks_over_the_ticks` (64 in one step) and `tests/growth.rs`
+`the_growers_look_at_new_chunks_a_few_a_tick` (100 in one tick). Owner should see: no periodic stall moving through
+grass or a portal.
+
+Priority 0 (owner, 2026-11-16: "I don't think we resolved the root cause ... the server never drops below 60fps"),
+measured in the browser (bench `stutter-run`) and natively (`tests/tick_budget.rs`), round 2:
+- Trees: a due tree grew all at once every 5 s (giants' stages ~3 ms each natively, two a step) → one tree a tick,
+  its two stages grown into a cache on earlier ticks (`dwell_worldgen::growth::warm`); a step's knocked-ground
+  check skipped for a tree's own cleared cells (the biomes' densities worked out for each, ~2 ms).
+- Grass and trees read an edited chunk "as generated" by regenerating it on the tick (~4 ms natively each) → the
+  generation jobs' pristine copies (`pristine`, the server's cache), the step waiting for them; grass's spread test
+  probed a slow set ~96k times a chunk → the few sprouts tested directly; its chunk reads copied once each.
+- The growth terrains (~0.6 s in the browser) were built on the first tick that needed them → once, shared, at a
+  join (behind the loading screen).
+- Collision: a reach build reads its neighbours, generating 9–12 chunks on one tick (~100 ms in the browser) → on
+  the server a build waits for neighbours the jobs haven't brought (they're asked for first), at most 2 generated a
+  tick (`Players::set_reach_generates`); the look-ahead, the falling pieces' boxes and `sync`'s rebuilds the same.
+Natively the worst tick went 31.8 → 3.0 ms; in the browser no chunk is generated on the tick any more. Still over
+budget in the browser: the save (20–38 ms at once), the join's first second (growth, ecology, water ~100 ms),
+growth bursts (~30 ms) and collision builds (~20 ms): next.
+Round 3: the autosave every 5 s committed one transaction with a file sync (20–40 ms in the browser) → autosaves
+commit lazily (`SaveBatch::lazy`, redb `Durability::None`), durably the first and once a minute and every host
+`save_now` (a close, a page hidden); a test pins a lazy save kept by the next durable one. The once-a-minute durable
+commit is still one ~60 ms tick in the browser: next, with the join's first second (~100 ms).
+Round 4: the durable commit waits for a moment nobody moves (2 s without movement input, a minute or more after
+the last; forced after ten minutes; `a_durable_save_waits_for_a_still_moment`); tree scans 1 chunk a tick; the
+browser's local server takes the phone tier's collision budgets (1024 cells, 1 chunk ahead) and never generates a
+chunk for its collision (0: ~35 ms each in WASM; the reach waits for the jobs, a player inside new ground lifted
+onto it); each phase's longest tick reported (`max.<phase>`, µs). The join's ~100 ms is in the server's first
+second, behind the loading screen. Browser run after round 4: no chunk generated on the tick, no save spike,
+terrain ≤ 12 ms; still over budget: **growth single ticks 9–25 ms** (a giant tree's stage grown, or a grass
+chunk, in WASM ~10× native).
+Round 5: a tree's stages grow in the server-jobs worker (job "TJ1", answer "TD1": `species::Grown` as bytes,
+`growth::keep_grown`); with remote jobs a due tree waits until both its stages are kept. Browser run: every advance
+≤ 15.8 ms (growth ticks 11–14 ms, now grass chunks). Next: grass chunks off the tick too.
+
+Round 7 (2026-11-17; owner: "I'm getting big hitches while flying at 362 m/s"): bench `stutter-fly` showed the
+server's `terrain` phase at 39–71 ms ticks for ~10 s after take-off. Cause: the air test's sky floors (a chunk
+column's heights, ~1 ms natively, several in WASM) computed on the tick by the collision's neighbour checks
+(`would_generate`), and by the controller's probe, swim and shape reads (`VoxelWorld::read`) of chunks not yet
+loaded: at 362 m/s new columns every tick. Fix: the world's tick-safe air test (`set_air_known`): reads of an
+unknown chunk read as air, the collision waits on it, and its column is wanted first. Tests red → green:
+`terrain::air_tests::the_reach_waits_for_unknown_sky_floors_instead_of_computing_them` (336 sky floors in one
+reach → 0) and `voxel_query::a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor`. The harness
+(`TICK_FLY=1`, its input fixed: its sequence numbers had been past `MAX_SEQ_AHEAD`, so no earlier harness run
+moved its player) natively: p99 17.5 → 0.94 ms, max 28 → 8.6 ms. Browser: flight's worst tick a second 1–6 ms
+(was 39–71) except take-off's growth (16–22 ms); the sprint run's terrain ≤ 15 ms (a first try without
+`want_first` made a 166 ms burst there: the look-ahead's columns came too late). Left: growth at take-off
+(16–22 ms), the join's first second (ecology ~25 ms).
+
+Round 8 (2026-11-17): the take-off's growth ticks were the tree scan: `trees_in_chunk` ran the placements over a
+chunk's whole 32 × 32 column (~1–5 ms natively) for every chunk stacked in it. The scan now places a column once
+(`Growers::trees_in_column`, kept per column and face, 4096 columns) and picks each chunk's trees from it. Test red
+→ green: `growth::the_scan_places_a_column_once_for_its_stacked_chunks` (65 placements for 25 columns → 25). Left:
+one placement per new column on the tick (~5 ms natively at take-off): next, off the tick like the sky floors.
+
+Round 9 (2026-11-17): a new column's tree placements left the tick. In the browser (`jobs_remote`) they are the
+server-jobs worker's job ("GJ1" → "GD1" with the column's `Records`), two out at once, the scan recording the
+chunks whose column has come; elsewhere a quarter column a tick (`Growers::trees_in_column_part`, the four
+quarters the column's trees: a test on both faces). Tests red → green: `the_scan_places_a_quarter_column_a_tick`
+(4 quarters in a tick → 1) and `a_remote_server_places_tree_columns_in_its_jobs_worker` (61 quarters on the tick →
+0, the trees still recorded). Harness: flight's worst tick 2.7 ms (was 4.9–6). Left: grass's quarter passes cost
+5–12 ms natively once a world day passes in the sprint run: next.
+
+Round 10 (2026-11-17): grass's quarter passes regenerated their chunk on the tick: a chunk unedited when picked
+needed no pristine copy, but its first quarter's own grass edits it, so each later quarter regenerated it to read
+it as generated (3–12 ms natively a quarter; an edit by a player between quarters did the same). Now a chunk's own
+and its neighbours' cells are copied as their pristine ones when picked (unedited), and a quarter whose chunks
+lack a copy waits for one instead. Test red → green: `the_tick_never_regenerates_a_chunk_to_grow_grass` (3
+regenerations → 0). Harness sprint: worst tick 11–12 → 7.8 ms, growth off the worst list. Left: the sprint's
+collision ticks (~7 ms natively), ecology at the join.
+
+Round 11 (2026-11-17, a finding): the sprint harness's ~7 ms collision ticks are tree growth. A grown stage's logs
+change collision (`collision_revision`), and `TerrainCollision::sync` rebuilds the chunk and every shaped chunk
+round it (6–16 builds, 2–7 ms natively). The harness grows a world day every 20 s (60×), so it shows these all the
+time; at the game's speed a tree grows a stage every few days. Kept as a smaller item: if it shows in the browser,
+budget `sync`'s neighbour rebuilds (the edited chunk at once, its neighbours a few a tick) or rebuild a neighbour
+only when the change touches the shared border.
+
+Round 13 (2026-11-17; owner: "There's a lot of trees, so once every few in game days is still probably pretty
+often."): a chunk keeps per side the collision changes within two cells of it (`Chunk::side_revision`), and
+`TerrainCollision::sync` rebuilds a shaped neighbour only when every side of the changed chunk facing it changed
+(a neighbour reads only those cells). Test red → green:
+`an_edit_away_from_the_border_rebuilds_no_shaped_neighbour` (2 builds → 1); the border test still rebuilds both.
+Also: making room for a picked grass chunk's pristine copies cleared its own (one regeneration, 12 ms natively):
+the clear now keeps them (no automated test: the copies are private; the harness shows `GRASS REGENERATED 0`).
+Harness sprint at 60× growth: worst tick 5.3 ms (was 8.5, failing the 8 ms gate); collision ticks 7.7 → 4.7 ms.
+
+### 193. Leaves left hanging in the air after a tree is cut down
+
+Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should
+only be attached to trees or fall to the ground and settle there." (Photo: a few leaf blocks floating in the open sky
+over a meadow, no trunk near.) Owner should see: no leaves left floating; a felled tree's leaves go with it or fall to
+the ground.
+
+### 192. Growing tall grass stacks with gaps instead of stretching
+
+Owner, 2026-11-16: "I see the tall grass is like stacking when it grows but that's not right at all, it's supposed to
+extend or stretch up. That looks really bad stacked with gaps." (Photo: tall grass two and three cells high drawn as
+separate short tufts one over another, gaps between them.) Owner should see: tall grass that grows taller as one
+stand, its blades stretching up, no stacked tufts or gaps.
+
+### 191. A fallen tree's logs settle out of line
+
+Owner, 2026-11-16: "I'm also seeing settling tree logs not matching their alignment, this is probably due to the
+original implementation and the later update to make them settle better. I haven't chopped this fallen tree at all"
+(screenshot: an unchopped fallen trunk lying as separate log pieces at different heights and offsets, ends
+staggered, not one straight trunk). Owner should see: a felled tree lies as one straight trunk, its logs in line.
+Looked into (2026-11-16): a 2 x 2 trunk resampled onto its side is one straight box at any rest offset
+(`felling.rs` unit test), and a giant's 2 x 2 trunk with a crown felled on flat ground, over a bush too, lies as one
+straight trunk (`tests/felling.rs` `a_two_by_two_trunk_with_a_crown_settles_as_one_straight_trunk`). Not reproduced
+yet: suspects are a trunk at rest on a hill (each column follows the pose, §4 step 2) or landing across other trees
+(each column lifted on its own over what holds its cells, step 3). Parked for the owner: where it was (a world and
+place, or how it came down). Found and fixed (2026-11-16): with the gentler topple the same 2 x 2 trunk landing across a bush settled
+with those columns two rows up. The body lies through leaves (passable) on the ground under them, but the leaf cells
+counted as taken, so each column under them stepped up over them (settling step 3). A log now crushes the leaves where
+it settles (the server's `taken`); a player there still takes the cell.
+
+### 190. Damaged slopes and logs show the void behind them
+
+Owner, 2026-11-16: "looks like regular slabs properly show the under blocks when damaged, but slopes and irregular
+shapes like logs don't, showing the void, or just straight through the blocks." #187's fix covered the full and
+slab shapes only. Owner should see: a damaged slope or log shows the blocks behind and under its bitten-out parts,
+as a slab does.
+
+### 189. Grass shadows flicker while walking through tall grass
+
+Owner, 2026-11-16: "I also found a bug where there's some grass shadow flickering I think, very distracting, happens
+as you walk through tall grass sections. I couldn't screenshot it, I had to capture frames from a video recording."
+(Frames: long thin dark streaks across the meadow in one frame, gone in the next.) Cause (found): since 0.70's far
+grass cards (#996), a plant past 16 m is one quad turned to face the eye, and the shadow passes ran the same vertex
+stage, so the shadow came from the camera-turned card: as the player moves the cards turn and their shadows sweep,
+and a card edge-on to the sun casts a long thin streak. Fix: the shadow passes keep the plants as meshed (no turn,
+no dropped quads), so a plant's shadow doesn't depend on the camera. Owner should see: no flickering or streaking
+shadows walking through tall grass.
+
+### 188. Chopping round a log heals the far side
+
+Owner, 2026-11-15: "For damaged blocks, at least trees sometimes circling the tree block and destroying all the way
+around seems to repair the other side visually or something?" Cause (found): a damaged cell keeps only its newest
+`MAX_HIT_MARKS` (4) hit marks (`dwell_protocol::damage::Damage::hit`), and its carved shape is drawn from the marks
+it holds, so hits on a new side push the oldest side's marks out and that side fills back in. Owner should see:
+every bite taken out of a block stays until it breaks (or heals by the healing rules), from whichever side.
+Fix (2026-11-15): a client keeps every mark it sees of a cell's damage (`DamageView::seen_after`, up to 48; the
+wire and saves unchanged), its mesh workers get them all, and the mask is built bite by bite (after mark b of m, b/m
+of the volume, the cheapest sub-cells by the marks so far, what an earlier bite removed kept). Red → green:
+`chopping_round_a_block_never_fills_a_bite_back_in`. Built; open until the owner's look.
+
+### 187. A block's mined-away chunks show sky, not the blocks behind and under it
+
+Owner, 2026-11-15, with a phone screenshot (stone, the stone pickaxe, mid-break): "fix this rendering bug, where
+chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it". Through the carved
+chunks of a damaged block the neighbouring stone isn't drawn: the gap shows the sky's blue. Suspect: the neighbours'
+faces against the damaged cell are culled as hidden by a full block (the mesher's face culling sees the damaged cell
+as a whole cube), so once its chunks are carved away nothing covers the hole. Owner should see: through a block's
+carved chunks, the blocks behind and under it, solid.
+
+### 186. Bare trunks ("sticks") with no crown at middle distance
+
+Owner, 2026-11-15, on the bench's mixed-forest shot: "I do see a bug in that screenshot but it's probably not new,
+there's some \"sticks\" trees without leaves. Likely the billboard not rendering." And: "Also, why do we have
+\"sticks\" shouldn't we have billboards of the logs too?" Not new: the same trunks show in 0.70.21's shot of the
+spot (bench `high-mixed`, `test:starter` seed 0, `starter:mixed-forest`), up the hill ~30–80 m away, with leafy trees
+between them. Suspect: the far trees' hand-over: past it a chunk draws its plants without its trees' leaves
+(`impostors::cutout_draw`), and the tree's impostor should draw the crown; where it doesn't (a tree the impostors
+don't hold, or the chunk's distance and the tree's disagreeing about the hand-over) only the trunk is left. Owner should
+see: no bare trunks; a far tree is one billboard, trunk and crown together.
+Cause and fix (2026-11-15): the neighbours' faces against a damaged cube were culled as hidden; they now draw
+(`mesh_cells`: beside a struck cell, or a damaged cell in the chunk's border, which mesh jobs now carry, and damage
+on a chunk's edge re-meshes the neighbour). Red → green: `a_blocks_face_toward_a_damaged_block_draws` (both faces,
+inside a chunk and across its border). Built; open until the owner's look.
+
+Cause (found 2026-11-15): the bare trunks were the `pine_groves` placement's hand-built pines (`dwell:pine_tree`,
+`dwell:tall_pine_tree`). The far tree lists held species trees only, so those pines had no impostor, yet every leaf
+was marked a tree's (`TREE_LEAF_FADE`) and dropped past the hand-over. Fix: the hand-built trees are baked as
+impostors too (a layer each after the species', `impostor::structure_trees`) and listed as far trees and leaf
+owners; and only a listed tree's leaves are marked to hand over (`Cells::tree_owned`), so a placed leaf stays drawn.
+Red → green: `far_trees_hand_built.rs` (no far tree for `dwell:pine_tree` before) and the mesher's
+`only_a_listed_trees_leaves_hand_over_to_its_impostor`. Built; open until the owner's look. Trunks folded into the
+billboard (skipping the near trunk's geometry past the hand-over) is the follow-up.
+
+### 185. No chunks come off a chopped log; tools held with their heads off to the right; chopped trees don't fall over
+
+Owner, 2026-11-15, after the axe clip of #980: "I don't see any chunks disappearing from the log from mesh deformation
+in that axe chopping video. Also all the tools are rotated so their heads face off to the right, they should face in to
+the left and more upright. Animations can be adjusted accordingly to ensure the hit aligns with the pointer." And:
+"Trees should get the force applied to them like it used to be so they fall again, towards the side with the least
+structure", corrected: "my description only had to do with the contents of the block you're breaking on break, than
+the surrounding terrain, essentially following the realistic falling toward the broken side of the tree."
+
+- **Cause (chunks):** the carved damage look was a height field per cube face (BLOCK_DAMAGE.md §6.2), which an
+  octagonal log is not, so #980 drew logs with cracks only.
+- **Fixed (chunks):** damage is a 3D bit mask over the cell for any shape (BLOCK_DAMAGE.md §15). Test:
+  `dwell-mesh` `a_damaged_octagon_log_loses_volume_by_stage` (both faces; red with the log drawn whole, as main did).
+- **Fixed (felling):** a tree falls toward the side its bottom log's hits took out (BLOCK_DAMAGE.md §16). Test:
+  `dwell-sim` `chopping` `a_tree_falls_toward_the_side_its_bottom_log_was_cut_from` (both faces; red on the old rule).
+- **Cause (grip):** each tool's turn about its handle (`shared/models/props.json` `hold.roll`/`yaw`) left the stone axe's
+  and stone pickaxe's heads standing out on the right of the handle, and the `tool` hold pose leaned the handle 17.6°.
+- **Fixed (grip):** the stone axe and pickaxe and the metal axe `roll` 120 (the head out on the left of the handle, in
+  toward the crosshair; the metal pickaxe and the shovels already were), and the `tool` hold pose
+  (`shared/characters/characters.json`) stands the handle at 10° from upright; the break clips' strike keys
+  (`fp_break_*` at 0.14 and 0.26 s) turn the hand back by the same 12°, so each head still meets the crosshair at its
+  contact (`every_tools_head_meets_the_crosshair_at_its_contact`, both faces). Test: `dwell-client` `clip_probe`
+  `every_tools_head_faces_in_to_the_left_and_stands_upright_at_rest` (red on main: the stone axe's head side +0.108,
+  the lean 17.6°).
+
+**Owner should see:** chunks coming off a log with each axe hit; each tool held with its head leaning in toward the
+crosshair, more upright, and striking at it; a tree whose bottom log you chop from one side falls toward that side.
+
+### 184. The axe still behaves unlike the pickaxe and the shovel (a gap in #954)
+
+Owner, 2026-11-15: "Did you change the axe (or fix deploys for changes to it) since 10:40? It does not have the same
+behavior as the other tools." (Claude: nothing changed it since #954.) "If you didn't change it." → "That's how it
+was, it was different from the other tools". The 2026-11-14 request ("Let's simplify the axe to be like the shovel and
+pick, without the multiple modes") was half done in #954: one mode, but the axe still swung as a chopping tool (its own
+swing and camera, an arc that cleared leaves, a stamina cost, the server's `chop_hit`) and drew its hits as the
+chopping system's V bites. Asked what a broken trunk's tree should do: "Tree still falls (Recommended)".
+
+**Owner should see:** in adventure with the stone axe, each click on a log swings like the pickaxe (the hit lands as
+the head reaches the crosshair), cracks spread over the log and wood chips fly, no V bites or notch; on the 10th hit
+the whole log breaks and drops wood; breaking a tree's bottom log, the tree above topples as a body with its crack.
+
+**Fixed:** the axes are break tools only (`shared/tools/tools.json`; docs/BLOCK_DAMAGE.md §14): hits are block edits
+taking the log's damage, a damaged log keeps its octagon with cracks, the server cuts no wood and ignores an older
+save's cuts. Tests: `dwell-sim` `chopping` (6 tests, both faces where it matters), `dwell-client` `game_local`
+`the_axe_hits_a_log_as_the_pickaxe_hits_stone`, `dwell-mesh`
+`a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage` (red on the old build → green).
+
+### 182. A held break at nothing loops its knock (phones in Break mode, the held mouse too)
+
+Owner, 2026-11-15: "there seems to be a looping sound when you have "break" on for mobile and you tap and hold the
+right side of the screen. It should definitely not play more than once when hitting nothing." A still touch on the
+look side in Break mode is a held Break (WORK_QUEUE item 17); with nothing aimed at, each repeat
+(`Game::repeat_held_use`) found no target, pushed the refusal knock (`deny`) and returned false, so the hold's clock
+never moved on and the repeat was due again the next frame: a knock every frame (122 in 2 s). The held mouse button
+did the same on desktop.
+
+**Owner should see:** on a phone in Break mode, holding the right side of the screen at the sky knocks once; held on a
+block, each hit sounds as before; a held left click into the air on desktop knocks once too.
+
+**Fixed:** `HeldUse::miss_sounds` (`crates/dwell-client/src/held_use.rs`): a click's miss knocks, a hold's only on its
+first swing; a new hold knocks once again. Tests: `game_local` `break_held_at_the_sky_knocks_once_per_hold` (touch
+and mouse holders; red: 122 knocks, green: 1), `held_use` `a_hold_at_nothing_sounds_its_miss_once`.
+
+### 181. Stone tools can't be crafted from the rocks dirt and grass give
+
+Owner, 2026-11-15 (screenshot: a backpack with 33 grass fibre, 17 sticks and 13 Rocks; Combine offered only Thatch
+and the Wooden shovel): "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards". Dirt and grass
+dropped `dwell:rock` (chance 0.5) and the ground's loose rocks were `dwell:rock`, an item apart from
+`dwell:rock_shard`, which the stone tool recipes take and only stone gave. The owner's decision: "One item: rock =
+shard".
+
+**Owner should see:** breaking dirt or grass, and picking up a rock from the ground, gives Rock shards; with 2 sticks,
+2 rock shards and 2 grass fibre the backpack's Combine offers the stone axe, the stone pickaxe and the stone shovel;
+the Rocks already in a backpack (or lying loose in a saved world) show as Rock shards.
+
+**Fixed:** one item. Dirt's and grass's random drop and the ground rock's item are `dwell:rock_shard`
+(`shared/blocks/dwell.json`, `shared/ground/ground.json`; the ground rock now lies as a shard, its item's one look);
+`dwell:rock` is gone as an item and kept as an alias (`shared/inventory/inventory.json` `aliases`, generated into
+`dwell_protocol::inventory::ITEM_ALIASES`), so a saved or sent stack of it reads 1:1 as rock shards
+(`canonical_item`, in `Inventory::read` and the saved loose items). Tests: `dwell-protocol` inventory
+`rocks_from_dirt_make_the_stone_tools` (red: no stone tool offered), `an_old_rock_reads_back_as_a_rock_shard` (red),
+the data test's dirt and grass drops (red: `dwell:rock`); `dwell-sim` `a_saved_old_rock_loads_as_a_rock_shard`, the
+ground rock pick-up tests in `tests/items.rs` (a rock shard collected); `shared/inventory/gen.test.mjs` the alias.
+
+### 179. Grass fibre (and the gems) drawn as a block when dropped
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "Plant fiber looks like a block for the drop." A loose grass fibre was a
+`cluster` look (the seeds' heap of tiny lumps) under a green-tinted sand tile, which reads as a little block; the
+gems had no `look` at all, so a loose gem fell back to the stand-in stone block tinted its colour.
+
+**Owner should see:** dropped grass fibre lying as a little fan of green-straw blades, a gem as a small crystal;
+no loose item drawn as a cube.
+
+**Fixed:** a `strands` look shape (five thin blades splayed flat from a tied end, `dwell-mesh` `ground_mesh`) for
+the fibre; the gems a `shard` each; the generator fails an item without a `look` (`shared/inventory/gen.mjs`), so
+nothing can fall back to the block again. Tests: `shared/inventory/gen.test.mjs` "every item that is not a block
+has its own look" (red: the gems had none, the fibre a cluster) and `ground_mesh`
+`the_grass_fibre_draws_strands_not_a_block` (red: a cluster).
+
+### 178. What rested on a destroyed block vanished or floated
+
+Owner, 2026-11-14 (WORK_QUEUE item 58): "When you destroy a block with grass, rock, sticks on it, those should drop
+too." and "Essentially a general rule of blocks or items sitting on a block should be dropped when that block is
+destroyed." A plain break already dropped the blocks standing on it and knocked the ground items loose, but the
+other ways a block goes did not: a region's clearing removed the tall grass, torches and saplings on what it
+cleared without their drops, and a region, a blast, a fall into a piece and a felling never knocked the ground
+rocks and sticks on the cells they took (gone, or drawn floating where a client had them). A block registered at
+run time (a mod's) was never counted as attached at all (`dwell_world::edit::attached` read only the build's
+table), nor named for `placeOn`.
+
+**Owner should see:** digging, blasting or clearing the block under tall grass, a torch, a sapling or a ground rock
+or stick drops their items onto the ground (adventure); nothing floats or vanishes; a stack of them drops cell by
+cell.
+
+**Fixed:** one rule, in the one place every change of the world goes through (`Server::broadcast_changes`): the
+attached blocks the tick's writes removed with what held them (block data `needsSupport`, `placeOn`; recorded by
+`TickChanges::set_and_unsupport`) drop their drops, and a ground item over a cell that is no longer solid is
+knocked loose; the separate calls in the break, blast, collapse and chopping paths are gone. `attached` and
+`supported_on` read a run-time block's own data. Blocks that stand on their own keep the support and falling
+rules. Tests (`dwell-sim` `tests/items.rs`, both faces): `a_regions_clearing_drops_what_stood_on_it` and
+`a_blast_under_a_ground_rock_knocks_it_loose` (red: no fibre, no rock), `a_data_only_block_and_a_column_of_it_drop_when_their_ground_goes`
+(the fixture `test:moss`, three stacked: red by region, none dropped), `the_blocks_standing_on_a_broken_block_drop_with_it`.
+
 ### 174. On a phone nothing in the inventory answers after opening the bag
 
 Owner, 2026-11-14: "A bug too for mobile, I can't seem to access inventory, after opening bag, nothing is
@@ -83,7 +399,7 @@ session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOP
 Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
 `game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
 frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
-frame, peaking every third). Remote players share the estimator since #180.
+frame, peaking every third). Remote players share the estimator since #198.
 
 ### 172. Trees disappear when the camera gets close
 
@@ -713,6 +1029,91 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 199. A cinematic take's sounds late on a few frames a clip (fixed after 0.71.28)
+
+Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
+scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
+clip. The AudioContext is stepped to each frame's time and suspended; each frame's sounds go `audio.leadS` (50 ms)
+after it. A step's resume–suspend round trip overshoots by a hardware buffer, sometimes past the lead, and then that
+frame's sounds were scheduled before the context's clock and played late, by up to the overshoot.
+
+**Owner should see:** a cinematic take's log reading `late 0`, every sound on its frame.
+
+**Fixed:** the take's timeline (`TakeTimeline`, `client/src/theater/cinematicAudio.ts`) moves on by a step's
+overshoot past the lead plus a render quantum, so the frame's sounds and its mark are scheduled ahead of the
+suspended clock whatever the overshoot; the re-timing on the frame marks (`realign`) takes the extra audio out. The
+report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
+…"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
+
+### 198. Remote players step after the server drops time (fixed after 0.71.28)
+
+Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
+(dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
+server's clock, the least delay seen drifting up 1 ms a second: after the server dropped time (a local world's
+worker busy past its catch-up cap) a remote was drawn past its newest snapshot for minutes, held there and moving
+only on frames a snapshot came (one in three at 30 fps), a step of three frames' motion each.
+
+**Owner should see:** a friend in your world moving smoothly on every frame after a hitch, not stepping.
+
+**Fixed:** one estimator, `dwell_game::server_clock::ServerClock` (the least delay within the last second, slewed
+3 %, snapped past 250 ms), shared by the remote players and the pieces (bodies are pieces). Creatures and NPCs ease
+toward their latest state by frame time and dropped items aren't moved by snapshots, so neither has a server clock
+to fix. Test (both faces): `remotes::tests::a_remote_drawn_after_the_server_dropped_time_moves_every_frame`, a
+remote at 6 m/s after a ½ s stall, 30 fps frames: red before (frames drawn still, deviation 1.00), within 3 % after.
+
+### 183. A blueprint's ghost and panel didn't show (fixed after 0.70.14)
+
+Found 2026-11-15 in site clearing's GPU check (`?local=1&seed=0&fresh=1&spawn=town`, `__dwell.blueprint('dwell:bp_hut')`).
+Two parts. (1) Fixed in 0.70.14: `Client::start_game` never set `blueprints_synced`, so a fresh session couldn't place a
+blueprint until a mode change. (2) Once placed, the server built it, but the client drew no ghost and the panel stayed
+empty when aimed into its box, also after a reload. Cause: the server sends `Blueprints` (`All` at the capabilities,
+`Added`/`Removed` after) on the **world** channel, and the client session (`net/session.rs` `on_reliable`) forwards a
+world-channel message to the game only if it is in its list, which `Blueprints` wasn't (it was handled on the control
+channel only); the message was dropped silently. Not only local worlds: every server. Fixed: `Blueprints` is in the
+world channel's list. Test: `game_local` `a_blueprint_placed_in_a_local_world_comes_back_as_a_ghost_with_its_panel`
+(red: the server kept the hut, the client's panel never showed; green after). **Owner should see:** a blueprint placed
+(Blueprints, or Structures → Test in town) shows its ghost when you look at it, and the panel names it, "Clearing"
+then "Building".
+
+### 180. Releases 0.70.3 onward never reached the site: Pages over its 1 GB limit (fixed after 0.70.7)
+
+Owner, 2026-11-15: "And 70.3/4 haven't deployed yet." The Release workflow tagged and published each release, but its
+"Update the site" build stopped: `Site: 1025.0 MB of 1000.0 MB (102.5%; budget 900 MB), 37 builds, about 27.7 MB per
+build ⛔ over the Pages limit: the deploy is stopped` (run 43668658029, 0.70.4; the same for 0.70.3–0.70.7). Fix: the
+retention policy (`shared/version/site-retention.json`) keeps the newest 12 lines (was 20) and 4 dev builds (was 10);
+older builds stay as GitHub releases and can be pinned back. `site.test.ts`'s policy test pins the new values (red on
+the old file). Long term the Cloudflare move lifts the limit. Owner should see: the launcher at /dwell/ offering the
+newest release (0.70.8 or later) within minutes of its merge.
+
+### 177. Vertical streaks through a moving flood: water column side faces inside the water (fixed after 0.70.5)
+
+Found 2026-11-14 by Claude in the dam-break recording (`videos/dam-break/`, scene `shared/theater/scenes/dam_break.json`;
+not reported by the owner). Through the flood's translucent water, a staircase of thin vertical lines (the outlines of
+the columns' levels) and two long bars across the valley along the dam's old upstream face, both drawn inside the water.
+
+**Owner should see:** the dam break's flood reads as one clear body of water: no streaks or bars inside it, the
+flood front and the banks as before; a river and the sea look as before.
+
+**Cause:** two. (1) **Step faces the heightfield already draws.** With the GPU heightfield drawing the water's surface
+(`ChunkFlags::water_tops` false), the chunk mesher still drew a side face between two columns of one water at different
+levels (the "slit" fix of BUGS.md #4). The heightfield joins a step within `join_m` (0.2 m) into a slope, so that face
+stood across the slope, and it draws a bigger step as a skirt, so the face doubled it. Worse, while only a chunk's water
+levels change the client redraws its tile, not its mesh (`chunk_stream` `levels_only`, until the water settles), so the
+faces stayed where the levels had been and the moving flood rose over them: measured on the scene's flood natively, half
+of the meshed side faces stood fully inside the water a second later. (2) **A sheet of water hung where the dam stood.**
+The lake was held still till the dam went; the columns against the dam fell 3 m in the grid's first step after the
+release, before it had drawn them (`drawn` unset), and its draw cleared cells only from the floor up to the new level:
+rows 27–29 m of the row against the dam stayed water over air for good (24 columns), a 1 m sheet across the valley
+drawn as the two bars.
+
+**Fixed:** (1) in the heightfield mode the mesher leaves out a side face between two cells of one water that lie in
+their columns' top water (`heightfield::surface_draws_step`); the grid and skirts draw that step. (2) a column the grid
+hasn't drawn since its cells were written otherwise clears the liquid standing on over its level too (`water.rs` `draw`).
+Red → green: `dwell-mesh` `heightfield::tests::steps_between_columns_of_one_water_are_the_surfaces_not_the_meshes`
+(both faces; red: 8 side triangles in the water) and `dwell-sim --test scenes no_water_hangs_where_the_dam_stood` (red:
+24 water cells over air at z 99). Left: the flood front's step-cell slopes (`step_water`) are meshed too and also stay
+behind while only the levels change, a few square metres at the front at a time.
 
 ### 175. On face B a sun landing stands ½ m over the sun's ground height (`game_local` sun trip fails on face B) (fixed after 0.70.2)
 

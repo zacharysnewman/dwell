@@ -61,12 +61,110 @@ pub fn decode_chunk_done(b: &[u8]) -> Option<(ChunkCoord, Box<Chunk>)> {
     Some((c, Box::new(Chunk::from_voxels(&voxels, 0)?)))
 }
 
+/// A tree's stage to grow (species index, seed, stage), as bytes: "TJ1" and those (u16, u32, u8,
+/// little-endian). Growing a giant's stage takes ~2 ms natively, ~20 in the browser: off the tick
+/// (priority 0, the owner's "the server never drops below 60fps").
+pub fn encode_tree_job(species: u16, seed: u32, stage: u8) -> Vec<u8> {
+    let mut out = b"TJ1".to_vec();
+    out.extend(species.to_le_bytes());
+    out.extend(seed.to_le_bytes());
+    out.push(stage);
+    out
+}
+
+fn tree_key(b: &[u8]) -> Option<(u16, u32, u8)> {
+    Some((
+        u16::from_le_bytes(b.get(3..5)?.try_into().ok()?),
+        u32::from_le_bytes(b.get(5..9)?.try_into().ok()?),
+        *b.get(9)?,
+    ))
+}
+
+fn decode_tree_job(b: &[u8]) -> Option<(u16, u32, u8)> {
+    (b.len() == 10 && b.starts_with(b"TJ1")).then(|| tree_key(b))?
+}
+
+fn encode_tree_done(
+    species: u16,
+    seed: u32,
+    stage: u8,
+    grown: &dwell_worldgen::species::Grown,
+) -> Vec<u8> {
+    let mut out = b"TD1".to_vec();
+    out.extend(species.to_le_bytes());
+    out.extend(seed.to_le_bytes());
+    out.push(stage);
+    out.extend(grown.to_bytes());
+    out
+}
+
+/// A grown tree stage's answer: its key and what grew (None if it isn't one).
+pub fn decode_tree_done(b: &[u8]) -> Option<((u16, u32, u8), dwell_worldgen::species::Grown)> {
+    if !b.starts_with(b"TD1") {
+        return None;
+    }
+    Some((
+        tree_key(b)?,
+        dwell_worldgen::species::Grown::from_bytes(b.get(10..)?)?,
+    ))
+}
+
+/// A chunk column's tree placements on a face (BUGS.md #194: ~5 ms natively a column, ~15–20 in
+/// the browser: off the tick), as bytes: "GJ1", the face (0 A, 1 B), the column's chunk x and z
+/// (i32, little-endian).
+pub fn encode_tree_column_job(key: (i32, i32, dwell_world::Face)) -> Vec<u8> {
+    let mut out = b"GJ1".to_vec();
+    out.extend(column_key_bytes(key));
+    out
+}
+
+fn column_key_bytes((x, z, face): (i32, i32, dwell_world::Face)) -> Vec<u8> {
+    let mut out = vec![u8::from(face == dwell_world::Face::B)];
+    out.extend(x.to_le_bytes());
+    out.extend(z.to_le_bytes());
+    out
+}
+
+fn column_key(b: &[u8]) -> Option<(i32, i32, dwell_world::Face)> {
+    let face = match *b.get(3)? {
+        0 => dwell_world::Face::A,
+        1 => dwell_world::Face::B,
+        _ => return None,
+    };
+    Some((
+        i32::from_le_bytes(b.get(4..8)?.try_into().ok()?),
+        i32::from_le_bytes(b.get(8..12)?.try_into().ok()?),
+        face,
+    ))
+}
+
+fn decode_tree_column_job(b: &[u8]) -> Option<(i32, i32, dwell_world::Face)> {
+    (b.len() == 12 && b.starts_with(b"GJ1")).then(|| column_key(b))?
+}
+
+/// A column's placed trees' answer: "GD1", its key, then the trees (`Records::to_bytes`).
+pub fn decode_tree_column_done(
+    b: &[u8],
+) -> Option<(
+    (i32, i32, dwell_world::Face),
+    Vec<dwell_worldgen::growth::Record>,
+)> {
+    if !b.starts_with(b"GD1") {
+        return None;
+    }
+    let records = dwell_worldgen::growth::Records::from_bytes(b.get(12..)?)?;
+    Some((column_key(b)?, records.trees.into_values().collect()))
+}
+
 /// Runs the server's jobs (the server-jobs worker): chunks generated, sky floors and LOD sections
 /// computed.
 pub struct JobRunner {
     generator: ChunkGenerator,
     air: Arc<AirColumns>,
     lod: LodRunner,
+    /// The world's generator version and seed, for the tree columns' growers (built at the first).
+    world: Option<(u32, u64)>,
+    growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
 }
 
 impl JobRunner {
@@ -87,6 +185,7 @@ impl JobRunner {
     ) -> Self {
         Self {
             air: AirColumns::for_generator_sized(generator_version, world_seed, size),
+            world: Some((generator_version, world_seed)),
             ..Self::new(
                 dwell_worldgen::generator_for_sized(generator_version, world_seed, size),
                 dwell_worldgen::lod_generator_for_sized(generator_version, world_seed, size),
@@ -100,6 +199,8 @@ impl JobRunner {
             generator,
             air: AirColumns::for_generator(dwell_world::GENERATOR_FLAT, 0),
             lod: LodRunner::new(lod),
+            world: None,
+            growers: None,
         }
     }
 
@@ -113,6 +214,29 @@ impl JobRunner {
         if let Some(col) = crate::sky_columns::decode_job(job) {
             return Some(crate::sky_columns::encode_done(col, self.air.compute(col)));
         }
+        if let Some(key) = decode_tree_column_job(job) {
+            let world = self.world;
+            let growers = self.growers.get_or_insert_with(|| {
+                world.and_then(|(v, s)| dwell_worldgen::growth::Growers::for_generator(v, s))
+            });
+            // Any chunk of the column on its face names it (its x and z, the face).
+            let c = dwell_world::FaceFrame::of(key.2).chunk(ChunkCoord::new(key.0, 1, key.1));
+            let trees = growers
+                .as_ref()
+                .map_or(Vec::new(), |g| g.trees_in_column(c));
+            let records = dwell_worldgen::growth::Records {
+                trees: trees.into_iter().map(|r| (r.anchor, r)).collect(),
+            };
+            let mut out = b"GD1".to_vec();
+            out.extend(column_key_bytes(key));
+            out.extend(records.to_bytes());
+            return Some(out);
+        }
+        if let Some((species, seed, stage)) = decode_tree_job(job) {
+            let s = dwell_worldgen::species::SPECIES.get(usize::from(species))?;
+            let grown = dwell_worldgen::species::grow(s, seed, u32::from(stage));
+            return Some(encode_tree_done(species, seed, stage, &grown));
+        }
         self.lod.run(job)
     }
 }
@@ -120,6 +244,21 @@ impl JobRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tree_job_round_trips_to_the_same_grown_stage() {
+        // face-a-only: an encoding; a tree's cells are face-local.
+        let species = dwell_worldgen::species::index("dwell:oak").expect("oak") as u16;
+        let s = &dwell_worldgen::species::SPECIES[usize::from(species)];
+        let mut r = JobRunner::new(
+            dwell_world::flat_generator(),
+            std::sync::Arc::new(dwell_world::lod::generate_flat_lod),
+        );
+        let done = r.run(&encode_tree_job(species, 77, 12)).expect("an answer");
+        let (key, grown) = decode_tree_done(&done).expect("a tree");
+        assert_eq!(key, (species, 77, 12));
+        assert_eq!(grown, dwell_worldgen::species::grow(s, 77, 12));
+    }
 
     #[test]
     fn a_chunk_job_round_trips() {

@@ -336,3 +336,76 @@ fn a_calm_pool_and_a_joined_step_draw_no_skirts_but_a_drop_does() {
     assert_eq!(skirt_bottom(2.0, 1.0, DRY, 0.2), Some(1.0));
     assert_eq!(skirt_bottom(DRY, 1.0, DRY, 0.2), None);
 }
+
+/// The vertical (side) faces in a mesh: its triangles whose normal has no up or down part.
+fn side_triangles(m: &MeshArrays) -> usize {
+    let v = |i: u32| {
+        let i = i as usize * 3;
+        [m.positions[i], m.positions[i + 1], m.positions[i + 2]]
+    };
+    m.indices
+        .chunks_exact(3)
+        .filter(|t| {
+            let (a, b, c) = (v(t[0]), v(t[1]), v(t[2]));
+            let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let n = [
+                e1[1] * e2[2] - e1[2] * e2[1],
+                e1[2] * e2[0] - e1[0] * e2[2],
+                e1[0] * e2[1] - e1[1] * e2[0],
+            ];
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            len > 1e-9 && (n[1] / len).abs() < 0.1
+        })
+        .count()
+}
+
+// both-faces: the same face-local fixture as either face's chunk.
+#[test]
+fn steps_between_columns_of_one_water_are_the_surfaces_not_the_meshes() {
+    // BUGS.md #177: a flood's columns stand at many levels. The heightfield joins a small step
+    // (within `join_m`) into its slope and draws a bigger one as a skirt down to the lower
+    // column, so the chunk mesh draws no side face between two columns of one water: one it did
+    // stood across the joined slope or doubled the skirt, and, kept while only the levels change
+    // (the client's re-mesh skip), stood inside the moving water as a streak.
+    let mut local = basin(1.0, Some((5, 7, 0.75)));
+    local.push((12, 4, 9, water()));
+    let local = voxels(&local);
+    for mirror in [false, true] {
+        let cells = if mirror {
+            mirror_padded(&local)
+        } else {
+            local.clone()
+        };
+        let mesh = |water_tops| {
+            let flags = ChunkFlags {
+                water_tops,
+                ..Default::default()
+            };
+            mesh_chunk_flags(&cells, &[], mirror, [0; 3], &[], None, flags).expect("padded")
+        };
+        let surface = mesh(false);
+        assert_eq!(
+            side_triangles(&surface.transparent),
+            0,
+            "no side face inside the water (mirror {mirror})"
+        );
+        // The raised column's drop is the skirts': four, down to the pool beside it.
+        let tile = surface.water.expect("a tile");
+        let pool = level(&tile.levels, 11, 9);
+        let raised: Vec<_> = skirts(&tile.levels, &floors(&tile))
+            .into_iter()
+            .filter(|q| {
+                q.iter()
+                    .all(|p| (12.0..=13.0).contains(&p[0]) && (9.0..=10.0).contains(&p[2]))
+            })
+            .collect();
+        assert_eq!(raised.len(), 4, "mirror {mirror}");
+        assert!(raised.iter().all(|q| q.iter().any(|p| p[1] == pool)));
+        // Meshed with its tops (no heightfield), the mesh draws the steps itself.
+        assert!(
+            side_triangles(&mesh(true).transparent) > 0,
+            "mirror {mirror}"
+        );
+    }
+}

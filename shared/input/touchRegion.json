@@ -1,0 +1,68 @@
+{
+  "$comment": "The touch region bar (docs/STRUCTURES.md §5.1; client/src/ui/regionBar.ts validates and draws it): the region tools on a phone. `showWhen`: when the Select button shows (flying, and every ability listed allowed by the world's mode, shared/modes/modes.json). `buttons`: the bar's buttons in order; `run` is `tool:<name>` (a region tool, Client.tool's names) or a shell action (`save`: the Structures page's save with the selection); `in`: the bar's states it shows in (`select`, or `paste` while paste mode is on).",
+  "showWhen": { "flying": true, "abilities": ["structures"] },
+  "open": { "id": "touch-region", "label": "Select" },
+  "buttons": [
+    {
+      "id": "region-corner-a",
+      "label": "Set A",
+      "run": "tool:cornerA",
+      "in": ["select"]
+    },
+    {
+      "id": "region-corner-b",
+      "label": "Set B",
+      "run": "tool:cornerB",
+      "in": ["select"]
+    },
+    {
+      "id": "region-copy",
+      "label": "Copy",
+      "run": "tool:copy",
+      "in": ["select"]
+    },
+    {
+      "id": "region-paste",
+      "label": "Paste",
+      "run": "tool:pasteMode",
+      "in": ["select"]
+    },
+    {
+      "id": "region-place",
+      "label": "Place",
+      "run": "tool:paste",
+      "in": ["paste"]
+    },
+    {
+      "id": "region-rotate",
+      "label": "Rotate",
+      "run": "tool:rotate",
+      "in": ["paste"]
+    },
+    {
+      "id": "region-mirror",
+      "label": "Mirror",
+      "run": "tool:mirror",
+      "in": ["paste"]
+    },
+    {
+      "id": "region-cancel",
+      "label": "Cancel",
+      "run": "tool:pasteMode",
+      "in": ["paste"]
+    },
+    {
+      "id": "region-undo",
+      "label": "Undo",
+      "run": "tool:undo",
+      "in": ["select", "paste"]
+    },
+    { "id": "region-save", "label": "Save", "run": "save", "in": ["select"] },
+    {
+      "id": "region-clear",
+      "label": "Clear",
+      "run": "tool:deselect",
+      "in": ["select"]
+    }
+  ]
+}

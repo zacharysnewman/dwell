@@ -165,7 +165,7 @@ crate::both_faces!(
         let w = Fixture::field(f, 4);
         let kinds = [GroundKind {
             name: "test:pebble",
-            item: "dwell:rock",
+            item: "dwell:rock_shard",
             shape: GroundShape::Lump,
             size: [0.1, 0.05, 0.1],
             texture: "dwell:stone",
@@ -202,7 +202,7 @@ crate::both_faces!(
         }
         let kinds = [GroundKind {
             name: "test:pebble",
-            item: "dwell:rock",
+            item: "dwell:rock_shard",
             shape: GroundShape::Lump,
             size: [0.05, 0.03, 0.05],
             texture: "dwell:sand",

@@ -1,6 +1,13 @@
 // The backpack screen's moves and order, and item labels (ADR 0066).
 import { describe, expect, it } from 'vitest';
-import { backpackKey, combinable, moveFor, recipeInputs, recipeOutput, screenOrder } from './backpack';
+import {
+  backpackKey,
+  combinable,
+  moveFor,
+  recipeInputs,
+  recipeOutput,
+  screenOrder,
+} from './backpack';
 import { itemLabel, wearLeft, type InventoryHud } from './hotbar';
 import { BACKPACK_SLOTS, HOTBAR_SLOTS, ITEMS, STACK_SIZE } from './inventory.gen';
 
@@ -28,7 +35,7 @@ describe('backpack', () => {
 
   it('labels items: non-block items from the data, blocks from their name', () => {
     expect(ITEMS.find((i) => i.name === 'dwell:gem')?.value).toBe(1);
-    expect(itemLabel('dwell:rock')).toBe('Rock');
+    expect(itemLabel('dwell:rock_shard')).toBe('Rock shard');
     expect(itemLabel('dwell:snowy_grass')).toBe('Snowy grass');
   });
 });
@@ -63,9 +70,13 @@ describe('combine and wear (owner, 2026-11-11)', () => {
   });
 
   it('lists the recipes the inventory can make, with how many times', () => {
-    expect(combinable(holding({ item: 'dwell:rock_shard', count: 7 }))).toEqual([]);
-    const can = combinable(holding({ item: 'dwell:rock_shard', count: 17 }));
-    expect(can.map((c) => [c.recipe.name, c.times])).toEqual([['dwell:stone_slab', 2]]);
+    expect(combinable(holding({ item: 'dwell:rock_shard', count: 3 }))).toEqual([]);
+    const can = combinable(holding({ item: 'dwell:rock_shard', count: 9 }));
+    // Stone and stone bricks take 4 rock shards each (owner, 2026-11-15).
+    expect(can.map((c) => [c.recipe.name, c.times])).toEqual([
+      ['dwell:stone_slab', 2],
+      ['dwell:stone_brick_slab', 2],
+    ]);
     const tools = combinable(
       holding(
         { item: 'dwell:stick', count: 4 },
@@ -73,9 +84,13 @@ describe('combine and wear (owner, 2026-11-11)', () => {
         { item: 'dwell:grass_fiber', count: 2 },
       ),
     );
+    // 4 sticks and 2 fibres also make a wooden shovel; the stone shovel shares the stone tools'
+    // inputs (owner, 2026-11-14).
     expect(tools.map((c) => [c.recipe.name, c.times])).toEqual([
       ['dwell:stone_axe', 1],
       ['dwell:stone_pickaxe', 1],
+      ['dwell:wooden_shovel', 1],
+      ['dwell:stone_shovel', 1],
     ]);
     expect(tools[0] && recipeInputs(tools[0].recipe)).toBe(
       '2 Stick + 2 Rock shard + 2 Grass fiber',
@@ -99,7 +114,7 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     expect(
       recipeOutput({
         name: 'test:pair',
-        inputs: [{ item: 'dwell:rock', count: 1 }],
+        inputs: [{ item: 'dwell:rock_shard', count: 1 }],
         output: { item: 'dwell:stick', count: 2 },
       }),
     ).toBe('2 Stick');
@@ -111,6 +126,6 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     expect(wearLeft('dwell:stone_axe', 31)).toBeCloseTo(1 / 32);
     // Owner, 2026-11-12: metal tools "have double durability".
     expect(wearLeft('dwell:metal_axe', 8)).toBe(0.875);
-    expect(wearLeft('dwell:rock', 8)).toBeNull();
+    expect(wearLeft('dwell:rock_shard', 8)).toBeNull();
   });
 });

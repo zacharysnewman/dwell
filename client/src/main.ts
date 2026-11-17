@@ -271,6 +271,11 @@ interface DwellDebug {
   pick(item: string): boolean;
   /** The state the selected slot would place at the crosshair, and where; null with no target. */
   placement(): { cell: [number, number, number]; material: number } | null;
+  /** Places the catalog's blueprint `name` at the crosshair's place cell, turned `turn` quarter
+   * turns, as the Structures page does (docs/BLUEPRINTS.md §3); false with no aim. */
+  blueprint(name: string, turn?: number): boolean;
+  /** The aimed blueprint's panel text (`blueprintPanel`; "" with none aimed). */
+  blueprintPanel(): string;
   /** Material at a voxel in the client's world. */
   voxel(x: number, y: number, z: number): number;
   /** Turns creative flight on or off by pressing F, the fly key, if it isn't already (and the
@@ -404,6 +409,8 @@ interface DwellDebug {
    * time, owed time, queue; docs/DEV_TOOLS.md); null outside a local world or before the first.
    */
   serverStats(): ServerStats | null;
+  /** The local server's per-second figures over the last minutes, oldest first (empty outside one). */
+  serverHistory(): ServerStats[];
   /** The local server's water around a cell (JSON, `Water::report`); null outside a local world. */
   waterReport(x: number, y: number, z: number, radius?: number): Promise<string | null>;
   /**
@@ -478,10 +485,17 @@ interface DwellDebug {
     /** Light shafts and bloom tiers (`off`, `low`, `high`). */
     shafts?: 'off' | 'low' | 'high';
     bloom?: 'off' | 'low' | 'high';
+    /** The ambient occlusion's tier and strength (docs/SSAO.md). */
+    ssao?: 'off' | 'low' | 'high';
+    ssaoStrength?: number;
+    /** Its look (`weak`, `normal`, `strong`). */
+    ssaoLevel?: string;
     /** Leaf cards on (the tier's) or off (`Client.setCards`). */
     cards?: boolean;
     /** The tall grass and flowers drawn or not. */
     grass?: boolean;
+    /** Chunks skip their faces turned away from the camera (`Client.setFacingCull`). */
+    facing?: boolean;
     /** The render scale (shared/render/upscale.json's scales), with the current upscaler. */
     renderScale?: number;
     /** Torch shadows `off`, `low`, `high`. */
@@ -1260,6 +1274,12 @@ async function start(): Promise<App | null> {
     client.setShafts(new URLSearchParams(location.search).get('shafts') ?? s.shafts);
     // Bloom (WORK_QUEUE item 19); ?bloom=off|low|high overrides it (the bench).
     client.setBloom(new URLSearchParams(location.search).get('bloom') ?? s.bloom);
+    // Ambient occlusion (docs/SSAO.md); ?ssao=off|low|high overrides its tier (the bench).
+    client.setSsao(
+      new URLSearchParams(location.search).get('ssao') ?? s.ssao.quality,
+      s.ssao.strength,
+    );
+    client.setSsaoLevel(s.ssao.level);
     // Render scale and its upscaler; ?renderscale= and ?upscaler= override them (the bench).
     const rs = renderScaleFromQuery(location.search, s.renderScale);
     client.setRenderScale(rs.scale, rs.upscaler, UPSCALE.sharpenStops);
@@ -1608,6 +1628,8 @@ async function start(): Promise<App | null> {
     pick: (item) => app.creative?.pickItem(item) ?? false,
     placement: () =>
       client.placement() as { cell: [number, number, number]; material: number } | null,
+    blueprint: (name, turn) => client.placeBlueprint(name, turn ?? 0),
+    blueprintPanel: () => client.blueprintPanel(),
     voxel: (x, y, z) => client.voxel(x, y, z),
     fly: (on) => {
       client.fly(on);
@@ -1706,7 +1728,10 @@ async function start(): Promise<App | null> {
       }
       if (v.shafts !== undefined) client.setShafts(v.shafts);
       if (v.bloom !== undefined) client.setBloom(v.bloom);
+      if (v.ssao !== undefined) client.setSsao(v.ssao, v.ssaoStrength ?? s.ssao.strength);
+      if (v.ssaoLevel !== undefined) client.setSsaoLevel(v.ssaoLevel);
       if (v.cards !== undefined) client.setCards(v.cards ? -1 : 0);
+      if (v.facing !== undefined) client.setFacingCull(v.facing);
       if (v.grass !== undefined) client.setPlants(s.motion.plantSway ? 1 : 0, v.grass);
       if (v.torchShadows !== undefined) {
         client.setTorchShadows(shadowLevel(v.torchShadows));
@@ -1807,6 +1832,7 @@ async function start(): Promise<App | null> {
     },
     sounds: () => [...sfx.recent],
     serverStats: () => app.loopback?.serverStats ?? null,
+    serverHistory: () => app.loopback?.serverHistory ?? [],
     waterReport: (x, y, z, radius) =>
       app.loopback?.waterReport([x, y, z], radius ?? WATER_REPORT_RADIUS) ?? Promise.resolve(null),
     lava: (op, args) => app.loopback?.lavaDev(op ?? 'report', args ?? []) ?? Promise.resolve(null),
@@ -2166,6 +2192,10 @@ function play(app: App, joined: Extract<SessionReport, { phase: 'joined' }>): vo
   );
   app.touch?.setOnBag(() => {
     setInventoryOpen(app, !inventoryOpen(app));
+  });
+  // The touch region bar's Save: the Structures page, its save set to the selection.
+  app.touch?.setOnRegionAction((name) => {
+    if (name === 'save') app.settings?.openStructures();
   });
   app.client.select(0);
   // The backpack screen (ADR 0066): E opens and closes it in a world that uses items.

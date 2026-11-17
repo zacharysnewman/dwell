@@ -115,6 +115,8 @@ const TOP_KEYS = [
   "underwater",
   "creatures",
   "brush",
+  "pickup",
+  "craft",
   "self",
   "sounds",
 ];
@@ -577,6 +579,8 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     underwater: undefined,
     creatures: undefined,
     brush: undefined,
+    pickup: undefined,
+    craft: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -773,6 +777,28 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     out.brush = { everyM: b.everyM, minS: b.minS };
   }
   if (!out.brush) fail("brush", "missing (the foliage rustle's rate)");
+  // Picking up a ground item (owner, 2026-11-14; AUDIO.md §2d): one pop, a burst rate-limited.
+  for (const file of sorted) {
+    const p = file.pickup;
+    if (p === undefined) continue;
+    if (out.pickup) fail("pickup", "given twice");
+    keysIn("pickup", p, ["$comment", "windowS", "reachM", "minS"]);
+    number("pickup.windowS", p.windowS, 0.01, 5);
+    number("pickup.reachM", p.reachM, 0.1, 32);
+    number("pickup.minS", p.minS, 0, 5);
+    out.pickup = { windowS: p.windowS, reachM: p.reachM, minS: p.minS };
+  }
+  if (!out.pickup) fail("pickup", "missing (the pickup sound's window and rate)");
+  // Making an item with Combine (owner, 2026-11-15): once per press the server answers with a change.
+  for (const file of sorted) {
+    const c = file.craft;
+    if (c === undefined) continue;
+    if (out.craft) fail("craft", "given twice");
+    keysIn("craft", c, ["$comment", "windowS"]);
+    number("craft.windowS", c.windowS, 0.05, 10);
+    out.craft = { windowS: c.windowS };
+  }
+  if (!out.craft) fail("craft", "missing (the craft sound's window)");
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every

@@ -20,6 +20,7 @@ fn is_log(m: u16) -> bool {
 
 fn join_streaming(f: &mut Fixture, id: SessionId) {
     let w = f.join(id, &Client::new(id as u8));
+    start_with_axe(&mut f.server, id as u16);
     let mut v = Chunk::default();
     generate_flat_chunk(ChunkCoord::from_array(w.verification_chunk), &mut v);
     f.send(id, Message::WorldgenCheck(chunk_hash(&v)));
@@ -694,4 +695,118 @@ fn a_cell_broken_off_a_falling_trunk_goes_and_a_break_through_it_splits_it() {
         .filter(|&(xx, y, zz)| is_log(w.get_voxel(xx, y, zz)))
         .count();
     assert_eq!(logs, 12, "the two bodies settled, the broken cell gone");
+}
+
+/// BUGS.md #191 (owner, 2026-11-16: "settling tree logs not matching their alignment ... I haven't
+/// chopped this fallen tree at all"): a giant's 2 x 2 trunk (0.71) with a crown, cut through at its
+/// foot, lies on flat ground as one straight trunk: its lying logs fill every row of the box they
+/// span in each column, the same rows in every column (no column stepped up or along).
+#[test]
+fn a_two_by_two_trunk_with_a_crown_settles_as_one_straight_trunk() {
+    // face-a-only: the flat test world is face A's (as the tests above).
+    let mut f = Fixture::new(flat());
+    join_streaming(&mut f, 1);
+    f.server.step();
+    f.take_all();
+    let (x, z) = (3, 3);
+    let leaves = dwell_blocks::require("dwell:leaves");
+    {
+        let w = f.server.world();
+        for y in G..G + 20 {
+            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                w.set_voxel(x + dx, y, z + dz, log());
+            }
+        }
+        // A crown round its top, leaning it a little to +x.
+        for y in G + 16..G + 24 {
+            for dx in -2..=4 {
+                for dz in -2..=3 {
+                    if w.get_voxel(x + dx, y, z + dz) == M.air {
+                        w.set_voxel(x + dx, y, z + dz, leaves);
+                    }
+                }
+            }
+        }
+        w.set_voxel(x + 2, G + 19, z, log());
+        // A bush where it lands (−x of it): leaves two rows high under part of its length.
+        for xx in x - 6..=x - 5 {
+            for zz in z..=z + 1 {
+                for y in G..G + 2 {
+                    w.set_voxel(xx, y, zz, leaves);
+                }
+            }
+        }
+    }
+    // Beside the trunk's −x side, every foot log in reach.
+    f.move_to(
+        1,
+        f64::from(x) - 1.2,
+        f64::from(G) * dwell_world::CELL_H,
+        f64::from(z) + 1.0,
+    );
+    for _ in 0..10 {
+        f.server.step();
+    }
+    for (dx, dz) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        if dx == 1 {
+            // The +x pair from the +x side, on their +x faces.
+            f.move_to(
+                1,
+                f64::from(x) + 3.2,
+                f64::from(G) * dwell_world::CELL_H,
+                f64::from(z) + 1.0,
+            );
+            for _ in 0..10 {
+                f.server.step();
+            }
+        }
+        f.send(
+            1,
+            Message::BlockEditRequest(BlockEditRequest {
+                action: BlockEditAction::Break,
+                cell: [x + dx, G + 1, z + dz],
+                face: if dx == 1 { 0 } else { 1 },
+                material: 0,
+                rows: 1,
+                down: false,
+                point: None,
+            }),
+        );
+        for _ in 0..8 {
+            f.server.step();
+        }
+    }
+    for _ in 0..(60 * 20) {
+        f.server.step();
+        let _ = f.server.take_outbox();
+    }
+    let w = f.server.world();
+    let mut cols: std::collections::BTreeMap<(i32, i32), Vec<i32>> = Default::default();
+    for zz in z - 24..=z + 24 {
+        for xx in x - 24..=x + 24 {
+            for y in G..G + 30 {
+                let m = w.get_voxel(xx, y, zz);
+                if is_log(m) && dwell_blocks::info(m).axis != dwell_blocks::Axis::Y {
+                    cols.entry((xx, zz)).or_default().push(y);
+                }
+            }
+        }
+    }
+    let cut: Vec<u16> = [(0, 0), (1, 0), (0, 1), (1, 1)]
+        .iter()
+        .map(|(dx, dz)| w.get_voxel(x + dx, G + 1, z + dz))
+        .collect();
+    let standing = (G..G + 20)
+        .filter(|&y| is_log(w.get_voxel(x, y, z)))
+        .count();
+    assert!(
+        cols.len() >= 8,
+        "it lies: {cols:?}; cut {cut:?}, standing {standing}"
+    );
+    // The same rows in every column (a branch's one cell on top aside: the lowest four).
+    let rows: std::collections::BTreeSet<Vec<i32>> = cols
+        .values()
+        .map(|r| r[..r.len().min(4)].to_vec())
+        .collect();
+    assert_eq!(rows.len(), 1, "every column the same rows: {cols:?}");
 }

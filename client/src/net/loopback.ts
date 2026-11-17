@@ -42,6 +42,8 @@ export class LoopbackTransport implements Transport {
   heapBytes = 0;
   /** The local server's figures, as the worker last reported them (every second). */
   serverStats: ServerStats | null = null;
+  /** The last few minutes of the server's per-second figures, oldest first (the bench's record). */
+  serverHistory: ServerStats[] = [];
   /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
   serverTicks: number | null = null;
   serverTickMs: number | null = null;
@@ -345,6 +347,8 @@ export class LoopbackTransport implements Transport {
         break;
       case 'stats':
         this.serverStats = msg.stats;
+        this.serverHistory.push(msg.stats);
+        if (this.serverHistory.length > 600) this.serverHistory.shift();
         break;
       case 'perf':
         this.serverTicks = msg.ticks;

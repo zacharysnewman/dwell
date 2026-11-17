@@ -32,7 +32,8 @@ fn material(m: StateId) -> StateId {
 
 /// What the generator's structure placements put over the ground (the pines' log and leaves).
 fn placed(m: StateId) -> bool {
-    m == require("dwell:log") || m == require("dwell:leaves")
+    // Any state of a tree's blocks (species logs and leaves carry their own properties).
+    matches!(dwell_blocks::block_of(m).name, "dwell:log" | "dwell:leaves")
 }
 
 /// The core's fill at face-local row `y` (from the midplane): the bedrock in its first rows
@@ -411,8 +412,15 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
         for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
             let c = chunk_of(x, cy * S, cz);
             let chunk = gen_chunk(&g, c);
+            // A trunk's pad levels its columns (WORK_QUEUE item 44): their fill is the pad's.
+            let (lo, hi) = ((c.x * S, c.z * S), (c.x * S + S - 1, c.z * S + S - 1));
+            let pads =
+                dwell_worldgen::placements::pads_over(g.planters(), &g.trees_in(lo, hi), lo, hi);
             for z in 0..S {
                 for lx in 0..S {
+                    if pads[(z * S + lx) as usize].is_some() {
+                        continue;
+                    }
                     let ground = g.ground_y(c.x * S + lx, c.z * S + z).expect("inside");
                     let col = g.column_at(c.x * S + lx, c.z * S + z);
                     let water_row = col.water_row();
@@ -425,12 +433,19 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                         // A stored ramp topping a column is its material, shaped.
                         let m = material(chunk.get(lx, y, z));
                         let depth = ground - wy;
-                        if depth == -1 && wy >= water_row && decoration(m) {
+                        // A decoration stands on the ground up to 2 m (4 rows) tall: 2 m grass.
+                        if (-4..=-1).contains(&depth) && wy >= water_row && decoration(m) {
                             decorated += 1;
                         } else if depth < 0 && wy >= water_row && placed(m) {
                             // A placed structure's (tests/placements.rs).
                         } else if depth < 0 {
-                            assert_eq!(m, if wy < water_row { M.water } else { M.air });
+                            assert_eq!(
+                                m,
+                                if wy < water_row { M.water } else { M.air },
+                                "{} at depth {depth}, water {}",
+                                dwell_blocks::block_of(m).name,
+                                wy - water_row
+                            );
                             water += i32::from(m == M.water);
                         } else if wy < MIDPLANE_Y + CORE_LAYERS {
                             // face-boundary: face A's core
@@ -456,7 +471,17 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
                             } else {
                                 M.stone
                             };
-                            assert_eq!(m, want);
+                            assert_eq!(
+                                m,
+                                want,
+                                "{} for {} at depth {depth}, ({}, {wy}, {}): state_at {}",
+                                dwell_blocks::block_of(m).name,
+                                dwell_blocks::block_of(want).name,
+                                c.x * S + lx,
+                                c.z * S + z,
+                                dwell_blocks::block_of(g.state_at(c.x * S + lx, wy, c.z * S + z))
+                                    .name
+                            );
                             grass += i32::from(m == M.grass);
                         }
                     }

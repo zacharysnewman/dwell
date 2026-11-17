@@ -232,6 +232,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
       .locator(`#hotbar .hotbar-slot[data-slot="${String(slot)}"]:visible`)
       .getAttribute('title');
     if (title === 'Ladder') continue;
+    // A planted sapling becomes its species' stage-0 tree at once (ADR 0079 S4; dwell-sim
+    // tests/saplings.rs pins it): a tree, not one block to break here.
+    if (item.name.endsWith('_sapling')) continue;
     // A tool places nothing: held, Place turns the axe's swing (docs/adr/0067-stone-axe-and-chopping.md).
     if (title !== null && TOOL_TITLES.has(title)) continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
@@ -248,7 +251,7 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
         { timeout: FRAME_STALL_MS },
       )
       .toBe(`${ground.cell.join()}/${String(ground.face)}`);
-    expect(await call<boolean>(page, `d.edit('place')`)).toBe(true);
+    expect(await call<boolean>(page, `d.edit('place')`), `${item.name} placed`).toBe(true);
     await expect
       .poll(() => voxel(page, cell), {
         message: `slot ${String(slot)} placed`,
@@ -263,10 +266,17 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     }
     await breakBlock(page, cell);
     await page.waitForTimeout(120); // BLOCK_EDIT_INTERVAL_MS
-    // A steep slope's upper half (a piece of two cells) is broken on its own.
-    const above = add(cell, [0, 1, 0]);
-    if ((await voxel(page, above)) !== 0) {
-      await breakBlock(page, above);
+    // A piece of several cells (a steep slope's upper half, 2 m grass's four rows) may leave its
+    // upper cells: each is broken on its own, highest first (aiming low on a tall piece hits it).
+    const left: Vec3[] = [];
+    for (let up = 1; up <= 4; up++) {
+      const above = add(cell, [0, up, 0]);
+      if ((await voxel(page, above)) === 0) break;
+      left.unshift(above);
+    }
+    for (const c of left) {
+      if ((await voxel(page, c)) === 0) continue;
+      await breakBlock(page, c);
       await page.waitForTimeout(120);
     }
     expect(placed, `slot ${String(slot)}`).toBeGreaterThan(0);

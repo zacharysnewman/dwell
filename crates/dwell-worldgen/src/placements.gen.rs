@@ -6,7 +6,7 @@ use crate::placements::{Placement, Variant};
 pub static PLACEMENTS: [Placement; 12] = [
     Placement {
         name: "pine_groves",
-        structures: &[("dwell:pine_tree", 55), ("dwell:tall_pine_tree", 45)],
+        structures: &[("dwell:pine", 1)],
         on: &["dwell:grass", "dwell:snowy_grass"],
         footprint_on: true,
         pad_trunk: true,

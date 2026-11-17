@@ -41,7 +41,8 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
   // (playwright.config.ts), so the preset reads Custom until Reset.
   await expect(menu.locator('#graphics-preset .settings-value')).toHaveText('Custom');
   await expect(row(menu, 'Render scale').locator('[aria-pressed=true]')).toHaveText('50 %');
-  await expect(row(menu, 'Full detail').locator('.settings-value')).toHaveText('256 m');
+  // High's 192 m (shared/settings/graphics-presets.json, since 2026-11-12; 256 m is Ultra's).
+  await expect(row(menu, 'Full detail').locator('.settings-value')).toHaveText('192 m');
   await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('256 MB');
   await expect(menu).not.toContainText('Fog');
   await expect(menu).not.toContainText('Density');
@@ -56,13 +57,14 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
   // The distant view's memory to the most.
   await row(menu, 'Distant memory').locator('input[type=range]').fill('1000');
   await expect(row(menu, 'Distant memory').locator('.settings-value')).toHaveText('1024 MB');
-  // Sound: the four volumes.
+  // Sound: the five volumes (the last the Ambience's, shared/sounds/dwell.json `ambience.volume`).
   await menu.locator('.gm-tab', { hasText: 'Sound' }).click();
   await expect(menu.locator('.gm-page:not([hidden]) .settings-value')).toHaveText([
     '80%',
     '100%',
     '60%',
     '60%',
+    '35%',
   ]);
   // Gameplay: the field of view to its narrowest, as a drag would.
   await menu.locator('.gm-tab', { hasText: 'Gameplay' }).click();
@@ -87,11 +89,13 @@ test('settings menu: opens from the corner, in panes, without fog sliders, and i
   await menu.locator('.settings-copy').click();
   await expect(menu.locator('.settings-copy')).toHaveText('Copied');
   const copied = await page.evaluate<string>('navigator.clipboard.readText()');
-  expect(JSON.parse(copied)).toEqual({
-    detail: { distanceM: 256, pixelError: 3, memoryMb: 256 },
+  // The record's fields that this page sets, at High's values (the record has more; their own
+  // unit tests pin them: client/src/ui/*Settings.test.ts).
+  expect(JSON.parse(copied)).toMatchObject({
+    detail: { distanceM: 192, pixelError: 3, memoryMb: 256 },
     exposure: 1,
-    audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6 },
-    clouds: 'medium',
+    audio: { master: 0.8, effects: 1, ui: 0.6, music: 0.6, ambience: 0.35 },
+    clouds: 'low',
     shafts: 'high',
     water: {
       quality: 'medium',

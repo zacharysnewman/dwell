@@ -104,9 +104,17 @@ export type Step =
       waterfalls?: boolean;
       shafts?: 'off' | 'low' | 'high';
       bloom?: 'off' | 'low' | 'high';
+      /** The ambient occlusion's tier (docs/SSAO.md). */
+      ssao?: 'off' | 'low' | 'high';
+      /** Its strength (× the data's; the Settings slider's 0–2, up to 4 to look closely). */
+      ssaoStrength?: number;
+      /** Its look (`weak`, `normal`, `strong`). */
+      ssaoLevel?: 'weak' | 'normal' | 'strong';
       torchShadows?: 'off' | 'low' | 'high';
       cards?: boolean;
       grass?: boolean;
+      /** Chunks skip their faces turned away from the camera (on by default; off to compare). */
+      facing?: boolean;
       renderScale?: number;
     }
   /** Breaks or places at the crosshair, as a click does; selects a hotbar slot. */
@@ -465,8 +473,12 @@ const STEP_FIELDS: Record<Step['do'], readonly string[]> = {
     'waterfalls',
     'shafts',
     'bloom',
+    'ssao',
+    'ssaoStrength',
+    'ssaoLevel',
     'cards',
     'grass',
+    'facing',
     'renderScale',
     'torchShadows',
   ],
@@ -626,8 +638,26 @@ export function parseStep(where: string, v: unknown): Step {
         ),
         ...opt('shafts', tier('shafts')),
         ...opt('bloom', tier('bloom')),
+        ...opt('ssao', tier('ssao')),
+        ...opt(
+          'ssaoStrength',
+          o.ssaoStrength === undefined ? undefined : num(at('ssaoStrength'), o.ssaoStrength, 0, 4),
+        ),
+        ...opt(
+          'ssaoLevel',
+          o.ssaoLevel === undefined
+            ? undefined
+            : ((): 'weak' | 'normal' | 'strong' => {
+                const v = o.ssaoLevel;
+                if (v !== 'weak' && v !== 'normal' && v !== 'strong') {
+                  throw new ViewError(`${at('ssaoLevel')}: expected "weak", "normal" or "strong"`);
+                }
+                return v;
+              })(),
+        ),
         ...opt('torchShadows', tier('torchShadows')),
         ...opt('cards', o.cards === undefined ? undefined : bool(at('cards'), o.cards)),
+        ...opt('facing', o.facing === undefined ? undefined : bool(at('facing'), o.facing)),
         ...opt('grass', o.grass === undefined ? undefined : bool(at('grass'), o.grass)),
         ...opt(
           'renderScale',

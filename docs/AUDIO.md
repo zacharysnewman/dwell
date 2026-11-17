@@ -374,8 +374,33 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
 | `leaf_brush` | procedural |
 
 The samples are now about 1.8 MB in all. Not built: remote players brushing leaves and stepping on
-sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
+sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, inventory/UI/coins, eating and
 drinking, the ladder's creak.
+
+**Picking up a ground item (owner, 2026-11-14: "I want picking up drops off the ground to have a sound, with
+some random variety. Maybe a light popping sound.").** The event `item_pickup` (`self`: the body) plays
+`item_pickup`, procedural: a sine chirp up (~520 → 980 Hz, a 55 ms decay), a faint modal ping and a 12 ms
+pink tick, four variants (`alts`) drawn round-robin by the seeded variation (never the last one twice), with
+±1.2 semitones and ±1.5 dB of jitter; at about a deny's level, well under the footsteps. The client
+(`dwell-game` `PickupSounds`) plays it when the local player's inventory gains items within `pickup.windowS`
+(0.5 s) of a loose item within `pickup.reachM` (3 m) of them going or shrinking, never closer than
+`pickup.minS` (0.09 s): a burst in one frame, or a sweep through a pile, pops once, not a stack. Crafting
+(a gain, no drop) and a drop that merged or despawned (no gain) are silent. Others' pickups are not heard:
+the server doesn't say who took an item, and a guess from where a drop vanished would sound on merges and
+despawns too. `npm run sfx:render -- --only item_pickup` renders each variant alone (`variant_…`) and eight
+in a row (`variations_…_x8`); an event sound with variants gets those renders by data alone.
+
+**Making an item (owner, 2026-11-15: "Do we yet have sounds for picking up drops and crafting items?").** The
+event `item_craft` (`self`: the hand) plays `item_craft`, procedural: a woody modal clack (~380 Hz), a lighter
+second clack 75 ms on (~540 Hz) with short pink ticks, and a faint chime (~1.76 kHz, a 0.38 s ring) at 0.12 s; four
+variants (`alts`: the clacks' pitch and spacing, the chime's note) and ±0.8 semitones, ±1.2 dB of jitter. The
+client (`dwell-game` `CraftSounds`) notes each Combine press and plays it once when the server's next inventory
+(which it always sends after a Combine) arrives changed within `craft.windowS` (1 s); unchanged (not enough items),
+nothing. Others' crafting is not heard. `npm run sfx:render -- --only item_craft` renders its variants.
+
+**A held break at nothing (BUGS.md #182).** A held Break (the mouse, a still touch in Break mode, the controller)
+aimed at nothing knocks its refusal (`deny`) once per hold, on its first swing, not on every repeat
+(`HeldUse::miss_sounds`); a click's knocks each time.
 
 ## 3. Synthesis (`client/src/audio/synth.ts`)
 

@@ -5,10 +5,10 @@ pub const SHIPPED: Rules = Rules {
     player_pace_ms: 150.0,
     panel_rows: 6,
     ghost_face_cap: 24000,
-    builder: BuilderRules { creature: "dwell:builder", pace_s: 0.75, reach_m: 4.0, near_m: 96.0, per_blueprint: 1, job: "dwell:builder" },
+    builder: BuilderRules { creature: "dwell:builder", pace_s: 0.75, reach_m: 4.0, near_m: 96.0, per_blueprint: 1, job: "dwell:builder", clear_margin_m: 1, clear_pace_s: 0.5 },
     jobs: &[JobRules { name: "dwell:builder", kind: JobKind::Build, carry_max: 10, mixed_loads: true, wait_s: 3.0 }],
     storehouse: StorehouseRules { stock: StockMode::Unlimited, range_m: 64.0, reach_m: 2.5 },
     carry_look: CarryLook { item: "carried", joint: "spine.003", at: [0.0, -0.18, -0.2], piece_m: 0.2, per_layer: 2, kinds: &[CarryKind { block: "dwell:log", piece_m: 0.24, per_layer: 2 }] },
-    catalog: &["dwell:bp_hut", "dwell:bp_wall", "dwell:bp_well", "dwell:bp_watchtower", "dwell:bp_storehouse"],
-    towns: TownRules { spacing_m: 1200, jitter: 0.6, attempts: 8, height_m: [2.0, 600.0], max_slope_deg: 12.0, footprint_m: 32, found_m: 128.0, clear_m: 4, plans: &[TownPlan { name: "dwell:hamlet", weight: 1, blueprints: &[PlanBlueprint { structure: "dwell:bp_storehouse", at: [9, 8], turn: 0, role: Role::Storehouse }, PlanBlueprint { structure: "dwell:bp_well", at: [0, 0], turn: 0, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_hut", at: [-9, -2], turn: 1, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_hut", at: [9, -2], turn: 3, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_watchtower", at: [0, 10], turn: 0, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_wall", at: [0, -11], turn: 0, role: Role::Building }] }] },
+    catalog: &["dwell:house1", "dwell:bp_hut", "dwell:bp_wall", "dwell:bp_well", "dwell:bp_watchtower", "dwell:bp_storehouse"],
+    towns: TownRules { spacing_m: 1200, jitter: 0.6, attempts: 8, height_m: [2.0, 600.0], max_slope_deg: 12.0, footprint_m: 32, found_m: 128.0, clear_m: 4, plans: &[TownPlan { name: "dwell:hamlet", weight: 1, blueprints: &[PlanBlueprint { structure: "dwell:bp_storehouse", at: [9, 8], turn: 0, role: Role::Storehouse }, PlanBlueprint { structure: "dwell:bp_well", at: [0, 0], turn: 0, role: Role::Building }, PlanBlueprint { structure: "dwell:house1", at: [-9, -2], turn: 0, role: Role::Building }, PlanBlueprint { structure: "dwell:house1", at: [9, -2], turn: 2, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_watchtower", at: [0, 10], turn: 0, role: Role::Building }, PlanBlueprint { structure: "dwell:bp_wall", at: [0, -11], turn: 0, role: Role::Building }] }] },
 };

@@ -1005,6 +1005,9 @@ pub struct Game<S: Scene> {
     pub lod_drawn: bool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
+    /// The cell just in front of the crosshair (`region_tools::ahead_cell`): a region corner's
+    /// where no block is aimed at.
+    ahead: Option<[i32; 3]>,
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
@@ -1090,6 +1093,10 @@ pub struct Game<S: Scene> {
     fire_sounds: FireSounds,
     /// The body's breathing, gasps and strain from the vitals (docs/AUDIO.md §5).
     vital_sounds: dwell_game::sound::VitalSounds,
+    /// Picking up a ground item: its pop (owner, 2026-11-14).
+    pickup_sounds: dwell_game::sound::PickupSounds,
+    /// Making an item with Combine: its clack and chime (owner, 2026-11-15).
+    craft_sounds: dwell_game::sound::CraftSounds,
     /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
     creature_sounds: dwell_game::sound::CreatureSounds,
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
@@ -1268,6 +1275,7 @@ impl<S: Scene> Game<S> {
             prediction: EditPredictor::new(),
             character_lights: Default::default(),
             target_eye: None,
+            ahead: None,
             lod: None,
             unloads: Default::default(),
             lod_map: None,
@@ -1314,6 +1322,8 @@ impl<S: Scene> Game<S> {
             lean_at: None,
             fire_sounds: FireSounds::new(),
             vital_sounds: dwell_game::sound::VitalSounds::new(),
+            pickup_sounds: dwell_game::sound::PickupSounds::new(),
+            craft_sounds: dwell_game::sound::CraftSounds::new(),
             creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
             ambience: dwell_game::ambience::Listening {
                 fire_m: dwell_game::ambience::FAR_M,
@@ -2289,10 +2299,19 @@ impl<S: Scene> Game<S> {
             Message::HeldTools(list) => {
                 // The server sweeps swings along their path (its answer to our first `Held`).
                 self.chop.sweep = true;
+                // A swung tool (the sword) or a break tool (an axe, a pickaxe, a shovel), by its
+                // `'static` name; anything else is held as the wire's block.
                 for h in list {
-                    match dwell_protocol::chopping::tool(&h.tool) {
-                        Some(t) => {
-                            self.remote_tools.insert(h.player_id, (t.name, h.vertical));
+                    let swung = dwell_protocol::chopping::tool(&h.tool).map(|t| t.name);
+                    let name = swung.or_else(|| {
+                        dwell_protocol::chopping::BREAK_TOOLS
+                            .iter()
+                            .find(|b| b.item == h.tool)
+                            .map(|b| b.item)
+                    });
+                    match name {
+                        Some(n) => {
+                            self.remote_tools.insert(h.player_id, (n, h.vertical));
                         }
                         None => {
                             self.remote_tools.remove(&h.player_id);
@@ -2359,6 +2378,26 @@ impl<S: Scene> Game<S> {
                 {
                     self.sounds.push(SoundEvent::new(ev, 0, 1.0, None));
                 }
+                let count = |inv: &dwell_protocol::inventory::Inventory| -> u32 {
+                    inv.slots
+                        .iter()
+                        .flatten()
+                        .map(|st| u32::from(st.count))
+                        .sum()
+                };
+                self.pickup_sounds.inventory(
+                    self.loose.inventory.as_ref().map(|(_, old)| count(old)),
+                    count(&i.inventory),
+                    now_ms,
+                );
+                self.pickup_sounds.update(now_ms, &mut self.sounds);
+                let changed = self
+                    .loose
+                    .inventory
+                    .as_ref()
+                    .is_some_and(|(_, old)| old.slots != i.inventory.slots);
+                self.craft_sounds
+                    .inventory(changed, now_ms, &mut self.sounds);
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
@@ -2373,6 +2412,27 @@ impl<S: Scene> Game<S> {
                 self.streamer.ground_gone(&cells);
             }
             Message::ItemDrops(d) => {
+                // Loose items that went or shrank near the local player: half of a pickup's pop.
+                let me = self.predictor.position();
+                let near = |it: &dwell_protocol::ItemDropNet| {
+                    me.distance(DVec3::from(it.position.map(f64::from)))
+                };
+                let taken = d
+                    .gone
+                    .iter()
+                    .filter_map(|id| self.loose.items.get(id))
+                    .chain(d.items.iter().filter(|it| {
+                        self.loose
+                            .items
+                            .get(&it.id)
+                            .is_some_and(|o| o.count > it.count)
+                    }))
+                    .map(near)
+                    .fold(f64::INFINITY, f64::min);
+                if taken.is_finite() {
+                    self.pickup_sounds.drops_taken(taken, now_ms);
+                    self.pickup_sounds.update(now_ms, &mut self.sounds);
+                }
                 let changed = self.loose.apply(d);
                 let mut scene = self.scene.borrow_mut();
                 for id in changed.removed {
@@ -2779,7 +2839,11 @@ impl<S: Scene> Game<S> {
             if action == EditAction::Place && self.edge_place(holder, now_ms) {
                 return true;
             }
-            self.sounds.push(sound_event(SoundKind::Deny));
+            // Break held at nothing knocks once per hold, not every repeat (BUGS.md, owner
+            // 2026-11-15: a still touch in Break mode looped it).
+            if action == EditAction::Place || self.held_use.miss_sounds() {
+                self.sounds.push(sound_event(SoundKind::Deny));
+            }
             return false;
         };
         let placement = self.interaction.placement();
@@ -3816,6 +3880,7 @@ impl<S: Scene> Game<S> {
         let target = self.brush.target().map(|t| t.cell);
         let ctx = ToolContext {
             target,
+            ahead: None,
             target_state: target
                 .map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2])),
             placement: self.brush.center(true),
@@ -4708,6 +4773,7 @@ impl<S: Scene> Game<S> {
             .map_or(0, |s| s.material);
         let ctx = ToolContext {
             target,
+            ahead: at.is_none().then_some(self.ahead).flatten(),
             target_state,
             placement: self.interaction.placement().map(|(c, _)| c),
             material,
@@ -6091,6 +6157,7 @@ impl<S: Scene> Game<S> {
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
         self.view_dir = dir;
+        self.ahead = eye.map(|e| dwell_game::region_tools::ahead_cell(e, dir));
         self.ground_target = eye.and_then(|e| self.ground_under_crosshair(e, dir));
         // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
         self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
@@ -6106,8 +6173,13 @@ impl<S: Scene> Game<S> {
         });
         self.drag_build(eye, dir, now_ms);
         self.blueprint_frame(eye, dir, now_ms);
+        // Where no block is aimed at, the cell ahead (as the region tools' corners take it).
+        let ahead = eye.map(|e| {
+            let dir = view_direction(input.look.yaw, input.look.pitch, face);
+            dwell_game::region_tools::ahead_cell(e, dir)
+        });
         self.region
-            .aim(self.interaction.placement().map(|(c, _)| c));
+            .aim(self.interaction.placement().map(|(c, _)| c).or(ahead), eye);
         self.show_region_boxes();
         // The brush aims much further along the same ray (its mode's brush reach), and where the
         // ray meets nothing editable in reach, at the farthest editable cell along it: it always
@@ -6184,6 +6256,13 @@ impl<S: Scene> Game<S> {
                     .unwrap_or(cells[0]);
                 let h = dwell_world::CELL_H as f32 * cells.len() as f32;
                 (dwell_world::pos_of_cell(lowest), ([0.0; 3], [1.0, h, 1.0]))
+            });
+            // With the region tools in hand, the cell a corner would take (`ahead`), outlined
+            // before it is set.
+            let ghost = ghost.or_else(|| {
+                let ahead = self.ahead.filter(|_| self.region.shows_ahead())?;
+                let h = dwell_world::CELL_H as f32;
+                Some((dwell_world::pos_of_cell(ahead), ([0.0; 3], [1.0, h, 1.0])))
             });
             let (at, bounds) = ghost.map_or((None, FULL_CELL), |(p, b)| (Some(p), b));
             self.scene.borrow_mut().set_block_outline(at, bounds);
@@ -6621,6 +6700,8 @@ impl<S: Scene> Game<S> {
         self.outbox
             .borrow_mut()
             .push(Send::Control(Message::InventoryAction(a)));
+        self.craft_sounds
+            .pressed(self.last_frame_ms.unwrap_or_default());
         true
     }
 

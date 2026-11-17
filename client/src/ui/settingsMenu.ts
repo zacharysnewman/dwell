@@ -129,6 +129,17 @@ import {
   sanitizeExplosions,
   type ExplosionSettings,
 } from './explosionSettings';
+import {
+  SSAO_KEY,
+  SSAO_QUALITIES,
+  SSAO_LEVELS,
+  defaultSsao,
+  sanitizeSsao,
+  ssaoRecord,
+  type SsaoLevel,
+  type SsaoQuality,
+  type SsaoSettings,
+} from './ssaoSettings';
 
 /** Slider steps: fine enough that a log-scaled slider moves smoothly. */
 export const SLIDER_STEPS = 1000;
@@ -167,6 +178,8 @@ export interface Settings {
   shafts: ShaftQuality;
   /** Bloom, the glow round self-lit surfaces: off, low or high (dwell-look's bloom.rs). */
   bloom: BloomQuality;
+  /** Screen-space ambient occlusion: its tier and strength (ui/ssaoSettings.ts, docs/SSAO.md). */
+  ssao: SsaoSettings;
   /** The water quality (ui/waterSettings.ts). */
   water: WaterSettings;
   /** The sun's and moon's shadows (ui/shadowSettings.ts). */
@@ -218,6 +231,7 @@ export function baseSettings(mobile: boolean, reducedMotion = false): Settings {
     clouds: defaultClouds(mobile),
     shafts: DEFAULT_SHAFTS,
     bloom: DEFAULT_BLOOM,
+    ssao: defaultSsao(),
     water: defaultWater(mobile),
     shadows: defaultShadows(mobile),
     motion: defaultMotion(reducedMotion),
@@ -253,6 +267,11 @@ export function settingsJson(s: Settings): string {
     clouds: s.clouds,
     shafts: s.shafts,
     bloom: s.bloom,
+    ssao: {
+      quality: s.ssao.quality,
+      strength: Math.round(s.ssao.strength * 100) / 100,
+      level: s.ssao.level,
+    },
     water: {
       quality: s.water.quality,
       flowRipples: s.water.flowRipples,
@@ -366,6 +385,7 @@ export function storedSettings(mobile: boolean, defaults: Settings): Settings {
     clouds: CLOUD_QUALITIES.find((q) => q === load(CLOUDS_KEY)) ?? defaults.clouds,
     shafts: sanitizeShafts(load(SHAFTS_KEY), defaults.shafts),
     bloom: sanitizeBloom(load(BLOOM_KEY), defaults.bloom),
+    ssao: sanitizeSsao(load(SSAO_KEY), defaults.ssao),
     water: sanitizeWater(load(WATER_KEY), defaults.water),
     shadows: sanitizeShadows(load(SHADOWS_KEY), defaults.shadows),
     motion: sanitizeMotion(load(MOTION_KEY), prefersReducedMotion()),
@@ -433,6 +453,7 @@ function writeSettings(s: Settings, pins: ReadonlySet<string>): void {
     [CLOUDS_KEY, s.clouds],
     [SHAFTS_KEY, s.shafts],
     [BLOOM_KEY, s.bloom],
+    [SSAO_KEY, ssaoRecord(load(SSAO_KEY), s.ssao)],
     [WATER_KEY, waterRecord(load(WATER_KEY), s.water)],
     [SHADOWS_KEY, shadowRecord(load(SHADOWS_KEY), s.shadows)],
     [MOTION_KEY, motionRecord(load(MOTION_KEY), s.motion)],
@@ -582,6 +603,28 @@ const CHOICES: ChoiceSpec<ShaftQuality>[] = [
   },
 ];
 
+/** Screen-space ambient occlusion's tier (docs/SSAO.md). */
+const SSAO_CHOICE: ChoiceSpec<SsaoQuality> = {
+  label: 'Ambient occlusion',
+  pin: 'ssao.quality',
+  hint: 'Soft shadows where things meet the ground and each other; Low is half resolution, lighter on the GPU (never on phones)',
+  choices: SSAO_QUALITIES,
+  labels: { off: 'Off', low: 'Low', high: 'High' },
+  get: (s) => s.ssao.quality,
+  with: (s, v) => ({ ...s, ssao: { ...s.ssao, quality: v } }),
+};
+
+/** Its look: Weak (the first one's), Normal or Strong (owner, 2026-11-15). */
+const SSAO_LEVEL_CHOICE: ChoiceSpec<SsaoLevel> = {
+  label: 'Ambient occlusion look',
+  pin: 'ssao.level',
+  hint: 'How dark the soft shadows are where things meet',
+  choices: SSAO_LEVELS,
+  labels: { weak: 'Weak', normal: 'Normal', strong: 'Strong' },
+  get: (s) => s.ssao.level,
+  with: (s, v) => ({ ...s, ssao: { ...s.ssao, level: v } }),
+};
+
 /** The Graphics section's choices, from the data (shared/render/upscale.json). */
 const RENDER_SCALE_CHOICES: ChoiceSpec<string>[] = [
   {
@@ -726,6 +769,8 @@ function panes(mobile: boolean): Record<SettingsPane, Group[]> {
           },
           choice(TORCH_SHADOW_CHOICE),
           ...CHOICES.map(choice),
+          choice(SSAO_CHOICE),
+          choice(SSAO_LEVEL_CHOICE),
         ],
       },
       { title: 'Sky & weather', rows: [choice(CLOUD_CHOICE)] },
@@ -1438,6 +1483,12 @@ export class SettingsMenu {
     const tab = this.pages.get('structures')?.tab;
     tab?.setAttribute('id', 'menu-structures');
     tab?.addEventListener('click', onShow);
+  }
+
+  /** Opens the menu on the Structures page, as its tab does (the touch region bar's Save). */
+  openStructures(): void {
+    this.setOpen(true);
+    this.pages.get('structures')?.tab.click();
   }
 
   /** Adds the Debug page: each tool a button with its key (DEBUG_KEYS). */

@@ -1,5 +1,5 @@
 {
-  "$comment": "Stamina and oxygen (docs/adr/0069-stamina-and-oxygen.md), in a mode with the `stamina` and `oxygen` abilities (adventure). stamina: `max` points when rested; `drains`, the points a second each activity spends (one activity a tick, from a fixed vocabulary: `sprint` running on the ground, `swim` in the water with any move input, `tread` in the water with none); `regenPerSecond` regained once nothing has been spent for `regenDelaySeconds`; reaching 0 exhausts the player (no sprint, no treading water: an exhausted swimmer sinks at `exhaustedSinkSpeed` m/s, no axe swings) until stamina is back to `recoverFraction` of `max`; a rested player may go below that freely. A tool's swing draws its `staminaCost` (shared/tools). oxygen: `capacitySeconds` of air with the head under water (the capsule's submerged share at least `headFraction`), refilled at `refillPerSecond` seconds a second with the head out; with none left, `drownDamage` health every `drownIntervalSeconds`. Prototype tuning (ARCHITECTURE.md §6.1). Run `node shared/vitals/gen.mjs` after editing; CI fails if the generated files are stale.",
+  "$comment": "Stamina and oxygen (docs/adr/0069-stamina-and-oxygen.md), in a mode with the `stamina` and `oxygen` abilities (adventure). stamina: `regenUnderWater` (optional, true by default) whether stamina comes back with the head under water (false: owner, 2026-11-16, \"you shouldn't recover stamina while underwater\", and \"Never recover underwater\": an exhausted swimmer sinking stays exhausted); stamina: `max` points when rested; `drains`, the points a second each activity spends (one activity a tick, from a fixed vocabulary: `sprint` running on the ground, `swim` in the water with any move input, `tread` in the water with none); `regenPerSecond` regained once nothing has been spent for `regenDelaySeconds`; reaching 0 exhausts the player (no sprint, no treading water: an exhausted swimmer sinks at `exhaustedSinkSpeed` m/s, no axe swings) until stamina is back to `recoverFraction` of `max`; a rested player may go below that freely. A tool's swing draws its `staminaCost` (shared/tools). oxygen: `capacitySeconds` of air with the head under water (the capsule's submerged share at least `headFraction`), refilled at `refillPerSecond` seconds a second with the head out; with none left, `drownDamage` health every `drownIntervalSeconds`. Prototype tuning (ARCHITECTURE.md §6.1). Run `node shared/vitals/gen.mjs` after editing; CI fails if the generated files are stale.",
   "formatVersion": 1,
   "stamina": {
     "max": 100,
@@ -10,6 +10,7 @@
     ],
     "regenPerSecond": 20,
     "regenDelaySeconds": 1.0,
+    "regenUnderWater": false,
     "recoverFraction": 0.25,
     "exhaustedSinkSpeed": 1.2
   },

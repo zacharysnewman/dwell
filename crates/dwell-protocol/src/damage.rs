@@ -253,16 +253,13 @@ pub fn hits_to_break_for(block: &str, held: Option<&str>, instant_breaks: bool) 
     hits_to_break_in_mode(BLOCK_DAMAGE, BREAK_TOOLS, block, held, instant_breaks)
 }
 
-/// How many of a block's `total` drops (of one item) hit `k` (1-based) of `hits` gives: half the
-/// total (rounded down) spread over the hits before the last, so the hits' and the destroy's
-/// ([`destroy_share`]) sum to `total` exactly.
+/// How many of a block's `total` drops (of one item) hit `k` (1-based) of `hits` gives: none, every
+/// piece drops on the destroy ([`destroy_share`]; until 2026-11-15 half spread over the hits).
 pub fn hit_share(total: u32, hits: u32, k: u32) -> u32 {
-    if hits <= 1 || k == 0 || k >= hits {
-        return 0;
-    }
-    let half = total / 2;
-    let over = hits - 1;
-    k * half / over - (k - 1) * half / over
+    // The owner, 2026-11-15: "4 chunks drop at the end not as you chop": every piece drops on the
+    // destroy; a hit drops none (its marks and chips are its look alone).
+    let _ = (total, hits, k);
+    0
 }
 
 /// What the destroying hit gives of `total`: what the earlier hits ([`hit_share`]) did not.
@@ -284,6 +281,8 @@ pub fn certain_drops(rules: &[DropRule]) -> Vec<(&'static str, u32)> {
 
 /// The most hit marks a cell keeps (the newest; D2 draws them).
 pub const MAX_HIT_MARKS: usize = 4;
+/// The most marks a client keeps of a cell's damage (the bites it has seen, [`DamageView::seen_after`]).
+pub const MAX_SEEN_MARKS: usize = 48;
 
 /// Where a hit struck: the face (the edit's face index) and the point on it (each axis in
 /// 1/255ths of the cell), and how big a piece it took off.
@@ -376,6 +375,61 @@ impl DamageView {
         DamageView { fraction, marks }
     }
 
+    /// Every mark, not only the wire's newest [`MAX_HIT_MARKS`] (a client's own copy to its mesh
+    /// workers: the bites it has seen, BUGS.md #188), up to [`MAX_SEEN_MARKS`], with their chunks.
+    pub fn write_all(&self, w: &mut ByteWriter) {
+        w.u8(self.fraction);
+        let n = self.marks.len().min(MAX_SEEN_MARKS);
+        w.u8(n as u8);
+        for m in &self.marks[..n] {
+            w.u8(m.face);
+            for p in m.point {
+                w.u8(p);
+            }
+            w.u8(m.chunk);
+        }
+    }
+
+    /// Reads [`Self::write_all`]'s form.
+    pub fn read_all(r: &mut ByteReader) -> DamageView {
+        let fraction = r.u8();
+        let n = usize::from(r.u8());
+        r.check(n <= MAX_SEEN_MARKS);
+        let marks = (0..n.min(MAX_SEEN_MARKS))
+            .map(|_| {
+                let mut m = HitMark::at(r.u8(), [r.u8(), r.u8(), r.u8()]);
+                m.chunk = r.u8();
+                m
+            })
+            .collect();
+        DamageView { fraction, marks }
+    }
+
+    /// The view `next` (the server's newer one of the same damage) after this one, keeping every
+    /// mark this one holds (BUGS.md #188: the wire carries only the newest [`MAX_HIT_MARKS`], so
+    /// a client that kept only those saw the oldest side's bites fill back in): `next`'s marks
+    /// this one hasn't seen are added, oldest first. A lower fraction (healed, or a new damage)
+    /// starts over from `next`.
+    pub fn seen_after(&self, next: &DamageView) -> DamageView {
+        if next.fraction < self.fraction || next.marks.is_empty() {
+            return next.clone();
+        }
+        // The newest marks this one already ends with, as `next` starts with them.
+        let overlap = (0..=next.marks.len().min(self.marks.len()))
+            .rev()
+            .find(|&k| self.marks[self.marks.len() - k..] == next.marks[..k])
+            .unwrap_or(0);
+        let mut marks = self.marks.clone();
+        marks.extend_from_slice(&next.marks[overlap..]);
+        if marks.len() > MAX_SEEN_MARKS {
+            marks.drain(..marks.len() - MAX_SEEN_MARKS);
+        }
+        DamageView {
+            fraction: next.fraction,
+            marks,
+        }
+    }
+
     /// Its marks' chunks (after the cells, [`CHUNKS_MARK`]): one byte a mark, as many as `write`
     /// wrote.
     pub fn write_chunks(&self, w: &mut ByteWriter) {
@@ -389,6 +443,69 @@ impl DamageView {
             m.chunk = r.u8();
             r.check(m.chunk > 0);
         }
+    }
+}
+
+/// The level side of a cell its hits took the most from (docs/BLOCK_DAMAGE.md §16): a unit
+/// `[x, z]` toward it, from its marks as its damage mask removes material round them (each mark's
+/// struck side, and where on the cell it struck, weighed by its piece, `HitMark::chunk`); none
+/// without marks or when they balance. Level axes only, so the same on both faces (a mark's
+/// `point` is world-oriented; x and z are not turned over).
+pub fn cut_side(marks: &[HitMark]) -> Option<[f64; 2]> {
+    let mut d = [0.0f64; 2];
+    for m in marks {
+        let w = m.scale();
+        // The struck side's outward normal, level (faces 0/1: ±x, 4/5: ±z; up and down: none).
+        let n = match m.face {
+            0 => [1.0, 0.0],
+            1 => [-1.0, 0.0],
+            4 => [0.0, 1.0],
+            5 => [0.0, -1.0],
+            _ => [0.0, 0.0],
+        };
+        // Where on the cell it struck, from its middle (−½..½).
+        let off = [
+            f64::from(m.point[0]) / 255.0 - 0.5,
+            f64::from(m.point[2]) / 255.0 - 0.5,
+        ];
+        d[0] += w * (n[0] + off[0]);
+        d[1] += w * (n[1] + off[1]);
+    }
+    let l = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    (l > 0.05).then(|| [d[0] / l, d[1] / l])
+}
+
+#[cfg(test)]
+mod cut_side_tests {
+    use super::*;
+
+    #[test]
+    fn the_cut_side_is_where_the_hits_took_the_most() {
+        // both-faces: level axes only (a mark's x and z are not turned over on face B).
+        let at = |face: u8, p: [u8; 3]| HitMark::at(face, p);
+        // Struck on +x: toward +x.
+        let s = cut_side(&[at(0, [255, 40, 128]), at(0, [255, 90, 120])]).unwrap();
+        assert!(s[0] > 0.95, "{s:?}");
+        // Mostly −z, one on +x: toward −z, a little +x.
+        let s = cut_side(&[
+            at(5, [128, 40, 0]),
+            at(5, [140, 40, 0]),
+            at(0, [255, 40, 128]),
+        ])
+        .unwrap();
+        assert!(s[1] < -0.8 && s[0] > 0.0, "{s:?}");
+        // A bigger piece weighs more.
+        let big = HitMark {
+            chunk: 4 * HitMark::ONE,
+            ..at(1, [0, 40, 128])
+        };
+        let s = cut_side(&[at(0, [255, 40, 128]), big]).unwrap();
+        assert!(s[0] < 0.0, "{s:?}");
+        // From the top, by where it struck; none without marks or balanced.
+        let s = cut_side(&[at(2, [230, 255, 128])]).unwrap();
+        assert!(s[0] > 0.95, "{s:?}");
+        assert!(cut_side(&[]).is_none());
+        assert!(cut_side(&[at(0, [255, 40, 128]), at(1, [0, 40, 128])]).is_none());
     }
 }
 
@@ -555,8 +672,13 @@ mod tests {
             hits_to_break("dwell:stone", Some("dwell:metal_shovel")),
             None
         );
+        // Owner, 2026-11-14: the stone shovel digs faster than the wooden one (its `wood` tier).
         assert_eq!(
             hits_to_break("dwell:dirt", Some("dwell:wooden_shovel")),
+            Some(6)
+        );
+        assert_eq!(
+            hits_to_break("dwell:dirt", Some("dwell:stone_shovel")),
             Some(5)
         );
         assert_eq!(
@@ -704,7 +826,8 @@ mod tests {
     #[test]
     fn a_bite_is_half_the_blocks_volume_over_its_hits() {
         let cases = [
-            ("dwell:dirt", Some("dwell:wooden_shovel"), 5),
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 6),
+            ("dwell:dirt", Some("dwell:stone_shovel"), 5),
             ("dwell:dirt", None, 11),
             ("dwell:stone", Some("dwell:stone_pickaxe"), 5),
             ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
@@ -843,23 +966,18 @@ mod tests {
     }
 
     #[test]
-    fn per_hit_and_destroy_drops_total_the_blocks_drops() {
+    fn every_piece_drops_on_the_destroy_none_on_a_hit() {
+        // The owner, 2026-11-15: "4 chunks drop at the end not as you chop" (red before: half the
+        // pieces were spread over the hits before the last).
         for total in 0..12 {
             for hits in 1..14 {
-                let on_hits: u32 = (1..hits).map(|k| hit_share(total, hits, k)).sum();
-                assert_eq!(
-                    on_hits,
-                    total / 2 * u32::from(hits > 1),
+                assert!(
+                    (1..hits).all(|k| hit_share(total, hits, k) == 0),
                     "{total} over {hits}"
                 );
-                assert_eq!(on_hits + destroy_share(total, hits), total);
+                assert_eq!(destroy_share(total, hits), total);
             }
         }
-        // Four over five hits: one a hit before the last.
-        assert_eq!(
-            (1..5).map(|k| hit_share(8, 5, k)).collect::<Vec<_>>(),
-            [1, 1, 1, 1]
-        );
     }
 
     #[test]

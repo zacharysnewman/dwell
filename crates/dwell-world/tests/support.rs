@@ -244,3 +244,58 @@ dwell_world::both_faces!(
         assert_eq!(pieces[0].carriers, 0);
     }
 );
+
+dwell_world::both_faces!(
+    /// BUGS.md #193 (owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a
+    /// tree ... Leaves should only be attached to trees or fall to the ground"): cutting a trunk
+    /// takes the leaf touching it only at a corner and one across a gap (a palm's fronds), and a loose clump of leaves
+    /// out of reach that rests on the falling tree's branch falls too. Red before: both stayed in
+    /// the air.
+    fn a_cut_tree_leaves_no_leaf_hanging(f: FaceFrame) {
+        let mut w = world_on(f);
+        let set = |w: &mut VoxelWorld, c: [i32; 3], m: u16| {
+            let [x, y, z] = f.cell(c);
+            w.set_voxel(x, y, z, f.state(m));
+        };
+        // A trunk rows 1..=10 at (0, 0), a branch out to x 3 at row 10.
+        for y in 1..=10 {
+            set(&mut w, [0, y, 0], log());
+        }
+        for x in 1..=3 {
+            set(&mut w, [x, 10, 0], log());
+        }
+        // A frond touching the trunk at a corner only.
+        set(&mut w, [-1, 6, 1], leaves());
+        // And one across a gap, touching nothing of it.
+        set(&mut w, [-2, 8, 0], leaves());
+        // A leaf clump on the branch's end, past a short reach from any log through leaves:
+        // rows 11.. over (3, 0) is one leaf, then the clump is held only by resting on it.
+        set(&mut w, [3, 11, 0], leaves());
+        let rules = SupportRules {
+            rider_reach: 1,
+            ..SupportRules::default()
+        };
+        set(&mut w, [3, 12, 0], leaves());
+        set(&mut w, [0, 2, 0], M.air);
+        let pieces = detached_pieces(&mut w, &[f.cell([0, 2, 0])], rules);
+        let gone: std::collections::HashSet<[i32; 3]> = pieces
+            .iter()
+            .flat_map(|p| p.cells.iter().map(|&c| f.cell(c)))
+            .collect();
+        for c in [[-1, 6, 1], [-2, 8, 0], [3, 11, 0], [3, 12, 0], [0, 10, 0]] {
+            assert!(gone.contains(&c), "{c:?} falls: {pieces:?}");
+        }
+    }
+);
+
+/// [`world`] on face `f`: its stone floor at face-local row 0.
+fn world_on(f: dwell_world::FaceFrame) -> VoxelWorld {
+    let mut w = VoxelWorld::new(Arc::new(|_, _| {}), None);
+    for z in -20..20 {
+        for x in -20..20 {
+            let [x, y, z] = f.cell([x, 0, z]);
+            w.set_voxel(x, y, z, M.stone);
+        }
+    }
+    w
+}

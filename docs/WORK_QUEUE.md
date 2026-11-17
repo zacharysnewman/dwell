@@ -16,6 +16,360 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
+  that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
+  world. Iterating from our first version we could see our big plate world, up to our current version. First it may
+  make sense to just take all the screenshots? And then splice them together with different durations into a video?
+  Not sure what's best. But we may want to show them on a speed curve or something. First show me what angle and
+  time of day you propose." and "Also, make tools to make each screenshot you take super quick and easy to setup the
+  world and take it." Owner should see: a proposed angle and time of day (sample shots) first; then the timelapse
+  video of every terrain look, oldest to newest, from high above.
+  Tool (2026-11-16): `node .claude/skills/record/scripts/look-shot.mjs --version <v|local> --out DIR [--only views]`
+  opens a hosted release (`dropkickarcade.com/dwell/v/<v>/`, the newest of each line from 0.59.3 is hosted) on a
+  fresh Realistic world (seed 7, clouds and music off), places each view of `videos/terrain-looks/views.json`, sets
+  the time, hides the HUD, waits for the view to settle and saves a PNG (~45 s a build). Older lines (0.55–0.58)
+  are retired from the site: their builds would come from GitHub Releases. Proposed to the owner: straight down from
+  90 km (the whole disc), midday.
+  Owner: "Yeah straight down at midday looks good.", "We'd want to use the same seed too.", "I want before realistic
+  terrain too.", "Perhaps we could another set from the coast." and, on old builds' camera, "You could always inject a
+  helper script". The tool now downloads any release's built site from GitHub (`--source github`, cached) and serves
+  it on :4180; `--world default` shoots the default terrain (the builds before Realistic); views may be relative to
+  the spawn (`fromSpawn`). `placeCamera` exists from 0.10.1 (only 0.10.0 lacks it: the same terrain), so no helper
+  is needed. A whole island shows from 90 km from 0.15 on. Hosted Realistic builds differ visibly from 90 km at 0.64,
+  0.65, 0.68 and 0.69 (0.60–0.63, 0.66–0.67 and 0.70 look the same). Open: a coastal camera per era (the default
+  generator's island and Realistic's lie differently).
+  Owner: "Let me know when you finish all the shots? I'd like to compile them into a video, both sets of screenshots
+  back to back. A 2 second pause on the last shot of each." and "1 second on each screenshot." The cut:
+  `looks-video.py --first 1 --last 1 --hold 1 --set <default 0.10–0.58> --set <Realistic 0.55–0.71>` (the versions
+  whose look changed, 1 s each, each set's last 2 s). **Owner should see:** one 9:16 video, the default island's
+  looks then Realistic's, 1 s a version, a 2 s hold at the end of each set.
+- **PRIORITY 0 (owner, 2026-11-16): the server never drops below 60 fps.** "On the server stutter to add back to the
+  queue, I don't think we resolved the root cause and this is a priority 0 issue, absolutely tippy top. Server
+  stutters make the game unplayable, it's absolutely mandatory that the server never drops below 60fps." (BUGS.md
+  #194: the grass and tree-scan spikes were fixed in 0.71.x; not the whole cause.) To do: measure the server's tick
+  natively while a player sprints, jumps and slides through grass and crosses a portal, find every tick over 16.7 ms
+  and its phase, fix each, and keep a test or a bench that fails on a tick over budget. Owner should see: no stutter,
+  ever; the server at 60 ticks a second throughout.
+  Round 2 (2026-11-16, BUGS.md #194, merged): growth (trees one a tick from cached stages, pristine copies instead
+  of regenerating, grass's spread test), the growth terrains built at a join, collision never generating more than 2
+  chunks a tick; tools `tests/tick_budget.rs` and bench `stutter-run`. Next: the save, the join's first second,
+  growth and collision bursts in the browser.
+  Round 3: lazy autosaves (saves now ~0–2 ms a second in the browser, was 20–40 ms every 5 s). Next: the
+  once-a-minute durable commit (~60 ms), the join's first second (~100 ms), bursts.
+  **Status (2026-11-16, round 4 merged; owner: "This is super important. Document this, what you're working on and
+  planned for working on next."):** done: growth spread over ticks and off regeneration, collision never generating
+  on the browser's tick, lazy autosaves with the durable commit in still moments, the browser's local server on the
+  phone's collision budgets, tools to see it (`tests/tick_budget.rs`, bench `stutter-run` with each phase's longest
+  tick). Remaining in the browser: growth ticks of 9–25 ms. **Next (planned):** (1) grow a tree's stage and a grass
+  chunk in the server-jobs worker (pure functions of the species/seed/stage and of a chunk with its apron), the tick
+  only applying the result; (2) a budget test that fails when a native tick of the harness exceeds 4 ms (WASM ~10×);
+  (3) the browser run again on a slower page (CPU throttled) and through a portal; (4) ecology's day step (8.6 ms
+  once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
+  Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
+  chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
+  Round 6 (WIP branch `claude/server-tick-6`): a grass chunk grown a quarter a tick; tests green, browser check
+  pending. Owner, 2026-11-16: "Also for the hitching fixes, I'm getting big hitches while flying at 362 m/s." Next:
+  measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
+  tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
+  (362 m/s) with no hitches.
+  Found 2026-11-17 (bench `stutter-fly`, browser): flying at 362 m/s the server's `terrain` phase (collision builds,
+  `Players::tick_terrain`, ~70 builds/s) gives ticks of 39–71 ms for ~10 s after take-off. The native harness
+  (`TICK_FLY=1`) does NOT reproduce it yet: its player never moves (stuck at its spawn in every harness run so far,
+  so the earlier native numbers were of a still player). Next: fix the harness's input (compare persistence.rs), then
+  find the costly collision builds and spread or cap them.
+  Round 7 (2026-11-17, BUGS.md #194): fixed: sky floors were computed on the tick by the collision's checks and
+  the controller's reads; now never (the world's tick-safe air test). Flight at 362 m/s in the browser: worst tick a
+  second 1–6 ms, was 39–71. Next: growth at take-off (16–22 ms), the join's first second (ecology ~25 ms), then the
+  budget test.
+  Round 8: the tree scan places a column once for its stacked chunks (was once a chunk). Next: a new column's
+  placements off the tick, then ecology at the join, then the budget test.
+  Round 9: a new column's tree placements in the jobs worker (browser) or a quarter a tick. Next: grass's quarter
+  passes (5–12 ms natively in the sprint run), then ecology at the join, then the budget test.
+  Round 10: grass never regenerates a chunk on the tick (its pristine copy kept when picked). Next: the sprint's
+  collision ticks (~7 ms natively), ecology at the join, then the budget test.
+  Round 11: the sprint harness's collision ticks are tree growth's rebuilds, shown 60× by the harness's growth speed
+  (a smaller item, BUGS.md #194). Next: ecology at the join, then the budget test.
+  Round 12 (2026-11-17): the budget gate: `tests/tick_budget.rs` fails a tick over `TICK_BUDGET_MS` (8 natively);
+  flight 2.6 ms, the sprint 3.6 ms at the game's growth speed. **Status:** in the browser (bench `stutter-run`,
+  `stutter-fly`, all rounds in) every second's worst tick after the join is ≤ 11 ms (was up to 664 ms in round 1,
+  39–71 ms flying). Left: the join's first second (ecology's islands built at the first tick, ~25 ms, during
+  loading), tree growth's collision rebuilds (occasional), the owner's look.
+  Owner, 2026-11-17, on tree growth's rebuilds: "There's a lot of trees, so once every few in game days is still
+  probably pretty often." Next (priority 0): a changed chunk's shaped neighbours rebuilt only when the cells on
+  their shared border changed (a tree grows inside its chunk: one build, not 6–16). Owner should see: no hitch when
+  trees grow nearby.
+  Done (round 13): neighbours rebuilt only when their shared border changed; the sprint at 60× growth 5.3 ms worst.
+- **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
+  random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
+- **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
+  the same time, not like just when transitioning, but both fully visible and static." Owner should see: each tree
+  drawn once, billboard or full, never both except during the brief fade.
+- **Owner, 2026-11-16 (bug, BUGS.md #195):** "I'm seeing big gray speckles across the whole map at medium to far LODs
+  and they seem to mostly (sometimes entirely) disappear when up close. Some of them at least seem to come from cores
+  inside of terrain or the random "rocks/boulders" scattered about." Owner should see: no grey speckles at any
+  distance; far terrain shows the material it shows up close.
+- **Owner, 2026-11-16 (releases):** "I'm seeing some releases, deploys going out, for these videos?" then "Sure." to
+  skipping them: release.yml ignores pushes touching only `.claude/` or `docs/`. Owner should see: no dev build or
+  deploy from a tools- or docs-only merge.
+- **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
+  and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
+  `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to
+  pick; Realistic the only terrain.
+- **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
+  So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
+  starts to fall, and the trunk lies flatter.
+- **Owner, 2026-11-16 (bug, far trees):** "On trees I'm noticing some big trees may not have billboards at a
+  distance, seeing some with just logs at a distance." Owner should see: every big tree drawn as a billboard far off,
+  no bare logs.
+- **Paused for priority 0 (2026-11-16):** the shrine respawn and rim torches (built) and the spawn town (built with
+  the world; its houses' ground not yet levelled) are on branch `claude/shrine-respawn`, unreleased: they need the
+  0.72 line together.
+- **The owner's house replaces the NPC hut (2026-11-15):** "Add in the house I built to replace the NPC house" (the
+  owner's `dwell:house1`: 6 × 11 × 6, plank floor, stone brick walls, a 2 m west door, a torch inside, a hipped thatch
+  roof). Added as `shared/structures/house1.json`, first in the blueprint catalog, and both hamlet houses use it (turns
+  0 and 2, so its door faces as the huts' did); `dwell:bp_hut` stays in the catalog. Owner should see: villages' two
+  houses built as his house.
+- **Found 2026-11-15 (CI):** main's end-to-end shards have failed since at least #985 (before the tree and damage
+  work): `characters.spec` 142, `edit.spec` 204 and 281, `join.spec` 55, `terrainDraw.spec` 22, `touch.spec` 283
+  (the phone region bar), besides the known `buildDrag`, `settings` and `spawn` ones (CLAUDE.md "Known CI
+  failures"). Not yet looked into; to run locally on the GPU config. Also failing in `dwell-sim` since before #988
+  (the Rust job stopped at its format step since, hiding them): `explosives` (a block broken with
+  `one_hit_breaks` in adventure stays: "the dirt broke", "the stone broke"), `region_edits` (a fill of tall grass),
+  `streaming` (the verification hash), `chisel_in_game` (a retune: "air to build in"). Fixed 2026-11-16: the
+  explosives tests waited 3 ticks for a held axe's hit that lands at its `contactS` (0.26 s); the region fill test
+  predated 2 m grass (tall grass on tall grass stands); a giant's crown reached the chisel test's build cell and the
+  air test's reach the whole streaming view (the sky past the trees' reach is asserted air). `dwell-sim` all green.
+  More (2026-11-16): the combine sound test gave 16 shards (4 a stone now); the leaf tint test predated species
+  pines; the terrain trip test (a near chunk waited 806 frames): the sky test kept room for a 120 m giant over every
+  column, so the whole view's sky was generated; it now takes the trees as planted over each column (214 frames;
+  the limit is 240, as giants' crowns fill more chunks to mesh). To check in the browser: chunks popping in near
+  giant trees. Then (2026-11-16): worldgen `terrain`'s shore test skips a trunk's pad columns (levelled on purpose,
+  item 44); e2e `edit` palette (a 4-row piece's upper cells broken top-down; saplings skipped: one becomes a stage-0
+  tree at once, dwell-sim saplings.rs), `join` (the shaders stage), `settings` (High's 192 m, the Ambience volume,
+  the copied record matched on its own fields) pass on a GPU. Still red on CI only: `characters.spec.ts:142` (A's
+  arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
+  arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
+  play two-client (#34). Owner should see: CI green.
+  2026-11-17: CI's Rust job stopped at the first failing file, hiding more. Fixed: the client's scenario test
+  (`stutter-run`/`stutter-fly` take an end shot), worldgen `lod` (tops compare the ground, not tree crowns, which
+  the species pines' giants put a cell apart), `realistic_biomes` (the world file owns each biome's plants). Still
+  red on main (`--no-fail-fast`): `realistic_sagebrush` (sagebrush on rock walls), `realistic_world` (a rift lake
+  27 km > 19, an arc cone off its plate, the map build time 6.0 s vs 1.7 under load), `starter_memory` (the starter
+  terrain golden changed). Then: `starter_memory` re-pinned (the same hashes at v0.71.0 and on main: the species
+  pines, 0.71.0, nothing since); parked with `#[ignore = reason]` (a `both_faces!` form carries it to both faces):
+  `realistic_world`'s arc-cone and rift-lake checks (stale since 0.65's curved plates) and its build-time test
+  (timed: run alone), `realistic_sagebrush`'s rock-wall check: **to fix with the 0.72 worldgen line** (with the
+  red-desert brush, the spawn town and the rivers).
+- **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
+  away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
+  middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
+  platform's middle looking away from the pillars; torches round the platform's rim only; stamina not refilling
+  while swimming under water.
+  Stamina built (2026-11-16): `regenUnderWater` false in shared/vitals/vitals.json; asked about an exhausted swimmer
+  (who sinks, head under): "Never recover underwater", so one stays exhausted while under.
+- **Owner, 2026-11-16 (spawn in a town):** "I'd also like you to start in a town. The spawn should be in a town. One
+  way to do that would be to place a town right next to the spawn. We also don't need to mark the initial spawn
+  point on the map, since you'll always respawn at a shrine." A worldgen change (where towns stand): a new
+  compatibility line. Owner should see: a new world starts in a town; the map shows no spawn marker.
+- **Owner, 2026-11-16 (bug, BUGS.md #194):** "I've noticed the server stuttering a bit while I'm sprint
+  jumping/sliding around this area" (M3 Max), "It's a periodic stutter. But quite visible and stalls the player
+  movement." and "there's almost always a stutter going through the portal (jumping into it, I think)". Fixed
+  (2026-11-16): the grass step grew 64 chunks in one tick every 5 s and the tree growers scanned 256 new chunks in one
+  tick (~60 ms, after every big load: crossing a portal); now 2 and 4 chunks every tick. Owner should see: no
+  periodic stall moving through grass or through a portal. To time next: the other periodic server steps
+  (blueprints' towns and checks, chunk eviction, creature spawns).
+- **Parked, need the owner's words:** "low_shrub seed" and "water darkened by SSAO underwater" were named in a session
+  brief, but no entry or bug records what was asked; ask the owner before working them.
+- **Owner, 2026-11-16 (tuning, waiting on the owner's numbers):** "I'd like to tune our hit table. Since we're working
+  with half meter blocks it might feel slower and less rewarding. Can you show me a table of tools and blocks, with
+  hits to break and time to break." Table given (hits from `dwell_protocol::damage::hits_to_break_for`, time = the
+  tool's `contactS` 0.26 s + (hits − 1) × `repeatS` 0.5 s; a punch lands at once, every 0.4 s). Found: a tool off its
+  class swings slower than a punch (0.5 s vs 0.4 s) for the same hits; thatch is quicker by hand. Owner should see:
+  breaking feels quick and rewarding at the numbers they pick.
+- **Owner, 2026-11-16 (bug, BUGS.md #193):** "Sometimes leaves hang in the air after cutting down a tree, possibly after
+  settling. Leaves should only be attached to trees or fall to the ground and settle there." Owner should see: no
+  floating leaves after a fell.
+- **Owner, 2026-11-16 (tuning):** "Trees also fall with too much force. They should have maybe 1/4 of that force for a
+  tree. And theoretically it should be scaled based on the trees mass so they all fall at the same relative starting
+  speed." To do: the felled trunk's topple push (`felling.json`'s tip/topple and the log's `fellTip`) at 1/4 of
+  today's for a tree, scaled by the piece's mass (or applied as a starting angular speed) so a sapling and a giant
+  start to tip at the same speed. Owner should see: trees tipping over gently, small and giant alike.
+  Built (2026-11-16): the topple is a starting spin (rad/s), not a force, so mass doesn't enter; every trunk now
+  starts at the same spin (`toppleSpin` × the share; the cap on a tall one's top speed, `toppleTipSpeed`, gone) and
+  an axe's cut tips at `cutTip` 0.75 (was 1.5: half; at a quarter, 0.375, and at 0.5 a short trunk cut through stayed
+  balanced on its stump, the wedge holding it, so half is the least that fells reliably). A short tree starts at
+  0.45 rad/s (was 0.9); a giant at the same, so it goes over as a short one does (its top had been capped at 6 m/s).
+- **Owner, 2026-11-16 (bug, BUGS.md #192):** "I see the tall grass is like stacking when it grows but that's not right
+  at all, it's supposed to extend or stretch up. That looks really bad stacked with gaps." Owner should see: growing
+  tall grass stretches up as one stand, no stacked tufts.
+- **Owner, 2026-11-16 (perf idea, queued):** "One major optimization I could see is to cull the underworld faces
+  entirely unless you're near a portal chunk or a world edge chunk." then "Add that to the queue". To do: measure what
+  face B (the far face, under the midplane) costs to draw from face A today (chunks, LOD, shadows), then skip it unless
+  the player is near a portal shaft or the disc's rim, where face B can be seen. Owner should see: the same view and a
+  faster frame, with face B still showing through portals and over the rim.
+- **Owner, 2026-11-16 (bugs, BUGS.md #190, #191):** "looks like regular slabs properly show the under blocks when
+  damaged, but slopes and irregular shapes like logs don't, showing the void, or just straight through the blocks.
+  I'm also seeing settling tree logs not matching their alignment ... I haven't chopped this fallen tree at all".
+  Owner should see: damaged slopes and logs show what's behind their bitten parts; a felled tree lies as one straight
+  trunk.
+- **Owner, 2026-11-16 (bug, BUGS.md #189):** "I also found a bug where there's some grass shadow flickering I think,
+  very distracting, happens as you walk through tall grass sections." Owner should see: no flickering or streaking
+  shadows walking through tall grass.
+- **Owner, 2026-11-15:** "Oh that's a high cost for damaged blocks 3x the meshing time. We should probably have them
+  heal over time whether you're there or not (like via accumulated time). And let's just adjust all drops and
+  recipes down so 4 chunks drop instead of 8 across all blocks." and "4 chunks drop at the end not as you chop."
+  (1) built: every ½ m cell of stone, dirt, grass, sand and log drops 4 pieces, all on the break (`hit_share` 0),
+  and the piece → block recipes take 4 (stone, dirt, sand, log, planks, stone brick; thatch and tools unchanged).
+  Owner should see: 4 chunks pop out when a block breaks, none while chopping; 4 make a block. (2) healing, with the
+  owner's decisions below: built (2026-11-15): `breaking.heal` (10 s delay, whole over 30 s, each player's last 3
+  kept), on the server's ticks whether the chunk is loaded or not (BLOCK_DAMAGE.md §9a). Owner should see: a block
+  you leave alone (and 3 newer ones hit) heals back over half a minute.
+- **Owner, 2026-11-15 (SSAO):** "Hmmm, I can't even tell the difference between off and on SSAO, maybe make a weak,
+  normal, and strong setting for SSAO with weak as our current setting." Built (2026-11-16): an Ambient occlusion look
+  choice (Weak = today's, Normal default, Strong) in place of the strength slider; Normal and Strong also darken part
+  of the sunlit share (docs/SSAO.md, Looks). Owner should see: corners and ledge bases clearly darker on Normal, heavy
+  on Strong, with SSAO on (High or Ultra).
+- **Owner decisions, 2026-11-15:** (1) Block healing: "blocks healing should happen on a delay (like 10s) before it
+  starts. And the last 3 blocks you hit shouldn't heal. So you'd have hit a 4th block for the 1st block to start
+  healing. Each player gets their own last 3 blocks." Owner should see: a block you're working on never heals; the
+  4th block you hit lets the 1st start healing after ~10 s. (2) "Bloom stays on on high for now." (3) "The native app
+  should be electron wrapper for now." (4) "Immediately after the tree task you're working on, fix this rendering bug,
+  where chunks mined away in the 3D Block damage bit mask properly render the blocks under/behind it" (BUGS.md #187).
+  (5) "For damaged blocks, at least trees sometimes circling the tree block and destroying all the way around seems to
+  repair the other side visually or something?" (BUGS.md #188: only the newest 4 hit marks are kept). Next after #187.
+- **Owner, 2026-11-15 (queued, new feature):** "Side question, do we have a native build that doesn't run in browser
+  but in a bundled app?" then "Yeah lets queue up the real native app" — today: the Electron shell
+  (`platforms/electron`, the web build in Chromium, not packaged) and `dwell-native` (a native Metal window, a dev
+  harness with no menus, HUD or audio). Which path (packaged Electron or a full native client) to be asked before
+  designing. Owner should see: Dwell launched as an installed app on the Mac, not in a browser tab.
+  Owner: "The native app should be electron wrapper for now." Built (2026-11-16): `npm run package` in
+  `platforms/electron` makes `out/Dwell-darwin-arm64/Dwell.app` (the client inside, offline; unsigned: right click →
+  Open the first time); its smoke check runs a local world on the Mac's GPU. Open: signing, an icon, publishing it
+  with each release (CI), and whether it should follow the site's versions instead of carrying one.
+  Owner, 2026-11-16: "For now, let's build each version locally in the electron native app, but just as an overwrite.
+  Mostly I want to try it out, without crowding my hard drive, later we'll set it up to build each one." Done: after
+  each merge, `npm run build-app` in `platforms/electron` rebuilds the client and packages it over the one
+  `out/Dwell-darwin-arm64/Dwell.app` (no copy per version). Owner should see: Dwell.app opening the newest merged
+  version. Later: a build per version (CI).
+- **Owner, 2026-11-15 (new feature, trees):** "Let's get rid of my pines. Make each tree have a different starting
+  age, growth rate, and increase the max size of the trees to quadruple the height. Big trees can take up more blocks
+  at the base as they grow past a 1 block width. They can expand into a neighboring 3 spaces if available (only player
+  placed blocks prevent growth into a space. When trees hit that size, they will pop into to be centered on those 4
+  square of block columns." Breaks worldgen (a new compatibility line). Design questions asked before building.
+  Owner should see: no hand-built pines; trees of many ages and sizes, the biggest four times today's height, the
+  big ones standing on 2 × 2 trunks centred on the four columns.
+  Owner's answers (2026-11-15): the hand-built pines' groves become species pines (`dwell:pine`), same places;
+  height: each species' maximum ×4, trees growing toward it at their own rates so ages and sizes vary; trunks stop at
+  2 × 2; a player-placed block in one of the 3 spaces stops the tree growing (until it is removed). And: "And fold
+  trunks into billboards." (past the hand-over the near trunk's geometry is not drawn; the billboard has it).
+  Built (2026-11-15): a listed tree's logs are the opaque mesh's last indices (`MeshArrays::tree_logs`); a chunk past
+  the leaves' hand-over leaves them out (`TREE_LOGS_BIT`), the sun's shadows keep them. Bench (M1 Air, High): forest
+  14.8 ms (~−0.25), triangles −4 %; mixed and open unchanged within noise.
+- **Owner, 2026-11-15:** "Yes performance pass to get up to 60fps" — next local job (High at 60 fps on the M1 Air;
+  biggest costs measured: tall grass ~2.5 ms, shadows 1–1.4 ms, SSAO ~0.9 ms, clouds ~0.85 ms). Owner should see:
+  High holding 60 fps on the M1 Air in forest, meadow and open ground.
+  Owner, 2026-11-15, on the trims: "Thinner far grass, Clouds Low on High, Bloom Low on High, Cheaper shadows on
+  High"; then "2D clouds are fine for High" (Low is the 2D deck; built 2026-11-15: High's clouds Low, −0.6 ms
+  at the mixed forest, the deck itself ~0.05 ms there, so not made cheaper); bloom
+  Low measured no saving (bloom off on High awaits the owner's yes). Then "Can we improve the core drawing?",
+  "Optimize", "Make it faster?", "Yes go ahead": the near pass is bound by geometry (~2.2 M triangles in a meadow),
+  so (1) chunk meshes grouped by face direction, the groups facing away from the camera (and the sun, for shadows)
+  not drawn; (2) packed vertices (56/64 → ~16–20 bytes). Owner should see: the same picture, a higher frame rate
+  on High. (1) built: −0.5 to −0.9 ms. Then: "Seems like grass could be rendered at half if we only did a billboard
+  at most distances? Unless we already do that? Is that a heavy render?" — not done before: every plant is an X of
+  two quads at every distance. Plan: the cutout mesh's second quads in their own range; chunks past ~16 m draw the
+  first quads alone, turned to face the camera in the vertex stage. Owner should see: distant grass looking the same,
+  a higher frame rate in meadows.
+  Built (2026-11-15): past 16 m (`blades::BILLBOARD_M`) a plant's first quad turns to the eye in the vertex stage
+  and its second is dropped; chunks wholly past it skip the second quads (`second_quads_from`). Bench (M1 Air, High):
+  mixed forest −0.3 ms; forest and open unchanged within noise (less than hoped: the near pass is mostly terrain).
+  Measured (2026-11-15, "Do we skip occluded chunks?"): no, and it would pay. `dwell-mesh` `tests/occlusion_probe.rs`
+  (ignored; run by hand): in the default world (seed 7), eye at standing height, chunks within 160 m, the chunks
+  the terrain alone hides wholly hold 25 % (spawn), 43 %, 36 % and 30 % of the triangles (trees not counted as
+  occluders). Built and measured a horizon cull on the CPU (occluder heights per chunk column over buried
+  ground, a horizon by azimuth; same-run A/B, M1 Air, High): it hid 64–151 chunks but only 1–2.5 % of the drawn
+  triangles (the hidden ones were mostly behind the camera, already frustum-culled, or deep chunks of little
+  geometry; giant trees lift chunks' tops over the line), −0.1 to −0.25 ms GPU for +1.5 ms CPU a frame. Not
+  adopted (kept on branch `claude/horizon-cull`); the probe's share counts every direction, not the view's.
+  (2) built (2026-11-15), less far than planned: the tile rectangle as unorm16x4 (terrain and cutout), a cutout's
+  uv as float16x2 (a terrain's merged uv runs to 32 blocks, too far for halves; a leaf card's plant y holds a packed
+  normal, too big for one): terrain 60 → 52 bytes, cutout 64 → 52. Bench (M1 Air, High): mixed −0.6 ms, forest −0.3.
+- **Owner, 2026-11-15** (BUGS.md #186): "there's some \"sticks\" trees without leaves. Likely the billboard not
+  rendering." and "why do we have \"sticks\" shouldn't we have billboards of the logs too?" Owner should see: no
+  bare trunks at any distance; past the hand-over a tree is one billboard, trunk included (fewer triangles too).
+  Owner: "That tree I built seems like it should be handled identically to the others?" — the hand-built pines now
+  get impostors like the species trees (built). Then: "Are my hand built pines, handled differently logically? Do
+  they not grow?" and "So we already have \"pines\" separate from my hand built ones? Do we" — answered: yes, the
+  species `dwell:pine` grows; the hand-built pines are fixed structures (no growth, stages, tints or saplings).
+- **Owner, 2026-11-15:** "We need to increase the range when pasting so it doesn't overlap with your position" — the
+  paste preview sits far enough ahead that it never overlaps the player. Owner should see: a paste never placed
+  inside or on top of you.
+  Built (2026-11-16): a paste stays centred on the aimed cell where that clears your body; else its near side on the
+  cell, reaching away along the look, pushed on until clear (`region_tools::paste_min`); with nothing aimed at, the
+  cell ahead. The ghost and the paste agree; desktop and touch alike.
+- **Owner answers (2026-11-15):** "Wooden shovel 6 hits. Warmer stone brick, door swing can come later. Axe swish should
+  play once per swing (animated swing). Trees should get the force applied to them like it used to be so they fall again,
+  towards the side with the least structure (post 3D bit mask change). Make small changes in this thread."
+  - Wooden shovel: 6 hits on dirt, the stone shovel 5 (as built in #963) — kept.
+  - Stone brick: a warm `dressed_stone` palette ramp instead of the cool `stone` ramp (it read dark bluish). Done.
+    Owner should see: stone brick walls in a warm, sandy grey.
+  - Door swing: later.
+  - Axe swish: once per animated swing, as built — kept.
+  - Felling: after the 3D damage mask, a cut tree gets a push again and falls toward the side with the least structure
+    (queued with the damage-mask job). Correction (owner, 2026-11-15): **"I think the tree interpretation may not be
+    correct, 'so a tree touching a hillside falls away from the hill' my description only had to do with the contents
+    of the block you're breaking on break, than the surrounding terrain, essentially following the realistic falling
+    toward the broken side of the tree."** So the direction comes from the broken log's own damage (the side of the
+    log that lost the most material, as a real notch), not from the terrain or the neighbouring support; the support
+    rule is unchanged. Owner should see: a tree whose bottom log you chop from one side falls over, toward the side
+    you chopped.
+  - Small changes are made directly in the main conversation, not in subagents.
+
+- **Axe chopping clip review (owner, 2026-11-15, after #980's clip):** "I don't see any chunks disappearing from the log
+  from mesh deformation in that axe chopping video. Also all the tools are rotated so their heads face off to the right,
+  they should face in to the left and more upright. Animations can be adjusted accordingly to ensure the hit aligns
+  with the pointer." And: **"We can update damage to be more of a 3D bit mask, which should work on any object
+  shape."** (WORK_QUEUE item 26; BUGS.md.)
+  - Damage as a 3D bit mask: built on `claude/damage-mask` (BLOCK_DAMAGE.md §15): a damaged cell's removed material
+    is a mask over a sub-grid of the cell (the look's `grid` per metre), the block's own shape (cube, octagonal log,
+    ramp, any convex shape) drawn intersected with it; stone and dirt use it too (one path). Owner should see: chunks
+    coming off a log as the axe hits it, stone and dirt dug into blocky chunks as before, ramps too.
+  - Tool grip: heads in toward the screen's centre (left) and more upright, the hit still on the crosshair. Owner
+    should see: each tool at rest with its head leaning in, upright-ish, and striking at the crosshair.
+  - Felling push: above (the owner's correction). Owner should see: a chopped tree falls toward the chopped side.
+
+- **Screen-space ambient occlusion (owner, 2026-11-15):** "I'd like to implement screen space ambient occlusion."
+  Answers: presets "High and Ultra" (a cheap half-resolution pass on High within ~1 ms, a fuller one on Ultra; off on
+  Low/Medium, phones and the CPU adapter tier); scope "Everything, soft" (contact shadows where characters, trees,
+  grass, props and built blocks meet the ground and each other, subtle, not doubling the baked corner shading);
+  tuning "Data + Settings toggle" (`shared/look/ssao.json`; Settings → Graphics → Ambient occlusion and its strength).
+  Done on `claude/ssao` (docs/SSAO.md, ADR 0080): on the hemisphere and block light only, its own passes after the
+  scene. **Owner should see:** on High, soft darkening where villagers, huts, tree trunks, grass and cliff feet meet
+  the ground and in built corners, none in full sun on open ground; Settings → Graphics → Lighting → Ambient
+  occlusion Off/Low/High and its strength; frame rate on High unchanged at 60 fps.
+
+- **Region tools on touch (owner, 2026-11-15):** "I'd love to copy a structure in mobile but there's no selection or
+  copy control for it. Perhaps we could add a mobile button for it, but only when you're flying perhaps? I have a
+  structure I want to select the region of, so I can copy, and paste it here." And: "If there's no block under your
+  cross hair it should pick the block 0.5m in front of you (crosshair)." — "That applies to desktop and movile."
+  Done on `claude/mobile-region`: a **Select** button (under Bag) while flying in creative opens a bar of the
+  existing region tools — Set A, Set B, Copy, Paste (then Place, Rotate, Mirror, Cancel), Undo, Save (the Structures
+  page's save with the selection) and Clear — from data (`shared/input/touchRegion.json`: `showWhen`, the buttons and
+  what each runs); with no block aimed at, a corner (B/N on desktop too) is the cell 0.5 m in front of the eye along
+  the crosshair (`region_tools::AHEAD_M`), outlined before it is set (STRUCTURES.md §5.1). **Owner should see:** on
+  the phone, fly, tap Select, set A and B (on blocks or in the air), Copy, fly elsewhere, Paste → Place; the copy
+  stands there, and Undo takes it away.
+
+- **One rock item (owner, 2026-11-15):** "Why can't I craft stone tools? I have grass fiber, sticks, and rock shards"
+  (BUGS.md #181), and the decision: "One item: rock = shard" — dirt, grass and the ground's rocks give Rock shards;
+  everything that means "stone" uses the one item; Rocks already in inventories and saved loose rocks become Rock
+  shards. Done on `claude/rock-is-shard` (`dwell:rock` an alias of `dwell:rock_shard`, `inventory.json` `aliases`).
+  **Owner should see:** 2 sticks, 2 rock shards (from dirt) and 2 grass fibre offer the stone axe, pickaxe and shovel
+  in Combine; old Rocks show as Rock shards.
+- **Session limits (owner, 2026-11-15):** "When you resume just 1 task locally, one cloud session." — one local job
+  and one cloud session at a time, until the owner says otherwise. Same message: "And 70.3/4 haven't deployed yet."
+  (BUGS.md, the site over Pages' 1 GB limit; fixed by a smaller retention policy). Owner should see: the newest release
+  on the launcher.
 - **Town building blocks and prototyping (owner, 2026-11-14):** new man-made blocks for town buildings, opening
   doors, and a quick way to test a saved building in a village. The owner's final word: "Let's just do 3 blocks.
   Plank floors, stone brick walls, thatch roof. And doors also." — exactly three blocks (planks for floors, stone
@@ -45,6 +399,25 @@ Last updated: 2026-11-11 (0.52.108).
   cleanups (the LOD shown properly, tree billboards, terrain slope generation) and refinements of what is built
   come first.
 
+- **A pickup sound (owner, 2026-11-14):** "I want picking up drops off the ground to have a sound, with some
+  random variety. Maybe a light popping sound." Built on `claude/pickup-sound` (AUDIO.md §2d): `dwell:item_pickup`,
+  a soft procedural pop in four variants drawn by the seeded variation with pitch and gain jitter, as data in
+  `shared/sounds/dwell.json` (the sound, the event, the `pickup` window and rate); a burst pops once. The local
+  player's pickups only: others' are not heard (the server doesn't say who took an item). Previews: `npm run
+  sfx:render -- --only item_pickup`. **Owner should see:** walking over items on the ground in adventure, each
+  pickup gives a light, soft pop that differs a little each time; sweeping through a pile gives a quick few pops,
+  not a loud stack; crafting makes no pop.
+- **Pickup and craft sounds, and the held break's loop (owner, 2026-11-15):** "Do we yet have sounds for picking up
+  drops and crafting items? Also, there seems to be a looping sound when you have "break" on for mobile and you tap
+  and hold the right side of the screen. It should definitely not play more than once when hitting nothing."
+  (a) The pickup pop (above) was finished and merged (0.70.x). (b) A craft sound, built (AUDIO.md §2d):
+  `dwell:item_craft`, a soft woody clack, a second lighter clack and a tiny chime, four variants with pitch and gain
+  jitter, as data in `shared/sounds/dwell.json` (the sound, the event, the `craft` window); it plays once for each
+  Combine press the server answers by making the item (`dwell-game` `CraftSounds`), a press without enough items is
+  silent. Previews: `npm run sfx:render -- --only item_craft`. (c) The loop is BUGS.md #182, fixed.
+  **Owner should see:** pressing a recipe's Combine in the backpack gives a short wooden clack with a small chime,
+  a little different each time; with too few items, nothing. On a phone in Break mode, holding the right side of the
+  screen at the sky knocks once, not over and over; held on a block, each hit sounds as before.
 - **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
   generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
   on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data
@@ -1214,6 +1587,19 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    `the_axe_swings_level_whatever_the_stance`, `dwell-sim` chopping's swing-kind and chop2 tests (an axe asked
    vertical swings level; red on the old server → green). Probe sheets `docs/clip_probe/tool-swings/`
    (CHARACTERS.md §5). Not changed: the sword's two stances and slashes; others see the body's plain `break`.
+   Owner, 2026-11-15: **"Did you change the axe (or fix deploys for changes to it) since 10:40? It does not have
+   the same behavior as the other tools."** (Claude: nothing changed it since #954.) **"If you didn't change it."** →
+   **"That's how it was, it was different from the other tools"**. Asked "when you break through a trunk, what should
+   the tree above do?": **"Tree still falls (Recommended)"**. (#954 gave the axe one mode but left it a chopping tool:
+   its own swing, an arc clearing leaves, stamina, the V bites; BUGS.md #184.)
+   **Owner should see:** with the stone axe, each click on a log swings and lands like the pickaxe (at the
+   crosshair's contact), cracks spread and chips fly, no V bites or notch; the 10th hit breaks the whole log and
+   drops wood; breaking a tree's bottom log, the tree above still topples as a body with its crack.
+   **Status (axe-like-tools):** built 2026-11-15, waiting on the owner's look in game: the axes are break tools
+   only (contact 0.26 s, `repeatS` 0.5, the pickaxes' clips), hits are block edits taking the log's damage (stone 10,
+   metal 5), a damaged log keeps its octagon with the `wood` cracks (its `damage.look`), the server cuts no wood (an
+   older save's cuts ignored, an older client's axe swing one damage hit), felling as after any break
+   (docs/BLOCK_DAMAGE.md §14).
 18. **Digging marks that look carved** (owner 2026-11-11: "the 'chunks' of dirt aren't at all what we
    discussed. It should be like a normal map change (do we support normal/bump maps)? It's completely flat
    should look like mesh deformation (preferably without actually doing it for performance)"; "That part was
@@ -2554,7 +2940,7 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
    snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
    same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
-   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #180 (remotes) and #181 (late
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #198 (remotes) and #199 (late
    sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
    delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
    ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
@@ -3374,6 +3760,21 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    (see item 40). **Owner should see:** open the big map (M) in a world you have explored: a town icon where each
    town site is, a brighter one where a town is being built, and a "Towns" box in the filters that hides them; open
    the `spawn=town` link and watch the builders put up the hamlet in front of you.
+   **Builders clear their site first (owner, 2026-11-15):** **"NPCs don't clear their build site currently. That should be
+   the first step."** Built 2026-11-15 (branch `claude/builder-site-clearing`, BLUEPRINTS.md §5b): before placing
+   anything, a builder removes everything in the blueprint's box and a 1 m margin (`builder.clearMarginM`) from its floor
+   up that the blueprint doesn't want there: a tree whose trunk stands in it goes whole, logs and leaves in one removal
+   (nothing floats); tall grass, plants, rocks, players' blocks and terrain over the floor go one a `clearPaceS` (0.5 s);
+   a cell already holding its own block is kept, other blueprints' and storehouses' boxes are never touched, nothing
+   below the floor is dug. What it clears drops at the site where items are used (adventure). The panel says
+   "Clearing", then "Building". A half-cleared site resumes after a save (the world is the record). Tests: `dwell-world`
+   `blueprint` (both faces: the whole tree, the margin, the kept cells), `dwell-sim` `tests/blueprints.rs` (both faces:
+   tree and grass cleared before the first piece, drops in adventure, a save mid-clear resumes). **Owner should see:**
+   Structures → a saved hut → **Test in town** placed over a tree: the builder takes the whole tree down at once, clears
+   the grass round the box, the panel reads "Clearing" then "Building", and only then the floor goes in.
+   **Ghosts and panel fixed (2026-11-15, BUGS.md #183):** the client dropped the server's `Blueprints` (sent on the
+   world channel), so no placed blueprint showed its ghost or panel; now it applies them. The hut's tests (`dwell-world`
+   `blueprint`) follow the town-block hut (planks, stone brick, thatch, the door column put from its bottom cell).
 
 57. **Villagers fetch materials from a storehouse (an Age of Empires-style work loop)** (owner 2026-11-14, after asking
    whether "town plans will clear trees" means villagers clear them: **"Ideally long term, I'd like this to work a lot
@@ -3411,6 +3812,55 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    empty or blocked, on to the town's next blueprint when one completes); the storehouses and loads saved (the
    blueprints record's format 3); the stack drawn on the back (`carryLook`, the `npcs.carry` capability). Not yet
    seen by the owner: needs a look in game (cloud sessions have no GPU). BLUEPRINTS.md §9.
+
+58. **Adventure's start: a wooden shovel, shovel recipes, and what rests on a block drops with it** (owner 2026-11-14,
+   through the orchestrator; branch `claude/adventure-start`).
+   (a) **"Perhaps you could start with a wooden shovel instead of an axe since dirt drops rocks."** Adventure's
+   starting item (`shared/inventory/inventory.json` `startingItems`) is `dwell:wooden_shovel`, not `dwell:stone_axe`
+   (the stone axe is combined from 2 sticks, 2 rock shards and 2 grass fibre).
+   **Owner should see:** a new adventure world starts with a wooden shovel in the hotbar and no axe.
+   (c) **"Shovel should get a 4 wood sticks recipe 2 grass fiber. Stone shovel is 1 stone, 2 sticks, and 2 grass
+   fiber."** Then: **"Or just make it 2 stone like the others."** Recipes: `dwell:wooden_shovel` = 4 sticks + 2 grass
+   fibre; `dwell:stone_shovel` = 2 rock shards + 2 sticks + 2 grass fibre, as the stone axe and pickaxe. The stone shovel is a new tool: the shovel class at the stone tier, wearing after 32 hits like the
+   stone axe and pickaxe, digging faster than the wooden shovel, drawn as the wooden shovel with a stone blade, and on
+   the creative hotbar's tools.
+   **Owner should see:** the backpack's Combine lists Wooden shovel and Stone shovel; the stone shovel digs dirt in
+   fewer hits than the wooden one and breaks after 32 hits.
+   (b) **"When you destroy a block with grass, rock, sticks on it, those should drop too."** Then: **"Essentially a
+   general rule of blocks or items sitting on a block should be dropped when that block is destroyed."** One general
+   rule (BUGS.md #178): anything the destroyed block holds up — a block whose placement needs the cell under it
+   (`needsSupport`, `placeOn`: plants, torches, saplings, any piece the support rule says no longer stands) and any
+   ground item lying on its top — breaks and drops its own drops (loose items, in adventure), cascading upward.
+   Blocks that stand on their own keep the existing support and falling rules.
+   **Owner should see:** digging the block under tall grass, a torch, a sapling or a ground rock or stick drops their
+   items onto the ground (adventure); nothing floats or vanishes; a stack of them drops in order.
+   (d) **"Let's keep drops the same but halve the resource cost of assembling blocks. 4 rock shards, 4 dirt clods, 4
+   sand clumps, etc."**, then reversed the same day: **"Yeah sand should have sub chunks. And let's leave them all at 8
+   actually."** So every piece → block recipe stays at 8, and sand gets pieces: `dwell:sand_clump` ("Sand clump"),
+   8 a ½ m sand cell (as dirt's clumps), and 8 sand clumps → sand. Red sand and red dirt keep their drops (red dirt
+   drops plain dirt clumps; red sand drops itself).
+   **Owner should see:** digging sand drops sand clumps; the backpack's Combine makes a sand slab from 8 of them.
+   (e) **"Plant fiber looks like a block for the drop."** (BUGS.md #179.) Grass fibre's look was a `cluster`
+   (seeds' heap of lumps) that read as a little block, and the gems had no look at all (drawn as a stone block in
+   their colour). Now a `strands` look (five thin blades splayed flat) for the fibre, the gems a shard each, and an
+   item without a look fails the generator.
+   **Owner should see:** dropped grass fibre lies as a little fan of green-straw blades, a gem as a small crystal;
+   nothing loose is drawn as a cube.
+   (f) **"Also grass fiber should be a guaranteed drop, seeds will be 50%"**, then **"1-2 grass fiber."**, then
+   **"Cutting grass that's taller than 1 gives +1 plant fiber each. You're right that makes more sense than
+   random."** So tall grass drops one fibre for each ½ m cell of its height (each cell drops its own as it goes
+   with the cell under it: today's one-cell tuft gives 1, a two-cell stand 2), no randomness; a seed at 50 % at
+   every stage; the gem as before.
+   **Owner should see:** cutting a tuft always gives a grass fibre, about half the time a seed too.
+   (g) **"I'm not seeing grass taller than 1 though is it pretty slow?"** → **"Oh it's supposed to be growing up to
+   2m"**: tall grass grows up to 2 m, up to four ½ m cells stacked, a cell at a time once the one below is full,
+   capped by the climate's share (data in `shared/worldgen/grass.json`: max cells per share band, days per cell),
+   cutting any cell cuts the column above it (and drops its fibre, one a cell). **Built** (branch
+   `claude/grass-2m`, ECOLOGY.md §10 "Up to 2 m"): grass.json `height` (stalk cells, `daysPerCell` 1.5, share
+   bands 0 → 1 cell, 0.7 → 2, 0.8 → 3, 0.9 → 4); generation unchanged, so meadows grow tall over their first
+   days; a grazer's bite eats the stand.
+   **Owner should see:** a lush meadow's grass reaching about 2 m over a few in-game days, a dry steppe's staying
+   short.
 
 ## Future (needs owner answers)
 
@@ -3466,7 +3916,8 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
 
 - **Crafting proposal shelved** (2026-11-11): "That's a lot of assumptions I don't think I want to do
   any of those crafting question things for now." Only the pieces and combine recipes were built.
-- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab;
+- **Pieces:** 8 rock shards → a stone slab, 8 dirt clumps → a dirt slab, 8 wood chunks → a log slab, 8 sand
+  clumps → a sand slab (2026-11-14: "let's leave them all at 8 actually");
   rocks still found in grass and dirt at random; sticks from leaves. Stone tools: 2 sticks + 2 rock
   shards + 2 grass fibers. Stone axe durability 32.
 - **Volcanoes:** dormant for now, eruptions later.

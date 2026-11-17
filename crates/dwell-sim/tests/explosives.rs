@@ -72,6 +72,7 @@ impl Scene {
         }
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            start_with_axe(&mut s.fx.server, id as u16);
             // Adventure uses items up (ADR 0066): a torch to light with, dynamite to place.
             s.fx.server.give(id as u16, "dwell:torch", 64);
             s.fx.server.give(id as u16, "dwell:dynamite", 64);
@@ -92,6 +93,7 @@ impl Scene {
         s.fx.server.set_pieces_per_tick(usize::MAX);
         for id in 1..=players as SessionId {
             s.fx.join(id, &Client::new(id as u8));
+            start_with_axe(&mut s.fx.server, id as u16);
         }
         for _ in 0..5 {
             s.fx.server.step();
@@ -818,6 +820,7 @@ fn a_world_saved_with_a_fuse_burning_lights_it_again_when_it_loads() {
             ..flat()
         });
         f.join(1, &Client::new(1));
+        start_with_axe(&mut f.server, 1);
         f.server.step();
         f.send(1, place([-1, g - 1, 2], require("dwell:dynamite")));
         f.server.step();
@@ -1374,7 +1377,7 @@ fn a_chained_column_of_yellow_destroys_the_pieces_left_in_each_later_blasts_core
 /// `max` ticks (with `settle`, until the pieces have settled too): each tick's (ms, pieces spawned, phases), the cells the chain cleared within 12 m and
 /// the pieces spawned.
 /// A tick's phases (`Server::tick_phases`).
-type Phases = [(&'static str, f64); 14];
+type Phases = [(&'static str, f64); dwell_sim::server::TICK_PHASES.len()];
 
 struct Chain {
     ticks: Vec<(f64, usize, Phases)>,
@@ -1729,7 +1732,8 @@ dwell_world::both_faces!(
                 point: None,
             }),
         );
-        s.run(3);
+        // Past the held axe's contact (`contactS`, 0.26 s: the hit lands then).
+        s.run(30);
         assert_eq!(s.get([0, -1, 0]), M.air, "the dirt broke");
         assert_eq!(s.get([0, 0, 0]), M.air, "the grass went with it");
         assert!(loose_count(&s, "dwell:grass_fiber") >= 1, "and dropped");
@@ -1760,7 +1764,8 @@ dwell_world::both_faces!(
                 point: None,
             }),
         );
-        let out = s.run(3);
+        // Past the held axe's contact (`contactS`, 0.26 s: the hit lands then).
+        let out = s.run(30);
         assert_eq!(s.get([0, -1, 0]), M.air, "the stone broke");
         assert_eq!(s.get([0, 0, 0]), M.air, "the sand fell");
         assert!(!spawns(&out).is_empty(), "as a piece");

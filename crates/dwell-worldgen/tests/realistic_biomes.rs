@@ -109,9 +109,15 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
         // The sand desert's own dune stack is the Realistic world's (worlds/realistic.json, 0.65:
         // the starter's sand desert keeps the preset's), and its sparse plants (0.68: open dunes).
         let mut want = *p;
+        // Each biome's plants are the world's own (worlds/realistic.json lists every biome's
+        // placements and densities: talus at cliffs' feet everywhere, 0.69; shrubs and bushes):
+        // the rest of the preset is unchanged.
+        if let Some(b) = b {
+            want.placements = b.placements;
+            want.trees = b.trees;
+        }
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
-            want.trees = &[("boulders", 0.25), ("sagebrush", 0.012)];
             // 0.69: sand on its steep faces too (no grey stone blobs on the dunes).
             want.bands = Box::leak(Box::new([dwell_worldgen::terrain::ElevationBand {
                 rock: "dwell:sand",

@@ -2,6 +2,334 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.28",
+      "changes": [
+        "Fewer hitches near growing trees: a tree growing no longer rebuilds the collision of the ground around it."
+      ]
+    },
+    {
+      "version": "0.71.27",
+      "changes": [
+        "Growing grass no longer causes stutters: the server keeps a copy of the ground instead of rebuilding it."
+      ]
+    },
+    {
+      "version": "0.71.26",
+      "changes": [
+        "Smoother movement into new ground: working out where trees stand now happens off the game's main loop."
+      ]
+    },
+    {
+      "version": "0.71.25",
+      "changes": [
+        "Fewer stalls when moving into new ground: the server works out each area's trees once instead of once per layer."
+      ]
+    },
+    {
+      "version": "0.71.24",
+      "changes": [
+        "No more hitches flying at full speed: the server no longer works out new sky columns in the middle of a tick.",
+        "Tall grass grows a quarter of a chunk at a time, so growing grass no longer stalls the game."
+      ]
+    },
+    {
+      "version": "0.71.23",
+      "changes": [
+        "Growing trees no longer cause hitches in local worlds: their growth is worked out in the background."
+      ]
+    },
+    {
+      "version": "0.71.22",
+      "changes": [
+        "Smoother local worlds: saving waits for a moment you stand still, and running into new land no longer stalls the world."
+      ]
+    },
+    {
+      "version": "0.71.21",
+      "changes": [
+        "Saving a local world no longer stalls the game every few seconds."
+      ]
+    },
+    {
+      "version": "0.71.20",
+      "changes": [
+        "Much smoother local worlds: tree and grass growth, and the land loading around a sprinting player, no longer stall the world's tick."
+      ]
+    },
+    {
+      "version": "0.71.19",
+      "changes": [
+        "Stamina no longer comes back while your head is under water."
+      ]
+    },
+    {
+      "version": "0.71.18",
+      "changes": [
+        "Fixed a periodic stutter that stalled movement every few seconds, and the hitch when going through a portal: growing grass and trees now do their work a little at a time."
+      ]
+    },
+    {
+      "version": "0.71.17",
+      "changes": [
+        "Felled trees tip over more gently, and every tree, small or giant, starts to fall at the same pace.",
+        "A felled trunk lies straight: it crushes the leaves it lands on instead of stepping up over them."
+      ]
+    },
+    {
+      "version": "0.71.16",
+      "changes": [
+        "Cutting down a tree no longer leaves leaves hanging in the air: big crowns, palm fronds and leaves resting on the falling tree all come down with it."
+      ]
+    },
+    {
+      "version": "0.71.15",
+      "changes": [
+        "Tall grass that has grown taller now stands as one plant stretching up, not stacked tufts with gaps."
+      ]
+    },
+    {
+      "version": "0.71.14",
+      "changes": [
+        "Damaged slopes and logs now show the blocks behind and under their bitten-out parts instead of a see-through hole."
+      ]
+    },
+    {
+      "version": "0.71.13",
+      "changes": [
+        "Fixed grass shadows flickering and streaking as you walk through tall grass."
+      ]
+    },
+    {
+      "version": "0.71.12",
+      "changes": [
+        "Faster loading of the land around you: the empty sky over the forests is no longer generated as if a giant tree could stand anywhere."
+      ]
+    },
+    {
+      "version": "0.71.11",
+      "changes": [
+        "A Mac desktop app: Dwell can now be packaged as Dwell.app (the game inside, playable offline)."
+      ]
+    },
+    {
+      "version": "0.71.10",
+      "changes": [
+        "Ambient occlusion now has a look setting, Weak, Normal or Strong, in place of the strength slider: Normal (the default) and Strong show clearly in corners and under ledges, sunlit ones too; Weak is the old look."
+      ]
+    },
+    {
+      "version": "0.71.9",
+      "changes": [
+        "A paste never lands on you: where the box would overlap you, it starts at the aimed block and reaches away from you instead."
+      ]
+    },
+    {
+      "version": "0.71.8",
+      "changes": [
+        "Damaged blocks heal: about 10 seconds after their last hit they start to mend, whole again within half a minute, whether you're nearby or not.",
+        "The last 3 blocks you hit never heal while you work on them; hitting a 4th lets the oldest start healing (each player has their own 3)."
+      ]
+    },
+    {
+      "version": "0.71.7",
+      "changes": [
+        "Blocks drop 4 pieces instead of 8, all when the block breaks (none while you chop or dig).",
+        "4 pieces make a block again: stone, dirt, sand, logs, planks and stone bricks."
+      ]
+    },
+    {
+      "version": "0.71.6",
+      "changes": [
+        "The High graphics preset draws the 2D cloud layer instead of the 3D clouds (about 0.6 ms a frame on an M1 Air); Ultra keeps the 3D clouds."
+      ]
+    },
+    {
+      "version": "0.71.5",
+      "changes": [
+        "Slightly lighter terrain and plant vertices for the GPU (about 0.3–0.6 ms a frame in forests on an M1 Air on High), with the same picture."
+      ]
+    },
+    {
+      "version": "0.71.4",
+      "changes": [
+        "Distant tall grass and flowers draw as one card turned to face you instead of two crossed cards, a little lighter on the GPU in meadows."
+      ]
+    },
+    {
+      "version": "0.71.3",
+      "changes": [
+        "Distant trees draw as one billboard, trunk included: the trunks' own blocks are no longer drawn past the hand-over, a little less work in forests."
+      ]
+    },
+    {
+      "version": "0.71.2",
+      "changes": [
+        "Chopping or mining all the way round a block no longer fills the first sides' bites back in: every chunk you take out stays gone until the block breaks."
+      ]
+    },
+    {
+      "version": "0.71.1",
+      "changes": [
+        "Fixed seeing the sky through a block's mined-away chunks: the blocks behind and under it now show through the holes, inside a chunk and across chunk edges."
+      ]
+    },
+    {
+      "version": "0.71.0",
+      "changes": [
+        "A new compatibility line: worlds' trees are new",
+        "The hand-built pines are gone: pine groves grow the pine species instead",
+        "Trees grow far bigger: each tree's full size is drawn up to four times the old tallest, with a wider crown",
+        "Every tree grows at its own pace, and new worlds start their trees at all ages",
+        "Big trees stand on a 2 × 2 trunk, centred on the four blocks; a block you placed in the way stops the tree growing until it's gone"
+      ]
+    },
+    {
+      "version": "0.70.26",
+      "changes": [
+        "Fixed bare tree trunks (\"sticks\") at a distance: the hand-built pines now turn into far-tree billboards like every other tree, instead of losing their leaves.",
+        "Leaves no generated tree owns (ones you place) no longer vanish past ~55 m."
+      ]
+    },
+    {
+      "version": "0.70.25",
+      "changes": [
+        "Faster drawing: the world no longer sends the GPU the block faces turned away from you (about 20% fewer triangles, ~0.4–0.9 ms a frame on an M1 Air on High), nor those turned away from the sun into its shadows."
+      ]
+    },
+    {
+      "version": "0.70.24",
+      "changes": [
+        "Distant tall grass fades out blade by blade instead of pixel by pixel, which is cheaper to draw."
+      ]
+    },
+    {
+      "version": "0.70.23",
+      "changes": [
+        "Villages build a new stone and thatch house, designed in game, in place of the old hut."
+      ]
+    },
+    {
+      "version": "0.70.22",
+      "changes": [
+        "Tools are held more upright, their heads turned in toward the crosshair rather than off to the right; swings still strike at the crosshair."
+      ]
+    },
+    {
+      "version": "0.70.21",
+      "changes": [
+        "A tree whose bottom log you chop through now falls toward the side you chopped, like a real notch."
+      ]
+    },
+    {
+      "version": "0.70.20",
+      "changes": [
+        "Chopping a log now knocks real chunks out of it with each axe hit, as digging dirt and mining stone do.",
+        "Block damage works on any block shape: ramps and logs show the chunks taken out of them."
+      ]
+    },
+    {
+      "version": "0.70.19",
+      "changes": [
+        "Ambient occlusion: soft shadows where people, trees, grass and buildings meet the ground and each other (High and Ultra presets).",
+        "Settings → Graphics → Lighting has Ambient occlusion (Off, Low, High) and its strength."
+      ]
+    },
+    {
+      "version": "0.70.18",
+      "changes": [
+        "Stone brick is a warmer, sandy grey instead of a dark bluish stone."
+      ]
+    },
+    {
+      "version": "0.70.17",
+      "changes": [
+        "A building test follows the new village hut (no change in game)."
+      ]
+    },
+    {
+      "version": "0.70.16",
+      "changes": [
+        "The axe now works exactly like the pickaxe and shovel: each swing lands at the crosshair and counts down a log's hits.",
+        "A log takes 10 hits with the stone axe (5 with the metal one), cracking and throwing chips, then breaks whole and drops its wood.",
+        "Breaking a tree's trunk still topples the tree above.",
+        "No more notches or V bites carved into logs."
+      ]
+    },
+    {
+      "version": "0.70.15",
+      "changes": [
+        "A placed blueprint shows its ghost again when you look at it, with its panel (Clearing, then Building)"
+      ]
+    },
+    {
+      "version": "0.70.14",
+      "changes": [
+        "Builders clear their site before they build: a tree in the way comes down whole, leaves and all, with the grass, rocks and stray blocks round the blueprint.",
+        "What a builder clears drops its items at the site in adventure.",
+        "A blueprint's panel says Clearing, then Building.",
+        "Placing a blueprint works from the start of a session again, not only after the game mode changes."
+      ]
+    },
+    {
+      "version": "0.70.13",
+      "changes": [
+        "On a phone, while flying in creative, a Select button opens the region tools: set corners, copy, paste (rotate, mirror), undo, save as a structure and clear",
+        "With no block under the crosshair, a selection corner is the spot just in front of you (keyboard and touch)"
+      ]
+    },
+    {
+      "version": "0.70.12",
+      "changes": [
+        "Making an item with Combine now plays a short wooden clack with a small chime, a little different each time.",
+        "Holding Break at the sky (a held touch on phones, or a held click) no longer repeats its knock: it sounds once per hold."
+      ]
+    },
+    {
+      "version": "0.70.11",
+      "changes": [
+        "Picking up items off the ground now makes a light pop that varies a little each time"
+      ]
+    },
+    {
+      "version": "0.70.10",
+      "changes": [
+        "Dirt, grass and the rocks on the ground now give Rock shards, so they craft the stone axe, pickaxe and shovel",
+        "Rocks already in your backpack turn into Rock shards"
+      ]
+    },
+    {
+      "version": "0.70.9",
+      "changes": [
+        "Tall grass grows up to 2 m: in a lush meadow a full tuft grows another ½ m every day or two, to four cells; dry or cold ground stays short.",
+        "Cutting a tall stand at any height takes everything above the cut, one grass fibre for each ½ m cell.",
+        "A deer grazing a tall stand eats it down to a sprout."
+      ]
+    },
+    {
+      "version": "0.70.8",
+      "changes": [
+        "The site holds fewer old builds so new releases fit on it again; older builds stay downloadable on GitHub."
+      ]
+    },
+    {
+      "version": "0.70.7",
+      "changes": [
+        "A flood no longer shows streaks and bars of water faces inside it",
+        "Water no longer hangs in the air where a removed wall held it back"
+      ]
+    },
+    {
+      "version": "0.70.6",
+      "changes": [
+        "Adventure now starts with a wooden shovel instead of a stone axe; the axe is combined from sticks, rock shards and grass fibre",
+        "New stone shovel: 2 sticks, 2 rock shards and 2 grass fibre; it digs faster than the wooden shovel, which you can now make from 4 sticks and 2 grass fibre",
+        "Sand breaks into sand clumps, and 8 make sand again",
+        "Whatever rests on a block drops when the block goes, however it goes: tall grass, torches, saplings and the rocks and sticks lying on it no longer vanish or float",
+        "Cutting tall grass always gives a grass fibre, and a seed about half the time",
+        "Dropped grass fibre lies as a little bundle of blades, and gems as small crystals, instead of tiny blocks"
+      ]
+    },
+    {
       "version": "0.70.5",
       "changes": [
         "Thick clouds read like real cumulus: bright white sunlit tops and sides from above, lighter bases from below instead of a muddy grey.",

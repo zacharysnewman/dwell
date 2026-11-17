@@ -1732,9 +1732,9 @@ fn a_felled_trunk_afloat_stays_a_body_and_is_predicted_without_snaps() {
 
 // --- leaves (BUGS.md #94) ------------------------------------------------------------------------
 
-/// The flat world with a pine (`shared/structures/pine_tree.json`: leaves from 1 m up) at x 6.
+/// The flat world with a tree (`shared/structures/proto_tree.json`: a trunk and a crown) at x 6.
 fn tree_generator() -> ChunkGenerator {
-    let pine = load("dwell:pine_tree").expect("the pine structure");
+    let pine = load("dwell:proto_tree").expect("the tree structure");
     with_structure(
         flat_generator(),
         Arc::new(pine.place([6, dwell_world::FLAT_TOP_Y, 0], 0)),

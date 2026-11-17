@@ -85,6 +85,7 @@ impl W {
         self.f32s(&m.flood);
         self.u32s(&m.cracks);
         self.u32s(&m.indices);
+        self.u32(m.tree_logs);
     }
     fn flat(&mut self, m: &FlatMesh) {
         self.f32s(&m.positions);
@@ -206,6 +207,7 @@ impl R<'_> {
             flood: self.f32s()?,
             cracks: self.u32s()?,
             indices: self.u32s()?,
+            tree_logs: self.u32()?,
         })
     }
     fn flat(&mut self) -> Res<FlatMesh> {
@@ -309,8 +311,7 @@ pub fn encode_job(id: u32, job: &Job) -> Vec<u8> {
                 c.iter().for_each(|v| w.i32(*v));
                 let mut b = Vec::new();
                 let mut bw = dwell_protocol::bytes::ByteWriter::new(&mut b);
-                d.write(&mut bw);
-                d.write_chunks(&mut bw);
+                d.write_all(&mut bw);
                 w.bytes(&b);
             }
         }
@@ -471,8 +472,7 @@ pub fn decode_job(bytes: &[u8]) -> Result<(u32, Job), DecodeError> {
                 let c = [r.i32()?, r.i32()?, r.i32()?];
                 let b = r.bytes()?;
                 let mut br = dwell_protocol::bytes::ByteReader::new(&b);
-                let mut d = dwell_protocol::damage::DamageView::read(&mut br);
-                d.read_chunks(&mut br);
+                let d = dwell_protocol::damage::DamageView::read_all(&mut br);
                 if !(br.ok() && br.at_end()) {
                     return Err(DecodeError);
                 }

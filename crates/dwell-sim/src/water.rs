@@ -1851,7 +1851,19 @@ impl Water {
                 }
                 let (f, (x, z), floor) = (k.f, k.xz(l), k.w.floor[l]);
                 let top = level.max(if drawn.is_nan() { level } else { drawn });
-                let (r0, r1) = (row_of_m(f64::from(floor)), row_of_m(f64::from(top)) + 1);
+                let (r0, mut r1) = (row_of_m(f64::from(floor)), row_of_m(f64::from(top)) + 1);
+                // Not drawn since its cells were written otherwise (a held lake freed, a scan, an
+                // edit): the liquid standing on in the column over its level is its own, cleared
+                // too (BUGS.md #177: a sheet of water hung along a removed dam's face).
+                if drawn.is_nan() {
+                    while self
+                        .cells
+                        .get(cell(f, x, r1 + 1, z))
+                        .is_some_and(|b| cells::kind_of(b) == Kind::Liquid)
+                    {
+                        r1 += 1;
+                    }
+                }
                 for r in r0..=r1 {
                     let w = cell(f, x, r, z);
                     let Some(now) = self.cells.get(w) else {
