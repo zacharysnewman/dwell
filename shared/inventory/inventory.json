@@ -30,7 +30,7 @@
       "label": "Wood chunk",
       "color": "#a07446",
       "size": 0.24,
-      "look": { "shape": "lump", "size": [0.16, 0.09, 0.12], "texture": "dwell:log", "color": "#d6ad84" }
+      "look": { "shape": "shard", "size": [0.16, 0.05, 0.07], "texture": "dwell:planks", "color": "#f4e2c4" }
     },
     {
       "name": "dwell:raw_meat",

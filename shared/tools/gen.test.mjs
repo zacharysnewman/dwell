@@ -88,7 +88,8 @@ test("the axe's held item and the log's chips reach the Rust table; the log need
   const d = validateTools(...fresh());
   const rs = toolsRust(d);
   assert.match(rs, /name: "dwell:stone_axe", kind: ToolKind::Axe, held: Some\("stone_axe"\)/);
-  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 3, piece: "dwell:wood", color: \[217, 179, 122\]/);
+  // Owner, 2026-11-17: hit particles half their size; wood's pale like the wood inside, not bark.
+  assert.match(rs, /block: "dwell:log", .*chips: Chips \{ count: 7, shards: 3, piece: "dwell:wood", color: \[239, 216, 176\], speed: 2\.6, size: 0\.025 \}/);
   assert.doesNotMatch(rs, /\("dwell:log", "axe"\),/);
   assert.match(rs, /BlockDamageDef \{ block: "dwell:log", volume: 1\.0, default: Some\(48\), .*barren: &\["hand"\]/);
 });

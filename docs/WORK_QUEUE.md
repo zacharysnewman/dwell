@@ -65,6 +65,9 @@ Last updated: 2026-11-11 (0.52.108).
   particles should be (light colored like wood insides not bark) and more shardy shaped like stone, wood doesn't make
   sense in balls unlike dirt, sand, etc." Owner should see: every block's hit particles half today's size; a log's hit
   pieces pale wood-inside coloured and angular shards like stone's, not balls.
+  Done (2026-11-17): every block's `damage.chips.size` and the woods' chips halved; wood chips #efd8b0; the wood chunk
+  (`dwell:wood`, the flying piece and the dropped item) a shard in the planks' texture, pale. The 3D pieces' size is the
+  bite rule's (unchanged). Waiting on the owner's look.
 - **Owner, 2026-11-17 (Realistic terrain: explain, then tune; after the tool efficiency work):** "Something to look at
   for tuning is how much precipitation? Or whatever value we use? I'm seeing a lot more deserts (plural) than I would
   expect on average. Seems like more deserts than green. And also fewer mountain ranges or super tall mountains. I'd
