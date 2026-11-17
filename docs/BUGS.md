@@ -1076,7 +1076,7 @@ older client's axe), the server first writes each log joined to it its joined si
 (`dwell_blocks::octagon::frozen_beside`); `joined_mask` returns a stored mask as it is. Not breaking (ADR 0063: a new
 property whose default means "as before"); the goldens re-pinned to the registry and hold by name against 0.73.3's.
 Tests: `dwell-blocks` `a_quarter_of_a_two_by_two_trunk_keeps_its_joined_sides_when_its_neighbours_break`; `dwell-sim`
-`a_quarter_of_a_two_by_two_trunk_keeps_its_shape_when_the_logs_round_it_are_cut` (both faces; red with the server's
+`a_trunk_quarter_keeps_its_shape_when_the_logs_round_it_are_cut` (both faces; red with the server's
 freeze taken out, green with it).
 
 ### 203. A 2×2 trunk showed holes in its mesh when cut at an inside edge (reported 2026-11-17; fixed after 0.73.2)

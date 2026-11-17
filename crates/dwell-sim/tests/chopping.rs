@@ -592,9 +592,7 @@ fn the_held_axe_reaches_the_others_that_understand_it_by_name() {
 }
 
 dwell_world::both_faces!(
-    fn a_quarter_of_a_two_by_two_trunk_keeps_its_shape_when_the_logs_round_it_are_cut(
-        f: FaceFrame,
-    ) {
+    fn a_trunk_quarter_keeps_its_shape_when_the_logs_round_it_are_cut(f: FaceFrame) {
         // BUGS.md #204 (owner, 2026-11-17: "logs shouldn't "adapt" when blocks break around them.
         // Like a quarter log shouldn't become a solitary log when you cut the logs around it.").
         let mut fx = scene(f, "creative", false);
