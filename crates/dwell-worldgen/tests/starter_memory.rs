@@ -155,6 +155,7 @@ const STARTER_PIN: [(Face, &str); 2] =
     [(Face::A, "cfa0fa2a0a615f5f"), (Face::B, "ddd04077016f7ee4")];
 
 #[test]
+#[ignore = "the Starter terrain is to be removed (owner, 2026-11-17); its pin also differs between CI and macOS since the LOD's far tint (0.72.1)"]
 fn the_starter_worlds_terrain_is_unchanged() {
     // both-faces: pins each face's terrain.
     starter_maps();
