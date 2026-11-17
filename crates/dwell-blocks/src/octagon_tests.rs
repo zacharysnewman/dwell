@@ -452,3 +452,55 @@ fn a_lying_logs_bark_ring_is_the_standing_logs_width() {
     };
     assert!((ring_m(0, lower) - ring_m(1, 0)).abs() < 1e-9);
 }
+
+#[test]
+fn a_quarter_of_a_two_by_two_trunk_keeps_its_joined_sides_when_its_neighbours_break() {
+    // BUGS.md #204 (owner, 2026-11-17: "a quarter log shouldn't become a solitary log when you cut
+    // the logs around it"). face-a-only: the joins are across a standing log's axis (level sides).
+    let y = log("y");
+    let quarters = [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 0, 1]];
+    let mut cells: Vec<([i32; 3], StateId)> = quarters.iter().map(|&q| (q, y)).collect();
+    let at = |cells: &Vec<([i32; 3], StateId)>, c: [i32; 3]| {
+        cells.iter().find(|(p, _)| *p == c).map_or(AIR, |(_, m)| *m)
+    };
+    let mask_of = |cells: &Vec<([i32; 3], StateId)>, c: [i32; 3]| {
+        let m = at(cells, c);
+        joined_mask(m, &|o| at(cells, [c[0] + o[0], c[1] + o[1], c[2] + o[2]]))
+    };
+    let keep = [0, 0, 0];
+    let before = mask_of(&cells, keep);
+    assert_eq!(
+        before,
+        (1 << 0) | (1 << 4),
+        "+x and +z: the trunk's inner sides"
+    );
+    // Break the two quarters beside it, freezing what each touches first (the server's order).
+    for gone in [[1, 0, 0], [0, 0, 1]] {
+        for (n, frozen) in frozen_beside(gone, &|c| at(&cells, c)) {
+            cells.retain(|(p, _)| *p != n);
+            cells.push((n, frozen));
+        }
+        cells.retain(|(p, _)| *p != gone);
+    }
+    assert_eq!(
+        mask_of(&cells, keep),
+        before,
+        "still squared where the trunk was"
+    );
+    assert_eq!(crate::state_property(at(&cells, keep), JOINED), Some("5"));
+    // An unfrozen log still joins as it is placed (ADR 0072), and a log on its own stays round.
+    assert_eq!(stored_joined(y), None);
+    assert_eq!(joined_mask(y, &world(vec![])), 0);
+    // A stored mask round-trips through the property on every axis.
+    for axis in ["x", "y", "z"] {
+        let m = log(axis);
+        let (_, a) = section_of(m).unwrap();
+        for f in 0..6usize {
+            if f / 2 == a {
+                continue;
+            }
+            let s = with_joined(m, 1 << f).expect("a joined value");
+            assert_eq!(stored_joined(s), Some(1 << f), "{axis} face {f}");
+        }
+    }
+}

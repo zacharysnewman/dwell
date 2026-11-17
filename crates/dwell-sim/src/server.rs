@@ -3486,6 +3486,10 @@ impl Server {
                 // Every cell of the piece (a 1 m block's two; docs/ITEMS.md) in one set of writes.
                 for (at, m) in outcome.writes(&mut self.world, medium_kept) {
                     if edit.action == BlockEditAction::Break {
+                        // The logs joined to a broken log keep their shape (BUGS.md #204).
+                        for (n, frozen) in freeze_joins(&mut self.world, at) {
+                            changes.set(&mut self.world, n, frozen);
+                        }
                         let was = self.world.get_voxel(at[0], at[1], at[2]);
                         under_ground.push((at, was));
                         if uses_items {
@@ -6051,6 +6055,29 @@ pub(crate) fn wear_tool(inventory: &mut inv::Inventory, uses_items: bool) -> inv
         return inv::Wear::None;
     }
     inventory.wear_held(dwell_protocol::chopping::durability)
+}
+
+/// The logs beside `cell` joined to the log there, frozen as they are joined now
+/// (`dwell_blocks::octagon::frozen_beside`), for writing before `cell` breaks: a quarter of a 2×2
+/// trunk keeps its shape when the logs round it are cut (BUGS.md #204). None for anything else.
+pub(crate) fn freeze_joins(
+    world: &mut VoxelWorld,
+    cell: [i32; 3],
+) -> Vec<([i32; 3], dwell_blocks::StateId)> {
+    if dwell_blocks::octagon::section_of(world.get_voxel(cell[0], cell[1], cell[2])).is_none() {
+        return Vec::new();
+    }
+    // Read the 5×5×5 round the cell once (the freeze reads neighbours' neighbours).
+    let mut near = HashMap::default();
+    for dx in -2..=2 {
+        for dy in -2..=2 {
+            for dz in -2..=2 {
+                let c = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
+                near.insert(c, world.get_voxel(c[0], c[1], c[2]));
+            }
+        }
+    }
+    dwell_blocks::octagon::frozen_beside(cell, &|c| near.get(&c).copied().unwrap_or(M.air))
 }
 
 fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {

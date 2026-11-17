@@ -78,6 +78,10 @@ pub fn joined_mask(m: StateId, at: &dyn Fn([i32; 3]) -> StateId) -> u8 {
     let Some((_, axis)) = section_of(m) else {
         return 0;
     };
+    // Kept as it was when a neighbour broke (BUGS.md #204): the state's `joined`.
+    if let Some(mask) = stored_joined(m) {
+        return mask;
+    }
     // A lying log (axis x or z) is two ½ m cells, its lower and upper half, each knowing which by
     // the log cells it joins above and below. Beside it (across a level side), a cell joins only
     // the same half: a log lying one row higher or lower is a separate octagon, not its upper half
@@ -99,6 +103,65 @@ pub fn joined_mask(m: StateId, at: &dyn Fn([i32; 3]) -> StateId) -> u8 {
         }
     }
     mask
+}
+
+/// The `joined` property (BUGS.md #204; owner, 2026-11-17: "logs shouldn't "adapt" when blocks
+/// break around them. Like a quarter log shouldn't become a solitary log when you cut the logs
+/// around it."): `auto` (the default: joined to the neighbours as they are, ADR 0072) or the sides
+/// it keeps joined, frozen when a neighbour broke: four bits, the faces across its axis in face
+/// order.
+pub const JOINED: &str = "joined";
+
+/// The faces across `axis`, in face order: the bits of a stored `joined`.
+fn across(axis: usize) -> impl Iterator<Item = usize> {
+    (0..6).filter(move |f| f / 2 != axis)
+}
+
+/// A state's stored joined sides (bits by face index), if its `joined` is not `auto`.
+pub fn stored_joined(m: StateId) -> Option<u8> {
+    let (_, axis) = section_of(m)?;
+    let code: u8 = crate::state_property(m, JOINED)?.parse().ok()?;
+    Some(
+        across(axis)
+            .enumerate()
+            .filter(|(i, _)| code & (1 << i) != 0)
+            .fold(0, |mask, (_, f)| mask | (1 << f)),
+    )
+}
+
+/// State `m` with its joined sides stored as `mask` (bits by face index), if it has `joined`.
+pub fn with_joined(m: StateId, mask: u8) -> Option<StateId> {
+    let (_, axis) = section_of(m)?;
+    let code = across(axis)
+        .enumerate()
+        .filter(|(_, f)| mask & (1 << f) != 0)
+        .fold(0u8, |c, (i, _)| c | (1 << i));
+    crate::with_property(m, JOINED, &code.to_string())
+}
+
+/// The logs beside `cell` that the octagonal block there joins, each frozen with the sides it is
+/// joined on now (`at`: the world, offsets from `cell`'s own frame are absolute cells), for when
+/// `cell` is about to break: a quarter of a 2×2 trunk keeps its shape (BUGS.md #204). Logs already
+/// frozen, and anything that isn't joined to it, are left.
+pub fn frozen_beside(cell: [i32; 3], at: &dyn Fn([i32; 3]) -> StateId) -> Vec<([i32; 3], StateId)> {
+    let m = at(cell);
+    if section_of(m).is_none() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for face in 0..6 {
+        let d = face_offset(face);
+        let n = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
+        let s = at(n);
+        if !joins(m, s) || stored_joined(s).is_some() {
+            continue;
+        }
+        let mask = joined_mask(s, &|o| at([n[0] + o[0], n[1] + o[1], n[2] + o[2]]));
+        if let Some(frozen) = with_joined(s, mask) {
+            out.push((n, frozen));
+        }
+    }
+    out
 }
 
 /// Which part of the prism a face is.

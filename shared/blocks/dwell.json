@@ -247,7 +247,7 @@
       }
     },
     {
-      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z. breakWith (shared/tools, ADR 0067; owner, 2026-11-08): where blocks are not unlimited (adventure), hands can't break it: an axe chops it. leafFlush (WORK_QUEUE item 48; owner, 2026-11-12: \"Flat leaf applied when a full Face touching\"): a leaf beside it lies flat against it, no chamfer on that side (docs/TREE_GROWTH.md §10).",
+      "$comment": "A trunk or branch (docs/FELLING.md): a carrier, holding up the leaves on it while a path of logs reaches the ground, and falling when cut off. Its axis turns its end grain (top, bottom) to face along it, so a felled trunk lies along x or z. breakWith (shared/tools, ADR 0067; owner, 2026-11-08): where blocks are not unlimited (adventure), hands can't break it: an axe chops it. leafFlush (WORK_QUEUE item 48; owner, 2026-11-12: \"Flat leaf applied when a full Face touching\"): a leaf beside it lies flat against it, no chamfer on that side (docs/TREE_GROWTH.md §10). joined (BUGS.md #204; owner, 2026-11-17: \"logs shouldn't adapt when blocks break around them\"): auto (the default) joins the neighbouring logs as they stand; when a neighbour breaks the server stores the sides it was joined on (0–15, the four sides across its axis), so a 2×2 trunk's quarter keeps its shape.",
       "name": "log",
       "drops": [{"item": "dwell:wood", "count": 4}],
       "sound": "dwell:wood",
@@ -260,7 +260,8 @@
       "axisProperty": "axis",
       "properties": {
         "axis": ["y", "x", "z"],
-        "width": ["4", "3", "2", "1"]
+        "width": ["4", "3", "2", "1"],
+        "joined": ["auto", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]
       },
       "crossSection": {
         "$comment": "ADR 0072 (owner, 2026-11-09: \"trees should be octagons around. But smoothly connect when placed next to each other, full width sides where they meet\"): a regular octagon across its axis (chamfer 1/(2+√2) of the side); a side squares off to full width where a log of the same axis lies on it. ring/heart (Phase 55 T3; owner, 2026-11-09: \"the outside bark ring should follow the octagon\"): the caps' bark band follows the octagon's edges, none along a joined side, with the ringless end grain inside.",

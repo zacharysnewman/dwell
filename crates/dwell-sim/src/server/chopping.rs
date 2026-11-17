@@ -325,6 +325,10 @@ impl Server {
             return;
         }
         let mut changes = TickChanges::default();
+        // The logs joined to it keep their shape (BUGS.md #204).
+        for (n, frozen) in super::freeze_joins(&mut self.world, cell) {
+            changes.set(&mut self.world, n, frozen);
+        }
         let left = if dwell_blocks::info(m).flooded {
             M.water
         } else {
