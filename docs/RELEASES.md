@@ -173,6 +173,10 @@ as before: a dev build, or a stable release if the push raised `package.json` by
 workflow's token starts no other workflow, so the release commit is neither re-released nor CI-tested
 (it changes only the version and notes).
 
+A push to `main` that touches only `.claude/` (the agents' skills and tools) or `docs/` runs no Release at
+all (`paths-ignore` in release.yml; owner, 2026-11-16, after six recording-tool merges made four dev builds and
+deploys): no dev build, no deploy. A pending note is under `shared/`, so a push carrying one always releases.
+
 Chosen over computing the version at release time without a commit: `changes.json` is the history
 every later build shows, and `package.json` the floor, so both must be on `main`.
 
