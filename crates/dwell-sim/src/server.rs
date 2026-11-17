@@ -695,7 +695,11 @@ struct Session {
     /// it would go into a player, EDIT_HOLD_TICKS), and a tool's hit's contact (the tick it lands
     /// and the tool it was swung with; WORK_QUEUE item 25: a break with a tool waits for its swing's
     /// `contactS`, and is dropped if the tool is no longer held then).
-    edits: Vec<(u32, BlockEditRequest, u8, Option<Contact>)>,
+    /// Each queued block edit: its sequence, the request, ticks held, a tool hit's contact, and the
+    /// break item held when it arrived (its hits go by that, not by what is held when the tick
+    /// applies it: a tool switched to just after a click changed the click's hits, so a predicted
+    /// one-hit break came back; the palette e2e test on the software renderer).
+    edits: Vec<QueuedEdit>,
     /// Body edits (docs/BUILT_BODIES.md §4), applied after the block edits.
     body_edits: Vec<BodyEditRequest>,
     edit_credit: f64,
@@ -1203,6 +1207,8 @@ pub struct Server {
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
     /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
     body_hits: HashMap<(u32, [i32; 3]), u32>,
+    /// Block breaks taken as a damage hit short of breaking, ever (the dev stats' `editsHitShort`).
+    hits_short: u64,
     /// When each damaged cell's heal clock started (s of the ticks; healing.rs), and each player's
     /// last blocks hit (they don't heal).
     heal_since: HashMap<[i32; 3], f64>,
@@ -1476,6 +1482,7 @@ impl Server {
             bite_log: Vec::new(),
             damage: Default::default(),
             body_hits: HashMap::default(),
+            hits_short: 0,
             heal_since: Default::default(),
             recent_hits: Default::default(),
             damage_unread: false,
@@ -2019,8 +2026,9 @@ impl Server {
                         let c = dwell_protocol::chopping::break_contact_s(Some(t));
                         (c > 0.0).then(|| (tick + contact_ticks(c), t.to_owned()))
                     });
+                let held_then = held_break_item(s, uses_items).map(str::to_owned);
                 if s.edits.len() < MAX_QUEUED_EDITS {
-                    s.edits.push((s.edit_seq, edit, 0, contact));
+                    s.edits.push((s.edit_seq, edit, 0, contact, held_then));
                 } else {
                     s.stats.edits_rejected += 1;
                     s.edit_refused.push(s.edit_seq);
@@ -2567,7 +2575,18 @@ impl Server {
             self.players.terrain().map_or(0, |t| t.cells()),
         ];
         let before = std::mem::replace(&mut self.counts_at, now);
+        // Every session's edits so far (cumulative): applied, refused, and breaks taken as a hit short
+        // of breaking (the e2e's view of why a predicted break came back).
+        let (applied, rejected) = self.sessions.values().fold((0u64, 0u64), |(a, r), s| {
+            (
+                a + u64::from(s.stats.edits_applied),
+                r + u64::from(s.stats.edits_rejected),
+            )
+        });
         let mut out = vec![
+            ("editsApplied", applied),
+            ("editsRejected", rejected),
+            ("editsHitShort", self.hits_short),
             ("collisionBuilds", now[0].saturating_sub(before[0])),
             ("generatedOnTick", now[1].saturating_sub(before[1])),
             ("collisionCells", now[2].saturating_sub(before[2])),
@@ -3298,11 +3317,11 @@ impl Server {
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
             s.punch_credit = (s.punch_credit + punch_credit_per_tick()).min(PUNCH_BURST);
             let mut held = Vec::new();
-            for (seq, edit, ticks, contact) in std::mem::take(&mut s.edits) {
+            for (seq, edit, ticks, contact, held_then) in std::mem::take(&mut s.edits) {
                 // A tool's hit waits for its contact; switched away from by then, it is dropped.
                 if let Some((at, tool)) = &contact {
                     if self.tick < *at {
-                        held.push((seq, edit, ticks, contact));
+                        held.push((seq, edit, ticks, contact, held_then));
                         continue;
                     }
                     if held_break_item(s, uses_items) != Some(tool.as_str()) {
@@ -3320,7 +3339,7 @@ impl Server {
                 s.stats.last_edit_check = outcome.check;
                 // Into a body: it waits for the body's queued inputs to move it (EDIT_HOLD_TICKS).
                 if outcome.check == EditCheck::IntoPlayer && ticks < EDIT_HOLD_TICKS {
-                    held.push((seq, edit, ticks + 1, None));
+                    held.push((seq, edit, ticks + 1, None, held_then));
                     continue;
                 }
                 if outcome.check != EditCheck::Ok {
@@ -3379,7 +3398,8 @@ impl Server {
                 if edit.action == BlockEditAction::Break {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
-                    let held = held_break_item(s, uses_items);
+                    // What was held when the request arrived (the click's), not now.
+                    let held = held_then.as_deref();
                     if !dwell_protocol::damage::drops_when_broken(block, held) {
                         barren.insert(outcome.cell);
                     }
@@ -3436,6 +3456,7 @@ impl Server {
                             s.edit_credit -= 1.0;
                             s.stats.edits_applied += 1;
                             if k < n {
+                                self.hits_short += 1;
                                 if uses_items {
                                     hits.push((outcome.cell, state, n, k));
                                 }
@@ -6117,6 +6138,10 @@ pub(crate) fn freeze_joins(
     }
     dwell_blocks::octagon::frozen_beside(cell, &|c| near.get(&c).copied().unwrap_or(M.air))
 }
+
+/// A queued block edit: its sequence, the request, ticks held, a tool hit's contact, and the break
+/// item held when it arrived (`Session::edits`).
+type QueuedEdit = (u32, BlockEditRequest, u8, Option<Contact>, Option<String>);
 
 fn held_break_item(s: &Session, uses_items: bool) -> Option<&str> {
     if uses_items {
