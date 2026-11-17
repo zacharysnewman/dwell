@@ -339,13 +339,23 @@ test('on a phone, flying, the region bar selects, copies, pastes and undoes', as
   const hover = async (dx: number) => {
     const to: Cell = [feet[0] + dx, feet[1] + 1.5, feet[2]];
     await page.evaluate(`globalThis.__dwell.teleport([${to.join(', ')}])`);
+    // On a slow page (CI's software renderer, since the near ring shrank and the screen opens
+    // sooner) the player can drop from the point before its flight is back (BUGS.md #200's
+    // follow-up): flight again once placed, and the ground below the point will do.
     await expect
-      .poll(async () => {
-        const s = await page.evaluate<{ feet: Cell; terrainReady: boolean } | null>(
-          'globalThis.__dwell.state()',
-        );
-        return !!s?.terrainReady && Math.hypot(s.feet[0] - to[0], s.feet[1] - to[1]) < 0.3;
-      })
+      .poll(
+        async () => {
+          const s = await page.evaluate<{ feet: Cell; terrainReady: boolean } | null>(
+            'globalThis.__dwell.state()',
+          );
+          if (s?.terrainReady) await page.evaluate('globalThis.__dwell.fly(true)');
+          // At the point, or dropped from it to the ground below (still clear of the boxes, the
+          // ground in reach).
+          const dy = s ? s.feet[1] - to[1] : 9;
+          return !!s?.terrainReady && Math.abs(s.feet[0] - to[0]) < 0.3 && dy > -1.6 && dy < 0.3;
+        },
+        { timeout: 30_000 },
+      )
       .toBe(true);
   };
   await hover(0);

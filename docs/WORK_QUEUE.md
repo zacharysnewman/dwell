@@ -197,6 +197,11 @@ Last updated: 2026-11-11 (0.52.108).
   as one: dwell-world tests/doors.rs), and the two-client test picks stone and sand by name (the hotbar's slots are the
   inventory's). The rest of the Rust workspace passes (`--no-fail-fast`). Still red on CI only: buildDrag towers (#30),
   characters (CI's renderer), spawn reopen (#51).
+  CI after #1046: `touch.spec` region bar failed on the software renderer from #1041 (bisected: the smaller near ring
+  opens the teleport's loading screen sooner, and the player drops from its hover before flight is back); the test
+  now re-flies and takes the ground below the point (passes on SwiftShader locally). `starter_memory`'s pin differs
+  between CI and macOS: parked (the Starter is to go). `terrainDraw` timed out once on CI (passes locally on GPU and
+  SwiftShader): watched.
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
