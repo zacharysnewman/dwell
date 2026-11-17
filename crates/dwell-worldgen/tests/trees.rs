@@ -55,8 +55,10 @@ dwell_world::both_faces!(
         let none = counts(f, &with(&[("pine_groves", 0.0)]));
         assert_eq!(none.get("pine_groves"), None, "{none:?}");
         let half = counts(f, &with(&[("pine_groves", 0.5)]))["pine_groves"];
+        // Spacing caps the full count too (0.71's giants' crowns: about 70% stand at half on seed
+        // 7), so half the density takes off less than half.
         assert!(
-            (half as f64) > 0.3 * pines as f64 && (half as f64) < 0.7 * pines as f64,
+            (half as f64) > 0.3 * pines as f64 && (half as f64) < 0.8 * pines as f64,
             "{half} of {pines}"
         );
         let more = counts(f, &with(&[("pine_groves", 2.0)]))["pine_groves"];
