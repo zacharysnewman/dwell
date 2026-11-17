@@ -113,6 +113,14 @@ quarters the column's trees: a test on both faces). Tests red → green: `the_sc
 0, the trees still recorded). Harness: flight's worst tick 2.7 ms (was 4.9–6). Left: grass's quarter passes cost
 5–12 ms natively once a world day passes in the sprint run: next.
 
+Round 10 (2026-11-17): grass's quarter passes regenerated their chunk on the tick: a chunk unedited when picked
+needed no pristine copy, but its first quarter's own grass edits it, so each later quarter regenerated it to read
+it as generated (3–12 ms natively a quarter; an edit by a player between quarters did the same). Now a chunk's own
+and its neighbours' cells are copied as their pristine ones when picked (unedited), and a quarter whose chunks
+lack a copy waits for one instead. Test red → green: `the_tick_never_regenerates_a_chunk_to_grow_grass` (3
+regenerations → 0). Harness sprint: worst tick 11–12 → 7.8 ms, growth off the worst list. Left: the sprint's
+collision ticks (~7 ms natively), ecology at the join.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

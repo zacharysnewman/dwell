@@ -159,6 +159,7 @@ fn the_owners_world_at_a_sprint() {
         all.iter().filter(|&&v| v > 16.7).count()
     );
     eprintln!("END feet {:?}", fx.server.feet_of(w.player_id));
+    eprintln!("GRASS REGENERATED {}", fx.server.grass_regenerated());
     for (ms, t, phases) in sorted.iter().take(12) {
         eprintln!("WORST {ms:.2} ms at tick {t}: {phases:?}");
     }
