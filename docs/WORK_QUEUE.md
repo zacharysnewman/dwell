@@ -44,6 +44,15 @@ Last updated: 2026-11-11 (0.52.108).
   the saplings too, which had tall grass's values).
 - **Owner, 2026-11-17 (bug, up next after the tool efficiency work):** "A bug for up next, the big (2x2 trees show holes
   in mesh when cutting inside edge)". BUGS.md #203. Owner should see: a cut 2×2 trunk solid behind its notch.
+- **Owner, 2026-11-17 (Realistic terrain: explain, then tune; after the tool efficiency work):** "Something to look at
+  for tuning is how much precipitation? Or whatever value we use? I'm seeing a lot more deserts (plural) than I would
+  expect on average. Seems like more deserts than green. And also fewer mountain ranges or super tall mountains. I'd
+  love to understand better what systems are working into this." "This is for after though" "Another one is tall
+  plains, I'm not seeing consistent elevation at higher points, just foothills/low mountains mostly and lower plains.
+  I wouldn't expect to see all of these everywhere or even every time. But I'd like to know what's possible, not
+  possible with our current systems." Owner should see: a write-up of what sets the desert share (rain, the climate
+  bands, the lee floor, the biome envelopes), the mountains' height and count (plates, uplift) and high plateaus (what
+  the systems can and can't make), with measured shares over seeds; then tuning on their call.
 
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
