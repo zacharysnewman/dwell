@@ -54,6 +54,8 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-17 (after #204):** "Dynamite should be smaller, so it aligns with the other kinds of blocks, it
   shouldn't take up the full block width." Owner should see: a dynamite stick narrower than a full block (its own
   shape, as the torch and ladder have), its neighbours' faces drawn round it.
+  Waiting on the owner (2026-11-17): a cross like the torch's (flat, shorter, not solid; cheap) or a narrow solid
+  octagonal bundle (~0.4 m, as thin trunks are; needs a fixed-width cross-section). Recommended: the bundle.
 - **Owner, 2026-11-17 (recipes):** "Make the thatch, planks and stone bricks recipes make 4 blocks for 2 chunks. I'm not
   sure what thatch costs now, that may be too simple for thatch." Today: planks 4 wood → 1, stone brick 4 rock shards
   → 1, thatch 6 sticks + 2 grass fibre → 1. Planks and stone brick to 2 → 4; thatch waits on the owner's cost (told
@@ -77,6 +79,12 @@ Last updated: 2026-11-11 (0.52.108).
   possible with our current systems." Owner should see: a write-up of what sets the desert share (rain, the climate
   bands, the lee floor, the biome envelopes), the mountains' height and count (plates, uplift) and high plateaus (what
   the systems can and can't make), with measured shares over seeds; then tuning on their call.
+  Measured (2026-11-17, 0.73.7, seeds 1–11 and 42, both faces; `cargo run --release -p dwell-worldgen --example
+  realistic_relief -- <seeds>`): land on average dry 32 % (cold desert, sand desert, mesa, badlands, steppe), green
+  38 %, savanna 6 %, cold 19 %. Dry follows the land's size: the big continents' faces (3,400–4,800 km²) 47–54 % dry,
+  the small ones (1,200–2,000 km²) 23–34 %; subtropical faces 40–51 % dry plus ~30 % savanna. Heights: half the land
+  under 100–310 m; 1–2 big ranges a face (90–700 km², tops 2.9–6 km) and a few small ones; under 1 % of land above
+  400 m slopes under 5 % (no plateaus). Write-up sent to the owner; tuning waits on their call.
 
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
