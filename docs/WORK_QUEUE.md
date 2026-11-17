@@ -418,6 +418,12 @@ Last updated: 2026-11-11 (0.52.108).
   **Owner should see:** pressing a recipe's Combine in the backpack gives a short wooden clack with a small chime,
   a little different each time; with too few items, nothing. On a phone in Break mode, holding the right side of the
   screen at the sky knocks once, not over and over; held on a block, each hit sounds as before.
+- **Long-open PRs triaged (orchestrator, 2026-11-14; refinement):** #591 (distant shadows' sweep no wider than the
+  sun's disc, BUGS.md #69 partly) and #384 (deep still water's slosh settles, BUGS.md #41b) merged up to main and
+  finished. #384's drag now acts only on a face whose flow reversed lately, so a cut lake and a river bed level as
+  before (its two red tests green). **Owner should see:** a pond or a dammed reservoir stirred by a dropped block
+  sloshes visibly for a minute, then goes still within a few minutes (no endless shimmer); distant hill shadows at a
+  low sun no longer spill sideways off ridges (the dark column before the starter volcano may remain: #69 open).
 - **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
   generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
   on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data

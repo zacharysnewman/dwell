@@ -3821,6 +3821,12 @@ in 0.48.2.
   the server's thread longer than a tick (BUGS.md #33); past the budget the rest of the tick's water
   time is lost, its clock with it (the calm windows count only the time simulated, so slowed water
   isn't taken for calm). On its own thread (G5, below) the time not run is owed instead.
+- **The slosh's drag** (BUGS.md #41b): deep still water's slosh, which Manning's friction on a speed
+  barely damps, kept a stirred reservoir past the sleep band for ever. A face whose flow reversed within
+  `sloshWindowS` (120 water s; per face, not saved) is pulled toward still with a time of `sloshDampS`
+  (30 s), weighted `1 / (1 + (u / sloshSpeedMs)²)` by its speed u (0.05 m/s): a flow one way (a river, a
+  lake levelling) never reverses and is never dragged, a big wave hardly, the small slosh it leaves dies
+  in minutes. The water as generated (the rest) is not dragged.
 - **Conserved** among free columns exactly (springs aside); held columns are where water enters and
   leaves.
 - **Drawn as blocks** until G3: a free column's water is written as water blocks (full cells, its top

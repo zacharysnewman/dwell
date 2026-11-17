@@ -970,6 +970,19 @@ about a steady mean (the calm window's mean, not its start), or a calm test on t
 level for deep water with the slosh's volume conserved (the chunk sleeps at its mean, the swing's
 volume kept in `owed`).
 
+**Fixture fixed 2026-11-14 (branch `claude/slosh-settles`): the slosh's drag.** A face whose flow reversed within
+`sloshWindowS` (120 water s) is pulled toward still with a time of `sloshDampS` (30 s), weighted
+`1 / (1 + (u / sloshSpeedMs)^2)` by its speed (0.05 m/s; `shared/fluids/flow.json`, `water.rs` `face`). The draft's
+first form pulled each face toward its running mean, which lags any slow flow one way, so it held back a cut lake's
+levelling (`tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`, drained at −2, 3: 22) and a river
+bed's resettling (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seed 1: 10); gating on a reversal
+leaves a flow one way undragged, and both pass. Red → green: `stirred_deep_water_settles` (both faces, no longer
+ignored; the slosh still swings > 0.2 m end to end for 90 s first) with `sloshDampS` 0 awake 300 of 300 s and 4,594
+cells after ten minutes; with 30 asleep and conserved to 0.01 m³. The kicked pond still reaches the far bank and comes
+back, and sleeps at 475 water s (2,082 before). The draft's other part, sleepers agreeing on a shared edge's flow, is
+in main as #48 (0.49.52). **Still open:** seed 0's dam sites (`measure_a_raised_dams_churn`, release, 170 water
+minutes, not run in this change); move #41b to Fixed once that shows the reservoirs asleep.
+
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
 *Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a

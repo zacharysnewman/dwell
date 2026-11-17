@@ -590,7 +590,8 @@ test adds a fixture by data alone. Per-world values travel in WorldSettings (ADR
 **As built (G4a, 0.49.1):** the runtime's settings live in `shared/fluids/flow.json` (the file the
 basins used, reshaped, so its generator and CI check carry on): `speed`, `tickEvery`, `theta`, `cfl`,
 `maxSubsteps`, `sleepBandM`, `wakeBandM`, `calmS`, `releaseS`, `jumpM2s`, `releaseM`, `editReach`,
-`fillHysteresis`, and `liquids` (each liquid's block, Manning's roughness, weir for the generator's
+`fillHysteresis`, the slosh's drag (`sloshDampS`, `sloshWindowS`, `sloshSpeedMs`; BUGS.md #41b: a face
+whose flow reversed lately is pulled toward still, the slower the more), and `liquids` (each liquid's block, Manning's roughness, weir for the generator's
 chute streams, running block; the first is the one drawn). `shared/fluids/gen.mjs` validates it
 (ranges, registry blocks, the wake band at least the sleep band) and emits `flow.gen.rs`;
 `dwell_sim::water::Settings::of` turns it into the engine's settings and `Water::with_settings` runs
