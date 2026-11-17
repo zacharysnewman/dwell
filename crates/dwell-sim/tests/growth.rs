@@ -173,3 +173,37 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194; owner, 2026-11-16: "big hitches while flying at 362 m/s"): the
+    /// scan places a chunk column's trees once for all its chunks (the placements cost ~1–5 ms
+    /// natively a column, the same for every chunk stacked in it), not once a chunk.
+    fn the_scan_places_a_column_once_for_its_stacked_chunks(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f));
+        fx.server
+            .set_growers(dwell_worldgen::growth::Growers::for_generator(
+                dwell_world::GENERATOR_TERRAIN,
+                7,
+            ));
+        for dy in -3..3 {
+            let [x, y, z] = f.cell([4, BASE + dy * 32, 4]);
+            fx.server
+                .world()
+                .get_or_create(dwell_world::chunk_of(x, y, z));
+        }
+        for _ in 0..120 {
+            fx.server.step();
+        }
+        let chunks = fx.server.tree_chunks_scanned();
+        let columns = fx.server.tree_columns_scanned();
+        assert!(
+            chunks > columns,
+            "stacked chunks scanned: {chunks} in {columns} columns"
+        );
+        assert_eq!(
+            fx.server.tree_columns_placed(),
+            columns,
+            "one placement a column ({chunks} chunks)"
+        );
+    }
+);

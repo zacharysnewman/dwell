@@ -1233,6 +1233,10 @@ pub struct Server {
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
     growth_scanned: HashSet<ChunkCoord>,
+    /// How many chunk columns' tree placements the scan has run (tests, tools).
+    tree_columns_placed: usize,
+    /// The scan's column placements kept for the column's other chunks (BUGS.md #194).
+    tree_columns: HashMap<(i32, i32, dwell_world::Face), Vec<dwell_worldgen::growth::Record>>,
     /// Edited chunks as generated, from the generation jobs (priority 0, BUGS.md #194: grass and
     /// tree growth regenerated an edited chunk on the tick, ~4 ms natively each, to compare with
     /// it); and the ones wanted next (low priority, after everything players need).
@@ -1486,6 +1490,8 @@ impl Server {
             grass_terrain: Default::default(),
             growers: None,
             growth_scanned: Default::default(),
+            tree_columns_placed: 0,
+            tree_columns: Default::default(),
             pristine: Default::default(),
             pristine_wanted: Vec::new(),
             last_durable_save: None,
