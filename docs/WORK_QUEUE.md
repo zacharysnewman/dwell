@@ -135,6 +135,8 @@ Last updated: 2026-11-11 (0.52.108).
   first; and a local world's job workers start as its maps come (`prewarmWorld`), with this thread's terrain built
   then, not at the join. New/regenerated/reopened: seed 987654321 10.6/8.8/7.5 → 9.2/7.1/5.6 s, seed 3218026833
   11.0/9.0/7.0 → 8.7/6.2/4.7 s (from 24.5/22.3/8.3 and 15.9/14.1/11.8 this morning).
+- **Owner, 2026-11-17 (terrain-looks video):** "Terrain video, keep stacked cut. Can drop." Done: the stacked 9:16 cut
+  (top-down over the coast) is the one; no more work on it.
 - **Owner, 2026-11-17 (PR #591, distant shadows):** "591 sounds bad instead of an improvement?" Closed, not merged:
   the sub-step sweep cost ~2× the sweep (0.25 → 0.53 ms) with no visible gain found.
 - **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
@@ -3980,3 +3982,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   shovel": the stone axe, stone pickaxe and wooden shovel 32 hits each; metal tools unlimited.
 - **Rocks from plain dirt** (2026-11-11): confirmed, as built in 0.52.46.
 - **Backpack:** 30 slots.
+
+## Follow-ups (owner, 2026-11-17)
+
+"Put door swing animation, hit table, and spawn search in a follow up section. Wait to work until we organize the
+current up next work." Not to be worked until the owner organizes the up-next work.
+
+- **Door swing animation:** doors open and close at once today (the wood sound only); an open/close swing.
+- **Hit table:** the tools' hits and times to break blocks (½ m cells may feel slow); the owner's targets.
+- **Spawn search:** ~2 s of "Finding a place to stand" on a new or regenerated world (the search for a level patch
+  near a river); a faster search or a cache by seed.
