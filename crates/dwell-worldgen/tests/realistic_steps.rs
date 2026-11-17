@@ -122,10 +122,12 @@ dwell_world::both_faces!(
             share(bedded) > share(p_bedded) + 0.02,
             "bedded stacks step: {bedded:?} against {p_bedded:?} unshaped"
         );
-        // At least 1.4 × (2 × before the 0.65 line's curved plates moved the provinces: face A
-        // 125 against 83 of 3662).
+        // More than unshaped, by a column or more per 400 sampled. 2 × before the 0.65 line's curved
+        // plates moved the provinces; 1.4 × until 0.73's climate (face A 125 against 83): its milder,
+        // wetter climate put a rougher biome's relief on face A's vertical rock, steep unshaped too
+        // (0.73: face A 112 against 103 of 3769, face B 116 against 0 of 3191).
         assert!(
-            10 * vertical.0 >= 14 * p_vertical.0,
+            vertical.0 >= p_vertical.0 + vertical.1 / 400,
             "vertical rock stands in columns: {vertical:?} against {p_vertical:?} unshaped"
         );
     }
