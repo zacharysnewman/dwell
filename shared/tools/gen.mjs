@@ -618,7 +618,7 @@ export function validateBreaking(b, items, blocks) {
   if (b === undefined) {
     return { proficiency: { neutral: 1 }, materials: { body: { hits: 1, durability: 1 } }, hand: { material: 'body' }, classes: [], repeatS: null, tools: [], planned: [], heal: validateHeal(undefined) };
   }
-  known(b, ['$comment', 'proficiency', 'materials', 'hand', 'classes', 'repeatS', 'tools', 'planned', 'heal'], 'breaking');
+  known(b, ['$comment', 'proficiency', 'materials', 'hand', 'classes', 'repeatS', 'tools', 'planned', 'heal', 'shake'], 'breaking');
   const name = (k, at) => {
     if (!/^[a-z][a-z0-9_]*$/.test(k)) fail(`${at}.${k}: names are lower_snake_case`);
   };
@@ -688,7 +688,13 @@ export function validateBreaking(b, items, blocks) {
   if (!Array.isArray(b.tools)) fail('breaking.tools must be a list');
   const tools = b.tools.map((t, i) => tool(t, `breaking.tools[${i}]`, false));
   const planned = (b.planned ?? []).map((t, i) => tool(t, `breaking.planned[${i}]`, true));
-  return { proficiency, materials, hand: { material: b.hand.material, repeatS }, classes, repeatS, tools, planned, heal: validateHeal(b.heal) };
+  // A shaking block's hit (`damage.hit: "shake"`): its seconds, first amplitude (m) and rate.
+  const sh = b.shake ?? { seconds: 0.3, amplitudeM: 0.04, hz: 14 };
+  known(obj(sh, 'breaking.shake'), ['seconds', 'amplitudeM', 'hz'], 'breaking.shake');
+  if (!(num(sh.seconds) && sh.seconds > 0 && sh.seconds <= 3)) fail('breaking.shake.seconds is in (0, 3]');
+  if (!(num(sh.amplitudeM) && sh.amplitudeM >= 0 && sh.amplitudeM <= 0.25)) fail('breaking.shake.amplitudeM is metres in [0, 0.25]');
+  if (!(num(sh.hz) && sh.hz > 0 && sh.hz <= 60)) fail('breaking.shake.hz is in (0, 60]');
+  return { proficiency, materials, hand: { material: b.hand.material, repeatS }, classes, repeatS, tools, planned, heal: validateHeal(b.heal), shake: { seconds: sh.seconds, amplitudeM: sh.amplitudeM, hz: sh.hz } };
 }
 
 /** A block's hits to break with a class (`hand` or a tool class) in a material, unrounded: base
@@ -799,7 +805,7 @@ const swingRust = (s) =>
   `SwingDef { windup_s: ${f64(s.windupS)}, active_s: ${f64(s.activeS)}, hit_stop_s: ${f64(s.hitStopS)}, recover_hit_s: ${f64(s.recoverHitS)}, recover_miss_s: ${f64(s.recoverMissS)}, reach_m: ${f64(s.reachM)}, arc_deg: ${f64(s.arcDeg)}, samples: ${s.samples}, camera_level: ${cameraRust(s.camera.level)}, camera_vertical: ${cameraRust(s.camera.vertical)}, stamina_cost: ${f64(s.staminaCost)}, swish: ${optStr(s.swish)}, bounce: ${optStr(s.bounce)}, rustle: ${optStr(s.rustle)}, rustle_leaves: ${s.rustleLeaves} }`;
 
 export function toolsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, Heal, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ClashLook, GuardDef, RaisedBlade, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
+  const rs = [`// ${header}`, '', 'use crate::chopping::{BlockDamageDef, BreakTool, Heal, Shake, CameraKey, CameraKick, CameraOffset, CarveProfile, Cracks, DamageLook, DamageLookKind, Chips, CutLook, BiteLook, Leaves, Sway, SwingCamera, SwingDef, ClashLook, GuardDef, RaisedBlade, ToolDef, ToolKind, WeaponDef, WoodDef, Chop2Wood};', 'use crate::inventory::{DropChoice, DropRule};', ''];
   rs.push('/// Whether the chopping prototype (`chop2`, WORK_QUEUE item 7) is on by default.');
   rs.push(`pub const CHOP2_DEFAULT: bool = ${d.chop2.enabled};`);
   rs.push('');
@@ -858,6 +864,9 @@ export function toolsRust(d) {
   rs.push('/// pace too), and the server');
   rs.push('/// takes damage hits by hand no faster; none: one per press.');
   rs.push(`pub const HAND_REPEAT_S: Option<f64> = ${d.breaking.hand.repeatS === null ? 'None' : `Some(${f64(d.breaking.hand.repeatS)})`};`);
+  const sh = d.breaking.shake;
+  rs.push("/// How a shaking block (`damage.hit: \"shake\"`) moves on a hit (`breaking.shake`).");
+  rs.push(`pub const SHAKE: Shake = Shake { seconds: ${f64(sh.seconds)}, amplitude_m: ${f64(sh.amplitudeM)}, hz: ${f64(sh.hz)} };`);
   const heal = d.breaking.heal;
   rs.push("/// How damage heals (`breaking.heal`): s after a cell's last hit, s from all but broken to whole, and the");
   rs.push('/// blocks each player hit last that never heal; none: it never heals.');

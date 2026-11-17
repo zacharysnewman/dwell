@@ -249,6 +249,8 @@ pub trait Scene: TerrainRenderer {
     fn set_eye_fluid(&mut self, _eye_fluid: Option<dwell_world::fluid::EyeFluid>) {}
     /// The tree being chopped leans (crate::chop `TreeLean`; none: nothing leans).
     fn set_tree_lean(&mut self, _lean: Option<crate::chop::TreeLean>) {}
+    /// A block shakes (door, ladder, dynamite hit; crate::block_shake); none: nothing shakes.
+    fn set_block_shake(&mut self, _shake: Option<crate::render::BlockShake>) {}
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
     /// corner; `dwell_world::edit::target_box`), or none.
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
@@ -870,6 +872,8 @@ pub struct Game<S: Scene> {
     inventory_flags: u8,
     /// Other players' hits seen in the damage updates (docs/BLOCK_DAMAGE.md §6).
     remote_hits: crate::hit_feedback::RemoteHits,
+    /// A shaking block (door, ladder, dynamite hit; docs/BLOCK_DAMAGE.md §17).
+    block_shake: crate::block_shake::ShakeState,
     /// Our tool hits on their way to their swing's contact (WORK_QUEUE item 25).
     pending_hits: crate::hit_feedback::PendingHits,
     /// Foliage brushed through and ground items stepped onto (AUDIO.md §5): ours, and other
@@ -1431,6 +1435,7 @@ impl<S: Scene> Game<S> {
             causes_on: false,
             inventory_flags: 0,
             remote_hits: Default::default(),
+            block_shake: Default::default(),
             pending_hits: Default::default(),
             contact_sounds: Default::default(),
             remote_contacts: Default::default(),
@@ -4606,6 +4611,17 @@ impl<S: Scene> Game<S> {
         if dwell_blocks::try_info(block).is_none() {
             return;
         }
+        // A door, ladder or dynamite shakes instead of showing marks (docs/BLOCK_DAMAGE.md §17).
+        {
+            let store = self.streamer.store_mut();
+            self.block_shake.hit(
+                cell,
+                block,
+                now_ms,
+                |x, y, z| store.get_voxel(x, y, z),
+                dwell_world::m_of_row,
+            );
+        }
         if let Some(look) = crate::chips::hit_chips_of(dwell_blocks::block_of(block).name) {
             let n = crate::chips::struck_normal(cell, at);
             self.chips.hit_burst(look, n, at, now_ms / 1000.0);
@@ -5615,6 +5631,10 @@ impl<S: Scene> Game<S> {
         self.scene.borrow_mut().set_eye_fluid(eye_fluid);
         let lean = self.tree_lean(now_ms);
         self.scene.borrow_mut().set_tree_lean(lean);
+        let shake = self
+            .block_shake
+            .frame(&dwell_protocol::chopping::SHAKE, now_ms);
+        self.scene.borrow_mut().set_block_shake(shake);
         telemetry::span("lod", || self.update_lod(&c, now_ms, input));
         self.probe_stream(c.feet());
         if let Some(lod) = &self.lod {

@@ -43,8 +43,9 @@ Last updated: 2026-11-11 (0.52.108).
   Owner, 2026-11-17: "You could use the same fixed hits of 1 for torch and tall grass" → `fixedHits: 1` (brush and
   the saplings too, which had tall grass's values).
   Status (2026-11-17): built (docs/BLOCK_DAMAGE.md §17; the table shared/tools/hits.gen.md matches the sheet).
-  Outstanding: the shake's look (the flag is data, the block doesn't move yet); the owner's values for the blocks
-  not on the sheet (proposals in §17); drops (separately).
+  The shake built after (BLOCK_DAMAGE.md §17; owner: "Sounds good on the shaking block proposal, as long as we don't
+  get edge holes": the block only grows outward, never in). Outstanding: the owner's look at the shake; the owner's
+  values for the blocks not on the sheet (proposals in §17); drops (separately).
 - **Owner, 2026-11-17 (bug, up next after the tool efficiency work):** "A bug for up next, the big (2x2 trees show holes
   in mesh when cutting inside edge)". BUGS.md #203. Owner should see: a cut 2×2 trunk solid behind its notch.
 - **Owner, 2026-11-17 (bug, queued after #203):** "Another bug to queue, logs shouldn't "adapt" when blocks break around
@@ -4034,6 +4035,12 @@ current up next work." Not to be worked until the owner organizes the up-next wo
 
 - **Door swing animation:** doors open and close at once today (the wood sound only); an open/close swing.
 - **Hit table:** the tools' hits and times to break blocks (½ m cells may feel slow); the owner's targets.
+- **Dropped items bigger, ground sticks and rocks auto-picked up (owner, 2026-11-17):** "I'd also like to add a follow
+  up to make dropped items 3x bigger. And make ground sticks and rocks on the ground auto pickup replacing the click to
+  drop. If some items are larger than others, I want to kind of normalize the sizes." (Read as: the sticks and rocks
+  lying on the ground, picked up today by a click, are picked up by walking over them as dropped items are.) Owner
+  should see: dropped items about 3× today's size, of similar sizes to each other; walking over a ground stick or rock
+  picks it up.
 - **Spawn search:** ~2 s of "Finding a place to stand" on a new or regenerated world (the search for a level patch
   near a river); a faster search or a cache by seed.
 - **Rivers from the mountains (BUGS.md #196):** owner: "Yes A and B for River's add to follow up." Both: (a) each river

@@ -65,7 +65,7 @@ pub mod fixture {
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY, HAND_REPEAT_S,
-    HEAL, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
+    HEAL, HINTS, SHAKE, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`
@@ -689,6 +689,27 @@ pub struct Heal {
     pub delay_s: f64,
     pub full_s: f64,
     pub keep_last: usize,
+}
+
+/// How a shaking block moves on a hit short of breaking (`breaking.shake`; owner, 2026-11-17: door,
+/// ladder and dynamite "should shake, not break"): back and forth along the hit's horizontal
+/// direction, `amplitude_m` at first, `hz` times a second, dying out over `seconds`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shake {
+    pub seconds: f64,
+    pub amplitude_m: f64,
+    pub hz: f64,
+}
+
+impl Shake {
+    /// The offset (m) along the shake's direction `elapsed_s` after the hit; none once it is over.
+    pub fn offset_at(&self, elapsed_s: f64) -> Option<f64> {
+        if !(0.0..self.seconds).contains(&elapsed_s) {
+            return None;
+        }
+        let fade = 1.0 - elapsed_s / self.seconds;
+        Some(self.amplitude_m * fade * (std::f64::consts::TAU * self.hz * elapsed_s).sin())
+    }
 }
 
 /// A tool item's class and tier for breaking (`breaking.tools` in shared/tools/tools.json).
