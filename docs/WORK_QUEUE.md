@@ -4002,3 +4002,12 @@ Dropped (owner, 2026-11-17: "I don't know what either of the unclear queue items
 Up next (owner, 2026-11-17): "prioritize investigating #976 to determine what value it provides and where we've
 already made improvements. Resolve the minimum conflicts to get comparison screenshots of the whole world in the
 current version and in the PR."
+  Findings (2026-11-17): built as it stands (no conflicts to resolve: its own worktree, 0.71.0 off 0.70.1), seeds 7,
+  42, 1 shot whole from 90 km against main 0.72.3. Main: two or three continents and islands in open sea, volcanic
+  black spots. #976: each face nearly one plate filling the disc (87 of 100 faces on one plate at 1×), one climate
+  region a face (seed 1 desert, seed 42 green with many lakes, seed 7 red and snow), few ranges (0.18 boundaries a
+  face), lakes everywhere. Its parts not on main: plates in real km and passive margins, volcano spacing (70–90 km),
+  latitude climate, sea moderation, the lee floor and moisture recovery, the rock provinces' layering and mixing
+  octaves, the ocean-face spawn (15.3 s → 0.6 ms), the biome data's memory (27.9 → 17.2 MB), 3 test files. Main has
+  moved 287 commits since its base (species trees, sagebrush, far tint, etc.); 18 commits on the branch.
+  While shooting it: BUGS.md #202 found and fixed (a worldgen world's far terrain drew the default island).
