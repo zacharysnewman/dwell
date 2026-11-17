@@ -143,7 +143,7 @@ dwell_world::both_faces!(
         assert_eq!(*c, Climate::for_seed(m.seed), "the face seed's own climate");
         let (x, z, h) = land(&m, 8)[0];
         let g: Geography = field.geography(x, z, h);
-        assert!((g.celsius - c.temperature_c(x as f64, z as f64, h)).abs() < 1e-9);
+        assert!((g.celsius - c.temperature_near_sea(x as f64, z as f64, h, g.coast)).abs() < 1e-9);
         assert!(
             g.rain
                 .is_some_and(|r| (0.0..=CLIMATE.biomes.max_rain_mm).contains(&r))
@@ -412,7 +412,8 @@ dwell_world::both_faces!(
         // (cells, of them the default chose without the two, the new preset chose with them).
         let (mut dry, mut hot) = ([0u32; 3], [0u32; 3]);
         let (mut was, mut is) = (0u32, 0u32);
-        for world in [42, seed_in_band(f, "subtropical")] {
+        // Seed 7 too since the lee floor (0.73): fewer cold-desert cells on the two alone.
+        for world in [42, 7, seed_in_band(f, "subtropical")] {
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 3) {
@@ -425,7 +426,7 @@ dwell_world::both_faces!(
                 // On low ground (the alpine presets take the high cold and dry).
                 let tally = if h > 600.0 {
                     None
-                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 150.0 {
+                } else if (-0.5..=12.5).contains(&g.celsius) && rain < 240.0 {
                     Some((&mut dry, cold))
                 } else if g.celsius >= 18.0 && rain >= 2500.0 {
                     Some((&mut hot, wet))
