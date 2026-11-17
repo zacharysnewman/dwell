@@ -204,6 +204,11 @@ Last updated: 2026-11-11 (0.52.108).
   SwiftShader): watched. Then two more stale since 0.71.0's species trees (their bigger crowns and branch logs; they
   failed at 0.71.30 already): `trees`' half density allows up to 80% (spacing caps the full count), `volume`'s
   floating-trees check tests each tree's anchor on solid ground (a branch log over air is by design).
+  `terrainDraw` (CI-only since #1042): its new diagnostic showed distant terrain starved (70 LOD sections in 3 min).
+  Three CI experiments (draft PRs #1051–#1053): not the worker prewarm, not the rocks' far tint; with no town-cell
+  jobs it passed. The map's town cells (#1042's `Job::TownCell`) shared the generation workers with the terrain on a
+  few-core machine. Now a town cell is asked only while no generation job waits, one at a time
+  (`town_cells_are_asked_only_while_the_generation_queue_is_empty`, red → green).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the

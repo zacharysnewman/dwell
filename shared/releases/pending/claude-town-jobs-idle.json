@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Distant terrain loads faster on slower machines: the map's towns are worked out only when nothing else is waiting"
+  ]
+}

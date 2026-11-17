@@ -241,6 +241,12 @@ impl Pool {
         pool
     }
 
+    /// No generation job waits to start (the map's town cells go only then: they never delay the
+    /// terrain).
+    pub fn generation_idle(&self) -> bool {
+        self.queued[0].is_empty()
+    }
+
     pub fn capacity(&self, mesh: bool) -> usize {
         self.jobs.capacity(mesh)
     }

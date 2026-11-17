@@ -417,7 +417,51 @@ pub enum Send {
 pub type Outbox = Rc<RefCell<Vec<Send>>>;
 
 /// Town cells asked of the generation workers at once (`Game::town_sites`).
-const TOWN_JOBS_OUT: usize = 4;
+const TOWN_JOBS_OUT: usize = 1;
+
+/// Which of the map's `missing` town cells (nearest first) to ask of the generation workers now,
+/// with `pending` already out: up to [`TOWN_JOBS_OUT`], and none while a generation job waits.
+fn town_requests(
+    missing: &[(bool, i32, i32)],
+    pending: usize,
+    generation_idle: bool,
+) -> Vec<(bool, i32, i32)> {
+    if !generation_idle {
+        return Vec::new();
+    }
+    missing
+        .iter()
+        .take(TOWN_JOBS_OUT.saturating_sub(pending))
+        .copied()
+        .collect()
+}
+
+#[cfg(test)]
+mod town_request_tests {
+    use super::*;
+
+    /// CI (2026-11-17): the town cells' jobs shared the generation workers with the terrain and
+    /// starved the distant terrain on a few-core machine (e2e terrainDraw: 70 LOD sections in
+    /// 3 min; with no town jobs, it passed). A town cell is asked only while no generation job
+    /// waits, one at a time: the map's towns never delay the terrain.
+    #[test]
+    fn town_cells_are_asked_only_while_the_generation_queue_is_empty() {
+        let missing = [(false, 0, 0), (false, 1, 0), (false, 0, 1)];
+        assert!(
+            town_requests(&missing, 0, false).is_empty(),
+            "terrain waiting: none"
+        );
+        assert_eq!(
+            town_requests(&missing, 0, true),
+            vec![(false, 0, 0)],
+            "idle: one"
+        );
+        assert!(
+            town_requests(&missing, 1, true).is_empty(),
+            "one already out: none"
+        );
+    }
+}
 
 type Streamer<S> = ChunkStreamer<VoxelWorld, ChunkJobs, MeshJobs, View<S>>;
 
@@ -1794,23 +1838,25 @@ impl<S: Scene> Game<S> {
             .collect();
         cells.sort_by_key(|&(i, k)| (i - ci).pow(2) + (k - ck).pow(2));
         let mut out = Vec::new();
+        let mut missing = Vec::new();
         for (i, k) in cells {
             match self.towns.get(&(b, i, k)) {
                 Some(site) => out.extend(*site),
-                None if self.towns_pending.len() < TOWN_JOBS_OUT
-                    && self.towns_pending.insert((b, i, k)) =>
-                {
-                    self.pool.borrow_mut().submit(
-                        Purpose::Town(b, i, k),
-                        crate::jobs::Job::TownCell {
-                            face: u8::from(b),
-                            i,
-                            k,
-                        },
-                    );
-                }
+                None if !self.towns_pending.contains(&(b, i, k)) => missing.push((b, i, k)),
                 None => {}
             }
+        }
+        let idle = self.pool.borrow().generation_idle();
+        for key in town_requests(&missing, self.towns_pending.len(), idle) {
+            self.towns_pending.insert(key);
+            self.pool.borrow_mut().submit(
+                Purpose::Town(key.0, key.1, key.2),
+                crate::jobs::Job::TownCell {
+                    face: u8::from(key.0),
+                    i: key.1,
+                    k: key.2,
+                },
+            );
         }
         out
     }
