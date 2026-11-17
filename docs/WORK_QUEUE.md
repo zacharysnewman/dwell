@@ -31,6 +31,14 @@ Last updated: 2026-11-11 (0.52.108).
   physical handling so water fills the boat instead of already existing in it at the waterline. We're not implementing
   this yet, but it will be up next. We'll clarify some questions first." Owner should see (first step): a land cannon
   (2 m long, 1 m tall, four cells) that fires a physics cannonball where aimed, the ball knocking loose what it hits.
+  Owner's answers (2026-11-17): "Cannon questions: 1) firing: using the same input as doors, you can fire the
+  cannon, clicking on it. It faces the direction of placement (still correctly rotates with dynamic objects), no
+  re-aiming for now. We can add aiming later. 2) let's setup 2 cannonball variants one explosive, one simple impact
+  knocking loose cells it strikes (and maybe knocks loose in an area around where it collides). Should have high mass
+  as it's a heavy steel ball. 3) yes 4) yes 5) ship should be moveable with player controls, force should be exerted
+  like a sail would, from the center of mass I think. Turning like you have a rudder. Default seems reasonable, minus
+  the test push." (3: anything that lands on a moving ship rides along with it; 4: cannons and cannonballs are data;
+  5: the wheel steers, no test push.) Design: docs/CANNONS.md (phases C1–C5).
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).

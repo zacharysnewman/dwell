@@ -64,6 +64,8 @@ and friend worlds), with a small master server for discovery; there are no offic
 - `docs/CHARACTERS.md` — design for Phase 40 (ADR 0041): characters and creatures as rigid chunky parts
   on a data rig (`shared/characters/characters.json`), the first-person arms view, clips; a concept and
   the Character Lab prototype, not in the game yet.
+- `docs/CANNONS.md` — cannons, cannonballs (impact and explosive) and steering ships (owner, 2026-11-17): data in
+  `shared/cannons/cannons.json`, phases C1–C5; designed, not built.
 - `docs/BUILT_BODIES.md` — design for Phase 51 (ADR 0052): moving pieces edited while they move
   (natural ones break only, built ones break and place, splits), the build platform block whose builds
   are bodies that never settle, bodies saved with the world and floating in water.
