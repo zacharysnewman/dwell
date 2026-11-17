@@ -311,6 +311,8 @@ fn a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor() {
     });
     let mut world = dwell_world::VoxelWorld::new(generator, Some(air));
     world.set_air_known(Arc::new(|_| None));
+    // The controller's window (`Players::tick_controllers`): outside it a read is the ground.
+    world.set_reads_known(true);
     let physics = dwell_physics::Physics::default();
     let q = VoxelQuery::new(&mut world, &physics);
     assert_eq!(

@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fixed edits and blasts far from you sometimes treating solid ground as air"
+  ]
+}

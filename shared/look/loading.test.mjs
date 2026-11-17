@@ -127,7 +127,8 @@ test('the estimate is data: the near ring counted, a stage cost by data alone in
   assert.match(ts, /holdFraction: 0\.9,/);
   assert.match(ts, /worldFile: \{ scales: 'device', baseS: 2\.5, local: true \},/);
   assert.match(ts, /cpuFactor: 6/);
-  assert.match(ts, /ringChunks: 179,/);
+  // The checked-in ring (radius 2, one less than the view: BUGS.md #200).
+  assert.match(ts, /ringChunks: 81,/);
 });
 
 test('a bad estimate entry fails naming it', () => {

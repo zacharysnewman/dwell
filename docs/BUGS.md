@@ -1043,6 +1043,15 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 201. Server reads of not-yet-known chunks returned air (fixed after 0.72.0)
+
+A regression of #194 round 7 (0.71.27): with the server's tick-safe air test, `VoxelWorld::read` returned air for
+any chunk whose sky floor wasn't known yet, for every reader, so a region edit, a blast or a tool could compare
+against air where the ground is (found by `region_edits`' brush test: a cell 200 m off read as air, then stone).
+**Fixed:** only the player controller's passes read such a chunk as air (`VoxelWorld::set_reads_known`, set by
+`Players::tick_controllers`); every other read is the generated chunk. Test (red without the window, green with):
+`world::a_read_outside_the_controllers_window_is_the_generated_chunk`. Flight at 362 m/s still ≤ 2.7 ms natively.
+
 ### 200. The loading screen waits out its timeout for chunks the server never sends (fixed after 0.71.30)
 
 Owner, 2026-11-17: "Are there other easy wins for the rest of loading" and "Ensure you check a new world, a
