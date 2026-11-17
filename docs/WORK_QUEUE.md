@@ -30,7 +30,12 @@ Last updated: 2026-11-11 (0.52.108).
   blocks (64) × its reference block's hits with the stone tool × the material's durability multiplier (wood 0.5×,
   stone 1×, metal 2×). Drops later, separately. Owner should see: each block taking the sheet's hits with each tool
   and by hand, every tool and the hand swinging at the axe's pace, tools wearing out at the sheet's durability.
-  Status: plan and the missing blocks sent to the owner (2026-11-17); waiting on the answers.
+  Owner's answers (2026-11-17): "1) yes allow 48 hits (also inefficient tools cause blocks to not drop anything)
+  2) Yes, compute now, add items later. 3) I think they drop a full block worth of resources, so yes full hits
+  (inconsistencies should be corrected) 4) Yes intended 5) Correct". So: stone by hand 48 hits (no "can't"); a block
+  broken with an inefficient tool (or hand) drops nothing; the wood axe and wood pick computed now, the items later;
+  ramps take their block's full hits; durability as the sheet (stone tools 384 hits); the hand swings at the axe's
+  0.5 s. The blocks not on the sheet take the nearest sheet block's values meanwhile (marked as proposals for the owner).
 
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
