@@ -1200,6 +1200,9 @@ pub struct Server {
     bite_log: Vec<weapons::BiteLog>,
     /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
     damage: dwell_protocol::damage::Damage,
+    /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
+    /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
+    body_hits: HashMap<(u32, [i32; 3]), u32>,
     /// When each damaged cell's heal clock started (s of the ticks; healing.rs), and each player's
     /// last blocks hit (they don't heal).
     heal_since: HashMap<[i32; 3], f64>,
@@ -1472,6 +1475,7 @@ impl Server {
             npc_strike_log: Vec::new(),
             bite_log: Vec::new(),
             damage: Default::default(),
+            body_hits: HashMap::default(),
             heal_since: Default::default(),
             recent_hits: Default::default(),
             damage_unread: false,
@@ -4411,10 +4415,43 @@ impl Server {
                     .iter()
                     .find(|&&(o, _)| o == cell)
                     .map_or(0, |&(_, m)| m);
+                // Its block's hits to break by the tool held, as in the grid (BUGS.md #206; owner,
+                // 2026-11-17: "falling/physics blocks ... only take one hit to break"); each hit wears
+                // the tool, and one short of the count leaves the cell.
+                let uses_items = self.uses_items();
+                let block = dwell_blocks::block_of(was).name;
+                let s = self.sessions.get_mut(&id).expect("session");
+                let held = held_break_item(s, uses_items).map(str::to_owned);
+                let held = held.as_deref();
+                let need = if self.config.one_hit_breaks {
+                    Some(1)
+                } else {
+                    dwell_protocol::damage::hits_to_break_for(
+                        block,
+                        held,
+                        self.settings.allows(Ability::InstantBreaks),
+                    )
+                };
+                let Some(need) = need else {
+                    continue;
+                };
+                if wear_tool(&mut s.inventory, uses_items) != inv::Wear::None {
+                    s.inventory_dirty = true;
+                }
+                let drops = dwell_protocol::damage::drops_when_broken(block, held);
+                if need > 1 {
+                    let k = self.body_hits.entry((e.body, cell)).or_insert(0);
+                    *k += 1;
+                    if *k < need {
+                        s.edit_credit -= 1.0;
+                        continue;
+                    }
+                }
+                self.body_hits.remove(&(e.body, cell));
                 let Some(out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
                     continue;
                 };
-                if self.uses_items() {
+                if uses_items && drops {
                     self.drop_block(was, at.to_array());
                 }
                 if let Some(s) = self.sessions.get_mut(&id) {
@@ -4437,6 +4474,7 @@ impl Server {
                     self.broadcast_world(&m);
                 }
                 if out.gone {
+                    self.body_hits.retain(|k, _| k.0 != e.body);
                     self.broadcast_world(&Message::EntityDespawn(e.body));
                 }
             }

@@ -6,12 +6,6 @@ pins it.
 
 ## Open
 
-### 206. Blocks of a falling or moving piece break in one hit (reported 2026-11-17)
-
-Owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only take one hit to break instead of the
-correct value per block." A body's cells (a felled trunk, a built body) ignore the block's hits to break
-(docs/BLOCK_DAMAGE.md §17). Owner should see: a block of a moving piece takes the same hits as the block in the ground.
-
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
@@ -1087,6 +1081,17 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 206. Blocks of a falling or moving piece broke in one hit (reported 2026-11-17; fixed after 0.73.11)
+
+Owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only take one hit to break instead of the
+correct value per block." A body's cells (a felled trunk, a built body) ignore the block's hits to break
+(docs/BLOCK_DAMAGE.md §17). Owner should see: a block of a moving piece takes the same hits as the block in the ground.
+**Cause:** a body's cell is broken by its own path (`apply_body_edits`), which took the cell at once and never asked
+the block's hits. **Fixed:** the server counts a body cell's hits (`body_hits`, by body and cell) against its block's
+hits to break with the tool held (`hits_to_break_for`, as the grid's), wears the tool each hit, and drops nothing for an
+inefficient break. Body cells show no marks yet. Test: `built_bodies` `a_bodys_block_takes_its_blocks_hits_to_break`
+(red at "hit 1 of 6", green now).
 
 ### 205. A cut 2×2 trunk showed no faces on its inside (reported 2026-11-17; fixed after 0.73.10)
 
