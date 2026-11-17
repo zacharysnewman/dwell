@@ -38,6 +38,16 @@ fn the_owners_world_at_a_sprint() {
         store: Some(WorldStore::new(WorldDb::in_memory().expect("opens"), false)),
         ..ServerConfig::default()
     });
+    // As the browser's local world (dwell-client local.rs, under wasm32): the phone's collision
+    // budgets (shared/render/streaming.json) and no generation on the reach.
+    fx.server.set_collision_budgets(
+        1024,
+        dwell_physics::terrain::CollisionAhead {
+            chunks_per_tick: 1,
+            ..Default::default()
+        },
+    );
+    fx.server.set_reach_generates(0);
     let mut runner = JobRunner::for_world(GENERATOR_TERRAIN, seed);
     let w = fx.join(1, &Client::new(1));
     let mut v = Chunk::default();
@@ -71,7 +81,9 @@ fn the_owners_world_at_a_sprint() {
                     run: true,
                     fly: true,
                     fly_speed: FLY_SPEED_MAX_LEVEL as u8,
-                    look_pitch: 4.0,
+                    // As the bench's stutter-fly: 3° up for 20 s, then level turned 90°.
+                    look_pitch: if t < 300 + 1200 { 3.0 } else { 0.0 },
+                    look_yaw: if t < 300 + 1200 { 0.0 } else { 90.0 },
                     ..Default::default()
                 }
             } else {
@@ -114,6 +126,9 @@ fn the_owners_world_at_a_sprint() {
             fx.server.deliver_job(&done);
         }
         let _ = fx.take(1);
+        if t % 300 == 0 {
+            eprintln!("AT {t}: feet {:?}", fx.server.feet_of(w.player_id));
+        }
         let ms = fx.server.tick_phases();
         let made = fx
             .server

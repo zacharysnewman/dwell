@@ -72,6 +72,11 @@ Last updated: 2026-11-11 (0.52.108).
   measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
   tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
   (362 m/s) with no hitches.
+  Found 2026-11-17 (bench `stutter-fly`, browser): flying at 362 m/s the server's `terrain` phase (collision builds,
+  `Players::tick_terrain`, ~70 builds/s) gives ticks of 39–71 ms for ~10 s after take-off. The native harness
+  (`TICK_FLY=1`) does NOT reproduce it yet: its player never moves (stuck at its spawn in every harness run so far,
+  so the earlier native numbers were of a still player). Next: fix the harness's input (compare persistence.rs), then
+  find the costly collision builds and spread or cap them.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
