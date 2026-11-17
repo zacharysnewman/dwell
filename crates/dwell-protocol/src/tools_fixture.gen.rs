@@ -107,6 +107,8 @@ pub static BREAK_TOOLS: &[BreakTool] = &[
 /// takes damage hits by hand no faster; none: one per press.
 pub const HAND_REPEAT_S: Option<f64> = Some(0.5);
 /// How a shaking block (`damage.hit: "shake"`) moves on a hit (`breaking.shake`).
+/// A hit's flying 3D pieces' linear size against the bite rule's (`breaking.pieceScale`).
+pub const PIECE_SCALE: f64 = 0.5;
 pub const SHAKE: Shake = Shake { seconds: 0.3, amplitude_m: 0.04, hz: 14.0 };
 /// How damage heals (`breaking.heal`): s after a cell's last hit, s from all but broken to whole, and the
 /// blocks each player hit last that never heal; none: it never heals.

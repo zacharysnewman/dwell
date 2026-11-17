@@ -189,13 +189,14 @@ pub fn mesh_volume(meshes: &[dwell_mesh::ChunkMeshes]) -> f64 {
 }
 
 /// The linear scale on `block`'s piece look that makes its data's `shards` pieces total
-/// `bite_m3` (the bite rule; BLOCK_DAMAGE.md §10): ∛(bite ÷ (count × the look's volume)).
+/// `bite_m3` (the bite rule; BLOCK_DAMAGE.md §10): ∛(bite ÷ (count × the look's volume)), times
+/// the data's `breaking.pieceScale` (0.5: the owner's half size).
 pub fn piece_scale(block: &str, bite_m3: f64, unit_m3: f64) -> f64 {
     let n = chips_of(block).map_or(0, |c| c.shards);
     if n == 0 || unit_m3 <= 0.0 {
         return 0.0;
     }
-    (bite_m3 / (f64::from(n) * unit_m3)).cbrt()
+    (bite_m3 / (f64::from(n) * unit_m3)).cbrt() * dwell_protocol::chopping::PIECE_SCALE
 }
 
 /// A hit's pieces' meshes: `block`'s piece item's look scaled so its data's `shards` of them total
@@ -260,12 +261,15 @@ mod tests {
     );
 
     /// The bite rule (owner, 2026-11-12): a hit's pieces together are its bite, 0.5 × the block's
-    /// volume ÷ its hits to break, for stone's shards, soil's clods and the axe's wood chips; the
-    /// metal pickaxe's 3 hits' pieces are 5/3 of the stone one's 5 hits'.
+    /// volume ÷ its hits to break, for stone's shards, soil's clods and the axe's wood chips, drawn
+    /// at `breaking.pieceScale` (0.5: an eighth of the volume; owner, 2026-11-17: "the particles
+    /// from hits were supposed to be half the size"); the metal pickaxe's pieces ∛2 the stone one's.
     #[test]
     fn a_hits_pieces_total_its_bite() {
         // face-a-only: volumes, the same mirrored (a mirror keeps a volume).
         use dwell_protocol::damage::bite_m3_of;
+        let k3 = dwell_protocol::chopping::PIECE_SCALE.powi(3);
+        assert_eq!(dwell_protocol::chopping::PIECE_SCALE, 0.5, "half size");
         let total = |block: &str, bite: f64| {
             let n = f64::from(chips_of(block).unwrap().shards);
             let (m, _) = fragment_meshes(block, bite, FaceFrame::A).expect("pieces");
@@ -279,14 +283,15 @@ mod tests {
         ] {
             let bite = bite_m3_of(block, Some(tool)).unwrap();
             let got = total(block, bite);
+            let want = bite * k3;
             assert!(
-                (got - bite).abs() < 1e-3 * bite,
-                "{block} {tool}: {got} vs {bite}"
+                (got - want).abs() < 1e-3 * want,
+                "{block} {tool}: {got} vs {want}"
             );
         }
         let bite = bite_m3_of("dwell:log", Some("dwell:stone_axe")).unwrap();
         assert!(
-            (total("dwell:log", bite) - bite).abs() < 1e-3 * bite,
+            (total("dwell:log", bite) - bite * k3).abs() < 1e-3 * bite * k3,
             "wood chips"
         );
         // Bigger, not more: the same count, each ∛2 the size (metal 3 hits, stone 6).
