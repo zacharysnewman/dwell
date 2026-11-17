@@ -27,6 +27,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 50.0,
+        lod_canopy: true,
     },
     Placement {
         name: "broadleaf_groves",
@@ -51,6 +52,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 50.0,
+        lod_canopy: true,
     },
     Placement {
         name: "conifer_groves",
@@ -75,6 +77,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 0.0,
+        lod_canopy: true,
     },
     Placement {
         name: "palm_coasts",
@@ -99,6 +102,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 0.0,
+        lod_canopy: true,
     },
     Placement {
         name: "boulders",
@@ -123,6 +127,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 30.0,
+        lod_canopy: false,
     },
     Placement {
         name: "old_growth",
@@ -147,6 +152,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 0.0,
+        lod_canopy: true,
     },
     Placement {
         name: "rainforest_groves",
@@ -171,6 +177,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 0.0,
+        lod_canopy: true,
     },
     Placement {
         name: "sagebrush",
@@ -195,6 +202,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 30.0,
+        lod_canopy: true,
     },
     Placement {
         name: "talus",
@@ -219,6 +227,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 12.0,
         wet: true,
         bleed: 0.0,
+        lod_canopy: false,
     },
     Placement {
         name: "bushes",
@@ -243,6 +252,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 40.0,
+        lod_canopy: true,
     },
     Placement {
         name: "cold_shrubs",
@@ -267,6 +277,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 30.0,
+        lod_canopy: true,
     },
     Placement {
         name: "scrub",
@@ -291,5 +302,6 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 40.0,
+        lod_canopy: true,
     },
 ];

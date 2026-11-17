@@ -278,6 +278,7 @@ const PLACEMENT_KEYS = [
   "cliffReach",
   "wet",
   "bleed",
+  "lodCanopy",
 ];
 /** What `footprint` may say: "on" (every column under the structure is one of `on`) or "anchor". */
 export const FOOTPRINTS = ["on", "anchor"];
@@ -443,6 +444,8 @@ export function validatePlacements(
       fail(`${at}: maxSlopeDeg must be in (0, 90) degrees`);
     if (p.tops !== undefined && !(isNum(p.tops) && p.tops >= 0 && p.tops <= 1))
       fail(`${at}: tops must be in [0, 1]`);
+    if (p.lodCanopy !== undefined && typeof p.lodCanopy !== 'boolean')
+      fail(`${at}: lodCanopy must be true or false`);
     if (p.cliffReach !== undefined && !(isNum(p.cliffReach) && p.cliffReach >= 0 && p.cliffReach <= 64))
       fail(`${at}: cliffReach must be in [0, 64] m`);
     if (p.wet !== undefined && typeof p.wet !== "boolean") fail(`${at}: wet must be true or false`);
@@ -551,6 +554,7 @@ export function placementsRust(data, species = registrySpecies()) {
     rs.push(`        cliff_reach: ${rf(p.cliffReach ?? 0)},`);
     rs.push(`        wet: ${p.wet === true},`);
     rs.push(`        bleed: ${rf(p.bleed ?? 0)},`);
+    rs.push(`        lod_canopy: ${p.lodCanopy !== false},`);
     rs.push("    },");
   }
   rs.push("];");

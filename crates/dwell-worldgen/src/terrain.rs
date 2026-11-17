@@ -5508,7 +5508,11 @@ impl TerrainGenerator {
                             + gz * (z - i64::from(wz)) as f32,
                     )
                 };
+                // Only rules whose far tint is a canopy (`lodCanopy`: not rocks, BUGS.md #195).
                 let Some((_, p)) = self.planters.iter().enumerate().find(|(i, p)| {
+                    if !p.rule().lod_canopy {
+                        return false;
+                    }
                     let f = || {
                         let c = if climate {
                             let k = self.vegetation.kind_for(p.rule().name);
