@@ -2732,7 +2732,6 @@ async function connect(app: App): Promise<void> {
   const client = app.client;
   // A local world's job workers start now, as its maps come, not at the join (loading, 2026-11-17).
   // EXPERIMENT (draft PR, not to merge): the prewarm off, to see whether CI's terrainDraw passes.
-  void localWorld;
   try {
     const key = await identify(client);
     let local: LocalSession | null = null;
