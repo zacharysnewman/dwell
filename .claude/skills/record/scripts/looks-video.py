@@ -7,7 +7,8 @@ newest, kept where the look changed, spliced into one portrait video on a speed 
 
 `--kenburns Z` (owner, 2026-11-16: "Can you edit it to be Ken burns style?"): one slow push-in through each set, from
 1× to Z× at the frame's centre, each still carrying on the zoom where the last left off (the stills share the camera,
-so it reads as one move while the look changes); a new set starts again from 1×.
+so it reads as one move while the look changes); a new set starts again from 1×. `--out-zoom`: a pull-back instead,
+from Z× to 1× (owner: "Perhaps a zoom out instead of in, since the last ones cut weirdly at the end.").
 Several `--set`s play back to back (owner, 2026-11-16: "both sets of screenshots back to back. A 2 second pause
 on the last shot of each"): each set is chosen and eased on its own, its last still held `--hold` seconds.
 
@@ -43,6 +44,7 @@ def main():
     ap.add_argument('--size', default='1080x1920')
     ap.add_argument('--sheet')
     ap.add_argument('--kenburns', type=float, default=0.0)
+    ap.add_argument('--out-zoom', action='store_true')
     a = ap.parse_args()
     w, h = (int(x) for x in a.size.split('x'))
     sets = [d.split(',') for d in a.set] + ([a.dirs] if a.dirs else [])
@@ -64,7 +66,11 @@ def main():
             mine.append(a.first + (a.last - a.first) * t * t + (a.hold if i == n - 1 else 0))
         total, start = sum(mine), 0.0
         for d in mine:
-            z = lambda at: 1 + (a.kenburns - 1) * min(at, total) / total if a.kenburns else 1
+            def z(at):
+                if not a.kenburns:
+                    return 1
+                t = min(at, total) / total
+                return 1 + (a.kenburns - 1) * ((1 - t) if a.out_zoom else t)
             zooms.append((z(start), z(start + d + a.fade)))
             start += d
         durations += mine
