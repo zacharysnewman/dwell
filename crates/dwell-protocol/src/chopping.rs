@@ -65,7 +65,7 @@ pub mod fixture {
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
     BLOCK_DAMAGE, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY, HAND_REPEAT_S,
-    HEAL, HINTS, SHAKE, TOOLS, WEAR_BREAK_SOUND, WOODS,
+    HEAL, HINTS, PIECE_SCALE, SHAKE, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`

@@ -92,7 +92,7 @@ Last updated: 2026-11-11 (0.52.108).
   Found: the flying 3D pieces are sized by the hit's bite (BLOCK_DAMAGE.md §10), and the tool sheet's fewer hits
   (stone axe on a log 6, was 10) made each bite bigger; the halved `chips` are the small flat particles. The drops'
   tripling is the Follow-ups item, not done yet. To do: the pieces half their size (a data scale on the fragments);
-  the drops 3× on the owner's go (Follow-ups).
+  the drops 3× on the owner's go (Follow-ups). Pieces done (2026-11-17): `breaking.pieceScale` 0.5.
   Done (2026-11-17): every block's `damage.chips.size` and the woods' chips halved; wood chips #efd8b0; the wood chunk
   (`dwell:wood`, the flying piece and the dropped item) a shard in the planks' texture, pale. The 3D pieces' size is the
   bite rule's (unchanged). Waiting on the owner's look.

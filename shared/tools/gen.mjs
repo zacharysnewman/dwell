@@ -618,7 +618,7 @@ export function validateBreaking(b, items, blocks) {
   if (b === undefined) {
     return { proficiency: { neutral: 1 }, materials: { body: { hits: 1, durability: 1 } }, hand: { material: 'body' }, classes: [], repeatS: null, tools: [], planned: [], heal: validateHeal(undefined) };
   }
-  known(b, ['$comment', 'proficiency', 'materials', 'hand', 'classes', 'repeatS', 'tools', 'planned', 'heal', 'shake'], 'breaking');
+  known(b, ['$comment', 'proficiency', 'materials', 'hand', 'classes', 'repeatS', 'tools', 'planned', 'heal', 'shake', 'pieceScale'], 'breaking');
   const name = (k, at) => {
     if (!/^[a-z][a-z0-9_]*$/.test(k)) fail(`${at}.${k}: names are lower_snake_case`);
   };
@@ -694,7 +694,9 @@ export function validateBreaking(b, items, blocks) {
   if (!(num(sh.seconds) && sh.seconds > 0 && sh.seconds <= 3)) fail('breaking.shake.seconds is in (0, 3]');
   if (!(num(sh.amplitudeM) && sh.amplitudeM >= 0 && sh.amplitudeM <= 0.25)) fail('breaking.shake.amplitudeM is metres in [0, 0.25]');
   if (!(num(sh.hz) && sh.hz > 0 && sh.hz <= 60)) fail('breaking.shake.hz is in (0, 60]');
-  return { proficiency, materials, hand: { material: b.hand.material, repeatS }, classes, repeatS, tools, planned, heal: validateHeal(b.heal), shake: { seconds: sh.seconds, amplitudeM: sh.amplitudeM, hz: sh.hz } };
+  const pieceScale = b.pieceScale ?? 1;
+  if (!(num(pieceScale) && pieceScale > 0 && pieceScale <= 4)) fail('breaking.pieceScale is a linear scale in (0, 4]');
+  return { proficiency, materials, hand: { material: b.hand.material, repeatS }, classes, repeatS, tools, planned, heal: validateHeal(b.heal), shake: { seconds: sh.seconds, amplitudeM: sh.amplitudeM, hz: sh.hz }, pieceScale };
 }
 
 /** A block's hits to break with a class (`hand` or a tool class) in a material, unrounded: base
@@ -866,6 +868,8 @@ export function toolsRust(d) {
   rs.push(`pub const HAND_REPEAT_S: Option<f64> = ${d.breaking.hand.repeatS === null ? 'None' : `Some(${f64(d.breaking.hand.repeatS)})`};`);
   const sh = d.breaking.shake;
   rs.push("/// How a shaking block (`damage.hit: \"shake\"`) moves on a hit (`breaking.shake`).");
+  rs.push("/// A hit's flying 3D pieces' linear size against the bite rule's (`breaking.pieceScale`).");
+  rs.push(`pub const PIECE_SCALE: f64 = ${f64(d.breaking.pieceScale)};`);
   rs.push(`pub const SHAKE: Shake = Shake { seconds: ${f64(sh.seconds)}, amplitude_m: ${f64(sh.amplitudeM)}, hz: ${f64(sh.hz)} };`);
   const heal = d.breaking.heal;
   rs.push("/// How damage heals (`breaking.heal`): s after a cell's last hit, s from all but broken to whole, and the");
