@@ -151,7 +151,11 @@ Last updated: 2026-11-11 (0.52.108).
   the species pines' giants put a cell apart), `realistic_biomes` (the world file owns each biome's plants). Still
   red on main (`--no-fail-fast`): `realistic_sagebrush` (sagebrush on rock walls), `realistic_world` (a rift lake
   27 km > 19, an arc cone off its plate, the map build time 6.0 s vs 1.7 under load), `starter_memory` (the starter
-  terrain golden changed).
+  terrain golden changed). Then: `starter_memory` re-pinned (the same hashes at v0.71.0 and on main: the species
+  pines, 0.71.0, nothing since); parked with `#[ignore = reason]` (a `both_faces!` form carries it to both faces):
+  `realistic_world`'s arc-cone and rift-lake checks (stale since 0.65's curved plates) and its build-time test
+  (timed: run alone), `realistic_sagebrush`'s rock-wall check: **to fix with the 0.72 worldgen line** (with the
+  red-desert brush, the spawn town and the rivers).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
