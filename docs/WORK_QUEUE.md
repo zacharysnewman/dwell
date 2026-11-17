@@ -51,6 +51,9 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-17 (bug, queued after #203):** "Another bug to queue, logs shouldn't "adapt" when blocks break around
   them. Like a quarter log shouldn't become a solitary log when you cut the logs around it." BUGS.md #204. Owner
   should see: a quarter log keeps its quarter shape whatever is cut round it.
+- **Owner, 2026-11-17 (after #204):** "Dynamite should be smaller, so it aligns with the other kinds of blocks, it
+  shouldn't take up the full block width." Owner should see: a dynamite stick narrower than a full block (its own
+  shape, as the torch and ladder have), its neighbours' faces drawn round it.
 - **Owner, 2026-11-17 (Realistic terrain: explain, then tune; after the tool efficiency work):** "Something to look at
   for tuning is how much precipitation? Or whatever value we use? I'm seeing a lot more deserts (plural) than I would
   expect on average. Seems like more deserts than green. And also fewer mountain ranges or super tall mountains. I'd

@@ -44,9 +44,23 @@ fn mesh_one(
     marks: &[(u8, [u8; 3])],
     fraction: u8,
 ) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
+    mesh_cells(f, &[(local, state)], local, marks, fraction)
+}
+
+/// [`mesh_one`] of several cells (face-local, each its state), `local` the one damaged.
+fn mesh_cells(
+    f: FaceFrame,
+    states: &[([i32; 3], u16)],
+    local: [i32; 3],
+    marks: &[(u8, [u8; 3])],
+    fraction: u8,
+) -> (Vec<[f64; 3]>, Vec<[u32; 3]>) {
     let cell = world_cell(f, local);
     let mut padded = vec![0u16; PADDED_VOLUME];
-    padded[padded_index(cell[0], cell[1], cell[2])] = state;
+    for &(l, state) in states {
+        let c = world_cell(f, l);
+        padded[padded_index(c[0], c[1], c[2])] = state;
+    }
     let view = DamageView {
         fraction,
         marks: marks
@@ -249,6 +263,36 @@ dwell_world::both_faces!(
                 "stage {stage}: the bite rule's share gone: {got} vs {want} of {whole}"
             );
             last = got;
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// A 2×2 trunk's quarter cut at its seam stays closed (BUGS.md #203; owner, 2026-11-17: "the
+    /// big (2x2 trees show holes in mesh when cutting inside edge)"): the four quarters' mesh
+    /// encloses the trunk less the bite rule's share of the struck quarter, no hole along the
+    /// joined side the carve reaches.
+    fn a_cut_quarter_of_a_two_by_two_trunk_leaves_no_hole_at_its_seam(f: FaceFrame) {
+        let log = dwell_blocks::require("dwell:log");
+        let quarters = [[5, 6, 5], [6, 6, 5], [5, 6, 6], [6, 6, 6]];
+        let states: Vec<_> = quarters.iter().map(|&q| (q, log)).collect();
+        let struck = quarters[0];
+        let vol = |marks: &[(u8, [u8; 3])], fraction| {
+            let (pts, tris) = mesh_cells(f, &states, struck, marks, fraction);
+            mesh_volume_m3(&pts, &tris)
+        };
+        let whole = vol(&[], 0);
+        assert!(whole > 3.5 * CELL_H, "four joined quarters fill most of their cells: {whole}");
+        // Struck on its outer -x side right beside the seam with the quarter at +z.
+        for (face, point) in [(1u8, [0u8, 128, 250]), (5u8, [250u8, 128, 0])] {
+            for fraction in [128u8, 255] {
+                let got = vol(&[(face, point)], fraction);
+                let want = whole * (1.0 - BROKEN_AT * f64::from(fraction) / 255.0 / 4.0);
+                assert!(
+                    (got - want).abs() < 0.01 * whole,
+                    "face {face} at {fraction}: {got} enclosed, want {want} of {whole} (a hole?)"
+                );
+            }
         }
     }
 );
