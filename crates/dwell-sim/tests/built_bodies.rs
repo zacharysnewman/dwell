@@ -499,3 +499,46 @@ fn a_felled_trunk_afloat_stays_a_body_and_settles_once_beached() {
         .count();
     assert_eq!(log_cells, 4, "its four logs on the bank");
 }
+
+#[test]
+fn a_bodys_block_takes_its_blocks_hits_to_break() {
+    // BUGS.md #206 (owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only
+    // take one hit to break instead of the correct value per block"): a body's log takes the hits
+    // a grid log takes with the tool held (the stone axe: 6), not one.
+    let mut f = Fixture::new(ServerConfig {
+        one_hit_breaks: false,
+        ..flat()
+    });
+    let raft = build_on_a_platform(&mut f);
+    f.send(
+        1,
+        Message::Chop(ChopAction::Held {
+            tool: "dwell:stone_axe".into(),
+            vertical: false,
+        }),
+    );
+    steps(&mut f, 2);
+    let want = dwell_protocol::damage::hits_to_break("dwell:log", Some("dwell:stone_axe"))
+        .expect("an axe breaks a log");
+    assert!(want > 1, "{want}");
+    let broken = |out: &std::collections::BTreeMap<SessionId, Vec<Message>>| {
+        out.get(&1).is_some_and(|ms| ms.iter().any(|m| {
+            matches!(m, Message::BodyEdit(e) if e.body == raft.id && e.cells.iter().any(|c| c.offset == [0, 1, 0] && c.state == 0))
+        }))
+    };
+    for hit in 1..=want {
+        f.send(
+            1,
+            Message::BodyEditRequest(BodyEditRequest {
+                body: raft.id,
+                cell: [0, 1, 0],
+                face: 2,
+                action: BlockEditAction::Break,
+                material: 0,
+            }),
+        );
+        steps(&mut f, 8);
+        let out = f.take_all();
+        assert_eq!(broken(&out), hit == want, "hit {hit} of {want}");
+    }
+}
