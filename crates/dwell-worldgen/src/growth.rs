@@ -478,14 +478,27 @@ impl Growers {
     /// the same for every chunk of the column, so a caller keeps it for the column's other chunks
     /// (BUGS.md #194) and picks each chunk's with [`Self::trees_of_chunk`].
     pub fn trees_in_column(&self, c: ChunkCoord) -> Vec<Record> {
+        self.trees_in_column_part(c, None)
+    }
+
+    /// A quarter of [`Self::trees_in_column`] (`Some(0..4)`: x half `k % 2`, z half `k / 2`; the
+    /// four together are the column's), so a tick places at most a quarter column (BUGS.md #194).
+    pub fn trees_in_column_part(&self, c: ChunkCoord, part: Option<u8>) -> Vec<Record> {
         let f = FaceFrame::at_chunk_y(c.y);
         let g = self.terrain.local(f.face);
-        let (x0, z0) = (c.x * CHUNK_SIZE, c.z * CHUNK_SIZE);
+        let half = CHUNK_SIZE / 2;
+        let (x0, z0, w) = match part {
+            Some(k) => (
+                c.x * CHUNK_SIZE + i32::from(k % 2) * half,
+                c.z * CHUNK_SIZE + i32::from(k / 2) * half,
+                half,
+            ),
+            None => (c.x * CHUNK_SIZE, c.z * CHUNK_SIZE, CHUNK_SIZE),
+        };
         let mut out = Vec::new();
-        for t in g.trees_in((x0, z0), (x0 + CHUNK_SIZE - 1, z0 + CHUNK_SIZE - 1)) {
+        for t in g.trees_in((x0, z0), (x0 + w - 1, z0 + w - 1)) {
             let a = t.anchor;
-            let inside =
-                (x0..x0 + CHUNK_SIZE).contains(&a[0]) && (z0..z0 + CHUNK_SIZE).contains(&a[2]);
+            let inside = (x0..x0 + w).contains(&a[0]) && (z0..z0 + w).contains(&a[2]);
             let planter = &g.planters()[usize::from(t.planter)];
             if let (true, Some((species, seed, stage))) = (inside, planter.grown(&t)) {
                 out.push(Record {
@@ -538,6 +551,28 @@ impl Growers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    dwell_world::both_faces!(
+        /// A column's four quarters are its trees (BUGS.md #194: a tick places a quarter).
+        fn a_columns_quarters_are_its_trees(f: FaceFrame) {
+            let g = Growers::for_generator(dwell_world::GENERATOR_TERRAIN, 7).expect("growers");
+            let mut seen = 0;
+            for (cx, cz) in [(2, 3), (-40, 17), (73, -12), (5, 230)] {
+                let c = f.chunk(ChunkCoord::new(cx, 1, cz));
+                let key = |r: &Record| (r.anchor, r.species, r.seed);
+                let mut whole: Vec<_> = g.trees_in_column(c).iter().map(key).collect();
+                let mut parts: Vec<_> = (0..4)
+                    .flat_map(|k| g.trees_in_column_part(c, Some(k)))
+                    .map(|r| key(&r))
+                    .collect();
+                whole.sort_unstable();
+                parts.sort_unstable();
+                assert_eq!(whole, parts, "column {cx}, {cz}");
+                seen += whole.len();
+            }
+            assert!(seen > 0, "some trees compared");
+        }
+    );
     use std::collections::HashMap;
 
     /// An oak's record on face `f`.

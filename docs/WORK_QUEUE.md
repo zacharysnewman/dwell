@@ -83,6 +83,8 @@ Last updated: 2026-11-11 (0.52.108).
   budget test.
   Round 8: the tree scan places a column once for its stacked chunks (was once a chunk). Next: a new column's
   placements off the tick, then ecology at the join, then the budget test.
+  Round 9: a new column's tree placements in the jobs worker (browser) or a quarter a tick. Next: grass's quarter
+  passes (5–12 ms natively in the sprint run), then ecology at the join, then the budget test.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
