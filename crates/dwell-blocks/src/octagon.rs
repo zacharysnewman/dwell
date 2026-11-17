@@ -164,6 +164,15 @@ pub fn frozen_beside(cell: [i32; 3], at: &dyn Fn([i32; 3]) -> StateId) -> Vec<([
     out
 }
 
+/// The sides of `m` that are joined and whose neighbour still joins it (no face on either cell
+/// there): `joined_mask` less the stored sides a cut-away neighbour left open (BUGS.md #205).
+pub fn closed_mask(m: StateId, at: &dyn Fn([i32; 3]) -> StateId) -> u8 {
+    let joined = joined_mask(m, at);
+    (0..6)
+        .filter(|&f| joined & (1 << f) != 0 && joins(m, at(face_offset(f))))
+        .fold(0, |k, f| k | (1 << f))
+}
+
 /// Which part of the prism a face is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Part {
@@ -361,7 +370,9 @@ pub fn open_faces_beside(
                 return true;
             }
             let n = at(face_offset(face));
-            joined & (1 << face) == 0
+            // A joined side is drawn by neither cell only while the neighbour still joins it: a
+            // stored (frozen) join beside a cut-away quarter draws its squared side (BUGS.md #205).
+            (joined & (1 << face) == 0 || !joins(m, n))
                 && (opened(face_offset(face)) || !(covers(n) && section_of(n).is_none()))
         }
         Part::Cap(end) => {

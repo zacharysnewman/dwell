@@ -301,6 +301,32 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
+    /// A trunk's quarter left alone, frozen with its joined sides (#204), is closed, whole and cut
+    /// (BUGS.md #205: its squared sides were drawn by neither cell): it encloses a quarter of the
+    /// joined trunk, less the bite rule's share when struck.
+    fn a_frozen_quarter_alone_is_closed_whole_and_cut(f: FaceFrame) {
+        let log = dwell_blocks::require("dwell:log");
+        let quarters = [[5, 6, 5], [6, 6, 5], [5, 6, 6], [6, 6, 6]];
+        let states: Vec<_> = quarters.iter().map(|&q| (q, log)).collect();
+        let (pts, tris) = mesh_cells(f, &states, quarters[0], &[], 0);
+        let trunk = mesh_volume_m3(&pts, &tris);
+        let frozen = dwell_blocks::octagon::with_joined(log, (1 << 0) | (1 << 4)).expect("frozen");
+        let vol = |marks: &[(u8, [u8; 3])], fraction| {
+            let (pts, tris) = mesh_one(f, f.state(frozen), quarters[0], marks, fraction);
+            mesh_volume_m3(&pts, &tris)
+        };
+        let whole = vol(&[], 0);
+        assert!(
+            (whole - trunk / 4.0).abs() < 0.01 * trunk,
+            "alone {whole} of the trunk's {trunk}"
+        );
+        let cut = vol(&[(1, [0, 128, 250])], 255);
+        let want = whole * (1.0 - BROKEN_AT);
+        assert!((cut - want).abs() < 0.02 * whole, "cut {cut}, want {want}");
+    }
+);
+
+dwell_world::both_faces!(
     /// A cube's damage (stone and dirt) is the same shape class as before: a hollow into the struck
     /// face that takes the bite rule's volume (k bites after k hits, half at the break), no
     /// vertex outside the cell, the faces not struck untouched near their far edges; and a stored

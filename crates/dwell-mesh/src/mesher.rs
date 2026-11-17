@@ -1603,8 +1603,9 @@ fn octagon_voxel(
             lit,
             crack: crack.as_ref(),
             marks: &view.marks,
-            // A joined side's neighbour (a 2×2 trunk's quarter) draws no face toward it (#203).
-            closed: joined,
+            // A joined side's neighbour (a 2×2 trunk's quarter) draws no face toward it (#203);
+            // a frozen side beside a cut-away quarter draws its own face (#205).
+            closed: dwell_blocks::octagon::closed_mask(m, &at),
         };
         mask_walls(b, k, cell, &walls);
     }

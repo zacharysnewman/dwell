@@ -504,3 +504,33 @@ fn a_quarter_of_a_two_by_two_trunk_keeps_its_joined_sides_when_its_neighbours_br
         }
     }
 }
+
+#[test]
+fn a_frozen_quarter_draws_its_squared_sides_once_its_neighbours_are_gone() {
+    // BUGS.md #205 (owner, 2026-11-17: "the inside faces aren't rendering at all"): a quarter
+    // frozen with its joined sides (#204) keeps them squared, and a joined side was drawn by
+    // neither cell, so with the other quarters cut away the trunk stood open. face-a-only: the
+    // sides are across a standing log's axis.
+    let frozen = with_joined(log("y"), (1 << 0) | (1 << 4)).expect("a frozen quarter");
+    let size = [1.0, 0.5, 1.0];
+    let alone = world(vec![]);
+    let faces = open_faces(frozen, &alone, &|s| s != AIR, size);
+    let sides: Vec<usize> = faces
+        .iter()
+        .filter_map(|f| match f.part {
+            Part::Side(face) => Some(face),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        sides.contains(&0) && sides.contains(&4),
+        "the squared +x and +z sides drawn: {sides:?}"
+    );
+    // Beside the quarter it still joins, the side stays undrawn (one surface inside the trunk).
+    let beside = world(vec![([1, 0, 0], log("y"))]);
+    let faces = open_faces(frozen, &beside, &|s| s != AIR, size);
+    assert!(
+        !faces.iter().any(|f| f.part == Part::Side(0)),
+        "a side against a joined log stays hidden"
+    );
+}

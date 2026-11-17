@@ -6,15 +6,6 @@ pins it.
 
 ## Open
 
-### 205. A cut 2×2 trunk shows no faces on its inside (reported 2026-11-17, after 0.73.9)
-
-Owner, 2026-11-17 (screenshot: a giant trunk with a quarter cut away, see-through inside): "Something is very much
-worse with our damage displays. Not sure if it's related to the logs not adapting anymore, but the inside faces aren't
-rendering at all." Suspect (#204's fix, 0.73.4): a quarter frozen with its joined sides keeps them after the neighbour
-breaks, and a joined side is drawn by neither cell (ADR 0072: squared off against another log), so with the neighbour
-gone the side is open. A stored joined side whose neighbour is no longer a joining log must draw its flat full side.
-Owner should see: a cut 2×2 trunk closed on every side, its cut faces drawn.
-
 ### 206. Blocks of a falling or moving piece break in one hit (reported 2026-11-17)
 
 Owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only take one hit to break instead of the
@@ -1096,6 +1087,20 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 205. A cut 2×2 trunk showed no faces on its inside (reported 2026-11-17; fixed after 0.73.10)
+
+Owner, 2026-11-17 (screenshot: a giant trunk with a quarter cut away, see-through inside): "Something is very much
+worse with our damage displays. Not sure if it's related to the logs not adapting anymore, but the inside faces aren't
+rendering at all." Suspect (#204's fix, 0.73.4): a quarter frozen with its joined sides keeps them after the neighbour
+breaks, and a joined side is drawn by neither cell (ADR 0072: squared off against another log), so with the neighbour
+gone the side is open. A stored joined side whose neighbour is no longer a joining log must draw its flat full side.
+Owner should see: a cut 2×2 trunk closed on every side, its cut faces drawn.
+**Cause:** as suspected, #204's frozen joins: `open_faces_beside` dropped every joined side, so a frozen quarter's side
+beside a cut-away quarter was drawn by neither. **Fixed:** a joined side is hidden only while its neighbour still joins it
+(`octagon::joins`); the damage mask walls only those sides (`octagon::closed_mask`). Tests: `dwell-blocks`
+`a_frozen_quarter_draws_its_squared_sides_once_its_neighbours_are_gone`, `dwell-mesh`
+`a_frozen_quarter_alone_is_closed_whole_and_cut` (both faces; red without the fix, green with it).
 
 ### 204. A quarter of a 2×2 trunk turned into a lone log when the logs round it were cut (reported 2026-11-17; fixed after 0.73.3)
 

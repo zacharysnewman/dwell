@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fixed a cut big tree trunk showing no faces inside once the logs round it were cut"
+  ]
+}
