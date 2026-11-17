@@ -42,14 +42,23 @@ impl Record {
     /// The stage it should stand at on world day `day`: a stage every `daysPerStage` days (over
     /// the tree's own `species::rate`) since it reached its own, up to the species' last.
     pub fn due(&self, day: f64) -> u8 {
-        let Some(s) = SPECIES.get(usize::from(self.species)) else {
-            return self.stage;
-        };
-        let per = (f64::from(s.days_per_stage) / f64::from(species::rate(s, self.seed))).max(1e-6);
-        let n = ((day - self.since) / per).floor().max(0.0);
-        let last = s.stages.saturating_sub(1) as f64;
-        (f64::from(self.stage) + n).min(last) as u8
+        due_stage(self.species, self.seed, self.stage, self.since, day)
     }
+}
+
+/// The stage a tree of `species` (index) and `seed`, at `stage` on world day `since`, stands at on
+/// world day `day`: a stage every `daysPerStage` days over its seed's `species::rate`, up to the
+/// species' last. One rule for the server's records ([`Record::due`]) and the far trees' impostors
+/// (`impostor::FarTree::grown_by`, BUGS.md #197), so a far tree is drawn at the stage its real
+/// tree has grown to.
+pub fn due_stage(species: u16, seed: u32, stage: u8, since: f64, day: f64) -> u8 {
+    let Some(s) = SPECIES.get(usize::from(species)) else {
+        return stage;
+    };
+    let per = (f64::from(s.days_per_stage) / f64::from(species::rate(s, seed))).max(1e-6);
+    let n = ((day - since) / per).floor().max(0.0);
+    let last = s.stages.saturating_sub(1) as f64;
+    (f64::from(stage) + n).min(last) as u8
 }
 
 /// Every tree's record, by anchor.

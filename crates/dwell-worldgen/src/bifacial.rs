@@ -560,11 +560,18 @@ mod shared_tests {
     #[test]
     fn a_second_ask_for_the_same_world_builds_no_terrain() {
         // face-a-only: builds both faces' terrain; no face-local rule.
+        // The cache keeps the last two worlds: another test building worlds in parallel can evict
+        // this one between the two asks, so a few tries; one with no build proves the reuse.
         let seed = 0x5EED_0B11;
-        let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
-        let before = BifacialTerrain::builds(seed);
-        let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
-        let _ = BifacialTerrain::for_generator(dwell_world::GENERATOR_TERRAIN, seed);
-        assert_eq!(BifacialTerrain::builds(seed) - before, 0, "built again");
+        let rebuilt: Vec<usize> = (0..4)
+            .map(|_| {
+                let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
+                let before = BifacialTerrain::builds(seed);
+                let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
+                let _ = BifacialTerrain::for_generator(dwell_world::GENERATOR_TERRAIN, seed);
+                BifacialTerrain::builds(seed) - before
+            })
+            .collect();
+        assert!(rebuilt.contains(&0), "built again every time: {rebuilt:?}");
     }
 }

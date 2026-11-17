@@ -2535,6 +2535,16 @@ impl Client {
     }
     /// `?impostors=0|1` (docs/DEV_TOOLS.md): 0 draws the far trees as the LOD sections' tree
     /// cells (`lod_trees.rs`, before the impostors); 1 or anything else the impostors.
+    #[wasm_bindgen(js_name = setGrowthSpeed)]
+    /// `?growth=N` (dev): the far trees' impostors grow N times as fast, as the local server's
+    /// trees do (BUGS.md #197).
+    pub fn set_growth_speed(&self, speed: f64) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_growth_speed(speed);
+    }
     #[wasm_bindgen(js_name = setImpostors)]
     pub fn set_impostors(&self, mode: i32) {
         let on = match mode {

@@ -633,6 +633,19 @@ fn imp_fs(i: ImpOut) -> ImpOutFs {
 }
 "#;
 
+/// How many times a day the far trees are re-packed at their grown stages (BUGS.md #197).
+pub const DAY_STEPS: f64 = 8.0;
+
+/// The re-pack step world day `day` falls in.
+pub fn day_step(day: f64) -> i64 {
+    (day * DAY_STEPS).floor() as i64
+}
+
+/// `trees` as grown by world day `day` (`FarTree::grown_by`).
+pub fn grown_trees(trees: &[FarTree], day: f64) -> Vec<FarTree> {
+    trees.iter().map(|t| t.grown_by(day)).collect()
+}
+
 /// The far trees' GPU side: the atlas, the layers' spheres, the instances, the pipeline.
 pub struct Impostors {
     config: &'static Config,
@@ -652,6 +665,12 @@ pub struct Impostors {
     tiles: HashMap<(u8, i32, i32), Vec<u8>>,
     /// The tiles' instances as placed (face-local), for the trees' states.
     placed: HashMap<(u8, i32, i32), Vec<Instance>>,
+    /// Each tile's far trees as generated, re-packed at the stage they have grown to by `day`
+    /// (BUGS.md #197).
+    raw: HashMap<(u8, i32, i32), Vec<FarTree>>,
+    /// The world day the trees are drawn grown by, and its eighth-of-a-day step last packed.
+    day: f64,
+    day_step: i64,
     /// Each tree's near/impostor state about the eye and the GPU's map of them.
     pub fades: TreeFades,
     dirty: bool,
@@ -883,6 +902,9 @@ impl Impostors {
             count: 0,
             tiles: HashMap::new(),
             placed: HashMap::new(),
+            raw: HashMap::new(),
+            day: 0.0,
+            day_step: 0,
             fades: TreeFades::default(),
             dirty: false,
             far: None,
@@ -1001,6 +1023,10 @@ impl Impostors {
 
     /// A tile's far trees on `face` (tile indices `ti`, `tk`), placed as `Config::instances` does.
     pub fn set_tile(&mut self, face: FaceFrame, ti: i32, tk: i32, trees: &[FarTree]) {
+        self.raw
+            .insert((u8::from(face.is_b()), ti, tk), trees.to_vec());
+        let grown = grown_trees(trees, self.day);
+        let trees = grown.as_slice();
         let leaf = self.config.leaf;
         let mut bytes = Vec::with_capacity(trees.len() * INSTANCE_BYTES as usize);
         for (t, inst) in trees.iter().zip(self.config.instances(trees)) {
@@ -1013,11 +1039,28 @@ impl Impostors {
         self.fades.touch();
     }
 
+    /// The world day (growth days, as the server's tree records count them): every tile re-packed
+    /// at its trees' grown stages each [`DAY_STEPS`]th of a day (BUGS.md #197).
+    pub fn set_day(&mut self, day: f64) {
+        self.day = day;
+        let step = day_step(day);
+        if step == self.day_step {
+            return;
+        }
+        self.day_step = step;
+        let raw = std::mem::take(&mut self.raw);
+        for (&(b, ti, tk), trees) in &raw {
+            let face = if b == 1 { FaceFrame::B } else { FaceFrame::A };
+            self.set_tile(face, ti, tk, trees);
+        }
+    }
+
     /// Drops the tiles `keep` doesn't hold (face, i, k).
     pub fn retain_tiles(&mut self, keep: impl Fn(&(u8, i32, i32)) -> bool) {
         let before = self.tiles.len();
         self.tiles.retain(|k, _| keep(k));
         self.placed.retain(|k, _| keep(k));
+        self.raw.retain(|k, _| keep(k));
         if self.tiles.len() != before {
             self.dirty = true;
             self.fades.touch();
@@ -1185,6 +1228,31 @@ impl Impostors {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_far_trees_are_drawn_grown_by_the_world_day_repacked_each_eighth() {
+        // BUGS.md #197: a far tree's impostor follows the server's growth of its real tree.
+        let oak = dwell_worldgen::species::SPECIES
+            .iter()
+            .position(|s| s.name == "dwell:oak")
+            .expect("the oak") as u16;
+        let t = FarTree {
+            anchor: [3, 40, 7],
+            species: oak,
+            seed: 11,
+            stage: 0,
+            stem: [3, 40, 7],
+            stem_cells: 4,
+        };
+        assert_eq!(grown_trees(&[t], 0.0)[0].stage, 0);
+        assert!(
+            grown_trees(&[t], 17.0)[0].stage > 0,
+            "17 days on it has grown"
+        );
+        assert_eq!(day_step(0.124), 0);
+        assert_eq!(day_step(0.126), 1);
+        assert_eq!(day_step(17.0), 136);
+    }
 
     #[test]
     fn the_tiles_kept_are_those_within_reach() {

@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Far trees now show the size their tree has grown to, so billboards no longer draw over full trees"
+  ]
+}

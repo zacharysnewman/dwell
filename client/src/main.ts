@@ -1307,6 +1307,9 @@ async function start(): Promise<App | null> {
     // ?impostors=0 draws the far trees as the LOD sections' tree cells, as before the impostors.
     const impostorsQ = new URLSearchParams(location.search).get('impostors');
     client.setImpostors(impostorsQ === '0' ? 0 : impostorsQ === '1' ? 1 : -1);
+    // ?growth=N: the far trees' impostors grow as fast as the local server's trees (BUGS.md #197).
+    const growthQ = Number(new URLSearchParams(location.search).get('growth') ?? 'NaN');
+    if (Number.isFinite(growthQ) && growthQ > 0) client.setGrowthSpeed(growthQ);
     client.setDistantShadows(s.features.distantShadows);
     client.setEffects(s.features.hitShards, s.features.particles, s.features.farHerds);
     reportSettings = {
