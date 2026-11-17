@@ -85,14 +85,15 @@ describe('combine and wear (owner, 2026-11-11)', () => {
       ),
     );
     // 4 sticks and 2 fibres also make a wooden shovel; the stone shovel shares the stone tools'
-    // inputs (owner, 2026-11-14).
+    // inputs (owner, 2026-11-14); 2 sticks and 2 fibres make thatch (owner, 2026-11-17).
     expect(tools.map((c) => [c.recipe.name, c.times])).toEqual([
+      ['dwell:thatch_slab', 1],
       ['dwell:stone_axe', 1],
       ['dwell:stone_pickaxe', 1],
       ['dwell:wooden_shovel', 1],
       ['dwell:stone_shovel', 1],
     ]);
-    expect(tools[0] && recipeInputs(tools[0].recipe)).toBe(
+    expect(tools[1] && recipeInputs(tools[1].recipe)).toBe(
       '2 Stick + 2 Rock shard + 2 Grass fiber',
     );
     expect(itemLabel('dwell:wood')).toBe('Wood chunk');
@@ -120,12 +121,12 @@ describe('combine and wear (owner, 2026-11-11)', () => {
     ).toBe('2 Stick');
   });
 
-  it("draws a tool's wear bar from its data (stone axe 32, metal 64); unlimited tools have none", () => {
+  it("draws a tool's wear bar from its data (stone axe 384, metal 768: the Block Stats sheet); unlimited tools have none", () => {
     expect(wearLeft('dwell:stone_axe', 0)).toBeNull();
-    expect(wearLeft('dwell:stone_axe', 8)).toBe(0.75);
-    expect(wearLeft('dwell:stone_axe', 31)).toBeCloseTo(1 / 32);
+    expect(wearLeft('dwell:stone_axe', 96)).toBe(0.75);
+    expect(wearLeft('dwell:stone_axe', 383)).toBeCloseTo(1 / 384);
     // Owner, 2026-11-12: metal tools "have double durability".
-    expect(wearLeft('dwell:metal_axe', 8)).toBe(0.875);
+    expect(wearLeft('dwell:metal_axe', 96)).toBe(0.875);
     expect(wearLeft('dwell:rock_shard', 8)).toBeNull();
   });
 });
