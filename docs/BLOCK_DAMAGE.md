@@ -877,3 +877,35 @@ neighbouring support (the support rule is unchanged).
   `a_tree_falls_toward_the_side_its_bottom_log_was_cut_from` (both faces: cut from +x it falls to +x, from +z to +z,
   the cutter standing on that side; red on the old rule, which tipped it away from the cutter: lean −0.22 x, −0.84 z),
   `breaking_the_bottom_log_of_a_tree_fells_it` (now toward the −x side cut).
+
+## 17. Tool efficiency as a system (owner, 2026-11-17)
+
+Owner: "I've designed a tool efficiency system for blocks, most of the values live on the block definitions
+themselves, except for tool durability by tool and material. ... The calculated values should be what's used, but the
+data definitions should use base hits, and base durability etc." The design is the owner's Block Stats sheet
+(https://claude.ai/artifact/WNbGvJHQd3SP5MjdNYx2C8). Replaces §5's per-block counts per class, the tier speeds and the
+per-item wear list.
+
+- **A block's `damage`:** `baseHits` and `proficiency` per class (`hand`, `shovel`, `axe`, `pickaxe`; absent:
+  `neutral`); or `fixedHits`, the same count with anything (owner: "Door, ladder, dynamite should shake, not break,
+  these are special types, 2 hits hardcoded"; "the same fixed hits of 1 for torch and tall grass"). `hit` (`marks`
+  default, `shake`): how a hit short of breaking shows; `look` and `chips` as before.
+- **`tools.json` `breaking`:** `proficiency` (proficient 0.5, neutral 1, inefficient 2), `materials` (`hits` and
+  `durability` multipliers: body 2 / –, wood 1.5 / 0.5, stone 1 / 1, metal 0.5 / 2), `hand.material` (`body`), per
+  class `durability` (`baseBlocks` 64, its reference `block` and `material`: shovel dirt, axe log, pickaxe stone,
+  each at stone), `repeatS` (one swing pace for every tool and the hand: 0.5 s, the axe's; owner: "all tools should
+  swing at the same rate"), `tools` (item, class, material, contact, clip), `planned` (the wood axe and wood pick:
+  computed for the table, items later; owner: "compute now, add items later").
+- **Computed** by `shared/tools/gen.mjs`: hits = ceil(base × proficiency × material), at least 1; a tool's wear =
+  baseBlocks × its reference block's hits with the class in the reference material (unrounded) × its material's
+  durability (stone shovel 64 × 4 = 256; stone axe and pick 384; metal double, wood half). The game reads only the
+  computed rows; `shared/tools/hits.gen.md` lays them out as the sheet's Hits (Rounded Up) for review.
+- **Inefficient breaks drop nothing** (owner: "inefficient tools cause blocks to not drop anything"): stone and logs by
+  hand (48 hits). Stone by hand is allowed now (owner: "yes allow 48 hits"); the log's `breakWith: "axe"` is gone.
+- **Ramps** take their block's full hits (owner: "they drop a full block worth of resources, so yes full hits").
+- **Blocks not on the sheet** take the nearest sheet block's values, proposals for the owner: snowy grass as grass;
+  red sand, moon dust and moon mare dust as sand; red dirt as dirt; red sandstone and basalt as stone; obsidian 20
+  base; snowy leaves as leaves; build platform as planks; brush and saplings 1 fixed hit.
+- **Not done yet:** the shake itself (the flag is data; the client does not move the block yet); drops (owner: "We'll
+  need to go through drops separately likely").
+

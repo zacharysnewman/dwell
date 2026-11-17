@@ -64,8 +64,8 @@ pub mod fixture {
 
 pub use crate::damage::{BlockDamageDef, CarveProfile, Cracks, DamageLook, DamageLookKind};
 pub use table::{
-    BLOCK_DAMAGE, BREAK_CLASSES, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY,
-    HAND_REPEAT_S, HEAL, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
+    BLOCK_DAMAGE, BREAK_TOOLS, BREAK_WITH, CHOP2_DEFAULT, CREATIVE_WEAR, DURABILITY, HAND_REPEAT_S,
+    HEAL, HINTS, TOOLS, WEAR_BREAK_SOUND, WOODS,
 };
 
 /// The on-screen hint for a tool of `kind` held in a stance (`vertical` or level), in `table`
@@ -697,9 +697,9 @@ pub struct BreakTool {
     pub item: &'static str,
     /// The tool class (`pickaxe`, `shovel`, `axe`, …: `breaking.classes`' keys).
     pub class: &'static str,
-    pub tier: &'static str,
-    /// The tier's break speed, a multiple of the bare hand's.
-    pub speed: f64,
+    /// Its material (`breaking.materials`: `wood`, `stone`, `metal`); its hits are computed into
+    /// each block's [`crate::damage::BlockDamageDef::tools`].
+    pub material: &'static str,
     /// When its swing's head meets the block (s after the click; `contactS`, 0: at once): a hit
     /// with it lands then (WORK_QUEUE item 25).
     pub contact_s: f64,
@@ -738,28 +738,6 @@ pub fn break_repeat_s(held: Option<&str>) -> Option<f64> {
 /// [`break_contact_s_in`] over the game's data.
 pub fn break_contact_s(held: Option<&str>) -> f64 {
     break_contact_s_in(BREAK_TOOLS, held)
-}
-
-/// The break speed of `block` holding `held` (an item name; none: an empty hand), from tables
-/// `classes` (block → tool class) and `tools`: the held tool's tier speed when its class is the
-/// block's, 1 (as before) otherwise.
-pub fn break_speed_in(
-    classes: &[(&str, &str)],
-    tools: &[BreakTool],
-    block: &str,
-    held: Option<&str>,
-) -> f64 {
-    let Some(class) = classes.iter().find(|(b, _)| *b == block).map(|(_, c)| *c) else {
-        return 1.0;
-    };
-    held.and_then(|h| tools.iter().find(|t| t.item == h))
-        .filter(|t| t.class == class)
-        .map_or(1.0, |t| t.speed)
-}
-
-/// [`break_speed_in`] over the build's data.
-pub fn break_speed(block: &str, held: Option<&str>) -> f64 {
-    break_speed_in(BREAK_CLASSES, BREAK_TOOLS, block, held)
 }
 
 /// The break tool class breaking a block needs where blocks are not unlimited (its `breakWith`,
@@ -1433,29 +1411,51 @@ mod tests {
     }
 
     #[test]
-    fn the_right_tool_breaks_its_material_faster_metal_faster_than_stone() {
-        // Pickaxe on stone, shovel on dirt and sand, axe on wood (owner, 2026-11-10).
-        for (block, stone, metal) in [
-            ("dwell:stone", "dwell:stone_pickaxe", "dwell:metal_pickaxe"),
-            ("dwell:dirt", "dwell:wooden_shovel", "dwell:metal_shovel"),
-            ("dwell:sand", "dwell:wooden_shovel", "dwell:metal_shovel"),
-            ("dwell:log", "dwell:stone_axe", "dwell:metal_axe"),
+    fn the_owners_sheet_hits_and_wear_are_the_builds() {
+        // Owner, 2026-11-17 (the Block Stats sheet): hits = ceil(base × proficiency × material).
+        use crate::damage::hits_to_break;
+        for (block, held, hits) in [
+            ("dwell:dirt", None, 16),
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 6),
+            ("dwell:dirt", Some("dwell:stone_shovel"), 4),
+            ("dwell:dirt", Some("dwell:metal_shovel"), 2),
+            ("dwell:dirt", Some("dwell:stone_axe"), 8),
+            ("dwell:log", None, 48),
+            ("dwell:log", Some("dwell:stone_axe"), 6),
+            ("dwell:log", Some("dwell:metal_axe"), 3),
+            ("dwell:stone", None, 48),
+            ("dwell:stone", Some("dwell:stone_pickaxe"), 6),
+            ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
+            ("dwell:stone", Some("dwell:metal_shovel"), 6),
+            ("dwell:thatch", Some("dwell:stone_axe"), 3),
+            ("dwell:tall_grass", None, 1),
+            ("dwell:leaves", Some("dwell:metal_axe"), 1),
+            // A held block or other item is a hand.
+            ("dwell:stone", Some("dwell:dirt"), 48),
+            // A ramp takes its block's full hits (owner: "yes full hits").
+            ("dwell:log_ramp", Some("dwell:stone_axe"), 6),
+            // Special blocks: 2 with anything (owner: "2 hits hardcoded").
+            ("dwell:door", None, 2),
+            ("dwell:door", Some("dwell:metal_axe"), 2),
+            ("dwell:dynamite", Some("dwell:stone_pickaxe"), 2),
         ] {
-            let (bare, s, m) = (
-                break_speed(block, None),
-                break_speed(block, Some(stone)),
-                break_speed(block, Some(metal)),
-            );
-            assert_eq!(bare, 1.0, "{block} by hand is as before");
-            assert!(
-                s > bare && m > s,
-                "{block}: hand {bare}, {stone} {s}, {metal} {m}"
+            assert_eq!(
+                hits_to_break(block, held),
+                Some(hits),
+                "{block} with {held:?}"
             );
         }
-        // The wrong tool, or a block no class names, is as before.
-        assert_eq!(break_speed("dwell:stone", Some("dwell:metal_shovel")), 1.0);
-        assert_eq!(break_speed("dwell:log", Some("dwell:metal_pickaxe")), 1.0);
-        assert_eq!(break_speed("dwell:leaves", Some("dwell:metal_axe")), 1.0);
+        for (item, hits) in [
+            ("dwell:wooden_shovel", 128),
+            ("dwell:stone_shovel", 256),
+            ("dwell:metal_shovel", 512),
+            ("dwell:stone_axe", 384),
+            ("dwell:metal_axe", 768),
+            ("dwell:stone_pickaxe", 384),
+            ("dwell:metal_pickaxe", 768),
+        ] {
+            assert_eq!(durability(item), Some(hits), "{item}");
+        }
         // Every breaking tool is an inventory item with a model look (the tool models).
         for t in BREAK_TOOLS {
             let item = crate::inventory::item(t.item).expect("a breaking tool is an item");
@@ -1468,26 +1468,19 @@ mod tests {
     }
 
     #[test]
-    fn a_fixture_tool_class_and_tier_by_data_alone_breaks_faster() {
-        let classes = [("test:clay", "trowel")];
-        let tools = [BreakTool {
-            item: "test:trowel",
-            class: "trowel",
-            tier: "bronze",
-            speed: 2.0,
-            contact_s: 0.4,
-            repeat_s: None,
-            clip: "break",
-        }];
+    fn every_tool_and_the_hand_swing_at_the_axes_pace() {
+        // Owner, 2026-11-17: "all tools should swing at the same rate (hits per second) including
+        // your hand (we can use the axe as the reference speed)".
+        let axe = break_repeat_s(Some("dwell:stone_axe")).expect("the axe repeats held");
+        assert_eq!(break_repeat_s(None), Some(axe), "the hand");
         assert_eq!(
-            break_speed_in(&classes, &tools, "test:clay", Some("test:trowel")),
-            2.0
+            break_repeat_s(Some("dwell:dirt")),
+            Some(axe),
+            "a held block punches"
         );
-        assert_eq!(break_speed_in(&classes, &tools, "test:clay", None), 1.0);
-        assert_eq!(
-            break_speed_in(&classes, &tools, "test:rock", Some("test:trowel")),
-            1.0
-        );
+        for t in BREAK_TOOLS {
+            assert_eq!(break_repeat_s(Some(t.item)), Some(axe), "{}", t.item);
+        }
     }
 
     #[test]
@@ -1496,8 +1489,7 @@ mod tests {
         let tools = [BreakTool {
             item: "test:trowel",
             class: "trowel",
-            tier: "bronze",
-            speed: 2.0,
+            material: "bronze",
             contact_s: 0.4,
             repeat_s: None,
             clip: "break",

@@ -130,7 +130,7 @@ async function breakBlock(page: Page, cell: Vec3, pages: Page[] = [page]): Promi
   const cells = (await voxel(page, upper)) === (await voxel(page, cell)) ? [upper, cell] : [cell];
   for (const c of cells) {
     await lookAt(page, c);
-    // Blocks take several hits by the tool held (docs/BLOCK_DAMAGE.md: 11 by hand for soil):
+    // Blocks take several hits by the tool held (docs/BLOCK_DAMAGE.md: 16 by hand for dirt, 2 a second):
     // hit until it breaks. edit() refuses (and sends nothing) within BLOCK_EDIT_INTERVAL_MS of
     // the last edit.
     await expect

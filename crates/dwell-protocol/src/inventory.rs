@@ -771,16 +771,17 @@ mod tests {
     }
 
     #[test]
-    fn the_stone_axe_wears_by_one_a_hit_and_breaks_after_its_32nd() {
+    fn the_stone_axe_wears_by_one_a_hit_and_breaks_after_its_last() {
         let hits = |item: &str| crate::chopping::durability(item);
-        assert_eq!(hits("dwell:stone_axe"), Some(32));
+        // Owner, 2026-11-17 (the Block Stats sheet): 64 logs × 6 stone-axe hits.
+        assert_eq!(hits("dwell:stone_axe"), Some(384));
         // Owner, 2026-11-12: metal tools "have double durability".
-        assert_eq!(hits("dwell:metal_axe"), Some(64), "double the stone axe's");
+        assert_eq!(hits("dwell:metal_axe"), Some(768), "double the stone axe's");
         let mut inv = Inventory::default();
         inv.add("dwell:stone_axe", 1);
         assert_eq!(inv.slots[0].as_ref().unwrap().item, "dwell:stone_axe");
-        for n in 1..32 {
-            assert_eq!(inv.wear_held(hits), Wear::Worn(32 - n));
+        for n in 1..384 {
+            assert_eq!(inv.wear_held(hits), Wear::Worn(384 - n));
         }
         let before = inv.clone();
         assert_eq!(inv.wear_held(hits), Wear::Broke);
@@ -793,32 +794,32 @@ mod tests {
     }
 
     #[test]
-    fn the_stone_pickaxe_and_the_wooden_shovel_wear_like_the_stone_axe() {
-        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; 2026-11-12: metal
-        // tools "have double durability".
+    fn the_pickaxe_and_shovels_wear_and_break_as_the_axe_does() {
+        // Owner, 2026-11-11: "stone pick wears too like axe, same with shovel"; the counts are the
+        // Block Stats sheet's (2026-11-17), metal double stone, wood half.
         let hits = |item: &str| crate::chopping::durability(item);
-        for item in [
-            "dwell:stone_pickaxe",
-            "dwell:wooden_shovel",
-            "dwell:stone_shovel",
+        for (item, n) in [
+            ("dwell:stone_pickaxe", 384u16),
+            ("dwell:wooden_shovel", 128),
+            ("dwell:stone_shovel", 256),
         ] {
-            assert_eq!(hits(item), Some(32), "{item}");
+            assert_eq!(hits(item), Some(n), "{item}");
             let mut inv = Inventory::starting();
             inv.slots[0] = None;
             inv.add(item, 1);
             assert_eq!(inv.slots[0].as_ref().unwrap().item, item);
-            for n in 1..32 {
-                assert_eq!(inv.wear_held(hits), Wear::Worn(32 - n), "{item}");
+            for k in 1..n {
+                assert_eq!(inv.wear_held(hits), Wear::Worn(n - k), "{item}");
             }
             assert_eq!(inv.wear_held(hits), Wear::Broke, "{item}");
             assert!(inv.slots[0].is_none(), "{item}: gone");
         }
-        for item in [
-            "dwell:metal_axe",
-            "dwell:metal_pickaxe",
-            "dwell:metal_shovel",
+        for (metal, stone) in [
+            ("dwell:metal_axe", "dwell:stone_axe"),
+            ("dwell:metal_pickaxe", "dwell:stone_pickaxe"),
+            ("dwell:metal_shovel", "dwell:stone_shovel"),
         ] {
-            assert_eq!(hits(item), Some(64), "{item}: double");
+            assert_eq!(hits(metal), hits(stone).map(|h| 2 * h), "{metal}: double");
         }
     }
 

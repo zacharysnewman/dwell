@@ -145,109 +145,40 @@
     }
   ],
   "durability": {
-    "$comment": "Tools wear (owner, 2026-11-11: the stone axe \"should survive 32 hits of durability\"; \"stone pick wears too like axe, same with shovel\": the stone pickaxe and the wooden shovel 32 each; owner, 2026-11-12: metal tools \"have double durability\": the metal axe, pickaxe and shovel 64 each): `items` gives a tool item its hits; a hit that counts (a chop, a bounce off a non-wood solid, or a break hit, with it held; at the swing's contact, never a miss, a swing through only leaves or a cancelled swing: owner, 2026-11-12, \"Tools should only consume durability on hit.\") uses one, and at none left the tool breaks (gone from its slot, `breakSound` played). A tool not listed never wears. `creativeWear`: whether tools wear where blocks are unlimited (false: creative's tools don't). The wear rides in the inventory record (dwell_protocol::inventory, a slot's `wear`).",
+    "$comment": "Tools wear (owner, 2026-11-11; a hit that counts uses one: a chop, a bounce off a non-wood solid, or a break hit, with it held, at the swing's contact, never a miss: owner, 2026-11-12, \"Tools should only consume durability on hit.\"). A break tool's hits are computed from `breaking` (owner, 2026-11-17, the Block Stats sheet: its class's `durability`); a weapon's are its `weapon.durability`. `items` (optional) gives any other tool item its hits. `creativeWear`: whether tools wear where blocks are unlimited. `breakSound`: the sound of a tool breaking from wear.",
     "creativeWear": false,
     "breakSound": "stick_snap",
-    "items": {
-      "dwell:stone_axe": 32,
-      "dwell:stone_pickaxe": 32,
-      "dwell:wooden_shovel": 32,
-      "dwell:stone_shovel": 32,
-      "dwell:metal_axe": 64,
-      "dwell:metal_pickaxe": 64,
-      "dwell:metal_shovel": 64
-    }
+    "items": {}
   },
   "breaking": {
-    "$comment": "Which tool breaks which blocks faster (owner, 2026-11-10: \"pickaxe, shovel, and axe. Stone and Metal variants\"): `classes` maps a tool class to the blocks (by name) it is the right tool for, each block in at most one; `tiers` is a tier's break speed (a multiple of the bare hand's, 1), as a number or `{ speed }` (a hit's bite is not a tier's: it is 0.5 × the block's volume ÷ its hits to break, docs/BLOCK_DAMAGE.md §10, so a faster tier's bites are bigger; owner, 2026-11-12: \"Metal tools break double sized bigger chunks off and reach 50% broken faster, which is when the blocks break. Also have double durability.\": metal speed 2 × stone's; owner, 2026-11-14: the stone shovel digs faster than the wooden one, so the wooden shovel is the `wood` tier, 1.25; the metal axe's `biteM` and `chop2.bite` 2 × the stone axe's); `tools` gives an item (shared/inventory) its class and tier. A break of a block holding the right class goes at its tier's speed, anything else at 1 (dwell_protocol::chopping::break_speed). A tool's `contactS` is when its swing's head meets the block, seconds after the click (the arms' `break` clip strikes at 0.26 s; WORK_QUEUE item 25: the hit, its marks, drops, sound and wear land then, the server applying it that long after the request arrives; none: 0, at once); The axes are break tools as the pickaxes and shovels (owner, 2026-11-14: \"Let's simplify the axe to be like the shovel and pick, without the multiple modes\"; 2026-11-15: \"it was different from the other tools\"; docs/BLOCK_DAMAGE.md §14): a hit is a block edit at their `contactS`, counting down a log's hits, the last breaking the whole log and felling what it held; no build cuts wood (the cut model in `tools`/`woods` above is the chopping vocabulary, tested on shared/tools/fixtures/chop_axes.json). A tool's `repeatOnHold` (owner, 2026-11-12: \"I wanted you to be able to hold the key down for tools like the axe.\"; a chopping tool's in `tools`, a break tool's here, never both): holding the use button keeps swinging it until let go, each swing a full one hitting what is aimed at then (wear on a hit only); a break tool's `repeatS` the time between its swings (default 0.5, at least its `contactS`). A break tool's `clip` is the arms' role its swing plays (default `break`; owner, 2026-11-14: \"when it swings it should swing toward your crosshair, so kind of to the left and forward, so the head of it hits your cross hair. Ensure the hit happens when it 'hits' your crosshair.\"): each tool's head sits at its own length, so each has its own clip, fitted with clip_probe --fit so the head comes in from the right and reaches the crosshair at `contactS` (a clip_probe test pins it); third person plays the body's `break`. `hand` is a punch's (a Break holding no breaking or chopping tool: an empty hand, a block, any other item; owner, 2026-11-13: \"You should also be able to hold 'punch' to dig with your hand.\"): `repeatOnHold` and `repeatS` as a break tool's (the punch lands at once, aimed then), and the server takes a damage hit by hand (one short of breaking) no faster than `repeatS`.",
-    "tiers": {
-      "wood": { "speed": 1.25 },
-      "stone": { "speed": 1.5 },
-      "metal": { "speed": 3 }
+    "$comment": "Hits to break and tool wear as a system (owner, 2026-11-17, the Block Stats sheet: \"the data definitions should use base hits, and base durability etc. this makes our definitions a system instead of a massive data definition per tool, per block, per material\"). A block's `damage` (shared/blocks) gives its `baseHits` and its `proficiency` per class (`hand`, and each of `classes`; absent: `neutral`). `proficiency` is each level's hits multiplier; `materials` each tool material's `hits` multiplier and `durability` multiplier (`body` is the hand's). The hits to break a block with a tool = ceil(baseHits × the block's proficiency for the tool's class × the tool's material's hits), at least 1; by hand (no break tool held: an empty hand, a block, any other item) the `hand`'s class and material. A block broken by a tool (or hand) it is `inefficient` for drops nothing (owner, 2026-11-17: \"inefficient tools cause blocks to not drop anything\"). A class's `durability`: a tool of it survives `baseBlocks` × the hits (unrounded) its `block` takes from a tool of the class in `material` × its own material's `durability` (shovel: 64 × dirt's 4 stone-shovel hits × stone 1 = 256). shared/tools/gen.mjs computes every block × tool and every tool's wear into the build (`BLOCK_DAMAGE`, `DURABILITY`) and the table shared/tools/hits.gen.md; the game reads only those. `tools` gives a break tool item its class and material, its `contactS` (when its swing's head meets the block, s after the click; the arms' `break` clip strikes at 0.26 s; the hit, its marks, drops, sound and wear land then) and its arms' `clip`; `planned` are tools computed for the table that are not items yet (owner: \"compute now, add items later\"). `repeatS`: every break tool and the hand swing at this one pace, held (owner, 2026-11-17: \"all tools should swing at the same rate (hits per second) including your hand (we can use the axe as the reference speed)\"); the server takes a damage hit by hand no faster. `heal`: s after a cell's last hit before it heals, s from all but broken to whole, the blocks each player hit last that never heal. Prototype values (the owner's sheet).",
+    "proficiency": { "proficient": 0.5, "neutral": 1, "inefficient": 2 },
+    "materials": {
+      "body": { "hits": 2 },
+      "wood": { "hits": 1.5, "durability": 0.5 },
+      "stone": { "hits": 1, "durability": 1 },
+      "metal": { "hits": 0.5, "durability": 2 }
     },
+    "hand": { "material": "body" },
     "classes": {
-      "pickaxe": ["dwell:stone", "dwell:stone_ramp"],
-      "shovel": [
-        "dwell:dirt",
-        "dwell:dirt_ramp",
-        "dwell:grass",
-        "dwell:grass_ramp",
-        "dwell:snowy_grass",
-        "dwell:snowy_grass_ramp",
-        "dwell:sand",
-        "dwell:sand_ramp"
-      ],
-      "axe": ["dwell:log", "dwell:log_ramp"]
+      "shovel": { "durability": { "baseBlocks": 64, "block": "dwell:dirt", "material": "stone" } },
+      "axe": { "durability": { "baseBlocks": 64, "block": "dwell:log", "material": "stone" } },
+      "pickaxe": { "durability": { "baseBlocks": 64, "block": "dwell:stone", "material": "stone" } }
     },
+    "repeatS": 0.5,
     "tools": [
-      {
-        "item": "dwell:stone_axe",
-        "class": "axe",
-        "tier": "stone",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_stone_pickaxe"
-      },
-      {
-        "item": "dwell:metal_axe",
-        "class": "axe",
-        "tier": "metal",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_metal_pickaxe"
-      },
-      {
-        "item": "dwell:stone_pickaxe",
-        "class": "pickaxe",
-        "tier": "stone",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_stone_pickaxe"
-      },
-      {
-        "item": "dwell:metal_pickaxe",
-        "class": "pickaxe",
-        "tier": "metal",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_metal_pickaxe"
-      },
-      {
-        "item": "dwell:wooden_shovel",
-        "class": "shovel",
-        "tier": "wood",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_wooden_shovel"
-      },
-      {
-        "item": "dwell:stone_shovel",
-        "class": "shovel",
-        "tier": "stone",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_wooden_shovel"
-      },
-      {
-        "item": "dwell:metal_shovel",
-        "class": "shovel",
-        "tier": "metal",
-        "contactS": 0.26,
-        "repeatOnHold": true,
-        "repeatS": 0.5,
-        "clip": "break_metal_shovel"
-      }
+      { "item": "dwell:wooden_shovel", "class": "shovel", "material": "wood", "contactS": 0.26, "clip": "break_wooden_shovel" },
+      { "item": "dwell:stone_shovel", "class": "shovel", "material": "stone", "contactS": 0.26, "clip": "break_wooden_shovel" },
+      { "item": "dwell:metal_shovel", "class": "shovel", "material": "metal", "contactS": 0.26, "clip": "break_metal_shovel" },
+      { "item": "dwell:stone_axe", "class": "axe", "material": "stone", "contactS": 0.26, "clip": "break_stone_pickaxe" },
+      { "item": "dwell:metal_axe", "class": "axe", "material": "metal", "contactS": 0.26, "clip": "break_metal_pickaxe" },
+      { "item": "dwell:stone_pickaxe", "class": "pickaxe", "material": "stone", "contactS": 0.26, "clip": "break_stone_pickaxe" },
+      { "item": "dwell:metal_pickaxe", "class": "pickaxe", "material": "metal", "contactS": 0.26, "clip": "break_metal_pickaxe" }
     ],
-    "hand": {
-      "repeatOnHold": true,
-      "repeatS": 0.4
-    },
+    "planned": [
+      { "item": "dwell:wooden_axe", "class": "axe", "material": "wood" },
+      { "item": "dwell:wooden_pickaxe", "class": "pickaxe", "material": "wood" }
+    ],
     "heal": { "delayS": 10, "fullS": 30, "keepLast": 3 }
   }
 }

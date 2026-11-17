@@ -6,6 +6,24 @@ pins it.
 
 ## Open
 
+### 204. A quarter of a 2×2 trunk turns into a lone log when the logs round it are cut (reported 2026-11-17)
+
+Owner, 2026-11-17: "Another bug to queue, logs shouldn't "adapt" when blocks break around them. Like a quarter log
+shouldn't become a solitary log when you cut the logs around it." A giant tree's trunk is four logs, each a quarter
+of the 2×2 trunk (its `width` property and facing); cutting its neighbours re-shapes the one left into a single
+log's look. Suspect: the log's shape is computed from its neighbours (an adaptive look or a neighbour-reshape on
+change) rather than kept as placed. Owner should see: a quarter log keeps its quarter shape whatever is cut round it.
+
+### 203. A 2×2 trunk shows holes in its mesh when cut at an inside edge (reported 2026-11-17)
+
+Owner, 2026-11-17: "A bug for up next, the big (2x2 trees show holes in mesh when cutting inside edge)". Screenshot: a
+giant tree's 2×2 log trunk hit with the stone axe where its four logs meet; past the carved notch the inner faces are
+missing, so the grass and sky behind show through (a see-through gap along the cut's inside edge). Repro: a giant
+(2×2 trunk) tree, axe its trunk at the seam between two of its logs until a notch opens. Suspect: the carved mesh of a
+damaged cell (`mesher/damage_mesh.rs`, BLOCK_DAMAGE.md §6.2) or the felling cut's open faces assume the neighbour
+across the struck face is air or a full face, so a face against another log of the same trunk is culled while the
+carve opens it. Owner should see: a cut 2×2 trunk solid behind its notch, no see-through gaps.
+
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
@@ -13,6 +31,19 @@ trees showing at the same time, not like just when transitioning, but both fully
 billboard's hand-over to the chunk's full trees never completes for some trees (a chunk meshed with its trees while
 the far layer still counts it as not loaded, or the two decide by different distances). Owner should see: each tree
 drawn once, as a billboard or as the full tree, never both except during the brief fade.
+
+Owner's repro (2026-11-17, 0.73.0 sha 0da2f58, seed 2552213262, generator 8; three block dumps and screenshots, each a
+closer fly-in toward the same trees, looking yaw 253.7°, pitch −34°): "First screenshot is trunks and billboards (I
+thought we weren't handling trunks separately from leaves now, so this one was surprising), second is full trees and
+billboards at the same time, and third is one of the trees is now just tree, no billboard, and one tree is still full
+tree + billboard."
+- Stage 1, feet (−12658.6, 131.9, −6893.3): near trees drawn as a bare trunk under a billboard canopy (the trunk
+  meshed, the leaves only as the billboard).
+- Stage 2, feet (−12701.7, 101.3, −6905.8): full trees (meshed leaves) and their billboards both drawn.
+- Stage 3, feet (−12725.6, 84.3, −6912.8): one tree full alone (fixed), the other still full + billboard.
+Suspect, from the stages: the billboard is dropped per tree (or per chunk) only when the tree's leaf chunk is meshed
+and the billboard layer is rebuilt; a tree whose trunk chunk meshed first, or whose billboard's LOD node was not
+rebuilt after its leaves meshed, keeps its billboard (stage 1: the canopy still a billboard over a meshed trunk).
 
 ### 196. Realistic's rivers don't start in the mountains
 

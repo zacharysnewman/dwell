@@ -3269,6 +3269,9 @@ impl Server {
         // and the cells a last hit broke, with their hits (the destroy drops what is left).
         let mut hits: Vec<([i32; 3], dwell_blocks::StateId, u32, u32)> = Vec::new();
         let mut destroyed_after: HashMap<[i32; 3], u32> = HashMap::default();
+        // Cells broken by a tool (or hand) the block is inefficient with: they drop nothing
+        // (owner, 2026-11-17: "inefficient tools cause blocks to not drop anything").
+        let mut barren: HashSet<[i32; 3]> = HashSet::default();
         // The cells broken through by damage this tick and the side their hits took out.
         let mut cut_sides: Vec<([i32; 3], [f64; 2])> = Vec::new();
         // Cells a hit damaged this tick, for the clients that draw damage, and who hit them.
@@ -3373,6 +3376,9 @@ impl Server {
                     let state = self.world.get_voxel_if_loaded(outcome.cell);
                     let block = dwell_blocks::block_of(state).name;
                     let held = held_break_item(s, uses_items);
+                    if !dwell_protocol::damage::drops_when_broken(block, held) {
+                        barren.insert(outcome.cell);
+                    }
                     let chunk = dwell_protocol::damage::hit_chunk(block, held);
                     let need = if self.config.one_hit_breaks {
                         Some(1)
@@ -3628,6 +3634,9 @@ impl Server {
             self.drop_hit(was, dwell_world::centre_of_cell(cell), n, k);
         }
         for (cell, was) in broken {
+            if barren.contains(&cell) {
+                continue;
+            }
             match destroyed_after.get(&cell) {
                 Some(&n) => self.drop_destroyed(was, dwell_world::centre_of_cell(cell), n),
                 None => self.drop_block(was, dwell_world::centre_of_cell(cell)),
