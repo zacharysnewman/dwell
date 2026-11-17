@@ -4011,3 +4011,7 @@ current version and in the PR."
   octaves, the ocean-face spawn (15.3 s → 0.6 ms), the biome data's memory (27.9 → 17.2 MB), 3 test files. Main has
   moved 287 commits since its base (species trees, sagebrush, far tint, etc.); 18 commits on the branch.
   While shooting it: BUGS.md #202 found and fixed (a worldgen world's far terrain drew the default island).
+  Owner, 2026-11-17: "I'd like to "take selected parts across" and compare with current (screenshots)." The parts:
+  the climate rules (latitude, sea moderation, the lee floor, moisture recovery), the ocean-face spawn fix, the biome
+  data's memory cut and the rock layering, without the real-km plates. Owner should see: whole-world screenshots of
+  main against main with those parts.
