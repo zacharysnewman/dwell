@@ -150,9 +150,9 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// giants to 4× on 2×2 trunks). The same hashes at the v0.71.0 tag and on main then: nothing since
 /// changed the starter's terrain within the line. Re-pinned for the 0.72 line: the red desert's
 /// sagebrush at a quarter (the owner: "Yes red desert sage brush, go"; the Starter is to go, so
-/// only re-pinned).
+/// only re-pinned). And for rocks' far tint (`lodCanopy`, BUGS.md #195; LOD rows only).
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "4241e28090c93b51"), (Face::B, "6d2cd10a16028d21")];
+    [(Face::A, "cfa0fa2a0a615f5f"), (Face::B, "ddd04077016f7ee4")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

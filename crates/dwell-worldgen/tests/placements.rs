@@ -415,6 +415,7 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         rotations: &[0],
         variants: &[],
         tops: 1.0,
+        lod_canopy: true,
         cliff_reach: 0.0,
         wet: false,
         bleed: 0.0,
@@ -451,4 +452,96 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
     if g.state_at(t.anchor[0], t.anchor[1], t.anchor[2]) == M.air {
         assert_eq!(Some(chunk.get(lx, ly, lz)), at);
     }
+}
+
+#[test]
+fn rocks_put_no_tint_on_distant_terrain() {
+    // BUGS.md #195 (owner, 2026-11-16: "big gray speckles across the whole map at medium to far
+    // LODs … mostly disappear when up close … from … the random rocks/boulders"): at levels
+    // coarser than the trees, a share of columns took a placement's commonest block on top, stone
+    // for rocks. A rule with `lodCanopy: false` tints nothing: the far stone tops are the
+    // world's without it.
+    use dwell_world::lod::{LodCells, LodCoord, ORIGIN_X, ORIGIN_Y, ORIGIN_Z, section_size};
+    let section_at = |level: i32, x: i64, y: i64, z: i64| {
+        let s = section_size(level);
+        let d = |v: i64, o: i64| (v - o).div_euclid(s) as i32;
+        LodCoord::new(level, d(x, ORIGIN_X), d(y, ORIGIN_Y), d(z, ORIGIN_Z))
+    };
+    let rule = |lod_canopy: bool| Placement {
+        name: "test_rocks",
+        structures: &[("dwell:proto_rock", 1)],
+        on: &["dwell:grass"],
+        footprint_on: false,
+        pad_trunk: false,
+        grid: 6,
+        density: 1.0,
+        grove_wavelength: 0,
+        grove_coverage: 1.0,
+        grove_outside: 1.0,
+        min_height: 0,
+        max_height: 1000,
+        rise_full: 0,
+        rise_low: 1.0,
+        max_gradient_sq: 4.0,
+        spacing: 0,
+        rotations: &[0],
+        variants: &[],
+        tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
+        bleed: 0.0,
+        lod_canopy,
+    };
+    let biome = Biome {
+        placements: &["test_rocks"],
+        ..BIOMES[0]
+    };
+    let bare = Biome {
+        placements: &[],
+        ..BIOMES[0]
+    };
+    let tinted = rule(true);
+    let plain = rule(false);
+    let worlds = [
+        TerrainGenerator::new(7)
+            .with_biome(&biome)
+            .with_placements(std::slice::from_ref(&tinted)),
+        TerrainGenerator::new(7)
+            .with_biome(&biome)
+            .with_placements(std::slice::from_ref(&plain)),
+        TerrainGenerator::new(7)
+            .with_biome(&bare)
+            .with_placements(&[]),
+    ];
+    let canopy = worlds[0].planters()[0].canopy();
+    let anchors: Vec<[i32; 3]> = worlds[0]
+        .trees_in((64, 64), (575, 575))
+        .iter()
+        .step_by(97)
+        .map(|t| t.anchor)
+        .collect();
+    assert!(anchors.len() > 3, "rocks placed: {}", anchors.len());
+    let mut counts = [0usize; 3];
+    let mut cells = LodCells::new();
+    for (w, g) in worlds.iter().enumerate() {
+        for &[x, y, z] in &anchors {
+            for level in [3, 4] {
+                g.generate_lod(
+                    section_at(level, x.into(), y.into(), z.into()),
+                    &mut cells,
+                    None,
+                );
+                counts[w] += cells.iter().filter(|&&m| m == canopy).count();
+            }
+        }
+    }
+    eprintln!(
+        "{canopy:?} cells: tinted {} untinted {} bare {}",
+        counts[0], counts[1], counts[2]
+    );
+    assert!(counts[0] > counts[2], "a tinting rule does tint");
+    assert_eq!(
+        counts[1], counts[2],
+        "an untinted rule's far tops are the bare world's"
+    );
 }

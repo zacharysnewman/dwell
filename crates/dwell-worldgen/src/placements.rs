@@ -60,6 +60,10 @@ pub struct Placement {
     /// `TerrainGenerator::erosion_at`'s margin above 0; 1: no matter). Sagebrush mostly on the
     /// floors (WORK_QUEUE item 15, 0.68: "tops read green under thick sagebrush").
     pub tops: f32,
+    /// Whether distant terrain coarser than the trees tints a share of its columns with the
+    /// structures' commonest block (`Planter::canopy`): leaves over a forest, yes; boulders and
+    /// talus, no (their stone tops read as grey specks far off that vanish near: BUGS.md #195).
+    pub lod_canopy: bool,
     /// Talus at cliff feet (0.69; owner, 2026-11-14: "Stone cliff regions should get rocks and
     /// boulders at the base of cliffs"): above 0, the density falls from full at a rock wall's foot
     /// to none this many m out (`TerrainGenerator::cliff_factor`); 0: walls don't matter.
@@ -923,6 +927,7 @@ mod tests {
             rotations: &[0, 1, 2, 3],
             variants: &[],
             tops: 1.0,
+            lod_canopy: true,
             cliff_reach: 0.0,
             wet: false,
             bleed: 0.0,
@@ -971,6 +976,7 @@ mod tests {
             rotations: &[0],
             variants: &[],
             tops: 1.0,
+            lod_canopy: true,
             cliff_reach: 0.0,
             wet: false,
             bleed: 0.0,

@@ -36,6 +36,12 @@ random "rocks/boulders" scattered about." Suspects: the LOD's downsampling picks
 boulder cell as a far cell's surface (a minority material winning a coarse cell, or a cell inside the ground exposed
 by the coarse mesh). Owner should see: no grey speckles at any distance; far terrain shows the material it shows up
 close.
+Part 1 (2026-11-17): at LOD levels coarser than the trees, a share of columns took a placement's commonest block on
+top: stone for boulders and talus, grey specks far off that the real 1–3 m rocks replace up close. Placements now
+say `lodCanopy` (false for boulders and talus). Test red → green: `placements::rocks_put_no_tint_on_distant_terrain`.
+LOD rows only (the Realistic golden's 68 lod rows, no chunk row): a look, not a new line. At seed 7's spawn it
+changed ~35 pixels of a frame, so it is not the main source there: **open**, a screenshot or a spot of the speckles
+asked of the owner (suspect next: a coarse cell on a slope taking the stone under the soil as its surface).
 
 ### 194. The game stalls every few seconds while grass grows
 
