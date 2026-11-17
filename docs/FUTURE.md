@@ -9,6 +9,18 @@ Each entry notes what the current architecture already does to keep the option o
 ---
 
 
+
+## Flood light off the main thread (PR #482, closed 2026-11-17; owner: "Close, saving info for possible future optimization if needed")
+
+Draft, 2026-11-10, branch `claude/flood-light-off-main` (kept on GitHub). Built: `dwell_world::light::LightRegion`, one
+chunk's flood light from the chunk and a 15-cell apron alone (no `LightMap` state), exact against `LightMap::padded` on
+both faces (tunnels, caves, lamps, torches, the midplane; the tests fail with a 4-cell apron or the sky input ignored).
+Native timing per chunk: `LightMap::load` on the main thread 1.56 ms; `LightRegion::gather` 0.74 ms;
+`LightRegion::light` (the worker's share) 1.68 ms. Left to do: a per-column sky index on the main thread; the remesh
+sets without the map's `take_changed`; the job payload (a 62³ region is ~476 KB; send the 27 chunks or the apron); the
+other light readers (character light, water, nearby lights) reading light returned with the mesh; then the bench before
+and after. Revisit if a profile of flight or loading shows the light's load among the main thread's top costs.
+
 ## Moisture recovery in the rain march (from #976; dropped from 0.73, owner 2026-11-17)
 
 Built and kept as data, off: `climate.json` `rain.recoverM` (m; 0 = off). Over land the marching air takes moisture
