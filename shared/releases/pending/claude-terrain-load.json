@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Loading no longer gets stuck for up to 20 seconds waiting for a few nearby chunks: worlds open in about half the time."
-  ]
-}

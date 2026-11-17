@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.32",
+      "changes": [
+        "Loading no longer gets stuck for up to 20 seconds waiting for a few nearby chunks: worlds open in about half the time."
+      ]
+    },
+    {
       "version": "0.71.31",
       "changes": [
         "Worlds open much faster: \"Finding a place to stand\" takes about a quarter of the time on a new world, and well under a second when reopening one."
