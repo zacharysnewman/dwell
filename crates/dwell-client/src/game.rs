@@ -1789,6 +1789,10 @@ impl<S: Scene> Game<S> {
         ck: i32,
         n: i32,
     ) -> Vec<dwell_world::blueprint::TownSite> {
+        if std::env::var("X").is_err() {
+            let _ = (b, ci, ck, n);
+            return Vec::new();
+        } // EXPERIMENT
         let mut cells: Vec<(i32, i32)> = (ck - n..=ck + n)
             .flat_map(|k| (ci - n..=ci + n).map(move |i| (i, k)))
             .collect();
