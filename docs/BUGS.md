@@ -6,14 +6,6 @@ pins it.
 
 ## Open
 
-### 204. A quarter of a 2×2 trunk turns into a lone log when the logs round it are cut (reported 2026-11-17)
-
-Owner, 2026-11-17: "Another bug to queue, logs shouldn't "adapt" when blocks break around them. Like a quarter log
-shouldn't become a solitary log when you cut the logs around it." A giant tree's trunk is four logs, each a quarter
-of the 2×2 trunk (its `width` property and facing); cutting its neighbours re-shapes the one left into a single
-log's look. Suspect: the log's shape is computed from its neighbours (an adaptive look or a neighbour-reshape on
-change) rather than kept as placed. Owner should see: a quarter log keeps its quarter shape whatever is cut round it.
-
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
@@ -1069,6 +1061,23 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 204. A quarter of a 2×2 trunk turned into a lone log when the logs round it were cut (reported 2026-11-17; fixed after 0.73.3)
+
+Owner, 2026-11-17: "Another bug to queue, logs shouldn't "adapt" when blocks break around them. Like a quarter log
+shouldn't become a solitary log when you cut the logs around it." A giant tree's trunk is four logs, each a quarter
+of the 2×2 trunk (its `width` property and facing); cutting its neighbours re-shapes the one left into a single
+log's look. Suspect: the log's shape is computed from its neighbours (an adaptive look or a neighbour-reshape on
+change) rather than kept as placed. Owner should see: a quarter log keeps its quarter shape whatever is cut round it.
+**Cause:** a log's joined sides were read from its neighbours every time it was meshed (ADR 0072: logs placed side by
+side join), so with the other quarters gone it was a lone octagon. **Fixed:** logs gain an optional `joined` property
+(`auto`, the default: as before; or 0–15, the four sides across its axis). When a log breaks (an edit's break, the
+older client's axe), the server first writes each log joined to it its joined sides then
+(`dwell_blocks::octagon::frozen_beside`); `joined_mask` returns a stored mask as it is. Not breaking (ADR 0063: a new
+property whose default means "as before"); the goldens re-pinned to the registry and hold by name against 0.73.3's.
+Tests: `dwell-blocks` `a_quarter_of_a_two_by_two_trunk_keeps_its_joined_sides_when_its_neighbours_break`; `dwell-sim`
+`a_quarter_of_a_two_by_two_trunk_keeps_its_shape_when_the_logs_round_it_are_cut` (both faces; red with the server's
+freeze taken out, green with it).
 
 ### 203. A 2×2 trunk showed holes in its mesh when cut at an inside edge (reported 2026-11-17; fixed after 0.73.2)
 

@@ -590,3 +590,65 @@ fn the_held_axe_reaches_the_others_that_understand_it_by_name() {
     say_held(&mut fx, 1, "dwell:stone", false);
     assert!(held_tools_to(&mut fx, 2).iter().any(|h| h.tool.is_empty()));
 }
+
+dwell_world::both_faces!(
+    fn a_quarter_of_a_two_by_two_trunk_keeps_its_shape_when_the_logs_round_it_are_cut(
+        f: FaceFrame,
+    ) {
+        // BUGS.md #204 (owner, 2026-11-17: "logs shouldn't "adapt" when blocks break around them.
+        // Like a quarter log shouldn't become a solitary log when you cut the logs around it.").
+        let mut fx = scene(f, "creative", false);
+        let y = log(f, "y");
+        for [x, z] in [[1, 1], [2, 1], [1, 2], [2, 2]] {
+            let [wx, wy, wz] = f.cell([x, BASE, z]);
+            fx.server.world().set_voxel(wx, wy, wz, y);
+        }
+        let mask = |fx: &mut Fixture| {
+            let [x, yy, z] = f.cell([1, BASE, 1]);
+            let w = fx.server.world();
+            let m = w.get_voxel(x, yy, z);
+            let mut at = |o: [i32; 3]| w.get_voxel(x + o[0], yy + o[1], z + o[2]);
+            let mut near = std::collections::HashMap::new();
+            for o in [
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, -1, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+            ] {
+                near.insert(o, at(o));
+            }
+            dwell_blocks::octagon::joined_mask(m, &|o| near.get(&o).copied().unwrap_or(0))
+        };
+        let before = mask(&mut fx);
+        assert_ne!(before, 0, "joined to the trunk's other quarters");
+        // The scene's player (at the origin) holds the axe: hit each on its side toward the player
+        // until it breaks.
+        for (c, face) in [([2, BASE, 1], 5), ([1, BASE, 2], 1)] {
+            for _ in 0..12 {
+                if cell_is(&mut fx, f, c) == M.air {
+                    break;
+                }
+                fx.send(
+                    1,
+                    Message::BlockEditRequest(BlockEditRequest {
+                        action: BlockEditAction::Break,
+                        cell: f.cell(c),
+                        face: f.cell_face(face) as u8,
+                        material: 0,
+                        rows: 1,
+                        down: false,
+                        point: None,
+                    }),
+                );
+                for _ in 0..40 {
+                    fx.server.step();
+                }
+            }
+        }
+        assert_eq!(cell_is(&mut fx, f, [2, BASE, 1]), M.air);
+        assert_eq!(cell_is(&mut fx, f, [1, BASE, 2]), M.air);
+        assert_eq!(mask(&mut fx), before, "the quarter keeps its squared sides");
+    }
+);
