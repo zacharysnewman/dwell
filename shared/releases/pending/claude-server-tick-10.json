@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Growing grass no longer causes stutters: the server keeps a copy of the ground instead of rebuilding it."
-  ]
-}
