@@ -2025,6 +2025,13 @@ downloads `materials.json` and `palette.json` (drop them into `shared/textures/`
 the build's data changes); Reset textures returns to the build's.
 
 
+## The loading screen's missing chunks
+
+`__dwell.nearMissing()` (2026-11-17, BUGS.md #200): the near ring's centre (`[cx, cy, cz, x, y, z]`, the chunk and
+the predicted capsule centre it is taken from), then each ring chunk the loading screen still waits for, `[x, y, z,
+loaded, drawable, drawnByLod, lodKnowsEmpty]` (1/0). A chunk never loaded while the rest are drawn is one the
+server isn't sending.
+
 ## The server's tick budget (priority 0, 2026-11-16)
 
 The owner: "it's absolutely mandatory that the server never drops below 60fps". Two tools measure it:

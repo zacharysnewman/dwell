@@ -120,6 +120,16 @@ Last updated: 2026-11-11 (0.52.108).
   installed maps) and clones it. Native start 2.5 → 0.9 s. Browser (seed 3218026833): "Finding a place to stand"
   11.1 → 2.6 s new, 0.7 s reopened (the spawn search is skipped on a reopen: the saved spawn). Left: "Loading the
   terrain" ~10 s, new or reopened.
+  Owner, 2026-11-17: "Are there other easy wins for the rest of loading, reusing instead of rebuilding?" Next:
+  "Loading the terrain" (10.1 s new and reopened on seed 3218026833): find what fills it, reuse what a reopen can.
+  Owner should see: reopening a world reaches play in a few seconds.
+  Owner: "Ensure you check a new world, a regenerated world, and a previously generated world." Every loading
+  measurement covers the three: a new seed (nothing cached on the device), the same seed regenerated (`fresh=1`: its
+  maps cached) and the world reopened.
+  Done (BUGS.md #200): the near ring one less than the server's view (a chunk-border disagreement left chunks never
+  sent, the screen waiting out 20 s). New/regenerated/reopened: seed 987654321 24.5/22.3/8.3 → 10.6/8.8/7.5 s, seed
+  3218026833 15.9/14.1/11.8 → 11.0/9.0/7.0 s. Next: the 2–3 s before the first chunk arrives (the local server's
+  first ticks late), "Loading the terrain" still ~6 s.
 - **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
   and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
   `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to

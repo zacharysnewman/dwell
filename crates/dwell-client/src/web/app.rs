@@ -2968,6 +2968,43 @@ impl Client {
         o.into()
     }
 
+    /// The near ring's chunks the loading screen still waits for (`__dwell.nearMissing()`): each
+    /// `[x, y, z, loaded, drawable, drawnByLod, lodKnowsEmpty]` (1/0).
+    #[wasm_bindgen(js_name = nearMissing)]
+    pub fn near_missing(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return JsValue::NULL;
+        };
+        let out = js_sys::Array::new();
+        // First: the ring's centre chunk and the position it is taken from.
+        let p = g.debug_position();
+        let c = dwell_world::chunk_of_pos(p);
+        let head = js_sys::Array::new();
+        for v in [
+            f64::from(c.x),
+            f64::from(c.y),
+            f64::from(c.z),
+            p[0],
+            p[1],
+            p[2],
+        ] {
+            head.push(&JsValue::from(v));
+        }
+        out.push(&head);
+        for (k, f) in g.near_missing() {
+            let row = js_sys::Array::new();
+            for v in k {
+                row.push(&JsValue::from(v));
+            }
+            for b in f {
+                row.push(&JsValue::from(u8::from(b)));
+            }
+            out.push(&row);
+        }
+        out.into()
+    }
+
     /// The `window.__dwell.state()` object (GameDebugState), or null before playing.
     #[wasm_bindgen(js_name = debugState)]
     pub fn debug_state(&self) -> JsValue {

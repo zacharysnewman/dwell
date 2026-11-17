@@ -73,8 +73,8 @@ export const LOADING_ESTIMATE = {
   calibrationPower: 0.25,
   overrunFraction: 0.2,
   device: { referenceCores: 8, minFactor: 0.6, maxFactor: 3, phoneFactor: 2, lowMemoryGB: 4, lowMemoryFactor: 1.4, cpuFactor: 4 },
-  /** The near ring's chunks (radiusChunks 3): the terrain's count. */
-  ringChunks: 179,
+  /** The near ring's chunks (radiusChunks 2): the terrain's count. */
+  ringChunks: 81,
   stages: {
     game: { scales: 'network', baseS: 0.2, totalGuess: 9000000, bytesPerS: 4000000 },
     graphics: { scales: 'device', baseS: 0.4 },

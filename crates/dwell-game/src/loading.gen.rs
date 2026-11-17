@@ -2,7 +2,7 @@
 
 /// The loading screen's tunables (shared/look/loading.json).
 pub const LOADING: LoadingTunables = LoadingTunables {
-    radius_chunks: 3,
+    radius_chunks: 2,
     timeout_s: 20.0,
 };
 
