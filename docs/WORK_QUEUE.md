@@ -4034,6 +4034,12 @@ current up next work." Not to be worked until the owner organizes the up-next wo
 
 - **Door swing animation:** doors open and close at once today (the wood sound only); an open/close swing.
 - **Hit table:** the tools' hits and times to break blocks (½ m cells may feel slow); the owner's targets.
+- **Dropped items bigger, ground sticks and rocks auto-picked up (owner, 2026-11-17):** "I'd also like to add a follow
+  up to make dropped items 3x bigger. And make ground sticks and rocks on the ground auto pickup replacing the click to
+  drop. If some items are larger than others, I want to kind of normalize the sizes." (Read as: the sticks and rocks
+  lying on the ground, picked up today by a click, are picked up by walking over them as dropped items are.) Owner
+  should see: dropped items about 3× today's size, of similar sizes to each other; walking over a ground stick or rock
+  picks it up.
 - **Spawn search:** ~2 s of "Finding a place to stand" on a new or regenerated world (the search for a level patch
   near a river); a faster search or a cache by seed.
 - **Rivers from the mountains (BUGS.md #196):** owner: "Yes A and B for River's add to follow up." Both: (a) each river
