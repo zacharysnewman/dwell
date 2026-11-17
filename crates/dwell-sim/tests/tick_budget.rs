@@ -1,7 +1,9 @@
 //! PRIORITY 0 (owner, 2026-11-16: "it's absolutely mandatory that the server never drops below
 //! 60fps"): the server's tick on the owner's world (seed 3218026833, where they saw the stutter,
-//! BUGS.md #194), a player moving at a sprint through it, its jobs answered off the tick as the
-//! browser's are. Prints the worst ticks with their phases; asserts the budget.
+//! BUGS.md #194), a player moving at a sprint through it (`TICK_FLY=1`: flying at 362 m/s), its jobs
+//! answered off the tick as the browser's are. Prints the worst ticks with their phases and fails a
+//! tick over `TICK_BUDGET_MS` (default 8 natively). `TICK_GROWTH_SPEED` (default 60: a world day
+//! every 20 s) sets how fast trees and grass grow.
 
 mod common;
 
@@ -34,7 +36,10 @@ fn the_owners_world_at_a_sprint() {
         worldgen_threads: 0,
         autosave_seconds: 10,
         // A world day every 20 s: grass and trees grow as in an old world.
-        growth_speed: 60.0,
+        growth_speed: std::env::var("TICK_GROWTH_SPEED")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60.0),
         store: Some(WorldStore::new(WorldDb::in_memory().expect("opens"), false)),
         ..ServerConfig::default()
     });
@@ -163,4 +168,16 @@ fn the_owners_world_at_a_sprint() {
     for (ms, t, phases) in sorted.iter().take(12) {
         eprintln!("WORST {ms:.2} ms at tick {t}: {phases:?}");
     }
+    // The budget (priority 0): no tick over `TICK_BUDGET_MS` natively (default 8; the browser runs
+    // ~2–3× slower, so 8 natively is ~16–24 ms there at worst).
+    let budget: f64 = std::env::var("TICK_BUDGET_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8.0);
+    assert!(
+        all[n - 1] <= budget,
+        "a tick of {:.2} ms, over the {budget} ms budget: {:?}",
+        all[n - 1],
+        sorted[0]
+    );
 }

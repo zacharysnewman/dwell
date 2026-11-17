@@ -89,6 +89,11 @@ Last updated: 2026-11-11 (0.52.108).
   collision ticks (~7 ms natively), ecology at the join, then the budget test.
   Round 11: the sprint harness's collision ticks are tree growth's rebuilds, shown 60× by the harness's growth speed
   (a smaller item, BUGS.md #194). Next: ecology at the join, then the budget test.
+  Round 12 (2026-11-17): the budget gate: `tests/tick_budget.rs` fails a tick over `TICK_BUDGET_MS` (8 natively);
+  flight 2.6 ms, the sprint 3.6 ms at the game's growth speed. **Status:** in the browser (bench `stutter-run`,
+  `stutter-fly`, all rounds in) every second's worst tick after the join is ≤ 11 ms (was up to 664 ms in round 1,
+  39–71 ms flying). Left: the join's first second (ecology's islands built at the first tick, ~25 ms, during
+  loading), tree growth's collision rebuilds (occasional), the owner's look.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
