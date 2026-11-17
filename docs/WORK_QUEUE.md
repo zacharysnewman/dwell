@@ -16,6 +16,22 @@ Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
 
+- **Owner, 2026-11-17 (tool efficiency; before the other up-next work):** "The next task I want you to work on
+  before the other up next tasks is this: https://claude.ai/artifact/WNbGvJHQd3SP5MjdNYx2C8#sheet-sht_6jtd3xp8hj.0 I've
+  designed a tool efficiency system for blocks, most of the values live on the block definitions themselves, except
+  for tool durability by tool and material. We'll need to go through drops separately likely. The calculated values
+  should be what's used, but the data definitions should use base hits, and base durability etc. this makes our
+  definitions a system instead of a massive data definition per tool, per block, per material. Let me know how you
+  plan to implement." and "One thing not covered in the sheet is that all tools should swing at the same rate (hits
+  per second) including your hand (we can use the axe as the reference speed)." and "I'm probably missing a number of
+  blocks, list the ones you still need values for." The sheet ("Block Stats"): a block's base hits and per class
+  (hand, shovel, axe, pick) Proficient 0.5× / Neutral 1× / Inefficient 2×; the tool material's hits multiplier (body
+  2×, wood 1.5×, stone 1×, metal 0.5×); hits = ceil(base × proficiency × material); a tool class's durability = base
+  blocks (64) × its reference block's hits with the stone tool × the material's durability multiplier (wood 0.5×,
+  stone 1×, metal 2×). Drops later, separately. Owner should see: each block taking the sheet's hits with each tool
+  and by hand, every tool and the hand swinging at the axe's pace, tools wearing out at the sheet's durability.
+  Status: plan and the missing blocks sent to the owner (2026-11-17); waiting on the answers.
+
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
   world. Iterating from our first version we could see our big plate world, up to our current version. First it may
