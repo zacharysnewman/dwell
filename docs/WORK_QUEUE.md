@@ -193,6 +193,10 @@ Last updated: 2026-11-11 (0.52.108).
   (timed: run alone), `realistic_sagebrush`'s rock-wall check: **to fix with the 0.72 worldgen line** (with the
   red-desert brush, the spawn town and the rivers). Then (2026-11-17): `shared/look/loading.test.mjs` updated for the ring of 81 (BUGS #200);
   `lava_world`'s two Starter tests parked (the Starter is to go); `region_edits`' brush test found BUGS #201 (fixed).
+  e2e `edit.spec` (red on a GPU too, not CI-only): the palette test skips the door (a block over four cells, broken
+  as one: dwell-world tests/doors.rs), and the two-client test picks stone and sand by name (the hotbar's slots are the
+  inventory's). The rest of the Rust workspace passes (`--no-fail-fast`). Still red on CI only: buildDrag towers (#30),
+  characters (CI's renderer), spawn reopen (#51).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the

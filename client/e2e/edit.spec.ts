@@ -237,6 +237,9 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     if (item.name.endsWith('_sapling')) continue;
     // A tool places nothing: held, Place turns the axe's swing (docs/adr/0067-stone-axe-and-chopping.md).
     if (title !== null && TOOL_TITLES.has(title)) continue;
+    // A door is one block over four cells, and breaking any of them clears all four (dwell-world
+    // tests/doors.rs pins both): not one cell to break here.
+    if (item.name === 'dwell:door') continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's
@@ -303,8 +306,9 @@ test('a placed block shows as the same state to a second client on a native serv
     await expect.poll(async () => (await state(a))?.remotes.length ?? 0).toBeGreaterThan(0);
     // Players spawn side by side: build where nobody stands.
     const yaw = await clearYaw(a);
-    for (const key of ['Digit1', 'Digit5'] as const) {
-      await a.keyboard.press(key); // stone, then sand
+    // Stone, then sand, picked by name (the hotbar's slots are the inventory's, not fixed blocks).
+    for (const name of ['dwell:stone', 'dwell:sand'] as const) {
+      expect(await call<boolean>(a, `d.pick(${JSON.stringify(name)})`), name).toBe(true);
       await call(a, `d.look(${String(yaw)}, -45)`);
       await expect.poll(async () => (await state(a))?.target ?? null).not.toBeNull();
       const placement = await call<Placement>(a, 'd.placement()');
