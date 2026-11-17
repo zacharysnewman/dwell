@@ -127,7 +127,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 0.0,
         wet: false,
         bleed: 30.0,
-        lod_canopy: false,
+        lod_canopy: true,
     },
     Placement {
         name: "old_growth",
@@ -227,7 +227,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         cliff_reach: 12.0,
         wet: true,
         bleed: 0.0,
-        lod_canopy: false,
+        lod_canopy: true,
     },
     Placement {
         name: "bushes",

@@ -95,7 +95,7 @@
       "spacing": 2,
       "bleed": 30,
       "rotate": [0, 90, 180, 270],
-      "lodCanopy": false
+      "lodCanopy": true
     },
     {
       "name": "old_growth",
@@ -165,7 +165,7 @@
           "on": ["dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone"]
         }
       ],
-      "lodCanopy": false
+      "lodCanopy": true
     },
     {
       "$comment": "Bushes (0.69; owner, 2026-11-14: \"We also need more shrubbery/bushes etc.\"): leafy clumps in clusters (`groves`: a 70 m noise, a third of the ground, few outside), on temperate and tropical ground, listed by the Realistic world's grassy and forest biomes with a density each (worlds/realistic.json `trees`), the climate's moisture ruling them (vegetation.json `dwell:shrubs`).",
