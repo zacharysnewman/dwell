@@ -27,6 +27,20 @@ Suspect, from the stages: the billboard is dropped per tree (or per chunk) only 
 and the billboard layer is rebuilt; a tree whose trunk chunk meshed first, or whose billboard's LOD node was not
 rebuilt after its leaves meshed, keeps its billboard (stage 1: the canopy still a billboard over a meshed trunk).
 
+**Cause found and fixed (2026-11-17, after 0.73.8; open until the owner's look):** the far trees' impostors drew each
+tree at its generated stage, while the server grows the real tree a stage every `daysPerStage` days (oak and pine 1.5–3)
+from day 0. The owner's world was ~17 days old (20,477 s at 1,200 s a day), so the real crowns had outgrown their
+billboards by several stages: the tree map gave each tree only its billboard's bounding radius, the grown crown's outer
+leaves fell outside it, owned by no tree, and were drawn real within `inM` while the impostor drew too (stage 2), and a
+tree switched only where its smaller radius reached (stage 3). **Fix:** one growth rule (`growth::due_stage`) for the
+server's records and the impostors (`impostor::FarTree::grown_by`); the client re-packs its far tree tiles at the world
+day (its world clock over the day's length) every eighth of a day (`render/impostors.rs` `set_day`), so each
+billboard is its tree's current stage and its bounding radius covers the real crown; `?growth=N` passes to the client
+too (`setGrowthSpeed`). Tests: `dwell-worldgen` `a_far_tree_grows_as_its_real_tree_does` (every species, the server
+record's stage on days 0–400), `dwell-client` `the_far_trees_are_drawn_grown_by_the_world_day_repacked_each_eighth`;
+red with `grown_by` returning the generated tree. Stage 1 (trunks with billboard crowns) is by design: only the leaves
+hand over to the impostor; the trunk is the chunk's mesh, drawn as long as its chunk draws (the owner's question).
+
 ### 196. Realistic's rivers don't start in the mountains
 
 Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."

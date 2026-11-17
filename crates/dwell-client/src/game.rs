@@ -251,6 +251,8 @@ pub trait Scene: TerrainRenderer {
     fn set_tree_lean(&mut self, _lean: Option<crate::chop::TreeLean>) {}
     /// A block shakes (door, ladder, dynamite hit; crate::block_shake); none: nothing shakes.
     fn set_block_shake(&mut self, _shake: Option<crate::render::BlockShake>) {}
+    /// The world's growth day (the server's tree records' days): far trees drawn grown to it.
+    fn set_growth_day(&mut self, _day: f64) {}
     /// Outlines the targeted block: its cell's minimum corner and the box in the cell (min, max
     /// corner; `dwell_world::edit::target_box`), or none.
     fn set_block_outline(&mut self, cell: Option<[f64; 3]>, bounds: ([f32; 3], [f32; 3]));
@@ -5777,6 +5779,11 @@ impl<S: Scene> Game<S> {
         self.day = self
             .world_day
             .state(world_s, self.theater_time.or(o.time), o.moon);
+        // The trees' growth days as the server counts them (its ticks over the day's length; BUGS.md
+        // #197): the far trees' impostors drawn at the stage their trees have grown to.
+        let growth_day =
+            self.clock.seconds(now_ms).unwrap_or(0.0) / self.world_day.day_length_s().max(1.0);
+        self.scene.borrow_mut().set_growth_day(growth_day);
         // On another grid the view is in its frame: the sky's directions turned into it, its own
         // far disc not drawn (MOON_WORLD.md §7.3).
         if let Some(m) = self.travel.as_ref().filter(|_| self.grid_drawn != 0) {

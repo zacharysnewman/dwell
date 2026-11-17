@@ -1913,6 +1913,8 @@ pub struct Renderer {
     tree_lean: Option<crate::chop::TreeLean>,
     /// A shaking block (`set_block_shake`; frame.shake_*).
     block_shake: Option<BlockShake>,
+    /// The dev `?growth=N` multiple of the far trees' growth day (`set_growth_speed`).
+    growth_speed: f64,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
     /// Whether this is a phone (the shell's `prefersTouch`): its own, cheaper reflection tiers
@@ -2827,6 +2829,7 @@ impl Renderer {
             eye_fluid: None,
             tree_lean: None,
             block_shake: None,
+            growth_speed: 1.0,
             water_quality: WaterQuality::default(),
             phone: false,
             water_debug: 0,
@@ -3373,6 +3376,25 @@ impl Renderer {
     }
     /// The tree being chopped leans toward its notch (crate::chop `TreeLean`): the terrain's
     /// vertices above its hinge turn with it (shaders.rs `tree_lean`).
+    /// The world's growth day: the far trees' impostors drawn at the stage their trees have grown
+    /// to (BUGS.md #197).
+    pub fn set_growth_day(&mut self, day: f64) {
+        let day = day * self.growth_speed;
+        if let Some(i) = self.impostors.as_mut() {
+            i.set_day(day);
+        }
+    }
+
+    /// The dev `?growth=N` time-lapse (the local server's trees grow N times as fast): the far
+    /// trees' growth day runs as fast.
+    pub fn set_growth_speed(&mut self, speed: f64) {
+        self.growth_speed = if speed.is_finite() && speed > 0.0 {
+            speed
+        } else {
+            1.0
+        };
+    }
+
     /// A block shakes (door, ladder, dynamite hit): its faces scaled out on x and z.
     pub fn set_block_shake(&mut self, shake: Option<BlockShake>) {
         self.block_shake = shake;
@@ -7200,6 +7222,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_block_shake(&mut self, shake: Option<BlockShake>) {
         Renderer::set_block_shake(self, shake);
+    }
+    fn set_growth_day(&mut self, day: f64) {
+        Renderer::set_growth_day(self, day);
     }
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);

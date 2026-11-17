@@ -1041,6 +1041,28 @@ pub struct FarTree {
     pub stem_cells: u8,
 }
 
+impl FarTree {
+    /// The tree as it has grown by world day `day` (BUGS.md #197: a far tree drew its generated
+    /// stage while the server grew the real one on, so the real crown outgrew the billboard and both
+    /// drew): its stage by [`crate::growth::due_stage`], from day 0 as the server's generated
+    /// records start. A hand-built tree (no species) doesn't grow.
+    pub fn grown_by(&self, day: f64) -> FarTree {
+        let Ok(stage) = u8::try_from(self.stage) else {
+            return *self;
+        };
+        FarTree {
+            stage: u32::from(crate::growth::due_stage(
+                self.species,
+                self.seed,
+                stage,
+                0.0,
+                day,
+            )),
+            ..*self
+        }
+    }
+}
+
 /// Whether a far tree still stands, as a client sees it (WORK_QUEUE item 31: felled trees left
 /// out): `held` answers a face-local cell's state where the client holds its chunk (`None` where
 /// it doesn't). `Some(false)`: felled, a stem cell it holds is air (a cut takes the trunk above it
@@ -1156,6 +1178,56 @@ mod tests {
     // face-a-only: the bake is face-local (+y up, no world position); the drawer crosses faces.
     use super::*;
     use crate::species::{SPECIES, find, species_gen_fixtures};
+
+    #[test]
+    fn a_far_tree_grows_as_its_real_tree_does() {
+        // BUGS.md #197 (owner, 2026-11-17: "both billboards and full detail trees showing at the
+        // same time"): the server grew the real tree a stage every few days from its generated
+        // stage, the impostor stayed at it. A far tree grown by day d is the server record's stage
+        // on day d, for every species and some seeds; a hand-built tree never grows.
+        for (k, s) in SPECIES.iter().enumerate() {
+            for seed in [1u32, 77, 9001] {
+                let far = FarTree {
+                    anchor: [0; 3],
+                    species: k as u16,
+                    seed,
+                    stage: 1,
+                    stem: [0; 3],
+                    stem_cells: 1,
+                };
+                let record = crate::growth::Record {
+                    anchor: [0; 3],
+                    face: dwell_world::Face::A,
+                    species: k as u16,
+                    seed,
+                    stage: 1,
+                    since: 0.0,
+                    turns: 0,
+                    planter: 0,
+                    variant: 0,
+                    stopped: false,
+                };
+                for day in [0.0, 2.0, 17.0, 400.0] {
+                    assert_eq!(
+                        far.grown_by(day).stage,
+                        u32::from(record.due(day)),
+                        "{} {seed} day {day}",
+                        s.name
+                    );
+                }
+                assert!(far.grown_by(400.0).stage > 1, "{} grows", s.name);
+            }
+        }
+        let hand_built = FarTree {
+            anchor: [0; 3],
+            species: SPECIES.len() as u16,
+            seed: 5,
+            stage: 0,
+            stem: [0; 3],
+            stem_cells: 1,
+        };
+        assert_eq!(hand_built.grown_by(400.0), hand_built);
+    }
 
     fn small() -> Config {
         let mut c = Config::get().clone();
