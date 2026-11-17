@@ -354,33 +354,39 @@ dwell_world::both_faces!(
 );
 
 dwell_world::both_faces!(
-    /// The owner: floating trees. A tree's trunk stands on solid ground: no log cell has air
-    /// under it unless another log or the tree's own block is there.
+    /// The owner: floating trees. Each tree stands on solid ground: the cell under its anchor
+    /// (its trunk's foot) is solid. (Until 0.71 this checked every log with no log under it; the
+    /// species trees' branches are logs over air by design.)
     fn trees_stand_on_the_reshaped_ground(f: FaceFrame) {
         let chunks = cliff_chunks(f);
-        let (mut trunks, mut floating) = (0, Vec::new());
-        for (c, ch) in &chunks {
-            for z in 0..CHUNK_SIZE {
-                for x in 0..CHUNK_SIZE {
-                    for y in 0..CHUNK_SIZE {
-                        if !named(ch.voxels()[local_index(x, y, z)]).starts_with("dwell:log") {
-                            continue;
-                        }
-                        let below = cell(&chunks, *c, x, y - 1, z);
-                        if below.is_some_and(|m| !named(m).starts_with("dwell:log")) {
-                            trunks += 1;
-                            if !below.is_some_and(solid) {
-                                floating.push((*c, x, y, z));
-                            }
-                        }
-                    }
+        let cliffs = BifacialTerrain::new(7);
+        let g = cliffs.local(f.face);
+        let mut columns: Vec<(i32, i32)> = chunks.iter().map(|(c, _)| (c.x, c.z)).collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let (mut trees, mut floating) = (0, Vec::new());
+        for (cx, cz) in columns {
+            let (x0, z0) = (cx * CHUNK_SIZE, cz * CHUNK_SIZE);
+            for t in g.trees_in((x0, z0), (x0 + CHUNK_SIZE - 1, z0 + CHUNK_SIZE - 1)) {
+                let [x, y, z] = t.anchor;
+                if x.div_euclid(CHUNK_SIZE) != cx || z.div_euclid(CHUNK_SIZE) != cz {
+                    continue;
+                }
+                let c = ChunkCoord::new(cx, y.div_euclid(CHUNK_SIZE), cz);
+                let (lx, ly, lz) = (x - x0, y.rem_euclid(CHUNK_SIZE), z - z0);
+                let Some(below) = cell(&chunks, c, lx, ly - 1, lz) else {
+                    continue; // past the chunks generated
+                };
+                trees += 1;
+                if !solid(below) {
+                    floating.push(t.anchor);
                 }
             }
         }
-        assert!(trunks > 5, "trunks round the hillsides: {trunks}");
+        assert!(trees > 5, "trees round the hillsides: {trees}");
         assert!(
             floating.is_empty(),
-            "{} of {trunks} trunks over air, e.g. {:?}",
+            "{} of {trees} trees over air, e.g. {:?}",
             floating.len(),
             floating.first()
         );

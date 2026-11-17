@@ -201,7 +201,9 @@ Last updated: 2026-11-11 (0.52.108).
   opens the teleport's loading screen sooner, and the player drops from its hover before flight is back); the test
   now re-flies and takes the ground below the point (passes on SwiftShader locally). `starter_memory`'s pin differs
   between CI and macOS: parked (the Starter is to go). `terrainDraw` timed out once on CI (passes locally on GPU and
-  SwiftShader): watched.
+  SwiftShader): watched. Then two more stale since 0.71.0's species trees (their bigger crowns and branch logs; they
+  failed at 0.71.30 already): `trees`' half density allows up to 80% (spacing caps the full count), `volume`'s
+  floating-trees check tests each tree's anchor on solid ground (a branch log over air is by design).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
