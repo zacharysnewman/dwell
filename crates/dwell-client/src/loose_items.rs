@@ -208,10 +208,14 @@ mod tests {
 
     dwell_world::both_faces!(
         fn a_stick_and_a_rock_are_drawn_loose_as_their_look_not_a_cube(f: FaceFrame) {
+            // The wood chunk is a shard as the rock shard is.
+            let tris = |item: &str| item_meshes(item, f).expect(item).0[0].opaque.indices.len() / 3;
+            assert_eq!(tris("dwell:wood"), tris("dwell:rock_shard"), "a wood shard");
             // Owner, 2026-11-09: "Why don't sticks and rocks in your hand and hotbar look like
             // sticks and rocks on the ground?" A loose one is its look's shape: a rod long along
-            // x, a lump of 14 faces; not the stand-in block's cube.
-            for (item, triangles) in [("dwell:stick", 12), ("dwell:wood", 32)] {
+            // x, a lump of 14 faces, a shard (the wood chunk since 2026-11-17: "more shardy shaped
+            // like stone"); not the stand-in block's cube.
+            for (item, triangles) in [("dwell:stick", 12), ("dwell:dirt_clump", 32)] {
                 let look = inv::item(item).and_then(|d| d.look).expect(item);
                 let (meshes, size) = item_meshes(item, f).expect(item);
                 let m = &meshes[0].opaque;

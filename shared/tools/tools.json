@@ -97,9 +97,9 @@
         "count": 7,
         "shards": 3,
         "piece": "dwell:wood",
-        "color": "#d9b37a",
+        "color": "#efd8b0",
         "speed": 2.6,
-        "size": 0.05
+        "size": 0.025
       },
       "leaves": {
         "block": "dwell:leaves",

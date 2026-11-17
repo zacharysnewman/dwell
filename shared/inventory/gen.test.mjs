@@ -173,9 +173,11 @@ test("the slab recipes name their ½ m piece by a label of their own, not the bl
   assert.match(inventoryTs(validateInventory(inv, blocks)), /"name":"test:cairn","label":"Cairn"/);
 });
 
-test('the wood chunk has a shaped look (a lump of log), not a plain dot', () => {
+test('the wood chunk has a shaped look (a pale shard of the wood inside), not a plain dot', () => {
+  // Owner, 2026-11-17: "wood chunks and particles should be (light colored like wood insides not
+  // bark) and more shardy shaped like stone, wood doesn't make sense in balls".
   const rs = inventoryRust(validateInventory(...fresh()));
-  assert.match(rs, /name: "dwell:wood".*look: Some\(ItemLook \{ shape: LookShape::Lump, size: \[[^\]]+\], texture: "dwell:log"/);
+  assert.match(rs, /name: "dwell:wood".*look: Some\(ItemLook \{ shape: LookShape::Shard, size: \[[^\]]+\], texture: "dwell:planks"/);
 });
 
 test('every item that is not a block has its own look, and grass fibre is strands (owner, 2026-11-14: "Plant fiber looks like a block for the drop.")', () => {
