@@ -517,26 +517,45 @@ impl DamageMask {
     }
 
     /// The walls between kept and removed sub-cells, clipped to `hull` (the shape), merged into
-    /// rectangles where they run on.
-    pub(crate) fn inner_faces(&self, hull: &Hull) -> Vec<InnerFace> {
+    /// rectangles where they run on. `closed` (bits by face index, +x −x +y −y +z −z): the cell's
+    /// sides whose neighbour draws no face toward it (a 2×2 trunk's joined quarters, BUGS.md #203):
+    /// there the removed sub-cells against the side get a wall on the cell's boundary, as if the
+    /// neighbour's material were kept sub-cells.
+    pub(crate) fn inner_faces(&self, hull: &Hull, closed: u8) -> Vec<InnerFace> {
         let n = self.n;
         let mut out = Vec::new();
         for axis in 0..3 {
             let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
             for sign in [1i32, -1] {
-                // Layer `l`: the plane between sub-cells l − 1 and l along the axis.
-                for l in 1..n[axis] {
+                // Layer `l`: the plane between sub-cells l − 1 and l along the axis; the cell's own
+                // sides (0 and n) only where `closed`, the sub-cells past them counted kept.
+                for l in 0..=n[axis] {
+                    let side = if l == 0 {
+                        Some(2 * axis + 1)
+                    } else if l == n[axis] {
+                        Some(2 * axis)
+                    } else {
+                        None
+                    };
+                    if side.is_some_and(|f| closed & (1 << f) == 0) {
+                        continue;
+                    }
                     let mut grid = vec![false; n[u] * n[v]];
                     for b in 0..n[v] {
                         for a in 0..n[u] {
-                            let at = |t: usize| {
+                            // Out of the cell (−1 or n): kept.
+                            let at = |t: isize| {
+                                if t < 0 || t >= n[axis] as isize {
+                                    return false;
+                                }
                                 let mut c = [0; 3];
-                                c[axis] = t;
+                                c[axis] = t as usize;
                                 c[u] = a;
                                 c[v] = b;
                                 self.is_removed(c[0], c[1], c[2])
                             };
                             // The kept sub-cell behind the wall, the removed one it looks into.
+                            let l = l as isize;
                             let (kept, gone) = if sign > 0 { (l - 1, l) } else { (l, l - 1) };
                             grid[a + n[u] * b] = !at(kept) && at(gone);
                         }
