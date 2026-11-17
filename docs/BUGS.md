@@ -1049,6 +1049,16 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 202. A worldgen world's far terrain drew the default island (0.71.32–0.72.2; fixed after 0.72.2)
+
+Found 2026-11-17 shooting #976's comparison: `?worldgen=test:realistic&seed=7` on 0.72.2 drew the default
+generator's island far off, a patch of Realistic ground round the player. The local world's prewarm (#1042) asked for
+the world maps before the join, when the session had no worldgen config yet: the build's maps were taken and kept,
+so the client's far terrain (and generated chunks) came from the wrong maps. **Fixed:** `prewarmWorld` carries the
+local world's worldgen config, used until the session has its own. Not automated (the maps' request is the browser
+build's alone): checked by the look-shot tool, 0.72.2 against the fix and 0.71.22, seed 7 (Realistic continents
+again).
+
 ### 201. Server reads of not-yet-known chunks returned air (fixed after 0.72.0)
 
 A regression of #194 round 7 (0.71.27): with the server's tick-safe air test, `VoxelWorld::read` returned air for

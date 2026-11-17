@@ -313,6 +313,10 @@ struct Inner {
     /// maps and built the terrain by the join (they were started at the join: ~2.7 s before any
     /// chunk; the owner, 2026-11-17, on loading).
     prewarm: Option<(u32, u64)>,
+    /// That world's worldgen config (a test world's, ADR 0074 B7; empty: the build's ground): its
+    /// maps are asked before the session knows it (0.72.2: the build's maps were taken for a
+    /// `?worldgen=` world, and its far terrain drew the default island).
+    prewarm_worldgen: String,
     /// Those workers, for the world (version, seed, size) they were started for.
     prewarmed: Option<((u32, u64, dwell_protocol::world_size::WorldSize), WebJobs)>,
 }
@@ -472,6 +476,7 @@ impl Client {
             crossing_roll,
             shaping: Shaping::NotAsked,
             prewarm: None,
+            prewarm_worldgen: String::new(),
             prewarmed: None,
         };
         Ok(Client {
@@ -3009,10 +3014,11 @@ impl Client {
     /// Names the local world about to be joined (its generator version and seed), so its job
     /// workers start as soon as its maps are ready instead of at the join (loading, 2026-11-17).
     #[wasm_bindgen(js_name = prewarmWorld)]
-    pub fn prewarm_world(&self, world_seed: u64, generator_version: u32) {
+    pub fn prewarm_world(&self, world_seed: u64, generator_version: u32, worldgen: String) {
         let mut s = self.inner.borrow_mut();
         if s.game.is_none() {
             s.prewarm = Some((generator_version, world_seed));
+            s.prewarm_worldgen = worldgen;
         }
     }
 
@@ -4361,10 +4367,13 @@ impl Inner {
             return Some(Vec::new());
         };
         let slot: MapsSlot = Rc::default();
+        // The session's config once it has one, else the named local world's (`prewarmWorld`).
         let worldgen = self
             .session
             .as_ref()
-            .map_or("", |s| s.worldgen_config())
+            .map(|s| s.worldgen_config())
+            .filter(|w| !w.is_empty())
+            .unwrap_or(&self.prewarm_worldgen)
             .to_owned();
         // And its size (BIG_MAP.md M2b): a bigger world's maps are its own.
         let scale = self
