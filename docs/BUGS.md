@@ -99,6 +99,12 @@ moved its player) natively: p99 17.5 → 0.94 ms, max 28 → 8.6 ms. Browser: fl
 `want_first` made a 166 ms burst there: the look-ahead's columns came too late). Left: growth at take-off
 (16–22 ms), the join's first second (ecology ~25 ms).
 
+Round 8 (2026-11-17): the take-off's growth ticks were the tree scan: `trees_in_chunk` ran the placements over a
+chunk's whole 32 × 32 column (~1–5 ms natively) for every chunk stacked in it. The scan now places a column once
+(`Growers::trees_in_column`, kept per column and face, 4096 columns) and picks each chunk's trees from it. Test red
+→ green: `growth::the_scan_places_a_column_once_for_its_stacked_chunks` (65 placements for 25 columns → 25). Left:
+one placement per new column on the tick (~5 ms natively at take-off): next, off the tick like the sky floors.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

@@ -469,15 +469,23 @@ impl Growers {
     pub fn trees_in_chunk(&self, c: ChunkCoord) -> Vec<Record> {
         let f = FaceFrame::at_chunk_y(c.y);
         let local = f.chunk(c);
+        let (y0, y1) = (local.y * CHUNK_SIZE, local.y * CHUNK_SIZE + CHUNK_SIZE);
+        Self::of_chunk(&self.trees_in_column(c), c, y0..y1)
+    }
+
+    /// The trees of chunk `c`'s whole column on its face (every height): the costly part of
+    /// [`Self::trees_in_chunk`] (the placements over the column's 32 × 32 cells, ~1–5 ms natively),
+    /// the same for every chunk of the column, so a caller keeps it for the column's other chunks
+    /// (BUGS.md #194) and picks each chunk's with [`Self::trees_of_chunk`].
+    pub fn trees_in_column(&self, c: ChunkCoord) -> Vec<Record> {
+        let f = FaceFrame::at_chunk_y(c.y);
         let g = self.terrain.local(f.face);
         let (x0, z0) = (c.x * CHUNK_SIZE, c.z * CHUNK_SIZE);
-        let (y0, y1) = (local.y * CHUNK_SIZE, local.y * CHUNK_SIZE + CHUNK_SIZE);
         let mut out = Vec::new();
         for t in g.trees_in((x0, z0), (x0 + CHUNK_SIZE - 1, z0 + CHUNK_SIZE - 1)) {
             let a = t.anchor;
-            let inside = (x0..x0 + CHUNK_SIZE).contains(&a[0])
-                && (z0..z0 + CHUNK_SIZE).contains(&a[2])
-                && (y0..y1).contains(&a[1]);
+            let inside =
+                (x0..x0 + CHUNK_SIZE).contains(&a[0]) && (z0..z0 + CHUNK_SIZE).contains(&a[2]);
             let planter = &g.planters()[usize::from(t.planter)];
             if let (true, Some((species, seed, stage))) = (inside, planter.grown(&t)) {
                 out.push(Record {
@@ -495,6 +503,26 @@ impl Growers {
             }
         }
         out
+    }
+
+    /// Chunk `c`'s trees out of its column's ([`Self::trees_in_column`]).
+    pub fn trees_of_chunk(column: &[Record], c: ChunkCoord) -> Vec<Record> {
+        let f = FaceFrame::at_chunk_y(c.y);
+        let local = f.chunk(c);
+        Self::of_chunk(
+            column,
+            c,
+            local.y * CHUNK_SIZE..local.y * CHUNK_SIZE + CHUNK_SIZE,
+        )
+    }
+
+    fn of_chunk(column: &[Record], c: ChunkCoord, ys: std::ops::Range<i32>) -> Vec<Record> {
+        let f = FaceFrame::at_chunk_y(c.y);
+        column
+            .iter()
+            .filter(|r| r.face == f.face && ys.contains(&f.cell(r.anchor)[1]))
+            .cloned()
+            .collect()
     }
 
     /// The block swaps of a record's variant.

@@ -17,6 +17,9 @@ const SCANS_PER_TICK: usize = 1;
 /// The most due trees grown a tick.
 const TREES_PER_TICK: usize = 1;
 
+/// Chunk columns' tree placements kept by the scan; past this many it starts again.
+const TREE_COLUMNS_KEPT: usize = 4096;
+
 impl Server {
     /// The world's days so far (its clock's day length), times the growth speed (dev, tests).
     pub fn world_days(&self) -> f64 {
@@ -110,6 +113,20 @@ impl Server {
         self.grow_these_trees(&next, true);
     }
 
+    /// How many distinct chunk columns (per face) the scan has looked at (tests, tools).
+    pub fn tree_columns_scanned(&self) -> usize {
+        self.growth_scanned
+            .iter()
+            .map(|&c| (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+
+    /// How many chunk columns' tree placements the scan has run (tests, tools).
+    pub fn tree_columns_placed(&self) -> usize {
+        self.tree_columns_placed
+    }
+
     /// How many chunks have been looked at for trees (tests, tools).
     pub fn tree_chunks_scanned(&self) -> usize {
         self.growth_scanned.len()
@@ -129,7 +146,16 @@ impl Server {
             .collect();
         for &c in &fresh {
             self.growth_scanned.insert(c);
-            for r in growers.trees_in_chunk(c) {
+            // A column's placements once for all its chunks (BUGS.md #194).
+            let key = (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face);
+            if !self.tree_columns.contains_key(&key) {
+                if self.tree_columns.len() >= TREE_COLUMNS_KEPT {
+                    self.tree_columns.clear();
+                }
+                self.tree_columns_placed += 1;
+                self.tree_columns.insert(key, growers.trees_in_column(c));
+            }
+            for r in Growers::trees_of_chunk(&self.tree_columns[&key], c) {
                 self.growth.trees.entry(r.anchor).or_insert(r);
             }
         }
