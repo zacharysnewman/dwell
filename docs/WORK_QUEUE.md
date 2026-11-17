@@ -67,6 +67,9 @@ Last updated: 2026-11-11 (0.52.108).
   once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
   Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
   chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
+- **Owner, 2026-11-16 (red desert brush):** "the underbrush in red deserts is insane. It should probably be like 1/4
+  of what is." Sagebrush's density 0.9 → 0.225 (`placements.json`). A worldgen change: ships on the next compatibility
+  line (0.72, with the spawn town). Owner should see: red desert floors with about a quarter of today's brush.
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.

@@ -179,7 +179,7 @@ pub static PLACEMENTS: [Placement; 12] = [
         footprint_on: false,
         pad_trunk: true,
         grid: 2,
-        density: 0.9,
+        density: 0.225,
         grove_wavelength: 0,
         grove_coverage: 1.0,
         grove_outside: 1.0,
