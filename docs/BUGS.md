@@ -121,6 +121,13 @@ lack a copy waits for one instead. Test red → green: `the_tick_never_regenerat
 regenerations → 0). Harness sprint: worst tick 11–12 → 7.8 ms, growth off the worst list. Left: the sprint's
 collision ticks (~7 ms natively), ecology at the join.
 
+Round 11 (2026-11-17, a finding): the sprint harness's ~7 ms collision ticks are tree growth. A grown stage's logs
+change collision (`collision_revision`), and `TerrainCollision::sync` rebuilds the chunk and every shaped chunk
+round it (6–16 builds, 2–7 ms natively). The harness grows a world day every 20 s (60×), so it shows these all the
+time; at the game's speed a tree grows a stage every few days. Kept as a smaller item: if it shows in the browser,
+budget `sync`'s neighbour rebuilds (the edited chunk at once, its neighbours a few a tick) or rebuild a neighbour
+only when the change touches the shared border.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

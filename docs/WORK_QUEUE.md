@@ -87,6 +87,8 @@ Last updated: 2026-11-11 (0.52.108).
   passes (5–12 ms natively in the sprint run), then ecology at the join, then the budget test.
   Round 10: grass never regenerates a chunk on the tick (its pristine copy kept when picked). Next: the sprint's
   collision ticks (~7 ms natively), ecology at the join, then the budget test.
+  Round 11: the sprint harness's collision ticks are tree growth's rebuilds, shown 60× by the harness's growth speed
+  (a smaller item, BUGS.md #194). Next: ecology at the join, then the budget test.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at

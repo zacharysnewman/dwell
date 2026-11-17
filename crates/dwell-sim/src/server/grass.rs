@@ -321,7 +321,7 @@ impl Server {
         let rule = &self.grass_rule;
         let mut changes = TickChanges::default();
         let mut writes = Vec::new();
-        let mut regenerated = 0;
+        let regenerated;
         {
             let mut cells = WorldCells {
                 world: &mut self.world,
