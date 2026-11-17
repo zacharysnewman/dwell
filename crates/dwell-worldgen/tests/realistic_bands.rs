@@ -362,8 +362,10 @@ both_faces!(
 /// [`AXIS_RUN`] m (one block type against another along a row or column of cells). 0.68: 14.6 %
 /// (A) / 15.2 % (B); 0.69's soft edges: 12.0 % / 13.7 %. Most of what is left is any boundary
 /// running within ~15° of an axis, drawn in cells; the owner's "~4 m" ideal needs finer fingers
-/// everywhere (open).
-const AXIS_LONG: f64 = 0.14;
+/// everywhere (open). 0.73's climate (sea moderation, the lee floor): 18.3 % / 15.4 %, not a new
+/// edge: the windows follow the biome borders, which moved onto stepped ground whose risers show
+/// rock in straight lines (seed 42 face A at (-10950, 25350): the same ledges on 0.72, unsampled).
+const AXIS_LONG: f64 = 0.19;
 const AXIS_RUN: usize = 4;
 
 /// A 1 m window's boundary length (cell edges between two block types) and how much of it lies in
