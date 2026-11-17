@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Fewer stalls when moving into new ground: the server works out each area's trees once instead of once per layer."
-  ]
-}

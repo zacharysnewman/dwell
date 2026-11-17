@@ -2,6 +2,12 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.71.25",
+      "changes": [
+        "Fewer stalls when moving into new ground: the server works out each area's trees once instead of once per layer."
+      ]
+    },
+    {
       "version": "0.71.24",
       "changes": [
         "No more hitches flying at full speed: the server no longer works out new sky columns in the middle of a tick.",
