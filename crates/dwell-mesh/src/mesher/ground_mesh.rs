@@ -732,7 +732,8 @@ mod tests {
         // both-faces: item-local geometry; the loose item mirrors it with its face.
         for (item, shape, faces) in [
             ("dwell:stick", GroundShape::Rod, 6),
-            ("dwell:wood", GroundShape::Lump, 14),
+            // (The wood chunk is a shard since 2026-11-17; the dirt clump is a lump.)
+            ("dwell:dirt_clump", GroundShape::Lump, 14),
         ] {
             let l = look(item);
             assert_eq!(l.shape, shape, "{item}");
