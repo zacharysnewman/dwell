@@ -2032,8 +2032,12 @@ The owner: "it's absolutely mandatory that the server never drops below 60fps". 
 - **Natively**, `cargo test --release -p dwell-sim --test tick_budget -- --ignored --nocapture` (`TICK_SECONDS`,
   default 90; `TICK_AT_OWNER` starts at the owner's stutter spot): the owner's world (seed 3218026833), a player
   sprinting and jumping through the controller, the jobs worker modelled by time (each job its native time × 2.5,
-  WASM's), a world day every 20 s; prints the tick p50/p99/max, the ticks over 8 and 16.7 ms and the 12 worst with
-  their phases.
-- **In the browser**, the bench's `stutter-run` (the same world, 40 s of sprinting and jumping): each record keeps
-  `server`, the local server's per-second figures (`__dwell.serverHistory()`: `advanceMaxMs`, `phasesMs`, `counts`
-  with `gen.<phase>`).
+  WASM's), a world day every 20 s (`TICK_GROWTH_SPEED`, default 60; 1 is the game's); prints the tick
+  p50/p99/max, the ticks over 8 and 16.7 ms and the 12 worst with their phases, and **fails a tick over
+  `TICK_BUDGET_MS`** (default 8 natively: ~16–24 ms in the browser at worst). `TICK_FLY=1` flies at the top speed
+  level (362 m/s) instead, 3° up for 20 s, then level turned 90°. The browser's budgets apply (the phone's
+  collision cells and look-ahead, no generation on the reach). 2026-11-17: flight max 2.6 ms; the sprint 3.6 ms at
+  the game's growth speed, 8.5 at 60× (tree growth's collision rebuilds, BUGS.md #194 round 11).
+- **In the browser**, the bench's `stutter-run` (the same world, 40 s of sprinting and jumping) and `stutter-fly`
+  (40 s at 362 m/s): each record keeps `server`, the local server's per-second figures
+  (`__dwell.serverHistory()`: `advanceMaxMs`, `phasesMs`, `counts` with `gen.<phase>`).
