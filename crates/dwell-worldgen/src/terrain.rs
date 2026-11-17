@@ -1910,6 +1910,11 @@ impl TerrainGenerator {
         0.0
     }
 
+    /// The plate settings at face-local (x, z), in a world whose rocks come from plates (R5).
+    pub fn plate_settings_at(&self, x: i64, z: i64) -> Option<crate::geology::PlateSettings> {
+        self.biomes.geology.plate_settings(x, z)
+    }
+
     /// The rain (mm a year) at face-local (x, z) by the biome map's climate; None without one.
     pub fn rain_at(&self, x: i64, z: i64) -> Option<f64> {
         let (base, _, _) = self.map.height_at(x as f64, z as f64);
@@ -5559,6 +5564,13 @@ impl TerrainGenerator {
     /// When none of those holds one (a wide island, WORLD_SCALE.md §3.2), a bounded search
     /// (`spawn_wider`); never a mountain top.
     pub fn spawn_point(&self) -> [f64; 3] {
+        // A face of open ocean (real-world scale, 0.71; owner, 2026-11-14: "it's ok if you end up
+        // in the ocean"): no land to search, so the sea's surface at the centre, at once (the
+        // search over no land took 15 s).
+        let map = self.map();
+        if !(0..map.height.len()).any(|c| !map.is_sea(c) && map.height[c].is_finite()) {
+            return [0.5, SEA_LEVEL_M, 0.5];
+        }
         // With shrines, every spawn is at one (owner, 2026-11-12: "target the nearest shrine to that
         // point for initial spawn, so all spawns are at shrines"): the search's point's nearest.
         if let Some(sh) = self.shrines.as_deref() {

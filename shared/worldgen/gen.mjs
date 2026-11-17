@@ -748,7 +748,7 @@ export function rocksRust(data) {
   rs.push(`        edge_fade: ${rf(pp.edgeFade ?? 0)},`);
   const mx = pp.mixing ?? {};
   rs.push(
-    `        mixing: Mixing { wavelength: ${rf(mx.wavelength ?? 0)}, warp: ${rf(mx.warp ?? 0)}, warp_wavelength: ${rf(mx.warpWavelength ?? 0)}, edge_shift: ${rf(mx.edgeShift ?? 0)}, edge_wavelength: ${rf(mx.edgeWavelength ?? 0)}, fade: ${rf(mx.fade ?? 0)} },`,
+    `        mixing: Mixing { wavelength: ${rf(mx.wavelength ?? 0)}, warp: ${rf(mx.warp ?? 0)}, warp_wavelength: ${rf(mx.warpWavelength ?? 0)}, edge_shift: ${rf(mx.edgeShift ?? 0)}, edge_wavelength: ${rf(mx.edgeWavelength ?? 0)}, fade: ${rf(mx.fade ?? 0)}, octaves: ${mx.octaves ?? 0} },`,
   );
   rs.push("        rules: &[");
   for (const r of pp.rules) {
