@@ -29,6 +29,7 @@ Last updated: 2026-11-11 (0.52.108).
   (2 m long, 1 m tall, four cells) that fires a physics cannonball where aimed, the ball knocking loose what it hits.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
+  Done (2026-11-17).
 - **Owner, 2026-11-17 (question):** "It might not just be leaves that don't show damage, I'm not seeing it on planks or
   some other structures. Do we have this supported for everything?" Answer: only blocks with a `damage.look` show marks
   (stone, the soils, logs, ice, sandstone, basalt, obsidian, moon dust); planks, stone brick, thatch, leaves, door,
@@ -86,6 +87,12 @@ Last updated: 2026-11-11 (0.52.108).
   particles should be (light colored like wood insides not bark) and more shardy shaped like stone, wood doesn't make
   sense in balls unlike dirt, sand, etc." Owner should see: every block's hit particles half today's size; a log's hit
   pieces pale wood-inside coloured and angular shards like stone's, not balls.
+  Owner, 2026-11-17 (after 0.73.7): "Also the particles from hits were supposed to be half the size but I think
+  they're doubled. And I think the item drops are either the same size or smaller? When they should've been tripled."
+  Found: the flying 3D pieces are sized by the hit's bite (BLOCK_DAMAGE.md §10), and the tool sheet's fewer hits
+  (stone axe on a log 6, was 10) made each bite bigger; the halved `chips` are the small flat particles. The drops'
+  tripling is the Follow-ups item, not done yet. To do: the pieces half their size (a data scale on the fragments);
+  the drops 3× on the owner's go (Follow-ups).
   Done (2026-11-17): every block's `damage.chips.size` and the woods' chips halved; wood chips #efd8b0; the wood chunk
   (`dwell:wood`, the flying piece and the dropped item) a shard in the planks' texture, pale. The 3D pieces' size is the
   bite rule's (unchanged). Waiting on the owner's look.

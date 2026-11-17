@@ -422,7 +422,7 @@ fn hand_break(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
 dwell_world::both_faces!(
     fn in_adventure_hands_hit_a_log_slowly_and_leaves_break_in_their_hits(f: FaceFrame) {
         // Owner, 2026-11-17: any block breaks by hand at its proficiency (a log 48 hits, for no
-        // drops; leaves 8); the log's `breakWith: "axe"` is gone.
+        // drops; leaves 1 since the owner's 2026-11-17 note); the log's `breakWith: "axe"` is gone.
         let mut fx = scene(f, "adventure", true);
         let leaves = f.state(require("dwell:leaves"));
         let [x, y, z] = f.cell([2, AT, 1]);

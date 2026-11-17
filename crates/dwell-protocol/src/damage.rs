@@ -689,7 +689,10 @@ mod tests {
             ("dwell:sand", Some("dwell:metal_shovel"), 2),
             ("dwell:grass", None, 24),
             ("dwell:dirt", Some("dwell:stone_pickaxe"), 8),
-            ("dwell:leaves", None, 8),
+            // Leaves: one hit with anything (owner, 2026-11-17: "leaves should be 1 hit ... since
+            // they don't adapt to damage").
+            ("dwell:leaves", None, 1),
+            ("dwell:snowy_leaves", Some("dwell:stone_pickaxe"), 1),
         ] {
             assert_eq!(hits_to_break(block, held), Some(n), "{block} {held:?}");
         }
