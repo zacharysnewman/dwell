@@ -289,7 +289,7 @@ mod tests {
             (total("dwell:log", bite) - bite).abs() < 1e-3 * bite,
             "wood chips"
         );
-        // Bigger, not more: the same count, each ∛(5/3) the size.
+        // Bigger, not more: the same count, each ∛2 the size (metal 3 hits, stone 6).
         let s = |t| bite_m3_of("dwell:stone", Some(t)).unwrap();
         let (a, b) = (
             fragment_meshes("dwell:stone", s("dwell:metal_pickaxe"), FaceFrame::A)
@@ -299,7 +299,7 @@ mod tests {
                 .unwrap()
                 .1,
         );
-        assert!((a / b - (5.0f64 / 3.0).cbrt()).abs() < 1e-6, "{a} {b}");
+        assert!((a / b - 2.0f64.cbrt()).abs() < 1e-6, "{a} {b}");
     }
 
     #[test]

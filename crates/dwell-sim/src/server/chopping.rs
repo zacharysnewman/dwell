@@ -239,10 +239,9 @@ impl Server {
         };
         let m = self.world.get_voxel_if_loaded(cell);
         let block = block_of(m).name;
-        if !chop::BREAK_CLASSES
-            .iter()
-            .any(|(n, class)| *n == block && *class == b.class)
-        {
+        // Any tool breaks any block that takes hits (owner, 2026-11-17: by its proficiency, slower or
+        // for nothing when inefficient).
+        if !dwell_protocol::damage::takes_damage(block) {
             return;
         }
         let repeat = b.repeat_s.unwrap_or(0.5);
@@ -333,7 +332,8 @@ impl Server {
         };
         changes.set_and_unsupport(&mut self.world, cell, left);
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
-        if uses_items {
+        // A tool the block is inefficient with breaks it for nothing (owner, 2026-11-17).
+        if uses_items && dwell_protocol::damage::drops_when_broken(block, Some(tool)) {
             self.drop_destroyed(m, centre, n);
         }
         self.fell(&[cell], 0, Some(DVec3::from(eye)));

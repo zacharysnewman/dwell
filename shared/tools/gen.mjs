@@ -424,10 +424,8 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     if (!classes.includes(def.breakWith)) fail(`${name}.breakWith must be one of ${classes.join(', ')} (a breaking.classes key)`);
     breakWith.push({ block: name, kind: def.breakWith });
   }
-  // A chopping tool's hold is its swing's (`tools[].repeatOnHold`), not a break tool's.
-  for (const b of data.breaking?.tools ?? []) {
-    if (b.repeatOnHold !== undefined && tools.some((t) => t.name === b.item)) fail(`breaking.tools: ${b.item} swings as a tool (tools.${b.item}); its repeatOnHold goes there`);
-  }
+  // A chopping tool's hold is its swing's (`tools[].repeatOnHold`): its break entry never repeats.
+  for (const b of breaking.tools) if (tools.some((t) => t.name === b.item)) b.repeatS = null;
   const chop2 = { enabled: false, ...(data.chop2 ?? {}) };
   known(data.chop2 ?? {}, [...CHOP2_FIELDS, '$comment'], 'chop2');
   if (typeof chop2.enabled !== 'boolean') fail('chop2.enabled must be true or false');
@@ -439,7 +437,15 @@ export function validateTools(data, items, blocks, heldItems = loadHeldItems(), 
     durability.items.push({ item: t.name, hits: t.weapon.durability });
   }
   const hints = validateHints(data.hints, tools);
-  return { chop2, tools, woods, breakWith, breaking, damage: validateDamage(blocks, items, data.breaking), durability, hints };
+  const damage = validateDamage(blocks, items, breaking);
+  // A break tool's wear is computed (its class's `durability`), never listed.
+  const damageByBlock = new Map(damage.map((d) => [d.block, d]));
+  for (const t of breaking.tools) {
+    if (durability.items.some((x) => x.item === t.item)) fail(`durability.items.${t.item}: a break tool's wear is computed from breaking.classes.${t.class}.durability`);
+    durability.items.push({ item: t.item, hits: durabilityOf(breaking, damageByBlock, t) });
+  }
+  const planned = breaking.planned.map((t) => ({ ...t, durability: durabilityOf(breaking, damageByBlock, t) }));
+  return { chop2, tools, woods, breakWith, breaking, damage, durability, planned, hints };
 }
 
 /** Validates `durability` (tools wear; owner, 2026-11-11): each listed item a tool item that stacks
@@ -488,20 +494,53 @@ export function validateCracksLook(c, at, crackSets) {
 }
 
 export function validateDamage(blocks, items, breaking, crackSets = loadCracks()) {
-  const classes = new Set(Object.keys(breaking?.classes ?? {}).filter((k) => k[0] !== '$'));
-  const hits = (v, at) => {
-    if (!(Number.isInteger(v) && v >= 1 && v <= 255)) fail(`${at} is a hit count from 1 to 255, not ${JSON.stringify(v)}`);
-    return v;
-  };
+  const classes = new Set([HAND, ...breaking.classes.map((c) => c.class)]);
   const out = [];
   for (const [name, def] of blocks) {
     const d = def.damage;
     if (d === undefined) continue;
     const at = `${name}.damage`;
     if (d === null || typeof d !== 'object' || Array.isArray(d)) fail(`${at} must be an object`);
-    if (!Object.hasOwn(d, 'default')) fail(`${at} needs a default (hits with bare hands; null: can't)`);
-    const dflt = d.default === null ? null : hits(d.default, `${at}.default`);
-    const tools = [];
+    known(d, ['$comment', 'baseHits', 'proficiency', 'fixedHits', 'hit', 'look', 'chips'], at);
+    // How a hit short of breaking shows (`hit`): `marks` (the default) its damage marks and chips;
+    // `shake` the block shakes and shows no damage (owner, 2026-11-17: "Door, ladder, dynamite should
+    // shake, not break, these are special types, 2 hits hardcoded").
+    const react = d.hit ?? 'marks';
+    if (!['marks', 'shake'].includes(react)) fail(`${at}.hit must be one of marks, shake`);
+    // A special block takes `fixedHits` with anything, by hand or any tool, and always drops.
+    if (d.fixedHits !== undefined) {
+      if (d.baseHits !== undefined || d.proficiency !== undefined) fail(`${at}: fixedHits takes no baseHits or proficiency`);
+      if (!(Number.isInteger(d.fixedHits) && d.fixedHits >= 1 && d.fixedHits <= 255)) fail(`${at}.fixedHits is a whole number of hits in [1, 255]`);
+      if (react === 'shake' && (d.look !== undefined || d.chips !== undefined)) fail(`${at}: a block that shakes shows no look or chips`);
+      out.push({ block: name, volume: 1, baseHits: null, proficiency: {}, fixedHits: d.fixedHits, shake: react === 'shake', default: d.fixedHits, tools: breaking.tools.map((t) => ({ tool: t.item, hits: d.fixedHits })), barren: [], look: null, chips: null });
+      continue;
+    }
+    if (react === 'shake' && d.look !== undefined) fail(`${at}: a block that shakes shows no look`);
+    // Its base hits and its proficiency per class (owner, 2026-11-17, the Block Stats sheet).
+    if (!(num(d.baseHits) && d.baseHits > 0 && d.baseHits <= 1000)) fail(`${at}.baseHits is a number of hits in (0, 1000], not ${JSON.stringify(d.baseHits)}`);
+    const proficiency = {};
+    if (d.proficiency !== undefined) {
+      if (typeof d.proficiency !== 'object' || d.proficiency === null || Array.isArray(d.proficiency)) fail(`${at}.proficiency must map a class to a level`);
+      for (const [k, v] of Object.entries(d.proficiency)) {
+        if (!classes.has(k)) fail(`${at}.proficiency.${k}: no class ${JSON.stringify(k)} (${[...classes].join(', ')})`);
+        if (breaking.proficiency[v] === undefined) fail(`${at}.proficiency.${k}: no level ${JSON.stringify(v)} (${Object.keys(breaking.proficiency).join(', ')})`);
+        proficiency[k] = v;
+      }
+    }
+    const dmg = { baseHits: d.baseHits, proficiency };
+    const hit = (cls, material) => {
+      const n = hitsOf(breaking, dmg, cls, material);
+      if (n > 65535) fail(`${at}: ${n} hits with ${cls} (${material}) is over 65535`);
+      return n;
+    };
+    const dflt = hit(HAND, breaking.hand.material);
+    // Every break tool's hits (the game reads these alone), and those it is inefficient with (they
+    // break it but it drops nothing; owner, 2026-11-17).
+    const tools = breaking.tools.map((t) => ({ tool: t.item, hits: hit(t.class, t.material) }));
+    const barren = [
+      ...(proficiency[HAND] === 'inefficient' ? [HAND] : []),
+      ...breaking.tools.filter((t) => proficiency[t.class] === 'inefficient').map((t) => t.item),
+    ];
     // The look of its damage (D2): shards (stone), scoops (soils) or chips (wood) at each hit mark,
     // `size` the mark's width (cells) at full damage, `color` the fresh face inside, `crack` the
     // cracks that grow with the damage, `depth` (optional, cells; default 0.1) how deep the mark is
@@ -557,84 +596,124 @@ export function validateDamage(blocks, items, breaking, crackSets = loadCracks()
     // The chips a hit knocks out of it (the client's particles, sounds round 2b): stone grey
     // chips, soil clods; none: no particles.
     const chips = d.chips === undefined ? null : validateChips(d.chips, `${at}.chips`);
-    for (const [k, v] of Object.entries(d)) {
-      if (k === 'default' || k === 'look' || k === 'chips' || k[0] === '$') continue;
-      if (!classes.has(k) && !items.has(k)) fail(`${at}.${k}: no tool class or item ${JSON.stringify(k)} (classes: ${[...classes].join(', ')})`);
-      tools.push({ tool: k, hits: hits(v, `${at}.${k}`) });
-    }
     // Its volume, a share of a cell, for the bite rule (BLOCK_DAMAGE.md §10: each hit carves and
     // throws off 0.5 × the volume ÷ the hits to break): a full block 1, a stored ramp ½.
-    const volume = def.family === 'ramp' ? 0.5 : (def.shape ?? 'full') === 'full' ? 1 : fail(`${at}: the bite rule knows the volume of a full block or a ramp, not shape ${JSON.stringify(def.shape)}`);
-    out.push({ block: name, volume, default: dflt, tools, look, chips });
+    // A block of another shape (a torch, a sapling, a door) bites as a full one: only a look carves.
+    const volume = def.family === 'ramp' ? 0.5 : 1;
+    out.push({ block: name, volume, baseHits: d.baseHits, proficiency, fixedHits: null, shake: react === 'shake', default: dflt, tools, barren, look, chips });
   }
   return out;
 }
 
-/** Validates `breaking` (the right tool's break speed): each block in one class, every tool item
- * known with a known class and tier, every tier's speed above 0. None: no tool speeds a break. */
+/** The proficiency levels a block's `damage.proficiency` names, and the classes it may name besides
+ * the tool classes (`hand`: no break tool held). */
+const HAND = 'hand';
+
+/** Validates `breaking` (owner, 2026-11-17, the Block Stats sheet: hits and wear as a system):
+ * `proficiency` each level's hits multiplier, `materials` each material's `hits` and `durability`
+ * multipliers, `hand` the hand's material, `classes` each tool class's `durability` rule, `repeatS`
+ * the one swing pace, `tools` each break tool item's class and material (with its `contactS` and
+ * `clip`), `planned` tools computed for the table only, `heal`. None: no tool breaks faster. */
 export function validateBreaking(b, items, blocks) {
-  if (b === undefined) return { classes: [], tools: [], hand: { repeatS: null }, heal: validateHeal(undefined) };
-  known(b, ['$comment', 'tiers', 'classes', 'tools', 'hand', 'heal'], 'breaking');
-  known(b.tiers, [...Object.keys(b.tiers ?? {})], 'breaking.tiers');
-  for (const [t, v] of Object.entries(b.tiers)) {
-    if (t[0] === '$') continue;
-    if (!/^[a-z][a-z0-9_]*$/.test(t)) fail(`breaking.tiers.${t}: tiers are lower_snake_case`);
-    // A tier is its break speed, or `{ speed }`. A hit's piece size is not a tier's: it follows
-    // from the hits (the bite rule, BLOCK_DAMAGE.md §10), so a faster tier's bites are bigger.
-    const tv = typeof v === 'object' && v !== null && !Array.isArray(v) ? v : { speed: v };
-    if (tv === v) known(tv, ['speed'], `breaking.tiers.${t}`);
-    if (!(num(tv.speed) && tv.speed > 0)) fail(`breaking.tiers.${t} is a speed above 0, not ${JSON.stringify(tv.speed)}`);
+  if (b === undefined) {
+    return { proficiency: { neutral: 1 }, materials: { body: { hits: 1, durability: 1 } }, hand: { material: 'body' }, classes: [], repeatS: null, tools: [], planned: [], heal: validateHeal(undefined) };
   }
-  const tierOf = (t) => (typeof b.tiers[t] === 'object' ? { speed: b.tiers[t].speed } : { speed: b.tiers[t] });
-  known(b.classes, [...Object.keys(b.classes ?? {})], 'breaking.classes');
-  const classOf = new Map();
+  known(b, ['$comment', 'proficiency', 'materials', 'hand', 'classes', 'repeatS', 'tools', 'planned', 'heal'], 'breaking');
+  const name = (k, at) => {
+    if (!/^[a-z][a-z0-9_]*$/.test(k)) fail(`${at}.${k}: names are lower_snake_case`);
+  };
+  const obj = (v, at) => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) fail(`${at} must be an object`);
+    return v;
+  };
+  const proficiency = {};
+  for (const [k, v] of Object.entries(obj(b.proficiency, 'breaking.proficiency'))) {
+    name(k, 'breaking.proficiency');
+    if (!(num(v) && v > 0 && v <= 100)) fail(`breaking.proficiency.${k} is a hits multiplier in (0, 100], not ${JSON.stringify(v)}`);
+    proficiency[k] = v;
+  }
+  for (const k of ['neutral', 'inefficient']) if (proficiency[k] === undefined) fail(`breaking.proficiency.${k} is required (a block's default level, and the one that drops nothing)`);
+  const materials = {};
+  for (const [k, v] of Object.entries(obj(b.materials, 'breaking.materials'))) {
+    name(k, 'breaking.materials');
+    const at = `breaking.materials.${k}`;
+    known(obj(v, at), ['hits', 'durability'], at);
+    if (!(num(v.hits) && v.hits > 0 && v.hits <= 100)) fail(`${at}.hits is a hits multiplier in (0, 100]`);
+    if (v.durability !== undefined && !(num(v.durability) && v.durability > 0 && v.durability <= 100)) fail(`${at}.durability is a durability multiplier in (0, 100]`);
+    materials[k] = { hits: v.hits, durability: v.durability ?? null };
+  }
+  known(obj(b.hand, 'breaking.hand'), ['material'], 'breaking.hand');
+  if (materials[b.hand.material] === undefined) fail(`breaking.hand.material: no material ${JSON.stringify(b.hand.material)}`);
   const classes = [];
-  for (const [c, list] of Object.entries(b.classes)) {
+  for (const [c, v] of Object.entries(obj(b.classes, 'breaking.classes'))) {
     if (c[0] === '$') continue;
-    if (!/^[a-z][a-z0-9_]*$/.test(c)) fail(`breaking.classes.${c}: classes are lower_snake_case`);
-    if (!Array.isArray(list)) fail(`breaking.classes.${c} is a list of block names`);
-    for (const block of list) {
-      if (!blocks.has(block)) fail(`breaking.classes.${c}: no block ${JSON.stringify(block)}`);
-      if (classOf.has(block)) fail(`breaking.classes: ${block} is in both ${classOf.get(block)} and ${c}`);
-      classOf.set(block, c);
-      classes.push({ block, class: c });
-    }
+    name(c, 'breaking.classes');
+    if (c === HAND) fail(`breaking.classes.${HAND}: the hand is \`breaking.hand\`, not a class`);
+    const at = `breaking.classes.${c}`;
+    known(obj(v, at), ['durability'], at);
+    const d = obj(v.durability, `${at}.durability`);
+    known(d, ['baseBlocks', 'block', 'material'], `${at}.durability`);
+    if (!(num(d.baseBlocks) && d.baseBlocks > 0 && d.baseBlocks <= 10000)) fail(`${at}.durability.baseBlocks is a number of blocks in (0, 10000]`);
+    if (!blocks.has(d.block)) fail(`${at}.durability.block: no block ${JSON.stringify(d.block)}`);
+    if (materials[d.material] === undefined) fail(`${at}.durability.material: no material ${JSON.stringify(d.material)}`);
+    classes.push({ class: c, durability: { baseBlocks: d.baseBlocks, block: d.block, material: d.material } });
   }
-  if (!Array.isArray(b.tools)) fail('breaking.tools must be a list');
+  const classNames = classes.map((c) => c.class);
+  const repeatS = b.repeatS ?? null;
+  if (repeatS !== null && !(num(repeatS) && repeatS >= 0.1 && repeatS <= 5)) fail('breaking.repeatS is seconds in [0.1, 5]');
   const seen = new Set();
-  const tools = b.tools.map((t, i) => {
-    const at = `breaking.tools[${i}]`;
-    known(t, ['item', 'class', 'tier', 'contactS', 'repeatOnHold', 'repeatS', 'clip'], at);
-    if (!items.has(t.item)) fail(`${at}: no item ${JSON.stringify(t.item)} (shared/inventory or a block)`);
+  const tool = (t, at, planned) => {
+    known(t, planned ? ['item', 'class', 'material'] : ['item', 'class', 'material', 'contactS', 'clip'], at);
+    if (!planned && !items.has(t.item)) fail(`${at}: no item ${JSON.stringify(t.item)} (shared/inventory or a block)`);
+    if (planned && items.has(t.item)) fail(`${at}: ${t.item} is an item now; list it in breaking.tools`);
+    if (planned && !/^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/.test(t.item ?? '')) fail(`${at}: item must be a namespaced name`);
     if (seen.has(t.item)) fail(`${at}: ${t.item} is listed twice`);
     seen.add(t.item);
-    if (!Object.hasOwn(b.classes, t.class) || t.class[0] === '$') fail(`${at}: unknown class ${JSON.stringify(t.class)} (${Object.keys(b.classes).filter((k) => k[0] !== '$').join(', ')})`);
-    if (!Object.hasOwn(b.tiers, t.tier) || t.tier[0] === '$') fail(`${at}: unknown tier ${JSON.stringify(t.tier)} (${Object.keys(b.tiers).filter((k) => k[0] !== '$').join(', ')})`);
+    if (!classNames.includes(t.class)) fail(`${at}: unknown class ${JSON.stringify(t.class)} (${classNames.join(', ')})`);
+    const m = materials[t.material];
+    if (m === undefined) fail(`${at}: unknown material ${JSON.stringify(t.material)} (${Object.keys(materials).join(', ')})`);
+    if (m.durability === null) fail(`${at}: material ${t.material} has no durability multiplier (a tool's material needs one)`);
+    if (planned) return { item: t.item, class: t.class, material: t.material };
     // When the swing's head meets the block (s after the click; WORK_QUEUE item 25): the hit lands
     // then, on the server and the client. Optional: 0, at once.
     const contactS = t.contactS ?? 0;
     if (typeof contactS !== 'number' || !(contactS >= 0 && contactS <= 2)) fail(`${at}: contactS is seconds in [0, 2]`);
-    // Held, the break repeats every `repeatS` (default 0.5 s; never before its contact).
-    const repeatOnHold = t.repeatOnHold ?? false;
-    if (typeof repeatOnHold !== 'boolean') fail(`${at}: repeatOnHold must be true or false`);
-    if (!repeatOnHold && t.repeatS !== undefined) fail(`${at}: repeatS without repeatOnHold`);
-    const repeatS = repeatOnHold ? (t.repeatS ?? 0.5) : null;
-    if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= Math.max(contactS, 0.1) && repeatS <= 5))) fail(`${at}: repeatS is seconds in [max(contactS, 0.1), 5]`);
-    // The arms' and body's role its break swing plays (owner, 2026-11-14: each tool's swing comes
-    // in from the right so its head strikes at the crosshair at `contactS`; heads sit at different
-    // lengths, so each is fitted with clip_probe --fit). A character without that role plays its
-    // `break` (a dwell-client test checks every role on the player's arms).
+    if (repeatS !== null && contactS > repeatS) fail(`${at}: contactS ${contactS} is after the swing pace (breaking.repeatS ${repeatS})`);
+    // The arms' and body's role its break swing plays (owner, 2026-11-14: each tool's head strikes
+    // at the crosshair at `contactS`; a character without that role plays its `break`).
     const clip = t.clip ?? 'break';
     if (typeof clip !== 'string' || !/^[a-z][a-z0-9_]*$/.test(clip)) fail(`${at}: clip must be a role name (lowercase: the player's firstPerson.clips, shared/characters)`);
-    return { item: t.item, class: t.class, tier: t.tier, ...tierOf(t.tier), contactS, repeatS, clip };
-  });
-  return { classes, tools, hand: validateHand(b.hand), heal: validateHeal(b.heal) };
+    return { item: t.item, class: t.class, material: t.material, contactS, repeatS, clip };
+  };
+  if (!Array.isArray(b.tools)) fail('breaking.tools must be a list');
+  const tools = b.tools.map((t, i) => tool(t, `breaking.tools[${i}]`, false));
+  const planned = (b.planned ?? []).map((t, i) => tool(t, `breaking.planned[${i}]`, true));
+  return { proficiency, materials, hand: { material: b.hand.material, repeatS }, classes, repeatS, tools, planned, heal: validateHeal(b.heal) };
 }
 
-/** Validates `breaking.hand` (WORK_QUEUE item 17; owner, 2026-11-13: "You should also be able to hold
- * 'punch' to dig with your hand."): a punch (a break holding no breaking or chopping tool) repeats
- * while held when `repeatOnHold`, every `repeatS` (default 0.5 s), and the server takes a damage hit
- * by hand no faster. None: one punch per press, at the edit rate. */
+/** A block's hits to break with a class (`hand` or a tool class) in a material, unrounded: base
+ * hits × the block's proficiency for the class × the material's hits (the owner's sheet). */
+export function rawHits(breaking, dmg, cls, material) {
+  return dmg.baseHits * breaking.proficiency[dmg.proficiency[cls] ?? 'neutral'] * breaking.materials[material].hits;
+}
+
+/** [`rawHits`] rounded up, at least 1 (the sheet's Hits (Rounded Up)). */
+export function hitsOf(breaking, dmg, cls, material) {
+  // A small epsilon so 0.15 × 10 = 1.5000000000000002 rounds as the sheet does.
+  return Math.max(1, Math.ceil(rawHits(breaking, dmg, cls, material) - 1e-9));
+}
+
+/** A break tool's wear (hits it survives): its class's `baseBlocks` × the hits its reference block
+ * takes from the class in the reference material (unrounded) × its material's `durability`. */
+export function durabilityOf(breaking, damageByBlock, t) {
+  const c = breaking.classes.find((x) => x.class === t.class).durability;
+  const ref = damageByBlock.get(c.block);
+  if (ref === undefined || ref.baseHits === null) fail(`breaking.classes.${t.class}.durability.block ${c.block} has no baseHits`);
+  const hits = Math.round(c.baseBlocks * rawHits(breaking, ref, t.class, c.material) * breaking.materials[t.material].durability);
+  if (!(hits >= 1 && hits <= 65535)) fail(`${t.item}: its computed wear ${hits} is outside [1, 65535]`);
+  return hits;
+}
+
 /** Validates `breaking.heal` (owner, 2026-11-15: damaged blocks "heal over time whether you're there or
  * not"; "blocks healing should happen on a delay (like 10s) before it starts. And the last 3 blocks you
  * hit shouldn't heal ... Each player gets their own last 3 blocks."): `delayS` after a cell's last hit
@@ -648,18 +727,6 @@ export function validateHeal(h) {
   if (typeof h.fullS !== 'number' || !(h.fullS >= 1 && h.fullS <= 86400)) fail('breaking.heal: fullS is seconds in [1, 86400]');
   if (!Number.isInteger(h.keepLast) || h.keepLast < 0 || h.keepLast > 16) fail('breaking.heal: keepLast is a whole number in [0, 16]');
   return { delayS: h.delayS, fullS: h.fullS, keepLast: h.keepLast };
-}
-
-export function validateHand(h) {
-  if (h === undefined) return { repeatS: null };
-  if (typeof h !== 'object' || h === null || Array.isArray(h)) fail('breaking.hand must be an object { repeatOnHold, repeatS }');
-  known(h, ['repeatOnHold', 'repeatS'], 'breaking.hand');
-  const repeatOnHold = h.repeatOnHold ?? false;
-  if (typeof repeatOnHold !== 'boolean') fail('breaking.hand: repeatOnHold must be true or false');
-  if (!repeatOnHold && h.repeatS !== undefined) fail('breaking.hand: repeatS without repeatOnHold');
-  const repeatS = repeatOnHold ? (h.repeatS ?? 0.5) : null;
-  if (repeatS !== null && (typeof repeatS !== 'number' || !(repeatS >= 0.1 && repeatS <= 5))) fail('breaking.hand: repeatS is seconds in [0.1, 5]');
-  return { repeatS };
 }
 
 /** The items a hand can show (shared/characters/characters.json's `items`). */
@@ -769,14 +836,11 @@ export function toolsRust(d) {
   for (const b of d.breakWith) rs.push(`    ("${b.block}", "${b.kind}"),`);
   rs.push('];');
   rs.push('');
-  rs.push("/// Each block's tool class (`breaking.classes`): the class that is the right tool for it.");
-  rs.push('pub static BREAK_CLASSES: &[(&str, &str)] = &[');
-  for (const c of d.breaking.classes) rs.push(`    ("${c.block}", "${c.class}"),`);
-  rs.push('];');
-  rs.push('');
-  rs.push("/// Each block's hits to destroy (its `damage`): by bare hands, and by tool class or item.");
+  rs.push("/// Each block's hits to destroy, computed from its `damage` (base hits × proficiency × material,");
+  rs.push('/// rounded up; or its `fixedHits`): by hand, by each break tool; the tools and hand it drops');
+  rs.push('/// nothing broken by (`barren`: inefficient); whether a hit shakes it instead of marking it.');
   rs.push('pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[');
-  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", volume: ${f64(b.volume)}, default: ${b.default === null ? 'None' : `Some(${b.default})`}, tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${crackRust(b.look.cracks)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, shards: ${b.chips.shards}, piece: "${b.chips.piece}", color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
+  for (const b of d.damage) rs.push(`    BlockDamageDef { block: "${b.block}", volume: ${f64(b.volume)}, default: Some(${b.default}), tools: &[${b.tools.map((t) => `("${t.tool}", ${t.hits})`).join(', ')}], barren: &[${b.barren.map((x) => `"${x}"`).join(', ')}], shake: ${b.shake}, look: ${b.look === null ? 'None' : `Some(DamageLook { kind: DamageLookKind::${b.look.kind[0].toUpperCase() + b.look.kind.slice(1)}, size: ${f64(b.look.size)}, color: [${rgb(b.look.color).join(', ')}], crack: [${rgb(b.look.crack).join(', ')}], depth: ${f64(b.look.depth)}, rim: ${f64(b.look.rim)}, parallax: ${b.look.parallax}, darken: ${f64(b.look.darken)}, profile: CarveProfile::${b.look.profile[0].toUpperCase() + b.look.profile.slice(1)}, facets: ${b.look.facets}, flakes: ${b.look.flakes}, grid: ${b.look.grid}, triangles: ${b.look.triangles}, cracks: ${crackRust(b.look.cracks)} })`}, chips: ${b.chips === null ? 'None' : `Some(Chips { count: ${b.chips.count}, shards: ${b.chips.shards}, piece: "${b.chips.piece}", color: [${rgb(b.chips.color).join(', ')}], speed: ${f64(b.chips.speed)}, size: ${f64(b.chips.size)} })`} },`);
   rs.push('];');
   rs.push('');
   rs.push('/// Tools that wear (`durability.items`): (item, hits it survives).');
@@ -786,11 +850,12 @@ export function toolsRust(d) {
   rs.push("/// The sound event of a tool breaking from wear.");
   rs.push(`pub const WEAR_BREAK_SOUND: Option<&str> = ${optStr(d.durability.breakSound)};`);
   rs.push('');
-  rs.push("/// Each tool item's class, tier and that tier's break speed (`breaking.tools`).");
+  rs.push("/// Each break tool item's class and material (`breaking.tools`), its contact, pace and clip.");
   rs.push('pub static BREAK_TOOLS: &[BreakTool] = &[');
-  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", tier: "${t.tier}", speed: ${f64(t.speed)}, contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`}, clip: "${t.clip}" },`);
+  for (const t of d.breaking.tools) rs.push(`    BreakTool { item: "${t.item}", class: "${t.class}", material: "${t.material}", contact_s: ${f64(t.contactS)}, repeat_s: ${t.repeatS === null ? 'None' : `Some(${f64(t.repeatS)})`}, clip: "${t.clip}" },`);
   rs.push('];');
-  rs.push("/// A punch (a break holding no tool) held repeats this often (s; `breaking.hand`), and the server");
+  rs.push("/// A punch (a break holding no tool) held repeats this often (s; `breaking.repeatS`, every tool's");
+  rs.push('/// pace too), and the server');
   rs.push('/// takes damage hits by hand no faster; none: one per press.');
   rs.push(`pub const HAND_REPEAT_S: Option<f64> = ${d.breaking.hand.repeatS === null ? 'None' : `Some(${f64(d.breaking.hand.repeatS)})`};`);
   const heal = d.breaking.heal;
@@ -801,6 +866,29 @@ export function toolsRust(d) {
   return rs.join('\n');
 }
 
+/** The computed table for review (shared/tools/hits.gen.md), laid out as the owner's sheet's Hits
+ * (Rounded Up): a row a block, a column the hand and each tool (planned ones too), then each tool's
+ * wear. */
+export function hitsMd(d) {
+  const b = d.breaking;
+  const cols = [{ item: 'hand', class: HAND, material: b.hand.material }, ...b.tools, ...d.planned].map((t) => ({ ...t, label: t.item === 'hand' ? `hand (${t.material})` : `${t.item.split(':')[1]}${d.planned.includes(t) ? ' (planned)' : ''}` }));
+  const md = [`<!-- ${header} -->`, '', '# Hits to break (computed)', '', 'Generated by `shared/tools/gen.mjs` from each block\'s `damage` and `tools.json` `breaking` (docs/BLOCK_DAMAGE.md §17). Hits = ceil(base × proficiency × material); ✗ = drops nothing (inefficient); a block with `fixedHits` takes them with anything.', ''];
+  md.push(`| Block | Base | ${cols.map((c) => c.label).join(' | ')} |`);
+  md.push(`|${' --- |'.repeat(cols.length + 2)}`);
+  for (const x of d.damage) {
+    const cell = (c) => {
+      if (x.fixedHits !== null) return `${x.fixedHits}`;
+      const n = hitsOf(b, x, c.class, c.material);
+      return `${n}${x.proficiency[c.class] === 'inefficient' ? ' ✗' : ''}`;
+    };
+    md.push(`| ${x.block} | ${x.fixedHits !== null ? `fixed${x.shake ? ', shakes' : ''}` : x.baseHits} | ${cols.map(cell).join(' | ')} |`);
+  }
+  md.push('', '## Tool wear (hits)', '', '| Tool | Class | Material | Hits |', '| --- | --- | --- | --- |');
+  for (const t of [...b.tools, ...d.planned]) md.push(`| ${t.item}${d.planned.includes(t) ? ' (planned)' : ''} | ${t.class} | ${t.material} | ${t.durability ?? d.durability.items.find((x) => x.item === t.item).hits} |`);
+  md.push('');
+  return md.join('\n');
+}
+
 export function toolsTs(d) {
   const ts = [`// ${header}`, ''];
   ts.push('/** A tool: its item name and kind (the swing hint shows for an axe). */');
@@ -809,7 +897,7 @@ export function toolsTs(d) {
   for (const t of d.tools) ts.push(`  { name: '${t.name}', kind: '${t.kind}' },`);
   ts.push('];');
   ts.push('');
-  ts.push("/** Each block's hits to destroy (its `damage`): `default` by bare hands (null: can't), `tools` by class or item. */");
+  ts.push("/** Each block's hits to destroy (computed from its `damage`): `default` by hand, `tools` by break tool item. */");
   ts.push('export const BLOCK_DAMAGE: readonly {', '  block: string;', '  default: number | null;', '  tools: Readonly<Record<string, number>>;', '}[] = [');
   for (const b of d.damage) ts.push(`  { block: '${b.block}', default: ${b.default}, tools: { ${b.tools.map((t) => `${/^[A-Za-z_]\w*$/.test(t.tool) ? t.tool : `'${t.tool}'`}: ${t.hits}`).join(', ')} } },`);
   ts.push('];');
@@ -827,6 +915,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const d = validateTools(loadTools(), items, blocks);
   writeFileSync(join(root, 'crates/dwell-protocol/src/tools.gen.rs'), toolsRust(d));
   writeFileSync(join(root, 'client/src/ui/tools.gen.ts'), toolsTs(d));
+  writeFileSync(join(here, 'hits.gen.md'), hitsMd(d));
   // The fixture (tests only): a weapon added by data alone (shared/tools/fixtures/tools.json).
   const fx = validateTools(fixtureTools(), items, blocks);
   writeFileSync(join(root, 'crates/dwell-protocol/src/tools_fixture.gen.rs'), toolsRust(fx).replace(header, header.replace('tools.json', 'fixtures/tools.json')));

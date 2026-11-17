@@ -84,7 +84,7 @@
     },
     {
       "name": "stone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "drops": [{"item": "dwell:rock_shard", "count": 4}],
       "sound": "dwell:stone",
       "density": 2400,
@@ -101,7 +101,7 @@
     },
     {
       "name": "dirt",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 4}, {"item": "dwell:rock_shard", "chance": 0.5}],
       "sound": "dwell:dirt",
       "density": 1500,
@@ -124,7 +124,7 @@
     },
     {
       "name": "grass",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 12, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 4}, {"item": "dwell:rock_shard", "chance": 0.5}],
       "sound": "dwell:grass",
       "density": 1400,
@@ -146,6 +146,7 @@
     },
     {
       "name": "ladder",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "empty",
@@ -211,7 +212,7 @@
     },
     {
       "name": "sand",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:sand_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:sand_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
       "$drops": "Owner, 2026-11-14: \"Yeah sand should have sub chunks.\": a ½ m cell breaks into 8 sand clumps, as dirt into dirt clumps; 8 make sand again (shared/inventory recipes).",
       "drops": [{ "item": "dwell:sand_clump", "count": 4 }],
       "support": "falls",
@@ -250,8 +251,7 @@
       "name": "log",
       "drops": [{"item": "dwell:wood", "count": 4}],
       "sound": "dwell:wood",
-      "breakWith": "axe",
-      "damage": { "default": 24, "axe": 15, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "baseHits": 12, "proficiency": { "axe": "proficient", "hand": "inefficient" }, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "density": 700,
       "shape": "full",
       "placeable": true,
@@ -285,6 +285,7 @@
     {
       "$comment": "Drawn cutout: the leaves tile has transparent gaps between the leaves. lightFilter: a canopy dims the sky light under it rather than shutting it out (docs/DAY_NIGHT.md §11). A rider (docs/FELLING.md): held up by the logs it belongs to, holding nothing; passable: players walk through it (owner, 2026-10-27). flooded (ADR 0063; owner, 2026-11-07: \"underwater leaves z fighting, I think they should be flooded\"): under water the leaves hold it in their gaps, drawn as the water beside them.",
       "name": "leaves",
+      "damage": { "baseHits": 4, "proficiency": { "axe": "proficient" } },
       "drops": [{ "item": "dwell:stick", "chance": 0.5 }],
       "sound": "dwell:grass",
       "density": 200,
@@ -302,6 +303,7 @@
     {
       "$comment": "Prototype content (docs/TRANSPARENT_BLOCKS.md §6): blades of grass, the first plant. No collision; crossed quads drawn cutout, jittered per cell, swaying in the wind and fading out before the LOD; placed by hand only (world generation doesn't grow it), on grass or dirt, replaced by what is placed into it, and gone with the block under it.",
       "name": "tall_grass",
+      "damage": { "fixedHits": 1 },
       "$drops": "Owner, 2026-11-14: \"grass fiber should be a guaranteed drop, seeds will be 50%\" and \"Cutting grass that's taller than 1 gives +1 plant fiber each\": one fibre for each ½ m cell (a taller stand's cells go with the cell under them, each dropping its own), a seed at 50 %, at every stage; the gem from a full tuft as before. A stand up to 2 m (WORK_QUEUE item 58 g): its lower cells are stalks (`stage` `stalk`), each dropping its fibre; the seed and the gem come from its top cell only.",
       "drops": [
         { "item": "dwell:grass_fiber" },
@@ -366,32 +368,33 @@
     {
       "$comment": "The stored ramps (rampFamilies) at their own slots, as generated before the torch was added: blocks added after them keep every earlier state id (the worldgen goldens hash ids). Stone's are placeable: the hotbar's stone slopes (shared/items, owner 2026-10-30).",
       "name": "stone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "stone",
       "palette": "all"
     },
     {
       "name": "dirt_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "dirt"
     },
     {
       "name": "grass_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 12, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "grass"
     },
     {
       "name": "sand_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#a8865a", "crack": "#6e5636", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c9ad7c", "speed": 1.6, "size": 0.04 } },
       "family": "ramp",
       "of": "sand"
     },
     {
       "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters).",
       "name": "torch",
+      "damage": { "fixedHits": 1 },
       "sound": "dwell:torch",
       "density": 600,
       "shape": "empty",
@@ -424,6 +427,7 @@
     {
       "$comment": "The torch's upper cell (docs/LIGHTS.md): the stick's top and the flame, which gives off the block light (`emits` 14, its cell the flame's) and, with Torch shadows (T2), the placed torch's dynamic light. Placed only with its torch (`partOf`).",
       "name": "torch_upper",
+      "damage": { "fixedHits": 1 },
       "sound": "dwell:torch",
       "density": 600,
       "shape": "empty",
@@ -462,7 +466,7 @@
     {
       "$comment": "Snow lying on turf (owner, 2026-10-21: \"add snow 'grass' block\"): grass's counterpart on high ground, which the terrain generator tops columns with above the snow line (shared/worldgen/terrain.json `bands`). A white snow top, a side with the snow's fringe hanging over the dirt (the `hang` tile, as grass's turf), dirt below; dirt under it shows the fringe as its skirt (`sideUnder`). Its ramps are stored like grass's (`rampFamilies`).",
       "name": "snowy_grass",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 12, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 4}, {"item": "dwell:rock_shard", "chance": 0.5}],
       "sound": "dwell:snow",
       "density": 1300,
@@ -484,13 +488,14 @@
     },
     {
       "name": "snowy_grass_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 12, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#4a3322", "crack": "#3f2d1f", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#5b3d27", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "snowy_grass"
     },
     {
       "$comment": "Leaves under snow (owner, 2026-10-21: \"snow leaves\"): the leaves' cutout canopy and light filter with snow on the top face and caught on the sides. Trees growing high up take it for their leaves (shared/worldgen/placements.json `variants`).",
       "name": "snowy_leaves",
+      "damage": { "baseHits": 4, "proficiency": { "axe": "proficient" } },
       "drops": [{ "item": "dwell:stick", "chance": 0.5 }],
       "sound": "dwell:snow",
       "density": 220,
@@ -512,6 +517,7 @@
     {
       "$comment": "Prototype content (docs/BUILT_BODIES.md §3, owner 2026-11-02): the build platform. Placed, it starts a built body (shared/physics/bodies.json `startedBy`) instead of going in the world's grid: blocks placed against it join that body, which never settles back into the world.",
       "name": "build_platform",
+      "damage": { "baseHits": 12, "proficiency": { "axe": "proficient", "hand": "inefficient" } },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "full",
@@ -536,6 +542,7 @@
     {
       "$comment": "Prototype content (docs/EXPLOSIVES.md, owner 2026-11-06): dynamite, placed unlit. Place with a torch held, aimed at it, lights it (shared/explosives: it becomes dwell:lit_dynamite and its fuse runs). Caught in a blast it is lit with a short random fuse.",
       "name": "dynamite",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:dynamite",
       "density": 1200,
       "shape": "full",
@@ -546,6 +553,7 @@
     {
       "$comment": "Dynamite with its fuse burning (docs/EXPLOSIVES.md): only lighting makes it; nothing breaks or overwrites it (`indestructible`) until it blows. Its light is the sputtering fuse (`dwell:fuse`, a small flame on its top) and its sound set's `burn` the fizz.",
       "name": "lit_dynamite",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:lit_dynamite",
       "density": 1200,
       "shape": "full",
@@ -558,6 +566,7 @@
     {
       "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): blue dynamite, a 4 m blast that destroys everything in it and flings nothing (shared/explosives). Lit with a torch as red's.",
       "name": "dynamite_blue",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:dynamite",
       "density": 1200,
       "shape": "full",
@@ -568,6 +577,7 @@
     {
       "$comment": "Blue dynamite with its fuse burning (as dwell:lit_dynamite).",
       "name": "lit_dynamite_blue",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:lit_dynamite",
       "density": 1200,
       "shape": "full",
@@ -580,6 +590,7 @@
     {
       "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-06): green dynamite, destroys 4 m and flings the 4–5 m shell as red's (shared/explosives). Lit with a torch as red's.",
       "name": "dynamite_green",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:dynamite",
       "density": 1200,
       "shape": "full",
@@ -590,6 +601,7 @@
     {
       "$comment": "Green dynamite with its fuse burning (as dwell:lit_dynamite).",
       "name": "lit_dynamite_green",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:lit_dynamite",
       "density": 1200,
       "shape": "full",
@@ -602,6 +614,7 @@
     {
       "$comment": "Prototype content (docs/EXPLOSIVES.md §variants, owner 2026-11-07): yellow dynamite, destroys 4 m and cracks the 4–5 m shell's cells that touch air (shared/explosives). Lit with a torch as red's.",
       "name": "dynamite_yellow",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:dynamite",
       "density": 1200,
       "shape": "full",
@@ -612,6 +625,7 @@
     {
       "$comment": "Yellow dynamite with its fuse burning (as dwell:lit_dynamite).",
       "name": "lit_dynamite_yellow",
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:lit_dynamite",
       "density": 1200,
       "shape": "full",
@@ -627,14 +641,13 @@
       "family": "ramp",
       "of": "log",
       "support": "carrier",
-      "breakWith": "axe",
-      "damage": { "default": 12, "axe": 8, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "baseHits": 12, "proficiency": { "axe": "proficient", "hand": "inefficient" }, "look": { "kind": "chips", "size": 0.3, "color": "#e8c99a", "crack": "#4a3420", "cracks": { "set": "wood", "stages": [0.15, 0.4, 0.65, 0.85], "strength": 0.85 } }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "crossSection": "of"
     },
     {
       "$comment": "Plain snow (owner approved 2026-11-11, with the glacier ice): a block of packed snow through, white on every face, for high ground where no turf lies under it. The snow line's cover on a tall peak (shared/worldgen/rocks.json `tectonic.snow`). Shovelled quickly; drops itself. Its ramps are stored like grass's (`rampFamilies`). Prototype content.",
       "name": "snow",
-      "damage": { "default": 6, "shovel": 3, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0", "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0", "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
       "sound": "dwell:snow",
       "density": 400,
       "shape": "full",
@@ -645,14 +658,14 @@
     },
     {
       "name": "snow_ramp",
-      "damage": { "default": 6, "shovel": 3, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0", "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.36, "color": "#b9c9de", "crack": "#8fa3c0", "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#e9eff6", "speed": 1.6, "size": 0.05 } },
       "family": "ramp",
       "of": "snow"
     },
     {
       "$comment": "Glacier ice (owner approved 2026-11-11): old, compacted ice, a pale blue-white with deeper blue cracks and a painted sheen (glossy-looking but opaque: no new render path). On a tall peak it covers the coldest gentle ground and the crater's dome above the snow (shared/worldgen/rocks.json `tectonic.ice`, terrain.json `tectonics.iceBelowC`). Like stone, hands can't break it; a pickaxe breaks it in fewer hits than stone. Drops itself. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
       "name": "glacier_ice",
-      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "pickaxe": "proficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
       "sound": "dwell:stone",
       "density": 917,
       "shape": "full",
@@ -663,14 +676,14 @@
     },
     {
       "name": "glacier_ice_ramp",
-      "damage": { "default": null, "pickaxe": 4, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "pickaxe": "proficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.3, "color": "#eef6fa", "crack": "#4f7fb8", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 8, "shards": 4, "color": "#cfe6f2", "speed": 2.8, "size": 0.04 } },
       "family": "ramp",
       "of": "glacier_ice"
     },
     {
       "$comment": "Red sandstone (0.52.66, the mesa's red layers): bedded red rock, the face of shared/worldgen/rocks.json's dwell:sandstone, so a stack's sandstone layers read red on a mesa's walls and tops. Breaks and drops like stone. Its ramps are stored like stone's (`rampFamilies`). Prototype content.",
       "name": "red_sandstone",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 4 }],
       "sound": "dwell:stone",
       "density": 2300,
@@ -682,14 +695,14 @@
     },
     {
       "name": "red_sandstone_ramp",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#efc6a4", "crack": "#7a3e28", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#b5643f", "speed": 2.6, "size": 0.045 } },
       "family": "ramp",
       "of": "red_sandstone"
     },
     {
       "$comment": "Basalt (lava V1, docs/proposals/VOLCANOES.md §6): the rock lava cools into (shared/fluids/lava.json `cooling.rock`), new land where a lava river crusts over. Breaks, drops and sounds like stone. Its look: the painterly `basalt` tile (shared/textures/materials.json, ropey pahoehoe folds). Prototype content.",
       "name": "basalt",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 4 }],
       "sound": "dwell:stone",
       "density": 2900,
@@ -702,7 +715,7 @@
     {
       "$comment": "Obsidian (lava V1): the quench edge, lava chilled at once where water touches it (shared/fluids/lava.json `quench.rock`). Breaks, drops and sounds like stone, harder. Its look: the painterly `obsidian` tile (near-black glass with a violet sheen). Prototype content.",
       "name": "obsidian",
-      "damage": { "default": null, "pickaxe": 12, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 20, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045 } },
       "drops": [{ "item": "dwell:rock_shard", "count": 4 }],
       "sound": "dwell:stone",
       "density": 2400,
@@ -729,6 +742,7 @@
     {
       "$comment": "An oak sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
       "name": "oak_sapling",
+      "damage": { "fixedHits": 1 },
       "sound": "dwell:grass",
       "density": 200,
       "shape": "empty",
@@ -746,6 +760,7 @@
     {
       "$comment": "A pine sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
       "name": "pine_sapling",
+      "damage": { "fixedHits": 1 },
       "sound": "dwell:grass",
       "density": 200,
       "shape": "empty",
@@ -763,6 +778,7 @@
     {
       "$comment": "A palm sapling (ADR 0079 S4, docs/TREE_GROWTH.md §11): the item a player plants. Its species (shared/trees) names it as its `sapling.item` and says where it takes (`plantOn`); the server turns a placed sapling into the species' stage-0 tree and its growth record, so this block stands in the world only on a build without that species. A simple crossed-leaf look; drops itself. Prototype content.",
       "name": "palm_sapling",
+      "damage": { "fixedHits": 1 },
       "sound": "dwell:grass",
       "density": 200,
       "shape": "empty",
@@ -780,7 +796,7 @@
     {
       "$comment": "The moon's ground (docs/proposals/MOON_WORLD.md M-1): gray dust over the whole moon world for now, the moon generator's one block (shared/worldgen/grids.json `block`; the maria take `dwell:moon_mare_dust`). Digs like sand. Prototype content (ARCHITECTURE.md §6.1).",
       "name": "moon_dust",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04 } },
       "sound": "dwell:sand",
       "density": 1500,
       "shape": "full",
@@ -792,7 +808,7 @@
     {
       "$comment": "The moon's darker ground in its maria (docs/proposals/MOON_WORLD.md §12 Q1; owner, 2026-11-12: \"keep darker seas (add a dark moon aria dirt block)\"): the cratered generator's `maria.block` (shared/worldgen/grids.json). Its `color` is also the far bake's albedo over the maria: 0.55 × the moon dust's luma, the old sky moon's seas (its shader's `1 − moon.maria`, 0.45), so the far moon keeps their contrast. Digs like moon dust. Prototype content (ARCHITECTURE.md §6.1).",
       "name": "moon_mare_dust",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04 } },
       "sound": "dwell:sand",
       "density": 1500,
       "shape": "full",
@@ -804,7 +820,7 @@
     {
       "$comment": "Red-brown desert sand (0.59.0; owner, 2026-11-13: \"We need a red brown sand for the red desert areas\"): the surface of the red desert (the red rock mesa and badlands biomes, the sandstone's talus in shared/worldgen/rocks.json). Sand's physics, tools and drops in the palette's red_sand ramp; falls and settles flat like sand. Its ramps are stored (`rampFamilies`). Prototype content.",
       "name": "red_sand",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
       "support": "falls",
       "settlesAs": "full",
       "sound": "dwell:sand",
@@ -819,38 +835,38 @@
     {
       "$comment": "Ramps for every terrain block (0.59.0; owner, 2026-11-13: \"we should support ramps for all terrain blocks\"); after every earlier block, so earlier state ids stay.",
       "name": "basalt_ramp",
-      "damage": {"default": null, "pickaxe": 7, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045}},
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#8c8a90", "crack": "#2a282c", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#4a4648", "speed": 2.6, "size": 0.045}},
       "family": "ramp",
       "of": "basalt"
     },
     {
       "name": "obsidian_ramp",
-      "damage": {"default": null, "pickaxe": 12, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045}},
+      "damage": { "baseHits": 20, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": {"kind": "shards", "profile": "spall", "flakes": 2, "grid": 12, "triangles": 512, "size": 0.34, "color": "#6e6080", "crack": "#0c0a10", "cracks": {"set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3}}, "chips": {"count": 7, "shards": 4, "color": "#2a2236", "speed": 2.6, "size": 0.045}},
       "family": "ramp",
       "of": "obsidian"
     },
     {
       "name": "moon_dust_ramp",
-      "damage": {"default": 11, "shovel": 7, "look": {"kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04}},
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": {"kind": "scoops", "size": 0.38, "color": "#6f6d78", "crack": "#4a4850", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#8a8890", "speed": 1.6, "size": 0.04}},
       "family": "ramp",
       "of": "moon_dust"
     },
     {
       "name": "moon_mare_dust_ramp",
-      "damage": {"default": 11, "shovel": 7, "look": {"kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04}},
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": {"kind": "scoops", "size": 0.38, "color": "#3a3940", "crack": "#27262c", "depth": 0.12, "cracks": {"set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6}}, "chips": {"count": 6, "color": "#4a4950", "speed": 1.6, "size": 0.04}},
       "family": "ramp",
       "of": "moon_mare_dust"
     },
     {
       "name": "red_sand_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#9a5434", "crack": "#5e3020", "depth": 0.12, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#c27a4e", "speed": 1.6, "size": 0.04 } },
       "family": "ramp",
       "of": "red_sand"
     },
     {
       "$comment": "Red-brown desert dirt (0.64; owner, 2026-11-13, of a Monument Valley photo: \"Mostly reddish dirt though.\"): the main surface of mesa country's floors (the red rock mesa's bands, the red siltstone's floors in shared/worldgen/rocks.json), blended with red sand and tan sand by the mesa floor's ordered blend (rocks.json `blends`). Dirt's tools, drops and sound in the palette's red_dirt ramp. Its ramps are stored (`rampFamilies`). Prototype content.",
       "name": "red_dirt",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
       "drops": [{"item": "dwell:dirt_clump", "count": 4}, {"item": "dwell:rock_shard", "chance": 0.5}],
       "sound": "dwell:dirt",
       "density": 1500,
@@ -863,13 +879,14 @@
     },
     {
       "name": "red_dirt_ramp",
-      "damage": { "default": 11, "shovel": 7, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
+      "damage": { "baseHits": 8, "proficiency": { "shovel": "proficient" }, "look": { "kind": "scoops", "size": 0.38, "color": "#6e3322", "crack": "#4a2418", "depth": 0.14, "cracks": { "set": "soil", "stages": [0.2, 0.45, 0.65, 0.85], "strength": 0.6 } }, "chips": { "count": 6, "shards": 3, "piece": "dwell:dirt_clump", "color": "#8a4a30", "speed": 1.8, "size": 0.06 } },
       "family": "ramp",
       "of": "red_dirt"
     },
     {
       "$comment": "Sagebrush's crown (0.64; owner, 2026-11-13, of Monument Valley: \"Some brush too. Could add some single 'tree' block with brush on top.\"): leaves' rules (a rider, passable, cutout, filtering the light) in the palette's grey-green sage ramp; the crown of dwell:sagebrush (shared/trees/sagebrush.json). Prototype content.",
       "name": "brush",
+      "damage": { "fixedHits": 1 },
       "drops": [{ "item": "dwell:stick", "chance": 0.3 }],
       "sound": "dwell:grass",
       "density": 200,
@@ -887,7 +904,7 @@
     {
       "$comment": "Town building blocks (owner, 2026-11-14: \"Let's just do 3 blocks. Plank floors, stone brick walls, thatch roof. And doors also.\"): plank floors, a man-made block of sawn boards (the build platform's painterly boards). Combined from 8 wood (shared/inventory). Prototype content.",
       "name": "planks",
-      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "baseHits": 12, "proficiency": { "axe": "proficient", "hand": "inefficient" }, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "full",
@@ -898,7 +915,7 @@
     {
       "$comment": "Town building blocks (owner, 2026-11-14): stone brick walls, dressed stone laid in courses (its own painterly tile in the stone ramp). Stone's tools; combined from 8 rock shards. Prototype content.",
       "name": "stone_brick",
-      "damage": { "default": null, "pickaxe": 7, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" }, "look": { "kind": "shards", "profile": "spall", "flakes": 1, "grid": 12, "triangles": 512, "size": 0.6, "color": "#e4ddcf", "crack": "#7a7266", "depth": 0.1, "darken": 0, "cracks": { "set": "stone", "stages": [0.5, 0.7, 0.85, 0.95], "strength": 0.3 } }, "chips": { "count": 7, "shards": 4, "piece": "dwell:rock_shard", "color": "#9a948c", "speed": 2.6, "size": 0.045 } },
       "sound": "dwell:stone",
       "density": 2300,
       "shape": "full",
@@ -909,7 +926,7 @@
     {
       "$comment": "Town building blocks (owner, 2026-11-14): the thatch roof, bundled straw, with ramps (`thatch_ramp`, below) for pitched roofs. Combined from 6 sticks and 2 grass fibre. Prototype content.",
       "name": "thatch",
-      "damage": { "default": 6, "chips": { "count": 6, "color": "#c9a85a", "speed": 1.6, "size": 0.05 } },
+      "damage": { "baseHits": 6, "proficiency": { "axe": "proficient" }, "chips": { "count": 6, "color": "#c9a85a", "speed": 1.6, "size": 0.05 } },
       "sound": "dwell:grass",
       "density": 250,
       "shape": "full",
@@ -920,7 +937,7 @@
     {
       "$comment": "The thatch roof's slopes (the stored ramps' shapes, placeable as the hotbar's thatch slopes, as stone's are): a pitched roof is ½ m and 1 m ramps facing down its eaves.",
       "name": "thatch_ramp",
-      "damage": { "default": 6, "chips": { "count": 6, "color": "#c9a85a", "speed": 1.6, "size": 0.05 } },
+      "damage": { "baseHits": 6, "proficiency": { "axe": "proficient" }, "chips": { "count": 6, "color": "#c9a85a", "speed": 1.6, "size": 0.05 } },
       "family": "ramp",
       "of": "thatch",
       "palette": "all"
@@ -928,7 +945,7 @@
     {
       "$comment": "The door (owner, 2026-11-14: \"2m doors.\"): 2 m tall over four ½ m cells, one wide, a column (`column`: its `part` property's values bottom to top, every cell of it the same door; BLOCK_REGISTRY.md, Multi-cell blocks). Closed it fills its cell as a block does (the doorway of a 1 m wall); open (`swing`) it is a thin plate against the cell's side, turned a quarter toward its `hinge`, with no collision. A Use (Place aimed at it, whatever is held) flips `open` on all four cells (`toggle`); villagers open the doors they walk through and close them behind them (shared/creatures `opensDoors`). Placed by its bottom part, facing the player. Prototype content.",
       "name": "door",
-      "damage": { "default": 12, "axe": 8, "chips": { "count": 7, "shards": 3, "piece": "dwell:wood", "color": "#d9b37a", "speed": 2.6, "size": 0.05 } },
+      "damage": { "fixedHits": 2, "hit": "shake" },
       "sound": "dwell:wood",
       "density": 600,
       "shape": "full",

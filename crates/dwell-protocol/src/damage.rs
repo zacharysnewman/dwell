@@ -15,10 +15,17 @@ pub struct BlockDamageDef {
     /// Its volume as a share of a cell's ([`CELL_M3`]; generated from its shape: a full block 1, a
     /// stored ramp ½), for the bite rule ([`bite_m3_in`]).
     pub volume: f64,
-    /// With bare hands or a tool not listed; none: it can't be broken so.
+    /// By hand (no break tool held), computed (`shared/tools/gen.mjs`); none: it can't be broken so.
     pub default: Option<u32>,
-    /// Per tool class (`pickaxe`, …) or item (`dwell:metal_pickaxe`), an item's over its class's.
+    /// Per break tool item, computed from the block's base hits, its proficiency for the tool's
+    /// class and the tool's material (owner, 2026-11-17, the Block Stats sheet).
     pub tools: &'static [(&'static str, u32)],
+    /// What it drops nothing broken by: `hand` and the tool items it is inefficient with (owner,
+    /// 2026-11-17: "inefficient tools cause blocks to not drop anything").
+    pub barren: &'static [&'static str],
+    /// A hit short of breaking shakes it and marks nothing (data `hit: "shake"`; owner,
+    /// 2026-11-17: door, ladder, dynamite).
+    pub shake: bool,
     /// How its damage is drawn (D2); none: not drawn.
     pub look: Option<DamageLook>,
     /// The chips a hit on it knocks out (the client's particles); none: none.
@@ -115,31 +122,43 @@ pub fn look_of(block: &str) -> Option<DamageLook> {
         .and_then(|d| d.look)
 }
 
-/// The hits to destroy `block` holding `held` (an item name; none: an empty hand), from tables
-/// `damage` and `tools`: none when it can't be broken so (stone by hand). An item's own entry
-/// wins; else its class's, divided by the item's tier speed (rounded up, at least 1); else the
-/// block's default. A block without a `damage` entry breaks in one hit, as before.
+/// The hits to destroy `block` holding `held` (an item name; none: an empty hand), from table
+/// `damage` (computed per break tool item by the generator): the held tool's entry, else the
+/// block's hand count (a block or any other item held punches). A block without a `damage` entry
+/// breaks in one hit. `_tools` is kept for the callers' signature.
 pub fn hits_to_break_in(
     damage: &[BlockDamageDef],
-    tools: &[BreakTool],
+    _tools: &[BreakTool],
     block: &str,
     held: Option<&str>,
 ) -> Option<u32> {
     let Some(d) = damage.iter().find(|d| d.block == block) else {
         return Some(1);
     };
-    let entry = |k: &str| d.tools.iter().find(|(t, _)| *t == k).map(|(_, n)| *n);
-    if let Some(h) = held {
-        if let Some(n) = entry(h) {
-            return Some(n);
-        }
-        if let Some(t) = tools.iter().find(|t| t.item == h)
-            && let Some(n) = entry(t.class)
-        {
-            return Some(((f64::from(n) / t.speed).ceil() as u32).max(1));
-        }
-    }
-    d.default
+    held.and_then(|h| d.tools.iter().find(|(t, _)| *t == h).map(|(_, n)| *n))
+        .or(d.default)
+}
+
+/// Whether `block` broken holding `held` drops anything, from table `damage`: not when the held
+/// tool (or the hand: no tool of the table's held) is one it is inefficient with (its `barren`).
+pub fn drops_when_broken_in(damage: &[BlockDamageDef], block: &str, held: Option<&str>) -> bool {
+    let Some(d) = damage.iter().find(|d| d.block == block) else {
+        return true;
+    };
+    let by = held
+        .filter(|h| d.tools.iter().any(|(t, _)| t == h))
+        .unwrap_or("hand");
+    !d.barren.contains(&by)
+}
+
+/// [`drops_when_broken_in`] over the build's data.
+pub fn drops_when_broken(block: &str, held: Option<&str>) -> bool {
+    drops_when_broken_in(BLOCK_DAMAGE, block, held)
+}
+
+/// Whether a hit short of breaking `block` shakes it (and marks nothing): door, ladder, dynamite.
+pub fn shakes(block: &str) -> bool {
+    BLOCK_DAMAGE.iter().any(|d| d.block == block && d.shake)
 }
 
 /// [`hits_to_break_in`] over the build's data.
@@ -656,42 +675,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hits_per_tool_tier_and_default_come_from_the_data() {
-        // Owner, 2026-11-10: the right tool at stone tier about 5, metal about 3, the wrong tool or
-        // bare hands about 10–12; bare hands can't break stone.
-        assert_eq!(
-            hits_to_break("dwell:stone", Some("dwell:stone_pickaxe")),
-            Some(5)
+    fn hits_per_tool_and_by_hand_come_from_the_data() {
+        // Owner, 2026-11-17 (the Block Stats sheet; the full table is chopping.rs'
+        // the_owners_sheet_hits_and_wear_are_the_builds): stone by hand 48 (owner: "yes allow 48
+        // hits"), the right tool's material faster.
+        for (block, held, n) in [
+            ("dwell:stone", Some("dwell:stone_pickaxe"), 6),
+            ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
+            ("dwell:stone", None, 48),
+            ("dwell:stone", Some("dwell:metal_shovel"), 6),
+            ("dwell:dirt", Some("dwell:wooden_shovel"), 6),
+            ("dwell:dirt", Some("dwell:stone_shovel"), 4),
+            ("dwell:sand", Some("dwell:metal_shovel"), 2),
+            ("dwell:grass", None, 24),
+            ("dwell:dirt", Some("dwell:stone_pickaxe"), 8),
+            ("dwell:leaves", None, 8),
+        ] {
+            assert_eq!(hits_to_break(block, held), Some(n), "{block} {held:?}");
+        }
+        // A block without `damage` (water, air) breaks in one hit, as before.
+        assert_eq!(hits_to_break("dwell:water", None), Some(1));
+        // Inefficient breaks drop nothing (owner: "inefficient tools cause blocks to not drop
+        // anything"): stone and logs by hand; any tool on them drops.
+        assert!(!drops_when_broken("dwell:stone", None));
+        assert!(
+            !drops_when_broken("dwell:log", Some("dwell:dirt")),
+            "a held block is a hand"
         );
-        assert_eq!(
-            hits_to_break("dwell:stone", Some("dwell:metal_pickaxe")),
-            Some(3)
-        );
-        assert_eq!(hits_to_break("dwell:stone", None), None);
-        assert_eq!(
-            hits_to_break("dwell:stone", Some("dwell:metal_shovel")),
-            None
-        );
-        // Owner, 2026-11-14: the stone shovel digs faster than the wooden one (its `wood` tier).
-        assert_eq!(
-            hits_to_break("dwell:dirt", Some("dwell:wooden_shovel")),
-            Some(6)
-        );
-        assert_eq!(
-            hits_to_break("dwell:dirt", Some("dwell:stone_shovel")),
-            Some(5)
-        );
-        assert_eq!(
-            hits_to_break("dwell:sand", Some("dwell:metal_shovel")),
-            Some(3)
-        );
-        assert_eq!(hits_to_break("dwell:grass", None), Some(11));
-        assert_eq!(
-            hits_to_break("dwell:dirt", Some("dwell:stone_pickaxe")),
-            Some(11)
-        );
-        // A block without `damage` breaks in one hit, as before.
-        assert_eq!(hits_to_break("dwell:leaves", None), Some(1));
+        assert!(drops_when_broken(
+            "dwell:stone",
+            Some("dwell:stone_pickaxe")
+        ));
+        assert!(drops_when_broken("dwell:stone", Some("dwell:metal_shovel")));
+        assert!(drops_when_broken("dwell:dirt", None));
+        // Door, ladder and dynamite shake (owner: "should shake, not break").
+        for b in [
+            "dwell:door",
+            "dwell:ladder",
+            "dwell:dynamite",
+            "dwell:lit_dynamite_blue",
+        ] {
+            assert!(shakes(b), "{b}");
+            assert!(look_of(b).is_none(), "{b}: no marks");
+        }
+        assert!(!shakes("dwell:stone"));
     }
 
     #[test]
@@ -710,18 +737,18 @@ mod tests {
                 "{held:?}"
             );
         }
-        // A tool keeps its hits, and its "can't" (a shovel on stone).
+        // A tool keeps its hits.
         assert_eq!(
             hits_to_break_for("dwell:stone", Some("dwell:stone_pickaxe"), true),
-            Some(5)
+            Some(6)
         );
         assert_eq!(
             hits_to_break_for("dwell:stone", Some("dwell:metal_shovel"), true),
-            None
+            Some(6)
         );
-        // Without it (adventure), as the data says: bare hands can't break stone.
-        assert_eq!(hits_to_break_for("dwell:stone", None, false), None);
-        assert_eq!(hits_to_break_for("dwell:dirt", None, false), Some(11));
+        // Without it (adventure), as the data says.
+        assert_eq!(hits_to_break_for("dwell:stone", None, false), Some(48));
+        assert_eq!(hits_to_break_for("dwell:dirt", None, false), Some(16));
         // And the modes' data gives it to creative only.
         use crate::modes::{Ability, mode};
         assert!(mode("creative").unwrap().allows(Ability::InstantBreaks));
@@ -730,39 +757,32 @@ mod tests {
 
     #[test]
     fn a_fixture_block_and_tool_by_data_alone() {
+        // The generator's computed rows (shared/tools/gen.test.mjs computes them from data).
         let damage = [BlockDamageDef {
             block: "test:clay",
             volume: 1.0,
             default: Some(9),
-            tools: &[("trowel", 6), ("test:golden_trowel", 1)],
+            tools: &[("test:trowel", 3), ("test:golden_trowel", 1)],
+            barren: &["hand"],
+            shake: false,
             look: None,
             chips: None,
         }];
-        let tools = [
-            BreakTool {
-                item: "test:trowel",
-                class: "trowel",
-                tier: "stone",
-                speed: 2.0,
-                contact_s: 0.0,
-                repeat_s: None,
-                clip: "break",
-            },
-            BreakTool {
-                item: "test:golden_trowel",
-                class: "trowel",
-                tier: "metal",
-                speed: 2.5,
-                contact_s: 0.0,
-                repeat_s: None,
-                clip: "break",
-            },
-        ];
+        let tools = [];
         let h = |held| hits_to_break_in(&damage, &tools, "test:clay", held);
-        assert_eq!(h(Some("test:trowel")), Some(3), "class over tier speed");
-        assert_eq!(h(Some("test:golden_trowel")), Some(1), "item over class");
+        assert_eq!(h(Some("test:trowel")), Some(3));
+        assert_eq!(h(Some("test:golden_trowel")), Some(1));
         assert_eq!(h(None), Some(9));
-        assert_eq!(h(Some("test:stick")), Some(9));
+        assert_eq!(h(Some("test:stick")), Some(9), "another item is a hand");
+        // Broken by hand (inefficient) it drops nothing; by a tool it drops.
+        let drops = |held| drops_when_broken_in(&damage, "test:clay", held);
+        assert!(!drops(None));
+        assert!(!drops(Some("test:stick")));
+        assert!(drops(Some("test:trowel")));
+        assert!(
+            drops_when_broken_in(&damage, "test:other", None),
+            "no damage row: drops"
+        );
     }
 
     /// Each metal breaking tool and its class's stone-tier counterpart (the wooden shovel is the
@@ -770,11 +790,11 @@ mod tests {
     fn metal_and_stone() -> Vec<(&'static BreakTool, &'static BreakTool)> {
         let pairs: Vec<_> = BREAK_TOOLS
             .iter()
-            .filter(|t| t.tier == "metal")
+            .filter(|t| t.material == "metal")
             .map(|m| {
                 let s = BREAK_TOOLS
                     .iter()
-                    .find(|t| t.class == m.class && t.tier == "stone")
+                    .find(|t| t.class == m.class && t.material == "stone")
                     .expect("a stone counterpart");
                 (m, s)
             })
@@ -788,7 +808,6 @@ mod tests {
         // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
         // broken faster, which is when the blocks break. Also have double durability."
         for (m, s) in metal_and_stone() {
-            assert_eq!(m.speed, 2.0 * s.speed, "{}", m.item);
             let wear = crate::chopping::durability;
             assert_eq!(
                 wear(m.item),
@@ -799,7 +818,7 @@ mod tests {
             // About half the hits on every block its class has damage for.
             for d in BLOCK_DAMAGE
                 .iter()
-                .filter(|d| d.tools.iter().any(|(k, _)| *k == m.class))
+                .filter(|d| d.tools.iter().any(|(k, _)| *k == m.item))
             {
                 let (Some(hm), Some(hs)) = (
                     hits_to_break(d.block, Some(m.item)),
@@ -807,7 +826,8 @@ mod tests {
                 ) else {
                     continue;
                 };
-                if hs > 1 {
+                // (A block with fixed hits, a door, takes the same with both.)
+                if hs > 1 && hm != hs {
                     assert!(
                         hm <= hs.div_ceil(2) && hm * 2 + 1 >= hs,
                         "{}: {} {hm} hits against {} {hs}",
@@ -827,11 +847,11 @@ mod tests {
     fn a_bite_is_half_the_blocks_volume_over_its_hits() {
         let cases = [
             ("dwell:dirt", Some("dwell:wooden_shovel"), 6),
-            ("dwell:dirt", Some("dwell:stone_shovel"), 5),
-            ("dwell:dirt", None, 11),
-            ("dwell:stone", Some("dwell:stone_pickaxe"), 5),
+            ("dwell:dirt", Some("dwell:stone_shovel"), 4),
+            ("dwell:dirt", None, 16),
+            ("dwell:stone", Some("dwell:stone_pickaxe"), 6),
             ("dwell:stone", Some("dwell:metal_pickaxe"), 3),
-            ("dwell:sand", Some("dwell:metal_shovel"), 3),
+            ("dwell:sand", Some("dwell:metal_shovel"), 2),
         ];
         for (block, held, n) in cases {
             assert_eq!(hits_to_break(block, held), Some(n), "{block} {held:?}");
@@ -849,12 +869,11 @@ mod tests {
         let ramp = bite_m3_of("dwell:stone_ramp", Some("dwell:stone_pickaxe")).unwrap();
         let full = bite_m3_of("dwell:stone", Some("dwell:stone_pickaxe")).unwrap();
         assert!((ramp - 0.5 * full).abs() < 1e-12, "{ramp} {full}");
-        // What can't be broken has no bite.
-        assert_eq!(bite_m3_of("dwell:stone", None), None);
-        // The mark's chunk is the bite: a metal pickaxe's 5/3 of the stone one's on stone.
-        assert_eq!(hit_chunk("dwell:stone", Some("dwell:stone_pickaxe")), 26);
+        // The mark's chunk is the bite: a metal pickaxe's twice the stone one's on stone (6 and 3
+        // hits), a hand's (48) an eighth of it.
+        assert_eq!(hit_chunk("dwell:stone", Some("dwell:stone_pickaxe")), 21);
         assert_eq!(hit_chunk("dwell:stone", Some("dwell:metal_pickaxe")), 43);
-        assert_eq!(hit_chunk("dwell:stone", None), HitMark::ONE);
+        assert_eq!(hit_chunk("dwell:stone", None), 3);
     }
 
     #[test]
@@ -863,20 +882,13 @@ mod tests {
             block: "test:clay",
             volume: 0.5,
             default: None,
-            tools: &[("trowel", 8)],
+            tools: &[("test:wood", 8), ("test:metal", 4)],
+            barren: &[],
+            shake: false,
             look: None,
             chips: None,
         }];
-        let trowel = |item, speed| BreakTool {
-            item,
-            class: "trowel",
-            tier: "t",
-            speed,
-            contact_s: 0.0,
-            repeat_s: None,
-            clip: "break",
-        };
-        let tools = [trowel("test:wood", 1.0), trowel("test:metal", 2.0)];
+        let tools: [BreakTool; 0] = [];
         let b = |held| bite_m3_in(&damage, &tools, "test:clay", held);
         let (w, m) = (
             b(Some("test:wood")).unwrap(),

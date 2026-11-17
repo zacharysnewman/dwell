@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "Breaking blocks follows one system: each block has base hits, each tool a class and material (hand, wood, stone, metal)",
+    "Every tool and your hand swing at the same pace",
+    "Stone and logs can be broken by hand, slowly, but drop nothing",
+    "Doors, ladders and dynamite take 2 hits with anything; torches and tall grass 1",
+    "Tools last much longer: a stone pickaxe about 64 stone blocks"
+  ]
+}

@@ -220,7 +220,7 @@ dwell_world::both_faces!(
             .damage_of(f.cell([3, AT, 0]))
             .expect("damaged")
             .clone();
-        assert_eq!((d.hits, d.need), (1, log_hits(AXE) as u16), "1 of its 10");
+        assert_eq!((d.hits, d.need), (1, log_hits(AXE) as u16), "1 of its 6");
         assert_eq!(d.marks.len(), 1);
         let m = d.marks[0];
         assert_eq!(m.face, f.cell_face(1) as u8, "the edit's face");
@@ -232,11 +232,11 @@ dwell_world::both_faces!(
         assert_eq!(axe_wear(&fx), Some(1), "one hit, one wear");
         assert_eq!(cell_is(&mut fx, f, [3, AT, 0]), log(f, "y"), "it stands");
         assert!(no_cuts_sent(&fx.take(1)), "no cut, no bites");
-        // The same count as the pickaxe's on stone: the data's hits for the tool's class and tier.
+        // The same count as the pickaxe's on stone (the owner's sheet: 12 base, proficient ½).
         assert_eq!(
             (log_hits(AXE), log_hits("dwell:metal_axe")),
-            (10, 5),
-            "stone 10, metal 5"
+            (6, 3),
+            "stone 6, metal 3"
         );
     }
 );
@@ -420,8 +420,9 @@ fn hand_break(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
 }
 
 dwell_world::both_faces!(
-    fn in_adventure_hands_cannot_break_a_log_but_leaves_still_break(f: FaceFrame) {
-        // Owner, 2026-11-08: logs need an axe in adventure (the log's `breakWith: "axe"`).
+    fn in_adventure_hands_hit_a_log_slowly_and_leaves_break_in_their_hits(f: FaceFrame) {
+        // Owner, 2026-11-17: any block breaks by hand at its proficiency (a log 48 hits, for no
+        // drops; leaves 8); the log's `breakWith: "axe"` is gone.
         let mut fx = scene(f, "adventure", true);
         let leaves = f.state(require("dwell:leaves"));
         let [x, y, z] = f.cell([2, AT, 1]);
@@ -436,8 +437,11 @@ dwell_world::both_faces!(
             log(f, "y"),
             "the log stays"
         );
-        assert!(fx.server.damage_of(f.cell([3, AT, 0])).is_none(), "not hit");
-        hand_break(&mut fx, f, [2, AT, 1]);
+        let d = fx.server.damage_of(f.cell([3, AT, 0])).expect("hit");
+        assert_eq!((d.hits, d.need), (1, 48), "a hand's hit of 48");
+        for _ in 0..8 {
+            hand_break(&mut fx, f, [2, AT, 1]);
+        }
         assert_eq!(
             cell_is(&mut fx, f, [2, AT, 1]),
             M.air,

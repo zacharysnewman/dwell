@@ -42,6 +42,9 @@ Last updated: 2026-11-11 (0.52.108).
   breaking on the second, whatever is held.
   Owner, 2026-11-17: "You could use the same fixed hits of 1 for torch and tall grass" → `fixedHits: 1` (brush and
   the saplings too, which had tall grass's values).
+  Status (2026-11-17): built (docs/BLOCK_DAMAGE.md §17; the table shared/tools/hits.gen.md matches the sheet).
+  Outstanding: the shake's look (the flag is data, the block doesn't move yet); the owner's values for the blocks
+  not on the sheet (proposals in §17); drops (separately).
 - **Owner, 2026-11-17 (bug, up next after the tool efficiency work):** "A bug for up next, the big (2x2 trees show holes
   in mesh when cutting inside edge)". BUGS.md #203. Owner should see: a cut 2×2 trunk solid behind its notch.
 - **Owner, 2026-11-17 (bug, queued after #203):** "Another bug to queue, logs shouldn't "adapt" when blocks break around

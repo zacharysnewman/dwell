@@ -881,12 +881,18 @@ item's pose of the hand, the `tool` hold for tools that name none; docs/ITEMS.md
 colour a character material row after the data's; `render/characters.rs` `prop_mesh`). A prop's
 `objects` (optional) names the FBX objects it keeps, for the pack's files that stack alternates (the
 axes file's three axes); the import fails on an unknown name. The six tools (stone and metal axe,
-pickaxe, shovel) carry a class and tier in `shared/tools/tools.json` `breaking` (block → class, tier →
-speed; `dwell_protocol::chopping::break_speed`, 1 for anything else). **Block damage [built, D1 0.52.28;
-ADR 0078, docs/BLOCK_DAMAGE.md]:** a block's `damage` (block data, generated into
-`dwell_protocol::chopping::BLOCK_DAMAGE` and `tools.gen.ts`) gives its hits to break by bare hands and per
-tool class or item (`dwell_protocol::damage::hits_to_break`: item, else class ÷ tier speed, else
-default; none: can't); the server keeps each damaged cell's state, hits and up to four hit marks
+pickaxe, shovel) carry a class and material in `shared/tools/tools.json` `breaking`. **Block damage [built, D1 0.52.28;
+ADR 0078, docs/BLOCK_DAMAGE.md]:** a block's `damage` (block data) gives its `baseHits` and its
+proficiency per class (`hand`, `shovel`, `axe`, `pickaxe`: proficient ½×, neutral 1×, inefficient 2×), or a
+`fixedHits` count taken with anything (door, ladder, dynamite 2 and shaking, `hit: "shake"`; torch, tall
+grass 1); `breaking` gives each material's hits and durability multipliers (body, the hand's, 2×; wood
+1.5×; stone 1×; metal ½×) and each class's wear rule (**the tool efficiency system [built, 2026-11-17;
+docs/BLOCK_DAMAGE.md §17]**, the owner's Block Stats sheet). `shared/tools/gen.mjs` computes every block ×
+tool (ceil(base × proficiency × material)) and every tool's wear into `dwell_protocol::chopping::BLOCK_DAMAGE`,
+`DURABILITY` and `tools.gen.ts`, with the review table `shared/tools/hits.gen.md`; the game reads only those
+(`dwell_protocol::damage::hits_to_break`: the held tool's entry, else the hand's). A block broken by a tool
+or hand it is inefficient with drops nothing (`drops_when_broken`). Every break tool and the hand swing at
+one pace, `breaking.repeatS` (0.5 s, the axe's). The server keeps each damaged cell's state, hits and up to four hit marks
 (`dwell_protocol::damage::Damage`), acks a hit short of the count as refused (the block stays), breaks
 it on the last, spreads half its certain drops over the hits, and clears a changed cell's damage; in a
 mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool breaks every block in one hit
@@ -894,7 +900,7 @@ mode with `instantBreaks` (creative, 0.52.51) anything but a breaking tool break
 client predicts only one-hit breaks and tells the server its held axe, pickaxe or shovel by
 `ChopAction::Held`. **The axe is a break tool [built, 2026-11-15; docs/BLOCK_DAMAGE.md §14]** (owner,
 2026-11-14: "Let's simplify the axe to be like the shovel and pick"): the axes are `breaking.tools`
-entries only (contact, `repeatS` and a break clip as the pickaxe's), not swung tools, so an axe hit is
+entries only (contact and a break clip as the pickaxe's), not swung tools, so an axe hit is
 a block edit's break taking the log's block damage as a pickaxe's on stone, the last breaking the whole
 log and a tree it held up falling as a body (FELLING.md). A block's `breakWith` names a break tool
 class. **Hits at contact [built, WORK_QUEUE item 25]:** a break made holding a tool with a

@@ -278,16 +278,16 @@ fn block_at(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) -> &'static str {
     dwell_blocks::block_of(fx.server.world().get_voxel(x, y, z)).name
 }
 
-/// Hits `local` until it breaks (at most 20): the hits it took.
+/// Hits `local` until it breaks (at most 60): the hits it took.
 fn hits_to_break(fx: &mut Fixture, f: FaceFrame, local: [i32; 3]) -> u32 {
     let was = block_at(fx, f, local);
-    for n in 1..=20 {
+    for n in 1..=60 {
         hit(fx, f, local);
         if block_at(fx, f, local) != was {
             return n;
         }
     }
-    panic!("{was} at {local:?} still stands after 20 hits");
+    panic!("{was} at {local:?} still stands after 60 hits");
 }
 
 fn loose(fx: &Fixture, item: &str) -> u32 {
@@ -301,14 +301,15 @@ fn loose(fx: &Fixture, item: &str) -> u32 {
 
 dwell_world::both_faces!(
     fn hits_to_break_come_from_the_tool_held_in_both_modes(f: FaceFrame) {
-        // Owner, 2026-11-10: stone tier about 5, metal about 3, the wrong tool or bare hands
-        // about 10–12; the same in creative and adventure.
+        // Owner, 2026-11-17 (the Block Stats sheet): stone 12 base, the pickaxe proficient (½),
+        // stone 1×, metal ½×: 6 and 3; dirt 8 base, the shovel proficient, metal: 2; by hand (body
+        // 2×) 16. The same in creative and adventure.
         for mode in ["adventure", "creative"] {
             let mut fx = scene_with(f, config(f, mode));
             hold(&mut fx, mode, "dwell:stone_pickaxe");
-            assert_eq!(hits_to_break(&mut fx, f, STONE), 5, "{mode}: stone pickaxe");
+            assert_eq!(hits_to_break(&mut fx, f, STONE), 6, "{mode}: stone pickaxe");
             hold(&mut fx, mode, "dwell:metal_shovel");
-            assert_eq!(hits_to_break(&mut fx, f, DIRT), 3, "{mode}: metal shovel");
+            assert_eq!(hits_to_break(&mut fx, f, DIRT), 2, "{mode}: metal shovel");
             hold(&mut fx, mode, "dwell:metal_pickaxe");
             assert_eq!(
                 hits_to_break(&mut fx, f, [-3, BASE - 1, 0]),
@@ -318,7 +319,7 @@ dwell_world::both_faces!(
         }
         let mut fx = scene_with(f, config(f, "adventure"));
         empty_hand(&mut fx);
-        assert_eq!(hits_to_break(&mut fx, f, DIRT), 11, "adventure: bare hands");
+        assert_eq!(hits_to_break(&mut fx, f, DIRT), 16, "adventure: bare hands");
     }
 );
 
@@ -327,16 +328,17 @@ dwell_world::both_faces!(
         // Owner, 2026-11-12: "Metal tools break double sized bigger chunks off and reach 50%
         // broken faster, which is when the blocks break. Also have double durability."
         // A mark's chunk is its hit's bite (BLOCK_DAMAGE.md §10): 0.5 × the cell ÷ the hits, in
-        // sixteenths of a 1-in-8 bite: 26 for 5 hits, 43 for 3 (the metal tool's 5/3 the stone's).
-        for (stone_tool, metal_tool, cell) in [
-            ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE),
-            ("dwell:stone_shovel", "dwell:metal_shovel", DIRT),
+        // sixteenths of a 1-in-8 bite, round(128 / hits): stone 6 and 3 hits (21, 43), dirt 4 and 2
+        // (32, 64): the metal tool's twice the stone's.
+        for (stone_tool, metal_tool, cell, stone_chunk, metal_chunk) in [
+            ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE, 21, 43),
+            ("dwell:stone_shovel", "dwell:metal_shovel", DIRT, 32, 64),
         ] {
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", stone_tool);
             hit(&mut fx, f, cell);
             let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
-            assert_eq!(d.marks[0].chunk, 26, "{stone_tool}: a 5-hit bite");
+            assert_eq!(d.marks[0].chunk, stone_chunk, "{stone_tool}: its bite");
             let s = 1 + hits_to_break(&mut fx, f, cell);
             assert_eq!(
                 wear_of(&fx, stone_tool),
@@ -348,7 +350,7 @@ dwell_world::both_faces!(
             hold(&mut fx, "adventure", metal_tool);
             hit(&mut fx, f, cell);
             let d = fx.server.damage_of(f.cell(cell)).expect("damaged").clone();
-            assert_eq!(d.marks[0].chunk, 43, "{metal_tool}: a 3-hit bite");
+            assert_eq!(d.marks[0].chunk, metal_chunk, "{metal_tool}: its bite");
             // Half-way to breaking after half as many hits.
             assert!(
                 f64::from(d.hits) / f64::from(d.need) >= 0.3,
@@ -414,41 +416,31 @@ dwell_world::both_faces!(
         hold(&mut fx, "creative", "dwell:stone_pickaxe");
         assert_eq!(
             hits_to_break(&mut fx, f, [-5, BASE - 1, 0]),
-            5,
+            6,
             "stone pickaxe"
         );
     }
 );
 
 dwell_world::both_faces!(
-    fn bare_hands_and_the_wrong_tool_do_nothing_to_stone(f: FaceFrame) {
-        // Adventure (creative breaks anything without a tool, above).
+    fn bare_hands_break_stone_slowly_for_nothing_and_any_tool_breaks_it(f: FaceFrame) {
+        // Owner, 2026-11-17: "yes allow 48 hits (also inefficient tools cause blocks to not drop
+        // anything)": by hand (inefficient) 48 hits and no drops; a shovel (neutral) 6 and drops.
         let mut fx = scene_with(f, config(f, "adventure"));
         empty_hand(&mut fx);
-        for _ in 0..12 {
-            hit(&mut fx, f, STONE);
+        assert_eq!(hits_to_break(&mut fx, f, STONE), 48, "bare hands");
+        for _ in 0..4 {
+            fx.server.step();
         }
-        assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone", "bare hands");
-        // Creative with a tool that lists none for stone (a shovel) can't either.
-        let mut fx = scene_with(f, config(f, "creative"));
-        hold(&mut fx, "creative", "dwell:metal_shovel");
-        for _ in 0..12 {
-            hit(&mut fx, f, STONE);
-        }
-        assert_eq!(
-            block_at(&mut fx, f, STONE),
-            "dwell:stone",
-            "creative: a shovel"
-        );
-        // Adventure starts holding an axe: the wrong tool for stone, which lists none for it.
+        assert_eq!(loose(&fx, "dwell:rock_shard"), 0, "by hand: no drops");
         let mut fx = scene_with(f, config(f, "adventure"));
-        for _ in 0..12 {
-            hit(&mut fx, f, STONE);
+        fx.server.give(1, "dwell:metal_shovel", 1);
+        hold(&mut fx, "adventure", "dwell:metal_shovel");
+        assert_eq!(hits_to_break(&mut fx, f, STONE), 6, "a metal shovel");
+        for _ in 0..4 {
+            fx.server.step();
         }
-        assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone", "an axe");
-        // And the hits left no damage: a pickaxe still takes its five.
-        hold(&mut fx, "adventure", "dwell:stone_pickaxe");
-        assert_eq!(hits_to_break(&mut fx, f, STONE), 5);
+        assert_eq!(loose(&fx, "dwell:rock_shard"), 4, "a neutral tool drops");
     }
 );
 
@@ -456,7 +448,7 @@ dwell_world::both_faces!(
     fn the_hits_and_the_destroy_drop_the_blocks_drops(f: FaceFrame) {
         let mut fx = scene_with(f, config(f, "adventure"));
         hold(&mut fx, "adventure", "dwell:stone_pickaxe");
-        for _ in 0..4 {
+        for _ in 0..5 {
             hit(&mut fx, f, STONE);
         }
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone");
@@ -495,7 +487,7 @@ dwell_world::both_faces!(
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", "dwell:stone_shovel");
             let n = hits_to_break(&mut fx, f, DIRT);
-            assert_eq!(n, 5, "a stone-tier shovel");
+            assert_eq!(n, 4, "a stone shovel");
             assert_eq!(loose(&fx, "dwell:dirt_clump"), 4);
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
             rocks += loose(&fx, "dwell:rock_shard");
@@ -509,8 +501,8 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     fn each_hit_with_the_stone_axe_wears_it_and_creative_does_not(f: FaceFrame) {
-        // Owner, 2026-11-11: "It should survive 32 hits of durability"; a break hit with it counts.
-        assert_eq!(chopping::durability("dwell:stone_axe"), Some(32));
+        // Owner, 2026-11-17 (the sheet): 64 logs × 6 hits = 384; a break hit with it counts.
+        assert_eq!(chopping::durability("dwell:stone_axe"), Some(384));
         let mut fx = scene_with(f, config(f, "adventure"));
         // Adventure starts holding the axe (slot 0).
         let wear = |fx: &Fixture| {
@@ -521,19 +513,16 @@ dwell_world::both_faces!(
         assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 0)));
         fx.take_all();
         let n = hits_to_break(&mut fx, f, DIRT);
-        assert_eq!(n, 11, "the axe is no shovel");
+        assert_eq!(n, 8, "the axe is neutral on dirt: 8 × 1 × 1");
         assert_eq!(
             wear(&fx),
-            Some(("dwell:stone_axe".into(), 11)),
+            Some(("dwell:stone_axe".into(), 8)),
             "one per hit"
         );
-        // A refused hit (stone with an axe) doesn't count.
-        hit(&mut fx, f, STONE);
-        assert_eq!(wear(&fx), Some(("dwell:stone_axe".into(), 11)));
         // The client is sent the wear.
         let sent = fx.take(1);
         assert!(sent.iter().any(|(m, _)| matches!(m, Message::Inventory(i)
-            if i.inventory.slots[0].as_ref().is_some_and(|s| s.wear == 11))));
+            if i.inventory.slots[0].as_ref().is_some_and(|s| s.wear == 8))));
         // Creative (`creativeWear` false): the hotbar's tool doesn't wear.
         const { assert!(!chopping::CREATIVE_WEAR) };
         let mut fx = scene_with(f, config(f, "creative"));
@@ -549,9 +538,9 @@ dwell_world::both_faces!(
     fn a_worn_tool_keeps_its_wear_through_a_defeat_and_as_a_loose_item(f: FaceFrame) {
         // A defeated player keeps its things (owner, 2026-11-13: "Keep everything"), the axe's
         // wear with them. Once a dead player's axe fell as a loose item with no wear, picked back
-        // up a fresh 32-hit axe: a loose item carries its stack's wear.
+        // up a fresh axe: a loose item carries its stack's wear.
         let mut fx = scene_with(f, config(f, "adventure"));
-        assert_eq!(hits_to_break(&mut fx, f, DIRT), 11);
+        assert_eq!(hits_to_break(&mut fx, f, DIRT), 8);
         let worn = |fx: &Fixture| -> Vec<u16> {
             let inv = fx.server.inventory_of(1).expect("joined");
             inv.slots
@@ -573,7 +562,7 @@ dwell_world::both_faces!(
                 .all(|it| it.stack.item != "dwell:stone_axe"),
             "the axe wasn't dropped"
         );
-        assert_eq!(worn(&fx), [11], "kept with 21 hits left");
+        assert_eq!(worn(&fx), [8], "kept, worn");
         // A worn axe on the ground, walked over: picked up with its wear.
         fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
         let feet = fx.server.feet_of(1).expect("stood up");
@@ -583,7 +572,7 @@ dwell_world::both_faces!(
         for _ in 0..60 {
             fx.server.step();
         }
-        assert_eq!(worn(&fx), [11, 7], "not a fresh axe");
+        assert_eq!(worn(&fx), [8, 7], "not a fresh axe");
     }
 );
 
@@ -612,9 +601,9 @@ fn damage_persists_across_a_save_and_an_older_world_loads_undamaged() {
     assert!(db.damage().is_some(), "saved");
     let mut fx = scene_with(f, cfg());
     hold(&mut fx, "creative", "dwell:stone_pickaxe");
-    assert_eq!(hits_to_break(&mut fx, f, STONE), 3, "two of five hits kept");
+    assert_eq!(hits_to_break(&mut fx, f, STONE), 4, "two of six hits kept");
     // A block never hit (an older world's every block) takes its full count.
-    assert_eq!(hits_to_break(&mut fx, f, [-3, BASE - 1, 0]), 5);
+    assert_eq!(hits_to_break(&mut fx, f, [-3, BASE - 1, 0]), 6);
 }
 
 #[test]
@@ -657,7 +646,7 @@ fn damage_and_its_struck_point_reach_a_client_that_draws_it_and_go_when_it_break
         })
         .expect("player 2 was told")
         .1;
-    assert_eq!(view.fraction, 51, "1 of 5 hits");
+    assert_eq!(view.fraction, 43, "1 of 6 hits");
     assert_eq!(view.marks[0].point, [40, 255, 200]);
     // Player 1 never asked: nothing it might not read.
     assert!(
@@ -665,7 +654,7 @@ fn damage_and_its_struck_point_reach_a_client_that_draws_it_and_go_when_it_break
             .iter()
             .any(|(m, _)| matches!(m, Message::Damage(_)))
     );
-    for _ in 0..4 {
+    for _ in 0..5 {
         hit(&mut fx, f, STONE);
     }
     assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
@@ -811,17 +800,16 @@ dwell_world::both_faces!(
 
 dwell_world::both_faces!(
     /// Owner, 2026-11-14: the stone shovel (2 sticks, 2 rock shards, 2 grass fibre) digs dirt in
-    /// fewer hits than the wooden one (the `wood` tier), and wears out after 32 hits as the other
-    /// stone tools do.
-    fn the_stone_shovel_digs_dirt_faster_than_the_wooden_one_and_wears_at_32(f: FaceFrame) {
+    /// fewer hits than the wooden one; the sheet (2026-11-17): 6 and 4, worn out after 64 × 4.
+    fn the_stone_shovel_digs_dirt_faster_than_the_wooden_one_and_wears_at_256(f: FaceFrame) {
         let mut by = Vec::new();
         for tool in ["dwell:wooden_shovel", "dwell:stone_shovel"] {
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", tool);
             by.push(hits_to_break(&mut fx, f, DIRT));
         }
-        assert_eq!(by, [6, 5], "wooden, stone");
-        assert_eq!(chopping::durability("dwell:stone_shovel"), Some(32));
+        assert_eq!(by, [6, 4], "wooden, stone");
+        assert_eq!(chopping::durability("dwell:stone_shovel"), Some(256));
     }
 );
 
