@@ -60,6 +60,10 @@ Last updated: 2026-11-11 (0.52.108).
   them today's). Owner should see: 4 wood make 4 planks, 4 rock shards 4 stone bricks, 2 sticks and 2 grass fibre 4 thatch. Owner: "2 sticks 2 grass fiber,
   4 blocks." → thatch 2 sticks + 2 grass fibre → 4. Owner: "Let's make the planks and stone brick 4 for 4 actually." →
   4 wood → 4 planks, 4 rock shards → 4 stone bricks.
+- **Owner, 2026-11-17 (hit particles):** "The particles that come off hits should be halved in size and wood chunks and
+  particles should be (light colored like wood insides not bark) and more shardy shaped like stone, wood doesn't make
+  sense in balls unlike dirt, sand, etc." Owner should see: every block's hit particles half today's size; a log's hit
+  pieces pale wood-inside coloured and angular shards like stone's, not balls.
 - **Owner, 2026-11-17 (Realistic terrain: explain, then tune; after the tool efficiency work):** "Something to look at
   for tuning is how much precipitation? Or whatever value we use? I'm seeing a lot more deserts (plural) than I would
   expect on average. Seems like more deserts than green. And also fewer mountain ranges or super tall mountains. I'd
