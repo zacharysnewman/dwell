@@ -111,6 +111,15 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-16 (releases):** "I'm seeing some releases, deploys going out, for these videos?" then "Sure." to
   skipping them: release.yml ignores pushes touching only `.claude/` or `docs/`. Owner should see: no dev build or
   deploy from a tools- or docs-only merge.
+- **Owner, 2026-11-17 (loading, priority):** "I've noticed the finding a place to stand step taking quite a bit
+  longer than I would expect, especially when loading a map for a second time it still seems to take just as long, I
+  would expect it to take almost no time to load that again?" Owner should see: reopening a world spends almost no
+  time on "Finding a place to stand"; a new world's is short too.
+  Done 2026-11-17: the server's start built the same world's terrain ~14 times (~0.2 s natively each: the generator,
+  air test, spawn, shrines, towns, LOD, …); `BifacialTerrain::sized` now builds it once per world (its seed, size and
+  installed maps) and clones it. Native start 2.5 → 0.9 s. Browser (seed 3218026833): "Finding a place to stand"
+  11.1 → 2.6 s new, 0.7 s reopened (the spawn search is skipped on a reopen: the saved spawn). Left: "Loading the
+  terrain" ~10 s, new or reopened.
 - **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
   and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
   `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to

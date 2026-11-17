@@ -29,6 +29,16 @@ pub fn face_seed(world_seed: u64, face: Face) -> u64 {
     }
 }
 
+/// Terrains built, per world seed (tests).
+static BUILDS: std::sync::Mutex<Vec<(u64, usize)>> = std::sync::Mutex::new(Vec::new());
+
+/// A built world's terrain: its seed, size and the identity of both faces' installed maps (a
+/// retune installs new ones), then the terrain.
+type Built = ((u64, WorldSize, usize, usize), BifacialTerrain);
+
+/// The last terrains built (two: a world and, say, its retune), cloned out (mostly shared parts).
+static BUILT: std::sync::Mutex<Vec<Built>> = std::sync::Mutex::new(Vec::new());
+
 #[derive(Clone, Debug)]
 pub struct BifacialTerrain {
     a: TerrainGenerator,
@@ -44,7 +54,50 @@ impl BifacialTerrain {
 
     /// [`BifacialTerrain::new`] in a world of `size` (BIG_MAP.md M2): both faces' maps, discs,
     /// build volumes and base fields the size's. At today's size, [`BifacialTerrain::new`].
+    ///
+    /// Built once per world (its seed, size and installed maps) and cloned after: a server's start
+    /// asked for the same world's terrain ~14 times, ~0.2 s natively each (the owner, 2026-11-17:
+    /// "Finding a place to stand" as long reopening a world as making it).
     pub fn sized(world_seed: u64, size: WorldSize) -> Self {
+        let map = |f| {
+            Arc::as_ptr(&crate::worldmap::cache::for_seed_sized(
+                face_seed(world_seed, f),
+                size,
+            )) as usize
+        };
+        let key = (world_seed, size, map(Face::A), map(Face::B));
+        if let Some((_, t)) = BUILT
+            .lock()
+            .expect("built terrains")
+            .iter()
+            .find(|b| b.0 == key)
+        {
+            return t.clone();
+        }
+        let t = Self::build_sized(world_seed, size);
+        let mut built = BUILT.lock().expect("built terrains");
+        if built.len() >= 2 {
+            built.remove(0);
+        }
+        built.push((key, t.clone()));
+        t
+    }
+
+    /// How many terrains [`Self::sized`] has built for world `world_seed` (tests: a second ask for
+    /// the same world builds none).
+    pub fn builds(world_seed: u64) -> usize {
+        let b = BUILDS.lock().expect("builds");
+        b.iter().find(|e| e.0 == world_seed).map_or(0, |e| e.1)
+    }
+
+    fn build_sized(world_seed: u64, size: WorldSize) -> Self {
+        {
+            let mut b = BUILDS.lock().expect("builds");
+            match b.iter_mut().find(|e| e.0 == world_seed) {
+                Some(e) => e.1 += 1,
+                None => b.push((world_seed, 1)),
+            }
+        }
         let t = Self::with_portal_rules_sized(world_seed, MIDPLANE.portals, size);
         let t = match crate::volume::terrain_volume() {
             Some(def) => Self {
@@ -494,4 +547,24 @@ fn world_setting_name(g: &TerrainGenerator) -> Option<String> {
     let w = g.map().worldgen.as_ref()?;
     let v: serde_json::Value = serde_json::from_str(&w.text).ok()?;
     v.get("name")?.as_str().map(str::to_owned)
+}
+
+#[cfg(test)]
+mod shared_tests {
+    use super::*;
+
+    /// The owner, 2026-11-17: "Finding a place to stand" took as long reopening a world as
+    /// making it. The server's start built the same world's terrain ~14 times (the generator, the
+    /// air test, the spawn, the shrines, the towns, the LOD, …), ~0.2 s natively each: a second
+    /// ask for the same world (its maps as installed) builds none.
+    #[test]
+    fn a_second_ask_for_the_same_world_builds_no_terrain() {
+        // face-a-only: builds both faces' terrain; no face-local rule.
+        let seed = 0x5EED_0B11;
+        let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
+        let before = BifacialTerrain::builds(seed);
+        let _ = BifacialTerrain::sized(seed, WorldSize::DEFAULT);
+        let _ = BifacialTerrain::for_generator(dwell_world::GENERATOR_TERRAIN, seed);
+        assert_eq!(BifacialTerrain::builds(seed) - before, 0, "built again");
+    }
 }

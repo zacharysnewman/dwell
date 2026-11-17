@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Worlds open much faster: \"Finding a place to stand\" takes about a quarter of the time on a new world, and well under a second when reopening one."
+  ]
+}
