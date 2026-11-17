@@ -25,15 +25,32 @@ test('terrain and LOD drawn, and the memory they hold reported', async ({ page }
   // The streamed chunks and LOD sections beyond them. On CI's software renderer this took 1.2 min
   // at 0.26.x; the cliffs (the default terrain since 0.35.0) made generation ~4x slower (245
   // chunks natively: 121 -> 476 ms), so it is given 3 min.
-  await expect
-    .poll(
-      async () => {
-        const f = await frame(page);
-        return f.chunks > 0 && f.lodDrawn > 20;
-      },
-      { timeout: 180_000 },
-    )
-    .toBe(true);
+  // What the page held at each check, printed if it never gets there (CI-only since 0.71.32,
+  // WORK_QUEUE: no screenshots or traces come back from CI).
+  let last = '';
+  try {
+    await expect
+      .poll(
+        async () => {
+          const f = await frame(page);
+          last = await page.evaluate<string>(`JSON.stringify((() => {
+          const d = globalThis.__dwell; const st = d?.state?.();
+          return {
+            stages: (globalThis.__dwellStages?.() ?? []).filter((x) => x.endedMs == null).map((x) => x.id),
+            ready: st?.terrainReady, loading: st?.loading, terrain: st?.terrain,
+            lod: st?.lod && { drawn: st.lod.drawn, generating: st.lod.generating, meshing: st.lod.meshing,
+              waiting: st.lod.waitingInView, wanted: st.lod.wanted, built: st.lod.built },
+            render: d?.renderStats?.(),
+          };
+        })())`);
+          return f.chunks > 0 && f.lodDrawn > 20;
+        },
+        { timeout: 180_000 },
+      )
+      .toBe(true);
+  } catch (e) {
+    throw new Error(`never drawn; the page last held ${last}\n${String(e)}`);
+  }
   const { stats } = await frame(page);
   expect(stats.triangles).toBeGreaterThan(0);
   // A draw per chunk and section (no batching, ADR 0028).
