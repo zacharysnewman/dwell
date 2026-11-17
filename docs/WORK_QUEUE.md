@@ -4083,7 +4083,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   generated brush and structure tables still named `dwell:log[axis=y,width=4]` (#1064 added `joined`), and two tests
   pinned the wood chunk as a lump (#1067) and leaves as one hit (#1060, the sapling drop test, which also didn't wait out
   the tool's contact). `edit.spec.ts`'s palette test failed on CI only (a block left in the cell on re-aiming); it passes
-  on a GPU in 30 s: recheck on the next main run before treating it as a new bug.
+  on a GPU in 30 s: recheck on the next main run before treating it as a new bug. Rechecked (2026-11-17): it fails
+  on every main run since #1060 and locally under the software renderer (55 s), at a different item each time (tall
+  grass, sand, …): the cell holds the previous item again when the next is placed. Watching the cell for 3 s after each
+  break never sees it come back (the wait hides it), so a predicted one-hit break is later undone: the server kept the
+  block. The server's `Held` handling clears the tool (checked). Next: expose the server's last edit refusal
+  (`SessionStats::last_edit_check`) to the dev API for a local world and read it at the failure. Also seen once:
+  `stream_cost`'s tick took 12.3 ms on a CI runner (#1070's run; passes locally): timing.
 
 ## Follow-ups (owner, 2026-11-17)
 
