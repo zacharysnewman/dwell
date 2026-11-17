@@ -3992,3 +3992,13 @@ current up next work." Not to be worked until the owner organizes the up-next wo
 - **Hit table:** the tools' hits and times to break blocks (½ m cells may feel slow); the owner's targets.
 - **Spawn search:** ~2 s of "Finding a place to stand" on a new or regenerated world (the search for a level patch
   near a river); a faster search or a cache by seed.
+- **Rivers from the mountains (BUGS.md #196):** owner: "Yes A and B for River's add to follow up." Both: (a) each river
+  drawn back up its main feeder to the ridge as a thin stream, and (b) a lower discharge threshold (more, longer
+  rivers, the small ones narrow). A worldgen change: a new compatibility line.
+
+Dropped (owner, 2026-11-17: "I don't know what either of the unclear queue items are, drop them"): "low_shrub seed" and
+"water darkened by SSAO underwater" (from the check-in list, never recorded in the owner's words).
+
+Up next (owner, 2026-11-17): "prioritize investigating #976 to determine what value it provides and where we've
+already made improvements. Resolve the minimum conflicts to get comparison screenshots of the whole world in the
+current version and in the PR."
