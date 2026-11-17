@@ -544,11 +544,21 @@ impl TerrainCollision {
     /// neighbours asked for (`wanting`), and this says false.
     fn try_load(&mut self, physics: &mut Physics, world: &mut VoxelWorld, c: ChunkCoord) -> bool {
         if world.generates() && self.force_budget != usize::MAX {
+            // A neighbour whose answer needs a sky floor waits like one that would generate: the
+            // server computes sky floors off the tick (BUGS.md #194: at 362 m/s these checks
+            // computed several a tick, 20+ ms natively).
+            let mut unknown = false;
             let missing: Vec<ChunkCoord> = around(c)
                 .filter(|n| (MIN_CHUNK_Y..=MAX_CHUNK_Y).contains(&n.y))
-                .filter(|n| world.would_generate(*n))
+                .filter(|n| match world.would_generate_known(*n) {
+                    Some(g) => g,
+                    None => {
+                        unknown = true;
+                        true
+                    }
+                })
                 .collect();
-            if missing.len() > self.force_budget {
+            if unknown || missing.len() > self.force_budget {
                 for n in missing {
                     if !self.wanting.contains(&n) {
                         self.wanting.push(n);
@@ -908,6 +918,55 @@ mod mass_tests {
             0.0,
             "the terrain collider has mass {}",
             collider.mass()
+        );
+    }
+}
+
+#[cfg(test)]
+mod air_tests {
+    use super::*;
+    use dwell_world::{Chunk, ChunkCoord, VoxelWorld};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Priority 0 (BUGS.md #194; owner, 2026-11-16: "big hitches while flying at 362 m/s"): the
+    /// reach's builds never compute a sky floor on the tick. A chunk whose neighbours' answer isn't
+    /// known waits (wanted), as one that would generate does, and the plain air test (a sky floor,
+    /// ~1 ms natively, several in the browser) is never asked.
+    #[test]
+    fn the_reach_waits_for_unknown_sky_floors_instead_of_computing_them() {
+        let generator: dwell_world::ChunkGenerator = Arc::new(|_: ChunkCoord, _: &mut Chunk| {});
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counter = asked.clone();
+        let air: dwell_world::AirChunkTest = Arc::new(move |_| {
+            counter.fetch_add(1, Ordering::Relaxed);
+            true
+        });
+        let mut world = VoxelWorld::new(generator, Some(air));
+        world.set_air_known(Arc::new(|_| None));
+        let mut physics = Physics::default();
+        let mut terrain = TerrainCollision::new(&mut physics);
+        terrain.set_force_budget(0);
+        let p = DVec3::new(5000.0, 900.0, 5000.0);
+        terrain.ensure_box(
+            &mut physics,
+            &mut world,
+            p - DVec3::splat(15.0),
+            p + DVec3::splat(15.0),
+        );
+        assert_eq!(
+            asked.load(Ordering::Relaxed),
+            0,
+            "sky floors computed on the tick"
+        );
+        assert_eq!(
+            terrain.loaded_chunks(),
+            0,
+            "built before its neighbours were known"
+        );
+        assert!(
+            !terrain.take_wanting().is_empty(),
+            "the unknown chunks wanted"
         );
     }
 }

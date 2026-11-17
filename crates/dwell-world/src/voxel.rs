@@ -201,6 +201,11 @@ pub type ChunkGenerator = Arc<dyn Fn(ChunkCoord, &mut Chunk) + Send + Sync>;
 /// True for chunks a generator leaves all air, known without generating them.
 pub type AirChunkTest = Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
 
+/// The air test without its costly part (ARCHITECTURE.md §6.3): `Some(all air)` when the chunk's
+/// answer is at hand, `None` while its column's sky floor isn't known (the server then has it
+/// computed off the tick, `dwell-sim` `sky_columns.rs`).
+pub type AirKnownTest = Arc<dyn Fn(ChunkCoord) -> Option<bool> + Send + Sync>;
+
 /// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain
 /// (its height field with the terrain volume over it, `dwell_worldgen::volume`), 100 the structure
 /// sandbox (the flat world in its floor block; numbered away from the terrain's versions, which
@@ -526,6 +531,8 @@ static AIR_CHUNK: LazyLock<Chunk> = LazyLock::new(Chunk::default);
 pub struct VoxelWorld {
     generator: Option<ChunkGenerator>,
     air: Option<AirChunkTest>,
+    /// The tick-safe air test (`air_known`); none: the plain test's answer.
+    air_known: Option<AirKnownTest>,
     saved: Option<Box<dyn SavedChunks>>,
     chunks: HashMap<ChunkCoord, Box<Chunk>>,
     epoch: u64,
@@ -571,6 +578,7 @@ impl VoxelWorld {
         Self {
             generator: Some(generator),
             air,
+            air_known: None,
             saved: None,
             chunks: HashMap::default(),
             epoch: 0,
@@ -856,6 +864,23 @@ impl VoxelWorld {
     /// the air test says the generator would leave it empty (not stored).
     /// Whether a read of chunk `coord` would generate it here (a generating world's chunk not
     /// stored, not saved and not all air): the costly read the server's tick avoids.
+    /// The tick-safe air test from now on ([`AirKnownTest`]).
+    pub fn set_air_known(&mut self, test: AirKnownTest) {
+        self.air_known = Some(test);
+    }
+
+    /// [`Self::would_generate`] without computing a sky floor: `None` while chunk `coord`'s answer
+    /// needs one (BUGS.md #194: at 362 m/s the collision's checks computed several a tick).
+    pub fn would_generate_known(&self, coord: ChunkCoord) -> Option<bool> {
+        if self.generator.is_none() || self.chunks.contains_key(&coord) || self.saved_has(coord) {
+            return Some(false);
+        }
+        match &self.air_known {
+            Some(known) => known(coord).map(|air| !air),
+            None => Some(!self.air.as_ref().is_some_and(|air| air(coord))),
+        }
+    }
+
     pub fn would_generate(&self, coord: ChunkCoord) -> bool {
         self.generator.is_some()
             && !self.chunks.contains_key(&coord)
@@ -865,9 +890,18 @@ impl VoxelWorld {
 
     pub fn read(&mut self, coord: ChunkCoord) -> &Chunk {
         if self.generator.is_some() {
+            let missing = !self.chunks.contains_key(&coord) && !self.saved_has(coord);
+            // With the tick-safe test (the server) a read never computes a sky floor: a chunk whose
+            // answer isn't known yet reads as air until its column is computed off the tick
+            // (BUGS.md #194: at 362 m/s the controller's reads computed several a tick).
+            if missing && let Some(known) = &self.air_known {
+                if known(coord) != Some(false) {
+                    return &AIR_CHUNK;
+                }
+                return self.get_or_create(coord);
+            }
             if let Some(air) = &self.air
-                && !self.chunks.contains_key(&coord)
-                && !self.saved_has(coord)
+                && missing
                 && air(coord)
             {
                 return &AIR_CHUNK;

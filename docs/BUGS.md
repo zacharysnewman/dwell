@@ -85,6 +85,20 @@ Round 5: a tree's stages grow in the server-jobs worker (job "TJ1", answer "TD1"
 `growth::keep_grown`); with remote jobs a due tree waits until both its stages are kept. Browser run: every advance
 ≤ 15.8 ms (growth ticks 11–14 ms, now grass chunks). Next: grass chunks off the tick too.
 
+Round 7 (2026-11-17; owner: "I'm getting big hitches while flying at 362 m/s"): bench `stutter-fly` showed the
+server's `terrain` phase at 39–71 ms ticks for ~10 s after take-off. Cause: the air test's sky floors (a chunk
+column's heights, ~1 ms natively, several in WASM) computed on the tick by the collision's neighbour checks
+(`would_generate`), and by the controller's probe, swim and shape reads (`VoxelWorld::read`) of chunks not yet
+loaded: at 362 m/s new columns every tick. Fix: the world's tick-safe air test (`set_air_known`): reads of an
+unknown chunk read as air, the collision waits on it, and its column is wanted first. Tests red → green:
+`terrain::air_tests::the_reach_waits_for_unknown_sky_floors_instead_of_computing_them` (336 sky floors in one
+reach → 0) and `voxel_query::a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor`. The harness
+(`TICK_FLY=1`, its input fixed: its sequence numbers had been past `MAX_SEQ_AHEAD`, so no earlier harness run
+moved its player) natively: p99 17.5 → 0.94 ms, max 28 → 8.6 ms. Browser: flight's worst tick a second 1–6 ms
+(was 39–71) except take-off's growth (16–22 ms); the sprint run's terrain ≤ 15 ms (a first try without
+`want_first` made a 166 ms burst there: the look-ahead's columns came too late). Left: growth at take-off
+(16–22 ms), the join's first second (ecology ~25 ms).
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

@@ -86,33 +86,49 @@ fn main() {
                     (i >= 0.0 && j >= 0.0 && (i as usize) < n && (j as usize) < n)
                         .then(|| j as usize * n + i as usize)
                 };
-                let mut put = |c: usize, rgb3: [u8; 3]| rgb[c * 3..c * 3 + 3].copy_from_slice(&rgb3);
+                let mut put =
+                    |c: usize, rgb3: [u8; 3]| rgb[c * 3..c * 3 + 3].copy_from_slice(&rgb3);
                 let mut land: Vec<f32> = (0..n * n)
                     .filter(|&c| m.height[c] > 0.0 && !m.is_sea(c))
                     .map(|c| m.height[c])
                     .collect();
                 land.sort_by(f32::total_cmp);
-                let pct = |h: f32| land.partition_point(|&v| v < h) as f64 / land.len() as f64 * 100.0;
+                let pct =
+                    |h: f32| land.partition_point(|&v| v < h) as f64 / land.len() as f64 * 100.0;
                 let mut sources = Vec::new();
                 for river in &m.rivers {
                     for w in river.path.windows(2) {
-                        let steps = (((w[1].x - w[0].x).hypot(w[1].z - w[0].z)) / m.cell as f32).ceil().max(1.0) as usize;
+                        let steps = (((w[1].x - w[0].x).hypot(w[1].z - w[0].z)) / m.cell as f32)
+                            .ceil()
+                            .max(1.0) as usize;
                         for k in 0..=steps {
                             let t = k as f32 / steps as f32;
-                            if let Some(c) = cell_of(w[0].x + (w[1].x - w[0].x) * t, w[0].z + (w[1].z - w[0].z) * t) {
+                            if let Some(c) = cell_of(
+                                w[0].x + (w[1].x - w[0].x) * t,
+                                w[0].z + (w[1].z - w[0].z) * t,
+                            ) {
                                 put(c, [40, 90, 255]);
                             }
                         }
                     }
                 }
                 for river in &m.rivers {
-                    let Some(v) = river.path.first() else { continue };
+                    let Some(v) = river.path.first() else {
+                        continue;
+                    };
                     let from_lake = river.from_lake != 0;
                     if let Some(c) = cell_of(v.x, v.z) {
                         for (di, dj) in [(0i64, 0i64), (1, 0), (-1, 0), (0, 1), (0, -1)] {
                             let cc = c as i64 + dj * n as i64 + di;
                             if cc >= 0 && (cc as usize) < n * n {
-                                put(cc as usize, if from_lake { [255, 140, 0] } else { [255, 230, 0] });
+                                put(
+                                    cc as usize,
+                                    if from_lake {
+                                        [255, 140, 0]
+                                    } else {
+                                        [255, 230, 0]
+                                    },
+                                );
                             }
                         }
                         if !from_lake {

@@ -98,9 +98,9 @@ fn the_owners_world_at_a_sprint() {
             };
             let m = Message::PlayerInput(PlayerInput {
                 last_snapshot_tick: 0,
-                inputs: vec![dwell_physics::net::quantize_input(&input, t as u32)],
+                inputs: vec![dwell_physics::net::quantize_input(&input, (t - 300) as u32)],
             });
-            fx.server.on_datagram(w.player_id.into(), &m.encode());
+            fx.server.on_datagram(1, &m.encode());
         }
         let clock = std::time::Instant::now();
         fx.server.step();
@@ -126,9 +126,6 @@ fn the_owners_world_at_a_sprint() {
             fx.server.deliver_job(&done);
         }
         let _ = fx.take(1);
-        if t % 300 == 0 {
-            eprintln!("AT {t}: feet {:?}", fx.server.feet_of(w.player_id));
-        }
         let ms = fx.server.tick_phases();
         let made = fx
             .server

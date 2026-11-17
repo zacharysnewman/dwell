@@ -291,3 +291,43 @@ fn the_exact_shape_ray_cast_answers_like_the_box_cast_on_cubes() {
     }
     assert!(hits > 1000, "{compared} rays, {hits} hits");
 }
+
+/// Priority 0 (BUGS.md #194; owner, 2026-11-16: "big hitches while flying at 362 m/s"): the
+/// controller's probe never computes a sky floor on the tick. A voxel of a chunk not held whose air
+/// answer isn't known yet reads as air (the collision has no shape there yet either) without
+/// asking the plain air test (a sky floor: ~1 ms natively, several in the browser).
+#[test]
+fn a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let stone = require("dwell:stone");
+    let generator: dwell_world::ChunkGenerator =
+        Arc::new(move |_, chunk: &mut dwell_world::Chunk| chunk.voxels_mut().fill(stone));
+    let asked = Arc::new(AtomicUsize::new(0));
+    let counter = asked.clone();
+    let air: dwell_world::AirChunkTest = Arc::new(move |_| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        false
+    });
+    let mut world = dwell_world::VoxelWorld::new(generator, Some(air));
+    world.set_air_known(Arc::new(|_| None));
+    let physics = dwell_physics::Physics::default();
+    let q = VoxelQuery::new(&mut world, &physics);
+    assert_eq!(
+        q.material(5000, 900, 5000),
+        dwell_world::M.air,
+        "an unknown chunk reads as air"
+    );
+    assert!(
+        std::ptr::eq(
+            q.shape(5000, 901, 5000),
+            dwell_blocks::shape::shape_of(dwell_world::M.air)
+        ),
+        "an unknown chunk's shape is air's"
+    );
+    assert_eq!(
+        asked.load(Ordering::Relaxed),
+        0,
+        "a sky floor computed on the tick"
+    );
+}

@@ -77,6 +77,10 @@ Last updated: 2026-11-11 (0.52.108).
   (`TICK_FLY=1`) does NOT reproduce it yet: its player never moves (stuck at its spawn in every harness run so far,
   so the earlier native numbers were of a still player). Next: fix the harness's input (compare persistence.rs), then
   find the costly collision builds and spread or cap them.
+  Round 7 (2026-11-17, BUGS.md #194): fixed: sky floors were computed on the tick by the collision's checks and
+  the controller's reads; now never (the world's tick-safe air test). Flight at 362 m/s in the browser: worst tick a
+  second 1–6 ms, was 39–71. Next: growth at take-off (16–22 ms), the join's first second (ecology ~25 ms), then the
+  budget test.
 - **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
   random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
 - **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
