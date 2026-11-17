@@ -91,6 +91,8 @@ pub enum Purpose {
     Verify,
     /// The F4 map.
     Map,
+    /// A town cell's site for the map (face B, cell i, k).
+    Town(bool, i32, i32),
     /// The big map's debug layer of a field on a face (`Job::Map`'s `layer`, REALISTIC_WORLD.md R6).
     MapLayer(u8, u8),
     /// The F3 overlay's regenerate-and-diff of a chunk.
@@ -132,6 +134,7 @@ impl Purpose {
             }
             Purpose::Verify => ("job.verify.wait", "job.verify.run"),
             Purpose::Map => ("job.map.wait", "job.map.run"),
+            Purpose::Town(..) => ("job.town.wait", "job.town.run"),
             Purpose::MapLayer(..) => ("job.map_layer.wait", "job.map_layer.run"),
             Purpose::Diff(..) => ("job.diff.wait", "job.diff.run"),
             Purpose::Base(..) => ("job.base.wait", "job.base.run"),
