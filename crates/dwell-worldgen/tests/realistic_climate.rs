@@ -75,6 +75,7 @@ dwell_world::both_faces!(
     /// grid and in the discharge's rain.
     fn the_windward_side_of_the_main_range_is_twice_as_wet_as_its_lee(f: FaceFrame) {
         let (mut all_wq, mut all_lq) = (0.0, 0.0);
+        let (mut all_w, mut all_l) = (0.0, 0.0);
         for world in SEEDS {
             let seed = face_seed(world, f.face);
             let m = map(seed);
@@ -88,7 +89,11 @@ dwell_world::both_faces!(
                 c.wind_cell().name,
                 c.wind_from
             );
-            assert!(wind >= 2.0 * lee, "seed {world}: windward {wind} lee {lee}");
+            // 0.73 (from #976): the lee keeps `rain.leeFloor` (0.4) of the flat rate, so a range the
+            // air reaches half dried shadows less: 1.4 x per seed (seed 1 B: 1.68), twice over the
+            // seeds together (below).
+            assert!(wind >= 1.4 * lee, "seed {world}: windward {wind} lee {lee}");
+            (all_w, all_l) = (all_w + wind, all_l + lee);
             // The discharge's rain (per map cell, the map's own march) follows it.
             let at = |x: f64, z: f64| {
                 let i = (((x - m.x0) / m.cell).round() as usize).min(m.grid.n - 1);
@@ -105,12 +110,17 @@ dwell_world::both_faces!(
             // rain, part B's `variety`; the coarse grid's twice, above). 1.3 × per seed before the
             // 0.65 line's curved plates moved seed 1 B's range: its district rain there outweighs
             // the shadow (0.060 against 0.065 lee), the coarse grid's own twice still holds.
+            // 0.8 since 0.73's lee floor (the lee wetter): seed 1 B 0.055 against 0.065.
             assert!(
-                wq >= 0.9 * lq,
+                wq >= 0.8 * lq,
                 "seed {world}: discharge rain windward {wq} lee {lq}"
             );
             (all_wq, all_lq) = (all_wq + wq, all_lq + lq);
         }
+        assert!(
+            all_w >= 2.0 * all_l,
+            "the seeds' coarse rain windward {all_w} lee {all_l}"
+        );
         assert!(
             all_wq >= 1.5 * all_lq,
             "the seeds' discharge rain windward {all_wq} lee {all_lq}"

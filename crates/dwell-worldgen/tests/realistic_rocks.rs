@@ -312,9 +312,11 @@ dwell_world::both_faces!(
         );
         // Forests (wet) mostly cover the provinces' treads with their own ground since 0.69
         // (`shaping.coverRain`): 9 bare sandstone floors a face are left to sample; and the arid
-        // ones are mostly mesa country's blend, skipped above (35 on face A).
+        // ones are mostly mesa country's blend, skipped above (35 on face A). Since 0.73's lee
+        // floor the forests' lee is wetter and covers nearly all of them (0-3 a face, on 5 seeds
+        // too): no minimum; any that is sampled must still not be red sand (the check above).
         assert!(
-            arid >= 30 && humid >= 50 && forests >= 5,
+            arid >= 30 && humid >= 50,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }

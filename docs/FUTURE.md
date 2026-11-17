@@ -8,6 +8,17 @@ Each entry notes what the current architecture already does to keep the option o
 
 ---
 
+
+## Moisture recovery in the rain march (from #976; dropped from 0.73, owner 2026-11-17)
+
+Built and kept as data, off: `climate.json` `rain.recoverM` (m; 0 = off). Over land the marching air takes moisture
+back, `m + (1 − m) × step / recoverM` (`biomemap::rainfall`), as a continent's plants and lakes give it back. #976 set
+60 km, for real-scale continents thousands of km across. On today's faces (~30 km centre to edge) it made inland
+ground wetter and shrank the arid country: in the 0.73 tests mesa country fell under its 0.5 % share on a temperate
+face and a seed-1 volcano's foot broke 0.47 (main 0.15; `realistic_cones`). The owner: "drop it but record it
+somewhere for historical and possible future look again." Look again if the world grows toward real scale (#976's
+real-km plates): set `recoverM`, then run `realistic_cones`, `realistic_mesa_presence` and `realistic_mesa_lakes`.
+
 ## Rivers filling the lower land beside them (owner, 2026-10-27)
 
 *"Rivers should fill adjacent 'lower' valleys, creating wider rivers/lakes/pools."* Today a river's

@@ -1977,7 +1977,10 @@ the island (along a direction from the seed, bent by a noise) less a lapse rate 
 0.52.7; ADR 0075]**): `biomemap::rainfall` marches a prevailing wind (`biomeMap.windDirection`) across
 the face's map once per biome field, upwind cells first, the sea refilling the air, rising ground
 raining it out (`baseRain`, `upliftRain`), falling ground raining less (`leeDry`), the air losing what
-rained over `windReach`, so the lee of high ground is dry; the wind sees the ground low-passed over
+rained over `windReach`, so the lee of high ground is dry; in a climate world (0.73, from #976) the lee keeps at least
+`leeFloor` of the march's rain and the air recovers its moisture over `recoverM` m, and the temperature takes the
+sea's moderation, up to `maritime` °C warmer within about `maritimeReachM` m of the coast, fading inland
+(`climate.json`; `Climate::temperature_near_sea`); the wind sees the ground low-passed over
 `windSmoothM` m (a tent filter, `biomemap::smooth_ground`; 3 km), so whole ranges lift and shadow the air,
 not each hillside; the wetness is `(1 − rainShare)` × the
 rivers' + `rainShare` × the rainfall, `rainShare` 0 in the default world (neutral). A biome's weight is its `weight` × each range's smoothstep fit over ± its

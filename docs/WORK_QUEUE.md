@@ -4011,3 +4011,14 @@ current version and in the PR."
   octaves, the ocean-face spawn (15.3 s → 0.6 ms), the biome data's memory (27.9 → 17.2 MB), 3 test files. Main has
   moved 287 commits since its base (species trees, sagebrush, far tint, etc.); 18 commits on the branch.
   While shooting it: BUGS.md #202 found and fixed (a worldgen world's far terrain drew the default island).
+  Owner, 2026-11-17: "I'd like to "take selected parts across" and compare with current (screenshots)." With all the
+  parts (climate, rock layering, ocean spawn, memory cut; branch `claude/realistic-parts`) each face read as one
+  climate: the latitude per km (under 1° across today's disc, against a band's 14° on main) and the climate noise cut.
+  Owner: "I do want to have multiple climates" and "I'm leaning towards only keeping sea moderation and lee
+  floor/moisture recovery." Branch `claude/climate-sea-lee`: only those (latitude and noise as on main); a worldgen
+  change, so a new line (0.73) if kept. Owner should see: several climates a face as on main, warmer coasts, softer
+  deserts behind ranges.
+  Owner, 2026-11-17: "Ship as 73." The full worldgen suite then failed 7 tests that pass on main: the moisture
+  recovery broke a seed-1 volcano's foot (0.47 against main's 0.15, the circular-cliff check) and mesa country (0.44 %
+  of a temperate face's land, min 0.5 %). Owner: "Ok, drop it but record it somewhere for historical and possible
+  future look again" → `recoverM` 0, recorded in docs/FUTURE.md. 0.73 ships sea moderation and the lee floor.
