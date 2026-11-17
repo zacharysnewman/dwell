@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fewer hitches near growing trees: a tree growing no longer rebuilds the collision of the ground around it."
+  ]
+}

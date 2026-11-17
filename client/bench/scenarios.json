@@ -11245,6 +11245,10 @@
         {
           "do": "record",
           "name": "run"
+        },
+        {
+          "do": "shot",
+          "name": "run-end"
         }
       ]
     },
@@ -11308,6 +11312,10 @@
         {
           "do": "record",
           "name": "fly"
+        },
+        {
+          "do": "shot",
+          "name": "fly-end"
         }
       ]
     }

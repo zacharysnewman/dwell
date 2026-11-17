@@ -128,6 +128,15 @@ time; at the game's speed a tree grows a stage every few days. Kept as a smaller
 budget `sync`'s neighbour rebuilds (the edited chunk at once, its neighbours a few a tick) or rebuild a neighbour
 only when the change touches the shared border.
 
+Round 13 (2026-11-17; owner: "There's a lot of trees, so once every few in game days is still probably pretty
+often."): a chunk keeps per side the collision changes within two cells of it (`Chunk::side_revision`), and
+`TerrainCollision::sync` rebuilds a shaped neighbour only when every side of the changed chunk facing it changed
+(a neighbour reads only those cells). Test red → green:
+`an_edit_away_from_the_border_rebuilds_no_shaped_neighbour` (2 builds → 1); the border test still rebuilds both.
+Also: making room for a picked grass chunk's pristine copies cleared its own (one regeneration, 12 ms natively):
+the clear now keeps them (no automated test: the copies are private; the harness shows `GRASS REGENERATED 0`).
+Harness sprint at 60× growth: worst tick 5.3 ms (was 8.5, failing the 8 ms gate); collision ticks 7.7 → 4.7 ms.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should

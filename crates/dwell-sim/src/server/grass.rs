@@ -245,11 +245,13 @@ impl Server {
     /// where unedited (a copy), so the later quarters read them so after its own grass edits them
     /// (BUGS.md #194: they regenerated the chunk, 3–12 ms natively a quarter).
     fn keep_unedited_as_pristine(&mut self, c: ChunkCoord) {
-        // Room for all three first: a clear part way would drop the ones just kept.
+        // Room for all three first, the chunk's own kept: a clear dropped the copy that let it be
+        // picked, and its first quarter regenerated it.
+        let mine = Self::grass_chunks(c);
         if self.pristine.len() + 3 > super::PRISTINE_KEPT {
-            self.pristine.clear();
+            self.pristine.retain(|k, _| mine.contains(k));
         }
-        for k in Self::grass_chunks(c) {
+        for k in mine {
             if let Some(ch) = self.world.find(k)
                 && ch.revision() == 0
                 && !self.pristine.contains_key(&k)

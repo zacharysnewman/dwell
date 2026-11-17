@@ -49,6 +49,8 @@ type Mask = Box<[u64; CHUNK_VOLUME / 64]>;
 struct Watch {
     stamp: u64,
     revision: u32,
+    /// Its sides' collision changes (`Chunk::side_revision`) as last read.
+    sides: [u32; 6],
     users: u32,
 }
 
@@ -146,6 +148,22 @@ fn signature(world: &VoxelWorld, c: ChunkCoord) -> (u64, u32) {
     world
         .find(c)
         .map_or((0, 0), |ch| (ch.stamp(), ch.collision_revision()))
+}
+
+fn sides(world: &VoxelWorld, c: ChunkCoord) -> [u32; 6] {
+    world.find(c).map_or([0; 6], |ch| ch.side_revision())
+}
+
+/// Whether a change in chunk `c` whose sides `changed` (−x, +x, −y, +y, −z, +z) may change its
+/// neighbour `n`'s collision: `n` reads only `c`'s cells near it, which lie near every side of `c`
+/// facing `n`, so one of those sides unchanged leaves them as they were.
+fn reaches(c: ChunkCoord, n: ChunkCoord, changed: [bool; 6]) -> bool {
+    let d = [n.x - c.x, n.y - c.y, n.z - c.z];
+    d.iter().enumerate().all(|(axis, &v)| match v {
+        -1 => changed[axis * 2],
+        1 => changed[axis * 2 + 1],
+        _ => true,
+    })
 }
 
 /// The chunks a loaded chunk's collision reads: the 27 around it, or (empty) itself.
@@ -611,11 +629,13 @@ impl TerrainCollision {
             }
             for d in deps(c, wide) {
                 let (stamp, revision) = signature(world, d);
+                let sides = sides(world, d);
                 self.watched
                     .entry(d)
                     .or_insert(Watch {
                         stamp,
                         revision,
+                        sides,
                         users: 0,
                     })
                     .users += 1;
@@ -817,22 +837,31 @@ impl TerrainCollision {
     /// unmodified chunk the world evicted reads the same when regenerated; rebuilding anyway is
     /// the simple, safe path.
     pub fn sync(&mut self, physics: &mut Physics, world: &mut VoxelWorld) {
-        let mut changed: Vec<ChunkCoord> = Vec::new();
+        // Each changed chunk with the sides whose cells changed (all of them when it was replaced).
+        let mut changed: Vec<(ChunkCoord, [bool; 6])> = Vec::new();
         for (&c, w) in &mut self.watched {
             let now = signature(world, c);
             if now != (w.stamp, w.revision) {
-                (w.stamp, w.revision) = now;
-                changed.push(c);
+                let s = sides(world, c);
+                let side_changed: [bool; 6] =
+                    std::array::from_fn(|i| now.0 != w.stamp || s[i] != w.sides[i]);
+                (w.stamp, w.revision, w.sides) = (now.0, now.1, s);
+                changed.push((c, side_changed));
             }
         }
         if changed.is_empty() && self.pending_rebuild.is_empty() {
             return;
         }
+        // The chunk itself, and the shaped chunks round it its change reaches (BUGS.md #194).
         let mut rebuild: Vec<ChunkCoord> = changed
             .iter()
-            .flat_map(|&c| around(c).map(move |n| (c, n)))
-            .filter(|&(c, n)| self.chunks.get(&n).is_some_and(|l| n == c || l.shaped))
-            .map(|(_, n)| n)
+            .flat_map(|&(c, side)| around(c).map(move |n| (c, n, side)))
+            .filter(|&(c, n, side)| {
+                self.chunks
+                    .get(&n)
+                    .is_some_and(|l| n == c || (l.shaped && reaches(c, n, side)))
+            })
+            .map(|(_, n, _)| n)
             .collect();
         // In a fixed order, so every run (and the client's prediction) builds the same colliders.
         rebuild.extend(std::mem::take(&mut self.pending_rebuild));
@@ -846,6 +875,7 @@ impl TerrainCollision {
         // Building may have generated chunks some watch saw as missing: take their stamps now.
         for (&c, w) in &mut self.watched {
             (w.stamp, w.revision) = signature(world, c);
+            w.sides = sides(world, c);
         }
     }
 
@@ -1167,6 +1197,27 @@ mod rebuild_tests {
             covered,
             "the ramp's face by the dug cell collides"
         );
+    }
+
+    // face-a-only: as above.
+    #[test]
+    fn an_edit_away_from_the_border_rebuilds_no_shaped_neighbour() {
+        // Priority 0 (BUGS.md #194; owner, 2026-11-17: "There's a lot of trees, so once every few
+        // in game days is still probably pretty often."): a tree's growth inside its chunk rebuilt
+        // every shaped chunk round it (6–16 builds, 2–7 ms natively). A neighbour reads only the
+        // cells within two of their shared border: a change deeper in rebuilds the chunk alone.
+        let ramp = dwell_blocks::parse_state(
+            "dwell:grass_ramp[facing=west,flooded=false,half=bottom,shape=ramp]",
+        )
+        .expect("a ramp");
+        let (mut world, mut physics, mut terrain) = loaded();
+        world.set_voxel(-1, -1, 5, ramp);
+        terrain.sync(&mut physics, &mut world);
+        let before = terrain.loads();
+        // Dug 10 cells into the next chunk (x = 0..31): far from the ramp's chunk at x = -1.
+        world.set_voxel(10, -1, 5, dwell_world::M.air);
+        terrain.sync(&mut physics, &mut world);
+        assert_eq!(terrain.loads() - before, 1, "the edited chunk only");
     }
 
     // face-a-only: a buried chunk is one under solid ground; the rule has no up of its own.
