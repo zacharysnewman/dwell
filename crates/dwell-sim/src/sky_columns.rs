@@ -77,6 +77,11 @@ impl SkyColumns {
         &self.air
     }
 
+    /// The shared cache itself (the world's tick-safe air test reads it).
+    pub fn air_arc(&self) -> Arc<AirColumns> {
+        self.air.clone()
+    }
+
     /// A tick's start: what finished is collected, and what is not out yet forgotten (the tick
     /// asks again, nearest first).
     pub fn begin(&mut self) {
@@ -88,6 +93,25 @@ impl SkyColumns {
         }
         self.queue.clear();
         self.queued.clear();
+    }
+
+    /// Column `col`'s sky floor is wanted before every other this tick (the collision's: a player
+    /// is about to reach it, BUGS.md #194).
+    pub fn want_first(&mut self, col: SkyColumn) {
+        if self.in_flight.contains(&col) {
+            return;
+        }
+        if !self.queued.insert(col) {
+            self.queue.retain(|&c| c != col);
+        }
+        self.queue.push_front(col);
+        if let Mode::Thread { jobs, .. } = &self.mode
+            && self.in_flight.len() < IN_FLIGHT
+            && let Some(c) = self.queue.pop_front()
+        {
+            self.in_flight.insert(c);
+            let _ = jobs.send(c);
+        }
     }
 
     /// Column `col`'s sky floor is wanted (after those wanted before it this tick).

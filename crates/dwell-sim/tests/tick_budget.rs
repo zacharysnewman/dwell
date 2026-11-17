@@ -6,6 +6,7 @@
 mod common;
 
 use common::*;
+use dwell_protocol::players::FLY_SPEED_MAX_LEVEL;
 use dwell_protocol::*;
 use dwell_sim::jobs::JobRunner;
 use dwell_sim::server::{ServerConfig, TICK_PHASES};
@@ -37,6 +38,16 @@ fn the_owners_world_at_a_sprint() {
         store: Some(WorldStore::new(WorldDb::in_memory().expect("opens"), false)),
         ..ServerConfig::default()
     });
+    // As the browser's local world (dwell-client local.rs, under wasm32): the phone's collision
+    // budgets (shared/render/streaming.json) and no generation on the reach.
+    fx.server.set_collision_budgets(
+        1024,
+        dwell_physics::terrain::CollisionAhead {
+            chunks_per_tick: 1,
+            ..Default::default()
+        },
+    );
+    fx.server.set_reach_generates(0);
     let mut runner = JobRunner::for_world(GENERATOR_TERRAIN, seed);
     let w = fx.join(1, &Client::new(1));
     let mut v = Chunk::default();
@@ -53,6 +64,9 @@ fn the_owners_world_at_a_sprint() {
     let mut worker_free_ms = 0.0f64;
     let mut on_tick = 0;
     let mut heading: f64 = 0.0;
+    // `TICK_FLY`: flying straight at the top speed level (362 m/s; owner, 2026-11-16: "big hitches
+    // while flying at 362 m/s"), climbing gently, instead of sprinting.
+    let fly = std::env::var("TICK_FLY").is_ok();
     let secs = std::env::var("TICK_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -61,19 +75,32 @@ fn the_owners_world_at_a_sprint() {
         // After 5 s at the join: sprinting forward through the controller, jumping every
         // 1.3 s, turning slowly (as the browser's stutter-run scenario).
         if t > 300 {
-            heading += 0.15;
-            let input = dwell_physics::controller::Input {
-                move_y: 1.0,
-                run: true,
-                jump: t % 80 < 8,
-                look_yaw: heading as f32,
-                ..Default::default()
+            let input = if fly {
+                dwell_physics::controller::Input {
+                    move_y: 1.0,
+                    run: true,
+                    fly: true,
+                    fly_speed: FLY_SPEED_MAX_LEVEL as u8,
+                    // As the bench's stutter-fly: 3° up for 20 s, then level turned 90°.
+                    look_pitch: if t < 300 + 1200 { 3.0 } else { 0.0 },
+                    look_yaw: if t < 300 + 1200 { 0.0 } else { 90.0 },
+                    ..Default::default()
+                }
+            } else {
+                heading += 0.15;
+                dwell_physics::controller::Input {
+                    move_y: 1.0,
+                    run: true,
+                    jump: t % 80 < 8,
+                    look_yaw: heading as f32,
+                    ..Default::default()
+                }
             };
             let m = Message::PlayerInput(PlayerInput {
                 last_snapshot_tick: 0,
-                inputs: vec![dwell_physics::net::quantize_input(&input, t as u32)],
+                inputs: vec![dwell_physics::net::quantize_input(&input, (t - 300) as u32)],
             });
-            fx.server.on_datagram(w.player_id.into(), &m.encode());
+            fx.server.on_datagram(1, &m.encode());
         }
         let clock = std::time::Instant::now();
         fx.server.step();

@@ -101,7 +101,8 @@ impl<'a> VoxelQuery<'a> {
         self
     }
 
-    /// The state of a voxel (generating its chunk if needed).
+    /// The state of a voxel (generating its chunk if needed; on the server a chunk whose air answer
+    /// isn't known yet reads as air, `VoxelWorld::read`).
     pub fn material(&self, x: i32, y: i32, z: i32) -> StateId {
         let c = chunk_of(x, y, z);
         let mut w = self.world.borrow_mut();

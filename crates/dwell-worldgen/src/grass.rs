@@ -346,6 +346,23 @@ impl Rule {
         env: &dyn Envelope,
         cells: &mut dyn Cells,
     ) -> Vec<([i32; 3], StateId)> {
+        self.grow_chunk_part(f, chunk, None, first_day, days, env, cells)
+    }
+
+    /// [`Self::grow_chunk`] over one quarter of the chunk's columns (`part` 0–3: x's lower or upper
+    /// half, then z's; None: the whole chunk), the server's a quarter a tick (a whole chunk took
+    /// ~12 ms of the browser's tick: priority 0, the owner's "the server never drops below 60fps").
+    #[allow(clippy::too_many_arguments)]
+    pub fn grow_chunk_part(
+        &self,
+        f: FaceFrame,
+        chunk: ChunkCoord,
+        part: Option<u8>,
+        first_day: u32,
+        days: u32,
+        env: &dyn Envelope,
+        cells: &mut dyn Cells,
+    ) -> Vec<([i32; 3], StateId)> {
         if days == 0 {
             return Vec::new();
         }
@@ -355,6 +372,20 @@ impl Rule {
             local.y * CHUNK_SIZE,
             local.z * CHUNK_SIZE,
         );
+        // The columns this call grows: the chunk's, or a quarter of them.
+        let half = CHUNK_SIZE / 2;
+        let (cx0, cx1, cz0, cz1) = match part {
+            Some(k) => {
+                let (i, j) = (i32::from(k % 2), i32::from(k / 2));
+                (
+                    x0 + i * half,
+                    x0 + (i + 1) * half,
+                    z0 + j * half,
+                    z0 + (j + 1) * half,
+                )
+            }
+            None => (x0, x0 + CHUNK_SIZE, z0, z0 + CHUNK_SIZE),
+        };
         let full = self.stages.len() - 1;
         let now = |cells: &dyn Cells, p: [i32; 3]| cells.now(f.cell(p)).map(|s| f.state(s));
         let is_grass =
@@ -377,8 +408,8 @@ impl Rule {
         let reach = self.data.reach;
         let mut tufts: std::collections::HashMap<(i32, i32), Vec<i32>> =
             std::collections::HashMap::new();
-        for z in z0 - reach..z0 + CHUNK_SIZE + reach {
-            for x in x0 - reach..x0 + CHUNK_SIZE + reach {
+        for z in cz0 - reach..cz1 + reach {
+            for x in cx0 - reach..cx1 + reach {
                 for y in y0 - SEED_ROWS..y0 + CHUNK_SIZE + SEED_ROWS {
                     if is_grass(cells, [x, y, z]) {
                         tufts.entry((x, z)).or_default().push(y);
@@ -405,8 +436,8 @@ impl Rule {
                 e
             }
         };
-        for z in z0..z0 + CHUNK_SIZE {
-            for x in x0..x0 + CHUNK_SIZE {
+        for z in cz0..cz1 {
+            for x in cx0..cx1 {
                 for y in y0..y0 + CHUNK_SIZE {
                     let p = [x, y, z];
                     let here = now(cells, p);

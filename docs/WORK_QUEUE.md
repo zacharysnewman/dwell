@@ -67,6 +67,29 @@ Last updated: 2026-11-11 (0.52.108).
   once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
   Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
   chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
+  Round 6 (WIP branch `claude/server-tick-6`): a grass chunk grown a quarter a tick; tests green, browser check
+  pending. Owner, 2026-11-16: "Also for the hitching fixes, I'm getting big hitches while flying at 362 m/s." Next:
+  measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
+  tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
+  (362 m/s) with no hitches.
+  Found 2026-11-17 (bench `stutter-fly`, browser): flying at 362 m/s the server's `terrain` phase (collision builds,
+  `Players::tick_terrain`, ~70 builds/s) gives ticks of 39–71 ms for ~10 s after take-off. The native harness
+  (`TICK_FLY=1`) does NOT reproduce it yet: its player never moves (stuck at its spawn in every harness run so far,
+  so the earlier native numbers were of a still player). Next: fix the harness's input (compare persistence.rs), then
+  find the costly collision builds and spread or cap them.
+  Round 7 (2026-11-17, BUGS.md #194): fixed: sky floors were computed on the tick by the collision's checks and
+  the controller's reads; now never (the world's tick-safe air test). Flight at 362 m/s in the browser: worst tick a
+  second 1–6 ms, was 39–71. Next: growth at take-off (16–22 ms), the join's first second (ecology ~25 ms), then the
+  budget test.
+- **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
+  random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
+- **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
+  the same time, not like just when transitioning, but both fully visible and static." Owner should see: each tree
+  drawn once, billboard or full, never both except during the brief fade.
+- **Owner, 2026-11-16 (bug, BUGS.md #195):** "I'm seeing big gray speckles across the whole map at medium to far LODs
+  and they seem to mostly (sometimes entirely) disappear when up close. Some of them at least seem to come from cores
+  inside of terrain or the random "rocks/boulders" scattered about." Owner should see: no grey speckles at any
+  distance; far terrain shows the material it shows up close.
 - **Owner, 2026-11-16 (releases):** "I'm seeing some releases, deploys going out, for these videos?" then "Sure." to
   skipping them: release.yml ignores pushes touching only `.claude/` or `docs/`. Owner should see: no dev build or
   deploy from a tools- or docs-only merge.

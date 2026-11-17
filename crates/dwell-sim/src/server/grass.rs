@@ -232,8 +232,14 @@ impl Server {
             .filter(|c| self.grass.days.get(c).copied().unwrap_or(0) < today)
             .take(CANDIDATES_PER_TICK)
             .collect();
-        let mut behind = Vec::new();
-        for c in candidates {
+        // On the tick a chunk grows a quarter of its columns a tick (`grow_chunk_part`), the one in
+        // hand first; its day once the fourth is done.
+        let mut behind: Vec<(ChunkCoord, Option<u8>)> = Vec::new();
+        if wait && let Some((c, k)) = self.grass_part {
+            behind.push((c, Some(k)));
+        }
+        let in_hand = !behind.is_empty();
+        for c in candidates.into_iter().filter(|_| !in_hand) {
             let f = FaceFrame::at_chunk_y(c.y);
             let l = f.chunk(c);
             let under = f.chunk(ChunkCoord::new(l.x, l.y - 1, l.z));
@@ -247,7 +253,7 @@ impl Server {
                 .collect();
             if missing.is_empty() || !wait {
                 if behind.len() < CHUNKS_PER_TICK {
-                    behind.push(c);
+                    behind.push((c, wait.then_some(0)));
                 }
             } else {
                 for k in missing {
@@ -266,7 +272,7 @@ impl Server {
                 cache: Default::default(),
                 copies: Default::default(),
             };
-            for c in behind {
+            for (c, part) in behind {
                 let last = self.grass.days.get(&c).copied().unwrap_or(0);
                 let (first, days) = rule.catch_up(last, today);
                 let f = FaceFrame::at_chunk_y(c.y);
@@ -274,19 +280,33 @@ impl Server {
                     (Some(e), _) => {
                         let face = f.face;
                         let e = |x: i32, z: i32| e(face, x, z);
-                        rule.grow_chunk(f, c, first, days, &e, &mut cells)
+                        rule.grow_chunk_part(f, c, part, first, days, &e, &mut cells)
                     }
                     (None, Some(t)) => {
                         let e = TerrainEnvelope {
                             terrain: t.local(f.face),
                             decoration: rule.data.decoration,
                         };
-                        rule.grow_chunk(f, c, first, days, &e as &dyn Envelope, &mut cells)
+                        rule.grow_chunk_part(
+                            f,
+                            c,
+                            part,
+                            first,
+                            days,
+                            &e as &dyn Envelope,
+                            &mut cells,
+                        )
                     }
                     (None, None) => Vec::new(),
                 };
                 writes.extend(w);
-                self.grass.days.insert(c, today);
+                match part {
+                    Some(k) if k < 3 => self.grass_part = Some((c, k + 1)),
+                    _ => {
+                        self.grass_part = None;
+                        self.grass.days.insert(c, today);
+                    }
+                }
             }
         }
         for (cell, s) in writes {

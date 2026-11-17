@@ -2269,7 +2269,15 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   by the browser's server-jobs worker (a job "SJ1", its answer "SD1", sky floors before chunks, 8
   out at once), by a thread on a server with worldgen threads, or on the tick in the generation
   phase within `SKY_FLOOR_BUDGET` (1 ms, at least one). The prefetch and the water's wanted chunks
-  ask the same way (`air_known`). A test flies a player across chunk boundaries on both faces
+  ask the same way (`air_known`). **The world's reads and the collision too** **[built, 0.71.x]**
+  (BUGS.md #194, priority 0): the server gives its `VoxelWorld` the tick-safe test
+  (`set_air_known`, over the same cache). A read of a chunk neither held nor saved whose answer
+  isn't known reads as air (`VoxelWorld::read`: the controller's probe, swim and shape reads), and
+  the collision's builds wait on such a neighbour like one that would generate
+  (`VoxelWorld::would_generate_known`, `TerrainCollision::try_load`); its wanted chunks have their
+  columns wanted first (`SkyColumns::want_first`), so the look-ahead's are known before the player
+  arrives. Flying at 362 m/s these reads computed several sky floors a tick (20–28 ms ticks
+  natively, 39–71 ms in the browser for ~10 s after take-off); now none. A test flies a player across chunk boundaries on both faces
   asking for chunks as the LOD does (`tests/stream_cost.rs`: 39 ms in the worst tick before, under
   0.1 ms after, the same chunks sent). In the browser (seed 0, the join then flying at level 6) the
   `stream` phase went from 25–367 ms a second at the join (worst tick 56 ms) to at most 1.5 ms a

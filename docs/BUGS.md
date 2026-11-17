@@ -6,6 +6,37 @@ pins it.
 
 ## Open
 
+### 197. Billboards and full trees both drawn at once, and staying that way
+
+Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
+trees showing at the same time, not like just when transitioning, but both fully visible and static." Suspects: the
+billboard's hand-over to the chunk's full trees never completes for some trees (a chunk meshed with its trees while
+the far layer still counts it as not loaded, or the two decide by different distances). Owner should see: each tree
+drawn once, as a billboard or as the full tree, never both except during the brief fade.
+
+### 196. Realistic's rivers don't start in the mountains
+
+Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
+Owner should see: Realistic's rivers rise in the mountains (or high ground) and run down to the sea, not start at
+random points.
+Suspect (from the code, not yet measured): a river is drawn only from where the cell's accumulated discharge reaches
+the profile's `river_threshold` (0.4, `hydrology/rivers.rs`): the water gathering on the mountain above that point
+isn't drawn, so every river appears to start part way down, wherever its catchment first gets big enough. The
+orographic rain (`rain.rs`) also leaves lee slopes dry, so some start far from any peak. Fix options for the owner:
+(a) draw each river's headwater as a thin stream traced up its largest tributary to the ridge, (b) a lower threshold
+with narrower small rivers, (c) both. Confirmed for seed 7 face A (`realistic_map --rivers`): 36 rivers, 32 from
+springs; the springs' heights as a percentile of the land: p10 6, p50 16, p90 50, none above the 75th. Every river
+rises on the plain south of the snowy range; none starts in it.
+
+### 195. Grey speckles across the map at medium and far LODs
+
+Owner, 2026-11-16: "I'm seeing big gray speckles across the whole map at medium to far LODs and they seem to mostly
+(sometimes entirely) disappear when up close. Some of them at least seem to come from cores inside of terrain or the
+random "rocks/boulders" scattered about." Suspects: the LOD's downsampling picks a buried stone/core cell or a lone
+boulder cell as a far cell's surface (a minority material winning a coarse cell, or a cell inside the ground exposed
+by the coarse mesh). Owner should see: no grey speckles at any distance; far terrain shows the material it shows up
+close.
+
 ### 194. The game stalls every few seconds while grass grows
 
 Owner, 2026-11-16 (M3 Max, "well under 10ms on everything else"): "I've noticed the server stuttering a bit while I'm
@@ -53,6 +84,20 @@ chunk, in WASM ~10× native).
 Round 5: a tree's stages grow in the server-jobs worker (job "TJ1", answer "TD1": `species::Grown` as bytes,
 `growth::keep_grown`); with remote jobs a due tree waits until both its stages are kept. Browser run: every advance
 ≤ 15.8 ms (growth ticks 11–14 ms, now grass chunks). Next: grass chunks off the tick too.
+
+Round 7 (2026-11-17; owner: "I'm getting big hitches while flying at 362 m/s"): bench `stutter-fly` showed the
+server's `terrain` phase at 39–71 ms ticks for ~10 s after take-off. Cause: the air test's sky floors (a chunk
+column's heights, ~1 ms natively, several in WASM) computed on the tick by the collision's neighbour checks
+(`would_generate`), and by the controller's probe, swim and shape reads (`VoxelWorld::read`) of chunks not yet
+loaded: at 362 m/s new columns every tick. Fix: the world's tick-safe air test (`set_air_known`): reads of an
+unknown chunk read as air, the collision waits on it, and its column is wanted first. Tests red → green:
+`terrain::air_tests::the_reach_waits_for_unknown_sky_floors_instead_of_computing_them` (336 sky floors in one
+reach → 0) and `voxel_query::a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor`. The harness
+(`TICK_FLY=1`, its input fixed: its sequence numbers had been past `MAX_SEQ_AHEAD`, so no earlier harness run
+moved its player) natively: p99 17.5 → 0.94 ms, max 28 → 8.6 ms. Browser: flight's worst tick a second 1–6 ms
+(was 39–71) except take-off's growth (16–22 ms); the sprint run's terrain ≤ 15 ms (a first try without
+`want_first` made a 166 ms burst there: the look-ahead's columns came too late). Left: growth at take-off
+(16–22 ms), the join's first second (ecology ~25 ms).
 
 ### 193. Leaves left hanging in the air after a tree is cut down
 

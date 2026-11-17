@@ -1249,6 +1249,8 @@ pub struct Server {
     /// The tree stages (species, seed, stage) to grow in the jobs worker, and those out there.
     tree_jobs: std::collections::VecDeque<(u16, u32, u8)>,
     tree_jobs_out: HashSet<(u16, u32, u8)>,
+    /// The chunk the grass step is part way through on the tick, and its next quarter.
+    grass_part: Option<(ChunkCoord, u8)>,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1364,7 +1366,15 @@ impl Server {
             edit_log: std::collections::VecDeque::new(),
             entropy,
             physics,
-            world: VoxelWorld::new(generator.clone(), air_test.clone()),
+            world: {
+                let mut w = VoxelWorld::new(generator.clone(), air_test.clone());
+                // The collision's checks ask without computing a sky floor (BUGS.md #194).
+                if let Some(sky) = &sky {
+                    let air = sky.air_arc();
+                    w.set_air_known(Arc::new(move |c| air.known(c).ok()));
+                }
+                w
+            },
             air_test,
             sky,
             players,
@@ -1484,6 +1494,7 @@ impl Server {
             growth_due: Default::default(),
             tree_jobs: Default::default(),
             tree_jobs_out: Default::default(),
+            grass_part: None,
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -2622,12 +2633,29 @@ impl Server {
         // The chunks the players' collision waits for first (priority 0: else they were generated
         // on the tick), then around players, then chunks full-mode clients wait for.
         // Saved chunks are read from the world file instead (a few per tick).
-        let mut wanted: Vec<ChunkCoord> = self
+        // The collision's waits: a chunk whose sky floor isn't known has its column wanted (computed
+        // off the tick, BUGS.md #194); one that would generate is wanted itself.
+        let waits: Vec<ChunkCoord> = self
             .players
             .take_terrain_wanting()
             .into_iter()
             .filter(|&c| self.world.find(c).is_none() && !self.is_saved(c))
             .collect();
+        let mut wanted: Vec<ChunkCoord> = Vec::new();
+        // Nearest last into the front, so the nearest goes first.
+        // (`waits` holds no saved chunk.)
+        if let Some(sky) = &mut self.sky {
+            for &c in waits.iter().rev() {
+                if let Err(col) = sky.air().known(c) {
+                    sky.want_first(col);
+                }
+            }
+        }
+        for c in waits {
+            if self.air_known(c) == Some(false) {
+                wanted.push(c);
+            }
+        }
         let mut loads = 0;
         for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
