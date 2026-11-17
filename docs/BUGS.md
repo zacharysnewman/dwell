@@ -6,6 +6,14 @@ pins it.
 
 ## Open
 
+### 204. A quarter of a 2×2 trunk turns into a lone log when the logs round it are cut (reported 2026-11-17)
+
+Owner, 2026-11-17: "Another bug to queue, logs shouldn't "adapt" when blocks break around them. Like a quarter log
+shouldn't become a solitary log when you cut the logs around it." A giant tree's trunk is four logs, each a quarter
+of the 2×2 trunk (its `width` property and facing); cutting its neighbours re-shapes the one left into a single
+log's look. Suspect: the log's shape is computed from its neighbours (an adaptive look or a neighbour-reshape on
+change) rather than kept as placed. Owner should see: a quarter log keeps its quarter shape whatever is cut round it.
+
 ### 203. A 2×2 trunk shows holes in its mesh when cut at an inside edge (reported 2026-11-17)
 
 Owner, 2026-11-17: "A bug for up next, the big (2x2 trees show holes in mesh when cutting inside edge)". Screenshot: a

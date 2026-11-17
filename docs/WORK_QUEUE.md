@@ -44,6 +44,9 @@ Last updated: 2026-11-11 (0.52.108).
   the saplings too, which had tall grass's values).
 - **Owner, 2026-11-17 (bug, up next after the tool efficiency work):** "A bug for up next, the big (2x2 trees show holes
   in mesh when cutting inside edge)". BUGS.md #203. Owner should see: a cut 2×2 trunk solid behind its notch.
+- **Owner, 2026-11-17 (bug, queued after #203):** "Another bug to queue, logs shouldn't "adapt" when blocks break around
+  them. Like a quarter log shouldn't become a solitary log when you cut the logs around it." BUGS.md #204. Owner
+  should see: a quarter log keeps its quarter shape whatever is cut round it.
 - **Owner, 2026-11-17 (Realistic terrain: explain, then tune; after the tool efficiency work):** "Something to look at
   for tuning is how much precipitation? Or whatever value we use? I'm seeing a lot more deserts (plural) than I would
   expect on average. Seems like more deserts than green. And also fewer mountain ranges or super tall mountains. I'd
