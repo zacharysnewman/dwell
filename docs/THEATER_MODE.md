@@ -289,11 +289,13 @@ shots) runs it; the settings are data, `shared/theater/cinematic.json` (validate
   driver writes it); the skill encodes them afterwards at exactly the take's rate.
 - **Frame-exact sound** (`src/theater/cinematicAudio.ts`). The page's AudioContext is suspended between frames and
   resumed until its clock reaches the next frame's time. While a take holds the engine's clock
-  (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`,
-  so a step that overshoots by a hardware buffer is never late), and Web Audio's sample-accurate scheduling puts it on
-  its frame. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
+  (`AudioEngine.holdClock`) every play is scheduled at its frame's time on the context's timeline (plus `audio.leadS`),
+  and Web Audio's sample-accurate scheduling puts it on its frame. A step that overshoots past the lead (a hardware
+  buffer longer than it: 3–16 frames a clip at 50 ms, BUGS.md #199) moves the timeline on by the overshoot
+  (`TakeTimeline`), so the frame's sounds and mark are still scheduled ahead of the suspended clock; the re-timing on
+  the marks takes the extra audio out. A recorder on the mixer's tap (effects and ambience, never the music) keeps every rendered sample with
   its time; a third channel carries an impulse scheduled like a sound at every frame, which calibrates the
-  recorder's latency and measures the alignment (the report's error and `late` count). The track is exactly
+  recorder's latency and measures the alignment (the report's error, `late` count, 0 since the re-basing, and `rebased` count). The track is exactly
   frames / fps long (`audio.wav`, 16-bit at the context's rate).
 
 A cinematic take is for a **local world** (the page hosts the world it steps); on a remote server the world keeps

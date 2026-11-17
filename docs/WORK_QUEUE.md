@@ -111,6 +111,10 @@ Last updated: 2026-11-11 (0.52.108).
 - **Owner, 2026-11-16 (releases):** "I'm seeing some releases, deploys going out, for these videos?" then "Sure." to
   skipping them: release.yml ignores pushes touching only `.claude/` or `docs/`. Owner should see: no dev build or
   deploy from a tools- or docs-only merge.
+- **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
+  and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
+  `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to
+  pick; Realistic the only terrain.
 - **Owner, 2026-11-16 (felling):** "when a tree is felled, the branches should "break" become disconnected after 1.5s.
   So the tree can lay flatter." Owner should see: a felled tree's branches come apart from the trunk 1.5 s after it
   starts to fall, and the trunk lies flatter.
@@ -2933,6 +2937,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** flying close over a forest, every tree stays drawn (its far look until its real one is
    ready, then a short fade to it); the dynamite's flung pieces moving on every frame, smooth in the air, in the
    cinematic clip and in play.
+   **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
+   snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
+   same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #198 (remotes) and #199 (late
+   sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
+   delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
+   ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
+   take's sound timeline moves on by a step's overshoot past the lead (`TakeTimeline`), so no sound is late.
+   **Owner should see:** in a world with a friend, after a hitch (the host's world busy loading), the friend keeps
+   moving smoothly on every frame instead of stepping a few times a second; a cinematic take's log reads `late 0`
+   (a `re-based N` count for steps that overshot), every sound on its frame.
    **The camera through a wall (owner, 2026-11-14):** "That flyover video goes straight through a wall. Not a big deal
    since you're just showing something but that shouldn't be included in most recordings." The forest fly-over's path
    ends inside a hill (8.35–10 s). Built: a camera clearance check (THEATER_MODE.md §6.2, the record skill's §0f):

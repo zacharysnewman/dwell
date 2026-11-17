@@ -9,6 +9,7 @@
 use std::collections::VecDeque;
 
 use dwell_blocks::{StateId, info};
+use dwell_game::server_clock::ServerClock;
 use dwell_game::sound::{SoundEvent, SoundKind, speed_intensity};
 use dwell_mesh::{ChunkMeshes, PADDED_VOLUME, mesh_chunk, padded_index};
 use dwell_physics::frame::{GridMaps, grid_of_pose};
@@ -86,75 +87,13 @@ pub type Latest<'a> = (u32, &'a [PieceCell], DVec3, DQuat, DVec3, u32);
 /// the server lifts a piece up to two cells to free it, and a snapshot may lag its last moves.
 const SETTLE_REACH_M: f64 = 4.0;
 
-/// How fast (ms a ms) the drawn clock is brought to a better estimate of the server's: 3 % faster
-/// or slower, no visible change of speed; one off by more than `SNAP_MS` (the first snapshot, a
-/// restarted server) is taken at once.
-const SLEW: f64 = 0.03;
-const SNAP_MS: f64 = 250.0;
-/// How long (ms, local) a snapshot's delay counts toward the estimate: the estimate is the least
-/// delay seen within it, so it follows a slower link, or a server that dropped time (a local
-/// world's worker busy past its catch-up cap, `LocalCore::advance`), within this. It drifted up
-/// 0.05 ms a snapshot before (BUGS.md #173): after the server dropped ½ s the pieces were drawn
-/// past their newest poses for minutes, moving only on frames a snapshot came.
-const WINDOW_MS: f64 = 1000.0;
-
-/// The server's clock as the pieces are drawn on it: a pose is timed by the server tick it was
-/// taken at, not by when the frame read its snapshot (an arrival a frame earlier or later drew
-/// 50 ms of motion over 33 or 67 ms, the shake of every moving piece, owner 2026-11-09). The
-/// local-minus-server offset is the least-delayed snapshot's within [`WINDOW_MS`] (as
-/// `dwell_game::remotes`), and the offset drawn with moves toward it continuously at `SLEW`, so a
-/// better estimate never jumps the drawn time.
-#[derive(Clone, Debug, Default)]
-struct Timeline {
-    /// The offset (local − server, ms) estimated: the smallest within the window.
-    target: Option<f64>,
-    /// The offsets seen within the window: (local ms, offset).
-    seen: VecDeque<(f64, f64)>,
-    /// The offset drawn with at local time `anchor_ms`, moving toward `target` from there.
-    anchor: f64,
-    anchor_ms: f64,
-}
-
-impl Timeline {
-    fn offset(&self, now_ms: f64) -> Option<f64> {
-        let target = self.target?;
-        let most = (now_ms - self.anchor_ms).max(0.0) * SLEW;
-        Some(self.anchor + (target - self.anchor).clamp(-most, most))
-    }
-
-    /// A snapshot of server time `server_ms` read at local `now_ms`.
-    fn observe(&mut self, server_ms: f64, now_ms: f64) {
-        let seen = now_ms - server_ms;
-        let drawn = self.offset(now_ms);
-        self.seen.push_back((now_ms, seen));
-        while self
-            .seen
-            .front()
-            .is_some_and(|&(at, _)| at < now_ms - WINDOW_MS)
-        {
-            self.seen.pop_front();
-        }
-        let target = self.seen.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
-        let anchor = match drawn {
-            Some(d) if (target - d).abs() <= SNAP_MS => d,
-            _ => target,
-        };
-        self.target = Some(target);
-        self.anchor = anchor;
-        self.anchor_ms = now_ms;
-    }
-
-    /// The server time (ms) at local `now_ms`, if a snapshot has been seen.
-    fn server_ms(&self, now_ms: f64) -> Option<f64> {
-        Some(now_ms - self.offset(now_ms)?)
-    }
-}
-
 /// The pieces falling now.
 #[derive(Default)]
 pub struct Pieces {
     map: HashMap<u32, Piece>,
-    timeline: Timeline,
+    /// The server's clock the poses are drawn on (`dwell_game::server_clock`, shared with the
+    /// remote players).
+    timeline: ServerClock,
     /// When any piece last sounded a landing (`ANY_LAND_EVERY_MS`).
     landed_ms: Option<f64>,
 }
@@ -335,7 +274,7 @@ impl Pieces {
         sounds: &mut Vec<SoundEvent>,
     ) {
         let server_ms = f64::from(server_tick) * 1000.0 / f64::from(dwell_protocol::SIM_HZ);
-        if self.timeline.target.is_none() {
+        if !self.timeline.is_set() {
             // The spawn poses timed before any snapshot, onto the server's clock.
             let offset = now_ms - server_ms;
             for p in self.map.values_mut() {
