@@ -36,6 +36,14 @@ Last updated: 2026-11-11 (0.52.108).
   broken with an inefficient tool (or hand) drops nothing; the wood axe and wood pick computed now, the items later;
   ramps take their block's full hits; durability as the sheet (stone tools 384 hits); the hand swings at the axe's
   0.5 s. The blocks not on the sheet take the nearest sheet block's values meanwhile (marked as proposals for the owner).
+  Owner, 2026-11-17: "Door, ladder, dynamite should shake, not break, these are special types, 2 hits hardcoded." So
+  they take 2 hits with any tool or by hand (a fixed count in their block data, `damage.fixedHits`), show no damage
+  marks, and shake when hit. Owner should see: a door, a ladder or a dynamite stick shaking on the first hit and
+  breaking on the second, whatever is held.
+  Owner, 2026-11-17: "You could use the same fixed hits of 1 for torch and tall grass" → `fixedHits: 1` (brush and
+  the saplings too, which had tall grass's values).
+- **Owner, 2026-11-17 (bug, up next after the tool efficiency work):** "A bug for up next, the big (2x2 trees show holes
+  in mesh when cutting inside edge)". BUGS.md #203. Owner should see: a cut 2×2 trunk solid behind its notch.
 
 - **Owner, 2026-11-16 (video, for tomorrow; priority 0 paused for it):** "I want to record a video for social media
   that does a sort of timelapse of our different terrain generation looks from way up high so you can see the whole
