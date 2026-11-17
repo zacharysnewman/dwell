@@ -2,6 +2,16 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.73.1",
+      "changes": [
+        "Breaking blocks follows one system: each block has base hits, each tool a class and material (hand, wood, stone, metal)",
+        "Every tool and your hand swing at the same pace",
+        "Stone and logs can be broken by hand, slowly, but drop nothing",
+        "Doors, ladders and dynamite take 2 hits with anything; torches and tall grass 1",
+        "Tools last much longer: a stone pickaxe about 64 stone blocks"
+      ]
+    },
+    {
       "version": "0.73.0",
       "changes": [
         "A new compatibility line: Realistic worlds' climate is new",
