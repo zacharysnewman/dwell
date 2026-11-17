@@ -17,6 +17,8 @@ Each DIR holds `<version>-<view>.png`; every PNG is ordered by its version. A st
 difference from the last kept one (grey, at 270×480) is at least `--min-diff`; the newest is always kept.
 The kept stills are shown from `--first` seconds each, easing (ease-in, quadratic) to `--last`, the newest held
 `--hold` seconds more, each cross-fading into the next over `--fade`. No text (the owner's showcase rule).
+`--view NAME` takes only `<version>-NAME.png`. Two cuts at 1080×960 stack into one 9:16 video (owner: "crop both and
+stack them"): `ffmpeg -i top.mp4 -i bottom.mp4 -filter_complex vstack out.mp4`.
 `--sheet` writes a contact sheet of the kept stills with their versions (for choosing, not for the video).
 """
 import argparse
@@ -47,12 +49,14 @@ def main():
     ap.add_argument('--kenburns', type=float, default=0.0)
     ap.add_argument('--out-zoom', action='store_true')
     ap.add_argument('--one-move', action='store_true')
+    # Only the stills of one view (`<version>-<view>.png`), for folders holding several.
+    ap.add_argument('--view', default='')
     a = ap.parse_args()
     w, h = (int(x) for x in a.size.split('x'))
     sets = [d.split(',') for d in a.set] + ([a.dirs] if a.dirs else [])
     kept, durations, zooms, sets_mine = [], [], [], []
     for dirs in sets:
-        stills = sorted({p for d in dirs for p in glob.glob(os.path.join(d, '*.png'))}, key=version_key)
+        stills = sorted({p for d in dirs for p in glob.glob(os.path.join(d, f'*-{a.view}.png' if a.view else '*.png'))}, key=version_key)
         these, last = [], None
         for i, p in enumerate(stills):
             small = Image.open(p).convert('L').resize((270, 480))
