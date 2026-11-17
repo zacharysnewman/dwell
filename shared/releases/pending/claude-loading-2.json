@@ -1,5 +1,0 @@
-{
-  "changes": [
-    "Worlds open faster again: background workers get ready while the world starts, and the map's towns are worked out off the main thread."
-  ]
-}
