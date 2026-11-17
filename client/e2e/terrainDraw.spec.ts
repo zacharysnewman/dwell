@@ -49,7 +49,7 @@ test('terrain and LOD drawn, and the memory they hold reported', async ({ page }
       )
       .toBe(true);
   } catch (e) {
-    throw new Error(`never drawn; the page last held ${last}\n${String(e)}`);
+    throw new Error(`never drawn; the page last held ${last}`, { cause: e });
   }
   const { stats } = await frame(page);
   expect(stats.triangles).toBeGreaterThan(0);
