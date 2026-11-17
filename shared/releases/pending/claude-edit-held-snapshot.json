@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Fixed a block coming back after breaking it when switching tools right away"
+  ]
+}

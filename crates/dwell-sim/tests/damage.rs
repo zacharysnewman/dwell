@@ -887,3 +887,30 @@ fn a_loaded_worlds_damage_heals_from_the_load() {
     run_s(&mut fx, heal.delay_s + heal.full_s / 5.0 + 1.5);
     assert_eq!(fx.server.damage_hits(f.cell(STONE)), None, "healed");
 }
+
+dwell_world::both_faces!(
+    fn a_breaks_hits_go_by_what_was_held_when_it_was_sent(f: FaceFrame) {
+        // A tool picked up right after a click doesn't change the click: in creative a block in
+        // hand breaks dirt in one hit (the client predicts it), though the pickaxe's `Held`
+        // reaches the server before its tick applies the break (the palette e2e test on the
+        // software renderer saw the predicted break come back: the server took it as a pickaxe hit).
+        let mut fx = scene_with(f, config(f, "creative"));
+        hold(&mut fx, "creative", "");
+        send_hit(&mut fx, f, DIRT);
+        fx.send(
+            1,
+            Message::Chop(ChopAction::Held {
+                tool: "dwell:stone_pickaxe".into(),
+                vertical: false,
+            }),
+        );
+        for _ in 0..4 {
+            fx.server.step();
+        }
+        assert_eq!(
+            block_at(&mut fx, f, DIRT),
+            "dwell:air",
+            "one hit: the hand's"
+        );
+    }
+);

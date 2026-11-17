@@ -1082,6 +1082,16 @@ the first ladder went there (it now waits for the cell).
 
 ## Fixed
 
+### 207. A break's hits went by the tool held when the server applied it, not when it was made (found 2026-11-17; fixed after 0.73.14)
+
+Found by the palette e2e test failing on every main run since #1060 (and under the software renderer locally): a block
+broken by hand in creative (one hit, predicted by the client) came back. The server queues a block edit and applies it
+on its tick, but read the held tool then; the next hotbar slot's `Held(stone_pickaxe)` arrived first, so the hand's
+break was taken as a pickaxe hit short of breaking. A player switching tools right after a click would see the same.
+**Fixed:** each queued edit keeps the break item held when it arrived (`QueuedEdit`). Test: `damage`
+`a_breaks_hits_go_by_what_was_held_when_it_was_sent` (both faces; red with the held read at the tick, green now); the
+e2e test passes locally under the software renderer (54 s).
+
 ### 206. Blocks of a falling or moving piece broke in one hit (reported 2026-11-17; fixed after 0.73.11)
 
 Owner, 2026-11-17: "falling/physics blocks definitely have a bug where they only take one hit to break instead of the

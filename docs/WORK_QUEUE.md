@@ -4089,7 +4089,13 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
   break never sees it come back (the wait hides it), so a predicted one-hit break is later undone: the server kept the
   block. The server's `Held` handling clears the tool (checked). Next: expose the server's last edit refusal
   (`SessionStats::last_edit_check`) to the dev API for a local world and read it at the failure. Also seen once:
-  `stream_cost`'s tick took 12.3 ms on a CI runner (#1070's run; passes locally): timing.
+  `stream_cost`'s tick took 12.3 ms on a CI runner (#1070's run; passes locally): timing. **Found and fixed (2026-11-17):** the
+  server queued a break and applied it on its tick, but took the held tool from the session then: the test's next slot
+  (holding the pickaxe from the stone items) sent `Held(stone_pickaxe)` before the tick, so the hand's one-hit break
+  of the item before became a pickaxe hit and the client's predicted break came back. Each queued edit now keeps the
+  break item held when it arrived. Test: `damage` `a_breaks_hits_go_by_what_was_held_when_it_was_sent` (both faces;
+  red with the held read at the tick); the palette e2e test passes under the software renderer locally. The local
+  world's stats now show `editsApplied`, `editsRejected`, `editsHitShort` (`__dwell.serverStats().counts`).
 
 ## Follow-ups (owner, 2026-11-17)
 
