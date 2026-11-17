@@ -1040,3 +1040,37 @@ dwell_world::both_faces!(
         assert_eq!(tops, h * h, "one surface cell per column");
     }
 );
+
+/// Found 2026-11-17 (a region edit's test read air where the ground is stone): with the server's
+/// tick-safe air test, every read of a chunk whose sky floor wasn't known yet returned air, so
+/// edits, blasts and tools compared against the wrong cells. Only the controller's reads, inside
+/// its window (`set_reads_known`), may read such a chunk as air (BUGS.md #194); every other read
+/// is the generated chunk.
+#[test]
+fn a_read_outside_the_controllers_window_is_the_generated_chunk() {
+    // face-a-only: reads by world cell; no face rule.
+    use std::sync::Arc;
+    let stone = dwell_blocks::require("dwell:stone");
+    let generator: dwell_world::ChunkGenerator =
+        Arc::new(move |_, chunk: &mut dwell_world::Chunk| chunk.voxels_mut().fill(stone));
+    let air: dwell_world::AirChunkTest = Arc::new(|_| false);
+    let mut world = dwell_world::VoxelWorld::new(generator, Some(air));
+    world.set_air_known(Arc::new(|_| None));
+    assert_eq!(
+        world.get_voxel(5000, 900, 5000),
+        stone,
+        "an ordinary read: the ground"
+    );
+    world.set_reads_known(true);
+    assert_eq!(
+        world.get_voxel(6000, 900, 6000),
+        dwell_world::M.air,
+        "the controller's window"
+    );
+    world.set_reads_known(false);
+    assert_eq!(
+        world.get_voxel(7000, 900, 7000),
+        stone,
+        "after it: the ground again"
+    );
+}

@@ -561,6 +561,9 @@ pub struct VoxelWorld {
     air: Option<AirChunkTest>,
     /// The tick-safe air test (`air_known`); none: the plain test's answer.
     air_known: Option<AirKnownTest>,
+    /// While set (the player controller's passes, `set_reads_known`), a read of a chunk whose air
+    /// answer isn't known reads as air; otherwise every read is the generated chunk.
+    reads_known: bool,
     saved: Option<Box<dyn SavedChunks>>,
     chunks: HashMap<ChunkCoord, Box<Chunk>>,
     epoch: u64,
@@ -607,6 +610,7 @@ impl VoxelWorld {
             generator: Some(generator),
             air,
             air_known: None,
+            reads_known: false,
             saved: None,
             chunks: HashMap::default(),
             epoch: 0,
@@ -892,6 +896,13 @@ impl VoxelWorld {
     /// the air test says the generator would leave it empty (not stored).
     /// Whether a read of chunk `coord` would generate it here (a generating world's chunk not
     /// stored, not saved and not all air): the costly read the server's tick avoids.
+    /// The player controller's window (its passes, BUGS.md #194): while on, a read of a chunk
+    /// whose air answer isn't known yet reads as air rather than computing a sky floor on the tick.
+    /// Off for every other read (edits, blasts, tools compare against the real cells).
+    pub fn set_reads_known(&mut self, on: bool) {
+        self.reads_known = on;
+    }
+
     /// The tick-safe air test from now on ([`AirKnownTest`]).
     pub fn set_air_known(&mut self, test: AirKnownTest) {
         self.air_known = Some(test);
@@ -922,7 +933,10 @@ impl VoxelWorld {
             // With the tick-safe test (the server) a read never computes a sky floor: a chunk whose
             // answer isn't known yet reads as air until its column is computed off the tick
             // (BUGS.md #194: at 362 m/s the controller's reads computed several a tick).
-            if missing && let Some(known) = &self.air_known {
+            if missing
+                && self.reads_known
+                && let Some(known) = &self.air_known
+            {
                 if known(coord) != Some(false) {
                     return &AIR_CHUNK;
                 }

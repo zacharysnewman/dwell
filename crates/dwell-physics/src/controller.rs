@@ -1076,6 +1076,14 @@ impl Players {
 
     /// The controllers' passes ([`Players::tick`]'s second part, after [`Players::tick_terrain`]).
     pub fn tick_controllers(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
+        // The controller's reads of chunks whose air answer isn't known read as air (no sky floor
+        // computed on the tick, BUGS.md #194); every other read stays the generated chunk.
+        world.set_reads_known(true);
+        self.tick_controllers_in(world, physics);
+        world.set_reads_known(false);
+    }
+
+    fn tick_controllers_in(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         for p in self.players.iter_mut().flatten() {
             physics.contact_normals(p.body, MAX_CONTACTS, &mut p.contacts);
             physics.tier1_contacts(p.body, MAX_CONTACTS, &mut p.tier1);

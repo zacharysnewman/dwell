@@ -191,7 +191,8 @@ Last updated: 2026-11-11 (0.52.108).
   pines, 0.71.0, nothing since); parked with `#[ignore = reason]` (a `both_faces!` form carries it to both faces):
   `realistic_world`'s arc-cone and rift-lake checks (stale since 0.65's curved plates) and its build-time test
   (timed: run alone), `realistic_sagebrush`'s rock-wall check: **to fix with the 0.72 worldgen line** (with the
-  red-desert brush, the spawn town and the rivers).
+  red-desert brush, the spawn town and the rivers). Then (2026-11-17): `shared/look/loading.test.mjs` updated for the ring of 81 (BUGS #200);
+  `lava_world`'s two Starter tests parked (the Starter is to go); `region_edits`' brush test found BUGS #201 (fixed).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the

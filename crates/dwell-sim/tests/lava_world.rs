@@ -82,6 +82,7 @@ fn the_starter_world_lists_a_lake_and_a_river_vent_on_its_youngest_hotspot_and_t
 }
 
 dwell_world::both_faces!(
+    #[ignore = "the Starter terrain is to be removed (owner, 2026-11-17: no Starter-specific fixes; WORK_QUEUE)"]
     fn the_starter_world_gets_its_vent_and_lava_stands_on_the_summit(f: FaceFrame) {
         install();
         let (c, y) = vent(f);
@@ -338,6 +339,7 @@ fn ground_was_sea(t: &BifacialTerrain, f: FaceFrame, [x, z]: [i32; 2], sea: f32)
 /// dev rate scale (`?lavaRate=`) fills it faster. Prints the site and the ground there for the
 /// bench's spots.
 #[test]
+#[ignore = "the Starter terrain is to be removed (owner, 2026-11-17: no Starter-specific fixes; WORK_QUEUE)"]
 fn the_dev_report_lists_the_starter_fields_and_the_rate_scale_fills_faster() {
     // both-faces: the report lists the fields of both faces at once.
     install();
