@@ -2277,7 +2277,9 @@ Server (native), local mode (WASM), and client (WASM) must produce **bit-identic
   (`VoxelWorld::would_generate_known`, `TerrainCollision::try_load`); its wanted chunks have their
   columns wanted first (`SkyColumns::want_first`), so the look-ahead's are known before the player
   arrives. Flying at 362 m/s these reads computed several sky floors a tick (20–28 ms ticks
-  natively, 39–71 ms in the browser for ~10 s after take-off); now none. A test flies a player across chunk boundaries on both faces
+  natively, 39–71 ms in the browser for ~10 s after take-off); now none. The growers' scan likewise never places a new
+  chunk column's trees on the browser's tick: a job "GJ1" (answer "GD1", the column's tree records) in the
+  server-jobs worker, two out at once; a native server places a quarter column a tick. A test flies a player across chunk boundaries on both faces
   asking for chunks as the LOD does (`tests/stream_cost.rs`: 39 ms in the worst tick before, under
   0.1 ms after, the same chunks sent). In the browser (seed 0, the join then flying at level 6) the
   `stream` phase went from 25–367 ms a second at the join (worst tick 56 ms) to at most 1.5 ms a

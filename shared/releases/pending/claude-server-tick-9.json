@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Smoother movement into new ground: working out where trees stand now happens off the game's main loop."
+  ]
+}

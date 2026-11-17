@@ -105,6 +105,14 @@ chunk's whole 32 × 32 column (~1–5 ms natively) for every chunk stacked in it
 → green: `growth::the_scan_places_a_column_once_for_its_stacked_chunks` (65 placements for 25 columns → 25). Left:
 one placement per new column on the tick (~5 ms natively at take-off): next, off the tick like the sky floors.
 
+Round 9 (2026-11-17): a new column's tree placements left the tick. In the browser (`jobs_remote`) they are the
+server-jobs worker's job ("GJ1" → "GD1" with the column's `Records`), two out at once, the scan recording the
+chunks whose column has come; elsewhere a quarter column a tick (`Growers::trees_in_column_part`, the four
+quarters the column's trees: a test on both faces). Tests red → green: `the_scan_places_a_quarter_column_a_tick`
+(4 quarters in a tick → 1) and `a_remote_server_places_tree_columns_in_its_jobs_worker` (61 quarters on the tick →
+0, the trees still recorded). Harness: flight's worst tick 2.7 ms (was 4.9–6). Left: grass's quarter passes cost
+5–12 ms natively once a world day passes in the sprint run: next.
+
 ### 193. Leaves left hanging in the air after a tree is cut down
 
 Owner, 2026-11-16: "Sometimes leaves hang in the air after cutting down a tree, possibly after settling. Leaves should
