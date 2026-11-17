@@ -29,6 +29,7 @@ Last updated: 2026-11-11 (0.52.108).
   (2 m long, 1 m tall, four cells) that fires a physics cannonball where aimed, the ball knocking loose what it hits.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
+  Done (2026-11-17).
 - **Owner, 2026-11-17 (question):** "It might not just be leaves that don't show damage, I'm not seeing it on planks or
   some other structures. Do we have this supported for everything?" Answer: only blocks with a `damage.look` show marks
   (stone, the soils, logs, ice, sandstone, basalt, obsidian, moon dust); planks, stone brick, thatch, leaves, door,

@@ -888,7 +888,8 @@ per-item wear list.
 
 - **A block's `damage`:** `baseHits` and `proficiency` per class (`hand`, `shovel`, `axe`, `pickaxe`; absent:
   `neutral`); or `fixedHits`, the same count with anything (owner: "Door, ladder, dynamite should shake, not break,
-  these are special types, 2 hits hardcoded"; "the same fixed hits of 1 for torch and tall grass"). `hit` (`marks`
+  these are special types, 2 hits hardcoded"; "the same fixed hits of 1 for torch and tall grass"; leaves too, 2026-11-17:
+  "leaves should be 1 hit I'm realizing, since they don't adapt to damage"). `hit` (`marks`
   default, `shake`): how a hit short of breaking shows; `look` and `chips` as before.
 - **`tools.json` `breaking`:** `proficiency` (proficient 0.5, neutral 1, inefficient 2), `materials` (`hits` and
   `durability` multipliers: body 2 / –, wood 1.5 / 0.5, stone 1 / 1, metal 0.5 / 2), `hand.material` (`body`), per
