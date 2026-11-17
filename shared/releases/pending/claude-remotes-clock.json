@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Other players in your world keep moving smoothly on every frame after a hitch, instead of stepping a few times a second",
-    "Cinematic takes: every sound lands exactly on its frame, even when a step of the sound runs long"
-  ]
-}
