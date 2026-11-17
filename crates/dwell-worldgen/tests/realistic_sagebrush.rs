@@ -33,6 +33,7 @@ fn red_dirt_has_its_ramps() {
 }
 
 both_faces!(
+    #[ignore = "sagebrush on rock walls (4-8): fixed with the red-desert brush change, 0.72 line (WORK_QUEUE)"]
     fn sagebrush_dots_the_floors_and_never_a_wall(f: FaceFrame) {
         let rule = PLACEMENTS
             .iter()

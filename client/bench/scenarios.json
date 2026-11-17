@@ -11245,6 +11245,77 @@
         {
           "do": "record",
           "name": "run"
+        },
+        {
+          "do": "shot",
+          "name": "run-end"
+        }
+      ]
+    },
+    {
+      "name": "stutter-fly",
+      "notes": "PRIORITY 0 (owner, 2026-11-16: \"I'm getting big hitches while flying at 362 m/s\"): the stutter-run world flown at the top speed level (11: 362 m/s) for ~40 s, low and level, with a turn; the frames and the local server's tick phases recorded.",
+      "window": {
+        "width": 1280,
+        "height": 800,
+        "pixelRatio": 2
+      },
+      "query": {
+        "seed": "3218026833",
+        "fresh": "1",
+        "preset": "high"
+      },
+      "steps": [
+        {
+          "do": "settle",
+          "maxS": 90
+        },
+        {
+          "do": "fly",
+          "on": true
+        },
+        {
+          "do": "flySpeed",
+          "level": 11
+        },
+        {
+          "do": "look",
+          "yaw": 0,
+          "pitch": 3
+        },
+        {
+          "do": "mark"
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": true
+        },
+        {
+          "do": "wait",
+          "s": 20
+        },
+        {
+          "do": "look",
+          "yaw": 90,
+          "pitch": 0
+        },
+        {
+          "do": "wait",
+          "s": 20
+        },
+        {
+          "do": "key",
+          "code": "KeyW",
+          "down": false
+        },
+        {
+          "do": "record",
+          "name": "fly"
+        },
+        {
+          "do": "shot",
+          "name": "fly-end"
         }
       ]
     }

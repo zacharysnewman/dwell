@@ -97,6 +97,12 @@ pub struct Settings {
     /// A freed column still in the rest shows the map's current, blended to its own as its depth
     /// leaves its generated depth by up to this (m; `riverCurrentBandM`).
     pub river_band: f32,
+    /// The slosh's drag (BUGS.md #41b): a face whose flow reversed within the last `slosh_window`
+    /// water s is pulled toward still over `slosh_damp` s (0: none), less as it runs faster than
+    /// `slosh_speed` (m/s). A flow one way (a river, a lake levelling) is never dragged.
+    pub slosh_damp: f32,
+    pub slosh_window: f32,
+    pub slosh_speed: f32,
     /// The liquid it draws (the data's first).
     pub liquid: StateId,
 }
@@ -127,6 +133,9 @@ impl Settings {
             still: d.current_still_ms as f32,
             current_depth: d.current_depth_m as f32,
             river_band: d.river_current_band_m.max(1e-6) as f32,
+            slosh_damp: d.slosh_damp_s.max(0.0) as f32,
+            slosh_window: d.slosh_window_s.max(0.0) as f32,
+            slosh_speed: d.slosh_speed_ms.max(1e-6) as f32,
             liquid: dwell_blocks::require(first.block),
         }
     }
@@ -192,6 +201,7 @@ fn face(
     qa: f32,
     qb: f32,
     qp: f32,
+    sloshing: bool,
     dt: f32,
 ) -> f32 {
     let (ea, eb) = (ga + da, gb + db);
@@ -202,7 +212,15 @@ fn face(
     let speed = (q * q + qp * qp).sqrt();
     let friction = 1.0 + G * dt * s.manning * s.manning * speed / (h * h * h.cbrt());
     let qt = s.theta * q + (1.0 - s.theta) * 0.5 * (qa + qb);
-    let nq = (qt - G * h * dt * (eb - ea)) / friction;
+    let mut nq = (qt - G * h * dt * (eb - ea)) / friction;
+    // The slosh's drag: a face whose flow went back and forth lately is pulled toward still, the
+    // more the slower it runs, so a flow one way is never dragged and a big wave hardly (BUGS.md
+    // #41b).
+    if sloshing && s.slosh_damp > 0.0 {
+        let u = nq.abs() / h / s.slosh_speed;
+        let w = 1.0 / (1.0 + u * u);
+        nq /= 1.0 + w * dt / s.slosh_damp;
+    }
     let limit = h * (G * h).sqrt();
     nq.clamp(-limit, limit)
 }
@@ -231,6 +249,10 @@ struct Layer {
     npx: [f32; CA],
     npz: [f32; CA],
     scale: [f32; CA],
+    /// Water s since each face's flow last reversed (infinite: not seen), for the slosh's drag;
+    /// not saved (a loaded world's faces wait for their next reversal).
+    tqx: [f32; CA],
+    tqz: [f32; CA],
 }
 
 impl Layer {
@@ -247,6 +269,8 @@ impl Layer {
             npx: [0.0; CA],
             npz: [0.0; CA],
             scale: [1.0; CA],
+            tqx: [f32::INFINITY; CA],
+            tqz: [f32::INFINITY; CA],
         }
     }
 }
@@ -1238,6 +1262,10 @@ impl Water {
                         continue;
                     }
                     let np = self.carried(c, l, d, zf, rest);
+                    // the face's flow before this substep, and whether it is sloshing (the
+                    // water as it is only; the rest layer is generated, never stirred)
+                    let mut before = 0.0f32;
+                    let mut sloshing = false;
                     let nq = {
                         let q_of = |cc: usize, ll: usize, z: bool| -> f32 {
                             let k = lay(&self.chunks[cc], rest);
@@ -1269,6 +1297,11 @@ impl Water {
                                         0.5 * (own + before)
                                     };
                                     let qp = 0.5 * (perp(c, l) + perp(c2, l2));
+                                    before = q;
+                                    if !rest {
+                                        let t = if zf { ka.tqz[l] } else { ka.tqx[l] };
+                                        sloshing = t <= self.cfg.slosh_window;
+                                    }
                                     face(
                                         &self.cfg,
                                         ga,
@@ -1279,6 +1312,7 @@ impl Water {
                                         qa,
                                         qb,
                                         qp,
+                                        sloshing,
                                         dt,
                                     )
                                 }
@@ -1288,6 +1322,8 @@ impl Water {
                     };
                     let k = &mut self.chunks[c];
                     let k = if rest { &mut k.r } else { &mut k.w };
+                    let t = if zf { &mut k.tqz[l] } else { &mut k.tqx[l] };
+                    *t = if before * nq < 0.0 { 0.0 } else { *t + dt };
                     if zf {
                         k.nqz[l] = nq;
                         k.npz[l] = np;

@@ -145,8 +145,12 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// Both faces again (the 0.70 follow-up) for plants bleeding across borders (placements.json
 /// `bleed` on the pines, oaks, boulders and sagebrush; owner: "Bushes, shrubs, rocks, trees, should
 /// bleed into the edge of the neighboring terrain").
+///
+/// Re-pinned 2026-11-17 for the 0.71 line: the species pines (0.71.0: grown from species data,
+/// giants to 4× on 2×2 trunks). The same hashes at the v0.71.0 tag and on main then: nothing since
+/// changed the starter's terrain within the line.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "2ff929bc1f2f6461"), (Face::B, "64d6e966bff666e6")];
+    [(Face::A, "b127397972ab5bd3"), (Face::B, "a6bda9cc786ed02b")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

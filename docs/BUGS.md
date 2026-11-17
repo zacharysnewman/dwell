@@ -6,6 +6,37 @@ pins it.
 
 ## Open
 
+### 197. Billboards and full trees both drawn at once, and staying that way
+
+Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
+trees showing at the same time, not like just when transitioning, but both fully visible and static." Suspects: the
+billboard's hand-over to the chunk's full trees never completes for some trees (a chunk meshed with its trees while
+the far layer still counts it as not loaded, or the two decide by different distances). Owner should see: each tree
+drawn once, as a billboard or as the full tree, never both except during the brief fade.
+
+### 196. Realistic's rivers don't start in the mountains
+
+Owner, 2026-11-16: "our rivers in realistic don't seem to come from the mountains, just random points in the world."
+Owner should see: Realistic's rivers rise in the mountains (or high ground) and run down to the sea, not start at
+random points.
+Suspect (from the code, not yet measured): a river is drawn only from where the cell's accumulated discharge reaches
+the profile's `river_threshold` (0.4, `hydrology/rivers.rs`): the water gathering on the mountain above that point
+isn't drawn, so every river appears to start part way down, wherever its catchment first gets big enough. The
+orographic rain (`rain.rs`) also leaves lee slopes dry, so some start far from any peak. Fix options for the owner:
+(a) draw each river's headwater as a thin stream traced up its largest tributary to the ridge, (b) a lower threshold
+with narrower small rivers, (c) both. Confirmed for seed 7 face A (`realistic_map --rivers`): 36 rivers, 32 from
+springs; the springs' heights as a percentile of the land: p10 6, p50 16, p90 50, none above the 75th. Every river
+rises on the plain south of the snowy range; none starts in it.
+
+### 195. Grey speckles across the map at medium and far LODs
+
+Owner, 2026-11-16: "I'm seeing big gray speckles across the whole map at medium to far LODs and they seem to mostly
+(sometimes entirely) disappear when up close. Some of them at least seem to come from cores inside of terrain or the
+random "rocks/boulders" scattered about." Suspects: the LOD's downsampling picks a buried stone/core cell or a lone
+boulder cell as a far cell's surface (a minority material winning a coarse cell, or a cell inside the ground exposed
+by the coarse mesh). Owner should see: no grey speckles at any distance; far terrain shows the material it shows up
+close.
+
 ### 194. The game stalls every few seconds while grass grows
 
 Owner, 2026-11-16 (M3 Max, "well under 10ms on everything else"): "I've noticed the server stuttering a bit while I'm
@@ -53,6 +84,58 @@ chunk, in WASM ~10× native).
 Round 5: a tree's stages grow in the server-jobs worker (job "TJ1", answer "TD1": `species::Grown` as bytes,
 `growth::keep_grown`); with remote jobs a due tree waits until both its stages are kept. Browser run: every advance
 ≤ 15.8 ms (growth ticks 11–14 ms, now grass chunks). Next: grass chunks off the tick too.
+
+Round 7 (2026-11-17; owner: "I'm getting big hitches while flying at 362 m/s"): bench `stutter-fly` showed the
+server's `terrain` phase at 39–71 ms ticks for ~10 s after take-off. Cause: the air test's sky floors (a chunk
+column's heights, ~1 ms natively, several in WASM) computed on the tick by the collision's neighbour checks
+(`would_generate`), and by the controller's probe, swim and shape reads (`VoxelWorld::read`) of chunks not yet
+loaded: at 362 m/s new columns every tick. Fix: the world's tick-safe air test (`set_air_known`): reads of an
+unknown chunk read as air, the collision waits on it, and its column is wanted first. Tests red → green:
+`terrain::air_tests::the_reach_waits_for_unknown_sky_floors_instead_of_computing_them` (336 sky floors in one
+reach → 0) and `voxel_query::a_probe_reads_an_unknown_chunk_as_air_without_a_sky_floor`. The harness
+(`TICK_FLY=1`, its input fixed: its sequence numbers had been past `MAX_SEQ_AHEAD`, so no earlier harness run
+moved its player) natively: p99 17.5 → 0.94 ms, max 28 → 8.6 ms. Browser: flight's worst tick a second 1–6 ms
+(was 39–71) except take-off's growth (16–22 ms); the sprint run's terrain ≤ 15 ms (a first try without
+`want_first` made a 166 ms burst there: the look-ahead's columns came too late). Left: growth at take-off
+(16–22 ms), the join's first second (ecology ~25 ms).
+
+Round 8 (2026-11-17): the take-off's growth ticks were the tree scan: `trees_in_chunk` ran the placements over a
+chunk's whole 32 × 32 column (~1–5 ms natively) for every chunk stacked in it. The scan now places a column once
+(`Growers::trees_in_column`, kept per column and face, 4096 columns) and picks each chunk's trees from it. Test red
+→ green: `growth::the_scan_places_a_column_once_for_its_stacked_chunks` (65 placements for 25 columns → 25). Left:
+one placement per new column on the tick (~5 ms natively at take-off): next, off the tick like the sky floors.
+
+Round 9 (2026-11-17): a new column's tree placements left the tick. In the browser (`jobs_remote`) they are the
+server-jobs worker's job ("GJ1" → "GD1" with the column's `Records`), two out at once, the scan recording the
+chunks whose column has come; elsewhere a quarter column a tick (`Growers::trees_in_column_part`, the four
+quarters the column's trees: a test on both faces). Tests red → green: `the_scan_places_a_quarter_column_a_tick`
+(4 quarters in a tick → 1) and `a_remote_server_places_tree_columns_in_its_jobs_worker` (61 quarters on the tick →
+0, the trees still recorded). Harness: flight's worst tick 2.7 ms (was 4.9–6). Left: grass's quarter passes cost
+5–12 ms natively once a world day passes in the sprint run: next.
+
+Round 10 (2026-11-17): grass's quarter passes regenerated their chunk on the tick: a chunk unedited when picked
+needed no pristine copy, but its first quarter's own grass edits it, so each later quarter regenerated it to read
+it as generated (3–12 ms natively a quarter; an edit by a player between quarters did the same). Now a chunk's own
+and its neighbours' cells are copied as their pristine ones when picked (unedited), and a quarter whose chunks
+lack a copy waits for one instead. Test red → green: `the_tick_never_regenerates_a_chunk_to_grow_grass` (3
+regenerations → 0). Harness sprint: worst tick 11–12 → 7.8 ms, growth off the worst list. Left: the sprint's
+collision ticks (~7 ms natively), ecology at the join.
+
+Round 11 (2026-11-17, a finding): the sprint harness's ~7 ms collision ticks are tree growth. A grown stage's logs
+change collision (`collision_revision`), and `TerrainCollision::sync` rebuilds the chunk and every shaped chunk
+round it (6–16 builds, 2–7 ms natively). The harness grows a world day every 20 s (60×), so it shows these all the
+time; at the game's speed a tree grows a stage every few days. Kept as a smaller item: if it shows in the browser,
+budget `sync`'s neighbour rebuilds (the edited chunk at once, its neighbours a few a tick) or rebuild a neighbour
+only when the change touches the shared border.
+
+Round 13 (2026-11-17; owner: "There's a lot of trees, so once every few in game days is still probably pretty
+often."): a chunk keeps per side the collision changes within two cells of it (`Chunk::side_revision`), and
+`TerrainCollision::sync` rebuilds a shaped neighbour only when every side of the changed chunk facing it changed
+(a neighbour reads only those cells). Test red → green:
+`an_edit_away_from_the_border_rebuilds_no_shaped_neighbour` (2 builds → 1); the border test still rebuilds both.
+Also: making room for a picked grass chunk's pristine copies cleared its own (one regeneration, 12 ms natively):
+the clear now keeps them (no automated test: the copies are private; the harness shows `GRASS REGENERATED 0`).
+Harness sprint at 60× growth: worst tick 5.3 ms (was 8.5, failing the 8 ms gate); collision ticks 7.7 → 4.7 ms.
 
 ### 193. Leaves left hanging in the air after a tree is cut down
 
@@ -316,7 +399,7 @@ session, no datagram size to keep under) gets up to 255 pieces a snapshot (`LOOP
 Guests over the network keep the datagram's budget. Tests (natively, frames of 2 server ticks as a take's):
 `game_local` `a_blasts_flung_pieces_move_every_frame_at_30_fps` (red: 5–20 pieces in the air drawn still most
 frames) and `after_the_server_dropped_time_a_blasts_pieces_still_move_every_frame` (red: 100–160 of ~200 still every
-frame, peaking every third). Remote players (`dwell_game::remotes`) keep the old drifting estimate.
+frame, peaking every third). Remote players share the estimator since #198.
 
 ### 172. Trees disappear when the camera gets close
 
@@ -887,6 +970,19 @@ about a steady mean (the calm window's mean, not its start), or a calm test on t
 level for deep water with the slosh's volume conserved (the chunk sleeps at its mean, the swing's
 volume kept in `owed`).
 
+**Fixture fixed 2026-11-14 (branch `claude/slosh-settles`): the slosh's drag.** A face whose flow reversed within
+`sloshWindowS` (120 water s) is pulled toward still with a time of `sloshDampS` (30 s), weighted
+`1 / (1 + (u / sloshSpeedMs)^2)` by its speed (0.05 m/s; `shared/fluids/flow.json`, `water.rs` `face`). The draft's
+first form pulled each face toward its running mean, which lags any slow flow one way, so it held back a cut lake's
+levelling (`tests/water.rs` `a_lake_cut_open_drains_on_after_its_player_leaves`, drained at −2, 3: 22) and a river
+bed's resettling (`a_block_set_in_a_generated_rivers_bed_changes_nothing_else`, seed 1: 10); gating on a reversal
+leaves a flow one way undragged, and both pass. Red → green: `stirred_deep_water_settles` (both faces, no longer
+ignored; the slosh still swings > 0.2 m end to end for 90 s first) with `sloshDampS` 0 awake 300 of 300 s and 4,594
+cells after ten minutes; with 30 asleep and conserved to 0.01 m³. The kicked pond still reaches the far bank and comes
+back, and sleeps at 475 water s (2,082 before). The draft's other part, sleepers agreeing on a shared edge's flow, is
+in main as #48 (0.49.52). **Still open:** seed 0's dam sites (`measure_a_raised_dams_churn`, release, 170 water
+minutes, not run in this change); move #41b to Fixed once that shows the reservoirs asleep.
+
 ### 34. e2e play.spec's two-client test times out on CI since 0.49.4
 
 *Found 2026-11-06, from CI.* "two clients on a native server see each other move": page B (on a
@@ -946,6 +1042,50 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 200. The loading screen waits out its timeout for chunks the server never sends (fixed after 0.71.30)
+
+Owner, 2026-11-17: "Are there other easy wins for the rest of loading" and "Ensure you check a new world, a
+regenerated world, and a previously generated world." Seed 987654321 waited the full 20 s on "Loading the terrain"
+(new and regenerated); 9 of the near ring's 179 chunks never arrived. The client's predicted capsule centre was
+319.997 m, the server's just over the chunk border at 320 m: the two centred a chunk apart, and the ring (the
+view's own radius) reached chunks outside the server's view. **Fixed:** the ring is one less than the view (2
+against 3, `shared/look/loading.json`), within it across any one border. Test (red at 3, green at 2):
+`loading::tests::the_ring_lies_within_the_view_of_a_server_one_chunk_off`. Browser, new/regenerated/reopened:
+seed 987654321 24.5/22.3/8.3 → 10.6/8.8/7.5 s; seed 3218026833 15.9/14.1/11.8 → 11.0/9.0/7.0 s. Found with the new
+dev call `__dwell.nearMissing()`.
+
+### 199. A cinematic take's sounds late on a few frames a clip (fixed after 0.71.28)
+
+Found checking #955's takes (owner's brief, 2026-11-14: "check the "late" sound frames in cinematic takes … make
+scheduling frame-exact regardless of overshoot"; WORK_QUEUE item 41): a take's report counted 3–16 `late` frames a
+clip. The AudioContext is stepped to each frame's time and suspended; each frame's sounds go `audio.leadS` (50 ms)
+after it. A step's resume–suspend round trip overshoots by a hardware buffer, sometimes past the lead, and then that
+frame's sounds were scheduled before the context's clock and played late, by up to the overshoot.
+
+**Owner should see:** a cinematic take's log reading `late 0`, every sound on its frame.
+
+**Fixed:** the take's timeline (`TakeTimeline`, `client/src/theater/cinematicAudio.ts`) moves on by a step's
+overshoot past the lead plus a render quantum, so the frame's sounds and its mark are scheduled ahead of the
+suspended clock whatever the overshoot; the re-timing on the frame marks (`realign`) takes the extra audio out. The
+report counts the steps that did it (`rebased`). Test (`cinematic.test.ts`, "a step that overshoots past the lead
+…"): 12 of 300 frames late before, none after, every frame's sound on its frame's sample.
+
+### 198. Remote players step after the server drops time (fixed after 0.71.28)
+
+Owner's brief, 2026-11-14 (WORK_QUEUE item 41): the pieces' clock fix (#173) for "Remote players
+(dwell_game::remotes) and any other snapshot-interpolated things". The remote players kept the old estimate of the
+server's clock, the least delay seen drifting up 1 ms a second: after the server dropped time (a local world's
+worker busy past its catch-up cap) a remote was drawn past its newest snapshot for minutes, held there and moving
+only on frames a snapshot came (one in three at 30 fps), a step of three frames' motion each.
+
+**Owner should see:** a friend in your world moving smoothly on every frame after a hitch, not stepping.
+
+**Fixed:** one estimator, `dwell_game::server_clock::ServerClock` (the least delay within the last second, slewed
+3 %, snapped past 250 ms), shared by the remote players and the pieces (bodies are pieces). Creatures and NPCs ease
+toward their latest state by frame time and dropped items aren't moved by snapshots, so neither has a server clock
+to fix. Test (both faces): `remotes::tests::a_remote_drawn_after_the_server_dropped_time_moves_every_frame`, a
+remote at 6 m/s after a ½ s stall, 30 fps frames: red before (frames drawn still, deviation 1.00), within 3 % after.
 
 ### 183. A blueprint's ghost and panel didn't show (fixed after 0.70.14)
 

@@ -68,6 +68,12 @@ pub struct FlowData {
     /// A freed column still in the rest shows the map's current, blended to its own as its depth
     /// leaves its generated depth by up to this (m).
     pub river_current_band_m: f64,
+    /// A sloshing face is pulled toward still over this long (water s; 0: none).
+    pub slosh_damp_s: f64,
+    /// How long after its flow last reversed a face counts as sloshing (water s).
+    pub slosh_window_s: f64,
+    /// A swing faster than this (m/s) is dragged less, as `1 / (1 + (u / this)^2)`.
+    pub slosh_speed_ms: f64,
     /// The liquids the grid moves; the first is the one it draws.
     pub liquids: &'static [LiquidFlow],
 }

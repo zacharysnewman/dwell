@@ -1233,6 +1233,14 @@ pub struct Server {
     growers: Option<Option<Arc<dwell_worldgen::growth::Growers>>>,
     /// The loaded chunks already looked at for trees (not saved: looked at again after a load).
     growth_scanned: HashSet<ChunkCoord>,
+    /// How many chunk columns' tree placements the scan has run (tests, tools).
+    tree_columns_placed: usize,
+    /// How many quarter columns the scan has placed (a whole column four; tests, tools).
+    tree_quarters_placed: usize,
+    /// The column the scan is placing a quarter a tick: its key, the trees so far, the next quarter.
+    tree_column_part: Option<growth::ColumnPart>,
+    /// The scan's column placements kept for the column's other chunks (BUGS.md #194).
+    tree_columns: HashMap<(i32, i32, dwell_world::Face), Vec<dwell_worldgen::growth::Record>>,
     /// Edited chunks as generated, from the generation jobs (priority 0, BUGS.md #194: grass and
     /// tree growth regenerated an edited chunk on the tick, ~4 ms natively each, to compare with
     /// it); and the ones wanted next (low priority, after everything players need).
@@ -1249,6 +1257,13 @@ pub struct Server {
     /// The tree stages (species, seed, stage) to grow in the jobs worker, and those out there.
     tree_jobs: std::collections::VecDeque<(u16, u32, u8)>,
     tree_jobs_out: HashSet<(u16, u32, u8)>,
+    /// The tree columns wanted from the server-jobs worker ("GJ1"), and those out (BUGS.md #194).
+    tree_column_jobs: VecDeque<(i32, i32, dwell_world::Face)>,
+    tree_column_jobs_out: HashSet<(i32, i32, dwell_world::Face)>,
+    /// The chunk the grass step is part way through on the tick, and its next quarter.
+    grass_part: Option<(ChunkCoord, u8)>,
+    /// How many chunks the grass step regenerated to read as generated (tests, tools).
+    grass_regenerated: usize,
     /// The ground items gone (picked up or knocked loose; ADR 0071), saved with the world.
     ground: dwell_world::ground::GroundGone,
     /// The saved gone set is a newer build's: kept, not written over.
@@ -1364,7 +1379,15 @@ impl Server {
             edit_log: std::collections::VecDeque::new(),
             entropy,
             physics,
-            world: VoxelWorld::new(generator.clone(), air_test.clone()),
+            world: {
+                let mut w = VoxelWorld::new(generator.clone(), air_test.clone());
+                // The collision's checks ask without computing a sky floor (BUGS.md #194).
+                if let Some(sky) = &sky {
+                    let air = sky.air_arc();
+                    w.set_air_known(Arc::new(move |c| air.known(c).ok()));
+                }
+                w
+            },
             air_test,
             sky,
             players,
@@ -1476,6 +1499,10 @@ impl Server {
             grass_terrain: Default::default(),
             growers: None,
             growth_scanned: Default::default(),
+            tree_columns_placed: 0,
+            tree_quarters_placed: 0,
+            tree_column_part: None,
+            tree_columns: Default::default(),
             pristine: Default::default(),
             pristine_wanted: Vec::new(),
             last_durable_save: None,
@@ -1484,6 +1511,10 @@ impl Server {
             growth_due: Default::default(),
             tree_jobs: Default::default(),
             tree_jobs_out: Default::default(),
+            tree_column_jobs: Default::default(),
+            tree_column_jobs_out: Default::default(),
+            grass_part: None,
+            grass_regenerated: 0,
             ground: Default::default(),
             ground_unread: false,
             ground_generated: Default::default(),
@@ -2622,12 +2653,29 @@ impl Server {
         // The chunks the players' collision waits for first (priority 0: else they were generated
         // on the tick), then around players, then chunks full-mode clients wait for.
         // Saved chunks are read from the world file instead (a few per tick).
-        let mut wanted: Vec<ChunkCoord> = self
+        // The collision's waits: a chunk whose sky floor isn't known has its column wanted (computed
+        // off the tick, BUGS.md #194); one that would generate is wanted itself.
+        let waits: Vec<ChunkCoord> = self
             .players
             .take_terrain_wanting()
             .into_iter()
             .filter(|&c| self.world.find(c).is_none() && !self.is_saved(c))
             .collect();
+        let mut wanted: Vec<ChunkCoord> = Vec::new();
+        // Nearest last into the front, so the nearest goes first.
+        // (`waits` holds no saved chunk.)
+        if let Some(sky) = &mut self.sky {
+            for &c in waits.iter().rev() {
+                if let Err(col) = sky.air().known(c) {
+                    sky.want_first(col);
+                }
+            }
+        }
+        for c in waits {
+            if self.air_known(c) == Some(false) {
+                wanted.push(c);
+            }
+        }
         let mut loads = 0;
         for k in 0..self.prefetch_offsets.len() {
             for &center in &centers {
@@ -5645,6 +5693,13 @@ impl Server {
             self.tree_jobs_out.insert(k);
             return Some(crate::jobs::encode_tree_job(k.0, k.1, k.2));
         }
+        // And the tree columns the growers' scan waits for, a couple out at once.
+        if self.tree_column_jobs_out.len() < 2
+            && let Some(k) = self.tree_column_jobs.pop_front()
+        {
+            self.tree_column_jobs_out.insert(k);
+            return Some(crate::jobs::encode_tree_column_job(k));
+        }
         self.lod.take_job()
     }
     /// The server-jobs worker's answer to a job; applied at the next tick. False if it can't be
@@ -5657,6 +5712,11 @@ impl Server {
         if let Some((k, grown)) = crate::jobs::decode_tree_done(bytes) {
             dwell_worldgen::growth::keep_grown(k.0, k.1, k.2, &grown);
             self.tree_jobs_out.remove(&k);
+            return true;
+        }
+        if let Some((key, trees)) = crate::jobs::decode_tree_column_done(bytes) {
+            self.tree_column_jobs_out.remove(&key);
+            self.keep_tree_column(key, trees);
             return true;
         }
         if let Some((col, floor)) = crate::sky_columns::decode_done(bytes) {

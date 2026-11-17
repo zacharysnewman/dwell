@@ -67,6 +67,78 @@ Last updated: 2026-11-11 (0.52.108).
   once) checked. Paused 2026-11-16 for the owner's video (below), resumed after.
   Round 5 (2026-11-16): tree stages grown in the jobs worker; in the browser every advance ≤ 15.8 ms. Next: grass
   chunks in the jobs worker (growth ticks 11–14 ms left), then the budget test.
+  Round 6 (WIP branch `claude/server-tick-6`): a grass chunk grown a quarter a tick; tests green, browser check
+  pending. Owner, 2026-11-16: "Also for the hitching fixes, I'm getting big hitches while flying at 362 m/s." Next:
+  measure flight at 362 m/s (the harness and `stutter-run` with a fast-flight leg): which side hitches (the server's
+  tick, or the client's chunk streaming and meshing), which phase, then fix. Owner should see: flying at full speed
+  (362 m/s) with no hitches.
+  Found 2026-11-17 (bench `stutter-fly`, browser): flying at 362 m/s the server's `terrain` phase (collision builds,
+  `Players::tick_terrain`, ~70 builds/s) gives ticks of 39–71 ms for ~10 s after take-off. The native harness
+  (`TICK_FLY=1`) does NOT reproduce it yet: its player never moves (stuck at its spawn in every harness run so far,
+  so the earlier native numbers were of a still player). Next: fix the harness's input (compare persistence.rs), then
+  find the costly collision builds and spread or cap them.
+  Round 7 (2026-11-17, BUGS.md #194): fixed: sky floors were computed on the tick by the collision's checks and
+  the controller's reads; now never (the world's tick-safe air test). Flight at 362 m/s in the browser: worst tick a
+  second 1–6 ms, was 39–71. Next: growth at take-off (16–22 ms), the join's first second (ecology ~25 ms), then the
+  budget test.
+  Round 8: the tree scan places a column once for its stacked chunks (was once a chunk). Next: a new column's
+  placements off the tick, then ecology at the join, then the budget test.
+  Round 9: a new column's tree placements in the jobs worker (browser) or a quarter a tick. Next: grass's quarter
+  passes (5–12 ms natively in the sprint run), then ecology at the join, then the budget test.
+  Round 10: grass never regenerates a chunk on the tick (its pristine copy kept when picked). Next: the sprint's
+  collision ticks (~7 ms natively), ecology at the join, then the budget test.
+  Round 11: the sprint harness's collision ticks are tree growth's rebuilds, shown 60× by the harness's growth speed
+  (a smaller item, BUGS.md #194). Next: ecology at the join, then the budget test.
+  Round 12 (2026-11-17): the budget gate: `tests/tick_budget.rs` fails a tick over `TICK_BUDGET_MS` (8 natively);
+  flight 2.6 ms, the sprint 3.6 ms at the game's growth speed. **Status:** in the browser (bench `stutter-run`,
+  `stutter-fly`, all rounds in) every second's worst tick after the join is ≤ 11 ms (was up to 664 ms in round 1,
+  39–71 ms flying). Left: the join's first second (ecology's islands built at the first tick, ~25 ms, during
+  loading), tree growth's collision rebuilds (occasional), the owner's look.
+  Owner, 2026-11-17, on tree growth's rebuilds: "There's a lot of trees, so once every few in game days is still
+  probably pretty often." Next (priority 0): a changed chunk's shaped neighbours rebuilt only when the cells on
+  their shared border changed (a tree grows inside its chunk: one build, not 6–16). Owner should see: no hitch when
+  trees grow nearby.
+  Done (round 13): neighbours rebuilt only when their shared border changed; the sprint at 60× growth 5.3 ms worst.
+- **Owner, 2026-11-16 (bug, BUGS.md #196):** "our rivers in realistic don't seem to come from the mountains, just
+  random points in the world." Owner should see: Realistic's rivers rise in the mountains and run to the sea.
+- **Owner, 2026-11-16 (bug, BUGS.md #197, performance):** "I'm seeing both billboards and full detail trees showing at
+  the same time, not like just when transitioning, but both fully visible and static." Owner should see: each tree
+  drawn once, billboard or full, never both except during the brief fade.
+- **Owner, 2026-11-16 (bug, BUGS.md #195):** "I'm seeing big gray speckles across the whole map at medium to far LODs
+  and they seem to mostly (sometimes entirely) disappear when up close. Some of them at least seem to come from cores
+  inside of terrain or the random "rocks/boulders" scattered about." Owner should see: no grey speckles at any
+  distance; far terrain shows the material it shows up close.
+- **Owner, 2026-11-16 (releases):** "I'm seeing some releases, deploys going out, for these videos?" then "Sure." to
+  skipping them: release.yml ignores pushes touching only `.claude/` or `docs/`. Owner should see: no dev build or
+  deploy from a tools- or docs-only merge.
+- **Owner, 2026-11-17 (loading, priority):** "I've noticed the finding a place to stand step taking quite a bit
+  longer than I would expect, especially when loading a map for a second time it still seems to take just as long, I
+  would expect it to take almost no time to load that again?" Owner should see: reopening a world spends almost no
+  time on "Finding a place to stand"; a new world's is short too.
+  Done 2026-11-17: the server's start built the same world's terrain ~14 times (~0.2 s natively each: the generator,
+  air test, spawn, shrines, towns, LOD, …); `BifacialTerrain::sized` now builds it once per world (its seed, size and
+  installed maps) and clones it. Native start 2.5 → 0.9 s. Browser (seed 3218026833): "Finding a place to stand"
+  11.1 → 2.6 s new, 0.7 s reopened (the spawn search is skipped on a reopen: the saved spawn). Left: "Loading the
+  terrain" ~10 s, new or reopened.
+  Owner, 2026-11-17: "Are there other easy wins for the rest of loading, reusing instead of rebuilding?" Next:
+  "Loading the terrain" (10.1 s new and reopened on seed 3218026833): find what fills it, reuse what a reopen can.
+  Owner should see: reopening a world reaches play in a few seconds.
+  Owner: "Ensure you check a new world, a regenerated world, and a previously generated world." Every loading
+  measurement covers the three: a new seed (nothing cached on the device), the same seed regenerated (`fresh=1`: its
+  maps cached) and the world reopened.
+  Done (BUGS.md #200): the near ring one less than the server's view (a chunk-border disagreement left chunks never
+  sent, the screen waiting out 20 s). New/regenerated/reopened: seed 987654321 24.5/22.3/8.3 → 10.6/8.8/7.5 s, seed
+  3218026833 15.9/14.1/11.8 → 11.0/9.0/7.0 s. Next: the 2–3 s before the first chunk arrives (the local server's
+  first ticks late), "Loading the terrain" still ~6 s.
+  Done next (2026-11-17): the map's town sites were sited on the main thread in the first frame after a join (81
+  grid cells, ~1.4 s, a CPU profile): now a generation worker's job (`Job::TownCell`), a few out at once, nearest
+  first; and a local world's job workers start as its maps come (`prewarmWorld`), with this thread's terrain built
+  then, not at the join. New/regenerated/reopened: seed 987654321 10.6/8.8/7.5 → 9.2/7.1/5.6 s, seed 3218026833
+  11.0/9.0/7.0 → 8.7/6.2/4.7 s (from 24.5/22.3/8.3 and 15.9/14.1/11.8 this morning).
+- **Owner, 2026-11-17 (Starter terrain):** "No need to fix anything "Starter" terrain specific that one is going away
+  and can be queued for removal." Queued: remove the Starter terrain (its generator's world option, data and tests,
+  `starter_memory`'s pin among them); until then no Starter-specific fixes. Owner should see: no Starter world to
+  pick; Realistic the only terrain.
 - **Owner, 2026-11-16 (red desert brush):** "the underbrush in red deserts is insane. It should probably be like 1/4
   of what is." Sagebrush's density 0.9 → 0.225 (`placements.json`). A worldgen change: ships on the next compatibility
   line (0.72, with the spawn town). Owner should see: red desert floors with about a quarter of today's brush.
@@ -105,6 +177,16 @@ Last updated: 2026-11-11 (0.52.108).
   arms never drawn on the software renderer since before #939; passes on a GPU; suspect `c.active` in game.rs's
   arms `shown` with two pages on one display), buildDrag towers (#30), spawn reopen/settings reload (#51), touch,
   play two-client (#34). Owner should see: CI green.
+  2026-11-17: CI's Rust job stopped at the first failing file, hiding more. Fixed: the client's scenario test
+  (`stutter-run`/`stutter-fly` take an end shot), worldgen `lod` (tops compare the ground, not tree crowns, which
+  the species pines' giants put a cell apart), `realistic_biomes` (the world file owns each biome's plants). Still
+  red on main (`--no-fail-fast`): `realistic_sagebrush` (sagebrush on rock walls), `realistic_world` (a rift lake
+  27 km > 19, an arc cone off its plate, the map build time 6.0 s vs 1.7 under load), `starter_memory` (the starter
+  terrain golden changed). Then: `starter_memory` re-pinned (the same hashes at v0.71.0 and on main: the species
+  pines, 0.71.0, nothing since); parked with `#[ignore = reason]` (a `both_faces!` form carries it to both faces):
+  `realistic_world`'s arc-cone and rift-lake checks (stale since 0.65's curved plates) and its build-time test
+  (timed: run alone), `realistic_sagebrush`'s rock-wall check: **to fix with the 0.72 worldgen line** (with the
+  red-desert brush, the spawn town and the rivers).
 - **Owner, 2026-11-16 (shrines, stamina):** "You should respawn at the middle of the shrine respawn platform facing
   away forward (away from the pillars). And let's just have torches on the outer edge of the platform, not the
   middle." and "you shouldn't recover stamina while underwater." Owner should see: a respawn standing in the
@@ -363,6 +445,12 @@ Last updated: 2026-11-11 (0.52.108).
   **Owner should see:** pressing a recipe's Combine in the backpack gives a short wooden clack with a small chime,
   a little different each time; with too few items, nothing. On a phone in Break mode, holding the right side of the
   screen at the sky knocks once, not over and over; held on a block, each hit sounds as before.
+- **Long-open PRs triaged (orchestrator, 2026-11-14; refinement):** #591 (distant shadows' sweep no wider than the
+  sun's disc, BUGS.md #69 partly) and #384 (deep still water's slosh settles, BUGS.md #41b) merged up to main and
+  finished. #384's drag now acts only on a face whose flow reversed lately, so a cut lake and a river bed level as
+  before (its two red tests green). **Owner should see:** a pond or a dammed reservoir stirred by a dropped block
+  sloshes visibly for a minute, then goes still within a few minutes (no endless shimmer); distant hill shadows at a
+  low sun no longer spill sideways off ridges (the dark column before the starter volcano may remain: #69 open).
 - **Torches whole (owner, 2026-11-14; BUGS.md #171):** "A bug: the torches sometimes are placed by me or the
   generator without their tops or bottoms, it should be impossible to have one without the other". Brief: one rule
   on multi-cell blocks (`partOf`), not torch code: structures and worldgen write one whole or not at all (data
@@ -2882,6 +2970,17 @@ Cloud sessions: logic-only items can run as `claude --cloud` sessions in paralle
    **Owner should see:** flying close over a forest, every tree stays drawn (its far look until its real one is
    ready, then a short fade to it); the dynamite's flung pieces moving on every frame, smooth in the air, in the
    cinematic clip and in play.
+   **Follow-up (owner's brief, 2026-11-14, refinement only):** "Remote players (dwell_game::remotes) and any other
+   snapshot-interpolated things (NPCs/creatures, dropped items, bodies) still use the old drifting estimate. Apply the
+   same windowed estimate to them (share one estimator, not copies) … Also check the "late" sound frames in cinematic
+   takes (#955 …): make scheduling frame-exact regardless of overshoot." BUGS.md #198 (remotes) and #199 (late
+   sounds). **Done (branch `claude/remotes-clock`):** one estimator, `dwell_game::server_clock::ServerClock` (the least
+   delay within 1 s, slewed), used by the remote players and the pieces (bodies are pieces); creatures and NPCs
+   ease toward their latest state and dropped items aren't moved by snapshots, so neither reads a server clock. A
+   take's sound timeline moves on by a step's overshoot past the lead (`TakeTimeline`), so no sound is late.
+   **Owner should see:** in a world with a friend, after a hitch (the host's world busy loading), the friend keeps
+   moving smoothly on every frame instead of stepping a few times a second; a cinematic take's log reads `late 0`
+   (a `re-based N` count for steps that overshot), every sound on its frame.
    **The camera through a wall (owner, 2026-11-14):** "That flyover video goes straight through a wall. Not a big deal
    since you're just showing something but that shouldn't be included in most recordings." The forest fly-over's path
    ends inside a hill (8.35–10 s). Built: a camera clearance check (THEATER_MODE.md §6.2, the record skill's §0f):

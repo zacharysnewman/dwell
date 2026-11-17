@@ -5,6 +5,11 @@ newest, kept where the look changed, spliced into one portrait video on a speed 
   python3 looks-video.py --out video.mp4 [--min-diff 1.0] [--first 0.35] [--last 2.5] [--hold 3]
                          [--fade 0.3] [--sheet sheet.png] DIR [DIR ...] [--set DIR[,DIR] ...]
 
+`--kenburns Z` (owner, 2026-11-16: "Can you edit it to be Ken burns style?"): one slow push-in through each set, from
+1× to Z× at the frame's centre, each still carrying on the zoom where the last left off (the stills share the camera,
+so it reads as one move while the look changes); a new set starts again from 1×. `--out-zoom`: a pull-back instead,
+from Z× to 1× (owner: "Perhaps a zoom out instead of in, since the last ones cut weirdly at the end."). `--one-move`:
+one zoom across every set, not one per set (owner: "It suddenly zooms back in on the snow one").
 Several `--set`s play back to back (owner, 2026-11-16: "both sets of screenshots back to back. A 2 second pause
 on the last shot of each"): each set is chosen and eased on its own, its last still held `--hold` seconds.
 
@@ -12,6 +17,8 @@ Each DIR holds `<version>-<view>.png`; every PNG is ordered by its version. A st
 difference from the last kept one (grey, at 270×480) is at least `--min-diff`; the newest is always kept.
 The kept stills are shown from `--first` seconds each, easing (ease-in, quadratic) to `--last`, the newest held
 `--hold` seconds more, each cross-fading into the next over `--fade`. No text (the owner's showcase rule).
+`--view NAME` takes only `<version>-NAME.png`. Two cuts at 1080×960 stack into one 9:16 video (owner: "crop both and
+stack them"): `ffmpeg -i top.mp4 -i bottom.mp4 -filter_complex vstack out.mp4`.
 `--sheet` writes a contact sheet of the kept stills with their versions (for choosing, not for the video).
 """
 import argparse
@@ -39,12 +46,17 @@ def main():
     ap.add_argument('--fade', type=float, default=0.3)
     ap.add_argument('--size', default='1080x1920')
     ap.add_argument('--sheet')
+    ap.add_argument('--kenburns', type=float, default=0.0)
+    ap.add_argument('--out-zoom', action='store_true')
+    ap.add_argument('--one-move', action='store_true')
+    # Only the stills of one view (`<version>-<view>.png`), for folders holding several.
+    ap.add_argument('--view', default='')
     a = ap.parse_args()
     w, h = (int(x) for x in a.size.split('x'))
     sets = [d.split(',') for d in a.set] + ([a.dirs] if a.dirs else [])
-    kept, durations = [], []
+    kept, durations, zooms, sets_mine = [], [], [], []
     for dirs in sets:
-        stills = sorted({p for d in dirs for p in glob.glob(os.path.join(d, '*.png'))}, key=version_key)
+        stills = sorted({p for d in dirs for p in glob.glob(os.path.join(d, f'*-{a.view}.png' if a.view else '*.png'))}, key=version_key)
         these, last = [], None
         for i, p in enumerate(stills):
             small = Image.open(p).convert('L').resize((270, 480))
@@ -54,10 +66,25 @@ def main():
                 last = small
         print(f'{len(these)} of {len(stills)} stills kept:', ' '.join(os.path.basename(p).split('-')[0] for p in these))
         n = len(these)
+        mine = []
         for i in range(n):
             t = i / max(1, n - 1)
-            durations.append(a.first + (a.last - a.first) * t * t + (a.hold if i == n - 1 else 0))
+            mine.append(a.first + (a.last - a.first) * t * t + (a.hold if i == n - 1 else 0))
+        sets_mine.append(mine)
+        durations += mine
         kept += these
+    # The zoom: per set, or (`--one-move`) over the whole video.
+    groups = [sum(sets_mine, [])] if a.one_move else sets_mine
+    for mine in groups:
+        total, start = sum(mine), 0.0
+        for d in mine:
+            def z(at):
+                if not a.kenburns:
+                    return 1
+                t = min(at, total) / total
+                return 1 + (a.kenburns - 1) * ((1 - t) if a.out_zoom else t)
+            zooms.append((z(start), z(start + d + a.fade)))
+            start += d
     if a.sheet:
         cols = 6
         rows = (len(kept) + cols - 1) // cols
@@ -77,7 +104,18 @@ def main():
     chains, prev, offset = [], '0:v', 0.0
     scale = f'scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps=30,format=yuv420p'
     for i in range(n):
-        chains.append(f'[{i}:v]{scale}[s{i}]')
+        if a.kenburns:
+            # Upscaled 2× first so the zoom's steps are sub-pixel (zoompan rounds its window).
+            z0, z1 = zooms[i]
+            frames = round((durations[i] + a.fade) * 30)
+            chains.append(
+                f'[{i}:v]scale={2 * w}:{2 * h}:force_original_aspect_ratio=increase:flags=lanczos,'
+                f'crop={2 * w}:{2 * h},fps=30,'
+                f"zoompan=z='{z0:.5f}+({z1 - z0:.5f})*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f':d=1:s={w}x{h}:fps=30,format=yuv420p[s{i}]'
+            )
+        else:
+            chains.append(f'[{i}:v]{scale}[s{i}]')
     prev = 's0'
     for i in range(1, n):
         offset += durations[i - 1]

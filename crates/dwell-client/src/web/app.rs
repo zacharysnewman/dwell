@@ -308,6 +308,13 @@ struct Inner {
     crossing_roll: f64,
     /// The world's maps, before the game starts.
     shaping: Shaping,
+    /// A local world named before its join (`prewarmWorld`: generator version, seed): its job
+    /// workers are started once its maps are ready, so they have loaded the module, installed the
+    /// maps and built the terrain by the join (they were started at the join: ~2.7 s before any
+    /// chunk; the owner, 2026-11-17, on loading).
+    prewarm: Option<(u32, u64)>,
+    /// Those workers, for the world (version, seed, size) they were started for.
+    prewarmed: Option<((u32, u64, dwell_protocol::world_size::WorldSize), WebJobs)>,
 }
 
 fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
@@ -315,15 +322,6 @@ fn shell_event(kind: &str, value: impl Into<JsValue>) -> JsValue {
     set(&o, "t", kind);
     set(&o, "value", value);
     o.into()
-}
-
-/// The map's town sites by (seed, face B, grid cell x, z).
-type TownCells =
-    std::collections::HashMap<(u64, bool, i32, i32), Option<dwell_world::blueprint::TownSite>>;
-
-thread_local! {
-    /// The map's town sites, each grid cell sited once (`mapTowns`).
-    static TOWN_CELLS: std::cell::RefCell<TownCells> = std::cell::RefCell::default();
 }
 
 #[wasm_bindgen]
@@ -473,6 +471,8 @@ impl Client {
             camera_sway: true,
             crossing_roll,
             shaping: Shaping::NotAsked,
+            prewarm: None,
+            prewarmed: None,
         };
         Ok(Client {
             last_end: std::cell::Cell::new(None),
@@ -603,6 +603,7 @@ impl Client {
         let s = &mut *s;
         telemetry::span("net", || s.pump_network(now_ms));
         if s.game.is_none() {
+            s.prewarm_workers();
             s.start_game();
         }
         // A still hold on the view in Place mode places and builds on (docs/ITEMS.md §5); in
@@ -2968,6 +2969,53 @@ impl Client {
         o.into()
     }
 
+    /// The near ring's chunks the loading screen still waits for (`__dwell.nearMissing()`): each
+    /// `[x, y, z, loaded, drawable, drawnByLod, lodKnowsEmpty]` (1/0).
+    #[wasm_bindgen(js_name = nearMissing)]
+    pub fn near_missing(&self) -> JsValue {
+        let s = self.inner.borrow();
+        let Some(g) = &s.game else {
+            return JsValue::NULL;
+        };
+        let out = js_sys::Array::new();
+        // First: the ring's centre chunk and the position it is taken from.
+        let p = g.debug_position();
+        let c = dwell_world::chunk_of_pos(p);
+        let head = js_sys::Array::new();
+        for v in [
+            f64::from(c.x),
+            f64::from(c.y),
+            f64::from(c.z),
+            p[0],
+            p[1],
+            p[2],
+        ] {
+            head.push(&JsValue::from(v));
+        }
+        out.push(&head);
+        for (k, f) in g.near_missing() {
+            let row = js_sys::Array::new();
+            for v in k {
+                row.push(&JsValue::from(v));
+            }
+            for b in f {
+                row.push(&JsValue::from(u8::from(b)));
+            }
+            out.push(&row);
+        }
+        out.into()
+    }
+
+    /// Names the local world about to be joined (its generator version and seed), so its job
+    /// workers start as soon as its maps are ready instead of at the join (loading, 2026-11-17).
+    #[wasm_bindgen(js_name = prewarmWorld)]
+    pub fn prewarm_world(&self, world_seed: u64, generator_version: u32) {
+        let mut s = self.inner.borrow_mut();
+        if s.game.is_none() {
+            s.prewarm = Some((generator_version, world_seed));
+        }
+    }
+
     /// The `window.__dwell.state()` object (GameDebugState), or null before playing.
     #[wasm_bindgen(js_name = debugState)]
     pub fn debug_state(&self) -> JsValue {
@@ -3336,39 +3384,24 @@ impl Client {
     /// world's within its footprint)]; the maps show the explored ones. Empty for a world without them.
     #[wasm_bindgen(js_name = mapTowns)]
     pub fn map_towns(&self, face: u8, x: f64, z: f64, cells: i32) -> Vec<f64> {
-        let s = self.inner.borrow();
-        let Some(g) = s.game.as_ref() else {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = s.game.as_mut() else {
             return Vec::new();
         };
-        let Some(t) = g.far_terrain.clone() else {
+        if g.far_terrain.is_none() {
             return Vec::new();
-        };
+        }
         let face = if face == 1 {
             dwell_world::Face::B
         } else {
             dwell_world::Face::A
         };
-        // Each grid cell sited once per world (up to 40 columns of the height field each): the
-        // minimap asks every frame.
-        let seed = g.world_seed();
+        // Each grid cell sited once per world, in the generation workers (`Game::town_sites`):
+        // the minimap asks every frame.
         let rules = &dwell_world::blueprint::SHIPPED.towns;
         let [ci, ck] = rules.cell_of(x.floor() as i32, z.floor() as i32);
         let n = cells.clamp(0, 4);
-        let mut sites = Vec::new();
-        TOWN_CELLS.with_borrow_mut(|cache| {
-            if cache.len() > 4096 {
-                cache.clear();
-            }
-            for k in ck - n..=ck + n {
-                for i in ci - n..=ci + n {
-                    let key = (seed, face == dwell_world::Face::B, i, k);
-                    let site = *cache
-                        .entry(key)
-                        .or_insert_with(|| t.town_in(seed, face, [i, k]));
-                    sites.extend(site);
-                }
-            }
-        });
+        let sites = g.town_sites(face == dwell_world::Face::B, ci, ck, n);
         let boxes: Vec<[i32; 4]> = g
             .blueprints
             .ghosts
@@ -4085,13 +4118,25 @@ impl Inner {
             .as_ref()
             .map_or(Default::default(), |s| s.world_size());
         let workers = self.options.workers;
-        let jobs = match WebJobs::new(
-            &self.options.make_worker,
-            workers,
-            workers,
-            (generator_version, world_seed, world_size),
-            &maps,
-            self.options.lod_map,
+        let world = (generator_version, world_seed, world_size);
+        // The workers started for this world before its join (`prewarmWorld`), else new ones.
+        let warm = self
+            .prewarmed
+            .take()
+            .filter(|(w, _)| *w == world)
+            .map(|(_, j)| j);
+        let jobs = match warm.map_or_else(
+            || {
+                WebJobs::new(
+                    &self.options.make_worker,
+                    workers,
+                    workers,
+                    world,
+                    &maps,
+                    self.options.lod_map,
+                )
+            },
+            Ok,
         ) {
             Ok(j) => j,
             Err(e) => {
@@ -4237,6 +4282,47 @@ impl Inner {
     /// The world's maps (ADR 0049), once they are here and installed in this instance: asks the
     /// shell for them the first time, `None` while they are on the way. A world without terrain,
     /// a shell without `prepareWorld` or a failure: no maps (each instance computes its own).
+    /// Starts the named local world's job workers once its maps are ready (`prewarm`), before its
+    /// join, at today's size (a world of another size starts its own at the join).
+    fn prewarm_workers(&mut self) {
+        let Some((version, seed)) = self.prewarm else {
+            return;
+        };
+        if self.prewarmed.is_some()
+            || self
+                .session
+                .as_ref()
+                .is_some_and(|s| matches!(s.state(), SessionState::Joined { .. }))
+        {
+            return;
+        }
+        let Some(maps) = self.world_maps(seed, version) else {
+            return;
+        };
+        self.prewarm = None;
+        let world = (
+            version,
+            seed,
+            dwell_protocol::world_size::WorldSize::default(),
+        );
+        // And this thread's own terrain (the game's prediction and collision build it at the
+        // join: ~2 s of the main thread with nothing drawn): built now, while the local world's
+        // server starts in its worker, and cloned at the join (`BifacialTerrain::sized` keeps it).
+        let _ = dwell_worldgen::BifacialTerrain::for_generator_sized(world.0, world.1, world.2);
+        let workers = self.options.workers;
+        match WebJobs::new(
+            &self.options.make_worker,
+            workers,
+            workers,
+            world,
+            &maps,
+            self.options.lod_map,
+        ) {
+            Ok(j) => self.prewarmed = Some((world, j)),
+            Err(e) => web_sys::console::warn_2(&"Dwell: workers not prewarmed".into(), &e),
+        }
+    }
+
     fn world_maps(&mut self, world_seed: u64, generator_version: u32) -> Option<Vec<Uint8Array>> {
         if !dwell_world::has_terrain(generator_version) {
             return Some(Vec::new());

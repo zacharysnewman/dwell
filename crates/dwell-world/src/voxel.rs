@@ -124,7 +124,16 @@ pub struct Chunk {
     /// a block placed, broken or reshaped, not water rising or falling in a cell. Terrain collision
     /// rebuilds a chunk only when it changes, so the water a blast lets in rebuilds nothing.
     collision_revision: u32,
+    /// Per side (−x, +x, −y, +y, −z, +z): the collision class changes within [`BORDER_CELLS`] of
+    /// it. A neighbour's collision reads only those cells, so terrain collision rebuilds a shaped
+    /// neighbour only when the sides facing it changed (BUGS.md #194: a tree's growth inside its
+    /// chunk rebuilt the 6–16 shaped chunks round it).
+    side_revision: [u32; 6],
 }
+
+/// How far into a chunk its neighbours' collision reads (a shape reads up to two cells across
+/// its chunk's border).
+pub const BORDER_CELLS: i32 = 2;
 
 impl Default for Chunk {
     fn default() -> Self {
@@ -133,6 +142,7 @@ impl Default for Chunk {
             revision: 0,
             stamp: 0,
             collision_revision: 0,
+            side_revision: [0; 6],
         }
     }
 }
@@ -157,11 +167,26 @@ impl Chunk {
     pub fn collision_revision(&self) -> u32 {
         self.collision_revision
     }
+    /// The collision class changes near each side (−x, +x, −y, +y, −z, +z; see the field).
+    pub fn side_revision(&self) -> [u32; 6] {
+        self.side_revision
+    }
     /// Edits (§6.5): voxels changed without per-voxel bumps, then one bump per modification.
     pub fn set_at(&mut self, index: usize, m: StateId) {
         let old = std::mem::replace(&mut self.voxels[index], m);
         if old != m && dwell_blocks::collision_class(old) != dwell_blocks::collision_class(m) {
             self.collision_revision = self.collision_revision.wrapping_add(1);
+            let i = index as i32;
+            let (lx, ly, lz) = (i & 31, (i >> 5) & 31, i >> 10);
+            for (axis, v) in [lx, ly, lz].into_iter().enumerate() {
+                if v < BORDER_CELLS {
+                    self.side_revision[axis * 2] = self.side_revision[axis * 2].wrapping_add(1);
+                }
+                if v >= CHUNK_SIZE - BORDER_CELLS {
+                    self.side_revision[axis * 2 + 1] =
+                        self.side_revision[axis * 2 + 1].wrapping_add(1);
+                }
+            }
         }
     }
     pub fn bump_revision(&mut self) {
@@ -181,6 +206,9 @@ impl Chunk {
     /// what is written isn't seen).
     pub fn voxels_mut(&mut self) -> &mut [StateId; CHUNK_VOLUME] {
         self.collision_revision = self.collision_revision.wrapping_add(1);
+        for s in &mut self.side_revision {
+            *s = s.wrapping_add(1);
+        }
         &mut self.voxels
     }
     pub fn from_voxels(voxels: &[StateId], revision: u32) -> Option<Self> {
@@ -200,6 +228,11 @@ impl Chunk {
 pub type ChunkGenerator = Arc<dyn Fn(ChunkCoord, &mut Chunk) + Send + Sync>;
 /// True for chunks a generator leaves all air, known without generating them.
 pub type AirChunkTest = Arc<dyn Fn(ChunkCoord) -> bool + Send + Sync>;
+
+/// The air test without its costly part (ARCHITECTURE.md §6.3): `Some(all air)` when the chunk's
+/// answer is at hand, `None` while its column's sky floor isn't known (the server then has it
+/// computed off the tick, `dwell-sim` `sky_columns.rs`).
+pub type AirKnownTest = Arc<dyn Fn(ChunkCoord) -> Option<bool> + Send + Sync>;
 
 /// Generator versions announced in Welcome (§6.3): 0 the flat test world, 8 procedural terrain
 /// (its height field with the terrain volume over it, `dwell_worldgen::volume`), 100 the structure
@@ -526,6 +559,8 @@ static AIR_CHUNK: LazyLock<Chunk> = LazyLock::new(Chunk::default);
 pub struct VoxelWorld {
     generator: Option<ChunkGenerator>,
     air: Option<AirChunkTest>,
+    /// The tick-safe air test (`air_known`); none: the plain test's answer.
+    air_known: Option<AirKnownTest>,
     saved: Option<Box<dyn SavedChunks>>,
     chunks: HashMap<ChunkCoord, Box<Chunk>>,
     epoch: u64,
@@ -571,6 +606,7 @@ impl VoxelWorld {
         Self {
             generator: Some(generator),
             air,
+            air_known: None,
             saved: None,
             chunks: HashMap::default(),
             epoch: 0,
@@ -856,6 +892,23 @@ impl VoxelWorld {
     /// the air test says the generator would leave it empty (not stored).
     /// Whether a read of chunk `coord` would generate it here (a generating world's chunk not
     /// stored, not saved and not all air): the costly read the server's tick avoids.
+    /// The tick-safe air test from now on ([`AirKnownTest`]).
+    pub fn set_air_known(&mut self, test: AirKnownTest) {
+        self.air_known = Some(test);
+    }
+
+    /// [`Self::would_generate`] without computing a sky floor: `None` while chunk `coord`'s answer
+    /// needs one (BUGS.md #194: at 362 m/s the collision's checks computed several a tick).
+    pub fn would_generate_known(&self, coord: ChunkCoord) -> Option<bool> {
+        if self.generator.is_none() || self.chunks.contains_key(&coord) || self.saved_has(coord) {
+            return Some(false);
+        }
+        match &self.air_known {
+            Some(known) => known(coord).map(|air| !air),
+            None => Some(!self.air.as_ref().is_some_and(|air| air(coord))),
+        }
+    }
+
     pub fn would_generate(&self, coord: ChunkCoord) -> bool {
         self.generator.is_some()
             && !self.chunks.contains_key(&coord)
@@ -865,9 +918,18 @@ impl VoxelWorld {
 
     pub fn read(&mut self, coord: ChunkCoord) -> &Chunk {
         if self.generator.is_some() {
+            let missing = !self.chunks.contains_key(&coord) && !self.saved_has(coord);
+            // With the tick-safe test (the server) a read never computes a sky floor: a chunk whose
+            // answer isn't known yet reads as air until its column is computed off the tick
+            // (BUGS.md #194: at 362 m/s the controller's reads computed several a tick).
+            if missing && let Some(known) = &self.air_known {
+                if known(coord) != Some(false) {
+                    return &AIR_CHUNK;
+                }
+                return self.get_or_create(coord);
+            }
             if let Some(air) = &self.air
-                && !self.chunks.contains_key(&coord)
-                && !self.saved_has(coord)
+                && missing
                 && air(coord)
             {
                 return &AIR_CHUNK;

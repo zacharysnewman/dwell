@@ -17,6 +17,15 @@ const SCANS_PER_TICK: usize = 1;
 /// The most due trees grown a tick.
 const TREES_PER_TICK: usize = 1;
 
+/// A chunk column on a face: (chunk x, chunk z, face).
+pub type ColumnKey = (i32, i32, dwell_world::Face);
+
+/// The column the scan is placing a quarter a tick: its key, the trees so far, the next quarter.
+pub type ColumnPart = (ColumnKey, Vec<dwell_worldgen::growth::Record>, u8);
+
+/// Chunk columns' tree placements kept by the scan; past this many it starts again.
+const TREE_COLUMNS_KEPT: usize = 4096;
+
 impl Server {
     /// The world's days so far (its clock's day length), times the growth speed (dev, tests).
     pub fn world_days(&self) -> f64 {
@@ -69,7 +78,7 @@ impl Server {
     /// made 20–30 ms ticks: priority 0, the owner's "the server never drops below 60fps"); the
     /// due ones found once a second.
     pub(super) fn grow_trees(&mut self) {
-        self.scan_tree_chunks(SCANS_PER_TICK);
+        self.scan_tree_chunks_by(SCANS_PER_TICK, true);
         if self.growth_due.is_empty() && self.tick.is_multiple_of(SIM_HZ) {
             self.growth_due = self.due_tree_anchors().into();
         }
@@ -110,6 +119,25 @@ impl Server {
         self.grow_these_trees(&next, true);
     }
 
+    /// How many distinct chunk columns (per face) the scan has looked at (tests, tools).
+    pub fn tree_columns_scanned(&self) -> usize {
+        self.growth_scanned
+            .iter()
+            .map(|&c| (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+
+    /// How many quarter columns the scan has placed (a whole column four; tests, tools).
+    pub fn tree_quarters_placed(&self) -> usize {
+        self.tree_quarters_placed
+    }
+
+    /// How many chunk columns' tree placements the scan has run (tests, tools).
+    pub fn tree_columns_placed(&self) -> usize {
+        self.tree_columns_placed
+    }
+
     /// How many chunks have been looked at for trees (tests, tools).
     pub fn tree_chunks_scanned(&self) -> usize {
         self.growth_scanned.len()
@@ -117,23 +145,79 @@ impl Server {
 
     /// Records the trees of up to `n` loaded chunks not looked at yet; how many it looked at.
     pub fn scan_tree_chunks(&mut self, n: usize) -> usize {
+        self.scan_tree_chunks_by(n, false)
+    }
+
+    /// [`Self::scan_tree_chunks`]; `quarters`: a new column's placements a quarter a call (the
+    /// tick's: BUGS.md #194, ~5 ms natively a column), its chunks scanned once all four are in.
+    fn scan_tree_chunks_by(&mut self, n: usize, quarters: bool) -> usize {
         let Some(growers) = self.growers() else {
             return 0;
         };
+        // In the browser (`jobs_remote`) a new column is the server-jobs worker's ("GJ1"): the scan
+        // records the chunks whose column has come, a few looked at a tick for one.
+        let remote = quarters && self.config.jobs_remote;
+        let look = if remote { n * 8 } else { n };
         let fresh: Vec<_> = self
             .world
             .chunks()
             .map(|(c, _)| *c)
             .filter(|c| !self.growth_scanned.contains(c))
-            .take(n)
+            .take(look)
             .collect();
+        let mut scanned = 0;
         for &c in &fresh {
+            if scanned >= n {
+                break;
+            }
+            // A column's placements once for all its chunks (BUGS.md #194).
+            let key = (c.x, c.z, dwell_world::FaceFrame::at_chunk_y(c.y).face);
+            if !self.tree_columns.contains_key(&key) {
+                if remote {
+                    if !self.tree_column_jobs_out.contains(&key)
+                        && !self.tree_column_jobs.contains(&key)
+                    {
+                        self.tree_column_jobs.push_back(key);
+                    }
+                    continue;
+                }
+                if quarters {
+                    let (mut trees, k) = self
+                        .tree_column_part
+                        .take()
+                        .filter(|p| p.0 == key)
+                        .map_or((Vec::new(), 0), |p| (p.1, p.2));
+                    trees.extend(growers.trees_in_column_part(c, Some(k)));
+                    self.tree_quarters_placed += 1;
+                    if k < 3 {
+                        self.tree_column_part = Some((key, trees, k + 1));
+                        break; // a quarter a call: the rest on the next ones
+                    }
+                    self.keep_tree_column(key, trees);
+                } else {
+                    self.tree_quarters_placed += 4;
+                    self.keep_tree_column(key, growers.trees_in_column(c));
+                }
+            }
             self.growth_scanned.insert(c);
-            for r in growers.trees_in_chunk(c) {
+            scanned += 1;
+            for r in Growers::trees_of_chunk(&self.tree_columns[&key], c) {
                 self.growth.trees.entry(r.anchor).or_insert(r);
             }
         }
-        fresh.len()
+        scanned
+    }
+
+    pub(super) fn keep_tree_column(
+        &mut self,
+        key: (i32, i32, dwell_world::Face),
+        trees: Vec<dwell_worldgen::growth::Record>,
+    ) {
+        if self.tree_columns.len() >= TREE_COLUMNS_KEPT {
+            self.tree_columns.clear();
+        }
+        self.tree_columns_placed += 1;
+        self.tree_columns.insert(key, trees);
     }
 
     /// The growers step now (tests, tools): record new chunks' trees (up to `SCANS_PER_STEP`), grow

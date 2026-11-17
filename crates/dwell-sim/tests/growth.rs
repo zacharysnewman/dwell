@@ -153,7 +153,8 @@ dwell_world::both_faces!(
                 7,
             ));
         let mut most = 0;
-        for _ in 0..(5 * 60 + 5) {
+        // A new column takes four ticks (a quarter a tick): 100 columns in ~7 s.
+        for _ in 0..(8 * 60) {
             for dx in -5..5 {
                 for dz in -5..5 {
                     let [x, y, z] = f.cell([dx * 32 + 4, BASE, dz * 32 + 4]);
@@ -170,6 +171,125 @@ dwell_world::both_faces!(
         assert!(
             fx.server.tree_chunks_scanned() >= 100,
             "all of them in turn"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194; owner, 2026-11-16: "big hitches while flying at 362 m/s"): the
+    /// scan places a chunk column's trees once for all its chunks (the placements cost ~1–5 ms
+    /// natively a column, the same for every chunk stacked in it), not once a chunk.
+    fn the_scan_places_a_column_once_for_its_stacked_chunks(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f));
+        fx.server
+            .set_growers(dwell_worldgen::growth::Growers::for_generator(
+                dwell_world::GENERATOR_TERRAIN,
+                7,
+            ));
+        for dy in -3..3 {
+            let [x, y, z] = f.cell([4, BASE + dy * 32, 4]);
+            fx.server
+                .world()
+                .get_or_create(dwell_world::chunk_of(x, y, z));
+        }
+        for _ in 0..120 {
+            fx.server.step();
+        }
+        let chunks = fx.server.tree_chunks_scanned();
+        let columns = fx.server.tree_columns_scanned();
+        assert!(
+            chunks > columns,
+            "stacked chunks scanned: {chunks} in {columns} columns"
+        );
+        assert_eq!(
+            fx.server.tree_columns_placed(),
+            columns,
+            "one placement a column ({chunks} chunks)"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194): a tick places at most a quarter of a new column's trees (a
+    /// column's placements cost ~5 ms natively, ~15–20 ms in the browser), the scan still covering
+    /// every chunk in turn.
+    fn the_scan_places_a_quarter_column_a_tick(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f));
+        fx.server
+            .set_growers(dwell_worldgen::growth::Growers::for_generator(
+                dwell_world::GENERATOR_TERRAIN,
+                7,
+            ));
+        for dx in -2..2 {
+            for dz in -2..2 {
+                let [x, y, z] = f.cell([dx * 32 + 4, BASE, dz * 32 + 4]);
+                fx.server
+                    .world()
+                    .get_or_create(dwell_world::chunk_of(x, y, z));
+            }
+        }
+        let mut most = 0;
+        for _ in 0..400 {
+            let before = fx.server.tree_quarters_placed();
+            fx.server.step();
+            most = most.max(fx.server.tree_quarters_placed() - before);
+        }
+        assert!(most <= 1, "{most} quarter columns placed in one tick");
+        let (placed, columns) = (
+            fx.server.tree_quarters_placed(),
+            fx.server.tree_columns_scanned(),
+        );
+        // Every scanned column placed whole, once (and at most the next one part way).
+        assert!(
+            (4 * columns..4 * columns + 4).contains(&placed),
+            "{placed} quarters for {columns} columns"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// Priority 0 (BUGS.md #194): with the browser's server-jobs worker (`jobs_remote`), a new
+    /// column's tree placements are its job ("GJ1"), never the tick's (a quarter column was still
+    /// ~4–6 ms natively, ~15–20 ms in the browser); its chunks' trees are recorded once it answers.
+    fn a_remote_server_places_tree_columns_in_its_jobs_worker(f: FaceFrame) {
+        let mut fx = Fixture::new(ServerConfig {
+            jobs_remote: true,
+            ..config(f)
+        });
+        fx.server
+            .set_growers(dwell_worldgen::growth::Growers::for_generator(
+                dwell_world::GENERATOR_TERRAIN,
+                7,
+            ));
+        let mut runner = dwell_sim::jobs::JobRunner::for_world(dwell_world::GENERATOR_TERRAIN, 7);
+        for dx in -2..2 {
+            for dz in -2..2 {
+                let [x, y, z] = f.cell([dx * 32 + 4, BASE, dz * 32 + 4]);
+                fx.server
+                    .world()
+                    .get_or_create(dwell_world::chunk_of(x, y, z));
+            }
+        }
+        for _ in 0..240 {
+            fx.server.step();
+            // Only the tree-column jobs answered (this world's own chunks are the test's).
+            while let Some(job) = fx.server.take_job() {
+                if job.starts_with(b"GJ1")
+                    && let Some(done) = runner.run(&job)
+                {
+                    assert!(fx.server.deliver_job(&done), "a column's answer read");
+                }
+            }
+        }
+        assert_eq!(
+            fx.server.tree_quarters_placed(),
+            0,
+            "columns placed on the tick"
+        );
+        assert!(
+            fx.server.tree_chunks_scanned() >= 16,
+            "the chunks' trees recorded from the jobs' columns: {}",
+            fx.server.tree_chunks_scanned()
         );
     }
 );

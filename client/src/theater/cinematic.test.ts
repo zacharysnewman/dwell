@@ -23,6 +23,7 @@ import {
   impulseErrors,
   joinChunks,
   realign,
+  TakeTimeline,
   wavBytes,
 } from './cinematicAudio';
 import type { ClearanceWorld } from './clearance';
@@ -407,6 +408,43 @@ describe("the take's sound", () => {
     ).toBeLessThanOrEqual(1);
     for (let i = 7; i < frames; i += 30) expect(snd?.[expected[i] ?? 0]).toBeCloseTo(0.9, 6);
     expect(snd?.length).toBe(n);
+  });
+  it("a step that overshoots past the lead still puts its frame's sound on its frame (#955: 3–16 late a clip)", () => {
+    // The context is stepped to each frame's time; a step overshoots by 0–20 ms, and on 12 of 300
+    // frames by 60–140 ms, past the 50 ms lead. A sound scheduled before the context's clock plays
+    // at the clock (late); every frame here triggers one, and its mark is scheduled like it.
+    const sr = 48_000;
+    const fps = 30;
+    const frames = 300;
+    const leadS = 0.05;
+    const playLeadS = 0.005;
+    const tl = new TakeTimeline(1, leadS, 128 / sr);
+    const over = (i: number): number => (i % 25 === 13 ? 0.06 + (i % 4) * 0.027 : (i % 7) * 0.003);
+    const origin = tl.at(0) + playLeadS;
+    const n = Math.round((frames / fps) * sr);
+    const marksCh = new Float32Array(n + 2 * sr);
+    const sound = new Float32Array(n + 2 * sr);
+    const rawExpected: number[] = [];
+    let late = 0;
+    for (let i = 0; i < frames; i++) {
+      const t = i / fps;
+      const ctxNow = tl.runTarget(t) + over(i);
+      tl.stepped(t, ctxNow);
+      const when = tl.at(t) + playLeadS;
+      if (when < ctxNow) late++;
+      const at = Math.round((Math.max(when, ctxNow) - origin) * sr);
+      marksCh[Math.round((when - origin) * sr)] = 1; // the mark the stream is re-timed on
+      sound[at] = 0.9;
+      rawExpected.push(Math.round((t + tl.shift) * sr));
+    }
+    const expected = Array.from({ length: frames }, (_, i) => Math.round((i / fps) * sr));
+    const marks = findMarks(marksCh, rawExpected);
+    const [snd] = realign([sound, marksCh], marks, expected, n);
+    const off = expected.filter(
+      (e) => (snd?.[e] ?? 0) !== 0.9 && Math.abs((snd?.[e] ?? 0) - 0.9) > 1e-6,
+    );
+    expect({ late, off: off.length }).toEqual({ late: 0, off: 0 });
+    expect(tl.rebased).toBeGreaterThan(0);
   });
   it("the track's length is the frames' length: a 16-bit stereo WAV of exactly frames / fps", () => {
     const sr = 48_000;

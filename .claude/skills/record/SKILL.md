@@ -152,7 +152,8 @@ lossless PNG frames written by the driver's sink (`/cine/start?name=`), and the 
 (`audio.wav`, already frame-exact: muxed as is, no alignment). A shot's **`cinematic`** object overrides any setting
 (`{"subframes": 4}` for motion blur, `{"supersample": 1}` for speed, `{"settle": {"capMs": 3000}}`). No `warmS` or
 `settleS` is needed: the pre-roll does both. The log prints the render time, the settle waits (mean, p95, max), the
-capped frames, the ticks and the sound's alignment (`error mean … max … ms, late N`).
+capped frames, the ticks and the sound's alignment (`error mean … max … ms, late N, re-based M`: late is 0; re-based counts steps that overshot
+the lead and moved the sound's timeline on, each still frame-exact).
 
 - **Setup runs in real time** before the take holds the world (a lit fuse burns until the take starts; the hold then
   freezes it through the pre-roll). A real-time twin of the same shot should skip the settle (`settleS: 0`) so its fuse
