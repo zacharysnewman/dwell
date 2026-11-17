@@ -1117,6 +1117,8 @@ export function terrainRust({
   rs.push(`    base_rain: ${rf(bm.baseRain)},`);
   rs.push(`    uplift_rain: ${rf(bm.upliftRain)},`);
   rs.push(`    lee_dry: ${rf(bm.leeDry)},`);
+  rs.push(`    lee_floor: 0.0,`);
+  rs.push(`    recover_m: 0.0,`);
   rs.push(`    rain_share: ${rf(bm.rainShare)},`);
   rs.push(`    wind_smooth_m: ${rf(bm.windSmoothM)},`);
   rs.push(`    sharpen: ${rf(bm.sharpen)},`);
@@ -3229,6 +3231,9 @@ const CLIMATE_TOP = [
   "seaLevel",
   "rainByLatitude",
   "lapseRate",
+  "degreesPerKm",
+  "maritime",
+  "maritimeReachM",
   "winds",
   "windJitter",
   "rain",
@@ -3246,6 +3251,8 @@ const CLIMATE_RAIN = [
   "baseRain",
   "upliftRain",
   "leeDry",
+  "leeFloor",
+  "recoverM",
   "blurM",
 ];
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
@@ -3314,6 +3321,9 @@ export function validateClimate(data) {
       fail(`rainByLatitude[${i}]: latitudes must ascend`);
   }
   num("lapseRate", data.lapseRate, 0, 20);
+  num("degreesPerKm", data.degreesPerKm, 0, 1);
+  num("maritime", data.maritime, 0, 20);
+  num("maritimeReachM", data.maritimeReachM, 1, 1_000_000);
   if (!(Array.isArray(data.winds) && data.winds.length > 0)) fail("winds must be a non-empty list");
   for (const [i, w] of data.winds.entries()) {
     obj(`winds[${i}]`, w, ["name", "latitude", "from"]);
@@ -3335,6 +3345,8 @@ export function validateClimate(data) {
   num("rain.baseRain", data.rain.baseRain, 0, 1);
   num("rain.upliftRain", data.rain.upliftRain, 0, 100);
   num("rain.leeDry", data.rain.leeDry, 0, 100);
+  num("rain.leeFloor", data.rain.leeFloor, 0, 1);
+  num("rain.recoverM", data.rain.recoverM, 0, 10_000_000);
   num("rain.blurM", data.rain.blurM, 0, 50_000);
   num("maxGridBytes", data.maxGridBytes, 1024, 64 * 1024 * 1024, true);
   if (data.rain.maxCells ** 2 * 4 > data.maxGridBytes)
@@ -3385,6 +3397,9 @@ export function climateRust(data) {
     ...data.rainByLatitude.map((p) => `        [${rf(p[0])}, ${rf(p[1])}],`),
     "    ],",
     `    lapse_rate: ${rf(data.lapseRate)},`,
+    `    degrees_per_km: ${rf(data.degreesPerKm)},`,
+    `    maritime: ${rf(data.maritime)},`,
+    `    maritime_reach_m: ${rf(data.maritimeReachM)},`,
     "    winds: &[",
     ...data.winds.map(
       (w) =>
@@ -3400,6 +3415,8 @@ export function climateRust(data) {
     `        base_rain: ${rf(r.baseRain)},`,
     `        uplift_rain: ${rf(r.upliftRain)},`,
     `        lee_dry: ${rf(r.leeDry)},`,
+    `        lee_floor: ${rf(r.leeFloor)},`,
+    `        recover_m: ${rf(r.recoverM)},`,
     `        blur_m: ${rf(r.blurM)},`,
     "    },",
     `    max_grid_bytes: ${data.maxGridBytes},`,
