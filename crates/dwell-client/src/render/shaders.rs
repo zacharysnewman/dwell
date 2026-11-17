@@ -106,6 +106,12 @@ struct Frame {
     lean_hinge: vec4f,
     lean_up: vec4f,
     lean_axis: vec4f,
+    // A shaking block (door, ladder, dynamite hit; mod.rs `shake_uniforms`, docs/BLOCK_DAMAGE.md
+    // §17): its cells' centre relative to the eye (w 1: shaking), their half-size, the scale on x
+    // and z (always >= 1, so a face only grows: no gap opens beside a neighbour whose face it hid).
+    shake_centre: vec4f,
+    shake_half: vec4f,
+    shake_scale: vec4f,
     // The far trees' hand-over (render/tree_fade.rs, dwell-worldgen `impostor::Far`): xy the eye's
     // face-local x and z from the tree map's corner, z the near leaves' reach (m; every leaf past it
     // is the impostors'), w 1 when impostors draw (else the near trees' leaves draw to the
@@ -791,9 +797,9 @@ fn terrain_vs(v: TerrainIn, @builtin(instance_index) k: u32) -> TerrainOut {
     let draw = draws[k];
     var o: TerrainOut;
     o.draw = k;
-    o.rel = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
-    o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     o.normal = qrot(draw.quat, v.normal.xyz);
+    o.rel = block_shake(tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w)), o.normal);
+    o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     o.color = v.color;
     o.uv = v.uv;
     o.tile = v.tile;
@@ -962,6 +968,19 @@ fn gust(p: vec2f, t: f32) -> f32 {
     let b = sin(dot(p, vec2f(-13.0, 31.0) * k) - 0.6 * t + 1.7);
     let c = sin(dot(p, vec2f(61.0, 47.0) * k) - 1.7 * t + 4.1);
     return clamp(0.5 + 0.3 * a + 0.15 * b + 0.1 * c, 0.0, 1.0);
+}
+
+// A shaking block (frame.shake_*): a vertex of its own faces (tested a hair inside along its
+// normal, so a neighbour's face on the cell's boundary stays) scaled out from its centre on x and z.
+fn block_shake(rel: vec3f, normal: vec3f) -> vec3f {
+    if (frame.shake_centre.w == 0.0) {
+        return rel;
+    }
+    let d = rel - frame.shake_centre.xyz;
+    if (any(abs(d - normal * 0.01) >= frame.shake_half.xyz)) {
+        return rel;
+    }
+    return frame.shake_centre.xyz + d * frame.shake_scale.xyz;
 }
 
 // The tree being chopped leans (frame.lean_*): a vertex above the hinge, within the radius across

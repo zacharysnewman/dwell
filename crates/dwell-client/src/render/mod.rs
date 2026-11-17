@@ -520,6 +520,30 @@ fn waterline_state(e: EyeFluid, eye_y: f64, face: FaceFrame) -> f32 {
     }
 }
 
+/// A shaking block's cells (world, `lo` to `hi`) and its scale on x and z (>= 1), for the frame
+/// (shaders.rs `block_shake`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockShake {
+    pub lo: [f64; 3],
+    pub hi: [f64; 3],
+    pub scale: [f64; 2],
+}
+
+/// The frame uniform's `shake_*` vec4s: the centre relative to `eye` (w 1), the half-size, the
+/// scale (x, 1, z); zeros when nothing shakes.
+pub(crate) fn shake_uniforms(shake: Option<BlockShake>, eye: [f64; 3]) -> [[f32; 4]; 3] {
+    let Some(b) = shake else {
+        return [[0.0; 4]; 3];
+    };
+    let c: [f64; 3] = std::array::from_fn(|k| 0.5 * (b.lo[k] + b.hi[k]) - eye[k]);
+    let h: [f64; 3] = std::array::from_fn(|k| 0.5 * (b.hi[k] - b.lo[k]));
+    [
+        [c[0] as f32, c[1] as f32, c[2] as f32, 1.0],
+        [h[0] as f32, h[1] as f32, h[2] as f32, 0.0],
+        [b.scale[0] as f32, 1.0, b.scale[1] as f32, 0.0],
+    ]
+}
+
 /// The frame uniform's `lean_*` vec4s (shaders.rs `tree_lean`): the hinge relative to `eye` and
 /// the radius, the tree's up and height, the turn's axis and angle (0: nothing leans).
 pub(crate) fn lean_uniforms(lean: Option<crate::chop::TreeLean>, eye: [f64; 3]) -> [[f32; 4]; 3] {
@@ -1887,6 +1911,8 @@ pub struct Renderer {
     eye_fluid: Option<EyeFluid>,
     /// The tree being chopped leans (`set_tree_lean`; frame.lean_*).
     tree_lean: Option<crate::chop::TreeLean>,
+    /// A shaking block (`set_block_shake`; frame.shake_*).
+    block_shake: Option<BlockShake>,
     /// The water quality setting (`set_water_quality`).
     water_quality: WaterQuality,
     /// Whether this is a phone (the shell's `prefersTouch`): its own, cheaper reflection tiers
@@ -2800,6 +2826,7 @@ impl Renderer {
             roll: 0.0,
             eye_fluid: None,
             tree_lean: None,
+            block_shake: None,
             water_quality: WaterQuality::default(),
             phone: false,
             water_debug: 0,
@@ -3346,6 +3373,11 @@ impl Renderer {
     }
     /// The tree being chopped leans toward its notch (crate::chop `TreeLean`): the terrain's
     /// vertices above its hinge turn with it (shaders.rs `tree_lean`).
+    /// A block shakes (door, ladder, dynamite hit): its faces scaled out on x and z.
+    pub fn set_block_shake(&mut self, shake: Option<BlockShake>) {
+        self.block_shake = shake;
+    }
+
     pub fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
         self.tree_lean = lean;
     }
@@ -4044,6 +4076,9 @@ impl Renderer {
             put(&v);
         }
         for v in lean_uniforms(self.tree_lean, self.eye) {
+            put(&v);
+        }
+        for v in shake_uniforms(self.block_shake, self.eye) {
             put(&v);
         }
         put(&self.far_uniform());
@@ -6835,7 +6870,7 @@ pub(crate) const FRAME_FLOATS: usize = 16
 
 /// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
 /// With the far trees' hand-over after them (`far_trees`, render/impostors.rs).
-pub(crate) const LEAN_FLOATS: usize = 4 * 4;
+pub(crate) const LEAN_FLOATS: usize = 7 * 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -7162,6 +7197,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_tree_lean(&mut self, lean: Option<crate::chop::TreeLean>) {
         Renderer::set_tree_lean(self, lean);
+    }
+    fn set_block_shake(&mut self, shake: Option<BlockShake>) {
+        Renderer::set_block_shake(self, shake);
     }
     fn set_day(&mut self, day: &DayState, seconds: f64) {
         Renderer::set_day(self, day, seconds);

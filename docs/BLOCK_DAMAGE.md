@@ -906,6 +906,11 @@ per-item wear list.
 - **Blocks not on the sheet** take the nearest sheet block's values, proposals for the owner: snowy grass as grass;
   red sand, moon dust and moon mare dust as sand; red dirt as dirt; red sandstone and basalt as stone; obsidian 20
   base; snowy leaves as leaves; build platform as planks; brush and saplings 1 fixed hit.
-- **Not done yet:** the shake itself (the flag is data; the client does not move the block yet); drops (owner: "We'll
-  need to go through drops separately likely").
+- **The shake** (`breaking.shake`: 0.3 s, 4 cm, 14 Hz): a hit short of breaking a `hit: "shake"` block scales its
+  cells (the struck one and the same block's straight above and below: a door's two) out on x and z in turn, never in
+  (owner: "as long as we don't get edge holes": a full block such as dynamite hides its neighbours' faces, so moving
+  it would open a gap; a face that only grows can't). The client (`crate::block_shake`) sets three frame vec4s and the
+  terrain vertex shader (`block_shake`) moves the vertices of the block's own faces, tested a hair inside along their
+  normal so a neighbour's face on the boundary stays; no remesh, no extra draw.
+- **Not done yet:** drops (owner: "We'll need to go through drops separately likely").
 
