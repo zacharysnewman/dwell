@@ -364,8 +364,10 @@ CU–LS and tall subjects (the skill: frame tall, slower horizontal moves). Dwel
 
 ### Validation checks vs Dwell
 - Done by tests: no jumps at joins (per-frame move/turn bounded), dolly zoom holds size, frame-rate independence.
-- Not available: subject-in-frame check, size ±15% check, **geometry clipping / 0.3 m clearance** (skill lessons:
-  close orbits on hills pass through terrain and trees), pan strobing check, "no linear easing" lint (`orbit`,
+- Done before every path shot records: **geometry clipping / 0.3 m clearance** (the clearance check, SKILL.md §0f,
+  THEATER_MODE.md §6.2: the eye sampled every 0.05 s against the world's solid blocks; a clip fails the shot unless
+  it sets `allowClipping`).
+- Not available: subject-in-frame check, size ±15% check, pan strobing check, "no linear easing" lint (`orbit`,
   `track`, `linear` default to linear), noise presence, hold-length lint, 180°/30° sequence checks.
 
 ### What the tools can't do yet (summary)

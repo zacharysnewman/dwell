@@ -60,6 +60,17 @@ pub struct Placement {
     /// `TerrainGenerator::erosion_at`'s margin above 0; 1: no matter). Sagebrush mostly on the
     /// floors (WORK_QUEUE item 15, 0.68: "tops read green under thick sagebrush").
     pub tops: f32,
+    /// Talus at cliff feet (0.69; owner, 2026-11-14: "Stone cliff regions should get rocks and
+    /// boulders at the base of cliffs"): above 0, the density falls from full at a rock wall's foot
+    /// to none this many m out (`TerrainGenerator::cliff_factor`); 0: walls don't matter.
+    pub cliff_reach: f32,
+    /// It may stand on a bed under water too, its cells replacing the water ("Including in the
+    /// water."); false: dry ground only.
+    pub wet: bool,
+    /// Its biomes' density read at a point moved up to this many m by a fine noise (0.69; owner,
+    /// 2026-11-14: "Bushes, shrubs, rocks, trees, should bleed into the edge of the neighboring
+    /// terrain"): its plants reach raggedly past a border, the neighbour's into its side; 0: none.
+    pub bleed: f32,
 }
 
 /// A swap of a placed structure's blocks by its anchor's height (m above sea level): none at
@@ -71,6 +82,10 @@ pub struct Variant {
     pub replace: &'static [(&'static str, &'static str)],
     pub from: i32,
     pub full: i32,
+    /// The variant also takes every structure standing on one of these blocks (by name; the snow
+    /// line's snow and snowy grass: 0.69; owner, 2026-11-14: "trees at snow level should use snow
+    /// leaves"), whatever its height.
+    pub on: &'static [&'static str],
 }
 
 mod table {
@@ -344,6 +359,45 @@ impl Planter {
     /// Whether it stands on ground block `b`.
     pub fn stands_on(&self, b: StateId) -> bool {
         self.on.contains(&b)
+            || (self.rule.wet && {
+                // Under water a bed's block takes its flooded state: by its name.
+                let n = dwell_blocks::info(b).name;
+                let n = n.split('[').next().unwrap_or(n);
+                self.rule.on.contains(&n)
+            })
+    }
+
+    /// Whether a candidate at (x, z) on ground `g` it doesn't take stands all the same by its
+    /// `bleed` (0.69): dry ground of its own (`on`) within `bleed` m in one of three hashed
+    /// directions, at a chance falling with that distance, so its plants reach raggedly past the
+    /// border onto the neighbour's ground.
+    fn bleeds(
+        &self,
+        gx: i32,
+        gz: i32,
+        (x, z): (i32, i32),
+        g: &Ground,
+        ground: &dyn Fn(i32, i32) -> Option<Ground>,
+    ) -> bool {
+        let reach = self.rule.bleed;
+        if reach <= 0.0 || !g.dry {
+            return false;
+        }
+        for k in 0..3 {
+            let a = unit(self.h(gx, gz, 20 + k)) * std::f32::consts::TAU;
+            let r = reach * (0.2 + 0.8 * unit(self.h(gx, gz, 30 + k)));
+            let (dx, dz) = ((r * a.cos()).round() as i32, (r * a.sin()).round() as i32);
+            if ground(x + dx, z + dz).is_some_and(|o| o.dry && self.stands_on(o.block)) {
+                let fall = 1.0 - r / reach;
+                return unit(self.h(gx, gz, 40)) < fall * fall;
+            }
+        }
+        false
+    }
+
+    /// Whether ground `g` takes it: dry (or a bed under water, if `wet`) and one of `on`.
+    fn takes(&self, g: &Ground) -> bool {
+        (g.dry || self.rule.wet) && self.stands_on(g.block)
     }
 
     /// Whether it can stand anywhere in this world.
@@ -448,7 +502,7 @@ impl Planter {
             return None;
         }
         let g = ground(x, z)?;
-        if !g.dry || !self.on.contains(&g.block) {
+        if !self.takes(&g) && !self.bleeds(gx, gz, (x, z), &g, ground) {
             return None;
         }
         if roll >= most * self.rise_factor(g.above_sea) {
@@ -477,7 +531,7 @@ impl Planter {
             shape: shape as u8,
             quarter_turns,
             priority: self.h(gx, gz, 5),
-            variant: self.variant_at(g.above_sea, self.h(gx, gz, 6)),
+            variant: self.variant_at(&g, self.h(gx, gz, 6)),
         };
         if !self.slope_ok(x, z, ground) {
             return None;
@@ -487,7 +541,7 @@ impl Planter {
             for cz in z0..=z1 {
                 for cx in x0..=x1 {
                     match ground(cx, cz) {
-                        Some(c) if c.dry && self.on.contains(&c.block) => {}
+                        Some(c) if self.takes(&c) => {}
                         _ => return None,
                     }
                 }
@@ -536,9 +590,18 @@ impl Planter {
 
     /// The variant (index + 1) a structure anchored `above_sea` m above sea level takes by its
     /// hash `h`: the first whose band takes it.
-    fn variant_at(&self, above_sea: i32, h: u32) -> u8 {
+    fn variant_at(&self, g: &Ground, h: u32) -> u8 {
+        let above_sea = g.above_sea;
         let roll = unit(h);
         for (i, v) in self.rule.variants.iter().enumerate() {
+            if !v.on.is_empty() {
+                let name = dwell_blocks::info(g.block).name;
+                let base = name.split('[').next().unwrap_or(name);
+                let base = base.strip_suffix("_ramp").unwrap_or(base);
+                if v.on.contains(&base) {
+                    return (i + 1) as u8;
+                }
+            }
             let share = if v.full <= v.from {
                 f32::from(u8::from(above_sea >= v.from))
             } else {
@@ -572,6 +635,23 @@ impl Planter {
     /// Whether any of its structures is a species tree (ADR 0079: they grow).
     pub fn grows(&self) -> bool {
         self.shapes.iter().any(|s| s.grown.is_some())
+    }
+
+    /// The far tree a tree is (its impostor): a species tree's (species index, seed, stage), or a
+    /// hand-built tree's (`impostor::structure_tree`'s index, its priority as the seed, stage 0;
+    /// BUGS.md #186); `None` for a structure that is no tree.
+    pub fn far_tree(&self, t: &Tree) -> Option<(u16, u32, u32)> {
+        let s = self.shapes.get(usize::from(t.shape))?;
+        s.grown.or_else(|| {
+            crate::impostor::structure_tree(s.structure.name).map(|k| (k, t.priority, 0))
+        })
+    }
+
+    /// Whether any of its structures is a tree with an impostor ([`Self::far_tree`]).
+    pub fn has_far_trees(&self) -> bool {
+        self.shapes.iter().any(|s| {
+            s.grown.is_some() || crate::impostor::structure_tree(s.structure.name).is_some()
+        })
     }
 
     /// A tree's stem (face-local): its bottom cell and the cells standing straight up from it
@@ -807,9 +887,17 @@ mod tests {
     fn the_data_resolves_by_name() {
         let p = Planter::resolve(&PLACEMENTS, 7, (0, 0));
         assert_eq!(p.len(), PLACEMENTS.len());
-        assert_eq!(p[0].reach(), 3, "the tall pine reaches 3 m from its trunk");
-        // In cells: the 9 m pine is 18 ½ m cells on the half-height grid, its top 17 over the anchor.
-        assert_eq!(p[0].rise(), 9 * dwell_world::rows_for_m(1.0) - 1);
+        // The pine groves stand the species pine (its tallest grown variant sets the bounds).
+        assert!(
+            p[0].reach() >= 3,
+            "the pines reach {} m from the trunk",
+            p[0].reach()
+        );
+        assert!(
+            p[0].rise() > 14 * dwell_world::rows_for_m(1.0),
+            "rise {}",
+            p[0].rise()
+        );
     }
 
     #[test]
@@ -835,6 +923,9 @@ mod tests {
             rotations: &[0, 1, 2, 3],
             variants: &[],
             tops: 1.0,
+            cliff_reach: 0.0,
+            wet: false,
+            bleed: 0.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let oak = crate::species::find("dwell:oak").unwrap();
@@ -880,6 +971,9 @@ mod tests {
             rotations: &[0],
             variants: &[],
             tops: 1.0,
+            cliff_reach: 0.0,
+            wet: false,
+            bleed: 0.0,
         };
         let p = Planter::resolve(&[rule], 3, (0, 0));
         let dirt = flat("dwell:dirt");

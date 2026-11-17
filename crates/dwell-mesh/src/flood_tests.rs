@@ -366,6 +366,15 @@ dwell_world::both_faces!(
                     && (z - s.z as f32 - 0.5).abs() <= reach as f32
             })
         };
+        // Nor is the ground under a tree's crown (since 0.71 a giant's crown, owner 2026-11-15,
+        // reaches metres over its trunk and shades it): its trees' boxes are left out too.
+        let trees = t.tree_tints((x0, z0), (x0 + 3 * N - 1, z0 + 3 * N - 1));
+        let shaded = |x: f32, z: f32| {
+            trees.iter().any(|tr| {
+                (tr.min[0] as f32 - 1.0..=tr.max[0] as f32 + 2.0).contains(&x)
+                    && (tr.min[2] as f32 - 1.0..=tr.max[2] as f32 + 2.0).contains(&z)
+            })
+        };
         let (mut checked, mut dark) = (0, 0);
         for dy in -1..=1 {
             let c = at(0, dy, 0);
@@ -388,7 +397,8 @@ dwell_world::both_faces!(
                         (c.x * N) as f32 + mesh.positions[i * 3],
                         (c.z * N) as f32 + mesh.positions[i * 3 + 2],
                     );
-                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf && !built(wx, wz) {
+                    if up > 0.2 && mesh.light[i] > 0.5 && !leaf && !built(wx, wz) && !shaded(wx, wz)
+                    {
                         checked += 1;
                         dark += usize::from(mesh.flood[i * 2] < 0.9);
                     }

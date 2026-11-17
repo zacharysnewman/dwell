@@ -115,6 +115,8 @@ const TOP_KEYS = [
   "underwater",
   "creatures",
   "brush",
+  "pickup",
+  "craft",
   "self",
   "sounds",
 ];
@@ -134,6 +136,7 @@ export const AMBIENCE_INPUTS = [
   "day",
   "fireM",
   "underwater",
+  "rush",
 ];
 /** The mixer's buses (AUDIO.md §3); the underwater filter names the ones it muffles. */
 export const BUSES = ["effects", "ambience", "ui", "music"];
@@ -477,7 +480,8 @@ function resolveSamples(sounds, dir, beds = {}) {
 /**
  * The ambient sounds' tunables (AUDIO.md §2): `fire` — burning light sources (a placed torch, one
  * in a hand) crackle within `radiusM`, the nearest `max`; `falls` — waterfalls rush within
- * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e). (No wind loop: removed, owner
+ * `radiusM`, the nearest `max`, at full level by their flow at `fullM3s` (docs/WATER_SURFACE_GRID.md §2e);
+ * `rush` — the grid's moving water heard from afar, and a flood's burst (its `$comment`, BUGS.md #176). (No wind loop: removed, owner
  * 2026-10-21; no night crickets: removed, owner 2026-10-28.)
  */
 /**
@@ -507,7 +511,7 @@ export function validateUnderwater(u) {
 }
 
 function validateAmbient(a) {
-  keysIn("ambient", a, ["fire", "falls"]);
+  keysIn("ambient", a, ["fire", "falls", "rush"]);
   keysIn("ambient.fire", a.fire, ["radiusM", "max"]);
   number("ambient.fire.radiusM", a.fire.radiusM, 1, 48);
   number("ambient.fire.max", a.fire.max, 0, 16, { integer: true });
@@ -515,6 +519,39 @@ function validateAmbient(a) {
   number("ambient.falls.radiusM", a.falls.radiusM, 1, 128);
   number("ambient.falls.max", a.falls.max, 0, 16, { integer: true });
   number("ambient.falls.fullM3s", a.falls.fullM3s, 0.01, 1000);
+  const r = a.rush;
+  keysIn("ambient.rush", r, [
+    "$comment",
+    "radiusM",
+    "strideColumns",
+    "minSpeedMs",
+    "nearM",
+    "fullFlux",
+    "fallWeight",
+    "panM",
+    "burst",
+  ]);
+  number("ambient.rush.radiusM", r.radiusM, 8, 256);
+  number("ambient.rush.strideColumns", r.strideColumns, 1, 16, { integer: true });
+  number("ambient.rush.minSpeedMs", r.minSpeedMs, 0.01, 10);
+  number("ambient.rush.nearM", r.nearM, 0.5, 128);
+  number("ambient.rush.fullFlux", r.fullFlux, 0.01, 1e6);
+  number("ambient.rush.fallWeight", r.fallWeight, 0, 100);
+  number("ambient.rush.panM", r.panM, 0.5, 16);
+  keysIn("ambient.rush.burst", r.burst, [
+    "windowS",
+    "minLevel",
+    "minShare",
+    "fullLevel",
+    "cooldownS",
+  ]);
+  number("ambient.rush.burst.windowS", r.burst.windowS, 0.25, 10);
+  number("ambient.rush.burst.minLevel", r.burst.minLevel, 0.01, 1);
+  number("ambient.rush.burst.minShare", r.burst.minShare, 0, 1);
+  number("ambient.rush.burst.fullLevel", r.burst.fullLevel, 0.01, 1);
+  if (r.burst.fullLevel < r.burst.minLevel)
+    fail("ambient.rush.burst.fullLevel", "must be at least minLevel");
+  number("ambient.rush.burst.cooldownS", r.burst.cooldownS, 0, 600);
   return a;
 }
 
@@ -542,6 +579,8 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     underwater: undefined,
     creatures: undefined,
     brush: undefined,
+    pickup: undefined,
+    craft: undefined,
     sounds: {},
   };
   const sorted = [...files].sort((a, b) =>
@@ -738,6 +777,28 @@ export function resolveSounds(files, samplesDir = SAMPLES_DIR) {
     out.brush = { everyM: b.everyM, minS: b.minS };
   }
   if (!out.brush) fail("brush", "missing (the foliage rustle's rate)");
+  // Picking up a ground item (owner, 2026-11-14; AUDIO.md §2d): one pop, a burst rate-limited.
+  for (const file of sorted) {
+    const p = file.pickup;
+    if (p === undefined) continue;
+    if (out.pickup) fail("pickup", "given twice");
+    keysIn("pickup", p, ["$comment", "windowS", "reachM", "minS"]);
+    number("pickup.windowS", p.windowS, 0.01, 5);
+    number("pickup.reachM", p.reachM, 0.1, 32);
+    number("pickup.minS", p.minS, 0, 5);
+    out.pickup = { windowS: p.windowS, reachM: p.reachM, minS: p.minS };
+  }
+  if (!out.pickup) fail("pickup", "missing (the pickup sound's window and rate)");
+  // Making an item with Combine (owner, 2026-11-15): once per press the server answers with a change.
+  for (const file of sorted) {
+    const c = file.craft;
+    if (c === undefined) continue;
+    if (out.craft) fail("craft", "given twice");
+    keysIn("craft", c, ["$comment", "windowS"]);
+    number("craft.windowS", c.windowS, 0.05, 10);
+    out.craft = { windowS: c.windowS };
+  }
+  if (!out.craft) fail("craft", "missing (the craft sound's window)");
   if (!out.fallback || !(out.fallback in out.sets))
     fail("fallback", `unknown set "${out.fallback}"`);
   // A loop's start plays loop sounds, every other event one-shots; the fallback set has every

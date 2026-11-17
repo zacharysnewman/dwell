@@ -1,5 +1,5 @@
 {
-  "$comment": "Cinematic takes (docs/THEATER_MODE.md §6.1; owner 2026-11-14: \"take more time to render it so it looks at its prettiest? Without seeing LODs load in, physics stutters\"). Read and validated by client/src/theater/cinematic.ts; the record skill's `render: \"cinematic\"` shots use it (a shot's `cinematic` object overrides any field). fps: the take's frame rate; the game (the local world's ticks, the client's clock, the camera path, the sound) moves exactly 1/fps per captured frame. subframes: frames rendered and averaged per captured frame (motion blur; 1 = none), each 1/(fps×subframes) of game time. supersample: the canvas is drawn at this multiple of the output size and scaled down. settle: before each captured frame, wait until the view is loaded (at most maxWaiting LOD sections waiting in view, the chunks meshed) on at least minFrames drawn frames, at most capMs (firstCapMs for frame 0); a frame that hits the cap is captured anyway and reported. preroll: before the take, fly the path once, uncaptured and with the world held, stepping stepS of path time and settling each step (at most capMs a step) so the view streams and meshes everything it will see. quality: the view settings applied for the take (__dwell.setView's names) and the shadows tier; the LOD's pixelError counts canvas pixels, so at supersample 2 a pixelError of 6 is Ultra's 3 px of the output (at 1 the LOD wanted 60 000 sections for a forest fly-over and never settled; at 4 its cache passed 3.5 GB and a take's page crashed). audio: the sound stepped with the frames (leadS: how far ahead of the context's clock sounds are scheduled, so a step that overshoots is never late).",
+  "$comment": "Cinematic takes (docs/THEATER_MODE.md §6.1; owner 2026-11-14: \"take more time to render it so it looks at its prettiest? Without seeing LODs load in, physics stutters\"). Read and validated by client/src/theater/cinematic.ts; the record skill's `render: \"cinematic\"` shots use it (a shot's `cinematic` object overrides any field). fps: the take's frame rate; the game (the local world's ticks, the client's clock, the camera path, the sound) moves exactly 1/fps per captured frame. subframes: frames rendered and averaged per captured frame (motion blur; 1 = none), each 1/(fps×subframes) of game time. supersample: the canvas is drawn at this multiple of the output size and scaled down. settle: before each captured frame, wait until the view is loaded (at most maxWaiting LOD sections waiting in view, the chunks meshed) on at least minFrames drawn frames, at most capMs (firstCapMs for frame 0); a frame that hits the cap is captured anyway and reported. preroll: before the take, fly the path once, uncaptured and with the world held, stepping stepS of path time and settling each step (at most capMs a step) so the view streams and meshes everything it will see. quality: the view settings applied for the take (__dwell.setView's names) and the shadows tier; the LOD's pixelError counts canvas pixels, so at supersample 2 a pixelError of 6 is Ultra's 3 px of the output (at 1 the LOD wanted 60 000 sections for a forest fly-over and never settled; at 4 its cache passed 3.5 GB and a take's page crashed). clearance (§6.2; owner 2026-11-14: \"That flyover video goes straight through a wall … that shouldn't be included in most recordings\"): every take's camera path is sampled every stepS of take time and each eye probed against the loaded world's solid blocks within radiusM (during a cinematic take's pre-roll; a real-time take's quick pass flies the path in passStepS steps, waiting at most capMs a step for the chunks); a path through solid ground fails the take with the times, positions and the lift that clears it (probed in liftStepM steps up to liftMaxM), unless the shot sets allowClipping. audio: the sound stepped with the frames (leadS: how far ahead of the context's clock sounds are scheduled; a step that overshoots past it moves the sound's timeline on, so a sound is never late).",
   "formatVersion": 1,
   "fps": 30,
   "subframes": 1,
@@ -24,6 +24,14 @@
       "speedEffects": false,
       "targetOutline": false
     }
+  },
+  "clearance": {
+    "radiusM": 0.3,
+    "stepS": 0.05,
+    "passStepS": 1,
+    "capMs": 3000,
+    "liftStepM": 0.5,
+    "liftMaxM": 30
   },
   "audio": { "on": true, "leadS": 0.05 },
   "image": "image/png"

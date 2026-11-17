@@ -73,7 +73,7 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   2.5), rounded up; else `default`. A block without `damage` breaks in one hit, as before.
   Prototype values: stone and its ramp `{ default: null, pickaxe: 7 }` (stone pickaxe 5, metal 3, by
   hand or another tool: can't); dirt, grass, snowy grass, sand and their ramps `{ default: 11, shovel: 7 }`
-  (shovel 5, metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
+  (shovel 5 — the stone shovel; the wooden shovel, the `wood` tier since 2026-11-14, 6 — metal 3, by hand or another tool 11). Logs: *superseded by §12* (they take damage
   like the others since WORK_QUEUE item 51).
 - **Generator and validation:** `shared/tools/gen.mjs` reads every block's `damage` (as it does
   `breakWith`), emits `BLOCK_DAMAGE` into `dwell_protocol::chopping`'s table and `client/src/ui/tools.gen.ts`,
@@ -89,11 +89,10 @@ D3 (tuning) to come. The owner's direction and answers are §1; §2 was the prop
   refused, so a predicted break gives way. The hit that reaches the count breaks it. A block that
   can't be broken so (stone by hand) is refused. Each hit costs one edit credit (the same rate limit,
   10 a second). Same in creative and adventure (owner).
-- **Drops** (where blocks are not unlimited): of the block's certain drops (rules with chance 1 and one
-  item, at their least count; a block without `drops` drops itself), half (rounded down) is spread over
-  the hits before the last (`hit_share`: hit k of n gives ⌊k·h/(n−1)⌋ − ⌊(k−1)·h/(n−1)⌋), the rest and
-  every chance drop on the destroy (`destroy_share`), so the hits and the destroy total the block's
-  drops exactly. Today's blocks drop one item, so a hit drops nothing yet: the per-hit drops show once a
+- **Drops** (where blocks are not unlimited): every drop falls on the destroy (`destroy_share`; a hit
+  drops none, `hit_share` 0: owner, 2026-11-15, "4 chunks drop at the end not as you chop"; until then
+  half the certain drops were spread over the hits before the last). A ½ m cell of stone, dirt, grass,
+  sand or log drops 4 pieces of its material (8 before 2026-11-15), and 4 pieces make the block again. Today's blocks drop one item, so a hit drops nothing yet: the per-hit drops show once a
   block drops more (D3 tuning, the owner's call).
 - **Client:** a Break the data (and the mode, §7) says takes one hit is predicted at once as before; one that takes more
   is not predicted (the server's hits so far aren't the client's), and its last hit shows when the
@@ -597,6 +596,19 @@ added. Built, as data:
   name, the metal tools' 64).
 - **Not done:** no browser check (cloud session, no GPU): the bigger marks in game are for the owner's look.
 
+## 9a. Healing (owner, 2026-11-15) **[built]**
+
+"We should probably have them heal over time whether you're there or not (like via accumulated time)";
+"blocks healing should happen on a delay (like 10s) before it starts. And the last 3 blocks you hit
+shouldn't heal. So you'd have hit a 4th block for the 1st block to start healing. Each player gets their
+own last 3 blocks." Data: `breaking.heal` in shared/tools/tools.json (`delayS` 10, `fullS` 30, `keepLast`
+3; `dwell_protocol::chopping::HEAL`). The server (`server/healing.rs`) keeps each damaged cell's heal
+clock (s of its ticks) and each player's last `keepLast` cells hit: a cell among some player's last ones
+waits; out of them (a player hits another block, or leaves), from `delayS` after, a hit heals every
+`fullS / need`, its record gone once whole, loaded chunk or not. Clients hear each hit healed (their
+damage view's fraction falls, the mask shrinks) and the cell made whole. Saves are unchanged: a loaded
+world's damage has no clock, and heals from the load.
+
 ## 10. The bite rule: one volume per hit (WORK_QUEUE item 18)
 
 Owner, 2026-11-12: **"the chunks that fly off and show chunked off the blocks should be equivalent to 50% of
@@ -685,6 +697,9 @@ client's sound and chips landed on it `contactS` later.
 
 ## 12. The axe like the other tools (WORK_QUEUE item 51)
 
+**Superseded by §14 (2026-11-15):** the axe is a break tool; its hits are block edits, a damaged log keeps
+its octagon and shows cracks (no bites), and the server cuts no wood. What follows is the step between.
+
 Owner, 2026-11-12: "Also the axe doesn't behave like the other tools. I think it should." Answer to how:
 **"Like the others, felling on top"**: logs take block damage like stone or dirt, and breaking a trunk's log
 fells the tree above as a body, as before.
@@ -750,3 +765,115 @@ Owner, 2026-11-13: "You should also be able to hold 'punch' to dig with your han
   landed); `dwell-client` `game_local` `a_held_punch_digs_dirt_at_the_hands_rate_and_stops_when_let_go`
   (the controller's hold: 4 punches in 3 × `repeatS`, none after the release, the dirt broken after its hand
   hits, none refused; red on the old client); `held_use.rs`; `shared/tools/gen.test.mjs`.
+
+## 14. The axe is a break tool, as the pickaxe and the shovel (WORK_QUEUE item 26)
+
+**The look superseded by §15 (2026-11-15):** a damaged log loses chunks by its damage mask, not cracks alone.
+
+Owner, 2026-11-14: **"Let's simplify the axe to be like the shovel and pick, without the multiple modes."**
+2026-11-15, after the first half (one mode, #954): **"Did you change the axe (or fix deploys for changes to
+it) since 10:40? It does not have the same behavior as the other tools."** → **"That's how it was, it was
+different from the other tools"**. Asked what the tree above should do when you break through a trunk:
+**"Tree still falls (Recommended)"**.
+
+§12 had the log take block damage, but the axe still swung as a chopping tool: its own swing and camera, its
+arc swept through the leaves (cleared) to the wood, a stamina cost, the server's `chop_hit`, and the hits
+drawn as the axe's head-sized V bites (`cut_of_marks`). Now it is a break tool and nothing else:
+
+- **Data:** the axes are no longer in `shared/tools/tools.json` `tools` (the swung tools are the weapons,
+  the sword); their `breaking.tools` entries carry the pickaxe's `contactS` (0.26 s), `repeatOnHold` and
+  `repeatS` (0.5 s) and a break `clip` (the stone axe the stone pickaxe's, the metal axe the metal pickaxe's:
+  their heads sit alike; the clip_probe tests pin every break tool's head on the crosshair at contact).
+  `hints.axe` is gone (the axe has no swing hint, as the pickaxe). A block's `breakWith` names a break tool
+  class (`breaking.classes`: the log's `axe`), met by a break tool of that class in hand.
+- **The hit:** a Break with the axe is a block edit (`BlockEditRequest`), landing at its contact, as a
+  pickaxe's: the log's hits to break by the axe's tier (stone 10, metal 5; a tool keeps its hits in
+  creative), a mark each, one wear, its share of the 8 wood; the last breaks the whole log (its drops' rest)
+  and what it held up falls as after any break (FELLING.md: a standing trunk above as one body, tipped away
+  from the nearest player, with the `fell` crack). Leaves are broken as by any tool (one hit), not cleared by
+  an arc; no stamina.
+- **The look:** the log's `damage.look` (`kind: chips`, the `wood` crack set at 0.15/0.4/0.65/0.85, strength
+  0.85) and its `chips`. An octagonal log is not a cube, so §6.2's carve does not apply: a damaged log is drawn
+  as its whole octagon with the cracks over every face drawn (`octagon_voxel`, each face's layer centred on
+  its hit or the nearest), and the chips fly per hit. No bites, no notch.
+- **Retired:** the server cuts no wood (`server/chopping.rs` keeps the weapons, `Held` and the hellos);
+  an older save's `cuts` record is ignored (neither read nor written); `ChopAction::Hello` and `BitesHello`
+  are answered with an empty `Cuts`; the chopping prototype's server switch (`ServerConfig::chop2`) is gone.
+  An older client on the line still swings the axe: its `Swing`/`Sweep` lands as one block-damage hit on
+  what its aim meets (a straight ray, at most one per `repeatS`). The client still draws an older server's
+  cuts (`carved_voxel`); the generator keeps the chopping vocabulary, tested on the old axes'
+  data (`shared/tools/fixtures/chop_axes.json`, `chopping::fixture::older_axe`).
+- **Compatibility:** no new line. The registry, the world format and the wire are unchanged; an older
+  client's axe swing still lands (as damage).
+- **Tests:** `dwell-sim` `chopping` (`the_axe_is_a_break_tool_as_the_pickaxe_and_swings_no_more`,
+  `an_axe_hit_on_a_log_counts_its_hits_as_a_pickaxe_on_stone`, `the_log_breaks_whole_at_its_count_and_drops_its_wood`,
+  `breaking_the_bottom_log_of_a_tree_fells_it`, `an_older_clients_axe_swing_lands_as_one_block_damage_hit`
+  (both faces), `an_older_saves_cuts_are_ignored`); `dwell-client` `game_local`
+  `the_axe_hits_a_log_as_the_pickaxe_hits_stone`; `dwell-mesh`
+  `a_damaged_log_keeps_its_whole_octagon_and_cracks_by_its_damage` (both faces); `shared/tools/gen.test.mjs`.
+  Red on the old build: the break-tool data, the older save's cut sent, the older client's swing, the
+  client's axe a swung tool, the log carved by bites.
+
+## 15. Damage as a 3D bit mask, on any shape (WORK_QUEUE item 26, BUGS.md #185)
+
+Owner, 2026-11-15, after the axe clip: "I don't see any chunks disappearing from the log from mesh deformation in that
+axe chopping video." → **"We can update damage to be more of a 3D bit mask, which should work on any object shape."**
+§6.2's carve was a height field pushed into each struck cube face, and §6.5's into a ramp's polygons; an octagonal log
+was neither, so §14 gave it cracks only. One mechanism now replaces both carves (`dwell-mesh` `mesher/damage_mask.rs`):
+
+- **The mask:** a damaged cell's removed material is a bit mask over a sub-grid of the cell, the look's `grid` cells per
+  metre on each axis (data; 8 by default: 8 × 4 × 8 in the 1 × ½ × 1 m cell; stone's 12: 12 × 6 × 12). Each sub-cell
+  is ranked by its cost from the cell's marks: its distance from the struck point, inward along the struck face's
+  normal and across it, the across scaled by the look's `size` over its `depth` (wider than deep for stone's flakes),
+  shaped by its `profile` (`bowl`: round, a little rough; `facets`: an L2/L∞ blend, rough in two-sub-cell blocks;
+  `spall`: flattened and elongated along a turn of each mark's own, rougher), each mark weighed by its piece
+  (`HitMark::chunk`). The cheapest are removed until the bite rule's volume is gone (§10: the fraction × ½ × the
+  shape's **own** volume, measured over the sub-grid: a cube's ½ m³, a ramp's half, an octagon's 0.83 of the cell),
+  counting only the share of each sub-cell inside the shape. So the mask grows only as the damage does, and the
+  same cell and view always give the same mask.
+- **No new state:** the mask is a function of the damage view the server already keeps, saves and sends (the
+  fraction and up to four marks, each its struck face and point). The world format, the wire and the registry are
+  unchanged; no new compatibility line, and an older client on the line draws its own look.
+- **The mesh:** the block's own shape, convex, as a hull of half-spaces (the cube; a shaped block's polygons from
+  `dwell_blocks::shape::faces_of`, a ramp or any ½ m piece; an octagonal log's prism from `octagon::outline_width`,
+  cut by its shape for a wood ramp) intersected with what the mask keeps: each of the shape's visible faces split
+  along the sub-grid only where removed sub-cells are near (a k-d split over a summed-volume table, so an untouched
+  face stays one polygon) and the removed sub-cells' parts dropped; and the walls between kept and removed sub-cells,
+  merged into rectangles, clipped to the hull. A damaged cube leaves the greedy merge on every face (its faces keep
+  their corner light, bilinear over the pieces); a ramp's and a log's faces keep their own lighting per point. The
+  walls take the block's inside tile (its end along its axis: dirt under grass, a log's end grain), the struck
+  faces' light, darker and more occluded the deeper they lie (`darken`), stone's spall lifted toward the look's
+  `color`; every face drawn, walls too, carries the crack overlay (§6.3).
+- **A non-convex shape** would be clipped to its convex hull (none is damaged today: the stored ramps are convex).
+- **Retired:** the height-field carves (`damage_mesh::carve_*`, `mesher/ramp_damage.rs`) and their tests. The look's
+  `triangles` is now the budget the perf test holds the mask to; `facets` and `flakes` are unread by the mask.
+- **Cost:** 50 damaged stone and dirt cells (one to four struck faces each) add 331 triangles a cell (512 budget) and
+  mesh in 14 ms against 5.4 ms undamaged (debug-optimised test build).
+- **Tests** (`dwell-mesh` `mesher/damage_mask_tests.rs`): `the_mask_grows_by_stage` (each stage a superset, half the
+  cell at the break, every profile), `the_first_chunks_come_off_the_struck_face_round_the_point`,
+  `a_damaged_octagon_log_loses_volume_by_stage` (both faces; the closed mesh's volume, the bite rule's share within
+  2 %; red with the log drawn whole, as before), `a_cubes_and_a_ramps_damage_takes_the_bite_rules_volume` (both faces:
+  stone and dirt k bites after k, inside the cell; the dirt ramp half its own at the break),
+  `a_fixture_shape_gets_damage_by_data_alone` (a wedge given as polygons and a fixture look),
+  `meshing_fifty_damaged_cells_stays_within_budget`; `damage_mesh`'s crack tests (walls looking down are cracked
+  too).
+
+## 16. A felled tree falls toward its cut side (WORK_QUEUE item 26)
+
+Owner, 2026-11-15: "Trees should get the force applied to them like it used to be so they fall again, towards the side
+with the least structure (post 3D bit mask change)." Corrected: **"my description only had to do with the contents of
+the block you're breaking on break, than the surrounding terrain, essentially following the realistic falling toward
+the broken side of the tree."** So the direction comes from the broken log alone, never from the terrain or the
+neighbouring support (the support rule is unchanged).
+
+- **The side:** `dwell_protocol::damage::cut_side(marks)`: the level direction its hits took the most from, as its mask
+  (§15) removes round them: each mark's struck side's outward normal plus where on the cell it struck, weighed by its
+  piece; level axes only, so the same on both faces. None without marks or when they balance.
+- **The push:** the hit that breaks a damaged block records its side; what the edit lets go of falls tipped toward it
+  (`Server::fell_tipped` with a point far past the opposite side) at `felling.json` `cutTip` (1.5) of the topple spin
+  and tip speed, about its foot as before (FELLING.md §3). A break without damage (a one-hit break) is tipped away from
+  the nearest player as before.
+- **Tests:** `dwell-protocol` `the_cut_side_is_where_the_hits_took_the_most`; `dwell-sim` `chopping`
+  `a_tree_falls_toward_the_side_its_bottom_log_was_cut_from` (both faces: cut from +x it falls to +x, from +z to +z,
+  the cutter standing on that side; red on the old rule, which tipped it away from the cutter: lean −0.22 x, −0.84 z),
+  `breaking_the_bottom_log_of_a_tree_fells_it` (now toward the −x side cut).

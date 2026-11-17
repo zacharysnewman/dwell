@@ -1,22 +1,23 @@
 //! The server's side of tall grass growing and spreading (ADR 0075 T3c, docs/ECOLOGY.md §10): every
-//! few seconds of the tick, each loaded chunk that hasn't grown up to today's whole world day grows
+//! tick a couple of the loaded chunks that hasn't grown up to today's whole world day grows
 //! the days it missed (at most the data's `catchUpDays`: on its first load since day 0, after an
 //! idle stretch), by `dwell_worldgen::grass::Rule::grow_chunk` over the face terrain's envelope. The
 //! writes go out as one modification. The world's switch and each grown chunk's last day are saved
 //! in an optional `grass_growth` table that older builds ignore.
 
 use super::{Server, TickChanges};
-use dwell_protocol::{SIM_HZ, VoxelModificationReason};
+use dwell_protocol::VoxelModificationReason;
 use dwell_world::{ChunkCoord, Face, FaceFrame, VoxelWorld, chunk_of};
 use dwell_worldgen::bifacial::BifacialTerrain;
 use dwell_worldgen::grass::{Cells, Envelope, TerrainEnvelope};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-/// How often the grass step runs (s of the tick).
-const EVERY_S: u32 = 5;
-/// The most chunks grown per step (the rest on the next).
-const CHUNKS_PER_STEP: usize = 64;
+/// The most chunks grown a tick (the rest on the next ticks): a few every tick, not 64 every
+/// 5 s, whose tick and re-meshing stalled the game (BUGS.md #194). 60 chunks a second.
+const CHUNKS_PER_TICK: usize = 1;
+/// The chunks behind today looked at a tick for one ready to grow.
+const CANDIDATES_PER_TICK: usize = 8;
 /// The saved form's version.
 const VERSION: u8 = 1;
 
@@ -86,21 +87,41 @@ impl Grass {
 /// The world's cells for the step: loaded chunks only, generated cells regenerated for edited chunks.
 struct WorldCells<'a> {
     world: &'a mut VoxelWorld,
+    /// Edited chunks as generated (the jobs' copies), read before regenerating one here.
+    pristine: &'a dwell_world::hash::HashMap<ChunkCoord, Box<dwell_world::Chunk>>,
     cache: dwell_world::hash::HashMap<ChunkCoord, Box<dwell_world::Chunk>>,
+    /// The chunks read, copied once each (a chunk's 32³ cells read one by one through the world
+    /// cost ~5 ms: priority 0); `None` for one not loaded.
+    copies: std::cell::RefCell<dwell_world::hash::HashMap<ChunkCoord, Option<Box<[u16]>>>>,
 }
 
 impl Cells for WorldCells<'_> {
     fn now(&self, c: [i32; 3]) -> Option<u16> {
-        self.world
-            .find(chunk_of(c[0], c[1], c[2]))
-            .is_some()
-            .then(|| self.world.get_voxel_if_loaded(c))
+        let k = chunk_of(c[0], c[1], c[2]);
+        let mut copies = self.copies.borrow_mut();
+        let v = copies.entry(k).or_insert_with(|| {
+            self.world
+                .find(k)
+                .map(|ch| ch.voxels().to_vec().into_boxed_slice())
+        });
+        let v = v.as_ref()?;
+        let s = dwell_world::CHUNK_SIZE;
+        Some(v[dwell_world::local_index(c[0] - k.x * s, c[1] - k.y * s, c[2] - k.z * s)])
     }
     fn generated(&mut self, c: [i32; 3]) -> Option<u16> {
-        self.world
-            .find(chunk_of(c[0], c[1], c[2]))
-            .is_some()
-            .then(|| self.world.generated_voxel(c, &mut self.cache))
+        let k = chunk_of(c[0], c[1], c[2]);
+        let chunk = self.world.find(k)?;
+        if chunk.revision() == 0 {
+            return Some(self.world.get_voxel_if_loaded(c));
+        }
+        if let Some(p) = self.pristine.get(&k) {
+            return Some(p.get(
+                c[0] - k.x * dwell_world::CHUNK_SIZE,
+                c[1] - k.y * dwell_world::CHUNK_SIZE,
+                c[2] - k.z * dwell_world::CHUNK_SIZE,
+            ));
+        }
+        Some(self.world.generated_voxel(c, &mut self.cache))
     }
 }
 
@@ -127,6 +148,17 @@ impl Server {
     /// The grass growth (tests, tools).
     pub fn grass(&self) -> &Grass {
         &self.grass
+    }
+
+    /// The chunk the tick's grass step is part way through and its next quarter (tests, tools).
+    pub fn grass_in_hand(&self) -> Option<(ChunkCoord, u8)> {
+        self.grass_part
+    }
+
+    /// How many chunks the grass step has regenerated to read them as generated (tests, tools:
+    /// none on the tick, BUGS.md #194).
+    pub fn grass_regenerated(&self) -> usize {
+        self.grass_regenerated
     }
 
     /// Tests, tools: the envelope in place of the terrain's, and the switch.
@@ -176,16 +208,69 @@ impl Server {
         t
     }
 
-    /// The grass step (every `EVERY_S` s).
+    /// The grass step, every tick: an edited chunk waits for its pristine copy.
     pub(super) fn grow_grass(&mut self) {
-        if !self.tick.is_multiple_of(EVERY_S * SIM_HZ) {
-            return;
-        }
-        self.grow_grass_now();
+        self.grass_step(true);
     }
 
-    /// The grass step now: up to `CHUNKS_PER_STEP` loaded chunks behind today grow their days.
+    /// The grass step now (tests, tools): up to `CHUNKS_PER_TICK` loaded chunks behind today grow
+    /// their days, an edited one regenerated here if its pristine copy isn't at hand.
     pub fn grow_grass_now(&mut self) {
+        self.grass_step(false);
+    }
+
+    /// Chunk `c`'s and the ones under and over it that are edited without a pristine copy (the
+    /// step would regenerate them to read them as generated).
+    fn grass_missing(&self, c: ChunkCoord) -> Vec<ChunkCoord> {
+        Self::grass_chunks(c)
+            .into_iter()
+            .filter(|k| {
+                self.world.find(*k).is_some_and(|ch| ch.revision() > 0)
+                    && !self.pristine.contains_key(k)
+            })
+            .collect()
+    }
+
+    fn grass_chunks(c: ChunkCoord) -> [ChunkCoord; 3] {
+        let f = FaceFrame::at_chunk_y(c.y);
+        let l = f.chunk(c);
+        [
+            c,
+            f.chunk(ChunkCoord::new(l.x, l.y - 1, l.z)),
+            f.chunk(ChunkCoord::new(l.x, l.y + 1, l.z)),
+        ]
+    }
+
+    /// Before a chunk's first quarter: its and its neighbours' cells kept as their generated ones
+    /// where unedited (a copy), so the later quarters read them so after its own grass edits them
+    /// (BUGS.md #194: they regenerated the chunk, 3–12 ms natively a quarter).
+    fn keep_unedited_as_pristine(&mut self, c: ChunkCoord) {
+        // Room for all three first, the chunk's own kept: a clear dropped the copy that let it be
+        // picked, and its first quarter regenerated it.
+        let mine = Self::grass_chunks(c);
+        if self.pristine.len() + 3 > super::PRISTINE_KEPT {
+            self.pristine.retain(|k, _| mine.contains(k));
+        }
+        for k in mine {
+            if let Some(ch) = self.world.find(k)
+                && ch.revision() == 0
+                && !self.pristine.contains_key(&k)
+            {
+                let copy = Box::new(ch.clone());
+                self.pristine.insert(k, copy);
+            }
+        }
+    }
+
+    fn want_pristine(&mut self, missing: Vec<ChunkCoord>) {
+        for k in missing {
+            if !self.pristine_wanted.contains(&k) && self.pristine_wanted.len() < 32 {
+                self.pristine_wanted.push(k);
+            }
+        }
+    }
+
+    fn grass_step(&mut self, wait: bool) {
         if !self.grass.enabled {
             return;
         }
@@ -199,22 +284,54 @@ impl Server {
             None
         };
         let today = self.world_days().floor().max(0.0) as u32;
-        let rule = &self.grass_rule;
-        let behind: Vec<ChunkCoord> = self
+        // A chunk grows once its own and the ones under and over it, where edited, are at hand as generated
+        // (the jobs' pristine copies): never regenerated on the tick (priority 0, BUGS.md #194).
+        let candidates: Vec<ChunkCoord> = self
             .world
             .chunks()
             .map(|(c, _)| *c)
             .filter(|c| self.grass.days.get(c).copied().unwrap_or(0) < today)
-            .take(CHUNKS_PER_STEP)
+            .take(CANDIDATES_PER_TICK)
             .collect();
+        // On the tick a chunk grows a quarter of its columns a tick (`grow_chunk_part`), the one in
+        // hand first; its day once the fourth is done.
+        let mut behind: Vec<(ChunkCoord, Option<u8>)> = Vec::new();
+        let in_hand = wait.then_some(self.grass_part).flatten();
+        if let Some((c, k)) = in_hand {
+            // Part way through: on once its chunks still read as generated without regenerating
+            // (else it waits for their pristine copies).
+            let missing = self.grass_missing(c);
+            if missing.is_empty() {
+                behind.push((c, Some(k)));
+            } else {
+                self.want_pristine(missing);
+            }
+        }
+        for c in candidates.into_iter().filter(|_| in_hand.is_none()) {
+            let missing = self.grass_missing(c);
+            if missing.is_empty() || !wait {
+                if behind.len() < CHUNKS_PER_TICK {
+                    if wait {
+                        self.keep_unedited_as_pristine(c);
+                    }
+                    behind.push((c, wait.then_some(0)));
+                }
+            } else {
+                self.want_pristine(missing);
+            }
+        }
+        let rule = &self.grass_rule;
         let mut changes = TickChanges::default();
         let mut writes = Vec::new();
+        let regenerated;
         {
             let mut cells = WorldCells {
                 world: &mut self.world,
+                pristine: &self.pristine,
                 cache: Default::default(),
+                copies: Default::default(),
             };
-            for c in behind {
+            for (c, part) in behind.iter().copied() {
                 let last = self.grass.days.get(&c).copied().unwrap_or(0);
                 let (first, days) = rule.catch_up(last, today);
                 let f = FaceFrame::at_chunk_y(c.y);
@@ -222,24 +339,40 @@ impl Server {
                     (Some(e), _) => {
                         let face = f.face;
                         let e = |x: i32, z: i32| e(face, x, z);
-                        rule.grow_chunk(f, c, first, days, &e, &mut cells)
+                        rule.grow_chunk_part(f, c, part, first, days, &e, &mut cells)
                     }
                     (None, Some(t)) => {
                         let e = TerrainEnvelope {
                             terrain: t.local(f.face),
                             decoration: rule.data.decoration,
                         };
-                        rule.grow_chunk(f, c, first, days, &e as &dyn Envelope, &mut cells)
+                        rule.grow_chunk_part(
+                            f,
+                            c,
+                            part,
+                            first,
+                            days,
+                            &e as &dyn Envelope,
+                            &mut cells,
+                        )
                     }
                     (None, None) => Vec::new(),
                 };
                 writes.extend(w);
-                self.grass.days.insert(c, today);
+                match part {
+                    Some(k) if k < 3 => self.grass_part = Some((c, k + 1)),
+                    _ => {
+                        self.grass_part = None;
+                        self.grass.days.insert(c, today);
+                    }
+                }
             }
+            regenerated = cells.cache.len();
         }
         for (cell, s) in writes {
             changes.set(&mut self.world, cell, s);
         }
+        self.grass_regenerated += regenerated;
         if !changes.chunks.is_empty() {
             self.broadcast_changes(changes, VoxelModificationReason::Rebake);
         }

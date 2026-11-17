@@ -42,6 +42,8 @@ export class LoopbackTransport implements Transport {
   heapBytes = 0;
   /** The local server's figures, as the worker last reported them (every second). */
   serverStats: ServerStats | null = null;
+  /** The last few minutes of the server's per-second figures, oldest first (the bench's record). */
+  serverHistory: ServerStats[] = [];
   /** The local server's last second: its ticks, and their mean time (ms; null before a tick). */
   serverTicks: number | null = null;
   serverTickMs: number | null = null;
@@ -56,6 +58,8 @@ export class LoopbackTransport implements Transport {
   private readonly reports: ((report: string | null) => void)[] = [];
   private readonly mapFinds: ((result: string | null) => void)[] = [];
   private readonly lavaAnswers: ((result: string | null) => void)[] = [];
+  private readonly sceneAnswers: ((result: string | null) => void)[] = [];
+  private readonly clearances: ((result: number[] | null) => void)[] = [];
   private readonly steps: ((tick: number | null) => void)[] = [];
 
   private constructor(private readonly worker: Worker) {
@@ -172,6 +176,33 @@ export class LoopbackTransport implements Transport {
     });
   }
 
+  /**
+   * The camera clearance check against the local world (THEATER_MODE.md §6.2, local.rs
+   * `camera_clearance`, its chunks generated as needed): per eye of `eyes` (`[x, y, z, …]`) its code
+   * (1 solid, 0 clear), then each eye's lift (m, NaN unless solid and cleared); null once closed.
+   */
+  cameraClearance(
+    eyes: number[],
+    radiusM: number,
+    liftStepM: number,
+    liftMaxM: number,
+  ): Promise<number[] | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.clearances.push(resolve);
+      this.post({ t: 'cameraClearance', eyes, radiusM, liftStepM, liftMaxM });
+    });
+  }
+
+  /** The scenes' dev tools (local.rs `scene_dev`; JSON); null once the transport is closed. */
+  sceneDev(op: string, text: string): Promise<string | null> {
+    if (this.closed) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.sceneAnswers.push(resolve);
+      this.post({ t: 'sceneDev', op, text });
+    });
+  }
+
   /** The lava's dev tools (local.rs `lava_dev`; JSON); null once the transport is closed. */
   lavaDev(op: string, args: number[]): Promise<string | null> {
     if (this.closed) return Promise.resolve(null);
@@ -256,6 +287,8 @@ export class LoopbackTransport implements Transport {
     for (const resolve of this.reports.splice(0)) resolve(null);
     for (const resolve of this.mapFinds.splice(0)) resolve(null);
     for (const resolve of this.lavaAnswers.splice(0)) resolve(null);
+    for (const resolve of this.sceneAnswers.splice(0)) resolve(null);
+    for (const resolve of this.clearances.splice(0)) resolve(null);
     for (const resolve of this.steps.splice(0)) resolve(null);
     for (const resolve of this.modeWaits.splice(0)) resolve(this.mode);
     for (const resolve of this.retuneWaits.splice(0)) resolve({ maps: [], error: message });
@@ -300,6 +333,12 @@ export class LoopbackTransport implements Transport {
       case 'lavaDev':
         this.lavaAnswers.shift()?.(msg.result);
         break;
+      case 'sceneDev':
+        this.sceneAnswers.shift()?.(msg.result);
+        break;
+      case 'cameraClearance':
+        this.clearances.shift()?.(msg.result);
+        break;
       case 'stepped':
         this.steps.shift()?.(msg.tick);
         break;
@@ -308,6 +347,8 @@ export class LoopbackTransport implements Transport {
         break;
       case 'stats':
         this.serverStats = msg.stats;
+        this.serverHistory.push(msg.stats);
+        if (this.serverHistory.length > 600) this.serverHistory.shift();
         break;
       case 'perf':
         this.serverTicks = msg.ticks;

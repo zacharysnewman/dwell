@@ -2,8 +2,6 @@
 
 /** A tool: its item name and kind (the swing hint shows for an axe). */
 export const TOOLS: readonly { name: string; kind: string }[] = [
-  { name: 'dwell:stone_axe', kind: 'axe' },
-  { name: 'dwell:metal_axe', kind: 'axe' },
   { name: 'dwell:sword', kind: 'weapon' },
 ];
 
@@ -43,6 +41,11 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:red_sand_ramp', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:red_dirt', default: 11, tools: { shovel: 7 } },
   { block: 'dwell:red_dirt_ramp', default: 11, tools: { shovel: 7 } },
+  { block: 'dwell:planks', default: 12, tools: { axe: 8 } },
+  { block: 'dwell:stone_brick', default: null, tools: { pickaxe: 7 } },
+  { block: 'dwell:thatch', default: 6, tools: {  } },
+  { block: 'dwell:thatch_ramp', default: 6, tools: {  } },
+  { block: 'dwell:door', default: 12, tools: { axe: 8 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */
@@ -50,6 +53,7 @@ export const DURABILITY: Readonly<Record<string, number>> = {
   'dwell:stone_axe': 32,
   'dwell:stone_pickaxe': 32,
   'dwell:wooden_shovel': 32,
+  'dwell:stone_shovel': 32,
   'dwell:metal_axe': 64,
   'dwell:metal_pickaxe': 64,
   'dwell:metal_shovel': 64,

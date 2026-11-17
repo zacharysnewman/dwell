@@ -2,6 +2,7 @@
 import { devices, expect, test, type CDPSession, type Page } from '@playwright/test';
 import { CELL_HEIGHT } from '../src/protocol/constants.gen';
 import { stateId } from '../src/world/blocks';
+import { untilTicking } from './ticking';
 
 test.use({ ...devices['iPhone 13 landscape'], browserName: 'chromium' });
 
@@ -225,4 +226,199 @@ test('on a phone a button toggles the debug overlay (no F3 key)', async ({ page 
   await expect(page.locator('#debug-overlay')).toBeVisible();
   await tapButton(2);
   await expect(page.locator('#debug-overlay')).toBeHidden();
+});
+
+// BUGS.md #174 (owner, 2026-11-14): "I can't seem to access inventory, after opening bag, nothing is
+// intractable." The touch layer is the whole screen; raised over the inventory so the bag button
+// stays on top, it took every tap meant for the inventory. And closing it took the pointer lock,
+// which sent the fingers to the canvas: no look after.
+test('on a phone the bag opens an inventory that answers taps, and closes to working controls', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto('./?world=flat');
+  await expect
+    .poll(async () => (await read(page))?.active ?? false, { timeout: 30_000 })
+    .toBe(true);
+  const tap = async (selector: string) => {
+    const box = await page.locator(selector).first().boundingBox();
+    if (!box) throw new Error(`${selector}: not on screen`);
+    // A finger at the element's centre: whatever is on top there gets the tap.
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  await tap('#touch-bag');
+  const inv = page.locator('#creative-inventory');
+  await expect(inv).toBeVisible();
+  // A slot of the inventory's hotbar is selected by a tap...
+  await tap('#creative-inventory .inventory-hotbar [data-slot="3"]');
+  await expect(inv.locator('.inventory-hotbar [data-slot="3"]')).toHaveClass(/selected/, {
+    timeout: 5_000,
+  });
+  // ...and an item tapped goes into it.
+  const label = await inv.locator('.inventory-items [data-item]').nth(4).getAttribute('title');
+  await tap('#creative-inventory .inventory-items [data-item] >> nth=4');
+  await expect(inv.locator('.inventory-hotbar [data-slot="3"]')).toHaveAttribute(
+    'title',
+    label ?? '',
+    { timeout: 5_000 },
+  );
+  // The bag closes it again, and the controls are back and answer.
+  await tap('#touch-bag');
+  await expect(inv).toBeHidden();
+  await expect(page.locator('#touch-jump')).toBeVisible();
+  const before = await yaw(page);
+  const cdp = await page.context().newCDPSession(page);
+  await touch(cdp, 'touchStart', [{ x: 600, y: 200, id: 2 }]);
+  for (let i = 1; i <= 8; i++) await touch(cdp, 'touchMove', [{ x: 600 - i * 15, y: 200, id: 2 }]);
+  await touch(cdp, 'touchEnd', []);
+  await expect
+    .poll(async () => Math.abs((await yaw(page)) - before), { timeout: 5_000 })
+    .toBeGreaterThan(1);
+});
+
+// Owner, 2026-11-15: "I'd love to copy a structure in mobile but there's no selection or copy
+// control for it. Perhaps we could add a mobile button for it, but only when you're flying
+// perhaps?" The region bar (ui/regionBar.ts, shared/input/touchRegion.json): Select shows while
+// flying in creative; its corners, Copy, Paste (Place) and Undo run the region tools.
+test('on a phone, flying, the region bar selects, copies, pastes and undoes', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('./?world=flat');
+  await expect
+    .poll(
+      () =>
+        page.evaluate<boolean>(
+          '!!(globalThis.__dwell && globalThis.__dwell.state()?.terrainReady)',
+        ),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  await untilTicking(page);
+  const shots = process.env.DWELL_SHOTS;
+  const shot = async (name: string) => {
+    if (shots) await page.screenshot({ path: `${shots}/${name}.png` });
+  };
+  const tap = async (selector: string) => {
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error(`${selector}: not on screen`);
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  type Cell = [number, number, number];
+  const target = () =>
+    page.evaluate<Cell | null>('globalThis.__dwell.state()?.target?.cell ?? null');
+  const voxel = ([x, y, z]: Cell) =>
+    page.evaluate<number>(`globalThis.__dwell.voxel(${String(x)}, ${String(y)}, ${String(z)})`);
+  // The tools' line (RegionTools::status), as the bar shows it.
+  const status = async () =>
+    (await page.locator('#touch-region-bar .region-status').textContent()) ?? '';
+  /** Turns the view and waits for the crosshair to land on a block other than `not`. */
+  const aim = async (yawDeg: number, pitchDeg: number, not?: Cell): Promise<Cell> => {
+    await page.evaluate(`globalThis.__dwell.look(${String(yawDeg)}, ${String(pitchDeg)})`);
+    await expect
+      .poll(async () => {
+        const t = await target();
+        return t !== null && t.join() !== not?.join();
+      })
+      .toBe(true);
+    return (await target()) as Cell;
+  };
+  const cellsOf = (min: Cell, size: Cell): Cell[] => {
+    const out: Cell[] = [];
+    for (let y = 0; y < size[1]; y++)
+      for (let z = 0; z < size[2]; z++)
+        for (let x = 0; x < size[0]; x++) out.push([min[0] + x, min[1] + y, min[2] + z]);
+    return out;
+  };
+  const read = (cells: Cell[]) => Promise.all(cells.map(voxel));
+
+  // Walking: no Select. Flying (creative): Select, and its bar.
+  await expect(page.locator('#touch-region')).toBeHidden();
+  await page.evaluate('globalThis.__dwell.fly(true)');
+  await expect(page.locator('#touch-region')).toBeVisible();
+  const feet = await page.evaluate<Cell>('globalThis.__dwell.state().feet');
+  /** Hovers `dx` m along x from the start, 1.5 m up: clear of the boxes edited, the ground in reach. */
+  const hover = async (dx: number) => {
+    const to: Cell = [feet[0] + dx, feet[1] + 1.5, feet[2]];
+    await page.evaluate(`globalThis.__dwell.teleport([${to.join(', ')}])`);
+    await expect
+      .poll(async () => {
+        const s = await page.evaluate<{ feet: Cell; terrainReady: boolean } | null>(
+          'globalThis.__dwell.state()',
+        );
+        return !!s?.terrainReady && Math.hypot(s.feet[0] - to[0], s.feet[1] - to[1]) < 0.3;
+      })
+      .toBe(true);
+  };
+  await hover(0);
+  await tap('#touch-region');
+  await expect(page.locator('#touch-region-bar')).toBeVisible();
+  await expect(page.locator('#region-place')).toBeHidden();
+  await shot('region-bar-open');
+
+  // Every button shown is on top where it is (nothing over it: the flight speed panel was), and
+  // clear of the play buttons and the bag.
+  const onTop = (id: string) =>
+    page.evaluate<boolean>(`(() => {
+      const b = document.getElementById('${id}').getBoundingClientRect();
+      return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.id === '${id}';
+    })()`);
+  for (const id of ['touch-region', 'region-corner-a', 'region-corner-b', 'region-copy']) {
+    expect(await onTop(id), id).toBe(true);
+  }
+  const barBox = await page.locator('#touch-region-bar').boundingBox();
+  for (const other of ['.touch-buttons', '#touch-bag', '#flight-speed']) {
+    const o = await page.locator(other).boundingBox();
+    if (!barBox || !o) continue;
+    const overlap =
+      barBox.x < o.x + o.width &&
+      o.x < barBox.x + barBox.width &&
+      barBox.y < o.y + o.height &&
+      o.y < barBox.y + barBox.height;
+    expect(overlap, `the region bar overlaps ${other}`).toBe(false);
+  }
+
+  // Two corners on the ground ahead, then Copy.
+  const a = await aim(0, -65);
+  await tap('#region-corner-a');
+  await expect.poll(status).toContain('Selection 1×1×1');
+  const b = await aim(60, -50, a);
+  await tap('#region-corner-b');
+  const min: Cell = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+  const size: Cell = [
+    Math.abs(a[0] - b[0]) + 1,
+    Math.abs(a[1] - b[1]) + 1,
+    Math.abs(a[2] - b[2]) + 1,
+  ];
+  await expect.poll(status).toContain(`Selection ${size.join('×')}`);
+  const source = await read(cellsOf(min, size));
+  expect(source.some((s) => s !== 0)).toBe(true);
+  await shot('region-bar-select');
+  await tap('#region-copy');
+  await expect.poll(status).toContain('Copied');
+
+  // Fly on 8 m, Paste: the ghost at the crosshair, then Place.
+  await hover(8);
+  await aim(0, -65);
+  await tap('#region-paste');
+  await expect(page.locator('#region-place')).toBeVisible();
+  await expect(page.locator('#region-corner-a')).toBeHidden();
+  const at = await page.evaluate<{ cell: Cell } | null>('globalThis.__dwell.placement()');
+  if (!at) throw new Error('no placement');
+  const p = at.cell;
+  // The box stands on the placement cell, its bottom centre there (region_tools.rs `paste_box`).
+  const pasteMin: Cell = [p[0] - Math.trunc(size[0] / 2), p[1], p[2] - Math.trunc(size[2] / 2)];
+  const pasted = cellsOf(pasteMin, size);
+  const before = await read(pasted);
+  await shot('region-bar-paste');
+  await tap('#region-place');
+  await expect.poll(() => read(pasted), { timeout: 10_000 }).toEqual(source);
+
+  // Cancel leaves paste mode; Undo takes the paste back.
+  await tap('#region-cancel');
+  await expect(page.locator('#region-corner-a')).toBeVisible();
+  await tap('#region-undo');
+  await expect.poll(() => read(pasted), { timeout: 10_000 }).toEqual(before);
+  // Landing hides Select and closes the bar.
+  await page.evaluate('globalThis.__dwell.fly(false)');
+  await expect(page.locator('#touch-region')).toBeHidden();
+  await expect(page.locator('#touch-region-bar')).toBeHidden();
 });

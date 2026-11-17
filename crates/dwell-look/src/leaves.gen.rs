@@ -4,7 +4,7 @@ use crate::leaves::{CardTiers, LeafCards, LeavesLook};
 
 /// The leaves' look (shared/look/leaves.json).
 pub const LEAVES: LeavesLook = LeavesLook {
-    blocks: &["dwell:leaves", "dwell:snowy_leaves"],
+    blocks: &["dwell:leaves", "dwell:snowy_leaves", "dwell:brush"],
     canopy_blend: 0.75,
     chamfer: 0.28,
     cards: LeafCards {

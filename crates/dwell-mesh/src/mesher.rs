@@ -8,15 +8,16 @@
 //! Arithmetic is done in `f64` and stored as `f32`, as the TS computes in doubles and stores into
 //! `Float32Array`s, so the buffers match it value for value.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+use damage_mask::{DamageMask, Hull};
 use dwell_blocks::{
     FLUIDS, FluidInfo, RenderMode, STATES, ShapeInfo, StateId, StateInfo, shape::faces_of,
 };
 use dwell_protocol::CHUNK_SIZE;
 use dwell_protocol::chopping::Cut;
-use dwell_protocol::damage::{DamageView, HitMark};
+use dwell_protocol::damage::{CarveProfile, DamageLook, DamageView, HitMark};
 use dwell_world::FaceFrame;
 use dwell_world::tree_tint::TreeTint;
 
@@ -34,10 +35,10 @@ use dwell_world::{CELL_H, SKY_APRON, SKY_EXTENT, SKY_VOLUME, normal_to_m};
 
 const N: i32 = CHUNK_SIZE;
 
+mod damage_mask;
 mod damage_mesh;
 mod ground_mesh;
 pub(crate) mod leaves;
-mod ramp_damage;
 pub mod relief;
 pub use ground_mesh::{GroundJob, look_mesh, look_swatch, scatter as ground_scatter};
 
@@ -90,6 +91,11 @@ pub struct MeshArrays {
     pub fluids: Vec<f32>,
     /// Triangles, counter-clockwise seen from outside.
     pub indices: Vec<u32>,
+    /// The opaque mesh only: how many of `indices`, at their end, are the logs of trees the far
+    /// tree lists hold (`Cells::tree_owned`): past the far trees' hand-over a chunk leaves them
+    /// to the trees' impostors, which draw the trunk too (owner, 2026-11-15: "fold trunks into
+    /// billboards").
+    pub tree_logs: u32,
 }
 
 impl MeshArrays {
@@ -409,6 +415,17 @@ impl<'a> Cells<'a> {
     }
 
     /// The leaf tint of chunk-local cell `cell`: its owning tree's (ADR 0079), else none.
+    /// Whether a species tree the generator lists owns `cell` (chunk-local): its leaves hand over
+    /// to that tree's far impostor (BUGS.md #186: a leaf no listed tree owns, a hand-built pine's or
+    /// a placed one, has no impostor to hand over to, so it stays drawn).
+    fn tree_owned(&self, cell: [i32; 3]) -> bool {
+        dwell_world::tree_tint::owner(
+            self.trees,
+            std::array::from_fn(|a| self.origin[a] + cell[a]),
+        )
+        .is_some()
+    }
+
     fn tint(&self, cell: [i32; 3]) -> dwell_world::tree_tint::Tint {
         dwell_world::tree_tint::tint_at(
             self.trees,
@@ -791,6 +808,36 @@ fn cell_noise(cell: [i64; 3], salt: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// Texture: across a cross's quad and up it, just inside the tile (fract(1) would wrap to its foot).
+const EDGE: f64 = 1e-3;
+/// How far up the tile a stalk's blades reach (the bases, under the tips: BUGS.md #192).
+const STALK_V: f64 = 0.45;
+
+/// Where a cross plant's cell stands in a stand of its block (tall grass up to 2 m: a column of
+/// cells, BUGS.md #192).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stand {
+    /// The cell above is the same plant: this one is a stalk.
+    pub below_top: bool,
+    /// The cell under it is the same plant.
+    pub above_foot: bool,
+}
+
+impl Stand {
+    fn of(&self) -> bool {
+        self.below_top || self.above_foot
+    }
+    /// The seed a cell's jitter and thinning take: its column's in a stand (so its cells line up
+    /// and are kept or thinned together), its own alone.
+    pub fn seed(&self, world: [i64; 3]) -> [i64; 3] {
+        if self.of() {
+            [world[0], i64::MIN / 3, world[2]]
+        } else {
+            world
+        }
+    }
+}
+
 /// Half the width of a cross's quad: corner to corner of the cell at 45° (√2 / 2).
 const CROSS_HALF_WIDTH: f64 = std::f64::consts::FRAC_1_SQRT_2;
 /// How much a cross's normals lean toward up (1: straight up, 0: the quad's own normal), so a
@@ -812,8 +859,12 @@ fn cross_voxel(
     [x, y, z]: [i32; 3],
     support: Option<&ShapeInfo>,
     (light, flood): (f32, [f32; 2]),
+    stand: Stand,
 ) {
     let Some(c) = style.cross else { return };
+    // A stand's cells (tall grass up to 2 m, BUGS.md #192: "it's supposed to extend or stretch
+    // up"): one plant, jittered by its column, its lower cells stalks.
+    let world = stand.seed(world);
     let sink = |px: f64, pz: f64| match support {
         Some(s) if c.sit_on_support => f64::from(plant_sink(
             s,
@@ -829,9 +880,21 @@ fn cross_voxel(
     let turn = jitter(3) * f64::from(c.rotation_deg).to_radians();
     let scale =
         f64::from(c.height_min) + f64::from(c.height_max - c.height_min) * cell_noise(world, 4);
-    let height = f64::from(c.height) * scale;
+    // A stalk fills its cell exactly, the cell above's blades rising out of its top.
+    let height = if stand.below_top {
+        1.0
+    } else {
+        f64::from(c.height) * scale
+    };
     let (y0, y1) = (f64::from(y), f64::from(y) + height);
-    let sway = style.wind.map_or(0.0, |w| f64::from(w.strength) * scale);
+    // A stalk stands still; the tip sways from its foot (no gap where the cells meet).
+    let sway = if stand.below_top {
+        0.0
+    } else {
+        style.wind.map_or(0.0, |w| f64::from(w.strength) * scale)
+    };
+    // A stalk draws the blades' lower band (their bases, no tips); the tip the whole tile.
+    let v_top = if stand.below_top { STALK_V } else { 1.0 - EDGE };
     let speed = style.wind.map_or(0.0, |w| f64::from(w.speed));
     let (fade0, fade1) = style
         .fade
@@ -842,8 +905,6 @@ fn cross_voxel(
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
     b.m.bare.resize(b.vertex_count() as usize, 0.0);
     let bare = if style.outline { 0.0 } else { 1.0 };
-    // Texture: across the quad and up it, just inside the tile (fract(1) would wrap to its foot).
-    const EDGE: f64 = 1e-3;
     for q in 0..u32::from(c.quads) {
         let angle = std::f64::consts::FRAC_PI_4
             + turn
@@ -859,11 +920,15 @@ fn cross_voxel(
         let tint = normal_tint(n[0], n[1], n[2]);
         let (color, _) = surface(style, 1, 1);
         let base = b.vertex_count();
+        // A plant's quads past its first carry u + `SECOND_QUAD_U` (the tile repeats whole units,
+        // so it draws the same): far off the first turns to face the eye and these are dropped
+        // (`second_quads_from`, the shader's `blade_card`).
+        let du = if q > 0 { SECOND_QUAD_U } else { 0.0 };
         let corners = [
             (-CROSS_HALF_WIDTH, y0, EDGE, EDGE, 0.0),
             (CROSS_HALF_WIDTH, y0, 1.0 - EDGE, EDGE, 0.0),
-            (CROSS_HALF_WIDTH, y1, 1.0 - EDGE, 1.0 - EDGE, sway),
-            (-CROSS_HALF_WIDTH, y1, EDGE, 1.0 - EDGE, sway),
+            (CROSS_HALF_WIDTH, y1, 1.0 - EDGE, v_top, sway),
+            (-CROSS_HALF_WIDTH, y1, EDGE, v_top, sway),
         ];
         for (along, py, u, v, s) in corners {
             let (px, pz) = (cx + dx * along, cz + dz * along);
@@ -875,7 +940,7 @@ fn cross_voxel(
                 (channel(color, 8) * tint[1]) as f32,
                 (channel(color, 0) * tint[2]) as f32,
             ]);
-            b.m.uvs.extend([u as f32, v as f32]);
+            b.m.uvs.extend([(u + du) as f32, v as f32]);
             b.push_tile(&tile);
             b.m.plants
                 .extend([s as f32, speed as f32, fade0 as f32, fade1 as f32]);
@@ -947,8 +1012,8 @@ fn neighbour_of(x: i32, y: i32, z: i32, axis: usize, sign: i32) -> [i32; 3] {
 }
 
 /// A shaped voxel: each polygon of its shape, but the parts of cell faces a neighbour covers. A
-/// damaged one (`damage`: its view, face-local) is carved where struck and cracked once staged
-/// (BUGS.md #112, BLOCK_DAMAGE.md §6.5; `ramp_damage`).
+/// damaged one (`damage`: its view, face-local) is drawn as its shape intersected with its damage
+/// mask (BLOCK_DAMAGE.md §15, `damage_mask`) and cracked once staged (§6.3).
 fn shaped_voxel(
     b: &mut Builder,
     cells: &Cells<'_>,
@@ -972,22 +1037,29 @@ fn shaped_voxel(
             !face_covered(def, tag, cover(&cells.kind(nx, ny, nz)))
         })
         .collect();
-    let hits = damage.and_then(|view| {
+    let polys: Vec<Vec<[f64; 3]>> = faces
+        .iter()
+        .map(|f| {
+            f.v[..usize::from(f.count)]
+                .iter()
+                .map(|p| p.map(f64::from))
+                .collect()
+        })
+        .collect();
+    let hit = damage.and_then(|view| {
         let look = dwell_protocol::damage::look_of(k.style.block)?;
-        let fraction = f64::from(view.fraction) / 255.0;
-        let carved = dwell_protocol::damage::carved_m3(k.style.block, fraction);
-        ramp_damage::RampDamage::new(def, look, carved, view, [x, y, z], &visible)
+        let hull = Hull::of_polygons(&polys);
+        let mask = DamageMask::of(&look, view, &hull);
+        let crack = damage_mesh::CrackLayer::of(&look, view, [x, y, z]);
+        Some((look, hull, mask, crack, view))
     });
     for (fi, f) in faces.iter().enumerate() {
         if !visible[fi] {
             continue;
         }
         let tag = usize::from(f.tag);
-        let pts: Vec<[f64; 3]> = f.v[..usize::from(f.count)]
-            .iter()
-            .map(|p| p.map(f64::from))
-            .collect();
-        let normal = polygon_normal(&pts);
+        let pts = &polys[fi];
+        let normal = polygon_normal(pts);
         let face_sign = if tag % 2 == 0 { 1 } else { -1 };
         let tint = if tag < 6 {
             face_tint(tag / 2, face_sign)
@@ -1014,37 +1086,232 @@ fn shaped_voxel(
         // Sky visibility only: a ramp's corners take no corner occlusion.
         let n_m = normal_to_m(normal);
         let salt = 6 + i64::from(f.tag);
-        let light: Vec<f32> = pts
-            .iter()
-            .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
-            .collect();
         let flood_at = cells.flood.shaped([x, y, z], normal);
-        if let Some(h) = &hits {
-            let sky = |p: [f64; 3]| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], p, n_m, salt));
-            let face = ramp_damage::RampFace {
-                cell: [x, y, z],
-                color,
+        let pieces = match &hit {
+            Some((_, _, Some(mask), ..)) => mask.clip(pts),
+            _ => vec![pts.clone()],
+        };
+        let crack_face = if tag < 6 { tag } else { face_of(axis, sign) };
+        let crack = hit
+            .as_ref()
+            .and_then(|(_, _, _, c, view)| c.map(|c| c.for_face(crack_face, &view.marks)));
+        for piece in pieces {
+            let light: Vec<f32> = piece
+                .iter()
+                .map(|p| vertex_light(AO_OPEN, cells.sky_rays([x, y, z], *p, n_m, salt)))
+                .collect();
+            let flood = vec![flood_at; piece.len()];
+            crack_start(b, crack.as_ref());
+            b.polygon(
+                &piece,
+                at,
+                normal,
                 tint,
-                tile: &tile,
-                side_top: side_top_of(def, tag),
-                light: &sky,
-                flood: flood_at,
-            };
-            if h.draw(&mut b.m, fi, &face) {
-                continue;
-            }
+                color,
+                &tile,
+                side_top_of(def, tag),
+                Some((&light, &flood)),
+            );
+            crack_points(b, crack.as_ref(), crack_face, &piece);
         }
-        let flood = vec![flood_at; pts.len()];
+    }
+    if let Some((look, hull, Some(mask), crack, view)) = &hit {
+        let lit = mark_light(cells, [x, y, z], view);
+        let walls = Walls {
+            look,
+            mask,
+            hull,
+            lit,
+            crack: crack.as_ref(),
+            marks: &view.marks,
+        };
+        mask_walls(b, k, [x, y, z], &walls);
+    }
+}
+
+/// Before a polygon of a cracked cell: the crack stream filled with "none" for the mesh's earlier
+/// vertices.
+fn crack_start(b: &mut Builder, crack: Option<&damage_mesh::CrackLayer>) {
+    if crack.is_some() {
+        let n = b.vertex_count() as usize;
+        b.m.cracks.resize(n, 0);
+    }
+}
+
+/// After a polygon of a cracked cell: its points' crack bytes on `face`.
+fn crack_points(
+    b: &mut Builder,
+    crack: Option<&damage_mesh::CrackLayer>,
+    face: usize,
+    pts: &[[f64; 3]],
+) {
+    if let Some(c) = crack {
+        let (pu, pv) = damage_mesh::plane_axes(face / 2);
+        let m = |p: &[f64; 3], a: usize| p[a] * if a == 1 { CELL_H } else { 1.0 };
+        b.m.cracks
+            .extend(pts.iter().map(|p| c.pack(face, [m(p, pu), m(p, pv)])));
+    }
+}
+
+/// The light the struck surface of a damaged cell sees (its marks' points, along the faces struck)
+/// and the flood light in front of its newest mark: the removed material's walls are lit by it.
+fn mark_light(cells: &Cells<'_>, cell: [i32; 3], view: &DamageView) -> (f32, [f32; 2]) {
+    let mut sum = 0.0;
+    for m in &view.marks {
+        let face = usize::from(m.face.min(5));
+        let (axis, sign) = FACES[face];
+        let mut q: [f64; 3] = std::array::from_fn(|a| f64::from(m.point[a]) / 255.0);
+        q[axis] = if sign > 0 { 1.0 } else { 0.0 };
+        let mut n = [0.0; 3];
+        n[axis] = f64::from(sign);
+        sum += vertex_light(AO_OPEN, cells.sky_rays(cell, q, n, 20 + face as i64));
+    }
+    let open = sum / view.marks.len().max(1) as f32;
+    let flood = view.marks.last().map_or([1.0, 0.0], |m| {
+        let (axis, sign) = FACES[usize::from(m.face.min(5))];
+        cells
+            .flood
+            .cell(neighbour_of(cell[0], cell[1], cell[2], axis, sign))
+    });
+    (open, flood)
+}
+
+/// What a damaged cell's walls are drawn from ([`mask_walls`]).
+struct Walls<'a> {
+    look: &'a DamageLook,
+    mask: &'a DamageMask,
+    hull: &'a Hull,
+    /// The struck surface's light and flood light ([`mark_light`]).
+    lit: (f32, [f32; 2]),
+    crack: Option<&'a damage_mesh::CrackLayer>,
+    marks: &'a [HitMark],
+}
+
+/// The walls of a damaged cell's removed material (BLOCK_DAMAGE.md §15): the faces between the
+/// mask's kept and removed sub-cells inside the shape, in the block's inside tile (its end along
+/// its axis: dirt under grass, a log's end grain), lit by the struck surface's light and darker
+/// the deeper they lie (the look's `darken`); a spall's fresh rock lifted toward the look's
+/// `color`. Cracked as the cell's faces are.
+fn mask_walls(b: &mut Builder, k: &Kind, cell: [i32; 3], w: &Walls<'_>) {
+    let (color, tile) = surface(&k.style, k.style.axis, -1);
+    let spall = w.look.profile == CarveProfile::Spall;
+    let lift = w.look.color.map(|c| 1.8 * f64::from(c) / 255.0);
+    let occlude = if spall { 0.15 } else { 0.4 };
+    let darken = if spall { 0.0 } else { w.look.darken };
+    let (open, flood) = w.lit;
+    let at = cell.map(f64::from);
+    for f in w.mask.inner_faces(w.hull) {
+        let mut normal = [0.0; 3];
+        normal[f.axis] = f64::from(f.sign);
+        let base = face_tint(f.axis, f.sign);
+        let tint = if spall {
+            std::array::from_fn(|i| base[i] * lift[i])
+        } else {
+            base
+        };
+        let light: Vec<f32> = f
+            .pts
+            .iter()
+            .map(|p| {
+                let s = w.mask.depth_share(*p);
+                open * ((1.0 - occlude * s) * (1.0 - darken * s)) as f32
+            })
+            .collect();
+        let fl = vec![flood; f.pts.len()];
+        let face = face_of(f.axis, f.sign);
+        let crack = w.crack.map(|c| c.for_face(face, w.marks));
+        crack_start(b, crack.as_ref());
+        let first = b.m.uvs.len();
         b.polygon(
-            &pts,
+            &f.pts,
             at,
             normal,
             tint,
             color,
             &tile,
-            side_top_of(def, tag),
+            None,
+            Some((&light, &fl)),
+        );
+        crack_points(b, crack.as_ref(), face, &f.pts);
+        if tile.turn {
+            for uv in b.m.uvs[first..].chunks_exact_mut(2) {
+                uv.swap(0, 1);
+            }
+        }
+    }
+}
+
+/// A damaged cube's visible face (`sf`, one the merge left out) drawn as the pieces the mask
+/// keeps (none: whole), each corner's light and flood interpolated from the face's four, cracked
+/// by `crack`.
+fn struck_face(
+    b: &mut Builder,
+    sf: &damage_mesh::StruckFace,
+    mask: Option<&DamageMask>,
+    crack: Option<&damage_mesh::CrackLayer>,
+) {
+    let axis = sf.face / 2;
+    let sign = if sf.face.is_multiple_of(2) { 1 } else { -1 };
+    let (u, v) = damage_mesh::plane_axes(axis);
+    let corner = |cu: f64, cv: f64| {
+        let mut p = [0.0; 3];
+        p[axis] = if sign > 0 { 1.0 } else { 0.0 };
+        p[u] = cu;
+        p[v] = cv;
+        p
+    };
+    let mut quad = vec![
+        corner(0.0, 0.0),
+        corner(1.0, 0.0),
+        corner(1.0, 1.0),
+        corner(0.0, 1.0),
+    ];
+    if sign < 0 {
+        quad.reverse();
+    }
+    let pieces = mask.map_or_else(|| vec![quad.clone()], |m| m.clip(&quad));
+    let mut normal = [0.0; 3];
+    normal[axis] = f64::from(sign);
+    let at = sf.cell.map(f64::from);
+    // A side's hanging tile runs down from the cell's top, as the merged quad's.
+    let side_top = (axis != 1).then_some(SideTop {
+        h: [4.0; 3],
+        run: 0,
+    });
+    for piece in pieces {
+        let (light, flood): (Vec<f32>, Vec<[f32; 2]>) = piece
+            .iter()
+            .map(|p| {
+                let (a, c) = (p[u], p[v]);
+                let w = [(1.0 - a) * (1.0 - c), a * (1.0 - c), a * c, (1.0 - a) * c];
+                let mut l = 0.0;
+                let mut f = [0.0; 2];
+                for ((w, l0), f0) in w.iter().zip(sf.light).zip(sf.flood) {
+                    l += w * f64::from(l0);
+                    f[0] += w * f64::from(f0[0]);
+                    f[1] += w * f64::from(f0[1]);
+                }
+                (l as f32, [f[0] as f32, f[1] as f32])
+            })
+            .unzip();
+        crack_start(b, crack);
+        let first = b.m.uvs.len();
+        b.polygon(
+            &piece,
+            at,
+            normal,
+            face_tint(axis, sign),
+            sf.color,
+            &sf.tile,
+            side_top,
             Some((&light, &flood)),
         );
+        crack_points(b, crack, sf.face, &piece);
+        if sf.tile.turn {
+            for uv in b.m.uvs[first..].chunks_exact_mut(2) {
+                uv.swap(0, 1);
+            }
+        }
     }
 }
 
@@ -1089,28 +1356,9 @@ const CUT_SHADE: f64 = 0.55;
 /// bark left on each side and the end grain are drawn as the cube's faces would be (and not where a
 /// neighbour covers them); the faces cut into it take the wood's cut tile (its `cut.tile`, else the
 /// end grain), lit by the sky the side they are cut into sees and darker the deeper they lie.
-/// A wood cell's extent across its sides (0..1 of the cell): a standing log's octagon `width` of
-/// its cell, centred (ADR 0079; a thinner trunk), else the whole cell (the server's `log_span`).
-fn wood_span(m: StateId, grain: usize) -> [f64; 2] {
-    match dwell_blocks::octagon::section_of(m) {
-        Some((section, _)) if grain == 1 && section.width < 1.0 => {
-            let w = f64::from(section.width).clamp(0.05, 1.0);
-            [0.5 - 0.5 * w, 0.5 + 0.5 * w]
-        }
-        _ => [0.0, 1.0],
-    }
-}
-
-/// `damage`: a damaged wood's fraction to breaking (WORK_QUEUE item 51), its cut made of its marks
-/// ([`dwell_protocol::chopping::cut_of_marks`]): the carve's progress and the cracks' stage.
-fn carved_voxel(
-    b: &mut Builder,
-    cells: &Cells<'_>,
-    k: &Kind,
-    cell: [i32; 3],
-    cut: &Cut,
-    damage: Option<f64>,
-) {
+/// Only an older server's cuts are drawn so (this build cuts no wood: the axe takes block damage,
+/// docs/BLOCK_DAMAGE.md §14).
+fn carved_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, cell: [i32; 3], cut: &Cut) {
     let grain = k.style.axis;
     let wood = dwell_protocol::chopping::wood(k.style.block);
     let look = wood.map_or(
@@ -1137,13 +1385,12 @@ fn carved_voxel(
     // or save's) as before: the notch across the side, the kerfs as slits.
     let faces = if cut.has_bites() {
         // Grown by the bite rule (WORK_QUEUE item 18): its share of the swings to fell.
-        let progress =
-            damage.unwrap_or_else(|| wood.map_or(cut.cross(grain), |w| cut.progress(w, grain)));
+        let progress = wood.map_or(cut.cross(grain), |w| cut.progress(w, grain));
         carve::carve_bites(grain, cut, &look, outline.as_deref(), progress)
     } else {
         carve::carve_in(grain, cut, &look, outline.as_deref())
     };
-    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell, damage));
+    let crack = wood.and_then(|w| cut_cracks(w, &look, grain, cut, cell));
     for f in faces {
         // The side (axis, sign) the face looks out of: a cut face's light comes from there.
         let (axis, sign, shade_axis) = match f.part {
@@ -1226,7 +1473,6 @@ fn cut_cracks(
     grain: usize,
     cut: &Cut,
     cell: [i32; 3],
-    damage: Option<f64>,
 ) -> Option<damage_mesh::CrackLayer> {
     use dwell_protocol::chopping::side_axis;
     let cracks = look.cracks.as_ref()?;
@@ -1235,7 +1481,7 @@ fn cut_cracks(
     } else {
         wood.buck_fraction
     };
-    let fraction = damage.unwrap_or_else(|| (cut.cross(grain) / through.max(1e-6)).min(1.0));
+    let fraction = (cut.cross(grain) / through.max(1e-6)).min(1.0);
     let mut layer = damage_mesh::CrackLayer::of_cracks(cracks, fraction, cell)?;
     let side = cut.deepest(grain)?;
     let bite = cut.bites[side].all().last()?;
@@ -1251,21 +1497,63 @@ fn cut_cracks(
 
 /// An octagonal log (ADR 0072, `dwell_blocks::octagon`): its prism's faces that nothing covers,
 /// squared off where it joins a neighbour. Bark on the sides and chamfers, end grain on the caps;
-/// each face lit by the sky its side sees (a chamfer: the mean of its two sides').
-fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell: [i32; 3]) {
-    use dwell_blocks::octagon::{Part as Oct, cap_pieces, joined_mask, open_faces, section_of};
+/// each face lit by the sky its side sees (a chamfer: the mean of its two sides'). A damaged one
+/// (`damage`: its view, face-local) is its octagon intersected with its damage mask
+/// (BLOCK_DAMAGE.md §15: chunks come off the log as it takes hits) and carries the cracks on every
+/// face drawn, centred per face on the hit on it or nearest it, as a damaged cube's (§6.3).
+fn octagon_voxel(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    m: StateId,
+    cell: [i32; 3],
+    damage: Option<&DamageView>,
+    damaged_beside: &dyn Fn([i32; 3]) -> bool,
+) {
+    use dwell_blocks::octagon::{
+        Part as Oct, cap_pieces, joined_mask, open_faces_beside, outline_width, section_of,
+    };
     let [x, y, z] = cell;
     let at = |o: [i32; 3]| cells.state(x + o[0], y + o[1], z + o[2]);
     let covers = |n: StateId| {
         let kn = cells.kinds.of(n);
         kn.occludes && kn.shape == Shape::Full
     };
-    let pos = [f64::from(x), f64::from(y), f64::from(z)];
     let size = [1.0, CELL_H, 1.0];
     let Some((section, sec_axis)) = section_of(m) else {
         return;
     };
     let joined = joined_mask(m, &at);
+    // The damage: the octagon's prism (cut by its shape, a wood ramp's) and the mask in it.
+    let hit = damage.and_then(|view| {
+        let look = dwell_protocol::damage::look_of(k.style.block)?;
+        let ring: Vec<[f64; 2]> = outline_width(
+            f64::from(section.chamfer),
+            f64::from(section.width),
+            sec_axis,
+            joined,
+            size,
+        )
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+        let mut hull = Hull::prism(&ring, sec_axis);
+        if let Some(def) = k.def.filter(|_| !dwell_blocks::octagon::full(m)) {
+            let polys: Vec<Vec<[f64; 3]>> = faces_of(def)
+                .iter()
+                .map(|f| {
+                    f.v[..usize::from(f.count)]
+                        .iter()
+                        .map(|p| p.map(f64::from))
+                        .collect()
+                })
+                .collect();
+            hull = hull.and(&Hull::of_polygons(&polys));
+        }
+        let mask = DamageMask::of(&look, view, &hull);
+        let crack = damage_mesh::CrackLayer::of(&look, view, cell);
+        Some((look, hull, mask, crack, view))
+    });
     // Each open cap split into its bark ring along the octagon's unjoined edges and the heart
     // inside (Phase 55 T3).
     // A cut cap (a wood ramp's, Phase 55 T4) is drawn whole, its ring not split off.
@@ -1273,13 +1561,63 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
         let n = dwell_blocks::octagon::outline(f64::from(section.chamfer), sec_axis, joined, size);
         f.pts.len() == n.len()
     };
-    let pieces = open_faces(m, &at, &covers, size)
+    // A face toward a damaged neighbour draws (BUGS.md #190): its carving may show it.
+    let opened = |o: [i32; 3]| damaged_beside([x + o[0], y + o[1], z + o[2]]);
+    let pieces = open_faces_beside(m, &at, &covers, size, &opened)
         .into_iter()
         .flat_map(|f| match f.part {
             Oct::Cap(end) if whole(&f) => cap_pieces(&section, sec_axis, joined, size, end),
             _ => vec![f],
         });
-    for f in pieces {
+    for whole in pieces {
+        let frags = match &hit {
+            Some((_, _, Some(mask), ..)) => mask.clip(&whole.pts),
+            _ => vec![whole.pts.clone()],
+        };
+        for pts in frags {
+            let f = dwell_blocks::octagon::Face {
+                pts,
+                part: whole.part,
+            };
+            octagon_face(
+                b,
+                cells,
+                k,
+                &section,
+                cell,
+                &f,
+                hit.as_ref().map(|h| (h.3, h.4)),
+            );
+        }
+    }
+    if let Some((look, hull, Some(mask), crack, view)) = &hit {
+        let lit = mark_light(cells, cell, view);
+        let walls = Walls {
+            look,
+            mask,
+            hull,
+            lit,
+            crack: crack.as_ref(),
+            marks: &view.marks,
+        };
+        mask_walls(b, k, cell, &walls);
+    }
+}
+
+/// One face (or a piece of one the damage mask keeps) of an octagonal log ([`octagon_voxel`]).
+fn octagon_face(
+    b: &mut Builder,
+    cells: &Cells<'_>,
+    k: &Kind,
+    section: &dwell_blocks::CrossSection,
+    cell: [i32; 3],
+    f: &dwell_blocks::octagon::Face,
+    crack: Option<(Option<damage_mesh::CrackLayer>, &DamageView)>,
+) {
+    use dwell_blocks::octagon::Part as Oct;
+    let [x, y, z] = cell;
+    let pos = [f64::from(x), f64::from(y), f64::from(z)];
+    {
         let sides: [usize; 2] = match f.part {
             Oct::Cap(end) | Oct::Ring(end, _) => {
                 let face = face_of(k.style.axis, if end { 1 } else { -1 });
@@ -1356,6 +1694,9 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
                 [l0[0].max(l1[0]), l0[1].max(l1[1])]
             })
             .collect();
+        let face = sides[0];
+        let layer = crack.and_then(|(c, view)| c.map(|c| c.for_face(face, &view.marks)));
+        crack_start(b, layer.as_ref());
         let first = b.m.uvs.len();
         b.polygon(
             &f.pts,
@@ -1367,6 +1708,7 @@ fn octagon_voxel(b: &mut Builder, cells: &Cells<'_>, k: &Kind, m: StateId, cell:
             None,
             Some((&light, &flood)),
         );
+        crack_points(b, layer.as_ref(), face, &f.pts);
         if tile.turn {
             for uv in b.m.uvs[first..].chunks_exact_mut(2) {
                 uv.swap(0, 1);
@@ -2044,6 +2386,16 @@ fn damaged_cells(
         .collect()
 }
 
+/// The damaged cells in the chunk's one-cell border (face-local like [`damaged_cells`]): its
+/// faces against them draw, as against a damaged cell of its own (BUGS.md #187).
+fn damaged_border(damage: &[([i32; 3], DamageView)], mirror: bool) -> HashSet<[i32; 3]> {
+    damage
+        .iter()
+        .filter(|(c, _)| !in_chunk(*c) && c.iter().all(|v| (-1..=N).contains(v)))
+        .map(|(c, v)| damage_mesh::face_local(*c, v, mirror).0)
+        .collect()
+}
+
 /// What a chunk mesh leaves to other layers (proposals/WATER_GPU_SURFACE.md §3, item 6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChunkFlags {
@@ -2170,6 +2522,7 @@ pub(crate) fn mesh_chunk_full(
             })
             .collect();
         let damaged = damaged_cells(&inner, damage, true);
+        let border = damaged_border(damage, true);
         let mut m = mesh_cells(
             kinds,
             &mirror_padded(&inner),
@@ -2180,8 +2533,11 @@ pub(crate) fn mesh_chunk_full(
             flags,
             trees,
             &damaged,
+            &border,
         );
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, true);
+        append_ground_before_logs(&mut m.opaque, |o| {
+            ground_mesh::append(o, kinds, &flood, &items, origin, true)
+        });
         ChunkMeshes {
             opaque: flip_arrays_y(m.opaque),
             transparent: flip_arrays_y(m.transparent),
@@ -2196,17 +2552,22 @@ pub(crate) fn mesh_chunk_full(
             .map(|(c, cut)| (*c, *cut))
             .collect();
         let damaged = damaged_cells(&inner, damage, false);
+        let border = damaged_border(damage, false);
         let mut m = mesh_cells(
-            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged,
+            kinds, &inner, &occ, &flood, origin, &carved, flags, trees, &damaged, &border,
         );
-        ground_mesh::append(&mut m.opaque, kinds, &flood, &items, origin, false);
+        append_ground_before_logs(&mut m.opaque, |o| {
+            ground_mesh::append(o, kinds, &flood, &items, origin, false)
+        });
         m
     };
     let water = (!flags.water_tops)
         .then(|| crate::heightfield::tile_with(kinds, &inner, light, mirror))
         .flatten();
+    let mut opaque = to_metres(m.opaque);
+    group_by_facing(&mut opaque);
     Ok(ChunkMeshes {
-        opaque: to_metres(m.opaque),
+        opaque,
         transparent: to_metres(m.transparent),
         cutout: to_metres(m.cutout),
         water,
@@ -2222,16 +2583,53 @@ fn is_tree_leaf(m: &MeshArrays, first: u32) -> bool {
 /// Orders a cutout mesh's triangles with the trees' leaf faces last (each kind keeping its own
 /// order), so the indices before [`tree_leaves_from`] are everything but the leaves.
 fn tree_leaves_last(m: &mut MeshArrays) {
-    let (mut rest, mut leaves) = (Vec::with_capacity(m.indices.len()), Vec::new());
+    let (mut rest, mut second, mut leaves) =
+        (Vec::with_capacity(m.indices.len()), Vec::new(), Vec::new());
     for tri in m.indices.chunks_exact(3) {
         if is_tree_leaf(m, tri[0]) {
             leaves.extend_from_slice(tri);
+        } else if is_second_quad(m, tri[0]) {
+            second.extend_from_slice(tri);
         } else {
             rest.extend_from_slice(tri);
         }
     }
+    rest.extend(second);
     rest.extend(leaves);
     m.indices = rest;
+}
+
+/// What a cross plant's quads past its first add to their u ([`second_quads_from`]).
+pub const SECOND_QUAD_U: f64 = 2.0;
+
+/// Whether a cutout triangle (its first index) is a cross plant's quad past its first: a plant's
+/// vertex (a distance fade, no leaf's or card's mark) with u past `SECOND_QUAD_U` (other cutouts'
+/// u, a leaf face's among them, run in blocks and may pass it too).
+fn is_second_quad(m: &MeshArrays, first: u32) -> bool {
+    let v = first as usize;
+    let plant = m.plants.get(v * 4..v * 4 + 4);
+    plant.is_some_and(|p| p[1] >= 0.0 && p[3] > 0.0)
+        && m.uvs
+            .get(v * 2)
+            .is_some_and(|&u| f64::from(u) >= SECOND_QUAD_U)
+}
+
+/// Where a chunk's cutout mesh starts its plants' quads past their first, as an index into
+/// `indices`: they come just before the trees' leaves ([`tree_leaves_from`]), so a chunk far off
+/// (the plants there one quad each, turned to the eye: the owner's "grass could be rendered at
+/// half if we only did a billboard at most distances") draws `0..second_quads_from` and its leaves.
+pub fn second_quads_from(m: &MeshArrays) -> usize {
+    let end = tree_leaves_from(m) / 3;
+    let (mut lo, mut hi) = (0, end);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if is_second_quad(m, m.indices[mid * 3]) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo * 3
 }
 
 /// Where a chunk's cutout mesh (meshed with its trees' leaves last) starts its trees' leaf faces,
@@ -2249,6 +2647,127 @@ pub fn tree_leaves_from(m: &MeshArrays) -> usize {
         }
     }
     lo * 3
+}
+
+/// Runs `append` (the ground items' meshes) on `m` keeping its listed trees' logs
+/// (`MeshArrays::tree_logs`) the last of its indices.
+fn append_ground_before_logs(m: &mut MeshArrays, append: impl FnOnce(&mut MeshArrays)) {
+    let logs = m.tree_logs as usize;
+    if logs == 0 {
+        append(m);
+        return;
+    }
+    let tail = m.indices.split_off(m.indices.len() - logs);
+    m.tree_logs = 0;
+    append(m);
+    m.indices.extend(tail);
+    m.tree_logs = logs as u32;
+}
+
+/// The facing groups of an opaque chunk mesh ([`group_by_facing`]): a triangle facing +X, −X, +Y,
+/// −Y, +Z or −Z ([`FACES`]' order) is in that group, any other (slopes, ramps, carved and relief
+/// faces) in group [`FACING_OTHER`].
+pub const FACING_GROUPS: usize = 7;
+/// The group of triangles facing no axis: drawn from every side.
+pub const FACING_OTHER: usize = 6;
+
+/// A triangle's facing group, by its geometric normal (its winding: counter-clockwise from
+/// outside): an axis's when the normal is within ~0.5° of it, else [`FACING_OTHER`].
+fn facing_of(m: &MeshArrays, tri: &[u32]) -> usize {
+    let p = |i: u32| -> [f64; 3] {
+        let i = i as usize * 3;
+        std::array::from_fn(|k| f64::from(m.positions[i + k]))
+    };
+    let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+    let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+    let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+    let n = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len == 0.0 {
+        return FACING_OTHER;
+    }
+    FACES
+        .iter()
+        .position(|&(axis, sign)| n[axis] * f64::from(sign) / len > 0.99996)
+        .unwrap_or(FACING_OTHER)
+}
+
+/// Orders an opaque mesh's triangles by facing group (each group keeping its order), so a draw
+/// can skip the groups facing away from the camera ([`facing_ranges`]; the GPU would otherwise
+/// shade every one of their vertices before culling them: the near pass is bound by geometry).
+pub fn group_by_facing(m: &mut MeshArrays) {
+    // The listed trees' logs stay last, ungrouped (`MeshArrays::tree_logs`).
+    let head = m.indices.len() - m.tree_logs as usize;
+    let mut groups: [Vec<u32>; FACING_GROUPS] = Default::default();
+    for tri in m.indices[..head].chunks_exact(3) {
+        groups[facing_of(m, tri)].extend_from_slice(tri);
+    }
+    let tail = m.indices.split_off(head);
+    m.indices = groups.concat();
+    m.indices.extend(tail);
+}
+
+/// Each facing group's range of `indices` in a mesh ordered by [`group_by_facing`] (empty ranges for
+/// absent groups). A mesh not so ordered is all in [`FACING_OTHER`]'s range, drawn from every side.
+pub fn facing_ranges(m: &MeshArrays) -> [std::ops::Range<u32>; FACING_GROUPS] {
+    // Before the listed trees' logs (`tree_logs_range`).
+    let head = m.indices.len().saturating_sub(m.tree_logs as usize);
+    let mut counts = [0u32; FACING_GROUPS];
+    let mut last = 0;
+    for tri in m.indices[..head].chunks_exact(3) {
+        let g = facing_of(m, tri);
+        if g < last {
+            counts = [0; FACING_GROUPS];
+            counts[FACING_OTHER] = head as u32;
+            break;
+        }
+        counts[g] += 3;
+        last = g;
+    }
+    let mut at = 0;
+    counts.map(|n| {
+        at += n;
+        at - n..at
+    })
+}
+
+/// The range of `indices` holding the listed trees' logs (`MeshArrays::tree_logs`; empty for none).
+pub fn tree_logs_range(m: &MeshArrays) -> std::ops::Range<u32> {
+    let n = m.indices.len() as u32;
+    n - m.tree_logs.min(n)..n
+}
+
+/// Which facing groups (a bit each) of a chunk mesh can face an eye at `rel` from the chunk's
+/// minimum corner (the eye minus the corner, m), the chunk `extent` m across: a face on the plane
+/// x = p facing +X shows only from x > p, and every +X face of the chunk is at p ≥ 0 (− `margin`,
+/// for vertices just outside the box). The other group always draws.
+pub fn facing_mask(rel: [f64; 3], extent: [f64; 3], margin: f64) -> u8 {
+    let mut mask = 1 << FACING_OTHER;
+    for (g, &(axis, sign)) in FACES.iter().enumerate() {
+        let shows = if sign > 0 {
+            rel[axis] > -margin
+        } else {
+            rel[axis] < extent[axis] + margin
+        };
+        mask |= u8::from(shows) << g;
+    }
+    mask
+}
+
+/// Which facing groups of a chunk mesh can face a directional light `toward` it (unit, world): a
+/// group whose axis points away from it is all back faces to it, culled anyway after its vertices
+/// are shaded (the shadow maps' opaque casters cull their back faces), and one edge-on to it casts
+/// nothing. The other group always.
+pub fn facing_mask_toward(toward: [f64; 3]) -> u8 {
+    let mut mask = 1 << FACING_OTHER;
+    for (g, &(axis, sign)) in FACES.iter().enumerate() {
+        mask |= u8::from(toward[axis] * f64::from(sign) > 0.0) << g;
+    }
+    mask
 }
 
 /// The one-voxel padded block ([`PADDED_VOLUME`]) inside a sky volume ([`SKY_VOLUME`]).
@@ -2291,13 +2810,13 @@ fn mesh_cells(
     flags: ChunkFlags,
     trees: &[TreeTint],
     damaged: &[([i32; 3], u16, DamageView)],
+    border: &HashSet<[i32; 3]>,
 ) -> ChunkMeshes {
-    // The struck faces of damaged cubes with a damage look (a cell holding another state than
-    // the one hit is undamaged), by cell and face: carved instead of merged.
-    // A cell cracked (BLOCK_DAMAGE.md §6.3: its look's crack stage reached) leaves the merge on
-    // every face, each drawn with the crack overlay.
+    // Damaged cubes with a damage look (a cell holding another state than the one hit is
+    // undamaged) leave the merge on every face, by cell and face: each drawn as the pieces its
+    // damage mask keeps (BLOCK_DAMAGE.md §15), with the crack overlay once staged (§6.3).
     let mut struck: HashMap<([i32; 3], usize), usize> = HashMap::new();
-    for (i, (c, state, view)) in damaged.iter().enumerate() {
+    for (i, (c, state, _)) in damaged.iter().enumerate() {
         let k = kinds.of(*state);
         if padded[padded_index(c[0], c[1], c[2])] != *state
             || k.shape != Shape::Full
@@ -2308,20 +2827,21 @@ fn mesh_cells(
         {
             continue;
         }
-        let Some(look) = dwell_protocol::damage::look_of(k.style.block) else {
+        if dwell_protocol::damage::look_of(k.style.block).is_none() {
             continue;
-        };
-        if damage_mesh::CrackLayer::of(&look, view, *c).is_some() {
-            for face in 0..6 {
-                struck.insert((*c, face), i);
-            }
         }
-        for mk in &view.marks {
-            if mk.face < 6 {
-                struck.insert((*c, usize::from(mk.face)), i);
-            }
+        for face in 0..6 {
+            struck.insert((*c, face), i);
         }
     }
+    // Every damaged cell still holding the state hit, whatever its shape (a cube, a ramp, a
+    // log's octagon): its neighbours' faces toward it draw (BUGS.md #187, #190), as its carving
+    // may show them.
+    let damaged_here: HashSet<[i32; 3]> = damaged
+        .iter()
+        .filter(|(c, state, _)| padded[padded_index(c[0], c[1], c[2])] == *state)
+        .map(|(c, _, _)| *c)
+        .collect();
     // Damaged ramps (BUGS.md #112): carved and cracked in `shaped_voxel`, by cell.
     let ramp_hits: HashMap<[i32; 3], usize> = damaged
         .iter()
@@ -2338,30 +2858,19 @@ fn mesh_cells(
         .map(|(i, (c, _, _))| (*c, i))
         .collect();
     let mut struck_faces: Vec<(damage_mesh::StruckFace, usize)> = Vec::new();
-    // A damaged wood (the log hit by the axe through block damage, WORK_QUEUE item 51) is drawn
-    // with the axe's bites at its marks, grown by its damage fraction (the bite rule): the
-    // octagon's carve. A cell with an older save's cut keeps the cut's.
-    let mut progress: HashMap<[i32; 3], f64> = HashMap::new();
-    let mut carved = carved.clone();
+    // A damaged octagonal log (hit by the axe through block damage, as any block) is its octagon
+    // intersected with its damage mask, cracked by the damage (BLOCK_DAMAGE.md §15). A cell with an
+    // older server's cut keeps the cut's carve.
+    let mut damaged_logs: HashMap<[i32; 3], &DamageView> = HashMap::new();
     for (c, state, view) in damaged {
         let k = kinds.of(*state);
-        if padded[padded_index(c[0], c[1], c[2])] != *state || carved.contains_key(c) {
+        if padded[padded_index(c[0], c[1], c[2])] != *state
+            || !k.style.octagon
+            || carved.contains_key(c)
+        {
             continue;
         }
-        let Some(wood) = dwell_protocol::chopping::wood(k.style.block) else {
-            continue;
-        };
-        let grain = k.style.axis;
-        let cut = dwell_protocol::chopping::cut_of_marks(
-            grain,
-            &view.marks,
-            &wood.cut.bite,
-            wood_span(*state, grain),
-        );
-        if cut.has_bites() {
-            carved.insert(*c, cut);
-            progress.insert(*c, f64::from(view.fraction) / 255.0);
-        }
+        damaged_logs.insert(*c, view);
     }
     // A cut cell is carved only if it is drawn as an opaque cube.
     let carved: HashMap<[i32; 3], Cut> = carved
@@ -2446,6 +2955,12 @@ fn mesh_cells(
                     // is this cell's to draw, or the step shows a slit into the water
                     // (docs/BUGS.md 4).
                     if k.liquid && axis != 1 && same_fluid(&k, &kn) {
+                        // The heightfield's grid and skirts draw it (BUGS.md #177).
+                        if let Some(runs) = &runs
+                            && crate::heightfield::surface_draws_step(runs, cell, [nx, nz])
+                        {
+                            continue;
+                        }
                         let own = fluid_side_top(&cells, &k, m, cx, cy, cz);
                         let theirs = fluid_side_top(&cells, &kn, m, nx, ny, nz);
                         // Under the water's slope over a step cell, the strip is inside it.
@@ -2469,7 +2984,12 @@ fn mesh_cells(
                         }
                         continue;
                     }
-                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) {
+                    // Against a damaged block the face draws (BUGS.md #187, #190): its mask may have
+                    // carved away the material that hid it, and nothing else would fill the hole.
+                    let beside_damage = (!damaged_here.is_empty() || !border.is_empty())
+                        && !k.liquid
+                        && (damaged_here.contains(&[nx, ny, nz]) || border.contains(&[nx, ny, nz]));
+                    if hidden(&k, &kn, m, cells.state(nx, ny, nz), face) && !beside_damage {
                         continue;
                     }
                     let ns = cells.state(nx, ny, nz);
@@ -2662,51 +3182,57 @@ fn mesh_cells(
             }
         }
     }
-    // The struck faces carved (BLOCK_DAMAGE.md §6.2): each cell's visible struck faces share its
-    // triangle budget.
+    // The damaged cubes' faces, each the pieces its cell's damage mask keeps, and the walls of the
+    // material removed (BLOCK_DAMAGE.md §15), lit by the struck faces' light.
+    let mut masks: std::collections::BTreeMap<usize, Option<DamageMask>> = Default::default();
+    let mut lit: HashMap<usize, ([i32; 3], f32, [f32; 2], usize)> = HashMap::new();
     for (sf, di) in &struck_faces {
         let (_, state, view) = &damaged[*di];
         let Some(look) = dwell_protocol::damage::look_of(kinds.of(*state).style.block) else {
             continue;
         };
-        let on = |f: usize| view.marks.iter().any(|m| usize::from(m.face) == f);
-        // The cell's carved faces share its budget; a cracked cell's unstruck faces are flat.
-        let faces = struck_faces
-            .iter()
-            .filter(|(o, _)| o.cell == sf.cell && on(o.face))
-            .count();
-        let marks: Vec<_> = view
-            .marks
-            .iter()
-            .filter(|m| usize::from(m.face) == sf.face)
-            .collect();
-        let fraction = f64::from(view.fraction) / 255.0;
-        // The bite rule (BLOCK_DAMAGE.md §10): the cell's carved volume, k bites after k hits,
-        // shared over its struck faces by their marks' bites.
-        let block = kinds.of(*state).style.block;
-        let weight = |ms: &mut dyn Iterator<Item = &HitMark>| ms.map(HitMark::scale).sum::<f64>();
-        let all = weight(&mut view.marks.iter());
-        let share = if all > 0.0 {
-            weight(&mut marks.iter().copied()) / all
-        } else {
-            0.0
-        };
-        let target = dwell_protocol::damage::carved_m3(block, fraction) * share;
-        let carve =
-            (!marks.is_empty()).then(|| damage_mesh::carve_for(sf.face, &marks, &look, target));
+        let mask = masks
+            .entry(*di)
+            .or_insert_with(|| DamageMask::of(&look, view, &Hull::cube()));
         let crack = damage_mesh::CrackLayer::of(&look, view, sf.cell)
             .map(|c| c.for_face(sf.face, &view.marks));
-        damage_mesh::carve_face(
-            &mut opaque.m,
-            sf,
-            carve.as_ref(),
-            &look,
-            damage_mesh::grid_for(&look, faces),
-            crack.as_ref(),
-        );
+        struck_face(&mut opaque, sf, mask.as_ref(), crack.as_ref());
+        // The walls take the light of the faces struck (else of every face drawn).
+        let struck_here = view.marks.iter().any(|m| usize::from(m.face) == sf.face);
+        let mean = sf.light.iter().sum::<f32>() / 4.0;
+        let fl = sf.flood[0];
+        let e = lit.entry(*di).or_insert((sf.cell, 0.0, fl, 0));
+        let w = if struck_here { 16 } else { 1 };
+        e.1 += mean * w as f32;
+        e.3 += w;
+        if struck_here {
+            e.2 = fl;
+        }
+    }
+    for (di, mask) in &masks {
+        let (Some(mask), Some(&(cell, sum, flood, n))) = (mask, lit.get(di)) else {
+            continue;
+        };
+        let (_, state, view) = &damaged[*di];
+        let k = kinds.of(*state);
+        let Some(look) = dwell_protocol::damage::look_of(k.style.block) else {
+            continue;
+        };
+        let crack = damage_mesh::CrackLayer::of(&look, view, cell);
+        let walls = Walls {
+            look: &look,
+            mask,
+            hull: &Hull::cube(),
+            lit: (sum / n.max(1) as f32, flood),
+            crack: crack.as_ref(),
+            marks: &view.marks,
+        };
+        mask_walls(&mut opaque, &k, cell, &walls);
     }
     // Leaves (shared/look/leaves.json): whole cells, chamfered where exposed, lit as a crown.
     let crowns = leaves::Crowns::new(&cells);
+    // The listed trees' logs' vertices (`MeshArrays::tree_logs`).
+    let mut tree_log_vertices: Vec<std::ops::Range<u32>> = Vec::new();
     // Shaped blocks (the generated ramps): whole voxels, not slices.
     for cy in 0..N {
         for cz in 0..N {
@@ -2729,10 +3255,17 @@ fn mesh_cells(
                     .then(|| carved.get(&[cx, cy, cz]))
                     .flatten()
                 {
-                    let damage = progress.get(&[cx, cy, cz]).copied();
-                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut, damage);
+                    carved_voxel(&mut opaque, &cells, &k, [cx, cy, cz], cut);
                 } else if k.style.octagon {
-                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz]);
+                    let hit = (!damaged_logs.is_empty())
+                        .then(|| damaged_logs.get(&[cx, cy, cz]).copied())
+                        .flatten();
+                    let from = opaque.vertex_count();
+                    let beside = |c: [i32; 3]| damaged_here.contains(&c) || border.contains(&c);
+                    octagon_voxel(&mut opaque, &cells, &k, m, [cx, cy, cz], hit, &beside);
+                    if cells.tree_owned([cx, cy, cz]) {
+                        tree_log_vertices.push(from..opaque.vertex_count());
+                    }
                 }
                 if k.style.leafy
                     && let Some(crowns) = &crowns
@@ -2763,8 +3296,17 @@ fn mesh_cells(
                     // light itself).
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
                     let flood = cells.flood.cell([cx, cy, cz]);
-                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`).
-                    if plant_kept(world, flags.plants) {
+                    let same = |dy: i32| {
+                        let n = cells.kind(cx, cy + dy, cz);
+                        n.style.look == Look::Cross && n.style.block == k.style.block
+                    };
+                    let stand = Stand {
+                        below_top: same(1),
+                        above_foot: same(-1),
+                    };
+                    // The Tall grass setting thins the cross plants (`ChunkFlags::plants`), a
+                    // stand whole.
+                    if plant_kept(stand.seed(world), flags.plants) {
                         cross_voxel(
                             target,
                             &k.style,
@@ -2772,6 +3314,7 @@ fn mesh_cells(
                             [cx, cy, cz],
                             support,
                             (light, flood),
+                            stand,
                         );
                     }
                     if k.style.render == RenderMode::Translucent {
@@ -2783,6 +3326,21 @@ fn mesh_cells(
                 }
             }
         }
+    }
+    // The listed trees' logs last (`MeshArrays::tree_logs`), each part keeping its order.
+    if !tree_log_vertices.is_empty() {
+        let is_log = |v: u32| tree_log_vertices.iter().any(|r| r.contains(&v));
+        let (mut rest, mut logs) = (Vec::with_capacity(opaque.m.indices.len()), Vec::new());
+        for tri in opaque.m.indices.chunks_exact(3) {
+            if is_log(tri[0]) {
+                logs.extend_from_slice(tri);
+            } else {
+                rest.extend_from_slice(tri);
+            }
+        }
+        opaque.m.tree_logs = logs.len() as u32;
+        rest.extend(logs);
+        opaque.m.indices = rest;
     }
     // The crack overlay's stream, once any face has it, covers every opaque vertex (0: none).
     if !opaque.m.cracks.is_empty() {

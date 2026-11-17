@@ -15,6 +15,7 @@ import { build } from 'vite';
 import { renderPlan, type RenderJob } from '../src/audio/renderPlan.ts';
 import { SOUND_DATA } from '../src/audio/sounds.gen.ts';
 import { checkRender, type RenderStats } from '../src/audio/wav.ts';
+import { Variation } from '../src/audio/variation.ts';
 
 const PORT = 4178;
 
@@ -80,11 +81,20 @@ async function main(): Promise<void> {
   const rows: string[] = [];
   try {
     await waitFor(url, 20_000);
-    const browser = await chromium.launch({ headless: true });
+    // A preinstalled Chromium (CLAUDE.md "Running the browser in a sandbox"): DWELL_CHROMIUM.
+    const browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.DWELL_CHROMIUM || undefined,
+    });
     const page = await browser.newPage();
     await page.goto(url);
     await page.waitForFunction(() => typeof (window as unknown as Page).renderJob === 'function');
-    const jobs = renderPlan(SOUND_DATA).filter((j) => !only || j.name.includes(only));
+    const jobs = renderPlan(
+      SOUND_DATA,
+      5,
+      8,
+      (seed, id, def, k) => new Variation(seed).draw(id, def).layers[k]?.alt,
+    ).filter((j) => !only || j.name.includes(only));
     for (const job of jobs) {
       const r = await page.evaluate((j) => {
         const render = (window as unknown as Page).renderJob;

@@ -24,6 +24,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # A push to main touching only the agents' tools and the docs builds nothing (owner, 2026-11-16:
+    # "I'm seeing some releases, deploys going out, for these videos?"; RELEASES.md §3). Tags are
+    # never path-filtered.
+    paths-ignore: ['.claude/**', 'docs/**']
   workflow_dispatch:
     inputs:
       version:

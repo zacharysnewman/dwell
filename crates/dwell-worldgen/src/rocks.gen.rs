@@ -121,7 +121,7 @@ pub const ROCKS: &[Rock] = &[
         jointing: Jointing::Massive,
         bed: 4.0,
         solubility: 0.0,
-        face: "dwell:stone",
+        face: "dwell:sand",
         cap: "dwell:sand",
         cap_by: &[],
         scree: "dwell:sand",
@@ -240,6 +240,10 @@ pub const GEOLOGY: Geology = Geology {
     ledge: 2.0,
     ledge_every: 1.0,
     tread_relief: 0.08,
+    cover_rain: f64::INFINITY,
+    cover_noise: 0.0,
+    edge_jitter: 0.0,
+    edge_fade: 0.0,
     notched: Notched::None,
     erosion: Erosion {
         strength: 1.0,
@@ -256,9 +260,11 @@ pub const GEOLOGY: Geology = Geology {
         outline_wavelength: 260.0,
         gully_wavelength: 40.0,
         gully_depth: 5.0,
+        warp: 0.0,
+        warp_wavelength: 200.0,
     },
     blends: &[
-        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand"], shares: &[0.72, 0.28], wavelength: 90.0, slope: 0.3, dither: 0.03, dither_wavelength: 12.0 },
+        Blend { name: "dwell:mesa_country", stacks: &["dwell:red_desert_beds"], blocks: &["dwell:red_dirt", "dwell:red_sand"], shares: &[0.72, 0.28], wavelength: 220.0, slope: 0.4, dither: 0.03, dither_wavelength: 12.0 },
     ],
     mesa_relief: MesaRelief {
         top_amplitude: 3.5,

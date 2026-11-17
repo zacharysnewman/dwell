@@ -1,0 +1,10 @@
+{
+  "$comment": "Prototype content (ARCHITECTURE.md §6.1): one fallen 1 m stone, the smallest piece of a cliff's talus (placements.json `talus`, WORK_QUEUE item 15, 0.69). Not Dwell's rock design.",
+  "format": 1,
+  "name": "dwell:talus_stone",
+  "kind": "voxels",
+  "size": [1, 2, 1],
+  "anchor": [0, 0, 0],
+  "palette": { "s": "dwell:stone" },
+  "layers": [["s"], ["s"]]
+}

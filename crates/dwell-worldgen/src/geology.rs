@@ -124,6 +124,18 @@ pub struct Geology {
     /// The share of a bed's height its tread rises over (0: a dead-flat cap): a mesa's top keeps a
     /// little of the ground's relief.
     pub tread_relief: f64,
+    /// Treads and talus covered by the biome's own ground where the rain (mm) is at least this,
+    /// ± `cover_noise` mm by a noise (0.69, Realistic: bedded hills in a wet climate are grassy
+    /// steps with rock risers, not contour stripes of bare cap and talus). Infinite: never (the
+    /// rock's blocks everywhere it shapes the ground, as before).
+    pub cover_rain: f64,
+    pub cover_noise: f64,
+    /// The height a column's part (tread, talus, plain) is read at, jittered ± this (m) by a fine
+    /// noise (0.69; 0: a crisp contour).
+    pub edge_jitter: f64,
+    /// The shaping's half-strength line (where the rock's blocks start) ± this share by the same
+    /// noise (0.69; 0: one smooth line along a province's fade).
+    pub edge_fade: f64,
     /// Where the rock shapes the ground (`strength` > 0), where the stored ramps also top a column
     /// on a diagonal contour (a notched ramp, `ramps::top_of_notched`), not only on straight edges.
     pub notched: Notched,
@@ -181,12 +193,10 @@ impl Blend {
         // A 3-octave fbm's spread is about 0.17: its normal CDF makes `t` near uniform, so each
         // tone covers about its share of the ground (the slope's push aside).
         let mut t = normal_cdf(n(0x6E01_0200, self.wavelength, 3) / FBM3_SD);
-        // The slope pushes toward the later tones but never into the last (a talus is red sand,
-        // never the blend's palest patches): a continuous push, so neighbours stay a tone apart.
-        let below_last: f64 = self.shares[..self.shares.len() - 1].iter().sum();
-        if t < below_last {
-            t = (t + self.slope * slope).min(below_last - 1e-6);
-        }
+        // The slope pushes toward the later tones (red sand on the slopes and washes, 0.69: the
+        // tones follow the relief instead of lying as flat blobs): a continuous push, so
+        // neighbours stay a tone apart.
+        t = (t + self.slope * slope).min(1.0 - 1e-6);
         if self.dither > 0.0 {
             t += self.dither * 2.0 * n(0x6E01_0201, self.dither_wavelength, 1);
         }
@@ -856,6 +866,10 @@ pub struct Erosion {
     pub gully_wavelength: f64,
     /// The rills' depth (m).
     pub gully_depth: f64,
+    /// The drainage lines read at a point warped ± `warp` m at `warp_wavelength` m (0.69; 0: as
+    /// built, the map cells' straight segments: washes and scarps meander instead).
+    pub warp: f64,
+    pub warp_wavelength: f64,
 }
 
 /// Relief on the erosion's mesas (rocks.json `mesaRelief`; owner, 2026-11-13: "mesas are too flat

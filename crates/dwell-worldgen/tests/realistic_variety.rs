@@ -99,8 +99,10 @@ both_faces!(
                     "{face:?}: {big} one region of {km2:.0} km² ({:.1} % of the land)",
                     100.0 * km2 / land
                 );
+                // 0.69: borders are one wandering line, not a km-wide mingling of two biomes'
+                // ground, so fewer windows straddle one (3.4 before; 2.96 on face A).
                 let per = m.biomes.distinct_per_4km2();
-                assert!(per >= 3.4, "{face:?}: {per:.2} biomes per 4 km²");
+                assert!(per >= 2.8, "{face:?}: {per:.2} biomes per 4 km²");
             }
         }
     }

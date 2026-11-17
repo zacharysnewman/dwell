@@ -30,6 +30,10 @@ pub struct BuilderRules {
     pub per_blueprint: u32,
     /// The job its builders do (`jobs`, B5).
     pub job: &'static str,
+    /// The ring round its box (whole m) a builder clears before it builds (§5b).
+    pub clear_margin_m: i32,
+    /// Seconds a removal while clearing (a whole tree is one).
+    pub clear_pace_s: f64,
 }
 
 /// What a job does (B5, docs/BLUEPRINTS.md §9): a small fixed vocabulary; the carters' `haul` and
@@ -293,6 +297,8 @@ pub struct Ghost {
     pub max: [i32; 3],
     /// Its cells, in the structure's layer order (bottom row first).
     pub cells: Vec<GhostCell>,
+    /// Its floor: the anchor's face-local row (site clearing digs from here up, never below).
+    pub floor: i32,
     index: HashMap<[i32; 3], usize>,
 }
 
@@ -307,6 +313,14 @@ pub fn built(now: StateId, want: StateId) -> bool {
 pub fn cost_item(state: StateId) -> &'static str {
     let name = block_of(state).name;
     dwell_protocol::inventory::drops_of(name).map_or(name, |d| d.cost)
+}
+
+/// Whether a cell of `state` comes with another cell of its multi-cell block rather than being put
+/// on its own (a torch's flame, a door's cells above its bottom one; BLOCK_REGISTRY.md, Multi-cell
+/// blocks): placing the block's first cell puts it, so it costs nothing and no one places it.
+pub fn comes_with(state: StateId) -> bool {
+    let s = info(state);
+    s.part_of.is_some() || s.column.is_some_and(|c| c.index > 0)
 }
 
 /// Whether a block can be put in a cell holding `m`: air, a liquid, or a replaceable plant.
@@ -355,6 +369,7 @@ impl Ghost {
             min: std::array::from_fn(|i| lo[i].min(hi[i])),
             max: std::array::from_fn(|i| lo[i].max(hi[i])),
             cells: out,
+            floor: b.at[1],
             index,
         }
     }
@@ -424,7 +439,12 @@ impl Ghost {
             let now = get(c)?;
             if let Some(&i) = self.index.get(&c) {
                 let g = self.cells[i];
-                if free(now) && !built(now, g.state) && has(g.state) && self.supported(c, get) {
+                if free(now)
+                    && !built(now, g.state)
+                    && !comes_with(g.state)
+                    && has(g.state)
+                    && self.supported(c, get)
+                {
                     return Some(g);
                 }
             }
@@ -460,6 +480,9 @@ impl Ghost {
         let mut left = 0;
         for c in self.remaining(get) {
             left += 1;
+            if comes_with(c.state) {
+                continue; // put with its block's first cell
+            }
             let name = cost_item(c.state);
             match by.iter_mut().find(|n| n.block == name) {
                 Some(n) => n.need += 1,
@@ -510,7 +533,7 @@ impl Ghost {
         let f = self.face;
         let mut cells: Vec<_> = self
             .remaining(get)
-            .filter(|c| get(c.world).is_some_and(free))
+            .filter(|c| get(c.world).is_some_and(free) && !comes_with(c.state))
             .enumerate()
             .map(|(i, c)| {
                 let down = f.cell([c.local[0], c.local[1] - 1, c.local[2]]);
@@ -563,6 +586,237 @@ impl Ghost {
     /// Whether any cell is left that a builder can put (free and left to build).
     pub fn buildable_left(&self, get: &dyn Fn([i32; 3]) -> Option<StateId>) -> bool {
         self.builder_next(get).is_some()
+    }
+}
+
+/// The most cells one tree taken whole while clearing may have (a larger system of logs, a
+/// player's log house, is cleared cell by cell instead).
+pub const CLEAR_TREE_CELLS: usize = 4096;
+/// How far above its box (rows) a column's clearing goes on while what is stacked on a cleared cell
+/// is solid (a hillside, a tall rock): nothing is left hanging over the site.
+const CLEAR_ABOVE_ROWS: i32 = 32;
+
+/// One removal while clearing a site (§5b): the cells that go together (a whole tree, logs and
+/// leaves, top first, or one cell) and the cell a builder walks to for it (a tree's lowest log in
+/// the site).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClearJob {
+    pub at: [i32; 3],
+    pub cells: Vec<[i32; 3]>,
+}
+
+fn role_of(m: StateId) -> Option<dwell_blocks::SupportRole> {
+    let s = info(m);
+    (s.solid && !s.liquid).then_some(s.support_role)
+}
+
+fn offset(a: [i32; 3], d: [i32; 3]) -> [i32; 3] {
+    [a[0] + d[0], a[1] + d[1], a[2] + d[2]]
+}
+
+impl Ghost {
+    /// The site clearing works (face-local): its box grown by `margin` cells round it (x, z
+    /// inclusive), and its rows from the floor up to its top.
+    fn clear_zone(&self, margin: i32) -> ([i32; 2], [i32; 2], [i32; 2]) {
+        let (lo, hi) = (self.face.cell(self.min), self.face.cell(self.max));
+        (
+            [lo[0].min(hi[0]) - margin, lo[0].max(hi[0]) + margin],
+            [self.floor, lo[1].max(hi[1])],
+            [lo[2].min(hi[2]) - margin, lo[2].max(hi[2]) + margin],
+        )
+    }
+
+    /// Whether world cell `c` lies in the site clearing works (any row from the floor up).
+    fn in_clear_zone(&self, c: [i32; 3], margin: i32) -> bool {
+        let l = self.face.cell(c);
+        let (xs, ys, zs) = self.clear_zone(margin);
+        l[0] >= xs[0] && l[0] <= xs[1] && l[2] >= zs[0] && l[2] <= zs[1] && l[1] >= ys[0]
+    }
+
+    /// Whether a cell holding `now` at world `c` is cleared: something there (not air or a liquid)
+    /// that can be broken, which isn't this blueprint's own block already in place, and which
+    /// `keep` doesn't keep (another blueprint's, a storehouse's).
+    fn unwanted(&self, c: [i32; 3], now: StateId, keep: &dyn Fn([i32; 3]) -> bool) -> bool {
+        targetable(now)
+            && !info(now).indestructible
+            && self.at(c).is_none_or(|want| !built(now, want))
+            && !keep(c)
+    }
+
+    /// The cells clearing its site removes (world cells), the highest face-local row first so
+    /// nothing is left standing on nothing: in its box and `margin` cells round it, from its floor
+    /// (the anchor's row; never below) to its top, and on up a column while what is stacked on a
+    /// cleared cell is solid (a hillside, a tall rock). An unloaded cell is left out.
+    pub fn clear_cells(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        margin: i32,
+        keep: &dyn Fn([i32; 3]) -> bool,
+    ) -> Vec<[i32; 3]> {
+        let f = self.face;
+        let (xs, ys, zs) = self.clear_zone(margin);
+        let mut out: Vec<([i32; 3], [i32; 3])> = Vec::new();
+        for x in xs[0]..=xs[1] {
+            for z in zs[0]..=zs[1] {
+                let mut last = false;
+                let mut y = ys[0];
+                while y <= ys[1] || (last && y <= ys[1] + CLEAR_ABOVE_ROWS) {
+                    let w = f.cell([x, y, z]);
+                    last = get(w).is_some_and(|now| self.unwanted(w, now, keep));
+                    if last {
+                        out.push(([x, y, z], w));
+                    }
+                    y += 1;
+                }
+            }
+        }
+        out.sort_by_key(|(l, _)| (std::cmp::Reverse(l[1]), l[0], l[2]));
+        out.into_iter().map(|(_, w)| w).collect()
+    }
+
+    /// Whether its site is still being cleared (a builder places nothing until it is clear).
+    pub fn clearing(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        margin: i32,
+        keep: &dyn Fn([i32; 3]) -> bool,
+    ) -> bool {
+        !self.clear_cells(get, margin, keep).is_empty()
+    }
+
+    /// The whole tree of the cell `c` (a log, or a leaf within `rider_reach` of one through
+    /// leaves): its logs (carriers joined face to face) and the leaves (riders) within
+    /// `rider_reach` of them through leaves, when one of its logs stands in the site; None for
+    /// anything else, a tree whose trunk is outside the site (a neighbour's crown reaching in), or
+    /// one past `CLEAR_TREE_CELLS`. Kept cells are never taken.
+    fn tree_at(
+        &self,
+        c: [i32; 3],
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        margin: i32,
+        rider_reach: u32,
+        keep: &dyn Fn([i32; 3]) -> bool,
+    ) -> Option<Vec<[i32; 3]>> {
+        use dwell_blocks::SupportRole::{Carrier, Rider};
+        use std::collections::{HashSet, VecDeque};
+        let role = |p: [i32; 3]| {
+            get(p)
+                .filter(|&m| self.unwanted(p, m, keep))
+                .and_then(role_of)
+        };
+        let start = match role(c)? {
+            Carrier => c,
+            Rider => {
+                // The nearest log through leaves.
+                let mut seen = HashSet::from([c]);
+                let mut q = VecDeque::from([(c, 0u32)]);
+                let mut found = None;
+                'search: while let Some((p, d)) = q.pop_front() {
+                    if d >= rider_reach {
+                        continue;
+                    }
+                    for dir in crate::edit::FACE_DIRS {
+                        let n = offset(p, dir);
+                        if !seen.insert(n) {
+                            continue;
+                        }
+                        match role(n) {
+                            Some(Carrier) => {
+                                found = Some(n);
+                                break 'search;
+                            }
+                            Some(Rider) => q.push_back((n, d + 1)),
+                            _ => {}
+                        }
+                    }
+                }
+                found?
+            }
+            _ => return None,
+        };
+        let mut logs = vec![start];
+        let mut seen = HashSet::from([start]);
+        let mut i = 0;
+        while i < logs.len() {
+            let p = logs[i];
+            i += 1;
+            for dir in crate::edit::FACE_DIRS {
+                let n = offset(p, dir);
+                if role(n) == Some(Carrier) && seen.insert(n) {
+                    logs.push(n);
+                    if logs.len() > CLEAR_TREE_CELLS {
+                        return None;
+                    }
+                }
+            }
+        }
+        if !logs.iter().any(|&l| self.in_clear_zone(l, margin)) {
+            return None;
+        }
+        let mut cells = logs.clone();
+        let mut q: VecDeque<([i32; 3], u32)> = logs.iter().map(|&l| (l, 0)).collect();
+        while let Some((p, d)) = q.pop_front() {
+            if d >= rider_reach {
+                continue;
+            }
+            for dir in crate::edit::FACE_DIRS {
+                let n = offset(p, dir);
+                if role(n) == Some(Rider) && seen.insert(n) {
+                    cells.push(n);
+                    if cells.len() > CLEAR_TREE_CELLS {
+                        return None;
+                    }
+                    q.push_back((n, d + 1));
+                }
+            }
+        }
+        Some(cells)
+    }
+
+    /// The next removal clearing its site (§5b), None when the site is clear: the first of
+    /// [`Ghost::clear_cells`] (the highest row; within it the nearest `near`, face-local feet),
+    /// taken with its whole tree when it is a tree's (logs and leaves, so nothing is left
+    /// floating), the cells top first.
+    pub fn clear_next(
+        &self,
+        get: &dyn Fn([i32; 3]) -> Option<StateId>,
+        near: Option<[f64; 3]>,
+        margin: i32,
+        rider_reach: u32,
+        keep: &dyn Fn([i32; 3]) -> bool,
+    ) -> Option<ClearJob> {
+        let f = self.face;
+        let cells = self.clear_cells(get, margin, keep);
+        let top = f.cell(*cells.first()?)[1];
+        let dist = |w: &[i32; 3]| {
+            let l = f.cell(*w);
+            near.map_or(0, |p| {
+                ((f64::from(l[0]) + 0.5 - p[0]).hypot(f64::from(l[2]) + 0.5 - p[2]) * 4.0) as i64
+            })
+        };
+        let first = cells
+            .iter()
+            .take_while(|w| f.cell(**w)[1] == top)
+            .min_by_key(|w| dist(w))
+            .copied()?;
+        let Some(mut tree) = self.tree_at(first, get, margin, rider_reach, keep) else {
+            return Some(ClearJob {
+                at: first,
+                cells: vec![first],
+            });
+        };
+        tree.sort_by_key(|w| std::cmp::Reverse(f.cell(*w)[1]));
+        // Walk to its trunk's foot in the site.
+        let at = tree
+            .iter()
+            .filter(|&&w| {
+                self.in_clear_zone(w, margin)
+                    && get(w).and_then(role_of) == Some(dwell_blocks::SupportRole::Carrier)
+            })
+            .min_by_key(|w| (f.cell(**w)[1], dist(w)))
+            .copied()
+            .unwrap_or(first);
+        Some(ClearJob { at, cells: tree })
     }
 }
 
@@ -721,6 +975,65 @@ impl TownRules {
         [b[0] - c, b[1] - c, b[2] + c, b[3] + c]
     }
 
+    /// "Test in town" (owner, 2026-11-14: "a quick way to test a saved building in a village";
+    /// docs/BLUEPRINTS.md §6c): where a structure's blueprint goes beside the town site of `sites`
+    /// nearest face-local column `near`, within `reach_m` of it: on rings round the site's layout
+    /// (`clear_box`), 2 m apart and widening, the nearest to `near` on the first ring with a spot
+    /// whose box (`half` columns either way of the anchor, so any turn fits) keeps a column clear of
+    /// the layout and of every box of `taken` (blueprints already placed, [x0, z0, x1, z1] inclusive)
+    /// and whose `ground` (the face-local row a place fills at a column; None: not known) is known.
+    /// Its face-local anchor cell, or None: no site near, or no free spot round it.
+    pub fn test_spot(
+        &self,
+        sites: &[TownSite],
+        near: [f64; 2],
+        reach_m: f64,
+        half: i32,
+        taken: &[[i32; 4]],
+        ground: &dyn Fn(i32, i32) -> Option<i32>,
+    ) -> Option<[i32; 3]> {
+        let d = |x: f64, z: f64| (x - near[0]).hypot(z - near[1]);
+        let site = sites
+            .iter()
+            .filter(|t| d(f64::from(t.x) + 0.5, f64::from(t.z) + 0.5) <= reach_m)
+            .min_by(|a, b| {
+                d(f64::from(a.x), f64::from(a.z)).total_cmp(&d(f64::from(b.x), f64::from(b.z)))
+            })?;
+        let [x0, z0, x1, z1] = self.clear_box(site);
+        let overlaps = |b: [i32; 4], o: [i32; 4]| {
+            b[0] <= o[2] + 1 && o[0] <= b[2] + 1 && b[1] <= o[3] + 1 && o[1] <= b[3] + 1
+        };
+        for ring in 0..12 {
+            let out = half + 1 + 2 * ring;
+            let (lx, lz, hx, hz) = (x0 - out, z0 - out, x1 + out, z1 + out);
+            let mut spots = Vec::new();
+            for x in (lx..=hx).step_by(2) {
+                spots.push([x, lz]);
+                spots.push([x, hz]);
+            }
+            for z in (lz..=hz).step_by(2) {
+                spots.push([lx, z]);
+                spots.push([hx, z]);
+            }
+            let best = spots
+                .into_iter()
+                .filter(|&[x, z]| {
+                    let b = [x - half, z - half, x + half, z + half];
+                    !overlaps(b, [x0, z0, x1, z1]) && !taken.iter().any(|&t| overlaps(b, t))
+                })
+                .filter_map(|[x, z]| ground(x, z).map(|y| [x, y, z]))
+                .min_by(|a, b| {
+                    let da = d(f64::from(a[0]) + 0.5, f64::from(a[2]) + 0.5);
+                    let db = d(f64::from(b[0]) + 0.5, f64::from(b[2]) + 0.5);
+                    da.total_cmp(&db).then(a.cmp(b))
+                });
+            if best.is_some() {
+                return best;
+            }
+        }
+        None
+    }
+
     /// A site's blueprints: each structure's name, its anchor's face-local column and its turn.
     pub fn layout(&self, t: &TownSite) -> Vec<(&'static str, [i32; 2], u8)> {
         self.plans[t.plan]
@@ -820,15 +1133,19 @@ mod tests {
                 assert!(g.cells.iter().any(|c| c.local == at));
                 assert!(g.cells.iter().all(|c| c.local[1] >= at[1]));
             }
-            // A quarter turn moves the doorway (south, +z) to the west (−x).
+            // A quarter turn moves the door (south, +z) to the west (−x); the wall fills the rest.
             let door = |turn| {
                 let g = Ghost::of(&record_of(&s, f, at, turn).unwrap());
+                let is_door = |c: [i32; 3]| {
+                    g.at(f.cell(c))
+                        .is_some_and(|m| block_of(m).name == "dwell:door")
+                };
                 let d = [at[0], at[1] + 1, at[2] + 2];
                 let w = [at[0] - 2, at[1] + 1, at[2]];
-                (g.at(f.cell(d)).is_some(), g.at(f.cell(w)).is_some())
+                (is_door(d), is_door(w))
             };
-            assert_eq!(door(0), (false, true));
-            assert_eq!(door(1), (true, false));
+            assert_eq!(door(0), (true, false));
+            assert_eq!(door(1), (false, true));
         }
     );
 
@@ -848,10 +1165,11 @@ mod tests {
             let all = |_: StateId| true;
             let p = g.pick(eye, dir, 6.0, &get, &all).expect("the floor's edge");
             assert_eq!(p.local, [0, 64, 2]);
-            assert_eq!(block_of(p.state).name, "dwell:stone");
-            // Without stone nothing is picked there (it shows red), not another block.
-            let no_stone = |m: StateId| block_of(m).name != "dwell:stone";
-            assert_eq!(g.pick(eye, dir, 6.0, &get, &no_stone), None);
+            assert_eq!(block_of(p.state).name, "dwell:planks");
+            // Without planks nothing is picked there (it shows red), not another block (the door
+            // over it has no floor to stand on yet).
+            let no_planks = |m: StateId| block_of(m).name != "dwell:planks";
+            assert_eq!(g.pick(eye, dir, 6.0, &get, &no_planks), None);
             // Aimed off the blueprint: nothing.
             let away = f.vector([0.0, -0.2, 1.0]);
             assert_eq!(g.pick(eye, away, 6.0, &get, &all), None);
@@ -859,7 +1177,7 @@ mod tests {
             assert_eq!(g.pick(eye, dir, 1.0, &get, &all), None);
             // Built: the next cell along is not that one.
             let mut set = HashMap::new();
-            set.insert(f.cell([0, 64, 2]), M.stone);
+            set.insert(f.cell([0, 64, 2]), p.state);
             let get = world(f, 64, &set);
             assert_ne!(
                 g.pick(eye, dir, 6.0, &get, &all).map(|c| c.local),
@@ -873,33 +1191,48 @@ mod tests {
             let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
             let set = HashMap::new();
             let get = world(f, 64, &set);
-            let have = |n: &str| if n == "dwell:log" { 12 } else { 0 };
+            let have = |n: &str| if n == "dwell:stone_brick" { 12 } else { 0 };
             let (rows, left) = g.needs(&get, &have);
-            // The hut: a 5 × 5 stone floor and roof, log walls 4 rows of the 16 edge cells less a
-            // 3-row doorway.
-            assert_eq!(left, 25 + 25 + 16 * 4 - 3);
+            // The hut: a 5 × 5 plank floor; stone brick walls 4 rows of the 16 edge cells less the
+            // door's column, and a ring of 16 under the roof round 9 planks; a thatch roof of 25 and
+            // 15 cells. Every cell is left, but the door is needed once (its bottom cell's).
+            assert_eq!(left, 25 + 16 * 4 + 16 + 9 + 25 + 15);
             assert_eq!(
                 rows[0],
                 Need {
-                    block: "dwell:log",
+                    block: "dwell:stone_brick",
                     have: 12,
-                    need: 61
+                    need: 15 * 4 + 16
                 }
             );
             assert_eq!(
-                rows[1],
-                Need {
-                    block: "dwell:stone",
+                rows.iter().find(|r| r.block == "dwell:planks"),
+                Some(&Need {
+                    block: "dwell:planks",
                     have: 0,
-                    need: 50
-                }
+                    need: 25 + 9
+                })
             );
-            // One floor cell built: one fewer stone.
+            assert_eq!(
+                rows.iter()
+                    .find(|r| r.block == "dwell:door")
+                    .map(|r| r.need),
+                Some(1),
+                "the door's upper cells come with it"
+            );
+            assert_eq!(rows.iter().map(|r| r.need).sum::<u32>(), left as u32 - 3);
+            // One floor cell built: one fewer plank.
+            let planks = |rows: &[Need]| {
+                rows.iter()
+                    .find(|r| r.block == "dwell:planks")
+                    .unwrap()
+                    .need
+            };
             let mut set = HashMap::new();
-            set.insert(f.cell([0, 64, 0]), M.stone);
+            set.insert(f.cell([0, 64, 0]), g.at(f.cell([0, 64, 0])).unwrap());
             let get = world(f, 64, &set);
-            let (rows, left2) = g.needs(&get, &have);
-            assert_eq!((rows[1].need, left2), (49, left - 1));
+            let (rows2, left2) = g.needs(&get, &have);
+            assert_eq!((planks(&rows2), left2), (planks(&rows) - 1, left - 1));
             assert_eq!(g.complete(&get), Some(false));
         }
     );
@@ -957,24 +1290,124 @@ mod tests {
                 };
                 rows.push(c.local[1]);
                 set.insert(c.world, c.state);
+                // A door's bottom cell puts the cells of its column above (`comes_with`).
+                let mut up = c.local;
+                loop {
+                    up[1] += 1;
+                    match g.at(f.cell(up)) {
+                        Some(m) if comes_with(m) => set.insert(f.cell(up), m),
+                        _ => break,
+                    };
+                }
             }
             assert!(
                 rows.windows(2).all(|w| w[0] <= w[1]),
                 "lowest row first: {rows:?}"
             );
+            let with = g.cells.iter().filter(|c| comes_with(c.state)).count();
+            assert_eq!(with, 3, "the door's cells over its bottom one");
             assert_eq!(
                 rows.len(),
-                g.cells.len() - 1,
-                "every cell but the occupied one"
+                g.cells.len() - 1 - with,
+                "every cell but the occupied one and those put with the door"
             );
             {
                 let get = world(f, 64, &set);
                 assert_eq!(g.complete(&get), Some(false));
                 assert_eq!(g.remaining(&get).count(), 1);
             }
-            set.insert(occupied, parse_state("dwell:log").unwrap());
+            set.insert(occupied, g.at(occupied).unwrap());
             let get = world(f, 64, &set);
             assert_eq!(g.complete(&get), Some(true));
+        }
+    );
+
+    both_faces!(
+        fn clearing_takes_the_whole_tree_and_unwanted_cells_keeping_the_right_ones(f: FaceFrame) {
+            // The hut over a tree: x, z -2..2, rows 64..71 (its floor 64, the ground under it).
+            let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
+            let (log, leaves, grass, planks) = (
+                f.state(parse_state("dwell:log").unwrap()),
+                f.state(parse_state("dwell:leaves").unwrap()),
+                f.state(parse_state("dwell:tall_grass").unwrap()),
+                f.state(parse_state("dwell:planks").unwrap()),
+            );
+            let mut set: HashMap<[i32; 3], StateId> = HashMap::new();
+            let mut put = |l: [i32; 3], m| {
+                set.insert(f.cell(l), m);
+            };
+            // The tree: a trunk in the hut rising past its top, a crown reaching outside the
+            // margin (x 4), so it would float if only the site's cells went.
+            for y in 64..76 {
+                put([0, y, 0], log);
+            }
+            for x in -2..=4 {
+                for z in -1..=1 {
+                    for y in 74..77 {
+                        if [x, z] != [0, 0] || y >= 76 {
+                            put([x, y, z], leaves);
+                        }
+                    }
+                }
+            }
+            // A neighbour's trunk at z 9 whose crown reaches into the margin (z 3): its leaf
+            // there goes, its tree stays.
+            for y in 64..71 {
+                put([-1, y, 9], log);
+            }
+            for z in 3..9 {
+                put([-1, 70, z], leaves);
+            }
+            put([-3, 64, 0], grass); // in the margin: cleared
+            put([6, 64, 6], grass); // outside it: kept
+            put([1, 64, 1], planks); // the floor's own block already there: kept
+            put([2, 65, 3], M.dirt); // terrain over the floor in the margin: dug
+            let tree: Vec<[i32; 3]> = set
+                .iter()
+                .filter(|(c, m)| {
+                    let l = f.cell(**c);
+                    (**m == log && l[2] == 0) || (**m == leaves && l[2].abs() <= 1)
+                })
+                .map(|(c, _)| *c)
+                .collect();
+            let keep = |_: [i32; 3]| false;
+            let mut jobs = Vec::new();
+            for _ in 0..200 {
+                let job = {
+                    let get = world(f, 64, &set);
+                    g.clear_next(&get, Some([-6.0, 0.0, 0.0]), 1, 6, &keep)
+                };
+                let Some(job) = job else {
+                    break;
+                };
+                for c in &job.cells {
+                    set.insert(*c, M.air);
+                }
+                jobs.push(job);
+            }
+            let get = world(f, 64, &set);
+            assert!(!g.clearing(&get, 1, &keep), "the site is clear");
+            // The tree went whole, in one removal walked to from its trunk's foot.
+            let whole = jobs
+                .iter()
+                .find(|j| j.cells.len() > 1)
+                .expect("the tree in one");
+            assert_eq!(whole.at, f.cell([0, 64, 0]), "from its foot");
+            for c in &tree {
+                assert!(whole.cells.contains(c), "the tree's {:?}", f.cell(*c));
+            }
+            assert!(tree.iter().all(|c| get(*c) == Some(M.air)), "no leaf left");
+            let at = |l: [i32; 3]| get(f.cell(l)).unwrap();
+            assert_eq!(at([-3, 64, 0]), M.air, "the margin's grass");
+            assert_eq!(at([6, 64, 6]), grass, "grass outside the margin");
+            assert_eq!(at([1, 64, 1]), planks, "the right block kept");
+            assert_eq!(at([2, 65, 3]), M.air, "terrain over the floor dug");
+            assert_eq!(at([0, 63, 0]), M.stone, "never below the floor");
+            assert_eq!(at([-1, 70, 3]), M.air, "the neighbour's leaf in the margin");
+            assert_eq!(at([-1, 70, 4]), leaves, "the rest of its crown");
+            assert_eq!(at([-1, 64, 9]), log, "the neighbour's trunk");
+            // Then building: the hut's next piece.
+            assert!(g.builder_next(&get).is_some());
         }
     );
 
@@ -983,32 +1416,36 @@ mod tests {
             let g = Ghost::of(&record_of(&hut(), f, [0, 64, 0], 0).unwrap());
             let set = HashMap::new();
             let get = world(f, 64, &set);
-            // The floor first: 25 stone, so a load of 10 is all stone.
+            // The floor first: 25 planks, so a load of 10 is all planks.
+            let planks = g.at(f.cell([0, 64, 0])).unwrap();
+            assert_eq!(block_of(planks).name, "dwell:planks");
             let load = g.next_load(&get, None, 10, true);
-            assert_eq!(load, vec![(f.state(M.stone), 10)]);
-            // The floor built but three cells: a mixed load is those three stone, then logs.
+            assert_eq!(load, vec![(planks, 10)]);
+            // The floor built but three cells: a mixed load is those three planks, then the walls'
+            // stone brick (and the door).
             let mut set = HashMap::new();
             for c in g.cells.iter().filter(|c| c.local[1] == 64).skip(3) {
                 set.insert(c.world, c.state);
             }
             let get = world(f, 64, &set);
             let load = g.next_load(&get, None, 10, true);
-            assert_eq!(load[0], (f.state(M.stone), 3));
+            assert_eq!(load[0], (planks, 3));
             assert_eq!(load.iter().map(|l| l.1).sum::<u32>(), 10);
             assert!(
                 load[1..]
                     .iter()
-                    .all(|l| block_of(l.0).name.ends_with("log"))
+                    .all(|l| ["dwell:stone_brick", "dwell:door"].contains(&block_of(l.0).name))
             );
-            // Unmixed: only the stone.
-            assert_eq!(
-                g.next_load(&get, None, 10, false),
-                vec![(f.state(M.stone), 3)]
-            );
-            // A builder carrying only logs is given only log cells.
-            let log = load[1].0;
-            let next = g.builder_next_of(&get, None, &|s| s == log).unwrap();
-            assert_eq!(next.state, log);
+            // Unmixed: only the planks.
+            assert_eq!(g.next_load(&get, None, 10, false), vec![(planks, 3)]);
+            // A builder carrying only stone brick is given only stone brick cells.
+            let brick = load
+                .iter()
+                .map(|l| l.0)
+                .find(|&m| block_of(m).name == "dwell:stone_brick")
+                .unwrap();
+            let next = g.builder_next_of(&get, None, &|s| s == brick).unwrap();
+            assert_eq!(next.state, brick);
         }
     );
 

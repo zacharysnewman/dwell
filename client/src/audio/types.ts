@@ -185,6 +185,24 @@ export interface AmbientDef {
   fire: { radiusM: number; max: number };
   /** Waterfalls (docs/WATER_SURFACE_GRID.md §2e): within `radiusM`, the nearest `max`, full at `fullM3s`. */
   falls: { radiusM: number; max: number; fullM3s: number };
+  /** The grid's moving water heard (BUGS.md #176): the fields' meanings in the data's `$comment`. */
+  rush: {
+    $comment?: string;
+    radiusM: number;
+    strideColumns: number;
+    minSpeedMs: number;
+    nearM: number;
+    fullFlux: number;
+    fallWeight: number;
+    panM: number;
+    burst: {
+      windowS: number;
+      minLevel: number;
+      minShare: number;
+      fullLevel: number;
+      cooldownS: number;
+    };
+  };
 }
 
 /** A bed's condition (AUDIO.md §2c): 0 at `from`, 1 at `full`, at least `floor`. */
@@ -266,6 +284,10 @@ export interface SoundData {
   };
   /** Brushing through foliage (AUDIO.md §5 `brush`): the Rust game's rate; here for the checks. */
   brush: { everyM: number; minS: number };
+  /** Picking up a ground item (AUDIO.md §5 `pickup`): the Rust game's window and rate; here for the checks. */
+  pickup: { windowS: number; reachM: number; minS: number };
+  /** Making an item with Combine (AUDIO.md §5 `craft`): the Rust game's window; here for the checks. */
+  craft: { windowS: number };
   sounds: Record<string, SoundDef>;
   /** Every sample file shipped: its published name and its file in shared/sounds/samples. */
   sampleFiles: { file: string; source: string }[];

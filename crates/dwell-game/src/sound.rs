@@ -684,19 +684,24 @@ pub const LOOP_OFF: f64 = 0.01;
 
 /// One continuous sound on its own voice: started, moved and stopped by a level (0–1).
 #[derive(Clone, Copy, Debug)]
-struct LoopTrack {
+pub(crate) struct LoopTrack {
     start: SoundKind,
     update: SoundKind,
     stop: SoundKind,
     voice: u32,
-    playing: bool,
+    pub(crate) playing: bool,
     sent: f64,
     sent_at: Option<[f64; 3]>,
     since: f64,
 }
 
 impl LoopTrack {
-    const fn new(start: SoundKind, update: SoundKind, stop: SoundKind, voice: u32) -> Self {
+    pub(crate) const fn new(
+        start: SoundKind,
+        update: SoundKind,
+        stop: SoundKind,
+        voice: u32,
+    ) -> Self {
         Self {
             start,
             update,
@@ -722,7 +727,7 @@ impl LoopTrack {
     }
 
     /// The level this update (`block`: its sound set, for set loops).
-    fn set(
+    pub(crate) fn set(
         &mut self,
         level: f64,
         block: StateId,
@@ -756,7 +761,7 @@ impl LoopTrack {
         }
     }
 
-    fn end(&mut self, out: &mut Vec<SoundEvent>) {
+    pub(crate) fn end(&mut self, out: &mut Vec<SoundEvent>) {
         if self.playing {
             out.push(self.event(self.stop, 0, 0.0, self.sent_at));
             self.playing = false;
@@ -1167,6 +1172,96 @@ impl VitalSounds {
     }
 }
 
+/// Picking up a ground item (owner, 2026-11-14; AUDIO.md §5, shared/sounds `pickup`): a light pop
+/// when the local player's inventory gains items within `WINDOW_S` of a loose item within `REACH_M`
+/// of them going or shrinking (the server took it into that inventory), never closer than `MIN_S`:
+/// a burst of pickups in a frame, or a sweep through a pile, pops once, not a stack. Either half
+/// alone is silent: crafting gains items with no drop gone, a drop that merged or despawned took
+/// nothing in. Which of the sound's variants plays is the shell's seeded draw (`alts`).
+#[derive(Clone, Debug, Default)]
+pub struct PickupSounds {
+    gained_ms: Option<f64>,
+    taken_ms: Option<f64>,
+    last_ms: Option<f64>,
+}
+
+impl PickupSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The inventory was sent again: `before` and `after` its item counts (None before: the first).
+    pub fn inventory(&mut self, before: Option<u32>, after: u32, now_ms: f64) {
+        if before.is_some_and(|b| after > b) {
+            self.gained_ms = Some(now_ms);
+        }
+    }
+
+    /// Loose items went or shrank: `nearest_m` the nearest of them to the local player.
+    pub fn drops_taken(&mut self, nearest_m: f64, now_ms: f64) {
+        if nearest_m <= pickup_sounds::REACH_M {
+            self.taken_ms = Some(now_ms);
+        }
+    }
+
+    /// Pops once when both halves came within the window of each other (at the listener).
+    pub fn update(&mut self, now_ms: f64, out: &mut Vec<SoundEvent>) {
+        let window = pickup_sounds::WINDOW_S * 1000.0;
+        for t in [&mut self.gained_ms, &mut self.taken_ms] {
+            if t.is_some_and(|t| now_ms - t > window) {
+                *t = None;
+            }
+        }
+        let (Some(g), Some(t)) = (self.gained_ms, self.taken_ms) else {
+            return;
+        };
+        if (g - t).abs() > window {
+            return;
+        }
+        self.gained_ms = None;
+        self.taken_ms = None;
+        if self
+            .last_ms
+            .is_some_and(|l| now_ms - l < pickup_sounds::MIN_S * 1000.0)
+        {
+            return;
+        }
+        self.last_ms = Some(now_ms);
+        out.push(SoundEvent::new(SoundKind::ItemPickup, 0, 1.0, None));
+    }
+}
+
+/// Making an item with Combine (owner, 2026-11-15; AUDIO.md §5, shared/sounds `craft`): a press of
+/// a recipe's Combine button waits up to `WINDOW_S` for the server's inventory (it always answers);
+/// a changed one made the recipe and plays `item_craft` once, an unchanged one (not enough items)
+/// is silent. Presses answered by one inventory (two in one tick) play once. Which variant plays is
+/// the shell's seeded draw (`alts`).
+#[derive(Clone, Debug, Default)]
+pub struct CraftSounds {
+    pressed_ms: Option<f64>,
+}
+
+impl CraftSounds {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A Combine press was sent at `now_ms`.
+    pub fn pressed(&mut self, now_ms: f64) {
+        self.pressed_ms = Some(now_ms);
+    }
+
+    /// The inventory was sent again (`changed`: unlike the last one): the answer to a press.
+    pub fn inventory(&mut self, changed: bool, now_ms: f64, out: &mut Vec<SoundEvent>) {
+        let Some(p) = self.pressed_ms.take() else {
+            return;
+        };
+        if changed && now_ms - p <= craft_sounds::WINDOW_S * 1000.0 {
+            out.push(SoundEvent::new(SoundKind::ItemCraft, 0, 1.0, None));
+        }
+    }
+}
+
 pub fn encode(events: &[SoundEvent]) -> Vec<f64> {
     let mut v = Vec::with_capacity(events.len() * FLOATS_PER_EVENT);
     for e in events {
@@ -1442,6 +1537,127 @@ impl RemoteContacts {
 
 #[cfg(test)]
 mod tests {
+    use super::{craft_sounds, pickup_sounds};
+
+    #[test]
+    fn a_combine_that_makes_an_item_plays_once_and_one_that_fails_is_silent() {
+        // face-a-only: presses and inventories, no geometry.
+        let crafts = |out: &[SoundEvent]| {
+            out.iter()
+                .filter(|e| e.kind == SoundKind::ItemCraft && e.at.is_none())
+                .count()
+        };
+        let mut c = CraftSounds::new();
+        let mut out = Vec::new();
+        c.inventory(true, 0.0, &mut out);
+        assert_eq!(
+            crafts(&out),
+            0,
+            "a change with no press (a pickup) is not a craft"
+        );
+        c.pressed(100.0);
+        c.inventory(true, 150.0, &mut out);
+        assert_eq!(crafts(&out), 1, "the press made it: once");
+        c.inventory(true, 160.0, &mut out);
+        assert_eq!(crafts(&out), 1, "a later change is not that press's");
+        c.pressed(200.0);
+        c.inventory(false, 250.0, &mut out);
+        assert_eq!(
+            crafts(&out),
+            1,
+            "not enough items: the same inventory, silent"
+        );
+        c.pressed(300.0);
+        c.inventory(
+            true,
+            300.0 + craft_sounds::WINDOW_S * 1000.0 + 1.0,
+            &mut out,
+        );
+        assert_eq!(crafts(&out), 1, "an answer long after is not the press's");
+        for i in 0..3 {
+            let t = 2000.0 + 500.0 * f64::from(i);
+            c.pressed(t);
+            c.inventory(true, t + 30.0, &mut out);
+        }
+        assert_eq!(crafts(&out), 4, "three presses, three makes, three plays");
+    }
+
+    fn pops(p: &mut PickupSounds, now_ms: f64) -> usize {
+        let mut out = Vec::new();
+        p.update(now_ms, &mut out);
+        assert!(
+            out.iter()
+                .all(|e| e.kind == SoundKind::ItemPickup && e.at.is_none())
+        );
+        out.len()
+    }
+
+    #[test]
+    fn picking_up_a_ground_item_pops_once() {
+        // face-a-only: inventory counts and distances, no geometry.
+        let mut p = PickupSounds::new();
+        p.inventory(None, 3, 0.0);
+        assert_eq!(pops(&mut p, 0.0), 0, "the first inventory is not a pickup");
+        p.drops_taken(1.0, 100.0);
+        assert_eq!(
+            pops(&mut p, 100.0),
+            0,
+            "a drop gone alone (merged, despawned) is silent"
+        );
+        p.inventory(Some(3), 4, 120.0);
+        assert_eq!(pops(&mut p, 120.0), 1, "the inventory took it: a pop");
+        assert_eq!(pops(&mut p, 130.0), 0, "once");
+        // the inventory's message first, the drop's after: a pop too
+        p.inventory(Some(4), 5, 1000.0);
+        p.drops_taken(0.5, 1010.0);
+        assert_eq!(pops(&mut p, 1010.0), 1);
+    }
+
+    #[test]
+    fn a_gain_without_a_drop_near_is_silent() {
+        // face-a-only: inventory counts and distances, no geometry.
+        let mut p = PickupSounds::new();
+        p.inventory(Some(1), 2, 0.0);
+        assert_eq!(pops(&mut p, 0.0), 0, "crafting gains with no drop taken");
+        p.drops_taken(pickup_sounds::REACH_M + 5.0, 10.0);
+        assert_eq!(pops(&mut p, 10.0), 0, "a drop taken far off is another's");
+        let late = (pickup_sounds::WINDOW_S * 1000.0) + 50.0;
+        p.drops_taken(0.5, late);
+        assert_eq!(
+            pops(&mut p, late),
+            0,
+            "a gain long before a drop gone is not its pickup"
+        );
+        p.inventory(Some(2), 2, late + 10.0);
+        assert_eq!(pops(&mut p, late + 10.0), 0, "no gain, no pop");
+    }
+
+    #[test]
+    fn a_burst_of_pickups_pops_once_not_a_stack() {
+        // face-a-only: inventory counts and distances, no geometry.
+        let mut p = PickupSounds::new();
+        let step = 1000.0 / 60.0;
+        let mut total = 0;
+        // a sweep through a pile: an item taken every frame for half a second
+        for i in 0..30 {
+            let t = f64::from(i) * step;
+            p.drops_taken(0.8, t);
+            p.inventory(Some(i), i + 1, t);
+            total += pops(&mut p, t);
+        }
+        let most = (30.0 * step / (pickup_sounds::MIN_S * 1000.0)).ceil() as usize;
+        assert!(
+            (1..=most).contains(&total),
+            "{total} pops in half a second (at most {most})"
+        );
+        // several in one frame: one
+        let mut p = PickupSounds::new();
+        p.drops_taken(0.5, 0.0);
+        p.drops_taken(0.7, 0.0);
+        p.inventory(Some(0), 5, 0.0);
+        assert_eq!(pops(&mut p, 0.0), 1);
+    }
+
     use super::*;
     use dwell_blocks::require;
 

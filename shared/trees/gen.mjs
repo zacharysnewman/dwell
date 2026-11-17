@@ -76,10 +76,15 @@ export function validateSpecies(s, blocks, file = "(species)") {
   for (const k of ["log", "leaf"]) if (!blocks.has(s.blocks[k])) fail(`blocks.${k}: ${s.blocks[k]} is not a block`);
   const t = s.trunk;
   only(t, t.lean === undefined ? ["height", "heightStep", "width"] : ["height", "heightStep", "width", "lean"], "trunk");
-  only(t.height, ["sapling", "mature"], "trunk.height");
+  only(t.height, t.height.giant === undefined ? ["sapling", "mature"] : ["sapling", "mature", "giant"], "trunk.height");
   num(t.height.sapling, 0.5, 40, "trunk.height.sapling");
   range(t.height.mature, 0.5, 40, "trunk.height.mature");
   if (t.height.mature[0] < t.height.sapling) fail("trunk.height.mature below the sapling's");
+  // A giant (owner, 2026-11-15: "increase the max size of the trees to quadruple the height"): a
+  // tree's full height is drawn up to `giant` × the mature range's top, its crown and trunk width
+  // grown with it past that top.
+  if (t.height.giant !== undefined) num(t.height.giant, 1, 8, "trunk.height.giant");
+  if (t.height.mature[1] * (t.height.giant ?? 1) > 120) fail("trunk.height.mature × giant must be at most 120 m");
   num(t.heightStep, 0.5, 4, "trunk.heightStep");
   if (Math.abs(t.heightStep * 2 - Math.round(t.heightStep * 2)) > 1e-9) fail("trunk.heightStep must be whole ½ m cells");
   only(t.width, ["sapling", "mature", "step"], "trunk.width");
@@ -105,8 +110,9 @@ export function validateSpecies(s, blocks, file = "(species)") {
   if (b.kind !== "none") num(b.emergeAt, 0, 1, "branches.emergeAt");
   const c = s.crown;
   if (!SHAPES[c?.shape]) fail(`crown.shape must be one of ${Object.keys(SHAPES).join(", ")}`);
-  only(c, SHAPES[c.shape], "crown");
+  only(c, c.withHeight === undefined ? SHAPES[c.shape] : [...SHAPES[c.shape], "withHeight"], "crown");
   range(c.scale, 0.05, 2, "crown.scale");
+  if (c.withHeight !== undefined) num(c.withHeight, 0, 1, "crown.withHeight");
   if (c.shape === "lumpy") {
     num(c.centre, -4, 8, "crown.centre");
     if (!(Array.isArray(c.radius) && c.radius.length === 3)) fail("crown.radius must be [x, y, z]");
@@ -140,7 +146,10 @@ export function validateSpecies(s, blocks, file = "(species)") {
   range(s.variety.lightness, 0.25, 2, "variety.lightness");
   range(s.variety.hue, -0.5, 0.5, "variety.hue");
   const g = s.growth;
-  only(g, ["stages", "daysPerStage", "wild", "variants"], "growth");
+  only(g, g.rate === undefined ? ["stages", "daysPerStage", "wild", "variants"] : ["stages", "daysPerStage", "wild", "variants", "rate"], "growth");
+  // Each tree's own pace (owner, 2026-11-15: "a different ... growth rate"): its stages come
+  // `rate` (drawn per tree) times as fast as `daysPerStage`.
+  if (g.rate !== undefined) range(g.rate, 0.1, 10, "growth.rate");
   if (!(Number.isInteger(g.stages) && g.stages >= 2 && g.stages <= 16)) fail("growth.stages must be a whole number in [2, 16]");
   num(g.daysPerStage, 0.01, 1000, "growth.daysPerStage");
   if (!(Array.isArray(g.wild) && g.wild.length === g.stages)) fail("growth.wild must weigh each stage");
@@ -190,17 +199,20 @@ function speciesRust(s) {
     `        leaf: ${JSON.stringify(s.blocks.leaf)},`,
     `        sapling_height: ${f(s.trunk.height.sapling)},`,
     `        mature_height: ${pair(s.trunk.height.mature)},`,
+    `        giant: ${f(s.trunk.height.giant ?? 1)},`,
     `        height_step: ${f(s.trunk.heightStep)},`,
     `        width: (${f(s.trunk.width.sapling)}, ${f(s.trunk.width.mature)}, ${f(s.trunk.width.step)}),`,
     `        lean: ${pair(s.trunk.lean ?? [0, 0])},`,
     `        branches: ${branches},`,
     `        crown: ${crown},`,
     `        crown_scale: ${pair(c.scale)},`,
+    `        crown_with_height: ${f(c.withHeight ?? 1)},`,
     `        crown_variety: ${pair(s.variety.crown)},`,
     `        lightness: ${pair(s.variety.lightness)},`,
     `        hue: ${pair(s.variety.hue)},`,
     `        stages: ${s.growth.stages},`,
     `        days_per_stage: ${f(s.growth.daysPerStage)},`,
+    `        rate: ${pair(s.growth.rate ?? [1, 1])},`,
     `        wild: &[${s.growth.wild.join(", ")}],`,
     `        variants: ${s.growth.variants},`,
     s.sapling

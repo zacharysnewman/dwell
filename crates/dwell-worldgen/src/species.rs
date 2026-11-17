@@ -39,6 +39,9 @@ pub struct Species {
     pub leaf: &'static str,
     pub sapling_height: f32,
     pub mature_height: (f32, f32),
+    /// A tree's full height is drawn up to this × `mature_height`'s top (1: inside the range);
+    /// past that top its crown and trunk width grow with it (owner, 2026-11-15: giants).
+    pub giant: f32,
     pub height_step: f32,
     /// The trunk's width (m): sapling, mature, step; drawn by the log's `crossSection.widths`.
     pub width: (f32, f32, f32),
@@ -48,6 +51,9 @@ pub struct Species {
     pub crown: Crown,
     /// The crown's scale over the stages: sapling, mature.
     pub crown_scale: (f32, f32),
+    /// How a giant's crown follows its height past `mature_height`'s top: its scale × (height /
+    /// that top) to this power (1: in proportion; 0: not at all).
+    pub crown_with_height: f32,
     /// The crown's scale per seed.
     pub crown_variety: (f32, f32),
     /// The leaves' lightness factor per seed (a per-tree tint, `dwell_world::tree_tint`).
@@ -57,6 +63,8 @@ pub struct Species {
     pub stages: u32,
     /// A world's days from one stage to the next (growth over time).
     pub days_per_stage: f32,
+    /// Each tree's pace, drawn per seed: its stages come this many times as fast.
+    pub rate: (f32, f32),
     /// The weight of each stage among generated trees.
     pub wild: &'static [u32],
     /// How many seeded trees a placement draws of it.
@@ -211,18 +219,31 @@ pub fn tint(species: &Species, seed: u32) -> Tint {
     Tint { hue, lightness }
 }
 
+/// A tree's own pace (owner, 2026-11-15: "a different ... growth rate"): drawn per seed from the
+/// species' `rate`, its stages come this many times as fast as `days_per_stage`.
+pub fn rate(species: &Species, seed: u32) -> f32 {
+    Rng(seed.wrapping_mul(2_654_435_761).wrapping_add(0x5EED))
+        .range(species.rate)
+        .max(1e-3)
+}
+
 /// Grows `species` from `seed` to `stage` (0 = sapling .. stages − 1 = mature): a pure function.
 pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
     let n = species.stages.max(2);
     let g = stage.min(n - 1) as f32 / (n - 1) as f32;
     let mut r = Rng(seed.wrapping_mul(7919).wrapping_add(13));
-    let mature = r.range(species.mature_height);
+    let (lo, top) = species.mature_height;
+    let mature = r.range((lo, top * species.giant));
+    // A giant (past the range's top) grows its crown with its height (`crown_with_height`).
+    let size = (mature / top).max(1.0).powf(species.crown_with_height);
     let h = species.sapling_height.max(qz(
         lerp(species.sapling_height, mature, g),
         species.height_step,
     ));
     let mut vr = Rng(seed.wrapping_mul(104_729).wrapping_add(7));
-    let s = lerp(species.crown_scale.0, species.crown_scale.1, g) * vr.range(species.crown_variety);
+    let s = lerp(species.crown_scale.0, species.crown_scale.1, g)
+        * vr.range(species.crown_variety)
+        * lerp(1.0, size, g);
     let trunk_cells = (h / CELL).round() as i32;
     let (w0, w1, ws) = species.width;
     let width = qz(lerp(w0, w1, g), ws).clamp(w0, w1);
@@ -415,20 +436,56 @@ pub fn grow(species: &Species, seed: u32, stage: u32) -> Grown {
             }
         }
     }
+    // Past a block's width the trunk takes the 3 columns beside it (+x, +z) and the tree centres
+    // on the four (owner, 2026-11-15: "Big trees can take up more blocks at the base as they grow
+    // past a 1 block width ... they will pop into to be centered on those 4 square of block
+    // columns"; 2 × 2 at most): a giant's width grows with its height past the range's top.
+    let wide = straight && qz(lerp(w0, w1 * (mature / top).max(1.0), g), ws) > 1.0 + 1e-3;
     if straight {
         for yc in 0..trunk_cells {
-            logs.insert([0, yc, 0], Part::Log(0, quarters));
+            logs.insert([0, yc, 0], Part::Log(0, if wide { 4 } else { quarters }));
         }
     }
+    let (logs, leaves) = if wide {
+        (
+            centred_on_four(logs),
+            centred_on_four(leaves.into_iter().map(|c| (c, Part::Leaf)).collect()),
+        )
+    } else {
+        (logs, leaves.into_iter().map(|c| (c, Part::Leaf)).collect())
+    };
     let mut cells = logs;
-    for c in leaves {
-        cells.entry(c).or_insert(Part::Leaf);
+    for (c, p) in leaves {
+        cells.entry(c).or_insert(p);
     }
     Grown {
         cells,
         height: h,
-        width,
+        width: if wide { 2.0 } else { width },
     }
+}
+
+/// A tree's cells spread to stand on four columns (a 2 × 2 trunk): split along its centre column
+/// in x and in z and drawn apart by one, so the column at 0 becomes 0 and 1 and every cell past it
+/// moves out by one. The trunk becomes four logs, and the crown and branches stay centred on the
+/// four (the corner they share), each side as it was.
+fn centred_on_four(cells: BTreeMap<[i32; 3], Part>) -> BTreeMap<[i32; 3], Part> {
+    let spread = |v: i32| -> &'static [i32] {
+        match v.signum() {
+            -1 => &[0],
+            0 => &[0, 1],
+            _ => &[1],
+        }
+    };
+    let mut out = BTreeMap::new();
+    for ([x, y, z], p) in cells {
+        for &dx in spread(x) {
+            for &dz in spread(z) {
+                out.insert([x + dx, y, z + dz], p);
+            }
+        }
+    }
+    out
 }
 
 /// A branch as a stepped path of log cells from `a` to `b` (the trunk cell `a` excluded), each
@@ -455,6 +512,53 @@ fn branch(logs: &mut BTreeMap<[i32; 3], Part>, a: [i32; 3], b: [i32; 3]) {
 }
 
 impl Grown {
+    /// Its bytes (the server-jobs worker's answer, `dwell_sim::jobs`): the height and width (f32),
+    /// the cell count (u32), then each cell's x, y, z (i16) and part (0 a leaf; else 1 + axis, and
+    /// the width in ¼ m), little-endian.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(12 + self.cells.len() * 8);
+        out.extend(self.height.to_le_bytes());
+        out.extend(self.width.to_le_bytes());
+        out.extend((self.cells.len() as u32).to_le_bytes());
+        for (c, part) in &self.cells {
+            for v in c {
+                out.extend((*v as i16).to_le_bytes());
+            }
+            let (a, w) = match part {
+                Part::Leaf => (0, 0),
+                Part::Log(axis, width) => (1 + axis, *width),
+            };
+            out.push(a);
+            out.push(w);
+        }
+        out
+    }
+
+    /// [`Self::to_bytes`] read back (None: not one).
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        let f = |at: usize| Some(f32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?));
+        let (height, width) = (f(0)?, f(4)?);
+        let n = u32::from_le_bytes(b.get(8..12)?.try_into().ok()?) as usize;
+        if b.len() != 12 + n * 8 {
+            return None;
+        }
+        let mut cells = BTreeMap::new();
+        for k in 0..n {
+            let r = &b[12 + k * 8..20 + k * 8];
+            let v = |i: usize| i32::from(i16::from_le_bytes([r[2 * i], r[2 * i + 1]]));
+            let part = match r[6] {
+                0 => Part::Leaf,
+                a => Part::Log(a - 1, r[7]),
+            };
+            cells.insert([v(0), v(1), v(2)], part);
+        }
+        Some(Self {
+            cells,
+            height,
+            width,
+        })
+    }
+
     /// The tree as a structure (anchor: the trunk's foot), its blocks resolved by name.
     pub fn structure(&self, species: &Species, hash: u64) -> Result<Structure, String> {
         let state = |n: String| parse_state(&n).map_err(|e| format!("{}: {n}: {e}", species.name));
@@ -589,8 +693,9 @@ mod tests {
     #[test]
     fn every_species_names_its_sapling() {
         // face-a-only: names only.
-        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf and the mesa's
-        // sagebrush (0.64) are wild only: no sapling of their own yet.
+        // The old-growth species (WORK_QUEUE item 32), the rainforest's tall broadleaf, the mesa's
+        // sagebrush (0.64) and the shrubs (bush, low shrub, scrub) are wild only: no sapling of
+        // their own yet.
         let wild: Vec<_> = SPECIES
             .iter()
             .filter(|s| s.sapling.is_none())
@@ -599,9 +704,12 @@ mod tests {
         assert_eq!(
             wild,
             [
+                "dwell:bush",
+                "dwell:low_shrub",
                 "dwell:old_oak",
                 "dwell:old_pine",
                 "dwell:sagebrush",
+                "dwell:scrub",
                 "dwell:tall_broadleaf"
             ]
         );
@@ -677,7 +785,8 @@ mod tests {
             let mut heights = Vec::new();
             for seed in 0..40 {
                 let t = grow(s, seed, s.stages - 1);
-                let (lo, hi) = s.mature_height;
+                // Up to `giant` × the range's top (owner, 2026-11-15: four times the height).
+                let (lo, hi) = (s.mature_height.0, s.mature_height.1 * s.giant);
                 assert!(
                     t.height >= lo - s.height_step && t.height <= hi + s.height_step,
                     "{} seed {seed}: {}",
@@ -716,6 +825,7 @@ mod tests {
             (ys.max().unwrap(), xs.max().unwrap(), t.cells.len())
         };
         for s in &SPECIES {
+            let mut grew_out = false;
             for seed in 0..8 {
                 let mut last = (0, 0, 0);
                 for stage in 0..s.stages {
@@ -738,7 +848,14 @@ mod tests {
                     );
                     last = now;
                 }
+                // Taller and over twice the cells, unless its trunk stays at its sapling's height
+                // by its data (a shrub's ½ m, `mature` from 0.5): such a seed only fills out, its
+                // top no lower (the loop above), and a small one (a low shrub) may stay as it was.
                 let (young, old) = (grow(s, seed, 1), grow(s, seed, s.stages - 1));
+                if old.height <= s.sapling_height {
+                    grew_out |= old.cells.len() > young.cells.len() * 2;
+                    continue;
+                }
                 assert!(
                     old.height > young.height && old.cells.len() > young.cells.len() * 2,
                     "{}: young {} m {} cells, old {} m {} cells",
@@ -748,7 +865,13 @@ mod tests {
                     old.height,
                     old.cells.len()
                 );
+                grew_out = true;
             }
+            assert!(
+                grew_out,
+                "{}: no seed grows to over twice its young cells",
+                s.name
+            );
         }
     }
 
@@ -800,18 +923,132 @@ mod tests {
     }
 
     #[test]
-    fn generated_trees_are_mostly_mature() {
-        // face-a-only: no geometry.
+    fn generated_trees_start_at_many_ages() {
+        // face-a-only: no geometry. The owner, 2026-11-15: "Make each tree have a different
+        // starting age": a placement's trees spread over the stages, young and old.
         for s in &SPECIES {
             let stages: Vec<u32> = wild(s).into_iter().map(|(_, st)| st).collect();
-            let mature = stages.iter().filter(|&&st| st + 2 >= s.stages).count();
-            assert!(mature * 2 >= stages.len(), "{}: {stages:?}", s.name);
+            let mut seen: Vec<u32> = stages.clone();
+            seen.sort_unstable();
+            seen.dedup();
+            assert!(
+                seen.len() * 2 >= s.stages as usize,
+                "{}: {stages:?}",
+                s.name
+            );
             assert!(
                 stages.iter().any(|&st| st + 2 < s.stages),
-                "{}: some young: {stages:?}",
+                "{}: some young",
+                s.name
+            );
+            assert!(
+                stages.iter().any(|&st| st + 2 >= s.stages),
+                "{}: some old",
                 s.name
             );
         }
+    }
+
+    #[test]
+    fn a_giant_stands_on_a_two_by_two_trunk_centred_on_the_four() {
+        // face-a-only: a tree is built face-local. The owner, 2026-11-15: "Big trees can take up
+        // more blocks at the base as they grow past a 1 block width ... centered on those 4 square
+        // of block columns" (2 × 2 at most).
+        let oak = find("dwell:oak").expect("oak");
+        let last = oak.stages - 1;
+        let base = |t: &Grown| -> Vec<(i32, i32)> {
+            let mut c: Vec<(i32, i32)> = t
+                .cells
+                .iter()
+                .filter(|(c, p)| c[1] == 0 && matches!(p, Part::Log(0, _)))
+                .map(|(c, _)| (c[0], c[2]))
+                .collect();
+            c.sort_unstable();
+            c
+        };
+        let (mut wide, mut narrow) = (0, 0);
+        for seed in 0..64 {
+            let t = grow(oak, seed, last);
+            let b = base(&t);
+            if t.width > 1.0 {
+                wide += 1;
+                assert_eq!(b, vec![(0, 0), (0, 1), (1, 0), (1, 1)], "seed {seed}");
+                // Centred on the four: the crown's leaves average about the corner (x, z = 1).
+                let leaves: Vec<&[i32; 3]> = t
+                    .cells
+                    .iter()
+                    .filter(|(_, p)| **p == Part::Leaf)
+                    .map(|(c, _)| c)
+                    .collect();
+                for a in [0, 2] {
+                    let mean =
+                        leaves.iter().map(|c| c[a] as f32).sum::<f32>() / leaves.len() as f32;
+                    assert!(
+                        (mean - 1.0).abs() < 1.5,
+                        "seed {seed}: crown centre {mean} on axis {a}"
+                    );
+                }
+                // Its young self (stage 0) is one column.
+                assert_eq!(base(&grow(oak, seed, 0)), vec![(0, 0)]);
+            } else {
+                narrow += 1;
+                assert_eq!(b, vec![(0, 0)], "seed {seed}");
+            }
+        }
+        assert!(wide > 8 && narrow > 8, "{wide} wide, {narrow} narrow");
+    }
+
+    #[test]
+    fn a_tree_grows_at_its_own_pace() {
+        // face-a-only: no geometry. The owner, 2026-11-15: "a different ... growth rate".
+        for s in &SPECIES {
+            let rates: Vec<f32> = (0..64).map(|seed| rate(s, seed)).collect();
+            assert!(
+                rates.iter().all(|r| (s.rate.0..=s.rate.1).contains(r)),
+                "{}",
+                s.name
+            );
+            if s.rate.0 < s.rate.1 {
+                let lo = rates.iter().copied().fold(f32::MAX, f32::min);
+                let hi = rates.iter().copied().fold(f32::MIN, f32::max);
+                assert!(hi > lo * 2.0, "{}: rates {lo}–{hi}", s.name);
+            }
+        }
+    }
+
+    #[test]
+    fn giants_reach_four_times_the_old_top_with_crowns_to_match() {
+        // face-a-only: a tree is built face-local. The owner, 2026-11-15: "increase the max size
+        // of the trees to quadruple the height" (each species' top × `giant`, the crown with it).
+        let oak = find("dwell:oak").expect("oak");
+        assert_eq!(oak.giant, 4.0);
+        let mut grown: Vec<Grown> = (0..128)
+            .map(|seed| grow(oak, seed, oak.stages - 1))
+            .collect();
+        grown.sort_by(|a, b| a.height.total_cmp(&b.height));
+        let tallest = grown.last().unwrap();
+        assert!(
+            tallest.height > oak.mature_height.1 * 3.0,
+            "tallest {}",
+            tallest.height
+        );
+        // The crown follows the height by `crown.withHeight` (0.5: a 4× giant's crown about 2×):
+        // the tallest quarter's crowns average wider than the shortest quarter's.
+        let span = |t: &Grown| {
+            let xs = t
+                .cells
+                .values()
+                .zip(t.cells.keys())
+                .filter(|(p, _)| **p == Part::Leaf);
+            let xs: Vec<i32> = xs.map(|(_, c)| c[0]).collect();
+            (xs.iter().max().unwrap() - xs.iter().min().unwrap()) as f32
+        };
+        let mean = |ts: &[Grown]| ts.iter().map(span).sum::<f32>() / ts.len() as f32;
+        let (short, tall) = (mean(&grown[..32]), mean(&grown[96..]));
+        assert!(
+            tall > short * 1.3,
+            "a giant's crown is wider: {tall} vs {short}"
+        );
     }
 
     #[test]
@@ -836,7 +1073,10 @@ mod tests {
                 "{}: a sapling is thin",
                 s.name
             );
-            assert_eq!(f32::from(old) / 4.0, s.width.1, "{}", s.name);
+            // Mature, its species' width, or a full log where a giant stands on a 2 × 2 trunk.
+            let mature = grow(s, 3, s.stages - 1);
+            let want = if mature.width > 1.0 { 1.0 } else { s.width.1 };
+            assert_eq!(f32::from(old) / 4.0, want, "{}", s.name);
             for st in 1..s.stages {
                 assert!(quarters(st) >= quarters(st - 1), "{}", s.name);
             }

@@ -33,6 +33,8 @@ and friend worlds), with a small master server for discovery; there are no offic
   system; built by the baseline rework, Phases 14–19 of the implementation plan.
 - `docs/prototypes/` — saved design prototypes (Adaptive Block Lab, Shape Playground) with their
   published links; republish to the same link after editing.
+- `docs/SSAO.md` — screen-space ambient occlusion (ADR 0080): the owner's answers, the ambient share in the
+  view depth, the passes, the tiers (High and Ultra) and the Settings toggle and strength.
 - `docs/SPYGLASS.md` — design for Phase 38 (ADR 0039): the spyglass zoom, its data file, and the
   LOD's detail inside the zoomed cone.
 - `docs/RELEASES.md` — Phase 6: builds as tagged releases loaded by a version launcher,
@@ -276,7 +278,8 @@ that touches the public API, a release or the workflows:
   writes `changes.json` and `package.json`, deletes the note, commits that to `main` and releases
   it, so parallel PRs don't conflict (`docs/RELEASES.md` §3). Write the lines for players, not as
   commit subjects. A PR that still raises `package.json` by hand with its own `changes.json` entry
-  releases as before. A push with neither (e.g. a direct push) is a dev build (`v<next>-dev.<run>`).
+  releases as before. A push with neither (e.g. a direct push) is a dev build (`v<next>-dev.<run>`);
+  a push touching only `.claude/` or `docs/` builds nothing (`paths-ignore`, owner 2026-11-16).
 - **Local builds carry the line, not the patch:** `crates/dwell-sim/build.rs` and `vite.config.ts`
   read `shared/version/line.json` (MAJOR.MINOR), not `package.json`, so a release recompiles
   nothing; a local build is `<line>.0-dev.local`. The release workflow passes the exact

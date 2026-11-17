@@ -78,7 +78,14 @@ fn a_matching_verification_hash_gets_generated_chunks_nearest_first() {
         previous = d;
     }
     assert!(ordered);
-    assert!(air_chunks > 0); // the sky above the spawn
+    // The sky above the spawn travels as Air. Since 0.71's giant trees (up to ~120 m) the air test
+    // keeps the chunks within a tree's reach of the ground, which is the whole view's height here:
+    // so the sky past that reach, not the view's.
+    let _ = air_chunks;
+    assert!(
+        air(dwell_world::ChunkCoord::new(spawn.x, spawn.y + 20, spawn.z)),
+        "the sky well over the spawn is air"
+    );
     // The whole view: a sphere of VIEW_RADIUS_CHUNKS.
     let mut expected = 0;
     for y in -R..=R {

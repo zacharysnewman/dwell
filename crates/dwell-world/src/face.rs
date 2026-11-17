@@ -292,6 +292,30 @@ impl FaceFrame {
 /// skips the other face's). A face-dependent test written this way cannot be face A's alone.
 #[macro_export]
 macro_rules! both_faces {
+    // Ignored on both faces, with its reason (a test kept but parked; the reason names where).
+    ($(#[doc = $d:literal])* #[ignore = $why:literal] fn $name:ident($f:ident : $t:ty) $body:block) => {
+        $(#[doc = $d])*
+        mod $name {
+            #[allow(unused_imports)]
+            use super::*;
+            fn body($f: $crate::FaceFrame) $body
+            fn run(face: $crate::FaceFrame) {
+                if $crate::FaceFrame::under_test().contains(&face) {
+                    body(face);
+                }
+            }
+            #[test]
+            #[ignore = $why]
+            fn a() {
+                run($crate::FaceFrame::A);
+            }
+            #[test]
+            #[ignore = $why]
+            fn b() {
+                run($crate::FaceFrame::B);
+            }
+        }
+    };
     ($(#[$m:meta])* fn $name:ident($f:ident : $t:ty) $body:block) => {
         $(#[$m])*
         mod $name {

@@ -120,6 +120,26 @@ once; five builders put it up in about 2.5 min (well, two huts, watchtower, wall
 the sound time-stretched) to 16:9 and 9:16. Start the shot right after `terrainReady` (the settle wait costs a third
 of the build); a tree stands inside the hamlet (BUGS.md #169). By hand in the driver: `curl -s localhost:4999/eval -d "$(node -e "import('./.claude/skills/record/scripts/take.mjs').then(m => console.log(m.settleScript()))")"`.
 
+## 0f. Camera paths never pass through terrain (the clearance check)
+
+Owner, 2026-11-14 (WORK_QUEUE item 41): "That flyover video goes straight through a wall. Not a big deal since you're
+just showing something but that shouldn't be included in most recordings." **Rule: a camera path never passes through
+terrain (or trees, or builds) unless the shot says so.** Every path shot is checked before it records
+(docs/THEATER_MODE.md §6.2): its eye sampled every 0.05 s of take time and probed against the world's solid blocks
+within 0.3 m (`shared/theater/cinematic.json` `clearance`). On a local world the probe reads the world itself (its
+chunks generated as needed: ~0.3 s for a 10 s shot); on a remote one only the loaded chunks, flown once in 1 s steps
+first. A clip **fails the shot** with each stretch's times (take and path), the eye, the keyframes it lies between and
+the lift that clears it:
+
+```
+the camera path passes through solid ground (within 0.30 m) in 1 place:
+  8.35–10.00 s (path 8.35–10.00 s, keyframes 0–1) at (22300.5, 136.7, 334.5): no lift up to 30 m clears it: move the keys
+```
+
+Raise or move those keyframes (or end the shot before it). A deliberate shot through the ground (a cut-away, a
+reveal from inside a hill) sets **`"allowClipping": true`** on the shot: the log still lists the clips. Check a path
+by hand without recording: `await __dwell.clearance(path)` (resolves with `clipping`, `unchecked` and `message`).
+
 ## 0e. Cinematic shots: rendered offline, frame-exact
 
 Owner, 2026-11-14 (WORK_QUEUE item 41): "take more time to render it so it looks at its prettiest? Without seeing LODs
@@ -132,7 +152,8 @@ lossless PNG frames written by the driver's sink (`/cine/start?name=`), and the 
 (`audio.wav`, already frame-exact: muxed as is, no alignment). A shot's **`cinematic`** object overrides any setting
 (`{"subframes": 4}` for motion blur, `{"supersample": 1}` for speed, `{"settle": {"capMs": 3000}}`). No `warmS` or
 `settleS` is needed: the pre-roll does both. The log prints the render time, the settle waits (mean, p95, max), the
-capped frames, the ticks and the sound's alignment (`error mean … max … ms, late N`).
+capped frames, the ticks and the sound's alignment (`error mean … max … ms, late N, re-based M`: late is 0; re-based counts steps that overshot
+the lead and moved the sound's timeline on, each still frame-exact).
 
 - **Setup runs in real time** before the take holds the world (a lit fuse burns until the take starts; the hold then
   freezes it through the pre-roll). A real-time twin of the same shot should skip the settle (`settleS: 0`) so its fuse
@@ -140,6 +161,19 @@ capped frames, the ticks and the sound's alignment (`error mean … max … ms, 
 - **Local worlds only**: on a remote server only the client's clock and the camera are stepped.
 - `videos/cinematic/` holds the first comparison (five 10 s 16:9 shots, each `_rt` and `_cine`); `--no-splice`
   records without splicing (the side-by-sides are made from the clips with ffmpeg `hstack`).
+
+## 0g. Scenes: a test world built for the shot (a valley, a dam, a lake, timed events)
+
+Owner, 2026-11-14 (WORK_QUEUE item 41): "Do a rendered recording of a 10 block high dam of a river suddenly deleted …
+We'll probably do a bunch of these so if you need tools to generate a valley with a river/lake with a dam, go ahead and
+make them." A shot's **`"scene": "<name>"`** builds `shared/theater/scenes/<name>.json` (docs/THEATER_MODE.md §6.3) into
+the page's local world right after it loads (`__dwell.scene('build', text)`, then a wait until no water chunk is awake,
+`setup.sceneSettleS` caps it, default 60 s; the log prints the build's figures and `settledS`), and the scene's
+**events** run on the take's clock: a cinematic take gets them as `events` (each before the world steps past its
+time; the log names the frame that first shows it), a real-time take by timers from the path's start. A new scene is a
+new file: copy `dam_break.json`, change the numbers (`cargo test -p dwell-sim scene` validates every file, and a bad
+entry fails the build with its path). Build on a fresh flat world (`/dwell/?world=flat&fresh=1&seed=0&at=…`, the
+spawn `at` on the land away from the valley and out of shot).
 
 ## 1. Run the game (new camera spots)
 
@@ -215,7 +249,7 @@ blocks injected `<style>` (the T-1 rule never applied for that reason).
 
 - **Dolly in:** the `dolly` preset (`fromM` → `toM`, `heightM` 1–3 m). Low and slow reads best.
 - **Orbit:** the `orbit` preset. Keep it **high or on open ground**: close orbits on hills pass through terrain
-  and trees (trim, or raise `heightM`).
+  and trees (trim, or raise `heightM`); the clearance check (§0f) now fails such a shot before it records.
 - **Track / follow:** the `track` preset on the subject (`distanceM` 4–8, `smoothingS` ~0.6): it stays centred,
   and the lag is exponential, the same at any frame rate.
 - **Drone rise:** the `rise` preset (`fromM` 5 → `toM` 60–150, `backM`): it looks at the subject as it climbs.
@@ -389,6 +423,19 @@ preview and the driver, remove any `client/node_modules` symlink or built `clien
   track with a limiter (→ −26 dB mean, peaks −0.7 dB). **The target box:** `view: {"targetOutline": false}` in a
   shot's setup (BUGS.md #113 fixed). Timings: the full `take.mjs water` ~4 min; `--only s3` 1 min 52 s; a re-splice
   1 min 15 s.
+- 2026-11-14, the dam break (`videos/dam-break/` 16:9, `videos/dam-break-9x16/` 9:16; scene `dam_break`, 30 s
+  cinematic each). **The scene's look:** on 1-in-2 sides (½ m ramps) the valley barely read from above (the ramps
+  shade like the land); 1-in-1 sides (steep pieces) read as a valley. A floor that falls 1 m per 100 m stepped the 45°
+  sides with notches where a row drops: the scene's floor is level. **Shadows:** at timeOfDay 0.78 with the take's
+  high shadows the far land went dark in great patches with a lit rectangle near the camera (a far cascade); 0.72
+  was clean. **Cameras:** from 58 m up and 75 m off the valley the near rim hid the floor; 90 m up, 60 m off (a
+  ~50° look down) shows the floor, the lake and the dam. 16:9: across the valley from beside the dam, the lake on the
+  left and the valley running up to the right; 9:16: over the lake looking down the valley's length, so it runs up
+  the frame. **The flood** (the water at real time, `waterClock: "real"`): the front ran ~5–6 m/s down the dry bed.
+  A 6 s test take rendered 181 frames in 93 s (14 s pre-roll; ~0.45 s a frame at 1920×1080, supersample 2); the full
+  30 s takes 401 s (16:9) and 713 s (9:16, 1080×1920) of rendering plus ~100 s each to encode, no frame capped.
+  **Sound:** both takes were silent (BUGS.md #176): the water beds hear water within ~24 m only, so a high flood shot
+  has no sound; film the water from low over it, or wait for #176, when the sound matters.
 - 2026-11-13, the trailer v1 (`videos/trailer/`, 19 parts, ~53 s, two aspects from one square capture; notes per shot in
   each shot's `note`). **Square 1920×1920 captures** ran 17–59 fps (36 typical) and encoded in 25–60 s a shot; the
   full first pass of 18 shots took ~25 min, so re-take with `--only`. **Ground heights:** `d.voxel` read 0 everywhere

@@ -7,6 +7,8 @@ use dwell_physics::net::{dequantize_pitch, dequantize_yaw, face_of_flags};
 use dwell_protocol::{PlayerState, RemotePlayerState, SIM_HZ, player_flags, players};
 use dwell_world::FaceFrame;
 
+use crate::server_clock::ServerClock;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RemoteView {
     pub player_id: u16,
@@ -96,8 +98,8 @@ fn view(s: &RemotePlayerState) -> RemoteView {
 #[derive(Clone, Debug)]
 pub struct RemotePlayers {
     remotes: Vec<Remote>,
-    /// Estimated (local clock − server clock) in ms; the smallest seen, i.e. the fastest delivery.
-    clock_offset: Option<f64>,
+    /// The server's clock the players are drawn on (`server_clock`, shared with the pieces).
+    clock: ServerClock,
     delay_ms: f64,
 }
 
@@ -111,7 +113,7 @@ impl RemotePlayers {
     pub fn new(delay_ms: f64) -> Self {
         Self {
             remotes: Vec::new(),
-            clock_offset: None,
+            clock: ServerClock::default(),
             delay_ms,
         }
     }
@@ -119,12 +121,7 @@ impl RemotePlayers {
     /// Adds one snapshot's remote players, received at local time `now_ms`.
     pub fn push(&mut self, server_tick: u32, remotes: &[RemotePlayerState], now_ms: f64) {
         let server_ms = f64::from(server_tick) * TICK_MS;
-        let offset = now_ms - server_ms;
-        // Track the minimum one-way delay, drifting up slowly so clock skew can't pin it forever.
-        self.clock_offset = Some(match self.clock_offset {
-            None => offset,
-            Some(c) => offset.min(c + 0.05),
-        });
+        self.clock.observe(server_ms, now_ms);
         for r in remotes {
             let i = match self.remotes.iter().position(|p| p.player_id == r.player_id) {
                 Some(i) => i,
@@ -181,10 +178,10 @@ impl RemotePlayers {
     /// Interpolated views at local time `now_ms` (`INTERP_DELAY_MS` in the past), each saying
     /// whether a jump has started since the last call (`RemoteView::jumped`).
     pub fn sample(&mut self, now_ms: f64) -> Vec<RemoteView> {
-        let Some(offset) = self.clock_offset else {
+        let Some(server_ms) = self.clock.server_ms(now_ms) else {
             return Vec::new();
         };
-        let t = now_ms - offset - self.delay_ms;
+        let t = server_ms - self.delay_ms;
         let mut out = Vec::with_capacity(self.remotes.len());
         for p in &mut self.remotes {
             let list = &p.samples;
@@ -426,6 +423,74 @@ mod tests {
             }
         }
     }
+
+    /// Plays a remote running 6 m/s across the face through `RemotePlayers` as the game does: 60 Hz
+    /// server ticks, a snapshot every 3, each delivered in 30 ms plus 0–20 ms of jitter and read at
+    /// the first frame after it arrives; frames 1/30 s apart. After 2 s the server drops `stall_ms`
+    /// (a local world's worker busy past its catch-up cap): no snapshot for that long, then its
+    /// ticks go on from where they stopped. Returns the worst deviation of a frame's drawn speed
+    /// from 6 m/s (a fraction; 1 is a frame drawn still), over the frames from 1.5 s after the stall.
+    fn remote_after_a_stall(stall_ms: f64, f: FaceFrame) -> f64 {
+        let mut r = RemotePlayers::default();
+        let mut seed = 11u32;
+        let mut jitter = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            f64::from(seed >> 8) / f64::from(1u32 << 24) * 20.0
+        };
+        let skew = 777.25;
+        let stall_at = 2000.0;
+        let arrives = |server_ms: f64| {
+            server_ms + skew + 30.0 + if server_ms >= stall_at { stall_ms } else { 0.0 }
+        };
+        let snapshots: Vec<(u32, f64)> = (0..400)
+            .map(|k| 3 * k)
+            .map(|tick| (tick, arrives(f64::from(tick) * TICK_MS) + jitter()))
+            .collect();
+        let state = |tick: u32| {
+            let t = f64::from(tick) * TICK_MS / 1000.0;
+            let mut s = remote(0.0, 0);
+            s.position = f.point([6.0 * t, 40.0, 0.0]);
+            s.velocity = [6.0, 0.0, 0.0];
+            s
+        };
+        let frame = 1000.0 / 30.0;
+        let mut now = skew;
+        let mut next = 0;
+        let mut drawn: Vec<(f64, f64)> = Vec::new();
+        while now < skew + 6000.0 {
+            now += frame;
+            while next < snapshots.len() && snapshots[next].1 <= now {
+                let tick = snapshots[next].0;
+                r.push(tick, &[state(tick)], now);
+                next += 1;
+            }
+            if let Some(v) = r.sample(now).first() {
+                drawn.push((now, v.feet[0]));
+            }
+        }
+        let from = skew + stall_at + stall_ms + 1500.0;
+        drawn
+            .windows(2)
+            .filter(|w| w[0].0 > from)
+            .map(|w| ((w[1].1 - w[0].1) / ((w[1].0 - w[0].0) / 1000.0) / 6.0 - 1.0).abs())
+            .fold(0.0, f64::max)
+    }
+
+    dwell_world::both_faces!(
+        /// The pieces' clock fix (BUGS.md #173) for remote players (BUGS.md #198): the delivery
+        /// estimate drifted up 1 ms a second, so after the server dropped ½ s a remote was drawn
+        /// past its newest snapshot for minutes, held there and moving only on frames a snapshot
+        /// came (one in three at 30 fps), a step of three frames' motion. Red before: drawn still
+        /// (deviation 1) and at 3× speed; now within 10 % every frame, as with no stall.
+        fn a_remote_drawn_after_the_server_dropped_time_moves_every_frame(f: FaceFrame) {
+            let steady = remote_after_a_stall(0.0, f);
+            let after = remote_after_a_stall(500.0, f);
+            assert!(
+                steady < 0.1 && after < 0.1,
+                "worst drawn speed off by (fraction): no stall {steady:.2}, after a ½ s stall {after:.2}"
+            );
+        }
+    );
 
     #[test]
     fn ignores_reordered_snapshots() {

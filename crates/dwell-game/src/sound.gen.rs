@@ -44,21 +44,27 @@ pub enum SoundKind {
     AxeSwish = 37,
     AxeRustle = 38,
     Exhausted = 39,
-    Gasp = 40,
-    Strain = 41,
-    CreatureStep = 42,
-    CreatureStartle = 43,
-    CreatureCall = 44,
-    FellLand = 45,
-    Brush = 46,
-    StickSnap = 47,
-    SteamHiss = 48,
-    Sizzle = 49,
-    SwimUnder = 50,
+    ItemPickup = 40,
+    ItemCraft = 41,
+    Gasp = 42,
+    Strain = 43,
+    CreatureStep = 44,
+    CreatureStartle = 45,
+    CreatureCall = 46,
+    FellLand = 47,
+    Brush = 48,
+    StickSnap = 49,
+    SteamHiss = 50,
+    Sizzle = 51,
+    SwimUnder = 52,
+    Rush = 53,
+    RushLevel = 54,
+    RushEnd = 55,
+    FloodBurst = 56,
 }
 
 impl SoundKind {
-    pub const ALL: [SoundKind; 51] = [
+    pub const ALL: [SoundKind; 57] = [
         SoundKind::Step,
         SoundKind::Climb,
         SoundKind::Land,
@@ -99,6 +105,8 @@ impl SoundKind {
         SoundKind::AxeSwish,
         SoundKind::AxeRustle,
         SoundKind::Exhausted,
+        SoundKind::ItemPickup,
+        SoundKind::ItemCraft,
         SoundKind::Gasp,
         SoundKind::Strain,
         SoundKind::CreatureStep,
@@ -110,6 +118,10 @@ impl SoundKind {
         SoundKind::SteamHiss,
         SoundKind::Sizzle,
         SoundKind::SwimUnder,
+        SoundKind::Rush,
+        SoundKind::RushLevel,
+        SoundKind::RushEnd,
+        SoundKind::FloodBurst,
     ];
 
     /// The event's name in the data.
@@ -155,6 +167,8 @@ impl SoundKind {
             SoundKind::AxeSwish => "axe_swish",
             SoundKind::AxeRustle => "axe_rustle",
             SoundKind::Exhausted => "exhausted",
+            SoundKind::ItemPickup => "item_pickup",
+            SoundKind::ItemCraft => "item_craft",
             SoundKind::Gasp => "gasp",
             SoundKind::Strain => "strain",
             SoundKind::CreatureStep => "creature_step",
@@ -166,6 +180,10 @@ impl SoundKind {
             SoundKind::SteamHiss => "steam_hiss",
             SoundKind::Sizzle => "sizzle",
             SoundKind::SwimUnder => "swim_under",
+            SoundKind::Rush => "rush",
+            SoundKind::RushLevel => "rush_level",
+            SoundKind::RushEnd => "rush_end",
+            SoundKind::FloodBurst => "flood_burst",
         }
     }
 
@@ -212,6 +230,8 @@ impl SoundKind {
             SoundKind::AxeSwish => None,
             SoundKind::AxeRustle => None,
             SoundKind::Exhausted => None,
+            SoundKind::ItemPickup => None,
+            SoundKind::ItemCraft => None,
             SoundKind::Gasp => None,
             SoundKind::Strain => None,
             SoundKind::CreatureStep => None,
@@ -223,6 +243,10 @@ impl SoundKind {
             SoundKind::SteamHiss => None,
             SoundKind::Sizzle => None,
             SoundKind::SwimUnder => None,
+            SoundKind::Rush => None,
+            SoundKind::RushLevel => None,
+            SoundKind::RushEnd => None,
+            SoundKind::FloodBurst => None,
         }
     }
 }
@@ -262,6 +286,20 @@ pub mod ambient {
     pub const FALLS_RADIUS_M: f64 = 40.0;
     pub const FALLS_MAX: usize = 3;
     pub const FALLS_FULL_M3S: f64 = 2.0;
+    /// The grid's moving water heard (shared/sounds `ambient.rush`, what each means in its
+    /// `$comment`; BUGS.md #176).
+    pub const RUSH_RADIUS_M: f64 = 160.0;
+    pub const RUSH_STRIDE: i32 = 4;
+    pub const RUSH_MIN_SPEED_MS: f64 = 0.15;
+    pub const RUSH_NEAR_M: f64 = 12.0;
+    pub const RUSH_FULL_FLUX: f64 = 1500.0;
+    pub const RUSH_FALL_WEIGHT: f64 = 30.0;
+    pub const RUSH_PAN_M: f64 = 2.0;
+    pub const RUSH_BURST_WINDOW_S: f64 = 1.0;
+    pub const RUSH_BURST_MIN_LEVEL: f64 = 0.1;
+    pub const RUSH_BURST_MIN_SHARE: f64 = 0.5;
+    pub const RUSH_BURST_FULL_LEVEL: f64 = 0.3;
+    pub const RUSH_BURST_COOLDOWN_S: f64 = 15.0;
     /// The ambience probe's reach round the listener (m) and the blocks that count as trees
     /// (shared/sounds `ambience.probe`; docs/AUDIO.md §2c).
     pub const AMBIENCE_RADIUS_M: f64 = 16.0;
@@ -287,4 +325,18 @@ pub mod creature_sounds {
 pub mod brush_sounds {
     pub const EVERY_M: f64 = 2.5;
     pub const MIN_S: f64 = 0.3;
+}
+
+/// Picking up a ground item (shared/sounds `pickup`; AUDIO.md §5): an inventory gain within `WINDOW_S`
+/// of a loose item within `REACH_M` going or shrinking pops once; never closer than `MIN_S`.
+pub mod pickup_sounds {
+    pub const WINDOW_S: f64 = 0.5;
+    pub const REACH_M: f64 = 3.0;
+    pub const MIN_S: f64 = 0.09;
+}
+
+/// Making an item with Combine (shared/sounds `craft`; AUDIO.md §5): a press answered within
+/// `WINDOW_S` by a changed inventory plays `item_craft` once.
+pub mod craft_sounds {
+    pub const WINDOW_S: f64 = 1.0;
 }

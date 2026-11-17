@@ -3,9 +3,11 @@ import data from '../../../shared/theater/cinematic.json';
 import {
   CINEMATIC,
   SettleGate,
+  eventsDue,
   frameName,
   frameTimeS,
   parseCinematic,
+  parseEvents,
   percentile,
   runCinematic,
   ticksDue,
@@ -21,8 +23,10 @@ import {
   impulseErrors,
   joinChunks,
   realign,
+  TakeTimeline,
   wavBytes,
 } from './cinematicAudio';
+import type { ClearanceWorld } from './clearance';
 
 const loaded: ViewState = { lod: { waitingInView: 0 }, terrain: { dirty: 0, meshing: 0 } };
 const loading: ViewState = { lod: { waitingInView: 300 }, terrain: { dirty: 0, meshing: 0 } };
@@ -133,62 +137,63 @@ it('frame names and percentiles', () => {
   expect(percentile([], 0.5)).toBe(0);
 });
 
+/** A fake page: the view loads `loadFrames` frames after each step; the canvas is a stand-in. */
+function fakeHost(loadFrames: number, capAt: number[] = []) {
+  let wall = 0;
+  let clock = 1000;
+  let sinceStep = 0;
+  let frame = 0;
+  const log = {
+    steps: [] as number[],
+    clocks: [] as number[],
+    advances: [] as number[],
+    files: [] as string[],
+    captures: 0,
+  };
+  const host: CinematicHost = {
+    holdClock: () => clock,
+    stepClockTo: (ms) => {
+      clock = ms;
+      log.clocks.push(ms);
+    },
+    world: {
+      hold: () => undefined,
+      step: (n) => {
+        log.steps.push(n);
+        sinceStep = 0;
+        frame++;
+        return Promise.resolve(0);
+      },
+    },
+    theaterExact: () => undefined,
+    theaterAdvance: (dt) => {
+      log.advances.push(dt);
+    },
+    theaterPlay: () => undefined,
+    theaterStop: () => undefined,
+    theaterState: () => ({ time: 0, duration: 1, finished: false }),
+    state: () => (sinceStep >= loadFrames && !capAt.includes(frame) ? loaded : loading),
+    setView: () => undefined,
+    setShadows: () => undefined,
+    canvas: {} as HTMLCanvasElement,
+    canvasSize: () => undefined,
+    nextFrame: (capture) => {
+      wall += 50;
+      sinceStep++;
+      if (capture) log.captures++;
+      return Promise.resolve(true);
+    },
+    sink: (file) => {
+      log.files.push(file);
+      return Promise.resolve();
+    },
+    audio: () => Promise.resolve(null),
+    wallMs: () => wall,
+    clearance: null,
+  };
+  return { host, log };
+}
 describe('the take', () => {
-  /** A fake page: the view loads `loadFrames` frames after each step; the canvas is a stand-in. */
-  function fakeHost(loadFrames: number, capAt: number[] = []) {
-    let wall = 0;
-    let clock = 1000;
-    let sinceStep = 0;
-    let frame = 0;
-    const log = {
-      steps: [] as number[],
-      clocks: [] as number[],
-      advances: [] as number[],
-      files: [] as string[],
-      captures: 0,
-    };
-    const host: CinematicHost = {
-      holdClock: () => clock,
-      stepClockTo: (ms) => {
-        clock = ms;
-        log.clocks.push(ms);
-      },
-      world: {
-        hold: () => undefined,
-        step: (n) => {
-          log.steps.push(n);
-          sinceStep = 0;
-          frame++;
-          return Promise.resolve(0);
-        },
-      },
-      theaterExact: () => undefined,
-      theaterAdvance: (dt) => {
-        log.advances.push(dt);
-      },
-      theaterPlay: () => undefined,
-      theaterStop: () => undefined,
-      theaterState: () => ({ time: 0, duration: 1, finished: false }),
-      state: () => (sinceStep >= loadFrames && !capAt.includes(frame) ? loaded : loading),
-      setView: () => undefined,
-      setShadows: () => undefined,
-      canvas: {} as HTMLCanvasElement,
-      canvasSize: () => undefined,
-      nextFrame: (capture) => {
-        wall += 50;
-        sinceStep++;
-        if (capture) log.captures++;
-        return Promise.resolve(true);
-      },
-      sink: (file) => {
-        log.files.push(file);
-        return Promise.resolve();
-      },
-      audio: () => Promise.resolve(null),
-      wallMs: () => wall,
-    };
-    return { host, log };
-  }
   const offscreen = globalThis.OffscreenCanvas;
   it('steps the world and the clock exactly per frame, settles each, captures each once', async () => {
     // a stand-in OffscreenCanvas for node
@@ -224,6 +229,127 @@ describe('the take', () => {
       expect(log.captures).toBe(31);
       // frame 4 never loaded: captured at the cap, and reported
       expect(r.settle.capped).toEqual([4]);
+    } finally {
+      (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
+    }
+  });
+});
+
+describe("a take's timed events (§6.3)", () => {
+  it('fire before the world steps past them, once each, in time order', () => {
+    const ev = [
+      { atS: 3, op: 'scene', arg: '0' },
+      { atS: 0, op: 'scene', arg: '1' },
+    ];
+    // at 30 fps frame 90 is exactly 3 s: the step from 89 to 90 doesn't run it, 90 to 91 does
+    expect(eventsDue(ev, frameTimeS(89, 0, 30, 1), frameTimeS(90, 0, 30, 1))).toEqual([]);
+    expect(eventsDue(ev, frameTimeS(90, 0, 30, 1), frameTimeS(91, 0, 30, 1))).toEqual([ev[0]]);
+    expect(eventsDue(ev, 0, 1 / 30)).toEqual([ev[1]]);
+    expect(eventsDue(ev, 0, 10).map((e) => e.arg)).toEqual(['1', '0']);
+  });
+  it('are checked', () => {
+    expect(parseEvents(undefined)).toEqual([]);
+    expect(() => parseEvents({})).toThrow('expected a list');
+    expect(() => parseEvents([{ atS: -1, op: 'scene' }])).toThrow('events[0]');
+    expect(parseEvents([{ atS: 1, op: 'scene' }])).toEqual([{ atS: 1, op: 'scene', arg: '' }]);
+  });
+  it('run on their frame of a take, between its world steps', async () => {
+    const offscreen = globalThis.OffscreenCanvas;
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
+      getContext() {
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
+      }
+      transferToImageBitmap() {
+        return {};
+      }
+      convertToBlob() {
+        return Promise.resolve(new Blob([new Uint8Array([1])]));
+      }
+    };
+    try {
+      const { host, log } = fakeHost(1);
+      const ran: [string, string, number][] = [];
+      host.event = (op, arg) => {
+        ran.push([op, arg, log.steps.length]);
+        return Promise.resolve('{"removed":3}');
+      };
+      const r = await runCinematic(host, {
+        path: {},
+        size: [16, 9],
+        settings: { preroll: { stepS: 0 }, audio: { on: false } },
+        events: [{ atS: 0.5, op: 'scene', arg: '0' }],
+      });
+      // frame 15 is 0.5 s: 15 steps made before it runs, and frame 16 is the first to show it
+      expect(ran).toEqual([['scene', '0', 15]]);
+      expect(r.events).toEqual([{ atS: 0.5, frame: 16, op: 'scene', result: '{"removed":3}' }]);
+      delete host.event;
+      await expect(
+        runCinematic(host, {
+          path: {},
+          size: [16, 9],
+          events: [{ atS: 0, op: 'scene', arg: '0' }],
+        }),
+      ).rejects.toThrow('runs no events');
+    } finally {
+      (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
+    }
+  });
+});
+
+describe("the take's camera clearance (§6.2)", () => {
+  const offscreen = globalThis.OffscreenCanvas;
+  /** A world where every eye is in solid ground (the lift that clears it 2 m). */
+  const walled: ClearanceWorld = {
+    samples: (_json, stepS) => {
+      const out: number[] = [];
+      for (let t = 0; t <= 1 + 1e-9; t += stepS) out.push(t, t, t, 5, 0);
+      return out;
+    },
+    probe: (eyes) => {
+      const n = eyes.length / 3;
+      return Promise.resolve({ codes: Array(n).fill(1), lifts: Array(n).fill(2) });
+    },
+  };
+  it('a path through solid ground fails before the pre-roll; allowClipping takes it and reports the clip', async () => {
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = class {
+      getContext() {
+        return {
+          drawImage: () => undefined,
+          globalAlpha: 1,
+          transferFromImageBitmap: () => undefined,
+        };
+      }
+      transferToImageBitmap() {
+        return {};
+      }
+      convertToBlob() {
+        return Promise.resolve(new Blob([new Uint8Array([1])]));
+      }
+    };
+    try {
+      const settings = { audio: { on: false }, preroll: { stepS: 0.5 } };
+      const a = fakeHost(0);
+      a.host.clearance = walled;
+      await expect(runCinematic(a.host, { path: {}, size: [16, 9], settings })).rejects.toThrow(
+        /cinematic: the camera path passes through solid ground .*\n.*lift the camera ≥ 2\.0 m/,
+      );
+      expect(a.log.advances).toEqual([]); // nothing flown
+      expect(a.log.files).toEqual([]);
+      const b = fakeHost(0);
+      b.host.clearance = walled;
+      const r = await runCinematic(b.host, {
+        path: {},
+        size: [16, 9],
+        settings,
+        allowClipping: true,
+      });
+      expect(r.clearance?.clipping).toHaveLength(1);
+      expect(r.clearance?.unchecked).toBe(0);
+      expect(b.log.files).toHaveLength(31);
     } finally {
       (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = offscreen;
     }
@@ -282,6 +408,43 @@ describe("the take's sound", () => {
     ).toBeLessThanOrEqual(1);
     for (let i = 7; i < frames; i += 30) expect(snd?.[expected[i] ?? 0]).toBeCloseTo(0.9, 6);
     expect(snd?.length).toBe(n);
+  });
+  it("a step that overshoots past the lead still puts its frame's sound on its frame (#955: 3–16 late a clip)", () => {
+    // The context is stepped to each frame's time; a step overshoots by 0–20 ms, and on 12 of 300
+    // frames by 60–140 ms, past the 50 ms lead. A sound scheduled before the context's clock plays
+    // at the clock (late); every frame here triggers one, and its mark is scheduled like it.
+    const sr = 48_000;
+    const fps = 30;
+    const frames = 300;
+    const leadS = 0.05;
+    const playLeadS = 0.005;
+    const tl = new TakeTimeline(1, leadS, 128 / sr);
+    const over = (i: number): number => (i % 25 === 13 ? 0.06 + (i % 4) * 0.027 : (i % 7) * 0.003);
+    const origin = tl.at(0) + playLeadS;
+    const n = Math.round((frames / fps) * sr);
+    const marksCh = new Float32Array(n + 2 * sr);
+    const sound = new Float32Array(n + 2 * sr);
+    const rawExpected: number[] = [];
+    let late = 0;
+    for (let i = 0; i < frames; i++) {
+      const t = i / fps;
+      const ctxNow = tl.runTarget(t) + over(i);
+      tl.stepped(t, ctxNow);
+      const when = tl.at(t) + playLeadS;
+      if (when < ctxNow) late++;
+      const at = Math.round((Math.max(when, ctxNow) - origin) * sr);
+      marksCh[Math.round((when - origin) * sr)] = 1; // the mark the stream is re-timed on
+      sound[at] = 0.9;
+      rawExpected.push(Math.round((t + tl.shift) * sr));
+    }
+    const expected = Array.from({ length: frames }, (_, i) => Math.round((i / fps) * sr));
+    const marks = findMarks(marksCh, rawExpected);
+    const [snd] = realign([sound, marksCh], marks, expected, n);
+    const off = expected.filter(
+      (e) => (snd?.[e] ?? 0) !== 0.9 && Math.abs((snd?.[e] ?? 0) - 0.9) > 1e-6,
+    );
+    expect({ late, off: off.length }).toEqual({ late: 0, off: 0 });
+    expect(tl.rebased).toBeGreaterThan(0);
   });
   it("the track's length is the frames' length: a 16-bit stereo WAV of exactly frames / fps", () => {
     const sr = 48_000;

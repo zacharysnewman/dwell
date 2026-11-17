@@ -1,0 +1,25 @@
+{
+  "$comment": "Screen-space ambient occlusion (docs/SSAO.md, ADR 0080; owner 2026-11-15: 'I'd like to implement screen space ambient occlusion'). Soft contact shadows where characters, trees, grass, props and built blocks meet the ground and each other, on the hemisphere and block light only (never the direct sun or moon): the scene writes each pixel's occludable share into its stored view depth (render/shaders.rs `frame_ao`), already weakened where the baked corner shading darkens it (`baked`: 0 ignores the baked shading, 1 leaves none of the AO where the baked light is 0). The pass (render/ssao.rs) samples `samples` points of a spiral within `radius` metres of each texel's view-space point (at most `maxPixels` drawing-buffer pixels across), the scalable ambient obscurance estimator (McGuire et al. 2012: `intensity`, `bias` metres), fades it in over `nearFrom`–`nearTo` m (your arms, the lens) and out over `farFrom`–`farTo` m, scales it by `strength` (× the Settings strength), blurs it (`blurRadius` texels each way, across then down; a tap counts less the farther its depth from the texel's, `blurSharpness` its share of the depth) and multiplies the scene's colour by 1 − (1 − AO) × the pixel's share. tiers: the Settings → Graphics → Ambient occlusion choices (Off draws none and builds no pipeline): Low (the High preset) at `scale` of the drawing buffer each axis with fewer samples, High (Ultra) at full resolution; a CPU adapter and the phone tier never draw it. Run `node shared/look/ssao.mjs` after editing; CI fails if crates/dwell-look/src/ssao.gen.rs is stale. The content is prototype (ARCHITECTURE.md §6.1).",
+  "radius": 0.75,
+  "intensity": 1.6,
+  "bias": 0.03,
+  "strength": 0.9,
+  "baked": 0.4,
+  "maxPixels": 64,
+  "nearFrom": 0.4,
+  "nearTo": 1.0,
+  "farFrom": 40,
+  "farTo": 72,
+  "blurRadius": 3,
+  "blurSharpness": 0.06,
+  "levels": {
+    "$comment": "The Settings look (owner, 2026-11-15: \"I can't even tell the difference between off and on SSAO, maybe make a weak, normal, and strong setting for SSAO with weak as our current setting\"): each level's strength, intensity and radius (m) in place of the file's, and its floor: the least share of a pixel's light the occlusion darkens (the sun's too, so contact shadows show in sunlight; the file's look darkens only the sky and block light's share, floor 0); weak is the file's own, normal the default.",
+    "weak": { "strength": 0.9, "intensity": 1.6, "radius": 0.75, "floor": 0 },
+    "normal": { "strength": 1.0, "intensity": 2.6, "radius": 1.0, "floor": 0.35 },
+    "strong": { "strength": 1.0, "intensity": 4.0, "radius": 1.4, "floor": 0.6 }
+  },
+  "tiers": {
+    "high": { "scale": 1.0, "samples": 12 },
+    "low": { "scale": 0.5, "samples": 8 }
+  }
+}

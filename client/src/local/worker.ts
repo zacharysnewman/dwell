@@ -192,6 +192,15 @@ function handle(msg: ToWorker): void {
     case 'lavaDev':
       scope.postMessage({ t: 'lavaDev', result: core.lavaDev(msg.op, msg.args) });
       break;
+    case 'sceneDev':
+      scope.postMessage({ t: 'sceneDev', result: core.sceneDev(msg.op, msg.text) });
+      break;
+    case 'cameraClearance':
+      scope.postMessage({
+        t: 'cameraClearance',
+        result: core.cameraClearance(msg.eyes, msg.radiusM, msg.liftStepM, msg.liftMaxM),
+      });
+      break;
     case 'respawnPreload':
       core.setRespawnPreload(msg.on);
       break;

@@ -26,7 +26,8 @@ const SEEDS: [u64; 4] = [1, 7, 42, 2_741_893_632];
 /// The tops' and floors' rms gain (m) over the flat 0.61 relief, [min, max].
 /// Tops 0.12 m at least (0.25 before the 0.65 line's curved plates moved the mesas: face A now samples
 /// only seed 1 A's 4 top patches, 0.91 -> 1.04 m; face B 0.80 -> 1.27 m over 7).
-const TOP_GAIN: [f64; 2] = [0.12, 8.0];
+/// 0.69: face A's 4 patches read 0.08 m once the washes meander (`erosion.warp`): at least 0.05.
+const TOP_GAIN: [f64; 2] = [0.05, 8.0];
 const FLOOR_GAIN: [f64; 2] = [0.3, 6.0];
 /// The walls' steep share may move by at most this share of itself.
 const WALL_TOLERANCE: f64 = 0.15;

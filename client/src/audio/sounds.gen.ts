@@ -285,6 +285,16 @@ export const SOUND_DATA: SoundData = {
       "sound": "dwell:breath_heavy"
     },
     {
+      "name": "item_pickup",
+      "sound": "dwell:item_pickup",
+      "self": "body"
+    },
+    {
+      "name": "item_craft",
+      "sound": "dwell:item_craft",
+      "self": "hand"
+    },
+    {
       "name": "gasp",
       "sound": "dwell:gasp"
     },
@@ -341,6 +351,23 @@ export const SOUND_DATA: SoundData = {
       "set": "swim_under",
       "fallback": false,
       "self": "body"
+    },
+    {
+      "name": "rush",
+      "sound": "dwell:water_rush",
+      "loop": "start"
+    },
+    {
+      "name": "rush_level",
+      "loop": "update"
+    },
+    {
+      "name": "rush_end",
+      "loop": "stop"
+    },
+    {
+      "name": "flood_burst",
+      "sound": "dwell:flood_burst"
     }
   ],
   "sets": {
@@ -554,6 +581,9 @@ export const SOUND_DATA: SoundData = {
     "Copy": [
       "event:tool"
     ],
+    "Select, copy and paste a box": [
+      "event:tool"
+    ],
     "Paste mode on or off": [
       "event:tool"
     ],
@@ -678,6 +708,23 @@ export const SOUND_DATA: SoundData = {
       "radiusM": 40,
       "max": 3,
       "fullM3s": 2
+    },
+    "rush": {
+      "$comment": "BUGS.md #176 (docs/AUDIO.md §5): the grid's moving water heard. Every `strideColumns`-th column of the current table within `radiusM` running faster than `minSpeedMs` adds its speed × depth × the area it stands for, weighted by distance (1 / (1 + (d / nearM)²), faded to nothing at radiusM); each waterfall adds its discharge × `fallWeight` the same way. The sum over `fullFlux` (its square root, at most 1) is the rushing loop's level, its loudness and brightness, placed `panM` toward where it comes from. `burst`: once the flow near the listener rises by `minLevel` (the same measure, over what the same chunks carried `windowS` before), the rise at least `minShare` of all that is heard (much water starting to move at once, not a flood front running on), a flood crash plays, at full intensity from a rise of `fullLevel`, then not again for `cooldownS`. Water whose land was not yet loaded `windowS` before (streaming in after a join or a teleport, already moving) is no onset.",
+      "radiusM": 160,
+      "strideColumns": 4,
+      "minSpeedMs": 0.15,
+      "nearM": 12,
+      "fullFlux": 1500,
+      "fallWeight": 30,
+      "panM": 2,
+      "burst": {
+        "windowS": 1,
+        "minLevel": 0.1,
+        "minShare": 0.5,
+        "fullLevel": 0.3,
+        "cooldownS": 15
+      }
     }
   },
   "ambience": {
@@ -828,6 +875,19 @@ export const SOUND_DATA: SoundData = {
             "full": 1
           }
         ]
+      },
+      "dwell:flood": {
+        "files": [
+          "river-loop-1-c2810749.m4a"
+        ],
+        "gain": 0.4,
+        "when": [
+          {
+            "input": "rush",
+            "from": 0.03,
+            "full": 0.6
+          }
+        ]
       }
     }
   },
@@ -870,6 +930,14 @@ export const SOUND_DATA: SoundData = {
   "brush": {
     "everyM": 2.5,
     "minS": 0.3
+  },
+  "pickup": {
+    "windowS": 0.5,
+    "reachM": 3,
+    "minS": 0.09
+  },
+  "craft": {
+    "windowS": 1
   },
   "sounds": {
     "dwell:stone_step": {
@@ -6785,6 +6853,248 @@ export const SOUND_DATA: SoundData = {
         }
       ]
     },
+    "dwell:item_craft": {
+      "gain": 0.55,
+      "reverb": 0.05,
+      "variation": {
+        "pitch": 0.8,
+        "gain": 1.2,
+        "cutoff": 0.08,
+        "time": 0.1
+      },
+      "layers": [
+        {
+          "source": "modal",
+          "freq": 380,
+          "gain": 0.32,
+          "partials": [
+            [
+              1,
+              1,
+              0.07
+            ],
+            [
+              2.71,
+              0.45,
+              0.035
+            ],
+            [
+              5.2,
+              0.2,
+              0.015
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 350
+            },
+            {
+              "freq": 410
+            },
+            {
+              "freq": 365
+            },
+            {
+              "freq": 395
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.13,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1700,
+              "q": 1.4
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.018
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 540,
+          "gain": 0.2,
+          "at": 0.075,
+          "partials": [
+            [
+              1,
+              1,
+              0.05
+            ],
+            [
+              2.71,
+              0.4,
+              0.025
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 500,
+              "at": 0.07
+            },
+            {
+              "freq": 590,
+              "at": 0.08
+            },
+            {
+              "freq": 520,
+              "at": 0.085
+            },
+            {
+              "freq": 560,
+              "at": 0.072
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.08,
+          "at": 0.075,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2100,
+              "q": 1.4
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.014
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 1760,
+          "gain": 0.06,
+          "at": 0.12,
+          "partials": [
+            [
+              1,
+              1,
+              0.38
+            ],
+            [
+              2.76,
+              0.3,
+              0.16
+            ],
+            [
+              5.4,
+              0.12,
+              0.07
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 1568
+            },
+            {
+              "freq": 1976
+            },
+            {
+              "freq": 1661
+            },
+            {
+              "freq": 1865
+            }
+          ]
+        }
+      ]
+    },
+    "dwell:item_pickup": {
+      "gain": 0.45,
+      "reverb": 0.03,
+      "variation": {
+        "pitch": 1.2,
+        "gain": 1.5,
+        "cutoff": 0.1,
+        "time": 0.12
+      },
+      "layers": [
+        {
+          "source": "osc",
+          "wave": "sine",
+          "freq": 520,
+          "to": 980,
+          "gain": 0.3,
+          "env": {
+            "attack": 0.002,
+            "decay": 0.055
+          },
+          "alts": [
+            {
+              "freq": 470,
+              "to": 900
+            },
+            {
+              "freq": 580,
+              "to": 1080
+            },
+            {
+              "freq": 540,
+              "to": 860
+            },
+            {
+              "freq": 500,
+              "to": 1040
+            }
+          ]
+        },
+        {
+          "source": "modal",
+          "freq": 1400,
+          "gain": 0.08,
+          "partials": [
+            [
+              1,
+              1,
+              0.03
+            ],
+            [
+              2.3,
+              0.35,
+              0.015
+            ]
+          ],
+          "alts": [
+            {
+              "freq": 1320
+            },
+            {
+              "freq": 1520
+            },
+            {
+              "freq": 1450
+            },
+            {
+              "freq": 1260
+            }
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.07,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 1.2
+            }
+          ],
+          "env": {
+            "attack": 0.0005,
+            "decay": 0.012
+          }
+        }
+      ]
+    },
     "dwell:torch_place": {
       "gain": 1.5,
       "reverb": 0.1,
@@ -7015,6 +7325,168 @@ export const SOUND_DATA: SoundData = {
           "tremolo": {
             "rate": 9,
             "depth": 0.3
+          }
+        }
+      ]
+    },
+    "dwell:water_rush": {
+      "gain": 1.1,
+      "reverb": 0.12,
+      "loop": true,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.08
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.35,
+          1.25
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.7,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 260,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 0.4,
+            "depth": 0.2
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.5,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 700,
+              "q": 0.5
+            }
+          ],
+          "tremolo": {
+            "rate": 1.7,
+            "depth": 0.18
+          }
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.12,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 2600,
+              "q": 0.6
+            }
+          ],
+          "tremolo": {
+            "rate": 6,
+            "depth": 0.35
+          }
+        }
+      ]
+    },
+    "dwell:flood_burst": {
+      "gain": 1.6,
+      "reverb": 0.4,
+      "variation": {
+        "pitch": 1.5,
+        "gain": 1,
+        "cutoff": 0.1,
+        "time": 0.1
+      },
+      "intensity": {
+        "gain": [
+          0.3,
+          1
+        ],
+        "cutoff": [
+          0.5,
+          1.1
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 0.9,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 380,
+              "q": 0.8,
+              "to": 120
+            }
+          ],
+          "env": {
+            "attack": 0.02,
+            "hold": 0.3,
+            "decay": 2.4
+          }
+        },
+        {
+          "source": "noise",
+          "color": "pink",
+          "gain": 0.6,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 1100,
+              "q": 0.6,
+              "to": 500
+            }
+          ],
+          "env": {
+            "attack": 0.01,
+            "hold": 0.15,
+            "decay": 1.6
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 52,
+          "gain": 0.45,
+          "partials": [
+            [
+              1,
+              1,
+              1.4
+            ],
+            [
+              1.7,
+              0.4,
+              0.9
+            ]
+          ]
+        },
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.18,
+          "at": 0.05,
+          "filters": [
+            {
+              "type": "bandpass",
+              "freq": 3400,
+              "q": 0.7
+            }
+          ],
+          "env": {
+            "attack": 0.05,
+            "decay": 1.1
           }
         }
       ]

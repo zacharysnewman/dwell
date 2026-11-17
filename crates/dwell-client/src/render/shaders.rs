@@ -240,19 +240,35 @@ fn qrot(q: vec4f, v: vec3f) -> vec3f {
 /// ink flag, set where the surface takes no ink outline (block data `outline: false`: the cross
 /// plants), and the next the self-lit flag (`self_lit_depth`, docs/LIGHTS.md §2), set where the
 /// surface gives off its own colour (a torch's flame), which the time of day's desaturation leaves
-/// alone. Two units in the last place (about 2e-7 of the depth) are far below anything a reader
-/// resolves, so the readers that don't ask are unchanged. **Every writer of the view depth goes
-/// through `frame_depth`** (a test checks it), or the flags would be its depth's own noise.
+/// alone. The next three carry the pixel's ambient-occlusion share (docs/SSAO.md): `frame_ao`,
+/// the share of its light the screen-space occlusion may darken, which `lambert_lit` sets as it
+/// lights the fragment, stored in `SHARE_LEVELS` + 1 steps (0: none, the fragments that never light
+/// through `lambert_lit`). Five units in the last place (about 4e-6 of the depth) are far below
+/// anything a reader resolves, so the readers that don't ask are unchanged. **Every writer of the
+/// view depth goes through `frame_depth`** (a test checks it), or the flags would be its depth's
+/// own noise; `self_lit_depth` stores the share again, for the writers that light after it.
 const FRAME_DEPTH: &str = r"
+var<private> frame_ao: f32 = 0.0;
+
+// The ambient-occlusion share's bits (2–4) of a stored view depth.
+fn frame_ao_bits() -> u32 {
+    return u32(round(clamp(frame_ao, 0.0, 1.0) * 7.0)) << 2u;
+}
+
 fn frame_depth(d: f32, inked: bool) -> f32 {
-    let b = bitcast<u32>(d) & ~3u;
-    return bitcast<f32>(select(b | 1u, b, inked));
+    let b = bitcast<u32>(d) & ~31u;
+    return bitcast<f32>(select(b | 1u, b, inked) | frame_ao_bits());
 }
 
 // A stored view depth flagged as a self-lit surface's (or not).
 fn self_lit_depth(d: f32, self_lit: bool) -> f32 {
-    let b = bitcast<u32>(d) & ~2u;
-    return bitcast<f32>(select(b, b | 2u, self_lit));
+    let b = bitcast<u32>(d) & ~30u;
+    return bitcast<f32>(select(b, b | 2u, self_lit) | frame_ao_bits());
+}
+
+// The ambient-occlusion share a stored view depth carries (0–1).
+fn frame_ao_share(d: f32) -> f32 {
+    return f32((bitcast<u32>(d) >> 2u) & 7u) / 7.0;
 }
 
 // Whether a stored view depth is a self-lit surface's.
@@ -460,7 +476,14 @@ fn lambert_lit(albedo: vec3f, n: vec3f, frag_y: f32, l: TerrainLight) -> vec3f {
     let shade = frame.pixel_art.z * (1.0 - clamp(ks, 0.0, 1.0));
     let hemi = mix(hemi_ground, hemi_sky, face_rise(face, n) * 0.5 + 0.5) * ambient
         * mix(vec3f(1.0), frame.pixel_tint.rgb, shade);
-    let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;
+    let glow = BLOCK_LIGHT * (PI * l.glow);
+    let irradiance = direct + hemi + glow + l.points;
+    // The share the screen-space occlusion may darken (docs/SSAO.md; dwell_look::ssao::share): the
+    // hemisphere and block light's, never the sun's, moon's or a torch's, less where the baked
+    // corner shading already darkens it.
+    let luma = vec3f(0.2126, 0.7152, 0.0722);
+    let open = clamp(dot(hemi + glow, luma) / max(dot(irradiance, luma), 1e-6), 0.0, 1.0);
+    frame_ao = open * (1.0 - SSAO_BAKED * (1.0 - clamp(l.ambient, 0.0, 1.0)));
     return irradiance * albedo / PI;
 }
 
@@ -925,6 +948,8 @@ struct CutoutOut {
     // 1 for a tree's leaves (their faces and cards): their shadow lookup's normal offset is at
     // least `leafNormalOffsetM` (render/shadows.rs `normal_offset_m`, BUGS.md #156).
     @location(10) @interpolate(flat) leaf: f32,
+    // A plant's distance fade, blade by blade (`blade_fade`): 1 drawn in full, 0 dropped.
+    @location(11) @interpolate(flat) blade: f32,
 };
 
 // The gust field: travelling waves whose wavelengths divide WIND_PERIOD, sampled at the world
@@ -1027,21 +1052,35 @@ fn sway(rel: vec3f, plant: vec4f) -> vec3f {
 
 @vertex
 fn cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
-    return cutout_vertex(v, k, true);
+    return cutout_vertex(v, k, true, true);
 }
 
 // The shadow passes' cutout vertices: as the scene's, but no card is dropped for the side of it
-// the camera is on (`card_dropped`'s `back_cull`).
+// the camera is on (`card_dropped`'s `back_cull`), and a far plant is not turned to the eye
+// (`cards` false): its shadow is the plant's as meshed, the same wherever the camera is (BUGS.md
+// #189: turned cards' shadows swept and streaked as the player walked).
 @vertex
 fn shadow_cutout_vs(v: CutoutIn, @builtin(instance_index) k: u32) -> CutoutOut {
-    return cutout_vertex(v, k, false);
+    return cutout_vertex(v, k, false, false);
 }
 
-fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
+fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool, cards: bool) -> CutoutOut {
     let draw = draws[k];
     var o: CutoutOut;
     o.draw = k;
-    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, v.position * draw.offset.w));
+    // A cross plant far off: one quad turned to the eye, the rest dropped (render/blades.rs).
+    var position = v.position;
+    var normal = v.normal.xyz;
+    if (cards && v.plant.y >= 0.0 && v.plant.w > 0.0) {
+        let card = blade_card(v, draw);
+        if (!card.keep) {
+            o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+            return o;
+        }
+        position = card.position;
+        normal = card.normal;
+    }
+    let still = tree_lean(draw.offset.xyz + qrot(draw.quat, position * draw.offset.w));
     o.rel = sway(still, v.plant);
     o.clip = frame.view_proj * vec4f(o.rel, 1.0);
     if (card_dropped(still, qrot(draw.quat, card_normal(v.plant.y)), v.plant, back_cull)) {
@@ -1049,7 +1088,7 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
         // nothing (one past the fade's margin only where all of it is faded out anyway).
         o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
     }
-    o.normal = qrot(draw.quat, v.normal.xyz);
+    o.normal = qrot(draw.quat, normal);
     o.color = v.color.rgb * (1.0 + 3.0 * v.color.a);
     o.uv = v.uv;
     o.tile = v.tile;
@@ -1058,8 +1097,24 @@ fn cutout_vertex(v: CutoutIn, k: u32, back_cull: bool) -> CutoutOut {
     o.light = v.lit.x;
     o.flood = v.lit.yz;
     o.leaf = select(0.0, 1.0, v.plant.y < 0.0 || v.plant.w < 0.0);
+    o.blade = 1.0;
+    if (v.plant.y >= 0.0 && v.plant.w > 0.0) {
+        o.blade = blade_fade(v, draw);
+        if (o.blade <= 0.0) {
+            o.clip = vec4f(0.0, 0.0, -1.0, 1.0);
+        }
+    }
     return o;
 }
+
+// A plant (a cross: tall grass, flowers) fades with distance blade by blade, not pixel by pixel
+// (the owner's 60 fps on High, 2026-11-15): each column's plants take a fixed random rank, and
+// over the fade from `plant.z` to `plant.w` m a growing share of them is dropped whole in the
+// vertex stage (no pixels), each dissolving over the last BLADE_DISSOLVE of its rank. The fade's
+// pixels were the cutout's largest cost: every blade out to its end was drawn and most of its
+// pixels discarded. The column (the cross's centre, its cell's middle: the corners' shared point,
+// so a quad's four corners agree) and its distance from the eye across the ground (both faces
+// alike) rule it; its rank is a hash of the column's world x, z (modulo WIND_PERIOD).
 
 // What a cutout fragment writes: the scene's outputs and the samples it covers.
 struct CutoutSceneOut {
@@ -1113,6 +1168,8 @@ fn cutout_fs(i: CutoutOut, @builtin(front_facing) front: bool) -> CutoutSceneOut
         // distance.
         if (i.leaf > 0.5 && frame.far_trees.w > 0.5) {
             fade = tree_cards_share(i.rel);
+        } else if (i.leaf < 0.5) {
+            fade = i.blade;
         } else {
             fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
         }
@@ -1267,7 +1324,7 @@ fn shadow_cutout_fs(i: CutoutOut) {
     let alpha = textureSampleLevel(atlas, atlas_sampler, atlas_crisp(atlas_uv), 0.0).a;
     var fade = 1.0;
     if (i.fade.y > 0.0) {
-        fade = 1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel));
+        fade = select(1.0 - smoothstep(i.fade.x, i.fade.y, length(i.rel)), i.blade, i.leaf < 0.5);
     }
     if (alpha < 0.5 || fade <= pixel_noise(i.clip.xy) || fade_discard(draw, i.clip.xy)) {
         discard;
@@ -3815,7 +3872,7 @@ fn scene_bindings(samples: u32) -> String {
          @group(3) @binding(10) var cloud_dist_now: texture_2d<f32>;\n\
          const CLOUD_DEPTH_TAPS: i32 = {taps};\n\
          const CLOUD_HISTORY_CLAMP: f32 = {clamp:?};\n{}",
-        dwell_look::clouds::cloud_march_wgsl(3, 4, 6),
+        dwell_look::clouds::cloud_march_wgsl(3, 4, 6, 11),
     )
 }
 
@@ -3823,12 +3880,13 @@ fn scene_bindings(samples: u32) -> String {
 /// shading and every entry point.
 pub fn source(samples: u32) -> String {
     format!(
-        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
+        "{}{DRAWS}\n{FADE}\n{}\n{}\n{}\n{}\n{TERRAIN}\n{}\n{MOTION}\n{OUTLINE}\n{WATER}\n{SHAFTS}\n{}",
         lighting_source(),
         dwell_look::lod_blend::LOD_BLEND.pattern.wgsl(),
         super::lod_map::wgsl(&dwell_look::lod_map::LOD_MAP),
         super::flow::wgsl() + &super::tree_fade::wgsl(),
         scene_bindings(samples),
+        super::blades::wgsl(),
         water_slope()
     ) + &super::heightfield::wgsl()
         + &super::impostors::wgsl(dwell_worldgen::impostor::Config::get())
@@ -3882,11 +3940,12 @@ pub fn lava_wgsl() -> String {
 /// entry points.
 pub fn lighting_source() -> String {
     format!(
-        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
+        "{}{}const SEA_LEVEL: f32 = {:.1};\nconst AMBIENT_FLOOR: f32 = {:?};\nconst SSAO_BAKED: f32 = {:?};\n{}{}const ATLAS_CELLS: u32 = {}u;\nconst ATLAS_TILES: u32 = {}u;\nconst ATLAS_GUTTER: u32 = {}u;\n{}\n{}\n{}\n{FRAME}\n{}\n{}\n{FRAME_DEPTH}\n{}\n{}\n{COMMON}\n{}\n{}\n",
         dwell_world::FaceFrame::wgsl(),
         super::face_shading::WGSL,
         world::SEA_LEVEL_M,
         dwell_look::ambient::AMBIENT.floor as f32,
+        dwell_look::ssao::SSAO.baked as f32,
         light_wgsl(),
         lava_wgsl(),
         dwell_mesh::ATLAS_CELLS,
@@ -3936,9 +3995,14 @@ mod tests {
             let at = src.find(&format!("fn {name}(")).expect(name);
             src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
         };
-        for stage in ["terrain_vs", "cutout_vertex", "line_vs"] {
+        // (The cutout stage turns its plant's far card's corner, `position`: render/blades.rs.)
+        for (stage, at) in [
+            ("terrain_vs", "v.position"),
+            ("cutout_vertex", "position"),
+            ("line_vs", "v.position"),
+        ] {
             assert!(
-                body(stage).contains("qrot(draw.quat, v.position * draw.offset.w)"),
+                body(stage).contains(&format!("qrot(draw.quat, {at} * draw.offset.w)")),
                 "{stage} turns by the draw's rotation"
             );
         }
@@ -4148,11 +4212,11 @@ mod tests {
         assert!(lit.contains(
             "let km = band(max(dot(n, d.moon.xyz), 0.0) * own(d.moon.xyz, face) * l.direct"
         ));
-        assert!(
-            lit.contains(
-                "let irradiance = direct + hemi + BLOCK_LIGHT * (PI * l.glow) + l.points;"
-            )
-        );
+        assert!(lit.contains("let glow = BLOCK_LIGHT * (PI * l.glow);"));
+        assert!(lit.contains("let irradiance = direct + hemi + glow + l.points;"));
+        // The occlusion's share (docs/SSAO.md) is the hemisphere and block light's, never the
+        // direct light's.
+        assert!(lit.contains("let open = clamp(dot(hemi + glow, luma)"));
         let direct: Vec<&str> = lit.lines().filter(|l| l.contains("direct")).collect();
         assert!(
             direct
@@ -4592,6 +4656,29 @@ mod tests {
     }
 
     #[test]
+    fn the_shadow_passes_cast_far_plants_as_meshed_not_turned_to_the_eye() {
+        // BUGS.md #189 (owner, 2026-11-16: "grass shadow flickering ... as you walk through tall
+        // grass"): past blades::BILLBOARD_M the scene turns a plant's card to the eye; the shadow
+        // passes must not, or its shadow turns as the camera moves (sweeping, edge-on streaks).
+        let src = super::source(4);
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            src[at..at + src[at..].find("\n}\n").expect("end")].to_string()
+        };
+        assert!(
+            body("shadow_cutout_vs").contains("cutout_vertex(v, k, false, false)"),
+            "the shadow vertex stage asks for no cards"
+        );
+        assert!(body("cutout_vs").contains("cutout_vertex(v, k, true, true)"));
+        let v = body("cutout_vertex");
+        let turn = v.find("blade_card(v, draw)").expect("the scene's turn");
+        let guard = v
+            .find("if (cards && ")
+            .expect("the turn only where cards are asked for");
+        assert!(guard < turn);
+    }
+
+    #[test]
     fn plants_without_ink_are_flagged_in_the_depth_and_seen_through() {
         // Owner's report (2026-10-20, `?outline=creases`): tall grass was mostly black, every
         // blade inked. A cutout whose block says `outline: false` (the cross plants' default)
@@ -4619,9 +4706,9 @@ mod tests {
         // The flag is the depth's lowest bit (the next the self-lit flag, cleared with it);
         // nothing drawn (0) takes the ink.
         let flag = super::FRAME_DEPTH;
-        assert!(flag.contains("let b = bitcast<u32>(d) & ~3u;"));
+        assert!(flag.contains("let b = bitcast<u32>(d) & ~31u;"));
         assert!(flag.contains("return (bitcast<u32>(d) & 2u) != 0u;"));
-        assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked));"));
+        assert!(flag.contains("return bitcast<f32>(select(b | 1u, b, inked) | frame_ao_bits());"));
         assert!(flag.contains("return (bitcast<u32>(d) & 1u) == 0u;"));
     }
 

@@ -196,7 +196,7 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
       [{ property: 'nope', heights: {} }, 'cross.heights.property must name a property'],
       [
         { property: 'stage', heights: { '0': 0.2, '1': 0.5 } },
-        'cross.heights.heights.2 must be a number in (0, 1]',
+        'cross.heights.heights.2 must be a number in (0, 2]',
       ],
       [
         { property: 'stage', heights: { '0': 0.2, '1': 0.5, '2': 0.7 } },

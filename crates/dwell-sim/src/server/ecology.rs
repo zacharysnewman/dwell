@@ -459,9 +459,10 @@ impl Server {
         }
         let mut changes = super::TickChanges::default();
         for c in eaten {
-            let to = self.eaten_to(c);
-            if self.world.get_voxel_if_loaded(c) != to {
-                changes.set(&mut self.world, c, to);
+            for (cell, to) in self.eaten_stand(c) {
+                if self.world.get_voxel_if_loaded(cell) != to {
+                    changes.set(&mut self.world, cell, to);
+                }
             }
         }
         self.broadcast_changes(changes, dwell_protocol::VoxelModificationReason::Edit);
@@ -478,6 +479,24 @@ impl Server {
         let [x, y, z] = f.cell(c);
         let below = f.state(self.world.get_voxel_if_loaded(f.cell([x, y - 1, z])));
         f.state(self.grass_rule.eaten(below))
+    }
+
+    /// What a grazer's bite at world cell `c` writes: the cell as [`Self::eaten_to`], and a taller
+    /// stand's cells over it eaten with it (WORK_QUEUE item 58 g: a stand up to 2 m; nothing is left
+    /// standing over a sprout). Public for tests and tools.
+    pub fn eaten_stand(&self, c: [i32; 3]) -> Vec<([i32; 3], dwell_blocks::StateId)> {
+        let f = dwell_world::FaceFrame::at_row(c[1]);
+        let [x, y, z] = f.cell(c);
+        let mut out = vec![(c, self.eaten_to(c))];
+        for k in 1..8 {
+            let up = f.cell([x, y + k, z]);
+            let s = f.state(self.world.get_voxel_if_loaded(up));
+            if !self.grass_rule.is_tuft(s) {
+                break;
+            }
+            out.push((up, dwell_blocks::AIR));
+        }
+        out
     }
 
     /// A client reads the far ecology (`EcologyHello`): the far groups now, then every

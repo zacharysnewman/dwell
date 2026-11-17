@@ -43,6 +43,7 @@ fn scene_with(f: FaceFrame, config: ServerConfig) -> Fixture {
         .world()
         .set_voxel(x, y, z, f.state(require("dwell:dirt")));
     fx.join(1, &Client::new(1));
+    start_with_axe(&mut fx.server, 1);
     fx.send(1, Message::InventoryAction(InventoryAction::Hello));
     fx.move_to_local(f, 0.5, m_of_row(BASE), 0.5);
     for _ in 0..5 {
@@ -329,7 +330,7 @@ dwell_world::both_faces!(
         // sixteenths of a 1-in-8 bite: 26 for 5 hits, 43 for 3 (the metal tool's 5/3 the stone's).
         for (stone_tool, metal_tool, cell) in [
             ("dwell:stone_pickaxe", "dwell:metal_pickaxe", STONE),
-            ("dwell:wooden_shovel", "dwell:metal_shovel", DIRT),
+            ("dwell:stone_shovel", "dwell:metal_shovel", DIRT),
         ] {
             let mut fx = scene_with(f, config(f, "adventure"));
             hold(&mut fx, "adventure", stone_tool);
@@ -459,9 +460,8 @@ dwell_world::both_faces!(
             hit(&mut fx, f, STONE);
         }
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:stone");
-        // Owner, 2026-11-11: a ½ m stone cell breaks into 8 rock shards, half (4) over the hits
-        // (one each of the four before the last), the rest on the destroy.
-        assert_eq!(loose(&fx, "dwell:rock_shard"), 4);
+        // Owner, 2026-11-15: "4 chunks drop at the end not as you chop": no shard on a hit.
+        assert_eq!(loose(&fx, "dwell:rock_shard"), 0);
         assert_eq!(loose(&fx, "dwell:stone"), 0, "no longer the block itself");
         // Each hit's piece is a real 3D shard (BLOCK_DAMAGE.md §6.2, owner: "both"): the loose item
         // is drawn by its look, the angular `shard`, no bigger than the mark the hit carves.
@@ -481,24 +481,24 @@ dwell_world::both_faces!(
         assert_eq!(block_at(&mut fx, f, STONE), "dwell:air");
         assert_eq!(
             loose(&fx, "dwell:rock_shard"),
-            8,
-            "the cell's 8 pieces, once"
+            4,
+            "the cell's 4 pieces, once, on the break"
         );
     }
 );
 
 dwell_world::both_faces!(
     fn dirt_breaks_into_eight_clumps_and_may_turn_up_a_rock(f: FaceFrame) {
-        // Owner, 2026-11-11: 8 dirt clumps a cell, half over the hits; rocks still found at random.
+        // Owner, 2026-11-15: 4 dirt clumps a cell, all on the break; rocks still found at random.
         let mut rocks = 0;
         for _ in 0..12 {
             let mut fx = scene_with(f, config(f, "adventure"));
-            hold(&mut fx, "adventure", "dwell:wooden_shovel");
+            hold(&mut fx, "adventure", "dwell:stone_shovel");
             let n = hits_to_break(&mut fx, f, DIRT);
             assert_eq!(n, 5, "a stone-tier shovel");
-            assert_eq!(loose(&fx, "dwell:dirt_clump"), 8);
+            assert_eq!(loose(&fx, "dwell:dirt_clump"), 4);
             assert_eq!(loose(&fx, "dwell:dirt"), 0);
-            rocks += loose(&fx, "dwell:rock");
+            rocks += loose(&fx, "dwell:rock_shard");
         }
         assert!(
             rocks > 0,
@@ -808,3 +808,94 @@ dwell_world::both_faces!(
         assert_eq!(block_at(&mut fx, f, DIRT), "dwell:dirt");
     }
 );
+
+dwell_world::both_faces!(
+    /// Owner, 2026-11-14: the stone shovel (2 sticks, 2 rock shards, 2 grass fibre) digs dirt in
+    /// fewer hits than the wooden one (the `wood` tier), and wears out after 32 hits as the other
+    /// stone tools do.
+    fn the_stone_shovel_digs_dirt_faster_than_the_wooden_one_and_wears_at_32(f: FaceFrame) {
+        let mut by = Vec::new();
+        for tool in ["dwell:wooden_shovel", "dwell:stone_shovel"] {
+            let mut fx = scene_with(f, config(f, "adventure"));
+            hold(&mut fx, "adventure", tool);
+            by.push(hits_to_break(&mut fx, f, DIRT));
+        }
+        assert_eq!(by, [6, 5], "wooden, stone");
+        assert_eq!(chopping::durability("dwell:stone_shovel"), Some(32));
+    }
+);
+
+/// Steps the server `s` seconds of ticks.
+fn run_s(fx: &mut Fixture, s: f64) {
+    for _ in 0..(s * f64::from(SIM_HZ)).round() as u32 {
+        fx.server.step();
+    }
+}
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: damaged blocks "heal over time whether you're there or not",
+    /// "on a delay (like 10s) before it starts. And the last 3 blocks you hit shouldn't heal. So
+    /// you'd have hit a 4th block for the 1st block to start healing." A stone hit twice, then three
+    /// others: from the fourth hit its delay runs, then a hit heals each `fullS / need`, and it is
+    /// whole; the three last stay as they are (red before: damage never healed).
+    fn a_block_heals_after_its_delay_once_out_of_your_last_three(f: FaceFrame) {
+        let heal = dwell_protocol::chopping::HEAL.expect("damage heals (breaking.heal)");
+        let mut fx = scene_with(f, config(f, "creative"));
+        hold(&mut fx, "creative", "dwell:stone_pickaxe");
+        let hits = |fx: &Fixture, c: [i32; 3]| fx.server.damage_hits(f.cell(c));
+        hit(&mut fx, f, STONE);
+        hit(&mut fx, f, STONE);
+        assert_eq!(hits(&fx, STONE), Some(2));
+        // Long past the delay while it is among the last three: it keeps its damage.
+        run_s(&mut fx, heal.delay_s + heal.full_s);
+        assert_eq!(
+            hits(&fx, STONE),
+            Some(2),
+            "kept while among your last blocks"
+        );
+        let others = [[-1, BASE - 1, 0], [1, BASE - 1, 0], [0, BASE - 1, -1]];
+        for c in others {
+            hit(&mut fx, f, c);
+        }
+        // Out of the last three now: its delay starts.
+        let need = 5.0; // a stone pickaxe on stone
+        let per = heal.full_s / need;
+        run_s(&mut fx, heal.delay_s - 0.5);
+        assert_eq!(hits(&fx, STONE), Some(2), "within the delay");
+        run_s(&mut fx, 0.5 + per + 0.6);
+        assert_eq!(
+            hits(&fx, STONE),
+            Some(1),
+            "one hit healed a step after the delay"
+        );
+        run_s(&mut fx, per + 0.6);
+        assert_eq!(hits(&fx, STONE), None, "whole again, its record gone");
+        for c in others {
+            assert_eq!(hits(&fx, c), Some(1), "your last three keep theirs");
+        }
+    }
+);
+
+#[test]
+fn a_loaded_worlds_damage_heals_from_the_load() {
+    // face-a-only: a byte format; the heal is face-free.
+    let f = FaceFrame::A;
+    let heal = dwell_protocol::chopping::HEAL.expect("damage heals");
+    let db = WorldDb::in_memory().expect("db");
+    let cfg = || ServerConfig {
+        store: Some(WorldStore::new(db.clone(), false)),
+        ..config(f, "creative")
+    };
+    {
+        let mut fx = scene_with(f, cfg());
+        hold(&mut fx, "creative", "dwell:stone_pickaxe");
+        hit(&mut fx, f, STONE);
+        fx.server.save_now();
+        fx.server.flush_store();
+    }
+    // Saved without its time (and no player's last blocks): it heals from the load.
+    let mut fx = scene_with(f, cfg());
+    assert_eq!(fx.server.damage_hits(f.cell(STONE)), Some(1));
+    run_s(&mut fx, heal.delay_s + heal.full_s / 5.0 + 1.5);
+    assert_eq!(fx.server.damage_hits(f.cell(STONE)), None, "healed");
+}

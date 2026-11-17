@@ -3,7 +3,10 @@
 // and place variations per set, landings soft to hard, each surface's slide from slow to fast
 // ending in its stop, each set's burn (a torch's crackle) and each event's loop (the wind, the
 // night) held and swelling from faint to full. Pure, so the plan is tested.
-import type { SoundData } from './types';
+import type { SoundData, SoundDef } from './types';
+
+/** Which alternative a seed's first play of a sound picks for its layer `k` (variation.ts's draw). */
+export type FirstAlt = (seed: number, id: string, def: SoundDef, k: number) => number | undefined;
 
 export interface RenderPlay {
   sound: string;
@@ -35,7 +38,12 @@ const TAIL = 0.8;
 /** Seconds a slide render holds its loop. */
 export const SLIDE_SECONDS = 4;
 
-export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): RenderJob[] {
+export function renderPlan(
+  data: SoundData,
+  walkSpeed = 5,
+  runSpeed = 8,
+  firstAlt?: FirstAlt,
+): RenderJob[] {
   const jobs: RenderJob[] = [];
   const isLoop = (sound: string): boolean => data.sounds[sound]?.loop === true;
   const single = (name: string, sound: string, bus: 'effects' | 'ui', intensity = 1): void => {
@@ -55,6 +63,42 @@ export function renderPlan(data: SoundData, walkSpeed = 5, runSpeed = 8): Render
       single(`set_${local(set)}_${event}`, sound, 'effects');
   }
   for (const e of data.events) if (e.sound) single(`event_${e.name}`, e.sound, 'effects');
+  // An event sound with variants (a layer's `alts`): each variant alone, from the first seed whose
+  // first draw picks it (`firstAlt`, the seeded draw), and eight plays in a row as the game varies
+  // them.
+  for (const e of data.events) {
+    const def = e.sound ? data.sounds[e.sound] : undefined;
+    if (!e.sound || !def || def.loop) continue;
+    const k = def.layers.findIndex((l) => l.alts?.length);
+    const alts = k >= 0 ? (def.layers[k]?.alts?.length ?? 0) : 0;
+    if (alts === 0) continue;
+    for (let alt = 0; firstAlt && alt < alts; alt++) {
+      let seed = 1;
+      while (seed < 1000 && firstAlt(seed, e.sound, def, k) !== alt) seed++;
+      if (seed === 1000) continue;
+      jobs.push({
+        name: `variant_${e.name}_${String(alt + 1)}`,
+        plays: [{ sound: e.sound, at: 0.02, bus: 'effects', intensity: 1 }],
+        seconds: 1.5,
+        seed,
+        minSeconds: 0.01,
+        maxSeconds: 1.2,
+      });
+    }
+    jobs.push({
+      name: `variations_${e.name}_x8`,
+      plays: Array.from({ length: 8 }, (_, i) => ({
+        sound: e.sound as string,
+        at: 0.02 + 0.4 * i,
+        bus: 'effects' as const,
+        intensity: 1,
+      })),
+      seconds: 0.02 + 0.4 * 8 + TAIL,
+      seed: 11,
+      minSeconds: 2.8,
+      maxSeconds: 4.2,
+    });
+  }
   for (const [name, sound] of Object.entries(data.actions)) single(`action_${name}`, sound, 'ui');
   for (const [kind, sound] of Object.entries(data.ui)) single(`ui_${kind}`, sound, 'ui');
 

@@ -5,6 +5,7 @@
 import { audio } from '../audio/engine';
 import type { Client } from '../engine/wasm';
 import { BUILD_MODES } from './buildModes.gen';
+import { RegionBar } from './regionBar';
 
 /** The on-screen buttons (touch.rs `TouchButton`), left to right; `debug` sits top right. */
 const BUTTONS = [
@@ -28,6 +29,8 @@ export class TouchControls {
   private readonly stickKnob: HTMLDivElement;
   private readonly flyButton: HTMLButtonElement;
   private readonly buildButton: HTMLButtonElement;
+  /** The region tools on touch (ui/regionBar.ts): a Select button while flying in creative. */
+  readonly region: RegionBar;
   /** Shown under the crosshair while it is on a ground item: a tap picks it up (ADR 0071). */
 
   constructor(
@@ -68,6 +71,21 @@ export class TouchControls {
       this.onBag?.();
     });
     this.root.append(moveZone, lookZone, this.stickBase, buttons, debug, bag);
+    this.region = new RegionBar(this.root, {
+      flying: () => client.flying(),
+      allows: (a) => client.allows(a),
+      state: () => client.regionState(),
+      status: () => client.regionStatus(),
+      tool: (name) => {
+        client.tool(name, performance.now());
+      },
+      armed: (open) => {
+        client.setRegionArmed(open);
+      },
+      action: (name) => {
+        this.onRegionAction?.(name);
+      },
+    });
     parent.append(this.root);
 
     moveZone.addEventListener('pointerdown', (e) => {
@@ -130,6 +148,12 @@ export class TouchControls {
   }
 
   private onBag: (() => void) | null = null;
+  private onRegionAction: ((name: string) => void) | null = null;
+
+  /** What the region bar's shell actions do (`save`: the Structures page's save). */
+  setOnRegionAction(f: (name: string) => void): void {
+    this.onRegionAction = f;
+  }
 
   /** What the bag button does (opens or closes the inventory view). */
   setOnBag(f: () => void): void {
@@ -155,6 +179,8 @@ export class TouchControls {
   setFlight(allowed: boolean, flying: boolean): void {
     this.flyButton.hidden = !allowed;
     this.flyButton.classList.toggle('flying', flying);
+    // The Select button follows flight (the region bar's `showWhen`).
+    this.region.update();
   }
 
   private drawStick(): void {

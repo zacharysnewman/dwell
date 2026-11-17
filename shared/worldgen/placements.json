@@ -1,9 +1,9 @@
 {
-  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; `pad` \"trunk\" (the default for a placement of tree species; \"none\" otherwise) levels the ground under the trunk's columns (the structure's lowest cells) up to the trunk's base, ramps there made full cells, so a tree on a slope stands on a flat 1 m pad (WORK_QUEUE item 44; owner, 2026-11-12: \"For now let's just do level pad, can just be the the tree width, 1m.\"); of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped (a negative `spacing`, down to -4, lets two boxes overlap by that many blocks: crowns interleaving in a dense stand). Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up). All decided from the world seed and positions, so chunks agree in any order. A structure name may be a tree species (shared/trees, ADR 0079): the placement stands that species' seeded trees at their drawn stages (`growth.variants`, `growth.wild`), each at the entry's weight; `conifer_groves` (pines) and `palm_coasts` (palms) are listed by the starter world only; `old_growth` (WORK_QUEUE item 32: the old-growth species, a candidate in every 5 m cell, everywhere, crowns allowed to touch) by the `preset:old_growth` biome only; `rainforest_groves` (the tropical rainforest's, REALISTIC_WORLD.md §7 q9: the tall broadleaf species with oaks and palms close together, a 5 m grid, no spacing) by that preset only. A placement stands only where a biome that lists it (biomes `placements`) has weight, by that biome's `trees` density (ADR 0074 B5): `broadleaf_groves` and `boulders` are listed by presets only, so the default world has neither. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
+  "$comment": "Structure placements (docs/WORLD_GENERATION.md §2, docs/STRUCTURES.md §8, ADR 0043): committed structures (shared/structures) the terrain generator stands on its ground. One candidate per `grid` cell, at a hashed point in it, kept by the density (inside the grove noise, `groves.outside` of it elsewhere), scaled by the height (`rise`: `low` at height[0], 1 from `full` up), and only where the ground at the anchor is one of `on`, its height (m above sea level) inside `height`, its slope at most `maxSlopeDeg` and, with footprint \"on\", every column under the structure is one of `on` too; `pad` \"trunk\" (the default for a placement of tree species; \"none\" otherwise) levels the ground under the trunk's columns (the structure's lowest cells) up to the trunk's base, ramps there made full cells, so a tree on a slope stands on a flat 1 m pad (WORK_QUEUE item 44; owner, 2026-11-12: \"For now let's just do level pad, can just be the the tree width, 1m.\"); of two candidates whose boxes come within `spacing` blocks the one with the lower priority hash is dropped (a negative `spacing`, down to -4, lets two boxes overlap by that many blocks: crowns interleaving in a dense stand). Each is turned by one of `rotate` and picked from `structures` by weight. `variants` swap blocks of a placed structure by the anchor's height (m above sea level): none at height[0], every one from height[1], a share in between (owner, 2026-10-21: snowy leaves on the pines high up); `bleed` (m, optional, 0.69): its biomes' density is read at a point moved up to that far by a fine noise, so its plants reach raggedly past a border into the neighbour and the neighbour's into its side (owner, 2026-11-14: \"Bushes, shrubs, rocks, trees, should bleed into the edge of the neighboring terrain\"). A variant's `on` (blocks, optional) also takes every structure standing on one of them, whatever its height (0.69; owner, 2026-11-14: \"trees at snow level should use snow leaves\": the snowy grass and snow the elevation bands lay at the snow line). All decided from the world seed and positions, so chunks agree in any order. A structure name may be a tree species (shared/trees, ADR 0079): the placement stands that species' seeded trees at their drawn stages (`growth.variants`, `growth.wild`), each at the entry's weight; `conifer_groves` (pines) and `palm_coasts` (palms) are listed by the starter world only; `old_growth` (WORK_QUEUE item 32: the old-growth species, a candidate in every 5 m cell, everywhere, crowns allowed to touch) by the `preset:old_growth` biome only; `rainforest_groves` (the tropical rainforest's, REALISTIC_WORLD.md §7 q9: the tall broadleaf species with oaks and palms close together, a 5 m grid, no spacing) by that preset only. A placement stands only where a biome that lists it (biomes `placements`) has weight, by that biome's `trees` density (ADR 0074 B5): `broadleaf_groves` and `boulders` are listed by presets only, so the default world has neither. Prototype content. Run `node shared/worldgen/gen.mjs` after editing; CI fails on stale output.",
   "placements": [
     {
       "name": "pine_groves",
-      "structures": { "dwell:pine_tree": 55, "dwell:tall_pine_tree": 45 },
+      "structures": { "dwell:pine": 1 },
       "on": ["dwell:grass", "dwell:snowy_grass"],
       "footprint": "on",
       "pad": "trunk",
@@ -14,12 +14,14 @@
       "rise": { "full": 120, "low": 0.15 },
       "maxSlopeDeg": 44,
       "spacing": 1,
+      "bleed": 50,
       "rotate": [0, 90, 180, 270],
       "variants": [
         {
           "name": "snowy",
           "replace": { "dwell:leaves": "dwell:snowy_leaves" },
-          "height": [1050, 1250]
+          "height": [1050, 1250],
+          "on": ["dwell:snowy_grass", "dwell:snow"]
         }
       ]
     },
@@ -35,6 +37,7 @@
       "rise": { "full": 40, "low": 0.3 },
       "maxSlopeDeg": 35,
       "spacing": 1,
+      "bleed": 50,
       "rotate": [0, 90, 180, 270]
     },
     {
@@ -54,7 +57,8 @@
         {
           "name": "snowy",
           "replace": { "dwell:leaves": "dwell:snowy_leaves" },
-          "height": [1050, 1250]
+          "height": [1050, 1250],
+          "on": ["dwell:snowy_grass", "dwell:snow"]
         }
       ]
     },
@@ -89,6 +93,7 @@
       "height": [1, 2500],
       "maxSlopeDeg": 40,
       "spacing": 2,
+      "bleed": 30,
       "rotate": [0, 90, 180, 270]
     },
     {
@@ -133,8 +138,85 @@
       "height": [1, 2500],
       "maxSlopeDeg": 25,
       "spacing": -2,
+      "bleed": 30,
       "rotate": [0, 90, 180, 270],
       "tops": 0.12
+    },
+    {
+      "$comment": "Talus (0.69; owner, 2026-11-14: \"Stone cliff regions should get rocks and boulders at the base of cliffs. Including in the water.\"): fallen stones and blocks under rock walls and steep rock, densest at a wall's foot and none `cliffReach` m out, single 1 m stones to multi-block boulders (`structures`), on the bed under water too (`wet`). A red ground's talus is red sandstone (`variants` `on`). Listed by the Realistic world's biomes (worlds/realistic.json).",
+      "name": "talus",
+      "structures": { "dwell:talus_stone": 5, "dwell:talus_block": 3, "dwell:proto_rock": 2 },
+      "on": ["dwell:stone", "dwell:dirt", "dwell:grass", "dwell:sand", "dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone", "dwell:snowy_grass", "dwell:basalt"],
+      "footprint": "anchor",
+      "grid": 4,
+      "density": 0.25,
+      "height": [-60, 2500],
+      "maxSlopeDeg": 50,
+      "spacing": 0,
+      "rotate": [0, 90, 180, 270],
+      "cliffReach": 12,
+      "wet": true,
+      "variants": [
+        {
+          "name": "red",
+          "replace": { "dwell:stone": "dwell:red_sandstone", "dwell:dirt": "dwell:red_sandstone" },
+          "height": [100000, 100000],
+          "on": ["dwell:red_dirt", "dwell:red_sand", "dwell:red_sandstone"]
+        }
+      ]
+    },
+    {
+      "$comment": "Bushes (0.69; owner, 2026-11-14: \"We also need more shrubbery/bushes etc.\"): leafy clumps in clusters (`groves`: a 70 m noise, a third of the ground, few outside), on temperate and tropical ground, listed by the Realistic world's grassy and forest biomes with a density each (worlds/realistic.json `trees`), the climate's moisture ruling them (vegetation.json `dwell:shrubs`).",
+      "name": "bushes",
+      "structures": { "dwell:bush": 1 },
+      "on": ["dwell:grass", "dwell:dirt"],
+      "footprint": "anchor",
+      "grid": 4,
+      "density": 0.5,
+      "groves": { "wavelength": 70, "coverage": 0.35, "outside": 0.05 },
+      "height": [1, 1600],
+      "maxSlopeDeg": 40,
+      "spacing": 0,
+      "bleed": 40,
+      "rotate": [0, 90, 180, 270]
+    },
+    {
+      "$comment": "Low shrubs (0.69): small leafy shrubs in clusters on boreal and alpine ground, snowy at the snow line as the pines are (`variants` `on`).",
+      "name": "cold_shrubs",
+      "structures": { "dwell:low_shrub": 1 },
+      "on": ["dwell:grass", "dwell:snowy_grass", "dwell:dirt"],
+      "footprint": "anchor",
+      "grid": 4,
+      "density": 0.5,
+      "groves": { "wavelength": 60, "coverage": 0.35, "outside": 0.05 },
+      "height": [1, 2500],
+      "maxSlopeDeg": 40,
+      "spacing": 0,
+      "bleed": 30,
+      "rotate": [0, 90, 180, 270],
+      "variants": [
+        {
+          "name": "snowy",
+          "replace": { "dwell:leaves": "dwell:snowy_leaves" },
+          "height": [1050, 1250],
+          "on": ["dwell:snowy_grass", "dwell:snow"]
+        }
+      ]
+    },
+    {
+      "$comment": "Scrub (0.69): grey-green scrub bushes in loose clusters on dry grassland and Mediterranean-like ground (steppe, savanna, badlands, coastal cliffs).",
+      "name": "scrub",
+      "structures": { "dwell:scrub": 1 },
+      "on": ["dwell:grass", "dwell:dirt", "dwell:red_dirt"],
+      "footprint": "anchor",
+      "grid": 5,
+      "density": 0.4,
+      "groves": { "wavelength": 90, "coverage": 0.4, "outside": 0.1 },
+      "height": [1, 2000],
+      "maxSlopeDeg": 35,
+      "spacing": 0,
+      "bleed": 40,
+      "rotate": [0, 90, 180, 270]
     }
   ]
 }

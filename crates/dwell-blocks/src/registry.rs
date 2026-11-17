@@ -129,6 +129,16 @@ pub fn with_property(state: StateId, name: &str, value: &str) -> Option<StateId>
     Some(state_of(block, &idx))
 }
 
+/// The same block with property `name` at its `k`th value (a column's cell, a toggle's other
+/// value); `None` if the block has no such property or value.
+pub fn with_property_index(state: StateId, name: &str, k: usize) -> Option<StateId> {
+    let base = crate::base_state(state);
+    try_info(base)?;
+    let block = block_of(base);
+    let p = block.properties.iter().find(|p| p.name == name)?;
+    with_property(state, name, p.values.get(k)?)
+}
+
 /// The same block facing `facing` (its `facingProperty`, BLOCK_REGISTRY.md), every other property
 /// kept; `state` itself if the block has no facing or no state facing that way.
 pub fn with_facing(state: StateId, facing: crate::Facing) -> StateId {

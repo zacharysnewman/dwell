@@ -3679,12 +3679,130 @@ body.loading-wait #brush-panel {
   touch-action: none;
 }
 
+/* The region tools on touch (ui/regionBar.ts): Select under the bag, shown while flying in creative;
+   its bar right-aligned over the play buttons, inside the look half (the stick's half stays clear).
+   The buttons take their taps; the look layer under the bar's gaps still turns the view. */
+.touch-region-open {
+  position: absolute;
+  top: calc(var(--safe-top) + 106px);
+  left: var(--safe-left);
+  z-index: 1;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 22px;
+  background: var(--glass);
+  color: #fff;
+  font: 700 14px var(--font-body);
+  touch-action: none;
+}
+
+.touch-region-open[hidden],
+#touch-region-bar[hidden],
+#touch-region-bar button[hidden] {
+  display: none;
+}
+
+.touch-region-open.pressed {
+  border-color: #fff;
+  background: rgb(255 255 255 / 85%);
+  color: var(--ink);
+}
+
+#touch-region-bar {
+  position: absolute;
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + 18px + 80px + 12px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(55vw - var(--safe-right));
+  pointer-events: none;
+}
+
+/* The bar takes the flight speed panel's place while it is open (close it to change the speed). */
+body.region-bar-open #flight-speed {
+  display: none;
+}
+
+/* Phones sideways: left of the play buttons' block (two 54 px columns), at the bottom. */
+@media (pointer: coarse) and (orientation: landscape) {
+  #touch-region-bar {
+    right: calc(var(--safe-right) + 2 * 54px + 8px + 12px);
+    bottom: calc(var(--safe-bottom) + 18px);
+    max-width: 236px;
+  }
+}
+
+/* Upright phones: above the play buttons' block (four rows up to Jump). */
+@media (pointer: coarse) and (orientation: portrait) {
+  /* Below the connection and frame-rate lines, which run across the screen upright. */
+  .touch-region-open {
+    top: calc(var(--safe-top) + 150px);
+  }
+
+  #touch-region-bar {
+    bottom: calc(var(--safe-bottom) + 18px + 3 * 58px + 76px + 3 * 10px + 22px);
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right));
+  }
+}
+
+#touch-region-bar .region-status {
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: var(--glass);
+  color: #fff;
+  font: 600 11px var(--font-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#touch-region-bar .region-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+#touch-region-bar button {
+  min-width: 52px;
+  height: 46px;
+  padding: 0 8px;
+  border: 1.5px solid rgb(255 255 255 / 45%);
+  border-radius: 23px;
+  background: rgb(16 24 34 / 50%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font: 800 12.5px var(--font-display);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#touch-region-bar button:active {
+  background: rgb(255 255 255 / 85%);
+  color: var(--ink);
+}
+
 body.inventory-open #touch-controls > :not(#touch-bag) {
   display: none;
 }
 
+/* Raised over the inventory for the bag button, the screen-wide layer lets every other tap through to the
+   inventory (BUGS.md #174: it took them all, so nothing in the bag answered on a phone). */
 body.inventory-open #touch-controls {
   z-index: calc(var(--z-widgets) + 1);
+  pointer-events: none;
+}
+
+body.inventory-open #touch-bag {
+  pointer-events: auto;
 }
 
 /* The minimap (ADR 0068; its size from shared/ui/map.json, set as --minimap-size): round, top right, the

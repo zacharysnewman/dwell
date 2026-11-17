@@ -18,6 +18,11 @@
 //! **A player's block wins.** A cell grows only where it is air now and was air or tall grass as
 //! generated, over ground that is still its generated block, with `openAbove` cells of air over it.
 //!
+//! **Up to 2 m** (owner 2026-11-14, WORK_QUEUE item 58 g): a stand is a column of up to four ½ m
+//! cells, its lower cells stalks and its top the stages' tip. A column at full height starts a new
+//! cell over it (`height`: the climate's share caps the cells, `daysPerCell` the pace); cutting a cell
+//! takes the cells above it (the block stands on itself: `placeOn`, the support rule).
+//!
 //! Face-local: the step reads and writes world cells through a [`FaceFrame`]; rolls hash face-local
 //! cells, so face B's meadow grows as face A's mirror.
 
@@ -38,6 +43,27 @@ pub struct GrassStage {
     pub days: f64,
     /// The least climate share a column needs for its tufts to reach this stage.
     pub share: f64,
+}
+
+/// A band of the climate's share and the most ½ m cells a column grows to there (grass.json
+/// `height.cells`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GrassCells {
+    /// The least climate share of the band.
+    pub share: f64,
+    /// The most cells a column of the band grows to.
+    pub cells: u32,
+}
+
+/// A stand's height in cells (grass.json `height`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GrassHeight {
+    /// The `stage_property` value of a column's lower cells (full blades).
+    pub stalk: &'static str,
+    /// The mean days a cell over the first takes from its start to full height.
+    pub days_per_cell: f64,
+    /// The bands, by rising share.
+    pub cells: &'static [GrassCells],
 }
 
 /// The growth rule as data (see `gen.mjs` `validateGrass` for the ranges).
@@ -68,16 +94,21 @@ pub struct GrassData {
     pub stage_property: &'static str,
     /// The stages, a sprout to full height (the last the property's default).
     pub stages: &'static [GrassStage],
+    /// The stand's height in cells.
+    pub height: GrassHeight,
 }
 
 mod table {
-    use super::{GrassData, GrassStage};
+    use super::{GrassCells, GrassData, GrassHeight, GrassStage};
     include!("grass.gen.rs");
 }
 pub use table::GRASS;
 
 /// The rows up or down a neighbouring tuft may stand and still seed a cell (½ m rows: 1 m).
 const SEED_ROWS: i32 = 2;
+/// The most cells a column is followed down to its ground (past the data's most, a stack a player
+/// built).
+const MAX_COLUMN: usize = 8;
 
 /// The envelope at a face-local column: (the decoration's per-cell roll, the climate's share).
 pub trait Envelope {
@@ -105,6 +136,8 @@ pub struct Rule {
     block: StateId,
     /// The block's states by stage, a sprout to full height.
     stages: Vec<StateId>,
+    /// A column's lower cell.
+    stalk: StateId,
     /// The ground states, face-local: the `on` blocks and, with `onRamps`, their ½ m ramps.
     on: Vec<StateId>,
     seed: u32,
@@ -124,10 +157,18 @@ impl Rule {
                 )
             })
             .collect();
+        let stalk = dwell_blocks::with_property(block, data.stage_property, data.height.stalk)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: no {}={}",
+                    data.block, data.stage_property, data.height.stalk
+                )
+            });
         Self {
             data,
             block,
             stages,
+            stalk,
             stage_seed: seed_word(world_seed, 0x6A55_57A6),
             on: data
                 .on
@@ -169,8 +210,24 @@ impl Rule {
         self.stages[0]
     }
 
+    /// A column's lower cell (full blades, under the cell over it).
+    pub fn stalk(&self) -> StateId {
+        self.stalk
+    }
+
+    /// The most cells a column of climate share `share` grows to (`height.cells`).
+    pub fn max_cells(&self, share: f64) -> usize {
+        self.data
+            .height
+            .cells
+            .iter()
+            .rev()
+            .find(|b| share >= b.share)
+            .map_or(1, |b| b.cells as usize)
+    }
+
     /// The stage of a tuft's state (None: not the grown block). A state without a stage the data
-    /// knows (an alias) is full height, as the property's default.
+    /// knows (a stalk, an alias) is full height, as the property's default.
     pub fn stage_of(&self, s: StateId) -> Option<usize> {
         if !self.is_tuft(s) {
             return None;
@@ -218,6 +275,33 @@ impl Rule {
         f64::from(r) < 1.0 / days
     }
 
+    /// The steps (a stage, or a new cell) a column over its first cell takes on `day` at face-local
+    /// cell `p` (its tip): `order.length` a `daysPerCell`, the whole steps every day and the rest by
+    /// a roll.
+    fn height_steps(&self, day: u32, [x, y, z]: [i32; 3]) -> u32 {
+        let rate = self.stages.len() as f64 / self.data.height.days_per_cell;
+        let whole = rate.floor();
+        let r = unit(hash3(
+            mix32(self.stage_seed ^ 0x48E1_6A11 ^ day.wrapping_mul(0xC2B2_AE35)),
+            x,
+            y,
+            z,
+        ));
+        whole as u32 + u32::from(f64::from(r) < rate - whole)
+    }
+
+    /// Whether a column may start a new cell at face-local `p` (over its tip): air now, with
+    /// `openAbove` cells of air over it, and air or the grown block as generated.
+    fn room(&self, f: FaceFrame, cells: &mut dyn Cells, [x, y, z]: [i32; 3]) -> bool {
+        let air =
+            |cells: &dyn Cells, p: [i32; 3]| cells.now(f.cell(p)).map(|s| f.state(s)) == Some(AIR);
+        (0..=self.data.open_above).all(|k| air(cells, [x, y + k, z]))
+            && cells
+                .generated(f.cell([x, y, z]))
+                .map(|s| f.state(s))
+                .is_some_and(|s| s == AIR || self.is_tuft(s))
+    }
+
     /// The most share of a column's open grass cells holding tall grass at a climate share.
     pub fn cap(&self, share: f64) -> f64 {
         self.data.max_density * share.clamp(0.0, 1.0)
@@ -251,11 +335,29 @@ impl Rule {
     }
 
     /// Grows world chunk `chunk` (on face `f`) through `days` world days from `first_day`: the
-    /// cells to write (world cell, state).
+    /// cells to write (world cell, state). A column (a stand of one or more cells) is grown by the
+    /// chunk holding its tip, and may grow into the chunk over it.
     pub fn grow_chunk(
         &self,
         f: FaceFrame,
         chunk: ChunkCoord,
+        first_day: u32,
+        days: u32,
+        env: &dyn Envelope,
+        cells: &mut dyn Cells,
+    ) -> Vec<([i32; 3], StateId)> {
+        self.grow_chunk_part(f, chunk, None, first_day, days, env, cells)
+    }
+
+    /// [`Self::grow_chunk`] over one quarter of the chunk's columns (`part` 0–3: x's lower or upper
+    /// half, then z's; None: the whole chunk), the server's a quarter a tick (a whole chunk took
+    /// ~12 ms of the browser's tick: priority 0, the owner's "the server never drops below 60fps").
+    #[allow(clippy::too_many_arguments)]
+    pub fn grow_chunk_part(
+        &self,
+        f: FaceFrame,
+        chunk: ChunkCoord,
+        part: Option<u8>,
         first_day: u32,
         days: u32,
         env: &dyn Envelope,
@@ -270,6 +372,21 @@ impl Rule {
             local.y * CHUNK_SIZE,
             local.z * CHUNK_SIZE,
         );
+        // The columns this call grows: the chunk's, or a quarter of them.
+        let half = CHUNK_SIZE / 2;
+        let (cx0, cx1, cz0, cz1) = match part {
+            Some(k) => {
+                let (i, j) = (i32::from(k % 2), i32::from(k / 2));
+                (
+                    x0 + i * half,
+                    x0 + (i + 1) * half,
+                    z0 + j * half,
+                    z0 + (j + 1) * half,
+                )
+            }
+            None => (x0, x0 + CHUNK_SIZE, z0, z0 + CHUNK_SIZE),
+        };
+        let full = self.stages.len() - 1;
         let now = |cells: &dyn Cells, p: [i32; 3]| cells.now(f.cell(p)).map(|s| f.state(s));
         let is_grass =
             |cells: &dyn Cells, p: [i32; 3]| now(cells, p).is_some_and(|s| self.is_tuft(s));
@@ -278,12 +395,38 @@ impl Rule {
             p: [i32; 3],
             roots: bool,
             near: bool,
-            /// The column's top stage.
-            top: usize,
+            /// The column's climate share.
+            share: f64,
         }
         let mut spots = Vec::new();
-        // The tufts standing (face-local cell, stage, the column's top stage) that may grow taller.
-        let mut tufts: Vec<([i32; 3], usize, usize)> = Vec::new();
+        // The columns standing that may grow, or whose cells need putting right (a stalk left on
+        // top by a cut, a stack placed by hand).
+        let mut columns: Vec<Column> = Vec::new();
+        // Each column's tuft rows round the chunk (its columns and `reach` more each way, its rows
+        // and SEED_ROWS more each way), read once: a spot's "tall grass near" looks these up
+        // rather than ~245 cells each (~5 ms a chunk on the server's tick: priority 0).
+        let reach = self.data.reach;
+        let mut tufts: std::collections::HashMap<(i32, i32), Vec<i32>> =
+            std::collections::HashMap::new();
+        for z in cz0 - reach..cz1 + reach {
+            for x in cx0 - reach..cx1 + reach {
+                for y in y0 - SEED_ROWS..y0 + CHUNK_SIZE + SEED_ROWS {
+                    if is_grass(cells, [x, y, z]) {
+                        tufts.entry((x, z)).or_default().push(y);
+                    }
+                }
+            }
+        }
+        let grass_near = |x: i32, y: i32, z: i32| {
+            (-reach..=reach).any(|dx| {
+                (-reach..=reach).any(|dz| {
+                    (dx, dz) != (0, 0)
+                        && tufts
+                            .get(&(x + dx, z + dz))
+                            .is_some_and(|rows| rows.iter().any(|&ry| (ry - y).abs() <= SEED_ROWS))
+                })
+            })
+        };
         let mut env_cache: Option<((i32, i32), (f32, f64))> = None;
         let mut envelope = |x: i32, z: i32| match env_cache {
             Some((at, e)) if at == (x, z) => e,
@@ -293,15 +436,40 @@ impl Rule {
                 e
             }
         };
-        for z in z0..z0 + CHUNK_SIZE {
-            for x in x0..x0 + CHUNK_SIZE {
+        for z in cz0..cz1 {
+            for x in cx0..cx1 {
                 for y in y0..y0 + CHUNK_SIZE {
                     let p = [x, y, z];
                     let here = now(cells, p);
                     if let Some(stage) = here.and_then(|s| self.stage_of(s)) {
-                        let top = self.top_stage(envelope(x, z).1);
-                        if stage < top {
-                            tufts.push((p, stage, top));
+                        if is_grass(cells, [x, y + 1, z]) {
+                            continue; // not its column's tip
+                        }
+                        let mut n = 1;
+                        while n < MAX_COLUMN && is_grass(cells, [x, y - n as i32, z]) {
+                            n += 1;
+                        }
+                        let base = [x, y + 1 - n as i32, z];
+                        let ground = now(cells, [x, base[1] - 1, z]);
+                        let share = envelope(x, z).1;
+                        let max = if ground.is_some_and(|g| self.grows_on(g)) {
+                            self.max_cells(share)
+                        } else {
+                            1
+                        };
+                        let col = Column {
+                            base,
+                            n,
+                            stage,
+                            top: self.top_stage(share),
+                            max,
+                            full,
+                        };
+                        let tidy = (0..n).all(|k| {
+                            now(cells, [x, base[1] + k as i32, z]) == Some(col.state(self, k))
+                        });
+                        if !tidy || col.grows() {
+                            columns.push(col);
                         }
                         continue;
                     }
@@ -328,20 +496,12 @@ impl Rule {
                     if cells.generated(f.cell(below)).map(|s| f.state(s)) != Some(ground) {
                         continue; // ground a player placed
                     }
-                    let r = self.data.reach;
-                    let near = (-r..=r).any(|dx| {
-                        (-r..=r).any(|dz| {
-                            (dx, dz) != (0, 0)
-                                && (-SEED_ROWS..=SEED_ROWS)
-                                    .any(|dy| is_grass(cells, [x + dx, y + dy, z + dz]))
-                        })
-                    });
-                    let top = self.top_stage(e.1);
+                    let near = grass_near(x, y, z);
                     spots.push(Spot {
                         p,
                         roots,
                         near,
-                        top,
+                        share: e.1,
                     });
                 }
             }
@@ -350,10 +510,25 @@ impl Rule {
         let r = self.data.reach;
         let spreads = self.data.spread_per_day > 0.0 || self.data.regrow_per_day > 0.0;
         for day in first_day..first_day + days {
-            // The standing tufts grow a stage (before today's sprouts, which start tomorrow).
-            for t in tufts.iter_mut().filter(|t| t.1 < t.2) {
-                if self.grows_up(t.1, day, t.0) {
-                    t.1 += 1;
+            // The standing columns grow (before today's sprouts, which start tomorrow).
+            for c in columns.iter_mut().filter(|c| c.grows()) {
+                if c.n == 1 && c.stage < full {
+                    // The first cell: a stage at a time, by the stages' days.
+                    if self.grows_up(c.stage, day, c.tip()) {
+                        c.stage += 1;
+                    }
+                    continue;
+                }
+                // Over it: a stage or a new cell a step, `daysPerCell` days a cell.
+                for _ in 0..self.height_steps(day, c.tip()) {
+                    if c.stage < full {
+                        c.stage += 1;
+                    } else if c.n < c.max && self.room(f, cells, c.above()) {
+                        c.n += 1;
+                        c.stage = 0;
+                    } else {
+                        break;
+                    }
                 }
             }
             if !spreads {
@@ -362,12 +537,13 @@ impl Rule {
             let mut today = Vec::new();
             for s in spots.iter().filter(|s| !grown.contains(&s.p)) {
                 let [x, y, z] = s.p;
+                // Near today's sprouts: the few grown, each tested (probing the ±reach box in the set
+                // cost ~5 ms a chunk on the server's tick: priority 0).
                 let near = s.near
-                    || (-r..=r).any(|dx| {
-                        (-r..=r).any(|dz| {
-                            (-SEED_ROWS..=SEED_ROWS)
-                                .any(|dy| grown.contains(&[x + dx, y + dy, z + dz]))
-                        })
+                    || grown.iter().any(|g| {
+                        (g[0] - x).abs() <= r
+                            && (g[2] - z).abs() <= r
+                            && (g[1] - y).abs() <= SEED_ROWS
                     });
                 let mut chance: f64 = 0.0;
                 if near {
@@ -377,25 +553,76 @@ impl Rule {
                     chance = chance.max(self.data.regrow_per_day);
                 }
                 if chance > 0.0 && self.day_roll(day, s.p) < chance {
-                    today.push(s.p);
+                    today.push((s.p, s.share));
                 }
             }
-            for p in today {
+            for (p, share) in today {
                 grown.insert(p);
-                let top = spots.iter().find(|s| s.p == p).map_or(0, |s| s.top);
-                tufts.push((p, 0, top));
+                columns.push(Column {
+                    base: p,
+                    n: 1,
+                    stage: 0,
+                    top: self.top_stage(share),
+                    max: self.max_cells(share),
+                    full,
+                });
             }
         }
-        // What changed: each grown cell's tuft and each standing tuft that grew, at its stage now.
-        let mut out: Vec<_> = tufts
-            .into_iter()
-            .filter(|&(p, stage, _)| {
-                grown.contains(&p) || now(cells, p).and_then(|s| self.stage_of(s)) != Some(stage)
-            })
-            .map(|(p, stage, _)| (f.cell(p), f.state(self.stage_state(stage))))
-            .collect();
+        // What changed: each column's cells (stalks under its tip at its stage) that differ now.
+        let mut out = Vec::new();
+        for c in &columns {
+            for k in 0..c.n {
+                let p = [c.base[0], c.base[1] + k as i32, c.base[2]];
+                let want = c.state(self, k);
+                if now(cells, p) != Some(want) {
+                    out.push((f.cell(p), f.state(want)));
+                }
+            }
+        }
         out.sort_unstable();
         out
+    }
+}
+
+/// A stand of tall grass in [`Rule::grow_chunk`]: `n` cells from face-local `base` up, the lower
+/// ones stalks, the tip at `stage`.
+struct Column {
+    base: [i32; 3],
+    n: usize,
+    stage: usize,
+    /// The first cell's top stage (the climate's).
+    top: usize,
+    /// The most cells (the climate's; 1 off the rule's ground).
+    max: usize,
+    /// The full stage.
+    full: usize,
+}
+
+impl Column {
+    fn tip(&self) -> [i32; 3] {
+        [self.base[0], self.base[1] + self.n as i32 - 1, self.base[2]]
+    }
+
+    fn above(&self) -> [i32; 3] {
+        [self.base[0], self.base[1] + self.n as i32, self.base[2]]
+    }
+
+    /// Whether it may still grow: its first cell short of its top stage, a cell over it short of
+    /// full height, or a full tip under its most cells.
+    fn grows(&self) -> bool {
+        if self.n == 1 && self.stage < self.full {
+            return self.stage < self.top;
+        }
+        self.stage < self.full || self.n < self.max
+    }
+
+    /// The state of its cell `k` (0: the base): stalks under the tip.
+    fn state(&self, rule: &Rule, k: usize) -> StateId {
+        if k + 1 < self.n {
+            rule.stalk
+        } else {
+            rule.stage_state(self.stage)
+        }
     }
 }
 

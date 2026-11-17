@@ -7,6 +7,7 @@
 //! the origin. It is the Three.js renderer's interface (render/Renderer.ts) in Rust.
 
 pub mod arena;
+pub mod blades;
 pub mod blasts;
 pub mod bloom;
 pub mod camera;
@@ -34,6 +35,7 @@ pub mod seam;
 pub mod shaders;
 pub mod shadows;
 pub mod skinned;
+pub mod ssao;
 pub mod staged;
 pub mod streaming;
 pub mod timing;
@@ -174,6 +176,12 @@ pub struct CloudNoise {
     base: (wgpu::Texture, wgpu::TextureView),
     detail: (wgpu::Texture, wgpu::TextureView),
     sampler: wgpu::Sampler,
+    /// The weather field's map (docs/CLOUDS.md §11; RGBA8, `weatherField.sizeCells`²): neutral
+    /// weather until the first bake comes back from the job workers, then the latest.
+    weather: (wgpu::Texture, wgpu::TextureView),
+    /// The map it holds (its face, corner and clock), and whether a bake is out.
+    weather_at: Option<dwell_look::weather_field::MapAt>,
+    weather_pending: bool,
     /// The slices of each texture written so far (base, detail).
     written: [u32; 2],
     /// The bake was handed to the game (`Renderer::take_cloud_noise_request`).
@@ -201,9 +209,31 @@ impl CloudNoise {
             (texture, view)
         };
         let repeat = wgpu::AddressMode::Repeat;
+        let n = t.weather_field.size_cells;
+        let weather = {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("cloud weather map"),
+                size: wgpu::Extent3d {
+                    width: n,
+                    height: n,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            (texture, view)
+        };
         Self {
             base: make("cloud base noise", t.form.base_size),
             detail: make("cloud detail noise", t.form.detail_size),
+            weather,
+            weather_at: None,
+            weather_pending: false,
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("cloud noise"),
                 address_mode_u: repeat,
@@ -222,6 +252,42 @@ impl CloudNoise {
     fn ready(&self) -> bool {
         self.written[0] >= self.base.0.size().depth_or_array_layers
             && self.written[1] >= self.detail.0.size().depth_or_array_layers
+    }
+
+    /// The neutral weather everywhere (before the first bake): written once at start.
+    fn write_neutral_weather(&self, queue: &wgpu::Queue, t: &dwell_look::clouds::CloudTunables) {
+        let cell = dwell_look::weather_field::encode(
+            t,
+            &dwell_look::weather_field::WeatherCell::neutral(t),
+        );
+        let n = t.weather_field.size_cells as usize;
+        self.write_weather(queue, &cell.repeat(n * n));
+    }
+
+    fn write_weather(&self, queue: &wgpu::Queue, texels: &[u8]) {
+        let n = self.weather.0.size().width;
+        if texels.len() != (4 * n * n) as usize {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.weather.0,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * n),
+                rows_per_image: Some(n),
+            },
+            wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     fn write(&mut self, queue: &wgpu::Queue, detail: bool, z0: u32, texels: &[u8]) {
@@ -584,17 +650,20 @@ struct GpuMesh {
 /// Bytes per vertex of each `Kind`'s interleaved format (the pipelines' vertex layouts), in the
 /// enum's order: `Kind as usize` indexes it.
 const STRIDES: [u64; 6] = [
-    // Terrain: position, normal (snorm8x4), colour, uv, tile, light and flood (unorm8x4), crack
-    // (unorm8x4): 64 bytes (`packed_lit`, WORK_QUEUE item 32; 84 before).
-    4 * (3 + 1 + 3 + 2 + 4 + 1 + 1),
+    // Terrain: position, normal (snorm8x4), colour, uv, tile (unorm16x4), light and flood
+    // (unorm8x4), crack (unorm8x4): 52 bytes (`packed_lit`, WORK_QUEUE item 32: 84 before; the
+    // tile in 16 bits since the 60 fps pass, 2026-11-15: 60 before).
+    4 * (3 + 1 + 3 + 2 + 2 + 1 + 1),
     4 * (3 + 3 + 3),         // Flat: position, normal, colour
     4 * (3 + 3 + 3 + 1),     // Line: position, colour, the other end, side (a quad corner)
     4 * (3 + 3),             // Ghost: position, colour (triangles)
     4 * (3 + 3 + 3 + 1 + 2), // Fluid: position, normal, colour, fluid id, flood
-    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv, tile,
-    // plant (sway, wind speed, fade), and light, flood and bare (unorm8x4): 64 bytes (`packed_lit`,
-    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before).
-    4 * (3 + 1 + 1 + 2 + 4 + 4 + 1),
+    // Cutout: position, normal (snorm8x4), colour (unorm8x4 over a scale, `scaled_rgb`), uv
+    // (float16x2), tile (unorm16x4), plant (sway, wind speed, fade; a leaf card's packed normal in
+    // its y, so full floats), and light, flood and bare (unorm8x4): 52 bytes (`packed_lit`,
+    // WORK_QUEUE item 32: the forest edge's near pass is its leaves' vertices; 92 bytes before, 64
+    // before the 60 fps pass, 2026-11-15).
+    4 * (3 + 1 + 1 + 1 + 2 + 4 + 1),
 ];
 
 pub(crate) fn floats(v: &[f32]) -> &[u8] {
@@ -690,15 +759,23 @@ fn textured_vertices(m: &MeshArrays, kind: Kind) -> Vec<f32> {
     } else {
         (&m.colors[..], 3)
     };
-    let mut streams: Vec<(&[f32], usize)> = vec![
-        (&m.positions, 3),
-        (&normals, 1),
-        (colors, per),
-        (&m.uvs, 2),
-        (&m.tiles, 4),
-    ];
+    // The tile rectangle in 16 bits a value (unorm16x4: an atlas offset and size within 0..1).
+    let tiles: Vec<f32> = m
+        .tiles
+        .chunks_exact(4)
+        .flat_map(|t| [unorm16x2(t[0], t[1]), unorm16x2(t[2], t[3])])
+        .collect();
+    // The cutout's uv as halves (float16x2): a plant's or a leaf's few blocks of it.
+    let uvs: Vec<f32>;
+    let mut streams: Vec<(&[f32], usize)> = vec![(&m.positions, 3), (&normals, 1), (colors, per)];
     if kind == Kind::Cutout {
+        uvs = m.uvs.chunks_exact(2).map(|u| f16x2(u[0], u[1])).collect();
+        streams.push((&uvs, 1));
+        streams.push((&tiles, 2));
         streams.push((&m.plants, 4));
+    } else {
+        streams.push((&m.uvs, 2));
+        streams.push((&tiles, 2));
     }
     streams.push((&lit, 1));
     // The terrain's crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes a vertex in one
@@ -722,6 +799,41 @@ fn snorm8x3(n: [f32; 3]) -> f32 {
     let k = if len > 1e-12 { 1.0 / len } else { 0.0 };
     let b = |c: f32| u32::from((((c * k).clamp(-1.0, 1.0) * 127.0).round() as i8) as u8);
     f32::from_bits(b(n[0]) | b(n[1]) << 8 | b(n[2]) << 16)
+}
+
+/// Two 0–1 values as unorm16s in one float's slot, its bits as they are (two of them a vertex
+/// the pipeline reads as unorm16x4).
+fn unorm16x2(a: f32, b: f32) -> f32 {
+    let q = |c: f32| u32::from((c.clamp(0.0, 1.0) * 65535.0).round() as u16);
+    f32::from_bits(q(a) | q(b) << 16)
+}
+
+/// An f32 as IEEE half bits (round to nearest; past the half's range, its largest; tiny values
+/// flushed to zero).
+fn f16_bits(v: f32) -> u32 {
+    let b = v.to_bits();
+    let sign = (b >> 16) & 0x8000;
+    let x = v.abs();
+    if x.is_nan() {
+        return sign | 0x7e00;
+    }
+    if x < 6.103_515_6e-5 {
+        // Under the half's least normal: its subnormals (steps of 2^-24) or zero.
+        return sign | (x * 16_777_216.0).round() as u32;
+    }
+    if x >= 65504.0 {
+        return sign | 0x7bff;
+    }
+    let e = ((b >> 23) & 0xff) as i32 - 127 + 15;
+    let mant = b & 0x7f_ffff;
+    // Round the 23-bit mantissa to 10 (ties away), carrying into the exponent.
+    let r = ((e as u32) << 10) + ((mant + 0x1000) >> 13);
+    sign | r.min(0x7bff)
+}
+
+/// Two f32s as halves in one float's slot (the pipeline reads it as float16x2).
+fn f16x2(a: f32, b: f32) -> f32 {
+    f32::from_bits(f16_bits(a) | f16_bits(b) << 16)
 }
 
 /// Four 0–1 values as unorm bytes in one float's slot (the pipeline reads it as unorm8x4).
@@ -1032,6 +1144,41 @@ struct Chunk {
     cutout: Option<GpuMesh>,
 }
 
+/// `Part::Facing`'s bit for the listed trees' logs (`MeshArrays::tree_logs`): left out past the
+/// far trees' hand-over, where their impostors draw the trunks (owner, 2026-11-15: "fold trunks
+/// into billboards").
+const TREE_LOGS_BIT: u8 = 1 << dwell_mesh::FACING_GROUPS;
+
+/// How far outside its chunk's box an opaque vertex may lie (m) for the facing test
+/// (`dwell_mesh::facing_mask`): ground items and damaged faces stand a little proud of it.
+const FACING_MARGIN_M: f64 = 1.0;
+
+/// The index ranges drawing the facing groups in `mask` of a chunk's opaque mesh (its `parts`:
+/// [0] all, [1 + g] group g, [8] the listed trees' logs, `TREE_LOGS_BIT`), neighbours merged into
+/// one draw; the whole mesh when everything is in, or when the mesh has no groups.
+fn facing_draws(parts: &[std::ops::Range<u32>], mask: u8) -> Vec<std::ops::Range<u32>> {
+    let groups = parts.get(1..);
+    if mask == u8::MAX {
+        return vec![parts[0].clone()];
+    }
+    let Some(groups) = groups.filter(|g| g.len() >= dwell_mesh::FACING_GROUPS) else {
+        return vec![parts[0].clone()];
+    };
+    // The groups, then the trees' logs where the mesh has them.
+    let n = groups.len().min(dwell_mesh::FACING_GROUPS + 1);
+    let mut out: Vec<std::ops::Range<u32>> = Vec::new();
+    for (g, r) in groups[..n].iter().enumerate() {
+        if mask & (1 << g) == 0 || r.is_empty() {
+            continue;
+        }
+        match out.last_mut() {
+            Some(last) if last.end == r.start => last.end = r.end,
+            _ => out.push(r.clone()),
+        }
+    }
+    out
+}
+
 /// Which of a chunk's meshes a draw is (one per render mode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Part {
@@ -1043,6 +1190,14 @@ enum Part {
     /// The cutout mesh's trees' leaves alone (the shadow casters past `plantCascades`, which
     /// plants don't cast into and leaves do: BUGS.md #156).
     Leaves,
+    /// The opaque mesh's facing groups in the mask (`dwell_mesh::facing_mask`): the ones that can
+    /// face the camera; the rest would be culled after their vertices were shaded.
+    Facing(u8),
+    /// The cutout mesh past `blades::BILLBOARD_M`: its plants' first quads (each a card turned to
+    /// the eye there) and its trees' leaves, without the plants' other quads.
+    CutoutCards,
+    /// [`Part::Plants`] past `blades::BILLBOARD_M`: the plants' first quads alone.
+    PlantCards,
 }
 
 /// A falling piece's meshes (docs/FELLING.md §3): blocks of its cells, opaque and cutout, their
@@ -1148,14 +1303,24 @@ impl TerrainRenderer for RasterTerrain {
         .map(|mut g| {
             g.parts
                 .push(0..dwell_mesh::tree_leaves_from(&m.cutout) as u32);
+            // [2] before the plants' quads past their first (`Part::PlantCards`).
+            g.parts
+                .push(0..dwell_mesh::second_quads_from(&m.cutout) as u32);
             g
         });
+        // Its parts: [0] all, [1 + g] facing group g (`Part::Facing`).
         let opaque = GpuMesh::textured_staged(
             &self.arena,
             &m.opaque,
             Kind::Terrain,
             stage.then_some(&mut writes),
-        );
+        )
+        .map(|mut g| {
+            g.parts.extend(dwell_mesh::facing_ranges(&m.opaque));
+            // [8] the listed trees' logs (`Part::Facing`'s bit 7).
+            g.parts.push(dwell_mesh::tree_logs_range(&m.opaque));
+            g
+        });
         let water = GpuMesh::fluid(
             &self.arena,
             &t.positions,
@@ -1573,6 +1738,15 @@ pub struct Renderer {
     bloom: dwell_look::bloom::BloomQuality,
     bloom_layout: wgpu::BindGroupLayout,
     bloom_pipelines: bloom::BloomPipelines,
+    /// Screen-space ambient occlusion (docs/SSAO.md): the setting and its strength, its passes'
+    /// group layout, uniform and pipelines (`ssao.rs`).
+    ssao: dwell_look::ssao::SsaoQuality,
+    ssao_strength: f64,
+    /// The ambient occlusion's Settings look (`dwell_look::ssao::level`: weak, normal, strong).
+    ssao_level: dwell_look::ssao::SsaoLevel,
+    ssao_layout: wgpu::BindGroupLayout,
+    ssao_uniform: wgpu::Buffer,
+    ssao_pipelines: ssao::SsaoPipelines,
     /// The volumetric clouds pass (docs/CLOUDS.md §8.6): its group layout, uniform, pipeline, the
     /// last frame's camera (right, up, forward, tangents; the eye) and the frame count (jitter).
     cloud_layout: wgpu::BindGroupLayout,
@@ -1699,6 +1873,8 @@ pub struct Renderer {
     plant_wind: f64,
     /// Whether the cutout meshes (ladders, plants) are drawn (the bench's A/B of their cost).
     cutout_shown: bool,
+    /// Chunks skip their faces turned away from the camera (`set_facing_cull`).
+    facing_cull: bool,
     /// The falling pieces shown this frame (`show_pieces`).
     piece_poses: Vec<(u32, V3, [f32; 4])>,
     eye: V3,
@@ -1931,8 +2107,9 @@ impl Renderer {
             (offset, attributes)
         };
         // The normal (snorm8x4) and the light and flood (unorm8x4) four bytes each (`packed_lit`).
-        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 4), (5, 1)]);
+        let mut terrain_attrs = attrs(&[(0, 3), (1, 1), (2, 3), (3, 2), (4, 2), (5, 1)]);
         terrain_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
+        terrain_attrs.1[4].format = wgpu::VertexFormat::Unorm16x4;
         terrain_attrs.1[5].format = wgpu::VertexFormat::Unorm8x4;
         // The crack overlay (docs/BLOCK_DAMAGE.md §6.3): four unorm bytes.
         terrain_attrs.1.push(wgpu::VertexAttribute {
@@ -1943,9 +2120,11 @@ impl Renderer {
         terrain_attrs.0 += 4;
         // The cutout's normal (snorm8x4) and its light, flood and bare (unorm8x4) are four bytes
         // each in one float's slot (`packed_cutout`).
-        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 2), (4, 4), (5, 4), (6, 1)]);
+        let mut cutout_attrs = attrs(&[(0, 3), (1, 1), (2, 1), (3, 1), (4, 2), (5, 4), (6, 1)]);
         cutout_attrs.1[1].format = wgpu::VertexFormat::Snorm8x4;
         cutout_attrs.1[2].format = wgpu::VertexFormat::Unorm8x4;
+        cutout_attrs.1[3].format = wgpu::VertexFormat::Float16x2;
+        cutout_attrs.1[4].format = wgpu::VertexFormat::Unorm16x4;
         cutout_attrs.1[6].format = wgpu::VertexFormat::Unorm8x4;
         let flat_attrs = attrs(&[(0, 3), (1, 3), (2, 3)]);
         let line_attrs = attrs(&[(0, 3), (1, 3), (2, 3), (3, 1)]);
@@ -2329,11 +2508,21 @@ impl Renderer {
         let bloom_layout = frame::bloom_layout(&device);
         let bloom_pipelines =
             bloom::BloomPipelines::new(&device, samples, &scene_read_layout, &bloom_layout);
+        // The ambient occlusion's passes (docs/SSAO.md): over the view depth, into its buffers.
+        let ssao_layout = ssao::layout(&device, samples);
+        let ssao_uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ssao"),
+            size: ssao::UNIFORM_BYTES,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ssao_pipelines = ssao::SsaoPipelines::new(&device, samples, &ssao_layout);
         // The volumetric clouds pass (docs/CLOUDS.md §8.6): the march into the clouds buffer and
         // its distances, at the tier's reduced size, over the last frame's (group 3).
         let cloud_layout = frame::cloud_history_layout(&device);
         let cloud_march_layout = frame::cloud_march_layout(&device);
         let cloud_noise = CloudNoise::new(&device, &CLOUDS);
+        cloud_noise.write_neutral_weather(&queue, &CLOUDS);
         let cloud_prev_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cloud history"),
             size: frame::CLOUD_PREV_BYTES,
@@ -2602,6 +2791,7 @@ impl Renderer {
             arena,
             plant_wind: 1.0,
             cutout_shown: true,
+            facing_cull: true,
             piece_poses: Vec::new(),
             eye: [0.0, 6.0, 14.0],
             yaw: 180.0,
@@ -2638,6 +2828,12 @@ impl Renderer {
             bloom: dwell_look::bloom::BloomQuality::High,
             bloom_layout,
             bloom_pipelines,
+            ssao: dwell_look::ssao::SsaoQuality::Off,
+            ssao_strength: 1.0,
+            ssao_level: dwell_look::ssao::level("normal"),
+            ssao_layout,
+            ssao_uniform,
+            ssao_pipelines,
             cloud_layout,
             cloud_march_layout,
             cloud_noise,
@@ -2917,6 +3113,10 @@ impl Renderer {
     }
     /// The plants' wind scale (block data `wind`): 1 by default, 0 keeps them still (low effects).
     /// Draws the cutout meshes or not (dev tools: `__dwell.plants`, measuring what they cost).
+    /// Whether chunks skip their faces turned away from the camera (`Part::Facing`; off to compare).
+    pub fn set_facing_cull(&mut self, on: bool) {
+        self.facing_cull = on;
+    }
     pub fn set_cutout_shown(&mut self, shown: bool) {
         self.cutout_shown = shown;
     }
@@ -3026,6 +3226,33 @@ impl Renderer {
     pub fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
         self.cloud_noise.write(&self.queue, detail, z0, texels);
     }
+    /// The weather field's next map to bake (docs/CLOUDS.md §11), when a volume tier draws and one
+    /// is due (`weather_field::due`); asking marks one out.
+    pub fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        if clouds_for(self.adapter, self.clouds).volume(&CLOUDS).steps == 0 {
+            return None;
+        }
+        let n = &mut self.cloud_noise;
+        let next = dwell_look::weather_field::due(
+            &CLOUDS,
+            n.weather_at,
+            n.weather_pending,
+            self.face.is_b(),
+            [self.eye[0], self.eye[2]],
+            self.cloud_seconds,
+        )?;
+        n.weather_pending = true;
+        Some(next)
+    }
+    /// A baked weather map (`None`: the bake failed; the next is asked for at once).
+    pub fn cloud_weather_map(&mut self, map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {
+        let n = &mut self.cloud_noise;
+        n.weather_pending = false;
+        if let Some((at, texels)) = map {
+            n.write_weather(&self.queue, texels);
+            n.weather_at = Some(at);
+        }
+    }
     /// The clouds pass's uniform (`CloudPrev`) for this frame's camera `view` (right, up, forward,
     /// tangents) and eye, and the tier's history blend: the last frame's camera, the share of the
     /// new frame (1 with no history: the first frame, new buffers, a jump), the frame index and how
@@ -3068,6 +3295,22 @@ impl Renderer {
     /// Bloom's tier this frame draws (`bloom::bloom_for`: none on a CPU adapter or a phone).
     fn bloom_tier(&self) -> Option<dwell_look::bloom::BloomTier> {
         bloom::bloom_for(self.adapter, self.phone, self.bloom).tier()
+    }
+    /// The Ambient occlusion setting (Off, Low, High) and its strength (× the data's; docs/SSAO.md).
+    pub fn set_ssao(&mut self, quality: dwell_look::ssao::SsaoQuality, strength: f64) {
+        self.ssao = quality;
+        self.ssao_strength = strength.clamp(0.0, 4.0);
+    }
+    /// The ambient occlusion's look (`weak`, `normal`, `strong`; owner, 2026-11-15).
+    pub fn set_ssao_level(&mut self, name: &str) {
+        self.ssao_level = dwell_look::ssao::level(name);
+    }
+    /// The ambient occlusion's tier this frame draws (`ssao::ssao_for`: none on a CPU adapter or a
+    /// phone, nor at strength 0).
+    fn ssao_tier(&self) -> Option<dwell_look::ssao::SsaoTier> {
+        ssao::ssao_for(self.adapter, self.phone, self.ssao)
+            .tier()
+            .filter(|_| self.ssao_strength > 0.0)
     }
     /// The eye this frame is drawn from (world m).
     pub fn eye_position(&self) -> [f64; 3] {
@@ -3271,6 +3514,9 @@ impl Renderer {
         }
         if self.bloom_tier().is_some() {
             set.extend(self.bloom_pipelines.all());
+        }
+        if self.ssao_tier().is_some() {
+            set.extend(self.ssao_pipelines.all());
         }
         set
     }
@@ -3936,7 +4182,11 @@ impl Renderer {
             DrawMesh::Piece(id, k, part) => {
                 let (opaque, cutout) = &self.terrain.pieces[id].parts[*k];
                 let m = match part {
-                    Part::Cutout | Part::Plants | Part::Leaves => cutout.as_ref(),
+                    Part::Cutout
+                    | Part::Plants
+                    | Part::Leaves
+                    | Part::CutoutCards
+                    | Part::PlantCards => cutout.as_ref(),
                     _ => opaque.as_ref(),
                 }
                 .expect("collected");
@@ -3945,12 +4195,28 @@ impl Renderer {
             DrawMesh::Chunk(c, part) => {
                 let chunk = &self.terrain.chunks[c];
                 let m = match part {
-                    Part::Opaque => chunk.opaque.as_ref(),
+                    Part::Opaque | Part::Facing(_) => chunk.opaque.as_ref(),
                     Part::Water => chunk.water.as_ref(),
-                    Part::Cutout | Part::Plants | Part::Leaves => chunk.cutout.as_ref(),
+                    Part::Cutout
+                    | Part::Plants
+                    | Part::Leaves
+                    | Part::CutoutCards
+                    | Part::PlantCards => chunk.cutout.as_ref(),
                 }
                 .expect("collected");
-                (m, vec![m.part(*part)])
+                match part {
+                    Part::Facing(mask) => (m, facing_draws(&m.parts, *mask)),
+                    Part::PlantCards | Part::CutoutCards => {
+                        let cards = m.parts.get(2).unwrap_or(&m.parts[0]).clone();
+                        let mut r = vec![cards];
+                        if *part == Part::CutoutCards {
+                            r.push(m.part(Part::Leaves));
+                        }
+                        r.retain(|x| !x.is_empty());
+                        (m, r)
+                    }
+                    _ => (m, vec![m.part(*part)]),
+                }
             }
             DrawMesh::Section(id, w, mask) => {
                 let s = &self.terrain.sections[id];
@@ -4026,6 +4292,27 @@ impl Renderer {
             let r = self.rel(c.origin);
             let offset = [r[0], r[1], r[2], 1.0];
             if c.opaque.is_some() {
+                // Only the facing groups that can face the eye (the eye from the chunk's corner).
+                // Past the far trees' hand-over its trees' logs are their impostors' to draw.
+                let logs = far.is_none_or(|_| {
+                    let d2: f64 = (0..3)
+                        .map(|k| {
+                            let lo = f64::from(r[k]);
+                            let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                            d * d
+                        })
+                        .sum();
+                    impostors::cutout_draw(far, d2.sqrt() as f32) == impostors::CutoutDraw::All
+                });
+                let facing = if self.facing_cull {
+                    dwell_mesh::facing_mask(
+                        std::array::from_fn(|k| self.eye[k] - c.origin[k]),
+                        CHUNK_EXTENT_M,
+                        FACING_MARGIN_M,
+                    )
+                } else {
+                    !TREE_LOGS_BIT
+                } | if logs { TREE_LOGS_BIT } else { 0 };
                 out.push(DrawItem {
                     kind: Kind::Terrain,
                     water: false,
@@ -4039,7 +4326,7 @@ impl Renderer {
                     page: 0,
                     passes,
                     key: 0,
-                    mesh: DrawMesh::Chunk(coord, Part::Opaque),
+                    mesh: DrawMesh::Chunk(coord, Part::Facing(facing)),
                 });
             }
             // The chunk's nearest point from the eye, for the far trees' hand-over.
@@ -4058,6 +4345,26 @@ impl Renderer {
                 }
             } else {
                 Some(Part::Cutout)
+            };
+            // Wholly past the plants' cards (across the ground, as the shader measures, less a
+            // sway's reach): their quads past the first are not drawn (`blades::BILLBOARD_M`).
+            let across: f64 = [0, 2]
+                .iter()
+                .map(|&k| {
+                    let lo = f64::from(r[k]);
+                    let d = (-lo).clamp(0.0, CHUNK_EXTENT_M[k]) + lo;
+                    d * d
+                })
+                .sum::<f64>()
+                .sqrt();
+            let cutout_part = if across > f64::from(blades::BILLBOARD_M) + 2.0 {
+                cutout_part.map(|p| match p {
+                    Part::Cutout => Part::CutoutCards,
+                    Part::Plants => Part::PlantCards,
+                    p => p,
+                })
+            } else {
+                cutout_part
             };
             if let Some(part) = cutout_part
                 && c.cutout
@@ -4426,11 +4733,16 @@ impl Renderer {
         let bloom = self
             .bloom_tier()
             .map_or((1, 1, 1), |t| dwell_look::bloom::chain(self.size, t));
+        // The ambient occlusion's buffers at the tier's size (1 × 1 with none).
+        let ssao = self
+            .ssao_tier()
+            .map_or((1, 1), |t| dwell_look::ssao::buffer_size(self.size, t));
         if self.targets.as_ref().is_some_and(|t| {
             t.under.is_some() == under
                 && t.shafts_size() == shafts
                 && t.clouds_size() == clouds
                 && t.bloom.size() == bloom
+                && t.ssao.size() == ssao
         }) {
             return;
         }
@@ -4456,9 +4768,13 @@ impl Renderer {
                     &self.cloud_noise.base.1,
                     &self.cloud_noise.detail.1,
                     &self.cloud_noise.sampler,
+                    &self.cloud_noise.weather.1,
                 ),
                 bloom,
                 bloom_layout: &self.bloom_layout,
+                ssao,
+                ssao_layout: &self.ssao_layout,
+                ssao_uniform: &self.ssao_uniform,
             },
             under.then_some((&self.under_layout, &self.under_sampler)),
         ));
@@ -4584,7 +4900,7 @@ impl Renderer {
         let shadow_plan = self.shadow_plan();
         let candidates = shadow_plan
             .as_ref()
-            .map(|_| self.shadow_candidates(chunk_fade))
+            .map(|p| self.shadow_candidates(chunk_fade, Some(p.caster.dir)))
             .unwrap_or_default();
         let shadow_frame = shadow_plan.as_ref().map(|p| {
             let moving = moving_casters(
@@ -5081,6 +5397,26 @@ impl Renderer {
             self.flames
                 .draw_colour(&mut pass, flames::Group::Arms, true, &mut calls);
         }
+        // The ambient occlusion (docs/SSAO.md) from the finished view depth, multiplied into the
+        // scene's resolved colour before anything reads it (the clouds, shafts, bloom, composite).
+        if let Some(tier) = self.ssao_tier() {
+            let u = ssao::uniforms(
+                self.size,
+                targets.ssao.size(),
+                tier,
+                self.frame_fov(),
+                self.ssao_strength,
+                self.ssao_level,
+            );
+            self.queue.write_buffer(&self.ssao_uniform, 0, floats(&u));
+            let query = self.timer.as_mut().and_then(|t| t.pass(timing::SSAO));
+            calls += self.ssao_pipelines.encode(
+                &mut encoder,
+                &targets.ssao,
+                &targets.colour.1,
+                self.timer.as_ref().map(|t| (t, query)),
+            );
+        }
         // The volumetric clouds (docs/CLOUDS.md §8.6) into their reduced buffer, over the last
         // frame's, which then keeps a copy for the next.
         if let Some(tier) = self.cloud_tier() {
@@ -5096,13 +5432,20 @@ impl Renderer {
             let block = self.cloud_prev_uniform(view, tier.history_blend);
             self.queue
                 .write_buffer(&self.cloud_prev_buffer, 0, floats(block.as_flattened()));
-            let plumes = self.plumes.pack(
+            let mut plumes = self.plumes.pack(
                 &CLOUDS,
                 self.eye,
                 self.face,
                 self.cloud_seconds,
                 self.clouds_now(),
             );
+            // The weather map's corner from the eye (head.zw, docs/CLOUDS.md §11), in f64 here.
+            let corner = self.cloud_noise.weather_at.map_or_else(
+                || dwell_look::weather_field::corner_for(&CLOUDS, [self.eye[0], self.eye[2]]),
+                |m| m.corner,
+            );
+            plumes[2] = (corner[0] - self.eye[0]) as f32;
+            plumes[3] = (corner[1] - self.eye[2]) as f32;
             self.queue
                 .write_buffer(&self.cloud_plume_buffer, 0, floats(&plumes));
             let query = self.timer.as_mut().and_then(|t| t.pass(timing::CLOUDS));
@@ -5421,7 +5764,19 @@ impl Renderer {
     /// plants, LOD sections and stand-ins (their skirts as shown), each with its box and an
     /// identity that changes when its mesh, its skirts or whether it is fading change (a kept map
     /// is drawn again when the identities in it change, `caster_signature`). Water casts none.
-    fn shadow_candidates(&self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> Vec<Candidate> {
+    ///
+    /// With `toward` (the directional light's direction, toward it), chunks cast only their facing
+    /// groups that face it (`dwell_mesh::facing_mask_toward`); without it (torches) all of them.
+    fn shadow_candidates(
+        &self,
+        chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>,
+        toward: Option<[f64; 3]>,
+    ) -> Vec<Candidate> {
+        // Every tree's logs cast (the impostors cast none).
+        let facing = toward
+            .filter(|_| self.facing_cull)
+            .map_or(u8::MAX, dwell_mesh::facing_mask_toward)
+            | TREE_LOGS_BIT;
         use shadows::CasterKind::Solid;
         let item = |kind, offset, clip, fade, mesh| DrawItem {
             kind,
@@ -5473,8 +5828,13 @@ impl Renderer {
                 ^ shadows::mix(coord.y as u64).rotate_left(21)
                 ^ shadows::mix(coord.z as u64).rotate_left(42);
             if c.opaque.is_some() {
-                let mesh = DrawMesh::Chunk(coord, Part::Opaque);
-                push(item(Kind::Terrain, offset, None, fade, mesh), b, tag, Solid);
+                let mesh = DrawMesh::Chunk(coord, Part::Facing(facing));
+                push(
+                    item(Kind::Terrain, offset, None, fade, mesh),
+                    b,
+                    tag ^ u64::from(facing) << 8,
+                    Solid,
+                );
             }
             // The plants and the trees' leaves apart: plants cast into the nearest
             // `plantCascades`, leaves into every cascade (BUGS.md #156: past those a crown cast
@@ -5909,7 +6269,7 @@ impl Renderer {
             };
         }
         let candidates: Vec<Candidate> = self
-            .shadow_candidates(chunk_fade)
+            .shadow_candidates(chunk_fade, None)
             .into_iter()
             .filter(|c| c.draw.kind == Kind::Terrain && c.draw.fade == 0.0)
             .collect();
@@ -6733,6 +7093,12 @@ impl crate::game::Scene for Renderer {
     fn take_cloud_noise_request(&mut self) -> bool {
         Renderer::take_cloud_noise_request(self)
     }
+    fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        Renderer::take_cloud_weather_request(self)
+    }
+    fn cloud_weather_map(&mut self, map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {
+        Renderer::cloud_weather_map(self, map);
+    }
     fn cloud_noise_slab(&mut self, detail: bool, z0: u32, texels: &[u8]) {
         Renderer::cloud_noise_slab(self, detail, z0, texels);
     }
@@ -6836,6 +7202,39 @@ impl crate::game::Scene for Renderer {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_chunk_draws_its_facing_groups_with_neighbours_merged() {
+        // face-a-only: index ranges, no up or down.
+        // [0] all, then +X 0..6, −X 6..9, +Y 9..30, −Y none, +Z 30..36, −Z 36..42, other 42..45,
+        // and the trees' logs 45..51.
+        let parts = vec![
+            0..51,
+            0..6,
+            6..9,
+            9..30,
+            30..30,
+            30..36,
+            36..42,
+            42..45,
+            45..51,
+        ];
+        // +X, +Y, +Z and the other: +Y and +Z are neighbours (−Y between them is empty).
+        assert_eq!(
+            super::facing_draws(&parts, 0b101_0101),
+            vec![0..6, 9..36, 42..45]
+        );
+        // With the trees' logs (near the trees): merged onto the other group.
+        assert_eq!(
+            super::facing_draws(&parts, 0b1101_0101),
+            vec![0..6, 9..36, 42..51]
+        );
+        // Every group but no logs (past the hand-over): all but the logs.
+        assert_eq!(super::facing_draws(&parts, 0b0111_1111), vec![0..45]);
+        // Everything, or a mesh without groups: one draw of it all.
+        assert_eq!(super::facing_draws(&parts, u8::MAX), vec![0..51]);
+        assert_eq!(super::facing_draws(&parts[..1], 0b100_0000), vec![0..51]);
+    }
 
     #[test]
     fn interleave_puts_each_vertex_streams_in_order() {
@@ -7032,15 +7431,37 @@ mod tests {
     }
 
     #[test]
+    fn halves_and_unorm16s_pack_as_the_gpu_reads_them() {
+        // face-a-only: number formats. The 60 fps pass (2026-11-15): a cutout's uv as float16x2,
+        // every tile rectangle as unorm16x4.
+        for (v, bits) in [
+            (0.0f32, 0x0000u32),
+            (1.0, 0x3c00),
+            (-1.0, 0xbc00),
+            (2.5, 0x4100),
+            (0.5, 0x3800),
+            (3.0 + 1.0 / 1024.0, 0x4201),
+            (65504.0, 0x7bff),
+            (1e9, 0x7bff),
+        ] {
+            assert_eq!(super::f16_bits(v), bits, "{v}");
+        }
+        let b = super::unorm16x2(0.0, 1.0).to_bits();
+        assert_eq!((b & 0xffff, b >> 16), (0, 0xffff));
+        let b = super::unorm16x2(0.25, 0.75).to_bits();
+        assert_eq!((b & 0xffff, b >> 16), (16384, 49151));
+    }
+
+    #[test]
     fn every_kind_has_its_own_stride() {
         let ghost = 4 * (3 + 3);
         for (kind, stride) in [
-            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 4 + 1 + 1)),
+            (Kind::Terrain, 4 * (3 + 1 + 3 + 2 + 2 + 1 + 1)),
             (Kind::Flat, 4 * (3 + 3 + 3)),
             (Kind::Line, 4 * (3 + 3 + 3 + 1)),
             (Kind::Ghost, ghost),
             (Kind::Fluid, 4 * (3 + 3 + 3 + 1 + 2)),
-            (Kind::Cutout, 4 * (3 + 1 + 1 + 2 + 4 + 4 + 1)),
+            (Kind::Cutout, 4 * (3 + 1 + 1 + 1 + 2 + 4 + 1)),
         ] {
             assert_eq!(STRIDES.get(kind as usize), Some(&stride), "{kind:?}");
         }
@@ -7181,8 +7602,23 @@ mod tests {
                     let got = unorm(bits >> (8 * a)) * scale;
                     assert!((got - c).abs() <= 0.5 / 255.0 * scale + 1e-6, "colour {a}");
                 }
-                assert_eq!(&at[11..15], &m.plants[4 * k..4 * k + 4], "plant");
-                let bits = at[15].to_bits();
+                // The uv as halves (float16x2), then the tile (unorm16x4) and the plant.
+                let half = |h: u32| {
+                    let (e, f) = ((h >> 10) & 0x1f, (h & 0x3ff) as f32);
+                    let v = if e == 0 {
+                        f / 1024.0 * 2f32.powi(-14)
+                    } else {
+                        (1.0 + f / 1024.0) * 2f32.powi(e as i32 - 15)
+                    };
+                    if h & 0x8000 != 0 { -v } else { v }
+                };
+                assert_eq!(&at[8..12], &m.plants[4 * k..4 * k + 4], "plant");
+                let uv = at[5].to_bits();
+                for (a, want) in m.uvs[2 * k..2 * k + 2].iter().enumerate() {
+                    let got = half(if a == 0 { uv & 0xffff } else { uv >> 16 });
+                    assert!((got - want).abs() <= want.abs() / 1024.0 + 1e-4, "uv {a}");
+                }
+                let bits = at[12].to_bits();
                 let want = [
                     m.light[k].clamp(0.0, 1.0),
                     m.flood[2 * k],
@@ -7217,7 +7653,8 @@ mod tests {
                     let got = snorm(at[3].to_bits() >> (8 * a));
                     assert!((got - c).abs() <= 0.5 / 127.0 + 1e-6, "terrain normal {a}");
                 }
-                let bits = at[13].to_bits();
+                // After the tile (unorm16x4: two slots).
+                let bits = at[11].to_bits();
                 let want = [
                     t.light[k].clamp(0.0, 1.0),
                     t.flood[2 * k],
@@ -7923,6 +8360,40 @@ mod tests {
                 r.warm_set().len() - warm_off,
                 3,
                 "the warm-up takes its three"
+            );
+        }
+        draws_cleanly(r);
+    }
+
+    /// The ambient occlusion off (docs/SSAO.md: Low, Medium, the phone tier, a CPU adapter, or a
+    /// strength of 0) builds none of its pipelines and keeps 1 × 1 buffers; on, it warms its four
+    /// and sizes its buffers by the tier (Low half the drawing buffer, High all of it).
+    #[test]
+    fn ssao_off_builds_no_pipeline_and_on_sizes_its_buffers_by_tier() {
+        use dwell_look::ssao::{SsaoQuality, buffer_size};
+        let mut r = noop_renderer();
+        r.set_ssao(SsaoQuality::Off, 1.0);
+        while !r.warm_pipelines() {
+            r.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        }
+        assert!(r.ssao_pipelines.all().iter().all(|p| !p.built()), "off");
+        r.ensure_targets();
+        assert_eq!(r.targets.as_ref().unwrap().ssao.size(), (1, 1));
+        let warm_off = r.warm_set().len();
+        r.set_ssao(SsaoQuality::High, 0.0);
+        assert!(r.ssao_tier().is_none(), "strength 0 draws none");
+        for q in [SsaoQuality::Low, SsaoQuality::High] {
+            r.set_ssao(q, 1.0);
+            let tier = r.ssao_tier().expect("on a GPU");
+            assert_eq!(
+                r.warm_set().len() - warm_off,
+                4,
+                "the warm-up takes its four"
+            );
+            r.ensure_targets();
+            assert_eq!(
+                r.targets.as_ref().unwrap().ssao.size(),
+                buffer_size(r.size, tier)
             );
         }
         draws_cleanly(r);

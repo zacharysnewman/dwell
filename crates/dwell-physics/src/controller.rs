@@ -586,6 +586,8 @@ fn capsule_shape(cfg: &PlayerControllerConfig, crouching: bool) -> SharedShape {
 pub struct Players {
     players: Vec<Option<Player>>,
     terrain: Option<TerrainCollision>,
+    /// The chunks a tick's reach builds may generate themselves (`set_reach_generates`).
+    reach_generates: Option<usize>,
     /// Boxes (world metres) whose terrain collision other bodies need this tick (falling pieces,
     /// docs/FELLING.md): loaded with the players', and kept while asked for.
     terrain_boxes: Vec<(DVec3, DVec3)>,
@@ -611,6 +613,7 @@ impl Players {
             players: Vec::new(),
             terrain: terrain.then(|| TerrainCollision::new(physics)),
             terrain_boxes: Vec::new(),
+            reach_generates: None,
             terrain_boxes_per_tick: usize::MAX,
             collision_cells_per_tick: crate::terrain::COLLISION_CELLS_PER_TICK,
             collision_ahead: crate::terrain::CollisionAhead::default(),
@@ -632,6 +635,21 @@ impl Players {
 
     pub fn terrain(&self) -> Option<&TerrainCollision> {
         self.terrain.as_ref()
+    }
+
+    /// A server's: the chunks a tick's reach builds may generate themselves (a chunk's build reads
+    /// its neighbours, and a sprint's reach generated 9–12 in one tick, ~100 ms in the browser:
+    /// priority 0, the owner's "the server never drops below 60fps"); the rest wait for its
+    /// generation jobs, which bring them first (`take_terrain_wanting`). None: unbounded.
+    pub fn set_reach_generates(&mut self, chunks: Option<usize>) {
+        self.reach_generates = chunks;
+    }
+
+    /// The chunks the reach builds waited for since the last call (`TerrainCollision::take_wanting`).
+    pub fn take_terrain_wanting(&mut self) -> Vec<dwell_world::ChunkCoord> {
+        self.terrain
+            .as_mut()
+            .map_or(Vec::new(), |t| t.take_wanting())
     }
 
     /// The most cells a tick puts in the terrain collider outside every player's and box's reach
@@ -974,6 +992,9 @@ impl Players {
     /// players and the boxes asked for loaded, the far ones dropped, the changed ones rebuilt.
     pub fn tick_terrain(&mut self, world: &mut VoxelWorld, physics: &mut Physics) {
         if let Some(terrain) = &mut self.terrain {
+            // A server's reach builds generate at most a few chunks a tick themselves; the rest
+            // wait for its generation jobs (priority 0). Without jobs (tests, tools): unbounded.
+            terrain.set_force_budget(self.reach_generates.unwrap_or(usize::MAX));
             terrain.ensure_boxes_within(
                 physics,
                 world,

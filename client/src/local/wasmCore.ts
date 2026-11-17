@@ -191,9 +191,19 @@ export class LocalCore {
   ): string {
     return this.world.findOnMap(kind, at[0], at[1], at[2], radius, face, minDepth);
   }
+  /** The camera clearance check (local.rs `camera_clearance`): the codes, then the lifts. */
+  cameraClearance(eyes: number[], radiusM: number, liftStepM: number, liftMaxM: number): number[] {
+    return Array.from(
+      this.world.cameraClearance(new Float64Array(eyes), radiusM, liftStepM, liftMaxM),
+    );
+  }
   /** The lava's dev tools (JSON; local.rs `lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate, depth]. */
   lavaDev(op: string, args: number[]): string {
     return this.world.lavaDev(op, new Float64Array(args));
+  }
+  /** The scenes' dev tools (JSON; local.rs `scene_dev`): `build` a scene file's text, `event` i, `status`. */
+  sceneDev(op: string, text: string): string {
+    return this.world.sceneDev(op, text);
   }
   /** A report the water worker sent back. */
   takeWaterReport(): string | undefined {

@@ -89,7 +89,9 @@ describe("the player's voice (BUGS.md #159)", () => {
     expect(from, 'breath_heavy plays only the sigh').toEqual(['VOICE_MALE_Sigh_1']);
     const files = s.samples?.files ?? [];
     expect(files).toHaveLength(1);
-    expect(files[0], 'breath-heavy-1.m4a, the sigh (names carry a content hash)').toMatch(/^breath-heavy-1(-[0-9a-f]+)?\.m4a$/);
+    expect(files[0], 'breath-heavy-1.m4a, the sigh (names carry a content hash)').toMatch(
+      /^breath-heavy-1(-[0-9a-f]+)?\.m4a$/,
+    );
     for (const name of from) {
       expect(['GRUNT', 'BREATH', 'VOICE'], name).toContain(name.split('_')[0]);
       expect(name, 'a male voice, like the gasp and the strain').toMatch(/_Male_/i);

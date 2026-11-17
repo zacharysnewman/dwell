@@ -1475,7 +1475,12 @@ dwell_world::both_faces!(
                 ("transparent", a.transparent, b.transparent),
                 ("cutout", a.cutout, b.cutout),
             ] {
-                let mb = local_mesh(f, mb);
+                let mut mb = local_mesh(f, mb);
+                // The opaque mesh is grouped by world facing (`group_by_facing`): face B's tops
+                // face −y. Grouped face-locally (each group's order kept) it is face A's.
+                if name == "opaque" {
+                    group_by_facing(&mut mb);
+                }
                 for (field, x, y) in [
                     ("positions", &mb.positions, &ma.positions),
                     ("normals", &mb.normals, &ma.normals),
@@ -2181,7 +2186,7 @@ dwell_world::both_faces!(
     fn a_bitten_log_is_carved_where_it_was_struck_and_cracks(f: FaceFrame) {
         let log = require("dwell:log");
         let wood = dwell_protocol::chopping::wood("dwell:log").unwrap();
-        let axe = dwell_protocol::chopping::tool("dwell:stone_axe").unwrap();
+        let axe = dwell_protocol::chopping::fixture::older_axe(false);
         let (x, z) = (5, 5);
         let cells: Vec<_> = (10..13).map(|y| (x, y, z, log)).collect();
         let mut cut = Cut::default();
@@ -2585,7 +2590,7 @@ dwell_world::both_faces!(
         let padded = voxels(&[(8, 8, 8, leaf)]);
         let mesh = |cards: bool| {
             in_cells(
-                super::mesh_chunk_flags(
+                super::mesh_chunk_trees(
                     &padded,
                     &[],
                     f.is_b(),
@@ -2597,6 +2602,8 @@ dwell_world::both_faces!(
                         cards,
                         ..ChunkFlags::default()
                     },
+                    &[],
+                    &[tree_over_chunk()],
                 )
                 .expect("padded"),
             )
@@ -2857,7 +2864,7 @@ fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
     // `carve::mirror_cut`; the meshed cracks on both faces: `a_bitten_log_is_carved_…`).
     use dwell_protocol::chopping as chop;
     let wood = chop::wood("dwell:log").unwrap();
-    let axe = chop::tool("dwell:stone_axe").unwrap();
+    let axe = chop::fixture::older_axe(false);
     let look = wood.cut;
     let face = face_of(0, -1);
     let (pu, pv) = damage_mesh::plane_axes(0);
@@ -2869,7 +2876,7 @@ fn a_bitten_logs_cracks_show_on_the_bark_round_the_bites() {
             cut.swing(axe, 1, 0, band, 1.0);
             cut.bite(1, 0, band, 0.5, &look.bite);
         }
-        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0], None).expect("cracks");
+        let layer = super::cut_cracks(wood, &look, 1, &cut, [0, 0, 0]).expect("cracks");
         let tile = crate::textures::TILE_ORDER[usize::from(layer.slot) - 1];
         let ts = crate::textures::TILE as i64;
         let (mut on_bark, mut in_cut) = (0, 0);
@@ -2981,6 +2988,38 @@ dwell_world::both_faces!(
             "taller stage by stage: {tops:?}"
         );
         assert_eq!(dwell_blocks::info(stages[3]).cross.unwrap().height, 0.85);
+        // A stand's lower cell (up to 2 m, WORK_QUEUE item 58 g): its blades fill its cell
+        // exactly, the cell over it rising out of them in line (BUGS.md #192: they had reached a
+        // third past, each cell jittered on its own, and read as stacked tufts); its box stays
+        // in its own cell.
+        let stalk = dwell_blocks::with_property(grass_block, "stage", "stalk").expect("a stalk");
+        let mut source = dwell_world::VoxelWorld::new(dwell_world::empty_generator(), None);
+        for x in 0..8 {
+            source.set_voxel(o[0] + 4 + x, o[1] + 4, o[2] + 4, cube_block());
+            source.set_voxel(o[0] + 4 + x, o[1] + 5, o[2] + 4, stalk);
+            source.set_voxel(o[0] + 4 + x, o[1] + 6, o[2] + 4, grass_block);
+        }
+        let m = local_mesh(f, mesh_on_face(&mut source, c, f).cutout);
+        let top_of = |y0: f32| {
+            m.positions
+                .iter()
+                .skip(1)
+                .step_by(3)
+                .copied()
+                .filter(|&y| y < y0 + 1.5)
+                .fold(f32::MIN, f32::max)
+                - y0
+        };
+        let drawn = top_of(5.0);
+        assert!(
+            (drawn - 1.0).abs() < 1e-4,
+            "a stalk fills its cell, the cell over it going on: {drawn}"
+        );
+        assert!(
+            dwell_blocks::info(stalk)
+                .selection
+                .is_none_or(|b| b[4] <= 1.0)
+        );
     }
 );
 
@@ -3326,7 +3365,7 @@ dwell_world::both_faces!(
             cells.push((x, 9, 8, leaf));
         }
         let padded = voxels(&cells);
-        let m = super::mesh_chunk_flags(
+        let m = super::mesh_chunk_trees(
             &padded,
             &[],
             f.is_b(),
@@ -3337,8 +3376,9 @@ dwell_world::both_faces!(
                 water_tops: true,
                 cards: true,
                 plants: 100,
-                ..ChunkFlags::default()
             },
+            &[],
+            &[tree_over_chunk()],
         )
         .expect("padded")
         .cutout;
@@ -3505,3 +3545,379 @@ dwell_world::both_faces!(
         }
     }
 );
+
+/// A listed tree whose box holds the whole chunk (ADR 0079 tints, `Tint::NONE`): it owns every
+/// leaf there, so they hand over to its impostor (BUGS.md #186).
+fn tree_over_chunk() -> dwell_world::tree_tint::TreeTint {
+    dwell_world::tree_tint::TreeTint {
+        anchor: [8, 0, 8],
+        // Every row: a face-B chunk at origin 0 meshes at its face-local rows, far from 0.
+        min: [-8, i32::MIN / 2, -8],
+        max: [48, i32::MAX / 2, 48],
+        tint: dwell_world::tree_tint::Tint::NONE,
+    }
+}
+
+/// Hilly ground for the facing tests: grass over stone in steps (natural ramps on their edges),
+/// a stone pillar with an overhang (faces of every direction) and an air pocket.
+fn hilly_chunk() -> Vec<u16> {
+    let mut cells = Vec::new();
+    for x in -1..33 {
+        for z in -1..33 {
+            let top = 6 + (x / 5 + z / 7) % 5;
+            for y in 0..top {
+                cells.push((x, y, z, stone()));
+            }
+            cells.push((x, top, z, grass()));
+        }
+    }
+    for y in 10..20 {
+        cells.push((16, y, 16, cube_block()));
+    }
+    for x in 14..19 {
+        cells.push((x, 20, 16, cube_block()));
+    }
+    voxels(&cells)
+}
+
+dwell_world::both_faces!(
+    /// The perf pass (owner, 2026-11-15: "Can we improve the core drawing?"): a chunk's opaque
+    /// mesh comes ordered by facing group, and each group's triangles face its axis (or none, the
+    /// other group), every triangle in exactly one range.
+    fn the_opaque_mesh_is_ordered_by_facing_group(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        assert_eq!(ranges[0].start, 0);
+        assert_eq!(ranges[FACING_GROUPS - 1].end as usize, m.indices.len());
+        for (g, r) in ranges.iter().enumerate() {
+            if g > 0 {
+                assert_eq!(ranges[g - 1].end, r.start);
+            }
+            for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                assert_eq!(facing_of(&m, tri), g);
+            }
+        }
+        // Hills have faces of every axis direction (bar the buried −Y but for the overhang).
+        for g in 0..6 {
+            assert!(!ranges[g].is_empty(), "group {g} empty: {ranges:?}");
+        }
+        eprintln!(
+            "facing groups: {:?}",
+            ranges.iter().map(|r| r.len() / 3).collect::<Vec<_>>()
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// No triangle that faces an eye is left out by the eye's facing mask, from eyes all round
+    /// the chunk, in it and far off (red: a mask dropping a group that shows).
+    fn the_facing_mask_keeps_every_triangle_that_faces_the_eye(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        let extent = dwell_world::CHUNK_EXTENT_M;
+        let p = |i: u32| -> [f64; 3] {
+            std::array::from_fn(|k| f64::from(m.positions[i as usize * 3 + k]))
+        };
+        let (mut kept, mut cut) = (0, 0);
+        for ex in [-40.0, -0.01, 0.3, 8.0, 15.9, 16.2, 60.0] {
+            for ey in [-30.0, 1.0, 5.0, 9.0, 20.0, 80.0] {
+                for ez in [-25.0, 0.2, 7.7, 16.1, 50.0] {
+                    let eye = [ex, ey * extent[1] / 16.0, ez];
+                    let mask = facing_mask(eye, extent, 0.0);
+                    for (g, r) in ranges.iter().enumerate() {
+                        for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                            let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+                            let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                            let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+                            let n = [
+                                u[1] * v[2] - u[2] * v[1],
+                                u[2] * v[0] - u[0] * v[2],
+                                u[0] * v[1] - u[1] * v[0],
+                            ];
+                            let to_eye = (0..3).map(|k| n[k] * (eye[k] - a[k])).sum::<f64>();
+                            let drawn = mask & (1 << g) != 0;
+                            if to_eye > 1e-9 {
+                                assert!(drawn, "group {g} faces {eye:?} but is masked out");
+                            }
+                            if drawn { kept += 1 } else { cut += 1 }
+                        }
+                    }
+                }
+            }
+        }
+        // And the mask does skip a share (most of these eyes are above or level with the ground,
+        // whose tops always show).
+        assert!(cut * 10 > kept, "skipped {cut} of {}", kept + cut);
+    }
+);
+
+#[test]
+fn a_mesh_out_of_facing_order_draws_whole_as_the_other_group() {
+    // face-a-only: about the ranges of an unordered index list, not the faces.
+    let mut m = super::mesh_chunk(&hilly_chunk(), false).unwrap().opaque;
+    m.indices.reverse();
+    let ranges = facing_ranges(&m);
+    assert_eq!(ranges[FACING_OTHER], 0..m.indices.len() as u32);
+    assert!(ranges.iter().take(FACING_OTHER).all(|r| r.is_empty()));
+}
+
+#[test]
+fn the_facing_mask_is_everything_inside_the_chunk_and_three_axes_far_off() {
+    // face-a-only: the mask is world-axis arithmetic on the eye, the same on either face.
+    let e = dwell_world::CHUNK_EXTENT_M;
+    assert_eq!(facing_mask([8.0, 4.0, 8.0], e, 0.0), 0x7f);
+    // Far off +X, +Y, +Z of it: only the +X, +Y and +Z faces (and the others) can show.
+    assert_eq!(
+        facing_mask([100.0, 100.0, 100.0], e, 0.0),
+        0b100_0000 | 0b01_0101
+    );
+    assert_eq!(
+        facing_mask([-100.0, -100.0, -100.0], e, 0.0),
+        0b100_0000 | 0b10_1010
+    );
+}
+
+dwell_world::both_faces!(
+    /// The sun's shadow maps cast only the facing groups facing the light: every triangle facing
+    /// it is kept, for lights all round (red: a group facing the light masked out).
+    fn the_light_mask_keeps_every_triangle_facing_the_light(f: FaceFrame) {
+        let m = super::mesh_chunk(&hilly_chunk(), f.is_b()).unwrap().opaque;
+        let ranges = facing_ranges(&m);
+        let p = |i: u32| -> [f64; 3] {
+            std::array::from_fn(|k| f64::from(m.positions[i as usize * 3 + k]))
+        };
+        for toward in [
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.6, 0.8, 0.0],
+            [-0.3, 0.9, 0.3],
+            [0.5, -0.5, -std::f64::consts::FRAC_1_SQRT_2],
+            [1.0, 0.0, 0.0],
+        ] {
+            let mask = facing_mask_toward(toward);
+            assert!(mask.count_ones() <= 5, "{toward:?} keeps {mask:b}");
+            for (g, r) in ranges.iter().enumerate() {
+                for tri in m.indices[r.start as usize..r.end as usize].chunks_exact(3) {
+                    let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
+                    let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+                    let n = [
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0],
+                    ];
+                    if (0..3).map(|k| n[k] * toward[k]).sum::<f64>() > 1e-9 {
+                        assert!(mask & (1 << g) != 0, "group {g} faces {toward:?}");
+                    }
+                }
+            }
+        }
+    }
+);
+
+dwell_world::both_faces!(
+    /// BUGS.md #186 (owner, 2026-11-15: "there's some \"sticks\" trees without leaves"): only a
+    /// listed tree's leaves are marked to hand over to its far impostor. A leaf no listed tree owns
+    /// (the hand-built pines', a placed one) has no impostor, so it keeps drawing at a distance
+    /// (red before: every leaf was marked, and past the hand-over the hand-built pines were bare
+    /// trunks).
+    fn only_a_listed_trees_leaves_hand_over_to_its_impostor(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let padded = voxels(&[(4, 8, 8, leaf), (20, 8, 8, leaf)]);
+        // A tree owning the leaf at x 4 only (face-local cells; face B's chunk meshes face-local).
+        let tree = dwell_world::tree_tint::TreeTint {
+            anchor: [4, 0, 8],
+            min: [0, i32::MIN / 2, 4],
+            max: [8, i32::MAX / 2, 12],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let marked = |trees: &[dwell_world::tree_tint::TreeTint]| {
+            let m = super::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags {
+                    water_tops: true,
+                    cards: false,
+                    plants: 100,
+                },
+                &[],
+                trees,
+            )
+            .expect("padded")
+            .cutout;
+            let xs: Vec<f32> = (0..m.positions.len() / 3)
+                .filter(|&v| m.plants[v * 4 + 3] == crate::TREE_LEAF_FADE)
+                .map(|v| m.positions[v * 3])
+                .collect();
+            (xs, m.positions.len() / 3)
+        };
+        let (none, n) = marked(&[]);
+        assert!(n > 0);
+        assert!(none.is_empty(), "no listed tree: no leaf hands over");
+        let (owned, _) = marked(&[tree]);
+        assert!(!owned.is_empty());
+        assert!(
+            owned.iter().all(|&x| x < 12.0),
+            "only the owned leaf (x 4) hands over: {owned:?}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: "fold trunks into billboards": a listed tree's logs are the opaque
+    /// mesh's last indices (`MeshArrays::tree_logs`), which a chunk past the far trees' hand-over
+    /// leaves to the impostor; logs no listed tree owns (a player's) stay with the rest, and the
+    /// facing groups cover the rest exactly.
+    fn a_listed_trees_logs_come_last(f: FaceFrame) {
+        let log = require("dwell:log");
+        let mut cells = Vec::new();
+        for y in 0..6 {
+            cells.push((4, 8 + y, 8, log));
+            cells.push((20, 8 + y, 8, log));
+        }
+        let padded = voxels(&cells);
+        let tree = dwell_world::tree_tint::TreeTint {
+            anchor: [4, 0, 8],
+            min: [0, i32::MIN / 2, 4],
+            max: [8, i32::MAX / 2, 12],
+            tint: dwell_world::tree_tint::Tint::NONE,
+        };
+        let mesh = |trees: &[dwell_world::tree_tint::TreeTint]| {
+            super::mesh_chunk_trees(
+                &padded,
+                &[],
+                f.is_b(),
+                [0; 3],
+                &[],
+                None,
+                ChunkFlags::default(),
+                &[],
+                trees,
+            )
+            .expect("padded")
+            .opaque
+        };
+        let none = mesh(&[]);
+        assert_eq!(none.tree_logs, 0, "no listed tree: no logs set apart");
+        let m = mesh(&[tree]);
+        assert!(m.tree_logs > 0);
+        assert_eq!(m.indices.len(), none.indices.len());
+        let tail = tree_logs_range(&m);
+        let x = |v: u32| m.positions[v as usize * 3];
+        assert!(
+            m.indices[tail.start as usize..]
+                .iter()
+                .all(|&v| x(v) < 12.0),
+            "only the listed tree's (x 4) logs come last"
+        );
+        assert!(
+            m.indices[..tail.start as usize]
+                .iter()
+                .any(|&v| x(v) > 12.0),
+            "the unlisted logs (x 20) stay with the rest"
+        );
+        let ranges = facing_ranges(&m);
+        assert_eq!(ranges[0].start, 0);
+        assert_eq!(ranges[FACING_GROUPS - 1].end, tail.start);
+    }
+);
+
+dwell_world::both_faces!(
+    /// The owner, 2026-11-15: "grass could be rendered at half if we only did a billboard at most
+    /// distances": a chunk's cutout holds its plants' quads past their first between
+    /// `second_quads_from` and `tree_leaves_from`, which a far chunk leaves out. Only those: a
+    /// leaf no listed tree owns (its u running in blocks past 2) stays before them (red before:
+    /// such leaves were taken for second quads and far crowns vanished).
+    fn only_plants_second_quads_are_set_apart_for_far_cards(f: FaceFrame) {
+        let leaf = require("dwell:leaves");
+        let ground = cube_block();
+        let mut cells = Vec::new();
+        for x in 0..32 {
+            for z in 0..32 {
+                cells.push((x, 4, z, ground));
+                cells.push((x, 5, z, if (x + z) % 3 == 0 { leaf } else { tall_grass() }));
+            }
+        }
+        let m = super::mesh_chunk_flags(
+            &voxels(&cells),
+            &[],
+            f.is_b(),
+            [0; 3],
+            &[],
+            None,
+            ChunkFlags {
+                water_tops: true,
+                cards: false,
+                plants: 100,
+            },
+        )
+        .expect("padded")
+        .cutout;
+        let (from, to) = (second_quads_from(&m), tree_leaves_from(&m));
+        assert!(from < to, "the plants have second quads: {from}..{to}");
+        let plant = |v: u32| m.plants[v as usize * 4 + 3] > 0.0;
+        assert!(
+            m.indices[from..to].iter().all(|&v| plant(v)),
+            "only plants' quads"
+        );
+        assert!(
+            m.indices[..from].iter().any(|&v| !plant(v)),
+            "the leaves stay with the first quads"
+        );
+    }
+);
+
+#[test]
+fn a_stand_of_tall_grass_draws_as_one_plant_stretching_up() {
+    // face-a-only: the stand's rows and the tile's v are compared up face A's +y; the jitter is
+    // by the world column on either face (`Stand::seed`).
+    // BUGS.md #192 (owner, 2026-11-16: "the tall grass is like stacking when it grows ... it's
+    // supposed to extend or stretch up"): a stand of three cells (two stalks and the tip) draws
+    // its cells' quads in line (one plant's offset and turn), each stalk exactly its cell tall
+    // with the blades' lower band (no tips) and still, the tip rising from the top stalk.
+    let stalk = dwell_blocks::parse_state("dwell:tall_grass[stage=stalk]").expect("a stalk");
+    let m = mesh(
+        &[
+            (4, 0, 4, cube_block()),
+            (4, 1, 4, stalk),
+            (4, 2, 4, stalk),
+            (4, 3, 4, tall_grass()),
+        ],
+        false,
+    );
+    let c = &m.cutout;
+    let n = c.positions.len() / 3;
+    let quads_n = usize::from(dwell_blocks::info(tall_grass()).cross.expect("cross").quads);
+    assert_eq!(n, 3 * quads_n * 4, "three cells' quads");
+    let per_cell = quads_n * 4;
+    // In line: each cell's corners at the same x, z as the first cell's.
+    for cell in 1..3 {
+        for v in 0..per_cell {
+            let a = vertex(&c.positions, v as u32);
+            let b = vertex(&c.positions, (cell * per_cell + v) as u32);
+            assert!(
+                (a[0] - b[0]).abs() < 1e-5 && (a[2] - b[2]).abs() < 1e-5,
+                "cell {cell} vertex {v}: {a:?} vs {b:?}"
+            );
+        }
+    }
+    for cell in 0..2 {
+        let y = f64::from(cell as i32 + 1);
+        for v in cell * per_cell..(cell + 1) * per_cell {
+            let p = vertex(&c.positions, v as u32);
+            assert!(
+                (p[1] - y).abs() < 1e-5 || (p[1] - (y + 1.0)).abs() < 1e-5,
+                "stalk {cell}: exactly its cell: {p:?}"
+            );
+            assert!(
+                c.uvs[v * 2 + 1] <= 0.5,
+                "stalk {cell}: the blades' lower band"
+            );
+            assert_eq!(c.plants[v * 4], 0.0, "stalk {cell}: still");
+        }
+    }
+}

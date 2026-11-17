@@ -109,9 +109,20 @@ fn the_realistic_world_lists_the_default_and_every_preset_unchanged() {
         // The sand desert's own dune stack is the Realistic world's (worlds/realistic.json, 0.65:
         // the starter's sand desert keeps the preset's), and its sparse plants (0.68: open dunes).
         let mut want = *p;
+        // Each biome's plants are the world's own (worlds/realistic.json lists every biome's
+        // placements and densities: talus at cliffs' feet everywhere, 0.69; shrubs and bushes):
+        // the rest of the preset is unchanged.
+        if let Some(b) = b {
+            want.placements = b.placements;
+            want.trees = b.trees;
+        }
         if p.name == "preset:sand_desert" {
             want.rock_stack = Some("dwell:dune_sands");
-            want.trees = &[("boulders", 0.25), ("sagebrush", 0.012)];
+            // 0.69: sand on its steep faces too (no grey stone blobs on the dunes).
+            want.bands = Box::leak(Box::new([dwell_worldgen::terrain::ElevationBand {
+                rock: "dwell:sand",
+                ..p.bands[0]
+            }]));
         }
         assert_eq!(b, Some(&want), "{}: listed, unchanged", p.name);
     }
@@ -161,7 +172,7 @@ dwell_world::both_faces!(
                 .map(|r| r.max + r.blend)
                 .fold(0.0, f64::max);
             for &(x, z, h) in &land(&m, 2) {
-                let g = field.geography(x, z, h);
+                let g = field.mix_geography(x, z, h);
                 let chosen = usize::from(field.mix(&e.biomes, x, z, h).chosen);
                 let rain = g.rain.unwrap();
                 if dry.contains(&chosen) {
@@ -210,7 +221,7 @@ dwell_world::both_faces!(
                         let elev = f64::from(m.height[cell]).max(0.0);
                         let (x, z) = (x as i64, z as i64);
                         let chosen = usize::from(field.mix(&e.biomes, x, z, elev).chosen);
-                        let r = field.geography(x, z, elev).rain.unwrap();
+                        let r = field.mix_geography(x, z, elev).rain.unwrap();
                         if r >= c.band().rain_mm {
                             wet += 1;
                             dried += u32::from(dry.contains(&chosen));
@@ -273,7 +284,8 @@ dwell_world::both_faces!(
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 2) {
-                let g = field.geography(x, z, h);
+                // The climate where the weights are read (the border's warp, 0.69).
+                let g = field.mix_geography(x, z, h);
                 let mix = field.mix(&e.biomes, x, z, h);
                 if usize::from(mix.chosen) == tundra {
                     assert!(g.celsius < t.max + t.blend, "tundra at {} °C", g.celsius);
@@ -356,7 +368,7 @@ dwell_world::both_faces!(
         let field = BiomeField::with_params(&m, face_seed(1, f.face), e.map);
         let (mut wet, mut dry) = (0, 0);
         for &(x, z, h) in &land(&m, 2) {
-            let r = field.geography(x, z, h).rain.unwrap();
+            let r = field.mix_geography(x, z, h).rain.unwrap();
             let w = field.mix(&list, x, z, h).weight(1);
             if r >= 1300.0 {
                 assert!(w > 0.99, "{r} mm: {w}");
@@ -404,7 +416,7 @@ dwell_world::both_faces!(
             let m = map(&e, world, f);
             let field = BiomeField::with_params(&m, face_seed(world, f.face), e.map);
             for &(x, z, h) in &land(&m, 3) {
-                let g = field.geography(x, z, h);
+                let g = field.mix_geography(x, z, h);
                 let rain = g.rain.unwrap();
                 let before = field.mix(&without, x, z, h).chosen;
                 let after = usize::from(field.mix(&e.biomes, x, z, h).chosen);

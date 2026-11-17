@@ -88,15 +88,23 @@ pub fn held_from_wire(held: u16, to_client: impl Fn(u16) -> Option<u16>) -> Held
 }
 
 /// What a remote player holds: its held tool by name (`HeldTools`, ADR 0067) over what the
-/// held-item wire says (blocks only), drawn as the tool's held item for its hold.
+/// held-item wire says (blocks only), drawn as the tool's held item for its hold: a swung tool's
+/// (the sword's stance), a break tool's (an axe, a pickaxe, a shovel) as its own hand holds it.
 pub fn with_tool(held: Held, tool: Option<(&str, bool)>) -> Held {
-    match tool
-        .and_then(|(name, vertical)| dwell_protocol::chopping::tool(name).map(|t| (t, vertical)))
-    {
-        Some((t, vertical)) => crate::render::characters::held_item(
+    let Some((name, vertical)) = tool else {
+        return held;
+    };
+    if let Some(t) = dwell_protocol::chopping::tool(name) {
+        return crate::render::characters::held_item(
             t.name,
             Some(t.held_for(vertical).unwrap_or("block")),
-        ),
+        );
+    }
+    match dwell_protocol::chopping::BREAK_TOOLS
+        .iter()
+        .find(|b| b.item == name)
+    {
+        Some(b) => crate::render::characters::held_item(b.item, None),
         None => held,
     }
 }
@@ -660,16 +668,16 @@ mod tests {
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", false))),
             Held::Model {
-                hold: "stone_axe",
+                hold: crate::render::characters::MODEL_HOLD,
                 model: "stone_axes"
             }
         );
-        // One mode (owner, 2026-11-14): an older peer's vertical axe is held as the level one;
-        // the sword keeps its vertical stance's hold.
+        // One mode (owner, 2026-11-14): a vertical axe is held as the level one (a break tool:
+        // no stances; a pickaxe too); the sword keeps its vertical stance's hold.
         assert_eq!(
             with_tool(Held::Empty, Some(("dwell:stone_axe", true))),
             Held::Model {
-                hold: "stone_axe",
+                hold: crate::render::characters::MODEL_HOLD,
                 model: "stone_axes"
             }
         );

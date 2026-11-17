@@ -11,6 +11,8 @@ import { PART_AUDIO, partAudio } from './audio.mjs';
 
 export const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const VIDEOS = join(SKILL, 'videos');
+/** The scenes a shot can build (docs/THEATER_MODE.md §6.3): test worlds as data, built by dwell-sim `scene.rs`. */
+export const SCENES = resolve(SKILL, '../../../shared/theater/scenes');
 
 const KEYS = {
   video: ['formatVersion', 'name', 'description', 'world', 'capture', 'aspects', 'title', 'audio', 'splice', 'shots'],
@@ -18,13 +20,28 @@ const KEYS = {
   world: ['url', 'storage'],
   capture: ['size', 'fps'],
   splice: ['fade', 'fadeIn', 'crf', 'gainDb'],
-  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice', 'render', 'cinematic'],
-  setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'settleS', 'eval'],
+  shot: ['id', 'note', 'kind', 'path', 'script', 'args', 'setup', 'capture', 'audio', 'splice', 'render', 'cinematic', 'allowClipping', 'scene'],
+  setup: ['reload', 'url', 'timeOfDay', 'view', 'hud', 'warmS', 'settleS', 'sceneSettleS', 'eval'],
   part: ['label', 'from', 'to', 'speed', 'vf', 'cut', 'audio', 'crop'],
 };
 const KINDS = { path: 'path', take: 'script' };
 /** How a shot is rendered: in real time (the screencast) or offline, frame-exact (`__dwell.cinematic`). */
 export const RENDERS = ['realtime', 'cinematic'];
+
+/** A scene file's text by name (shared/theater/scenes/<name>.json), or null when there is none. */
+export function sceneText(name, scenes = SCENES) {
+  const file = join(scenes, `${name}.json`);
+  return typeof name === 'string' && /^[a-z0-9][a-z0-9_-]*$/.test(name) && existsSync(file) ? readFileSync(file, 'utf8') : null;
+}
+
+/**
+ * A scene's timed events as a cinematic take's (`__dwell.cinematic`'s `events`: `{atS, op: 'scene', arg: index}`),
+ * from its file's text. The page's builder (dwell-sim scene.rs) validates the rest of the scene.
+ */
+export function sceneEvents(text) {
+  const s = JSON.parse(text);
+  return (s.events ?? []).map((e, i) => ({ atS: e.atS, op: 'scene', arg: String(i) }));
+}
 
 /** Throws with every problem in the manifest (unknown keys, missing files, bad times), or returns it. */
 export function validate(m, base = SKILL) {
@@ -97,7 +114,22 @@ export function validate(m, base = SKILL) {
     if (s.render !== undefined && !RENDERS.includes(s.render)) errs.push(`${at}.render: expected one of ${RENDERS.join(', ')}, got ${JSON.stringify(s.render)}`);
     if (s.render === 'cinematic' && s.kind !== 'path') errs.push(`${at}.render: "cinematic" renders a path shot only`);
     if (s.cinematic !== undefined && (!obj(s.cinematic) || s.render !== 'cinematic')) errs.push(`${at}.cinematic: an object of settings overrides, on a "cinematic" shot only`);
+    // allowClipping: a deliberate shot through solid ground (the clearance check, THEATER_MODE.md §6.2, reports it but doesn't fail)
+    if (s.allowClipping !== undefined && (typeof s.allowClipping !== 'boolean' || s.kind !== 'path')) errs.push(`${at}.allowClipping: true or false, on a "path" shot only`);
     if (s.args !== undefined && (s.kind !== 'take' || !obj(s.args))) errs.push(`${at}.args: an object, on a "take" shot only`);
+    // scene: a test world built into the page's local world before the shot (THEATER_MODE.md §6.3), its events on the take's clock
+    if (s.scene !== undefined) {
+      const text = sceneText(s.scene);
+      if (text === null) errs.push(`${at}.scene: no scene ${JSON.stringify(s.scene)} (shared/theater/scenes/<name>.json)`);
+      else {
+        try {
+          const sc = JSON.parse(text);
+          if (sc.formatVersion !== 1) errs.push(`${at}.scene: ${s.scene} is not a scene (formatVersion 1)`);
+          for (const [j, e] of (sc.events ?? []).entries()) if (typeof e?.atS !== 'number' || e.atS < 0) errs.push(`${at}.scene: ${s.scene}'s events[${j}].atS: expected a time ≥ 0 (s)`);
+        } catch (e) { errs.push(`${at}.scene: ${s.scene}: ${e.message}`); }
+      }
+      if (s.kind !== 'path') errs.push(`${at}.scene: a scene is built for a "path" shot only`);
+    }
     if (s.setup !== undefined && keys(s.setup, 'setup', `${at}.setup`)) {
       const u = s.setup;
       if (u.reload !== undefined && typeof u.reload !== 'boolean') errs.push(`${at}.setup.reload: expected true or false`);
@@ -107,6 +139,7 @@ export function validate(m, base = SKILL) {
       if (u.hud !== undefined && typeof u.hud !== 'boolean') errs.push(`${at}.setup.hud: expected true or false`);
       if (u.warmS !== undefined) num(u.warmS, `${at}.setup.warmS`);
       if (u.settleS !== undefined) num(u.settleS, `${at}.setup.settleS`);
+      if (u.sceneSettleS !== undefined) num(u.sceneSettleS, `${at}.setup.sceneSettleS`);
       if (u.eval !== undefined && typeof u.eval !== 'string') errs.push(`${at}.setup.eval: expected a JS expression`);
     }
     if (s.capture !== undefined && keys(s.capture, 'capture', `${at}.capture`)) {
@@ -176,6 +209,7 @@ export function fingerprint(m, shot, base = SKILL) {
     setup: shot.setup ?? null, file: readFileSync(resolve(base, file), 'utf8'), audio: shotAudio(m, shot),
     // only when set, so a real-time shot's fingerprint (its cached clip) is what it was before cinematic takes
     ...(shot.render ? { render: shot.render, cinematic: shot.cinematic ?? null } : {}),
+    ...(shot.scene ? { scene: sceneText(shot.scene) } : {}),
   };
   return createHash('sha256').update(JSON.stringify(recipe)).digest('hex').slice(0, 16);
 }

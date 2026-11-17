@@ -67,6 +67,17 @@ fn class_of(m: StateId) -> i32 {
 
 /// Share of interior cells of the same class, share of columns whose top non-air cell is within
 /// one cell, and the mean difference of that cell. On face B the surface is the lowest cell.
+/// A cell the tops count: not air, nor a tree's log or leaves (a crown is sampled at a cell's
+/// centre column, the downsample takes any voxel of the cell: the species pines' giants, 0.71.0,
+/// put whole crowns a cell apart). The tops compare the ground.
+fn ground(m: dwell_blocks::StateId) -> bool {
+    m != M.air
+        && !matches!(
+            dwell_blocks::info(m).support_role,
+            dwell_blocks::SupportRole::Carrier | dwell_blocks::SupportRole::Rider
+        )
+}
+
 fn compare(a: &LodCells, b: &LodCells, face: Face) -> (f64, f64, f64) {
     let (mut same, mut within, mut total) = (0, 0, 0.0);
     for z in 0..N {
@@ -76,10 +87,10 @@ fn compare(a: &LodCells, b: &LodCells, face: Face) -> (f64, f64, f64) {
                 let y = if face == Face::A { yy } else { N - 1 - yy };
                 let i = cell_index(x, y, z);
                 same += i32::from(class_of(a[i]) == class_of(b[i]));
-                if a[i] != M.air {
+                if ground(a[i]) {
                     ta = yy;
                 }
-                if b[i] != M.air {
+                if ground(b[i]) {
                     tb = yy;
                 }
             }

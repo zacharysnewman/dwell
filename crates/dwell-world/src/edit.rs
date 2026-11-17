@@ -210,17 +210,8 @@ pub fn holds_behind(m: StateId) -> bool {
     s.solid && s.shape == VoxelShape::Full
 }
 
-/// The name of the block a state belongs to ("" for an id outside the table).
-fn block_name(m: StateId) -> &'static str {
-    if usize::from(m) < dwell_blocks::state_count() {
-        block_of(m).name
-    } else {
-        ""
-    }
-}
-
 // The other cells of a multi-cell block (block data `extends`, `partOf`): crate::parts.
-use crate::parts::partners;
+use crate::parts::{holds, partners};
 
 /// Every write an edit setting `cell` to `material` makes, in order (the server sends them in one
 /// `VoxelModification`; the client predicts the same): the cell; a multi-cell block's other cells
@@ -257,22 +248,22 @@ pub fn edit_writes_all(
         };
         let old = current(world, &out, c);
         out.push((c, m));
+        // The parts of what is put there come with it (a door opened: each of its cells opened),
+        // before the parts of what was there are cleared, so a cell both name keeps the new part.
+        let new_parts = partners(c, m);
+        for &(p, part) in &new_parts {
+            if current(world, &out, p) != part {
+                queue.push_back((p, part));
+            }
+        }
         if old != m {
             // The parts of what was there go with it.
-            for (p, name) in partners(c, old) {
+            for (p, want) in partners(c, old) {
                 let there = current(world, &out, p);
-                if block_name(there) == name {
+                if holds(there, want) && !new_parts.iter().any(|(q, _)| *q == p) {
                     let left = if info(there).flooded { M.water } else { M.air };
                     queue.push_back((p, left));
                 }
-            }
-        }
-        // The parts of what is put there come with it.
-        for (p, name) in partners(c, m) {
-            if let Some(part) = dwell_blocks::state(name)
-                && current(world, &out, p) != part
-            {
-                queue.push_back((p, part));
             }
         }
         // A block hung on it (a ladder: `needsSupport` behind), if this leaves it nothing to
@@ -314,8 +305,8 @@ pub fn edit_writes_all(
 pub fn outline_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3]) {
     let (mut lo, mut hi) = target_box(world, cell);
     let m = world.get_voxel(cell[0], cell[1], cell[2]);
-    for (p, name) in partners(cell, m) {
-        if block_name(world.get_voxel(p[0], p[1], p[2])) != name {
+    for (p, want) in partners(cell, m) {
+        if !holds(world.get_voxel(p[0], p[1], p[2]), want) {
             continue;
         }
         let (plo, phi) = target_box(world, p);
@@ -335,7 +326,8 @@ pub fn outline_box(world: &mut VoxelWorld, cell: [i32; 3]) -> ([f32; 3], [f32; 3
 pub fn supported_on(m: StateId, under: StateId) -> bool {
     let s = info(m);
     if !s.place_on.is_empty() {
-        let name = if usize::from(under) < dwell_blocks::STATES.len() {
+        // A block registered at run time (a mod's) is named too: what stands on it by name does.
+        let name = if dwell_blocks::try_info(under).is_some() {
             block_of(under).name
         } else {
             ""
@@ -353,10 +345,11 @@ pub fn supported_on(m: StateId, under: StateId) -> bool {
 /// a piece (docs/EXPLOSIVES.md §3; owner, 2026-11-13).
 /// A multi-cell block's other cells (`partOf`: a torch's upper cell) are attached as their block is.
 pub fn attached(m: StateId) -> bool {
-    if usize::from(m) >= dwell_blocks::STATES.len() {
+    // A block registered at run time (a mod's, the server's registry) is past the build's table:
+    // it is attached by its own data too (WORK_QUEUE item 58).
+    let Some(s) = dwell_blocks::try_info(m) else {
         return false;
-    }
-    let s = info(m);
+    };
     s.needs_support != Support::None
         || s.part_of
             .and_then(dwell_blocks::state)
@@ -649,6 +642,9 @@ pub struct EditOutcome {
     pub material: StateId,
     /// A 1 m piece's second cell (docs/ITEMS.md), set to `material` too.
     pub also: Option<[i32; 3]>,
+    /// A Use: the aimed block's `toggle` flipped (a door opened or closed), nothing placed and
+    /// nothing paid.
+    pub toggled: bool,
 }
 
 impl EditOutcome {
@@ -658,6 +654,7 @@ impl EditOutcome {
             cell: [0; 3],
             material: M.air,
             also: None,
+            toggled: false,
         }
     }
 
@@ -809,6 +806,29 @@ pub fn check_block_edit(
             cell: c,
             material: lit,
             also: None,
+            toggled: false,
+        };
+    }
+    // A Place aimed at a block with a `toggle` (a door) is a Use: it flips the property, whatever
+    // is held (BLOCK_REGISTRY.md, Doors); every cell of a multi-cell block follows
+    // (`edit_writes`). Not into a body: a door closing on a player waits, as a place does.
+    if request.action == BlockEditAction::Place
+        && let Some(flipped) = toggled(target)
+    {
+        if overlaps_player(flipped, c, players) {
+            return EditOutcome::fail(EditCheck::IntoPlayer);
+        }
+        for (p, part) in partners(c, flipped) {
+            if overlaps_player(part, p, players) {
+                return EditOutcome::fail(EditCheck::IntoPlayer);
+            }
+        }
+        return EditOutcome {
+            check: EditCheck::Ok,
+            cell: c,
+            material: flipped,
+            also: None,
+            toggled: true,
         };
     }
     if request.action == BlockEditAction::Break {
@@ -823,6 +843,7 @@ pub fn check_block_edit(
             cell: c,
             material,
             also: None,
+            toggled: false,
         };
     }
     if !placeable(request.material) {
@@ -912,10 +933,7 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::NoSupport);
     }
     // A multi-cell block needs its other cells free too (a 1 m torch's upper cell).
-    for (p, name) in partners(cell, material) {
-        let Some(part) = dwell_blocks::state(name) else {
-            return EditOutcome::fail(EditCheck::NotPlaceable);
-        };
+    for (p, part) in partners(cell, material) {
         if !world.bounds.contains_cell(p) {
             return EditOutcome::fail(EditCheck::OutOfWorld);
         }
@@ -935,7 +953,19 @@ pub fn check_block_edit(
         cell,
         material,
         also,
+        toggled: false,
     }
+}
+
+/// What a Use does to `m` (block data `toggle`): the state with that property at its other value,
+/// or None for a block without one.
+pub fn toggled(m: StateId) -> Option<StateId> {
+    let s = dwell_blocks::try_info(m)?;
+    let property = s.toggle?;
+    let now = dwell_blocks::state_property(m, property)?;
+    (0..2)
+        .filter_map(|k| dwell_blocks::with_property_index(m, property, k))
+        .find(|&o| dwell_blocks::state_property(o, property) != Some(now))
 }
 
 /// A block no edit may change (the registry's `indestructible`): single breaks and region edits

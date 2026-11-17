@@ -3,14 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "license": "UNLICENSED",
-  "description": "Dwell desktop shell (ARCHITECTURE.md §2.2)",
+  "description": "Dwell desktop shell (ARCHITECTURE.md \u00a72.2)",
   "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "smoke": "electron . --smoke --ozone-platform=headless"
+    "smoke": "electron . --smoke --ozone-platform=headless",
+    "package": "node package-app.mjs",
+    "build-app": "npm --prefix ../../client run build && node package-app.mjs"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "electron": "44.4.5"
   }
 }

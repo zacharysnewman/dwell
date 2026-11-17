@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { softClip } from './mixer';
 import { renderPlan } from './renderPlan';
+import { Variation } from './variation';
 import { SOUND_DATA } from './sounds.gen';
 import { checkRender, encodeWav, renderStats } from './wav';
 
 describe('offline renders', () => {
   it('plan every set event, event, action and UI sound, plus sequences', () => {
-    const names = renderPlan(SOUND_DATA).map((j) => j.name);
+    const firstAlt = (seed: number, id: string, def: Parameters<Variation['draw']>[1], k: number) =>
+      new Variation(seed).draw(id, def).layers[k]?.alt;
+    const names = renderPlan(SOUND_DATA, 5, 8, firstAlt).map((j) => j.name);
     for (const [set, events] of Object.entries(SOUND_DATA.sets)) {
       const local = set.split(':')[1] ?? '';
       for (const [e, sound] of Object.entries(events)) {
@@ -32,6 +35,16 @@ describe('offline renders', () => {
         expect(names).toContain(`loop_${e.name}_faint_to_full`);
     // The night's crickets were removed (owner, 2026-10-28).
     expect(names).not.toContain('loop_night_faint_to_full');
+    // An event with variants renders each alone and eight in a row: the pickup's pop (owner,
+    // 2026-11-14) has one file per variant to listen to.
+    // The craft's clack and chime (owner, 2026-11-15) too.
+    for (const sound of ['item_pickup', 'item_craft']) {
+      const def = SOUND_DATA.sounds[`dwell:${sound}`];
+      const variants = def?.layers[0]?.alts?.length ?? 0;
+      expect(variants).toBe(4);
+      for (let k = 1; k <= variants; k++) expect(names).toContain(`variant_${sound}_${String(k)}`);
+      expect(names).toContain(`variations_${sound}_x8`);
+    }
     expect(new Set(names).size).toBe(names.length);
     const walk = renderPlan(SOUND_DATA).find((j) => j.name === 'steps_stone_walk_x10');
     expect(walk?.plays.length).toBe(10);

@@ -241,6 +241,11 @@ fn decode_body(id: u32, bytes: &[u8]) -> Option<SavedBody> {
 /// Everything one autosave writes, committed in one transaction.
 #[derive(Clone, Debug, Default)]
 pub struct SaveBatch {
+    /// Committed without syncing the file (redb's `Durability::None`): persisted by the next
+    /// durable commit. An autosave's, but every minute's (priority 0: the browser's file sync took
+    /// 20–40 ms on the server's tick every 5 s); a host's own `save_now` (a close, a page hidden)
+    /// is durable. False: durable (the default).
+    pub lazy: bool,
     pub meta: Option<WorldMeta>,
     pub chunks: Vec<SavedChunk>,
     pub players: Vec<PlayerRecord>,
@@ -1028,7 +1033,10 @@ impl WorldDb {
             bodies: body_records,
             water,
         } = prepared;
-        let txn = self.db.begin_write().map_err(err)?;
+        let mut txn = self.db.begin_write().map_err(err)?;
+        if batch.lazy {
+            txn.set_durability(redb::Durability::None).map_err(err)?;
+        }
         let now = now();
         let generator_version;
         {

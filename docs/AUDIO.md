@@ -82,7 +82,8 @@ the Rust game). CI regenerates both and fails on a diff, as for the block regist
 - **`ambient`** — the ambient sounds' tunables, emitted into `sound.gen.rs` as `ambient::…`:
   `fire` (`radiusM`: burning light sources crackle within it; `max`: the nearest this many);
   `falls` (`radiusM`: waterfalls rush within it; `max`: the loudest this many; `fullM3s`: the flow
-  at which one is at full level).
+  at which one is at full level); `rush` (the grid's moving water heard from afar and a flood's
+  burst, below in §5 "Moving water"; each field in its `$comment`).
   There is no wind loop (removed, owner 2026-10-21: too intense) and no night loop (the crickets,
   removed, owner 2026-10-28: "it's bad").
 - **`gaits`** — `walk`, `run`, `crouch`, `climb`, `swim`: footstep `stride` (m between steps) and
@@ -271,7 +272,12 @@ altitude above the sea: nothing on the ground, even on a mountain; it comes in f
   a 9 × 9 grid of columns over `probe.radiusM` open to the sky), `waterShare` (share whose top is
   water), `waterM` (m to the nearest), `flow` (the fastest current over it, m/s), `trees` (share
   whose top is one of `probe.trees`), `day` (0 night – 1 day, the sun over the face), `fireM` (m to
-  the nearest burning light source). The vocabulary is code; the beds and their conditions data.
+  the nearest burning light source), `underwater` (1 with the eye under a fluid), `rush` (the moving
+  water's level from afar, §5 "Moving water"). Each column is read from 8 m over the eye to 64 m
+  under it. The vocabulary is code; the beds and their conditions data.
+- **The listener** is the camera drawn: the player's eye, or a placed camera's (theater mode's paths,
+  a cinematic take, the bench's camera), so a shot hears the world from where it is filmed
+  (BUGS.md #176).
 - Sea, river and stream are told apart by the water's share and current: wide water near (the sea
   or a lake), running water (a river), a narrow strip (a stream).
 
@@ -281,6 +287,7 @@ altitude above the sea: nothing on the ground, even on a mountain; it comes in f
 | `sea` | `WATER_Sea_Waves_Small_15sec_loop` | wide water (share ≥ 0.15) × near (≤ 40 m) |
 | `river` | `STREAM_FOUNTAIN_Wide_Outlet_Smooth_loop` | a current ≥ 0.1 m/s × near (≤ 24 m) |
 | `stream` | `STREAM_FOUNTAIN_Trickling_loop` | narrow water × near (≤ 12 m) |
+| `flood` | `STREAM_FOUNTAIN_Wide_Outlet_Smooth_loop` | the moving water heard from afar (`rush` ≥ 0.03, full at 0.6) |
 | `birds` | `ANIMAL_Birds_01_loop` | trees × daylight (a floor of 0.1 at night) |
 | `leaves` | `AMBIENCE_Summer_Broadleaf_Forest_Wind_loop` | trees × open sky (a floor of 0.3) |
 
@@ -367,8 +374,33 @@ Owner (2026-11-10): ongoing, ambient and looping sounds stay quiet ("more flavor
 | `leaf_brush` | procedural |
 
 The samples are now about 1.8 MB in all. Not built: remote players brushing leaves and stepping on
-sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, pickup/inventory/UI/coins, eating and
+sticks (local player only), a stick's snap heard by others. Saved for later by the owner: rain and thunder, inventory/UI/coins, eating and
 drinking, the ladder's creak.
+
+**Picking up a ground item (owner, 2026-11-14: "I want picking up drops off the ground to have a sound, with
+some random variety. Maybe a light popping sound.").** The event `item_pickup` (`self`: the body) plays
+`item_pickup`, procedural: a sine chirp up (~520 → 980 Hz, a 55 ms decay), a faint modal ping and a 12 ms
+pink tick, four variants (`alts`) drawn round-robin by the seeded variation (never the last one twice), with
+±1.2 semitones and ±1.5 dB of jitter; at about a deny's level, well under the footsteps. The client
+(`dwell-game` `PickupSounds`) plays it when the local player's inventory gains items within `pickup.windowS`
+(0.5 s) of a loose item within `pickup.reachM` (3 m) of them going or shrinking, never closer than
+`pickup.minS` (0.09 s): a burst in one frame, or a sweep through a pile, pops once, not a stack. Crafting
+(a gain, no drop) and a drop that merged or despawned (no gain) are silent. Others' pickups are not heard:
+the server doesn't say who took an item, and a guess from where a drop vanished would sound on merges and
+despawns too. `npm run sfx:render -- --only item_pickup` renders each variant alone (`variant_…`) and eight
+in a row (`variations_…_x8`); an event sound with variants gets those renders by data alone.
+
+**Making an item (owner, 2026-11-15: "Do we yet have sounds for picking up drops and crafting items?").** The
+event `item_craft` (`self`: the hand) plays `item_craft`, procedural: a woody modal clack (~380 Hz), a lighter
+second clack 75 ms on (~540 Hz) with short pink ticks, and a faint chime (~1.76 kHz, a 0.38 s ring) at 0.12 s; four
+variants (`alts`: the clacks' pitch and spacing, the chime's note) and ±0.8 semitones, ±1.2 dB of jitter. The
+client (`dwell-game` `CraftSounds`) notes each Combine press and plays it once when the server's next inventory
+(which it always sends after a Combine) arrives changed within `craft.windowS` (1 s); unchanged (not enough items),
+nothing. Others' crafting is not heard. `npm run sfx:render -- --only item_craft` renders its variants.
+
+**A held break at nothing (BUGS.md #182).** A held Break (the mouse, a still touch in Break mode, the controller)
+aimed at nothing knocks its refusal (`deny`) once per hold, on its first swing, not on every repeat
+(`HeldUse::miss_sounds`); a click's knocks each time.
 
 ## 3. Synthesis (`client/src/audio/synth.ts`)
 
@@ -477,6 +509,27 @@ each sound from their sheet's middle; the loudest `ambient.falls.max` within `am
 hold a loop voice (`FALL_VOICE` on, the `fall`/`fall_level`/`fall_end` events) at a level
 `√min(1, q / fullM3s) · (1 − (d / r)²)²` (`fall_level`) for a fall carrying `q` m³/s. The loop is
 `waterfall`: pink, brown and a little white noise through filters, its cutoff rising with the level.
+
+**Moving water** (`dwell-game` `rush.rs`, `ambient.rush`; BUGS.md #176): the beds hear water within
+the probe's few metres only, so a flood seen from a high camera had no voice. Four times a second
+the client reads its current table (WATER_SURFACE_GRID.md §2c) out to `radiusM` (160 m): every
+`strideColumns`-th column (4) running faster than `minSpeedMs` adds speed × depth (the column's
+water, `dwell_world::falls::column`) × the area it stands for, weighted by distance
+`(1 − (d / r)²)² / (1 + (d / nearM)²)`; each waterfall adds its discharge × `fallWeight`. The level is
+`√min(1, Σ / fullFlux)`: one loop voice (`RUSH_VOICE`, the `rush`/`rush_level`/`rush_end` events,
+the procedural `water_rush`: brown, pink and white noise, its gain and cutoff rising with the
+level, so a near flood is loud and bright and a far one quiet and dull), placed `panM` (2 m) toward
+the flux-weighted middle of what moves (the panner at its reference distance: the level holds the
+whole of the distance's effect), and the ambience's `rush` input (the `flood` bed). **Still water
+adds nothing.** **The burst** (`flood_burst`, a one-shot crash): when the flux of the same water
+chunks rose by `burst.minLevel` over `burst.windowS` (a chunk still then counts 0), the rise at least
+`burst.minShare` of all that is heard — much water starting to move at once, as a dam goes, not a
+flood front running on — at most once per `burst.cooldownS`. Chunks that were moving when they came into reach (32 m past
+the radius), and water whose land was not loaded a window before (streaming in after a join or a
+teleport, already moving: checked live, four teleports to rivers and the sea, no burst), are no
+onset. Measured on the
+dam_break scene from its take's camera (~95 m from the dam): silent before the dam goes, 0.11 at
+0.2 s after, 0.5 by 8 s, one burst (`dwell-sim` `tests/scenes.rs`).
 
 **Fires** (`FireSounds`): every frame the burning light sources near the listener — placed ones
 (`VoxelWorld::light_sources_near`, the flame's cell), the torch in our hand (at the listener) and

@@ -299,25 +299,23 @@ fn placed_pines_never_overlap_and_any_window_finds_the_same_ones() {
 }
 
 #[test]
-fn pines_turn_a_quarter_at_random_and_mix_about_60_40() {
+fn pines_turn_a_quarter_at_random_and_are_the_species_pine() {
+    // The owner, 2026-11-15: "Let's get rid of my pines": the pine groves stand the species pine
+    // (`dwell:pine`, grown) where the hand-built pines stood.
     let g = TerrainGenerator::new(12345);
     let p = &g.planters()[0];
     let mut turns = [0usize; 4];
-    let mut tall = 0;
     let mut n = 0;
     for sq in squares() {
         for t in trees_anchored(&g, sq, 256) {
             n += 1;
             turns[t.quarter_turns as usize] += 1;
-            tall += usize::from(p.structure_name(&t) == "dwell:tall_pine_tree");
+            assert_eq!(p.structure_name(&t), "dwell:pine");
+            assert!(p.grown(&t).is_some(), "a grown species tree");
         }
     }
-    assert!(n > 2_000, "{n}");
-    let share = tall as f64 / n as f64;
-    eprintln!("{n} trees: tall {share:.3}, turns {turns:?}");
-    // The owner: about 60/40. The tall pine is wider, so the overlap rule drops it more often; its
-    // weight (45 of 100) leaves about 40 % of the trees placed tall.
-    assert!((0.36..=0.44).contains(&share), "tall pines {share}");
+    assert!(n > 1_000, "{n}");
+    eprintln!("{n} trees: turns {turns:?}");
     for k in turns {
         let s = k as f64 / n as f64;
         assert!((0.22..=0.28).contains(&s), "turns {turns:?}");
@@ -417,6 +415,9 @@ fn a_placement_added_by_data_alone_stands_its_structure_in_the_chunks() {
         rotations: &[0],
         variants: &[],
         tops: 1.0,
+        cliff_reach: 0.0,
+        wet: false,
+        bleed: 0.0,
     };
     // The world's biome lists it (ADR 0074 B5: a placement no biome lists stands nowhere).
     let biome = Biome {

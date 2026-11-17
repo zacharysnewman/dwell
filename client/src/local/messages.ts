@@ -105,6 +105,10 @@ export type ToWorker =
     }
   /** The lava's dev tools (local.rs `lava_dev`); answered with `lavaDev`. */
   | { t: 'lavaDev'; op: string; args: number[] }
+  /** The scenes' dev tools (local.rs `scene_dev`: build, event, status); answered with `sceneDev`. */
+  | { t: 'sceneDev'; op: string; text: string }
+  /** The camera clearance check (local.rs `camera_clearance`); answered with `cameraClearance`. */
+  | { t: 'cameraClearance'; eyes: number[]; radiusM: number; liftStepM: number; liftMaxM: number }
   /**
    * A cinematic take (THEATER_MODE.md §6.1): `manual` stops the real-time clock (the world moves only
    * by `step`), off resumes it from now with no catch-up.
@@ -142,6 +146,10 @@ export type FromWorker =
   | { t: 'findOnMap'; result: string }
   /** The lava's dev tools' answer as JSON (in reply to `lavaDev`). */
   | { t: 'lavaDev'; result: string }
+  /** The scenes' dev tools' answer as JSON (in reply to `sceneDev`). */
+  | { t: 'sceneDev'; result: string }
+  /** Each eye's code, then each eye's lift (in reply to `cameraClearance`). */
+  | { t: 'cameraClearance'; result: number[] }
   /** The server's tick after a `step`, its outbox flushed first. */
   | { t: 'stepped'; tick: number }
   /** The server's figures, every second (docs/DEV_TOOLS.md `__dwell.serverStats`). */

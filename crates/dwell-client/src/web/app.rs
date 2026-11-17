@@ -1426,6 +1426,43 @@ impl Client {
         set(&o, "finished", finished);
         o.into()
     }
+    /// A camera path's eye sampled every `step_s` seconds of take time (the clearance check,
+    /// THEATER_MODE.md §6.2): `[takeS, pathS, x, y, z, …]`, at most `max` samples; fails with the
+    /// path's message.
+    #[wasm_bindgen(js_name = theaterSamples)]
+    pub fn theater_samples(&self, json: &str, step_s: f64, max: u32) -> Result<Vec<f64>, JsValue> {
+        let path = dwell_theater::Path::parse_str(json).map_err(|e| JsValue::from_str(&e))?;
+        let s = self.inner.borrow();
+        let g = s.game.as_ref().ok_or("no game yet")?;
+        Ok(g.theater_samples(path, step_s, max as usize)
+            .into_iter()
+            .flat_map(|(t, pt, [x, y, z])| [t, pt, x, y, z])
+            .collect())
+    }
+    /// Probes camera eyes (`[x, y, z, …]`, m) against the loaded world's solid blocks within
+    /// `radius` m (`camera_clearance::probe`): one code an eye, 1 solid, 0 clear, -1 not loaded.
+    #[wasm_bindgen(js_name = cameraClearance)]
+    pub fn camera_clearance(&self, eyes: &[f64], radius: f64) -> Vec<i8> {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return vec![-1; eyes.len() / 3];
+        };
+        let mut read = crate::camera_clearance::held(g.world());
+        eyes.chunks_exact(3)
+            .map(|p| crate::camera_clearance::probe(&mut read, [p[0], p[1], p[2]], radius).code())
+            .collect()
+    }
+    /// How far (m) the eye at (x, y, z) must rise along its face's up to clear the solid blocks
+    /// within `radius` m, in `step` m steps up to `max` m; NaN when it doesn't (or isn't loaded).
+    #[wasm_bindgen(js_name = cameraLift)]
+    pub fn camera_lift(&self, x: f64, y: f64, z: f64, radius: f64, step: f64, max: f64) -> f64 {
+        let mut s = self.inner.borrow_mut();
+        let Some(g) = &mut s.game else {
+            return f64::NAN;
+        };
+        let mut read = crate::camera_clearance::held(g.world());
+        crate::camera_clearance::lift(&mut read, [x, y, z], radius, step, max).unwrap_or(f64::NAN)
+    }
     /// The presets file (`shared/theater/presets.json`) as the build has it.
     /// Whether the world lets guests use theater mode (THEATER_MODE.md §7; the host always may):
     /// true before joining and on a server that never sets it.
@@ -1959,6 +1996,54 @@ impl Client {
             .and_then(|g| g.region.selection())
             .map_or_else(Vec::new, |(min, size)| [min, size].concat())
     }
+    /// The region tools' state for the touch region bar (ui/regionBar.ts): `[enabled, pasting,
+    /// selected]` as 0/1 (enabled: the server takes region edits); empty before a game.
+    #[wasm_bindgen(js_name = regionState)]
+    pub fn region_state(&self) -> Vec<u8> {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(Vec::new, |g| {
+                let r = &g.region;
+                vec![
+                    u8::from(r.enabled),
+                    u8::from(r.pasting()),
+                    u8::from(r.selection().is_some()),
+                ]
+            })
+    }
+    /// The region tools' HUD line (`RegionTools::status`): the selection or paste box and the
+    /// last tool's message.
+    #[wasm_bindgen(js_name = regionStatus)]
+    pub fn region_status(&self) -> String {
+        self.inner
+            .borrow()
+            .game
+            .as_ref()
+            .map_or_else(String::new, |g| g.region.status())
+    }
+    /// The touch region bar is open (`open`) or closed: while open the cell a corner would take is
+    /// outlined even where no block is aimed at (`RegionTools::armed`).
+    #[wasm_bindgen(js_name = setRegionArmed)]
+    pub fn set_region_armed(&self, open: bool) {
+        if let Some(g) = &mut self.inner.borrow_mut().game {
+            g.region.armed = open;
+        }
+    }
+    /// Whether the world's mode allows the ability of that data name (`shared/modes/modes.json`,
+    /// e.g. `structures`); false for a name this build doesn't know.
+    pub fn allows(&self, ability: &str) -> bool {
+        use dwell_protocol::modes::Ability;
+        let Some(a) = Ability::ALL.into_iter().find(|a| a.name() == ability) else {
+            return false;
+        };
+        self.inner
+            .borrow()
+            .session
+            .as_ref()
+            .is_some_and(|s| s.allows(a))
+    }
     /// Loads a structure into the region tools' clipboard and turns paste mode on: the ghost box
     /// follows the crosshair, R and M turn it, a right click pastes it as region edits (§6.5).
     /// `cells` in layer order; `keep[i]` non-zero where the structure keeps what is there. An
@@ -2119,6 +2204,26 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_bloom(BloomQuality::from_name(quality).unwrap_or(BloomQuality::High));
+    }
+    /// The Ambient occlusion setting: `off`, `low` or `high` (anything else: off) and its strength
+    /// (× the data's, 0–2; docs/SSAO.md).
+    /// The Ambient occlusion look: `weak`, `normal` or `strong` (anything else: normal).
+    #[wasm_bindgen(js_name = setSsaoLevel)]
+    pub fn set_ssao_level(&self, level: &str) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_ssao_level(level);
+    }
+    #[wasm_bindgen(js_name = setSsao)]
+    pub fn set_ssao(&self, quality: &str, strength: f64) {
+        use dwell_look::ssao::SsaoQuality;
+        let strength = if strength.is_finite() { strength } else { 1.0 };
+        self.inner.borrow().renderer.borrow_mut().set_ssao(
+            SsaoQuality::from_name(quality).unwrap_or(SsaoQuality::Off),
+            strength,
+        );
     }
     /// The run-time plumes' dev tools (`__dwell.plume`, docs/CLOUDS.md §8.7;
     /// `dwell_look::plumes::dev`): `list`, `add` [x, y, z, radius?, height?, density?, riseMps?],
@@ -2395,6 +2500,16 @@ impl Client {
             .renderer
             .borrow_mut()
             .set_heightfield_override(on);
+    }
+    /// Whether chunks skip their faces turned away from the camera (on; off only to compare, the
+    /// bench's `view` `facing`; docs/DEV_TOOLS.md).
+    #[wasm_bindgen(js_name = setFacingCull)]
+    pub fn set_facing_cull(&self, on: bool) {
+        self.inner
+            .borrow()
+            .renderer
+            .borrow_mut()
+            .set_facing_cull(on);
     }
     /// Forces the leaf cards on (1) or off (0), or back to the tier's (any other value): `?cards=`,
     /// a dev tool (docs/DEV_TOOLS.md). Chunks meshed after it follow it, so it is set before the
@@ -3443,13 +3558,63 @@ impl Client {
             .as_mut()
             .is_some_and(|g| g.place_blueprint_structure(&s, turn))
     }
+    /// "Test in town" (docs/BLUEPRINTS.md §6c): a structure of the player's library (as
+    /// `placeBlueprintCells` takes it) placed as a blueprint beside the nearest town, so its builders
+    /// build it; with no town near, at the crosshair. "town" placed in a town, "here" at the
+    /// crosshair, "" not placed.
+    #[wasm_bindgen(js_name = placeBlueprintInTown)]
+    pub fn place_blueprint_in_town(
+        &self,
+        name: &str,
+        size: Vec<u8>,
+        anchor: Vec<u8>,
+        palette: &str,
+        cells: Vec<u8>,
+        turn: u8,
+    ) -> String {
+        let (Ok(size), Ok(anchor)) = (<[u8; 3]>::try_from(size), <[u8; 3]>::try_from(anchor))
+        else {
+            return String::new();
+        };
+        let names: Vec<String> = palette.lines().map(str::to_owned).collect();
+        let states: Vec<Option<dwell_blocks::StateId>> = cells
+            .iter()
+            .map(|&c| {
+                (c > 0)
+                    .then(|| names.get(usize::from(c) - 1))
+                    .flatten()
+                    .and_then(|n| dwell_blocks::parse_state(n).ok())
+            })
+            .collect();
+        if states.len() != size.iter().map(|&n| usize::from(n)).product::<usize>() {
+            return String::new();
+        }
+        let s = dwell_world::structure::Structure::from_cells(
+            dwell_blocks::intern(name),
+            0,
+            size.map(i32::from),
+            anchor.map(i32::from),
+            &states,
+        );
+        let mut st = self.inner.borrow_mut();
+        match st
+            .game
+            .as_mut()
+            .and_then(|g| g.place_blueprint_in_town(&s, turn))
+        {
+            Some(true) => "town".into(),
+            Some(false) => "here".into(),
+            None => String::new(),
+        }
+    }
     /// Removes the blueprint the view aims into; false when none is.
     #[wasm_bindgen(js_name = removeAimedBlueprint)]
     pub fn remove_aimed_blueprint(&self) -> bool {
         let mut st = self.inner.borrow_mut();
         st.game.as_mut().is_some_and(|g| g.remove_aimed_blueprint())
     }
-    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left, then per item
+    /// The aimed blueprint's panel (docs/BLUEPRINTS.md §4): its name, cells left and its phase
+    /// ("clearing" its site, then "building", §5b), then per item
     /// still needed "item have need", one a line ("" with none aimed); a last line "+n" folds rows
     /// past the panel's most.
     #[wasm_bindgen(js_name = blueprintPanel)]
@@ -3458,7 +3623,8 @@ impl Client {
         let Some(p) = st.game.as_mut().and_then(|g| g.blueprint_panel()) else {
             return String::new();
         };
-        let mut out = format!("{}\n{}", p.name, p.left);
+        let phase = if p.clearing { "clearing" } else { "building" };
+        let mut out = format!("{}\n{} {phase}", p.name, p.left);
         for r in &p.rows {
             let have = if r.have == u32::MAX {
                 "∞".to_string()
@@ -3999,6 +4165,11 @@ impl Inner {
             );
             game.set_markers_synced(
                 s.capability(dwell_protocol::capability_names::MARKERS_PRIVATE),
+            );
+            // Set at the start too, not only when the host changes the mode: without it no
+            // blueprint could be placed (Blueprint, Test in town) until a mode change.
+            game.set_blueprints_synced(
+                s.capability(dwell_protocol::capability_names::BLUEPRINTS_WORLD),
             );
             game.set_theater_viewpoint(
                 s.capability(dwell_protocol::capability_names::THEATER_VIEWPOINT)

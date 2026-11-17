@@ -101,6 +101,7 @@ describe('applying a preset', () => {
     shadows: null,
     shafts: null,
     bloom: null,
+    ssao: { ...s.ssao, quality: null },
     clouds: null,
     leafCards: null,
     detail: null,
@@ -140,7 +141,7 @@ describe('applying a preset', () => {
     const high = defaultSettings(false);
     expect(presetOf(high, false)?.id).toBe('high');
     const changed: Settings[] = [
-      { ...high, clouds: 'low' },
+      { ...high, clouds: 'medium' },
       { ...high, shafts: 'off' },
       { ...high, water: { ...high.water, quality: 'low' } },
       { ...high, shadows: { ...high.shadows, torch: 'high' } },

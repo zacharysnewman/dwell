@@ -68,9 +68,35 @@ Peasant with its colours, no `held`, no fight) with a `builder` behaviour from `
 it works the blueprint it is given, at `paceS` a piece, with unlimited blocks, walking (the creatures' walk)
 to within `reachM` of its next cell. Its order (`dwell_world::blueprint::builder_order`): the lowest row
 first, and within a row the cells resting on something solid before the ones that don't, so foundations go
-in before walls and supports before spans. A cell a player filled with something else is skipped (occupied);
-one already holding its block counts as built. The server places its piece as the growers do (an edit
+in before walls and supports before spans. A cell already holding its block counts as built; one a player
+filled with something else is cleared first (§5b). The server places its piece as the growers do (an edit
 broadcast to everyone, saved with the world).
+
+## 5b. Clearing the site first (2026-11-15)
+
+The owner: **"NPCs don't clear their build site currently. That should be the first step."** A builder places
+nothing (and fetches no load, §9) while its blueprint's site holds something the blueprint doesn't want there
+(`dwell_world::blueprint::Ghost::clear_cells`, `clear_next`, pure, both server and client):
+
+- **The site**: the blueprint's box and `builder.clearMarginM` whole metres round it (1), from its **floor** (the
+  anchor's face-local row) to its top, and on up a column while what is stacked on a cleared cell is solid (a hillside,
+  a tall rock; at most 32 rows), so nothing is left hanging over it. Nothing below the floor is dug: ground the
+  blueprint needs there is its own bottom layer, built as any cell.
+- **What goes**: any cell there that isn't air or a liquid, can be broken (not `indestructible`), isn't the blueprint's
+  own block already in place (a correct cell is kept), and isn't inside another blueprint's box or a storehouse's
+  (server; the client knows the blueprints only). Trees, plants, tall grass, rocks, players' blocks, terrain.
+- **Trees go whole**: a log there, or a leaf within the felling rules' `riderReach` of one, takes its whole tree in one
+  removal: its logs joined face to face and the leaves within `riderReach` of them (FELLING.md §2's rule), so no leaf
+  is left floating and nothing is felled into the site; a tree whose trunk stands outside the site loses only its
+  leaves inside it, and a system of logs past 4096 cells (a log house) goes cell by cell.
+- **The order**: the highest row first (nothing left standing on nothing), within it the nearest the builder; one
+  removal every `builder.clearPaceS` (0.5 s), the builder walking to within `reachM` of it (a tree: its trunk's foot),
+  from outside the box as for a piece.
+- **Drops**: what is cleared drops its items at the site as if broken where the mode uses items (adventure); the
+  builders' own blocks are unlimited, so they collect nothing.
+- **State**: none is kept: the world is the record, so a half-cleared site resumes after a save, and a block a player
+  puts in the site while it is being built is cleared before the next piece. The ghost keeps showing; the panel says
+  **Clearing**, then **Building** (`blueprintPanel`'s second line: cells left and the phase).
 
 ## 6. Towns (B4) **[built, 0.61]**
 
@@ -129,6 +155,26 @@ The dev link **`?spawn=town`** (`town-b`) opens its own world file with the spaw
 the face's spawn (`dwell_worldgen::town_spawn_for_sized`, `local::spawn_by_town`), so it founds at once and its
 builders come (docs/DEV_TOOLS.md).
 
+## 6c. Test in town, and the town blocks (2026-11-14)
+
+The owner asked for **"a quick way to test a saved building in a village"** and new man-made blocks
+(BLOCK_REGISTRY.md, Doors; ITEMS.md, The town blocks). Each saved structure on the Structures page has a
+**Test in town** button: it places the structure as a blueprint (an ordinary `Place`: per world, seen by
+everyone, saved as any blueprint) beside the town site nearest the player within 400 m, so the town's
+builders build it; with no town near, at the crosshair as **Blueprint** does. The spot is
+`TownRules::test_spot` (`dwell-world`, pure): rings round the site's layout box (`clear_box`) 2 m apart,
+widening, the spot nearest the player on the first ring whose box (the structure's furthest column from
+its anchor, so any turn fits) keeps a column clear of the layout and of every blueprint already placed,
+on ground the client has loaded (the lowest free cell over a solid one). The client sites the towns from
+the seed as the map does (`BifacialTerrain::town_in`); no protocol change.
+
+The hamlet's huts (`dwell:bp_hut`) are built of the town blocks: a plank floor, stone brick walls 2 m tall,
+a 2 m door in the south wall and a pitched thatch roof (½ m ramps at the eaves, a plank ceiling). The door
+is one piece: a builder places its bottom cell and the rest come with it (`comes_with`); villagers and
+builders open it as they pass (BLOCK_REGISTRY.md, Doors). Its box is the same, so the towns' clear ground
+and the trees a seed generates are unchanged. Tests: `dwell-world` `tests/test_in_town.rs`; `dwell-sim`
+`tests/blueprints.rs` (the hut, door and all, built by a builder).
+
 ## 7. Built, and left
 
 Built (B1–B4): the data and its generator, the four test blueprints, the record and message behind the
@@ -144,6 +190,9 @@ Left:
 - A blueprint's ghost is drawn only while aimed into (within four reaches); a brush in use hides it.
 - A builder shows no building pose of its own (it stands; the place swing is the players').
 - Gathering for builders: B5's later phases (§9); player-placed towns (later).
+- A player building a blueprint's door by held Place: the ghost's door is a multi-cell block, which the
+  one-cell region fill drops as lone (`parts::keep_whole`), so only builders put doors for now (a player
+  places a door from the hotbar).
 
 ## 8. Tests
 
@@ -152,7 +201,7 @@ Left:
 ghost cells turned and through the face, the pick only at ghost cells with the block the player has, the
 have/need counts, the builder order); `dwell-sim` `tests/blueprints.rs` (both faces: placed and synced to
 every capable client, refused without the capability or past the limits, saved and reloaded, completed and
-removed, a builder's progress over ticks skipping an occupied cell).
+removed, a builder's progress over ticks after clearing a player's block; §5b: a tree and grass cleared before the first piece, drops in adventure, a save mid-clear resumes).
 
 ## 9. The storehouse and the work loop (B5) **[first slice built, the 0.67 line]**
 

@@ -136,8 +136,21 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
 /// its ground), mesa country without tan sand (the `dwell:mesa_country` blend, its dither at 12 m)
 /// and sagebrush sparse on the erosion's standing tops (placements.json `tops`). Each alone moves
 /// face A's hash (with the first two undone it still moves, by the sagebrush).
+///
+/// Re-pinned 2026-11-14 for the 0.69 line: pines standing on snowy grass or snow take their
+/// snowy leaves whatever their height (placements.json variants' `on`; the owner: "trees at snow
+/// level should use snow leaves"). Face A only; with `on` removed the pin reads as before.
+/// Both faces again (the same line) for mesa country's blend shared with the Realistic world
+/// (`dwell:mesa_country`: 220 m patches, the slope's push into red sand, no cap below the last tone).
+/// Both faces again (the 0.70 follow-up) for plants bleeding across borders (placements.json
+/// `bleed` on the pines, oaks, boulders and sagebrush; owner: "Bushes, shrubs, rocks, trees, should
+/// bleed into the edge of the neighboring terrain").
+///
+/// Re-pinned 2026-11-17 for the 0.71 line: the species pines (0.71.0: grown from species data,
+/// giants to 4× on 2×2 trunks). The same hashes at the v0.71.0 tag and on main then: nothing since
+/// changed the starter's terrain within the line.
 const STARTER_PIN: [(Face, &str); 2] =
-    [(Face::A, "aca376b226a9b407"), (Face::B, "651d111b005fa437")];
+    [(Face::A, "b127397972ab5bd3"), (Face::B, "a6bda9cc786ed02b")];
 
 #[test]
 fn the_starter_worlds_terrain_is_unchanged() {

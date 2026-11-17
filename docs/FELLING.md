@@ -40,13 +40,19 @@ carriers and riders around the change, budgeted per tick (`INTEGRITY_BUDGET_VOXE
 1. The carriers connected to the change through carriers (face neighbours) are flood-filled into
    components; a component is **anchored** if any of its carriers touches a `ground` block.
 2. Each rider nearby belongs to the carrier nearest it through riders (a multi-source search from the
-   carriers, at most `riderReach` cells), so two trees' touching canopies split between their own
-   trunks and leaves never hold up a neighbour's crown.
+   carriers, at most `riderReach` cells: 20 since 0.71's giants, whose leaves reach 17 from their wood;
+   `tests/leaf_reach.rs` checks every species' grown tree against it), so two trees' touching canopies
+   split between their own trunks and leaves never hold up a neighbour's crown. A rider touches a rider
+   or a carrier through a face, an edge or a corner (26 neighbours; carriers join through faces only),
+   so a palm's drooping frond belongs to its crown (BUGS.md #193).
 3. Each unanchored component, with its riders, becomes one **piece**: its cells leave the grid in the
    same reliable change (reason `Collapse`) and it becomes a body. Riders that belong to no carrier
    within reach fall alone (a leaves-only piece, §3) — unless they rest on something solid under
    them (0.40.0: a leaf placed on the ground stays; owner, 2026-10-28: "all leaves fall to the
-   ground unless they're connected … to a tree trunk").
+   ground unless they're connected … to a tree trunk"). Resting on what falls in the same change holds
+   nothing, and after a tree falls the box it stood in (2 cells round) is swept: its leaves that no
+   standing tree holds fall too, those across a gap from it included (owner, 2026-11-16: "Leaves
+   should only be attached to trees or fall to the ground and settle there"; BUGS.md #193).
 4. A `falls` block (sand) next to the change with nothing solid under it falls with the column of
    its kind stacked on it (a piece of all carriers). It collides with the terrain and other pieces
    but passes players (`Collide::World`): it may hurt one (`hits` is by the geometry, not contact)
@@ -173,10 +179,11 @@ same for every block.
 Block data: `support` (`ground` | `carrier` | `rider` | `falls`), `passable`, `density` (exists), log `axis`
 (`y` | `x` | `z`, its texture turned by it). Felling tunables (`shared/physics/felling.json`,
 generated into `crates/dwell-sim/src/felling.gen.rs` by `shared/physics/gen.mjs`, validated, CI
-failing on stale output): `riderReach` (cells, 6), `maxSystemCells` (16384), `maxPieceCells`
-(4096), `toppleSpin` (0.6 rad/s) and `toppleTipSpeed` (4 m/s: the spin is about the piece's foot,
-the face-local bottom under its centre of mass, so the foot starts still, and at most this fast at
-its farthest point; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
+failing on stale output): `riderReach` (cells, 20), `maxSystemCells` (16384), `maxPieceCells`
+(4096), `toppleSpin` (0.6 rad/s, the same for every trunk, short or tall; owner, 2026-11-16: "they all
+fall at the same relative starting speed", the cap on its top's speed, `toppleTipSpeed` 4 m/s, gone;
+the spin is about the piece's foot, the face-local bottom under its centre of mass, so the foot starts
+still; owner, 2026-10-30: 40–120 log trunks "flip out", spun about their centre of mass
 the foot of a 60 m one skidded back at 18 m/s; on face B the old spin tipped toward the cutter,
 `a_tall_trunk_tips_about_its_foot_away_from_who_cut_it`), `sleepLinear` / `sleepAngular` (0.05), `restDrift` (0.1 m: a piece that has gone no farther since it began counting is still too, jostled in a heap or rocked by water, 0.49.29), `sleepSeconds` (1; 2 before 0.49.29), `settleEveryTicks` (6: the pieces due settle together, 0.49.29),
 `maxSeconds` (30), `maxSettles` (1), `hitSpeed` (4 m/s),
@@ -225,9 +232,16 @@ Tier 2 debris (Phase 21).
 
 ## 8. Felled by an axe (ADR 0067)
 
-**Since WORK_QUEUE item 51 (2026-11-12):** a log takes block damage (docs/BLOCK_DAMAGE.md §12) and the axe's
-last hit breaks it; a standing trunk above falls as one body, tipped toward the side struck (the uncut side
-the hinge), with no fell wedges. What follows describes the older cut model, still read from old saves.
+**Since 2026-11-15 (docs/BLOCK_DAMAGE.md §14; owner: the axe "was different from the other tools", and
+"Tree still falls"):** the axe is a break tool as the pickaxe: a log takes block damage, the axe's last hit
+(a block edit) breaks the whole log, and a standing trunk above falls as one body as after any break (§2),
+with no fell wedges: **since 2026-11-15** tipped toward the side of the broken log its hits took out the most
+(`dwell_protocol::damage::cut_side` over its marks, the side its damage mask removed: a real notch), at `cutTip`
+(1.5) of the topple (docs/BLOCK_DAMAGE.md §16); a break with no damage (one hit) is still tipped away from the
+nearest player. No wood is cut: an older save's cuts are ignored.
+(WORK_QUEUE item 51, 2026-11-12, had the log take damage through the axe's own swing, tipped toward the side
+struck.) What follows describes the older cut model, kept only as history and for drawing an older
+server's cuts.
 
 A standing trunk cut past its wood's `fellFraction` (docs/adr/0067-stone-axe-and-chopping.md) loses
 its cut cell, and the integrity pass takes what that cell held as one piece as §3 describes, tipped

@@ -149,8 +149,8 @@ impl LocalWorld {
     /// sections are done in the server-jobs worker this worker's script starts (`takeJob`,
     /// `jobIn`); without, on the tick within its budgets. `mode`: a new world's game mode (ADR
     /// 0065; the New world form's choice, by name); a saved world keeps its own. `growth` (dev,
-    /// `?growth=N`): trees grow N times as fast (ADR 0079). `chop2` (dev, `?chop=v2`): the
-    /// chopping prototype (docs/WORK_QUEUE.md item 7). `radius_scale`: a new world's size (BIG_MAP.md
+    /// `?growth=N`): trees grow N times as fast (ADR 0079). `_chop2` (dev, `?chop=v2`): the
+    /// retired chopping prototype (docs/WORK_QUEUE.md item 7), ignored (kept for its position). `radius_scale`: a new world's size (BIG_MAP.md
     /// M2b; the New world form's World size, `?size=2x`), a saved world keeps its own. `sky`: a new
     /// world's Sky preset (REALISTIC_WORLD.md §8: its orbit rolled from its seed); a saved world
     /// keeps its own orbit. `spawn_grid`: a new world's spawn on another grid (MOON_WORLD.md §8: a
@@ -172,7 +172,7 @@ impl LocalWorld {
         jobs_worker: Option<bool>,
         mode: Option<String>,
         growth: Option<f64>,
-        chop2: Option<bool>,
+        _chop2: Option<bool>,
         radius_scale: Option<u32>,
         sky: Option<String>,
         spawn_grid: Option<String>,
@@ -208,10 +208,6 @@ impl LocalWorld {
                 // `?growth=N` (dev): trees grow N times as fast (ADR 0079).
                 if let Some(g) = growth.filter(|g| g.is_finite() && *g > 0.0) {
                     c.growth_speed = g;
-                }
-                // `?chop=v2` (dev): the chopping prototype.
-                if chop2 == Some(true) {
-                    c.chop2 = true;
                 }
                 // A new world's size (the server reads a saved world's own from its file).
                 c.world_size = dwell_protocol::world_size::WorldSize::playable(radius_scale);
@@ -333,6 +329,12 @@ impl LocalWorld {
     pub fn teleport(&mut self, x: f64, y: f64, z: f64) -> bool {
         self.core.teleport_local_player([x, y, z])
     }
+    /// The scenes' dev tools (`LocalCore::scene_dev`): `build` a scene file's text, run `event`
+    /// i, the water's `status`; JSON back.
+    #[wasm_bindgen(js_name = sceneDev)]
+    pub fn scene_dev(&mut self, op: &str, text: &str) -> String {
+        self.core.scene_dev(op, text)
+    }
     /// The lava's dev tools (`LocalCore::lava_dev`): `report`, `rate` [k], `vent` [x, y, z, rate,
     /// depth]; JSON back.
     #[wasm_bindgen(js_name = lavaDev)]
@@ -358,6 +360,22 @@ impl LocalWorld {
         let face = (face != 0).then(|| dwell_world::FaceFrame::of_sign(f64::from(face)));
         self.core
             .find_on_map(kind, [x, y, z], radius, face, min_depth)
+    }
+    /// The camera clearance check against this world (`LocalCore::camera_clearance`): per eye
+    /// (`[x, y, z, …]`) its code (1 solid, 0 clear) then, after all the codes, each eye's lift (m,
+    /// NaN unless solid and cleared within `lift_max` m).
+    #[wasm_bindgen(js_name = cameraClearance)]
+    pub fn camera_clearance(
+        &mut self,
+        eyes: &[f64],
+        radius: f64,
+        lift_step: f64,
+        lift_max: f64,
+    ) -> Vec<f64> {
+        let (codes, lifts) = self
+            .core
+            .camera_clearance(eyes, radius, lift_step, lift_max);
+        codes.into_iter().map(f64::from).chain(lifts).collect()
     }
     /// The water near a cell as this server has it (JSON; the block dump's `water`, a diagnostic);
     /// undefined while the water worker's is on its way (`takeWaterReport`).

@@ -74,6 +74,70 @@
       "rows": 1
     },
     {
+      "name": "dwell:planks",
+      "category": "blocks",
+      "label": "Planks",
+      "block": "dwell:planks",
+      "rows": 1
+    },
+    {
+      "name": "dwell:stone_brick",
+      "category": "blocks",
+      "label": "Stone brick",
+      "block": "dwell:stone_brick",
+      "rows": 1
+    },
+    {
+      "name": "dwell:thatch",
+      "category": "blocks",
+      "label": "Thatch",
+      "block": "dwell:thatch",
+      "rows": 1
+    },
+    {
+      "name": "dwell:thatch_slope",
+      "category": "shapes",
+      "label": "Thatch slope",
+      "block": "dwell:thatch_ramp",
+      "rows": 1,
+      "state": {
+        "flooded": "false",
+        "half": "bottom",
+        "shape": "ramp"
+      },
+      "facing": "toward"
+    },
+    {
+      "name": "dwell:thatch_steep_slope",
+      "category": "shapes",
+      "label": "Thatch steep slope",
+      "block": "dwell:thatch_ramp",
+      "rows": 2,
+      "state": {
+        "flooded": "false",
+        "half": "bottom",
+        "shape": "steep_lower"
+      },
+      "upper": {
+        "shape": "steep_upper"
+      },
+      "facing": "toward"
+    },
+    {
+      "name": "dwell:door",
+      "category": "shapes",
+      "label": "Door",
+      "block": "dwell:door",
+      "rows": 1,
+      "drag": "none",
+      "state": {
+        "hinge": "left",
+        "open": "false",
+        "part": "bottom"
+      },
+      "facing": "toward"
+    },
+    {
       "name": "dwell:stone_axe",
       "category": "tools",
       "label": "Stone axe",
@@ -102,6 +166,12 @@
       "category": "tools",
       "label": "Wooden shovel",
       "tool": "dwell:wooden_shovel"
+    },
+    {
+      "name": "dwell:stone_shovel",
+      "category": "tools",
+      "label": "Stone shovel",
+      "tool": "dwell:stone_shovel"
     },
     {
       "name": "dwell:metal_shovel",

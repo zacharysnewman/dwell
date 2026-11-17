@@ -1345,19 +1345,42 @@ where
         damage: Option<dwell_protocol::damage::DamageView>,
     ) {
         let changed = match damage {
-            Some(d) => self.damage.insert(cell, d.clone()) != Some(d),
+            // Every bite seen stays (BUGS.md #188): the wire holds only the newest few marks.
+            Some(d) => {
+                let seen = match self.damage.get(&cell) {
+                    Some(old) => old.seen_after(&d),
+                    None => d,
+                };
+                self.damage.insert(cell, seen.clone()) != Some(seen)
+            }
             None => self.damage.remove(&cell).is_some(),
         };
         if !changed {
             return;
         }
+        // Its chunk, and a neighbour it borders: that one's faces against it draw once its
+        // mask carves into them (BUGS.md #187).
         let k = cell.map(|v| v.div_euclid(CHUNK_SIZE));
-        if self.loaded.contains_key(&k) && !self.air.contains(&k) {
-            self.dirty.mark(k);
+        let l = cell.map(|v| v.rem_euclid(CHUNK_SIZE));
+        let mut chunks = vec![k];
+        for a in 0..3 {
+            for (edge, step) in [(0, -1), (CHUNK_SIZE - 1, 1)] {
+                if l[a] == edge {
+                    let mut n = k;
+                    n[a] += step;
+                    chunks.push(n);
+                }
+            }
+        }
+        for k in chunks {
+            if self.loaded.contains_key(&k) && !self.air.contains(&k) {
+                self.dirty.mark(k);
+            }
         }
     }
 
-    /// The damaged cells in chunk `c`, chunk-local (a mesh job's `damage`).
+    /// The damaged cells in chunk `c` and its one-cell border, chunk-local (a mesh job's `damage`;
+    /// the border's let its faces against them draw, BUGS.md #187).
     fn damage_in(&self, c: Coord) -> Vec<([i32; 3], dwell_protocol::damage::DamageView)> {
         if self.damage.is_empty() {
             return Vec::new();
@@ -1366,7 +1389,7 @@ where
         let mut out: Vec<_> = self
             .damage
             .iter()
-            .filter(|(w, _)| (0..3).all(|k| w[k].div_euclid(CHUNK_SIZE) == c[k]))
+            .filter(|(w, _)| (0..3).all(|k| (-1..=CHUNK_SIZE).contains(&(w[k] - o[k]))))
             .map(|(w, d)| ([w[0] - o[0], w[1] - o[1], w[2] - o[2]], d.clone()))
             .collect();
         out.sort_by_key(|(l, _)| *l);

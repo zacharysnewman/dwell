@@ -4,11 +4,11 @@ use crate::felling::FellingData;
 
 /// The felling tunables (shared/physics/felling.json).
 pub const FELLING: FellingData = FellingData {
-    rider_reach: 6,
+    rider_reach: 20,
     max_system_cells: 16384,
     max_piece_cells: 4096,
     topple_spin: 0.6,
-    topple_tip_speed: 4.0,
+    cut_tip: 0.75,
     sleep_linear: 0.05,
     sleep_angular: 0.05,
     rest_drift: 0.1,

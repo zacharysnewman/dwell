@@ -284,6 +284,13 @@ pub trait Scene: TerrainRenderer {
     }
     /// A baked slab of the clouds' shape noise (`detail`: the detail texture, else the base).
     fn cloud_noise_slab(&mut self, _detail: bool, _z0: u32, _texels: &[u8]) {}
+    /// The clouds' weather field's next map to bake, if one is due (docs/CLOUDS.md §11); asking
+    /// marks one out.
+    fn take_cloud_weather_request(&mut self) -> Option<dwell_look::weather_field::MapAt> {
+        None
+    }
+    /// A baked weather map, or `None` when its bake failed.
+    fn cloud_weather_map(&mut self, _map: Option<(dwell_look::weather_field::MapAt, &[u8])>) {}
     fn stats(&self) -> RenderStats;
     /// The day/night cycle's state this frame, and seconds for the stars' twinkle.
     fn set_day(&mut self, _day: &DayState, _seconds: f64) {}
@@ -966,6 +973,10 @@ pub struct Game<S: Scene> {
     /// The blasts going off near us (docs/EXPLOSIVES.md §4): their flash, smoke, dust and shake.
     blasts: crate::blasts::Blasts,
     fall_sounds: dwell_game::sound::FallSounds,
+    /// The grid's moving water heard from afar, and a flood's burst (BUGS.md #176), with the time
+    /// since it last listened.
+    rush_sounds: dwell_game::rush::RushSounds,
+    rush_elapsed_s: f64,
     /// Box select, fill, copy/paste, undo (§6.5); `enabled` once the server announces region edits.
     pub region: RegionTools,
     /// VoxelSniper-style brushes (BRUSHES.md); `available` where the server announces them.
@@ -994,11 +1005,16 @@ pub struct Game<S: Scene> {
     pub lod_drawn: bool,
     /// The eye the crosshair targets from (None while not playing).
     target_eye: Option<[f64; 3]>,
+    /// The cell just in front of the crosshair (`region_tools::ahead_cell`): a region corner's
+    /// where no block is aimed at.
+    ahead: Option<[i32; 3]>,
     lod: Option<LodSystem>,
     /// The LOD colour map's rings (`?lodmap=on`), once turned on.
     lod_map: Option<crate::lod_map::LodMap>,
     /// Far trees tiles asked of the workers and not back yet (render/impostors.rs).
     far_tree_jobs: std::collections::HashSet<(u8, i32, i32)>,
+    /// The clouds' weather map out with the job workers (docs/CLOUDS.md §11).
+    cloud_weather_asked: Option<dwell_look::weather_field::MapAt>,
     /// Far trees tiles as the generator lists them (the felled are left out of what is drawn,
     /// `impostors::standing_trees`), the felled trees seen (face bit, anchor), and the tiles whose
     /// chunks arrived or changed since they were filtered.
@@ -1077,6 +1093,10 @@ pub struct Game<S: Scene> {
     fire_sounds: FireSounds,
     /// The body's breathing, gasps and strain from the vitals (docs/AUDIO.md §5).
     vital_sounds: dwell_game::sound::VitalSounds,
+    /// Picking up a ground item: its pop (owner, 2026-11-14).
+    pickup_sounds: dwell_game::sound::PickupSounds,
+    /// Making an item with Combine: its clack and chime (owner, 2026-11-15).
+    craft_sounds: dwell_game::sound::CraftSounds,
     /// The creatures' footsteps, startles and calls (docs/AUDIO.md §2d).
     creature_sounds: dwell_game::sound::CreatureSounds,
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), read a few times a second.
@@ -1247,16 +1267,20 @@ impl<S: Scene> Game<S> {
             falls_shown: true,
             blasts: crate::blasts::Blasts::default(),
             fall_sounds: dwell_game::sound::FallSounds::new(),
+            rush_sounds: dwell_game::rush::RushSounds::new(),
+            rush_elapsed_s: 0.0,
             region: RegionTools::new(),
             brush: BrushTool::new(),
             portals: (Vec::new(), ""),
             prediction: EditPredictor::new(),
             character_lights: Default::default(),
             target_eye: None,
+            ahead: None,
             lod: None,
             unloads: Default::default(),
             lod_map: None,
             far_tree_jobs: Default::default(),
+            cloud_weather_asked: None,
             far_tree_lists: Default::default(),
             far_tree_felled: Default::default(),
             far_tree_stale: Default::default(),
@@ -1298,6 +1322,8 @@ impl<S: Scene> Game<S> {
             lean_at: None,
             fire_sounds: FireSounds::new(),
             vital_sounds: dwell_game::sound::VitalSounds::new(),
+            pickup_sounds: dwell_game::sound::PickupSounds::new(),
+            craft_sounds: dwell_game::sound::CraftSounds::new(),
             creature_sounds: dwell_game::sound::CreatureSounds::new(0x5eed),
             ambience: dwell_game::ambience::Listening {
                 fire_m: dwell_game::ambience::FAR_M,
@@ -1519,6 +1545,29 @@ impl<S: Scene> Game<S> {
         self.theater
             .as_ref()
             .map(|p| (p.time, p.path.duration(), p.finished()))
+    }
+    /// A camera path's eye sampled every `step_s` seconds of real time from its start (the clearance
+    /// check, THEATER_MODE.md §6.2): (take seconds, path seconds, eye), played by a fresh player
+    /// against the targets where they are now; at most `max` samples.
+    pub fn theater_samples(
+        &self,
+        path: dwell_theater::Path,
+        step_s: f64,
+        max: usize,
+    ) -> Vec<(f64, f64, [f64; 3])> {
+        let step = step_s.clamp(1e-3, 1.0);
+        let targets = self.theater_targets();
+        let mut player = dwell_theater::Player::new(path);
+        let mut out = Vec::new();
+        let mut t = 0.0;
+        let pose = player.step(0.0, &targets);
+        out.push((t, player.time, pose.position));
+        while !player.finished() && out.len() < max {
+            let pose = player.step(step, &targets);
+            t += step;
+            out.push((t, player.time, pose.position));
+        }
+        out
     }
     /// Pauses or resumes the path.
     pub fn pause_theater(&mut self, paused: bool) {
@@ -2250,10 +2299,19 @@ impl<S: Scene> Game<S> {
             Message::HeldTools(list) => {
                 // The server sweeps swings along their path (its answer to our first `Held`).
                 self.chop.sweep = true;
+                // A swung tool (the sword) or a break tool (an axe, a pickaxe, a shovel), by its
+                // `'static` name; anything else is held as the wire's block.
                 for h in list {
-                    match dwell_protocol::chopping::tool(&h.tool) {
-                        Some(t) => {
-                            self.remote_tools.insert(h.player_id, (t.name, h.vertical));
+                    let swung = dwell_protocol::chopping::tool(&h.tool).map(|t| t.name);
+                    let name = swung.or_else(|| {
+                        dwell_protocol::chopping::BREAK_TOOLS
+                            .iter()
+                            .find(|b| b.item == h.tool)
+                            .map(|b| b.item)
+                    });
+                    match name {
+                        Some(n) => {
+                            self.remote_tools.insert(h.player_id, (n, h.vertical));
                         }
                         None => {
                             self.remote_tools.remove(&h.player_id);
@@ -2320,6 +2378,26 @@ impl<S: Scene> Game<S> {
                 {
                     self.sounds.push(SoundEvent::new(ev, 0, 1.0, None));
                 }
+                let count = |inv: &dwell_protocol::inventory::Inventory| -> u32 {
+                    inv.slots
+                        .iter()
+                        .flatten()
+                        .map(|st| u32::from(st.count))
+                        .sum()
+                };
+                self.pickup_sounds.inventory(
+                    self.loose.inventory.as_ref().map(|(_, old)| count(old)),
+                    count(&i.inventory),
+                    now_ms,
+                );
+                self.pickup_sounds.update(now_ms, &mut self.sounds);
+                let changed = self
+                    .loose
+                    .inventory
+                    .as_ref()
+                    .is_some_and(|(_, old)| old.slots != i.inventory.slots);
+                self.craft_sounds
+                    .inventory(changed, now_ms, &mut self.sounds);
                 self.loose.inventory = Some((uses, i.inventory));
                 if uses {
                     self.select_inventory_slot(self.inventory_slot);
@@ -2334,6 +2412,27 @@ impl<S: Scene> Game<S> {
                 self.streamer.ground_gone(&cells);
             }
             Message::ItemDrops(d) => {
+                // Loose items that went or shrank near the local player: half of a pickup's pop.
+                let me = self.predictor.position();
+                let near = |it: &dwell_protocol::ItemDropNet| {
+                    me.distance(DVec3::from(it.position.map(f64::from)))
+                };
+                let taken = d
+                    .gone
+                    .iter()
+                    .filter_map(|id| self.loose.items.get(id))
+                    .chain(d.items.iter().filter(|it| {
+                        self.loose
+                            .items
+                            .get(&it.id)
+                            .is_some_and(|o| o.count > it.count)
+                    }))
+                    .map(near)
+                    .fold(f64::INFINITY, f64::min);
+                if taken.is_finite() {
+                    self.pickup_sounds.drops_taken(taken, now_ms);
+                    self.pickup_sounds.update(now_ms, &mut self.sounds);
+                }
                 let changed = self.loose.apply(d);
                 let mut scene = self.scene.borrow_mut();
                 for id in changed.removed {
@@ -2502,6 +2601,22 @@ impl<S: Scene> Game<S> {
                     self.scene
                         .borrow_mut()
                         .cloud_noise_slab(detail, z0, &texels);
+                }
+                (Purpose::CloudWeather, out) => {
+                    let mut scene = self.scene.borrow_mut();
+                    match (out, self.cloud_weather_asked.take()) {
+                        (
+                            Output::CloudWeather {
+                                face_b,
+                                corner,
+                                texels,
+                            },
+                            Some(at),
+                        ) if at.face_b == face_b && at.corner == corner => {
+                            scene.cloud_weather_map(Some((at, &texels)));
+                        }
+                        _ => scene.cloud_weather_map(None),
+                    }
                 }
                 (Purpose::LodMap(job), out) => {
                     if let Some(map) = &mut self.lod_map
@@ -2724,7 +2839,11 @@ impl<S: Scene> Game<S> {
             if action == EditAction::Place && self.edge_place(holder, now_ms) {
                 return true;
             }
-            self.sounds.push(sound_event(SoundKind::Deny));
+            // Break held at nothing knocks once per hold, not every repeat (BUGS.md, owner
+            // 2026-11-15: a still touch in Break mode looped it).
+            if action == EditAction::Place || self.held_use.miss_sounds() {
+                self.sounds.push(sound_event(SoundKind::Deny));
+            }
             return false;
         };
         let placement = self.interaction.placement();
@@ -3589,6 +3708,7 @@ impl<S: Scene> Game<S> {
             velocity: self.current.velocity,
             world_s: f64::from(self.last_snapshot_tick) / SIM_HZ as f64,
             gravity: f64::from(self.predictor.config().body.gravity),
+            radius: f64::from(self.predictor.config().body.radius),
         };
         let mut r = crate::moon_probe::grid_report(map, self.world_seed, name, viewer)?;
         let f = FaceFrame::at_height(viewer.feet[1]);
@@ -3760,6 +3880,7 @@ impl<S: Scene> Game<S> {
         let target = self.brush.target().map(|t| t.cell);
         let ctx = ToolContext {
             target,
+            ahead: None,
             target_state: target
                 .map_or(0, |c| self.streamer.store_mut().get_voxel(c[0], c[1], c[2])),
             placement: self.brush.center(true),
@@ -3980,7 +4101,7 @@ impl<S: Scene> Game<S> {
 
     /// The listener's surroundings for the ambience beds (AUDIO.md §2c), in
     /// `dwell_game::ambience::INPUTS` order.
-    pub fn ambience(&self) -> [f64; 10] {
+    pub fn ambience(&self) -> [f64; 11] {
         self.ambience.to_array()
     }
 
@@ -4652,6 +4773,7 @@ impl<S: Scene> Game<S> {
             .map_or(0, |s| s.material);
         let ctx = ToolContext {
             target,
+            ahead: at.is_none().then_some(self.ahead).flatten(),
             target_state,
             placement: self.interaction.placement().map(|(c, _)| c),
             material,
@@ -5336,6 +5458,9 @@ impl<S: Scene> Game<S> {
                     .borrow_mut()
                     .set_camera(v.eye, yaw, pitch, face, roll);
                 self.scene.borrow_mut().set_block_outline(None, FULL_CELL);
+                // A placed camera (a theater path, a cinematic take) hears from where it is: the
+                // listener, the ambience and every placed sound follow it (BUGS.md #176).
+                self.listener = listener(v.eye, yaw, pitch, face);
                 v.eye
             }
             None => camera_eye,
@@ -5614,6 +5739,7 @@ impl<S: Scene> Game<S> {
         self.fire_sounds.update(eye, &fires, dt, &mut self.sounds);
         // The ambience beds' surroundings (AUDIO.md §2c), four times a second.
         self.ambience_due_s -= dt;
+        self.rush_elapsed_s += dt;
         if self.ambience_due_s <= 0.0 {
             self.ambience_due_s = 0.25;
             let fire_m = fires
@@ -5641,6 +5767,18 @@ impl<S: Scene> Game<S> {
             l.day = dwell_game::ambience::daylight(self.day.sun, face);
             l.fire_m = fire_m;
             l.underwater = f64::from(u8::from(self.eye_underwater));
+            // The moving water heard from afar (BUGS.md #176): its loop and burst, and its bed.
+            let falls: Vec<([f64; 3], f64)> = self
+                .falls
+                .iter()
+                .map(|f| (f.lip_world(), f.discharge()))
+                .collect();
+            let heard = telemetry::span("rush.hear", || dwell_game::rush::hear(store, eye, &falls));
+            l.rush = heard.level();
+            let down = face.vector([0.0, -1.0, 0.0]);
+            let elapsed = std::mem::take(&mut self.rush_elapsed_s);
+            self.rush_sounds
+                .update(eye, down, &heard, elapsed, &mut self.sounds);
             self.ambience = l;
         }
         let vitals = HudVitals::of(&self.predictor.controller().vitals, self.vitals_rules)
@@ -5804,6 +5942,7 @@ impl<S: Scene> Game<S> {
         }
         self.update_lod_map(position);
         self.update_cloud_noise();
+        self.update_cloud_weather();
         self.update_far_trees(position);
     }
 
@@ -5847,6 +5986,24 @@ impl<S: Scene> Game<S> {
             LodView::<SectionMeshes>::show_lod_sections(&mut view, &[]);
             LodView::<SectionMeshes>::show_lod_stand_ins(&mut view, &[]);
         }
+    }
+
+    /// The clouds' weather field (docs/CLOUDS.md §11): when the renderer wants a new map (a volume
+    /// tier, every `weatherField.updateS` or when the eye leaves the window), its bake goes to a
+    /// job worker, which has the world's terrain; the map goes to the renderer as it comes back.
+    fn update_cloud_weather(&mut self) {
+        let Some(at) = self.scene.borrow_mut().take_cloud_weather_request() else {
+            return;
+        };
+        self.cloud_weather_asked = Some(at);
+        self.pool.borrow_mut().submit(
+            Purpose::CloudWeather,
+            crate::jobs::Job::CloudWeather {
+                face_b: at.face_b,
+                corner: at.corner,
+                seconds: at.seconds,
+            },
+        );
     }
 
     /// The clouds' shape noise (docs/CLOUDS.md §9.4): when a volume tier first wants it, its bake
@@ -6000,6 +6157,7 @@ impl<S: Scene> Game<S> {
         self.target_eye = eye;
         let dir = view_direction(input.look.yaw, input.look.pitch, face);
         self.view_dir = dir;
+        self.ahead = eye.map(|e| dwell_game::region_tools::ahead_cell(e, dir));
         self.ground_target = eye.and_then(|e| self.ground_under_crosshair(e, dir));
         // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
         self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
@@ -6015,8 +6173,13 @@ impl<S: Scene> Game<S> {
         });
         self.drag_build(eye, dir, now_ms);
         self.blueprint_frame(eye, dir, now_ms);
+        // Where no block is aimed at, the cell ahead (as the region tools' corners take it).
+        let ahead = eye.map(|e| {
+            let dir = view_direction(input.look.yaw, input.look.pitch, face);
+            dwell_game::region_tools::ahead_cell(e, dir)
+        });
         self.region
-            .aim(self.interaction.placement().map(|(c, _)| c));
+            .aim(self.interaction.placement().map(|(c, _)| c).or(ahead), eye);
         self.show_region_boxes();
         // The brush aims much further along the same ray (its mode's brush reach), and where the
         // ray meets nothing editable in reach, at the farthest editable cell along it: it always
@@ -6093,6 +6256,13 @@ impl<S: Scene> Game<S> {
                     .unwrap_or(cells[0]);
                 let h = dwell_world::CELL_H as f32 * cells.len() as f32;
                 (dwell_world::pos_of_cell(lowest), ([0.0; 3], [1.0, h, 1.0]))
+            });
+            // With the region tools in hand, the cell a corner would take (`ahead`), outlined
+            // before it is set.
+            let ghost = ghost.or_else(|| {
+                let ahead = self.ahead.filter(|_| self.region.shows_ahead())?;
+                let h = dwell_world::CELL_H as f32;
+                Some((dwell_world::pos_of_cell(ahead), ([0.0; 3], [1.0, h, 1.0])))
             });
             let (at, bounds) = ghost.map_or((None, FULL_CELL), |(p, b)| (Some(p), b));
             self.scene.borrow_mut().set_block_outline(at, bounds);
@@ -6530,6 +6700,8 @@ impl<S: Scene> Game<S> {
         self.outbox
             .borrow_mut()
             .push(Send::Control(Message::InventoryAction(a)));
+        self.craft_sounds
+            .pressed(self.last_frame_ms.unwrap_or_default());
         true
     }
 

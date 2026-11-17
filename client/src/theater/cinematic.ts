@@ -14,6 +14,12 @@
 import data from '../../../shared/theater/cinematic.json';
 import { SIM_HZ } from '../protocol/constants.gen';
 import type { AudioStep, CinematicAudio } from './cinematicAudio';
+import {
+  ClearanceCheck,
+  type ClearanceConfig,
+  type ClearanceResult,
+  type ClearanceWorld,
+} from './clearance';
 
 export interface CinematicConfig {
   fps: number;
@@ -22,6 +28,7 @@ export interface CinematicConfig {
   settle: { minFrames: number; maxWaiting: number; capMs: number; firstCapMs: number };
   preroll: { stepS: number; capMs: number };
   quality: { shadows?: string; view: Record<string, unknown> };
+  clearance: ClearanceConfig;
   audio: { on: boolean; leadS: number };
   image: string;
 }
@@ -56,6 +63,7 @@ const KEYS = [
   'settle',
   'preroll',
   'quality',
+  'clearance',
   'audio',
   'image',
 ];
@@ -73,8 +81,9 @@ export function parseCinematic(raw: unknown): CinematicConfig {
   const preroll = raw.preroll;
   const quality = raw.quality;
   const audio = raw.audio;
-  if (!isObj(settle) || !isObj(preroll) || !isObj(quality) || !isObj(audio))
-    throw new Error('cinematic: settle, preroll, quality and audio must be objects');
+  const clear = raw.clearance;
+  if (!isObj(settle) || !isObj(preroll) || !isObj(quality) || !isObj(audio) || !isObj(clear))
+    throw new Error('cinematic: settle, preroll, quality, clearance and audio must be objects');
   if (!isObj(quality.view)) throw new Error('cinematic: quality.view must be an object');
   const shadows = quality.shadows;
   if (
@@ -106,6 +115,14 @@ export function parseCinematic(raw: unknown): CinematicConfig {
     quality: {
       ...(typeof shadows === 'string' ? { shadows } : {}),
       view: quality.view,
+    },
+    clearance: {
+      radiusM: num(clear, 'radiusM', 'clearance.', 0, 5),
+      stepS: num(clear, 'stepS', 'clearance.', 0.001, 10),
+      passStepS: num(clear, 'passStepS', 'clearance.', 0.01, 60),
+      capMs: num(clear, 'capMs', 'clearance.', 0, 600_000),
+      liftStepM: num(clear, 'liftStepM', 'clearance.', 0.05, 100),
+      liftMaxM: num(clear, 'liftMaxM', 'clearance.', 0, 1000),
     },
     audio: { on: audio.on, leadS: num(audio, 'leadS', 'audio.', 0, 1) },
     image: raw.image,
@@ -139,6 +156,41 @@ export function frameTimeS(frame: number, sub: number, fps: number, subframes: n
  */
 export function ticksDue(tS: number, hz: number = SIM_HZ): number {
   return Math.floor(tS * hz + 1e-6);
+}
+
+/**
+ * A timed event of a take (THEATER_MODE.md §6.3): at take time `atS` (s) the host runs `op` with
+ * `arg` (`scene`: a built scene's event by index, e.g. its dam deleted), on the cinematic clock.
+ */
+export interface CinematicEvent {
+  atS: number;
+  op: string;
+  arg: string;
+}
+
+/** The events a take's events list holds, checked: each `{atS ≥ 0, op, arg}`, or an error naming it. */
+export function parseEvents(raw: unknown): CinematicEvent[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error('cinematic: events: expected a list');
+  return raw.map((e: unknown, i) => {
+    const o = (e ?? {}) as Partial<CinematicEvent>;
+    if (typeof o.atS !== 'number' || !(o.atS >= 0) || typeof o.op !== 'string' || !o.op)
+      throw new Error(`cinematic: events[${String(i)}]: expected {atS ≥ 0, op, arg}`);
+    return { atS: o.atS, op: o.op, arg: typeof o.arg === 'string' ? o.arg : '' };
+  });
+}
+
+/**
+ * The events that fire as the take steps from `fromS` to `toS` (s): those at `fromS` ≤ atS < `toS`,
+ * in time order. They run before the world steps past them, so an event at 3 s is in the world by
+ * the first frame after 3 s (frame 91 at 30 fps: frame 90 is 3 s exactly and still shows before it).
+ */
+export function eventsDue(
+  events: readonly CinematicEvent[],
+  fromS: number,
+  toS: number,
+): CinematicEvent[] {
+  return events.filter((e) => e.atS >= fromS && e.atS < toS).sort((a, b) => a.atS - b.atS);
 }
 
 /** The view's load state, as `__dwell.state()` reports it. */
@@ -224,7 +276,11 @@ export interface CinematicHost {
   sink(file: string, bytes: Uint8Array): Promise<void>;
   /** The sound stepped with the frames, or null (no audio). */
   audio(leadS: number): Promise<CinematicAudio | null>;
+  /** Runs a timed event (`CinematicEvent`'s op and arg); resolves with its answer. */
+  event?(op: string, arg: string): Promise<string | null>;
   wallMs(): number;
+  /** The camera clearance check's world (clearance.ts), or null (no check). */
+  clearance: ClearanceWorld | null;
 }
 
 export interface CinematicTakeOptions {
@@ -235,6 +291,10 @@ export interface CinematicTakeOptions {
   settings?: unknown;
   /** Stop after this many frames (default: the path's length × fps). */
   frames?: number;
+  /** A deliberate shot through solid ground: the clearance check reports it but doesn't fail the take. */
+  allowClipping?: boolean;
+  /** Timed events (§6.3): each run at its take time, before the world steps past it. */
+  events?: unknown;
 }
 
 export interface CinematicReport {
@@ -247,6 +307,10 @@ export interface CinematicReport {
   settle: { meanMs: number; p95Ms: number; maxMs: number; capped: number[] };
   ticks: number;
   audio: AudioStep | null;
+  /** The camera clearance check (null without one): its samples, unchecked ones and clips. */
+  clearance: Omit<ClearanceResult, 'message'> | null;
+  /** Each event run: its time, the first frame that shows it, and the host's answer. */
+  events: { atS: number; frame: number; op: string; result: string | null }[];
 }
 
 /** The p-th percentile of `xs` (0–1). */
@@ -275,6 +339,9 @@ export async function runCinematic(
   const cfg = parseCinematic(withOverrides(data, o.settings));
   const [w, h] = o.size;
   const json = typeof o.path === 'string' ? o.path : JSON.stringify(o.path);
+  const events = parseEvents(o.events);
+  if (events.length && !host.event) throw new Error('cinematic: this page runs no events');
+  const fired: CinematicReport['events'] = [];
   const t0 = host.wallMs();
   if (cfg.quality.shadows) host.setShadows(cfg.quality.shadows);
   host.setView(cfg.quality.view);
@@ -301,15 +368,29 @@ export async function runCinematic(
     // The pre-roll: the path flown once, the world held, each step settled; nothing captured.
     host.theaterPlay(json);
     const duration = host.theaterState()?.duration ?? 0;
+    // The clearance check (§6.2): every eye probed now (a local world knows them all: a clip fails
+    // the take before its pre-roll), the rest in the pre-roll, each step's once it has settled.
+    const check = host.clearance && new ClearanceCheck(host.clearance, json, cfg.clearance);
+    const verdict = (): ClearanceResult | null => {
+      const r = check?.result() ?? null;
+      if (r?.clipping.length && !o.allowClipping) throw new Error(`cinematic: ${r.message}`);
+      return r;
+    };
+    const unknown = check ? await check.probeUpTo(Infinity) : 0;
+    if (!unknown) verdict();
     if (cfg.preroll.stepS > 0) {
       await settle(cfg.settle.firstCapMs);
+      if (unknown && check) await check.probeUpTo(0);
       for (let t = cfg.preroll.stepS; t < duration + cfg.preroll.stepS; t += cfg.preroll.stepS) {
         host.theaterAdvance(cfg.preroll.stepS);
         await settle(cfg.preroll.capMs);
+        if (unknown && check) await check.probeUpTo(t);
       }
       host.theaterStop();
       host.theaterPlay(json);
     }
+    if (unknown && check) await check.probeUpTo(Infinity);
+    const clear = verdict();
     const prerollS = (host.wallMs() - t0) / 1000;
     const frames = o.frames ?? Math.max(1, Math.round(duration * cfg.fps) + 1);
     const S = cfg.subframes;
@@ -324,6 +405,13 @@ export async function runCinematic(
       for (let s = 0; s < S; s++) {
         const t = frameTimeS(i, s, cfg.fps, S);
         if (i > 0 || s > 0) {
+          for (const e of eventsDue(events, lastT, t))
+            fired.push({
+              atS: e.atS,
+              frame: i,
+              op: e.op,
+              result: (await host.event?.(e.op, e.arg)) ?? null,
+            });
           const due = ticksDue(t) - ticks;
           if (due > 0 && host.world) await host.world.step(due);
           ticks += Math.max(0, due);
@@ -381,7 +469,14 @@ export async function runCinematic(
         capped,
       },
       ticks,
+      events: fired,
       audio: step && { ...step, wav: new Uint8Array(0) },
+      clearance: clear && {
+        samples: clear.samples,
+        unchecked: clear.unchecked,
+        radiusM: clear.radiusM,
+        clipping: clear.clipping,
+      },
     };
   } finally {
     audio?.close();

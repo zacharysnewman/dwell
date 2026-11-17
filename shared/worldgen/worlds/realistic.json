@@ -8,16 +8,24 @@
   "cliffs": 0,
   "biomeMap": {
     "ditherSpeckle": 0,
-    "ditherWavelength": 48,
-    "ditherWarp": 60,
-    "treesSharpen": 4
+    "ditherWavelength": 160,
+    "ditherWarp": 150,
+    "dither": 0.06,
+    "treesSharpen": 4,
+    "rockEdge": 0.3
   },
   "geology": {
     "shaping": {
-      "strength": 1
+      "strength": 1,
+      "coverRain": 260,
+      "coverNoise": 60,
+      "edgeJitter": 3,
+      "edgeFade": 0.35
     },
     "erosion": {
-      "strength": 1
+      "strength": 1,
+      "warp": 60,
+      "warpWavelength": 240
     },
     "surfaces": {
       "replace": [{ "block": "dwell:sand", "with": "dwell:dirt", "except": ["dwell:dune_sand"] }]
@@ -30,23 +38,23 @@
     }
   },
   "biomes": [
-    "dwell:default",
-    "preset:alpine_tundra",
-    "preset:badlands",
-    "preset:boreal",
-    "preset:coastal_cliffs",
-    "preset:cold_desert",
-    "preset:cold_rainforest",
-    "preset:mixed_forest",
-    "preset:old_growth",
-    "preset:red_rock_mesa",
-    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "trees": { "boulders": 0.25, "sagebrush": 0.012 } },
-    "preset:savanna",
-    "preset:snowfield",
-    "preset:steppe",
-    "preset:temperate_meadow",
-    "preset:tropical_beach",
-    "preset:tropical_rainforest",
-    "preset:wetland"
+    { "biome": "dwell:default", "placements": ["pine_groves", "bushes", "talus"], "trees": {"bushes": 0.6} },
+    { "biome": "preset:alpine_tundra", "placements": ["pine_groves", "boulders", "cold_shrubs", "talus"], "trees": {"pine_groves": 0.3, "cold_shrubs": 0.8} },
+    { "biome": "preset:badlands", "placements": ["boulders", "scrub", "talus"], "trees": {"scrub": 0.3} },
+    { "biome": "preset:boreal", "placements": ["pine_groves", "cold_shrubs", "talus"], "trees": {"pine_groves": 1.5, "cold_shrubs": 1.0} },
+    { "biome": "preset:coastal_cliffs", "placements": ["boulders", "scrub", "talus"], "trees": {"boulders": 0.5, "scrub": 0.8} },
+    { "biome": "preset:cold_desert", "placements": ["boulders", "talus"] },
+    { "biome": "preset:cold_rainforest", "placements": ["pine_groves", "broadleaf_groves", "bushes", "talus"], "trees": {"pine_groves": 2, "broadleaf_groves": 0.5, "bushes": 1.2} },
+    { "biome": "preset:mixed_forest", "placements": ["pine_groves", "broadleaf_groves", "bushes", "talus"], "trees": {"pine_groves": 0.5, "bushes": 1.0} },
+    { "biome": "preset:old_growth", "placements": ["old_growth", "bushes", "talus"], "trees": {"old_growth": 1, "bushes": 0.8} },
+    { "biome": "preset:red_rock_mesa", "placements": ["boulders", "sagebrush", "talus"] },
+    { "biome": "preset:sand_desert", "rockStack": "dwell:dune_sands", "bands": [{"name": "dunes", "ground": "dwell:sand", "under": "dwell:sand", "rock": "dwell:sand", "shoreBlock": "dwell:sand"}], "trees": {"boulders": 0.25, "sagebrush": 0.012}, "placements": ["boulders", "sagebrush", "talus"] },
+    { "biome": "preset:savanna", "placements": ["broadleaf_groves", "scrub", "talus"], "trees": {"broadleaf_groves": 0.15, "scrub": 1.0} },
+    { "biome": "preset:snowfield", "placements": ["talus"] },
+    { "biome": "preset:steppe", "placements": ["boulders", "scrub", "talus"], "trees": {"boulders": 0.3, "scrub": 0.6} },
+    { "biome": "preset:temperate_meadow", "placements": ["broadleaf_groves", "bushes", "talus"], "trees": {"broadleaf_groves": 0.25, "bushes": 0.9} },
+    { "biome": "preset:tropical_beach", "placements": ["broadleaf_groves", "bushes", "talus"], "trees": {"broadleaf_groves": 0.4, "bushes": 0.5} },
+    { "biome": "preset:tropical_rainforest", "placements": ["rainforest_groves", "bushes", "talus"], "trees": {"rainforest_groves": 3, "bushes": 1.4} },
+    { "biome": "preset:wetland", "placements": ["broadleaf_groves", "bushes", "talus"], "trees": {"broadleaf_groves": 0.3, "bushes": 1.0} }
   ]
 }

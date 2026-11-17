@@ -1,7 +1,7 @@
 //! Blueprints through the server (WORK_QUEUE item 56, docs/BLUEPRINTS.md): placed by a client
 //! with `blueprints.world` and sent to every client with it (and none without), saved with the
 //! world and back at the next join, removed once every cell holds its block, and built by a
-//! builder NPC over ticks, foundation up, skipping a cell a player filled with something else.
+//! builder NPC over ticks, its site cleared first (a whole tree, grass, a player's block), then foundation up.
 //! Both faces: the record is face-local and the ghost goes through `FaceFrame`.
 
 mod common;
@@ -88,15 +88,21 @@ fn sent(fx: &mut Fixture, ids: &[SessionId]) -> Vec<Vec<BlueprintsMessage>> {
 }
 
 /// The cells of the world's blueprint `b` holding their block, and those left.
+/// (pieces built, pieces left): a multi-cell block's cells that come with its first (a door's upper
+/// cells, `comes_with`) are not pieces of their own.
 fn progress(fx: &mut Fixture, b: &Blueprint) -> (usize, usize) {
     let g = Ghost::of(b);
     let world = fx.server.world();
-    let done = g
+    let pieces: Vec<_> = g
         .cells
+        .iter()
+        .filter(|c| !dwell_world::blueprint::comes_with(c.state))
+        .collect();
+    let done = pieces
         .iter()
         .filter(|c| built(world.get_voxel(c.world[0], c.world[1], c.world[2]), c.state))
         .count();
-    (done, g.cells.len() - done)
+    (done, pieces.len() - done)
 }
 
 both_faces!(
@@ -228,7 +234,7 @@ both_faces!(
 );
 
 both_faces!(
-    fn a_builder_builds_the_hut_over_ticks_foundation_up_skipping_an_occupied_cell(f: FaceFrame) {
+    fn a_builder_clears_a_player_s_block_then_builds_the_hut_foundation_up(f: FaceFrame) {
         let mut fx = Fixture::new(config(f, None));
         ground(&mut fx, f);
         fx.join(1, &Client::new(1));
@@ -249,13 +255,13 @@ both_faces!(
             .place_blueprint(blueprint(f, "dwell:bp_hut", at, 0))
             .expect("placed");
         let b = fx.server.blueprint_list()[0].clone();
-        // A player's dirt where a wall cell goes.
+        // A player's dirt where a wall cell goes: cleared before anything is built (it was skipped
+        // before site clearing).
         let occupied = f.cell([6, BASE + 2, 6]);
         let dirt = f.state(dwell_blocks::require("dwell:dirt"));
         fx.server
             .world()
             .set_voxel(occupied[0], occupied[1], occupied[2], dirt);
-        let total = Ghost::of(&b).cells.len();
         step(&mut fx, 2);
         let builders = fx.server.builders_of(id);
         assert_eq!(builders.len(), 1, "a builder came");
@@ -281,6 +287,8 @@ both_faces!(
         let mut last = 0;
         let mut floor_done_at = None;
         let mut first_roof = None;
+        let mut cleared_at = None;
+        let mut first_piece = None;
         for t in 0..60 * 240 {
             step(&mut fx, 1);
             let (done, _) = progress(&mut fx, &b);
@@ -288,6 +296,14 @@ both_faces!(
             last = done;
             let g = Ghost::of(&b);
             let world = fx.server.world();
+            if cleared_at.is_none()
+                && world.get_voxel(occupied[0], occupied[1], occupied[2]) != dirt
+            {
+                cleared_at = Some(t);
+            }
+            if first_piece.is_none() && done > 0 {
+                first_piece = Some(t);
+            }
             let rows: Vec<(i32, bool)> = g
                 .cells
                 .iter()
@@ -304,23 +320,20 @@ both_faces!(
             if first_roof.is_none() && any_at(BASE + 5) {
                 first_roof = Some(t);
             }
-            if done == total - 1 {
+            if fx.server.blueprint_list().is_empty() {
                 break;
             }
         }
-        assert_eq!(last, total - 1, "every cell but the occupied one built");
         assert!(
             floor_done_at.unwrap() < first_roof.unwrap(),
             "the floor before the roof"
         );
-        let world = fx.server.world();
-        assert_eq!(world.get_voxel(occupied[0], occupied[1], occupied[2]), dirt);
-        // The occupied cell cleared and filled by its builder: the blueprint completes and goes.
-        let air = dwell_blocks::require("dwell:air");
-        fx.server
-            .world()
-            .set_voxel(occupied[0], occupied[1], occupied[2], air);
-        step(&mut fx, 60 * 20);
+        // The player's dirt cleared from the site first (§5b), then its wall cell built: the
+        // blueprint completes and goes.
+        assert!(
+            cleared_at.unwrap() < first_piece.unwrap(),
+            "cleared before the first piece"
+        );
         assert!(fx.server.blueprint_list().is_empty(), "completed");
         assert!(fx.server.builders_of(id).is_empty());
         assert!(
@@ -800,6 +813,212 @@ both_faces!(
             count(&now) + (after - before) as u32,
             count(&load),
             "carrying what it carried"
+        );
+    }
+);
+
+// --- Site clearing (docs/BLUEPRINTS.md §5b) ---
+
+/// Fast builders that clear fast too.
+fn fast_clearing() -> dwell_world::blueprint::Rules {
+    dwell_world::blueprint::Rules {
+        builder: dwell_world::blueprint::BuilderRules {
+            pace_s: 0.05,
+            clear_pace_s: 0.05,
+            ..SHIPPED.builder
+        },
+        ..SHIPPED
+    }
+}
+
+/// What stands on the hut's site at (8, BASE, 8) (box x 6..10, z 6..10, rows BASE..BASE + 7): a
+/// tree whose trunk is in it, rising past its top with a crown reaching past its margin; tall grass
+/// in it and in its margin, and one outside; the floor's own planks already in a cell; dirt over
+/// the floor in the margin.
+struct Site {
+    /// The tree's cells, the highest first.
+    tree: Vec<[i32; 3]>,
+    /// The other cells that must go.
+    cleared: Vec<[i32; 3]>,
+    grass_kept: [i32; 3],
+    planks: [i32; 3],
+}
+
+fn site(fx: &mut Fixture, f: FaceFrame) -> Site {
+    let s = |n: &str| f.state(dwell_blocks::require(n));
+    let (log, leaves, grass, dirt, planks) = (
+        s("dwell:log"),
+        s("dwell:leaves"),
+        s("dwell:tall_grass"),
+        s("dwell:dirt"),
+        s("dwell:planks"),
+    );
+    let mut put = |l: [i32; 3], m| {
+        let w = f.cell(l);
+        fx.server.world().set_voxel(w[0], w[1], w[2], m);
+        w
+    };
+    let mut tree = Vec::new();
+    for x in 6..=12 {
+        for z in 7..=9 {
+            for r in (9..12).rev() {
+                if [x, z] != [8, 8] || r == 11 {
+                    tree.push(put([x, BASE + r, z], leaves));
+                }
+            }
+        }
+    }
+    tree.sort_by_key(|c| std::cmp::Reverse(f.cell(*c)[1]));
+    for r in 0..11 {
+        tree.push(put([8, BASE + r, 8], log));
+    }
+    let cleared = vec![
+        put([7, BASE, 9], grass),
+        put([5, BASE, 8], grass),
+        put([9, BASE + 1, 5], dirt),
+    ];
+    Site {
+        tree,
+        cleared,
+        grass_kept: put([2, BASE, 2], grass),
+        planks: put([7, BASE, 7], planks),
+    }
+}
+
+/// A server in `mode` with the hut's blueprint over [`site`] and a player near: the fixture, the
+/// site and the blueprint's record.
+fn hut_over_a_tree(
+    f: FaceFrame,
+    mode: &str,
+    db: Option<&std::sync::Arc<WorldDb>>,
+) -> (Fixture, Site, Blueprint) {
+    let mut fx = Fixture::new(ServerConfig {
+        mode: mode.into(),
+        ..config(f, db)
+    });
+    ground(&mut fx, f);
+    let site = site(&mut fx, f);
+    fx.join(1, &Client::new(1));
+    fx.send(1, Message::CreaturesHello);
+    fx.send(1, caps());
+    stand(&mut fx, f, 1, 8.5, 16.5);
+    fx.server.set_blueprint_rules(fast_clearing());
+    fx.server
+        .place_blueprint(blueprint(f, "dwell:bp_hut", [8, BASE, 8], 0))
+        .expect("placed");
+    let b = fx.server.blueprint_list()[0].clone();
+    (fx, site, b)
+}
+
+fn air_at(fx: &mut Fixture, c: [i32; 3]) -> bool {
+    fx.server.world().get_voxel(c[0], c[1], c[2]) == dwell_blocks::require("dwell:air")
+}
+
+both_faces!(
+    fn a_builder_clears_the_whole_tree_and_the_grass_before_placing_anything(f: FaceFrame) {
+        let (mut fx, site, b) = hut_over_a_tree(f, "adventure", None);
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        // The planks already there count as built.
+        let (start, _) = progress(&mut fx, &b);
+        assert_eq!(start, 1);
+        let mut clear_at = None;
+        let mut first_piece = None;
+        for t in 0..60 * 120 {
+            step(&mut fx, 1);
+            // The tree is whole or gone: never leaves left floating.
+            let gone = site.tree.iter().filter(|&&c| air_at(&mut fx, c)).count();
+            assert!(
+                gone == 0 || gone == site.tree.len(),
+                "the tree went in one: {gone} of {}",
+                site.tree.len()
+            );
+            let all_gone =
+                gone == site.tree.len() && site.cleared.iter().all(|&c| air_at(&mut fx, c));
+            if clear_at.is_none() && all_gone {
+                clear_at = Some(t);
+            }
+            if progress(&mut fx, &b).0 > start {
+                first_piece = Some(t);
+                break;
+            }
+        }
+        let clear_at = clear_at.expect("cleared");
+        let first_piece = first_piece.expect("a piece");
+        assert!(
+            clear_at < first_piece,
+            "cleared ({clear_at}) before building ({first_piece})"
+        );
+        let w = fx.server.world();
+        let mut at = |c: [i32; 3]| w.get_voxel(c[0], c[1], c[2]);
+        assert_eq!(at(site.planks), planks, "the right block kept");
+        assert_eq!(
+            at(site.grass_kept),
+            f.state(dwell_blocks::require("dwell:tall_grass")),
+            "grass outside the margin kept"
+        );
+        // Never below the floor: the stone under the trunk stays.
+        assert_eq!(
+            at(f.cell([8, BASE - 1, 8])),
+            f.state(dwell_blocks::require("dwell:stone"))
+        );
+        // Adventure: what was cleared dropped at the site (the logs' wood among it).
+        let items: Vec<String> = fx
+            .server
+            .loose_items()
+            .iter()
+            .map(|i| i.stack.item.clone())
+            .collect();
+        assert!(
+            items.iter().any(|i| i == "dwell:wood"),
+            "the logs' wood dropped: {items:?}"
+        );
+    }
+);
+
+both_faces!(
+    fn a_half_cleared_site_resumes_after_a_save(f: FaceFrame) {
+        let db = WorldDb::in_memory().expect("db");
+        let site = {
+            let (mut fx, site, b) = hut_over_a_tree(f, "creative", Some(&db));
+            // Until the tree goes (the highest first), the grass still standing.
+            for _ in 0..60 * 60 {
+                step(&mut fx, 1);
+                if air_at(&mut fx, site.tree[0]) {
+                    break;
+                }
+            }
+            assert!(air_at(&mut fx, site.tree[0]), "the tree went");
+            assert!(
+                site.cleared.iter().any(|&c| !air_at(&mut fx, c)),
+                "something still to clear"
+            );
+            assert_eq!(progress(&mut fx, &b).0, 1, "nothing built yet");
+            fx.server.save_now();
+            fx.server.flush_store();
+            site
+        };
+        let mut fx = Fixture::new(ServerConfig {
+            mode: "creative".into(),
+            ..config(f, Some(&db))
+        });
+        fx.server.set_blueprint_rules(fast_clearing());
+        let b = fx.server.blueprint_list()[0].clone();
+        fx.join(1, &Client::new(1));
+        fx.send(1, caps());
+        stand(&mut fx, f, 1, 8.5, 16.5);
+        assert!(air_at(&mut fx, site.tree[0]), "the tree stays gone");
+        let mut built = false;
+        for _ in 0..60 * 60 {
+            step(&mut fx, 1);
+            if progress(&mut fx, &b).0 > 1 {
+                built = true;
+                break;
+            }
+        }
+        assert!(built, "building after the clearing");
+        assert!(
+            site.cleared.iter().all(|&c| air_at(&mut fx, c)),
+            "the rest cleared first"
         );
     }
 );

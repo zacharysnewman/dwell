@@ -251,8 +251,9 @@ impl BloomChain {
 }
 
 /// The clouds pass's own group (3; binding 0 is the motion pass's `finished`): the last frame's
-/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7) and the baked
-/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler).
+/// camera (`CloudPrev`), the run-time plumes (`CloudPlumes`, docs/CLOUDS.md §8.7), the baked
+/// shape noise (§9.3: the base and detail 3D textures, their repeating sampler) and the weather
+/// field's map (§11, binding 11).
 pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let texture_3d = |binding| wgpu::BindGroupLayoutEntry {
         binding,
@@ -284,6 +285,17 @@ pub fn cloud_march_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 binding: 8,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            // The weather field's map (docs/CLOUDS.md §11), 2D.
+            wgpu::BindGroupLayoutEntry {
+                binding: 11,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -409,6 +421,8 @@ pub struct Targets {
     pub cloud_raw: (wgpu::Texture, wgpu::TextureView),
     /// Bloom's chain (its tier's size; 1 × 1 with bloom off).
     pub bloom: BloomChain,
+    /// The ambient occlusion's buffers (docs/SSAO.md; the tier's size, 1 × 1 with it off).
+    pub ssao: super::ssao::SsaoTargets,
 }
 
 /// What [`Targets::new`] makes the scene's groups with: the scene layout, the shafts pass's read
@@ -429,10 +443,15 @@ pub struct SceneGroups<'a> {
         &'a wgpu::TextureView,
         &'a wgpu::TextureView,
         &'a wgpu::Sampler,
+        &'a wgpu::TextureView,
     ),
     /// Bloom's chain (`dwell_look::bloom::chain`; (1, 1, 1) off) and its passes' group layout.
     pub bloom: (u32, u32, u32),
     pub bloom_layout: &'a wgpu::BindGroupLayout,
+    /// The ambient occlusion's buffer size ((1, 1) off), its passes' group layout and uniform.
+    pub ssao: (u32, u32),
+    pub ssao_layout: &'a wgpu::BindGroupLayout,
+    pub ssao_uniform: &'a wgpu::Buffer,
 }
 
 impl Targets {
@@ -568,7 +587,7 @@ impl Targets {
                 },
             ],
         });
-        let (base, detail, noise_sampler) = groups.cloud_noise;
+        let (base, detail, noise_sampler, weather) = groups.cloud_noise;
         let cloud_march_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cloud march"),
             layout: groups.cloud_march_layout,
@@ -593,9 +612,20 @@ impl Targets {
                     binding: 8,
                     resource: wgpu::BindingResource::Sampler(noise_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(weather),
+                },
             ],
         });
         let bloom = BloomChain::new(device, groups.bloom, groups.bloom_layout, groups.sampler);
+        let ssao = super::ssao::SsaoTargets::new(
+            device,
+            groups.ssao,
+            groups.ssao_layout,
+            &view_depth.1,
+            groups.ssao_uniform,
+        );
         let scene = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout,
@@ -688,6 +718,7 @@ impl Targets {
             cloud_march_group,
             cloud_raw,
             bloom,
+            ssao,
         }
     }
 

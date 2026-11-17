@@ -59,12 +59,27 @@ pub struct HeldUse {
     held: [bool; 3],
     /// When the last swing (pressed or repeated) started (ms).
     last_ms: Option<f64>,
+    /// This hold's miss (aimed at nothing) has sounded: the repeats are silent (owner,
+    /// 2026-11-15: "It should definitely not play more than once when hitting nothing.").
+    missed: bool,
 }
 
 impl HeldUse {
     /// The use button went down, held by `by`.
     pub fn press(&mut self, by: Holder) {
+        if !self.held() {
+            self.missed = false;
+        }
         self.held[slot(by)] = true;
+    }
+
+    /// A break aimed at nothing: whether its refusal sounds. A click's always does; a hold's only
+    /// the first time (its press), not on every repeat while it is held at the sky.
+    pub fn miss_sounds(&mut self) -> bool {
+        if !self.held() {
+            return true;
+        }
+        !std::mem::replace(&mut self.missed, true)
     }
 
     /// `by` let go (or play stopped): no more repeats unless another still holds it; the swing
@@ -99,11 +114,33 @@ impl HeldUse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hold_at_nothing_sounds_its_miss_once() {
+        let mut h = HeldUse::default();
+        assert!(
+            h.miss_sounds() && h.miss_sounds(),
+            "clicks: each one sounds"
+        );
+        h.press(Holder::Touch);
+        assert!(h.miss_sounds(), "the hold's press sounds");
+        assert!(
+            (0..100).all(|_| !h.miss_sounds()),
+            "its repeats at nothing are silent"
+        );
+        h.press(Holder::Mouse);
+        assert!(!h.miss_sounds(), "a second holder joining is the same hold");
+        h.release(Holder::Touch);
+        h.release(Holder::Mouse);
+        h.press(Holder::Mouse);
+        assert!(h.miss_sounds(), "a new hold sounds once again");
+        assert!(!h.miss_sounds());
+    }
     use crate::chop::{Chopping, Impact};
     use dwell_protocol::chopping::{BREAK_TOOLS, ToolDef, tool};
 
     fn axe() -> &'static ToolDef {
-        tool("dwell:stone_axe").unwrap()
+        tool("dwell:sword").unwrap()
     }
 
     /// A hold of the axe for `hold_s` at 60 fps (its path meeting a wood at the arc's middle step
@@ -160,12 +197,15 @@ mod tests {
 
     #[test]
     fn the_axe_pick_shovel_and_sword_repeat_by_their_data() {
-        assert_eq!(Repeat::of_tool(axe()), Repeat::WhenReady);
         assert_eq!(
             Repeat::of_tool(tool("dwell:sword").unwrap()),
             Repeat::WhenReady
         );
+        // The axes break as the pickaxes and the shovels do (owner, 2026-11-14): at their
+        // `repeatS`.
         for p in [
+            "dwell:stone_axe",
+            "dwell:metal_axe",
             "dwell:stone_pickaxe",
             "dwell:metal_pickaxe",
             "dwell:wooden_shovel",
@@ -181,8 +221,7 @@ mod tests {
         assert_eq!(Repeat::of_break(None), Repeat::Every(hand));
         assert_eq!(Repeat::of_break(Some("dwell:stone")), Repeat::Every(hand));
         assert_eq!(Repeat::of_break(Some("dwell:torch")), Repeat::Every(hand));
-        // An axe's break-table entry and a chopping tool: not as a break (the swing repeats).
-        assert_eq!(Repeat::of_break(Some("dwell:stone_axe")), Repeat::No);
+        // A swung tool: not as a break (the swing repeats).
         assert_eq!(Repeat::of_break(Some("dwell:sword")), Repeat::No);
         // A tool added by data alone (shared/tools/fixtures: the stick club) repeats as its data says.
         let stick = dwell_protocol::chopping::fixture::TOOLS
