@@ -14,16 +14,6 @@ of the 2×2 trunk (its `width` property and facing); cutting its neighbours re-s
 log's look. Suspect: the log's shape is computed from its neighbours (an adaptive look or a neighbour-reshape on
 change) rather than kept as placed. Owner should see: a quarter log keeps its quarter shape whatever is cut round it.
 
-### 203. A 2×2 trunk shows holes in its mesh when cut at an inside edge (reported 2026-11-17)
-
-Owner, 2026-11-17: "A bug for up next, the big (2x2 trees show holes in mesh when cutting inside edge)". Screenshot: a
-giant tree's 2×2 log trunk hit with the stone axe where its four logs meet; past the carved notch the inner faces are
-missing, so the grass and sky behind show through (a see-through gap along the cut's inside edge). Repro: a giant
-(2×2 trunk) tree, axe its trunk at the seam between two of its logs until a notch opens. Suspect: the carved mesh of a
-damaged cell (`mesher/damage_mesh.rs`, BLOCK_DAMAGE.md §6.2) or the felling cut's open faces assume the neighbour
-across the struck face is air or a full face, so a face against another log of the same trunk is culled while the
-carve opens it. Owner should see: a cut 2×2 trunk solid behind its notch, no see-through gaps.
-
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail
@@ -1079,6 +1069,23 @@ the first ladder went there (it now waits for the cell).
 
 
 ## Fixed
+
+### 203. A 2×2 trunk showed holes in its mesh when cut at an inside edge (reported 2026-11-17; fixed after 0.73.2)
+
+Owner, 2026-11-17: "A bug for up next, the big (2x2 trees show holes in mesh when cutting inside edge)". Screenshot: a
+giant tree's 2×2 log trunk hit with the stone axe where its four logs meet; past the carved notch the inner faces are
+missing, so the grass and sky behind show through (a see-through gap along the cut's inside edge). Repro: a giant
+(2×2 trunk) tree, axe its trunk at the seam between two of its logs until a notch opens. Suspect: the carved mesh of a
+damaged cell (`mesher/damage_mesh.rs`, BLOCK_DAMAGE.md §6.2) or the felling cut's open faces assume the neighbour
+across the struck face is air or a full face, so a face against another log of the same trunk is culled while the
+carve opens it. Owner should see: a cut 2×2 trunk solid behind its notch, no see-through gaps.
+**Cause:** a 2×2 trunk's quarters are joined octagon logs, squared off where they meet, and a joined side has no face
+on either side. The damage mask's walls (BLOCK_DAMAGE.md §15) were only drawn on planes inside the cell, so where the
+carve reached the joined side the removed material had no wall and the neighbour quarter drew none (#190's fix draws
+a neighbour's face toward a damaged cell, but a joined side has none to draw). **Fixed:** `DamageMask::inner_faces`
+takes the cell's closed sides (an octagon log's joined sides) and walls the removed sub-cells against them on the
+cell's boundary. Test: `dwell-mesh` `a_cut_quarter_of_a_two_by_two_trunk_leaves_no_hole_at_its_seam` (both faces;
+the four quarters' mesh encloses the trunk less the struck quarter's bite: red at 2.17 against 1.79, open; green).
 
 ### 202. A worldgen world's far terrain drew the default island (0.71.32–0.72.2; fixed after 0.72.2)
 

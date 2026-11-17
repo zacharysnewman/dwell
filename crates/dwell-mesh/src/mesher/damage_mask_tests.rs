@@ -282,7 +282,10 @@ dwell_world::both_faces!(
             mesh_volume_m3(&pts, &tris)
         };
         let whole = vol(&[], 0);
-        assert!(whole > 3.5 * CELL_H, "four joined quarters fill most of their cells: {whole}");
+        assert!(
+            whole > 3.5 * CELL_H,
+            "four joined quarters fill most of their cells: {whole}"
+        );
         // Struck on its outer -x side right beside the seam with the quarter at +z.
         for (face, point) in [(1u8, [0u8, 128, 250]), (5u8, [250u8, 128, 0])] {
             for fraction in [128u8, 255] {
@@ -409,7 +412,7 @@ fn a_fixture_shape_gets_damage_by_data_alone() {
         "half the wedge: {gone} of {inside}"
     );
     // Its walls lie inside the shape, the clipped faces too.
-    for w in mask.inner_faces(&hull) {
+    for w in mask.inner_faces(&hull, 0) {
         for q in &w.pts {
             assert!(q[0] + q[1] <= 1.0 + 1e-6, "a wall inside the wedge: {q:?}");
         }

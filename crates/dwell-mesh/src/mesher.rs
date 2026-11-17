@@ -1124,6 +1124,7 @@ fn shaped_voxel(
             lit,
             crack: crack.as_ref(),
             marks: &view.marks,
+            closed: 0,
         };
         mask_walls(b, k, [x, y, z], &walls);
     }
@@ -1185,6 +1186,9 @@ struct Walls<'a> {
     lit: (f32, [f32; 2]),
     crack: Option<&'a damage_mesh::CrackLayer>,
     marks: &'a [HitMark],
+    /// The sides (bits by face index) whose neighbour draws no face toward the cell: walls on the
+    /// cell's boundary there too ([`DamageMask::inner_faces`]).
+    closed: u8,
 }
 
 /// The walls of a damaged cell's removed material (BLOCK_DAMAGE.md §15): the faces between the
@@ -1200,7 +1204,7 @@ fn mask_walls(b: &mut Builder, k: &Kind, cell: [i32; 3], w: &Walls<'_>) {
     let darken = if spall { 0.0 } else { w.look.darken };
     let (open, flood) = w.lit;
     let at = cell.map(f64::from);
-    for f in w.mask.inner_faces(w.hull) {
+    for f in w.mask.inner_faces(w.hull, w.closed) {
         let mut normal = [0.0; 3];
         normal[f.axis] = f64::from(f.sign);
         let base = face_tint(f.axis, f.sign);
@@ -1599,6 +1603,8 @@ fn octagon_voxel(
             lit,
             crack: crack.as_ref(),
             marks: &view.marks,
+            // A joined side's neighbour (a 2×2 trunk's quarter) draws no face toward it (#203).
+            closed: joined,
         };
         mask_walls(b, k, cell, &walls);
     }
@@ -3226,6 +3232,7 @@ fn mesh_cells(
             lit: (sum / n.max(1) as f32, flood),
             crack: crack.as_ref(),
             marks: &view.marks,
+            closed: 0,
         };
         mask_walls(&mut opaque, &k, cell, &walls);
     }
