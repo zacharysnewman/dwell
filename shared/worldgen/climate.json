@@ -40,7 +40,7 @@
     "reachM": 5000,
     "baseRain": 0.15,
     "upliftRain": 1.5,
-    "leeDry": 1, "leeFloor": 0.4, "recoverM": 60000,
+    "leeDry": 1, "leeFloor": 0.4, "recoverM": 0,
     "blurM": 4000
   },
   "maxGridBytes": 1048576,
