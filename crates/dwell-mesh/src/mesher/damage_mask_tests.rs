@@ -811,11 +811,17 @@ dwell_world::both_faces!(
             lo(0),
             hi(0)
         );
+        // Along z the ten segments put no vertex at ±r: its half-width is r · sin 72°.
+        let half_z = 0.5 * (hi(2) - lo(2));
         assert!(
-            near(lo(2), 4.5 - r) && near(hi(2), 4.5 + r),
-            "z {} {}",
+            near(0.5 * (hi(2) + lo(2)), 4.5),
+            "z centre {} {}",
             lo(2),
             hi(2)
+        );
+        assert!(
+            (0.94 * r..=r + 1e-6).contains(&half_z),
+            "z half-width {half_z}"
         );
     }
 );

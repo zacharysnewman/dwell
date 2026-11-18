@@ -65,30 +65,23 @@ fn use_it(fx: &mut Fixture, f: FaceFrame, cell: [i32; 3]) {
 }
 
 both_faces!(
-    fn a_cannon_fires_on_a_use_and_again_once_reloaded(f: FaceFrame) {
+    fn a_cannon_fires_on_every_use(f: FaceFrame) {
+        // No fire-rate cap (owner, 2026-11-18: "set that to off or none, so you can fire quickly").
         let mut fx = Fixture::new(config(f));
         fx.join(1, &Client::new(1));
         for _ in 0..10 {
             fx.server.step();
         }
         let cells = cannon_scene(&mut fx, f);
-        use_it(&mut fx, f, cells[2]);
-        assert_eq!(fx.server.shots_fired(), 1, "fired");
-        // Any cell is the cannon; too soon after a shot it doesn't fire.
-        use_it(&mut fx, f, cells[1]);
-        assert_eq!(fx.server.shots_fired(), 1, "reloading");
-        // Its cells are all still there: a Use writes nothing.
+        // Any of its cells is the cannon, each Use a shot, ticks apart.
+        for (k, c) in [cells[2], cells[1], cells[3]].into_iter().enumerate() {
+            use_it(&mut fx, f, c);
+            assert_eq!(fx.server.shots_fired(), k as u64 + 1);
+        }
+        // A Use writes nothing.
         for c in cells {
             assert_ne!(fx.server.world().get_voxel(c[0], c[1], c[2]), 0);
         }
-        let reload = dwell_world::cannons::cannon("dwell:cannon")
-            .unwrap()
-            .reload_s;
-        for _ in 0..(reload * f64::from(SIM_HZ)) as u32 {
-            fx.server.step();
-        }
-        use_it(&mut fx, f, cells[3]);
-        assert_eq!(fx.server.shots_fired(), 2, "reloaded");
     }
 );
 
@@ -163,91 +156,126 @@ both_faces!(
             (next[2] - now[2]).abs() * f64::from(SIM_HZ) > 0.5
         });
         assert!(!moving, "still rolling at {at:?}");
-        // Landing and rolling on the flat struck nothing loose (a grazing landing is no strike).
-        assert_eq!(fx.server.ball_strikes().1, 0, "knocked cells on the flat");
+        // Landing and rolling on the flat broke nothing (resting on the ground touches no cell).
+        assert_eq!(fx.server.ball_hits(), (0, 0), "broke the flat");
         assert!(at[2] > -150.0 && at[2] < -10.0, "rested at {at:?}");
     }
 );
 
-/// A stone brick wall across the barrel's path at face-local z = `WALL_Z`, 5 rows tall.
+/// A stone brick wall across the barrel's path at face-local z = `WALL_Z` and the `deep` - 1 rows of
+/// z behind it, 5 rows tall.
 const WALL_Z: i32 = -8;
-fn wall(fx: &mut Fixture, f: FaceFrame) -> Vec<[i32; 3]> {
+fn wall(fx: &mut Fixture, f: FaceFrame, deep: i32) -> Vec<[i32; 3]> {
     let brick = f.state(dwell_blocks::require("dwell:stone_brick"));
     let mut cells = Vec::new();
     for x in -2..8 {
         for r in 0..5 {
-            let c = f.cell([x, BASE + r, WALL_Z]);
-            fx.server.world().set_voxel(c[0], c[1], c[2], brick);
-            cells.push(c);
+            for d in 0..deep {
+                let c = f.cell([x, BASE + r, WALL_Z - d]);
+                fx.server.world().set_voxel(c[0], c[1], c[2], brick);
+                cells.push(c);
+            }
         }
     }
     cells
 }
 
-fn fire_at_wall(f: FaceFrame, explosive: bool) -> (Fixture, Vec<[i32; 3]>, u32) {
+fn fire_at_wall(f: FaceFrame, deep: i32) -> (Fixture, Vec<[i32; 3]>, u32) {
     let mut fx = Fixture::new(config(f));
     fx.join(1, &Client::new(1));
     for _ in 0..10 {
         fx.server.step();
     }
     let cells = cannon_scene(&mut fx, f);
-    let wall = wall(&mut fx, f);
-    if explosive {
-        fx.server.set_cannon_ball("dwell:explosive_ball");
-    }
+    let wall = wall(&mut fx, f, deep);
     use_it(&mut fx, f, cells[0]);
     let id = fx.server.last_ball().expect("a ball fired");
-    for _ in 0..40 {
+    for _ in 0..60 {
         fx.server.step();
     }
     (fx, wall, id)
 }
 
 both_faces!(
-    fn an_iron_ball_knocks_loose_the_cells_round_where_it_strikes_a_wall(f: FaceFrame) {
-        // docs/CANNONS.md C3; owner, 2026-11-17: "one simple impact knocking loose cells it strikes
-        // (and maybe knocks loose in an area around where it collides)".
-        let (mut fx, wall, id) = fire_at_wall(f, false);
-        let (strikes, knocked) = fx.server.ball_strikes();
-        assert!(strikes >= 1, "it struck the wall");
-        let max = match dwell_world::cannons::ball("dwell:iron_ball")
-            .unwrap()
-            .impact
-        {
-            dwell_world::cannons::Impact::Knock { max_cells, .. } => u64::from(max_cells),
-            _ => unreachable!(),
-        };
+    fn a_fast_ball_smashes_through_and_loosens_the_blocks_round_its_hole(f: FaceFrame) {
+        // Owner, 2026-11-18: "Every time the cannonball hits a block at greater than a certain
+        // velocity, it should destroy it"; "detaches neighboring blocks from their structures. 1m
+        // radius". A 1-block wall at 45 m/s: smashed through, the cells round the hole loose.
+        let (mut fx, wall, _) = fire_at_wall(f, 1);
+        let (smashed, loosened) = fx.server.ball_hits();
+        assert!(smashed >= 1, "smashed {smashed}");
+        assert!(loosened >= 1, "loosened {loosened}");
+        let gone =
+            |fx: &mut Fixture, c: [i32; 3]| fx.server.world().get_voxel(c[0], c[1], c[2]) == 0;
         assert!(
-            knocked >= 1 && knocked <= max * strikes,
-            "knocked {knocked} in {strikes}"
+            gone(&mut fx, f.cell([2, BASE + 1, WALL_Z])),
+            "the cell in its path"
         );
-        // Gone from the wall: in line with the barrel (x 2), at its height.
-        let gone: Vec<[i32; 3]> = wall
-            .iter()
-            .copied()
-            .filter(|c| fx.server.world().get_voxel(c[0], c[1], c[2]) == 0)
-            .collect();
-        assert_eq!(gone.len() as u64, knocked, "{gone:?}");
+        // Only round the hole: the wall's far ends stand.
         assert!(
-            gone.contains(&f.cell([2, BASE + 1, WALL_Z])),
-            "the cell it hit: {gone:?}"
+            !gone(&mut fx, f.cell([-2, BASE + 1, WALL_Z]))
+                && !gone(&mut fx, f.cell([7, BASE + 1, WALL_Z]))
         );
-        // The ball itself is still about (flown on, or resting).
-        let _ = fx.server.body_pose(id);
+        let left = wall.iter().filter(|&&c| !gone(&mut fx, c)).count();
+        assert!(
+            left + 10 < wall.len() + 10 && left > wall.len() / 2,
+            "{left} of {} left",
+            wall.len()
+        );
     }
 );
 
 both_faces!(
-    fn an_explosive_ball_blows_up_where_it_strikes(f: FaceFrame) {
-        let (mut fx, wall, id) = fire_at_wall(f, true);
-        assert!(fx.server.body_pose(id).is_none(), "the ball is gone");
-        let gone = wall
-            .iter()
-            .filter(|c| fx.server.world().get_voxel(c[0], c[1], c[2]) == 0)
-            .count();
-        // Dynamite's blast takes far more than the iron ball's knock.
-        assert!(gone > 6, "the blast cleared {gone} cells of the wall");
-        assert!(gone < wall.len(), "not the whole wall");
+    fn a_thick_wall_slows_the_ball_by_the_weight_it_smashes_until_it_knocks_loose(f: FaceFrame) {
+        // "By the block's weight": every brick it destroys costs its energy; under 20 m/s it knocks
+        // the next loose instead. A wall 12 bricks deep stops it inside.
+        let (fx, _, id) = fire_at_wall(f, 12);
+        let (smashed, _) = fx.server.ball_hits();
+        let ball = dwell_world::cannons::ball("dwell:iron_ball").unwrap();
+        let brick = dwell_blocks::info(dwell_blocks::require("dwell:stone_brick"));
+        let kg = f64::from(brick.density_kg_m3) * dwell_world::CELL_H;
+        let (v0, v1) = (45.0f64, ball.impact.destroy_speed_ms);
+        // The bricks the energy between 45 and 20 m/s pays for (the hits per tick round up).
+        let most = (0.5 * ball.mass_kg() * (v0 * v0 - v1 * v1) / (ball.impact.energy_per_kg_j * kg))
+            .ceil() as u64
+            + 4;
+        assert!(
+            smashed >= 1 && smashed <= most,
+            "smashed {smashed}, at most {most}"
+        );
+        // It didn't come out the far side.
+        let far = fx
+            .server
+            .body_pose(id)
+            .map(|(p, _)| f.point(p.to_array())[2]);
+        assert!(
+            far.is_none_or(|z| z > f64::from(WALL_Z - 12)),
+            "came through at z {far:?}"
+        );
+    }
+);
+
+both_faces!(
+    fn the_ball_drags_loose_pieces_along_its_path(f: FaceFrame) {
+        // Owner, 2026-11-18: "it should exert continuous force as it flies around it, in its velocity
+        // direction". A loose piece beside its path (within 1 m) is pushed north, the ball's way.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        let cells = cannon_scene(&mut fx, f);
+        let dirt = f.state(dwell_blocks::require("dwell:dirt"));
+        // Hung in the air beside the line 6 m out, its box clear of the ball (x 2.5 ± 0.24) and its centre 0.9 m off it.
+        let at = f.point([3.4, m_of_row(BASE) + 0.6, -6.0]);
+        let piece = fx.server.add_body(0, vec![([0, 0, 0], dirt)], at);
+        use_it(&mut fx, f, cells[0]);
+        let z0 = at[2];
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        let z1 = fx.server.body_pose(piece).map_or(z0, |p| p.0.z);
+        assert!(z0 - z1 > 0.3, "dragged north: {z0} -> {z1}");
     }
 );
 

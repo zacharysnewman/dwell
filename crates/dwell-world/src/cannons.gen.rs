@@ -4,11 +4,10 @@ use crate::cannons::{BallDef, CannonDef, Impact};
 
 /// The cannons, by block (`cannons`).
 pub static CANNONS: &[CannonDef] = &[
-    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, reload_s: 2.0 },
+    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, reload_s: 0.0 },
 ];
 
 /// The cannonballs (`balls`).
 pub static BALLS: &[BallDef] = &[
-    BallDef { name: "dwell:iron_ball", radius_m: 0.12, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact::Knock { radius_m: 0.8, max_cells: 6, min_speed_ms: 8.0 } },
-    BallDef { name: "dwell:explosive_ball", radius_m: 0.12, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact::Explode { explosive: "dwell:dynamite", min_speed_ms: 6.0 } },
+    BallDef { name: "dwell:iron_ball", radius_m: 0.24, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact { destroy_speed_ms: 20.0, energy_per_kg_j: 40.0, drag_radius_m: 1.0, drag_force_per_speed_n: 2000.0, max_loose_cells: 24, min_speed_ms: 4.0 } },
 ];

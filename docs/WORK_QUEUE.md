@@ -62,7 +62,7 @@ Last updated: 2026-11-11 (0.52.108).
   block hit is destroyed, below it knocked loose as a physics block); each block destroyed or knocked loose slows the
   ball "by the block's weight"; the 1 m drag: "It shouldn't be a velocity setter, it should exert continuous force as
   it flies around it, in its velocity direction" (a force on the loose blocks within 1 m, along the ball's velocity,
-  growing with its speed, every tick it passes).
+  growing with its speed, every tick it passes). Built 2026-11-18 (docs/CANNONS.md §9).
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).
