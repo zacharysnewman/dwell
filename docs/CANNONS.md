@@ -53,6 +53,10 @@ direction." No ammunition or reloading for now.
 
 ## 4. Open (later)
 
+Owner, 2026-11-18: rudder and sail blocks on hold; no aiming the barrel; a ball doesn't hurt players; sinking and water
+filling the hull are next (with a hull's enclosed air as buoyancy).
+
+
 - Aiming (turning and raising the barrel), ammunition and reloading by hand.
 - Sinking by holes below the waterline; water filling a hull rather than standing inside it (owner: "We'll clarify
   some questions first").
@@ -219,4 +223,8 @@ velocity setter, it should exert continuous force as it flies around it, in its 
   momentum that pushes the body back; the whole of it sent a 12 t raft back 1.7 m/s a shot, out of frame in a few);
   the helm's `thrustN` 20,000 and `rudderNmPerMs` 20,000 (a 16 t boat barely moved at 6,000; 40,000 spun a small raft
   round in 4 s); its camera 8 m back and 3 m up over 0.8 s (5 m and 1.5 m showed mostly deck).
+- **The helm's push scales with the ship's mass** (owner, 2026-11-18: "The movement force should be scaled based on the
+  mass of the boat, so big boats can move at a reasonable speed too"): `thrustAccelMs2` 1.2 (replacing `thrustN`): the
+  force is the body's mass × it. Test: `tests/ships.rs` `a_big_boat_sails_about_as_fast_as_a_small_raft` (both faces:
+  8 × 12 × 2 against 4 × 4 × 1 in 3 s; with a fixed 16 kN the big one went 1.3 m to the raft's 8.4 m).
 

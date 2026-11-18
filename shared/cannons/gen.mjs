@@ -81,7 +81,7 @@ export function validateCannons(data, names) {
   const helmSeen = new Set();
   const helms = data.helms.map((h, i) => {
     const at = `helms[${i}]`;
-    known(h, ['block', 'thrustN', 'rudderNmPerMs', 'camera'], at);
+    known(h, ['block', 'thrustAccelMs2', 'rudderNmPerMs', 'camera'], at);
     known(h.camera, ['backM', 'upM', 'easeS'], `${at}.camera`);
     range(h.camera, 'backM', 0, 30, `${at}.camera`);
     range(h.camera, 'upM', -5, 15, `${at}.camera`);
@@ -91,7 +91,7 @@ export function validateCannons(data, names) {
     if (def.use !== 'helm') fail(`${at}.block: ${h.block} must have use: helm`);
     if (helmSeen.has(h.block)) fail(`${at}.block: ${h.block} is listed twice`);
     helmSeen.add(h.block);
-    range(h, 'thrustN', 0, 1e7, at);
+    range(h, 'thrustAccelMs2', 0, 20, at);
     range(h, 'rudderNmPerMs', 0, 1e7, at);
     return h;
   });
@@ -118,7 +118,7 @@ export function cannonsRust(d) {
   rs.push('/// The ships\' helms, by block (`helms`).');
   rs.push('pub static HELMS: &[HelmDef] = &[');
   for (const h of d.helms) {
-    rs.push(`    HelmDef { block: "${h.block}", thrust_n: ${f64(h.thrustN)}, rudder_nm_per_ms: ${f64(h.rudderNmPerMs)}, camera: HelmCamera { back_m: ${f64(h.camera.backM)}, up_m: ${f64(h.camera.upM)}, ease_s: ${f64(h.camera.easeS)} } },`);
+    rs.push(`    HelmDef { block: "${h.block}", thrust_accel_ms2: ${f64(h.thrustAccelMs2)}, rudder_nm_per_ms: ${f64(h.rudderNmPerMs)}, camera: HelmCamera { back_m: ${f64(h.camera.backM)}, up_m: ${f64(h.camera.upM)}, ease_s: ${f64(h.camera.easeS)} } },`);
   }
   rs.push('];', '');
   return rs.join('\n');

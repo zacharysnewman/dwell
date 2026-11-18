@@ -517,3 +517,73 @@ both_faces!(
         }
     }
 );
+
+/// How far (m) a plank boat `w` × `d` cells and `layers` deep, its helm facing north on its deck,
+/// sails in 3 s at the helm from still (`harbour`'s pool; its own raft taken away).
+fn sails_in_3_s(f: FaceFrame, w: i32, d: i32, layers: i32) -> f64 {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    let (raft, _) = harbour(&mut fx, f);
+    fx.server.remove_body(raft);
+    let up = up_rows(f);
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let mut cells: Vec<([i32; 3], u16)> = Vec::new();
+    for x in 0..w {
+        for z in 0..d {
+            for l in 0..layers {
+                cells.push(([x, l * up, z], planks));
+            }
+        }
+    }
+    let helm = [w / 2, layers * up, d - 2];
+    cells.push((
+        helm,
+        f.state(dwell_blocks::require("dwell:helm[facing=north]")),
+    ));
+    let c = f.cell([0, BASE, 0]);
+    let y = f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+    let boat = fx.server.add_body(1, cells, [0.5, y, 0.5]);
+    let mut seq = 0;
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    let (p0, q) = fx.server.body_pose(boat).expect("afloat");
+    let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+    let off = dwell_physics::DVec3::new(
+        f64::from(w / 2),
+        f64::from(layers - 1) * dwell_world::CELL_H * f64::from(up),
+        f64::from(d - 1),
+    );
+    stand(
+        &mut fx,
+        p0 + q * off + upv * (0.5 * dwell_world::CELL_H + 0.05),
+        upv,
+    );
+    hold(&mut fx, &mut seq, Input::default(), 20);
+    assert!(fx.server.use_body_cell(1, boat, helm), "the helm");
+    hold(&mut fx, &mut seq, Input::default(), 3);
+    let (a, _) = fx.server.body_pose(boat).unwrap();
+    hold(
+        &mut fx,
+        &mut seq,
+        Input {
+            move_y: 1.0,
+            ..Input::default()
+        },
+        180,
+    );
+    let (b, _) = fx.server.body_pose(boat).unwrap();
+    a.z - b.z
+}
+
+both_faces!(
+    fn a_big_boat_sails_about_as_fast_as_a_small_raft(f: FaceFrame) {
+        // Owner, 2026-11-18: "The movement force should be scaled based on the mass of the boat, so
+        // big boats can move at a reasonable speed too." 4 × 4 × 1 against 8 × 12 × 2 (6× the mass).
+        let small = sails_in_3_s(f, 4, 4, 1);
+        let big = sails_in_3_s(f, 8, 12, 2);
+        assert!(small > 1.0, "the raft sails: {small}");
+        assert!(
+            big > 0.7 * small,
+            "the big boat keeps up: {big} against {small}"
+        );
+    }
+);
