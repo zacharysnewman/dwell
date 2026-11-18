@@ -77,7 +77,8 @@ Last updated: 2026-11-11 (0.52.108).
   person helm camera); and a tool that builds a moving body (a raft, a boat with its cannon or helm) from data instead
   of block by block. Owner's answer (2026-11-18): "Just the videos, they should ultimately use the same tooling (updated perhaps)
   that is used to copy paste sections." (The bodies tool is to come from the copy-paste (region/structure) tooling;
-  for now the videos only, built by dev hooks.)
+  for now the videos only, built by dev hooks.) Both videos sent 2026-11-18 (raft-battle, boat-helm; recorded with the dev hooks
+  in the harbour scene); waiting on the owner's look.
   Owner, 2026-11-18 (sidebar): "What's the current process to build a raft as a normal player in creative? I noticed I
   can't build on existing structures anymore, I think that's a bug." / "Existing dynamic structures" → BUGS.md #208.
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look

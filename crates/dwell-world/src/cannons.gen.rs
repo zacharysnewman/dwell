@@ -4,7 +4,7 @@ use crate::cannons::{BallDef, CannonDef, HelmCamera, HelmDef, Impact};
 
 /// The cannons, by block (`cannons`).
 pub static CANNONS: &[CannonDef] = &[
-    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, reload_s: 0.0 },
+    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, recoil_share: 0.2, reload_s: 0.0 },
 ];
 
 /// The cannonballs (`balls`).
@@ -14,5 +14,5 @@ pub static BALLS: &[BallDef] = &[
 
 /// The ships' helms, by block (`helms`).
 pub static HELMS: &[HelmDef] = &[
-    HelmDef { block: "dwell:helm", thrust_n: 6000.0, rudder_nm_per_ms: 4000.0, camera: HelmCamera { back_m: 5.0, up_m: 1.5, ease_s: 0.6 } },
+    HelmDef { block: "dwell:helm", thrust_n: 20000.0, rudder_nm_per_ms: 20000.0, camera: HelmCamera { back_m: 8.0, up_m: 3.0, ease_s: 0.8 } },
 ];

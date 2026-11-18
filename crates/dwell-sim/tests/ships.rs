@@ -136,7 +136,7 @@ both_faces!(
             move_y: 1.0,
             ..Input::default()
         };
-        hold(&mut fx, &mut seq, turning, 240);
+        hold(&mut fx, &mut seq, turning, 90);
         let h1 = heading(&fx, raft);
         assert!(h1.dot(right) > 0.15, "turned right: {h0:?} -> {h1:?}");
         // Jump leaves the helm.

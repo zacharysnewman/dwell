@@ -215,4 +215,8 @@ velocity setter, it should exert continuous force as it flies around it, in its 
   (2026-11-18): bodies are ultimately to be made with the copy-paste (region) tooling.
 - **The harbour scene** (shared/theater/scenes/harbour.json): a broad still lake 5 m deep for rafts and boats.
 - **The build platform's look**: a blue grid (owner: "planks look exactly like build platform").
+- **Tuning from the first recordings** (2026-11-18): the cannon's `recoilShare` 0.2 (new data: the share of the ball's
+  momentum that pushes the body back; the whole of it sent a 12 t raft back 1.7 m/s a shot, out of frame in a few);
+  the helm's `thrustN` 20,000 and `rudderNmPerMs` 20,000 (a 16 t boat barely moved at 6,000; 40,000 spun a small raft
+  round in 4 s); its camera 8 m back and 3 m up over 0.8 s (5 m and 1.5 m showed mostly deck).
 
