@@ -122,6 +122,10 @@ pub mod tag {
     pub const FILL: u8 = 0x92;
     /// No bytes: leaves beside it lie flat against it (`StateInfo::leaf_flush`), sent only when set.
     pub const LEAF_FLUSH: u8 = 0x93;
+    /// `f32` degrees, `f32` length (m), `f32` from (m): a wall-mounted cross's lean
+    /// (`Cross::lean_deg`, `lean_length_m`, `lean_from_m`; a torch on a wall), after tag 0x88, sent
+    /// only when it leans. A build before it draws the cross upright.
+    pub const CROSS_LEAN: u8 = 0x94;
 }
 
 /// Rule flag bits (tag `FLAGS`).
@@ -414,6 +418,13 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             if !c.sit_on_support {
                 w.u8(0);
             }
+        }));
+    }
+    if let Some(c) = s.cross.filter(|c| c.lean_deg != 0.0) {
+        out.push(field(tag::CROSS_LEAN, |w| {
+            w.f32(c.lean_deg);
+            w.f32(c.lean_length_m);
+            w.f32(c.lean_from_m);
         }));
     }
     if let Some(v) = s.wind {
@@ -1046,12 +1057,23 @@ fn apply_look(fields: &Fields, fluids: &[String], row: &mut StateInfo) {
                     height_min: r.f32(),
                     height_max: r.f32(),
                     sit_on_support: true,
+                    lean_deg: 0.0,
+                    lean_length_m: 0.0,
+                    lean_from_m: 0.0,
                 };
                 let sit = r.at_end() || r.u8() != 0;
                 row.cross = r.ok().then_some(Cross {
                     sit_on_support: sit,
                     ..c
                 });
+            }
+            tag::CROSS_LEAN => {
+                let (deg, len, from) = (r.f32(), r.f32(), r.f32());
+                if let (true, Some(c)) = (r.ok() && deg.is_finite(), row.cross.as_mut()) {
+                    c.lean_deg = deg;
+                    c.lean_length_m = len;
+                    c.lean_from_m = from;
+                }
             }
             tag::WIND => {
                 let w = Wind {
@@ -1607,6 +1629,29 @@ mod tests {
         })];
         apply_look(&unknown, &[], &mut row);
         assert_eq!((row.light, row.held), (None, None));
+    }
+
+    #[test]
+    fn a_wall_torchs_lean_travels_as_a_look_and_a_floor_torch_sends_none() {
+        // Owner, 2026-11-18: torches "mounted to walls", "Tilted out from the wall": the lean is
+        // a look tag after the cross; its facing and support are the rules' own fields.
+        let wall = *crate::info(crate::require("dwell:torch[mount=east]"));
+        let fields = state_fields(&wall);
+        const { assert!(tag::CROSS_LEAN & tag::LOOK_BIT != 0) };
+        assert!(fields.iter().any(|(k, _)| *k == tag::CROSS_LEAN));
+        let mut row = default_row("test:copy");
+        apply_look(&fields, &[], &mut row);
+        let c = row.cross.expect("its cross");
+        assert_eq!(
+            (c.lean_deg, c.lean_length_m, c.lean_from_m),
+            (25.0, 1.0, 0.0)
+        );
+        let floor = *crate::info(crate::require("dwell:torch"));
+        assert!(
+            !state_fields(&floor)
+                .iter()
+                .any(|(k, _)| *k == tag::CROSS_LEAN)
+        );
     }
 
     #[test]

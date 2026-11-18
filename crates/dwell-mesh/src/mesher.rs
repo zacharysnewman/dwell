@@ -907,6 +907,21 @@ fn cross_voxel(
     // vertices.
     b.m.plants.resize(b.vertex_count() as usize * 4, 0.0);
     b.m.bare.resize(b.vertex_count() as usize, 0.0);
+    // A wall-mounted cross's lean: its facing (out from the wall), tan of its angle, the stick's
+    // length and this cell's height up it (m).
+    let lean = style
+        .ladder_face
+        .filter(|_| c.lean_deg > 0.0)
+        .and_then(|k| dwell_world::edit::FACE_DIRS.get(k))
+        .map(|d| {
+            (
+                f64::from(d[0]),
+                f64::from(d[2]),
+                f64::from(c.lean_deg).to_radians().tan(),
+                f64::from(c.lean_length_m),
+                f64::from(c.lean_from_m),
+            )
+        });
     let bare = if style.outline { 0.0 } else { 1.0 };
     for q in 0..u32::from(c.quads) {
         let angle = std::f64::consts::FRAC_PI_4
@@ -935,6 +950,17 @@ fn cross_voxel(
         ];
         for (along, py, u, v, s) in corners {
             let (px, pz) = (cx + dx * along, cz + dz * along);
+            // A wall torch leans out from its wall (`Cross::lean_deg`): its quads sheared toward
+            // its facing by how far up the stick each vertex is, its foot at the wall and its top
+            // over the cell's middle (where its flame burns).
+            let (px, pz) = match lean {
+                Some((fx, fz, slope, length, from)) => {
+                    let h = from + (py - f64::from(y)) * CELL_H;
+                    let shift = slope * (h - length);
+                    (px + fx * shift, pz + fz * shift)
+                }
+                None => (px, pz),
+            };
             let py = py - sink(px, pz);
             b.m.positions.extend([px as f32, py as f32, pz as f32]);
             b.m.normals.extend(n.map(|v| v as f32));

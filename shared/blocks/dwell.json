@@ -393,7 +393,7 @@
       "of": "sand"
     },
     {
-      "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters).",
+      "$comment": "Prototype content (docs/LIGHTS.md): a torch on the floor, 1 m tall over two ½ m cells. This is its lower cell (the stick), placed from the palette; `extends.up` puts `dwell:torch_upper` (the flame) in the cell above, and breaking either cell clears both (BLOCK_REGISTRY.md, Multi-cell blocks). Crossed quads, drawn cutout, no collision, standing on the block below and gone with it. Its `light` is the light a hand holding it gives off; a hand holding it shows the `torch` item (shared/characters). Placed against a wall's side it hangs on that wall (`mount` the facing, `wallMount`: the stick leaning 25° out from the wall, flame on top; it goes with the wall; owner, 2026-11-18: \"Are we supporting torches mounted to walls?\", \"Tilted out from the wall\").",
       "name": "torch",
       "damage": { "fixedHits": 1 },
       "sound": "dwell:torch",
@@ -416,6 +416,9 @@
         0.62
       ],
       "needsSupport": "below",
+      "properties": { "mount": ["floor", "north", "east", "south", "west"] },
+      "palette": [{ "mount": "floor" }, { "mount": "north" }, { "mount": "east" }, { "mount": "south" }, { "mount": "west" }],
+      "wallMount": { "property": "mount", "leanDeg": 25, "lengthM": 1.0 },
       "medium": "air",
       "extends": {
         "up": "dwell:torch_upper"
@@ -449,6 +452,8 @@
       ],
       "medium": "air",
       "partOf": "dwell:torch",
+      "properties": { "mount": ["floor", "north", "east", "south", "west"] },
+      "wallMount": { "property": "mount", "leanDeg": 25, "lengthM": 1.0 },
       "emits": 14,
       "light": "dwell:torch",
       "color": "#ffffff",

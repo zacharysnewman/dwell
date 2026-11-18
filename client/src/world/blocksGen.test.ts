@@ -163,14 +163,14 @@ describe('block generator: the cross geometry and wind', { timeout: 30_000 }, ()
     ]);
     expect(r.status, r.output).toBe(0);
     expect(r.rust).toContain(
-      'cross: Some(Cross { height: 0.9, quads: 3, offset: 0.2, rotation_deg: 30.0, height_min: 0.7, height_max: 1.0, sit_on_support: false })',
+      'cross: Some(Cross { height: 0.9, quads: 3, offset: 0.2, rotation_deg: 30.0, height_min: 0.7, height_max: 1.0, sit_on_support: false, lean_deg: 0.0, lean_length_m: 0.0, lean_from_m: 0.0 })',
     );
     expect(r.rust).toContain('wind: Some(Wind { strength: 0.1, speed: 2.0 })');
     expect(r.rust).toContain('fade: Some(Fade { start: 40.0, end: 80.0 })');
     expect(r.rust).toContain('selection: Some([0.25, 0.0, 0.25, 0.75, 0.5, 0.75])');
     // Defaults: two full-height quads, no jitter, sitting on the support, no wind.
     expect(r.rust).toMatch(
-      /name: "dwell:tuft".*cross: Some\(Cross \{ height: 1\.0, quads: 2, offset: 0\.0, rotation_deg: 0\.0, height_min: 1\.0, height_max: 1\.0, sit_on_support: true \}\), wind: None/,
+      /name: "dwell:tuft".*cross: Some\(Cross \{ height: 1\.0, quads: 2, offset: 0\.0, rotation_deg: 0\.0, height_min: 1\.0, height_max: 1\.0, sit_on_support: true, lean_deg: 0\.0, lean_length_m: 0\.0, lean_from_m: 0\.0 \}\), wind: None/,
     );
   });
 

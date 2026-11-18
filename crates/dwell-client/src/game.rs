@@ -3390,9 +3390,15 @@ impl<S: Scene> Game<S> {
     fn body_material(&self, b: &crate::pieces::BodyHit) -> StateId {
         let inv = b.rotation.inverse();
         let to_grid = |v: [f64; 3]| (inv * DVec3::from(v)).to_array();
-        self.interaction
+        let m = self
+            .interaction
             .faced_for_body(&to_grid, FaceFrame::at_height(b.position.y))
-            .unwrap_or(0)
+            .unwrap_or(0);
+        // Against a side of the body's grid, a torch hangs there (owner, 2026-11-18).
+        dwell_world::edit::FACE_DIRS
+            .get(usize::from(b.face))
+            .and_then(|&d| dwell_game::block_interaction::hung_against(m, d))
+            .unwrap_or(m)
     }
 
     /// A held Place's stroke on a moving body (BUGS.md #209; owner, 2026-11-18: "Drag building on

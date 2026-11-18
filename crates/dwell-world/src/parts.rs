@@ -64,11 +64,12 @@ pub fn partners_in(cell: [i32; 3], m: StateId, f: crate::FaceFrame) -> Vec<([i32
     let step = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
     let up_by = |c: [i32; 3], k: i32| [c[0], c[1] + step * k, c[2]];
     let mut out = Vec::new();
+    // A part takes its block's shared properties (a wall torch's `mount`), and the block its part's.
     if let Some(up) = s.extends_up.and_then(dwell_blocks::state) {
-        out.push((up_by(cell, 1), up));
+        out.push((up_by(cell, 1), dwell_blocks::with_shared_properties(m, up)));
     }
     if let Some(of) = s.part_of.and_then(dwell_blocks::state) {
-        out.push((up_by(cell, -1), of));
+        out.push((up_by(cell, -1), dwell_blocks::with_shared_properties(m, of)));
     }
     if let Some(c) = s.column {
         let (a0, r0) = c.place_of(c.index);

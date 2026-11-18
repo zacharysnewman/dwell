@@ -36,3 +36,17 @@ test('a dangling or mismatched partner fails with the block named', () => {
   ];
   for (const [blocks, re] of cases) assert.throws(() => checkParts(blocks), re);
 });
+
+test("a part shares its block's properties, and only those (a wall torch's mount)", () => {
+  const mount = { mount: ['floor', 'north'] };
+  const ok = [
+    { id: 'a:post', def: { extends: { up: 'a:top' }, properties: mount } },
+    { id: 'a:top', def: { partOf: 'a:post', properties: mount } },
+  ];
+  assert.equal(checkParts(ok).get('a:top').partOf, 'a:post');
+  const other = [
+    { id: 'a:post', def: { extends: { up: 'a:top' }, properties: mount } },
+    { id: 'a:top', def: { partOf: 'a:post', properties: { lit: ['false', 'true'] } } },
+  ];
+  assert.throws(() => checkParts(other), /a:top: a part's property lit must be its block's own/);
+});

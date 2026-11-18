@@ -132,11 +132,9 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         textures: s.textures,
         block: block_id(s.name),
         side_under: s.side_under,
-        ladder_face: if look == Look::Ladder {
-            ladder_face
-        } else {
-            None
-        },
+        // Every look's: a ladder's plane, a ship's wheel's and a wall torch's lean read it (the
+        // mesher draws a ladder only for the ladder look).
+        ladder_face,
         shape: usize::from(s.shape_index),
         flooded: s.flooded,
         heat_stop: heat_stop(s.name),

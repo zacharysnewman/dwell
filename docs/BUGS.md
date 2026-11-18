@@ -6,6 +6,18 @@ pins it.
 
 ## Open
 
+### 218. The ship's wheel always faced north
+
+Found 2026-11-18 (not reported): the mesher's style kept a block's facing only for the ladder look, so the wheel look
+(0.75.15) drew facing north whichever way it was placed. Fixed: every look carries its facing (`style.rs`); test
+`dwell-mesh` `a_ships_wheel_turns_with_its_facing` (both faces), red before.
+
+### 217. Slopes show holes when a block edge next to them is damaged
+
+Owner, 2026-11-18: "One bug I'd love to prioritize is slopes show holes when damaging block edges next to them." Owner
+should see: hitting a block beside a slope (its damage look, cracks and dents near the shared edge) leaves the slope
+drawn whole, no gap or see-through hole where they meet. Priority (owner); next after the wall torch.
+
 ### 216. A cannon on a body splits when the body breaks apart under it
 
 Owner, 2026-11-18: "Also ensure you check every one of the 4 cannon blocks to see if it is destroyed. I noticed half of

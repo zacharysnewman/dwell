@@ -93,6 +93,17 @@ Last updated: 2026-11-11 (0.52.108).
   Owner's answers on sinking (2026-11-18): hull air "Open-topped hulls count"; flooding "Through holes, by hole size";
   inner water "Yes, a water surface"; a sunk ship "Settles into the world". Design: docs/CANNONS.md §12 (H1 hull air,
   H2 flooding and sinking, H3 the inner water's surface).
+  Owner, 2026-11-18: "One bug I'd love to prioritize is slopes show holes when damaging block edges next to them." →
+  BUGS.md #217, priority. Owner should see: a damaged block beside a slope leaves the slope whole, no holes.
+  Owner, 2026-11-18: "Are we supporting torches mounted to walls? That would be awesome!" (Not yet: torches stand on
+  the floor only, `needsSupport: below`; docs/LIGHTS.md planned wall torches "later as a state".) Owner should see: a
+  torch placed against a wall's side hangs on that wall, tilted out from it, with its flame and light. Questions first
+  (how it looks, now or after ships). Owner's answers (2026-11-18): "Now, part of ships"; "Tilted out from the wall"
+  (the same torch item; placed against a side it becomes a wall state, its stick leaning about 25° out from the wall,
+  flame on top; breaking the wall drops it). Built (docs/LIGHTS.md "Wall torches").
+  Sea depth, owner's answer (2026-11-18) to the options (today: median 19 m, never over 22 m, the core's limit; 12 m
+  deep 750 m off a coast, 21 m at 1.5 km): "Sea level +40m and a steeper shelf." Owner should see: open sea about 60 m
+  deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant).
   Owner, 2026-11-18: "We may need to generally deepen oceans which might mean we need to increase the stone layer
   depth/face depth." (For ships: a deeper sea, so a ship's keel and a sunk wreck have room; a worldgen change, a new
   compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep

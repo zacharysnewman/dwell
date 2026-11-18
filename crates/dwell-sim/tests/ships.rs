@@ -1117,3 +1117,37 @@ both_faces!(
         assert_eq!(bodies(&fx), 1);
     }
 );
+
+both_faces!(
+    fn a_torch_placed_against_a_rafts_side_hangs_there_leaning(f: FaceFrame) {
+        // Owner, 2026-11-18: torches "mounted to walls", "Tilted out from the wall"; useful on a
+        // hull. Against the raft's east side: both cells hung facing east.
+        let (mut fx, raft, _, mut seq) = raft_to_build_on(f);
+        let east = (0..6)
+            .find(|&k| dwell_world::edit::FACE_DIRS[k] == [1, 0, 0])
+            .unwrap() as u8;
+        let torch = f.state(dwell_blocks::require("dwell:torch[mount=east]"));
+        send_body_edit(
+            &mut fx,
+            raft,
+            [5, 0, 1],
+            east,
+            BlockEditAction::Place,
+            torch,
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        let mut hung: Vec<String> = fx
+            .server
+            .body_cells(raft)
+            .iter()
+            .filter(|(_, m)| dwell_blocks::block_of(*m).name.starts_with("dwell:torch"))
+            .map(|(c, m)| format!("{c:?} {}", dwell_blocks::info(*m).name))
+            .collect();
+        hung.sort();
+        assert_eq!(hung.len(), 2, "{hung:?}");
+        assert!(
+            hung.iter().all(|h| h.contains("mount=east")),
+            "both cells hung: {hung:?}"
+        );
+    }
+);

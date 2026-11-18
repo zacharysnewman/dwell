@@ -41,7 +41,14 @@ export function checkParts(blocks) {
       if (!owner) fail(id, `partOf names unknown block ${def.partOf}`);
       if (owner.def.extends?.up !== id) fail(id, `partOf names ${def.partOf}, whose extends.up must be ${id}`);
       if (def.placeable || def.palette) fail(id, 'a part is placed with its block: it may not be placeable on its own');
-      if (def.properties && Object.keys(def.properties).length) fail(id, 'a part has no properties (one state)');
+      // A part may share its block's properties (a wall torch's `mount`): the same names and
+      // values, its state copied from its block's (dwell_world::parts); no others.
+      for (const [k, v] of Object.entries(def.properties ?? {})) {
+        const theirs = owner.def.properties?.[k];
+        if (!theirs || JSON.stringify(theirs) !== JSON.stringify(v)) {
+          fail(id, `a part's property ${k} must be its block's own, the same values (it is copied from it)`);
+        }
+      }
       partOf = def.partOf;
     }
     out.set(id, { extendsUp, partOf });
