@@ -8,7 +8,7 @@ test("the build's cannon and its two balls validate and reach the Rust table", (
   const rs = cannonsRust(d);
   assert.match(rs, /CannonDef \{ block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45\.0/);
   assert.match(rs, /BallDef \{ name: "dwell:iron_ball", radius_m: 0\.12, density_kg_m3: 7850\.0, roll_damping: 1\.5, impact: Impact::Knock \{/);
-  assert.match(rs, /impact: Impact::Explode \{ explosive: "dwell:dynamite" \}/);
+  assert.match(rs, /impact: Impact::Explode \{ explosive: "dwell:dynamite", min_speed_ms: 6\.0 \}/);
 });
 
 test('a fixture cannon and ball by data alone; bad entries fail naming them', () => {

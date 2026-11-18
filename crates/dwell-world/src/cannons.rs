@@ -12,8 +12,23 @@ pub enum Impact {
         max_cells: u32,
         min_speed_ms: f64,
     },
-    /// The explosive (by its block, shared/explosives) blows where it strikes.
-    Explode { explosive: &'static str },
+    /// The explosive (by its block, shared/explosives) blows where it strikes, at a strike of
+    /// `min_speed_ms` or more.
+    Explode {
+        explosive: &'static str,
+        min_speed_ms: f64,
+    },
+}
+
+impl Impact {
+    /// The least strike (the change in the ball's velocity in one tick, m/s) that does anything.
+    pub fn min_speed_ms(&self) -> f64 {
+        match *self {
+            Impact::Knock { min_speed_ms, .. } | Impact::Explode { min_speed_ms, .. } => {
+                min_speed_ms
+            }
+        }
+    }
 }
 
 /// A cannonball.

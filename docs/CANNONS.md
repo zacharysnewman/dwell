@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** C1 and C2 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; §5, §6); C3–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -99,4 +99,24 @@ direction." No ammunition or reloading for now.
 - **Tests:** `dwell-sim` `tests/cannons.rs` `a_shot_launches_a_heavy_ball_along_the_barrel` (both faces: at the muzzle,
   the ball's mass, flying along the barrel, landing on the floor beyond); `dwell-mesh`
   `a_cannonball_is_a_sphere_of_its_radius_on_its_cells_floor` (both faces).
+
+## 7. As built: C3 (2026-11-17)
+
+- **A strike** is a change in a ball's velocity of its impact's `minSpeedMs` or more in one tick (the server's
+  `roll_balls`, each tick before the physics step, against the velocity it had the tick before): a grazing landing
+  changes it little and strikes nothing; a wall hit head on changes it by nearly its speed. Away from what it hit:
+  the contact is the sphere's surface against that change.
+- **Knock** (the iron ball: 0.8 m, up to 6 cells, from 8 m/s): the breakable cells (solid, not liquid, not
+  indestructible, not an explosive) whose centres lie within `knockRadiusM` of the contact, nearest first, at most
+  `maxCells`, are cleared (`Collapse`, no flash) and queued as natural pieces with the blast's pieces
+  (`blasts::Queued`, spawned a few a tick) flung along the ball's path at half its speed; what that leaves without
+  support falls. Having knocked any, the ball flies on at half its speed (it can strike again).
+- **Explode** (the explosive ball: dynamite, from 6 m/s): the ball's body is destroyed and its explosive's blast set off
+  at its cell (`blast_at`, the dynamite blast's body split from its fuse check: the same destroy, fling, water,
+  knockback and damage, `Explosion` so clients flash and boom).
+- **Not yet:** a ball's hit on a player or a moving body's cells (C4), the impact's own sound and dust.
+- **Tests** (`dwell-sim` `tests/cannons.rs`, both faces): `an_iron_ball_knocks_loose_the_cells_round_where_it_strikes_a_wall`
+  (the hit cell among those gone, no more than `maxCells` a strike), `an_explosive_ball_blows_up_where_it_strikes`
+  (the ball gone, more of the wall than a knock, not all of it), and the flat roll knocks nothing. `set_cannon_ball`
+  makes the cannons fire another ball (tests, the dev tools).
 
