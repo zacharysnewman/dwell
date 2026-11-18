@@ -63,16 +63,33 @@ pub fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], StateId)> {
         out.push((edit::below(cell), of));
     }
     if let Some(c) = s.column {
+        let (a0, r0) = c.place_of(c.index);
+        let fwd = forward(s.facing);
         for j in 0..c.count {
             if j == c.index {
                 continue;
             }
             if let Some(want) = dwell_blocks::with_property_index(m, c.property, usize::from(j)) {
-                out.push((up_by(cell, i32::from(j) - i32::from(c.index)), want));
+                let (a, r) = c.place_of(j);
+                let up = up_by(cell, r - r0);
+                let k = a - a0;
+                out.push(([up[0] + fwd[0] * k, up[1], up[2] + fwd[2] * k], want));
             }
         }
     }
     out
+}
+
+/// One cell along `facing` (face-local, level): north −z, south +z, east +x, west −x (the
+/// opposite of `edit::behind`); none for no facing.
+pub fn forward(facing: dwell_blocks::Facing) -> [i32; 3] {
+    match facing {
+        dwell_blocks::Facing::North => [0, 0, -1],
+        dwell_blocks::Facing::South => [0, 0, 1],
+        dwell_blocks::Facing::East => [1, 0, 0],
+        dwell_blocks::Facing::West => [-1, 0, 0],
+        dwell_blocks::Facing::None => [0, 0, 0],
+    }
 }
 
 /// Whether `there` holds what a partner wants: a column's cell its exact state (the same door,
@@ -98,8 +115,10 @@ pub fn whole(cell: [i32; 3], m: StateId, get: impl Fn([i32; 3]) -> Option<StateI
         .all(|(p, want)| get(p).is_none_or(|there| holds(there, want)))
 }
 
-/// `c` and the cells beside it above and below that a multi-cell block there could reach: the one
-/// above and the one below, and on through every further cell `multi` holds (a door's four cells).
+/// `c` and the cells beside it that a multi-cell block there could reach: the one above and the one
+/// below, and on through every further cell `multi` holds (a door's four cells); and the level
+/// neighbours, through every further cell `multi` holds along the same line (a cannon's cells
+/// along its facing, docs/CANNONS.md C1).
 fn near(c: [i32; 3], mut multi: impl FnMut([i32; 3]) -> bool) -> Vec<[i32; 3]> {
     let mut out = vec![c];
     for dir in [1, -1] {
@@ -109,6 +128,19 @@ fn near(c: [i32; 3], mut multi: impl FnMut([i32; 3]) -> bool) -> Vec<[i32; 3]> {
             out.push(p);
             if !multi(p) {
                 break;
+            }
+        }
+    }
+    let starts: Vec<[i32; 3]> = out.clone();
+    for s in starts {
+        for d in [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]] {
+            let mut p = s;
+            for _ in 0..4 {
+                p = [p[0] + d[0], p[1], p[2] + d[2]];
+                out.push(p);
+                if !multi(p) {
+                    break;
+                }
             }
         }
     }

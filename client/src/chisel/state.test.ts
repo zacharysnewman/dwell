@@ -333,7 +333,9 @@ describe("a biome's trees and structures (ADR 0074 B5)", () => {
       return b;
     };
     expect(treeDensity(p('sand_desert'), 'pine_groves')).toBe(0);
-    expect(treeDensity(p('sand_desert'), 'boulders')).toBeGreaterThan(0);
+    // No boulders since 0.74 (owner, 2026-11-17: "they don't sit down on the ground properly").
+    expect(treeDensity(p('sand_desert'), 'boulders')).toBe(0);
+    expect(treeDensity(p('red_rock_mesa'), 'sagebrush')).toBeGreaterThan(0);
     expect(treeDensity(p('boreal'), 'pine_groves')).toBeGreaterThan(1);
   });
 });

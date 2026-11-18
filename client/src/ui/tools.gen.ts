@@ -65,6 +65,7 @@ export const BLOCK_DAMAGE: readonly {
   { block: 'dwell:thatch', default: 12, tools: { 'dwell:wooden_shovel': 9, 'dwell:stone_shovel': 6, 'dwell:metal_shovel': 3, 'dwell:stone_axe': 3, 'dwell:metal_axe': 2, 'dwell:stone_pickaxe': 6, 'dwell:metal_pickaxe': 3 } },
   { block: 'dwell:thatch_ramp', default: 12, tools: { 'dwell:wooden_shovel': 9, 'dwell:stone_shovel': 6, 'dwell:metal_shovel': 3, 'dwell:stone_axe': 3, 'dwell:metal_axe': 2, 'dwell:stone_pickaxe': 6, 'dwell:metal_pickaxe': 3 } },
   { block: 'dwell:door', default: 2, tools: { 'dwell:wooden_shovel': 2, 'dwell:stone_shovel': 2, 'dwell:metal_shovel': 2, 'dwell:stone_axe': 2, 'dwell:metal_axe': 2, 'dwell:stone_pickaxe': 2, 'dwell:metal_pickaxe': 2 } },
+  { block: 'dwell:cannon', default: 48, tools: { 'dwell:wooden_shovel': 18, 'dwell:stone_shovel': 12, 'dwell:metal_shovel': 6, 'dwell:stone_axe': 12, 'dwell:metal_axe': 6, 'dwell:stone_pickaxe': 6, 'dwell:metal_pickaxe': 3 } },
 ];
 
 /** Tools that wear (`durability.items`): the hits each survives (the slot's wear bar). */

@@ -1204,6 +1204,10 @@ pub struct Server {
     bite_log: Vec<weapons::BiteLog>,
     /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
     damage: dwell_protocol::damage::Damage,
+    /// Each cannon's next tick it may fire, by its rear bottom cell (docs/CANNONS.md C1).
+    cannon_ready: HashMap<[i32; 3], u32>,
+    /// Shots fired, ever (C1; C2 launches each one's ball).
+    shots_fired: u64,
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
     /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
     body_hits: HashMap<(u32, [i32; 3]), u32>,
@@ -1482,6 +1486,8 @@ impl Server {
             bite_log: Vec::new(),
             damage: Default::default(),
             body_hits: HashMap::default(),
+            cannon_ready: HashMap::default(),
+            shots_fired: 0,
             hits_short: 0,
             heal_since: Default::default(),
             recent_hits: Default::default(),
@@ -3295,6 +3301,8 @@ impl Server {
         // Cells broken by a tool (or hand) the block is inefficient with: they drop nothing
         // (owner, 2026-11-17: "inefficient tools cause blocks to not drop anything").
         let mut barren: HashSet<[i32; 3]> = HashSet::default();
+        // Blocks used this tick (a cannon's Use) and their states.
+        let mut used: Vec<([i32; 3], dwell_blocks::StateId)> = Vec::new();
         // The cells broken through by damage this tick and the side their hits took out.
         let mut cut_sides: Vec<([i32; 3], [f64; 2])> = Vec::new();
         // Cells a hit damaged this tick, for the clients that draw damage, and who hit them.
@@ -3357,6 +3365,14 @@ impl Server {
                     s.edit_refused.push(seq);
                     continue;
                 };
+                // A Use of a block with a `use` action (a cannon fired, docs/CANNONS.md): nothing is
+                // written; the action follows the edits (its reload checked there).
+                if outcome.used {
+                    used.push((outcome.cell, self.world.get_voxel_if_loaded(outcome.cell)));
+                    s.edit_credit -= 1.0;
+                    s.stats.edits_applied += 1;
+                    continue;
+                }
                 // The item asked for must be held; it is used up when it is what goes in (a torch
                 // held against dynamite lights it and stays in the hand).
                 // A Use (a door opened or closed) pays nothing and needs nothing held.
@@ -3652,6 +3668,9 @@ impl Server {
                 }
             }
             self.growth.trees.insert(r.anchor, r);
+        }
+        for (cell, state) in used {
+            self.use_block(cell, state);
         }
         let edited = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Edit);
@@ -4331,6 +4350,31 @@ impl Server {
                 })
                 .collect(),
         })
+    }
+
+    /// A Use of the block `state` at `cell` (its data's `use`): a cannon fires once its reload is
+    /// done (docs/CANNONS.md C1; C2 launches the ball).
+    fn use_block(&mut self, cell: [i32; 3], state: dwell_blocks::StateId) {
+        let block = dwell_blocks::block_of(state).name;
+        let Some(c) = dwell_world::cannons::cannon(block) else {
+            return;
+        };
+        let anchor = dwell_world::cannons::anchor_of(cell, state);
+        if self
+            .cannon_ready
+            .get(&anchor)
+            .is_some_and(|&t| self.tick < t)
+        {
+            return;
+        }
+        let reload = (c.reload_s * f64::from(dwell_protocol::SIM_HZ)).ceil() as u32;
+        self.cannon_ready.insert(anchor, self.tick + reload);
+        self.shots_fired += 1;
+    }
+
+    /// Shots fired since the server started (docs/CANNONS.md C1).
+    pub fn shots_fired(&self) -> u64 {
+        self.shots_fired
     }
 
     /// The body edits queued this tick (docs/BUILT_BODIES.md §4), each paid from its player's edit

@@ -138,6 +138,18 @@
       "facing": "toward"
     },
     {
+      "name": "dwell:cannon",
+      "category": "shapes",
+      "label": "Cannon",
+      "block": "dwell:cannon",
+      "rows": 1,
+      "drag": "none",
+      "state": {
+        "part": "rear_bottom"
+      },
+      "facing": "away"
+    },
+    {
       "name": "dwell:stone_axe",
       "category": "tools",
       "label": "Stone axe",

@@ -645,6 +645,9 @@ pub struct EditOutcome {
     /// A Use: the aimed block's `toggle` flipped (a door opened or closed), nothing placed and
     /// nothing paid.
     pub toggled: bool,
+    /// A Use of a block with a `use` action (a cannon fired, docs/CANNONS.md): nothing written,
+    /// nothing paid; the server acts on `cell`'s block.
+    pub used: bool,
 }
 
 impl EditOutcome {
@@ -655,6 +658,7 @@ impl EditOutcome {
             material: M.air,
             also: None,
             toggled: false,
+            used: false,
         }
     }
 
@@ -807,6 +811,21 @@ pub fn check_block_edit(
             material: lit,
             also: None,
             toggled: false,
+            used: false,
+        };
+    }
+    // A Place aimed at a block with a `use` action (a cannon) is a Use of it: nothing changes here,
+    // whatever is held; the server does the action (docs/CANNONS.md C1).
+    if request.action == BlockEditAction::Place
+        && dwell_blocks::try_info(target).is_some_and(|s| s.use_action.is_some())
+    {
+        return EditOutcome {
+            check: EditCheck::Ok,
+            cell: c,
+            material: target,
+            also: None,
+            toggled: false,
+            used: true,
         };
     }
     // A Place aimed at a block with a `toggle` (a door) is a Use: it flips the property, whatever
@@ -829,6 +848,7 @@ pub fn check_block_edit(
             material: flipped,
             also: None,
             toggled: true,
+            used: false,
         };
     }
     if request.action == BlockEditAction::Break {
@@ -844,6 +864,7 @@ pub fn check_block_edit(
             material,
             also: None,
             toggled: false,
+            used: false,
         };
     }
     if !placeable(request.material) {
@@ -954,6 +975,7 @@ pub fn check_block_edit(
         material,
         also,
         toggled: false,
+        used: false,
     }
 }
 

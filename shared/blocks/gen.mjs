@@ -518,6 +518,17 @@ for (const b of blocks) {
     for (const e of d.palette ?? []) {
       if (e[d.column] !== undefined && e[d.column] !== p.values[0]) fail(`${b.id}: a column is placed by its first cell: palette entries keep ${d.column} ${p.values[0]}`);
     }
+    // `columnAlong` (optional, 1–4; default 1): the column is that many cells long along the
+    // block's facing too, its values filling each upright row of cells bottom to top, row after row
+    // forward from the first (a cannon: 2 along × 2 up; docs/CANNONS.md C1).
+    if (d.columnAlong !== undefined) {
+      const n = d.columnAlong;
+      if (!Number.isInteger(n) || n < 1 || n > 4) fail(`${b.id}: columnAlong must be a whole number from 1 to 4`);
+      if (p.values.length % n !== 0) fail(`${b.id}: column ${d.column}'s ${p.values.length} values must fill ${n} rows along equally`);
+      if (n > 1 && !d.facingProperty) fail(`${b.id}: columnAlong needs a facingProperty (the cells run along the facing)`);
+    }
+  } else if (d.columnAlong !== undefined) {
+    fail(`${b.id}: columnAlong needs a column`);
   }
   if (d.swing !== undefined) {
     onlyKeys(b.id, 'swing', d.swing, ['property', 'hinge']);
@@ -531,6 +542,12 @@ for (const b of blocks) {
   if (d.toggle !== undefined) {
     const p = propOf(d.toggle);
     if (typeof d.toggle !== 'string' || !p || p.values.length !== 2) fail(`${b.id}: toggle must name a property of two values`);
+  }
+  // `use: "<action>"` (docs/CANNONS.md C1): a Use (a Place aimed at it) does this instead of placing,
+  // the block unchanged: the server's vocabulary (`fire`: a cannon's shot).
+  if (d.use !== undefined) {
+    if (!['fire'].includes(d.use)) fail(`${b.id}: use must be one of fire`);
+    if (d.toggle !== undefined) fail(`${b.id}: use and toggle are two answers to a Use: pick one`);
   }
 }
 // What a state's own values change: its shape, look, facing, selection, light filter and support.
@@ -911,8 +928,9 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
       `held: ${st.block.held === null ? 'None' : `Some(${rstr(st.block.held)})`}`,
       `extends_up: ${parts.get(st.block.id).extendsUp === null ? 'None' : `Some(${rstr(parts.get(st.block.id).extendsUp)})`}`,
       `part_of: ${parts.get(st.block.id).partOf === null ? 'None' : `Some(${rstr(parts.get(st.block.id).partOf)})`}`,
-      `column: ${col ? `Some(Column { property: ${rstr(col.name)}, index: ${col.values.indexOf(st.values[col.name])}, count: ${col.values.length} })` : 'None'}`,
+      `column: ${col ? `Some(Column { property: ${rstr(col.name)}, index: ${col.values.indexOf(st.values[col.name])}, count: ${col.values.length}, along: ${d.columnAlong ?? 1} })` : 'None'}`,
       `toggle: ${d.toggle === undefined ? 'None' : `Some(${rstr(d.toggle)})`}`,
+      `use_action: ${d.use === undefined ? 'None' : `Some(${rstr(d.use)})`}`,
       `support_role: SupportRole::${pascal(d.support ?? 'ground')}`,
       `passable: ${!!d.passable}`,
       `axis: Axis::${d.axisProperty ? st.values[d.axisProperty].toUpperCase() : 'Y'}`,

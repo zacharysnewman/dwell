@@ -6,6 +6,7 @@ pub mod affinity;
 pub mod blueprint;
 pub mod bounds;
 pub mod brush;
+pub mod cannons;
 mod cell;
 pub mod currents;
 pub mod edit;

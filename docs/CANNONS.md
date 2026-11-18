@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** designed (2026-11-17), not built. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1 built (2026-11-17: the land cannon block, its Use and reload; §5); C2–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -57,3 +57,25 @@ direction." No ammunition or reloading for now.
 - Sinking by holes below the waterline; water filling a hull rather than standing inside it (owner: "We'll clarify
   some questions first").
 - Damage to players from a ball's hit.
+
+## 5. As built: C1 (2026-11-17)
+
+- **The block** `dwell:cannon` (shared/blocks/dwell.json): four cells, `part` rear_bottom, rear_top, front_bottom,
+  front_top; `column: "part"` with **`columnAlong: 2`**, a new rule of the block vocabulary (shared/blocks/gen.mjs,
+  `Column::along`, synced as registry tag 17 `COLUMN_ALONG`; an older build reads the column straight up, the server's
+  writes still whole): a column's values fill each upright row of `count / along` cells bottom to top, row after row
+  forward along the block's facing (`dwell_world::parts::forward`: north −z). Placed whole by its rear bottom cell, the
+  barrel away from the player (items.json `facing: away`), cleared whole; `needsSupport: below`; 12 base hits
+  (pickaxe proficient). Prototype look: basalt-textured cells.
+- **Use:** the block rule **`use: "fire"`** (registry tag 18 `USE_ACTION`): a Place aimed at it is a Use
+  (`EditOutcome::used`), nothing written or paid, whatever is held; the server's `use_block` fires the cannon at its
+  rear bottom cell (`cannons::anchor_of`) once its `reloadS` has passed (`shots_fired`; C2 launches the ball).
+- **Data:** shared/cannons/cannons.json (generator shared/cannons/gen.mjs → crates/dwell-world/src/cannons.gen.rs):
+  the cannon (its ball, muzzle speed 45 m/s, muzzle 0.6 m up and 2.1 m forward, reload 2 s) and two balls, `iron_ball`
+  (r 0.12 m, steel 7,850 kg/m³: ~57 kg; impact `knock`, 0.8 m, up to 6 cells, from 8 m/s) and `explosive_ball`
+  (impact `explode`: dynamite's blast).
+- **Tests:** `dwell-world` `tests/cannons.rs` (both faces: four cells two along and two up, any cell's break clears
+  all, every cell's anchor, a Use writes nothing and reports it); `dwell-sim` `tests/cannons.rs` (both faces: a Use
+  fires once, not again while reloading, again after); `cannons::tests`; shared/cannons/gen.test.mjs (a fixture cannon
+  and ball by data alone, bad entries named).
+
