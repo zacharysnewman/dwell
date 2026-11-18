@@ -293,3 +293,20 @@ settling into a liquid's cell takes its `flooded` state if it has one (the balls
 water round it. Test: `tests/ships.rs` `a_cannonball_in_water_sinks_and_rests_flooded_on_the_bed` (both faces; red with
 the cell's volume).
 
+## 14. The helm, tuned and ruled (2026-11-18)
+
+- **Speed ×3** (owner: "triple the speed of the boat"): `thrustAccelMs2` 5.4 (from 1.2; the water's drag grows with the
+  speed's square): a 6 × 10 × 2 boat at 7.4 m/s after 3 s, from 2.4.
+- **Turning, scaled and doubled** (owner: "double the turning responsiveness"; "a 3x3 rafter turns very quickly ... and a
+  7x7 raft turns super slowly. Perhaps it just needs to be scaled too?"): `turnRadS2PerMs` 0.1 replaces
+  `rudderNmPerMs`: the rudder changes the ship's spin directly (rad/s² per m/s along its heading), so every size turns
+  alike: 28.5° in 2 s at that speed (twice the old rudder's at it). Tests: `a_small_and_a_big_raft_turn_alike_at_the_helm`
+  (both faces: 3 × 3 and 7 × 7 within 2× of each other); `measure_helm_figures` (ignored, prints the figures).
+- **At the helm only Uses** (owner: "block breaking/building should be disabled while steering the ship. But "use"
+  should still be allowed"): the server refuses a world or body edit from a player at the helm unless it is a Use (a
+  door, a cannon, the wheel); the client denies it first (`world_use_aimed`). Test: `at_the_helm_nothing_is_built_or_broken_but_a_cannon_still_fires`
+  (both faces; red with the server's rule off).
+- **Aim from the crosshair** (owner: "your "aim" should be based on your 3rd person crosshair, though your "acceptable"
+  range blocks can be the ones around you still"): fully out at the helm, the client casts the body aim from the drawn
+  third-person eye (`aim_from`), as far again as the camera is behind, keeping a hit only within reach of the player.
+
