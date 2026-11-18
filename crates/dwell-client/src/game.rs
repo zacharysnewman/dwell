@@ -5990,7 +5990,14 @@ impl<S: Scene> Game<S> {
             telemetry::add("lod.retiring", f.retiring as f64);
         }
         // The placed torches' flames near the eye (docs/LIGHTS.md §6).
-        let flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
+        let mut flames = crate::render::flames::placed_flames(self.streamer.store(), camera_eye);
+        // And the torches riding bodies (BUGS.md #212).
+        let riding = self.pieces.light_cells(now_ms);
+        flames.extend(
+            riding
+                .iter()
+                .filter_map(|&(c, up, m, seed)| body_flame(c, up, m, seed, camera_eye)),
+        );
         self.scene.borrow_mut().set_placed_flames(flames);
         // The portals' motes near the eye (BIFACIAL_WORLD.md §12.1).
         let motes =
@@ -6030,10 +6037,29 @@ impl<S: Scene> Game<S> {
         self.ambient_sounds(&views, dt);
         // The placed light sources near the eye (docs/LIGHTS.md §4): Torch shadows draws the
         // nearest as shadowed lights.
-        let placed = placed_lights(
+        let mut placed = placed_lights(
             self.streamer.store(),
             camera_eye,
             dwell_look::lights::LIGHTS.shadows.placed_m,
+        );
+        // And the torches riding bodies (BUGS.md #212).
+        let reach = dwell_look::lights::LIGHTS.shadows.placed_m;
+        placed.extend(
+            self.pieces
+                .light_cells(now_ms)
+                .into_iter()
+                .filter_map(|(c, _, m, seed)| {
+                    let d = (0..3)
+                        .map(|k| (c[k] - camera_eye[k]).powi(2))
+                        .sum::<f64>()
+                        .sqrt();
+                    let source = dwell_blocks::try_info(m)?.light?;
+                    (d <= reach).then_some(crate::render::lights::PlacedLight {
+                        pos: c,
+                        source,
+                        seed,
+                    })
+                }),
         );
         self.scene.borrow_mut().set_placed_lights(placed);
         self.update_flow(camera_eye);
@@ -8089,6 +8115,32 @@ impl dwell_game::build_drag::DragWorld for DragCells<'_> {
             &self.me,
         )
     }
+}
+
+/// The flame of a light source riding a body (BUGS.md #212): its cell's centre `c` (world), the
+/// body's up there, its state `m` and seed; within the flames' draw distance of `eye`. Its base the
+/// look's `base_m` over the cell's floor, along the body's up.
+fn body_flame(
+    c: [f64; 3],
+    up: [f64; 3],
+    m: StateId,
+    seed: u32,
+    eye: [f64; 3],
+) -> Option<crate::render::flames::PlacedFlame> {
+    use dwell_look::flames::{FLAME_TUNABLES, FLAMES, find};
+    let source = dwell_blocks::try_info(m)?.light?;
+    let look = &FLAMES[find(source.flame?)?];
+    let d = (0..3).map(|k| (c[k] - eye[k]).powi(2)).sum::<f64>().sqrt();
+    if d > FLAME_TUNABLES.draw_m {
+        return None;
+    }
+    let rise = f64::from(look.base_m) - 0.5 * dwell_world::CELL_H;
+    Some(crate::render::flames::PlacedFlame {
+        base: std::array::from_fn(|k| c[k] + up[k] * rise),
+        face: FaceFrame::at_height(c[1]),
+        source,
+        seed,
+    })
 }
 
 /// The placed light sources within `radius` of `eye` (`VoxelWorld::light_sources_near`), as the
