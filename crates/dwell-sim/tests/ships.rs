@@ -712,3 +712,108 @@ both_faces!(
         );
     }
 );
+
+/// A plank raft afloat with player 1 standing on it beside (1, ·, 2): the fixture, the raft, its
+/// top face's index and the input sequence.
+fn raft_to_build_on(f: FaceFrame) -> (Fixture, u32, u8, u32) {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    let (raft, _) = harbour(&mut fx, f);
+    let mut seq = 0;
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    let (p0, _) = fx.server.body_pose(raft).expect("afloat");
+    let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+    stand(
+        &mut fx,
+        p0 + dwell_physics::DVec3::new(4.5, 0.0, 2.5) + up * (0.5 * dwell_world::CELL_H + 0.05),
+        up,
+    );
+    hold(&mut fx, &mut seq, Input::default(), 30);
+    let top = (0..6)
+        .find(|&k| dwell_world::edit::FACE_DIRS[k][1] == up_rows(f))
+        .unwrap() as u8;
+    (fx, raft, top, seq)
+}
+
+fn send_body_edit(
+    fx: &mut Fixture,
+    body: u32,
+    cell: [i16; 3],
+    face: u8,
+    action: BlockEditAction,
+    material: u16,
+) {
+    fx.send(
+        1,
+        Message::BodyEditRequest(BodyEditRequest {
+            body,
+            cell,
+            face,
+            action,
+            material,
+        }),
+    );
+}
+
+both_faces!(
+    fn breaking_one_cell_of_a_cannon_on_a_raft_breaks_the_whole_cannon(f: FaceFrame) {
+        // BUGS.md #210 (owner, 2026-11-18: "Breaking one cannon block, should break the whole cannon
+        // not 1 of the 4 blocks"; "on a dynamic body").
+        let (mut fx, raft, top, mut seq) = raft_to_build_on(f);
+        let cannon = f.state(dwell_blocks::require(
+            "dwell:cannon[facing=north,part=rear_bottom]",
+        ));
+        send_body_edit(
+            &mut fx,
+            raft,
+            [1, 0, 2],
+            top,
+            BlockEditAction::Place,
+            cannon,
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        let is_cannon = |fx: &Fixture| {
+            fx.server
+                .body_cells(raft)
+                .iter()
+                .filter(|(_, m)| dwell_blocks::block_of(*m).name == "dwell:cannon")
+                .count()
+        };
+        assert_eq!(is_cannon(&fx), 4, "placed whole");
+        // Its front top cell hit until it breaks.
+        let u = up_rows(f);
+        for _ in 0..40 {
+            send_body_edit(
+                &mut fx,
+                raft,
+                [1, 2 * u as i16, 1],
+                top,
+                BlockEditAction::Break,
+                0,
+            );
+            hold(&mut fx, &mut seq, Input::default(), 8);
+            if is_cannon(&fx) < 4 {
+                break;
+            }
+        }
+        assert_eq!(is_cannon(&fx), 0, "the whole cannon went");
+    }
+);
+
+both_faces!(
+    fn a_torch_placed_on_a_raft_stands_there_whole(f: FaceFrame) {
+        // BUGS.md #212 (owner, 2026-11-18: "Placing torches on dynamic bodies should work too").
+        let (mut fx, raft, top, mut seq) = raft_to_build_on(f);
+        let torch = f.state(dwell_blocks::require("dwell:torch"));
+        send_body_edit(&mut fx, raft, [2, 0, 1], top, BlockEditAction::Place, torch);
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        let names: Vec<&str> = fx
+            .server
+            .body_cells(raft)
+            .iter()
+            .map(|(_, m)| dwell_blocks::block_of(*m).name)
+            .filter(|n| n.starts_with("dwell:torch"))
+            .collect();
+        assert_eq!(names.len(), 2, "the torch and its upper: {names:?}");
+    }
+);

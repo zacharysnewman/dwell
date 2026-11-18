@@ -5327,9 +5327,41 @@ impl Server {
                     }
                 }
                 self.body_hits.remove(&(e.body, cell));
-                let Some(out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
+                // A multi-cell block's other cells (a cannon, a door, a tall torch) go with it
+                // (BUGS.md #210), found in the body's grid by its face.
+                let partners: Vec<[i32; 3]> = self
+                    .felling
+                    .pieces
+                    .iter()
+                    .find(|p| p.id == e.body)
+                    .map(|p| {
+                        let f = FaceFrame::at_height(self.physics.position(p.body).y);
+                        p.cells
+                            .iter()
+                            .find(|(o, _)| *o == cell)
+                            .map(|&(_, m)| {
+                                dwell_world::parts::partners_in(cell, m, f)
+                                    .into_iter()
+                                    .filter(|(c, want)| {
+                                        p.cells.iter().any(|(o, s)| o == c && s == want)
+                                    })
+                                    .map(|(c, _)| c)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                let Some(mut out) = self.felling.break_cell(&mut self.physics, e.body, cell) else {
                     continue;
                 };
+                for c in partners {
+                    self.body_hits.remove(&(e.body, c));
+                    if let Some(more) = self.felling.break_cell(&mut self.physics, e.body, c) {
+                        out.removed.extend(more.removed);
+                        out.spawned.extend(more.spawned);
+                        out.gone |= more.gone;
+                    }
+                }
                 if uses_items && drops {
                     self.drop_block(was, at.to_array());
                 }

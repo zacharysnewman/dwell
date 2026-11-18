@@ -41,7 +41,7 @@ export const CREATIVE = {
     { name: 'dwell:thatch_steep_slope', label: 'Thatch steep slope', category: 'shapes' },
     { name: 'dwell:door', label: 'Door', category: 'shapes' },
     { name: 'dwell:cannon', label: 'Cannon', category: 'shapes' },
-    { name: 'dwell:helm', label: 'Helm', category: 'shapes' },
+    { name: 'dwell:helm', label: 'Ship\'s wheel', category: 'shapes' },
     { name: 'dwell:stone_axe', label: 'Stone axe', category: 'tools' },
     { name: 'dwell:metal_axe', label: 'Metal axe', category: 'tools' },
     { name: 'dwell:stone_pickaxe', label: 'Stone pickaxe', category: 'tools' },

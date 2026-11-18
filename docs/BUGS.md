@@ -6,6 +6,40 @@ pins it.
 
 ## Open
 
+### 212. Torches can't be placed on a moving body
+
+Owner, 2026-11-18: "Placing torches on dynamic bodies should work too." Owner should see: a torch placed on a raft's
+deck (or against its side) stands there and moves with it.
+2026-11-18: the server places a torch on a body whole since the multi-cell fix (#208's, 0.75.1); test `tests/ships.rs` `a_torch_placed_on_a_raft_stands_there_whole` (both faces). A torch on a body doesn't light yet (the lights come from the world's cells). Browser check to come.
+Owner, 2026-11-18 (the deployed build): "The torch was very broken in the deployed build, placed but completely broken
+visually, no light, no flame." Open: a torch on a body is drawn by the body mesher (its cross look and its flame, made
+for the world's cells, aren't there) and lights nothing (the lights come from the world's cells).
+
+### 211. A cannon placed on a moving body faces the body's grid's way, not the way it was placed
+
+Owner, 2026-11-18: "Placing a cannon should always face the cardinal direction placed, even on dynamic bodies." The
+client picks the facing in the world's terms; on a turned body that facing is read in the body's own grid, so the
+cannon comes out turned with the body. Owner should see: a cannon placed on a raft points the way the player faced
+(the nearest of the raft's four sides to it).
+Fixed 2026-11-18 (client): a block placed on a body is faced by the look turned into the body's grid (`BlockInteraction::faced_for_body`), the nearest of its four sides. Test: `dwell-game` `a_cannon_on_a_turned_body_faces_the_way_it_was_placed` (both faces).
+
+### 210. Breaking one cell of a cannon on a moving body breaks only that cell
+
+Owner, 2026-11-18: "Breaking one cannon block, should break the whole cannon not 1 of the 4 blocks." On a body, a
+multi-cell block's break took only the cell hit (in the world it takes all, `parts`). Owner should see: breaking any
+part of a cannon (or a door, a tall torch) on a raft removes the whole block.
+Owner, 2026-11-18: "Breaking one cannon block on a dynamic body. Is the issue spot, seems like breaking a cannon block on
+normal terrain works as expected."
+Fixed 2026-11-18 (server): a body cell's break takes its multi-cell partners (`parts::partners_in` by the body's face). Test: `tests/ships.rs` `breaking_one_cell_of_a_cannon_on_a_raft_breaks_the_whole_cannon` (both faces; red: 3 cells left).
+
+### 209. Drag building on a moving body stalls after a few blocks, placing at the same spot
+
+Owner, 2026-11-18: "Drag building on dynamic bodies seems to break after the first few and just keeps trying to
+place in the same spot." Suspect: body edits aren't predicted (a body's new cell shows only when the server's
+`BodyEdit` arrives), so the drag stroke's next step aims at the same face again. Owner should see: a held Place
+dragged along a raft lays a row of blocks on it, as on the ground.
+Fixed 2026-11-18 (client): a held Place on a moving body (afloat, turned) starts a body stroke (`Game::body_drag`): once held 150 ms, each frame the aimed face of that body gets the block beside it, one request a cell (`body_drag_skips`), at the edit pace; a held body lined up with the grid drags in the world's cells as before. Test: `dwell-client` `a_body_stroke_sends_each_cell_once` (face-a-only: the body's grid). Browser check to come.
+
 ### 208. Can't build on an existing moving body (a raft) any more
 
 Owner, 2026-11-18: "What's the current process to build a raft as a normal player in creative? I noticed I can't
