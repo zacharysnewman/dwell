@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Damaging a block next to a slope no longer leaves holes in the slope",
-    "A wall torch's flame sits on the top of its stick"
-  ]
-}
