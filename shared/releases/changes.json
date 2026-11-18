@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.75.8",
+      "changes": [
+        "Drag building on a floating raft lays a row of blocks instead of stalling on one spot",
+        "Breaking any block of a cannon (or door) on a raft breaks the whole thing",
+        "A cannon placed on a turned raft faces the way you placed it",
+        "The helm is called Ship's wheel in the hotbar"
+      ]
+    },
+    {
       "version": "0.75.7",
       "changes": [
         "A holed hull floods through its holes (faster the bigger the hole), sinks, and settles on the bottom"

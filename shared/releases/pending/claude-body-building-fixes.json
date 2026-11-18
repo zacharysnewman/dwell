@@ -1,8 +1,0 @@
-{
-  "changes": [
-    "Drag building on a floating raft lays a row of blocks instead of stalling on one spot",
-    "Breaking any block of a cannon (or door) on a raft breaks the whole thing",
-    "A cannon placed on a turned raft faces the way you placed it",
-    "The helm is called Ship's wheel in the hotbar"
-  ]
-}
