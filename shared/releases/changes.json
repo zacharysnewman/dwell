@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.74.7",
+      "changes": [
+        "Cannonballs are twice the size and as heavy as real steel (about 455 kg)",
+        "A fast cannonball smashes through the blocks it hits and knocks loose the blocks round its hole; slower, it knocks blocks loose",
+        "Loose blocks near a flying cannonball are dragged along with it",
+        "Cannons fire as fast as you click"
+      ]
+    },
+    {
       "version": "0.74.6",
       "changes": [
         "What comes to rest on a ship or other built body (a cannonball, a knocked-loose block) now rides along with it"
