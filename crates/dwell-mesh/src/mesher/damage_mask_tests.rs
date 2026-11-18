@@ -855,3 +855,95 @@ dwell_world::both_faces!(
         );
     }
 );
+
+/// The cutout mesh's vertices (face-local cells, y in cells) of `states` on face `f`.
+fn cutout_points(f: FaceFrame, states: &[([i32; 3], u16)]) -> Vec<[f64; 3]> {
+    let mut padded = vec![0u16; PADDED_VOLUME];
+    for &(l, state) in states {
+        let c = world_cell(f, l);
+        padded[padded_index(c[0], c[1], c[2])] = state;
+    }
+    let m = mesh_chunk_damaged(
+        &padded,
+        &[],
+        f == FaceFrame::B,
+        [0, 0, 0],
+        &[],
+        None,
+        ChunkFlags::default(),
+        &[],
+    )
+    .expect("padded volume")
+    .cutout;
+    m.positions
+        .chunks_exact(3)
+        .map(|p| {
+            let y = f64::from(p[1]) / CELL_H;
+            [
+                f64::from(p[0]),
+                if f == FaceFrame::B {
+                    f64::from(N) - y
+                } else {
+                    y
+                },
+                f64::from(p[2]),
+            ]
+        })
+        .collect()
+}
+
+dwell_world::both_faces!(
+    fn a_wall_torch_leans_out_from_its_wall_its_top_over_the_cells_middle(f: FaceFrame) {
+        // Owner, 2026-11-18: torches "mounted to walls", "Tilted out from the wall". Hung facing
+        // east (its wall to the west, −x): its foot near the wall, its top over the cell's middle.
+        let lower = f.state(dwell_blocks::require("dwell:torch[mount=east]"));
+        let upper = f.state(dwell_blocks::require("dwell:torch_upper[mount=east]"));
+        let pts = cutout_points(f, &[([4, 4, 4], lower), ([4, 5, 4], upper)]);
+        let mean_x_at = |row: f64| {
+            let at: Vec<f64> = pts
+                .iter()
+                .filter(|p| (p[1] - row).abs() < 0.01)
+                .map(|p| p[0])
+                .collect();
+            assert!(!at.is_empty(), "vertices at row {row}");
+            at.iter().sum::<f64>() / at.len() as f64
+        };
+        let (foot, top) = (mean_x_at(4.0), mean_x_at(6.0));
+        assert!(foot < 4.1, "the foot at the wall: {foot}");
+        assert!((top - 4.5).abs() < 0.02, "the top over the middle: {top}");
+        // Upright on the floor.
+        let floor = f.state(dwell_blocks::require("dwell:torch"));
+        let up = f.state(dwell_blocks::require("dwell:torch_upper"));
+        let pts = cutout_points(f, &[([4, 4, 4], floor), ([4, 5, 4], up)]);
+        let xs: Vec<f64> = pts
+            .iter()
+            .filter(|p| (p[1] - 4.0).abs() < 0.01)
+            .map(|p| p[0])
+            .collect();
+        let mean = xs.iter().sum::<f64>() / xs.len() as f64;
+        assert!(
+            (mean - 4.5).abs() < 0.02,
+            "a floor torch's foot centred: {mean}"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_ships_wheel_turns_with_its_facing(f: FaceFrame) {
+        // The wheel stands across its facing: facing east it is wide in z, thin in x (it drew
+        // north whatever its facing before every look carried its facing).
+        let m = dwell_blocks::require("dwell:helm[facing=east]");
+        let (pts, _) = mesh_one(f, f.state(m), [4, 4, 4], &[], 0);
+        let span = |k: usize| {
+            let a = pts.iter().map(|p| p[k]).fold(f64::MAX, f64::min);
+            let b = pts.iter().map(|p| p[k]).fold(f64::MIN, f64::max);
+            b - a
+        };
+        assert!(
+            span(2) > 0.7 && span(0) < 0.3,
+            "x {} z {}",
+            span(0),
+            span(2)
+        );
+    }
+);

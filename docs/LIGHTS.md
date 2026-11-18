@@ -32,7 +32,7 @@ The owner's answers to the design questions (2026-10-21):
 4. **Data-driven.** The torch is a block (`emits` for its block light) plus a **`light` entry**
    (colour, radius, strength, flicker, casts shadows), and both the placed block and the held item
    use it. More lights (lanterns, …) are added by data alone. Floor placement first; wall torches
-   can come later as a state.
+   came later as a state (below, "Wall torches").
 
 What is added later, and how: more light sources and blocks that use them (data in
 `shared/blocks/*.json`, by hand or a tool; per build, synced to clients by name), more held items
@@ -221,6 +221,22 @@ post, a doorway, leaves). A first build sized the halo by `discM` alone, and a t
 the whole view (the screen blend lifts the black corners of a cave); it is capped at `maxDisc`
 (half a screen height), and its decay is per twelfth of the way, since Low's fewer samples read
 brighter than High's when it was per sample.
+
+### Wall torches **[built, 2026-11-18]**
+
+Owner, 2026-11-18: "Are we supporting torches mounted to walls? That would be awesome!"; "Tilted out from the wall".
+The torch and its upper cell have a `mount` property (`floor`, the default, then `north`, `east`, `south`, `west`) and
+block data `wallMount` (`property`, `leanDeg` 25, `lengthM` 1): a state other than `floor` faces that way and hangs on
+the full block behind it (`needsSupport` behind, the ladder's rule: placed only against a block's side, gone with it);
+a part takes its block's shared properties (`dwell_world::parts`, `dwell_blocks::with_shared_properties`). Placed
+against a side, the client picks the hung state (`dwell_game::block_interaction::hung_against`, the registry's
+`hung_facing`), on the ground and on a moving body's side alike. The cross look leans by a shear (`Cross::lean_deg`,
+`lean_length_m`, `lean_from_m`, synced as look tag 0x94): the stick's foot at the wall, its top over the cell's middle,
+so the flame and its light stay where a floor torch's are. Adding the property is not breaking (ADR 0063). Tests:
+`dwell-world` `tests/placement.rs` `a_wall_torch_hangs_on_a_blocks_side_and_goes_with_it`, `dwell-mesh`
+`a_wall_torch_leans_out_from_its_wall_its_top_over_the_cells_middle` (both faces), `dwell-sim` `tests/ships.rs`
+`a_torch_placed_against_a_rafts_side_hangs_there_leaning`, `dwell-blocks` sync, `shared/blocks/parts.test.mjs`.
+A torch hung on a body's side doesn't yet go when its body cell breaks.
 
 ## 5. Both faces
 

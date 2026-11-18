@@ -291,6 +291,22 @@ function validateRender(id, def, look, isAir) {
   }
   if (def.replaceable !== undefined && typeof def.replaceable !== 'boolean') fail(`${id}: replaceable must be true or false`);
   if (def.needsSupport === 'behind' && !def.facingProperty) fail(`${id}: needsSupport behind needs a facingProperty (what is behind it)`);
+  // A wall mount (a torch, docs/LIGHTS.md §2): `property`'s first value stands on the floor, the
+  // others are facings, each hung on the block behind it (`needsSupport` behind, when the block
+  // needs support at all), its cross look leaning `leanDeg` out from the wall over `lengthM` m.
+  if (def.wallMount !== undefined) {
+    const w = def.wallMount;
+    const known = ['property', 'leanDeg', 'lengthM'];
+    for (const k of Object.keys(w)) if (!known.includes(k)) fail(`${id}: wallMount has no field ${k}`);
+    const p = (def.properties ?? {})[w.property];
+    if (!p || p[0] !== 'floor' || p.slice(1).some((v) => !FACINGS.includes(v)) || p.length < 2) {
+      fail(`${id}: wallMount.property must name a property of floor then facings`);
+    }
+    if (!(typeof w.leanDeg === 'number' && w.leanDeg >= 0 && w.leanDeg <= 60)) fail(`${id}: wallMount.leanDeg must be in [0, 60]`);
+    if (!(typeof w.lengthM === 'number' && w.lengthM > 0 && w.lengthM <= 4)) fail(`${id}: wallMount.lengthM must be in (0, 4]`);
+    if (def.look !== 'cross') fail(`${id}: wallMount needs the cross look`);
+    if (def.facingProperty) fail(`${id}: wallMount sets the facing itself: no facingProperty`);
+  }
   if (def.onSlopes !== undefined && typeof def.onSlopes !== 'boolean') fail(`${id}: onSlopes must be true or false`);
   if (def.support !== undefined && !SUPPORT_ROLES.includes(def.support)) {
     fail(`${id}: support must be one of ${SUPPORT_ROLES.join(', ')}`);
@@ -565,6 +581,10 @@ for (const st of states) {
     lightFilter: lightFilterOf(d),
     needsSupport: d.needsSupport ?? null,
   };
+  if (d.wallMount && st.values[d.wallMount.property] !== 'floor') {
+    st.over.facing = st.values[d.wallMount.property];
+    st.over.needsSupport = d.needsSupport ? 'behind' : null;
+  }
   if (d.column !== undefined && st.values[d.column] !== st.block.props.find((p) => p.name === d.column).values[0]) {
     st.over.needsSupport = null;
   }
@@ -879,12 +899,20 @@ if (!fixture) writeFileSync(join(root, 'client/src/world/blocks.gen.ts'), ts.joi
   rs.push('];');
   rs.push('');
   const RS_SHAPES = { empty: 'Empty', full: 'Full', shaped: 'Shaped' };
+  // A wall-mounted state's lean (`wallMount`): its degrees, the stick's length and how far up it
+  // this cell's floor is (the cells under it in its block: `partOf`).
+  const leanRs = (d, values) => {
+    const w = d.wallMount;
+    const on = w && values[w.property] !== 'floor';
+    const from = on && d.partOf !== undefined ? 0.5 : 0;
+    return `lean_deg: ${rf(on ? w.leanDeg : 0)}, lean_length_m: ${rf(on ? w.lengthM : 0)}, lean_from_m: ${rf(from)}`;
+  };
   const crossRs = (d, values) => {
     if (d.look !== 'cross') return 'None';
     const c = d.cross ?? {};
     const j = c.jitter ?? {};
     const [lo, hi] = j.height ?? [1, 1];
-    return `Some(Cross { height: ${rf(crossHeightOf(d, values))}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true} })`;
+    return `Some(Cross { height: ${rf(crossHeightOf(d, values))}, quads: ${c.quads ?? 2}, offset: ${rf(j.offset ?? 0)}, rotation_deg: ${rf(j.rotation ?? 0)}, height_min: ${rf(lo)}, height_max: ${rf(hi)}, sit_on_support: ${c.sitOnSupport ?? true}, ${leanRs(d, values)} })`;
   };
   rs.push(`pub static STATES: [StateInfo; ${states.length}] = [`);
   for (const st of states) {

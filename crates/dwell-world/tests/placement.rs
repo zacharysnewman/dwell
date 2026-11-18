@@ -417,3 +417,44 @@ fn a_flat_face_or_a_slopes_top_half_has_no_side() {
     // Hanging (face B): out its bottom or its side.
     assert_eq!(slope_side([0.0, -1.0, 1.0], [0.5, 0.8, 0.8]), Some(4));
 }
+
+dwell_world::both_faces!(
+    /// A torch placed against a block's side hangs on it (owner, 2026-11-18: torches "mounted to
+    /// walls", "Tilted out from the wall"): its `mount` the face's facing, its upper cell the same,
+    /// never hung with nothing behind it; breaking the wall takes both cells.
+    fn a_wall_torch_hangs_on_a_blocks_side_and_goes_with_it(f: FaceFrame) {
+        let wall = s("dwell:torch[mount=north]");
+        let upper = s("dwell:torch_upper[mount=north]");
+        let mut w = ground(f);
+        assert_eq!(
+            place(&mut w, f, [0, -1, 2], 2, wall, 1, false).check,
+            EditCheck::NoSupport,
+            "a wall torch on a top"
+        );
+        assert_eq!(
+            place(&mut w, f, [0, -1, 2], 2, s("dwell:torch"), 1, false).check,
+            EditCheck::Ok,
+            "a floor torch there"
+        );
+        set(&mut w, f, [0, 0, 3], s("dwell:stone"));
+        let hung = place(&mut w, f, [0, 0, 3], 5, wall, 1, false);
+        assert_eq!(
+            (hung.check, cells(f, &hung)),
+            (EditCheck::Ok, vec![[0, 0, 2]])
+        );
+        let writes = edit_writes(&mut w, f.cell([0, 0, 2]), f.state(wall));
+        assert!(
+            writes.contains(&(f.cell([0, 1, 2]), f.state(upper))),
+            "its upper cell hangs too: {writes:?}"
+        );
+        for (c, m) in writes {
+            w.set_voxel(c[0], c[1], c[2], m);
+        }
+        let gone = edit_writes(&mut w, f.cell([0, 0, 3]), s("dwell:air"));
+        assert!(
+            gone.contains(&(f.cell([0, 0, 2]), s("dwell:air")))
+                && gone.contains(&(f.cell([0, 1, 2]), s("dwell:air"))),
+            "both cells go with the wall: {gone:?}"
+        );
+    }
+);

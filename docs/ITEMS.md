@@ -218,6 +218,7 @@ prediction alike.
 | `replaceable` | Placing into or against it replaces it (tall grass) — already built |
 | `placeOn` | The blocks it may stand on — already built (tall grass: grass, dirt and their ramps) |
 | `needsSupport` | `below`: stands on the cell under it and goes with it, dropping its drops however that cell goes — a break, a region, a blast, a fall (tall grass, torch; BUGS.md #178); `behind` (new): hangs on the cell opposite its facing, a full solid block, placed only against that block's side, and goes with it (ladder; each cell of a 1 m ladder needs its block) |
+| `wallMount` (new, 2026-11-18) | `{ property, leanDeg, lengthM }`: the property whose first value `floor` stands and whose other values (facings) hang on the block behind, `needsSupport` behind, the cross look leaning out (a torch; docs/LIGHTS.md "Wall torches") |
 | `onSlopes` | Since 0.39.0 (owner, 2026-10-28: "make it so we can build on slopes again") no rule: any block may be placed on a slope's top, in the cell above it, the slope staying under it. Kept in the data and the registry sync (`flag::ON_SLOPES`). Aimed at a slope's lower half, a place goes past its low edge instead: into the cell the slope faces out into there (`dwell_world::edit::slope_side`, BUGS.md #23) |
 | `moldable` (new) | Its natural material group (`dirt`: dirt, grass, snowy grass; `sand`); a ramp takes its block's. Building with a block of the slope's group onto the slope replaces the slope with the block; any other block goes on top of it |
 

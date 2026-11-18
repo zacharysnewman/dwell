@@ -129,6 +129,49 @@ pub fn with_property(state: StateId, name: &str, value: &str) -> Option<StateId>
     Some(state_of(block, &idx))
 }
 
+/// The state of `m`'s block that hangs on a wall facing `facing` (block data `wallMount`: a
+/// torch's `mount`; its facing, hung on the block behind it, leaning), the rest of `m`'s values
+/// kept where they can be; None when its block has none (a block that only stands).
+pub fn hung_facing(m: StateId, facing: crate::Facing) -> Option<StateId> {
+    let base = crate::base_state(m);
+    try_info(base)?;
+    let block = block_of(base);
+    block
+        .states()
+        .map(|i| i as StateId)
+        .filter(|&i| {
+            let s = crate::info(i);
+            s.facing == facing
+                && s.needs_support == crate::Support::Behind
+                && s.cross.is_some_and(|c| c.lean_deg > 0.0)
+        })
+        .max_by_key(|&i| {
+            // The most of `m`'s other values in common.
+            block
+                .properties
+                .iter()
+                .filter(|p| state_property(i, p.name) == state_property(base, p.name))
+                .count()
+        })
+}
+
+/// `to` with every property it shares with `from`'s block (the same name) set to `from`'s value
+/// (a multi-cell block's part takes its block's `mount`: a wall torch's upper cell); a value `to`'s
+/// block lacks is left as it was.
+pub fn with_shared_properties(from: StateId, to: StateId) -> StateId {
+    let from = crate::base_state(from);
+    if try_info(from).is_none() || try_info(to).is_none() {
+        return to;
+    }
+    let mut out = to;
+    for p in block_of(from).properties {
+        if let Some(v) = state_property(from, p.name) {
+            out = with_property(out, p.name, v).unwrap_or(out);
+        }
+    }
+    out
+}
+
 /// The same block with property `name` at its `k`th value (a column's cell, a toggle's other
 /// value); `None` if the block has no such property or value.
 pub fn with_property_index(state: StateId, name: &str, k: usize) -> Option<StateId> {

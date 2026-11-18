@@ -92,6 +92,14 @@ pub struct Cross {
     pub height_min: f32,
     pub height_max: f32,
     pub sit_on_support: bool,
+    /// A wall-mounted state's lean (block data `wallMount`; a torch on a wall): its quads lean
+    /// this many degrees out from the wall (toward its `facing`), 0 upright.
+    pub lean_deg: f32,
+    /// The leaning stick's whole length (m), over all its block's cells: its foot at the wall, its
+    /// top over the cell's middle.
+    pub lean_length_m: f32,
+    /// How far up the stick (m) this cell's floor is (0 its foot's cell).
+    pub lean_from_m: f32,
 }
 
 /// An octagonal cross-section (block data `crossSection`, ADR 0072): `chamfer` is the corners' cut,

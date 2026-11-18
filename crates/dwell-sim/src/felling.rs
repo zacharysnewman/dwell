@@ -1134,7 +1134,10 @@ impl Felling {
                 continue;
             }
             let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
-            let local = turn.inverse() * (centre - at);
+            let local = DVec3::from(
+                dwell_world::GridFrame::at_pose(at.to_array(), turn.to_array())
+                    .to_grid(centre.to_array()),
+            );
             // The free cell beside its cells nearest this one: it rides low in the water, so not a
             // rounding of the offset.
             let near = p

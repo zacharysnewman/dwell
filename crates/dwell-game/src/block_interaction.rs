@@ -189,6 +189,21 @@ fn with_values(m: StateId, values: &[(&str, &str)]) -> Option<StateId> {
         .try_fold(m, |m, (k, v)| dwell_blocks::with_property(m, k, v))
 }
 
+/// `m`'s state hung on the wall a place against the side whose outward direction is `dir` puts it
+/// on (block data `wallMount`: a torch facing out from the wall); None against a top or bottom, or
+/// for a block that doesn't hang (owner, 2026-11-18: torches "mounted to walls").
+pub fn hung_against(m: StateId, dir: [i32; 3]) -> Option<StateId> {
+    use dwell_blocks::Facing;
+    let facing = match dir {
+        [1, 0, 0] => Facing::East,
+        [-1, 0, 0] => Facing::West,
+        [0, 0, 1] => Facing::South,
+        [0, 0, -1] => Facing::North,
+        _ => return None,
+    };
+    dwell_blocks::hung_facing(m, facing)
+}
+
 /// Where the ray from `eye` along unit `dir` meets a liquid's surface within `reach` (m), coming down
 /// onto it: the liquid cell whose cell above (face-local) is no liquid, its top face (a raft's first
 /// block goes on it; docs/CANNONS.md, owner 2026-11-18: "Aim at the surface"). `at` reads a cell.
@@ -412,6 +427,10 @@ impl BlockInteraction {
             };
             return Some((cell, ladder_for(face, self.yaw)));
         }
+        // Against a side, a block that hangs on walls (a torch, `wallMount`) hangs there.
+        if let Some(m) = hung_against(slot.material, dir) {
+            return Some((cell, FaceFrame::at_row(cell[1]).state(m)));
+        }
         Some((cell, self.faced(slot, slot.material, cell)))
     }
 
@@ -602,6 +621,23 @@ mod tests {
         assert!(slots.iter().all(|s| s.rows == 1 || !s.upper.is_empty()));
         let ladder = slots.iter().find(|s| s.ladder).expect("a ladder slot");
         assert_eq!(ladder.drag, crate::items::ItemDrag::Vertical);
+    }
+
+    #[test]
+    fn a_torch_against_a_side_hangs_facing_out_and_on_a_top_stands() {
+        // face-a-only: the facing of a side direction, no geometry. Owner, 2026-11-18: torches
+        // "mounted to walls".
+        let torch = require("dwell:torch");
+        assert_eq!(
+            hung_against(torch, [0, 0, -1]),
+            Some(require("dwell:torch[mount=north]"))
+        );
+        assert_eq!(
+            hung_against(torch, [1, 0, 0]),
+            Some(require("dwell:torch[mount=east]"))
+        );
+        assert_eq!(hung_against(torch, [0, 1, 0]), None, "on a top it stands");
+        assert_eq!(hung_against(require("dwell:stone"), [1, 0, 0]), None);
     }
 
     dwell_world::both_faces!(
