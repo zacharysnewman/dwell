@@ -1,6 +1,0 @@
-{
-  "changes": [
-    "Drag building on a raft follows the build modes (a line, a flat floor) as on the ground",
-    "The bridging help works off the edge of a raft you stand on"
-  ]
-}
