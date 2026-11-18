@@ -39,9 +39,10 @@ export function validateCannons(data, names) {
   if (!Array.isArray(data.balls) || data.balls.length === 0) fail('balls must be a non-empty list');
   const balls = data.balls.map((b, i) => {
     const at = `balls[${i}]`;
-    known(b, ['name', 'radiusM', 'densityKgM3', 'impact'], at);
+    known(b, ['name', 'radiusM', 'densityKgM3', 'rollDamping', 'impact'], at);
     if (typeof b.name !== 'string' || !/^[a-z]+:[a-z0-9_]+$/.test(b.name)) fail(`${at}.name must be a namespaced name`);
     range(b, 'radiusM', 0.02, 1, at);
+    range(b, 'rollDamping', 0, 50, at);
     range(b, 'densityKgM3', 100, 30000, at);
     const im = b.impact;
     known(im, ['kind', 'knockRadiusM', 'maxCells', 'minSpeedMs', 'explosive'], `${at}.impact`);
@@ -96,7 +97,7 @@ export function cannonsRust(d) {
     const im = b.impact.kind === 'knock'
       ? `Impact::Knock { radius_m: ${f64(b.impact.knockRadiusM)}, max_cells: ${b.impact.maxCells}, min_speed_ms: ${f64(b.impact.minSpeedMs)} }`
       : `Impact::Explode { explosive: "${b.impact.explosive}" }`;
-    rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, impact: ${im} },`);
+    rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, roll_damping: ${f64(b.rollDamping)}, impact: ${im} },`);
   }
   rs.push('];', '');
   return rs.join('\n');

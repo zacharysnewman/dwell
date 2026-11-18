@@ -21,6 +21,8 @@ pub enum Impact {
 pub struct BallDef {
     pub name: &'static str,
     pub radius_m: f64,
+    /// Its rolling resistance: its speed's damping (1/s) while it touches the ground.
+    pub roll_damping: f64,
     pub density_kg_m3: f64,
     pub impact: Impact,
 }

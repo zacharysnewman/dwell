@@ -239,7 +239,8 @@ test('local mode: every palette block can be picked from the hotbar, placed, and
     if (title !== null && TOOL_TITLES.has(title)) continue;
     // A door is one block over four cells, and breaking any of them clears all four (dwell-world
     // tests/doors.rs pins both): not one cell to break here.
-    if (item.name === 'dwell:door') continue;
+    // The cannon too (four cells, two along and two up; dwell-world tests/cannons.rs).
+    if (item.name === 'dwell:door' || item.name === 'dwell:cannon') continue;
     // Leaves placed on the ground stay there (docs/FELLING.md §2: loose leaves fall only to land).
 
     // Back to the ground cell, and wait until it is the target: the target is the previous look's

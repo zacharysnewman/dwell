@@ -23,7 +23,7 @@ fn config(f: FaceFrame) -> ServerConfig {
 fn cannon_scene(fx: &mut Fixture, f: FaceFrame) -> [[i32; 3]; 4] {
     let stone = f.state(dwell_blocks::require("dwell:stone"));
     for x in -6..8 {
-        for z in -40..8 {
+        for z in -160..8 {
             for r in -2..0 {
                 let [x, y, z] = f.cell([x, BASE + r, z]);
                 fx.server.world().set_voxel(x, y, z, stone);
@@ -128,5 +128,41 @@ both_faces!(
         let l2 = f.point(fx.server.body_pose(id).unwrap().0.to_array());
         assert!(l2[2] < -10.0, "{l2:?}");
         assert!((l2[1] - m_of_row(BASE)).abs() < 0.3, "on the floor: {l2:?}");
+    }
+);
+
+both_faces!(
+    fn a_ball_rolls_to_rest_not_on_for_hundreds_of_metres(f: FaceFrame) {
+        // Its data's `rollDamping`: a sphere's contact alone rolled it on past 200 m (the browser,
+        // 2026-11-17: no ball within 200 m of the cannon).
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        let cells = cannon_scene(&mut fx, f);
+        use_it(&mut fx, f, cells[0]);
+        let id = fx.server.last_ball().expect("a ball fired");
+        let mut last = None;
+        for _ in 0..(8 * SIM_HZ) {
+            fx.server.step();
+            if let Some((p, _)) = fx.server.body_pose(id) {
+                last = Some(f.point(p.to_array()));
+            }
+        }
+        let at = last.expect("it flew");
+        // At rest (settled into the grid, its body gone) or nearly, well within the floor.
+        let moving = fx.server.body_pose(id).is_some_and(|(p, _)| {
+            let now = f.point(p.to_array());
+            fx.server.step();
+            let next = f.point(
+                fx.server
+                    .body_pose(id)
+                    .map_or(p.to_array(), |q| q.0.to_array()),
+            );
+            (next[2] - now[2]).abs() * f64::from(SIM_HZ) > 0.5
+        });
+        assert!(!moving, "still rolling at {at:?}");
+        assert!(at[2] > -150.0 && at[2] < -10.0, "rested at {at:?}");
     }
 );
