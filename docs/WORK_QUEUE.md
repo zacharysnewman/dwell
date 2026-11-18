@@ -12,6 +12,12 @@ or decision the owner gives goes into this file **in the same turn it arrives**,
 the work, quoting the owner's words; never only in a session's memory or an agent's brief. An item nobody
 recorded doesn't exist for the next session.
 
+**Hold (owner, 2026-11-18): "Put a hold on everything except ships, cannons, etc."** Only the ships and cannons
+work (docs/CANNONS.md C4–C5 and what they need) goes ahead; every other item, the CI failures included, waits until
+the owner lifts the hold. Parked at the hold: the cold desert fix for main's failing `realistic_variety` (branch
+`claude/cold-desert-region`, unmerged: back at 220 mm the one-region check passes, biomes per 4 km² reads 2.796
+against 2.8, 2.958 before 0.73's lee floor; it raises the 0.75 line).
+
 Last updated: 2026-11-11 (0.52.108).
 
 ## Queued next, in order (2026-11-12)
@@ -42,8 +48,21 @@ Last updated: 2026-11-11 (0.52.108).
   2 up, `columnAlong`), its Use (`use: fire`) and reload; the cannons data. C2 built (2026-11-17): the iron ball flies
   from the muzzle as a heavy sphere body and settles where it rests. C3 built (2026-11-17): impacts. Owner should see: clicking a
   cannon shoots a dark ball out of the barrel that arcs, lands and rolls; aimed at a wall, the iron ball knocks a few
-  blocks loose round where it hits, and the explosive ball (not in the hotbar yet: data or dev tools) blows a hole. Next:
-  C4, riding along on bodies.
+  blocks loose round where it hits, and the explosive ball (not in the hotbar yet: data or dev tools) blows a hole. C4 in progress (2026-11-18, branch `claude/cannon-c4`, not merged): what comes to rest on a built body joins it.
+  Owner, 2026-11-18 (a new ball design, before more of C4): "I want to double the size of the cannonball." "I also
+  want the cannonball to have a drag force with it that also detaches neighboring blocks from their structures. 1m
+  radius. Every time the cannonball hits a block at greater than a certain velocity, it should destroy it, if it drops
+  below the velocity it should activate physics on the block like it does now. The area drag force should also be
+  equivalent to its speed." "This cannonball design replaces the 2 types I specced out before." "Also the cannon seems
+  to have a capped fire rate, set that to off or none, so you can fire quickly." Owner should see: a ball twice the
+  size; fired into a wall it smashes through the blocks it hits while fast, knocks them loose as physics blocks once
+  slower, and drags the blocks within 1 m of it loose along with it; one ball type (no explosive ball); clicking as
+  fast as you like fires each time.
+  Owner's answers (2026-11-18): mass "8× mass, real steel" (r 0.24 m, ~455 kg); destroy speed 20 m/s (above it each
+  block hit is destroyed, below it knocked loose as a physics block); each block destroyed or knocked loose slows the
+  ball "by the block's weight"; the 1 m drag: "It shouldn't be a velocity setter, it should exert continuous force as
+  it flies around it, in its velocity direction" (a force on the loose blocks within 1 m, along the ball's velocity,
+  growing with its speed, every tick it passes).
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).
