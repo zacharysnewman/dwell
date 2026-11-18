@@ -104,6 +104,9 @@ pub struct WaterRules {
     pub heave_drag: f64,
     /// Slowing of its spin (/s), the same way.
     pub angular_drag: f64,
+    /// The water (m³/s) each m² of a hull's openings below the water line lets in (docs/CANNONS.md
+    /// §12 H2): a side opening of a cell is 1 × ½ m, a floor or top one 1 × 1 m.
+    pub flood_m3s_per_m2: f64,
 }
 
 // Included (not a `#[path]` module) so rustfmt leaves the generated file as written.
@@ -442,7 +445,10 @@ pub struct Felling {
     /// server takes them (`merge`).
     pub joins: Vec<(u32, u32)>,
     /// Each body's air cells (`air_cells`) by id, with its cells' fingerprint when found.
-    air: std::collections::HashMap<u32, (u64, Vec<[i32; 3]>)>,
+    air: std::collections::HashMap<u32, Hull>,
+    /// The built bodies sunk (in a liquid, no longer afloat; docs/CANNONS.md §12 H2): they settle
+    /// into the world once at rest (owner, 2026-11-18: a sunk ship "Settles into the world").
+    sunk: std::collections::HashSet<u32>,
 }
 
 /// Whether height `y` (m) lies within the world's chunk rows (a piece past them is lost).
@@ -680,6 +686,17 @@ pub fn air_cells(cells: &[([i32; 3], StateId)], up_step: i32) -> Vec<[i32; 3]> {
         }
     }
     air
+}
+
+/// A body's hull (docs/CANNONS.md §12): its air cells, the fingerprint and count of the cells they
+/// were found for, and the water in it (m³). Cells only taken away (a ball's hole) keep the air: the
+/// hole is an opening the water comes in by; cells added (built, patched) find it again.
+#[derive(Clone, Debug, Default)]
+struct Hull {
+    key: u64,
+    count: usize,
+    air: Vec<[i32; 3]>,
+    water_m3: f64,
 }
 
 /// The largest bounding box (cells) whose air cells are looked for (a ship; a felled forest's
@@ -1266,21 +1283,52 @@ impl Felling {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
             let mut liquid = 0.0f64;
-            // Its hull's air (docs/CANNONS.md §12 H1) buoys it as its cells do.
+            // Its hull's air (docs/CANNONS.md §12 H1) buoys it as its cells do, but for the cells
+            // its water fills, lowest first (H2).
             let key = cells_key(&p.cells);
-            let up_step = FaceFrame::at_height(position.y).cell([0, 1, 0])[1]
-                - FaceFrame::at_height(position.y).cell([0, 0, 0])[1];
-            let air = match self.air.get(&p.id) {
-                Some((k, a)) if *k == key => a.len(),
-                _ => {
-                    let a = air_cells(&p.cells, up_step);
-                    let n = a.len();
-                    self.air.insert(p.id, (key, a));
-                    n
+            let f = FaceFrame::at_height(position.y);
+            let up_step = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+            let hull = self.air.entry(p.id).or_default();
+            if hull.key != key {
+                let taken_only = p.cells.len() < hull.count && hull.count > 0;
+                if taken_only {
+                    // A hole: the air stays (the cells taken become openings).
+                    hull.air.retain(|c| !p.cells.iter().any(|(o, _)| o == c));
+                } else {
+                    hull.air = air_cells(&p.cells, up_step);
                 }
-            };
-            let air_cells = &self.air[&p.id].1;
-            for &o in p.cells.iter().map(|(o, _)| o).chain(air_cells.iter()) {
+                hull.key = key;
+                hull.count = p.cells.len();
+                hull.water_m3 = hull.water_m3.min(hull.air.len() as f64 * volume);
+            }
+            // The water in by its openings: the outside cells beside its air, under the liquid.
+            let mut openings = 0.0f64;
+            for &a in &hull.air {
+                for d in dwell_world::edit::FACE_DIRS {
+                    let q = [a[0] + d[0], a[1] + d[1], a[2] + d[2]];
+                    if hull.air.contains(&q) || p.cells.iter().any(|(o, _)| *o == q) {
+                        continue;
+                    }
+                    let at = position + rotation * offset_m(q);
+                    if cell_in_liquid(world, at, rotation).0 > 0.0 {
+                        // Its area (m²): a side is 1 × ½ m, a floor or top 1 × 1 m.
+                        openings += if d[1] == 0 { CELL_H } else { 1.0 };
+                    }
+                }
+            }
+            let room = hull.air.len() as f64 * volume;
+            hull.water_m3 = (hull.water_m3 + openings * WATER.flood_m3s_per_m2 * dt).min(room);
+            // The cells its water fills: the lowest, by their height along the face's up.
+            let wet = (hull.water_m3 / volume).floor() as usize;
+            let mut dry: Vec<([i32; 3], f64)> = hull
+                .air
+                .iter()
+                .map(|&a| (a, f.y((position + rotation * offset_m(a)).y)))
+                .collect();
+            dry.sort_by(|a, b| a.1.total_cmp(&b.1));
+            let dry: Vec<[i32; 3]> = dry.into_iter().skip(wet).map(|(a, _)| a).collect();
+            let air = dry.len();
+            for &o in p.cells.iter().map(|(o, _)| o).chain(dry.iter()) {
                 let centre = position + rotation * offset_m(o);
                 let (fraction, density) = cell_in_liquid(world, centre, rotation);
                 if fraction <= 0.0 {
@@ -1300,6 +1348,12 @@ impl Felling {
             let cells_n = p.cells.len() as f64;
             let density = body_density(&p.cells) * cells_n / (cells_n + air as f64);
             p.afloat = under > 0.0 && density < liquid;
+            // Sunk (a built body under, no longer afloat): it settles once at rest.
+            if under > 0.0 && !p.afloat && !body_kind(p.kind).settles {
+                self.sunk.insert(p.id);
+            } else {
+                self.sunk.remove(&p.id);
+            }
             if p.afloat {
                 p.dry = 0;
             } else {
@@ -1599,8 +1653,15 @@ impl Felling {
             let y = physics.position(p.body).y;
             let lost = !in_world_rows(y);
             // A kind that doesn't settle (a built body) stays a body; lost past the rows, it goes.
-            let settles = kind.settles && (kind.settles_afloat || beached);
-            if lost || (settling && settles && (p.still >= r.sleep_ticks || p.age >= r.max_ticks)) {
+            let settles =
+                (kind.settles && (kind.settles_afloat || beached)) || self.sunk.contains(&p.id);
+            // A sunk ship settles only at rest on the bed (its age ran all the while it sailed).
+            let sunk = self.sunk.contains(&p.id) && !kind.settles;
+            if lost
+                || (settling
+                    && settles
+                    && (p.still >= r.sleep_ticks || (p.age >= r.max_ticks && !sunk)))
+            {
                 due.push(i);
             }
         }

@@ -293,6 +293,19 @@ fn a_wooden_raft_floats_and_a_stone_one_sinks() {
         raft(dwell_blocks::require("dwell:stone")),
         [11.5, surface + 1.0, 11.5],
     );
+    let stone_m = dwell_blocks::require("dwell:stone");
+    let stone_on_bed = |f: &mut Fixture| {
+        let mut n = 0;
+        for x in 8..16 {
+            for z in 8..16 {
+                for y in G - 6..G - 2 {
+                    n += usize::from(f.server.world().get_voxel(x, y, z) == stone_m);
+                }
+            }
+        }
+        n
+    };
+    let before = stone_on_bed(&mut f);
     for _ in 0..(60 * 12) {
         f.server.step();
     }
@@ -307,12 +320,16 @@ fn a_wooden_raft_floats_and_a_stone_one_sinks() {
         turn.angle_between(dwell_physics::DQuat::IDENTITY) < 0.1,
         "level: {turn:?}"
     );
-    let (at, _) = f.server.body_pose(stone).expect("the stone raft");
-    let bottom = f64::from(G - 4) * 0.5 + 0.25;
+    // Sunk, it settled into the world on the bed (owner, 2026-11-18: a sunk ship "Settles into the
+    // world"; docs/CANNONS.md §12 H2).
     assert!(
-        (at.y - bottom).abs() < 0.06,
-        "the stone raft sank: {:.3} m (bottom {bottom})",
-        at.y
+        f.server.body_pose(stone).is_none(),
+        "the stone raft settled"
+    );
+    let after = stone_on_bed(&mut f);
+    assert!(
+        after >= before + 4,
+        "its stone lies on the bed: {before} -> {after}"
     );
 }
 

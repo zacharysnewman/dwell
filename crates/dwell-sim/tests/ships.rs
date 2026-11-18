@@ -633,3 +633,82 @@ both_faces!(
         );
     }
 );
+
+both_faces!(
+    fn a_holed_hull_floods_sinks_and_settles_into_the_world(f: FaceFrame) {
+        // docs/CANNONS.md §12 H2 (owner, 2026-11-18: water comes in "Through holes, by hole size";
+        // a sunk ship "Settles into the world"). A sealed plank hull afloat; a hole in its floor.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let up = up_rows(f);
+        // Stone so that its air alone keeps it up: a stone hull sinks once flooded.
+        let stone = f.state(dwell_blocks::require("dwell:stone"));
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        // 8 × 8, walls 3 high, a third of its cells stone (~600 kg a cell): sealed, its air keeps it
+        // under water's density (148 cells and 108 of air); flooded, it is over it.
+        let mut hull = Vec::new();
+        let mut k = 0;
+        let next = |k: &mut i32| {
+            *k += 1;
+            if *k % 3 == 0 { stone } else { planks }
+        };
+        for x in 0..8 {
+            for z in 0..8 {
+                hull.push(([x, 0, z], next(&mut k)));
+                if x == 0 || z == 0 || x == 7 || z == 7 {
+                    for r in 1..4 {
+                        hull.push(([x, r * up, z], next(&mut k)));
+                    }
+                }
+            }
+        }
+        let c = f.cell([0, BASE, 0]);
+        let y =
+            f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+        let body = fx.server.add_body(1, hull, [0.5, y, 0.5]);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 240);
+        let floor = |fx: &Fixture| {
+            fx.server
+                .body_pose(body)
+                .map(|(p, _)| f.point(p.to_array())[1])
+        };
+        let afloat = floor(&fx).expect("afloat");
+        // Its rim (3 rows over the floor's top) clears the water.
+        let rim = afloat + 0.5 * dwell_world::CELL_H + 3.0 * dwell_world::CELL_H;
+        assert!(rim > m_of_row(BASE), "sealed, it floats: its rim at {rim}");
+        // A hole in its floor.
+        assert!(fx.server.break_body_cell(body, [3, 0, 3]), "holed");
+        hold(&mut fx, &mut seq, Input::default(), 600);
+        let flooding = floor(&fx).expect("still a body");
+        assert!(
+            flooding < afloat - 0.1,
+            "it rides lower as it floods: {afloat} -> {flooding}"
+        );
+        // In time it goes down and settles on the bed as blocks of the world.
+        for _ in 0..40 {
+            hold(&mut fx, &mut seq, Input::default(), 60);
+            if floor(&fx).is_none() {
+                break;
+            }
+        }
+        assert!(floor(&fx).is_none(), "it settled: {:?}", floor(&fx));
+        let mut planks_on_bed = 0;
+        for x in -4..10 {
+            for z in -4..10 {
+                for r in -7..0 {
+                    let w = f.cell([x, BASE + r, z]);
+                    if fx.server.world().get_voxel(w[0], w[1], w[2]) == planks {
+                        planks_on_bed += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            planks_on_bed > 20,
+            "its planks lie in the pool: {planks_on_bed}"
+        );
+    }
+);
