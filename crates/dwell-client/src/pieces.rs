@@ -270,6 +270,37 @@ impl Pieces {
         self.map.get(&id).map(|p| p.drawn(at))
     }
 
+    /// The light sources riding the bodies (a torch on a raft; BUGS.md #212; owner, 2026-11-18:
+    /// "Placing torches on dynamic bodies should work too"), at the poses drawn at `now_ms`: each lit
+    /// cell's centre (world), the body's up there (the face's up turned with it), its state and a
+    /// flicker seed of its body and cell.
+    pub fn light_cells(&self, now_ms: f64) -> Vec<([f64; 3], [f64; 3], StateId, u32)> {
+        let at = self.draw_ms(now_ms);
+        let mut out = Vec::new();
+        for (&id, p) in &self.map {
+            let lit: Vec<_> = p
+                .blocks
+                .iter()
+                .filter(|&&(_, m)| dwell_world::is_light_source(m))
+                .collect();
+            if lit.is_empty() {
+                continue;
+            }
+            let (position, rotation) = p.drawn(at);
+            let up = rotation * DVec3::from(FaceFrame::at_height(position.y).up());
+            for &&(c, m) in &lit {
+                let offset = DVec3::new(f64::from(c[0]), f64::from(c[1]) * CELL_H, f64::from(c[2]));
+                let centre = position + rotation * offset;
+                let seed = id.wrapping_mul(0x27d4_eb2d)
+                    ^ (c[0] as u32).wrapping_mul(0x9e37_79b1)
+                    ^ (c[1] as u32).wrapping_mul(0x85eb_ca77)
+                    ^ (c[2] as u32).wrapping_mul(0xc2b2_ae3d);
+                out.push((centre.to_array(), up.to_array(), m, seed));
+            }
+        }
+        out
+    }
+
     /// Body `id`'s cells (its grid).
     pub fn cells_of(&self, id: u32) -> Vec<[i32; 3]> {
         self.map

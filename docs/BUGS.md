@@ -47,6 +47,10 @@ deck (or against its side) stands there and moves with it.
 Owner, 2026-11-18 (the deployed build): "The torch was very broken in the deployed build, placed but completely broken
 visually, no light, no flame." Open: a torch on a body is drawn by the body mesher (its cross look and its flame, made
 for the world's cells, aren't there) and lights nothing (the lights come from the world's cells).
+Fixed 2026-11-18 (client): a body's light sources (`dwell_world::is_light_source`, the world's rule) give their flame
+(`body_flame`, the look's base over the cell's floor along the body's up) and a placed light (Torch shadows) at their
+poses each frame (`Pieces::light_cells`). Browser check at dusk: a torch placed on a raft turned 20 degrees stands on its
+deck with its flame and glow (the flood light, the world's, doesn't come from bodies).
 
 ### 211. A cannon placed on a moving body faces the body's grid's way, not the way it was placed
 
