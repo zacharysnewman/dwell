@@ -19,7 +19,7 @@ test('a fixture cannon and ball by data alone; bad entries fail naming them', ()
   names.blocks.set('test:tiller', { use: 'helm' });
   data.helms.push({ block: 'test:tiller', thrustAccelMs2: 0.5, turnRadS2PerMs: 0.05, camera: { backM: 3, upM: 1, easeS: 0.2 } });
   assert.match(cannonsRust(validateCannons(data, names)), /HelmDef \{ block: "test:tiller", thrust_accel_ms2: 0\.5/);
-  data.cannons.push({ block: 'test:mortar', ball: 'test:stone_ball', muzzleSpeedMs: 20, muzzleUpM: 1, muzzleForwardM: 0.5, recoilShare: 0.5, reloadS: 6, fire: structuredClone(data.cannons[0].fire) });
+  data.cannons.push({ block: 'test:mortar', ball: 'test:stone_ball', muzzleSpeedMs: 20, elevationDeg: 10, muzzleUpM: 1, muzzleForwardM: 0.5, recoilShare: 0.5, reloadS: 6, fire: structuredClone(data.cannons[0].fire) });
   assert.match(cannonsRust(validateCannons(data, names)), /CannonDef \{ block: "test:mortar", ball: "test:stone_ball"/);
   const bad = (edit, re) => {
     const d = loadCannons();

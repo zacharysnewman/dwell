@@ -108,14 +108,28 @@ both_faces!(
             .unwrap()
             .mass_kg();
         assert!((mass - want).abs() < 1.0, "mass {mass} want {want}");
+        // It leaves rising at the barrel's elevation (owner, 2026-11-18: "angled up a bit").
+        let v = fx.server.body_velocity(id).unwrap();
+        let vl = f.vector(v.to_array());
+        let elevation = vl[1]
+            .atan2((vl[0] * vl[0] + vl[2] * vl[2]).sqrt())
+            .to_degrees();
+        let want = dwell_world::cannons::cannon("dwell:cannon")
+            .unwrap()
+            .elevation_deg;
+        assert!(
+            (elevation - want).abs() < 1.5,
+            "fired at {elevation} degrees, want {want}"
+        );
         // It flies north (−z) fast.
         for _ in 0..6 {
             fx.server.step();
         }
         let l1 = f.point(fx.server.body_pose(id).unwrap().0.to_array());
         assert!(l0[2] - l1[2] > 3.0, "{l0:?} -> {l1:?}");
-        // And lands on the floor north of the cannon, rolling on along it, not through it.
-        for _ in 0..30 {
+        // And lands on the floor north of the cannon, rolling on along it, not through it (its arc
+        // up at the barrel's elevation lasts about a second).
+        for _ in 0..80 {
             fx.server.step();
         }
         let l2 = f.point(fx.server.body_pose(id).unwrap().0.to_array());
@@ -156,8 +170,13 @@ both_faces!(
             (next[2] - now[2]).abs() * f64::from(SIM_HZ) > 0.5
         });
         assert!(!moving, "still rolling at {at:?}");
-        // Landing and rolling on the flat broke nothing (resting on the ground touches no cell).
-        assert_eq!(fx.server.ball_hits(), (0, 0), "broke the flat");
+        // Landing fast on the flat at the barrel's elevation it plows a few cells where it strikes
+        // (a block hit at 20 m/s or more is destroyed, the owner's rule); rolling breaks none.
+        let (smashed, loosened) = fx.server.ball_hits();
+        assert!(
+            smashed + loosened <= 6,
+            "only where it landed: {smashed}, {loosened}"
+        );
         assert!(at[2] > -150.0 && at[2] < -10.0, "rested at {at:?}");
     }
 );
@@ -267,7 +286,8 @@ both_faces!(
         let cells = cannon_scene(&mut fx, f);
         let dirt = f.state(dwell_blocks::require("dwell:dirt"));
         // Hung in the air beside the line 6 m out, its box clear of the ball (x 2.5 ± 0.24) and its centre 0.9 m off it.
-        let at = f.point([3.4, m_of_row(BASE) + 0.6, -6.0]);
+        // (0.44 m higher for the barrel's 5° rise over those 6 m.)
+        let at = f.point([3.4, m_of_row(BASE) + 1.04, -6.0]);
         let piece = fx.server.add_body(0, vec![([0, 0, 0], dirt)], at);
         use_it(&mut fx, f, cells[0]);
         let z0 = at[2];

@@ -310,3 +310,12 @@ the cell's volume).
   range blocks can be the ones around you still"): fully out at the helm, the client casts the body aim from the drawn
   third-person eye (`aim_from`), as far again as the camera is behind, keeping a hit only within reach of the player.
 
+## 15. The barrel's elevation (2026-11-18)
+
+Owner: "Cannon fire angle should be angled up a bit? What's a realistic angle cannons on ships were tilted at?" Naval
+guns were set by a wedge (a quoin) from about −5° to +10°: close broadsides near level (0–3°), long shots 5–10°. Each
+cannon's `elevationDeg` (data, −30 to 60; the land cannon 5°): the ball leaves along the barrel tilted up by it (on a
+body, by the body's up), the recoil against it. A ball landing fast at that angle plows the few cells it strikes (the
+owner's rule: a block hit at `destroySpeedMs` or more is destroyed). Test: `tests/cannons.rs`
+`a_shot_launches_a_heavy_ball_along_the_barrel` (both faces: it leaves at the elevation, within 1.5°).
+

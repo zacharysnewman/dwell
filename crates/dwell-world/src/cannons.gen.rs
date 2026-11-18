@@ -5,7 +5,7 @@ use crate::explosives::{BlastEffects, BoomLook, FlashLook, PuffLook, ShakeLook};
 
 /// The cannons, by block (`cannons`).
 pub static CANNONS: &[CannonDef] = &[
-    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, recoil_share: 0.2, reload_s: 0.0, fire: BlastEffects {
+    CannonDef { block: "dwell:cannon", ball: "dwell:iron_ball", muzzle_speed_ms: 45.0, elevation_deg: 5.0, muzzle_up_m: 0.6, muzzle_forward_m: 2.1, recoil_share: 0.2, reload_s: 0.0, fire: BlastEffects {
         flash: FlashLook { color: [1.0, 0.811765, 0.541176], strength: 3.0, light_radius_m: 10.0, seconds: 0.15, size_m: 1.6 },
         smoke: PuffLook { color: [0.603922, 0.580392, 0.54902], count: 12, cpu_count: 4, size_m: [0.8, 1.8], seconds: [2.5, 4.5], spread_m: 1.2, rise_ms: 0.6, opacity: 0.7, open_bias: 0.85, speed_ms: [0.0, 0.0] },
         dust: PuffLook { color: [0.643137, 0.54902, 0.423529], count: 0, cpu_count: 0, size_m: [0.1, 0.2], seconds: [0.1, 0.2], speed_ms: [0.0, 1.0], opacity: 0.0, open_bias: 0.0, spread_m: 0.0, rise_ms: 0.0 },

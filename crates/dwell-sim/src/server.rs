@@ -4494,6 +4494,9 @@ impl Server {
             return;
         };
         let f = dwell_world::FaceFrame::at_height(anchor.y);
+        // Along the barrel, tilted up by its elevation (owner, 2026-11-18: "angled up a bit").
+        let tilt = c.elevation_deg.to_radians();
+        let shot = (forward * tilt.cos() + up * tilt.sin()).normalize_or_zero();
         let floor = anchor - up * (0.5 * dwell_world::CELL_H);
         let muzzle = floor + forward * c.muzzle_forward_m + up * c.muzzle_up_m;
         // The body's origin is its cell's centre; the sphere sits on the cell's floor.
@@ -4506,11 +4509,11 @@ impl Server {
             vec![([0, 0, 0], f.state(m))],
             origin,
             dwell_physics::DQuat::IDENTITY,
-            carried + forward * c.muzzle_speed_ms,
+            carried + shot * c.muzzle_speed_ms,
             DVec3::ZERO,
         );
         if let Some(b) = recoil {
-            let kick = -forward * (ball.mass_kg() * c.muzzle_speed_ms * c.recoil_share);
+            let kick = -shot * (ball.mass_kg() * c.muzzle_speed_ms * c.recoil_share);
             self.physics.apply_impulse_at(b, kick, anchor);
         }
         self.balls.push(self.felling.pieces[i].id);
