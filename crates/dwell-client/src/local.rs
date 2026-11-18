@@ -499,6 +499,78 @@ impl LocalCore {
                 })
                 .to_string()
             }
+            // `body` {kind, at: [x, y, z] (its reference cell's centre), yaw (degrees about the
+            // face's up), cells: [[x, y, z, "state name"], …] (its grid)}: a moving body, its id
+            // back (recordings and tests: rafts and boats, docs/CANNONS.md; the copy-paste tooling
+            // is to make these later).
+            "body" => {
+                let v: serde_json::Value = match serde_json::from_str(text) {
+                    Ok(v) => v,
+                    Err(e) => return error(e.to_string()),
+                };
+                let num = |p: &serde_json::Value| p.as_f64();
+                let at: Vec<f64> = v["at"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(num).collect())
+                    .unwrap_or_default();
+                if at.len() != 3 {
+                    return error("at: expected [x, y, z]".into());
+                }
+                let f = dwell_world::FaceFrame::at_height(at[1]);
+                let mut cells = Vec::new();
+                for c in v["cells"].as_array().into_iter().flatten() {
+                    let Some(c) = c.as_array().filter(|c| c.len() == 4) else {
+                        return error("cells: expected [x, y, z, \"state\"] each".into());
+                    };
+                    let o: Vec<i32> = c[..3]
+                        .iter()
+                        .filter_map(|n| n.as_i64())
+                        .map(|n| n as i32)
+                        .collect();
+                    let name = c[3].as_str().unwrap_or("");
+                    let Some(m) = dwell_blocks::state(name) else {
+                        return error(format!("cells: no state {name:?}"));
+                    };
+                    if o.len() != 3 {
+                        return error("cells: expected whole offsets".into());
+                    }
+                    cells.push(([o[0], o[1], o[2]], f.state(m)));
+                }
+                let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+                let yaw = v["yaw"].as_f64().unwrap_or(0.0).to_radians();
+                let turn = dwell_physics::DQuat::from_axis_angle(up, yaw);
+                let kind = v["kind"].as_u64().unwrap_or(1) as u8;
+                let id = self
+                    .server
+                    .add_body_turned(kind, cells, [at[0], at[1], at[2]], turn);
+                serde_json::json!({ "id": id }).to_string()
+            }
+            // `bodies`: every moving body's id, kind, pose and cells (the dev tools: BUGS.md #208).
+            "bodies" => self.server.bodies_report(),
+            // `use` {body, cell: [x, y, z]}: the local player's Use of that body's block (a cannon
+            // fires, a helm takes them), as a click on it would, wherever they stand.
+            "use" => {
+                let v: serde_json::Value = match serde_json::from_str(text) {
+                    Ok(v) => v,
+                    Err(e) => return error(e.to_string()),
+                };
+                let cell: Vec<i32> = v["cell"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|n| n.as_i64())
+                            .map(|n| n as i32)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let (Some(body), [x, y, z]) = (v["body"].as_u64(), cell.as_slice()) else {
+                    return error("expected {body, cell: [x, y, z]}".into());
+                };
+                let used = self
+                    .server
+                    .use_body_cell(LOCAL_SESSION, body as u32, [*x, *y, *z]);
+                serde_json::json!({ "used": used, "shots": self.server.shots_fired() }).to_string()
+            }
             _ => error(format!("unknown scene op {op:?}")),
         }
     }

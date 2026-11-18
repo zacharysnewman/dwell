@@ -6,6 +6,26 @@ pins it.
 
 ## Open
 
+### 208. Can't build on an existing moving body (a raft) any more
+
+Owner, 2026-11-18: "What's the current process to build a raft as a normal player in creative? I noticed I can't
+build on existing structures anymore, I think that's a bug." / "Existing dynamic structures". Placing a block against a
+built body's cell (a raft started from a build platform) no longer joins it. The server's place-on-body tests
+(`dwell-sim` `tests/built_bodies.rs`) still pass, so the suspect is the client (its body target, or the place path
+before `edit_body`: 0.74–0.75 added a Use branch for body blocks with a `use`). Owner should see: in creative, a block
+placed against a raft's side or top joins the raft and moves with it.
+Owner, 2026-11-18, more: "I think there's some specifics there that are missing too, because I think if you build off
+of the platform blocks instead of the neighboring blocks, breaking the platform blocks may break your raft in pieces,
+making only some of the blocks live." (Suspect: blocks placed against a platform block's side, not on a body cell,
+go into the grid, or start their own body; when the platforms break, only the cells of the held body move.) Owner
+should see: however a raft is built over its platforms, breaking the platforms lets the whole raft go as one body.
+Investigated 2026-11-18 (the owner: it was a raft afloat in water): in the browser, planks placed on a held raft, on a
+free one on land and on one afloat in the harbour scene's lake all joined it (the dev tool `d.scene('bodies')`). Found
+and fixed: a **multi-cell block** placed on a body (a cannon, a door, a 1 m torch) put only its first cell there; it
+now goes in whole, laid out in the body's grid by the body's face (`parts::partners_in`, `Felling::place_cells`; test
+`dwell-sim` `tests/ships.rs` `a_cannon_placed_on_a_raft_goes_in_whole`, both faces, red with the fix off: one cell).
+Still open: the planks case on the owner's raft (not reproduced: needs the owner's steps), and the platform-sides case.
+
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
 Owner, 2026-11-16: "Another bug that's probably affecting performance is I'm seeing both billboards and full detail

@@ -52,15 +52,23 @@ pub fn up_by(cell: [i32; 3], k: i32) -> [i32; 3] {
 /// above its face's ground for `extends.up`, below for `partOf`; a column's other cells above and
 /// below it, each its own value of the column's property (the rest of the state the same).
 pub fn partners(cell: [i32; 3], m: StateId) -> Vec<([i32; 3], StateId)> {
+    partners_in(cell, m, crate::FaceFrame::at_row(cell[1]))
+}
+
+/// [`partners`] in a grid whose up is face `f`'s: a moving body's own grid (docs/CANNONS.md: a
+/// cannon or a door placed on a raft), whose rows are no world rows to read a face from.
+pub fn partners_in(cell: [i32; 3], m: StateId, f: crate::FaceFrame) -> Vec<([i32; 3], StateId)> {
     let Some(s) = dwell_blocks::try_info(m) else {
         return Vec::new();
     };
+    let step = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+    let up_by = |c: [i32; 3], k: i32| [c[0], c[1] + step * k, c[2]];
     let mut out = Vec::new();
     if let Some(up) = s.extends_up.and_then(dwell_blocks::state) {
-        out.push((edit::above(cell), up));
+        out.push((up_by(cell, 1), up));
     }
     if let Some(of) = s.part_of.and_then(dwell_blocks::state) {
-        out.push((edit::below(cell), of));
+        out.push((up_by(cell, -1), of));
     }
     if let Some(c) = s.column {
         let (a0, r0) = c.place_of(c.index);

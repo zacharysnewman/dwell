@@ -276,3 +276,102 @@ both_faces!(
         assert!(kick < -0.05, "recoil {kick}");
     }
 );
+
+both_faces!(
+    fn a_cannon_placed_on_a_raft_goes_in_whole(f: FaceFrame) {
+        // BUGS.md #208: a multi-cell block placed on a moving body put only its first cell there.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 120);
+        let (p0, _) = fx.server.body_pose(raft).expect("afloat");
+        let up = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        let feet =
+            p0 + dwell_physics::DVec3::new(4.5, 0.0, 2.5) + up * (0.5 * dwell_world::CELL_H + 0.05);
+        stand(&mut fx, feet, up);
+        hold(&mut fx, &mut seq, Input::default(), 30);
+        let before = fx.server.body_cells(raft).len();
+        // On the deck's top at (1, 0, 2), facing north: its barrel runs −z to (1, ·, 1).
+        let top = (0..6)
+            .find(|&k| dwell_world::edit::FACE_DIRS[k][1] == up_rows(f))
+            .unwrap() as u8;
+        fx.send(
+            1,
+            Message::BodyEditRequest(BodyEditRequest {
+                body: raft,
+                cell: [1, 0, 2],
+                face: top,
+                action: BlockEditAction::Place,
+                material: f.state(dwell_blocks::require(
+                    "dwell:cannon[facing=north,part=rear_bottom]",
+                )),
+            }),
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        let cells = fx.server.body_cells(raft);
+        let cannon: Vec<[i32; 3]> = cells
+            .iter()
+            .filter(|(_, m)| dwell_blocks::block_of(*m).name == "dwell:cannon")
+            .map(|(c, _)| *c)
+            .collect();
+        assert_eq!(cells.len(), before + 4, "four cells added: {cannon:?}");
+        let u = up_rows(f);
+        for want in [[1, u, 2], [1, 2 * u, 2], [1, u, 1], [1, 2 * u, 1]] {
+            assert!(cannon.contains(&want), "{want:?} in {cannon:?}");
+        }
+    }
+);
+
+both_faces!(
+    fn a_ball_blows_cells_off_the_raft_it_hits(f: FaceFrame) {
+        // The goal (owner, 2026-11-17): "ship battles where cannons can blow off pieces of ships".
+        // A raft with an east-facing cannon fires at a second raft 8 m east: cells of that raft are
+        // smashed or knocked off, and it is still afloat with the rest.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let up = up_rows(f);
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        let deck = |w: i32, d: i32| -> Vec<([i32; 3], u16)> {
+            (0..w)
+                .flat_map(|x| (0..d).map(move |z| ([x, 0, z], planks)))
+                .collect()
+        };
+        let cannon = |part: &str| {
+            f.state(dwell_blocks::require(&format!(
+                "dwell:cannon[facing=east,part={part}]"
+            )))
+        };
+        let mut a = deck(4, 4);
+        a.extend([
+            ([1, up, 1], cannon("rear_bottom")),
+            ([1, 2 * up, 1], cannon("rear_top")),
+            ([2, up, 1], cannon("front_bottom")),
+            ([2, 2 * up, 1], cannon("front_top")),
+        ]);
+        // Raft B: a deck with a 2-high wall of planks along its west side, in the line of fire.
+        let mut b = deck(4, 4);
+        for z in 0..4 {
+            for r in 1..3 {
+                b.push(([0, r * up, z], planks));
+            }
+        }
+        let c = f.cell([0, BASE, 0]);
+        let y =
+            f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+        let ra = fx.server.add_body(1, a, [0.5, y, 0.5]);
+        let rb = fx.server.add_body(1, b, [12.5, y, 0.5]);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 90);
+        let before = fx.server.body_cells(rb).len();
+        assert!(fx.server.use_body_cell(1, ra, [2, up, 1]), "fired");
+        hold(&mut fx, &mut seq, Input::default(), 60);
+        let (smashed, loosened) = fx.server.ball_hits();
+        let after = fx.server.body_cells(rb).len();
+        assert!(smashed + loosened >= 1, "hit {smashed} / {loosened}");
+        assert!(after < before, "raft B lost cells: {before} -> {after}");
+        assert!(fx.server.body_pose(rb).is_some(), "raft B still afloat");
+    }
+);

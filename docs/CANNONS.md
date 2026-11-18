@@ -197,3 +197,22 @@ velocity setter, it should exert continuous force as it flies around it, in its 
   the raft a quarter turn round and level, the ball along the turned barrel, the raft kicked back).
 - **Not yet:** sails as blocks, a rudder block, the explosive_ball block's removal (with the next line).
 
+## 11. Ship battles: balls against bodies, multi-cell blocks on bodies (2026-11-18)
+
+- **A ball against a moving body** (the goal: "ship battles where cannons can blow off pieces of ships";
+  `smash_bodies`, after the world's cells in `smash`): the cells of every body along its path this tick (its sphere
+  drawn in 5 cm, tested in each body's own grid at its pose), in the order it meets them, are destroyed while the ball
+  moves at `destroySpeedMs` or more (paying `energyPerKgJ` × the cell's mass), the first met slower comes off as a
+  loose natural piece where it was (moving as the body did there); the cells of that body within `dragRadiusM` of
+  where it met each come off loose too (at most `maxLooseCells`). `take_body_cell`: `Felling::break_cell` (what's left
+  apart splits off), every client hearing the body's change. Test: `tests/ships.rs` `a_ball_blows_cells_off_the_raft_it_hits`
+  (both faces; red with it off).
+- **Multi-cell blocks on a body** (BUGS.md #208): a cannon, a door or a 1 m torch placed against a body's cell goes in
+  whole (all or none), laid out in the body's grid by the body's face (`parts::partners_in`, `Felling::place_cells`).
+- **Dev tools** (`d.scene(op, json)`, `LocalCore::scene_dev`): `body` {kind, at, yaw, cells: [[x, y, z, "state"]…]}
+  adds a moving body (its id back); `use` {body, cell} is the local player's Use of a body's block (a cannon fires, a
+  helm takes them); `bodies` lists every body (id, kind, pose, cells). For recordings now; the owner's answer
+  (2026-11-18): bodies are ultimately to be made with the copy-paste (region) tooling.
+- **The harbour scene** (shared/theater/scenes/harbour.json): a broad still lake 5 m deep for rafts and boats.
+- **The build platform's look**: a blue grid (owner: "planks look exactly like build platform").
+
