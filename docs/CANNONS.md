@@ -319,3 +319,13 @@ body, by the body's up), the recoil against it. A ball landing fast at that angl
 owner's rule: a block hit at `destroySpeedMs` or more is destroyed). Test: `tests/cannons.rs`
 `a_shot_launches_a_heavy_ball_along_the_barrel` (both faces: it leaves at the elevation, within 1.5°).
 
+### H3 (part one) as built (2026-11-18): no water drawn in a hull's dry air
+
+Owner: "We also want to not draw water in that "air" area"; answer: "Hide the lake first". Each body's dry-air box (the
+box round its `air_cells`, client `pieces::air_box`, found when it spawns or changes) goes to the frame uniform for the
+four nearest the eye (`dry_hulls`: centre relative to the eye, half-size, the body's rotation); the water's fragment
+shaders (`water_fs`, `water_scene_fs`) discard what lies in one (`in_dry_hull`). A holed hull's client box is found
+again from its cells (no air past a hole) until the hull's own water level is sent (H3 part two, a protocol change).
+Browser check: an open hull riding low in the harbour scene's lake is dry inside. Test: `dwell-client`
+`an_open_hulls_dry_air_box_is_its_inside_up_to_its_rim` (both faces).
+
