@@ -29,7 +29,7 @@ pub mod world {
     pub const CORE_LAYERS: i64 = 20;
     pub const CORE_ANCHOR_LAYERS: i64 = 8;
     pub const FLIP_BAND: i64 = 4;
-    pub const SEA_LEVEL: i64 = 64;
+    pub const SEA_LEVEL: i64 = 144;
     pub const ISLAND_RADIUS: i64 = 25000;
     pub const FLAT_TOP_Y: i64 = 64;
     pub const WORLD_RADIUS: i64 = 50000;
@@ -49,7 +49,7 @@ pub mod world {
     /// `CORE_LAYERS` in metres (row × `CELL_HEIGHT`).
     pub const CORE_M: f64 = 10.0;
     /// `SEA_LEVEL` in metres (row × `CELL_HEIGHT`).
-    pub const SEA_LEVEL_M: f64 = 32.0;
+    pub const SEA_LEVEL_M: f64 = 72.0;
     /// `FLAT_TOP_Y` in metres (row × `CELL_HEIGHT`).
     pub const FLAT_TOP_M: f64 = 32.0;
 }

@@ -409,7 +409,9 @@ fn the_fill_grass_over_dirt_sand_at_the_shore_sea_to_its_level() {
     // From the coastal plain's grass out over its beach into the sea.
     for x in (cx - 1600..=cx + 200).step_by(60) {
         let h = g.ground_y(x, cz).expect("inside");
-        for cy in [floor_div(h, S) - 1, floor_div(h, S), floor_div(h, S) + 1] {
+        // Up to the sea's own row too: off the steep shelf (0.76) the water stands far over the bed.
+        let top = (floor_div(h, S) + 1).max(floor_div(SEA_LEVEL, S));
+        for cy in floor_div(h, S) - 1..=top {
             let c = chunk_of(x, cy * S, cz);
             let chunk = gen_chunk(&g, c);
             // A trunk's pad levels its columns (WORK_QUEUE item 44): their fill is the pad's.
@@ -1981,3 +1983,4 @@ fn existing_seeds_spawn_where_they_did() {
         );
     }
 }
+

@@ -103,7 +103,7 @@ Last updated: 2026-11-11 (0.52.108).
   flame on top; breaking the wall drops it). Built (docs/LIGHTS.md "Wall torches").
   Sea depth, owner's answer (2026-11-18) to the options (today: median 19 m, never over 22 m, the core's limit; 12 m
   deep 750 m off a coast, 21 m at 1.5 km): "Sea level +40m and a steeper shelf." Owner should see: open sea about 60 m
-  deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant).
+  deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant). Built on 0.76 (CANNONS.md §18).
   Owner, 2026-11-18: "We may need to generally deepen oceans which might mean we need to increase the stone layer
   depth/face depth." (For ships: a deeper sea, so a ship's keel and a sunk wreck have room; a worldgen change, a new
   compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep

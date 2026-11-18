@@ -54,6 +54,11 @@ pub use terrain::TerrainGenerator;
 
 /// The block the structure sandbox (`GENERATOR_SANDBOX`) is made of, by name (block data
 /// `"indestructible": true`, so its ground stays to build on).
+/// The lowest the ground stands (m, face-local over the midplane): 1 m over the stone core's top,
+/// so the deepest sea's bed lies on the core and never floods its stone (0.76's deeper seas; owner,
+/// 2026-11-18: "Sea level +40m and a steeper shelf").
+pub const GROUND_MIN_M: f64 = dwell_world::MIDPLANE_M + dwell_world::CORE_M + 1.0;
+
 pub const SANDBOX_FLOOR: &str = "dwell:sandbox_floor";
 
 /// The sandbox's layers: the flat world, all floor block.

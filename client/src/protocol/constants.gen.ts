@@ -28,7 +28,7 @@ export const World = {
   coreLayers: 20,
   coreAnchorLayers: 8,
   flipBand: 4,
-  seaLevel: 64,
+  seaLevel: 144,
   islandRadius: 25000,
   flatTopY: 64,
   worldRadius: 50000,

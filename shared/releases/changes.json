@@ -2,6 +2,14 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.76.0",
+      "changes": [
+        "A new compatibility line: deeper seas. Sea level 40 m higher, the open sea about 60 m deep, deep water close off the coast",
+        "Ships have room to sail and sink: wrecks settle far below the surface",
+        "New worlds only: worlds from 0.75 open in a 0.75 build"
+      ]
+    },
+    {
       "version": "0.75.19",
       "changes": [
         "Torches hang on walls: place one against a block's side and it leans out from the wall",

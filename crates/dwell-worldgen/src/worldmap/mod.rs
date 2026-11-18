@@ -48,9 +48,9 @@ pub const NO_FLOW: u8 = 0x0f;
 pub const NO_LAKE: u16 = 0;
 pub const NO_RIVER: u32 = u32::MAX;
 
-/// The lowest height a cell keeps (m above sea): the sea floor never lies deeper (the core stops
-/// it sooner).
-pub const FLOOR: f32 = -40.0;
+/// The lowest height a cell keeps (m above sea): 1 m over the core's top, so the sea's bed lies on
+/// the core and never floods its stone (owner, 2026-11-18: "Sea level +40m and a steeper shelf").
+pub const FLOOR: f32 = (crate::GROUND_MIN_M - dwell_world::SEA_LEVEL_M) as f32;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MapLake {

@@ -161,10 +161,7 @@ impl BaseField {
         };
         let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
         let relief = base + land * h.hill_height * 2.0 * hills + h.bump_height * 2.0 * bumps;
-        Some(
-            (dwell_world::SEA_LEVEL_M as f32 + relief)
-                .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32),
-        )
+        Some((dwell_world::SEA_LEVEL_M as f32 + relief).max(crate::GROUND_MIN_M as f32))
     }
 
     /// A Realistic world's height (m, face-local) at (x, z) over its plates' `coast` distance
@@ -206,8 +203,7 @@ impl BaseField {
         let land = smooth_step(h.hill_fade_from, h.hill_fade_to, coast);
         let relief =
             base + land * vary * h.hill_height * 2.0 * hills + vary * h.bump_height * 2.0 * bumps;
-        (dwell_world::SEA_LEVEL_M as f32 + relief)
-            .max((dwell_world::MIDPLANE_M + dwell_world::CORE_M) as f32)
+        (dwell_world::SEA_LEVEL_M as f32 + relief).max(crate::GROUND_MIN_M as f32)
     }
 
     /// A Realistic world's warped sample point (plates.json `variety.relief.warp`; noise lattice m).

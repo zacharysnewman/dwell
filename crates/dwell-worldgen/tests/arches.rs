@@ -15,9 +15,10 @@ fn fixture() -> Biome {
         .expect("the arches fixture")
 }
 
-/// The fixture's sites over a 1 km square of seed 7's scarps.
+/// The fixture's sites over a 1 km square of seed 7's scarps (moved from (18 500, 1 500) with the
+/// deeper sea of 0.76, whose drainage left that square no fin to cut through).
 fn sites(g: &TerrainGenerator) -> Vec<Site> {
-    g.arches_near((18_500, 1_500), (19_500, 2_500))
+    g.arches_near((14_000, -3_000), (15_000, -2_000))
 }
 
 /// World cells, chunks generated on demand.

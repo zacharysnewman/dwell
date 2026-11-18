@@ -2821,7 +2821,7 @@ impl TerrainGenerator {
             water = Water::Sea;
             level = 0.0;
         }
-        let height = ((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32;
+        let height = ((SEA_LEVEL_M + h).max(crate::GROUND_MIN_M)) as f32;
         let level = (SEA_LEVEL_M + level) as f32;
         // Water only where its surface's row lies above the top cell's bottom (rows, as drawn).
         let wet = water != Water::None && surface_row(level) > top_voxel(height);
@@ -3347,7 +3347,7 @@ impl TerrainGenerator {
         let mix = self.biomes.mix(x, z, base);
         let detail = self.blended_detail(&mix, x, z, base, 1);
         let h = base + detail;
-        Some(((SEA_LEVEL_M + h).max(dwell_world::MIDPLANE_M + dwell_world::CORE_M)) as f32)
+        Some(((SEA_LEVEL_M + h).max(crate::GROUND_MIN_M)) as f32)
     }
 
     /// The ground at face-local column (x, z) with the rivers' valleys but no beds (no cut, lips or
