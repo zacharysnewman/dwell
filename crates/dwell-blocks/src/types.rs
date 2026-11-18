@@ -249,6 +249,9 @@ pub struct StateInfo {
     /// The property a Use (a Place aimed at it) flips between its two values on every cell of the
     /// block (block data `toggle`: a door's `open`).
     pub toggle: Option<&'static str>,
+    /// What a Use (a Place aimed at it) does instead of placing (block data `use`): `fire`, a
+    /// cannon's shot (docs/CANNONS.md); the server acts on it, the block itself unchanged.
+    pub use_action: Option<&'static str>,
     /// What it counts as for holding things up (block data `support`; docs/FELLING.md).
     pub support_role: SupportRole,
     /// Players and falling pieces pass through it (block data `passable`: leaves); targeting
@@ -279,6 +282,22 @@ pub struct Column {
     pub property: &'static str,
     pub index: u8,
     pub count: u8,
+    /// Cells along the block's facing (data `columnAlong`, default 1): the values fill each upright
+    /// row of `count / along` cells bottom to top, row after row forward from the first.
+    pub along: u8,
+}
+
+impl Column {
+    /// The upright rows' height (cells).
+    pub fn rows(&self) -> u8 {
+        (self.count / self.along.max(1)).max(1)
+    }
+
+    /// Cell `j`'s place: (forward along the facing, up) from the first cell.
+    pub fn place_of(&self, j: u8) -> (i32, i32) {
+        let rows = self.rows();
+        (i32::from(j / rows), i32::from(j % rows))
+    }
 }
 
 /// A named light source (`lights` in `shared/blocks/*.json`; docs/LIGHTS.md §2): looks only.

@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x6ef425e57c9910b8n;
+export const REGISTRY_HASH = 0x3c8769241b178494n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -138,6 +138,7 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:thatch', first: 1003, count: 1, properties: [], sound: 'dwell:grass' },
   { id: 'dwell:thatch_ramp', first: 1004, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:grass' },
   { id: 'dwell:door', first: 1052, count: 64, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'hinge', values: ['left', 'right'] }, { name: 'open', values: ['false', 'true'] }, { name: 'part', values: ['bottom', 'lower', 'upper', 'top'] }], sound: 'dwell:wood' },
+  { id: 'dwell:cannon', first: 1116, count: 16, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'part', values: ['rear_bottom', 'rear_top', 'front_bottom', 'front_top'] }], sound: 'dwell:stone' },
 ];
 
 /** The shapes block states use. */
@@ -1311,6 +1312,22 @@ const STATES_8: readonly StateDef[] = [
   { id: 1113, state: 'dwell:door[facing=west,hinge=right,open=true,part=lower]', block: 59, values: { facing: 'west', hinge: 'right', open: 'true', part: 'lower' }, look: 'ladder', render: 'cutout', color: 0x8a5a32, opacity: 1, textures: { top: 'door', side: 'door', bottom: 'door' }, ladderFace: 5, selection: [0, 0, 0.875, 1, 1, 1], shape: 0, flooded: false, placeable: false },
   { id: 1114, state: 'dwell:door[facing=west,hinge=right,open=true,part=upper]', block: 59, values: { facing: 'west', hinge: 'right', open: 'true', part: 'upper' }, look: 'ladder', render: 'cutout', color: 0x8a5a32, opacity: 1, textures: { top: 'door', side: 'door', bottom: 'door' }, ladderFace: 5, selection: [0, 0, 0.875, 1, 1, 1], shape: 0, flooded: false, placeable: false },
   { id: 1115, state: 'dwell:door[facing=west,hinge=right,open=true,part=top]', block: 59, values: { facing: 'west', hinge: 'right', open: 'true', part: 'top' }, look: 'ladder', render: 'cutout', color: 0x8a5a32, opacity: 1, textures: { top: 'door', side: 'door', bottom: 'door' }, ladderFace: 5, selection: [0, 0, 0.875, 1, 1, 1], shape: 0, flooded: false, placeable: false },
+  { id: 1116, state: 'dwell:cannon[facing=north,part=rear_bottom]', block: 60, values: { facing: 'north', part: 'rear_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: true },
+  { id: 1117, state: 'dwell:cannon[facing=north,part=rear_top]', block: 60, values: { facing: 'north', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1118, state: 'dwell:cannon[facing=north,part=front_bottom]', block: 60, values: { facing: 'north', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1119, state: 'dwell:cannon[facing=north,part=front_top]', block: 60, values: { facing: 'north', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1120, state: 'dwell:cannon[facing=east,part=rear_bottom]', block: 60, values: { facing: 'east', part: 'rear_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: true },
+  { id: 1121, state: 'dwell:cannon[facing=east,part=rear_top]', block: 60, values: { facing: 'east', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1122, state: 'dwell:cannon[facing=east,part=front_bottom]', block: 60, values: { facing: 'east', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1123, state: 'dwell:cannon[facing=east,part=front_top]', block: 60, values: { facing: 'east', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1124, state: 'dwell:cannon[facing=south,part=rear_bottom]', block: 60, values: { facing: 'south', part: 'rear_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: true },
+  { id: 1125, state: 'dwell:cannon[facing=south,part=rear_top]', block: 60, values: { facing: 'south', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1126, state: 'dwell:cannon[facing=south,part=front_bottom]', block: 60, values: { facing: 'south', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1127, state: 'dwell:cannon[facing=south,part=front_top]', block: 60, values: { facing: 'south', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1128, state: 'dwell:cannon[facing=west,part=rear_bottom]', block: 60, values: { facing: 'west', part: 'rear_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: true },
+  { id: 1129, state: 'dwell:cannon[facing=west,part=rear_top]', block: 60, values: { facing: 'west', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1130, state: 'dwell:cannon[facing=west,part=front_bottom]', block: 60, values: { facing: 'west', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1131, state: 'dwell:cannon[facing=west,part=front_top]', block: 60, values: { facing: 'west', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

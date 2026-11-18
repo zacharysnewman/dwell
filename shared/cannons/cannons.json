@@ -1,0 +1,27 @@
+{
+  "$comment": "Cannons and cannonballs (docs/CANNONS.md; owner, 2026-11-17). `cannons`: each a block (shared/blocks) whose Use fires it (block data `use: fire`): `ball` the ball it fires (a `balls` name), `muzzleSpeedMs` the ball's speed out of the barrel along the cannon's facing, `muzzleUpM` and `muzzleForwardM` where it leaves (m from the cannon's rear bottom cell's centre: up, and forward along the facing), `reloadS` the least time between shots. `balls`: each a `name`, `radiusM`, `densityKgM3` (steel 7,850: \"a heavy steel ball\"), and its `impact`: `knock` (the cells within `knockRadiusM` of where it strikes come loose as pieces, at most `maxCells`, none below `minSpeedMs`) or `explode` (an explosive of shared/explosives/explosives.json, by its block, blown where it strikes). Prototype values.",
+  "cannons": [
+    {
+      "block": "dwell:cannon",
+      "ball": "dwell:iron_ball",
+      "muzzleSpeedMs": 45,
+      "muzzleUpM": 0.6,
+      "muzzleForwardM": 2.1,
+      "reloadS": 2
+    }
+  ],
+  "balls": [
+    {
+      "name": "dwell:iron_ball",
+      "radiusM": 0.12,
+      "densityKgM3": 7850,
+      "impact": { "kind": "knock", "knockRadiusM": 0.8, "maxCells": 6, "minSpeedMs": 8 }
+    },
+    {
+      "name": "dwell:explosive_ball",
+      "radiusM": 0.12,
+      "densityKgM3": 7850,
+      "impact": { "kind": "explode", "explosive": "dwell:dynamite" }
+    }
+  ]
+}

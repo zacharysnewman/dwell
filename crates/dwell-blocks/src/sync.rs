@@ -73,6 +73,12 @@ pub mod tag {
     pub const COLUMN: u8 = 15;
     /// `str` the property a Use flips (`StateInfo::toggle`, a door's `open`), sent only when set.
     pub const TOGGLE: u8 = 16;
+    /// `u8` cells along the facing (`Column::along`, a cannon's 2; docs/CANNONS.md C1), after tag
+    /// 15, sent only when above 1. A rule: it keeps the block whole (an older build reads a
+    /// column straight up, the server's writes still whole).
+    pub const COLUMN_ALONG: u8 = 17;
+    /// `str` what a Use does (`StateInfo::use_action`, a cannon's `fire`), sent only when set.
+    pub const USE_ACTION: u8 = 18;
     /// `str`.
     pub const LOOK: u8 = 0x81;
     /// `u32` sRGB, `f32` opacity.
@@ -361,9 +367,15 @@ pub fn state_fields(s: &StateInfo) -> Fields {
             w.u8(c.index);
             w.u8(c.count);
         }));
+        if c.along > 1 {
+            out.push(field(tag::COLUMN_ALONG, |w| w.u8(c.along)));
+        }
     }
     if let Some(t) = s.toggle {
         out.push(field(tag::TOGGLE, |w| w.str(t)));
+    }
+    if let Some(a) = s.use_action {
+        out.push(field(tag::USE_ACTION, |w| w.str(a)));
     }
     if s.near_fade > 0.0 {
         out.push(field(tag::NEAR_FADE, |w| w.f32(s.near_fade)));
@@ -741,6 +753,7 @@ fn default_row(name: &str) -> StateInfo {
         part_of: None,
         column: None,
         toggle: None,
+        use_action: None,
         support_role: SupportRole::Ground,
         passable: false,
         axis: Axis::Y,
@@ -883,7 +896,22 @@ fn apply_rules(
                         property: intern(&property),
                         index,
                         count,
+                        along: 1,
                     });
+                }
+            }
+            tag::USE_ACTION => {
+                let a = r.str(MAX_STR);
+                if r.ok() && !a.is_empty() {
+                    row.use_action = Some(intern(&a));
+                }
+            }
+            tag::COLUMN_ALONG => {
+                let along = r.u8();
+                if let (true, Some(c)) = (r.ok() && along >= 1, row.column.as_mut())
+                    && c.count % along == 0
+                {
+                    c.along = along;
                 }
             }
             tag::TOGGLE => {

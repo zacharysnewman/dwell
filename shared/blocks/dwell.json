@@ -965,6 +965,27 @@
       "render": "cutout",
       "color": "#8a5a32",
       "textures": "door"
+    },
+    {
+      "$comment": "A land cannon (docs/CANNONS.md C1; owner, 2026-11-17: \"cannon takes up 4 blocks 2m long by 1m tall, shoots physics cannon ball in aimed direction\"; \"using the same input as doors, you can fire the cannon, clicking on it. It faces the direction of placement\"): four cells, 2 along its facing (the barrel) and 2 up (`column` part, `columnAlong` 2), placed by its rear bottom cell with the barrel away from the player; a Use fires it (`use`: the server's cannons table, shared/cannons). Prototype look: basalt-textured cells.",
+      "name": "cannon",
+      "sound": "dwell:stone",
+      "density": 7800,
+      "shape": "full",
+      "placeable": true,
+      "facingProperty": "facing",
+      "properties": {
+        "facing": ["north", "east", "south", "west"],
+        "part": ["rear_bottom", "rear_top", "front_bottom", "front_top"]
+      },
+      "palette": [{"facing": "north"}, {"facing": "east"}, {"facing": "south"}, {"facing": "west"}],
+      "column": "part",
+      "columnAlong": 2,
+      "use": "fire",
+      "needsSupport": "below",
+      "damage": { "baseHits": 12, "proficiency": { "pickaxe": "proficient", "hand": "inefficient" } },
+      "color": "#2e2c30",
+      "textures": "basalt"
     }
   ]
 }

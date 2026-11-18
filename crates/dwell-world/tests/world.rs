@@ -132,6 +132,10 @@ fn the_palette_is_the_registrys_placeable_states() {
             "dwell:door[facing=east,hinge=left,open=false,part=bottom]",
             "dwell:door[facing=south,hinge=left,open=false,part=bottom]",
             "dwell:door[facing=west,hinge=left,open=false,part=bottom]",
+            "dwell:cannon[facing=north,part=rear_bottom]",
+            "dwell:cannon[facing=east,part=rear_bottom]",
+            "dwell:cannon[facing=south,part=rear_bottom]",
+            "dwell:cannon[facing=west,part=rear_bottom]",
         ]
     );
     assert!(!placeable(dwell_blocks::STATES.len() as StateId));

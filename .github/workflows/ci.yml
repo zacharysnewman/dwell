@@ -78,7 +78,9 @@ jobs:
           node shared/physics/gen.mjs
           node --test shared/physics/gen.test.mjs
           node shared/explosives/gen.mjs
+          node shared/cannons/gen.mjs
           node --test shared/explosives/gen.test.mjs
+          node --test shared/cannons/gen.test.mjs
           node shared/fluids/gen.mjs
           node --test shared/fluids/gen.test.mjs
           node shared/fluids/falls.mjs
