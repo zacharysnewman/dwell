@@ -2,6 +2,13 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.75.10",
+      "changes": [
+        "Ships sail three times as fast and turn twice as quickly at the wheel; small and big ships turn alike",
+        "At the wheel you can't break or build (cannons and the wheel still work), and you aim from the third-person crosshair"
+      ]
+    },
+    {
       "version": "0.75.9",
       "changes": [
         "Cannons boom when they fire, with a muzzle flash and a puff of smoke",
