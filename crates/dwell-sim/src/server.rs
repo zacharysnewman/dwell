@@ -5179,6 +5179,23 @@ impl Server {
                     {
                         continue;
                     }
+                    // A natural body afloat (felled logs) takes it and becomes a built one; if it
+                    // changed kind every client hears its spawn again (its kind with it).
+                    let was_natural = self
+                        .felling
+                        .pieces
+                        .iter()
+                        .find(|p| p.id == e.body)
+                        .is_some_and(|p| !crate::felling::body_kind(p.kind).place);
+                    if !self.felling.make_buildable(&mut self.physics, e.body) {
+                        continue;
+                    }
+                    if was_natural
+                        && let Some(i) = self.felling.pieces.iter().position(|p| p.id == e.body)
+                    {
+                        let m = self.spawn_message(i);
+                        self.broadcast_world(&m);
+                    }
                     // A multi-cell block (a cannon, a door) goes in whole, its other cells laid out
                     // in the body's grid by the body's face (docs/CANNONS.md; BUGS.md #208).
                     let body_face = self

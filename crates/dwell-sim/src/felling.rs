@@ -807,6 +807,35 @@ impl Felling {
     /// frame) of the cell `cell` of the body `id` (docs/BUILT_BODIES.md §4): it joins the body. The
     /// new cell, or None if there is no such body or cell, its kind can't be built on, or the cell
     /// is taken (`taken`: given its world centre, e.g. a player there).
+    /// A natural body (felled logs, knocked-loose cells) afloat becomes a built one when a block is
+    /// placed on it (owner, 2026-11-18: natural bodies take placed blocks "Only floating ones";
+    /// BUGS.md #208): its kind the first that takes places, its colliders made again for it. On land
+    /// it stays break-only (to revisit with land vehicles). Whether body `id` now takes places.
+    pub fn make_buildable(&mut self, physics: &mut Physics, id: u32) -> bool {
+        let Some(i) = self.pieces.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        if body_kind(self.pieces[i].kind).place {
+            return true;
+        }
+        if !self.pieces[i].afloat {
+            return false;
+        }
+        let Some(k) = BODY_KINDS.iter().position(|k| k.place) else {
+            return false;
+        };
+        let p = &mut self.pieces[i];
+        p.kind = k as u8;
+        let (cells, carriers) = carriers_first(std::mem::take(&mut p.cells));
+        let boxes = piece_boxes(&cells, carriers, p.kind);
+        physics.set_piece_cells(p.body, &boxes);
+        p.cells = cells;
+        p.carriers = carriers;
+        p.still = 0;
+        p.rest = None;
+        true
+    }
+
     /// Puts `cells` (its grid, each with its state) into body `id` together, all or none (a
     /// multi-cell block: a cannon, a door, docs/CANNONS.md): none may be filled already or `taken`
     /// at its place, and its kind must take places. Whether they went in.
