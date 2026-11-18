@@ -86,6 +86,9 @@ pub enum Divert {
     Join { id: u32, cell: [i32; 3] },
     /// A new body of `kind`: it is on a build platform's top.
     New { kind: u8 },
+    /// A new free body of `kind`: it is on open water (liquid under it, no land beside it), the
+    /// start of a raft (docs/CANNONS.md; owner, 2026-11-18: "Built on water").
+    Float { kind: u8 },
     /// Nowhere: a held body's cell is already there.
     Taken,
 }
@@ -1108,7 +1111,51 @@ impl Felling {
             }
         }
         let below = cell[1] - FaceFrame::at_row(cell[1]).sign();
-        kind_built_on(world.get_voxel(cell[0], below, cell[2])).map(|kind| Divert::New { kind })
+        if let Some(kind) = kind_built_on(world.get_voxel(cell[0], below, cell[2])) {
+            return Some(Divert::New { kind });
+        }
+        // On open water: liquid under it and no block of the land beside it (a pier off the shore
+        // stays land).
+        let under = world.get_voxel(cell[0], below, cell[2]);
+        // stays land): a solid block beside it or beside the water under it.
+        let land = [cell[1], below].iter().any(|&row| {
+            dwell_world::edit::FACE_DIRS
+                .iter()
+                .filter(|d| d[1] == 0)
+                .any(|d| info(world.get_voxel(cell[0] + d[0], row, cell[2] + d[2])).solid)
+        });
+        if !info(under).liquid || land {
+            return None;
+        }
+        // Beside a raft afloat: into it, at its grid's cell nearest this one (it may be turned).
+        let centre = cell_centre(cell);
+        for p in &self.pieces {
+            if p.anchored || !body_kind(p.kind).place {
+                continue;
+            }
+            let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
+            let local = turn.inverse() * (centre - at);
+            // The free cell beside its cells nearest this one: it rides low in the water, so not a
+            // rounding of the offset.
+            let near = p
+                .cells
+                .iter()
+                .flat_map(|&(c, _)| {
+                    dwell_world::edit::FACE_DIRS
+                        .iter()
+                        .map(move |d| [c[0] + d[0], c[1] + d[1], c[2] + d[2]])
+                })
+                .filter(|o| !p.cells.iter().any(|&(c, _)| c == *o))
+                .map(|o| (o, (offset_m(o) - local).length()))
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((o, gap)) = near
+                && gap < 0.6
+            {
+                return Some(Divert::Join { id: p.id, cell: o });
+            }
+        }
+        let kind = BODY_KINDS.iter().position(|k| k.place)? as u8;
+        Some(Divert::Float { kind })
     }
 
     /// Applies a [`Divert`] of `material` at the world's cell `cell`: the body it joined or started
@@ -1141,6 +1188,20 @@ impl Felling {
                 );
                 self.pieces[i].anchored = true;
                 physics.set_held(self.pieces[i].body, true);
+                Some((self.pieces[i].id, None))
+            }
+            Divert::Float { kind } => {
+                let i = self.spawn_body(
+                    physics,
+                    None,
+                    kind,
+                    0,
+                    vec![([0, 0, 0], material)],
+                    cell_centre(cell),
+                    DQuat::IDENTITY,
+                    DVec3::ZERO,
+                    DVec3::ZERO,
+                );
                 Some((self.pieces[i].id, None))
             }
         }

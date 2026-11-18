@@ -6727,6 +6727,25 @@ impl<S: Scene> Game<S> {
             });
             block.is_none_or(|b| hit.distance < b).then_some(hit)
         });
+        // Nothing else aimed at: a liquid's surface, where a raft's first block goes (water last:
+        // owner, 2026-11-18: "Water should be last in priority").
+        if t.is_none()
+            && self.body_target.is_none()
+            && aim_from.is_none()
+            && let Some(e) = eye
+        {
+            let store = self.streamer.store_mut();
+            let mut at = |c: [i32; 3]| store.get_voxel(c[0], c[1], c[2]);
+            if let Some(w) = dwell_game::block_interaction::water_surface(
+                &mut at,
+                e,
+                dir,
+                f64::from(players::REACH_DISTANCE),
+            ) {
+                let state = at(w.cell);
+                self.interaction.aim_surface(w, state);
+            }
+        }
         self.drag_build(eye, dir, now_ms);
         self.blueprint_frame(eye, dir, now_ms);
         // Where no block is aimed at, the cell ahead (as the region tools' corners take it).

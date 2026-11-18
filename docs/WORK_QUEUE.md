@@ -133,7 +133,11 @@ Last updated: 2026-11-11 (0.52.108).
   player can make a boat (how it is started: questions first) and craft its cannon and wheel. Owner's answers
   (2026-11-18): a boat starts "Built on water" (no platform: a block placed on water, or against a floating block,
   starts a raft); a cannon "16 rock shards + 4 wood"; a ship's wheel "6 wood + 4 sticks"; the wheel "A spoked wheel
-  model".
+  model". Wheel and recipes built (0.75.15). Then: the first block on open water "Aim at the surface" (holding a
+  block, the water's surface is aimed at like a floor; Place puts a block floating there, the start of a new raft;
+  beside the shore it stays land, like a pier), in "Both modes". Owner, 2026-11-18: "My only concern is that water will block building in water or on
+  bodies on water, or building in terrain under water. Water should be last in priority." (The surface is aimed at only
+  when the ray meets no block and no body within reach; it still passes through water to what's under it.) Built (CANNONS.md §17).
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
