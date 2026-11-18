@@ -232,7 +232,8 @@ a part takes its block's shared properties (`dwell_world::parts`, `dwell_blocks:
 against a side, the client picks the hung state (`dwell_game::block_interaction::hung_against`, the registry's
 `hung_facing`), on the ground and on a moving body's side alike. The cross look leans by a shear (`Cross::lean_deg`,
 `lean_length_m`, `lean_from_m`, synced as look tag 0x94): the stick's foot at the wall, its top over the cell's middle,
-so the flame and its light stay where a floor torch's are. Adding the property is not breaking (ADR 0063). Tests:
+and the flame moves with the lean at its base (`dwell_blocks::lean_shift`; owner, 2026-11-18: "The flame doesn't line
+up over the torch"); the light stays at the cell's centre. Adding the property is not breaking (ADR 0063). Tests:
 `dwell-world` `tests/placement.rs` `a_wall_torch_hangs_on_a_blocks_side_and_goes_with_it`, `dwell-mesh`
 `a_wall_torch_leans_out_from_its_wall_its_top_over_the_cells_middle` (both faces), `dwell-sim` `tests/ships.rs`
 `a_torch_placed_against_a_rafts_side_hangs_there_leaning`, `dwell-blocks` sync, `shared/blocks/parts.test.mjs`.

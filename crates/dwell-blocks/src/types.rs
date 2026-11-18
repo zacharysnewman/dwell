@@ -102,6 +102,41 @@ pub struct Cross {
     pub lean_from_m: f32,
 }
 
+impl Cross {
+    /// How far (m) a wall-mounted cross's stick lies out along its facing at `up_m` up this cell
+    /// (its shear: the foot at the wall, `-tan × length`, the top over the middle, 0); 0 upright.
+    /// A flame sat on it moves by the same (docs/LIGHTS.md "Wall torches").
+    pub fn lean_out_m(&self, up_m: f64) -> f64 {
+        if self.lean_deg <= 0.0 {
+            return 0.0;
+        }
+        let h = f64::from(self.lean_from_m) + up_m;
+        f64::from(self.lean_deg).to_radians().tan() * (h - f64::from(self.lean_length_m))
+    }
+}
+
+/// The level unit vector (face-local, x and z) `facing` points along: north −z, east +x, south +z,
+/// west −x; zero for none.
+pub fn facing_vector(facing: Facing) -> [f64; 3] {
+    match facing {
+        Facing::North => [0.0, 0.0, -1.0],
+        Facing::East => [1.0, 0.0, 0.0],
+        Facing::South => [0.0, 0.0, 1.0],
+        Facing::West => [-1.0, 0.0, 0.0],
+        Facing::None => [0.0; 3],
+    }
+}
+
+/// Where a flame `up_m` up state `m`'s cell sits off the cell's middle (m, face-local x and z): a
+/// wall torch's lean there ([`Cross::lean_out_m`]); zero for an upright block.
+pub fn lean_shift(m: crate::StateId, up_m: f64) -> [f64; 3] {
+    let Some(s) = crate::try_info(m) else {
+        return [0.0; 3];
+    };
+    let out = s.cross.map_or(0.0, |c| c.lean_out_m(up_m));
+    facing_vector(s.facing).map(|v| v * out)
+}
+
 /// An octagonal cross-section (block data `crossSection`, ADR 0072): `chamfer` is the corners' cut,
 /// a fraction of the cross-section's shorter side; it joins (full-width sides) with neighbours of
 /// the same `joins` group and the same axis. `ring` is the bark band round its end caps (a

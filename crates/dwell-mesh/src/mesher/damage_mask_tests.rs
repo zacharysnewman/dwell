@@ -947,3 +947,54 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    /// BUGS.md #217 (owner, 2026-11-18: "slopes show holes when damaging block edges next to
+    /// them"): a slope beside a damaged block draws its side toward it, as a cube does (#187):
+    /// the block's carved edge shows the slope's side, not the void. Red before: the slope's side
+    /// stayed culled.
+    fn a_slopes_side_toward_a_damaged_block_draws(f: FaceFrame) {
+        // A ramp facing west, its tall side (+x) against the stone.
+        let ramp = "dwell:stone_ramp[facing=west,flooded=false,half=bottom,shape=ramp]";
+        assert_eq!(
+            faces_toward_shape_beside(f, ramp, "dwell:stone", false),
+            0,
+            "undamaged: hidden"
+        );
+        assert!(
+            faces_toward_shape_beside(f, ramp, "dwell:stone", true) > 0,
+            "the ramp's side beside the damaged stone: drawn"
+        );
+    }
+);
+
+dwell_world::both_faces!(
+    fn a_wall_torchs_flame_sits_on_its_drawn_stick(f: FaceFrame) {
+        // Owner, 2026-11-18: "The flame doesn't line up over the torch in that wall torch
+        // screenshot". The flame's offset (`lean_shift`, its base up the upper cell) is where the
+        // drawn stick is at that height. Red before: the flame stood over the cell's middle.
+        let lower = f.state(dwell_blocks::require("dwell:torch[mount=east]"));
+        let upper_state = dwell_blocks::require("dwell:torch_upper[mount=east]");
+        let upper = f.state(upper_state);
+        let pts = cutout_points(f, &[([4, 4, 4], lower), ([4, 5, 4], upper)]);
+        let mean_x_at = |row: f64| {
+            let at: Vec<f64> = pts
+                .iter()
+                .filter(|p| (p[1] - row).abs() < 0.01)
+                .map(|p| p[0])
+                .collect();
+            at.iter().sum::<f64>() / at.len() as f64
+        };
+        // The stick between the upper cell's floor (row 5) and its top (row 6), at 0.3 m up it.
+        let up = 0.3;
+        let t = up / CELL_H;
+        let stick = mean_x_at(5.0) + (mean_x_at(6.0) - mean_x_at(5.0)) * t;
+        let flame = 4.5 + dwell_blocks::lean_shift(upper_state, up)[0];
+        assert!((stick - flame).abs() < 0.01, "stick {stick} flame {flame}");
+        assert!(flame < 4.45, "off the middle toward the wall: {flame}");
+        assert_eq!(
+            dwell_blocks::lean_shift(dwell_blocks::require("dwell:torch_upper"), up),
+            [0.0; 3]
+        );
+    }
+);
