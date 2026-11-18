@@ -50,6 +50,67 @@ const COLOURED = ['flash', 'smoke', 'dust'];
 export const SHELL_RULES = { fling: 'Fling', crack: 'Crack' };
 const COUNTS = ['count', 'cpuCount'];
 
+/**
+ * Checks a blast's looks (`effects`: flash, smoke, dust, boom, shake; EFFECT_RANGES) at `at`, failing
+ * by `bad`. Shared with shared/cannons (a shot's `fire`, docs/CANNONS.md).
+ */
+export function validateEffects(effects, at, bad) {
+  const object = (v, a) => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) bad(`${a} must be an object`);
+  };
+  const keys = (v, a, allowed) => {
+    for (const k of Object.keys(v)) if (k !== '$comment' && !allowed.includes(k)) bad(`unknown entry ${a}.${k}`);
+  };
+  const number = (v, a, lo, hi, int = false) => {
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi || (int && !Number.isInteger(v))) {
+      bad(`${a} must be ${int ? 'a whole number' : 'a number'} in [${lo}, ${hi}], got ${JSON.stringify(v)}`);
+    }
+  };
+  const pair = (v, a, lo, hi) => {
+    if (!Array.isArray(v) || v.length !== 2) bad(`${a} must be a [low, high] pair`);
+    number(v[0], `${a}[0]`, lo, hi);
+    number(v[1], `${a}[1]`, lo, hi);
+    if (v[1] < v[0]) bad(`${a}: high below low`);
+  };
+  object(effects, at);
+  keys(effects, at, Object.keys(EFFECT_RANGES));
+  for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
+    const f = effects[fx];
+    const fat = `${at}.${fx}`;
+    object(f, fat);
+    keys(f, fat, [...Object.keys(ranges), ...(COLOURED.includes(fx) ? ['color'] : [])]);
+    if (COLOURED.includes(fx) && !(typeof f.color === 'string' && /^#[0-9a-f]{6}$/i.test(f.color))) bad(`${fat}.color must be #rrggbb`);
+    for (const [k, [lo, hi, kind]] of Object.entries(ranges)) {
+      if (kind === 'pair') pair(f[k], `${fat}.${k}`, lo, hi);
+      else number(f[k], `${fat}.${k}`, lo, hi, COUNTS.includes(k));
+    }
+  }
+  if (effects.smoke.cpuCount > effects.smoke.count) bad(`${at}.smoke.cpuCount must be at most its count`);
+  if (effects.dust.cpuCount > effects.dust.count) bad(`${at}.dust.cpuCount must be at most its count`);
+  if (effects.boom.hearM < effects.boom.fullM) bad(`${at}.boom.hearM must be at least fullM`);
+}
+
+/** A blast's looks as a Rust `BlastEffects` literal (crates/dwell-world/src/explosives.rs), `indent` before each line. */
+export function effectsRust(effects, indent) {
+  const lines = [`BlastEffects {`];
+  for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
+    const f = effects[fx];
+    const type = { flash: 'FlashLook', smoke: 'PuffLook', dust: 'PuffLook', boom: 'BoomLook', shake: 'ShakeLook' }[fx];
+    const fields = [];
+    if (COLOURED.includes(fx)) fields.push(`color: ${rgb(f.color)}`);
+    for (const [k, [, , kind]] of Object.entries(ranges)) {
+      const v = f[k];
+      fields.push(`${snake(k)}: ${kind === 'pair' ? `[${v.map(rf).join(', ')}]` : COUNTS.includes(k) ? String(v) : rf(v)}`);
+    }
+    // Smoke rises and spreads; dust is thrown out: each puff kind carries every field.
+    if (fx === 'smoke') fields.push('speed_ms: [0.0, 0.0]');
+    if (fx === 'dust') fields.push('spread_m: 0.0', 'rise_ms: 0.0');
+    lines.push(`${indent}    ${fx}: ${type} { ${fields.join(', ')} },`);
+  }
+  lines.push(`${indent}}`);
+  return lines.join('\n');
+}
+
 /** The registry's block names (`dwell:stone`) with whether each is placeable, from shared/blocks/dwell.json. */
 export function registryBlocks() {
   const ns = JSON.parse(readFileSync(join(root, 'shared/blocks/dwell.json'), 'utf8'));
@@ -124,22 +185,7 @@ export function validateExplosives(data, blocks = registryBlocks()) {
     if (e.crackVerticalOnly && (e.shell ?? 'fling') !== 'crack') bad(`${at}.crackVerticalOnly is only for shell "crack"`);
     if (e.waterSparesBlocks !== undefined && typeof e.waterSparesBlocks !== 'boolean') bad(`${at}.waterSparesBlocks must be true or false`);
     if (e.waterShields !== undefined && typeof e.waterShields !== 'boolean') bad(`${at}.waterShields must be true or false`);
-    object(e.effects, `${at}.effects`);
-    keys(e.effects, `${at}.effects`, Object.keys(EFFECT_RANGES));
-    for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
-      const f = e.effects[fx];
-      const fat = `${at}.effects.${fx}`;
-      object(f, fat);
-      keys(f, fat, [...Object.keys(ranges), ...(COLOURED.includes(fx) ? ['color'] : [])]);
-      if (COLOURED.includes(fx) && !(typeof f.color === 'string' && /^#[0-9a-f]{6}$/i.test(f.color))) bad(`${fat}.color must be #rrggbb`);
-      for (const [k, [lo, hi, kind]] of Object.entries(ranges)) {
-        if (kind === 'pair') pair(f[k], `${fat}.${k}`, lo, hi);
-        else number(f[k], `${fat}.${k}`, lo, hi, COUNTS.includes(k));
-      }
-    }
-    if (e.effects.smoke.cpuCount > e.effects.smoke.count) bad(`${at}.effects.smoke.cpuCount must be at most its count`);
-    if (e.effects.dust.cpuCount > e.effects.dust.count) bad(`${at}.effects.dust.cpuCount must be at most its count`);
-    if (e.effects.boom.hearM < e.effects.boom.fullM) bad(`${at}.effects.boom.hearM must be at least fullM`);
+    validateEffects(e.effects, `${at}.effects`, bad);
   });
   return data;
 }
@@ -171,22 +217,7 @@ export function explosivesRust(data) {
     lines.push(`        water_spares_blocks: ${e.waterSparesBlocks ? 'true' : 'false'},`);
     lines.push(`        water_shields: ${e.waterShields ? 'true' : 'false'},`);
     lines.push(`        chain_delay_seconds: [${e.chainDelaySeconds.map(rf).join(', ')}],`);
-    lines.push('        effects: BlastEffects {');
-    for (const [fx, ranges] of Object.entries(EFFECT_RANGES)) {
-      const f = e.effects[fx];
-      const type = { flash: 'FlashLook', smoke: 'PuffLook', dust: 'PuffLook', boom: 'BoomLook', shake: 'ShakeLook' }[fx];
-      const fields = [];
-      if (COLOURED.includes(fx)) fields.push(`color: ${rgb(f.color)}`);
-      for (const [k, [, , kind]] of Object.entries(ranges)) {
-        const v = f[k];
-        fields.push(`${snake(k)}: ${kind === 'pair' ? `[${v.map(rf).join(', ')}]` : COUNTS.includes(k) ? String(v) : rf(v)}`);
-      }
-      // Smoke rises and spreads; dust is thrown out: each puff kind carries every field.
-      if (fx === 'smoke') fields.push('speed_ms: [0.0, 0.0]');
-      if (fx === 'dust') fields.push('spread_m: 0.0', 'rise_ms: 0.0');
-      lines.push(`            ${fx}: ${type} { ${fields.join(', ')} },`);
-    }
-    lines.push('        },');
+    lines.push(`        effects: ${effectsRust(e.effects, '        ')},`);
     lines.push('    },');
   }
   lines.push('];', '');

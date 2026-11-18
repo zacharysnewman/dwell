@@ -440,6 +440,17 @@ export const SOUND_DATA: SoundData = {
       "burn": "dwell:torch_fire",
       "impact": "dwell:wood_impact"
     },
+    "dwell:cannon": {
+      "step": "dwell:stone_step",
+      "land": "dwell:stone_land",
+      "break": "dwell:stone_break",
+      "place": "dwell:stone_place",
+      "hit": "dwell:stone_hit",
+      "slide": "dwell:stone_slide",
+      "slide_stop": "dwell:stone_slide_stop",
+      "explode": "dwell:cannon_boom",
+      "impact": "dwell:stone_impact"
+    },
     "dwell:dynamite": {
       "step": "dwell:wood_step",
       "land": "dwell:wood_land",
@@ -7719,6 +7730,81 @@ export const SOUND_DATA: SoundData = {
             "attack": 0.02,
             "decay": 0.35
           }
+        }
+      ]
+    },
+    "dwell:cannon_boom": {
+      "$comment": "A cannon's shot (owner, 2026-11-18: \"A deep boom\"): a sharp crack, a short low body and a deep thump, shorter and lower than dynamite's blast.",
+      "gain": 2,
+      "reverb": 0.5,
+      "variation": {
+        "pitch": 1,
+        "gain": 1,
+        "cutoff": 0.08,
+        "time": 0.08
+      },
+      "intensity": {
+        "gain": [
+          0,
+          1
+        ],
+        "cutoff": [
+          0.4,
+          1
+        ]
+      },
+      "layers": [
+        {
+          "source": "noise",
+          "color": "white",
+          "gain": 0.7,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 5000,
+              "q": 0.7,
+              "to": 700
+            }
+          ],
+          "env": {
+            "attack": 0.0004,
+            "decay": 0.09
+          }
+        },
+        {
+          "source": "noise",
+          "color": "brown",
+          "gain": 1,
+          "filters": [
+            {
+              "type": "lowpass",
+              "freq": 320,
+              "q": 0.9,
+              "to": 60
+            }
+          ],
+          "env": {
+            "attack": 0.003,
+            "hold": 0.05,
+            "decay": 0.9
+          }
+        },
+        {
+          "source": "modal",
+          "freq": 38,
+          "gain": 0.8,
+          "partials": [
+            [
+              1,
+              1,
+              0.8
+            ],
+            [
+              1.5,
+              0.4,
+              0.5
+            ]
+          ]
         }
       ]
     },

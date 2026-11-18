@@ -5,7 +5,7 @@
 use super::camera::Basis;
 use super::flames::{VERTEX_FLOATS, quad};
 use crate::blasts::{Puff, PuffKind};
-use dwell_world::explosives::EXPLOSIVES;
+use dwell_world::explosives::{BlastEffects, blast_look, blast_look_count};
 
 /// A smoke puff (lit, over what is behind).
 pub const KIND_SMOKE: u32 = 8;
@@ -59,9 +59,10 @@ pub fn blast_quads(puffs: &[Puff], eye: [f64; 3], basis: &Basis) -> (Vec<f32>, u
     (out, far.len())
 }
 
-/// The smoke look index of steam's puffs (crate::steam): after the explosives' smokes.
+/// The smoke look index of steam's puffs (crate::steam): after the blasts' looks (the explosives',
+/// then the cannons' shots).
 pub fn steam_look() -> usize {
-    EXPLOSIVES.len()
+    blast_look_count()
 }
 
 /// Steam's colour (sRGB 0–1) from shared/fluids/lava.json `steam.color`.
@@ -79,8 +80,9 @@ pub fn wgsl() -> String {
         let [r, g, b] = c.map(|v| dwell_look::srgb_to_linear(f64::from(v)) as f32);
         format!("vec3f({r:?}, {g:?}, {b:?})")
     };
-    let list = |f: &dyn Fn(&dwell_world::explosives::ExplosiveData) -> String| {
-        let v: Vec<String> = EXPLOSIVES.iter().map(f).collect();
+    let looks: Vec<&BlastEffects> = (0..blast_look_count()).filter_map(blast_look).collect();
+    let list = |f: &dyn Fn(&BlastEffects) -> String| {
+        let v: Vec<String> = looks.iter().map(|e| f(e)).collect();
         if v.is_empty() {
             "vec3f(1.0)".to_string()
         } else {
@@ -113,16 +115,13 @@ pub fn wgsl() -> String {
     // The smokes, then steam's (shared/fluids/lava.json `steam`, VOLCANOES.md §6.3) at
     // `steam_look()`: crate::steam's puffs are smoke puffs of that look.
     let smokes = {
-        let mut v: Vec<String> = EXPLOSIVES
-            .iter()
-            .map(|e| lin(e.effects.smoke.color))
-            .collect();
+        let mut v: Vec<String> = looks.iter().map(|e| lin(e.smoke.color)).collect();
         v.push(lin(steam_color()));
         v.join(", ")
     };
-    let dusts = list(&|e| lin(e.effects.dust.color));
-    let fires = list(&|e| lin(e.effects.flash.color));
-    let n = EXPLOSIVES.len().max(1);
+    let dusts = list(&|e| lin(e.dust.color));
+    let fires = list(&|e| lin(e.flash.color));
+    let n = looks.len().max(1);
     format!(
         "const BLAST_SMOKES = array<vec3f, {ns}>({smokes});
 const BLAST_DUSTS = array<vec3f, {n}>({dusts});
@@ -243,7 +242,7 @@ fn chip_colour(kind: u32, k: u32, uv: vec2f, rest: vec3f, rel: vec3f, seed: u32,
 }}
 ",
         last = n - 1,
-        ns = EXPLOSIVES.len() + 1,
+        ns = looks.len() + 1,
         steam = steam_look(),
         last_wood = nw - 1,
     )

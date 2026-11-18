@@ -494,7 +494,12 @@ pub fn chain_delay(e: &ExplosiveData, cell: [i32; 3], salt: u32) -> f64 {
 /// How loud blast `e`'s boom is at `d` m (0–1): full within `full_m`, falling to nothing at `hear_m`
 /// (as 1 / distance would, eased to zero at the end).
 pub fn boom_level(e: &ExplosiveData, d: f64) -> f64 {
-    let b = e.effects.boom;
+    boom_level_of(&e.effects, d)
+}
+
+/// [`boom_level`] for looks `fx` (a blast's or a shot's).
+pub fn boom_level_of(fx: &BlastEffects, d: f64) -> f64 {
+    let b = fx.boom;
     if d <= b.full_m {
         return 1.0;
     }
@@ -507,7 +512,33 @@ pub fn boom_level(e: &ExplosiveData, d: f64) -> f64 {
 
 /// How hard the camera shakes at `d` m from blast `e` (0–1).
 pub fn shake_level(e: &ExplosiveData, d: f64) -> f64 {
-    share(d, e.effects.shake.radius_m, 2.0)
+    shake_level_of(&e.effects, d)
+}
+
+/// [`shake_level`] for looks `fx` (a blast's or a shot's).
+pub fn shake_level_of(fx: &BlastEffects, d: f64) -> f64 {
+    share(d, fx.shake.radius_m, 2.0)
+}
+
+/// The blasts' looks by index (the clients' effects, docs/EXPLOSIVES.md §4): the explosives' in
+/// their order, then each cannon's shot (`crate::cannons::CANNONS`' `fire`, docs/CANNONS.md).
+pub fn blast_look(i: usize) -> Option<&'static BlastEffects> {
+    match EXPLOSIVES.get(i) {
+        Some(e) => Some(&e.effects),
+        None => crate::cannons::CANNONS
+            .get(i - EXPLOSIVES.len())
+            .map(|c| &c.fire),
+    }
+}
+
+/// How many blast looks there are ([`blast_look`]).
+pub fn blast_look_count() -> usize {
+    EXPLOSIVES.len() + crate::cannons::CANNONS.len()
+}
+
+/// The blast look of cannon `k`'s shot (an index into `crate::cannons::CANNONS`).
+pub fn cannon_fire_look(k: usize) -> usize {
+    EXPLOSIVES.len() + k
 }
 
 #[cfg(test)]

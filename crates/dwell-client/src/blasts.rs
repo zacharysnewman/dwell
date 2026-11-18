@@ -9,9 +9,12 @@
 
 use dwell_look::lights::PointLight;
 use dwell_world::FaceFrame;
-use dwell_world::explosives::{EXPLOSIVES, ExplosiveData, LIMITS, PuffLook, shake_level};
+use dwell_world::explosives::{
+    BlastEffects, ExplosiveData, LIMITS, PuffLook, blast_look, shake_level_of,
+};
 
-/// A blast going off: where (world m), its explosive (index in `EXPLOSIVES`), when (s), its seed.
+/// A blast going off: where (world m), its look (index of `blast_look`: an explosive's, or a cannon's
+/// shot), when (s), its seed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Blast {
     pub at: [f64; 3],
@@ -119,8 +122,7 @@ fn lerp([a, b]: [f64; 2], t: f64) -> f64 {
 }
 
 /// How long blast `e`'s effects last (s): its longest.
-fn lasts(e: &ExplosiveData) -> f64 {
-    let fx = e.effects;
+fn lasts(fx: &BlastEffects) -> f64 {
     fx.smoke.seconds[1]
         .max(fx.dust.seconds[1])
         .max(fx.flash.seconds)
@@ -135,7 +137,7 @@ impl Blasts {
             ^ (at[1] as i32 as u32).wrapping_mul(19_349_663)
             ^ (at[2] as i32 as u32).wrapping_mul(83_492_791)
             ^ (now_s * 1000.0) as u32;
-        let share = EXPLOSIVES.get(explosive).map_or(1.0, |e| {
+        let share = blast_look(explosive).map_or(1.0, |e| {
             let n = self.puff_count(e, 1.0);
             let left = f64::from(LIMITS.max_puffs) - self.puffs_in_flight(now_s) as f64;
             if n == 0 {
@@ -155,8 +157,7 @@ impl Blasts {
     }
 
     /// Blast `e`'s smoke and dust puffs at `share` (the CPU's counts on a CPU adapter).
-    fn puff_count(&self, e: &ExplosiveData, share: f64) -> usize {
-        let fx = e.effects;
+    fn puff_count(&self, fx: &BlastEffects, share: f64) -> usize {
         let (s, d) = if self.settings.cpu {
             (fx.smoke.cpu_count, fx.dust.cpu_count)
         } else {
@@ -171,8 +172,8 @@ impl Blasts {
         self.list
             .iter()
             .filter_map(|b| {
-                let e = EXPLOSIVES.get(b.explosive)?;
-                let fx = e.effects;
+                let e = blast_look(b.explosive)?;
+                let fx = *e;
                 let t = now_s - b.start_s;
                 (t < fx.smoke.seconds[1].max(fx.dust.seconds[1]))
                     .then(|| self.puff_count(e, b.share))
@@ -182,11 +183,8 @@ impl Blasts {
 
     /// Forgets the blasts whose effects are over.
     pub fn prune(&mut self, now_s: f64) {
-        self.list.retain(|b| {
-            EXPLOSIVES
-                .get(b.explosive)
-                .is_some_and(|e| now_s - b.start_s <= lasts(e))
-        });
+        self.list
+            .retain(|b| blast_look(b.explosive).is_some_and(|e| now_s - b.start_s <= lasts(e)));
     }
 
     /// The camera's shake now (yaw, pitch degrees) at `eye`: each blast's, strongest at it and
@@ -197,16 +195,16 @@ impl Blasts {
         }
         let (mut yaw, mut pitch) = (0.0, 0.0);
         for b in &self.list {
-            let Some(e) = EXPLOSIVES.get(b.explosive) else {
+            let Some(e) = blast_look(b.explosive) else {
                 continue;
             };
-            let s = e.effects.shake;
+            let s = e.shake;
             let t = now_s - b.start_s;
             if !(0.0..s.seconds).contains(&t) {
                 continue;
             }
             let d = dist(eye, b.at);
-            let amp = s.degrees * shake_level(e, d) * (1.0 - t / s.seconds).powi(2);
+            let amp = s.degrees * shake_level_of(e, d) * (1.0 - t / s.seconds).powi(2);
             let w = std::f64::consts::TAU * s.hz * t;
             let p = hash(b.seed, 1) * std::f64::consts::TAU;
             yaw += amp * (w + p).sin();
@@ -223,8 +221,8 @@ impl Blasts {
         self.list
             .iter()
             .filter_map(|b| {
-                let e = EXPLOSIVES.get(b.explosive)?;
-                let f = e.effects.flash;
+                let e = blast_look(b.explosive)?;
+                let f = e.flash;
                 let t = now_s - b.start_s;
                 if !(0.0..f.seconds).contains(&t) {
                     return None;
@@ -250,7 +248,7 @@ impl Blasts {
     pub fn puffs(&self, now_s: f64) -> Vec<Puff> {
         let mut out = Vec::new();
         for b in &self.list {
-            let Some(e) = EXPLOSIVES.get(b.explosive) else {
+            let Some(e) = blast_look(b.explosive) else {
                 continue;
             };
             let t = now_s - b.start_s;
@@ -259,7 +257,7 @@ impl Blasts {
             }
             let face = FaceFrame::at_height(b.at[1]);
             let local = face.point(b.at);
-            let fx = e.effects;
+            let fx = *e;
             if self.settings.flash && t < fx.flash.seconds {
                 let grow = (t / 0.12).min(1.0);
                 out.push(Puff {
@@ -376,6 +374,7 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwell_world::explosives::EXPLOSIVES;
 
     fn dynamite() -> usize {
         EXPLOSIVES

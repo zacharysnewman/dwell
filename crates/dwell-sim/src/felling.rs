@@ -1328,7 +1328,17 @@ impl Felling {
             dry.sort_by(|a, b| a.1.total_cmp(&b.1));
             let dry: Vec<[i32; 3]> = dry.into_iter().skip(wet).map(|(a, _)| a).collect();
             let air = dry.len();
-            for &o in p.cells.iter().map(|(o, _)| o).chain(dry.iter()) {
+            // A cell displaces its volume, a ball its sphere's (BUGS.md #213: a cannonball's ½ m³
+            // cell outweighed its steel, and it floated); air its cell's.
+            let cells = p.cells.iter().map(|&(o, m)| {
+                (
+                    o,
+                    dwell_physics::ball_of(m).map_or(volume, |b| {
+                        4.0 / 3.0 * std::f64::consts::PI * b.radius_m.powi(3)
+                    }),
+                )
+            });
+            for (o, displaced) in cells.chain(dry.iter().map(|&o| (o, volume))) {
                 let centre = position + rotation * offset_m(o);
                 let (fraction, density) = cell_in_liquid(world, centre, rotation);
                 if fraction <= 0.0 {
@@ -1338,7 +1348,7 @@ impl Felling {
                 let up = DVec3::Y * FaceFrame::at_height(centre.y).sign_f64();
                 physics.apply_impulse_at(
                     p.body,
-                    up * (density * g * volume * fraction * dt),
+                    up * (density * g * displaced * fraction * dt),
                     centre,
                 );
                 under += fraction;

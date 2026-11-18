@@ -5479,6 +5479,19 @@ impl Server {
                 .felling
                 .settle(&mut self.world, &mut self.physics, i, &taken);
             for &(c, m) in &settled.cells {
+                // Settling into a liquid's cell, a block that can stand flooded does (BUGS.md
+                // #213: a cannonball rests on the bed with the water still round it).
+                // (Not a full cube: no room for water in it, though a slab family's states carry
+                // the property.)
+                let here = self.world.get_voxel(c[0], c[1], c[2]);
+                let shape = dwell_blocks::shape::shape_of(m);
+                let full =
+                    shape.corners == [2, 2, 2, 2] && shape.min_y == 0.0 && shape.max_y == 1.0;
+                let m = if info(here).liquid && !(full && info(m).solid) {
+                    dwell_blocks::with_property(m, "flooded", "true").unwrap_or(m)
+                } else {
+                    m
+                };
                 rebake.set(&mut self.world, c, m);
                 placed.push((c, settled.settles));
             }

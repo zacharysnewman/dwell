@@ -273,3 +273,23 @@ the air: the sealed hull, a plank heavier, rode lower).
 - **Not yet:** the outside water's depth over an opening (the rate assumes ½ m), water levels inside and out evening out,
   compartments (one water for the whole hull), bailing; H3 (drawing).
 
+## 13. A shot's flash, smoke and boom (2026-11-18)
+
+Owner: "We need sound effects and VFX for cannon fire." Answers: "Flash + smoke puff"; "A deep boom".
+
+- **Data:** each cannon's `fire` (shared/cannons/cannons.json) in the explosives' effects schema (flash, smoke, dust,
+  boom, shake; `validateEffects` and `effectsRust` exported from shared/explosives/gen.mjs): a small warm flash, a dozen
+  grey puffs drifting up, no dust, no shake; the boom heard full to 15 m, gone at 250 m. `CannonDef::fire`.
+- **The looks list:** `explosives::blast_look(i)`: the explosives' effects, then each cannon's `fire`
+  (`cannon_fire_look(k)`); the client's blasts and the puff colour tables (render/blasts.rs, steam after them) index it.
+- **The trigger:** no protocol change: a client seeing a new body whose one cell is a cannonball (`shot_cannon`) plays
+  its cannon's `fire` at the spawn (the muzzle), the smoke drifting up, and the cannon block's sound set's `explode`.
+- **The sound:** the cannon block's sound set `cannon` (shared/sounds: stone's, and `explode`: `cannon_boom`, a
+  synthesized crack, a short low body and a 38 Hz thump, shorter and lower than dynamite's).
+- **Tests:** `dwell-client` `a_cannonballs_spawn_is_its_cannons_shot`; shared/cannons/gen.test.mjs (a bad `fire` named).
+
+**Cannonballs sink** (BUGS.md #213): a ball cell displaces its sphere's volume, not its cell's, so it sinks; a block
+settling into a liquid's cell takes its `flooded` state if it has one (the balls have one now), and rests with the
+water round it. Test: `tests/ships.rs` `a_cannonball_in_water_sinks_and_rests_flooded_on_the_bed` (both faces; red with
+the cell's volume).
+

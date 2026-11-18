@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x893d48b11cdc92b5n;
+export const REGISTRY_HASH = 0x784f01cc9544e320n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -138,10 +138,10 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:thatch', first: 1003, count: 1, properties: [], sound: 'dwell:grass' },
   { id: 'dwell:thatch_ramp', first: 1004, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:grass' },
   { id: 'dwell:door', first: 1052, count: 64, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'hinge', values: ['left', 'right'] }, { name: 'open', values: ['false', 'true'] }, { name: 'part', values: ['bottom', 'lower', 'upper', 'top'] }], sound: 'dwell:wood' },
-  { id: 'dwell:cannon', first: 1116, count: 16, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'part', values: ['rear_bottom', 'rear_top', 'front_bottom', 'front_top'] }], sound: 'dwell:stone' },
-  { id: 'dwell:iron_ball', first: 1132, count: 1, properties: [], sound: 'dwell:stone' },
-  { id: 'dwell:explosive_ball', first: 1133, count: 1, properties: [], sound: 'dwell:stone' },
-  { id: 'dwell:helm', first: 1134, count: 4, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }], sound: 'dwell:wood' },
+  { id: 'dwell:cannon', first: 1116, count: 16, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'part', values: ['rear_bottom', 'rear_top', 'front_bottom', 'front_top'] }], sound: 'dwell:cannon' },
+  { id: 'dwell:iron_ball', first: 1132, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
+  { id: 'dwell:explosive_ball', first: 1134, count: 2, properties: [{ name: 'flooded', values: ['false', 'true'] }], sound: 'dwell:stone' },
+  { id: 'dwell:helm', first: 1136, count: 4, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }], sound: 'dwell:wood' },
 ];
 
 /** The shapes block states use. */
@@ -1331,12 +1331,14 @@ const STATES_8: readonly StateDef[] = [
   { id: 1129, state: 'dwell:cannon[facing=west,part=rear_top]', block: 60, values: { facing: 'west', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1130, state: 'dwell:cannon[facing=west,part=front_bottom]', block: 60, values: { facing: 'west', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1131, state: 'dwell:cannon[facing=west,part=front_top]', block: 60, values: { facing: 'west', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
-  { id: 1132, state: 'dwell:iron_ball', block: 61, values: {  }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.26, 0, 0.26, 0.74, 0.96, 0.74], shape: 0, flooded: false, placeable: false },
-  { id: 1133, state: 'dwell:explosive_ball', block: 62, values: {  }, look: 'ball', render: 'opaque', color: 0x8a2e2a, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
-  { id: 1134, state: 'dwell:helm[facing=north]', block: 63, values: { facing: 'north' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
-  { id: 1135, state: 'dwell:helm[facing=east]', block: 63, values: { facing: 'east' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
-  { id: 1136, state: 'dwell:helm[facing=south]', block: 63, values: { facing: 'south' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
-  { id: 1137, state: 'dwell:helm[facing=west]', block: 63, values: { facing: 'west' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
+  { id: 1132, state: 'dwell:iron_ball[flooded=false]', block: 61, values: { flooded: 'false' }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.26, 0, 0.26, 0.74, 0.96, 0.74], shape: 0, flooded: false, placeable: false },
+  { id: 1133, state: 'dwell:iron_ball[flooded=true]', block: 61, values: { flooded: 'true' }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.26, 0, 0.26, 0.74, 0.96, 0.74], shape: 0, flooded: true, placeable: false },
+  { id: 1134, state: 'dwell:explosive_ball[flooded=false]', block: 62, values: { flooded: 'false' }, look: 'ball', render: 'opaque', color: 0x8a2e2a, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
+  { id: 1135, state: 'dwell:explosive_ball[flooded=true]', block: 62, values: { flooded: 'true' }, look: 'ball', render: 'opaque', color: 0x8a2e2a, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: true, placeable: false },
+  { id: 1136, state: 'dwell:helm[facing=north]', block: 63, values: { facing: 'north' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
+  { id: 1137, state: 'dwell:helm[facing=east]', block: 63, values: { facing: 'east' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
+  { id: 1138, state: 'dwell:helm[facing=south]', block: 63, values: { facing: 'south' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
+  { id: 1139, state: 'dwell:helm[facing=west]', block: 63, values: { facing: 'west' }, look: 'cube', render: 'opaque', color: 0x8a5a2b, opacity: 1, textures: { top: 'planks', side: 'planks', bottom: 'planks' }, shape: 1, flooded: false, placeable: true },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [
