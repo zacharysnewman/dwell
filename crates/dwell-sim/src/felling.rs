@@ -427,6 +427,12 @@ pub struct Felling {
     /// The steps counted (`step`), for `settle_every_ticks`.
     steps: u32,
     pub rules: FellingRules,
+    /// The settling pieces resting on a body that never settles (a built one, a ship;
+    /// docs/CANNONS.md C4): piece id → (that body's id, the ticks it has been still on it).
+    riding: std::collections::HashMap<u32, (u32, u32)>,
+    /// The pieces due to join the body they ride (piece id, body id), from the last `step`; the
+    /// server takes them (`merge`).
+    pub joins: Vec<(u32, u32)>,
 }
 
 /// Whether height `y` (m) lies within the world's chunk rows (a piece past them is lost).
@@ -1202,6 +1208,94 @@ impl Felling {
         out
     }
 
+    /// The body that never settles (a built one, a ship) which piece `i` rests on, if any: one of
+    /// its cells is just under one of `i`'s (face-local), in that body's own grid at its pose now.
+    fn support_of(&self, physics: &Physics, i: usize) -> Option<usize> {
+        let p = &self.pieces[i];
+        let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
+        let down = -DVec3::from(FaceFrame::at_height(at.y).vector([0.0, 1.0, 0.0]));
+        let probes: Vec<DVec3> = p
+            .cells
+            .iter()
+            .map(|&(o, _)| at + turn * offset_m(o) + down * (0.5 * CELL_H + 0.15))
+            .collect();
+        self.pieces.iter().enumerate().find_map(|(j, q)| {
+            if j == i || body_kind(q.kind).settles {
+                return None;
+            }
+            let (qa, qt) = (physics.position(q.body), physics.rotation(q.body));
+            let inv = qt.inverse();
+            probes
+                .iter()
+                .any(|&w| {
+                    let l = inv * (w - qa);
+                    let o = [
+                        l.x.round() as i32,
+                        (l.y / CELL_H).round() as i32,
+                        l.z.round() as i32,
+                    ];
+                    q.cells.iter().any(|&(c, m)| c == o && info(m).solid)
+                })
+                .then_some(j)
+        })
+    }
+
+    /// Joins piece `id` to the body `onto` it rests on (docs/CANNONS.md C4: what comes to rest on a
+    /// ship rides along with it): each of its cells goes to the cell of `onto`'s grid its centre is
+    /// in now (a falling block as it settles), skipping one already filled, and the piece is gone.
+    /// The cells added (in `onto`'s grid, with their states), or None if either body is gone.
+    pub fn merge(
+        &mut self,
+        physics: &mut Physics,
+        id: u32,
+        onto: u32,
+    ) -> Option<Vec<([i32; 3], StateId)>> {
+        let i = self.pieces.iter().position(|p| p.id == id)?;
+        let j = self.pieces.iter().position(|p| p.id == onto)?;
+        let (pa, pt) = (
+            physics.position(self.pieces[i].body),
+            physics.rotation(self.pieces[i].body),
+        );
+        let (qa, qt) = (
+            physics.position(self.pieces[j].body),
+            physics.rotation(self.pieces[j].body),
+        );
+        let inv = qt.inverse();
+        let mut cells = self.pieces[j].cells.clone();
+        let mut added = Vec::new();
+        for &(o, m) in &self.pieces[i].cells {
+            let l = inv * (pa + pt * offset_m(o) - qa);
+            let at = [
+                l.x.round() as i32,
+                (l.y / CELL_H).round() as i32,
+                l.z.round() as i32,
+            ];
+            if cells.iter().any(|&(c, _)| c == at) {
+                continue;
+            }
+            let m = if info(m).support_role == dwell_blocks::SupportRole::Falls {
+                dwell_blocks::settled_state(m)
+            } else {
+                m
+            };
+            cells.push((at, m));
+            added.push((at, m));
+        }
+        let p = self.pieces.remove(i);
+        physics.remove_body(p.body);
+        self.riding.remove(&id);
+        let j = self.pieces.iter().position(|p| p.id == onto)?;
+        let kind = self.pieces[j].kind;
+        let (cells, carriers) = carriers_first(cells);
+        let boxes = piece_boxes(&cells, carriers, kind);
+        physics.set_piece_cells(self.pieces[j].body, &boxes);
+        let q = &mut self.pieces[j];
+        q.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        q.cells = cells;
+        q.carriers = carriers;
+        Some(added)
+    }
+
     /// Counts each piece's still ticks after a physics step; returns the indices of those to
     /// settle now (at rest, or out of time), last first (so removing them keeps the rest).
     /// And holds the pieces moving slowly (or pushed lately) from players' contacts, letting the
@@ -1209,6 +1303,41 @@ impl Felling {
     pub fn step(&mut self, physics: &mut Physics) -> Vec<usize> {
         let r = self.rules;
         let mut due = Vec::new();
+        // What each settling piece rests on, if a body that never settles (docs/CANNONS.md C4): it
+        // joins that body once still on it for `sleep_ticks`, and never settles into the grid there.
+        self.joins.clear();
+        // (None at all without a body that never settles: a blast's hundreds of pieces cost nothing.)
+        let ships = self.pieces.iter().any(|p| !body_kind(p.kind).settles);
+        let supports: Vec<Option<usize>> = (0..self.pieces.len())
+            .map(|i| {
+                if ships && body_kind(self.pieces[i].kind).settles {
+                    self.support_of(physics, i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut riding = std::collections::HashMap::new();
+        for (i, support) in supports.iter().enumerate() {
+            let Some(j) = *support else {
+                continue;
+            };
+            let (p, q) = (&self.pieces[i], &self.pieces[j]);
+            let (pa, qa) = (physics.position(p.body), physics.position(q.body));
+            let qw = physics.angular_velocity(q.body);
+            let carried = physics.velocity(q.body) + qw.cross(pa - qa);
+            let still = (physics.velocity(p.body) - carried).length() < r.sleep_linear
+                && (physics.angular_velocity(p.body) - qw).length() < r.sleep_angular;
+            let ticks = match self.riding.get(&p.id) {
+                Some(&(b, t)) if b == q.id && still => t + 1,
+                _ => u32::from(still),
+            };
+            if ticks >= r.sleep_ticks {
+                self.joins.push((p.id, q.id));
+            }
+            riding.insert(p.id, (q.id, ticks));
+        }
+        self.riding = riding;
         self.steps = self.steps.wrapping_add(1);
         let settling = self.steps.is_multiple_of(r.settle_every_ticks.max(1));
         for (i, p) in self.pieces.iter_mut().enumerate() {
@@ -1240,6 +1369,12 @@ impl Felling {
             // never settle, it causes them to block up rivers randomly instead of floating
             // downstream"). Rapier never sleeps a piece (`can_sleep(false)`), so the current
             // always moves it.
+            // On a ship it rides, never settling into the grid under it.
+            if supports[i].is_some() {
+                p.still = 0;
+                p.age = 0;
+                p.rest = None;
+            }
             let kind = body_kind(p.kind);
             let beached = p.dry >= r.beach_ticks;
             if !kind.settles_afloat && !beached {

@@ -250,3 +250,71 @@ both_faces!(
         assert!(gone < wall.len(), "not the whole wall");
     }
 );
+
+/// The centre of face-local cell (x, row, z) in the world (m).
+fn centre(f: FaceFrame, local: [i32; 3]) -> [f64; 3] {
+    let c = f.cell(local);
+    [
+        f64::from(c[0]) + 0.5,
+        (f64::from(c[1]) + 0.5) * dwell_world::CELL_H,
+        f64::from(c[2]) + 0.5,
+    ]
+}
+
+both_faces!(
+    fn what_comes_to_rest_on_a_built_body_joins_it_not_the_grid(f: FaceFrame) {
+        // docs/CANNONS.md C4; owner, 2026-11-17: anything that comes to rest on a moving ship rides
+        // along with it, not settling into the world's grid.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        cannon_scene(&mut fx, f);
+        // A 4 × 4 plank deck, a built body (kind 1) standing on the floor away from the cannon.
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        let deck_cells: Vec<([i32; 3], u16)> = (0..4)
+            .flat_map(|x| (0..4).map(move |z| ([x, 0, z], planks)))
+            .collect();
+        let deck = fx
+            .server
+            .add_body(1, deck_cells, centre(f, [-4, BASE, -12]));
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        // A clump of dirt and a cannonball dropped on it.
+        let dirt = f.state(dwell_blocks::require("dwell:dirt"));
+        let ball = f.state(dwell_blocks::require("dwell:iron_ball"));
+        let a = fx
+            .server
+            .add_body(0, vec![([0, 0, 0], dirt)], centre(f, [-3, BASE + 4, -11]));
+        let b = fx
+            .server
+            .add_body(0, vec![([0, 0, 0], ball)], centre(f, [-2, BASE + 4, -10]));
+        for _ in 0..(10 * SIM_HZ) {
+            fx.server.step();
+        }
+        assert_eq!(fx.server.riders_joined(), 2, "both joined the deck");
+        assert!(fx.server.body_pose(a).is_none() && fx.server.body_pose(b).is_none());
+        let h = fx
+            .server
+            .body_handle(deck)
+            .expect("the deck is still a body");
+        let (_, physics, _) = fx.server.sim();
+        let mass = physics.mass(h);
+        let iron = dwell_world::cannons::ball("dwell:iron_ball")
+            .unwrap()
+            .mass_kg();
+        assert!(mass > iron, "the deck carries the ball's mass: {mass}");
+        // Nothing of them settled into the world on or round the deck.
+        for x in -6..2 {
+            for z in -14..-6 {
+                for r in 0..6 {
+                    let c = f.cell([x, BASE + r, z]);
+                    let m = fx.server.world().get_voxel(c[0], c[1], c[2]);
+                    assert!(m != dirt && m != ball, "settled into the grid at {c:?}");
+                }
+            }
+        }
+    }
+);

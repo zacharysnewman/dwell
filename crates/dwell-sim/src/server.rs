@@ -1213,6 +1213,7 @@ pub struct Server {
     strikes: u64,
     knocked: u64,
     ball_override: Option<&'static str>,
+    riders_joined: u64,
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
     /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
     body_hits: HashMap<(u32, [i32; 3]), u32>,
@@ -1498,6 +1499,7 @@ impl Server {
             strikes: 0,
             knocked: 0,
             ball_override: None,
+            riders_joined: 0,
             hits_short: 0,
             heal_since: Default::default(),
             recent_hits: Default::default(),
@@ -4589,6 +4591,12 @@ impl Server {
         self.ball_override = Some(name);
     }
 
+    /// Pieces that came to rest on a ship and joined it (docs/CANNONS.md C4), since the server
+    /// started.
+    pub fn riders_joined(&self) -> u64 {
+        self.riders_joined
+    }
+
     /// Strikes (docs/CANNONS.md C3) and the cells balls knocked loose, since the server started.
     pub fn ball_strikes(&self) -> (u64, u64) {
         (self.strikes, self.knocked)
@@ -4801,6 +4809,39 @@ impl Server {
 
     fn settle_pieces(&mut self) {
         let due = self.felling.step(&mut self.physics);
+        // What came to rest on a ship joins it (docs/CANNONS.md C4), before the settling: the due
+        // pieces' indices are taken again by id after the merges.
+        let joins = std::mem::take(&mut self.felling.joins);
+        let due = if joins.is_empty() {
+            due
+        } else {
+            let ids: Vec<u32> = due.iter().map(|&i| self.felling.pieces[i].id).collect();
+            for (id, onto) in joins {
+                let Some(added) = self.felling.merge(&mut self.physics, id, onto) else {
+                    continue;
+                };
+                self.riders_joined += 1;
+                self.broadcast_world(&Message::EntityDespawn(id));
+                if !added.is_empty() {
+                    self.broadcast_world(&Message::BodyEdit(BodyEdit {
+                        body: onto,
+                        cells: added
+                            .iter()
+                            .map(|&(o, state)| PieceCellNet {
+                                offset: o.map(|v| v as i16),
+                                state,
+                            })
+                            .collect(),
+                    }));
+                }
+            }
+            let mut due: Vec<usize> = ids
+                .iter()
+                .filter_map(|id| self.felling.pieces.iter().position(|p| p.id == *id))
+                .collect();
+            due.sort_unstable_by(|a, b| b.cmp(a));
+            due
+        };
         if due.is_empty() {
             return;
         }

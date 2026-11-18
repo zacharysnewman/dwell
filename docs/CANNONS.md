@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4 riding along built (2026-11-18, §8; a cannon on a moving body and recoil to come); C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -119,4 +119,17 @@ direction." No ammunition or reloading for now.
   (the hit cell among those gone, no more than `maxCells` a strike), `an_explosive_ball_blows_up_where_it_strikes`
   (the ball gone, more of the wall than a knock, not all of it), and the flat roll knocks nothing. `set_cannon_ball`
   makes the cannons fire another ball (tests, the dev tools).
+
+## 8. As built: C4 riding along (2026-11-18)
+
+- A settling piece (a natural one: knocked-loose cells, a felled trunk, a ball) resting on a body that never settles (a
+  built one, a ship) — one of that body's cells just under one of its own, face-local, in the body's grid at its pose
+  (`Felling::support_of`) — never settles into the world's grid there; once still **relative to that body** (its
+  velocity less the body's at its place, its spin less the body's, under the settling thresholds) for `sleep_ticks`, it
+  **joins** the body (`Felling::merge`): each cell to the cell of the body's grid its centre is in (a falling block as it
+  settles), a filled one skipped; clients hear `EntityDespawn` for the piece and a `BodyEdit` adding the cells. No
+  search at all while no body that never settles exists (a blast's pieces cost nothing).
+- **Not yet:** a cannon standing on a moving body firing along the body's turned facing, and recoil.
+- **Test:** `dwell-sim` `tests/cannons.rs` `what_comes_to_rest_on_a_built_body_joins_it_not_the_grid` (both faces: a
+  dirt clump and an iron ball dropped on a plank deck join it, nothing of them in the grid; red with the joins off).
 
