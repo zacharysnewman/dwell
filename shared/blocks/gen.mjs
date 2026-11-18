@@ -670,7 +670,7 @@ const num = (v) => (Number.isInteger(v) ? `${v}.0f` : `${v}f`);
 // ---- TypeScript --------------------------------------------------------------------------------
 const ts = [];
 ts.push(`// ${header}`);
-ts.push("export type MaterialLook = 'cube' | 'shaped' | 'ladder' | 'fluid' | 'cross';");
+ts.push(`export type MaterialLook = ${LOOKS.map((l) => `'${l}'`).join(' | ')};`);
 ts.push("export type RenderMode = 'opaque' | 'cutout' | 'translucent';");
 ts.push('');
 ts.push('/** Texture tiles (dwell-mesh textures.rs) per face group; untextured materials use `color`. */');
