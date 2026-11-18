@@ -4496,7 +4496,7 @@ impl Server {
             DVec3::ZERO,
         );
         if let Some(b) = recoil {
-            let kick = -forward * (ball.mass_kg() * c.muzzle_speed_ms);
+            let kick = -forward * (ball.mass_kg() * c.muzzle_speed_ms * c.recoil_share);
             self.physics.apply_impulse_at(b, kick, anchor);
         }
         self.balls.push(self.felling.pieces[i].id);

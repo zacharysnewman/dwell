@@ -73,6 +73,8 @@ pub struct CannonDef {
     pub muzzle_speed_ms: f64,
     pub muzzle_up_m: f64,
     pub muzzle_forward_m: f64,
+    /// The share of the ball's momentum that pushes a body the cannon stands on back (0–1).
+    pub recoil_share: f64,
     pub reload_s: f64,
 }
 

@@ -63,7 +63,7 @@ export function validateCannons(data, names) {
   const seen = new Set();
   const cannons = data.cannons.map((c, i) => {
     const at = `cannons[${i}]`;
-    known(c, ['block', 'ball', 'muzzleSpeedMs', 'muzzleUpM', 'muzzleForwardM', 'reloadS'], at);
+    known(c, ['block', 'ball', 'muzzleSpeedMs', 'muzzleUpM', 'muzzleForwardM', 'recoilShare', 'reloadS'], at);
     const def = names.blocks.get(c.block);
     if (!def) fail(`${at}.block: no block ${JSON.stringify(c.block)}`);
     if (def.use !== 'fire') fail(`${at}.block: ${c.block} must have use: fire`);
@@ -74,6 +74,7 @@ export function validateCannons(data, names) {
     range(c, 'muzzleUpM', 0, 4, at);
     range(c, 'muzzleForwardM', 0, 8, at);
     range(c, 'reloadS', 0, 120, at);
+    range(c, 'recoilShare', 0, 1, at);
     return c;
   });
   if (!Array.isArray(data.helms)) fail('helms must be a list');
@@ -104,7 +105,7 @@ export function cannonsRust(d) {
   rs.push('/// The cannons, by block (`cannons`).');
   rs.push('pub static CANNONS: &[CannonDef] = &[');
   for (const c of d.cannons) {
-    rs.push(`    CannonDef { block: "${c.block}", ball: "${c.ball}", muzzle_speed_ms: ${f64(c.muzzleSpeedMs)}, muzzle_up_m: ${f64(c.muzzleUpM)}, muzzle_forward_m: ${f64(c.muzzleForwardM)}, reload_s: ${f64(c.reloadS)} },`);
+    rs.push(`    CannonDef { block: "${c.block}", ball: "${c.ball}", muzzle_speed_ms: ${f64(c.muzzleSpeedMs)}, muzzle_up_m: ${f64(c.muzzleUpM)}, muzzle_forward_m: ${f64(c.muzzleForwardM)}, recoil_share: ${f64(c.recoilShare)}, reload_s: ${f64(c.reloadS)} },`);
   }
   rs.push('];', '');
   rs.push('/// The cannonballs (`balls`).');
