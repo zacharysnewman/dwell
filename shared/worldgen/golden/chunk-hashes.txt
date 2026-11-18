@@ -1,5 +1,5 @@
 # seed chunk_x chunk_y chunk_z fnv1a64(voxels) - generator version 32
-# registry 3c8769241b178494
+# registry f63da225bc4a7f01
 0 0 -5 0 66deee2beeac2325
 0 0 -4 0 66deee2beeac2325
 0 0 -3 0 66deee2beeac2325

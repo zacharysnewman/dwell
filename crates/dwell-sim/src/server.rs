@@ -1208,6 +1208,7 @@ pub struct Server {
     cannon_ready: HashMap<[i32; 3], u32>,
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
+    last_ball: Option<u32>,
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
     /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
     body_hits: HashMap<(u32, [i32; 3]), u32>,
@@ -1488,6 +1489,7 @@ impl Server {
             body_hits: HashMap::default(),
             cannon_ready: HashMap::default(),
             shots_fired: 0,
+            last_ball: None,
             hits_short: 0,
             heal_since: Default::default(),
             recent_hits: Default::default(),
@@ -4370,6 +4372,54 @@ impl Server {
         let reload = (c.reload_s * f64::from(dwell_protocol::SIM_HZ)).ceil() as u32;
         self.cannon_ready.insert(anchor, self.tick + reload);
         self.shots_fired += 1;
+        self.launch_ball(c, anchor, state);
+    }
+
+    /// A cannon's shot (docs/CANNONS.md C2): its ball as a one-cell natural body (a sphere of the
+    /// ball's radius and mass, `dwell_physics::ball_of`) at the muzzle — `muzzleForwardM` from the
+    /// rear bottom cell's centre along the facing, `muzzleUpM` above its floor, face-local — moving
+    /// at the muzzle speed along the barrel; every client hears its `EntitySpawn`. Gravity and water
+    /// as any body's; at rest it settles as its block.
+    fn launch_ball(
+        &mut self,
+        c: &dwell_world::cannons::CannonDef,
+        anchor: [i32; 3],
+        state: dwell_blocks::StateId,
+    ) {
+        let Some(ball) = dwell_world::cannons::ball(c.ball) else {
+            return;
+        };
+        let Some(m) = dwell_blocks::state(ball.name) else {
+            return;
+        };
+        let f = dwell_world::FaceFrame::at_row(anchor[1]);
+        let facing = dwell_blocks::info(state).facing;
+        let fw = dwell_world::parts::forward(facing).map(f64::from);
+        let forward = DVec3::new(fw[0], 0.0, fw[2]);
+        let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        let floor = crate::felling::cell_centre(anchor) - up * (0.5 * dwell_world::CELL_H);
+        let muzzle = floor + forward * c.muzzle_forward_m + up * c.muzzle_up_m;
+        // The body's origin is its cell's centre; the sphere sits on the cell's floor.
+        let origin = muzzle - up * (ball.radius_m - 0.5 * dwell_world::CELL_H);
+        let i = self.felling.spawn_body(
+            &mut self.physics,
+            None,
+            0,
+            0,
+            vec![([0, 0, 0], f.state(m))],
+            origin,
+            dwell_physics::DQuat::IDENTITY,
+            forward * c.muzzle_speed_ms,
+            DVec3::ZERO,
+        );
+        let msg = self.spawn_message(i);
+        self.broadcast_world(&msg);
+        self.last_ball = Some(self.felling.pieces[i].id);
+    }
+
+    /// The body id of the last ball a cannon fired (docs/CANNONS.md C2), for tests and the dev tools.
+    pub fn last_ball(&self) -> Option<u32> {
+        self.last_ball
     }
 
     /// Shots fired since the server started (docs/CANNONS.md C1).

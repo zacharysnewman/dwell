@@ -79,7 +79,7 @@ function selectionOf(d, values) {
   const [bx, bz] = turn(b[3], b[5]);
   return [Math.min(ax, bx), b[1], Math.min(az, bz), Math.max(ax, bx), b[4], Math.max(az, bz)];
 }
-const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross'];
+const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross', 'ball'];
 // Render modes (docs/TRANSPARENT_BLOCKS.md): how a look's pixels are drawn. `opaque` covers every
 // pixel it draws; `cutout` is alpha-tested (alpha-to-coverage under MSAA), writes depth and needs
 // no sorting; `translucent` is alpha-blended without depth writes, sorted far to near.
@@ -233,6 +233,9 @@ function validateRender(id, def, look, isAir) {
   if (!isAir && opacity < 1 && render !== 'translucent') fail(`${id}: opacity ${opacity} needs "render": "translucent"`);
   if (render === 'cutout' && !def.textures) fail(`${id}: render cutout needs textures (a tile with transparent texels)`);
   if (look === 'fluid' && render !== 'translucent') fail(`${id}: look fluid is drawn translucent (got render ${render})`);
+  // A ball (a cannonball, docs/CANNONS.md C2): a sphere drawn on the cell's floor, its collider the
+  // ball's own (shared/cannons); no cell geometry.
+  if (look === 'ball' && def.shape !== 'empty') fail(`${id}: look ball needs shape empty (its sphere is its body's collider)`);
   if (look === 'cross') {
     if (render === 'opaque') fail(`${id}: look cross has gaps: render must be cutout or translucent`);
     if (def.shape !== 'empty') fail(`${id}: look cross needs shape empty (crosses have no collision geometry)`);

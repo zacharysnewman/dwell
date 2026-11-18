@@ -790,3 +790,32 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    fn a_cannonball_is_a_sphere_of_its_radius_on_its_cells_floor(f: FaceFrame) {
+        // docs/CANNONS.md C2: the `ball` look, its radius from the cannons data by name.
+        let m = dwell_blocks::require("dwell:iron_ball");
+        let r = dwell_world::cannons::ball("dwell:iron_ball")
+            .unwrap()
+            .radius_m;
+        let (pts, tris) = mesh_one(f, m, [4, 4, 4], &[], 0);
+        assert!(tris.len() >= 40, "a sphere's triangles: {}", tris.len());
+        let lo = |k: usize| pts.iter().map(|p| p[k]).fold(f64::MAX, f64::min);
+        let hi = |k: usize| pts.iter().map(|p| p[k]).fold(f64::MIN, f64::max);
+        let near = |a: f64, b: f64| (a - b).abs() < 0.01;
+        assert!(near(lo(1), 4.0), "on the floor: {}", lo(1));
+        assert!(near(hi(1), 4.0 + 2.0 * r / CELL_H), "its top: {}", hi(1));
+        assert!(
+            near(lo(0), 4.5 - r) && near(hi(0), 4.5 + r),
+            "x {} {}",
+            lo(0),
+            hi(0)
+        );
+        assert!(
+            near(lo(2), 4.5 - r) && near(hi(2), 4.5 + r),
+            "z {} {}",
+            lo(2),
+            hi(2)
+        );
+    }
+);
