@@ -993,3 +993,35 @@ both_faces!(
         assert_eq!(fx.server.shots_fired(), 1, "the cannon fired");
     }
 );
+
+both_faces!(
+    fn a_ball_taking_one_cannon_cell_takes_the_whole_cannon(f: FaceFrame) {
+        // BUGS.md #216 (owner, 2026-11-18: "Also ensure you check every one of the 4 cannon blocks to
+        // see if it is destroyed. I noticed half of cannons fall off the boat").
+        let (mut fx, raft, top, mut seq) = raft_to_build_on(f);
+        let cannon = f.state(dwell_blocks::require(
+            "dwell:cannon[facing=north,part=rear_bottom]",
+        ));
+        send_body_edit(
+            &mut fx,
+            raft,
+            [1, 0, 2],
+            top,
+            BlockEditAction::Place,
+            cannon,
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        let count = |fx: &Fixture| {
+            fx.server
+                .body_cells(raft)
+                .iter()
+                .filter(|(_, m)| dwell_blocks::block_of(*m).name == "dwell:cannon")
+                .count()
+        };
+        assert_eq!(count(&fx), 4);
+        // One cell knocked out as a ball's hit does (its front top).
+        let u = up_rows(f);
+        assert!(fx.server.break_body_cell(raft, [1, 2 * u, 1]));
+        assert_eq!(count(&fx), 0, "no part of the cannon left on the raft");
+    }
+);

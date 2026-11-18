@@ -4999,15 +4999,34 @@ impl Server {
             self.physics.position(p.body),
             self.physics.rotation(p.body),
         );
-        let centre = at + turn * crate::felling::cell_offset_m(cell);
+        // A multi-cell block goes whole (BUGS.md #216; owner, 2026-11-18: "check every one of the
+        // 4 cannon blocks"): its other cells, laid out by the body's face, with it.
+        let f = FaceFrame::at_height(at.y);
+        let mut block: Vec<([i32; 3], dwell_blocks::StateId)> = vec![(cell, m)];
+        for (c, want) in dwell_world::parts::partners_in(cell, m, f) {
+            if p.cells.iter().any(|&(o, s)| o == c && s == want) {
+                block.push((c, want));
+            }
+        }
         let w = self.physics.angular_velocity(h);
-        let v = self.physics.velocity(h) + w.cross(centre - at);
-        let out = self.felling.break_cell(&mut self.physics, id, cell)?;
-        self.body_hits.remove(&(id, cell));
+        let v = self.physics.velocity(h) + w.cross(turn * crate::felling::cell_offset_m(cell));
+        let mut removed = Vec::new();
+        let mut spawned = Vec::new();
+        let mut gone = false;
+        for &(c, _) in &block {
+            self.body_hits.remove(&(id, c));
+            if let Some(out) = self.felling.break_cell(&mut self.physics, id, c) {
+                removed.extend(out.removed);
+                spawned.extend(out.spawned);
+                gone |= out.gone;
+            }
+        }
+        if removed.is_empty() {
+            return None;
+        }
         self.broadcast_world(&Message::BodyEdit(BodyEdit {
             body: id,
-            cells: out
-                .removed
+            cells: removed
                 .iter()
                 .map(|&o| PieceCellNet {
                     offset: o.map(|v| v as i16),
@@ -5015,26 +5034,26 @@ impl Server {
                 })
                 .collect(),
         }));
-        for &i in &out.spawned {
-            let msg = self.spawn_message(i);
-            self.broadcast_world(&msg);
+        for i in spawned {
+            if i < self.felling.pieces.len() {
+                let msg = self.spawn_message(i);
+                self.broadcast_world(&msg);
+            }
         }
-        if out.gone {
+        if gone {
             self.body_hits.retain(|k, _| k.0 != id);
             self.broadcast_world(&Message::EntityDespawn(id));
         }
         if loose {
-            let i = self.felling.spawn_body(
-                &mut self.physics,
-                None,
-                0,
-                0,
-                vec![([0, 0, 0], m)],
-                centre,
-                turn,
-                v,
-                w,
-            );
+            // The whole block as one natural piece where it was, moving as the body did there.
+            let centre = at + turn * crate::felling::cell_offset_m(cell);
+            let cells: Vec<([i32; 3], dwell_blocks::StateId)> = block
+                .iter()
+                .map(|&(c, s)| ([c[0] - cell[0], c[1] - cell[1], c[2] - cell[2]], s))
+                .collect();
+            let i =
+                self.felling
+                    .spawn_body(&mut self.physics, None, 0, 0, cells, centre, turn, v, w);
             let msg = self.spawn_message(i);
             self.broadcast_world(&msg);
         }
