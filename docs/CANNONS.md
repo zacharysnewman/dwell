@@ -340,3 +340,19 @@ Browser check: an open hull riding low in the harbour scene's lake is dry inside
 - **Recipes** (shared/inventory): a cannon is 16 rock shards and 4 wood; a ship's wheel 6 wood and 4 sticks. Test:
   `dwell-sim` `tests/items.rs` `a_cannon_and_a_ships_wheel_are_crafted`.
 
+## 17. A raft started on open water (2026-11-18)
+
+Owner: boats in adventure, "Built on water"; "Aim at the surface", in "Both modes"; "Water should be last in priority".
+No build platform is needed:
+
+- **The aim** (`dwell-game` `water_surface`, `BlockInteraction::aim_surface`): when the ray meets no block and no body
+  within reach, the first liquid cell it comes down into whose cell above is not liquid is aimed at, through its
+  top face; place only (no break). The ray still passes through water, so blocks under water and bodies afloat are
+  aimed at first.
+- **The server** (`dwell_world::edit::placing_on_surface`; `Felling::divert`'s `Float`): a Place onto a liquid's
+  surface from above is allowed. The block goes into a new free body (the first placeable body kind) when nothing solid
+  is beside it or beside the water under it; otherwise it stays in the world (a pier off the shore). Beside a raft
+  afloat it joins that raft at the free cell next to it nearest the aim (a raft rides low, so no rounding).
+- Test: `dwell-sim` `tests/ships.rs` `a_block_placed_on_open_water_floats_a_new_raft_one_by_the_shore_stays_land`
+  (both faces: a raft, a join, a pier, a block built under water). Browser check: planks placed on the harbour lake.
+

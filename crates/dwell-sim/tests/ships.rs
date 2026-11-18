@@ -1025,3 +1025,95 @@ both_faces!(
         assert_eq!(count(&fx), 0, "no part of the cannon left on the raft");
     }
 );
+
+both_faces!(
+    fn a_block_placed_on_open_water_floats_a_new_raft_one_by_the_shore_stays_land(f: FaceFrame) {
+        // Owner, 2026-11-18: a boat is "Built on water"; the first block "Aim at the surface", in
+        // "Both modes"; "Water should be last in priority" (a block under water still builds).
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let up = up_rows(f);
+        let top = (0..6)
+            .find(|&k| dwell_world::edit::FACE_DIRS[k][1] == up)
+            .unwrap() as u8;
+        let stone = f.state(dwell_blocks::require("dwell:stone"));
+        let plank = f.state(dwell_blocks::require("dwell:planks"));
+        // A stone shore west of the pool, its top level with the water's.
+        for x in -18..-12 {
+            for z in -3..4 {
+                for r in -7..0 {
+                    let c = f.cell([x, BASE + r, z]);
+                    fx.server.world().set_voxel(c[0], c[1], c[2], stone);
+                }
+            }
+        }
+        let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        let feet = dwell_physics::DVec3::from(f.point([-13.5, m_of_row(BASE), 0.5]));
+        stand(&mut fx, feet, upv);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 20);
+        let place = |fx: &mut Fixture, cell: [i32; 3], face: u8| {
+            fx.send(
+                1,
+                Message::BlockEditRequest(dwell_protocol::BlockEditRequest {
+                    action: BlockEditAction::Place,
+                    cell,
+                    face,
+                    material: plank,
+                    rows: 1,
+                    down: false,
+                    point: None,
+                }),
+            );
+            for _ in 0..3 {
+                fx.server.step();
+            }
+        };
+        let bodies = |fx: &Fixture| {
+            serde_json::from_str::<Vec<serde_json::Value>>(&fx.server.bodies_report())
+                .unwrap()
+                .len()
+        };
+        // Onto the water's surface 3 m out: a new body, nothing in the world there.
+        place(&mut fx, f.cell([-10, BASE - 1, 0]), top);
+        assert_eq!(bodies(&fx), 1, "a raft started");
+        let above = f.cell([-10, BASE, 0]);
+        assert_eq!(
+            fx.server.world().get_voxel(above[0], above[1], above[2]),
+            0,
+            "not in the world"
+        );
+        // Let it settle, riding low (its grid offset no longer a whole row off the surface).
+        hold(&mut fx, &mut seq, Input::default(), 180);
+        // Onto the surface beside it: into that raft.
+        place(&mut fx, f.cell([-9, BASE - 1, 0]), top);
+        assert_eq!(bodies(&fx), 1, "joined, no second raft");
+        let cells: Vec<serde_json::Value> =
+            serde_json::from_str(&fx.server.bodies_report()).unwrap();
+        assert_eq!(cells[0]["cells"].as_array().unwrap().len(), 2, "two cells");
+        // Onto the surface by the shore: a pier, in the world.
+        place(&mut fx, f.cell([-12, BASE - 1, 1]), top);
+        let pier = f.cell([-12, BASE, 1]);
+        assert_eq!(bodies(&fx), 1, "no new body by the shore");
+        assert_eq!(
+            fx.server.world().get_voxel(pier[0], pier[1], pier[2]),
+            plank,
+            "the pier is land"
+        );
+        // On a stone under water: an ordinary block in the world, in the water (water last).
+        let rock = f.cell([-11, BASE - 3, -1]);
+        fx.server
+            .world()
+            .set_voxel(rock[0], rock[1], rock[2], stone);
+        place(&mut fx, rock, top);
+        let under = f.cell([-11, BASE - 2, -1]);
+        assert_eq!(
+            fx.server.world().get_voxel(under[0], under[1], under[2]),
+            plank,
+            "built under water"
+        );
+        assert_eq!(bodies(&fx), 1);
+    }
+);

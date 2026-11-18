@@ -31,6 +31,30 @@ pub fn targetable(m: StateId) -> bool {
     m != M.air && !info(m).liquid
 }
 
+/// Whether `request` is a Place onto the surface of the liquid `target` at its cell: through the
+/// cell's face-local top, the cell above not a liquid (the start of a raft on open water;
+/// docs/CANNONS.md, owner 2026-11-18).
+pub fn placing_on_surface(
+    world: &mut VoxelWorld,
+    request: &BlockEditRequest,
+    target: StateId,
+) -> bool {
+    if request.action != BlockEditAction::Place || target == M.air || !info(target).liquid {
+        return false;
+    }
+    let c = request.cell;
+    let f = crate::FaceFrame::at_row(c[1]);
+    let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+    let Some(d) = FACE_DIRS.get(usize::from(request.face)) else {
+        return false;
+    };
+    if *d != [0, up, 0] {
+        return false;
+    }
+    let above = world.get_voxel(c[0], c[1] + up, c[2]);
+    !info(above).liquid
+}
+
 /// In the infinite creative palette (§6.5).
 pub fn placeable(m: StateId) -> bool {
     dwell_blocks::try_info(m).is_some_and(|s| s.placeable)
@@ -709,7 +733,10 @@ pub fn check_block_edit(
         return EditOutcome::fail(EditCheck::OutOfReach);
     }
     let target = world.get_voxel(c[0], c[1], c[2]);
-    if !targetable(target) {
+    // A Place may go onto a liquid's surface (its face-local top, the cell above it not liquid):
+    // the start of a raft (docs/CANNONS.md; owner, 2026-11-18: "Aim at the surface").
+    let on_surface = placing_on_surface(world, request, target);
+    if !targetable(target) && !on_surface {
         return EditOutcome::fail(EditCheck::NothingThere);
     }
     // Line of sight: the eye is in front of a surface of the target whose normal points through
@@ -717,7 +744,17 @@ pub fn check_block_edit(
     // near one of its corners. Surfaces are in cell space (y in rows); which side of a plane the
     // eye is on is the same there as in metres.
     let eye_c = cell_space(eye);
-    let mut visible = false;
+    // A liquid's surface has no faces to see: the eye above it (face-locally) sees it.
+    let mut visible = on_surface && {
+        let f = crate::FaceFrame::at_row(c[1]);
+        let top = f64::from(c[1])
+            + if f.cell([0, 1, 0])[1] > f.cell([0, 0, 0])[1] {
+                1.0
+            } else {
+                0.0
+            };
+        (eye_c[1] - top) * f64::from(f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1]) > 0.0
+    };
     for polygon in &target_faces(world, c) {
         if visible {
             break;

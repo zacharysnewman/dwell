@@ -189,6 +189,44 @@ fn with_values(m: StateId, values: &[(&str, &str)]) -> Option<StateId> {
         .try_fold(m, |m, (k, v)| dwell_blocks::with_property(m, k, v))
 }
 
+/// Where the ray from `eye` along unit `dir` meets a liquid's surface within `reach` (m), coming down
+/// onto it: the liquid cell whose cell above (face-local) is no liquid, its top face (a raft's first
+/// block goes on it; docs/CANNONS.md, owner 2026-11-18: "Aim at the surface"). `at` reads a cell.
+pub fn water_surface(
+    mut at: impl FnMut([i32; 3]) -> StateId,
+    eye: [f64; 3],
+    dir: [f64; 3],
+    reach: f64,
+) -> Option<BlockTarget> {
+    let liquid = |m: StateId| m != 0 && dwell_blocks::try_info(m).is_some_and(|s| s.liquid);
+    let step = 0.05;
+    let mut last = dwell_world::cell_of_pos(eye);
+    let mut t = step;
+    while t <= reach {
+        let p: [f64; 3] = std::array::from_fn(|k| eye[k] + dir[k] * t);
+        let c = dwell_world::cell_of_pos(p);
+        if c != last {
+            let f = FaceFrame::at_row(c[1]);
+            let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+            let above = [c[0], c[1] + up, c[2]];
+            if liquid(at(c)) && last == above && !liquid(at(above)) {
+                let face = dwell_world::edit::FACE_DIRS
+                    .iter()
+                    .position(|d| *d == [0, up, 0])? as u8;
+                return Some(BlockTarget {
+                    cell: c,
+                    face,
+                    aim_up: 1.0,
+                    slope_side: None,
+                });
+            }
+            last = c;
+        }
+        t += step;
+    }
+    None
+}
+
 /// The compass facing (`north` −Z, `east` +X, `south` +Z, `west` −X) nearest the level part of the
 /// world direction `dir`.
 fn compass(dir: [f64; 3]) -> &'static str {
@@ -253,6 +291,8 @@ pub struct BlockInteraction {
     /// Touch: what a tap on the view does.
     pub touch_action: EditAction,
     current: Option<BlockTarget>,
+    /// The aim is a liquid's surface ([`Self::aim_surface`]): a place only.
+    on_surface: bool,
     /// The current target is replaceable: placing goes into its cell.
     into_target: bool,
     /// The current target's state.
@@ -279,6 +319,7 @@ impl BlockInteraction {
             selected: 0,
             touch_action: EditAction::Break,
             current: None,
+            on_surface: false,
             into_target: false,
             target_state: 0,
             yaw: 0.0,
@@ -315,6 +356,18 @@ impl BlockInteraction {
         self.current
     }
 
+    /// Aims at a liquid's surface (`water_surface`) when nothing else is aimed at: the water is
+    /// last (owner, 2026-11-18: "Water should be last in priority").
+    pub fn aim_surface(&mut self, t: BlockTarget, state: StateId) {
+        if self.current.is_none() {
+            self.current = Some(t);
+            // A place goes on top of it, never into the water; nothing breaks it.
+            self.into_target = false;
+            self.target_state = state;
+            self.on_surface = true;
+        }
+    }
+
     /// Re-targets from the eye along the view; no eye clears the target (dead, loading).
     pub fn update(
         &mut self,
@@ -328,6 +381,7 @@ impl BlockInteraction {
         self.face = face;
         let dir = view_direction(yaw_deg, pitch_deg, face).map(|v| v as f32);
         self.current = eye.and_then(|e| world.target(e, dir, players::REACH_DISTANCE));
+        self.on_surface = false;
         self.into_target = self.current.is_some_and(|t| world.replaceable(t.cell));
         self.target_state = self.current.map_or(0, |t| world.state(t.cell));
         self.current
@@ -510,7 +564,7 @@ impl BlockInteraction {
     /// swing's contact (the click that started the swing took the rate; BUGS.md #111). None when
     /// nothing is targeted (a miss).
     pub fn break_request(&self) -> Option<BlockEditRequest> {
-        let t = self.current?;
+        let t = self.current.filter(|_| !self.on_surface)?;
         Some(BlockEditRequest {
             action: BlockEditAction::Break,
             cell: t.cell,
@@ -549,6 +603,29 @@ mod tests {
         let ladder = slots.iter().find(|s| s.ladder).expect("a ladder slot");
         assert_eq!(ladder.drag, crate::items::ItemDrag::Vertical);
     }
+
+    dwell_world::both_faces!(
+        fn the_aim_meets_a_waters_surface_from_above(f: FaceFrame) {
+            // docs/CANNONS.md (owner, 2026-11-18: "Aim at the surface"): water in rows 0..4 under
+            // air; looking down from 2 m over it the aim stops on the top row's top face.
+            let water = dwell_blocks::require("dwell:water");
+            let at = |c: [i32; 3]| {
+                let l = f.cell(c);
+                if (0..4).contains(&l[1]) { water } else { 0 }
+            };
+            let eye = f.point([0.5, dwell_world::m_of_row(4) + 2.0, 0.5]);
+            let down = f.vector([0.0, -1.0, 0.0]);
+            let t = water_surface(at, eye, down, 5.0).expect("the surface");
+            assert_eq!(t.cell, f.cell([0, 3, 0]));
+            assert_eq!(
+                dwell_world::edit::FACE_DIRS[usize::from(t.face)],
+                f.vector([0.0, 1.0, 0.0]).map(|v| v as i32)
+            );
+            // Out of reach, or looking up: none.
+            assert!(water_surface(at, eye, down, 1.0).is_none());
+            assert!(water_surface(at, eye, f.vector([0.0, 1.0, 0.0]), 5.0).is_none());
+        }
+    );
 
     dwell_world::both_faces!(
         fn a_cannon_on_a_turned_body_faces_the_way_it_was_placed(f: FaceFrame) {

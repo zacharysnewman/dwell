@@ -1,0 +1,6 @@
+{
+  "changes": [
+    "Start a raft anywhere on open water: aim at the surface and place a block, then build onto it",
+    "Blocks placed on the water beside a raft join it; by the shore they stay put as a pier"
+  ]
+}
