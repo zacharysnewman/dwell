@@ -178,6 +178,9 @@ pub struct PlacedLight {
     pub pos: [f64; 3],
     pub source: &'static dwell_blocks::LightInfo,
     pub seed: u32,
+    /// On a moving body (BUGS.md #212): no flood light lights it, so it lights as a held one
+    /// does, at full strength, with or without a map and with Torch shadows off too.
+    pub riding: bool,
 }
 
 /// This frame's dynamic lights: the held ones (relative to `eye`) and the placed ones (only with
@@ -190,11 +193,10 @@ pub fn frame_lights(held: &[HeldLight], placed: &[PlacedLight], eye: [f64; 3]) -
             let pos = std::array::from_fn(|k| eye[k] + f64::from(h.rel[k]));
             PointLight::of(h.source, pos, h.seed)
         })
-        .chain(
-            placed
-                .iter()
-                .map(|p| PointLight::of(p.source, p.pos, p.seed).placed()),
-        )
+        .chain(placed.iter().map(|p| {
+            let l = PointLight::of(p.source, p.pos, p.seed);
+            if p.riding { l } else { l.placed() }
+        }))
         .collect();
     pick(&all, eye, LIGHTS.max_lights, LIGHTS.cull_m)
 }
@@ -236,6 +238,25 @@ pub fn frame_block(lights: &[PointLight], eye: [f64; 3], t: f64) -> ([f32; LIGHT
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_torch_riding_a_body_lights_like_a_held_one() {
+        // face-a-only: light packing, no geometry. BUGS.md #212 (owner, 2026-11-18: "Placing
+        // torches on dynamic bodies should work too"): no flood light reaches a moving body's
+        // torch, so it is drawn at full strength without a map.
+        let eye = [0.0; 3];
+        let riding = [PlacedLight {
+            pos: [2.0, 0.0, 0.0],
+            source: torch(),
+            seed: 3,
+            riding: true,
+        }];
+        let lights = frame_lights(&[], &riding, eye);
+        assert_eq!(lights.len(), 1);
+        assert!(!lights[0].placed, "a held light's strength");
+        assert_eq!(with_slots(lights, &[], &[]).len(), 1, "drawn without a map");
+    }
+
     use super::*;
 
     fn torch() -> &'static dwell_blocks::LightInfo {
@@ -274,6 +295,7 @@ mod tests {
                 pos: [2.0 + f64::from(k), 0.0, 0.0],
                 source: torch(),
                 seed: 10 + k,
+                riding: false,
             })
             .collect();
         let lights = frame_lights(&held, &placed, eye);

@@ -6059,6 +6059,7 @@ impl<S: Scene> Game<S> {
                         pos: c,
                         source,
                         seed,
+                        riding: true,
                     })
                 }),
         );
@@ -8190,6 +8191,7 @@ pub fn placed_lights(
                 pos,
                 source,
                 seed: h,
+                riding: false,
             })
         })
         .collect()
