@@ -194,3 +194,85 @@ both_faces!(
         );
     }
 );
+
+both_faces!(
+    fn a_cannon_on_a_turned_raft_fires_along_the_raft_and_kicks_it_back(f: FaceFrame) {
+        // docs/CANNONS.md C4 (owner, 2026-11-17: "It faces the direction of placement (still
+        // correctly rotates with dynamic objects)"): a cannon on a raft turned a quarter turn fires
+        // along its facing turned with the raft, and the raft recoils the other way.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 60);
+        // A north-facing cannon (its barrel −z in the raft's grid) on the deck, then the raft turned
+        // a quarter about the face's up.
+        let up = up_rows(f);
+        let cannon = |part: &str| {
+            f.state(dwell_blocks::require(&format!(
+                "dwell:cannon[facing=north,part={part}]"
+            )))
+        };
+        let cells = [
+            ([2, up, 2], cannon("rear_bottom")),
+            ([2, 2 * up, 2], cannon("rear_top")),
+            ([2, up, 1], cannon("front_bottom")),
+            ([2, 2 * up, 1], cannon("front_top")),
+        ];
+        let (pose, _) = fx.server.body_pose(raft).unwrap();
+        let mut all: Vec<([i32; 3], u16)> = (0..6)
+            .flat_map(|x| {
+                (0..4).map(move |z| ([x, 0, z], f.state(dwell_blocks::require("dwell:planks"))))
+            })
+            .collect();
+        all.extend(cells);
+        let turned = dwell_physics::DQuat::from_axis_angle(
+            dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0])),
+            std::f64::consts::FRAC_PI_2,
+        );
+        let ship = fx.server.add_body_turned(1, all, pose.to_array(), turned);
+        fx.server.remove_body(raft);
+        hold(&mut fx, &mut seq, Input::default(), 60);
+        let (_, q) = fx.server.body_pose(ship).unwrap();
+        // The barrel as the raft holds it: level (it floats level), a quarter turn from north.
+        let barrel = q * dwell_physics::DVec3::new(0.0, 0.0, -1.0);
+        let flat = dwell_physics::DVec3::new(barrel.x, 0.0, barrel.z).normalize();
+        assert!(barrel.dot(flat) > 0.98, "the raft floats level: {barrel:?}");
+        assert!(flat.z.abs() < 0.2, "turned: {flat:?}");
+        let v0 = fx.server.body_velocity(ship).unwrap();
+        // Stand by the cannon and use it.
+        let (p, _) = fx.server.body_pose(ship).unwrap();
+        let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        let feet = p
+            + q * dwell_physics::DVec3::new(4.5, 0.0, 2.5)
+            + upv * (0.5 * dwell_world::CELL_H + 0.05);
+        stand(&mut fx, feet, upv);
+        hold(&mut fx, &mut seq, Input::default(), 10);
+        fx.send(
+            1,
+            Message::BodyEditRequest(BodyEditRequest {
+                body: ship,
+                cell: [2, up, 1].map(|v| v as i16),
+                face: 4,
+                action: BlockEditAction::Place,
+                material: 0,
+            }),
+        );
+        hold(&mut fx, &mut seq, Input::default(), 2);
+        assert_eq!(fx.server.shots_fired(), 1, "fired from the raft");
+        let ball = fx.server.last_ball().expect("a ball");
+        let v = fx.server.body_velocity(ball).unwrap();
+        let along = v.dot(barrel);
+        assert!(
+            along > 30.0,
+            "along the turned barrel: {v:?} barrel {barrel:?}"
+        );
+        assert!(
+            (v - barrel * along).length() < 0.25 * along,
+            "not along the raft's grid: {v:?}"
+        );
+        // The raft kicked back, against the barrel.
+        let kick = (fx.server.body_velocity(ship).unwrap() - v0).dot(barrel);
+        assert!(kick < -0.05, "recoil {kick}");
+    }
+);

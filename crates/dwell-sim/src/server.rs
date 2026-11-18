@@ -4322,6 +4322,17 @@ impl Server {
         cells: Vec<([i32; 3], dwell_blocks::StateId)>,
         position: [f64; 3],
     ) -> u32 {
+        self.add_body_turned(kind, cells, position, dwell_physics::DQuat::IDENTITY)
+    }
+
+    /// [`Self::add_body`] turned by `rotation` (tests and tools).
+    pub fn add_body_turned(
+        &mut self,
+        kind: u8,
+        cells: Vec<([i32; 3], dwell_blocks::StateId)>,
+        position: [f64; 3],
+        rotation: dwell_physics::DQuat,
+    ) -> u32 {
         let i = self.felling.spawn_body(
             &mut self.physics,
             None,
@@ -4329,13 +4340,28 @@ impl Server {
             0,
             cells,
             DVec3::from(position),
-            dwell_physics::DQuat::IDENTITY,
+            rotation,
             DVec3::ZERO,
             DVec3::ZERO,
         );
         let m = self.spawn_message(i);
         self.broadcast_world(&m);
         self.felling.pieces[i].id
+    }
+
+    /// Removes body `id` whole, if its kind can be broken (tests and tools); every client hears it.
+    pub fn remove_body(&mut self, id: u32) -> bool {
+        let gone = self.felling.destroy_piece(&mut self.physics, id);
+        if gone {
+            self.broadcast_world(&Message::EntityDespawn(id));
+        }
+        gone
+    }
+
+    /// Body `id`'s velocity now (m/s), if it is still one (tests and tools).
+    pub fn body_velocity(&self, id: u32) -> Option<DVec3> {
+        let p = self.felling.pieces.iter().find(|p| p.id == id)?;
+        Some(self.physics.velocity(p.body))
     }
 
     /// A body's pose now (its reference cell's centre and rotation), if it is still one.
@@ -4500,13 +4526,13 @@ impl Server {
                 let Some(c) = dwell_world::cannons::cannon(block) else {
                     return;
                 };
-                let anchor = dwell_world::cannons::anchor_of(cell, state);
+                // The body's own grid is its face's way up (its rows are no world rows); its cells'
+                // states are the world's (a face-B body's carry face B's).
+                let f = dwell_world::FaceFrame::at_height(at.y);
+                let anchor = dwell_world::cannons::anchor_in(cell, state, f);
                 if !self.cannon_reloaded(body, anchor, c) {
                     return;
                 }
-                // The body's own grid is face A's way up for a body on face A; its cells' states
-                // are the world's (a face-B body's carry face B's).
-                let f = dwell_world::FaceFrame::at_height(at.y);
                 let fw = dwell_world::parts::forward(info(state).facing).map(f64::from);
                 let forward = turn * DVec3::new(fw[0], 0.0, fw[2]);
                 let up = turn * DVec3::from(f.vector([0.0, 1.0, 0.0]));
