@@ -6340,12 +6340,19 @@ impl Renderer {
     /// within each light's radius).
     fn torch_frame(&mut self, chunk_fade: &dyn Fn(ChunkCoord) -> Option<Fade>) -> TorchFrame {
         let shadows_on = self.torch_tier().is_some();
-        let placed: &[lights::PlacedLight] = if shadows_on { &self.placed_lights } else { &[] };
+        // With Torch shadows off a placed torch lights by its flood light alone; one riding a
+        // body has none, so it is drawn anyway (BUGS.md #212).
+        let placed: Vec<lights::PlacedLight> = self
+            .placed_lights
+            .iter()
+            .filter(|p| shadows_on || p.riding)
+            .copied()
+            .collect();
         // A blast's flash first (crate::blasts): the brightest light while it lasts.
         let mut all = self.flash_lights.clone();
         all.extend(lights::frame_lights(
             self.characters.held_lights(),
-            placed,
+            &placed,
             self.eye,
         ));
         all.truncate(dwell_look::lights::LIGHTS.max_lights);
