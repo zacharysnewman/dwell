@@ -1,0 +1,49 @@
+{
+  "$comment": "A harbour for recordings of rafts and boats (docs/CANNONS.md; owner, 2026-11-18: \"make a video of 2 rafts with cannons next to each other shooting at each other\", \"And one of a player driving a boat around\"): a broad valley 160 m long down +z from (0, 0), its floor 48 m wide and 6 m under the land, closed at 140 m by a stone wall 6 blocks high, a still lake behind it one metre under the wall's top (5 m deep). Built on the flat world (?world=flat). The rafts and boats are added after (`d.scene('body', …)`); no events.",
+  "formatVersion": 1,
+  "name": "harbour",
+  "description": "A broad still lake 5 m deep for rafts and boats.",
+  "world": "flat",
+  "face": "a",
+  "origin": [
+    0,
+    0
+  ],
+  "axis": "+z",
+  "waterClock": "real",
+  "terrain": {
+    "kind": "valley",
+    "landM": 32,
+    "lengthM": 160,
+    "floorWidthM": 48,
+    "depthM": 6,
+    "floorFall": 0,
+    "sideSlope": 1,
+    "clearM": 2,
+    "surface": "dwell:grass",
+    "under": "dwell:dirt",
+    "underDepthM": 1.5,
+    "rock": "dwell:stone",
+    "bed": "dwell:sand"
+  },
+  "structures": [
+    {
+      "name": "quay",
+      "kind": "wall",
+      "atM": 140,
+      "heightBlocks": 6,
+      "blockM": 1,
+      "thicknessM": 4,
+      "material": "dwell:stone"
+    }
+  ],
+  "water": [
+    {
+      "name": "harbour",
+      "kind": "lake",
+      "behind": "quay",
+      "belowTopM": 1
+    }
+  ],
+  "events": []
+}

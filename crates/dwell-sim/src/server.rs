@@ -4358,6 +4358,16 @@ impl Server {
         gone
     }
 
+    /// Body `id`'s cells (its grid, with their states), none if it is gone (tests and tools).
+    pub fn body_cells(&self, id: u32) -> Vec<([i32; 3], dwell_blocks::StateId)> {
+        self.felling
+            .pieces
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.cells.clone())
+            .unwrap_or_default()
+    }
+
     /// Body `id`'s velocity now (m/s), if it is still one (tests and tools).
     pub fn body_velocity(&self, id: u32) -> Option<DVec3> {
         let p = self.felling.pieces.iter().find(|p| p.id == id)?;
@@ -4545,6 +4555,45 @@ impl Server {
         }
     }
 
+    /// Every moving body (the dev tools, JSON): its id, kind, whether held, pose and cells.
+    pub fn bodies_report(&self) -> String {
+        let list: Vec<serde_json::Value> = self
+            .felling
+            .pieces
+            .iter()
+            .map(|p| {
+                let at = self.physics.position(p.body);
+                serde_json::json!({
+                    "id": p.id,
+                    "kind": p.kind,
+                    "at": [at.x, at.y, at.z],
+                    "cells": p.cells.iter().map(|&(o, m)| serde_json::json!([o[0], o[1], o[2], dwell_blocks::try_info(m).map_or("?", |i| i.name)])).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        serde_json::Value::Array(list).to_string()
+    }
+
+    /// Session `id`'s Use of cell `cell` of body `body` (its block's `use`), wherever the player
+    /// stands (the dev tools' and recordings'; a click goes through `apply_body_edits`, in reach).
+    /// Whether that block has a use.
+    pub fn use_body_cell(&mut self, id: SessionId, body: u32, cell: [i32; 3]) -> bool {
+        let Some(m) = self
+            .felling
+            .pieces
+            .iter()
+            .find(|p| p.id == body)
+            .and_then(|p| p.cells.iter().find(|(c, _)| *c == cell).map(|&(_, m)| m))
+        else {
+            return false;
+        };
+        if info(m).use_action.is_none() {
+            return false;
+        }
+        self.use_body_block(id, body, cell, m);
+        true
+    }
+
     /// The ships steered (docs/CANNONS.md C5), each tick before the physics step: for each player
     /// at a helm (`helms`) still standing at it (their controller's `helm`) on a body still afloat,
     /// their forward input pushes the body along the helm's facing (turned with it, flat) from its
@@ -4690,8 +4739,10 @@ impl Server {
         let core = (r - 0.05).max(0.01);
         // (each with the sphere's centre where it first meets it)
         let mut path: Vec<([i32; 3], DVec3)> = Vec::new();
+        let mut samples = Vec::with_capacity(steps + 1);
         for k in 0..=steps {
             let c = centre + along * (reach * k as f64 / steps as f64);
+            samples.push(c);
             let (lo, hi) = (
                 cell_of(c - DVec3::splat(core)),
                 cell_of(c + DVec3::splat(core)),
@@ -4744,7 +4795,13 @@ impl Server {
                 break;
             }
         }
+        // Then the cells of moving bodies (another ship) in its way.
+        let before = speed;
+        self.smash_bodies(body, ball, &samples, core, &mut speed);
         if hit.is_empty() {
+            if speed != before {
+                self.physics.set_velocity(body, along * speed);
+            }
             return;
         }
         self.physics.set_velocity(body, along * speed);
@@ -4791,6 +4848,179 @@ impl Server {
         let cleared = changes.cells();
         self.broadcast_changes(changes, VoxelModificationReason::Collapse);
         self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// The ball `ball_body` against the cells of moving bodies along its path this tick (`samples`,
+    /// its sphere drawn in to `core`; docs/CANNONS.md: "ship battles where cannons can blow off
+    /// pieces of ships"): in the order it meets them, each breakable cell is destroyed while it
+    /// moves at `destroySpeedMs` or more (its energy less `energyPerKgJ` × the cell's mass), the
+    /// first met slower comes off as a loose natural piece and the contact is the physics'; the
+    /// cells of that body within `dragRadiusM` of where it met each come off loose too (at most
+    /// `maxLooseCells`). Every client hears each body's change (`take_body_cell`).
+    fn smash_bodies(
+        &mut self,
+        ball_body: dwell_physics::BodyHandle,
+        ball: &dwell_world::cannons::BallDef,
+        samples: &[DVec3],
+        core: f64,
+        speed: &mut f64,
+    ) {
+        let im = ball.impact;
+        let mass = ball.mass_kg();
+        let (Some(&first), Some(&last)) = (samples.first(), samples.last()) else {
+            return;
+        };
+        let half = DVec3::new(0.5, 0.5 * dwell_world::CELL_H, 0.5);
+        // (body id, cell, state, where it met it), in the order it meets them.
+        let mut met: Vec<(u32, [i32; 3], dwell_blocks::StateId, DVec3)> = Vec::new();
+        for q in &self.felling.pieces {
+            if q.body == ball_body || self.balls.contains(&q.id) {
+                continue;
+            }
+            if q.cells
+                .first()
+                .is_some_and(|&(_, m)| dwell_physics::ball_of(m).is_some())
+            {
+                continue;
+            }
+            let (qa, qt) = (self.physics.position(q.body), self.physics.rotation(q.body));
+            let room = q
+                .cells
+                .iter()
+                .map(|&(o, _)| crate::felling::cell_offset_m(o).length())
+                .fold(0.0, f64::max)
+                + 2.0;
+            if (first - qa).length() > room + (last - first).length() {
+                continue;
+            }
+            let inv = qt.inverse();
+            for &c in samples {
+                let l = inv * (c - qa);
+                for &(o, m) in &q.cells {
+                    let centre = crate::felling::cell_offset_m(o);
+                    if (l - centre).abs().cmpgt(half + DVec3::splat(core)).any() {
+                        continue;
+                    }
+                    let near = l.clamp(centre - half, centre + half);
+                    if (near - l).length() < core && !met.iter().any(|e| e.0 == q.id && e.1 == o) {
+                        met.push((q.id, o, m, c));
+                    }
+                }
+            }
+        }
+        let mut loose_left = im.max_loose_cells as usize;
+        for (id, o, m, at) in met {
+            if !self.ball_breaks(m) {
+                continue;
+            }
+            if *speed >= im.destroy_speed_ms {
+                if self.take_body_cell(id, o, false).is_none() {
+                    continue;
+                }
+                let kg = f64::from(info(m).density_kg_m3) * dwell_world::CELL_H;
+                *speed = (*speed * *speed - 2.0 * im.energy_per_kg_j * kg / mass)
+                    .max(0.0)
+                    .sqrt();
+                self.smashed += 1;
+            } else {
+                if self.take_body_cell(id, o, true).is_some() {
+                    self.loosened += 1;
+                }
+                break;
+            }
+            // The cells of that body round where it met it come off loose.
+            let Some(q) = self.felling.pieces.iter().find(|p| p.id == id) else {
+                continue;
+            };
+            let (qa, qt) = (self.physics.position(q.body), self.physics.rotation(q.body));
+            let mut round: Vec<(f64, [i32; 3])> = q
+                .cells
+                .iter()
+                .map(|&(c, _)| {
+                    (
+                        (qa + qt * crate::felling::cell_offset_m(c) - at).length(),
+                        c,
+                    )
+                })
+                .filter(|&(d, _)| d <= im.drag_radius_m)
+                .collect();
+            round.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (_, c) in round {
+                if loose_left == 0 {
+                    break;
+                }
+                let state = self
+                    .felling
+                    .pieces
+                    .iter()
+                    .find(|p| p.id == id)
+                    .and_then(|p| p.cells.iter().find(|(k, _)| *k == c).map(|&(_, m)| m));
+                if state.is_some_and(|m| self.ball_breaks(m))
+                    && self.take_body_cell(id, c, true).is_some()
+                {
+                    self.loosened += 1;
+                    loose_left -= 1;
+                }
+            }
+        }
+    }
+
+    /// Takes cell `cell` out of body `id` (`Felling::break_cell`: what it leaves apart splits off),
+    /// every client hearing it; `loose`: the cell goes on as its own natural piece where it was,
+    /// moving as the body did there. Its state, if it was there and the body's kind breaks.
+    fn take_body_cell(
+        &mut self,
+        id: u32,
+        cell: [i32; 3],
+        loose: bool,
+    ) -> Option<dwell_blocks::StateId> {
+        let p = self.felling.pieces.iter().find(|p| p.id == id)?;
+        let m = p.cells.iter().find(|(c, _)| *c == cell).map(|&(_, m)| m)?;
+        let (h, at, turn) = (
+            p.body,
+            self.physics.position(p.body),
+            self.physics.rotation(p.body),
+        );
+        let centre = at + turn * crate::felling::cell_offset_m(cell);
+        let w = self.physics.angular_velocity(h);
+        let v = self.physics.velocity(h) + w.cross(centre - at);
+        let out = self.felling.break_cell(&mut self.physics, id, cell)?;
+        self.body_hits.remove(&(id, cell));
+        self.broadcast_world(&Message::BodyEdit(BodyEdit {
+            body: id,
+            cells: out
+                .removed
+                .iter()
+                .map(|&o| PieceCellNet {
+                    offset: o.map(|v| v as i16),
+                    state: 0,
+                })
+                .collect(),
+        }));
+        for &i in &out.spawned {
+            let msg = self.spawn_message(i);
+            self.broadcast_world(&msg);
+        }
+        if out.gone {
+            self.body_hits.retain(|k, _| k.0 != id);
+            self.broadcast_world(&Message::EntityDespawn(id));
+        }
+        if loose {
+            let i = self.felling.spawn_body(
+                &mut self.physics,
+                None,
+                0,
+                0,
+                vec![([0, 0, 0], m)],
+                centre,
+                turn,
+                v,
+                w,
+            );
+            let msg = self.spawn_message(i);
+            self.broadcast_world(&msg);
+        }
+        Some(m)
     }
 
     /// The ball's drag (owner, 2026-11-18: "it should exert continuous force as it flies around it,
@@ -4949,15 +5179,60 @@ impl Server {
                     {
                         continue;
                     }
-                    let Some(new) = self.felling.place_cell(
-                        &mut self.physics,
-                        e.body,
-                        cell,
-                        e.face,
-                        e.material,
-                        &taken,
-                    ) else {
-                        continue;
+                    // A multi-cell block (a cannon, a door) goes in whole, its other cells laid out
+                    // in the body's grid by the body's face (docs/CANNONS.md; BUGS.md #208).
+                    let body_face = self
+                        .felling
+                        .pieces
+                        .iter()
+                        .find(|p| p.id == e.body)
+                        .map(|p| FaceFrame::at_height(self.physics.position(p.body).y));
+                    let dir = dwell_world::edit::FACE_DIRS.get(usize::from(e.face));
+                    let parts = match (body_face, dir) {
+                        (Some(f), Some(d)) => {
+                            let new = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
+                            let rest = dwell_world::parts::partners_in(new, e.material, f);
+                            (!rest.is_empty()).then(|| {
+                                let mut all = vec![(new, e.material)];
+                                all.extend(rest);
+                                all
+                            })
+                        }
+                        _ => None,
+                    };
+                    let placed: Vec<([i32; 3], dwell_blocks::StateId)> = match parts {
+                        Some(all) => {
+                            let on_body = self
+                                .felling
+                                .pieces
+                                .iter()
+                                .find(|p| p.id == e.body)
+                                .is_some_and(|p| p.cells.iter().any(|&(o, _)| o == cell));
+                            if !on_body
+                                || !self.felling.place_cells(
+                                    &mut self.physics,
+                                    e.body,
+                                    &all,
+                                    &taken,
+                                )
+                            {
+                                continue;
+                            }
+                            all
+                        }
+                        None => {
+                            let Some(new) = self.felling.place_cell(
+                                &mut self.physics,
+                                e.body,
+                                cell,
+                                e.face,
+                                e.material,
+                                &taken,
+                            ) else {
+                                continue;
+                            };
+                            vec![(new, e.material)]
+                        }
                     };
                     if let Some(s) = self.sessions.get_mut(&id) {
                         s.edit_credit -= 1.0;
@@ -4968,10 +5243,13 @@ impl Server {
                     }
                     self.broadcast_world(&Message::BodyEdit(BodyEdit {
                         body: e.body,
-                        cells: vec![PieceCellNet {
-                            offset: new.map(|v| v as i16),
-                            state: e.material,
-                        }],
+                        cells: placed
+                            .iter()
+                            .map(|&(o, state)| PieceCellNet {
+                                offset: o.map(|v| v as i16),
+                                state,
+                            })
+                            .collect(),
                     }));
                     continue;
                 }

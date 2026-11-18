@@ -69,6 +69,19 @@ Last updated: 2026-11-11 (0.52.108).
   Owner, 2026-11-18: "The camera should smoothly transition to 3rd person when you grab the helm." Owner should see:
   taking the helm eases the view out to a third-person camera behind the player; leaving it eases back to first
   person.
+  Owner, 2026-11-18: "Yeah make a video of 2 rafts with cannons next to each other shooting at each other." Owner
+  should see: a showcase video (9:16, a minute or less, game sound, no music or text) of two rafts afloat side by side,
+  each with a cannon, firing at each other, the balls knocking blocks off the other raft.
+  Owner, 2026-11-18: "And one of a player driving a boat around. This seems like we need more tooling for building
+  dynamic bodies." Owner should see: a second video, a player at a boat's helm sailing it around (turning, the third-
+  person helm camera); and a tool that builds a moving body (a raft, a boat with its cannon or helm) from data instead
+  of block by block. Owner's answer (2026-11-18): "Just the videos, they should ultimately use the same tooling (updated perhaps)
+  that is used to copy paste sections." (The bodies tool is to come from the copy-paste (region/structure) tooling;
+  for now the videos only, built by dev hooks.)
+  Owner, 2026-11-18 (sidebar): "What's the current process to build a raft as a normal player in creative? I noticed I
+  can't build on existing structures anymore, I think that's a bug." / "Existing dynamic structures" → BUGS.md #208.
+  Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
+  distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).

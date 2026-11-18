@@ -807,6 +807,45 @@ impl Felling {
     /// frame) of the cell `cell` of the body `id` (docs/BUILT_BODIES.md §4): it joins the body. The
     /// new cell, or None if there is no such body or cell, its kind can't be built on, or the cell
     /// is taken (`taken`: given its world centre, e.g. a player there).
+    /// Puts `cells` (its grid, each with its state) into body `id` together, all or none (a
+    /// multi-cell block: a cannon, a door, docs/CANNONS.md): none may be filled already or `taken`
+    /// at its place, and its kind must take places. Whether they went in.
+    pub fn place_cells(
+        &mut self,
+        physics: &mut Physics,
+        id: u32,
+        cells: &[([i32; 3], StateId)],
+        taken: &dyn Fn(DVec3) -> bool,
+    ) -> bool {
+        let Some(i) = self.pieces.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        let p = &self.pieces[i];
+        if !body_kind(p.kind).place {
+            return false;
+        }
+        let (at, turn) = (physics.position(p.body), physics.rotation(p.body));
+        let free = cells.iter().all(|&(c, _)| {
+            !p.cells.iter().any(|&(o, _)| o == c) && !taken(at + turn * offset_m(c))
+        });
+        if !free {
+            return false;
+        }
+        let mut all = p.cells.clone();
+        all.extend_from_slice(cells);
+        let kind = p.kind;
+        let (all, carriers) = carriers_first(all);
+        let boxes = piece_boxes(&all, carriers, kind);
+        physics.set_piece_cells(self.pieces[i].body, &boxes);
+        let p = &mut self.pieces[i];
+        p.reach = boxes.iter().map(|b| b.center.length()).fold(0.0, f64::max) + 0.9;
+        p.cells = all;
+        p.carriers = carriers;
+        p.still = 0;
+        p.rest = None;
+        true
+    }
+
     pub fn place_cell(
         &mut self,
         physics: &mut Physics,

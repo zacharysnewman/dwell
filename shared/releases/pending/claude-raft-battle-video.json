@@ -1,0 +1,7 @@
+{
+  "changes": [
+    "Cannonballs blow pieces off rafts and other moving bodies they hit",
+    "A cannon, door or tall torch placed on a raft goes on whole (it used to place only its first block)",
+    "The build platform is a blue grid now, easy to tell from planks"
+  ]
+}
