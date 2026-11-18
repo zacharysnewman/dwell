@@ -397,6 +397,20 @@ impl BuildDrag {
         Self::default()
     }
 
+    /// A drag of build mode `mode` (an index into the modes): a second stroke's, in another grid (a
+    /// moving body's, BUGS.md #215).
+    pub fn with_mode(mode: usize) -> Self {
+        Self {
+            mode: mode % BUILD_MODES.len(),
+            ..Self::default()
+        }
+    }
+
+    /// The build mode's index.
+    pub fn mode_index(&self) -> usize {
+        self.mode
+    }
+
     /// The build mode: the data's first by default.
     pub fn mode(&self) -> &'static BuildModeDef {
         &BUILD_MODES[self.mode]

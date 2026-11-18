@@ -22,12 +22,14 @@ block (`parts::partners_in` by the body's face): destroyed together, or knocked 
 Owner, 2026-11-18: "Also dragging in a line by rotating the camera doesn't seem to work correctly on a dynamic body. It
 doesn't follow the line." (#209's stroke places against whatever face is aimed at; the world's drag keeps to the line it
 began.) Owner should see: a held Place swept along a raft lays a straight row in the body's grid, as on the ground.
+Fixed 2026-11-18 (client): a held Place on a moving body runs the build modes' drag (`BuildDrag`, a second one in the body's mode) in the body's grid, set beside a world cell near it (`BodyDrag`, `BodyGridDrag`): the aim turned into that grid, each fill a body place against a filled neighbour (`body_place_against`). Browser check: Line mode on a raft turned 30 degrees built a column of four as the aim rose, as the ground's built three. Test: `dwell-client` `a_body_strokes_cell_goes_against_a_filled_neighbour`.
 
 ### 214. No bridging help on moving bodies
 
 Owner, 2026-11-18: "I notice I can't use the bridging helper on dynamic objects, I want to be to do that." Owner should
 see: Place held over a raft's edge with nothing targeted builds on ahead along the body, as it does over the world's
 edges.
+Fixed 2026-11-18 (client): with nothing aimed at and the player on a built body, `build_drag::edge_target` runs in the body's grid (`Game::body_edge_place`): the block goes over its edge against its neighbour and, held, the body stroke bridges on. Browser check: over a 30-degree raft's +z edge, held Place laid (3, 1, 6), (3, 1, 7), (3, 1, 8) out from its deck.
 
 ### 213. Cannonballs float on water
 
