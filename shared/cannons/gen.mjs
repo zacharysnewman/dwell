@@ -35,7 +35,7 @@ export function loadNames() {
 
 /** Validates the table against `names` ({ blocks, explosives }); returns it normalised. */
 export function validateCannons(data, names) {
-  known(data, ['cannons', 'balls'], 'cannons.json');
+  known(data, ['cannons', 'balls', 'helms'], 'cannons.json');
   if (!Array.isArray(data.balls) || data.balls.length === 0) fail('balls must be a non-empty list');
   const balls = data.balls.map((b, i) => {
     const at = `balls[${i}]`;
@@ -76,13 +76,31 @@ export function validateCannons(data, names) {
     range(c, 'reloadS', 0, 120, at);
     return c;
   });
-  return { cannons, balls };
+  if (!Array.isArray(data.helms)) fail('helms must be a list');
+  const helmSeen = new Set();
+  const helms = data.helms.map((h, i) => {
+    const at = `helms[${i}]`;
+    known(h, ['block', 'thrustN', 'rudderNmPerMs', 'camera'], at);
+    known(h.camera, ['backM', 'upM', 'easeS'], `${at}.camera`);
+    range(h.camera, 'backM', 0, 30, `${at}.camera`);
+    range(h.camera, 'upM', -5, 15, `${at}.camera`);
+    range(h.camera, 'easeS', 0, 5, `${at}.camera`);
+    const def = names.blocks.get(h.block);
+    if (!def) fail(`${at}.block: no block ${JSON.stringify(h.block)}`);
+    if (def.use !== 'helm') fail(`${at}.block: ${h.block} must have use: helm`);
+    if (helmSeen.has(h.block)) fail(`${at}.block: ${h.block} is listed twice`);
+    helmSeen.add(h.block);
+    range(h, 'thrustN', 0, 1e7, at);
+    range(h, 'rudderNmPerMs', 0, 1e7, at);
+    return h;
+  });
+  return { cannons, balls, helms };
 }
 
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 export function cannonsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::cannons::{BallDef, CannonDef, Impact};', ''];
+  const rs = [`// ${header}`, '', 'use crate::cannons::{BallDef, CannonDef, HelmCamera, HelmDef, Impact};', ''];
   rs.push('/// The cannons, by block (`cannons`).');
   rs.push('pub static CANNONS: &[CannonDef] = &[');
   for (const c of d.cannons) {
@@ -96,6 +114,12 @@ export function cannonsRust(d) {
     rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, roll_damping: ${f64(b.rollDamping)}, impact: Impact { destroy_speed_ms: ${f64(im.destroySpeedMs)}, energy_per_kg_j: ${f64(im.energyPerKgJ)}, drag_radius_m: ${f64(im.dragRadiusM)}, drag_force_per_speed_n: ${f64(im.dragForcePerSpeedN)}, max_loose_cells: ${im.maxLooseCells}, min_speed_ms: ${f64(im.minSpeedMs)} } },`);
   }
   rs.push('];', '');
+  rs.push('/// The ships\' helms, by block (`helms`).');
+  rs.push('pub static HELMS: &[HelmDef] = &[');
+  for (const h of d.helms) {
+    rs.push(`    HelmDef { block: "${h.block}", thrust_n: ${f64(h.thrustN)}, rudder_nm_per_ms: ${f64(h.rudderNmPerMs)}, camera: HelmCamera { back_m: ${f64(h.camera.backM)}, up_m: ${f64(h.camera.upM)}, ease_s: ${f64(h.camera.easeS)} } },`);
+  }
+  rs.push('];', '');
   return rs.join('\n');
 }
 
@@ -106,5 +130,5 @@ export function loadCannons() {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const d = validateCannons(loadCannons(), loadNames());
   writeFileSync(join(root, 'crates/dwell-world/src/cannons.gen.rs'), cannonsRust(d));
-  console.log(`cannons: ${d.cannons.length} cannon(s), ${d.balls.length} ball(s) generated`);
+  console.log(`cannons: ${d.cannons.length} cannon(s), ${d.balls.length} ball(s), ${d.helms.length} helm(s) generated`);
 }

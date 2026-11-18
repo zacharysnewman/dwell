@@ -130,4 +130,5 @@ pub static DROPS: &[BlockDrops] = &[
     BlockDrops { block: "dwell:cannon", cost: "dwell:cannon", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:cannon", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:iron_ball", cost: "dwell:iron_ball", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:iron_ball", min: 1, max: 1, weight: 1.0 }] }] },
     BlockDrops { block: "dwell:explosive_ball", cost: "dwell:explosive_ball", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:explosive_ball", min: 1, max: 1, weight: 1.0 }] }] },
+    BlockDrops { block: "dwell:helm", cost: "dwell:helm", drops: &[DropRule { chance: 1.0, when: &[], choices: &[DropChoice { item: "dwell:helm", min: 1, max: 1, weight: 1.0 }] }] },
 ];

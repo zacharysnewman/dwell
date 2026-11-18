@@ -1054,6 +1054,14 @@ below applies (creative).
   refills out; creative never drains. `tests/predictor.rs`
   `prediction_runs_stamina_out_as_the_server_does_and_takes_its_corrections`.
 
+### 6.14 At a ship's helm (Dwell addition) **[built, 0.75.0]**
+
+`PlayerController::helm` (docs/CANNONS.md C5): set by the server when the player Uses a helm block on a built body.
+While set, each tick's move input is kept aside as `steer` ([x right, y forward], as given) for the server's
+`steer_ships` and the controller sees no move, no run and no jump: the player stands still on the deck (carried by it
+as any platform). A jump pressed (held this tick, not the last) clears it. On the wire as `slide_flags::HELM` (protocol
+v24), so a replay and the server agree; the client never sets it itself.
+
 ## 7. Configuration
 
 `PlayerControllerConfig` lives in `crates/dwell-physics/src/config.rs` — both sides compile the

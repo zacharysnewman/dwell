@@ -175,6 +175,14 @@ pub fn body_kind(k: u8) -> &'static BodyKind {
     BODY_KINDS.get(usize::from(k)).unwrap_or(&BODY_KINDS[0])
 }
 
+impl Falling {
+    /// Afloat this tick (a cell of it in a liquid and the body lighter than it): a ship's helm
+    /// steers it only then (docs/CANNONS.md C5).
+    pub fn is_afloat(&self) -> bool {
+        self.afloat
+    }
+}
+
 /// What breaking a cell of a body did (docs/BUILT_BODIES.md §4).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BreakOutcome {

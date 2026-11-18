@@ -21,6 +21,32 @@ pub struct Impact {
     pub min_speed_ms: f64,
 }
 
+/// A ship's helm (C5): a block a player takes the helm at; while the ship is afloat its forward and
+/// back push it with `thrust_n` along the helm's facing from its centre of mass, and left and right
+/// turn it with `rudder_nm_per_ms` for each m/s it moves along its heading.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HelmDef {
+    pub block: &'static str,
+    pub thrust_n: f64,
+    pub rudder_nm_per_ms: f64,
+    pub camera: HelmCamera,
+}
+
+/// The view at a helm (owner, 2026-11-18: "The camera should smoothly transition to 3rd person when
+/// you grab the helm"): eased out over `ease_s` to `back_m` behind the eye along the look and `up_m`
+/// up, and back in on leaving it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HelmCamera {
+    pub back_m: f64,
+    pub up_m: f64,
+    pub ease_s: f64,
+}
+
+/// The helm whose block is `block`, if any.
+pub fn helm(block: &str) -> Option<&'static HelmDef> {
+    HELMS.iter().find(|h| h.block == block)
+}
+
 /// A cannonball.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BallDef {
@@ -53,7 +79,7 @@ pub struct CannonDef {
 mod table {
     include!("cannons.gen.rs");
 }
-pub use table::{BALLS, CANNONS};
+pub use table::{BALLS, CANNONS, HELMS};
 
 /// The cannon whose block is `block` (a name), if any.
 pub fn cannon(block: &str) -> Option<&'static CannonDef> {

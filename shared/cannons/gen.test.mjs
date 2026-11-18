@@ -16,6 +16,9 @@ test('a fixture cannon and ball by data alone; bad entries fail naming them', ()
   const data = loadCannons();
   names.blocks.set('test:stone_ball', { look: 'ball' });
   data.balls.push({ name: 'test:stone_ball', radiusM: 0.2, densityKgM3: 2400, rollDamping: 2, impact: { destroySpeedMs: 30, energyPerKgJ: 10, dragRadiusM: 0.5, dragForcePerSpeedN: 100, maxLooseCells: 4, minSpeedMs: 2 } });
+  names.blocks.set('test:tiller', { use: 'helm' });
+  data.helms.push({ block: 'test:tiller', thrustN: 500, rudderNmPerMs: 50, camera: { backM: 3, upM: 1, easeS: 0.2 } });
+  assert.match(cannonsRust(validateCannons(data, names)), /HelmDef \{ block: "test:tiller", thrust_n: 500\.0/);
   data.cannons.push({ block: 'test:mortar', ball: 'test:stone_ball', muzzleSpeedMs: 20, muzzleUpM: 1, muzzleForwardM: 0.5, reloadS: 6 });
   assert.match(cannonsRust(validateCannons(data, names)), /CannonDef \{ block: "test:mortar", ball: "test:stone_ball"/);
   const bad = (edit, re) => {
@@ -31,4 +34,7 @@ test('a fixture cannon and ball by data alone; bad entries fail naming them', ()
   bad((d) => (d.balls[0].name = 'dwell:stone'), /must be a block of look ball/);
   bad((d) => (d.balls[0].densityKgM3 = 5), /densityKgM3 must be a number/);
   bad((d) => (d.cannons[0].speed = 1), /unknown field speed/);
+  bad((d) => (d.helms[0].block = 'dwell:cannon'), /must have use: helm/);
+  bad((d) => (d.helms[0].camera.easeS = 9), /camera\.easeS must be a number/);
+  bad((d) => (d.helms[0].thrustN = -1), /helms\[0\]\.thrustN must be a number/);
 });

@@ -123,7 +123,7 @@ pub fn to_net(c: &PlayerController, ground_id: impl Fn(GroundRef) -> u16) -> Con
         buffer_ticks: c.jump.buffer_ticks.min(255) as u8,
         coyote_ticks: c.jump.coyote_ticks.min(255) as u8,
         step_grace: c.vertical.step_grace,
-        slide_flags: flag(c.sprint_slide.active, sf::ACTIVE),
+        slide_flags: flag(c.sprint_slide.active, sf::ACTIVE) | flag(c.helm, sf::HELM),
         slide_cooldown: c.sprint_slide.cooldown_ticks.min(255) as u8,
         ladder: [c.climb.ladder.x, c.climb.ladder.y, c.climb.ladder.z],
         released: [c.climb.released.x, c.climb.released.z],
@@ -152,6 +152,7 @@ pub fn from_net(
     c.vertical.target_y = s.target_y;
     c.vertical.step_grace = s.step_grace;
     c.sprint_slide.active = s.slide_flags & sf::ACTIVE != 0;
+    c.helm = s.slide_flags & sf::HELM != 0;
     c.sprint_slide.cooldown_ticks = u16::from(s.slide_cooldown);
     c.platform.ground = ground(s.ground_kind, s.ground_id);
     c.platform.ground_velocity = Vec3::new(0.0, s.ground_velocity_y, 0.0);

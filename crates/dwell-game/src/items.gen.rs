@@ -4,7 +4,7 @@ use crate::build_drag::{BuildModeDef, DragKind};
 use crate::items::{ItemDef, ItemDrag, ItemFacing};
 
 /// The creative hotbar's items, in its order (shared/items/items.json).
-pub const ITEMS: [ItemDef; 38] = [
+pub const ITEMS: [ItemDef; 39] = [
     ItemDef { name: "dwell:stone", label: "Stone", block: "dwell:stone", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:stone_slope", label: "Stone slope", block: "dwell:stone_ramp", tool: None, rows: 1, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "ramp")], facing: ItemFacing::Toward, upper: &[] },
     ItemDef { name: "dwell:stone_steep_slope", label: "Stone steep slope", block: "dwell:stone_ramp", tool: None, rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
@@ -20,6 +20,7 @@ pub const ITEMS: [ItemDef; 38] = [
     ItemDef { name: "dwell:thatch_steep_slope", label: "Thatch steep slope", block: "dwell:thatch_ramp", tool: None, rows: 2, drag: ItemDrag::Modes, state: &[("flooded", "false"), ("half", "bottom"), ("shape", "steep_lower")], facing: ItemFacing::Toward, upper: &[("shape", "steep_upper")] },
     ItemDef { name: "dwell:door", label: "Door", block: "dwell:door", tool: None, rows: 1, drag: ItemDrag::None, state: &[("hinge", "left"), ("open", "false"), ("part", "bottom")], facing: ItemFacing::Toward, upper: &[] },
     ItemDef { name: "dwell:cannon", label: "Cannon", block: "dwell:cannon", tool: None, rows: 1, drag: ItemDrag::None, state: &[("part", "rear_bottom")], facing: ItemFacing::Away, upper: &[] },
+    ItemDef { name: "dwell:helm", label: "Helm", block: "dwell:helm", tool: None, rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::Away, upper: &[] },
     ItemDef { name: "dwell:stone_axe", label: "Stone axe", block: "", tool: Some("dwell:stone_axe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:metal_axe", label: "Metal axe", block: "", tool: Some("dwell:metal_axe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },
     ItemDef { name: "dwell:stone_pickaxe", label: "Stone pickaxe", block: "", tool: Some("dwell:stone_pickaxe"), rows: 1, drag: ItemDrag::None, state: &[], facing: ItemFacing::None, upper: &[] },

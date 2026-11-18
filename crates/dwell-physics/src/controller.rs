@@ -295,6 +295,12 @@ pub struct PlayerController {
     /// [`Players::set_vitals`] rules. Not on the wire's `ControllerState`: a replay keeps the
     /// predicted value, and the server's `Vitals` message corrects it.
     pub vitals: Vitals,
+    /// ◆ At a ship's helm (docs/CANNONS.md C5): the move input steers the ship (`steer`), not the
+    /// player, who stands still on its deck; jump leaves the helm. On the wire's `ControllerState`
+    /// (`slide_flags::HELM`), so a replay and the server agree.
+    pub helm: bool,
+    /// This tick's move input at the helm, as given (x right, y forward): the server steers by it.
+    pub steer: [f32; 2],
 }
 
 /// How many ticks a push outlasts its contact (`Players::step_push`).
@@ -324,6 +330,8 @@ impl Default for PlayerController {
             swim: SwimState::default(),
             fly: FlyState::default(),
             sprint_slide: SprintSlideState::default(),
+            helm: false,
+            steer: [0.0; 2],
             platform: PlatformState::default(),
             target_velocity: Vec3::ZERO,
             face: FaceFrame::A,
@@ -1150,6 +1158,20 @@ impl Players {
             let length = length_sq.sqrt();
             c.input.move_x /= length;
             c.input.move_y /= length;
+        }
+        // At the helm (docs/CANNONS.md C5) the move keys steer the ship: kept aside, and the player
+        // neither walks, runs nor jumps; a jump pressed leaves the helm.
+        if c.helm {
+            if c.input.jump && !c.previous_input.jump {
+                c.helm = false;
+            }
+            c.steer = [p.pending.move_x, p.pending.move_y];
+            c.input.move_x = 0.0;
+            c.input.move_y = 0.0;
+            c.input.jump = false;
+            c.input.run = false;
+        } else {
+            c.steer = [0.0; 2];
         }
         c.events = 0;
         c.impact_speed = 0.0;

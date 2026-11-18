@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4 riding along built (2026-11-18, §8; a cannon on a moving body and recoil to come); the owner's new ball (2026-11-18, §9) replaces C3's two balls; C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4 riding along built (2026-11-18, §8; a cannon on a moving body and recoil to come); the owner's new ball (2026-11-18, §9) replaces C3's two balls; C5 steering and C4's cannons on bodies built (0.75.0, §10). The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -164,4 +164,32 @@ velocity setter, it should exert continuous force as it flies around it, in its 
   smashed, the energy's ~9, then knocked loose, stopped inside), `the_ball_drags_loose_pieces_along_its_path` (a piece
   0.9 m off its line, its box clear of the ball, pushed 0.4 m its way; red with the drag off), and the flat roll breaks
   nothing; `dwell-world` `cannons::tests` (the size, mass, one ball, no reload).
+
+## 10. As built: C5 steering, and cannons on bodies (0.75.0, 2026-11-18)
+
+- **The helm** `dwell:helm` (block data `use: helm`, a new use word; one plank-textured cell facing away from the
+  player, the ship's forward; in the hotbar). Its data: shared/cannons/cannons.json `helms` (`thrustN` 6,000,
+  `rudderNmPerMs` 4,000; `HelmDef`, `cannons::helm`).
+- **A Use on a body** (a Place aimed at a body cell whose block has a `use`, whatever is held; the client sends it as a
+  `BodyEditRequest` Place, material 0; the server's `use_body_block`, within reach, one edit credit): a **helm** puts the
+  player at it (`helms`: session → body and cell; the controller's `helm`, PLAYER_CONTROLLER.md §6.14); a **cannon**
+  fires along its facing turned with the body, the ball given the body's velocity at the cannon too, and the body
+  **recoils** by the ball's momentum at the cannon (`launch_ball`'s `recoil`). Reload per cannon and body
+  (`cannon_ready` by body id and anchor).
+- **Steering** (`steer_ships`, each tick before the physics step, while the body is afloat): forward input × `thrustN`
+  along the helm's facing turned with the body (flat), at the centre of mass, as a sail would push; sideways input ×
+  `rudderNmPerMs` × the body's speed along that heading, a turn about the face's up (input right turns the heading
+  toward heading × up), as a rudder would: none when still, reversed backing. Off the helm (a jump), the body gone or the
+  helm broken, the entry goes.
+- **The helm's camera** (owner, 2026-11-18: "The camera should smoothly transition to 3rd person when you grab the
+  helm"): the helm's data `camera` (`backM` 5, `upM` 1.5, `easeS` 0.6); the client eases a blend toward 1 while its
+  predicted controller is at the helm and back to 0 after (`helm_blend_step`), and draws the eye that far back along the
+  look and up along the face's up by the blend's smoothstep (`helm_eye`; the aim stays at the eyes); while out, your
+  whole body is drawn and your arms aren't. Test: `dwell-client` `the_helm_camera_eases_out_behind_and_up_and_back_in`
+  (both faces).
+- **Protocol v24**, the **0.75 line**: the controller state's `slide_flags` carries `HELM` (bit 2).
+- **Tests:** `dwell-sim` `tests/ships.rs` (both faces): a player at the helm sails a raft north, stands still on the
+  deck, turns it right, and a jump leaves the helm; a rudder doesn't turn a still raft.
+- **Not yet:** sails as blocks, a rudder block, a cannon test on a moving body (its recoil and turned facing are built,
+  untested), the explosive_ball block's removal (with the next line).
 
