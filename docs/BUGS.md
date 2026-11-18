@@ -12,6 +12,10 @@ Owner, 2026-11-18: "Also ensure you check every one of the 4 cannon blocks to se
 cannons fall off the boat, when breaking the bottom on the boat, if hanging over the edge." A body that splits
 (`Felling::break_cell`'s connected groups) can part a multi-cell block's cells between the pieces. Owner should see: a
 cannon stays whole when the deck under it is broken: it goes with one piece, or comes off whole.
+Fixed 2026-11-18: a split alone keeps a cannon's four touching cells together; the parting was a ball's: its smash and
+loosening took body cells one at a time (`take_body_cell`). Now taking any cell of a multi-cell block takes the whole
+block (`parts::partners_in` by the body's face): destroyed together, or knocked loose as one piece. Test:
+`tests/ships.rs` `a_ball_taking_one_cannon_cell_takes_the_whole_cannon` (both faces; red: 3 cells left).
 
 ### 215. Dragging a line on a moving body by turning the camera doesn't follow the line
 
