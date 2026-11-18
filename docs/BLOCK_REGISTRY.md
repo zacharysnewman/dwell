@@ -169,6 +169,9 @@ rule tag `17` (`COLUMN_ALONG`, sent only when above 1; an older build reads a co
 structures or blueprints (their column checks stack straight up). **Use actions** (built 2026-11-17): `"use":
 "fire"` (one word for now) makes a Use (a Place aimed at it) do the server's action, nothing written
 (`EditOutcome::used`, `StateInfo::use_action`, rule tag `18` `USE_ACTION`): a cannon's shot.
+**The `ball` look** (built 2026-11-17, docs/CANNONS.md C2): a sphere on the cell's floor (face-local) of the radius of
+the cannons data's ball of the block's name, shape empty; a body cell of it collides as that sphere with the ball's
+mass (`dwell_physics::ball_of`). An older build draws an unknown look as a cube (`drawable`).
 
 **Doors** (**built**, 2026-11-14; owner: "Let's just do 3 blocks. Plank floors, stone brick walls,
 thatch roof. And doors also." / "2m doors."): two more words of vocabulary, both over a block's own

@@ -75,7 +75,7 @@ export interface ShapeDef {
 }
 
 /** FNV-1a 64 over the canonical state strings (each followed by "\n") in id order. */
-export const REGISTRY_HASH = 0x3c8769241b178494n;
+export const REGISTRY_HASH = 0xf63da225bc4a7f01n;
 
 export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:air', first: 0, count: 1, properties: [] },
@@ -139,6 +139,8 @@ export const BLOCK_DEFS: readonly BlockDef[] = [
   { id: 'dwell:thatch_ramp', first: 1004, count: 48, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'flooded', values: ['false', 'true'] }, { name: 'half', values: ['bottom', 'top'] }, { name: 'shape', values: ['ramp', 'steep_lower', 'steep_upper'] }], sound: 'dwell:grass' },
   { id: 'dwell:door', first: 1052, count: 64, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'hinge', values: ['left', 'right'] }, { name: 'open', values: ['false', 'true'] }, { name: 'part', values: ['bottom', 'lower', 'upper', 'top'] }], sound: 'dwell:wood' },
   { id: 'dwell:cannon', first: 1116, count: 16, properties: [{ name: 'facing', values: ['north', 'east', 'south', 'west'] }, { name: 'part', values: ['rear_bottom', 'rear_top', 'front_bottom', 'front_top'] }], sound: 'dwell:stone' },
+  { id: 'dwell:iron_ball', first: 1132, count: 1, properties: [], sound: 'dwell:stone' },
+  { id: 'dwell:explosive_ball', first: 1133, count: 1, properties: [], sound: 'dwell:stone' },
 ];
 
 /** The shapes block states use. */
@@ -1328,6 +1330,8 @@ const STATES_8: readonly StateDef[] = [
   { id: 1129, state: 'dwell:cannon[facing=west,part=rear_top]', block: 60, values: { facing: 'west', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1130, state: 'dwell:cannon[facing=west,part=front_bottom]', block: 60, values: { facing: 'west', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1131, state: 'dwell:cannon[facing=west,part=front_top]', block: 60, values: { facing: 'west', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
+  { id: 1132, state: 'dwell:iron_ball', block: 61, values: {  }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
+  { id: 1133, state: 'dwell:explosive_ball', block: 62, values: {  }, look: 'ball', render: 'opaque', color: 0x8a2e2a, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
 ];
 
 export const STATE_DEFS: readonly StateDef[] = [

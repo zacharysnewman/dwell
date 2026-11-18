@@ -20,6 +20,9 @@ pub(crate) enum Look {
     Fluid,
     /// Crossed vertical quads through the cell (plants).
     Cross,
+    /// A sphere resting on the cell's floor, of its ball's radius (`"look": "ball"`, a cannonball:
+    /// `dwell_world::cannons::ball` by the block's name; docs/CANNONS.md C2).
+    Ball,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -106,6 +109,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         "ladder" => Look::Ladder,
         "cross" => Look::Cross,
         "fluid" => Look::Fluid,
+        "ball" => Look::Ball,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
     };
@@ -171,7 +175,10 @@ const UNKNOWN_COLOR: u32 = 0xff00ff;
 /// the atlas has, and a fluid for the fluid look. Every build state can (a test pins it); a state
 /// synced from a server may not (ADR 0038 decision 7).
 pub(crate) fn drawable(s: &StateInfo, fluids: &[FluidInfo]) -> bool {
-    let look = matches!(s.look, "cube" | "shaped" | "ladder" | "cross" | "fluid");
+    let look = matches!(
+        s.look,
+        "cube" | "shaped" | "ladder" | "cross" | "fluid" | "ball"
+    );
     let tiles = s.textures.is_none_or(|t| {
         crate::textures::has_tile(t.top)
             && crate::textures::has_tile(t.side)

@@ -175,7 +175,7 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
     let empty = id == 0
         || style.look == Look::Fluid
         || style.look == Look::Ladder
-        || style.look == Look::Cross;
+        || matches!(style.look, Look::Cross | Look::Ball);
     let shaped = !empty && style.look == Look::Shaped;
     Kind {
         shape: if empty {
@@ -198,7 +198,7 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
         // is drawn inside it): the water beside draws no face toward it.
         flooded: (shaped
             || style.look == Look::Ladder
-            || style.look == Look::Cross
+            || matches!(style.look, Look::Cross | Look::Ball)
             || (!empty && style.render != RenderMode::Opaque))
             && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
@@ -713,7 +713,10 @@ fn shore_mask(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> u32 {
     use dwell_look::waterflow as w;
     let solid = |dx: i32, dz: i32| {
         let k = cells.kind(x + dx, y, z + dz);
-        !k.liquid && !k.flooded && k.shape != Shape::Empty && k.style.look != Look::Cross
+        !k.liquid
+            && !k.flooded
+            && k.shape != Shape::Empty
+            && !matches!(k.style.look, Look::Cross | Look::Ball)
     };
     [
         (-1, 0, w::SHORE_W),
@@ -1127,6 +1130,64 @@ fn shaped_voxel(
             closed: 0,
         };
         mask_walls(b, k, [x, y, z], &walls);
+    }
+}
+
+/// The sphere of a `ball` look (a cannonball, docs/CANNONS.md C2): its ball's radius (the cannons
+/// data, by the block's name; 0.12 m without one) resting on the cell's floor at its middle, as a
+/// low-poly UV sphere (`BALL_SEGMENTS` round, `BALL_BANDS` up), flat-shaded in the block's colour.
+const BALL_SEGMENTS: usize = 10;
+const BALL_BANDS: usize = 6;
+fn ball_voxel(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    cell: [i32; 3],
+    (light, flood): (f32, [f32; 2]),
+) {
+    let r = dwell_world::cannons::ball(style.block).map_or(0.12, |d| d.radius_m);
+    // Cell units: x and z in metres, y in cells (CELL_H m).
+    let centre = [0.5, r / CELL_H, 0.5];
+    let at = |band: usize, seg: usize| {
+        let lat =
+            std::f64::consts::PI * (band as f64 / BALL_BANDS as f64) - std::f64::consts::FRAC_PI_2;
+        let lon = std::f64::consts::TAU * (seg as f64 / BALL_SEGMENTS as f64);
+        [
+            centre[0] + r * lat.cos() * lon.cos(),
+            centre[1] + r * lat.sin() / CELL_H,
+            centre[2] + r * lat.cos() * lon.sin(),
+        ]
+    };
+    let (color, tile) = surface(style, 1, 1);
+    let origin = cell.map(f64::from);
+    for band in 0..BALL_BANDS {
+        for seg in 0..BALL_SEGMENTS {
+            let (a, c) = (at(band, seg), at(band + 1, seg + 1));
+            let (b1, d) = (at(band, seg + 1), at(band + 1, seg));
+            // Counter-clockwise seen from outside; the poles' quads fold to triangles.
+            let mut pts = vec![a, d, c, b1];
+            pts.dedup_by(|p, q| (0..3).all(|k| (p[k] - q[k]).abs() < 1e-9));
+            if pts.len() > 3 && (0..3).all(|k| (pts[0][k] - pts[pts.len() - 1][k]).abs() < 1e-9) {
+                pts.pop();
+            }
+            if pts.len() < 3 {
+                continue;
+            }
+            let normal = polygon_normal(&pts);
+            let m = normal_to_m(normal);
+            let tint = normal_tint(m[0], m[1], m[2]);
+            let lights = vec![light; pts.len()];
+            let floods = vec![flood; pts.len()];
+            b.polygon(
+                &pts,
+                origin,
+                normal,
+                tint,
+                color,
+                &tile,
+                None,
+                Some((&lights, &floods)),
+            );
+        }
     }
 }
 
@@ -1895,7 +1956,7 @@ fn step_lower(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64)> {
         || k.liquid
         || k.flooded
         || k.ladder_face.is_some()
-        || k.style.look == Look::Cross
+        || matches!(k.style.look, Look::Cross | Look::Ball)
     {
         return None;
     }
@@ -2948,7 +3009,7 @@ fn mesh_cells(
                         continue;
                     }
                     if k.shape == Shape::Shaped
-                        || k.style.look == Look::Cross
+                        || matches!(k.style.look, Look::Cross | Look::Ball)
                         || k.style.octagon
                         || k.style.leafy
                         || (!carved.is_empty() && carved.contains_key(&cell))
@@ -3287,6 +3348,11 @@ fn mesh_cells(
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);
+                }
+                if k.style.look == Look::Ball {
+                    let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
+                    let flood = cells.flood.cell([cx, cy, cz]);
+                    ball_voxel(&mut opaque, &k.style, [cx, cy, cz], (light, flood));
                 }
                 if k.style.look == Look::Cross {
                     let target = match k.style.render {

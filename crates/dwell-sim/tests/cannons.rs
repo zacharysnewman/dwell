@@ -23,7 +23,7 @@ fn config(f: FaceFrame) -> ServerConfig {
 fn cannon_scene(fx: &mut Fixture, f: FaceFrame) -> [[i32; 3]; 4] {
     let stone = f.state(dwell_blocks::require("dwell:stone"));
     for x in -6..8 {
-        for z in -6..8 {
+        for z in -40..8 {
             for r in -2..0 {
                 let [x, y, z] = f.cell([x, BASE + r, z]);
                 fx.server.world().set_voxel(x, y, z, stone);
@@ -89,5 +89,44 @@ both_faces!(
         }
         use_it(&mut fx, f, cells[3]);
         assert_eq!(fx.server.shots_fired(), 2, "reloaded");
+    }
+);
+
+both_faces!(
+    fn a_shot_launches_a_heavy_ball_along_the_barrel(f: FaceFrame) {
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        for _ in 0..10 {
+            fx.server.step();
+        }
+        let cells = cannon_scene(&mut fx, f);
+        use_it(&mut fx, f, cells[0]);
+        let id = fx.server.last_ball().expect("a ball fired");
+        let (p0, _) = fx.server.body_pose(id).unwrap();
+        let l0 = f.point(p0.to_array());
+        // At the muzzle: in line with the barrel (x 2.5), beyond its front (z 0), ~0.6 m up.
+        assert!((l0[0] - 2.5).abs() < 0.05, "{l0:?}");
+        assert!(l0[2] < 0.0, "{l0:?}");
+        // Its body weighs the ball's mass.
+        let h = fx.server.body_handle(id).unwrap();
+        let (_, physics, _) = fx.server.sim();
+        let mass = physics.mass(h);
+        let want = dwell_world::cannons::ball("dwell:iron_ball")
+            .unwrap()
+            .mass_kg();
+        assert!((mass - want).abs() < 1.0, "mass {mass} want {want}");
+        // It flies north (−z) fast.
+        for _ in 0..6 {
+            fx.server.step();
+        }
+        let l1 = f.point(fx.server.body_pose(id).unwrap().0.to_array());
+        assert!(l0[2] - l1[2] > 3.0, "{l0:?} -> {l1:?}");
+        // And lands on the floor north of the cannon, rolling on along it, not through it.
+        for _ in 0..30 {
+            fx.server.step();
+        }
+        let l2 = f.point(fx.server.body_pose(id).unwrap().0.to_array());
+        assert!(l2[2] < -10.0, "{l2:?}");
+        assert!((l2[1] - m_of_row(BASE)).abs() < 0.3, "on the floor: {l2:?}");
     }
 );

@@ -275,10 +275,15 @@ impl Physics {
     fn insert_piece_cells(&mut self, h: RigidBodyHandle, cells: &[PieceCell]) {
         self.pieces
             .insert(h, cells.iter().map(|c| c.center).collect());
+        // A ball rests on its cell's floor face-local (docs/CANNONS.md C2): toward +y on face B.
+        let y = self.w.bodies[h].translation().y;
+        let face_b = dwell_world::FaceFrame::at_height(y).is_b();
         for c in merged_boxes(cells) {
-            self.w
-                .colliders
-                .insert_with_parent(piece_collider(&c), h, &mut self.w.bodies);
+            self.w.colliders.insert_with_parent(
+                piece_collider_on(&c, face_b),
+                h,
+                &mut self.w.bodies,
+            );
         }
     }
 
@@ -916,7 +921,13 @@ fn octagon_prisms(
 pub const PIECE_SKIN: f64 = 0.01;
 
 /// The cell `c` of a piece as its collider: a box of its mass, colliding as its `collide` says.
+#[cfg(test)]
 fn piece_collider(c: &PieceCell) -> Collider {
+    piece_collider_on(c, false)
+}
+
+/// [`piece_collider`] for a piece on face B when `face_b` (a ball sits on the face-local floor).
+fn piece_collider_on(c: &PieceCell, face_b: bool) -> Collider {
     let groups = match c.collide {
         Collide::All => groups(Layer::Tier1),
         Collide::World => {
@@ -927,6 +938,20 @@ fn piece_collider(c: &PieceCell) -> Collider {
     // Each face drawn in by PIECE_SKIN, so pieces side by side (and a piece beside a wall) don't
     // touch until they move together.
     let half = (c.half - DVec3::splat(PIECE_SKIN)).max(c.half * 0.5);
+    // A ball (a cannonball, docs/CANNONS.md C2): a sphere of its radius and mass resting on the
+    // cell's floor.
+    if let Some(ball) = c.hull.and_then(ball_of) {
+        let r = ball.radius_m;
+        return ColliderBuilder::ball(r)
+            .translation(
+                c.center + DVec3::new(0.0, (r - c.half.y) * if face_b { -1.0 } else { 1.0 }, 0.0),
+            )
+            .mass(ball.mass_kg())
+            .friction(PIECE_FRICTION)
+            .restitution(0.1)
+            .collision_groups(groups)
+            .build();
+    }
     let hull = c.hull.and_then(|m| {
         // A log's run is its octagon prism; a wood ramp riding a felled trunk keeps its square
         // ramp's hull (Phase 55 T4 deviation: on the octagon's narrower hinge the felling test's
@@ -947,6 +972,16 @@ fn piece_collider(c: &PieceCell) -> Collider {
         .build()
 }
 
+/// The ball a state of look `ball` is (`dwell_world::cannons::ball` by its block's name), if any.
+pub fn ball_of(m: dwell_blocks::StateId) -> Option<&'static dwell_world::cannons::BallDef> {
+    let s = dwell_blocks::try_info(m)?;
+    if s.look != "ball" {
+        return None;
+    }
+    let block = s.name.split_once('[').map_or(s.name, |(b, _)| b);
+    dwell_world::cannons::ball(block)
+}
+
 /// The hull a piece cell of state `m` collides as (`PieceCell::hull`): its shape when that is a
 /// convex shape other than the full cube (a ramp), else none (the box). A log stays its box for now
 /// (Phase 55 T4): with its octagon prism (`octagon_prisms`, built and tested, given by setting
@@ -954,6 +989,9 @@ fn piece_collider(c: &PieceCell) -> Collider {
 /// (`pushing_a_log_on_land_is_predicted_without_snaps_at_150_ms_rtt`: 0 m pushed square on, from
 /// 1.5–4 m), so the switch waits on that.
 pub fn piece_hull(m: dwell_blocks::StateId) -> Option<dwell_blocks::StateId> {
+    if ball_of(m).is_some() {
+        return Some(m);
+    }
     let s = dwell_blocks::shape::shape_of(m);
     let cube = s.corners == [2, 2, 2, 2] && s.min_y == 0.0 && s.max_y == 1.0;
     (s.convex && s.face_count > 0 && !cube && dwell_blocks::try_info(m).is_some_and(|i| i.solid))

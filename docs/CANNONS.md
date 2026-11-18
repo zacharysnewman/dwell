@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** C1 built (2026-11-17: the land cannon block, its Use and reload; §5); C2–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1 and C2 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; §5, §6); C3–C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -78,4 +78,21 @@ direction." No ammunition or reloading for now.
   all, every cell's anchor, a Use writes nothing and reports it); `dwell-sim` `tests/cannons.rs` (both faces: a Use
   fires once, not again while reloading, again after); `cannons::tests`; shared/cannons/gen.test.mjs (a fixture cannon
   and ball by data alone, bad entries named).
+
+## 6. As built: C2 (2026-11-17)
+
+- **The balls are blocks** `dwell:iron_ball` and `dwell:explosive_ball` (shared/blocks/dwell.json; their names are the
+  cannons data's balls): shape empty, the new look **`ball`** (shared/blocks/gen.mjs: needs shape empty), a sphere of the
+  ball's radius on the cell's floor face-local (`dwell-mesh` `ball_voxel`, a 10 × 6 UV sphere in the block's colour),
+  `needsSupport: below`, 1 hit. Not placeable or in the hotbar.
+- **The shot:** the server's `launch_ball` spawns a one-cell natural body of the ball's block at the muzzle
+  (`muzzleForwardM` from the rear bottom cell's centre along the facing, `muzzleUpM` above its floor) moving at
+  `muzzleSpeedMs` along the barrel, and broadcasts its `EntitySpawn` (no protocol change: clients draw it as any body's
+  cells). Its collider is a sphere of the radius and the ball's mass (`dwell_physics::ball_of`, `piece_hull` gives a
+  ball cell its own collider; on face B it sits toward +y), CCD on; gravity, water and settling as any natural body: at
+  rest it settles as its block. A piece's riders-only groups: it hits the world and bodies, not players (yet).
+- **Not yet:** the cannon on a moving body (C4 turns the facing with it), recoil, the firing sound and smoke, impacts (C3).
+- **Tests:** `dwell-sim` `tests/cannons.rs` `a_shot_launches_a_heavy_ball_along_the_barrel` (both faces: at the muzzle,
+  the ball's mass, flying along the barrel, landing on the floor beyond); `dwell-mesh`
+  `a_cannonball_is_a_sphere_of_its_radius_on_its_cells_floor` (both faces).
 
