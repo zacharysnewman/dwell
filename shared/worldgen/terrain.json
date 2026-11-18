@@ -6,7 +6,8 @@
   },
   "seaFloor": {
     "depth": 60,
-    "shelf": 800
+    "shelf": 1000,
+    "curve": 2
   },
   "islands": {
     "$comment": "The coast broken into islands (ADR 0074 B4, the archipelago's knob): with amplitude > 0 the island's signed coast distance is capped at cap m and offset by a fractal noise of ±amplitude m at wavelength m (octaves), so the coast weaves into bays, straits and islands; the inland rise and the shelf then follow each island's own coast. 0 (the default world's): the one island as before.",

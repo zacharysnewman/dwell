@@ -991,6 +991,15 @@ function tectonicsRs(g) {
   return `crate::tectonics::Tectonics { ${body} }`;
 }
 
+/** The sea floor's curve (`seaFloor.curve`, a whole number 1–4, 1 when left out): the depth rises
+ * as the distance's share of the shelf to that power, shallow by the shore then steep (owner,
+ * 2026-11-18: "Sea level +40m and a steeper shelf"). */
+function seaCurve(sf) {
+  const c = sf.curve ?? 1;
+  if (!Number.isInteger(c) || c < 1 || c > 4) fail(`terrain: seaFloor.curve must be a whole number 1 to 4 (got ${c})`);
+  return c;
+}
+
 /** The world's groups and one biome's, merged, as Rust: the base field's and the surface's. */
 function biomeFields(t) {
   const fields = [
@@ -998,6 +1007,7 @@ function biomeFields(t) {
     ["rise_half", rf(t.inland.halfDistance)],
     ["sea_floor", rf(-t.seaFloor.depth)],
     ["shelf", rf(t.seaFloor.shelf)],
+    ["shelf_curve", `${seaCurve(t.seaFloor)}`],
     ["hill_height", rf(t.hills.amplitude)],
     ["hill_wavelength", `${t.hills.wavelength}`],
     ["hill_octaves", `${t.hills.octaves}`],

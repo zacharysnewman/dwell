@@ -104,6 +104,10 @@ Last updated: 2026-11-11 (0.52.108).
   Sea depth, owner's answer (2026-11-18) to the options (today: median 19 m, never over 22 m, the core's limit; 12 m
   deep 750 m off a coast, 21 m at 1.5 km): "Sea level +40m and a steeper shelf." Owner should see: open sea about 60 m
   deep, deep water a few hundred metres off the coast. A new compatibility line (worldgen and the sea-level constant). Built on 0.76 (CANNONS.md §18).
+  Main's CI, 2026-11-18: 0.73 failed `realistic_variety` on face A, one cold desert region of 1,188 km² (26.7 % of the
+  land; at most 18 %): 0.73's raise of the cold desert's rain limit (220 → 300 mm). It rides 0.76's line: back at 220
+  mm (the fallback-climate test's bar under it, 200 mm; the arid count's bar 25). Owner should see: on a new Realistic
+  world, no one cold desert covering a quarter of a continent.
   Owner, 2026-11-18: "We may need to generally deepen oceans which might mean we need to increase the stone layer
   depth/face depth." (For ships: a deeper sea, so a ship's keel and a sunk wreck have room; a worldgen change, a new
   compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep

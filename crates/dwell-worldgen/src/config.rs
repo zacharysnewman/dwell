@@ -383,6 +383,9 @@ pub fn height_from_json(v: &Value) -> Result<HeightField, String> {
         h.sea_floor = -x as f32;
     }
     set(&mut h.shelf, "seaFloor", "shelf");
+    if let Some(x) = get("seaFloor", "curve") {
+        h.shelf_curve = (x.round() as u32).clamp(1, 4);
+    }
     set(&mut h.inland_rise, "inland", "rise");
     set(&mut h.rise_half, "inland", "halfDistance");
     set(&mut h.hill_height, "hills", "amplitude");

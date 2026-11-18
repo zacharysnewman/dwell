@@ -65,10 +65,12 @@ pub struct HeightField {
     /// done.
     pub inland_rise: f32,
     pub rise_half: f32,
-    /// The sea floor's depth offshore (m below sea level, negative), reached linearly over `shelf`
-    /// (m).
+    /// The sea floor's depth offshore (m below sea level, negative), reached over `shelf` (m): at
+    /// a share t of it the depth is `sea_floor` × t^`shelf_curve` (1 linear; 2 shallow by the
+    /// shore, then steep).
     pub sea_floor: f32,
     pub shelf: f32,
+    pub shelf_curve: u32,
     /// Hills on land (about ±`hill_height` m; a fractal sum of this wavelength in m and octaves),
     /// faded in from `hill_fade_from` to `hill_fade_to` m inland.
     pub hill_height: f32,
@@ -2793,13 +2795,26 @@ impl TerrainGenerator {
                     .each_near(warped.0, warped.1, min_half, min_width, |_, o| {
                         h = h.min(valley_of(&o, land));
                     });
-                let bank = r.level + S.river_bank;
                 // Where the land is lower than the water, a levee `bank` over it so the water
                 // never stands open beside lower ground, falling away gently (`leveeFall`) so it
                 // is a broad bank, never a ridge; none where the river is at the sea's level (its
-                // water is the sea's: the land beside it is a shore, open to both).
-                if r.level > CELL_H {
-                    let levee = bank - (edge - 1.0).max(0.0) * S.river_levee_fall;
+                // water is the sea's: the land beside it is a shore, open to both). By every
+                // channel near, the highest, as the valleys are by every channel: the nearest
+                // alone stepped where it changed between two rivers at different levels.
+                let levee_of = |r: &worldmap::Hit| {
+                    let edge = (r.d - r.half).max(0.0);
+                    (r.level > CELL_H).then(|| {
+                        r.level + S.river_bank - (edge - 1.0).max(0.0) * S.river_levee_fall
+                    })
+                };
+                let mut levee = levee_of(r);
+                map.channels
+                    .each_near(warped.0, warped.1, min_half, min_width, |_, o| {
+                        if let Some(l) = levee_of(&o) {
+                            levee = Some(levee.map_or(l, |m: f64| m.max(l)));
+                        }
+                    });
+                if let Some(levee) = levee {
                     h = h.max(levee);
                 }
             }

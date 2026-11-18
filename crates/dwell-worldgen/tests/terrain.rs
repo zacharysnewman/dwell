@@ -135,7 +135,7 @@ fn fractal_sums_stay_in_range() {
 }
 
 #[test]
-fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
+fn heights_a_low_shore_land_rising_inland_a_deep_sea_floor() {
     let g = TerrainGenerator::new(0);
     let (cx, cz) = coast_on_axis(&g);
     let (mut highest, mut lowest) = (f32::MIN, f32::MAX);
@@ -146,15 +146,17 @@ fn heights_a_low_shore_land_rising_inland_a_shallow_sea_floor() {
             lowest = lowest.min(h);
         }
     }
-    // Face-local heights from the midplane: sea level 32, the core's top 10.
+    // Face-local heights from the midplane: sea level 72 (32 before 0.76), the core's top 10.
     let sea = dwell_world::SEA_LEVEL_M as f32;
     // The world map's mountains (ADR 0049): the uplift layer's ranges, ~2,300–2,600 m.
     assert!(
         highest > sea + 1800.0 && highest < sea + 3000.0,
         "{highest}"
     );
+    // The deep sea of 0.76 (owner, 2026-11-18: "Sea level +40m and a steeper shelf"): its floor
+    // reaches the ground's least height, on the core.
     assert!(
-        lowest >= (dwell_world::CORE_M as f32) && lowest > sea - 30.0,
+        lowest >= dwell_worldgen::GROUND_MIN_M as f32 - 0.01 && lowest < sea - 50.0,
         "{lowest}"
     );
     assert!((g.column_at(cx, cz).height - sea).abs() < 6.0);
@@ -1195,8 +1197,9 @@ fn no_shore_column_has_drawn_water_higher_than_the_dry_land_beside_it() {
         let water = require("dwell:water");
         let (mut pairs, mut piled) = (0, Vec::new());
         for &(cx, cz) in &coasts {
-            for z in cz - 24..cz + 24 {
-                for x in cx - 24..cx + 24 {
+            // ±48 m: the steeper sea of 0.76 leaves less shore in a patch (seed 7: 6 pairs at ±24).
+            for z in cz - 48..cz + 48 {
+                for x in cx - 48..cx + 48 {
                     let y = SEA_LEVEL - 1;
                     let m = w.get_voxel(x, y, z);
                     let wet = m == water || (m != 0 && w.flooded_at(x, y, z));
@@ -1966,8 +1969,9 @@ fn existing_seeds_spawn_where_they_did() {
     // Since 0.58 the spawn is the shrine nearest the search's point (tests/shrines.rs): the pin is
     // the search's, which is unchanged.
     for (seed, a, b) in [
-        (0u64, [2128.5, 162.0, 7544.5], [-1567.5, -187.5, 1208.5]),
-        (7, [1688.5, 186.0, 7160.5], [-10557.5, -68.5, 2158.5]),
+        // 0.76's deeper seas moved the rivers the search prefers.
+        (0u64, [6466.5, 145.5, 7942.5], [7456.5, -191.5, -2175.5]),
+        (7, [1350.5, 137.0, 10250.5], [-10557.5, -109.5, 2158.5]),
     ] {
         let t = dwell_worldgen::BifacialTerrain::new(seed);
         assert_eq!(
@@ -1983,4 +1987,3 @@ fn existing_seeds_spawn_where_they_did() {
         );
     }
 }
-

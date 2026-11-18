@@ -10,7 +10,7 @@ const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 // map's input; the rest shapes each column from the map (ADR 0049).
 export const TERRAIN = {
   inland: { rise: [0, 1000], halfDistance: [{ above: 0 }, 100_000] },
-  seaFloor: { depth: [0, 1000], shelf: [{ above: 0 }, 100_000] },
+  seaFloor: { depth: [0, 1000], shelf: [{ above: 0 }, 100_000], curve: [1, 4] },
   islands: {
     amplitude: [0, 10_000],
     wavelength: [64, 65_536, true],
@@ -1314,7 +1314,7 @@ export function validateBiomeMap(bm) {
  */
 export const WORLD_KNOBS = {
   islands: ["amplitude", "wavelength", "octaves", "cap"],
-  seaFloor: ["depth", "shelf"],
+  seaFloor: ["depth", "shelf", "curve"],
   inland: ["rise", "halfDistance"],
   hills: ["amplitude"],
   tectonics: Object.keys(TERRAIN.tectonics),
