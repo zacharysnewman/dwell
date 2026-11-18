@@ -95,6 +95,12 @@ pub fn ball(name: &str) -> Option<&'static BallDef> {
 /// (its column's first cell: back along its facing and down its rows); `cell` for a block without a
 /// column.
 pub fn anchor_of(cell: [i32; 3], m: dwell_blocks::StateId) -> [i32; 3] {
+    anchor_in(cell, m, crate::FaceFrame::at_row(cell[1]))
+}
+
+/// [`anchor_of`] in a grid whose up is face `f`'s: a moving body's own grid (docs/CANNONS.md C4),
+/// whose rows are no world rows to read a face from.
+pub fn anchor_in(cell: [i32; 3], m: dwell_blocks::StateId, f: crate::FaceFrame) -> [i32; 3] {
     let Some(s) = dwell_blocks::try_info(m) else {
         return cell;
     };
@@ -102,9 +108,13 @@ pub fn anchor_of(cell: [i32; 3], m: dwell_blocks::StateId) -> [i32; 3] {
         return cell;
     };
     let (a, r) = c.place_of(c.index);
-    let down = crate::parts::up_by(cell, -r);
-    let f = crate::parts::forward(s.facing);
-    [down[0] - f[0] * a, down[1], down[2] - f[2] * a]
+    let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+    let ahead = crate::parts::forward(s.facing);
+    [
+        cell[0] - ahead[0] * a,
+        cell[1] - up * r,
+        cell[2] - ahead[2] * a,
+    ]
 }
 
 #[cfg(test)]

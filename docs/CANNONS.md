@@ -190,6 +190,10 @@ velocity setter, it should exert continuous force as it flies around it, in its 
 - **Protocol v24**, the **0.75 line**: the controller state's `slide_flags` carries `HELM` (bit 2).
 - **Tests:** `dwell-sim` `tests/ships.rs` (both faces): a player at the helm sails a raft north, stands still on the
   deck, turns it right, and a jump leaves the helm; a rudder doesn't turn a still raft.
-- **Not yet:** sails as blocks, a rudder block, a cannon test on a moving body (its recoil and turned facing are built,
-  untested), the explosive_ball block's removal (with the next line).
+- **A cannon on a body** (2026-11-18): its rear bottom cell found in the body's own grid with the body's face
+  (`cannons::anchor_in`; a body's rows are no world rows to read a face from). The cannon block weighs 1,500 kg/m³
+  (~3 t over its four cells, a real cannon's weight; at solid steel's 7,800 it was ~15.6 t and heeled a plank raft
+  over ~29°). Test: `tests/ships.rs` `a_cannon_on_a_turned_raft_fires_along_the_raft_and_kicks_it_back` (both faces:
+  the raft a quarter turn round and level, the ball along the turned barrel, the raft kicked back).
+- **Not yet:** sails as blocks, a rudder block, the explosive_ball block's removal (with the next line).
 

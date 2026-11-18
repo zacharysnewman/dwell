@@ -967,10 +967,10 @@
       "textures": "door"
     },
     {
-      "$comment": "A land cannon (docs/CANNONS.md C1; owner, 2026-11-17: \"cannon takes up 4 blocks 2m long by 1m tall, shoots physics cannon ball in aimed direction\"; \"using the same input as doors, you can fire the cannon, clicking on it. It faces the direction of placement\"): four cells, 2 along its facing (the barrel) and 2 up (`column` part, `columnAlong` 2), placed by its rear bottom cell with the barrel away from the player; a Use fires it (`use`: the server's cannons table, shared/cannons). Prototype look: basalt-textured cells.",
+      "$comment": "A land cannon (docs/CANNONS.md C1; owner, 2026-11-17: \"cannon takes up 4 blocks 2m long by 1m tall, shoots physics cannon ball in aimed direction\"; \"using the same input as doors, you can fire the cannon, clicking on it. It faces the direction of placement\"): four cells, 2 along its facing (the barrel) and 2 up (`column` part, `columnAlong` 2), placed by its rear bottom cell with the barrel away from the player; a Use fires it (`use`: the server's cannons table, shared/cannons). Prototype look: basalt-textured cells. Density 1,500 kg/m³: ~3 t over its four ½ m³ cells, a real cannon's weight (2026-11-18: at solid steel's 7,800 it was ~15.6 t and heeled a raft over).",
       "name": "cannon",
       "sound": "dwell:stone",
-      "density": 7800,
+      "density": 1500,
       "shape": "full",
       "placeable": true,
       "facingProperty": "facing",
