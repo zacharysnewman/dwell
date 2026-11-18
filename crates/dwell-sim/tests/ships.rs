@@ -375,3 +375,145 @@ both_faces!(
         assert!(fx.server.body_pose(rb).is_some(), "raft B still afloat");
     }
 );
+
+both_faces!(
+    fn blocks_placed_on_a_log_raft_join_it(f: FaceFrame) {
+        // BUGS.md #208 (owner, 2026-11-18: "It was a log raft, I tried to place any blocks on it"):
+        // a built raft of logs lying along x, afloat; a block placed on a log's top joins it.
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let log = f.state(dwell_blocks::require(
+            "dwell:log[axis=x,joined=auto,width=4]",
+        ));
+        let cells: Vec<([i32; 3], u16)> = (0..5)
+            .flat_map(|x| (0..4).map(move |z| ([x, 0, z], log)))
+            .collect();
+        let c = f.cell([0, BASE, 0]);
+        let up = up_rows(f);
+        let y =
+            f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+        let r = fx.server.add_body(1, cells, [0.5, y, 0.5]);
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 120);
+        let (p0, _) = fx.server.body_pose(r).expect("afloat");
+        let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        let feet = p0
+            + dwell_physics::DVec3::new(3.5, 0.0, 1.5)
+            + upv * (0.5 * dwell_world::CELL_H + 0.05);
+        stand(&mut fx, feet, upv);
+        hold(&mut fx, &mut seq, Input::default(), 30);
+        let before = fx.server.body_cells(r).len();
+        let top = (0..6)
+            .find(|&k| dwell_world::edit::FACE_DIRS[k][1] == up)
+            .unwrap() as u8;
+        fx.send(
+            1,
+            Message::BodyEditRequest(BodyEditRequest {
+                body: r,
+                cell: [1, 0, 2],
+                face: top,
+                action: BlockEditAction::Place,
+                material: f.state(dwell_blocks::require("dwell:planks")),
+            }),
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        assert_eq!(
+            fx.server.body_cells(r).len(),
+            before + 1,
+            "the plank joined the log raft"
+        );
+    }
+);
+
+both_faces!(
+    fn felled_logs_afloat_take_blocks_and_become_a_raft_on_land_they_dont(f: FaceFrame) {
+        // BUGS.md #208; owner, 2026-11-18: natural bodies take placed blocks "Only floating ones".
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let up = up_rows(f);
+        let log = f.state(dwell_blocks::require(
+            "dwell:log[axis=x,joined=auto,width=4]",
+        ));
+        let logs: Vec<([i32; 3], u16)> = (0..4)
+            .flat_map(|x| (0..3).map(move |z| ([x, 0, z], log)))
+            .collect();
+        let c = f.cell([0, BASE, 0]);
+        let y =
+            f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+        // Natural (kind 0): one afloat in the pool, one on the stone shore past it.
+        let afloat = fx.server.add_body(0, logs.clone(), [0.5, y, 0.5]);
+        let shore = f.cell([24, BASE - 7, 0]);
+        for x in 22..30 {
+            for z in -2..6 {
+                for r in -7..-6 {
+                    let s = f.cell([x, BASE + r, z]);
+                    fx.server.world().set_voxel(
+                        s[0],
+                        s[1],
+                        s[2],
+                        f.state(dwell_blocks::require("dwell:stone")),
+                    );
+                }
+            }
+        }
+        let on_land = fx.server.add_body(
+            0,
+            logs,
+            [
+                f64::from(shore[0]) + 0.5,
+                (f64::from(shore[1]) + if up > 0 { 1.5 } else { -0.5 }) * dwell_world::CELL_H,
+                f64::from(shore[2]) + 0.5,
+            ],
+        );
+        let mut seq = 0;
+        hold(&mut fx, &mut seq, Input::default(), 20);
+        let top = (0..6)
+            .find(|&k| dwell_world::edit::FACE_DIRS[k][1] == up)
+            .unwrap() as u8;
+        let plank = f.state(dwell_blocks::require("dwell:planks"));
+        let try_place = |fx: &mut Fixture, seq: &mut u32, body: u32| {
+            let (p, _) = fx.server.body_pose(body).expect("a body");
+            let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+            stand(
+                fx,
+                p + dwell_physics::DVec3::new(2.5, 0.0, 1.0)
+                    + upv * (0.5 * dwell_world::CELL_H + 0.05),
+                upv,
+            );
+            hold(fx, seq, Input::default(), 10);
+            let before = fx.server.body_cells(body).len();
+            fx.send(
+                1,
+                Message::BodyEditRequest(BodyEditRequest {
+                    body,
+                    cell: [1, 0, 1],
+                    face: top,
+                    action: BlockEditAction::Place,
+                    material: plank,
+                }),
+            );
+            hold(fx, seq, Input::default(), 3);
+            fx.server.body_cells(body).len() - before
+        };
+        assert_eq!(
+            try_place(&mut fx, &mut seq, afloat),
+            1,
+            "afloat: the plank joined"
+        );
+        assert!(
+            fx.server.body_pose(on_land).is_some(),
+            "the logs on land are still a body"
+        );
+        {
+            assert_eq!(
+                try_place(&mut fx, &mut seq, on_land),
+                0,
+                "on land: break-only"
+            );
+        }
+    }
+);

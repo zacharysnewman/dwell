@@ -80,7 +80,11 @@ Last updated: 2026-11-11 (0.52.108).
   for now the videos only, built by dev hooks.) Both videos sent 2026-11-18 (raft-battle, boat-helm; recorded with the dev hooks
   in the harbour scene); waiting on the owner's look.
   Owner, 2026-11-18 (sidebar): "What's the current process to build a raft as a normal player in creative? I noticed I
-  can't build on existing structures anymore, I think that's a bug." / "Existing dynamic structures" → BUGS.md #208.
+  can't build on existing structures anymore, I think that's a bug." / "Existing dynamic structures" → BUGS.md #208. Owner, 2026-11-18: "It was a log raft, I tried to place any blocks on it." (felled
+  logs: natural bodies, break-only by design.) Asked whether natural bodies should take placed blocks: "Only floating
+  ones." Owner should see: felled logs floating in water take placed blocks and become one raft; on land they don't. Owner,
+  2026-11-18: "Sorry that wasn't quite right. I'll need to think about how land vehicles will work, since this rule would
+  make them always settle. This is fine for now. Proceed." (Revisit with land vehicles.)
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."

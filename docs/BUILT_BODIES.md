@@ -38,6 +38,12 @@ The kind's rules are data, so a later kind (a minecart that only takes rails, a 
 splits) is a new entry, not a branch in code. The engine's vocabulary: `place`, `break`, `split`,
 `settles`, `saved`.
 
+**Natural bodies afloat** (owner, 2026-11-18, BUGS.md #208: natural bodies take placed blocks "Only floating
+ones"): a block placed on a natural body (felled logs, knocked-loose cells) while it is afloat makes it a built body
+(`Felling::make_buildable`: the first kind that takes places, its colliders remade; every client hears its spawn again
+with the new kind), and the block joins it: felled logs lashed into a raft. On land a natural body stays break-only;
+to revisit with land vehicles (owner: "this rule would make them always settle").
+
 ## 3. The build platform
 
 **Corrected 2026-11-02 (0.41.3).** The owner: *"The platform wasn't supposed to 'make up' the

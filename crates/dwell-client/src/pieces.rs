@@ -134,7 +134,8 @@ impl Pieces {
             angular: DVec3::ZERO,
         };
         let block = cells.first().map_or(0, |c| c.1);
-        if e.carriers > 0 && block != 0 {
+        // (A body spawned again, its kind changed — felled logs afloat made a raft — cracks no tree.)
+        if e.carriers > 0 && block != 0 && !self.map.contains_key(&e.id) {
             sounds.push(SoundEvent::new(SoundKind::Fell, block, 1.0, Some(e.origin)));
         }
         self.map.insert(

@@ -3178,10 +3178,9 @@ impl<S: Scene> Game<S> {
     /// aimed at (a body its kind lets be built on: a built one; else refused), as `BodyEditRequest`
     /// (docs/BUILT_BODIES.md §4). Shown when the server answers.
     fn edit_body(&mut self, action: EditAction, b: crate::pieces::BodyHit, now_ms: f64) -> bool {
-        let builds = self
-            .pieces
-            .kind_of(b.body)
-            .is_some_and(|k| dwell_sim::felling::body_kind(k).place);
+        // A built body takes it; so does a natural one afloat (felled logs: it becomes a raft, owner
+        // 2026-11-18), which the server decides (on land it refuses).
+        let builds = self.pieces.kind_of(b.body).is_some();
         let material = self.selected_material();
         if action == EditAction::Place && (!builds || material == 0) {
             self.sounds.push(sound_event(SoundKind::Deny));

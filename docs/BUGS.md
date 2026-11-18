@@ -25,6 +25,10 @@ and fixed: a **multi-cell block** placed on a body (a cannon, a door, a 1 m torc
 now goes in whole, laid out in the body's grid by the body's face (`parts::partners_in`, `Felling::place_cells`; test
 `dwell-sim` `tests/ships.rs` `a_cannon_placed_on_a_raft_goes_in_whole`, both faces, red with the fix off: one cell).
 Still open: the planks case on the owner's raft (not reproduced: needs the owner's steps), and the platform-sides case.
+Owner, 2026-11-18: "It was a log raft, I tried to place any blocks on it."
+Found 2026-11-18: a built log raft afloat takes blocks (server test and browser); the owner's was felled logs, natural
+bodies, which by design took no placed blocks. Owner's answer: natural bodies take placed blocks "Only floating ones":
+a block placed on a natural body afloat makes it a built one (a raft); on land natural pieces stay break-only.
 
 ### 197. Billboards and full trees both drawn at once, and staying that way
 
