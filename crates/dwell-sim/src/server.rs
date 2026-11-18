@@ -1209,9 +1209,9 @@ pub struct Server {
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
     last_ball: Option<u32>,
-    balls: Vec<(u32, DVec3)>,
-    strikes: u64,
-    knocked: u64,
+    balls: Vec<u32>,
+    smashed: u64,
+    loosened: u64,
     ball_override: Option<&'static str>,
     riders_joined: u64,
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
@@ -1496,8 +1496,8 @@ impl Server {
             shots_fired: 0,
             last_ball: None,
             balls: Vec::new(),
-            strikes: 0,
-            knocked: 0,
+            smashed: 0,
+            loosened: 0,
             ball_override: None,
             riders_joined: 0,
             hits_short: 0,
@@ -4429,22 +4429,21 @@ impl Server {
             forward * c.muzzle_speed_ms,
             DVec3::ZERO,
         );
-        self.balls
-            .push((self.felling.pieces[i].id, forward * c.muzzle_speed_ms));
+        self.balls.push(self.felling.pieces[i].id);
         let msg = self.spawn_message(i);
         self.broadcast_world(&msg);
         self.last_ball = Some(self.felling.pieces[i].id);
     }
 
     /// The balls in flight or rolling (docs/CANNONS.md C2, C3), each tick before the physics step:
-    /// a ball whose velocity changed by its data's `minSpeedMs` or more since the last tick struck
-    /// something ([`Self::strike`]); one touching the ground (a solid cell just under its bottom,
-    /// face-local) is slowed by its `rollDamping`, in the air by a body's usual damping; a ball whose
-    /// body is gone (settled, destroyed) is dropped.
+    /// a ball at its impact's `minSpeedMs` or more smashes what its sphere runs into this tick
+    /// ([`Self::smash`]) and drags the loose pieces round it ([`Self::drag`]); one touching the
+    /// ground (a solid cell just under its bottom, face-local) is slowed by its `rollDamping`, in
+    /// the air by a body's usual damping; a ball whose body is gone (settled, joined) is dropped.
     fn roll_balls(&mut self) {
         let balls = std::mem::take(&mut self.balls);
         let mut keep = Vec::with_capacity(balls.len());
-        for (id, last_v) in balls {
+        for id in balls {
             let Some(p) = self.felling.pieces.iter().find(|p| p.id == id) else {
                 continue;
             };
@@ -4456,19 +4455,15 @@ impl Server {
             else {
                 continue;
             };
+            keep.push(id);
             let at = self.physics.position(body);
-            let v = self.physics.velocity(body);
             let f = dwell_world::FaceFrame::at_height(at.y);
             let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
             // The sphere's centre sits `r` over the cell's floor.
             let centre = at + up * (ball.radius_m - 0.5 * dwell_world::CELL_H);
-            let dv = v - last_v;
-            if dv.length() >= ball.impact.min_speed_ms() {
-                if !self.strike(id, ball, centre, last_v, dv) {
-                    continue;
-                }
-                keep.push((id, self.physics.velocity(body)));
-                continue;
+            if self.physics.velocity(body).length() >= ball.impact.min_speed_ms {
+                self.smash(body, ball, centre);
+                self.drag(id, body, ball, centre, &keep);
             }
             let probe = centre - up * (ball.radius_m + 0.05);
             let cell = [
@@ -4479,27 +4474,40 @@ impl Server {
             let ground = dwell_blocks::info(self.world.get_voxel(cell[0], cell[1], cell[2])).solid;
             let damping = if ground { ball.roll_damping } else { 0.05 };
             self.physics.set_linear_damping(body, damping);
-            keep.push((id, v));
         }
         self.balls.extend(keep);
     }
 
-    /// Ball `id` struck something (docs/CANNONS.md C3): moving at `last_v` before, its velocity
-    /// changed by `dv` (away from what it hit), its sphere's centre at `centre`. An `explode` ball
-    /// sets off its explosive's blast at its cell and is gone (false); a `knock` ball turns the
-    /// breakable cells within `knockRadiusM` of the contact (nearest first, at most `maxCells`) into
-    /// natural pieces flung along its path at half its speed, and, having knocked any, flies on at
-    /// half its speed (true).
-    fn strike(
+    /// Whether a ball breaks or loosens a block of state `m` (docs/CANNONS.md C3): solid, not a
+    /// liquid, not indestructible, not an explosive, not a ball.
+    fn ball_breaks(&self, m: dwell_blocks::StateId) -> bool {
+        let s = info(m);
+        m != M.air
+            && s.solid
+            && !s.liquid
+            && !s.indestructible
+            && explosive_of(&self.fuses.table, m).is_none()
+            && dwell_physics::ball_of(m).is_none()
+    }
+
+    /// Ball `body` (centre `centre`) against the cells its sphere runs into before the next tick
+    /// (owner, 2026-11-18): in order along its path, each breakable one is destroyed while the ball
+    /// moves at `destroySpeedMs` or more, the ball losing `energyPerKgJ` for each kg of it; the
+    /// first met slower is knocked loose as a natural piece and the contact is the physics'. The
+    /// breakable cells within `dragRadiusM` of where it met each come loose too (nearest first, at
+    /// most `maxLooseCells`). One `Collapse` modification; what it leaves without support falls.
+    fn smash(
         &mut self,
-        id: u32,
+        body: dwell_physics::BodyHandle,
         ball: &dwell_world::cannons::BallDef,
         centre: DVec3,
-        last_v: DVec3,
-        dv: DVec3,
-    ) -> bool {
-        use dwell_world::cannons::Impact;
-        self.strikes += 1;
+    ) {
+        let im = ball.impact;
+        let v = self.physics.velocity(body);
+        let mut speed = v.length();
+        let along = v.normalize_or_zero();
+        let mass = ball.mass_kg();
+        let r = ball.radius_m;
         let cell_of = |p: DVec3| {
             [
                 p.x.floor() as i32,
@@ -4507,82 +4515,162 @@ impl Server {
                 p.z.floor() as i32,
             ]
         };
-        match ball.impact {
-            Impact::Explode { explosive, .. } => {
-                let Some(e) = self
-                    .fuses
-                    .table
-                    .iter()
-                    .find(|e| e.block == explosive)
-                    .copied()
-                else {
-                    return true;
-                };
-                if self.felling.destroy_piece(&mut self.physics, id) {
-                    self.broadcast_world(&Message::EntityDespawn(id));
-                }
-                self.blast_at(cell_of(centre), e);
-                false
-            }
-            Impact::Knock {
-                radius_m,
-                max_cells,
-                ..
-            } => {
-                let contact = centre - dv.normalize_or_zero() * (ball.radius_m + 0.05);
-                let c0 = cell_of(contact);
-                let reach = radius_m.ceil() as i32 + 1;
-                let rows = (radius_m / dwell_world::CELL_H).ceil() as i32 + 1;
-                let mut cells = Vec::new();
-                for dx in -reach..=reach {
-                    for dy in -rows..=rows {
-                        for dz in -reach..=reach {
-                            let c = [c0[0] + dx, c0[1] + dy, c0[2] + dz];
-                            let d = (crate::felling::cell_centre(c) - contact).length();
-                            if d > radius_m {
-                                continue;
-                            }
-                            let m = self.world.get_voxel(c[0], c[1], c[2]);
-                            let s = info(m);
-                            if m == M.air || s.liquid || s.indestructible || !s.solid {
-                                continue;
-                            }
-                            if explosive_of(&self.fuses.table, m).is_some() {
-                                continue;
-                            }
-                            cells.push((d, c, m));
+        // The cells the sphere (drawn in 5 cm, so resting on the ground touches none) overlaps along
+        // this tick's path, in the order it meets them.
+        let reach = speed / f64::from(SIM_HZ);
+        let steps = ((reach / (0.5 * r)).ceil() as usize).max(1);
+        let core = (r - 0.05).max(0.01);
+        // (each with the sphere's centre where it first meets it)
+        let mut path: Vec<([i32; 3], DVec3)> = Vec::new();
+        for k in 0..=steps {
+            let c = centre + along * (reach * k as f64 / steps as f64);
+            let (lo, hi) = (
+                cell_of(c - DVec3::splat(core)),
+                cell_of(c + DVec3::splat(core)),
+            );
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        let b0 = DVec3::new(
+                            f64::from(x),
+                            f64::from(y) * dwell_world::CELL_H,
+                            f64::from(z),
+                        );
+                        let b1 = b0 + DVec3::new(1.0, dwell_world::CELL_H, 1.0);
+                        if (c.clamp(b0, b1) - c).length() < core
+                            && !path.iter().any(|(q, _)| *q == [x, y, z])
+                        {
+                            path.push(([x, y, z], c));
                         }
                     }
                 }
-                cells.sort_by(|a, b| a.0.total_cmp(&b.0));
-                cells.truncate(max_cells as usize);
-                if cells.is_empty() {
-                    return true;
-                }
-                let mut changes = TickChanges::default();
-                let speed = last_v.length() * 0.5;
-                let along = last_v.normalize_or_zero();
-                for &(_, c, m) in &cells {
-                    let left = if info(m).flooded { M.water } else { M.air };
-                    changes.set_and_unsupport(&mut self.world, c, left);
-                    self.fuses.queued.push_back(crate::blasts::Queued {
-                        cell: c,
-                        state: m,
-                        velocity: along * speed,
-                        apart_ticks: 0,
-                    });
-                }
-                let cleared = changes.cells();
-                self.broadcast_changes(changes, VoxelModificationReason::Collapse);
-                // What it left without support falls.
-                self.fell(&cleared, 0, Some(contact));
-                self.knocked += cells.len() as u64;
-                if let Some(p) = self.felling.pieces.iter().find(|p| p.id == id) {
-                    self.physics.set_velocity(p.body, last_v * 0.5);
-                }
-                true
             }
         }
+        let mut changes = TickChanges::default();
+        let mut hit = Vec::new();
+        let mut met = Vec::new();
+        for (c, at) in path {
+            let m = self.world.get_voxel(c[0], c[1], c[2]);
+            if !self.ball_breaks(m) {
+                continue;
+            }
+            let left = if info(m).flooded { M.water } else { M.air };
+            changes.set_and_unsupport(&mut self.world, c, left);
+            hit.push(c);
+            met.push(at);
+            if speed >= im.destroy_speed_ms {
+                // "By the block's weight": its mass's share of the ball's energy.
+                let kg = f64::from(info(m).density_kg_m3) * dwell_world::CELL_H;
+                speed = (speed * speed - 2.0 * im.energy_per_kg_j * kg / mass)
+                    .max(0.0)
+                    .sqrt();
+                self.smashed += 1;
+            } else {
+                self.fuses.queued.push_back(crate::blasts::Queued {
+                    cell: c,
+                    state: m,
+                    velocity: DVec3::ZERO,
+                    apart_ticks: 0,
+                });
+                self.loosened += 1;
+                break;
+            }
+        }
+        if hit.is_empty() {
+            return;
+        }
+        self.physics.set_velocity(body, along * speed);
+        // The cells round where it met them come loose too.
+        let reach = im.drag_radius_m;
+        let n = reach.ceil() as i32 + 1;
+        let rows = (reach / dwell_world::CELL_H).ceil() as i32 + 1;
+        let mut round: Vec<(f64, [i32; 3], dwell_blocks::StateId)> = Vec::new();
+        for &at in &met {
+            let c0 = cell_of(at);
+            for dx in -n..=n {
+                for dy in -rows..=rows {
+                    for dz in -n..=n {
+                        let c = [c0[0] + dx, c0[1] + dy, c0[2] + dz];
+                        let d = (crate::felling::cell_centre(c) - at).length();
+                        if d > reach || hit.contains(&c) {
+                            continue;
+                        }
+                        if let Some(e) = round.iter_mut().find(|e| e.1 == c) {
+                            e.0 = e.0.min(d);
+                            continue;
+                        }
+                        let m = self.world.get_voxel(c[0], c[1], c[2]);
+                        if self.ball_breaks(m) {
+                            round.push((d, c, m));
+                        }
+                    }
+                }
+            }
+        }
+        round.sort_by(|a, b| a.0.total_cmp(&b.0));
+        round.truncate(im.max_loose_cells as usize);
+        for (_, c, m) in round {
+            let left = if info(m).flooded { M.water } else { M.air };
+            changes.set_and_unsupport(&mut self.world, c, left);
+            self.fuses.queued.push_back(crate::blasts::Queued {
+                cell: c,
+                state: m,
+                velocity: DVec3::ZERO,
+                apart_ticks: 0,
+            });
+            self.loosened += 1;
+        }
+        let cleared = changes.cells();
+        self.broadcast_changes(changes, VoxelModificationReason::Collapse);
+        self.fell(&cleared, 0, Some(centre));
+    }
+
+    /// The ball's drag (owner, 2026-11-18: "it should exert continuous force as it flies around it,
+    /// in its velocity direction"): every loose natural piece (not a ball, `balls`) and every piece
+    /// queued to spawn within `dragRadiusM` of its centre is pushed along its velocity by
+    /// `dragForcePerSpeedN` newtons for each m/s of its speed for this tick, never past the ball's
+    /// own speed that way.
+    fn drag(
+        &mut self,
+        id: u32,
+        body: dwell_physics::BodyHandle,
+        ball: &dwell_world::cannons::BallDef,
+        centre: DVec3,
+        balls: &[u32],
+    ) {
+        let v = self.physics.velocity(body);
+        let speed = v.length();
+        let along = v.normalize_or_zero();
+        let reach = ball.impact.drag_radius_m;
+        let impulse = ball.impact.drag_force_per_speed_n * speed / f64::from(SIM_HZ);
+        for k in 0..self.felling.pieces.len() {
+            let p = &self.felling.pieces[k];
+            if p.id == id || p.kind != 0 || balls.contains(&p.id) || self.balls.contains(&p.id) {
+                continue;
+            }
+            let b = p.body;
+            if (self.physics.position(b) - centre).length() > reach {
+                continue;
+            }
+            let u = self.physics.velocity(b);
+            let room = (speed - u.dot(along)).max(0.0);
+            let dv = (impulse / self.physics.mass(b).max(1.0)).min(room);
+            self.physics.set_velocity(b, u + along * dv);
+        }
+        for q in &mut self.fuses.queued {
+            if (crate::felling::cell_centre(q.cell) - centre).length() > reach {
+                continue;
+            }
+            let kg = (f64::from(info(q.state).density_kg_m3) * dwell_world::CELL_H).max(1.0);
+            let room = (speed - q.velocity.dot(along)).max(0.0);
+            q.velocity += along * (impulse / kg).min(room);
+        }
+    }
+
+    /// Blocks balls destroyed and blocks they knocked loose (docs/CANNONS.md C3), since the server
+    /// started.
+    pub fn ball_hits(&self) -> (u64, u64) {
+        (self.smashed, self.loosened)
     }
 
     /// Every cannon fires the ball `name` from now on (tests and the dev tools: the cannons' data
@@ -4595,11 +4683,6 @@ impl Server {
     /// started.
     pub fn riders_joined(&self) -> u64 {
         self.riders_joined
-    }
-
-    /// Strikes (docs/CANNONS.md C3) and the cells balls knocked loose, since the server started.
-    pub fn ball_strikes(&self) -> (u64, u64) {
-        (self.strikes, self.knocked)
     }
 
     /// The body id of the last ball a cannon fired (docs/CANNONS.md C2), for tests and the dev tools.

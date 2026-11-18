@@ -1330,7 +1330,7 @@ const STATES_8: readonly StateDef[] = [
   { id: 1129, state: 'dwell:cannon[facing=west,part=rear_top]', block: 60, values: { facing: 'west', part: 'rear_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1130, state: 'dwell:cannon[facing=west,part=front_bottom]', block: 60, values: { facing: 'west', part: 'front_bottom' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
   { id: 1131, state: 'dwell:cannon[facing=west,part=front_top]', block: 60, values: { facing: 'west', part: 'front_top' }, look: 'cube', render: 'opaque', color: 0x2e2c30, opacity: 1, textures: { top: 'basalt', side: 'basalt', bottom: 'basalt' }, shape: 1, flooded: false, placeable: false },
-  { id: 1132, state: 'dwell:iron_ball', block: 61, values: {  }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
+  { id: 1132, state: 'dwell:iron_ball', block: 61, values: {  }, look: 'ball', render: 'opaque', color: 0x3a3a40, opacity: 1, selection: [0.26, 0, 0.26, 0.74, 0.96, 0.74], shape: 0, flooded: false, placeable: false },
   { id: 1133, state: 'dwell:explosive_ball', block: 62, values: {  }, look: 'ball', render: 'opaque', color: 0x8a2e2a, opacity: 1, selection: [0.38, 0, 0.38, 0.62, 0.48, 0.62], shape: 0, flooded: false, placeable: false },
 ];
 

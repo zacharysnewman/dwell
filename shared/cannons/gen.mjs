@@ -41,23 +41,20 @@ export function validateCannons(data, names) {
     const at = `balls[${i}]`;
     known(b, ['name', 'radiusM', 'densityKgM3', 'rollDamping', 'impact'], at);
     if (typeof b.name !== 'string' || !/^[a-z]+:[a-z0-9_]+$/.test(b.name)) fail(`${at}.name must be a namespaced name`);
+    if (names.blocks.get(b.name)?.look !== 'ball') fail(`${at}.name: ${b.name} must be a block of look ball (shared/blocks)`);
     range(b, 'radiusM', 0.02, 1, at);
     range(b, 'rollDamping', 0, 50, at);
     range(b, 'densityKgM3', 100, 30000, at);
     const im = b.impact;
-    known(im, ['kind', 'knockRadiusM', 'maxCells', 'minSpeedMs', 'explosive'], `${at}.impact`);
-    if (im.kind === 'knock') {
-      range(im, 'knockRadiusM', 0.1, 4, `${at}.impact`);
-      if (!Number.isInteger(im.maxCells) || im.maxCells < 1 || im.maxCells > 64) fail(`${at}.impact.maxCells must be a whole number in [1, 64]`);
-      range(im, 'minSpeedMs', 0, 200, `${at}.impact`);
-      if (im.explosive !== undefined) fail(`${at}.impact: a knock names no explosive`);
-    } else if (im.kind === 'explode') {
-      if (!names.explosives.has(im.explosive)) fail(`${at}.impact.explosive: no explosive ${JSON.stringify(im.explosive)} (shared/explosives)`);
-      for (const k of ['knockRadiusM', 'maxCells']) if (im[k] !== undefined) fail(`${at}.impact: an explosion has no ${k}`);
-      range(im, 'minSpeedMs', 0, 100, `${at}.impact`);
-    } else {
-      fail(`${at}.impact.kind must be one of knock, explode`);
-    }
+    const keys = ['destroySpeedMs', 'energyPerKgJ', 'dragRadiusM', 'dragForcePerSpeedN', 'maxLooseCells', 'minSpeedMs'];
+    known(im, keys, `${at}.impact`);
+    range(im, 'destroySpeedMs', 0, 300, `${at}.impact`);
+    range(im, 'energyPerKgJ', 0, 10000, `${at}.impact`);
+    range(im, 'dragRadiusM', 0, 4, `${at}.impact`);
+    range(im, 'dragForcePerSpeedN', 0, 1e6, `${at}.impact`);
+    if (!Number.isInteger(im.maxLooseCells) || im.maxLooseCells < 0 || im.maxLooseCells > 256) fail(`${at}.impact.maxLooseCells must be a whole number in [0, 256]`);
+    range(im, 'minSpeedMs', 0, 300, `${at}.impact`);
+    if (im.minSpeedMs > im.destroySpeedMs) fail(`${at}.impact.minSpeedMs must not exceed destroySpeedMs`);
     return b;
   });
   const ballNames = new Set(balls.map((b) => b.name));
@@ -76,7 +73,7 @@ export function validateCannons(data, names) {
     range(c, 'muzzleSpeedMs', 1, 300, at);
     range(c, 'muzzleUpM', 0, 4, at);
     range(c, 'muzzleForwardM', 0, 8, at);
-    range(c, 'reloadS', 0.1, 120, at);
+    range(c, 'reloadS', 0, 120, at);
     return c;
   });
   return { cannons, balls };
@@ -95,10 +92,8 @@ export function cannonsRust(d) {
   rs.push('/// The cannonballs (`balls`).');
   rs.push('pub static BALLS: &[BallDef] = &[');
   for (const b of d.balls) {
-    const im = b.impact.kind === 'knock'
-      ? `Impact::Knock { radius_m: ${f64(b.impact.knockRadiusM)}, max_cells: ${b.impact.maxCells}, min_speed_ms: ${f64(b.impact.minSpeedMs)} }`
-      : `Impact::Explode { explosive: "${b.impact.explosive}", min_speed_ms: ${f64(b.impact.minSpeedMs)} }`;
-    rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, roll_damping: ${f64(b.rollDamping)}, impact: ${im} },`);
+    const im = b.impact;
+    rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, roll_damping: ${f64(b.rollDamping)}, impact: Impact { destroy_speed_ms: ${f64(im.destroySpeedMs)}, energy_per_kg_j: ${f64(im.energyPerKgJ)}, drag_radius_m: ${f64(im.dragRadiusM)}, drag_force_per_speed_n: ${f64(im.dragForcePerSpeedN)}, max_loose_cells: ${im.maxLooseCells}, min_speed_ms: ${f64(im.minSpeedMs)} } },`);
   }
   rs.push('];', '');
   return rs.join('\n');

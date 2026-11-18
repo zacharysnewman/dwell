@@ -1,6 +1,6 @@
 # Cannons, cannonballs and steering ships
 
-**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4 riding along built (2026-11-18, §8; a cannon on a moving body and recoil to come); C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
+**Status:** C1–C3 built (2026-11-17: the land cannon block, its Use and reload; the ball in flight; its impacts; §5–§7); C4 riding along built (2026-11-18, §8; a cannon on a moving body and recoil to come); the owner's new ball (2026-11-18, §9) replaces C3's two balls; C5 to come. The goal (owner, 2026-11-17): "ship battles where cannons can blow off
 pieces of ships." Sinking by holes below the waterline, and water filling a hull instead of standing in it, come after
 this design (WORK_QUEUE; questions first).
 
@@ -132,4 +132,36 @@ direction." No ammunition or reloading for now.
 - **Not yet:** a cannon standing on a moving body firing along the body's turned facing, and recoil.
 - **Test:** `dwell-sim` `tests/cannons.rs` `what_comes_to_rest_on_a_built_body_joins_it_not_the_grid` (both faces: a
   dirt clump and an iron ball dropped on a plank deck join it, nothing of them in the grid; red with the joins off).
+
+## 9. The new ball (owner, 2026-11-18; replaces §7's knock and explosive balls)
+
+The owner: "I want to double the size of the cannonball." "I also want the cannonball to have a drag force with it
+that also detaches neighboring blocks from their structures. 1m radius. Every time the cannonball hits a block at
+greater than a certain velocity, it should destroy it, if it drops below the velocity it should activate physics on the
+block like it does now. The area drag force should also be equivalent to its speed." "This cannonball design replaces
+the 2 types I specced out before." "Also the cannon seems to have a capped fire rate, set that to off or none." Answers:
+"8× mass, real steel"; destroy speed 20 m/s; each block slows it "by the block's weight"; the drag "shouldn't be a
+velocity setter, it should exert continuous force as it flies around it, in its velocity direction".
+
+- **One ball**, `dwell:iron_ball`: r 0.24 m (0.48 m across), steel 7,850 kg/m³: ~455 kg. Its `impact` (shared/cannons,
+  one fixed vocabulary, `cannons::Impact`): `destroySpeedMs` 20, `energyPerKgJ` 40, `dragRadiusM` 1, `dragForcePerSpeedN`
+  2,000, `maxLooseCells` 24, `minSpeedMs` 4. `dwell:explosive_ball` is in no ball's data now; the block stays in the
+  registry only until the next compatibility line (removing a block breaks the line).
+- **No reload:** `reloadS` 0 (the data allows 0): every Use fires.
+- **Smash** (`smash`, each tick before the physics step while the ball moves at `minSpeedMs` or more): the cells its
+  sphere (drawn in 5 cm, so resting on the ground touches none) overlaps along this tick's path, in the order it meets
+  them; each breakable one (solid, not a liquid, indestructible, an explosive or a ball) is **destroyed** while the ball
+  moves at `destroySpeedMs` or more, the ball's energy less `energyPerKgJ` × the block's mass (its density × the ½ m³
+  cell); the first met slower is **knocked loose** as a natural piece (queued with the blasts' pieces) and the contact
+  is the physics'. The breakable cells within `dragRadiusM` of where it met each come loose too (nearest first, at most
+  `maxLooseCells`). One `Collapse` modification; what that leaves unsupported falls.
+- **Drag** (`drag`, the same ticks): every loose natural piece within `dragRadiusM` of its centre (not a ball), and every
+  piece queued to spawn there, is pushed along its velocity by `dragForcePerSpeedN` × its speed for the tick, never
+  past the ball's speed that way. No reaction on the ball.
+- **Tests** (`dwell-sim` `tests/cannons.rs`, both faces): `a_cannon_fires_on_every_use`,
+  `a_fast_ball_smashes_through_and_loosens_the_blocks_round_its_hole` (a one-brick wall: the cell in its path gone, the
+  ends standing), `a_thick_wall_slows_the_ball_by_the_weight_it_smashes_until_it_knocks_loose` (12 bricks deep: 8
+  smashed, the energy's ~9, then knocked loose, stopped inside), `the_ball_drags_loose_pieces_along_its_path` (a piece
+  0.9 m off its line, its box clear of the ball, pushed 0.4 m its way; red with the drag off), and the flat roll breaks
+  nothing; `dwell-world` `cannons::tests` (the size, mass, one ball, no reload).
 
