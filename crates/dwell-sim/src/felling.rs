@@ -441,6 +441,8 @@ pub struct Felling {
     /// The pieces due to join the body they ride (piece id, body id), from the last `step`; the
     /// server takes them (`merge`).
     pub joins: Vec<(u32, u32)>,
+    /// Each body's air cells (`air_cells`) by id, with its cells' fingerprint when found.
+    air: std::collections::HashMap<u32, (u64, Vec<[i32; 3]>)>,
 }
 
 /// Whether height `y` (m) lies within the world's chunk rows (a piece past them is lost).
@@ -582,6 +584,119 @@ pub fn cell_in_liquid(world: &mut VoxelWorld, centre: DVec3, rotation: DQuat) ->
 }
 
 /// A body's mean density (kg/m³) by its cells' blocks: lighter than a liquid, it floats.
+/// A body's air cells (docs/CANNONS.md §12 H1; owner, 2026-11-18: hull air, "Open-topped hulls
+/// count"): the empty cells of its grid's bounding box lying below their **spill height** — the
+/// lowest level water from outside must rise to before it reaches them (a priority flood from the
+/// box's empty boundary cells, each the level of its own row, or one above the top row for the top
+/// face; through empty cells in all six directions, a cell's spill the higher of its own row and the
+/// lowest spill beside it). Rows count along the grid's up (`up_step`: +1 when it is +y, −1 on face
+/// B). An open-topped hull's inside is air up to its rim; a cell above the rim, or at or above a
+/// hole in its side, is not. None for a box over `AIR_MAX_CELLS`.
+pub fn air_cells(cells: &[([i32; 3], StateId)], up_step: i32) -> Vec<[i32; 3]> {
+    use std::cmp::Reverse;
+    if cells.is_empty() {
+        return Vec::new();
+    }
+    let (mut lo, mut hi) = ([i32::MAX; 3], [i32::MIN; 3]);
+    for &(c, _) in cells {
+        for k in 0..3 {
+            lo[k] = lo[k].min(c[k]);
+            hi[k] = hi[k].max(c[k]);
+        }
+    }
+    let size = [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1];
+    let n = size[0] as usize * size[1] as usize * size[2] as usize;
+    if n > AIR_MAX_CELLS {
+        return Vec::new();
+    }
+    let index = |c: [i32; 3]| {
+        ((c[1] - lo[1]) as usize * size[2] as usize + (c[2] - lo[2]) as usize) * size[0] as usize
+            + (c[0] - lo[0]) as usize
+    };
+    let mut filled = vec![false; n];
+    let mut solid = vec![false; n];
+    for &(c, m) in cells {
+        filled[index(c)] = true;
+        solid[index(c)] = info(m).solid;
+    }
+    // A row's height along the up; the box's top row (the highest such).
+    let height = |y: i32| y * up_step;
+    let top = if up_step > 0 { hi[1] } else { lo[1] };
+    let mut spill = vec![i32::MAX; n];
+    let mut heap = std::collections::BinaryHeap::new();
+    for y in lo[1]..=hi[1] {
+        for z in lo[2]..=hi[2] {
+            for x in lo[0]..=hi[0] {
+                let c = [x, y, z];
+                let i = index(c);
+                if solid[i] {
+                    continue;
+                }
+                let side = x == lo[0] || x == hi[0] || z == lo[2] || z == hi[2];
+                let bottom = y == if up_step > 0 { lo[1] } else { hi[1] };
+                let level = if side || bottom {
+                    height(y)
+                } else if y == top {
+                    height(y) + 1
+                } else {
+                    continue;
+                };
+                if level < spill[i] {
+                    spill[i] = level;
+                    heap.push(Reverse((level, x, y, z)));
+                }
+            }
+        }
+    }
+    while let Some(Reverse((level, x, y, z))) = heap.pop() {
+        if level > spill[index([x, y, z])] {
+            continue;
+        }
+        for d in dwell_world::edit::FACE_DIRS {
+            let q = [x + d[0], y + d[1], z + d[2]];
+            if (0..3).any(|k| q[k] < lo[k] || q[k] > hi[k]) {
+                continue;
+            }
+            let i = index(q);
+            if solid[i] {
+                continue;
+            }
+            let l = level.max(height(q[1]));
+            if l < spill[i] {
+                spill[i] = l;
+                heap.push(Reverse((l, q[0], q[1], q[2])));
+            }
+        }
+    }
+    let mut air = Vec::new();
+    for y in lo[1]..=hi[1] {
+        for z in lo[2]..=hi[2] {
+            for x in lo[0]..=hi[0] {
+                let i = index([x, y, z]);
+                if !filled[i] && height(y) < spill[i] {
+                    air.push([x, y, z]);
+                }
+            }
+        }
+    }
+    air
+}
+
+/// The largest bounding box (cells) whose air cells are looked for (a ship; a felled forest's
+/// pieces are far smaller).
+const AIR_MAX_CELLS: usize = 200_000;
+
+/// A cheap fingerprint of a body's cells, for the air cells' cache.
+fn cells_key(cells: &[([i32; 3], StateId)]) -> u64 {
+    cells.iter().fold(cells.len() as u64, |h, &(o, m)| {
+        h.wrapping_mul(1_000_003)
+            ^ (o[0] as u64).wrapping_mul(73_856_093)
+            ^ (o[1] as u64).wrapping_mul(19_349_663)
+            ^ (o[2] as u64).wrapping_mul(83_492_791)
+            ^ u64::from(m)
+    })
+}
+
 fn body_density(cells: &[([i32; 3], StateId)]) -> f64 {
     if cells.is_empty() {
         return 0.0;
@@ -1142,11 +1257,30 @@ impl Felling {
         let volume = CELL_H;
         // The bodies only take impulses here: the world stands still, so the falls' reads hold.
         let mut falls = dwell_world::falls::FallMemo::default();
+        // Forget the air of bodies gone.
+        if self.air.len() > self.pieces.len() {
+            let ids: std::collections::HashSet<u32> = self.pieces.iter().map(|p| p.id).collect();
+            self.air.retain(|id, _| ids.contains(id));
+        }
         for p in &mut self.pieces {
             let (position, rotation) = (physics.position(p.body), physics.rotation(p.body));
             let mut under = 0.0;
             let mut liquid = 0.0f64;
-            for &(o, _) in &p.cells {
+            // Its hull's air (docs/CANNONS.md §12 H1) buoys it as its cells do.
+            let key = cells_key(&p.cells);
+            let up_step = FaceFrame::at_height(position.y).cell([0, 1, 0])[1]
+                - FaceFrame::at_height(position.y).cell([0, 0, 0])[1];
+            let air = match self.air.get(&p.id) {
+                Some((k, a)) if *k == key => a.len(),
+                _ => {
+                    let a = air_cells(&p.cells, up_step);
+                    let n = a.len();
+                    self.air.insert(p.id, (key, a));
+                    n
+                }
+            };
+            let air_cells = &self.air[&p.id].1;
+            for &o in p.cells.iter().map(|(o, _)| o).chain(air_cells.iter()) {
                 let centre = position + rotation * offset_m(o);
                 let (fraction, density) = cell_in_liquid(world, centre, rotation);
                 if fraction <= 0.0 {
@@ -1161,9 +1295,11 @@ impl Felling {
                 );
                 under += fraction;
             }
-            // Afloat: in a liquid and lighter than it on the whole (a log, a crown; a sand piece
-            // sinks and settles on the bed as before).
-            p.afloat = under > 0.0 && body_density(&p.cells) < liquid;
+            // Afloat: in a liquid and lighter than it on the whole, its air counted in its volume
+            // (a log, a crown, a hull; a sand piece sinks and settles on the bed as before).
+            let cells_n = p.cells.len() as f64;
+            let density = body_density(&p.cells) * cells_n / (cells_n + air as f64);
+            p.afloat = under > 0.0 && density < liquid;
             if p.afloat {
                 p.dry = 0;
             } else {
@@ -1846,6 +1982,53 @@ impl PieceBook {
 
 #[cfg(test)]
 mod tests {
+    /// An open-topped plank box: a `w` × `d` floor and walls `h` high round it (rows along `up`).
+    fn open_box(w: i32, d: i32, h: i32, up: i32) -> Vec<([i32; 3], StateId)> {
+        let m = dwell_blocks::require("dwell:planks");
+        let mut c = Vec::new();
+        for x in 0..w {
+            for z in 0..d {
+                c.push(([x, 0, z], m));
+                for r in 1..=h {
+                    if x == 0 || z == 0 || x == w - 1 || z == d - 1 {
+                        c.push(([x, r * up, z], m));
+                    }
+                }
+            }
+        }
+        c
+    }
+
+    dwell_world::both_faces!(
+        fn an_open_topped_hulls_inside_is_air_and_a_hole_lets_it_out(f: FaceFrame) {
+            // docs/CANNONS.md §12 H1 (owner, 2026-11-18: "Open-topped hulls count").
+            let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+            let hull = open_box(5, 4, 2, up);
+            let air = air_cells(&hull, up);
+            // The 3 × 2 inside, both rows.
+            assert_eq!(air.len(), 3 * 2 * 2, "{air:?}");
+            assert!(air.contains(&[2, up, 1]) && air.contains(&[2, 2 * up, 2]));
+            // A hole in a wall at the floor's level above: the water reaches every inside cell.
+            let holed: Vec<_> = hull
+                .iter()
+                .copied()
+                .filter(|&(c, _)| c != [0, up, 1])
+                .collect();
+            assert!(
+                air_cells(&holed, up).is_empty(),
+                "a hole in the side lets water in"
+            );
+            // A mast above the rim makes the box taller: its cells above the walls are outside.
+            let mut masted = hull.clone();
+            for r in 3..6 {
+                masted.push(([2, r * up, 2], dwell_blocks::require("dwell:planks")));
+            }
+            assert_eq!(air_cells(&masted, up).len(), 12, "above the rim is outside");
+            // A flat raft has none.
+            assert!(air_cells(&open_box(5, 4, 0, up), up).is_empty());
+        }
+    );
+
     use super::*;
 
     /// The heights (face-local, metres over the cell's floor) of `m`'s hull's top and bottom at

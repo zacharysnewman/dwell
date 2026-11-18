@@ -587,3 +587,49 @@ both_faces!(
         );
     }
 );
+
+/// Where (face-local m) the floor of plank body `cells` rides once afloat in `harbour`'s pool.
+fn floor_height(f: FaceFrame, cells: Vec<([i32; 3], u16)>) -> f64 {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    let (raft, _) = harbour(&mut fx, f);
+    fx.server.remove_body(raft);
+    let up = up_rows(f);
+    let c = f.cell([0, BASE, 0]);
+    let y = f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+    let body = fx.server.add_body(1, cells, [0.5, y, 0.5]);
+    let mut seq = 0;
+    hold(&mut fx, &mut seq, Input::default(), 300);
+    let (p, _) = fx.server.body_pose(body).expect("afloat");
+    f.point(p.to_array())[1]
+}
+
+both_faces!(
+    fn an_open_hulls_air_floats_it_higher_than_the_same_hull_holed(f: FaceFrame) {
+        // docs/CANNONS.md §12 H1; owner, 2026-11-18: "water filling the hull, which would also make
+        // boats more buoyant? I think based on air inside?" The holed hull is a plank lighter, yet
+        // without its air it rides lower.
+        let up = up_rows(f);
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        let mut hull = Vec::new();
+        for x in 0..5 {
+            for z in 0..4 {
+                hull.push(([x, 0, z], planks));
+                if x == 0 || z == 0 || x == 4 || z == 3 {
+                    hull.push(([x, up, z], planks));
+                    hull.push(([x, 2 * up, z], planks));
+                }
+            }
+        }
+        let holed: Vec<_> = hull
+            .iter()
+            .copied()
+            .filter(|&(c, _)| c != [0, up, 1])
+            .collect();
+        let (h, w) = (floor_height(f, hull), floor_height(f, holed));
+        assert!(
+            h > w + 0.05,
+            "the sealed hull's floor rides higher: {h} against the holed one's {w}"
+        );
+    }
+);

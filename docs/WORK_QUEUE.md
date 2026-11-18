@@ -90,6 +90,15 @@ Last updated: 2026-11-11 (0.52.108).
   the hull, which would also make boats more buoyant? I think based on air inside? No aiming the barrel. Ball doesn't
   hurt players." Owner should see: a big boat sails about as fast as a small raft at the helm; later (design questions
   first) a hull's enclosed air keeps it afloat higher, and holes below the waterline let water fill it until it sinks.
+  Owner's answers on sinking (2026-11-18): hull air "Open-topped hulls count"; flooding "Through holes, by hole size";
+  inner water "Yes, a water surface"; a sunk ship "Settles into the world". Design: docs/CANNONS.md §12 (H1 hull air,
+  H2 flooding and sinking, H3 the inner water's surface).
+  Owner, 2026-11-18: "We may need to generally deepen oceans which might mean we need to increase the stone layer
+  depth/face depth." (For ships: a deeper sea, so a ship's keel and a sunk wreck have room; a worldgen change, a new
+  compatibility line; questions first: how deep, everywhere or the open sea only.) Owner should see: oceans deep
+  enough to sail and sink ships in.
+  Owner, 2026-11-18: "We also want to not draw water in that "air" area." Owner should see: no lake water drawn
+  inside a floating hull's air (the hull dry inside), only the hull's own water once it floods (H3).
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
