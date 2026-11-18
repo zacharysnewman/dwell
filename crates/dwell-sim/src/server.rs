@@ -1209,6 +1209,7 @@ pub struct Server {
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
     last_ball: Option<u32>,
+    balls: Vec<u32>,
     /// The hits a moving piece's cells have taken (body id, cell): a body's block takes its block's
     /// hits to break as the grid's does (BUGS.md #206); gone when the cell breaks.
     body_hits: HashMap<(u32, [i32; 3]), u32>,
@@ -1490,6 +1491,7 @@ impl Server {
             cannon_ready: HashMap::default(),
             shots_fired: 0,
             last_ball: None,
+            balls: Vec::new(),
             hits_short: 0,
             heal_since: Default::default(),
             recent_hits: Default::default(),
@@ -2434,6 +2436,7 @@ impl Server {
             .release_unheld(&mut self.world, &mut self.physics);
         self.felling.float(&mut self.world, &mut self.physics);
         self.lap(5, &mut watch);
+        self.roll_balls();
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));
@@ -4412,9 +4415,45 @@ impl Server {
             forward * c.muzzle_speed_ms,
             DVec3::ZERO,
         );
+        self.balls.push(self.felling.pieces[i].id);
         let msg = self.spawn_message(i);
         self.broadcast_world(&msg);
         self.last_ball = Some(self.felling.pieces[i].id);
+    }
+
+    /// The balls in flight or rolling (docs/CANNONS.md C2): each one touching the ground (a solid
+    /// cell just under its bottom, face-local) is slowed by its data's `rollDamping`, in the air by
+    /// a body's usual damping; a ball whose body is gone (settled) is dropped.
+    fn roll_balls(&mut self) {
+        let mut keep = Vec::with_capacity(self.balls.len());
+        for &id in &self.balls {
+            let Some(p) = self.felling.pieces.iter().find(|p| p.id == id) else {
+                continue;
+            };
+            keep.push(id);
+            let Some(ball) = p
+                .cells
+                .first()
+                .and_then(|&(_, m)| dwell_physics::ball_of(m))
+            else {
+                continue;
+            };
+            let at = self.physics.position(p.body);
+            let f = dwell_world::FaceFrame::at_height(at.y);
+            let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
+            // The sphere's centre sits `r` over the cell's floor; its bottom a little below that.
+            let centre = at + up * (ball.radius_m - 0.5 * dwell_world::CELL_H);
+            let probe = centre - up * (ball.radius_m + 0.05);
+            let cell = [
+                probe.x.floor() as i32,
+                (probe.y / dwell_world::CELL_H).floor() as i32,
+                probe.z.floor() as i32,
+            ];
+            let ground = dwell_blocks::info(self.world.get_voxel(cell[0], cell[1], cell[2])).solid;
+            let damping = if ground { ball.roll_damping } else { 0.05 };
+            self.physics.set_linear_damping(p.body, damping);
+        }
+        self.balls = keep;
     }
 
     /// The body id of the last ball a cannon fired (docs/CANNONS.md C2), for tests and the dev tools.

@@ -91,6 +91,10 @@ direction." No ammunition or reloading for now.
   cells). Its collider is a sphere of the radius and the ball's mass (`dwell_physics::ball_of`, `piece_hull` gives a
   ball cell its own collider; on face B it sits toward +y), CCD on; gravity, water and settling as any natural body: at
   rest it settles as its block. A piece's riders-only groups: it hits the world and bodies, not players (yet).
+- **Rolling resistance** (the browser, 2026-11-17: a fired ball rolled past 200 m on the flat; rapier has no rolling
+  friction): each ball's data `rollDamping` (1/s, the iron ball 1.5) damps its speed while a solid cell lies just under
+  it (the server's `roll_balls`, every tick before the physics step), the air's usual damping otherwise. The iron ball
+  fired over flat ground rests ~39 m out (`a_ball_rolls_to_rest_not_on_for_hundreds_of_metres`, both faces).
 - **Not yet:** the cannon on a moving body (C4 turns the facing with it), recoil, the firing sound and smoke, impacts (C3).
 - **Tests:** `dwell-sim` `tests/cannons.rs` `a_shot_launches_a_heavy_ball_along_the_barrel` (both faces: at the muzzle,
   the ball's mass, flying along the barrel, landing on the floor beyond); `dwell-mesh`

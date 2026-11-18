@@ -365,6 +365,14 @@ impl Physics {
     }
 
     /// A body's mass (kg; a kinematic stand-in's too, from its cells).
+    /// Sets body `h`'s linear damping (1/s): a ball's rolling resistance while it touches the
+    /// ground (docs/CANNONS.md C2; rapier has no rolling friction).
+    pub fn set_linear_damping(&mut self, h: BodyHandle, damping: f64) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.set_linear_damping(damping);
+        }
+    }
+
     pub fn mass(&self, h: BodyHandle) -> f64 {
         self.w.bodies.get(h.0).map_or(0.0, |b| b.mass())
     }
