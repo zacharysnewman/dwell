@@ -3338,6 +3338,9 @@ impl Server {
             }
             let (may_edit, handle) = (self.may_edit(s), s.handle);
             let eye = handle.map(|h| self.eye_of(h));
+            // At a ship's helm only Uses go through (owner, 2026-11-18: "block breaking/building
+            // should be disabled while steering the ship. But "use" should still be allowed").
+            let at_helm = handle.is_some_and(|h| self.players.controller(h).helm);
             let s = self.sessions.get_mut(&id).expect("session");
             s.edit_credit = (s.edit_credit + EDITS_PER_TICK).min(EDIT_BURST);
             s.punch_credit = (s.punch_credit + punch_credit_per_tick()).min(PUNCH_BURST);
@@ -3384,6 +3387,11 @@ impl Server {
                 };
                 // A Use of a block with a `use` action (a cannon fired, docs/CANNONS.md): nothing is
                 // written; the action follows the edits (its reload checked there).
+                if at_helm && !(outcome.used || outcome.toggled) {
+                    s.stats.edits_rejected += 1;
+                    s.edit_refused.push(seq);
+                    continue;
+                }
                 if outcome.used {
                     used.push((outcome.cell, self.world.get_voxel_if_loaded(outcome.cell)));
                     s.edit_credit -= 1.0;
@@ -4604,8 +4612,8 @@ impl Server {
     /// at a helm (`helms`) still standing at it (their controller's `helm`) on a body still afloat,
     /// their forward input pushes the body along the helm's facing (turned with it, flat) from its
     /// centre of mass with its mass × the helm's `thrustAccelMs2` (owner, 2026-11-18: scaled by the ship's mass), as a sail would; their sideways input turns it
-    /// about the face's up with `rudderNmPerMs` for each m/s it moves along that heading, as a rudder
-    /// would (none when still; backing, the other way). Off the helm, or the body gone, the entry
+    /// about the face's up by `turnRadS2PerMs` (rad/s², any size of ship) for each m/s it moves along
+    /// that heading, as a rudder would (none when still; backing, the other way). Off the helm, or the body gone, the entry
     /// goes (and the player's flag with it).
     fn steer_ships(&mut self) {
         let dt = 1.0 / f64::from(SIM_HZ);
@@ -4648,9 +4656,11 @@ impl Server {
             }
             let along = self.physics.velocity(handle).dot(heading);
             if turn_in != 0.0 && along != 0.0 {
-                // Turning right (input +x) turns the heading toward heading × up.
-                let torque = -up * (def.rudder_nm_per_ms * along * turn_in);
-                self.physics.apply_torque_impulse(handle, torque * dt);
+                // Turning right (input +x) turns the heading toward heading × up, the same rate for
+                // any size of ship (its spin changed directly, not by a torque its inertia resists).
+                let w = self.physics.angular_velocity(handle);
+                let turn = -up * (def.turn_rad_s2_per_ms * along * turn_in * dt);
+                self.physics.set_angular_velocity(handle, w + turn);
             }
         }
     }
@@ -5118,6 +5128,7 @@ impl Server {
             }
             let (may_edit, handle) = (self.may_edit(s), s.handle);
             let eye = handle.map(|h| DVec3::from(self.eye_of(h)));
+            let at_helm = handle.is_some_and(|h| self.players.controller(h).helm);
             let edits =
                 std::mem::take(&mut self.sessions.get_mut(&id).expect("session").body_edits);
             for e in edits {
@@ -5150,6 +5161,10 @@ impl Server {
                         }
                         continue;
                     }
+                }
+                // At the helm nothing else (a Use above).
+                if at_helm {
+                    continue;
                 }
                 if e.action == BlockEditAction::Place {
                     // A block placed against a body's cell joins it (a built body; its kind's

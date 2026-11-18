@@ -23,14 +23,15 @@ pub struct Impact {
 
 /// A ship's helm (C5): a block a player takes the helm at; while the ship is afloat its forward and
 /// back push it with its mass × `thrust_accel_ms2` along the helm's facing from its centre of mass, and left and right
-/// turn it with `rudder_nm_per_ms` for each m/s it moves along its heading.
+/// turn it by `turn_rad_s2_per_ms` (rad/s²) for each m/s it moves along its heading.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HelmDef {
     pub block: &'static str,
     /// The push's acceleration (m/s²): its force is the ship's mass times it (owner, 2026-11-18: "The
     /// movement force should be scaled based on the mass of the boat").
     pub thrust_accel_ms2: f64,
-    pub rudder_nm_per_ms: f64,
+    /// The rudder's turn (rad/s²) for each m/s the ship moves along its heading, whatever its size.
+    pub turn_rad_s2_per_ms: f64,
     pub camera: HelmCamera,
 }
 

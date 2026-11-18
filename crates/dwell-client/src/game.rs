@@ -987,6 +987,9 @@ pub struct Game<S: Scene> {
     /// How far the view is out to the helm's third person (0 first person, 1 out; docs/CANNONS.md
     /// C5), eased in and out with the predicted controller's `helm`.
     helm_blend: f64,
+    /// At the helm, fully out to third person: the drawn eye the aim is cast from (the crosshair's;
+    /// owner, 2026-11-18), what it hits kept only within reach of the player.
+    aim_from: Option<[f64; 3]>,
     /// Seconds left of the stand at the shrine (`STAND_S`): third person, input held, the view
     /// fading back in from `stood_ms`.
     stand_left_s: f64,
@@ -1306,6 +1309,7 @@ impl<S: Scene> Game<S> {
             defeat_yaw: None,
             defeat_from: ([0.0; 3], 0.0),
             helm_blend: 0.0,
+            aim_from: None,
             stand_left_s: 0.0,
             stood_ms: 0.0,
             last_camera: ([0.0; 3], 0.0),
@@ -2964,6 +2968,12 @@ impl<S: Scene> Game<S> {
         if action == EditAction::Place && self.use_body_block(now_ms) {
             return true;
         }
+        // At the helm nothing is broken or built (owner, 2026-11-18: "block breaking/building should
+        // be disabled while steering the ship. But "use" should still be allowed"): only a Use.
+        if self.predictor.controller().helm && !self.world_use_aimed(action) {
+            self.sounds.push(sound_event(SoundKind::Deny));
+            return false;
+        }
         // The axe held (ADR 0067): Use turns the swing, Break swings at wood aimed at.
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
@@ -3152,6 +3162,22 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// Whether `action` is a Place aimed at a world block with a `use` (a cannon on land, a door):
+    /// the one thing a world click does at the helm.
+    fn world_use_aimed(&mut self, action: EditAction) -> bool {
+        if action != EditAction::Place {
+            return false;
+        }
+        let Some(t) = self.interaction.target() else {
+            return false;
+        };
+        let m = self
+            .streamer
+            .store_mut()
+            .get_voxel(t.cell[0], t.cell[1], t.cell[2]);
+        dwell_blocks::try_info(m).is_some_and(|s| s.use_action.is_some())
     }
 
     /// Sends the Use of the body block aimed at, if it has a `use` (block data; a cannon fires, a
@@ -5715,6 +5741,7 @@ impl<S: Scene> Game<S> {
             self.scene
                 .borrow_mut()
                 .set_camera(drawn_eye, v.yaw, v.pitch, face, v.roll);
+            self.aim_from = (self.helm_blend >= 1.0).then_some(drawn_eye);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -6484,10 +6511,24 @@ impl<S: Scene> Game<S> {
         self.ahead = eye.map(|e| dwell_game::region_tools::ahead_cell(e, dir));
         self.ground_target = eye.and_then(|e| self.ground_under_crosshair(e, dir));
         // A moving body's cell nearer than the block aimed at (docs/BUILT_BODIES.md §4).
+        let aim_from = self.aim_from;
         self.body_target = eye.filter(|_| !self.brush.active()).and_then(|e| {
-            let (o, d) = (DVec3::from(e), DVec3::from(dir));
             let reach = f64::from(players::REACH_DISTANCE);
-            let hit = self.pieces.raycast(o, d, reach, now_ms)?;
+            // At the helm the aim is the third-person crosshair's: cast from the drawn eye, as far
+            // again as it is behind, a hit kept only within reach of the player (owner, 2026-11-18).
+            let (o, ray) = match aim_from {
+                Some(c) => (
+                    DVec3::from(c),
+                    reach + (DVec3::from(c) - DVec3::from(e)).length(),
+                ),
+                None => (DVec3::from(e), reach),
+            };
+            let d = DVec3::from(dir);
+            let hit = self.pieces.raycast(o, d, ray, now_ms)?;
+            if aim_from.is_some() && (o + d * hit.distance - DVec3::from(e)).length() > reach + 0.5
+            {
+                return None;
+            }
             let block = t.and_then(|t| {
                 let corner = DVec3::from(dwell_world::pos_of_cell(t.cell));
                 let centre = corner + DVec3::new(0.5, 0.5 * dwell_world::CELL_H, 0.5);

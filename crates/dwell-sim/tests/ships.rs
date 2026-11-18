@@ -860,3 +860,136 @@ both_faces!(
         assert!(dwell_blocks::info(w).liquid, "the water above it");
     }
 );
+
+/// The boat's speed (m/s) after `secs` s at the helm from still and its heading's turn (degrees)
+/// in 2 s more with the rudder hard over: a `w` × `d` × 2 plank boat in `harbour`'s pool.
+fn helm_figures(f: FaceFrame, secs: u32, w: i32, d: i32) -> (f64, f64) {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    let (raft, _) = harbour(&mut fx, f);
+    fx.server.remove_body(raft);
+    let up = up_rows(f);
+    let planks = f.state(dwell_blocks::require("dwell:planks"));
+    let mut cells: Vec<([i32; 3], u16)> = Vec::new();
+    for x in 0..w {
+        for z in 0..d {
+            cells.push(([x, 0, z], planks));
+            cells.push(([x, up, z], planks));
+        }
+    }
+    let helm = [w / 2, 2 * up, d - 2];
+    cells.push((
+        helm,
+        f.state(dwell_blocks::require("dwell:helm[facing=north]")),
+    ));
+    let c = f.cell([0, BASE, 0]);
+    let y = f64::from(c[1]) * dwell_world::CELL_H + if up > 0 { 0.0 } else { dwell_world::CELL_H };
+    let boat = fx.server.add_body(1, cells, [0.5, y, 0.5]);
+    let mut seq = 0;
+    hold(&mut fx, &mut seq, Input::default(), 120);
+    let (p0, q) = fx.server.body_pose(boat).expect("afloat");
+    let upv = dwell_physics::DVec3::from(f.vector([0.0, 1.0, 0.0]));
+    stand(
+        &mut fx,
+        p0 + q * dwell_physics::DVec3::new(2.0, 0.5 * f64::from(up), 9.0) + upv * 0.3,
+        upv,
+    );
+    hold(&mut fx, &mut seq, Input::default(), 20);
+    assert!(fx.server.use_body_cell(1, boat, helm), "the helm");
+    hold(
+        &mut fx,
+        &mut seq,
+        Input {
+            move_y: 1.0,
+            ..Input::default()
+        },
+        secs * 60,
+    );
+    let speed = fx.server.body_velocity(boat).unwrap().length();
+    let h0 = heading(&fx, boat);
+    hold(
+        &mut fx,
+        &mut seq,
+        Input {
+            move_x: 1.0,
+            move_y: 1.0,
+            ..Input::default()
+        },
+        120,
+    );
+    let h1 = heading(&fx, boat);
+    (speed, h0.angle_between(h1).to_degrees())
+}
+
+#[test]
+#[ignore = "a measurement: `cargo test -p dwell-sim --test ships helm_figures -- --ignored --nocapture`"]
+fn measure_helm_figures() {
+    // face-a-only: a measurement print.
+    let (v, turn) = helm_figures(FaceFrame::A, 3, 6, 10);
+    eprintln!("speed after 3 s {v:.2} m/s; turn in 2 s {turn:.1} degrees");
+}
+
+both_faces!(
+    fn a_small_and_a_big_raft_turn_alike_at_the_helm(f: FaceFrame) {
+        // Owner, 2026-11-18: "a 3x3 rafter turns very quickly ... and a 7x7 raft turns super slowly.
+        // Perhaps it just needs to be scaled too?" Both are pushed by their mass (the same speed) and
+        // turned the same rate at it.
+        let (vs, small) = helm_figures(f, 2, 3, 3);
+        let (vb, big) = helm_figures(f, 2, 7, 7);
+        assert!(
+            small > 3.0 && big > 3.0,
+            "both turn: {small} and {big} degrees"
+        );
+        assert!(
+            small < 2.0 * big && big < 2.0 * small,
+            "alike: {small} and {big} degrees ({vs} and {vb} m/s)"
+        );
+    }
+);
+
+both_faces!(
+    fn at_the_helm_nothing_is_built_or_broken_but_a_cannon_still_fires(f: FaceFrame) {
+        // Owner, 2026-11-18: "block breaking/building should be disabled while steering the ship.
+        // But "use" should still be allowed like currently."
+        let (mut fx, raft, top, mut seq) = raft_to_build_on(f);
+        let cannon = f.state(dwell_blocks::require(
+            "dwell:cannon[facing=north,part=rear_bottom]",
+        ));
+        send_body_edit(
+            &mut fx,
+            raft,
+            [1, 0, 2],
+            top,
+            BlockEditAction::Place,
+            cannon,
+        );
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        // The harbour raft's helm is at (3, up, 1).
+        let u = up_rows(f) as i16;
+        send_body_edit(&mut fx, raft, [3, u, 1], top, BlockEditAction::Place, 0);
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        assert_eq!(fx.server.at_helms(), vec![(1, raft)], "at the helm");
+        let before = fx.server.body_cells(raft).len();
+        let planks = f.state(dwell_blocks::require("dwell:planks"));
+        send_body_edit(
+            &mut fx,
+            raft,
+            [5, 0, 3],
+            top,
+            BlockEditAction::Place,
+            planks,
+        );
+        for _ in 0..10 {
+            send_body_edit(&mut fx, raft, [0, 0, 0], top, BlockEditAction::Break, 0);
+            hold(&mut fx, &mut seq, Input::default(), 6);
+        }
+        assert_eq!(
+            fx.server.body_cells(raft).len(),
+            before,
+            "nothing built or broken"
+        );
+        send_body_edit(&mut fx, raft, [1, 2 * u, 1], top, BlockEditAction::Place, 0);
+        hold(&mut fx, &mut seq, Input::default(), 3);
+        assert_eq!(fx.server.shots_fired(), 1, "the cannon fired");
+    }
+);

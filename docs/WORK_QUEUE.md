@@ -118,6 +118,8 @@ Last updated: 2026-11-11 (0.52.108).
   boat." Owner should see: at the helm, clicks don't break or place (a cannon or the wheel still uses); the block aimed
   at is the one under the third-person crosshair, within reach of the player; the boat sails three times as fast. Owner,
   2026-11-18: "And double the turning responsiveness" (the boat turns twice as fast at the helm). Owner, 2026-11-18:
+  "I'm noticing a 3x3 rafter turns very quickly (no turning buff yet) and a 7x7 raft turns super slowly. Perhaps it just
+  needs to be scaled too?" (The rudder's turn scaled by the ship's size, as its push is by its mass.) Owner, 2026-11-18:
   "I notice I can't use the bridging helper on dynamic objects, I want to be to do that." → BUGS.md #214. "Also
   dragging in a line by rotating the camera doesn't seem to work correctly on a dynamic body. It doesn't follow the
   line." → #215. "Also ensure you check every one of the 4 cannon blocks to see if it is destroyed. I noticed half of
