@@ -117,6 +117,10 @@ struct Frame {
     // is the impostors'), w 1 when impostors draw (else the near trees' leaves draw to the
     // full-detail distance as before).
     far_trees: vec4f,
+    // The hulls' dry air (docs/CANNONS.md §12 H3; mod.rs `dry_hull_uniforms`): up to four, three
+    // vec4s each: the box's centre relative to the eye (w 1: there), its half-size (body frame), the
+    // body's rotation (a quaternion). No water is drawn inside one.
+    dry_hulls: array<vec4f, 12>,
     // The day/night cycle (dwell-look `DaySky`): the sun, moon and stars, the viewer's sky and each
     // face's lights.
     day: DaySky,
@@ -3376,6 +3380,28 @@ fn from_below(s: Surface, f: Fluid, xz: vec2f, footprint: f32, fluid: u32) -> ve
 // moon's) GGX glint and sparkle; the alpha leaves what is behind seen through the share the
 // surface neither reflects nor hides. From inside: `from_below`. A see-through face that is no
 // fluid's draws its vertex colour at half opacity.
+// Whether `rel` (a point relative to the eye) lies in a hull's dry air (frame.dry_hulls; owner,
+// 2026-11-18: no water drawn in a hull's air): inside a box turned with its body.
+fn in_dry_hull(rel: vec3f) -> bool {
+    for (var k = 0u; k < 4u; k = k + 1u) {
+        let c = frame.dry_hulls[k * 3u];
+        if (c.w == 0.0) {
+            continue;
+        }
+        let half = frame.dry_hulls[k * 3u + 1u].xyz;
+        let q = frame.dry_hulls[k * 3u + 2u];
+        // The point in the body's frame: rotated by the quaternion's inverse.
+        let v = rel - c.xyz;
+        let u = -q.xyz;
+        let t = 2.0 * cross(u, v);
+        let local = v + q.w * t + cross(u, t);
+        if (all(abs(local) < half)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 @fragment
 fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let draw = draws[i.draw];
@@ -3384,7 +3410,7 @@ fn water_fs(i: FluidOut, @builtin(front_facing) front: bool) -> SceneOut {
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
     // A swap's water fades with its level's surface (the same pixels: neither blends twice).
-    let hidden = waterline_hides(i, front);
+    let hidden = waterline_hides(i, front) || in_dry_hull(i.rel);
     if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }
@@ -3491,7 +3517,7 @@ fn water_scene_fs(i: FluidOut, @builtin(front_facing) front: bool) -> @location(
     let draw = draws[i.draw];
     let footprint = max(length(dpdx(i.wrapped)), length(dpdy(i.wrapped)));
     let deck_fw = reflected_deck_fw(i.rel);
-    let hidden = waterline_hides(i, front);
+    let hidden = waterline_hides(i, front) || in_dry_hull(i.rel);
     if (fade_discard(draw, i.clip.xy) || hidden) {
         discard;
     }

@@ -127,6 +127,10 @@ Last updated: 2026-11-11 (0.52.108).
   Owner, 2026-11-18: "Cannon fire angle should be angled up a bit? What's a realistic angle cannons on ships were tilted
   at?" (Answered: quoins set naval guns from about −5° to +10°; close broadsides near level, 0–3°; long shots 5–10°.)
   Built: the cannon data's `elevationDeg`, 5°. Owner should see: a cannonball leaving the barrel rising a little.
+  Owner, 2026-11-18: "What's left on boats? Making helms look different than planks. I'd like boats to work in adventure
+  too. What do we need for that? Do we need build platforms? Or can we just connect to a real block? And crafting
+  recipes for cannons and helms?" Owner should see: the ship's wheel looks like a wheel, not planks; in adventure a
+  player can make a boat (how it is started: questions first) and craft its cannon and wheel.
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."

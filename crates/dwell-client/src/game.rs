@@ -214,6 +214,7 @@ pub trait Scene: TerrainRenderer {
     /// The placed light sources near the eye this frame (a torch's flame; docs/LIGHTS.md §4):
     /// drawn as shadowed dynamic lights with Torch shadows on.
     fn set_placed_lights(&mut self, _lights: Vec<crate::render::lights::PlacedLight>) {}
+    fn set_dry_hulls(&mut self, _hulls: Vec<crate::render::DryHull>) {}
     /// The placed light sources' flames near the eye this frame (a torch's; docs/LIGHTS.md §6).
     fn set_placed_flames(&mut self, _flames: Vec<crate::render::flames::PlacedFlame>) {}
     /// The water's currents around the eye (render/flow.rs; `Currents::window`'s texels), when they
@@ -6062,6 +6063,11 @@ impl<S: Scene> Game<S> {
                 }),
         );
         self.scene.borrow_mut().set_placed_lights(placed);
+        // The hulls' dry air near the eye: no water drawn there (docs/CANNONS.md §12 H3).
+        let hulls = self
+            .pieces
+            .dry_hulls(now_ms, camera_eye, crate::render::DRY_HULLS);
+        self.scene.borrow_mut().set_dry_hulls(hulls);
         self.update_flow(camera_eye);
         // The flecks on moving water (the Drifting flecks setting).
         self.flecks.update(

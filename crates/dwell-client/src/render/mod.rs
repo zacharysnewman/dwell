@@ -544,6 +544,33 @@ pub(crate) fn shake_uniforms(shake: Option<BlockShake>, eye: [f64; 3]) -> [[f32;
     ]
 }
 
+/// A hull's dry air this frame (docs/CANNONS.md §12 H3): its box's centre (world m), half-size (its
+/// body's frame) and the body's rotation (x, y, z, w).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DryHull {
+    pub centre: [f64; 3],
+    pub half: [f64; 3],
+    pub rotation: [f64; 4],
+}
+
+/// The frame uniform's `dry_hulls` (shaders.rs `in_dry_hull`): for each of `DRY_HULLS` (the first
+/// of `hulls`), its centre relative to `eye` (w 1), its half-size and rotation; zeros past them.
+pub(crate) fn dry_hull_uniforms(hulls: &[DryHull], eye: [f64; 3]) -> Vec<[f32; 4]> {
+    let mut out = Vec::with_capacity(DRY_HULLS * 3);
+    for k in 0..DRY_HULLS {
+        match hulls.get(k) {
+            Some(h) => {
+                let c: [f64; 3] = std::array::from_fn(|i| h.centre[i] - eye[i]);
+                out.push([c[0] as f32, c[1] as f32, c[2] as f32, 1.0]);
+                out.push([h.half[0] as f32, h.half[1] as f32, h.half[2] as f32, 0.0]);
+                out.push(h.rotation.map(|v| v as f32));
+            }
+            None => out.extend([[0.0; 4]; 3]),
+        }
+    }
+    out
+}
+
 /// The frame uniform's `lean_*` vec4s (shaders.rs `tree_lean`): the hinge relative to `eye` and
 /// the radius, the tree's up and height, the turn's axis and angle (0: nothing leans).
 pub(crate) fn lean_uniforms(lean: Option<crate::chop::TreeLean>, eye: [f64; 3]) -> [[f32; 4]; 3] {
@@ -1850,6 +1877,8 @@ pub struct Renderer {
     torch_shadow_quality: ShadowQuality,
     torch_cache: dwell_look::lights::TorchShadowCache,
     placed_lights: Vec<lights::PlacedLight>,
+    /// The hulls' dry air near the eye (`set_dry_hulls`).
+    dry_hulls: Vec<DryHull>,
     draw_buffer: wgpu::Buffer,
     draw_group: wgpu::BindGroup,
     draw_capacity: u64,
@@ -2792,6 +2821,7 @@ impl Renderer {
             torch_shadow_quality: ShadowQuality::Low,
             torch_cache: Default::default(),
             placed_lights: Vec::new(),
+            dry_hulls: Vec::new(),
             draw_buffer,
             draw_group,
             draw_capacity: 1024,
@@ -3502,6 +3532,10 @@ impl Renderer {
     pub fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
         self.placed_lights = lights;
     }
+    /// The hulls' dry air near the eye this frame (docs/CANNONS.md §12 H3), nearest first.
+    pub fn set_dry_hulls(&mut self, hulls: Vec<DryHull>) {
+        self.dry_hulls = hulls;
+    }
     /// The distant shadows this adapter draws (lod_shadows.rs): the Shadows setting's tier, none on
     /// a CPU adapter or with `?lodshadows=off`.
     fn lod_tier(&self) -> Option<dwell_look::lod_shadows::LodShadowTier> {
@@ -4104,6 +4138,9 @@ impl Renderer {
             put(&v);
         }
         put(&self.far_uniform());
+        for v in dry_hull_uniforms(&self.dry_hulls, self.eye) {
+            put(&v);
+        }
         let pixel_angle = 2.0 * tan_y / f64::from(self.size.1.max(1));
         let mut day =
             self.day_in_air()
@@ -6892,7 +6929,11 @@ pub(crate) const FRAME_FLOATS: usize = 16
 
 /// Floats of the tree lean's vec4s (`lean_uniforms`), just before the day/night block.
 /// With the far trees' hand-over after them (`far_trees`, render/impostors.rs).
-pub(crate) const LEAN_FLOATS: usize = 7 * 4;
+/// And the hulls' dry air (`dry_hull_uniforms`: 4 hulls × 3 vec4s) after them.
+pub(crate) const LEAN_FLOATS: usize = 7 * 4 + DRY_HULLS * 3 * 4;
+
+/// The hulls whose dry air hides the water (the nearest; docs/CANNONS.md §12 H3).
+pub const DRY_HULLS: usize = 4;
 
 /// The atlas and its mipmaps, each with its side in texels: down to the level where a tile's gutter
 /// is one texel wide. Filtering a smaller level at a tile's edge would reach past the gutter into
@@ -7181,6 +7222,9 @@ impl crate::game::Scene for Renderer {
     }
     fn set_placed_lights(&mut self, lights: Vec<lights::PlacedLight>) {
         Renderer::set_placed_lights(self, lights);
+    }
+    fn set_dry_hulls(&mut self, hulls: Vec<DryHull>) {
+        Renderer::set_dry_hulls(self, hulls);
     }
     fn set_flecks(&mut self, flecks: Vec<crate::flecks::Fleck>) {
         self.flecks = flecks;

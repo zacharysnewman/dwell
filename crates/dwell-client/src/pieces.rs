@@ -77,6 +77,28 @@ struct Piece {
     /// A snapshot's velocity seen (the spawn pose's zero is no measure: a flung piece's first
     /// snapshot is no landing).
     sampled: bool,
+    /// Its rows' up (+1, or −1 on face B) and its hull's dry air (`air_box`; docs/CANNONS.md §12
+    /// H3): the box's centre and half-size in its frame (m), none without air.
+    up_step: i32,
+    air: Option<([f64; 3], [f64; 3])>,
+}
+
+/// The box round a body's air cells (`dwell_sim::felling::air_cells`) in its frame: centre and
+/// half-size (m), none without air. A cell is 1 × ½ × 1 m about its offset.
+fn air_box(blocks: &[([i32; 3], StateId)], up_step: i32) -> Option<([f64; 3], [f64; 3])> {
+    let air = dwell_sim::felling::air_cells(blocks, up_step);
+    let first = *air.first()?;
+    let (mut lo, mut hi) = (first, first);
+    for c in &air {
+        for k in 0..3 {
+            lo[k] = lo[k].min(c[k]);
+            hi[k] = hi[k].max(c[k]);
+        }
+    }
+    let size = [1.0, CELL_H, 1.0];
+    let centre = std::array::from_fn(|k| 0.5 * f64::from(lo[k] + hi[k]) * size[k]);
+    let half = std::array::from_fn(|k| 0.5 * f64::from(hi[k] - lo[k] + 1) * size[k]);
+    Some((centre, half))
 }
 
 /// A piece's latest pose for the prediction: its id, boxes, position, rotation, velocity and the
@@ -138,6 +160,8 @@ impl Pieces {
             velocity: DVec3::ZERO,
             angular: DVec3::ZERO,
         };
+        let f = FaceFrame::at_height(e.origin[1]);
+        let up_step = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
         let block = cells.first().map_or(0, |c| c.1);
         // (A body spawned again, its kind changed — felled logs afloat made a raft — cracks no tree.)
         if e.carriers > 0 && block != 0 && !self.map.contains_key(&e.id) {
@@ -157,6 +181,8 @@ impl Pieces {
                 landed_ms: f64::NEG_INFINITY,
                 falling_trunk: if block != 0 { e.carriers } else { 0 },
                 sampled: false,
+                up_step,
+                air: air_box(&cells, up_step),
             },
         );
         piece_meshes(&cells)
@@ -207,6 +233,7 @@ impl Pieces {
             }
         }
         p.cells = piece_boxes(&p.blocks, p.kind);
+        p.air = air_box(&p.blocks, p.up_step);
         Some(piece_meshes(&p.blocks))
     }
 
@@ -299,6 +326,32 @@ impl Pieces {
             }
         }
         out
+    }
+
+    /// The hulls' dry air at the poses drawn at `now_ms` (docs/CANNONS.md §12 H3): the nearest
+    /// `max` to `eye` with any, nearest first.
+    pub fn dry_hulls(&self, now_ms: f64, eye: [f64; 3], max: usize) -> Vec<crate::render::DryHull> {
+        let at = self.draw_ms(now_ms);
+        let mut out: Vec<(f64, crate::render::DryHull)> = self
+            .map
+            .values()
+            .filter_map(|p| {
+                let (centre, half) = p.air?;
+                let (position, rotation) = p.drawn(at);
+                let c = position + rotation * DVec3::from(centre);
+                let d = (c - DVec3::from(eye)).length();
+                Some((
+                    d,
+                    crate::render::DryHull {
+                        centre: c.to_array(),
+                        half,
+                        rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+                    },
+                ))
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.total_cmp(&b.0));
+        out.into_iter().take(max).map(|(_, h)| h).collect()
     }
 
     /// Body `id`'s cells (its grid).
@@ -779,6 +832,31 @@ fn meshed_blocks(cells: &[([i32; 3], StateId)], mirror: bool) -> Vec<ChunkMeshes
 
 #[cfg(test)]
 mod tests {
+
+    dwell_world::both_faces!(
+        fn an_open_hulls_dry_air_box_is_its_inside_up_to_its_rim(f: FaceFrame) {
+            // docs/CANNONS.md §12 H3: a 4 × 4 floor, walls 2 high round it: its 2 × 2 inside, rows 1
+            // and 2 (the rim), in its frame.
+            let up = f.cell([0, 1, 0])[1] - f.cell([0, 0, 0])[1];
+            let m = dwell_blocks::require("dwell:planks");
+            let mut blocks = Vec::new();
+            for x in 0..4 {
+                for z in 0..4 {
+                    blocks.push(([x, 0, z], m));
+                    if x == 0 || z == 0 || x == 3 || z == 3 {
+                        blocks.push(([x, up, z], m));
+                        blocks.push(([x, 2 * up, z], m));
+                    }
+                }
+            }
+            let (centre, half) = air_box(&blocks, up).expect("air inside");
+            assert_eq!(centre, [1.5, 1.5 * CELL_H * f64::from(up), 1.5]);
+            assert_eq!(half, [1.0, CELL_H, 1.0]);
+            // A flat raft has none.
+            assert!(air_box(&[([0, 0, 0], m), ([1, 0, 0], m)], up).is_none());
+        }
+    );
+
     use super::*;
 
     #[test]
