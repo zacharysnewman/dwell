@@ -3013,6 +3013,10 @@ impl<S: Scene> Game<S> {
             return self.tool(tool, now_ms);
         }
         let Some(target) = self.interaction.target() else {
+            // Stood on a moving body, the bridging help builds on along it (BUGS.md #214).
+            if action == EditAction::Place && self.body_edge_place(holder, now_ms) {
+                return true;
+            }
             if action == EditAction::Place && self.edge_place(holder, now_ms) {
                 return true;
             }
@@ -3180,6 +3184,118 @@ impl<S: Scene> Game<S> {
         dwell_blocks::try_info(m).is_some_and(|s| s.use_action.is_some())
     }
 
+    /// The bridging help on a moving body (BUGS.md #214; owner, 2026-11-18: "I can't use the
+    /// bridging helper on dynamic objects, I want to be to do that"): with nothing aimed at and the
+    /// player on a body, `build_drag::edge_target` in the body's grid (set beside a world cell near
+    /// it, as the body stroke's) finds the cell over its edge; the block goes against its neighbour,
+    /// and held, the body stroke bridges on. Plain blocks only, as the world's.
+    fn body_edge_place(
+        &mut self,
+        holder: Option<dwell_game::build_drag::Holder>,
+        now_ms: f64,
+    ) -> bool {
+        use dwell_game::build_drag::{drags, edge_target};
+        let Some(slot) = self.interaction.palette().get(self.interaction.selected()) else {
+            return false;
+        };
+        let material = slot.material;
+        if !self.region.enabled
+            || !drags(material)
+            || slot.drag != dwell_game::items::ItemDrag::Modes
+            || slot.rows != 1
+            || self.brush.active()
+            || self.region.pasting()
+        {
+            return false;
+        }
+        let (Some(capsule), Some(eye)) = (self.own_capsule(), self.target_eye) else {
+            return false;
+        };
+        let feet = self.current.feet();
+        let f = FaceFrame::at_height(feet[1]);
+        let down = -DVec3::from(f.up());
+        let Some(under) = self
+            .pieces
+            .raycast(DVec3::from(feet) - down * 0.3, down, 1.0, now_ms)
+        else {
+            return false;
+        };
+        if self
+            .pieces
+            .kind_of(under.body)
+            .is_none_or(|k| !dwell_sim::felling::body_kind(k).place)
+        {
+            return false;
+        }
+        let (position, rotation) = (under.position, under.rotation);
+        let inv = rotation.inverse();
+        let anchor = dwell_world::cell_of_pos(position.to_array());
+        let base = DVec3::from(dwell_world::centre_of_cell(anchor));
+        let local = |p: [f64; 3]| (base + inv * (DVec3::from(p) - position)).to_array();
+        let local_dir = (inv * DVec3::from(self.view_dir)).to_array();
+        let cells = self.pieces.cells_of(under.body);
+        let mut world = BodyGridDrag {
+            cells: cells.iter().map(|&c| add3(anchor, c)).collect(),
+        };
+        let reach = f64::from(dwell_protocol::players::REACH_DISTANCE);
+        let Some((cell, dir)) = edge_target(
+            local(feet),
+            f64::from(capsule.radius),
+            local(eye),
+            local_dir,
+            reach,
+            material,
+            &mut world,
+        ) else {
+            return false;
+        };
+        let g = [
+            cell[0] - anchor[0],
+            cell[1] - anchor[1],
+            cell[2] - anchor[2],
+        ];
+        let Some((n, face)) = body_place_against(g, &cells) else {
+            return false;
+        };
+        let material = self.body_material(&under);
+        if material == 0 {
+            return false;
+        }
+        self.body_edit_ms = now_ms;
+        self.bodies
+            .swing_arms(dwell_characters::animator::Swing::Place);
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::BodyEditRequest(
+                dwell_protocol::BodyEditRequest {
+                    body: under.body,
+                    cell: n.map(|v| v as i16),
+                    face,
+                    action: dwell_protocol::BlockEditAction::Place,
+                    material,
+                },
+            )));
+        if let Some(holder) = holder {
+            let mut engine = dwell_game::build_drag::BuildDrag::with_mode(self.drag.mode_index());
+            engine.start(
+                holder,
+                &[cell],
+                dir,
+                material,
+                dwell_game::items::ItemDrag::Modes,
+                now_ms,
+            );
+            engine.bridging();
+            self.body_drag = Some(BodyDrag {
+                body: under.body,
+                engine,
+                anchor,
+                sent: vec![g],
+            });
+        }
+        true
+    }
+
     /// Sends the Use of the body block aimed at, if it has a `use` (block data; a cannon fires, a
     /// helm takes the player: docs/CANNONS.md C4, C5) as a `BodyEditRequest` Place (the server does
     /// the use, nothing placed). Whether it did.
@@ -3283,44 +3399,73 @@ impl<S: Scene> Game<S> {
     /// spot"): once held a moment, each frame the face of that body aimed at gets the block beside it,
     /// one request a cell (body edits aren't predicted: the cell shows when the server answers) at the
     /// edit pace, so sweeping the aim lays a row.
-    fn body_drag_build(&mut self, now_ms: f64) {
-        let Some(d) = &self.body_drag else {
+    fn body_drag_build(&mut self, eye: Option<[f64; 3]>, dir: [f64; 3], now_ms: f64) {
+        let (Some(eye), Some(d)) = (eye, self.body_drag.as_ref()) else {
             return;
         };
-        if now_ms - d.started_ms < BODY_DRAG_HOLD_MS
-            || now_ms - self.body_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64
-        {
+        if !d.engine.armed(now_ms) {
             return;
         }
-        let Some(b) = self.body_target.filter(|b| b.body == d.body) else {
+        let Some((position, rotation)) = self.pieces.drawn_pose(d.body, now_ms) else {
+            self.body_drag = None;
             return;
         };
-        let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
-        let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
-        if body_drag_skips(&d.sent, new, self.pieces.block_at(b.body, new).is_some()) {
+        // The aim in the body's grid, set beside a world cell near it (`anchor`) so its rows read
+        // its face: its cell c is the drag's cell anchor + c.
+        let inv = rotation.inverse();
+        let base = DVec3::from(dwell_world::centre_of_cell(d.anchor));
+        let local_eye = (base + inv * (DVec3::from(eye) - position)).to_array();
+        let local_dir = (inv * DVec3::from(dir)).to_array();
+        let anchor = d.anchor;
+        let body = d.body;
+        let mut filled: Vec<[i32; 3]> = self.pieces.cells_of(body);
+        filled.extend(d.sent.iter().copied());
+        let mut world = BodyGridDrag {
+            cells: filled.iter().map(|&c| add3(anchor, c)).collect(),
+        };
+        let d = self.body_drag.as_mut().expect("the stroke");
+        d.engine.aim_at(
+            local_eye,
+            local_dir,
+            f64::from(dwell_protocol::players::REACH_DISTANCE),
+            &mut world,
+            now_ms,
+        );
+        let fills = d.engine.pump_capped(now_ms, 4);
+        let mut sends = Vec::new();
+        for (fill, _) in fills {
+            for y in 0..i32::from(fill.size[1]) {
+                let g = [
+                    fill.min[0] - anchor[0],
+                    fill.min[1] + y - anchor[1],
+                    fill.min[2] - anchor[2],
+                ];
+                if let Some((n, face)) = body_place_against(g, &filled) {
+                    filled.push(g);
+                    sends.push((n, face, fill.material, g));
+                }
+            }
+        }
+        if sends.is_empty() {
             return;
         }
-        let material = self.body_material(&b);
-        if material == 0 {
-            return;
-        }
-        self.body_edit_ms = now_ms;
-        if let Some(d) = &mut self.body_drag {
-            d.sent.push(new);
-        }
+        let d = self.body_drag.as_mut().expect("the stroke");
+        d.sent.extend(sends.iter().map(|s| s.3));
         self.bodies
             .swing_arms(dwell_characters::animator::Swing::Place);
-        self.outbox
-            .borrow_mut()
-            .push(Send::Control(Message::BodyEditRequest(
-                dwell_protocol::BodyEditRequest {
-                    body: b.body,
-                    cell: b.cell.map(|v| v as i16),
-                    face: b.face,
-                    action: dwell_protocol::BlockEditAction::Place,
-                    material,
-                },
-            )));
+        for (n, face, material, _) in sends {
+            self.outbox
+                .borrow_mut()
+                .push(Send::Control(Message::BodyEditRequest(
+                    dwell_protocol::BodyEditRequest {
+                        body,
+                        cell: n.map(|v| v as i16),
+                        face,
+                        action: dwell_protocol::BlockEditAction::Place,
+                        material,
+                    },
+                )));
+        }
     }
 
     /// Breaks or places as [`edit`](Self::edit), with the button held by `holder`: a place
@@ -3352,14 +3497,28 @@ impl<S: Scene> Game<S> {
         {
             let lined_up = b.rotation.angle_between(dwell_physics::DQuat::IDENTITY) < 1e-3;
             let placed = self.edit(action, now_ms);
-            // A moving body (afloat, turned): the stroke builds on in its own grid (BUGS.md #209).
+            // A moving body (afloat, turned): the stroke builds on in its own grid, by the build
+            // modes as on the ground (BUGS.md #209, #215).
             if placed && !lined_up {
                 let dir = dwell_world::edit::FACE_DIRS[usize::from(b.face)];
                 let new = [b.cell[0] + dir[0], b.cell[1] + dir[1], b.cell[2] + dir[2]];
+                let anchor = dwell_world::cell_of_pos(b.position.to_array());
+                let mut engine =
+                    dwell_game::build_drag::BuildDrag::with_mode(self.drag.mode_index());
+                let material = self.body_material(&b);
+                engine.start(
+                    holder,
+                    &[add3(anchor, new)],
+                    dir,
+                    material,
+                    dwell_game::items::ItemDrag::Modes,
+                    now_ms,
+                );
                 self.body_drag = Some(BodyDrag {
                     body: b.body,
+                    engine,
+                    anchor,
                     sent: vec![new],
-                    started_ms: now_ms,
                 });
             }
             if placed && lined_up {
@@ -3759,7 +3918,7 @@ impl<S: Scene> Game<S> {
             self.drag.cancel();
             self.body_drag = None;
         }
-        self.body_drag_build(now_ms);
+        self.body_drag_build(eye, dir, now_ms);
         // A first place waiting for the body: it goes once the body is clear of it.
         if let Some(w) = self.drag.waiting() {
             let m = Message::BlockEditRequest(w.request.clone());
@@ -7205,21 +7364,47 @@ fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
     (active && !whole, active && whole)
 }
 
-/// A held Place's stroke on a moving body ([`Game::body_drag_build`]).
-#[derive(Clone, Debug)]
+/// A held Place's stroke on a moving body ([`Game::body_drag_build`]; BUGS.md #209, #215): the
+/// build modes' drag in the body's grid, set beside the world cell `anchor` near it.
 struct BodyDrag {
     body: u32,
+    engine: dwell_game::build_drag::BuildDrag,
+    anchor: [i32; 3],
     /// The cells (its grid) a place was sent for in this stroke.
     sent: Vec<[i32; 3]>,
-    started_ms: f64,
 }
 
-/// How long Place is held before a stroke on a moving body builds on (a click places one block).
-const BODY_DRAG_HOLD_MS: f64 = 150.0;
+/// A body's cells as the drag's world (its grid's cells, set beside its anchor).
+struct BodyGridDrag {
+    cells: Vec<[i32; 3]>,
+}
 
-/// Whether a body stroke skips cell `new`: sent already this stroke, or filled.
-fn body_drag_skips(sent: &[[i32; 3]], new: [i32; 3], filled: bool) -> bool {
-    filled || sent.contains(&new)
+impl dwell_game::build_drag::DragWorld for BodyGridDrag {
+    fn free(&mut self, cell: [i32; 3], _material: StateId) -> bool {
+        !self.cells.contains(&cell)
+    }
+    fn occupied(&mut self, cell: [i32; 3]) -> bool {
+        self.cells.contains(&cell)
+    }
+}
+
+fn add3(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+/// Where a place goes for body cell `g` (its grid): against a filled neighbour (`filled`, the
+/// body's cells and those sent), the neighbour and the face toward `g`; none beside nothing.
+fn body_place_against(g: [i32; 3], filled: &[[i32; 3]]) -> Option<([i32; 3], u8)> {
+    if filled.contains(&g) {
+        return None;
+    }
+    dwell_world::edit::FACE_DIRS
+        .iter()
+        .enumerate()
+        .find_map(|(k, d)| {
+            let n = [g[0] - d[0], g[1] - d[1], g[2] - d[2]];
+            filled.contains(&n).then_some((n, k as u8))
+        })
 }
 
 /// The cannon (its index in `CANNONS`) whose ball a body of the one state `m` is: a shot's ball
@@ -7484,13 +7669,16 @@ mod tests {
     }
 
     #[test]
-    fn a_body_stroke_sends_each_cell_once() {
-        // BUGS.md #209: it kept placing at the same spot (the body's cell shows only when the
-        // server answers). face-a-only: cells of a body's own grid, no face.
-        let sent = vec![[1, 1, 0]];
-        assert!(body_drag_skips(&sent, [1, 1, 0], false), "sent already");
-        assert!(body_drag_skips(&sent, [2, 1, 0], true), "filled");
-        assert!(!body_drag_skips(&sent, [2, 1, 0], false), "a new cell");
+    fn a_body_strokes_cell_goes_against_a_filled_neighbour() {
+        // BUGS.md #209, #215. face-a-only: cells of a body's own grid, no face.
+        let filled = vec![[0, 0, 0], [1, 0, 0]];
+        // Beside (1, 0, 0) along +x: against it, its +x face (0).
+        assert_eq!(body_place_against([2, 0, 0], &filled), Some(([1, 0, 0], 0)));
+        // On top of (0, 0, 0): its +y face (2).
+        assert_eq!(body_place_against([0, 1, 0], &filled), Some(([0, 0, 0], 2)));
+        // Filled already, or beside nothing: none.
+        assert_eq!(body_place_against([1, 0, 0], &filled), None);
+        assert_eq!(body_place_against([5, 5, 5], &filled), None);
     }
 
     dwell_world::both_faces!(

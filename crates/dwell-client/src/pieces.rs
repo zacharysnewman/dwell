@@ -264,6 +264,20 @@ impl Pieces {
         p.blocks.iter().find(|&&(o, _)| o == cell).map(|&(_, m)| m)
     }
 
+    /// Body `id`'s pose as drawn at `now_ms` (its reference cell's centre and rotation).
+    pub fn drawn_pose(&self, id: u32, now_ms: f64) -> Option<(DVec3, DQuat)> {
+        let at = self.draw_ms(now_ms);
+        self.map.get(&id).map(|p| p.drawn(at))
+    }
+
+    /// Body `id`'s cells (its grid).
+    pub fn cells_of(&self, id: u32) -> Vec<[i32; 3]> {
+        self.map
+            .get(&id)
+            .map(|p| p.blocks.iter().map(|&(o, _)| o).collect())
+            .unwrap_or_default()
+    }
+
     pub fn ids(&self) -> Vec<u32> {
         self.map.keys().copied().collect()
     }
