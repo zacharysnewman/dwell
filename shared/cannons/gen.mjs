@@ -64,7 +64,7 @@ export function validateCannons(data, names) {
   const seen = new Set();
   const cannons = data.cannons.map((c, i) => {
     const at = `cannons[${i}]`;
-    known(c, ['block', 'ball', 'muzzleSpeedMs', 'muzzleUpM', 'muzzleForwardM', 'recoilShare', 'reloadS', 'fire'], at);
+    known(c, ['block', 'ball', 'muzzleSpeedMs', 'elevationDeg', 'muzzleUpM', 'muzzleForwardM', 'recoilShare', 'reloadS', 'fire'], at);
     validateEffects(c.fire, `${at}.fire`, fail);
     const def = names.blocks.get(c.block);
     if (!def) fail(`${at}.block: no block ${JSON.stringify(c.block)}`);
@@ -73,6 +73,7 @@ export function validateCannons(data, names) {
     seen.add(c.block);
     if (!ballNames.has(c.ball)) fail(`${at}.ball: no ball ${JSON.stringify(c.ball)}`);
     range(c, 'muzzleSpeedMs', 1, 300, at);
+    range(c, 'elevationDeg', -30, 60, at);
     range(c, 'muzzleUpM', 0, 4, at);
     range(c, 'muzzleForwardM', 0, 8, at);
     range(c, 'reloadS', 0, 120, at);
@@ -107,7 +108,7 @@ export function cannonsRust(d) {
   rs.push('/// The cannons, by block (`cannons`).');
   rs.push('pub static CANNONS: &[CannonDef] = &[');
   for (const c of d.cannons) {
-    rs.push(`    CannonDef { block: "${c.block}", ball: "${c.ball}", muzzle_speed_ms: ${f64(c.muzzleSpeedMs)}, muzzle_up_m: ${f64(c.muzzleUpM)}, muzzle_forward_m: ${f64(c.muzzleForwardM)}, recoil_share: ${f64(c.recoilShare)}, reload_s: ${f64(c.reloadS)}, fire: ${effectsRust(c.fire, '    ')} },`);
+    rs.push(`    CannonDef { block: "${c.block}", ball: "${c.ball}", muzzle_speed_ms: ${f64(c.muzzleSpeedMs)}, elevation_deg: ${f64(c.elevationDeg)}, muzzle_up_m: ${f64(c.muzzleUpM)}, muzzle_forward_m: ${f64(c.muzzleForwardM)}, recoil_share: ${f64(c.recoilShare)}, reload_s: ${f64(c.reloadS)}, fire: ${effectsRust(c.fire, '    ')} },`);
   }
   rs.push('];', '');
   rs.push('/// The cannonballs (`balls`).');

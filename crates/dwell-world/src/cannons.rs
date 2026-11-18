@@ -74,6 +74,8 @@ pub struct CannonDef {
     pub block: &'static str,
     pub ball: &'static str,
     pub muzzle_speed_ms: f64,
+    /// The barrel's tilt up from level along its facing (degrees).
+    pub elevation_deg: f64,
     pub muzzle_up_m: f64,
     pub muzzle_forward_m: f64,
     /// The share of the ball's momentum that pushes a body the cannon stands on back (0–1).
