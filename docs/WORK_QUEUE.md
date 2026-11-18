@@ -130,7 +130,10 @@ Last updated: 2026-11-11 (0.52.108).
   Owner, 2026-11-18: "What's left on boats? Making helms look different than planks. I'd like boats to work in adventure
   too. What do we need for that? Do we need build platforms? Or can we just connect to a real block? And crafting
   recipes for cannons and helms?" Owner should see: the ship's wheel looks like a wheel, not planks; in adventure a
-  player can make a boat (how it is started: questions first) and craft its cannon and wheel.
+  player can make a boat (how it is started: questions first) and craft its cannon and wheel. Owner's answers
+  (2026-11-18): a boat starts "Built on water" (no platform: a block placed on water, or against a floating block,
+  starts a raft); a cannon "16 rock shards + 4 wood"; a ship's wheel "6 wood + 4 sticks"; the wheel "A spoked wheel
+  model".
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."

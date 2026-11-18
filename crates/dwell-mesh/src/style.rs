@@ -23,6 +23,9 @@ pub(crate) enum Look {
     /// A sphere resting on the cell's floor, of its ball's radius (`"look": "ball"`, a cannonball:
     /// `dwell_world::cannons::ball` by the block's name; docs/CANNONS.md C2).
     Ball,
+    /// A ship's spoked wheel on its post (`"look": "wheel"`: `dwell_world::cannons::helm`'s `wheel`
+    /// by the block's name), across the block's facing.
+    Wheel,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +113,7 @@ pub(crate) fn style_of(s: &StateInfo, fluids: &[FluidInfo]) -> MaterialStyle {
         "cross" => Look::Cross,
         "fluid" => Look::Fluid,
         "ball" => Look::Ball,
+        "wheel" => Look::Wheel,
         // 'cube', and any look the meshers do not know: a full cube.
         _ => Look::Cube,
     };
@@ -177,7 +181,7 @@ const UNKNOWN_COLOR: u32 = 0xff00ff;
 pub(crate) fn drawable(s: &StateInfo, fluids: &[FluidInfo]) -> bool {
     let look = matches!(
         s.look,
-        "cube" | "shaped" | "ladder" | "cross" | "fluid" | "ball"
+        "cube" | "shaped" | "ladder" | "cross" | "fluid" | "ball" | "wheel"
     );
     let tiles = s.textures.is_none_or(|t| {
         crate::textures::has_tile(t.top)

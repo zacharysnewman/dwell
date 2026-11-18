@@ -84,7 +84,12 @@ export function validateCannons(data, names) {
   const helmSeen = new Set();
   const helms = data.helms.map((h, i) => {
     const at = `helms[${i}]`;
-    known(h, ['block', 'thrustAccelMs2', 'turnRadS2PerMs', 'camera'], at);
+    known(h, ['block', 'thrustAccelMs2', 'turnRadS2PerMs', 'camera', 'wheel'], at);
+    known(h.wheel, ['radiusM', 'hubM', 'spokes', 'handleM'], `${at}.wheel`);
+    range(h.wheel, 'radiusM', 0.05, 1, `${at}.wheel`);
+    range(h.wheel, 'hubM', 0.05, 2, `${at}.wheel`);
+    range(h.wheel, 'handleM', 0, 0.5, `${at}.wheel`);
+    if (!Number.isInteger(h.wheel.spokes) || h.wheel.spokes < 3 || h.wheel.spokes > 16) fail(`${at}.wheel.spokes must be a whole number in [3, 16]`);
     known(h.camera, ['backM', 'upM', 'easeS'], `${at}.camera`);
     range(h.camera, 'backM', 0, 30, `${at}.camera`);
     range(h.camera, 'upM', -5, 15, `${at}.camera`);
@@ -104,7 +109,7 @@ export function validateCannons(data, names) {
 const f64 = (v) => (Number.isInteger(v) ? `${v}.0` : `${v}`);
 
 export function cannonsRust(d) {
-  const rs = [`// ${header}`, '', 'use crate::cannons::{BallDef, CannonDef, HelmCamera, HelmDef, Impact};', 'use crate::explosives::{BlastEffects, BoomLook, FlashLook, PuffLook, ShakeLook};', ''];
+  const rs = [`// ${header}`, '', 'use crate::cannons::{BallDef, CannonDef, HelmCamera, HelmDef, HelmWheel, Impact};', 'use crate::explosives::{BlastEffects, BoomLook, FlashLook, PuffLook, ShakeLook};', ''];
   rs.push('/// The cannons, by block (`cannons`).');
   rs.push('pub static CANNONS: &[CannonDef] = &[');
   for (const c of d.cannons) {
@@ -121,7 +126,7 @@ export function cannonsRust(d) {
   rs.push('/// The ships\' helms, by block (`helms`).');
   rs.push('pub static HELMS: &[HelmDef] = &[');
   for (const h of d.helms) {
-    rs.push(`    HelmDef { block: "${h.block}", thrust_accel_ms2: ${f64(h.thrustAccelMs2)}, turn_rad_s2_per_ms: ${f64(h.turnRadS2PerMs)}, camera: HelmCamera { back_m: ${f64(h.camera.backM)}, up_m: ${f64(h.camera.upM)}, ease_s: ${f64(h.camera.easeS)} } },`);
+    rs.push(`    HelmDef { block: "${h.block}", thrust_accel_ms2: ${f64(h.thrustAccelMs2)}, turn_rad_s2_per_ms: ${f64(h.turnRadS2PerMs)}, camera: HelmCamera { back_m: ${f64(h.camera.backM)}, up_m: ${f64(h.camera.upM)}, ease_s: ${f64(h.camera.easeS)} }, wheel: HelmWheel { radius_m: ${f64(h.wheel.radiusM)}, hub_m: ${f64(h.wheel.hubM)}, spokes: ${h.wheel.spokes}, handle_m: ${f64(h.wheel.handleM)} } },`);
   }
   rs.push('];', '');
   return rs.join('\n');

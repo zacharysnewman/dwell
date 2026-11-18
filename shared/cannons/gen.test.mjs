@@ -17,7 +17,7 @@ test('a fixture cannon and ball by data alone; bad entries fail naming them', ()
   names.blocks.set('test:stone_ball', { look: 'ball' });
   data.balls.push({ name: 'test:stone_ball', radiusM: 0.2, densityKgM3: 2400, rollDamping: 2, impact: { destroySpeedMs: 30, energyPerKgJ: 10, dragRadiusM: 0.5, dragForcePerSpeedN: 100, maxLooseCells: 4, minSpeedMs: 2 } });
   names.blocks.set('test:tiller', { use: 'helm' });
-  data.helms.push({ block: 'test:tiller', thrustAccelMs2: 0.5, turnRadS2PerMs: 0.05, camera: { backM: 3, upM: 1, easeS: 0.2 } });
+  data.helms.push({ block: 'test:tiller', thrustAccelMs2: 0.5, turnRadS2PerMs: 0.05, camera: { backM: 3, upM: 1, easeS: 0.2 }, wheel: { radiusM: 0.3, hubM: 0.5, spokes: 6, handleM: 0.05 } });
   assert.match(cannonsRust(validateCannons(data, names)), /HelmDef \{ block: "test:tiller", thrust_accel_ms2: 0\.5/);
   data.cannons.push({ block: 'test:mortar', ball: 'test:stone_ball', muzzleSpeedMs: 20, elevationDeg: 10, muzzleUpM: 1, muzzleForwardM: 0.5, recoilShare: 0.5, reloadS: 6, fire: structuredClone(data.cannons[0].fire) });
   assert.match(cannonsRust(validateCannons(data, names)), /CannonDef \{ block: "test:mortar", ball: "test:stone_ball"/);

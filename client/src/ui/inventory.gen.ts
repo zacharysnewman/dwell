@@ -58,6 +58,8 @@ export const RECIPES: readonly Recipe[] = [
   {"name":"dwell:planks_slab","label":"Planks","inputs":[{"item":"dwell:wood","count":4}],"output":{"item":"dwell:planks","count":4}},
   {"name":"dwell:stone_brick_slab","label":"Stone brick","inputs":[{"item":"dwell:rock_shard","count":4}],"output":{"item":"dwell:stone_brick","count":4}},
   {"name":"dwell:thatch_slab","label":"Thatch","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:thatch","count":4}},
+  {"name":"dwell:cannon","label":"Cannon","inputs":[{"item":"dwell:rock_shard","count":16},{"item":"dwell:wood","count":4}],"output":{"item":"dwell:cannon","count":1}},
+  {"name":"dwell:helm","label":"Ship's wheel","inputs":[{"item":"dwell:wood","count":6},{"item":"dwell:stick","count":4}],"output":{"item":"dwell:helm","count":1}},
   {"name":"dwell:stone_axe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_axe","count":1}},
   {"name":"dwell:stone_pickaxe","inputs":[{"item":"dwell:stick","count":2},{"item":"dwell:rock_shard","count":2},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:stone_pickaxe","count":1}},
   {"name":"dwell:wooden_shovel","inputs":[{"item":"dwell:stick","count":4},{"item":"dwell:grass_fiber","count":2}],"output":{"item":"dwell:wooden_shovel","count":1}},

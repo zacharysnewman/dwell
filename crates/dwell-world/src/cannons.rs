@@ -33,6 +33,18 @@ pub struct HelmDef {
     /// The rudder's turn (rad/s²) for each m/s the ship moves along its heading, whatever its size.
     pub turn_rad_s2_per_ms: f64,
     pub camera: HelmCamera,
+    pub wheel: HelmWheel,
+}
+
+/// A helm's look (owner, 2026-11-18: "A spoked wheel model"; its block's look `wheel`): a post up
+/// to the hub `hub_m` over the cell's floor, a rim of `radius_m` with `spokes` spokes running
+/// `handle_m` out past it, across the helm's facing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HelmWheel {
+    pub radius_m: f64,
+    pub hub_m: f64,
+    pub spokes: u32,
+    pub handle_m: f64,
 }
 
 /// The view at a helm (owner, 2026-11-18: "The camera should smoothly transition to 3rd person when
