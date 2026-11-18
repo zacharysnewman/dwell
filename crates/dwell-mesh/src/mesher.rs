@@ -175,7 +175,7 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
     let empty = id == 0
         || style.look == Look::Fluid
         || style.look == Look::Ladder
-        || matches!(style.look, Look::Cross | Look::Ball);
+        || matches!(style.look, Look::Cross | Look::Ball | Look::Wheel);
     let shaped = !empty && style.look == Look::Shaped;
     Kind {
         shape: if empty {
@@ -198,7 +198,7 @@ fn make_kind(id: StateId, style: MaterialStyle) -> Kind {
         // is drawn inside it): the water beside draws no face toward it.
         flooded: (shaped
             || style.look == Look::Ladder
-            || matches!(style.look, Look::Cross | Look::Ball)
+            || matches!(style.look, Look::Cross | Look::Ball | Look::Wheel)
             || (!empty && style.render != RenderMode::Opaque))
             && style.flooded,
         occludes: !empty && style.render == RenderMode::Opaque,
@@ -716,7 +716,7 @@ fn shore_mask(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> u32 {
         !k.liquid
             && !k.flooded
             && k.shape != Shape::Empty
-            && !matches!(k.style.look, Look::Cross | Look::Ball)
+            && !matches!(k.style.look, Look::Cross | Look::Ball | Look::Wheel)
     };
     [
         (-1, 0, w::SHORE_W),
@@ -1130,6 +1130,138 @@ fn shaped_voxel(
             closed: 0,
         };
         mask_walls(b, k, [x, y, z], &walls);
+    }
+}
+
+/// A ship's wheel (`wheel` look, docs/CANNONS.md: owner, 2026-11-18: "A spoked wheel model"): a
+/// post from the cell's floor up to the hub, a rim of `spokes` × 2 segments and its spokes running
+/// out past it as handles, the wheel across the block's facing (its `ladder_face`) and the post on
+/// its forward side; flat-shaded boxes in the block's colour. Sizes from its helm's `wheel` data.
+fn wheel_voxel(
+    b: &mut Builder,
+    style: &MaterialStyle,
+    cell: [i32; 3],
+    (light, flood): (f32, [f32; 2]),
+) {
+    let Some(w) = dwell_world::cannons::helm(style.block).map(|h| h.wheel) else {
+        return;
+    };
+    // The wheel's frame (m): u across it, v up, f forward (its facing).
+    let (u, f): ([f64; 3], [f64; 3]) = match style.ladder_face {
+        Some(0) => ([0.0, 0.0, -1.0], [1.0, 0.0, 0.0]),
+        Some(1) => ([0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]),
+        Some(4) => ([-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        _ => ([1.0, 0.0, 0.0], [0.0, 0.0, -1.0]),
+    };
+    let v = [0.0, 1.0, 0.0];
+    // A box centred at (cu, cv, cf) in that frame, its axes turned by `angle` about f in the u-v
+    // plane, of half-sizes (hu, hv, hf); to the cell's units (y in cells) about its floor's middle.
+    let (color, tile) = surface(style, 1, 1);
+    let origin = cell.map(f64::from);
+    let mut put_box = |c: [f64; 3], angle: f64, h: [f64; 3]| {
+        let (ca, sa) = (angle.cos(), angle.sin());
+        let a1: [f64; 3] = std::array::from_fn(|k| u[k] * ca + v[k] * sa);
+        let a2: [f64; 3] = std::array::from_fn(|k| -u[k] * sa + v[k] * ca);
+        let centre: [f64; 3] = std::array::from_fn(|k| u[k] * c[0] + v[k] * c[1] + f[k] * c[2]);
+        let corner = |s1: f64, s2: f64, s3: f64| -> [f64; 3] {
+            let p: [f64; 3] = std::array::from_fn(|k| {
+                centre[k] + a1[k] * s1 * h[0] + a2[k] * s2 * h[1] + f[k] * s3 * h[2]
+            });
+            [0.5 + p[0], p[1] / CELL_H, 0.5 + p[2]]
+        };
+        // Six faces, each counter-clockwise seen from outside.
+        let faces = [
+            [
+                corner(1.0, -1.0, -1.0),
+                corner(1.0, 1.0, -1.0),
+                corner(1.0, 1.0, 1.0),
+                corner(1.0, -1.0, 1.0),
+            ],
+            [
+                corner(-1.0, -1.0, 1.0),
+                corner(-1.0, 1.0, 1.0),
+                corner(-1.0, 1.0, -1.0),
+                corner(-1.0, -1.0, -1.0),
+            ],
+            [
+                corner(-1.0, 1.0, -1.0),
+                corner(-1.0, 1.0, 1.0),
+                corner(1.0, 1.0, 1.0),
+                corner(1.0, 1.0, -1.0),
+            ],
+            [
+                corner(-1.0, -1.0, 1.0),
+                corner(-1.0, -1.0, -1.0),
+                corner(1.0, -1.0, -1.0),
+                corner(1.0, -1.0, 1.0),
+            ],
+            [
+                corner(-1.0, -1.0, 1.0),
+                corner(1.0, -1.0, 1.0),
+                corner(1.0, 1.0, 1.0),
+                corner(-1.0, 1.0, 1.0),
+            ],
+            [
+                corner(1.0, -1.0, -1.0),
+                corner(-1.0, -1.0, -1.0),
+                corner(-1.0, 1.0, -1.0),
+                corner(1.0, 1.0, -1.0),
+            ],
+        ];
+        for pts in faces {
+            let mut normal = polygon_normal(&pts);
+            // Make it face out of the box (its centre to the face's middle).
+            let mid: [f64; 3] =
+                std::array::from_fn(|k| pts.iter().map(|p| p[k]).sum::<f64>() / 4.0);
+            let cc = [0.5 + centre[0], centre[1] / CELL_H, 0.5 + centre[2]];
+            let out: [f64; 3] = std::array::from_fn(|k| mid[k] - cc[k]);
+            let mut pts = pts.to_vec();
+            if (0..3).map(|k| out[k] * normal[k]).sum::<f64>() < 0.0 {
+                pts.reverse();
+                normal = normal.map(|n| -n);
+            }
+            let m = normal_to_m(normal);
+            let tint = normal_tint(m[0], m[1], m[2]);
+            let lights = vec![light; 4];
+            let floods = vec![flood; 4];
+            b.polygon(
+                &pts,
+                origin,
+                normal,
+                tint,
+                color,
+                &tile,
+                None,
+                Some((&lights, &floods)),
+            );
+        }
+    };
+    let hub = w.hub_m;
+    // The post, on the wheel's forward side.
+    put_box([0.0, 0.5 * hub, 0.09], 0.0, [0.05, 0.5 * hub, 0.05]);
+    // The hub.
+    put_box([0.0, hub, 0.0], 0.0, [0.06, 0.06, 0.06]);
+    let n = w.spokes.max(3);
+    let tau = std::f64::consts::TAU;
+    // The rim: twice the spokes' segments round the circle.
+    let segments = 2 * n;
+    let seg = tau / f64::from(segments);
+    for k in 0..segments {
+        let a = seg * (f64::from(k) + 0.5);
+        let (x, y) = (w.radius_m * a.cos(), hub + w.radius_m * a.sin());
+        let len = w.radius_m * (0.5 * seg).tan() + 0.01;
+        put_box(
+            [x, y, 0.0],
+            a + 0.5 * std::f64::consts::PI,
+            [len, 0.025, 0.03],
+        );
+    }
+    // The spokes, out past the rim as handles.
+    for k in 0..n {
+        let a = tau * f64::from(k) / f64::from(n);
+        let r = 0.5 * (w.radius_m + w.handle_m);
+        let (x, y) = (r * a.cos(), hub + r * a.sin());
+        put_box([x, y, 0.0], a, [r, 0.018, 0.018]);
     }
 }
 
@@ -1956,7 +2088,7 @@ fn step_lower(cells: &Cells<'_>, [x, y, z]: [i32; 3]) -> Option<(Kind, f64)> {
         || k.liquid
         || k.flooded
         || k.ladder_face.is_some()
-        || matches!(k.style.look, Look::Cross | Look::Ball)
+        || matches!(k.style.look, Look::Cross | Look::Ball | Look::Wheel)
     {
         return None;
     }
@@ -3009,7 +3141,7 @@ fn mesh_cells(
                         continue;
                     }
                     if k.shape == Shape::Shaped
-                        || matches!(k.style.look, Look::Cross | Look::Ball)
+                        || matches!(k.style.look, Look::Cross | Look::Ball | Look::Wheel)
                         || k.style.octagon
                         || k.style.leafy
                         || (!carved.is_empty() && carved.contains_key(&cell))
@@ -3348,6 +3480,11 @@ fn mesh_cells(
                 }
                 if k.liquid {
                     fall_into(&mut transparent, &cells, &k, cx, cy, cz);
+                }
+                if k.style.look == Look::Wheel {
+                    let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));
+                    let flood = cells.flood.cell([cx, cy, cz]);
+                    wheel_voxel(&mut opaque, &k.style, [cx, cy, cz], (light, flood));
                 }
                 if k.style.look == Look::Ball {
                     let light = vertex_light(AO_OPEN, cells.lattice_rays([cx, cy, cz], 2));

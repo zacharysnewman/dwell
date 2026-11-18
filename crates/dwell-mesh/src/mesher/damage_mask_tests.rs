@@ -825,3 +825,33 @@ dwell_world::both_faces!(
         );
     }
 );
+
+dwell_world::both_faces!(
+    fn a_ships_wheel_stands_on_its_post_spoked(f: FaceFrame) {
+        // docs/CANNONS.md (owner, 2026-11-18: "A spoked wheel model"): the `wheel` look, its sizes
+        // the helm's data.
+        let m = dwell_blocks::require("dwell:helm[facing=north]");
+        let w = dwell_world::cannons::helm("dwell:helm").unwrap().wheel;
+        let (pts, tris) = mesh_one(f, f.state(m), [4, 4, 4], &[], 0);
+        // Its post, hub, rim segments and spokes: boxes of 12 triangles each.
+        let boxes = 2 + 2 * w.spokes as usize + w.spokes as usize;
+        assert_eq!(tris.len(), boxes * 12, "{} triangles", tris.len());
+        let lo = pts.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+        let hi = pts.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+        assert!((lo - 4.0).abs() < 0.01, "from the cell's floor: {lo}");
+        let top = 4.0 + (w.hub_m + w.radius_m + w.handle_m) / CELL_H;
+        assert!((hi - top).abs() < 0.1, "to a spoke's tip: {hi} want {top}");
+        // Across the facing (north, −z): wide in x, thin in z.
+        let span = |k: usize| {
+            let a = pts.iter().map(|p| p[k]).fold(f64::MAX, f64::min);
+            let b = pts.iter().map(|p| p[k]).fold(f64::MIN, f64::max);
+            b - a
+        };
+        assert!(
+            span(0) > 2.0 * w.radius_m && span(2) < 0.3,
+            "x {} z {}",
+            span(0),
+            span(2)
+        );
+    }
+);

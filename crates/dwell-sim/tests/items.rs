@@ -1028,3 +1028,35 @@ fn the_town_blocks_combine_from_wood_shards_sticks_and_fibre() {
         (4, 0, 0)
     );
 }
+
+#[test]
+fn a_cannon_and_a_ships_wheel_are_crafted() {
+    // face-a-only: inventory counts, no geometry. Owner, 2026-11-18: a cannon "16 rock shards + 4
+    // wood"; a ship's wheel "6 wood + 4 sticks".
+    let mut fx = scene(FaceFrame::A, "adventure");
+    let count = |fx: &Fixture, item: &str| fx.server.inventory_of(1).unwrap().count_of(item);
+    fx.server.give(1, "dwell:rock_shard", 15);
+    fx.server.give(1, "dwell:wood", 10);
+    combine(&mut fx, "dwell:cannon");
+    assert_eq!(count(&fx, "dwell:cannon"), 0, "refused: 15 shards");
+    fx.server.give(1, "dwell:rock_shard", 1);
+    combine(&mut fx, "dwell:cannon");
+    assert_eq!(
+        (
+            count(&fx, "dwell:cannon"),
+            count(&fx, "dwell:rock_shard"),
+            count(&fx, "dwell:wood")
+        ),
+        (1, 0, 6)
+    );
+    fx.server.give(1, "dwell:stick", 4);
+    combine(&mut fx, "dwell:helm");
+    assert_eq!(
+        (
+            count(&fx, "dwell:helm"),
+            count(&fx, "dwell:wood"),
+            count(&fx, "dwell:stick")
+        ),
+        (1, 0, 0)
+    );
+}

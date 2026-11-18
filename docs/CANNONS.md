@@ -329,3 +329,14 @@ again from its cells (no air past a hole) until the hull's own water level is se
 Browser check: an open hull riding low in the harbour scene's lake is dry inside. Test: `dwell-client`
 `an_open_hulls_dry_air_box_is_its_inside_up_to_its_rim` (both faces).
 
+## 16. The wheel's look and the boat recipes (2026-11-18)
+
+- **The ship's wheel** (owner: "Making helms look different than planks"; "A spoked wheel model"): the helm block's look
+  `wheel` (a new look word; dwell-mesh `wheel_voxel`): a post from the cell's floor to the hub on its forward side, a
+  rim of twice the spokes' segments, the spokes out past it as handles, across its facing; flat-shaded boxes in its
+  colour, sizes from its helm's `wheel` data (`radiusM` 0.38, `hubM` 0.62, `spokes` 8, `handleM` 0.1). Its cell still
+  collides as a cube. Test: `dwell-mesh` `a_ships_wheel_stands_on_its_post_spoked` (both faces). Its item in the hand
+  and hotbar is still the cube.
+- **Recipes** (shared/inventory): a cannon is 16 rock shards and 4 wood; a ship's wheel 6 wood and 4 sticks. Test:
+  `dwell-sim` `tests/items.rs` `a_cannon_and_a_ships_wheel_are_crafted`.
+

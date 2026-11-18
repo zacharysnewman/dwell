@@ -79,7 +79,7 @@ function selectionOf(d, values) {
   const [bx, bz] = turn(b[3], b[5]);
   return [Math.min(ax, bx), b[1], Math.min(az, bz), Math.max(ax, bx), b[4], Math.max(az, bz)];
 }
-const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross', 'ball'];
+const LOOKS = ['cube', 'shaped', 'ladder', 'fluid', 'cross', 'ball', 'wheel'];
 // Render modes (docs/TRANSPARENT_BLOCKS.md): how a look's pixels are drawn. `opaque` covers every
 // pixel it draws; `cutout` is alpha-tested (alpha-to-coverage under MSAA), writes depth and needs
 // no sorting; `translucent` is alpha-blended without depth writes, sorted far to near.
