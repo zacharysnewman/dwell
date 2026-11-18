@@ -2,6 +2,15 @@
   "$comment": "What changed in each build (docs/RELEASES.md §3): a few short lines per version, newest first, shown on the launcher's version page and in the main menu's Versions page. Every release needs its entry: a client test fails when client/package.json's version has none, and the release script refuses to publish without one. Earlier entries were drafted from the merged pull requests' titles (2026-10-28).",
   "versions": [
     {
+      "version": "0.75.0",
+      "changes": [
+        "A new compatibility line (protocol 24): ships can be steered",
+        "New: a helm. Place it on a raft, click it to take the helm, then W/S to sail and A/D to turn; Space leaves it",
+        "At the helm the camera eases out to third person behind you, and back when you leave it",
+        "A cannon on a raft fires along the raft's heading and kicks it back"
+      ]
+    },
+    {
       "version": "0.74.7",
       "changes": [
         "Cannonballs are twice the size and as heavy as real steel (about 455 kg)",

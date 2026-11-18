@@ -63,6 +63,12 @@ Last updated: 2026-11-11 (0.52.108).
   ball "by the block's weight"; the 1 m drag: "It shouldn't be a velocity setter, it should exert continuous force as
   it flies around it, in its velocity direction" (a force on the loose blocks within 1 m, along the ball's velocity,
   growing with its speed, every tick it passes). Built 2026-11-18 (docs/CANNONS.md §9).
+  C5 built (0.75.0, 2026-11-18; docs/CANNONS.md §10): the helm. Owner should see: a helm placed on a raft afloat;
+  clicking it puts you at the helm; W/S push the raft forward and back, A/D turn it while it moves; you stand still on
+  the deck; Space leaves the helm. A cannon on the raft fires along the raft's heading and kicks it back.
+  Owner, 2026-11-18: "The camera should smoothly transition to 3rd person when you grab the helm." Owner should see:
+  taking the helm eases the view out to a third-person camera behind the player; leaving it eases back to first
+  person.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).

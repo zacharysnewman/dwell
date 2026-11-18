@@ -150,6 +150,15 @@
       "facing": "away"
     },
     {
+      "name": "dwell:helm",
+      "category": "shapes",
+      "label": "Helm",
+      "block": "dwell:helm",
+      "rows": 1,
+      "drag": "none",
+      "facing": "away"
+    },
+    {
       "name": "dwell:stone_axe",
       "category": "tools",
       "label": "Stone axe",

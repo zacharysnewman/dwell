@@ -981,6 +981,9 @@ pub struct Game<S: Scene> {
     defeated_ms: f64,
     defeat_yaw: Option<f64>,
     defeat_from: ([f64; 3], f64),
+    /// How far the view is out to the helm's third person (0 first person, 1 out; docs/CANNONS.md
+    /// C5), eased in and out with the predicted controller's `helm`.
+    helm_blend: f64,
     /// Seconds left of the stand at the shrine (`STAND_S`): third person, input held, the view
     /// fading back in from `stood_ms`.
     stand_left_s: f64,
@@ -1298,6 +1301,7 @@ impl<S: Scene> Game<S> {
             defeated_ms: 0.0,
             defeat_yaw: None,
             defeat_from: ([0.0; 3], 0.0),
+            helm_blend: 0.0,
             stand_left_s: 0.0,
             stood_ms: 0.0,
             last_camera: ([0.0; 3], 0.0),
@@ -2943,6 +2947,11 @@ impl<S: Scene> Game<S> {
         {
             return true;
         }
+        // A body's block with a `use` aimed at (a cannon or a helm on a ship, docs/CANNONS.md C4,
+        // C5): Place is its Use, whatever the hand holds.
+        if action == EditAction::Place && self.use_body_block(now_ms) {
+            return true;
+        }
         // The axe held (ADR 0067): Use turns the swing, Break swings at wood aimed at.
         if let Some(tool) = self.held_tool() {
             return self.chop_with(tool, action, now_ms);
@@ -3131,6 +3140,38 @@ impl<S: Scene> Game<S> {
             }
             None => false,
         }
+    }
+
+    /// Sends the Use of the body block aimed at, if it has a `use` (block data; a cannon fires, a
+    /// helm takes the player: docs/CANNONS.md C4, C5) as a `BodyEditRequest` Place (the server does
+    /// the use, nothing placed). Whether it did.
+    fn use_body_block(&mut self, now_ms: f64) -> bool {
+        let Some(b) = self.body_target.filter(|_| !self.region.pasting()) else {
+            return false;
+        };
+        let used = self
+            .pieces
+            .block_at(b.body, b.cell)
+            .is_some_and(|m| dwell_blocks::try_info(m).is_some_and(|s| s.use_action.is_some()));
+        if !used {
+            return false;
+        }
+        if now_ms - self.body_edit_ms < players::BLOCK_EDIT_INTERVAL_MS as f64 {
+            return true;
+        }
+        self.body_edit_ms = now_ms;
+        self.outbox
+            .borrow_mut()
+            .push(Send::Control(Message::BodyEditRequest(
+                dwell_protocol::BodyEditRequest {
+                    body: b.body,
+                    cell: b.cell.map(|v| v as i16),
+                    face: b.face,
+                    action: dwell_protocol::BlockEditAction::Place,
+                    material: 0,
+                },
+            )));
+        true
     }
 
     /// Breaks the cell of a moving body aimed at, or places the selected block against the face
@@ -5555,9 +5596,22 @@ impl<S: Scene> Game<S> {
                 roll,
             };
             let v = self.view_pose(aim, effects, face);
+            // At a ship's helm the view eases out to third person (owner, 2026-11-18); the aim
+            // stays at the eyes.
+            let helm_cam = dwell_world::cannons::HELMS.first().map(|h| h.camera);
+            if let Some(cam) = helm_cam {
+                let at_helm = self.predictor.controller().helm;
+                self.helm_blend = helm_blend_step(self.helm_blend, at_helm, dt, cam.ease_s);
+            }
+            let drawn_eye = match helm_cam {
+                Some(cam) if self.helm_blend > 0.0 => {
+                    helm_eye(v.eye, v.yaw, v.pitch, face, &cam, self.helm_blend)
+                }
+                _ => v.eye,
+            };
             self.scene
                 .borrow_mut()
-                .set_camera(v.eye, v.yaw, v.pitch, face, v.roll);
+                .set_camera(drawn_eye, v.yaw, v.pitch, face, v.roll);
             self.listener = listener(eye, yaw, pitch, face);
             let ready = self.terrain_ready();
             self.target(ready.then_some(eye), input, now_ms);
@@ -5580,6 +5634,7 @@ impl<S: Scene> Game<S> {
             let shown = self.show_arms
                 && c.active
                 && self.view.is_none()
+                && self.helm_blend == 0.0
                 && self.spyglass_view.magnification <= 1.001;
             self.scene.borrow_mut().set_arms(shown.then_some(arms));
             // Your body casts a shadow (drawn into the shadow maps only), first person or not.
@@ -5590,12 +5645,12 @@ impl<S: Scene> Game<S> {
             scene.set_own_shadow(c.active.then_some(own));
             // And you see it from the neck down, in first person (CHARACTERS.md §5.1); from a
             // placed camera (theater mode, the bench's camera) your whole body, as others see it.
-            let placed = self.view.as_ref().map(|v| {
-                (0..3)
-                    .map(|k| (v.eye[k] - eye[k]).powi(2))
-                    .sum::<f64>()
-                    .sqrt()
-            });
+            let placed = self
+                .view
+                .as_ref()
+                .map(|v| v.eye)
+                .or((self.helm_blend > 0.0).then_some(drawn_eye))
+                .map(|at| (0..3).map(|k| (at[k] - eye[k]).powi(2)).sum::<f64>().sqrt());
             let (neck_down, whole) = own_body_draw(c.active, placed);
             scene.set_own_body(neck_down.then_some(own));
             if whole {
@@ -7006,6 +7061,39 @@ fn own_body_draw(active: bool, placed_from_eyes: Option<f64>) -> (bool, bool) {
     (active && !whole, active && whole)
 }
 
+/// The helm camera's blend after `dt` s (docs/CANNONS.md C5): toward 1 at the helm, toward 0 off it,
+/// the whole way in `ease_s` (at once for none).
+fn helm_blend_step(blend: f64, at_helm: bool, dt: f64, ease_s: f64) -> f64 {
+    let target = if at_helm { 1.0 } else { 0.0 };
+    if ease_s <= 0.0 {
+        return target;
+    }
+    let step = dt / ease_s;
+    if blend < target {
+        (blend + step).min(target)
+    } else {
+        (blend - step).max(target)
+    }
+}
+
+/// The eye drawn at the helm (owner, 2026-11-18: "The camera should smoothly transition to 3rd
+/// person when you grab the helm"): `eye` moved `back_m` back along the look (`yaw`, `pitch` on
+/// `face`) and `up_m` along the face's up, by the smoothstep of `blend`.
+fn helm_eye(
+    eye: [f64; 3],
+    yaw: f64,
+    pitch: f64,
+    face: FaceFrame,
+    cam: &dwell_world::cannons::HelmCamera,
+    blend: f64,
+) -> [f64; 3] {
+    let u = blend.clamp(0.0, 1.0);
+    let u = u * u * (3.0 - 2.0 * u);
+    let look = face.look(yaw, pitch);
+    let up = face.up();
+    std::array::from_fn(|k| eye[k] + (up[k] * cam.up_m - look[k] * cam.back_m) * u)
+}
+
 /// The camera over a defeated body at `feet` (CHARACTERS.md §11.13), looking along `yaw`: on the
 /// face the body is on (the predictor's controller has no body while defeated and falls back to
 /// face A's frame: owner, 2026-11-06, the camera was upside down on face B), `cam.back_m` behind
@@ -7212,6 +7300,36 @@ mod tests {
         assert_eq!(v[0]["at"][2], 3.0);
         assert_eq!(v[1]["npc"], true);
     }
+
+    dwell_world::both_faces!(
+        fn the_helm_camera_eases_out_behind_and_up_and_back_in(f: FaceFrame) {
+            // docs/CANNONS.md C5; owner, 2026-11-18: "The camera should smoothly transition to 3rd
+            // person when you grab the helm."
+            let cam = dwell_world::cannons::HELMS[0].camera;
+            let mut b = 0.0;
+            let mut steps = 0;
+            while b < 1.0 {
+                b = helm_blend_step(b, true, 1.0 / 60.0, cam.ease_s);
+                steps += 1;
+            }
+            assert_eq!(steps, (cam.ease_s * 60.0).ceil() as i32, "eased over easeS");
+            let eye = f.point([0.5, 40.0, 0.5]);
+            let out = helm_eye(eye, 0.0, 0.0, f, &cam, 1.0);
+            // Looking along +z (yaw 0): behind is −z, up the face's up.
+            let up = f.vector([0.0, 1.0, 0.0]);
+            let d: [f64; 3] = std::array::from_fn(|k| out[k] - eye[k]);
+            assert!(
+                (d[2] + cam.back_m).abs() < 1e-9 && d[0].abs() < 1e-9,
+                "{d:?}"
+            );
+            assert!((d[1] - up[1] * cam.up_m).abs() < 1e-9, "{d:?}");
+            // Halfway the smoothstep's half; out of the helm it eases back to the eyes.
+            let half = helm_eye(eye, 0.0, 0.0, f, &cam, 0.5);
+            assert!((half[2] - eye[2] + 0.5 * cam.back_m).abs() < 1e-9);
+            assert!(helm_blend_step(1.0, false, 1.0 / 60.0, cam.ease_s) < 1.0);
+            assert_eq!(helm_eye(eye, 0.0, 0.0, f, &cam, 0.0), eye);
+        }
+    );
 
     #[test]
     fn a_placed_camera_draws_your_whole_body() {

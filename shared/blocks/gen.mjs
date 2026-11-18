@@ -549,7 +549,7 @@ for (const b of blocks) {
   // `use: "<action>"` (docs/CANNONS.md C1): a Use (a Place aimed at it) does this instead of placing,
   // the block unchanged: the server's vocabulary (`fire`: a cannon's shot).
   if (d.use !== undefined) {
-    if (!['fire'].includes(d.use)) fail(`${b.id}: use must be one of fire`);
+    if (!['fire', 'helm'].includes(d.use)) fail(`${b.id}: use must be one of fire, helm`);
     if (d.toggle !== undefined) fail(`${b.id}: use and toggle are two answers to a Use: pick one`);
   }
 }

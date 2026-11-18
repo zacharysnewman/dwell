@@ -86,6 +86,7 @@ pub static BLOCK_DAMAGE: &[BlockDamageDef] = &[
     BlockDamageDef { block: "dwell:cannon", volume: 1.0, default: Some(48), tools: &[("dwell:wooden_shovel", 18), ("dwell:stone_shovel", 12), ("dwell:metal_shovel", 6), ("dwell:stone_axe", 12), ("dwell:metal_axe", 6), ("dwell:stone_pickaxe", 6), ("dwell:metal_pickaxe", 3)], barren: &["hand"], shake: false, look: None, chips: None },
     BlockDamageDef { block: "dwell:iron_ball", volume: 1.0, default: Some(1), tools: &[("dwell:wooden_shovel", 1), ("dwell:stone_shovel", 1), ("dwell:metal_shovel", 1), ("dwell:stone_axe", 1), ("dwell:metal_axe", 1), ("dwell:stone_pickaxe", 1), ("dwell:metal_pickaxe", 1)], barren: &[], shake: false, look: None, chips: None },
     BlockDamageDef { block: "dwell:explosive_ball", volume: 1.0, default: Some(1), tools: &[("dwell:wooden_shovel", 1), ("dwell:stone_shovel", 1), ("dwell:metal_shovel", 1), ("dwell:stone_axe", 1), ("dwell:metal_axe", 1), ("dwell:stone_pickaxe", 1), ("dwell:metal_pickaxe", 1)], barren: &[], shake: false, look: None, chips: None },
+    BlockDamageDef { block: "dwell:helm", volume: 1.0, default: Some(16), tools: &[("dwell:wooden_shovel", 6), ("dwell:stone_shovel", 4), ("dwell:metal_shovel", 2), ("dwell:stone_axe", 2), ("dwell:metal_axe", 1), ("dwell:stone_pickaxe", 4), ("dwell:metal_pickaxe", 2)], barren: &["hand"], shake: false, look: None, chips: None },
 ];
 
 /// Tools that wear (`durability.items`): (item, hits it survives).

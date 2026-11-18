@@ -609,6 +609,13 @@ impl Physics {
         self.config.gravity_y.abs()
     }
     /// An impulse (N·s) on the body at a world point (a cell's buoyancy, docs/BUILT_BODIES.md §6).
+    /// Applies the angular impulse `impulse` (N·m·s) to body `h` (a ship's rudder, docs/CANNONS.md C5).
+    pub fn apply_torque_impulse(&mut self, h: BodyHandle, impulse: DVec3) {
+        if let Some(b) = self.w.bodies.get_mut(h.0) {
+            b.apply_torque_impulse(impulse, true);
+        }
+    }
+
     pub fn apply_impulse_at(&mut self, h: BodyHandle, impulse: DVec3, point: DVec3) {
         if let Some(b) = self.w.bodies.get_mut(h.0) {
             b.apply_impulse_at_point(impulse, point, true);

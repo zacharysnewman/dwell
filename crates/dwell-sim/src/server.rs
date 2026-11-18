@@ -1205,7 +1205,9 @@ pub struct Server {
     /// The blocks hit short of breaking (docs/BLOCK_DAMAGE.md, ADR 0078), saved with the world.
     damage: dwell_protocol::damage::Damage,
     /// Each cannon's next tick it may fire, by its rear bottom cell (docs/CANNONS.md C1).
-    cannon_ready: HashMap<[i32; 3], u32>,
+    cannon_ready: HashMap<(u32, [i32; 3]), u32>,
+    /// The players at a ship's helm (docs/CANNONS.md C5): session → (body id, the helm's cell).
+    helms: HashMap<SessionId, (u32, [i32; 3])>,
     /// Shots fired, ever (C1; C2 launches each one's ball).
     shots_fired: u64,
     last_ball: Option<u32>,
@@ -1493,6 +1495,7 @@ impl Server {
             damage: Default::default(),
             body_hits: HashMap::default(),
             cannon_ready: HashMap::default(),
+            helms: HashMap::default(),
             shots_fired: 0,
             last_ball: None,
             balls: Vec::new(),
@@ -2445,6 +2448,7 @@ impl Server {
         self.felling.float(&mut self.world, &mut self.physics);
         self.lap(5, &mut watch);
         self.roll_balls();
+        self.steer_ships();
         self.physics.step(1.0 / f64::from(SIM_HZ));
         // The other grids' spaces, their players and physics.
         self.grids.step(1.0 / f64::from(SIM_HZ));
@@ -4379,29 +4383,59 @@ impl Server {
             return;
         };
         let anchor = dwell_world::cannons::anchor_of(cell, state);
-        if self
-            .cannon_ready
-            .get(&anchor)
-            .is_some_and(|&t| self.tick < t)
-        {
+        if !self.cannon_reloaded(0, anchor, c) {
             return;
         }
+        let f = dwell_world::FaceFrame::at_row(anchor[1]);
+        let fw = dwell_world::parts::forward(dwell_blocks::info(state).facing).map(f64::from);
+        let forward = DVec3::new(fw[0], 0.0, fw[2]);
+        let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
+        self.launch_ball(
+            c,
+            crate::felling::cell_centre(anchor),
+            forward,
+            up,
+            DVec3::ZERO,
+            None,
+        );
+    }
+
+    /// Whether the cannon `c` whose rear bottom cell is `anchor` (in body `body`'s grid; 0: the
+    /// world's) may fire now, its `reloadS` since its last shot; if so, its shot is counted.
+    fn cannon_reloaded(
+        &mut self,
+        body: u32,
+        anchor: [i32; 3],
+        c: &dwell_world::cannons::CannonDef,
+    ) -> bool {
+        if self
+            .cannon_ready
+            .get(&(body, anchor))
+            .is_some_and(|&t| self.tick < t)
+        {
+            return false;
+        }
         let reload = (c.reload_s * f64::from(dwell_protocol::SIM_HZ)).ceil() as u32;
-        self.cannon_ready.insert(anchor, self.tick + reload);
+        self.cannon_ready.insert((body, anchor), self.tick + reload);
         self.shots_fired += 1;
-        self.launch_ball(c, anchor, state);
+        true
     }
 
     /// A cannon's shot (docs/CANNONS.md C2): its ball as a one-cell natural body (a sphere of the
     /// ball's radius and mass, `dwell_physics::ball_of`) at the muzzle — `muzzleForwardM` from the
-    /// rear bottom cell's centre along the facing, `muzzleUpM` above its floor, face-local — moving
-    /// at the muzzle speed along the barrel; every client hears its `EntitySpawn`. Gravity and water
-    /// as any body's; at rest it settles as its block.
+    /// rear bottom cell's centre (`anchor`, m) along `forward`, `muzzleUpM` above its floor along
+    /// `up` — moving at the muzzle speed along the barrel, plus `carried` (the velocity of the body
+    /// the cannon stands on, there); every client hears its `EntitySpawn`. A cannon on a body
+    /// (`recoil`) pushes it back by the ball's momentum, at the cannon (C4). Gravity and water as any
+    /// body's; at rest it settles as its block (or joins the body it rests on).
     fn launch_ball(
         &mut self,
         c: &dwell_world::cannons::CannonDef,
-        anchor: [i32; 3],
-        state: dwell_blocks::StateId,
+        anchor: DVec3,
+        forward: DVec3,
+        up: DVec3,
+        carried: DVec3,
+        recoil: Option<dwell_physics::BodyHandle>,
     ) {
         let Some(ball) = dwell_world::cannons::ball(self.ball_override.unwrap_or(c.ball)) else {
             return;
@@ -4409,12 +4443,8 @@ impl Server {
         let Some(m) = dwell_blocks::state(ball.name) else {
             return;
         };
-        let f = dwell_world::FaceFrame::at_row(anchor[1]);
-        let facing = dwell_blocks::info(state).facing;
-        let fw = dwell_world::parts::forward(facing).map(f64::from);
-        let forward = DVec3::new(fw[0], 0.0, fw[2]);
-        let up = DVec3::from(f.vector([0.0, 1.0, 0.0]));
-        let floor = crate::felling::cell_centre(anchor) - up * (0.5 * dwell_world::CELL_H);
+        let f = dwell_world::FaceFrame::at_height(anchor.y);
+        let floor = anchor - up * (0.5 * dwell_world::CELL_H);
         let muzzle = floor + forward * c.muzzle_forward_m + up * c.muzzle_up_m;
         // The body's origin is its cell's centre; the sphere sits on the cell's floor.
         let origin = muzzle - up * (ball.radius_m - 0.5 * dwell_world::CELL_H);
@@ -4426,13 +4456,125 @@ impl Server {
             vec![([0, 0, 0], f.state(m))],
             origin,
             dwell_physics::DQuat::IDENTITY,
-            forward * c.muzzle_speed_ms,
+            carried + forward * c.muzzle_speed_ms,
             DVec3::ZERO,
         );
+        if let Some(b) = recoil {
+            let kick = -forward * (ball.mass_kg() * c.muzzle_speed_ms);
+            self.physics.apply_impulse_at(b, kick, anchor);
+        }
         self.balls.push(self.felling.pieces[i].id);
         let msg = self.spawn_message(i);
         self.broadcast_world(&msg);
         self.last_ball = Some(self.felling.pieces[i].id);
+    }
+
+    /// A Use of the block `state` at cell `cell` of body `body` (its data's `use`; docs/CANNONS.md
+    /// C4, C5) by session `id`: a cannon fires along its facing turned with the body, the body
+    /// recoiling; a helm puts the player at it (`helms`; their move keys steer the body).
+    fn use_body_block(
+        &mut self,
+        id: SessionId,
+        body: u32,
+        cell: [i32; 3],
+        state: dwell_blocks::StateId,
+    ) {
+        let Some(p) = self.felling.pieces.iter().find(|p| p.id == body) else {
+            return;
+        };
+        let (handle, at, turn) = (
+            p.body,
+            self.physics.position(p.body),
+            self.physics.rotation(p.body),
+        );
+        let block = dwell_blocks::block_of(state).name;
+        match info(state).use_action {
+            Some("helm") => {
+                let Some(h) = self.sessions.get(&id).and_then(|s| s.handle) else {
+                    return;
+                };
+                self.players.controller_mut(h).helm = true;
+                self.helms.insert(id, (body, cell));
+            }
+            Some("fire") => {
+                let Some(c) = dwell_world::cannons::cannon(block) else {
+                    return;
+                };
+                let anchor = dwell_world::cannons::anchor_of(cell, state);
+                if !self.cannon_reloaded(body, anchor, c) {
+                    return;
+                }
+                // The body's own grid is face A's way up for a body on face A; its cells' states
+                // are the world's (a face-B body's carry face B's).
+                let f = dwell_world::FaceFrame::at_height(at.y);
+                let fw = dwell_world::parts::forward(info(state).facing).map(f64::from);
+                let forward = turn * DVec3::new(fw[0], 0.0, fw[2]);
+                let up = turn * DVec3::from(f.vector([0.0, 1.0, 0.0]));
+                let centre = at + turn * crate::felling::cell_offset_m(anchor);
+                let w = self.physics.angular_velocity(handle);
+                let carried = self.physics.velocity(handle) + w.cross(centre - at);
+                self.launch_ball(c, centre, forward, up, carried, Some(handle));
+            }
+            _ => {}
+        }
+    }
+
+    /// The ships steered (docs/CANNONS.md C5), each tick before the physics step: for each player
+    /// at a helm (`helms`) still standing at it (their controller's `helm`) on a body still afloat,
+    /// their forward input pushes the body along the helm's facing (turned with it, flat) from its
+    /// centre of mass with the helm's `thrustN`, as a sail would; their sideways input turns it
+    /// about the face's up with `rudderNmPerMs` for each m/s it moves along that heading, as a rudder
+    /// would (none when still; backing, the other way). Off the helm, or the body gone, the entry
+    /// goes (and the player's flag with it).
+    fn steer_ships(&mut self) {
+        let dt = 1.0 / f64::from(SIM_HZ);
+        let helms: Vec<(SessionId, (u32, [i32; 3]))> =
+            self.helms.iter().map(|(&k, &v)| (k, v)).collect();
+        for (id, (body, cell)) in helms {
+            let Some(h) = self.sessions.get(&id).and_then(|s| s.handle) else {
+                self.helms.remove(&id);
+                continue;
+            };
+            let piece = self.felling.pieces.iter().find(|p| p.id == body);
+            let state =
+                piece.and_then(|p| p.cells.iter().find(|(c, _)| *c == cell).map(|&(_, m)| m));
+            let def =
+                state.and_then(|m| dwell_world::cannons::helm(dwell_blocks::block_of(m).name));
+            let (Some(p), Some(m), Some(def)) = (piece, state, def) else {
+                self.helms.remove(&id);
+                self.players.controller_mut(h).helm = false;
+                continue;
+            };
+            if !self.players.controller(h).helm {
+                self.helms.remove(&id);
+                continue;
+            }
+            let (handle, afloat) = (p.body, p.is_afloat());
+            if !afloat {
+                continue;
+            }
+            let [turn_in, ahead] = self.players.controller(h).steer.map(f64::from);
+            let (at, rot) = (self.physics.position(handle), self.physics.rotation(handle));
+            let up = DVec3::from(dwell_world::FaceFrame::at_height(at.y).vector([0.0, 1.0, 0.0]));
+            let fw = dwell_world::parts::forward(info(m).facing).map(f64::from);
+            let heading = rot * DVec3::new(fw[0], 0.0, fw[2]);
+            let heading = (heading - up * heading.dot(up)).normalize_or_zero();
+            if ahead != 0.0 {
+                self.physics
+                    .apply_impulse(handle, heading * (def.thrust_n * ahead * dt));
+            }
+            let along = self.physics.velocity(handle).dot(heading);
+            if turn_in != 0.0 && along != 0.0 {
+                // Turning right (input +x) turns the heading toward heading × up.
+                let torque = -up * (def.rudder_nm_per_ms * along * turn_in);
+                self.physics.apply_torque_impulse(handle, torque * dt);
+            }
+        }
+    }
+
+    /// The players at a helm now (session, body id), for tests and the dev tools.
+    pub fn at_helms(&self) -> Vec<(SessionId, u32)> {
+        self.helms.iter().map(|(&k, &(b, _))| (k, b)).collect()
     }
 
     /// The balls in flight or rolling (docs/CANNONS.md C2, C3), each tick before the physics step:
@@ -4720,6 +4862,31 @@ impl Server {
                     continue;
                 };
                 let cell = e.cell.map(i32::from);
+                // A Place aimed at a block with a `use` is its Use (docs/CANNONS.md C4, C5): a
+                // cannon on the body fires, a helm takes the player; nothing placed or paid.
+                if e.action == BlockEditAction::Place {
+                    let used = self
+                        .felling
+                        .pieces
+                        .iter()
+                        .find(|p| p.id == e.body)
+                        .and_then(|p| {
+                            let (m, at) = (
+                                p.cells.iter().find(|(c, _)| *c == cell).map(|&(_, m)| m)?,
+                                self.physics.position(p.body)
+                                    + self.physics.rotation(p.body)
+                                        * crate::felling::cell_offset_m(cell),
+                            );
+                            info(m).use_action.map(|_| (m, at))
+                        });
+                    if let Some((m, at)) = used {
+                        if (at - eye).length() <= reach {
+                            s.edit_credit -= 1.0;
+                            self.use_body_block(id, e.body, cell, m);
+                        }
+                        continue;
+                    }
+                }
                 if e.action == BlockEditAction::Place {
                     // A block placed against a body's cell joins it (a built body; its kind's
                     // `place`), clear of every player.
