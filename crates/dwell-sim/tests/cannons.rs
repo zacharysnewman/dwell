@@ -163,6 +163,90 @@ both_faces!(
             (next[2] - now[2]).abs() * f64::from(SIM_HZ) > 0.5
         });
         assert!(!moving, "still rolling at {at:?}");
+        // Landing and rolling on the flat struck nothing loose (a grazing landing is no strike).
+        assert_eq!(fx.server.ball_strikes().1, 0, "knocked cells on the flat");
         assert!(at[2] > -150.0 && at[2] < -10.0, "rested at {at:?}");
+    }
+);
+
+/// A stone brick wall across the barrel's path at face-local z = `WALL_Z`, 5 rows tall.
+const WALL_Z: i32 = -8;
+fn wall(fx: &mut Fixture, f: FaceFrame) -> Vec<[i32; 3]> {
+    let brick = f.state(dwell_blocks::require("dwell:stone_brick"));
+    let mut cells = Vec::new();
+    for x in -2..8 {
+        for r in 0..5 {
+            let c = f.cell([x, BASE + r, WALL_Z]);
+            fx.server.world().set_voxel(c[0], c[1], c[2], brick);
+            cells.push(c);
+        }
+    }
+    cells
+}
+
+fn fire_at_wall(f: FaceFrame, explosive: bool) -> (Fixture, Vec<[i32; 3]>, u32) {
+    let mut fx = Fixture::new(config(f));
+    fx.join(1, &Client::new(1));
+    for _ in 0..10 {
+        fx.server.step();
+    }
+    let cells = cannon_scene(&mut fx, f);
+    let wall = wall(&mut fx, f);
+    if explosive {
+        fx.server.set_cannon_ball("dwell:explosive_ball");
+    }
+    use_it(&mut fx, f, cells[0]);
+    let id = fx.server.last_ball().expect("a ball fired");
+    for _ in 0..40 {
+        fx.server.step();
+    }
+    (fx, wall, id)
+}
+
+both_faces!(
+    fn an_iron_ball_knocks_loose_the_cells_round_where_it_strikes_a_wall(f: FaceFrame) {
+        // docs/CANNONS.md C3; owner, 2026-11-17: "one simple impact knocking loose cells it strikes
+        // (and maybe knocks loose in an area around where it collides)".
+        let (mut fx, wall, id) = fire_at_wall(f, false);
+        let (strikes, knocked) = fx.server.ball_strikes();
+        assert!(strikes >= 1, "it struck the wall");
+        let max = match dwell_world::cannons::ball("dwell:iron_ball")
+            .unwrap()
+            .impact
+        {
+            dwell_world::cannons::Impact::Knock { max_cells, .. } => u64::from(max_cells),
+            _ => unreachable!(),
+        };
+        assert!(
+            knocked >= 1 && knocked <= max * strikes,
+            "knocked {knocked} in {strikes}"
+        );
+        // Gone from the wall: in line with the barrel (x 2), at its height.
+        let gone: Vec<[i32; 3]> = wall
+            .iter()
+            .copied()
+            .filter(|c| fx.server.world().get_voxel(c[0], c[1], c[2]) == 0)
+            .collect();
+        assert_eq!(gone.len() as u64, knocked, "{gone:?}");
+        assert!(
+            gone.contains(&f.cell([2, BASE + 1, WALL_Z])),
+            "the cell it hit: {gone:?}"
+        );
+        // The ball itself is still about (flown on, or resting).
+        let _ = fx.server.body_pose(id);
+    }
+);
+
+both_faces!(
+    fn an_explosive_ball_blows_up_where_it_strikes(f: FaceFrame) {
+        let (mut fx, wall, id) = fire_at_wall(f, true);
+        assert!(fx.server.body_pose(id).is_none(), "the ball is gone");
+        let gone = wall
+            .iter()
+            .filter(|c| fx.server.world().get_voxel(c[0], c[1], c[2]) == 0)
+            .count();
+        // Dynamite's blast takes far more than the iron ball's knock.
+        assert!(gone > 6, "the blast cleared {gone} cells of the wall");
+        assert!(gone < wall.len(), "not the whole wall");
     }
 );

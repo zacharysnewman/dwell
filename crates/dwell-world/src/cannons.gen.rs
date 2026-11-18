@@ -10,5 +10,5 @@ pub static CANNONS: &[CannonDef] = &[
 /// The cannonballs (`balls`).
 pub static BALLS: &[BallDef] = &[
     BallDef { name: "dwell:iron_ball", radius_m: 0.12, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact::Knock { radius_m: 0.8, max_cells: 6, min_speed_ms: 8.0 } },
-    BallDef { name: "dwell:explosive_ball", radius_m: 0.12, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact::Explode { explosive: "dwell:dynamite" } },
+    BallDef { name: "dwell:explosive_ball", radius_m: 0.12, density_kg_m3: 7850.0, roll_damping: 1.5, impact: Impact::Explode { explosive: "dwell:dynamite", min_speed_ms: 6.0 } },
 ];

@@ -40,8 +40,10 @@ Last updated: 2026-11-11 (0.52.108).
   the test push." (3: anything that lands on a moving ship rides along with it; 4: cannons and cannonballs are data;
   5: the wheel steers, no test push.) Design: docs/CANNONS.md (phases C1–C5). C1 built (2026-11-17): the land cannon block (2 along ×
   2 up, `columnAlong`), its Use (`use: fire`) and reload; the cannons data. C2 built (2026-11-17): the iron ball flies
-  from the muzzle as a heavy sphere body and settles where it rests. Next: C3, impacts. Owner should see: clicking a
-  cannon shoots a dark ball out of the barrel that arcs, lands and rolls.
+  from the muzzle as a heavy sphere body and settles where it rests. C3 built (2026-11-17): impacts. Owner should see: clicking a
+  cannon shoots a dark ball out of the barrel that arcs, lands and rolls; aimed at a wall, the iron ball knocks a few
+  blocks loose round where it hits, and the explosive ball (not in the hotbar yet: data or dev tools) blows a hole. Next:
+  C4, riding along on bodies.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
   Leaves (and snowy leaves) to `fixedHits: 1`. Owner should see: leaves break in one hit with anything.
   Done (2026-11-17).

@@ -53,7 +53,8 @@ export function validateCannons(data, names) {
       if (im.explosive !== undefined) fail(`${at}.impact: a knock names no explosive`);
     } else if (im.kind === 'explode') {
       if (!names.explosives.has(im.explosive)) fail(`${at}.impact.explosive: no explosive ${JSON.stringify(im.explosive)} (shared/explosives)`);
-      for (const k of ['knockRadiusM', 'maxCells', 'minSpeedMs']) if (im[k] !== undefined) fail(`${at}.impact: an explosion has no ${k}`);
+      for (const k of ['knockRadiusM', 'maxCells']) if (im[k] !== undefined) fail(`${at}.impact: an explosion has no ${k}`);
+      range(im, 'minSpeedMs', 0, 100, `${at}.impact`);
     } else {
       fail(`${at}.impact.kind must be one of knock, explode`);
     }
@@ -96,7 +97,7 @@ export function cannonsRust(d) {
   for (const b of d.balls) {
     const im = b.impact.kind === 'knock'
       ? `Impact::Knock { radius_m: ${f64(b.impact.knockRadiusM)}, max_cells: ${b.impact.maxCells}, min_speed_ms: ${f64(b.impact.minSpeedMs)} }`
-      : `Impact::Explode { explosive: "${b.impact.explosive}" }`;
+      : `Impact::Explode { explosive: "${b.impact.explosive}", min_speed_ms: ${f64(b.impact.minSpeedMs)} }`;
     rs.push(`    BallDef { name: "${b.name}", radius_m: ${f64(b.radiusM)}, density_kg_m3: ${f64(b.densityKgM3)}, roll_damping: ${f64(b.rollDamping)}, impact: ${im} },`);
   }
   rs.push('];', '');
