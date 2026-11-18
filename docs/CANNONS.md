@@ -256,3 +256,20 @@ does, and counts in its volume for `afloat`. Tests: `felling::tests::an_open_top
 flat raft); `tests/ships.rs` `an_open_hulls_air_floats_it_higher_than_the_same_hull_holed` (both faces; red without
 the air: the sealed hull, a plank heavier, rode lower).
 
+### H2 as built (2026-11-18)
+
+- **The hull** (`felling::Hull`, per body): its air cells, the cells' fingerprint and count they were found for, and its
+  water (m³). Cells only **taken away** (a ball's hole, a break) keep the air: the cells taken become openings. Cells
+  **added** (built, patched) find the air again; the water is kept, up to the new air's room.
+- **Openings:** the outside cells beside its air (not its cells, not its air) under the liquid; each lets in
+  `water.floodM3sPerM2` (shared/physics/bodies.json, 1.9: ~0.6 × √(2 g · ½ m)) per m² of it — a side 1 × ½ m, a floor
+  or top 1 × 1 m: "by hole size". Over the rim the cells above it are openings too once they're under.
+- **Flooding:** the water fills its air cells from the lowest (along the face's up), and those stop buoying it and
+  leave its volume for `afloat`.
+- **Sinking:** a built body in a liquid and no longer afloat is **sunk** (`Felling::sunk`): it settles into the world
+  once at rest on the bed (its age, which ran all the while it sailed, doesn't count).
+- **Test:** `tests/ships.rs` `a_holed_hull_floods_sinks_and_settles_into_the_world` (both faces: an 8 × 8 hull a third
+  stone floats on its air, a hole in its floor: lower after 10 s, settled in the pool as blocks; red with no inflow).
+- **Not yet:** the outside water's depth over an opening (the rate assumes ½ m), water levels inside and out evening out,
+  compartments (one water for the whole hull), bailing; H3 (drawing).
+

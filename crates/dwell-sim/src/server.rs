@@ -4358,6 +4358,12 @@ impl Server {
         gone
     }
 
+    /// Knocks cell `cell` out of body `id` (as a ball's hit does: what's left apart splits off),
+    /// every client hearing it (tests and tools). Whether it was there.
+    pub fn break_body_cell(&mut self, id: u32, cell: [i32; 3]) -> bool {
+        self.take_body_cell(id, cell, false).is_some()
+    }
+
     /// Body `id`'s cells (its grid, with their states), none if it is gone (tests and tools).
     pub fn body_cells(&self, id: u32) -> Vec<([i32; 3], dwell_blocks::StateId)> {
         self.felling

@@ -87,7 +87,8 @@ export function validateBodies(data, blocks = registryBlockNames()) {
   for (const k of Object.keys(data)) if (!['$comment', 'kinds', 'water'].includes(k)) bad(`unknown entry (root).${k}`);
   const w = data.water;
   if (typeof w !== 'object' || w === null || Array.isArray(w)) bad('water must be an object');
-  for (const k of Object.keys(w)) if (!['dragCoefficient', 'drag', 'heaveDrag', 'angularDrag'].includes(k)) bad(`water: unknown ${k}`);
+  for (const k of Object.keys(w)) if (!['dragCoefficient', 'drag', 'heaveDrag', 'angularDrag', 'floodM3sPerM2'].includes(k)) bad(`water: unknown ${k}`);
+  if (typeof w.floodM3sPerM2 !== 'number' || !(w.floodM3sPerM2 >= 0 && w.floodM3sPerM2 <= 100)) bad('water.floodM3sPerM2 must be a number in [0, 100] (m³/s per m²)');
   if (typeof w.dragCoefficient !== 'number' || !(w.dragCoefficient >= 0 && w.dragCoefficient <= 5)) bad('water.dragCoefficient must be a number in [0, 5]');
   for (const k of ['drag', 'heaveDrag', 'angularDrag']) {
     if (typeof w[k] !== 'number' || !(w[k] >= 0 && w[k] <= 50)) bad(`water.${k} must be a number in [0, 50] (/s)`);
@@ -122,7 +123,7 @@ export function bodiesRust(data) {
   const lines = [`// ${bodiesHeader}`, '', 'use crate::felling::{BodyKind, WaterRules};', ''];
   const rf = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
   lines.push('/// How bodies float (shared/physics/bodies.json `water`).');
-  lines.push(`pub const WATER: WaterRules = WaterRules { drag_coefficient: ${rf(data.water.dragCoefficient)}, drag: ${rf(data.water.drag)}, heave_drag: ${rf(data.water.heaveDrag)}, angular_drag: ${rf(data.water.angularDrag)} };`, '');
+  lines.push(`pub const WATER: WaterRules = WaterRules { drag_coefficient: ${rf(data.water.dragCoefficient)}, drag: ${rf(data.water.drag)}, heave_drag: ${rf(data.water.heaveDrag)}, angular_drag: ${rf(data.water.angularDrag)}, flood_m3s_per_m2: ${rf(data.water.floodM3sPerM2)} };`, '');
   lines.push('/// The body kinds, in wire order (shared/physics/bodies.json).');
   lines.push(`pub const BODY_KINDS: [BodyKind; ${data.kinds.length}] = [`);
   for (const k of data.kinds) {
