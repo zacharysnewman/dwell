@@ -4597,7 +4597,7 @@ impl Server {
     /// The ships steered (docs/CANNONS.md C5), each tick before the physics step: for each player
     /// at a helm (`helms`) still standing at it (their controller's `helm`) on a body still afloat,
     /// their forward input pushes the body along the helm's facing (turned with it, flat) from its
-    /// centre of mass with the helm's `thrustN`, as a sail would; their sideways input turns it
+    /// centre of mass with its mass × the helm's `thrustAccelMs2` (owner, 2026-11-18: scaled by the ship's mass), as a sail would; their sideways input turns it
     /// about the face's up with `rudderNmPerMs` for each m/s it moves along that heading, as a rudder
     /// would (none when still; backing, the other way). Off the helm, or the body gone, the entry
     /// goes (and the player's flag with it).
@@ -4635,8 +4635,10 @@ impl Server {
             let heading = rot * DVec3::new(fw[0], 0.0, fw[2]);
             let heading = (heading - up * heading.dot(up)).normalize_or_zero();
             if ahead != 0.0 {
-                self.physics
-                    .apply_impulse(handle, heading * (def.thrust_n * ahead * dt));
+                self.physics.apply_impulse(
+                    handle,
+                    heading * (self.physics.mass(handle) * def.thrust_accel_ms2 * ahead * dt),
+                );
             }
             let along = self.physics.velocity(handle).dot(heading);
             if turn_in != 0.0 && along != 0.0 {

@@ -14,5 +14,5 @@ pub static BALLS: &[BallDef] = &[
 
 /// The ships' helms, by block (`helms`).
 pub static HELMS: &[HelmDef] = &[
-    HelmDef { block: "dwell:helm", thrust_n: 20000.0, rudder_nm_per_ms: 20000.0, camera: HelmCamera { back_m: 8.0, up_m: 3.0, ease_s: 0.8 } },
+    HelmDef { block: "dwell:helm", thrust_accel_ms2: 1.2, rudder_nm_per_ms: 20000.0, camera: HelmCamera { back_m: 8.0, up_m: 3.0, ease_s: 0.8 } },
 ];

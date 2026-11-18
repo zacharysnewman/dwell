@@ -85,6 +85,11 @@ Last updated: 2026-11-11 (0.52.108).
   ones." Owner should see: felled logs floating in water take placed blocks and become one raft; on land they don't. Owner,
   2026-11-18: "Sorry that wasn't quite right. I'll need to think about how land vehicles will work, since this rule would
   make them always settle. This is fine for now. Proceed." (Revisit with land vehicles.)
+  Owner's answers, 2026-11-18: "The movement force should be scaled based on the mass of the boat, so big boats can
+  move at a reasonable speed too. We'll hold on rudder and sails for now. I think we'll add sinking and water filling
+  the hull, which would also make boats more buoyant? I think based on air inside? No aiming the barrel. Ball doesn't
+  hurt players." Owner should see: a big boat sails about as fast as a small raft at the helm; later (design questions
+  first) a hull's enclosed air keeps it afloat higher, and holes below the waterline let water fill it until it sinks.
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."
