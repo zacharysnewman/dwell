@@ -234,6 +234,17 @@
       "burn": "torch_fire",
       "impact": "wood_impact"
     },
+    "cannon": {
+      "step": "stone_step",
+      "land": "stone_land",
+      "break": "stone_break",
+      "place": "stone_place",
+      "hit": "stone_hit",
+      "slide": "stone_slide",
+      "slide_stop": "stone_slide_stop",
+      "explode": "cannon_boom",
+      "impact": "stone_impact"
+    },
     "dynamite": {
       "step": "wood_step",
       "land": "wood_land",
@@ -2438,6 +2449,17 @@
       "layers": [
         {"source": "noise", "color": "white", "gain": 0.4, "filters": [{"type": "bandpass", "freq": 3000, "q": 1.0, "to": 5200}], "env": {"attack": 0.004, "decay": 0.25}},
         {"source": "noise", "color": "crackle", "gain": 0.45, "at": 0.03, "filters": [{"type": "bandpass", "freq": 2600, "q": 0.9}], "env": {"attack": 0.02, "decay": 0.35}}
+      ]
+    },
+    "cannon_boom": {
+      "$comment": "A cannon's shot (owner, 2026-11-18: \"A deep boom\"): a sharp crack, a short low body and a deep thump, shorter and lower than dynamite's blast.",
+      "gain": 2.0, "reverb": 0.5,
+      "variation": {"pitch": 1, "gain": 1, "cutoff": 0.08, "time": 0.08},
+      "intensity": {"gain": [0, 1], "cutoff": [0.4, 1]},
+      "layers": [
+        {"source": "noise", "color": "white", "gain": 0.7, "filters": [{"type": "lowpass", "freq": 5000, "q": 0.7, "to": 700}], "env": {"attack": 0.0004, "decay": 0.09}},
+        {"source": "noise", "color": "brown", "gain": 1.0, "filters": [{"type": "lowpass", "freq": 320, "q": 0.9, "to": 60}], "env": {"attack": 0.003, "hold": 0.05, "decay": 0.9}},
+        {"source": "modal", "freq": 38, "gain": 0.8, "partials": [[1, 1, 0.8], [1.5, 0.4, 0.5]]}
       ]
     },
     "dynamite_boom": {

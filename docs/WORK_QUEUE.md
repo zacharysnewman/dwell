@@ -110,7 +110,18 @@ Last updated: 2026-11-11 (0.52.108).
   flash and a drifting grey smoke cloud at the barrel's mouth, dynamite's looks scaled down, data per cannon); "A deep
   boom" (a synthesized cannon boom, shorter and lower than dynamite's, heard far). Owner should see: a cannon firing
   booms, with a muzzle flash and a puff of smoke at its barrel. Owner, 2026-11-18: "Where's the ship's wheel? I can't find it in creative?" (It
-  was the item "Helm", a plank cube in the Shapes; renamed "Ship's wheel".)
+  was the item "Helm", a plank cube in the Shapes; renamed "Ship's wheel".) Owner, 2026-11-18: "Cannonballs shouldn't settle on the water surface or float,
+  they should sink and settle flooded on the bottom." → BUGS.md #213.
+  Owner, 2026-11-18: "Also, block breaking/building should be disabled while steering the ship. But "use" should still
+  be allowed like currently. Also, your "aim" should be based on your 3rd person crosshair, though your "acceptable"
+  range blocks can be the ones around you still." / "Like what block your "aiming" at." / "Also, triple the speed of the
+  boat." Owner should see: at the helm, clicks don't break or place (a cannon or the wheel still uses); the block aimed
+  at is the one under the third-person crosshair, within reach of the player; the boat sails three times as fast. Owner,
+  2026-11-18: "And double the turning responsiveness" (the boat turns twice as fast at the helm). Owner, 2026-11-18:
+  "I notice I can't use the bridging helper on dynamic objects, I want to be to do that." → BUGS.md #214. "Also
+  dragging in a line by rotating the camera doesn't seem to work correctly on a dynamic body. It doesn't follow the
+  line." → #215. "Also ensure you check every one of the 4 cannon blocks to see if it is destroyed. I noticed half of
+  cannons fall off the boat, when breaking the bottom on the boat, if hanging over the edge." → #216.
   Owner, 2026-11-18: "Also, planks look exactly like build platform, we should change build platform to look
   distinctly different from planks." Owner should see: a build platform block that reads at a glance as not planks.
 - **Owner, 2026-11-17 (leaves):** "it's that leaves should be 1 hit I'm realizing, since they don't adapt to damage."

@@ -346,15 +346,15 @@ both_faces!(
         };
         let mut a = deck(4, 4);
         a.extend([
-            ([1, up, 1], cannon("rear_bottom")),
-            ([1, 2 * up, 1], cannon("rear_top")),
-            ([2, up, 1], cannon("front_bottom")),
-            ([2, 2 * up, 1], cannon("front_top")),
+            ([1, 2 * up, 1], cannon("rear_bottom")),
+            ([1, 3 * up, 1], cannon("rear_top")),
+            ([2, 2 * up, 1], cannon("front_bottom")),
+            ([2, 3 * up, 1], cannon("front_top")),
         ]);
         // Raft B: a deck with a 2-high wall of planks along its west side, in the line of fire.
         let mut b = deck(4, 4);
         for z in 0..4 {
-            for r in 1..3 {
+            for r in 2..4 {
                 b.push(([0, r * up, z], planks));
             }
         }
@@ -366,7 +366,7 @@ both_faces!(
         let mut seq = 0;
         hold(&mut fx, &mut seq, Input::default(), 90);
         let before = fx.server.body_cells(rb).len();
-        assert!(fx.server.use_body_cell(1, ra, [2, up, 1]), "fired");
+        assert!(fx.server.use_body_cell(1, ra, [2, 2 * up, 1]), "fired");
         hold(&mut fx, &mut seq, Input::default(), 60);
         let (smashed, loosened) = fx.server.ball_hits();
         let after = fx.server.body_cells(rb).len();
@@ -815,5 +815,48 @@ both_faces!(
             .filter(|n| n.starts_with("dwell:torch"))
             .collect();
         assert_eq!(names.len(), 2, "the torch and its upper: {names:?}");
+    }
+);
+
+both_faces!(
+    fn a_cannonball_in_water_sinks_and_rests_flooded_on_the_bed(f: FaceFrame) {
+        // BUGS.md #213 (owner, 2026-11-18: "Cannonballs shouldn't settle on the water surface or
+        // float, they should sink and settle flooded on the bottom").
+        let mut fx = Fixture::new(config(f));
+        fx.join(1, &Client::new(1));
+        let (raft, _) = harbour(&mut fx, f);
+        fx.server.remove_body(raft);
+        let ball = f.state(dwell_blocks::require("dwell:iron_ball[flooded=false]"));
+        let c = f.cell([4, BASE, 4]);
+        let at = [
+            f64::from(c[0]) + 0.5,
+            (f64::from(c[1]) + 0.5) * dwell_world::CELL_H,
+            f64::from(c[2]) + 0.5,
+        ];
+        let id = fx.server.add_body(0, vec![([0, 0, 0], ball)], at);
+        let mut seq = 0;
+        for _ in 0..40 {
+            hold(&mut fx, &mut seq, Input::default(), 30);
+            if fx.server.body_pose(id).is_none() {
+                break;
+            }
+        }
+        assert!(fx.server.body_pose(id).is_none(), "it settled");
+        // On the bed (the pool's lowest water row), flooded; the water above it still there.
+        let bed = f.cell([4, BASE - 6, 4]);
+        let m = fx.server.world().get_voxel(bed[0], bed[1], bed[2]);
+        assert_eq!(
+            dwell_blocks::block_of(m).name,
+            "dwell:iron_ball",
+            "the ball on the bed"
+        );
+        assert_eq!(
+            dwell_blocks::state_property(m, "flooded"),
+            Some("true"),
+            "flooded"
+        );
+        let above = f.cell([4, BASE - 5, 4]);
+        let w = fx.server.world().get_voxel(above[0], above[1], above[2]);
+        assert!(dwell_blocks::info(w).liquid, "the water above it");
     }
 );

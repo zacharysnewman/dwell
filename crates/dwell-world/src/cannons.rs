@@ -78,6 +78,9 @@ pub struct CannonDef {
     /// The share of the ball's momentum that pushes a body the cannon stands on back (0–1).
     pub recoil_share: f64,
     pub reload_s: f64,
+    /// Its shot's looks at the muzzle (owner, 2026-11-18: "Flash + smoke puff"): the explosives'
+    /// schema; its boom is its block's sound set's `explode`.
+    pub fire: crate::explosives::BlastEffects,
 }
 
 mod table {

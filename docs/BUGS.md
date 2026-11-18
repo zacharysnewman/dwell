@@ -6,6 +6,33 @@ pins it.
 
 ## Open
 
+### 216. A cannon on a body splits when the body breaks apart under it
+
+Owner, 2026-11-18: "Also ensure you check every one of the 4 cannon blocks to see if it is destroyed. I noticed half of
+cannons fall off the boat, when breaking the bottom on the boat, if hanging over the edge." A body that splits
+(`Felling::break_cell`'s connected groups) can part a multi-cell block's cells between the pieces. Owner should see: a
+cannon stays whole when the deck under it is broken: it goes with one piece, or comes off whole.
+
+### 215. Dragging a line on a moving body by turning the camera doesn't follow the line
+
+Owner, 2026-11-18: "Also dragging in a line by rotating the camera doesn't seem to work correctly on a dynamic body. It
+doesn't follow the line." (#209's stroke places against whatever face is aimed at; the world's drag keeps to the line it
+began.) Owner should see: a held Place swept along a raft lays a straight row in the body's grid, as on the ground.
+
+### 214. No bridging help on moving bodies
+
+Owner, 2026-11-18: "I notice I can't use the bridging helper on dynamic objects, I want to be to do that." Owner should
+see: Place held over a raft's edge with nothing targeted builds on ahead along the body, as it does over the world's
+edges.
+
+### 213. Cannonballs float on water
+
+Owner, 2026-11-18: "Cannonballs shouldn't settle on the water surface or float, they should sink and settle flooded on
+the bottom." Cause: the buoyancy counts a body's whole ½ m³ cell, so a ball's ~500 kg of displaced water outweighs its
+455 kg of steel. Owner should see: a cannonball that lands in water sinks to the bottom and rests there, the water still
+round it.
+Fixed 2026-11-18: buoyancy by the ball's sphere; settling flooded into a liquid's cell (docs/CANNONS.md §13).
+
 ### 212. Torches can't be placed on a moving body
 
 Owner, 2026-11-18: "Placing torches on dynamic bodies should work too." Owner should see: a torch placed on a raft's

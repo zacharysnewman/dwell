@@ -2360,6 +2360,14 @@ impl<S: Scene> Game<S> {
                 }
             }
             Message::EntitySpawn(e) => {
+                // A cannonball's first spawn is a shot: its cannon's flash, smoke and boom at the
+                // muzzle (owner, 2026-11-18: "We need sound effects and VFX for cannon fire").
+                if !self.pieces.has(e.id)
+                    && let [cell] = e.cells.as_slice()
+                    && let Some(k) = shot_cannon(cell.state)
+                {
+                    self.shot_effects(k, e.origin, now_ms);
+                }
                 let (meshes, radius) = self.pieces.spawn(&e, now_ms, &mut self.sounds);
                 self.scene
                     .borrow_mut()
@@ -4379,6 +4387,30 @@ impl<S: Scene> Game<S> {
     /// air): each starts its effects, and its boom plays as loud as its distance from the
     /// listener allows (`boom_level`; at the listener, so a far blast is heard past the panner's
     /// reach).
+    /// Cannon `k`'s shot at `at` (its ball's spawn, at the muzzle): its `fire` looks
+    /// (`cannon_fire_look`), its smoke drifting up, and its block's `explode` sound by its boom's
+    /// distances (docs/CANNONS.md).
+    fn shot_effects(&mut self, k: usize, at: [f64; 3], now_ms: f64) {
+        use dwell_world::explosives::{boom_level_of, cannon_fire_look};
+        let Some(c) = dwell_world::cannons::CANNONS.get(k) else {
+            return;
+        };
+        let up = FaceFrame::at_height(at[1]).up();
+        self.blasts
+            .start(at, cannon_fire_look(k), now_ms / 1000.0, up);
+        let d = (0..3)
+            .map(|i| (at[i] - self.listener[i]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let level = boom_level_of(&c.fire, d);
+        if level > 0.0
+            && let Some(block) = dwell_blocks::state(c.block)
+        {
+            self.sounds
+                .push(SoundEvent::new(SoundKind::Explode, block, level, Some(at)));
+        }
+    }
+
     fn blasts_from(&mut self, changes: &[CellChange], now_ms: f64) {
         use dwell_world::explosives::{EXPLOSIVES, boom_level, explosive_of};
         for c in changes {
@@ -7149,6 +7181,15 @@ fn body_drag_skips(sent: &[[i32; 3]], new: [i32; 3], filled: bool) -> bool {
     filled || sent.contains(&new)
 }
 
+/// The cannon (its index in `CANNONS`) whose ball a body of the one state `m` is: a shot's ball
+/// (docs/CANNONS.md); none for any other.
+fn shot_cannon(m: StateId) -> Option<usize> {
+    let ball = dwell_physics::ball_of(m)?;
+    dwell_world::cannons::CANNONS
+        .iter()
+        .position(|c| c.ball == ball.name)
+}
+
 /// The helm camera's blend after `dt` s (docs/CANNONS.md C5): toward 1 at the helm, toward 0 off it,
 /// the whole way in `ease_s` (at once for none).
 fn helm_blend_step(blend: f64, at_helm: bool, dt: f64, ease_s: f64) -> f64 {
@@ -7387,6 +7428,18 @@ mod tests {
         assert_eq!(v[0]["npc"], false);
         assert_eq!(v[0]["at"][2], 3.0);
         assert_eq!(v[1]["npc"], true);
+    }
+
+    #[test]
+    fn a_cannonballs_spawn_is_its_cannons_shot() {
+        // face-a-only: a state's lookup, no geometry.
+        let ball = dwell_blocks::require("dwell:iron_ball");
+        assert_eq!(
+            shot_cannon(ball),
+            Some(0),
+            "the iron ball is the land cannon's"
+        );
+        assert_eq!(shot_cannon(dwell_blocks::require("dwell:planks")), None);
     }
 
     #[test]

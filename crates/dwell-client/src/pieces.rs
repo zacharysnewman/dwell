@@ -109,6 +109,11 @@ fn quat(q: [f32; 4]) -> DQuat {
 }
 
 impl Pieces {
+    /// Whether body `id` is known (spawned and not gone).
+    pub fn has(&self, id: u32) -> bool {
+        self.map.contains_key(&id)
+    }
+
     /// A piece began to fall: kept with its spawn pose; returns its meshes (positions relative to
     /// its reference cell's centre) and how far they reach (m), and a tree's crack where it went
     /// (`sounds`). Its states are this client's.
