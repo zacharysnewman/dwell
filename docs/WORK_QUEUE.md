@@ -4162,3 +4162,9 @@ current version and in the PR."
   recovery broke a seed-1 volcano's foot (0.47 against main's 0.15, the circular-cliff check) and mesa country (0.44 %
   of a temperate face's land, min 0.5 %). Owner: "Ok, drop it but record it somewhere for historical and possible
   future look again" → `recoverM` 0, recorded in docs/FUTURE.md. 0.73 ships sea moderation and the lee floor.
+  Main's CI, 2026-11-18 (found late: main's runs were cancelled by later merges until #1085's): 0.73 failed
+  `realistic_variety` on the owner's face A, one cold desert region of 1,188 km² (26.7 % of the land; at most 18 %).
+  The cause was 0.73's raise of the cold desert's rain limit (220 → 300 mm, to keep it with the lee floor's wetter
+  lee): 0.75.0 puts it back at 220 mm (the fallback-climate test's bar back under it, 200 mm), a new compatibility
+  line (the terrain a seed generates). Owner should see: on a new Realistic world, no one cold desert covering a
+  quarter of a continent.

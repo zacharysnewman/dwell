@@ -315,8 +315,9 @@ dwell_world::both_faces!(
         // ones are mostly mesa country's blend, skipped above (35 on face A). Since 0.73's lee
         // floor the forests' lee is wetter and covers nearly all of them (0-3 a face, on 5 seeds
         // too): no minimum; any that is sampled must still not be red sand (the check above).
+        // 25 arid since 0.75 (the cold desert back under 220 mm: 29 on face A).
         assert!(
-            arid >= 30 && humid >= 50,
+            arid >= 25 && humid >= 50,
             "arid {arid}, humid {humid}, forest {forests} floors sampled"
         );
     }
